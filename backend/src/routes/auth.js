@@ -35,7 +35,7 @@ router.post('/send-code', async (req, res) => {
 
   codStore.set(phone, { code, expiry: Date.now() + 5 * 60 * 1000 });
 
-  console.log(`📱 手机号 ${phone} 验证码: ${code}`);
+  // 生产环境验证码通过短信发送，不打印到日志
 
   res.json({
     success: true,

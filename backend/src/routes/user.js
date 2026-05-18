@@ -50,13 +50,11 @@ router.put('/me', auth, async (req, res) => {
 
     // 直接用原生 MongoDB driver，完全绕过 Mongoose schema 类型转换
     // 这样无论 Railway 上跑的是哪个版本的 User schema，数组字段都能正常写入
-    console.log('PUT /user/me updateData keys:', Object.keys(updateData));
     await User.collection.updateOne(
       { _id: req.user._id },
       { $set: updateData }
     );
     const user = await User.findById(req.user._id).select('-password');
-    console.log('PUT /user/me success, user:', user?._id);
 
     res.json({ success: true, data: user });
   } catch (err) {
@@ -323,7 +321,7 @@ router.post('/change-phone/send-code', auth, async (req, res) => {
     : '123456';
 
   changeCodeStore.set(`${req.user._id}:${newPhone}`, { code, expiry: Date.now() + 5 * 60 * 1000 });
-  console.log(`📱 换绑验证码 ${newPhone}: ${code}`);
+  // 生产环境验证码通过短信发送，不打印到日志
 
   res.json({
     success: true,
