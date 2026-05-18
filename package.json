@@ -1,0 +1,15 @@
+{
+  "name": "jiayicare-monorepo",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "app",
+    "admin",
+    "backend"
+  ],
+  "scripts": {
+    "dev:app": "cd app && npx expo start",
+    "dev:admin": "cd admin && npm run dev",
+    "dev:backend": "cd backend && npm run dev"
+  }
+}

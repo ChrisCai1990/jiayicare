@@ -1,0 +1,444 @@
+import React, { useState, useEffect } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, SafeAreaView, Modal,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius } from '../../theme';
+import { useAuth } from '../../context/AuthContext';
+import { userAPI, ordersAPI } from '../../services/api';
+import Avatar, { AvatarOnDark } from '../../components/Avatar';
+
+// ── 菜单条目 ──────────────────────────────────────────────────────
+function MenuItem({ icon, iconColor, label, value, badge, onPress, isLast }) {
+  const ic = iconColor || colors.primary;
+  return (
+    <TouchableOpacity
+      style={[styles.menuItem, !isLast && styles.menuItemBorder]}
+      onPress={onPress}
+      activeOpacity={0.7}
+    >
+      <View style={[styles.menuIconWrap, { backgroundColor: ic + '14' }]}>
+        <Ionicons name={icon} size={18} color={ic} />
+      </View>
+      <Text style={styles.menuLabel}>{label}</Text>
+      <View style={styles.menuRight}>
+        {badge != null && (
+          <View style={styles.menuBadge}>
+            <Text style={styles.menuBadgeText}>{badge}</Text>
+          </View>
+        )}
+        {value ? <Text style={styles.menuValue}>{value}</Text> : null}
+        <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── 退出登录确认弹窗 ──────────────────────────────────────────────
+function LogoutModal({ visible, onConfirm, onCancel }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalIconWrap}>
+            <Ionicons name="log-out-outline" size={28} color={colors.danger} />
+          </View>
+          <Text style={styles.modalTitle}>退出登录</Text>
+          <Text style={styles.modalDesc}>确定要退出当前账号吗？</Text>
+          <View style={styles.modalBtns}>
+            <TouchableOpacity style={styles.modalCancelBtn} onPress={onCancel} activeOpacity={0.8}>
+              <Text style={styles.modalCancelText}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.modalConfirmBtn} onPress={onConfirm} activeOpacity={0.8}>
+              <Text style={styles.modalConfirmText}>确定退出</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── 主页面 ────────────────────────────────────────────────────────
+export default function ProfileScreen({ navigation }) {
+  const { user, isDemo, logout } = useAuth();
+  const [showLogout, setShowLogout] = useState(false);
+  const [monthlyCount, setMonthlyCount] = useState(null);
+  const [pendingOrders, setPendingOrders] = useState(0);
+  const [notifLabel, setNotifLabel] = useState('');
+
+  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  const expiry = hasService ? new Date(user.serviceExpiry) : null;
+  const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
+  const score = user?.healthScore || 0;
+  const scoreColor = score >= 80 ? colors.success : score >= 60 ? colors.warning : colors.danger;
+
+  useEffect(() => {
+    // 本月记录数
+    (async () => {
+      try {
+        const res = await userAPI.getReport('month');
+        if (res.success) setMonthlyCount(res.data.recordCount ?? 0);
+      } catch { setMonthlyCount(0); }
+    })();
+
+    // 待跟进订单数
+    (async () => {
+      try {
+        const res = await ordersAPI.list();
+        if (res.success) {
+          setPendingOrders(res.data.filter(o => o.status === 'pending').length);
+        }
+      } catch {}
+    })();
+
+    // 通知设置摘要
+    try {
+      const raw = localStorage.getItem('jy_notif_settings');
+      if (raw) {
+        const settings = JSON.parse(raw);
+        const allOff = Object.values(settings).every(v => !v);
+        setNotifLabel(allOff ? '已全部关闭' : '已开启');
+      } else {
+        setNotifLabel('已开启');
+      }
+    } catch { setNotifLabel('已开启'); }
+  }, []);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <ScrollView showsVerticalScrollIndicator={false}>
+
+        {/* ── Header ─────────────────────────────────────────── */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.settingBtn} onPress={() => navigation.navigate('EditProfile')}>
+            <Ionicons name="create-outline" size={20} color="rgba(255,255,255,0.8)" />
+          </TouchableOpacity>
+
+          <View style={styles.headerContent}>
+            <AvatarOnDark name={user?.name || '用'} size={76} />
+            <Text style={styles.userName}>{user?.name || '用户'}</Text>
+            <Text style={styles.userSub}>
+              {[user?.age && `${user.age}岁`, user?.gender !== '未知' && user?.gender, user?.phone].filter(Boolean).join(' · ')}
+            </Text>
+          </View>
+        </View>
+
+        {/* ── 健康概况 ────────────────────────────────────────── */}
+        <View style={styles.statsCard}>
+          {[
+            { val: score || '--',    label: '健康评分', color: score ? scoreColor : colors.textMuted },
+            { val: hasService ? daysLeft : '--', label: '服务天数', color: hasService ? colors.primary : colors.textMuted },
+            { val: monthlyCount ?? '--', label: '本月记录', color: monthlyCount > 0 ? colors.textPrimary : colors.textMuted },
+          ].map((s, i) => (
+            <React.Fragment key={i}>
+              {i > 0 && <View style={styles.statsDivider} />}
+              <View style={styles.statItem}>
+                <Text style={[styles.statVal, { color: s.color }]}>{s.val}</Text>
+                <Text style={styles.statLabel}>{s.label}</Text>
+              </View>
+            </React.Fragment>
+          ))}
+        </View>
+
+        {/* ── 服务包 ──────────────────────────────────────────── */}
+        <View style={styles.section}>
+          {hasService ? (
+            <View style={styles.serviceCard}>
+              <View style={styles.serviceIconWrap}>
+                <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.serviceInfo}>
+                <Text style={styles.serviceName} numberOfLines={1}>{user.servicePackage}</Text>
+                <Text style={styles.serviceExpiry}>
+                  到期 {user.serviceExpiry} · 剩余 {daysLeft} 天
+                </Text>
+              </View>
+              <TouchableOpacity style={styles.renewBtn} onPress={() => navigation.navigate('Renewal')}>
+                <Text style={styles.renewText}>续约</Text>
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.noServiceCard} onPress={() => navigation.navigate('ServiceMall')} activeOpacity={0.85}>
+              <View style={styles.noServiceLeft}>
+                <View style={styles.noServiceIconWrap}>
+                  <Ionicons name="shield-outline" size={22} color={colors.primary} />
+                </View>
+                <View>
+                  <Text style={styles.noServiceTitle}>开通专属服务包</Text>
+                  <Text style={styles.noServiceSub}>获得医生随访、健管服务与专属权益</Text>
+                </View>
+              </View>
+              <View style={styles.noServiceBtn}>
+                <Text style={styles.noServiceBtnText}>了解详情</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* ── 家庭成员 ─────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionRow}>
+            <Text style={styles.sectionTitle}>家庭成员</Text>
+            <TouchableOpacity style={styles.sectionLink} onPress={() => navigation.navigate('ComingSoon', { title: '家庭成员', desc: '家庭成员管理功能即将上线，届时可为家人统一管理健康档案。', icon: 'people-outline' })}>
+              <Ionicons name="add" size={14} color={colors.primary} />
+              <Text style={styles.sectionLinkText}>添加</Text>
+            </TouchableOpacity>
+          </View>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ gap: spacing.sm, paddingBottom: 2 }}>
+            <TouchableOpacity style={styles.addFamilyCard} onPress={() => navigation.navigate('ComingSoon', { title: '家庭成员', desc: '家庭成员管理功能即将上线，届时可为家人统一管理健康档案。', icon: 'people-outline' })}>
+              <View style={styles.addFamilyCircle}>
+                <Ionicons name="add" size={20} color={colors.primary} />
+              </View>
+              <Text style={styles.addFamilyLabel}>添加成员</Text>
+            </TouchableOpacity>
+          </ScrollView>
+        </View>
+
+        {/* ── 健康管理 ─────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>健康管理</Text>
+          <View style={styles.menuCard}>
+            <MenuItem icon="heart-outline"         iconColor="#DC3545" label="健康档案" value="查看全部" onPress={() => navigation.navigate('Records')} />
+            <MenuItem icon="document-text-outline" iconColor="#0077B6" label="体检报告" badge={undefined} onPress={() => navigation.navigate('ReportUpload')} />
+            <MenuItem icon="medkit-outline"        iconColor="#D97706" label="用药记录"              onPress={() => navigation.navigate('Medication')} />
+            <MenuItem icon="notifications-outline" iconColor={colors.primary} label="提醒管理"       onPress={() => navigation.navigate('Reminders')} isLast />
+          </View>
+        </View>
+
+        {/* ── 我的服务 ─────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>我的服务</Text>
+          <View style={styles.menuCard}>
+            <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
+            <MenuItem icon="people-outline"  iconColor="#22A06B" label="服务群组"  value="即将开放" onPress={() => navigation.navigate('ComingSoon', { title: '服务群组', desc: '专属健康服务群组即将开放，届时可与医生、健管师及病友实时交流。', icon: 'people-outline' })} />
+            <MenuItem icon="call-outline"    iconColor="#7C3AED" label="预约随访"               onPress={() => navigation.navigate('Tasks')} />
+            <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} />
+            <MenuItem icon="star-outline"    iconColor="#F39C12" label="评价服务"               onPress={() => navigation.navigate('ComingSoon', { title: '评价服务', desc: '服务评价功能即将上线，帮助我们持续改善服务质量。', icon: 'star-outline' })} isLast />
+          </View>
+        </View>
+
+        {/* ── 账号设置 ─────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>账号设置</Text>
+          <View style={styles.menuCard}>
+            <MenuItem icon="person-outline"        iconColor="#0077B6" label="编辑资料"            onPress={() => navigation.navigate('EditProfile')} />
+            <MenuItem icon="notifications-outline" iconColor="#7C3AED" label="消息通知" value={notifLabel} onPress={() => navigation.navigate('NotificationSettings')} />
+            <MenuItem icon="lock-closed-outline"   iconColor="#22A06B" label="账号安全"            onPress={() => navigation.navigate('AccountSecurity')} />
+            <MenuItem icon="help-circle-outline"   iconColor="#D97706" label="帮助与反馈"          onPress={() => navigation.navigate('HelpFeedback')} isLast />
+          </View>
+        </View>
+
+        {/* ── 关于与法律 ───────────────────────────────────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>关于与法律</Text>
+          <View style={styles.menuCard}>
+            <MenuItem icon="document-text-outline" iconColor="#6B7280" label="用户协议"   onPress={() => navigation.navigate('Legal', { type: 'terms' })} />
+            <MenuItem icon="shield-outline"        iconColor="#6B7280" label="隐私政策"   onPress={() => navigation.navigate('Legal', { type: 'privacy' })} />
+            <MenuItem icon="information-circle-outline" iconColor="#6B7280" label="免责声明" onPress={() => navigation.navigate('Legal', { type: 'disclaimer' })} isLast />
+          </View>
+        </View>
+
+        {/* ── 退出登录 ─────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.logoutBtn} onPress={() => setShowLogout(true)} activeOpacity={0.8}>
+            <Ionicons name="log-out-outline" size={17} color={colors.danger} />
+            <Text style={styles.logoutText}>退出登录</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.versionText}>嘉医管家 v1.0.0</Text>
+        <View style={{ height: spacing.xl }} />
+      </ScrollView>
+
+      {/* 退出登录确认弹窗 */}
+      <LogoutModal
+        visible={showLogout}
+        onCancel={() => setShowLogout(false)}
+        onConfirm={() => { setShowLogout(false); logout(); }}
+      />
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+
+  // Header
+  header: {
+    backgroundColor: '#1A2B24',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  settingBtn: {
+    position: 'absolute', top: spacing.sm, right: spacing.lg,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerContent: { alignItems: 'center', paddingTop: spacing.md },
+  userName: { fontSize: 22, fontWeight: '700', color: colors.white, marginTop: spacing.sm, letterSpacing: -0.3 },
+  userSub: { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
+
+  // 健康概况
+  statsCard: {
+    flexDirection: 'row',
+    backgroundColor: colors.white,
+    marginHorizontal: spacing.lg,
+    marginTop: -spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.lg,
+    overflow: 'hidden',
+  },
+  statItem: { flex: 1, alignItems: 'center' },
+  statVal: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+  statLabel: { fontSize: 11, color: colors.textMuted, marginTop: 4, fontWeight: '500' },
+  statsDivider: { width: 1, backgroundColor: colors.borderLight, marginVertical: 4 },
+
+  // Section
+  section: { marginTop: spacing.lg, paddingHorizontal: spacing.lg },
+  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  sectionTitle: { fontSize: 10, fontWeight: '700', color: colors.textMuted, marginBottom: spacing.sm, letterSpacing: 1.2, textTransform: 'uppercase' },
+  sectionLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  sectionLinkText: { fontSize: 13, color: colors.primary, fontWeight: '500' },
+
+  // 服务包
+  serviceCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  serviceIconWrap: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: colors.primary10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  serviceInfo: { flex: 1 },
+  serviceName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  serviceExpiry: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  renewBtn: {
+    paddingHorizontal: 14, paddingVertical: 7,
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+  },
+  renewText: { fontSize: 12, color: colors.white, fontWeight: '700' },
+
+  // 无服务包引导卡
+  noServiceCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.white, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.primary + '40',
+    borderStyle: 'dashed', padding: spacing.md,
+  },
+  noServiceLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  noServiceIconWrap: {
+    width: 42, height: 42, borderRadius: 12,
+    backgroundColor: colors.primary + '12',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  noServiceTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  noServiceSub: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  noServiceBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: colors.primary + '12',
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: radius.full,
+  },
+  noServiceBtnText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
+
+  // 家庭成员
+  addFamilyCard: {
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radius.sm, padding: spacing.md,
+    minWidth: 78, borderWidth: 1.5, borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  addFamilyCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.primary10,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
+  },
+  addFamilyLabel: { fontSize: 12, color: colors.primary, fontWeight: '500' },
+
+  // 菜单
+  menuCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.md, paddingVertical: 14,
+  },
+  menuItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  menuIconWrap: {
+    width: 34, height: 34, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm,
+  },
+  menuLabel: { flex: 1, fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
+  menuRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  menuValue: { fontSize: 12, color: colors.textMuted },
+  menuBadge: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: colors.danger, paddingHorizontal: 5,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  menuBadgeText: { fontSize: 10, color: colors.white, fontWeight: '700' },
+
+  // 退出登录
+  logoutBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.danger + '40',
+  },
+  logoutText: { fontSize: 15, color: colors.danger, fontWeight: '600' },
+  versionText: { textAlign: 'center', fontSize: 11, color: colors.textMuted, marginTop: spacing.md },
+
+  // 退出确认弹窗
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    width: 280,
+    alignItems: 'center',
+  },
+  modalIconWrap: {
+    width: 60, height: 60, borderRadius: 30,
+    backgroundColor: colors.danger + '12',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xs },
+  modalDesc: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.lg },
+  modalBtns: { flexDirection: 'row', gap: spacing.sm, width: '100%' },
+  modalCancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center',
+  },
+  modalCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
+  modalConfirmBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+  },
+  modalConfirmText: { fontSize: 15, color: colors.white, fontWeight: '700' },
+});

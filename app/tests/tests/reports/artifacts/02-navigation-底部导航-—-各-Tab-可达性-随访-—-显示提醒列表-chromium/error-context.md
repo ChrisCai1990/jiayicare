@@ -1,0 +1,246 @@
+# Instructions
+
+- Following Playwright test failed.
+- Explain why, be concise, respect Playwright best practices.
+- Provide a snippet of code with the fix, if possible.
+
+# Test info
+
+- Name: 02-navigation.spec.js >> 底部导航 — 各 Tab 可达性 >> 随访 — 显示提醒列表
+- Location: tests\e2e\02-navigation.spec.js:82:3
+
+# Error details
+
+```
+Error: page.evaluate: TypeError: Failed to execute 'getComputedStyle' on 'Window': parameter 1 is not of type 'Element'.
+    at walk (eval at evaluate (:302:30), <anonymous>:5:28)
+    at walk (eval at evaluate (:302:30), <anonymous>:9:13)
+    at eval (eval at evaluate (:302:30), <anonymous>:13:12)
+    at UtilityScript.evaluate (<anonymous>:304:16)
+    at UtilityScript.<anonymous> (<anonymous>:1:44)
+```
+
+# Page snapshot
+
+```yaml
+- generic [ref=e8]:
+  - generic [ref=e16]:
+    - generic [ref=e17]:
+      - generic [ref=e18]:
+        - generic [ref=e19]: 嘉医汇
+        - generic [ref=e20]: 私人家庭医生，全生命周期健康管理
+      - generic [ref=e22] [cursor=pointer]: 用
+    - generic [ref=e23]:
+      - generic [ref=e24]:
+        - generic [ref=e25]: 下午好
+        - generic [ref=e26]: 用户8000，继续保持 💪
+        - generic [ref=e27]:
+          - generic [ref=e28]: "72"
+          - generic [ref=e29]:
+            - generic [ref=e30]: 健康评分 / 100
+            - generic [ref=e31]: ↑ 较上月 +3 分
+      - generic [ref=e32]:
+        - generic [ref=e33]: 健康指标
+        - generic [ref=e34]:
+          - generic [ref=e35]:
+            - generic [ref=e36]:
+              - generic [ref=e37]: 血压
+              - generic [ref=e39]: 偏高
+            - generic [ref=e40]:
+              - generic [ref=e41]: undefined / undefined
+              - generic [ref=e42]: mmHg
+            - generic [ref=e43]:
+              - generic [ref=e44]:
+                - img [ref=e45]
+                - generic [ref=e53]:
+                  - generic [ref=e54]: "160"
+                  - generic [ref=e55]: "130"
+                  - generic [ref=e56]: "90"
+              - generic [ref=e57]:
+                - generic [ref=e59]: 5/11
+                - generic [ref=e61]: 5/12
+                - generic [ref=e63]: 5/13
+                - generic [ref=e65]: 5/14
+                - generic [ref=e67]: 5/15
+                - generic [ref=e69]: 5/16
+                - generic [ref=e71]: 5/17
+          - generic [ref=e72]:
+            - generic [ref=e73]:
+              - generic [ref=e74]: 血糖
+              - generic [ref=e76]: 偏高
+            - generic [ref=e77]:
+              - generic [ref=e78]: "6.1"
+              - generic [ref=e79]: mmol/L
+            - generic [ref=e80]:
+              - generic [ref=e81]:
+                - img [ref=e82]
+                - generic [ref=e90]:
+                  - generic [ref=e91]: "8"
+                  - generic [ref=e92]: "6"
+                  - generic [ref=e93]: "4"
+              - generic [ref=e94]:
+                - generic [ref=e96]: 5/2
+                - generic [ref=e98]: 5/5
+                - generic [ref=e100]: 5/8
+                - generic [ref=e102]: 5/11
+                - generic [ref=e104]: 5/13
+                - generic [ref=e106]: 5/15
+                - generic [ref=e108]: 5/17
+          - generic [ref=e109]:
+            - generic [ref=e110]:
+              - generic [ref=e111]: BMI
+              - generic [ref=e113]: 正常
+            - generic [ref=e114]:
+              - generic [ref=e115]: "24.1"
+              - generic [ref=e116]: kg/m²
+            - generic [ref=e117]:
+              - img [ref=e118]
+              - generic [ref=e124]: 偏轻<18.5 / 正常 18.5-24 / 超重 24-28 / 肥胖>28
+          - generic [ref=e125]:
+            - generic [ref=e126]:
+              - generic [ref=e127]: 睡眠
+              - generic [ref=e129]: 充足
+            - generic [ref=e130] [cursor=pointer]:
+              - generic [ref=e131]: 入睡时间
+              - generic [ref=e132]: 22:30
+            - generic [ref=e133] [cursor=pointer]:
+              - generic [ref=e134]: 晨起时间
+              - generic [ref=e135]: 06:45
+            - generic [ref=e136]:
+              - generic [ref=e137]: 睡眠时长
+              - generic [ref=e138]:
+                - generic [ref=e139]: 8.3 小时
+                - generic [ref=e140]: 自动计算
+          - generic [ref=e141]:
+            - generic [ref=e142]:
+              - generic [ref=e143]: 情绪
+              - generic [ref=e145]: 良好
+            - generic [ref=e146]:
+              - generic [ref=e147]: "7"
+              - generic [ref=e148]: 分
+            - generic [ref=e149]:
+              - generic [ref=e151] [cursor=pointer]: "1"
+              - generic [ref=e153] [cursor=pointer]: "2"
+              - generic [ref=e155] [cursor=pointer]: "3"
+              - generic [ref=e157] [cursor=pointer]: "4"
+              - generic [ref=e159] [cursor=pointer]: "5"
+              - generic [ref=e161] [cursor=pointer]: "6"
+              - generic [ref=e163] [cursor=pointer]: "7"
+              - generic [ref=e165] [cursor=pointer]: "8"
+              - generic [ref=e167] [cursor=pointer]: "9"
+              - generic [ref=e169] [cursor=pointer]: "10"
+            - generic [ref=e170]: 6分以下 · 建议记录 | 6-8分 · 可选记录 | 8分以上 · 无需记录
+      - generic [ref=e171]:
+        - generic [ref=e172]: 快捷服务
+        - generic [ref=e173]:
+          - generic [ref=e174] [cursor=pointer]:
+            - generic [ref=e176]: 
+            - generic [ref=e177]: 问诊医生
+          - generic [ref=e178] [cursor=pointer]:
+            - generic [ref=e180]: 
+            - generic [ref=e181]: 健康档案
+          - generic [ref=e182] [cursor=pointer]:
+            - generic [ref=e184]: 
+            - generic [ref=e185]: 用药计划
+          - generic [ref=e186] [cursor=pointer]:
+            - generic [ref=e188]: 
+            - generic [ref=e189]: AI 助手
+      - generic [ref=e190]:
+        - generic [ref=e191]: 我的健康管家团队
+        - generic [ref=e193]:
+          - generic [ref=e194] [cursor=pointer]:
+            - generic [ref=e196]: 王
+            - generic [ref=e198]: 王建国
+            - generic [ref=e199]: 主治医生
+          - generic [ref=e200] [cursor=pointer]:
+            - generic [ref=e202]: 张
+            - generic [ref=e204]: 张丽
+            - generic [ref=e205]: 健康管家
+          - generic [ref=e206] [cursor=pointer]:
+            - generic [ref=e208]: 李
+            - generic [ref=e210]: 李华
+            - generic [ref=e211]: 营养师
+      - generic [ref=e212]:
+        - generic [ref=e213]:
+          - generic [ref=e214]: 今日待办
+          - generic [ref=e215]:
+            - generic [ref=e217] [cursor=pointer]: 今日
+            - generic [ref=e219] [cursor=pointer]: 本周
+            - generic [ref=e221] [cursor=pointer]: 本月
+          - generic [ref=e222] [cursor=pointer]:
+            - generic [ref=e223]: 全部
+            - generic [ref=e224]: 
+        - generic [ref=e225]:
+          - generic [ref=e226] [cursor=pointer]:
+            - generic [ref=e228]: 
+            - generic [ref=e229]:
+              - generic [ref=e230]: 本月随访
+              - generic [ref=e231]: 张医生 · 今日 14:00
+            - generic [ref=e233]: 紧急
+          - generic [ref=e234] [cursor=pointer]:
+            - generic [ref=e236]: 
+            - generic [ref=e237]:
+              - generic [ref=e238]: 血压记录
+              - generic [ref=e239]: 王健管 · 今日 09:00
+            - generic [ref=e241]: 紧急
+          - generic [ref=e242] [cursor=pointer]:
+            - generic [ref=e244]: 
+            - generic [ref=e245]:
+              - generic [ref=e246]: 填写健康问卷
+              - generic [ref=e247]: 本人填写 · 明日 23:59
+            - generic [ref=e249]: 今天
+          - generic [ref=e250] [cursor=pointer]:
+            - generic [ref=e252]: 
+            - generic [ref=e253]:
+              - generic [ref=e254]: 复查血脂四项
+              - generic [ref=e255]: 王健管跟进 · 5月20日 前完成
+            - generic [ref=e257]: 今天
+      - generic [ref=e259]:
+        - generic [ref=e260] [cursor=pointer]:
+          - generic [ref=e261]: 
+          - generic [ref=e262]: 健康报告
+        - generic [ref=e263] [cursor=pointer]:
+          - generic [ref=e264]: 
+          - generic [ref=e265]: 提醒管理
+        - generic [ref=e266] [cursor=pointer]:
+          - generic [ref=e267]: 
+          - generic [ref=e268]: 健康问卷
+        - generic [ref=e269] [cursor=pointer]:
+          - generic [ref=e270]: 
+          - generic [ref=e271]: 服务商城
+        - generic [ref=e272] [cursor=pointer]:
+          - generic [ref=e273]: 
+          - generic [ref=e274]: 上传报告
+        - generic [ref=e275] [cursor=pointer]:
+          - generic [ref=e276]: 
+          - generic [ref=e277]: 记录数据
+  - tablist [ref=e280]:
+    - link " 首页" [ref=e281] [cursor=pointer]:
+      - /url: /Main/Home
+      - generic [ref=e284]: 
+      - generic [ref=e285]: 首页
+    - link "  健康档案" [ref=e286] [cursor=pointer]:
+      - /url: /Main/Records
+      - generic:
+        - generic [ref=e288]: 
+        - generic [ref=e290]: 
+      - generic [ref=e291]: 健康档案
+    - link "  随访" [ref=e292] [cursor=pointer]:
+      - /url: /Main/Tasks
+      - generic:
+        - generic [ref=e294]: 
+        - generic [ref=e296]: 
+      - generic [ref=e297]: 随访
+    - link "  消息" [ref=e298] [cursor=pointer]:
+      - /url: /Main/Messages
+      - generic:
+        - generic [ref=e300]: 
+        - generic [ref=e302]: 
+      - generic [ref=e303]: 消息
+    - link "  我的" [ref=e304] [cursor=pointer]:
+      - /url: /Main/Profile
+      - generic:
+        - generic [ref=e306]: 
+        - generic [ref=e308]: 
+      - generic [ref=e309]: 我的
+```

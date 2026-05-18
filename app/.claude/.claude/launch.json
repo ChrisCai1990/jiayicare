@@ -1,0 +1,23 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "UI预览",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "mockup", "-p", "3333", "--no-clipboard"],
+      "port": 3333
+    },
+    {
+      "name": "前端 - Expo Web",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["expo", "start", "--web", "--port", "8081"],
+      "port": 8081
+    },
+    {
+      "name": "后端 - Node.js API",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["server.js"],
+      "port": 3000
+    }
+  ]
+}
