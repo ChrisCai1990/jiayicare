@@ -335,10 +335,11 @@ export default function HomeScreen({ navigation }) {
 
   const loadData = useCallback(async () => {
     try {
-      const [dashRes, bpRes, sugarRes] = await Promise.allSettled([
+      const [dashRes, bpRes, sugarRes, moodRes] = await Promise.allSettled([
         userAPI.getDashboard(),
         recordsAPI.trend('bloodPressure'),
         recordsAPI.trend('bloodSugar'),
+        recordsAPI.list({ type: 'mood', limit: 1 }),
       ]);
 
       if (dashRes.status === 'fulfilled' && dashRes.value?.success) {
@@ -367,6 +368,10 @@ export default function HomeScreen({ navigation }) {
         if (normalised.length > 0) setSugarTrend(normalised);
       } else if (isDemo) {
         setSugarTrend(mockBloodSugarData);
+      }
+      if (moodRes.status === 'fulfilled' && moodRes.value?.data?.length > 0) {
+        const v = parseInt(moodRes.value.data[0].value);
+        if (v >= 1 && v <= 10) setMoodScore(v);
       }
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
@@ -659,7 +664,13 @@ export default function HomeScreen({ navigation }) {
                   {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
                     <TouchableOpacity
                       key={n}
-                      onPress={() => setMoodScore(n)}
+                      onPress={() => {
+                        setMoodScore(n);
+                        recordsAPI.create({
+                          category: 'lifestyle', type: 'mood', label: '情绪',
+                          value: String(n), unit: '分', status: n >= 8 ? 'normal' : n >= 6 ? 'normal' : 'warning',
+                        }).catch(() => {});
+                      }}
                       activeOpacity={0.7}
                       style={[
                         styles.moodDot,
