@@ -103,8 +103,8 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.logoMark}>
             <Ionicons name="medical" size={28} color="#5EC99B" />
           </View>
-          <Text style={styles.brandName}>嘉医管家</Text>
-          <Text style={styles.brandSlogan}>您的私人家庭医生服务平台</Text>
+          <Text style={styles.brandName}>嘉医汇</Text>
+          <Text style={styles.brandSlogan}>全生命周期健康管理</Text>
         </View>
 
         {/* 底部数据背书行 */}
