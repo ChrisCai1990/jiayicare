@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, TextInput, ActivityIndicator,
+  StyleSheet, SafeAreaView, TextInput, ActivityIndicator, Modal, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -39,6 +39,140 @@ function calcSleepDuration(sleepTime, wakeTime) {
   return ((w - s) / 60).toFixed(1);
 }
 
+// ── 时间选择器组件 ──────────────────────────────────────────────────
+const ITEM_H = 48;
+const HOURS   = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
+const MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, '0'));
+
+function TimePickerModal({ visible, title, value, onChange, onClose }) {
+  const initH = value ? value.split(':')[0] : '22';
+  const initM = value ? String(Math.round(parseInt(value.split(':')[1] || '0') / 5) * 5).padStart(2, '0') : '00';
+
+  const [selH, setSelH] = useState(initH);
+  const [selM, setSelM] = useState(initM);
+  const hourRef = useRef(null);
+  const minRef  = useRef(null);
+
+  useEffect(() => {
+    if (visible) {
+      const h = value ? value.split(':')[0] : '22';
+      const m = value ? String(Math.round(parseInt(value.split(':')[1] || '0') / 5) * 5).padStart(2, '0') : '00';
+      setSelH(h);
+      setSelM(m);
+      setTimeout(() => {
+        hourRef.current?.scrollToIndex({ index: parseInt(h), animated: false });
+        minRef.current?.scrollToIndex({ index: Math.round(parseInt(m) / 5), animated: false });
+      }, 50);
+    }
+  }, [visible]);
+
+  const handleConfirm = () => {
+    onChange(`${selH}:${selM}`);
+    onClose();
+  };
+
+  const renderItem = (item, selected, onSelect) => (
+    <TouchableOpacity
+      style={[tpStyles.item, item === selected && tpStyles.itemSelected]}
+      onPress={() => onSelect(item)}
+    >
+      <Text style={[tpStyles.itemText, item === selected && tpStyles.itemTextSelected]}>{item}</Text>
+    </TouchableOpacity>
+  );
+
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={tpStyles.overlay} activeOpacity={1} onPress={onClose} />
+      <View style={tpStyles.sheet}>
+        <View style={tpStyles.header}>
+          <Text style={tpStyles.headerTitle}>{title}</Text>
+          <TouchableOpacity onPress={onClose}>
+            <Ionicons name="close" size={22} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
+        <View style={tpStyles.pickerRow}>
+          {/* 小时列 */}
+          <View style={tpStyles.colWrap}>
+            <Text style={tpStyles.colLabel}>时</Text>
+            <View style={tpStyles.listWrap}>
+              <View style={tpStyles.highlight} pointerEvents="none" />
+              <FlatList
+                ref={hourRef}
+                data={HOURS}
+                keyExtractor={i => i}
+                showsVerticalScrollIndicator={false}
+                snapToInterval={ITEM_H}
+                decelerationRate="fast"
+                getItemLayout={(_, idx) => ({ length: ITEM_H, offset: ITEM_H * idx, index: idx })}
+                renderItem={({ item }) => renderItem(item, selH, setSelH)}
+                contentContainerStyle={{ paddingVertical: ITEM_H * 2 }}
+              />
+            </View>
+          </View>
+
+          <Text style={tpStyles.colon}>:</Text>
+
+          {/* 分钟列 */}
+          <View style={tpStyles.colWrap}>
+            <Text style={tpStyles.colLabel}>分</Text>
+            <View style={tpStyles.listWrap}>
+              <View style={tpStyles.highlight} pointerEvents="none" />
+              <FlatList
+                ref={minRef}
+                data={MINUTES}
+                keyExtractor={i => i}
+                showsVerticalScrollIndicator={false}
+                snapToInterval={ITEM_H}
+                decelerationRate="fast"
+                getItemLayout={(_, idx) => ({ length: ITEM_H, offset: ITEM_H * idx, index: idx })}
+                renderItem={({ item }) => renderItem(item, selM, setSelM)}
+                contentContainerStyle={{ paddingVertical: ITEM_H * 2 }}
+              />
+            </View>
+          </View>
+        </View>
+
+        <TouchableOpacity style={tpStyles.confirmBtn} onPress={handleConfirm}>
+          <Text style={tpStyles.confirmText}>确定</Text>
+        </TouchableOpacity>
+      </View>
+    </Modal>
+  );
+}
+
+const tpStyles = StyleSheet.create({
+  overlay:     { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.4)' },
+  sheet:       {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    paddingBottom: 32,
+  },
+  header:      { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: spacing.lg },
+  headerTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  pickerRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, paddingHorizontal: spacing.lg },
+  colWrap:     { alignItems: 'center', flex: 1 },
+  colLabel:    { fontSize: 13, color: colors.textMuted, marginBottom: 4 },
+  listWrap:    { height: ITEM_H * 5, width: '100%', overflow: 'hidden', position: 'relative' },
+  highlight:   {
+    position: 'absolute', top: ITEM_H * 2, left: 0, right: 0, height: ITEM_H,
+    backgroundColor: '#7B68EE18', borderRadius: radius.sm,
+    borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: '#7B68EE44',
+    zIndex: 1,
+  },
+  item:        { height: ITEM_H, alignItems: 'center', justifyContent: 'center' },
+  itemSelected:{ },
+  itemText:    { fontSize: 22, color: colors.textMuted, fontWeight: '400' },
+  itemTextSelected: { fontSize: 26, color: '#7B68EE', fontWeight: '700' },
+  colon:       { fontSize: 28, fontWeight: '700', color: colors.textPrimary, marginTop: 20 },
+  confirmBtn:  {
+    marginHorizontal: spacing.lg, marginTop: spacing.md,
+    backgroundColor: '#7B68EE', borderRadius: radius.md, height: 50,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  confirmText: { color: colors.white, fontSize: 16, fontWeight: '700' },
+});
+
 const TIME_OPTIONS = ['现在', '今日早上', '今日中午', '今日晚上', '昨日'];
 const MEASURE_OPTIONS = { bloodSugar: ['空腹', '餐后2小时', '睡前'], bloodPressure: ['左臂', '右臂'] };
 
@@ -53,6 +187,7 @@ export default function AddRecordScreen({ navigation, route }) {
   const [measureOption, setMeasureOption] = useState('');
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null); // { type: 'success'|'error'|'warn', msg: string }
+  const [timePicker, setTimePicker] = useState(null); // { key: 'sleepTime'|'wakeTime', title: string }
 
   // Toast 自动消失（成功 1.8s，错误 3s）
   useEffect(() => {
@@ -234,24 +369,24 @@ export default function AddRecordScreen({ navigation, route }) {
           {activeType.id === 'sleep' && (
             <View>
               {[
-                { key: 'sleepTime', label: '入睡时间', placeholder: '如：22:30' },
-                { key: 'wakeTime',  label: '醒来时间', placeholder: '如：06:30' },
+                { key: 'sleepTime', label: '入睡时间', placeholder: '点击选择' },
+                { key: 'wakeTime',  label: '醒来时间', placeholder: '点击选择' },
               ].map(f => (
                 <View key={f.key} style={styles.fieldRow}>
                   <View style={styles.fieldInfo}>
                     <Text style={styles.fieldLabel}>{f.label}</Text>
                   </View>
-                  <View style={styles.valueInput}>
-                    <TextInput
-                      style={styles.valueInputText}
-                      placeholder={f.placeholder}
-                      keyboardType="numbers-and-punctuation"
-                      value={values[f.key] || ''}
-                      onChangeText={v => setValue(f.key, v)}
-                      placeholderTextColor={colors.textMuted}
-                    />
-                    <Text style={styles.unitText}>HH:MM</Text>
-                  </View>
+                  <TouchableOpacity
+                    style={[styles.valueInput, styles.timePickerBtn]}
+                    onPress={() => setTimePicker({ key: f.key, title: f.label })}
+                    activeOpacity={0.7}
+                  >
+                    <Ionicons name="time-outline" size={18} color={values[f.key] ? '#7B68EE' : colors.textMuted} />
+                    <Text style={[styles.timePickerBtnText, values[f.key] && styles.timePickerBtnTextSelected]}>
+                      {values[f.key] || f.placeholder}
+                    </Text>
+                    <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+                  </TouchableOpacity>
                 </View>
               ))}
               {values.sleepTime && values.wakeTime ? (
@@ -315,6 +450,15 @@ export default function AddRecordScreen({ navigation, route }) {
         <View style={{ height: 100 }} />
       </ScrollView>
 
+      {/* 时间选择器 Modal */}
+      <TimePickerModal
+        visible={!!timePicker}
+        title={timePicker?.title || ''}
+        value={timePicker ? (values[timePicker.key] || '') : ''}
+        onChange={v => timePicker && setValue(timePicker.key, v)}
+        onClose={() => setTimePicker(null)}
+      />
+
       {/* Submit */}
       <View style={styles.footer}>
         <TouchableOpacity style={[styles.submitBtn, saving && { opacity: 0.7 }]} onPress={handleSubmit} disabled={saving}>
@@ -375,6 +519,9 @@ const styles = StyleSheet.create({
   unitText: { fontSize: 12, color: colors.textMuted },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
   statusBadgeText: { fontSize: 11, fontWeight: '700' },
+  timePickerBtn: { justifyContent: 'space-between', gap: 8 },
+  timePickerBtnText: { flex: 1, fontSize: 18, fontWeight: '500', color: colors.textMuted },
+  timePickerBtnTextSelected: { color: '#7B68EE', fontWeight: '700' },
   sleepDurRow: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
     marginTop: spacing.sm, backgroundColor: '#F0EEFF',
