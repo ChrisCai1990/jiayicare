@@ -16,7 +16,6 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ── 快捷服务配置 ─────────────────────────────────────────────────
 const QUICK_SERVICES = [
-  { icon: 'medical-outline',       label: '问诊医生', color: '#1E6B50', bg: '#E8F5EF', screen: 'Chat' },
   { icon: 'folder-open-outline',   label: '健康档案', color: '#0077B6', bg: '#E8F3FB', screen: 'Records' },
   { icon: 'medkit-outline',        label: '用药计划', color: '#D44000', bg: '#FDF0EB', screen: 'Medication' },
   { icon: 'hardware-chip-outline', label: 'AI 助手',  color: '#7C3AED', bg: '#F2EEFF', screen: 'Chat' },
