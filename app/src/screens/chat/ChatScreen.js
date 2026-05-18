@@ -121,7 +121,7 @@ export default function ChatScreen({ navigation }) {
     } catch (err) {
       setMessages(prev => [...prev, {
         id: Date.now() + 1, role: 'assistant',
-        content: '网络异常，请检查连接后重试。',
+        content: err.message || '网络异常，请检查连接后重试。',
         roleIcon: activeRole.icon, roleColor: activeRole.color, roleName: activeRole.label,
         time: now(),
       }]);
