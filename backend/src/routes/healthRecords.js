@@ -6,19 +6,22 @@ const router = express.Router();
 // 获取记录列表（支持按类型/时间筛选）
 router.get('/', auth, async (req, res) => {
   try {
-    const { type, category, limit = 20, page = 1, days } = req.query;
+    const { type, category, days } = req.query;
+    const limit = Math.min(Math.max(parseInt(req.query.limit) || 20, 1), 100);
+    const page  = Math.max(parseInt(req.query.page) || 1, 1);
     const query = { user: req.user._id };
 
     if (type) query.type = type;
     if (category) query.category = category;
     if (days) {
-      query.recordedAt = { $gte: new Date(Date.now() - days * 24 * 60 * 60 * 1000) };
+      const d = Math.min(Math.max(parseInt(days) || 30, 1), 365);
+      query.recordedAt = { $gte: new Date(Date.now() - d * 24 * 60 * 60 * 1000) };
     }
 
     const records = await HealthRecord.find(query)
       .sort({ recordedAt: -1 })
-      .limit(Number(limit))
-      .skip((Number(page) - 1) * Number(limit));
+      .limit(limit)
+      .skip((page - 1) * limit);
 
     const total = await HealthRecord.countDocuments(query);
     res.json({ success: true, data: records, total, page: Number(page) });
@@ -31,7 +34,7 @@ router.get('/', auth, async (req, res) => {
 router.get('/trend/:type', auth, async (req, res) => {
   try {
     const { type } = req.params;
-    const { days = 30 } = req.query;
+    const days = Math.min(Math.max(parseInt(req.query.days) || 30, 1), 365);
 
     const records = await HealthRecord.find({
       user: req.user._id,
