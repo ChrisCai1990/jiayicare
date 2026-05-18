@@ -50,7 +50,7 @@ router.get('/dashboard', adminAuth, async (req, res) => {
   const [totalPatients, pendingOrders, unreadMessages, recentPatients] = await Promise.all([
     User.countDocuments(),
     Order.countDocuments({ status: 'pending' }),
-    Message.countDocuments({ type: 'user', unread: false }), // 用户发出的留言
+    Message.countDocuments({ type: 'user', unread: true }), // 用户发出的未读留言
     User.find().sort({ createdAt: -1 }).limit(5).select('name phone servicePackage healthScore createdAt'),
   ]);
 

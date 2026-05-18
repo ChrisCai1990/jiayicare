@@ -71,7 +71,7 @@ export default function LoginPage() {
         </form>
 
         <div className="login-hint">
-          默认账号：<code>doctor1</code> / <code>manager1</code>，密码：<code>jiayi2024</code>
+          请使用管理员账号登录
         </div>
       </div>
     </div>
