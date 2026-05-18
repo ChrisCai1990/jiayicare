@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, Switch, RefreshControl,
-  Modal, TextInput, ActivityIndicator, Platform,
+  Modal, TextInput, ActivityIndicator, Platform, FlatList,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -91,6 +91,97 @@ function ReminderCard({ item, onToggle, onDelete }) {
   );
 }
 
+// ── 天数滚轮选择器 ────────────────────────────────────────────────
+const DAY_ITEMS = Array.from({ length: 90 }, (_, i) => String(i + 1));
+const DAY_ITEM_H = 48;
+
+function DaysScrollPicker({ value, onChange }) {
+  const listRef = useRef(null);
+  const current = String(parseInt(value) || 30);
+
+  useEffect(() => {
+    const idx = Math.max(0, (parseInt(current) || 1) - 1);
+    setTimeout(() => listRef.current?.scrollToIndex({ index: idx, animated: false }), 80);
+  }, []);
+
+  return (
+    <View style={dspStyles.wrap}>
+      <View style={dspStyles.highlight} pointerEvents="none" />
+      <FlatList
+        ref={listRef}
+        data={DAY_ITEMS}
+        keyExtractor={i => i}
+        showsVerticalScrollIndicator={false}
+        snapToInterval={DAY_ITEM_H}
+        decelerationRate="fast"
+        getItemLayout={(_, i) => ({ length: DAY_ITEM_H, offset: DAY_ITEM_H * i, index: i })}
+        contentContainerStyle={{ paddingVertical: DAY_ITEM_H * 2 }}
+        renderItem={({ item }) => (
+          <TouchableOpacity style={dspStyles.item} onPress={() => onChange(item)}>
+            <Text style={[dspStyles.itemText, item === current && dspStyles.itemActive]}>
+              {item} 天
+            </Text>
+          </TouchableOpacity>
+        )}
+      />
+    </View>
+  );
+}
+
+const dspStyles = StyleSheet.create({
+  wrap: {
+    height: DAY_ITEM_H * 5, borderRadius: radius.sm,
+    overflow: 'hidden', position: 'relative',
+    backgroundColor: colors.background, borderWidth: 1.5, borderColor: colors.border,
+  },
+  highlight: {
+    position: 'absolute', top: DAY_ITEM_H * 2, left: 0, right: 0, height: DAY_ITEM_H,
+    backgroundColor: colors.primary + '12',
+    borderTopWidth: 1.5, borderBottomWidth: 1.5, borderColor: colors.primary + '40',
+    zIndex: 1,
+  },
+  item:     { height: DAY_ITEM_H, alignItems: 'center', justifyContent: 'center' },
+  itemText: { fontSize: 18, color: colors.textMuted, fontWeight: '400' },
+  itemActive: { fontSize: 22, color: colors.primary, fontWeight: '700' },
+});
+
+// ── 日期选择器（web原生 date input） ──────────────────────────────
+function DateInputWeb({ value, onChange }) {
+  const today = new Date().toISOString().split('T')[0];
+  if (Platform.OS === 'web') {
+    return (
+      <input
+        type="date"
+        value={value || ''}
+        min={today}
+        onChange={e => onChange(e.target.value)}
+        style={{
+          backgroundColor: colors.background,
+          borderRadius: 8,
+          padding: 12,
+          fontSize: 15,
+          color: value ? colors.textPrimary : colors.textMuted,
+          border: `1.5px solid ${colors.border}`,
+          width: '100%',
+          boxSizing: 'border-box',
+          outline: 'none',
+          fontFamily: 'inherit',
+          cursor: 'pointer',
+        }}
+      />
+    );
+  }
+  return (
+    <TextInput
+      style={{ backgroundColor: colors.background, borderRadius: 8, padding: 12, fontSize: 14, color: colors.textPrimary, borderWidth: 1.5, borderColor: colors.border }}
+      placeholder="YYYY-MM-DD"
+      value={value}
+      onChangeText={onChange}
+      placeholderTextColor={colors.textMuted}
+    />
+  );
+}
+
 // ── 创建提醒弹窗 ──────────────────────────────────────────────────
 function CreateModal({ visible, onClose, onCreate }) {
   const [step, setStep] = useState(0); // 0=选类别 1=填信息
@@ -98,8 +189,9 @@ function CreateModal({ visible, onClose, onCreate }) {
   const [form, setForm] = useState({
     title: '', description: '',
     // once
+    dateMode: 'days',  // 'days' | 'date'
     targetDate: '',
-    daysFromNow: '',
+    daysFromNow: '30',
     // recurring
     hour: '08', minute: '00',
     freqType: 'daily', // 'daily'|'weekdays'|'custom_days'|'every_n'
@@ -112,7 +204,7 @@ function CreateModal({ visible, onClose, onCreate }) {
   const [createError, setCreateError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
-  const reset = () => { setStep(0); setSelCat(null); setForm({ title:'', description:'', targetDate:'', daysFromNow:'', hour:'08', minute:'00', freqType:'daily', selectedDays:[...ALL_DAYS], everyNDays:'2', hasEndDate:false, endDate:'' }); setSaving(false); };
+  const reset = () => { setStep(0); setSelCat(null); setForm({ title:'', description:'', dateMode:'days', targetDate:'', daysFromNow:'30', hour:'08', minute:'00', freqType:'daily', selectedDays:[...ALL_DAYS], everyNDays:'2', hasEndDate:false, endDate:'' }); setSaving(false); };
   const handleClose = () => { reset(); onClose(); };
 
   const toggleDay = (d) => set('selectedDays', form.selectedDays.includes(d) ? form.selectedDays.filter(x => x !== d) : [...form.selectedDays, d]);
@@ -131,11 +223,11 @@ function CreateModal({ visible, onClose, onCreate }) {
       };
 
       if (cat.scheduleType === 'once') {
-        if (form.daysFromNow) {
+        if (form.dateMode === 'days' && form.daysFromNow) {
           const d = new Date();
           d.setDate(d.getDate() + parseInt(form.daysFromNow));
           payload.targetDate = d.toISOString();
-        } else if (form.targetDate) {
+        } else if (form.dateMode === 'date' && form.targetDate) {
           payload.targetDate = new Date(form.targetDate).toISOString();
         }
       } else {
@@ -224,41 +316,31 @@ function CreateModal({ visible, onClose, onCreate }) {
                     <View style={styles.formGroup}>
                       <Text style={styles.formLabel}>提醒方式</Text>
                       <View style={styles.segRow}>
-                        {[['daysFromNow_mode', 'N天后提醒'], ['date_mode', '指定日期']].map(([k, lbl]) => (
+                        {[['days', 'N天后提醒'], ['date', '指定日期']].map(([k, lbl]) => (
                           <TouchableOpacity
                             key={k}
-                            style={[styles.seg, form.daysFromNow && k === 'daysFromNow_mode' && styles.segActive, !form.daysFromNow && k === 'date_mode' && styles.segActive]}
-                            onPress={() => { if (k === 'daysFromNow_mode') set('targetDate', ''); else set('daysFromNow', ''); }}
+                            style={[styles.seg, form.dateMode === k && styles.segActive]}
+                            onPress={() => set('dateMode', k)}
                           >
-                            <Text style={styles.segText}>{lbl}</Text>
+                            <Text style={[styles.segText, form.dateMode === k && { color: colors.primary }]}>{lbl}</Text>
                           </TouchableOpacity>
                         ))}
                       </View>
                     </View>
-                    {form.daysFromNow !== '' || !form.targetDate ? (
+                    {form.dateMode === 'days' ? (
                       <View style={styles.formGroup}>
-                        <Text style={styles.formLabel}>距今天数</Text>
-                        <View style={styles.fieldRow}>
-                          <TextInput
-                            style={[styles.formInput, { flex: 1 }]}
-                            placeholder="如：30"
-                            value={form.daysFromNow}
-                            onChangeText={v => { set('daysFromNow', v); set('targetDate', ''); }}
-                            keyboardType="number-pad"
-                            placeholderTextColor={colors.textMuted}
-                          />
-                          <Text style={styles.unitText}>天后</Text>
-                        </View>
+                        <Text style={styles.formLabel}>距今天数（滚动选择）</Text>
+                        <DaysScrollPicker
+                          value={form.daysFromNow}
+                          onChange={v => set('daysFromNow', v)}
+                        />
                       </View>
                     ) : (
                       <View style={styles.formGroup}>
                         <Text style={styles.formLabel}>指定日期</Text>
-                        <TextInput
-                          style={styles.formInput}
-                          placeholder="YYYY-MM-DD"
+                        <DateInputWeb
                           value={form.targetDate}
-                          onChangeText={v => { set('targetDate', v); set('daysFromNow', ''); }}
-                          placeholderTextColor={colors.textMuted}
+                          onChange={v => set('targetDate', v)}
                         />
                       </View>
                     )}
