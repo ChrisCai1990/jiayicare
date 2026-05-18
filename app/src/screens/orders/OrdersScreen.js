@@ -113,8 +113,9 @@ export default function OrdersScreen({ navigation }) {
     try {
       const res = await ordersAPI.list();
       if (res.success) setOrders(res.data);
-    } catch {}
-    finally { setLoading(false); setRefreshing(false); }
+    } catch (err) {
+      Alert.alert('加载失败', err.message || '订单列表加载失败，请下拉刷新重试');
+    } finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
@@ -135,7 +136,9 @@ export default function OrdersScreen({ navigation }) {
                   o._id === order._id ? { ...o, status: 'cancelled' } : o
                 ));
               }
-            } catch {}
+            } catch (err) {
+              Alert.alert('取消失败', err.message || '操作失败，请稍后重试');
+            }
           },
         },
       ]

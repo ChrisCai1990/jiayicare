@@ -253,9 +253,11 @@ export default function EditProfileScreen({ navigation }) {
         weight: weight ? Number(weight) : undefined,
         healthProfile: {
           bloodType,
-          // 旧后端把这些字段定义为 String，发数组会报 Cast 错误
-          // 等 Railway 部署新 schema（Mixed 数组）后再开放
-          // allergies, medicalHistory, medications, familyHistory, surgeries,
+          allergies,
+          medicalHistory,
+          medications,
+          familyHistory,
+          surgeries,
           drugAllergy:    hp.drugAllergy    || '',
           foodAllergy:    hp.foodAllergy    || '',
           pastHistory:    hp.pastHistory    || '',

@@ -25,6 +25,7 @@ export default function LoginScreen({ navigation }) {
   const [code, setCode] = useState('');
   const [countdown, setCountdown] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
   const [phoneFocused, setPhoneFocused] = useState(false);
   const [codeFocused, setCodeFocused] = useState(false);
 
@@ -48,6 +49,7 @@ export default function LoginScreen({ navigation }) {
 
   const sendCode = async () => {
     if (!phone || phone.length < 11) return;
+    setError('');
     try {
       setLoading(true);
       const res = await authAPI.sendCode(phone);
@@ -56,25 +58,33 @@ export default function LoginScreen({ navigation }) {
       const timer = setInterval(() => {
         setCountdown(prev => { if (prev <= 1) { clearInterval(timer); return 0; } return prev - 1; });
       }, 1000);
-    } catch {} finally { setLoading(false); }
+    } catch (err) {
+      setError(err.message || '验证码发送失败，请稍后重试');
+    } finally { setLoading(false); }
   };
 
   const handleLogin = async () => {
     if (!phone || !code) return;
+    setError('');
     try {
       setLoading(true);
       const res = await authAPI.login(phone, code);
       if (res.success) await login(res.data.user, res.data.token);
-    } catch {} finally { setLoading(false); }
+    } catch (err) {
+      setError(err.message || '登录失败，请检查验证码后重试');
+    } finally { setLoading(false); }
   };
 
   const demoLogin = async () => {
+    setError('');
     try {
       setLoading(true);
       const r1 = await authAPI.sendCode('13800138000');
       const r2 = await authAPI.login('13800138000', r1.code || '123456');
       if (r2.success) await login(r2.data.user, r2.data.token);
-    } catch {} finally { setLoading(false); }
+    } catch (err) {
+      setError(err.message || '演示登录失败，请稍后重试');
+    } finally { setLoading(false); }
   };
 
   const canSend = phone.length === 11 && countdown === 0;
@@ -168,6 +178,14 @@ export default function LoginScreen({ navigation }) {
               </Text>
             </TouchableOpacity>
           </View>
+
+          {/* 错误提示 */}
+          {!!error && (
+            <View style={styles.errorWrap}>
+              <Ionicons name="alert-circle-outline" size={14} color={colors.danger} />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
 
           {/* 登录按钮 */}
           <TouchableOpacity
@@ -332,6 +350,12 @@ const styles = StyleSheet.create({
     marginTop: 4, marginBottom: spacing.lg,
   },
   loginBtnDisabled: { opacity: 0.35 },
+  errorWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.danger + '12', borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: 8, marginBottom: spacing.sm,
+  },
+  errorText: { flex: 1, fontSize: 13, color: colors.danger },
   loginBtnText: { color: colors.white, fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
 
   // 分隔线

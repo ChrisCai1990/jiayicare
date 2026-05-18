@@ -109,6 +109,7 @@ function CreateModal({ visible, onClose, onCreate }) {
     endDate: '',
   });
   const [saving, setSaving] = useState(false);
+  const [createError, setCreateError] = useState('');
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const reset = () => { setStep(0); setSelCat(null); setForm({ title:'', description:'', targetDate:'', daysFromNow:'', hour:'08', minute:'00', freqType:'daily', selectedDays:[...ALL_DAYS], everyNDays:'2', hasEndDate:false, endDate:'' }); setSaving(false); };
@@ -150,10 +151,12 @@ function CreateModal({ visible, onClose, onCreate }) {
         if (form.hasEndDate && form.endDate) payload.endDate = new Date(form.endDate).toISOString();
       }
 
+      setCreateError('');
       await onCreate(payload);
       handleClose();
-    } catch {}
-    finally { setSaving(false); }
+    } catch (err) {
+      setCreateError(err.message || '创建失败，请稍后重试');
+    } finally { setSaving(false); }
   };
 
   const cat = selCat ? CAT_MAP[selCat] : null;
@@ -365,6 +368,13 @@ function CreateModal({ visible, onClose, onCreate }) {
                       )}
                     </View>
                   </>
+                )}
+
+                {!!createError && (
+                  <View style={styles.createErrorWrap}>
+                    <Ionicons name="alert-circle-outline" size={14} color={colors.danger} />
+                    <Text style={styles.createErrorText}>{createError}</Text>
+                  </View>
                 )}
 
                 <TouchableOpacity
@@ -651,4 +661,10 @@ const styles = StyleSheet.create({
     alignItems: 'center', marginTop: spacing.md,
   },
   submitBtnText: { color: colors.white, fontSize: 16, fontWeight: '700' },
+  createErrorWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    backgroundColor: colors.danger + '12', borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: 8, marginBottom: spacing.sm,
+  },
+  createErrorText: { flex: 1, fontSize: 13, color: colors.danger },
 });
