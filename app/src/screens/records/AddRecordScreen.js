@@ -22,9 +22,7 @@ const RECORD_TYPES = [
     { key: 'value', label: '体重', unit: 'kg', placeholder: '如：70.5', normal: '视BMI而定' },
   ]},
   { id: 'sleep', label: '睡眠', icon: 'moon', color: '#7B68EE', fields: [] },
-  { id: 'mood', label: '情绪', icon: 'happy', color: colors.accent, fields: [
-    { key: 'value', label: '情绪评分', unit: '分', placeholder: '1-10', normal: '7-10' },
-  ]},
+  { id: 'mood', label: '情绪', icon: 'happy', color: colors.accent, fields: [] },
 ];
 
 // 根据入睡和醒来时间计算睡眠时长（跨午夜自动处理）
@@ -44,8 +42,11 @@ function calcSleepDuration(sleepTime, wakeTime) {
 const TIME_OPTIONS = ['现在', '今日早上', '今日中午', '今日晚上', '昨日'];
 const MEASURE_OPTIONS = { bloodSugar: ['空腹', '餐后2小时', '睡前'], bloodPressure: ['左臂', '右臂'] };
 
-export default function AddRecordScreen({ navigation }) {
-  const [activeType, setActiveType] = useState(RECORD_TYPES[0]);
+export default function AddRecordScreen({ navigation, route }) {
+  const initialType = route?.params?.type
+    ? RECORD_TYPES.find(t => t.id === route.params.type) || RECORD_TYPES[0]
+    : RECORD_TYPES[0];
+  const [activeType, setActiveType] = useState(initialType);
   const [values, setValues] = useState({});
   const [time, setTime] = useState('现在');
   const [note, setNote] = useState('');
@@ -80,9 +81,14 @@ export default function AddRecordScreen({ navigation }) {
   const handleSubmit = async () => {
     const hasValue = activeType.id === 'sleep'
       ? (values.sleepTime && values.wakeTime)
+      : activeType.id === 'mood'
+      ? !!values.value
       : activeType.fields.every(f => values[f.key]);
     if (!hasValue) {
-      showToast('warn', activeType.id === 'sleep' ? '请填写入睡时间和醒来时间' : '请填写完整数值');
+      const warnMsg = activeType.id === 'sleep' ? '请填写入睡时间和醒来时间'
+        : activeType.id === 'mood' ? '请选择情绪评分'
+        : '请填写完整数值';
+      showToast('warn', warnMsg);
       return;
     }
 
@@ -98,7 +104,7 @@ export default function AddRecordScreen({ navigation }) {
         category: CATEGORY_MAP[activeType.id] || 'vitals',
         type: activeType.id,
         label: activeType.label,
-        unit: activeType.fields[0].unit,
+        unit: activeType.fields[0]?.unit || '',
         note: [measureOption, note].filter(Boolean).join(' · ') || '',
       };
 
