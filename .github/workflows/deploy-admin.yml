@@ -1,0 +1,36 @@
+name: Deploy Admin to Vercel
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'admin/**'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build admin
+        run: |
+          cd admin
+          ../node_modules/.bin/vite build
+
+      - name: Add vercel.json to dist
+        run: |
+          echo '{"version":2,"framework":null,"buildCommand":"","outputDirectory":".","installCommand":""}' > admin/dist/vercel.json
+
+      - name: Deploy to Vercel
+        run: npx vercel deploy admin/dist --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
+        env:
+          VERCEL_ORG_ID: team_jBlK7SOYz0Iwbn6o5mZ2C74j
+          VERCEL_PROJECT_ID: prj_0mYoZAyIr5IyLsCBjYoRYLyOxnYT
