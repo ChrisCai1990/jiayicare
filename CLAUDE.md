@@ -32,7 +32,8 @@ git add backend/<files> && git commit -m "..." && git push origin master
 ```
 
 ## 线上地址
-- 前端：https://dist-jiayihui.vercel.app
+- 前端 app：https://dist-jiayihui.vercel.app
+- 管理后台：https://jiayicare-admin.vercel.app
 - 后端：https://mongodb-production-06f7.up.railway.app/api
 
 ## 演示账号
