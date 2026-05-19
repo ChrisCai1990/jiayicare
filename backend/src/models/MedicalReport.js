@@ -5,7 +5,20 @@ const medicalReportSchema = new mongoose.Schema({
   title: { type: String, required: true },
   type: {
     type: String,
-    enum: ['annual', 'followup', 'ecg', 'blood', 'imaging'],
+    enum: [
+      'annual',     // 年度体检
+      'body_comp',  // 人体成分
+      'blood',      // 血液检查
+      'ultrasound', // 超声检查
+      'radiology',  // 放射检查
+      'mri',        // 磁共振
+      'endoscopy',  // 内镜检查
+      'ecg',        // 心电图
+      'pathology',  // 病理报告
+      'other',      // 其他
+      // 兼容旧数据
+      'followup', 'imaging',
+    ],
     default: 'annual',
   },
   hospital:    { type: String, default: '' },
