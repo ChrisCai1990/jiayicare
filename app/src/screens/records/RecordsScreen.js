@@ -738,10 +738,11 @@ export default function RecordsScreen({ navigation }) {
       />
 
       {/* ── 编辑生活方式 Modal ───────────────────────────────────── */}
-      <Modal visible={editingLifestyle} animationType="slide" transparent>
-        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+      <Modal visible={editingLifestyle} animationType="slide" transparent onRequestClose={() => setEditingLifestyle(false)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
           <View style={styles.editOverlay}>
-            <View style={styles.editSheet}>
+            <View style={styles.editCard}>
+              <View style={styles.editHandle} />
               <View style={styles.editHeader}>
                 <Text style={styles.editTitle}>编辑生活方式</Text>
                 <TouchableOpacity onPress={() => setEditingLifestyle(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
@@ -750,24 +751,24 @@ export default function RecordsScreen({ navigation }) {
               </View>
               <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
                 {[
-                  { key: 'diet',     label: '饮食',  placeholder: '如：三餐规律，以主食蔬菜为主，少油少盐' },
-                  { key: 'exercise', label: '运动',  placeholder: '如：跑步，每周3次，每次30分钟' },
-                  { key: 'sleep',    label: '睡眠',  placeholder: '如：7小时，质量良好，早晨清醒' },
-                  { key: 'water',    label: '饮水',  placeholder: '如：白水为主，每日约2000毫升' },
-                  { key: 'alcohol',  label: '饮酒',  placeholder: '如：红酒，每次100ml，每周1次，未曾醉酒' },
-                  { key: 'smoking',  label: '吸烟',  placeholder: '如：不吸烟 / 卷烟，每日10支，2010年起' },
+                  { key: 'diet',     label: '饮食',  icon: 'nutrition-outline',  placeholder: '如：三餐规律，以主食蔬菜为主，少油少盐' },
+                  { key: 'exercise', label: '运动',  icon: 'fitness-outline',    placeholder: '如：跑步，每周3次，每次30分钟' },
+                  { key: 'sleep',    label: '睡眠',  icon: 'moon-outline',       placeholder: '如：7小时，质量良好，早晨清醒' },
+                  { key: 'water',    label: '饮水',  icon: 'water-outline',      placeholder: '如：白水为主，每日约2000毫升' },
+                  { key: 'alcohol',  label: '饮酒',  icon: 'wine-outline',       placeholder: '如：红酒，每次100ml，每周1次，未曾醉酒' },
+                  { key: 'smoking',  label: '吸烟',  icon: 'flame-outline',      placeholder: '如：不吸烟 / 卷烟，每日10支，2010年起' },
                 ].map(field => (
                   <View key={field.key} style={styles.editField}>
                     <View style={styles.editFieldLabel}>
+                      <Ionicons name={field.icon} size={14} color={colors.primary} style={{ marginRight: 6 }} />
                       <Text style={styles.editFieldLabelText}>{field.label}</Text>
                     </View>
                     <TextInput
-                      style={[styles.editInput, { minHeight: 44 }]}
+                      style={styles.editInput}
                       value={lifestyleDraft[field.key] || ''}
                       onChangeText={v => setLifestyleDraft(p => ({ ...p, [field.key]: v }))}
                       placeholder={field.placeholder}
                       placeholderTextColor={colors.textMuted}
-                      multiline
                     />
                   </View>
                 ))}
