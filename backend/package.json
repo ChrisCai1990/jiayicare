@@ -8,6 +8,8 @@
     "dev": "nodemon src/index.js"
   },
   "dependencies": {
+    "@alicloud/dysmsapi20170525": "^4.5.1",
+    "@alicloud/openapi-client": "^0.4.15",
     "@anthropic-ai/sdk": "^0.96.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",

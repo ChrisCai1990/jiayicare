@@ -18,30 +18,73 @@ function httpsGet(url) {
   });
 }
 
-// 内存存储验证码（演示用，生产环境用 Redis）
+// 内存存储验证码（演示用，生产环境建议用 Redis）
 const codStore = new Map();
 
-// 发送验证码（演示：直接返回，不真实发短信）
+// 阿里云短信发送
+async function sendSmsAliyun(phone, code) {
+  const Dysmsapi = require('@alicloud/dysmsapi20170525');
+  const OpenApi  = require('@alicloud/openapi-client');
+
+  const config = new OpenApi.Config({
+    accessKeyId:     process.env.ALIYUN_SMS_KEY_ID,
+    accessKeySecret: process.env.ALIYUN_SMS_KEY_SECRET,
+    endpoint: 'dysmsapi.aliyuncs.com',
+  });
+
+  const client = new Dysmsapi.default(config);
+  const request = new Dysmsapi.SendSmsRequest({
+    phoneNumbers:  phone,
+    signName:      process.env.ALIYUN_SMS_SIGN,       // 如：嘉医汇
+    templateCode:  process.env.ALIYUN_SMS_TEMPLATE,   // 如：SMS_123456789
+    templateParam: JSON.stringify({ code }),
+  });
+
+  const result = await client.sendSms(request);
+  if (result.body.code !== 'OK') {
+    throw new Error(`短信发送失败: ${result.body.message}`);
+  }
+}
+
+// 判断是否启用真实短信（需配置4个环境变量）
+function smsEnabled() {
+  return !!(
+    process.env.ALIYUN_SMS_KEY_ID &&
+    process.env.ALIYUN_SMS_KEY_SECRET &&
+    process.env.ALIYUN_SMS_SIGN &&
+    process.env.ALIYUN_SMS_TEMPLATE
+  );
+}
+
+// 发送验证码
 router.post('/send-code', async (req, res) => {
   const { phone } = req.body;
   if (!phone || !/^1[3-9]\d{9}$/.test(phone)) {
     return res.status(400).json({ success: false, message: '请输入正确的手机号' });
   }
 
-  // 演示环境：固定验证码 123456，或随机6位
-  const code = process.env.NODE_ENV === 'production'
-    ? String(Math.floor(100000 + Math.random() * 900000))
-    : '123456';
+  // 演示账号始终用固定验证码
+  const isDemo = phone === '13800138000';
+  const code = isDemo ? '123456' : String(Math.floor(100000 + Math.random() * 900000));
 
   codStore.set(phone, { code, expiry: Date.now() + 5 * 60 * 1000 });
 
-  // 生产环境验证码通过短信发送，不打印到日志
+  // 真实短信模式
+  if (!isDemo && smsEnabled()) {
+    try {
+      await sendSmsAliyun(phone, code);
+    } catch (err) {
+      console.error('SMS error:', err.message);
+      return res.status(500).json({ success: false, message: '短信发送失败，请稍后重试' });
+    }
+    return res.json({ success: true, message: '验证码已发送至您的手机' });
+  }
 
+  // 未配置短信 或 演示账号：返回验证码（仅开发/演示用）
   res.json({
     success: true,
-    message: '验证码已发送',
-    // 演示模式直接返回验证码
-    ...(process.env.NODE_ENV !== 'production' && { code }),
+    message: isDemo ? '演示账号验证码：123456' : '验证码已发送（未配置短信服务，验证码见下）',
+    ...((!smsEnabled() || isDemo) && { code }),
   });
 });
 
