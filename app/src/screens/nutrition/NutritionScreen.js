@@ -1,11 +1,48 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, TextInput, Modal, RefreshControl, ActivityIndicator,
+  SafeAreaView, TextInput, Modal, RefreshControl, ActivityIndicator, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { supplementsAPI } from '../../services/api';
+
+function DateField({ value, onChange, placeholder }) {
+  if (Platform.OS === 'web') {
+    return (
+      <input
+        type="date"
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        style={{
+          width: '100%', boxSizing: 'border-box',
+          padding: '11px 12px', fontSize: 15,
+          border: `1.5px solid ${colors.border}`,
+          borderRadius: radius.sm,
+          backgroundColor: colors.background,
+          color: value ? colors.textPrimary : colors.textMuted,
+          outline: 'none', fontFamily: 'inherit',
+        }}
+      />
+    );
+  }
+  return (
+    <TextInput
+      style={dateFieldStyles.input}
+      value={value || ''}
+      onChangeText={onChange}
+      placeholder={placeholder || 'YYYY-MM-DD'}
+      placeholderTextColor={colors.textMuted}
+    />
+  );
+}
+const dateFieldStyles = StyleSheet.create({
+  input: {
+    backgroundColor: colors.background, borderRadius: radius.sm,
+    padding: spacing.sm, fontSize: 15, color: colors.textPrimary,
+    borderWidth: 1.5, borderColor: colors.border,
+  },
+});
 
 const FREQ_OPTIONS = ['每日1次', '每日2次', '每日3次', '隔日1次', '每周3次', '按需服用'];
 const METHOD_OPTIONS = ['随餐', '空腹', '冲服', '睡前', '饭后', '其他'];
@@ -230,7 +267,6 @@ export default function NutritionScreen({ navigation }) {
                 { label: '营养素名称 *', key: 'name', placeholder: '如：维生素C、钙、蛋白粉' },
                 { label: '品牌（可选）', key: 'brand', placeholder: '如：Swisse、汤臣倍健' },
                 { label: '剂量 *', key: 'dosage', placeholder: '如：500mg、1粒' },
-                { label: '开始补充日期', key: 'startDate', placeholder: '如：2025-01-15' },
                 { label: '备注', key: 'note', placeholder: '如：补充维骨力' },
               ].map(f => (
                 <View key={f.key} style={styles.formGroup}>
@@ -244,6 +280,15 @@ export default function NutritionScreen({ navigation }) {
                   />
                 </View>
               ))}
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>开始补充日期</Text>
+                <DateField
+                  value={form.startDate}
+                  onChange={v => setForm(p => ({ ...p, startDate: v }))}
+                  placeholder="选择开始日期"
+                />
+              </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>使用方法</Text>

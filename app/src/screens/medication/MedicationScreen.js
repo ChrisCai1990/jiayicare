@@ -1,12 +1,50 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, TextInput, Modal, RefreshControl, ActivityIndicator,
+  SafeAreaView, TextInput, Modal, RefreshControl, ActivityIndicator, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { medicationsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+
+// 日期选择器：web 用原生 date input，其他平台用文本输入
+function DateField({ value, onChange, placeholder }) {
+  if (Platform.OS === 'web') {
+    return (
+      <input
+        type="date"
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        style={{
+          width: '100%', boxSizing: 'border-box',
+          padding: '11px 12px', fontSize: 15,
+          border: `1.5px solid ${colors.border}`,
+          borderRadius: radius.sm,
+          backgroundColor: colors.background,
+          color: value ? colors.textPrimary : colors.textMuted,
+          outline: 'none', fontFamily: 'inherit',
+        }}
+      />
+    );
+  }
+  return (
+    <TextInput
+      style={dateFieldStyles.input}
+      value={value || ''}
+      onChangeText={onChange}
+      placeholder={placeholder || 'YYYY-MM-DD'}
+      placeholderTextColor={colors.textMuted}
+    />
+  );
+}
+const dateFieldStyles = StyleSheet.create({
+  input: {
+    backgroundColor: colors.background, borderRadius: radius.sm,
+    padding: spacing.sm, fontSize: 15, color: colors.textPrimary,
+    borderWidth: 1.5, borderColor: colors.border,
+  },
+});
 
 const FREQ_OPTIONS = ['每日1次', '每日2次', '每日3次', '隔日1次', '每周1次', '按需服用'];
 const TIME_OPTIONS = ['早饭前', '早饭后', '午饭后', '晚饭后', '睡前', '不限时间'];
@@ -280,7 +318,6 @@ export default function MedicationScreen({ navigation }) {
                 { label: '化学名/通用名 *', key: 'name', placeholder: '如：苯磺酸氨氯地平' },
                 { label: '商品名（可选）', key: 'brandName', placeholder: '如：络活喜' },
                 { label: '剂量 *', key: 'dosage', placeholder: '如：5mg、1片' },
-                { label: '开始使用日期', key: 'startDate', placeholder: '如：2025-01-15' },
                 { label: '备注', key: 'note', placeholder: '如：控制血压' },
               ].map(f => (
                 <View key={f.key} style={styles.formGroup}>
@@ -294,6 +331,15 @@ export default function MedicationScreen({ navigation }) {
                   />
                 </View>
               ))}
+
+              <View style={styles.formGroup}>
+                <Text style={styles.formLabel}>开始使用日期</Text>
+                <DateField
+                  value={form.startDate}
+                  onChange={v => setForm(p => ({ ...p, startDate: v }))}
+                  placeholder="选择开始日期"
+                />
+              </View>
 
               <View style={styles.formGroup}>
                 <Text style={styles.formLabel}>使用方法</Text>
