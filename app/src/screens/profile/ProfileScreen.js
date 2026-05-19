@@ -204,8 +204,8 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.menuCard}>
             <MenuItem icon="heart-outline"         iconColor="#DC3545" label="健康档案" value="查看全部" onPress={() => navigation.navigate('Records')} />
             <MenuItem icon="document-text-outline" iconColor="#0077B6" label="体检报告" badge={undefined} onPress={() => navigation.navigate('ReportUpload')} />
-            <MenuItem icon="medkit-outline"        iconColor="#D97706" label="用药记录"              onPress={() => navigation.navigate('Medication')} />
-            <MenuItem icon="notifications-outline" iconColor={colors.primary} label="提醒管理"       onPress={() => navigation.navigate('Reminders')} isLast />
+            <MenuItem icon="medkit-outline"        iconColor="#D97706" label="用药管理"              onPress={() => navigation.navigate('Medication')} />
+            <MenuItem icon="leaf-outline"          iconColor="#22A06B" label="营养素管理"            onPress={() => navigation.navigate('Nutrition')} isLast />
           </View>
         </View>
 
@@ -215,7 +215,6 @@ export default function ProfileScreen({ navigation }) {
           <View style={styles.menuCard}>
             <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
             <MenuItem icon="people-outline"  iconColor="#22A06B" label="服务群组"  value="即将开放" onPress={() => navigation.navigate('ComingSoon', { title: '服务群组', desc: '专属健康服务群组即将开放，届时可与医生、健管师及病友实时交流。', icon: 'people-outline' })} />
-            <MenuItem icon="call-outline"    iconColor="#7C3AED" label="预约随访"               onPress={() => navigation.navigate('Tasks')} />
             <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} />
             <MenuItem icon="star-outline"    iconColor="#F39C12" label="评价服务"               onPress={() => navigation.navigate('ComingSoon', { title: '评价服务', desc: '服务评价功能即将上线，帮助我们持续改善服务质量。', icon: 'star-outline' })} isLast />
           </View>

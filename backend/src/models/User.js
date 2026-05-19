@@ -49,6 +49,15 @@ const userSchema = new mongoose.Schema({
     medicHistory:  { type: String, default: '' },
     surgeryHistory:{ type: String, default: '' },
   },
+  // 生活方式（文字描述，6个维度）
+  lifestyle: {
+    diet:     { type: String, default: '' },  // 饮食
+    exercise: { type: String, default: '' },  // 运动
+    sleep:    { type: String, default: '' },  // 睡眠
+    water:    { type: String, default: '' },  // 饮水
+    alcohol:  { type: String, default: '' },  // 饮酒
+    smoking:  { type: String, default: '' },  // 吸烟
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

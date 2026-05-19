@@ -14,11 +14,6 @@ import { mockBloodPressureData, mockBloodSugarData, mockTasks } from '../../data
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// ── 快捷服务配置 ─────────────────────────────────────────────────
-const QUICK_SERVICES = [
-  { icon: 'folder-open-outline',   label: '健康档案', color: '#0077B6', bg: '#E8F3FB', screen: 'Records' },
-  { icon: 'hardware-chip-outline', label: 'AI 助手',  color: '#7C3AED', bg: '#F2EEFF', screen: 'Chat' },
-];
 
 // ── 迷你评分走势图 ────────────────────────────────────────────────
 function ScoreTrendLine({ history }) {
@@ -695,26 +690,6 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── 快捷服务 ──────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>快捷服务</Text>
-            <View style={styles.quickGrid}>
-              {QUICK_SERVICES.map((item, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.quickItem}
-                  onPress={() => navigation.navigate(item.screen)}
-                  activeOpacity={0.8}
-                >
-                  <View style={[styles.quickIconWrap, { backgroundColor: item.bg }]}>
-                    <Ionicons name={item.icon} size={26} color={item.color} />
-                  </View>
-                  <Text style={styles.quickLabel}>{item.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
           {/* ── 我的健康管家团队 ──────────────────────────────────── */}
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>我的健康管家团队</Text>
@@ -976,22 +951,6 @@ const styles = StyleSheet.create({
     fontSize: 10, color: colors.textMuted, marginTop: 8, lineHeight: 14,
   },
 
-  // 快捷服务
-  quickGrid: {
-    flexDirection: 'row', gap: spacing.sm,
-  },
-  quickItem: {
-    flex: 1, alignItems: 'center',
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    paddingVertical: 18,
-    borderWidth: 1, borderColor: colors.borderLight,
-  },
-  quickIconWrap: {
-    width: 52, height: 52, borderRadius: 16,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 8,
-  },
-  quickLabel: { fontSize: 11, color: colors.textSecondary, fontWeight: '600', textAlign: 'center' },
 
   // 健康管家团队
   teamEmpty: {

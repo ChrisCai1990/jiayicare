@@ -1,15 +1,21 @@
 const mongoose = require('mongoose');
 
 const medicationSchema = new mongoose.Schema({
-  user:      { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
-  name:      { type: String, required: true },
-  dosage:    { type: String, required: true },
-  frequency: { type: String, required: true },
-  timing:    { type: String },
-  startDate: { type: String },
-  endDate:   { type: String },
-  note:      { type: String, default: '' },
-  active:    { type: Boolean, default: true },
+  user:         { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  // 基础信息
+  name:         { type: String, required: true },   // 化学名/通用名（必填）
+  brandName:    { type: String, default: '' },       // 商品名（可选）
+  dosage:       { type: String, required: true },    // 剂量（如 5mg）
+  method:       { type: String, default: '口服' },   // 使用方法：口服/外用/注射/含服/吸入
+  frequency:    { type: String, required: true },    // 使用频次
+  timing:       { type: String },                    // 服药时机（早饭后等）
+  startDate:    { type: String },                    // 开始使用日期
+  // 停用信息
+  stopped:      { type: Boolean, default: false },   // 是否已停用
+  stopDate:     { type: String, default: '' },       // 停用日期
+  stopReason:   { type: String, default: '' },       // 停用原因（可选）
+  note:         { type: String, default: '' },
+  active:       { type: Boolean, default: true },
   // 今日打卡记录
   checkIns: [{
     date:   { type: String }, // YYYY-MM-DD

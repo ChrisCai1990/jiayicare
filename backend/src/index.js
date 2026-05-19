@@ -26,6 +26,7 @@ app.use('/api/auth',    require('./routes/auth'));
 app.use('/api/user',    require('./routes/user'));
 app.use('/api/records', require('./routes/healthRecords'));
 app.use('/api/medications', require('./routes/medications'));
+app.use('/api/supplements', require('./routes/supplements'));
 app.use('/api/tasks',   require('./routes/tasks'));
 app.use('/api/messages',require('./routes/messages'));
 app.use('/api/reminders', require('./routes/reminders'));

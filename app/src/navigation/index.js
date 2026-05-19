@@ -20,6 +20,7 @@ import MessagesScreen from '../screens/messages/MessagesScreen';
 import ProfileScreen from '../screens/profile/ProfileScreen';
 import ChatScreen from '../screens/chat/ChatScreen';
 import MedicationScreen from '../screens/medication/MedicationScreen';
+import NutritionScreen from '../screens/nutrition/NutritionScreen';
 import QuestionnaireScreen from '../screens/questionnaire/QuestionnaireScreen';
 import RemindersScreen from '../screens/reminders/RemindersScreen';
 import ServiceMallScreen from '../screens/services/ServiceMallScreen';
@@ -37,11 +38,11 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const TAB_CONFIG = [
-  { name: 'Home',     label: '首页',   icon: 'home',       component: HomeScreen },
+  { name: 'Home',     label: '首页',    icon: 'home',       component: HomeScreen },
   { name: 'Records',  label: '健康档案', icon: 'heart',      component: RecordsScreen },
-  { name: 'Tasks',    label: '随访',   icon: 'checkbox',   component: TasksScreen },
-  { name: 'Messages', label: '消息',   icon: 'chatbubble', component: MessagesScreen },
-  { name: 'Profile',  label: '我的',   icon: 'person',     component: ProfileScreen },
+  { name: 'Tasks',    label: '待办任务', icon: 'checkbox',   component: TasksScreen },
+  { name: 'Messages', label: '消息',    icon: 'chatbubble', component: MessagesScreen },
+  { name: 'Profile',  label: '我的',    icon: 'person',     component: ProfileScreen },
 ];
 
 function MainTabs() {
@@ -130,6 +131,7 @@ export default function Navigation() {
             <Stack.Screen name="ReportUpload" component={ReportUploadScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="Medication" component={MedicationScreen} />
+            <Stack.Screen name="Nutrition" component={NutritionScreen} />
             <Stack.Screen name="Questionnaire" component={QuestionnaireScreen} />
             <Stack.Screen name="Reminders" component={RemindersScreen} />
             <Stack.Screen name="ServiceMall" component={ServiceMallScreen} />

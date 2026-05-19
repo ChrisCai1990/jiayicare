@@ -364,6 +364,11 @@ export default function RecordsScreen({ navigation }) {
   const [profile, setProfile]         = useState(EMPTY_PROFILE);
   const [editingProfile, setEditingProfile] = useState(false);
 
+  // 生活方式
+  const [lifestyle, setLifestyle]         = useState({});
+  const [editingLifestyle, setEditingLifestyle] = useState(false);
+  const [lifestyleDraft, setLifestyleDraft] = useState({});
+
   const currentTypeCfg = CHART_TYPES.find(t => t.key === chartType) || CHART_TYPES[0];
   const PERIOD_TABS = ['周', '月', '年'];
 
@@ -390,6 +395,12 @@ export default function RecordsScreen({ navigation }) {
       const res = await userAPI.getDashboard();
       const vitals = res?.data?.latestVitals || res?.latestVitals;
       if (vitals) setLatestVitals(vitals);
+    } catch {}
+    // 加载生活方式数据
+    try {
+      const res = await userAPI.getMe();
+      const ls = res?.data?.lifestyle || res?.lifestyle;
+      if (ls) setLifestyle(ls);
     } catch {}
   }, []);
 
@@ -466,12 +477,18 @@ export default function RecordsScreen({ navigation }) {
     setProfile(draft);
     saveProfileToStorage(draft);
     setEditingProfile(false);
-    // 同步到服务器
     try {
       await userAPI.updateMe({ healthProfile: draft });
-    } catch {
-      // 网络失败时数据仍保存在 localStorage，下次进入时还在
-    }
+    } catch {}
+  };
+
+  // ── 保存生活方式 ──────────────────────────────────────────────────
+  const saveLifestyle = async () => {
+    setLifestyle(lifestyleDraft);
+    setEditingLifestyle(false);
+    try {
+      await userAPI.updateMe({ lifestyle: lifestyleDraft });
+    } catch {}
   };
 
   // ── 构建 METRICS 数组（最新指标）────────────────────────────────
@@ -548,12 +565,12 @@ export default function RecordsScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} tintColor={colors.primary} />
         }
       >
-        {/* ── 个人健康档案 ─────────────────────────────────────── */}
+        {/* ── 基础健康档案 ─────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <View style={styles.sectionTitleRow}>
               <Ionicons name="person-circle-outline" size={17} color={colors.primary} />
-              <Text style={styles.sectionTitle}>个人健康档案</Text>
+              <Text style={styles.sectionTitle}>基础健康档案</Text>
             </View>
             <TouchableOpacity style={styles.editBtn} onPress={() => setEditingProfile(true)}>
               <Ionicons name="pencil-outline" size={13} color={colors.primary} />
@@ -568,6 +585,40 @@ export default function RecordsScreen({ navigation }) {
                   <Text style={styles.profileRowLabel}>{field.label}</Text>
                 </View>
                 <Text style={styles.profileRowValue} numberOfLines={1}>{profile[field.key] || '未填写'}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ── 生活方式 ─────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="sunny-outline" size={17} color="#D97706" />
+              <Text style={styles.sectionTitle}>生活方式</Text>
+            </View>
+            <TouchableOpacity style={styles.editBtn} onPress={() => { setLifestyleDraft(lifestyle); setEditingLifestyle(true); }}>
+              <Ionicons name="pencil-outline" size={13} color={colors.primary} />
+              <Text style={styles.editBtnText}>编辑</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.profileCard}>
+            {[
+              { key: 'diet',     label: '饮食', icon: 'nutrition-outline',  color: '#059669' },
+              { key: 'exercise', label: '运动', icon: 'fitness-outline',    color: '#0077B6' },
+              { key: 'sleep',    label: '睡眠', icon: 'moon-outline',       color: '#4F46E5' },
+              { key: 'water',    label: '饮水', icon: 'water-outline',      color: '#0EA5E9' },
+              { key: 'alcohol',  label: '饮酒', icon: 'wine-outline',       color: '#9D174D' },
+              { key: 'smoking',  label: '吸烟', icon: 'flame-outline',      color: '#B45309' },
+            ].map((item, i, arr) => (
+              <View key={item.key} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>
+                <View style={styles.profileRowLeft}>
+                  <Ionicons name={item.icon} size={13} color={item.color} style={{ marginRight: 6 }} />
+                  <Text style={styles.profileRowLabel}>{item.label}</Text>
+                </View>
+                <Text style={[styles.profileRowValue, !lifestyle[item.key] && { color: colors.textMuted }]} numberOfLines={1}>
+                  {lifestyle[item.key] || '未填写'}
+                </Text>
               </View>
             ))}
           </View>
@@ -685,6 +736,51 @@ export default function RecordsScreen({ navigation }) {
         onSave={saveProfile}
         onClose={() => setEditingProfile(false)}
       />
+
+      {/* ── 编辑生活方式 Modal ───────────────────────────────────── */}
+      <Modal visible={editingLifestyle} animationType="slide" transparent>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+          <View style={styles.editOverlay}>
+            <View style={styles.editSheet}>
+              <View style={styles.editHeader}>
+                <Text style={styles.editTitle}>编辑生活方式</Text>
+                <TouchableOpacity onPress={() => setEditingLifestyle(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                  <Ionicons name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                {[
+                  { key: 'diet',     label: '饮食',  placeholder: '如：三餐规律，以主食蔬菜为主，少油少盐' },
+                  { key: 'exercise', label: '运动',  placeholder: '如：跑步，每周3次，每次30分钟' },
+                  { key: 'sleep',    label: '睡眠',  placeholder: '如：7小时，质量良好，早晨清醒' },
+                  { key: 'water',    label: '饮水',  placeholder: '如：白水为主，每日约2000毫升' },
+                  { key: 'alcohol',  label: '饮酒',  placeholder: '如：红酒，每次100ml，每周1次，未曾醉酒' },
+                  { key: 'smoking',  label: '吸烟',  placeholder: '如：不吸烟 / 卷烟，每日10支，2010年起' },
+                ].map(field => (
+                  <View key={field.key} style={styles.editField}>
+                    <View style={styles.editFieldLabel}>
+                      <Text style={styles.editFieldLabelText}>{field.label}</Text>
+                    </View>
+                    <TextInput
+                      style={[styles.editInput, { minHeight: 44 }]}
+                      value={lifestyleDraft[field.key] || ''}
+                      onChangeText={v => setLifestyleDraft(p => ({ ...p, [field.key]: v }))}
+                      placeholder={field.placeholder}
+                      placeholderTextColor={colors.textMuted}
+                      multiline
+                    />
+                  </View>
+                ))}
+                <View style={{ height: 20 }} />
+              </ScrollView>
+              <TouchableOpacity style={styles.saveBtn} onPress={saveLifestyle} activeOpacity={0.85}>
+                <Ionicons name="checkmark-circle" size={18} color={colors.white} />
+                <Text style={styles.saveBtnText}>保存生活方式</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
     </SafeAreaView>
   );
 }
