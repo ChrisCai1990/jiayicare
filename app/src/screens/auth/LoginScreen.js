@@ -141,7 +141,7 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.pullHandle} />
 
           <Text style={styles.formTitle}>手机号登录</Text>
-          <Text style={styles.formSubtitle}>会员专属服务，请使用已开通的手机号登录</Text>
+          <Text style={styles.formSubtitle}>手机号验证码登录，新用户自动注册</Text>
 
           {/* 手机号输入框 */}
           <View style={[styles.field, phoneFocused && styles.fieldFocused]}>
