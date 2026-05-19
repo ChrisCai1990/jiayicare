@@ -789,7 +789,6 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.moreGrid}>
               {[
                 { icon: 'document-text-outline', label: '健康报告', color: colors.primary, screen: 'HealthReport' },
-                { icon: 'notifications-outline', label: '提醒管理', color: colors.primary, screen: 'Reminders' },
                 { icon: 'clipboard-outline',     label: '健康问卷', color: colors.primary, screen: 'Questionnaire' },
                 { icon: 'cart-outline',          label: '服务商城', color: colors.primary, screen: 'ServiceMall' },
                 { icon: 'cloud-upload-outline',  label: '上传报告', color: colors.primary, screen: 'ReportUpload' },
