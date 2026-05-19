@@ -102,17 +102,25 @@ router.post('/login', async (req, res) => {
   }
   codStore.delete(phone);
 
-  // 找或创建用户
+  // 查找用户（关闭自主注册：新手机号不自动创建账号）
   let user = await User.findOne({ phone });
-  const isNew = !user;
+  const isDemo = phone === '13800138000';
+
   if (!user) {
-    const isDemo = phone === '13800138000';
-    user = await User.create({ phone });
-    // 仅演示账号初始化 mock 数据
+    // 演示账号自动创建
     if (isDemo) {
+      user = await User.create({ phone });
       seedUserData(user._id).catch(console.error);
+    } else {
+      // 非演示用户未注册：返回特定 code，前端引导申请加入
+      return res.status(403).json({
+        success: false,
+        code: 'NOT_REGISTERED',
+        message: '该手机号暂未开通会员资格，请联系客服申请加入嘉医汇会员计划。',
+      });
     }
   }
+  const isNew = false;
 
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '30d',

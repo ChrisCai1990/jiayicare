@@ -254,7 +254,8 @@ export default function AddRecordScreen({ navigation, route }) {
         payload.value = String(dur);
         payload.unit = '小时';
         payload.extra = { sleepTime: values.sleepTime, wakeTime: values.wakeTime };
-        payload.status = parseFloat(dur) >= 7 && parseFloat(dur) <= 9 ? 'normal' : 'warning';
+        const durF = parseFloat(dur);
+        payload.status = durF >= 7 && durF <= 9 ? 'normal' : durF < 7 ? 'low' : 'warning';
       } else {
         payload.value = String(values.value);
         payload.status = (() => {

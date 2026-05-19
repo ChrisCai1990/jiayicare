@@ -12,14 +12,16 @@ import { mockMedicalReports } from '../../data/mockData';
 
 // ── 重新设计的8类报告 ─────────────────────────────────────────────
 const TYPE_LIST = [
-  { key: 'annual',     label: '年度体检', icon: 'clipboard-outline',      color: '#0077B6', bg: '#EBF5FB' },
-  { key: 'followup',   label: '日常复查', icon: 'refresh-circle-outline',  color: '#1E6B50', bg: '#E8F5EF' },
-  { key: 'imaging',    label: '影像检查', icon: 'scan-outline',            color: '#7C3AED', bg: '#F2EEFF' },
-  { key: 'blood',      label: '血液检查', icon: 'water-outline',           color: '#DC3545', bg: '#FDEEEC' },
-  { key: 'ecg',        label: '心电图',   icon: 'pulse-outline',           color: '#D97706', bg: '#FEF3E2' },
-  { key: 'pathology',  label: '病理报告', icon: 'flask-outline',           color: '#9D174D', bg: '#FCE7F3' },
-  { key: 'prescription',label: '处方笺',  icon: 'receipt-outline',         color: '#059669', bg: '#D1FAE5' },
-  { key: 'other',      label: '其他',     icon: 'document-outline',        color: '#64748B', bg: '#F1F5F9' },
+  { key: 'annual',       label: '年度体检',   icon: 'clipboard-outline',      color: '#0077B6', bg: '#EBF5FB' },
+  { key: 'body_comp',    label: '人体成分',   icon: 'body-outline',           color: '#1E6B50', bg: '#E8F5EF' },
+  { key: 'blood',        label: '血液检查',   icon: 'water-outline',          color: '#DC3545', bg: '#FDEEEC' },
+  { key: 'ultrasound',   label: '超声检查',   icon: 'scan-outline',           color: '#7C3AED', bg: '#F2EEFF' },
+  { key: 'radiology',    label: '放射检查',   icon: 'radio-outline',          color: '#D97706', bg: '#FEF3E2' },
+  { key: 'mri',          label: '磁共振',     icon: 'cellular-outline',       color: '#0369A1', bg: '#E0F2FE' },
+  { key: 'endoscopy',    label: '内镜检查',   icon: 'search-outline',         color: '#059669', bg: '#D1FAE5' },
+  { key: 'ecg',          label: '心电图',     icon: 'pulse-outline',          color: '#9D174D', bg: '#FCE7F3' },
+  { key: 'pathology',    label: '病理报告',   icon: 'flask-outline',          color: '#B45309', bg: '#FEF3C7' },
+  { key: 'other',        label: '其他',       icon: 'document-outline',       color: '#64748B', bg: '#F1F5F9' },
 ];
 
 const TYPE_META = Object.fromEntries(
@@ -502,7 +504,7 @@ export default function ReportUploadScreen({ navigation }) {
                   <ReportCard
                     key={r._id || r.id}
                     report={r}
-                    onDelete={isRealReport(r) ? handleDelete : null}
+                    onDelete={null}
                     onPreview={setPreviewReport}
                   />
                 ))}

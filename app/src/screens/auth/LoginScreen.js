@@ -28,6 +28,7 @@ export default function LoginScreen({ navigation }) {
   const [error, setError] = useState('');
   const [phoneFocused, setPhoneFocused] = useState(false);
   const [codeFocused, setCodeFocused] = useState(false);
+  const [notRegistered, setNotRegistered] = useState(false);
 
   // 检测微信 OAuth 回调（URL 中含 ?code=）
   useEffect(() => {
@@ -66,12 +67,17 @@ export default function LoginScreen({ navigation }) {
   const handleLogin = async () => {
     if (!phone || !code) return;
     setError('');
+    setNotRegistered(false);
     try {
       setLoading(true);
       const res = await authAPI.login(phone, code);
       if (res.success) await login(res.data.user, res.data.token);
     } catch (err) {
-      setError(err.message || '登录失败，请检查验证码后重试');
+      if (err.code === 'NOT_REGISTERED') {
+        setNotRegistered(true);
+      } else {
+        setError(err.message || '登录失败，请检查验证码后重试');
+      }
     } finally { setLoading(false); }
   };
 
@@ -135,7 +141,7 @@ export default function LoginScreen({ navigation }) {
           <View style={styles.pullHandle} />
 
           <Text style={styles.formTitle}>手机号登录</Text>
-          <Text style={styles.formSubtitle}>新用户自动注册，无需等待</Text>
+          <Text style={styles.formSubtitle}>会员专属服务，请使用已开通的手机号登录</Text>
 
           {/* 手机号输入框 */}
           <View style={[styles.field, phoneFocused && styles.fieldFocused]}>
@@ -184,6 +190,34 @@ export default function LoginScreen({ navigation }) {
             <View style={styles.errorWrap}>
               <Ionicons name="alert-circle-outline" size={14} color={colors.danger} />
               <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          {/* 未开通会员提示 */}
+          {notRegistered && (
+            <View style={styles.notRegWrap}>
+              <View style={styles.notRegIcon}>
+                <Ionicons name="person-add-outline" size={22} color="#0077B6" />
+              </View>
+              <Text style={styles.notRegTitle}>该手机号暂未开通会员</Text>
+              <Text style={styles.notRegDesc}>
+                嘉医汇为邀请制会员服务，如需加入请联系客服申请开通
+              </Text>
+              <TouchableOpacity
+                style={styles.notRegBtn}
+                onPress={() => {
+                  if (typeof window !== 'undefined') {
+                    window.open('tel:17742039618');
+                  }
+                }}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="call-outline" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
+                <Text style={styles.notRegBtnText}>拨打客服：17742039618</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setNotRegistered(false)}>
+                <Text style={styles.notRegDismiss}>返回重试</Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -376,4 +410,36 @@ const styles = StyleSheet.create({
 
   agreement: { textAlign: 'center', fontSize: 11, color: colors.textMuted, marginTop: spacing.md },
   agreeLink: { color: colors.primary, fontWeight: '500' },
+
+  // 未开通会员卡片
+  notRegWrap: {
+    backgroundColor: '#EBF5FB',
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: '#BEE3F8',
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    alignItems: 'center',
+  },
+  notRegIcon: {
+    width: 48, height: 48, borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 10,
+    borderWidth: 1, borderColor: '#BEE3F8',
+  },
+  notRegTitle: {
+    fontSize: 15, fontWeight: '700', color: '#0077B6', marginBottom: 6,
+  },
+  notRegDesc: {
+    fontSize: 13, color: '#4A6558', textAlign: 'center', lineHeight: 20, marginBottom: 14,
+  },
+  notRegBtn: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: '#0077B6',
+    borderRadius: radius.sm,
+    paddingHorizontal: 20, paddingVertical: 11,
+    marginBottom: 10,
+  },
+  notRegBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  notRegDismiss: { fontSize: 12, color: colors.textMuted, textDecorationLine: 'underline' },
 });

@@ -55,7 +55,7 @@ function scheduleText(r) {
 }
 
 // ── 过滤 Tab ──────────────────────────────────────────────────────
-const FILTER_TABS = ['随访任务', '今日任务', '已完成', '今日提醒'];
+const FILTER_TABS = ['全部', '今日', '本周', '本月'];
 
 // ── 任务卡片 ──────────────────────────────────────────────────────
 function TaskCard({ task, onToggle }) {
@@ -144,7 +144,7 @@ function ReminderCard({ reminder, onToggle }) {
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function TasksScreen() {
   const { isDemo } = useAuth();
-  const [filter, setFilter]       = useState('随访任务');
+  const [filter, setFilter]       = useState('全部');
   const [tasks, setTasks]         = useState([]);
   const [reminders, setReminders] = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -208,87 +208,78 @@ export default function TasksScreen() {
     }
   };
 
-  // 今日激活提醒（由后端 isActiveToday 字段确定）
-  const todayReminders = reminders.filter(r => r.isActiveToday);
-  const allReminders   = reminders;
+  // 将提醒转换为统一的待办条目
+  const reminderToItem = (r) => ({
+    _id: r._id,
+    title: r.title,
+    type: r.category || 'followup',
+    description: r.description || '',
+    dueDate: r.targetDate ? new Date(r.targetDate).toISOString().slice(0, 10) : null,
+    dueTime: r.reminderTime || '',
+    priority: r.category === 'followup_abnormal' ? 'high' : 'medium',
+    status: 'pending',
+    assignee: '',
+    isReminder: true,
+  });
 
-  // 任务过滤
+  // 合并任务 + 提醒
+  const allItems = [
+    ...tasks.filter(t => t.status !== 'completed'),
+    ...reminders.filter(r => r.enabled).map(reminderToItem),
+  ];
+
+  const today = new Date().toISOString().slice(0, 10);
+  const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  const monthEnd = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+
   const filteredTasks = (() => {
-    if (filter === '今日任务') return tasks.filter(t => t.dueDate === '今日' && t.status !== 'completed');
-    if (filter === '已完成') return tasks.filter(t => t.status === 'completed');
-    // 随访任务：所有未完成任务
-    return tasks.filter(t => t.status !== 'completed');
+    if (filter === '今日') return [
+      ...tasks.filter(t => t.status !== 'completed' && (!t.dueDate || t.dueDate <= today)),
+      ...reminders.filter(r => r.enabled && r.isActiveToday).map(reminderToItem),
+    ];
+    if (filter === '本周') return allItems.filter(t => !t.dueDate || t.dueDate <= weekEnd);
+    if (filter === '本月') return allItems.filter(t => !t.dueDate || t.dueDate <= monthEnd);
+    return allItems; // 全部
   })();
 
   // 统计
   const pendingCount   = tasks.filter(t => t.status === 'pending').length;
   const completedCount = tasks.filter(t => t.status === 'completed').length;
-  const reminderCount  = todayReminders.length;
-
-  const isReminderTab = filter === '今日提醒';
+  const reminderCount  = reminders.filter(r => r.enabled && r.isActiveToday).length;
 
   return (
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.pageTitle}>{isReminderTab ? '今日提醒' : '随访任务'}</Text>
-          <Text style={styles.pageSubtitle}>
-            {isReminderTab ? `今日有 ${reminderCount} 条提醒` : '跟进健康管理进度'}
-          </Text>
+          <Text style={styles.pageTitle}>待办任务</Text>
+          <Text style={styles.pageSubtitle}>健康管理进度跟踪</Text>
         </View>
-        {!isReminderTab && pendingCount > 0 && (
+        {filteredTasks.length > 0 && (
           <View style={styles.pendingBadge}>
             <Ionicons name="time-outline" size={13} color={colors.primary} />
-            <Text style={styles.pendingBadgeText}>{pendingCount} 项待办</Text>
-          </View>
-        )}
-        {isReminderTab && reminderCount > 0 && (
-          <View style={[styles.pendingBadge, { backgroundColor: '#EEF2FF', borderColor: '#4F46E5' + '30' }]}>
-            <Ionicons name="notifications-outline" size={13} color="#4F46E5" />
-            <Text style={[styles.pendingBadgeText, { color: '#4F46E5' }]}>{reminderCount} 条今日</Text>
+            <Text style={styles.pendingBadgeText}>{filteredTasks.length} 项待办</Text>
           </View>
         )}
       </View>
 
       {/* Summary */}
-      {!isReminderTab && (
-        <View style={styles.summary}>
-          {[
-            { val: pendingCount,    label: '待完成',  color: colors.textPrimary },
-            { val: completedCount,  label: '已完成',  color: colors.success },
-            { val: tasks.filter(t => t.priority === 'high' && t.status === 'pending').length, label: '高优先级', color: colors.danger },
-            { val: tasks.length > 0 ? `${Math.round((completedCount / tasks.length) * 100)}%` : '0%', label: '完成率', color: colors.primary },
-          ].map((s, i, arr) => (
-            <React.Fragment key={i}>
-              {i > 0 && <View style={styles.summaryDivider} />}
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: s.color }]}>{s.val}</Text>
-                <Text style={styles.summaryLabel}>{s.label}</Text>
-              </View>
-            </React.Fragment>
-          ))}
-        </View>
-      )}
-
-      {isReminderTab && (
-        <View style={styles.summary}>
-          {[
-            { val: reminders.filter(r => r.enabled).length, label: '已开启', color: colors.primary },
-            { val: reminderCount, label: '今日激活', color: '#4F46E5' },
-            { val: reminders.filter(r => !r.enabled).length, label: '已暂停', color: colors.textMuted },
-            { val: reminders.length, label: '总计', color: colors.textSecondary },
-          ].map((s, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && <View style={styles.summaryDivider} />}
-              <View style={styles.summaryItem}>
-                <Text style={[styles.summaryValue, { color: s.color }]}>{s.val}</Text>
-                <Text style={styles.summaryLabel}>{s.label}</Text>
-              </View>
-            </React.Fragment>
-          ))}
-        </View>
-      )}
+      <View style={styles.summary}>
+        {[
+          { val: allItems.length,    label: '全部待办',  color: colors.textPrimary },
+          { val: reminderCount,      label: '今日提醒',  color: '#4F46E5' },
+          { val: completedCount,     label: '已完成',    color: colors.success },
+          { val: tasks.filter(t => t.priority === 'high' && t.status === 'pending').length, label: '高优先级', color: colors.danger },
+        ].map((s, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <View style={styles.summaryDivider} />}
+            <View style={styles.summaryItem}>
+              <Text style={[styles.summaryValue, { color: s.color }]}>{s.val}</Text>
+              <Text style={styles.summaryLabel}>{s.label}</Text>
+            </View>
+          </React.Fragment>
+        ))}
+      </View>
 
       {/* Filter tabs */}
       <ScrollView
@@ -303,9 +294,6 @@ export default function TasksScreen() {
             style={[styles.filterChip, filter === tab && styles.filterChipActive]}
             onPress={() => setFilter(tab)}
           >
-            {tab === '今日提醒' && reminderCount > 0 && (
-              <View style={styles.filterDot} />
-            )}
             <Text style={[styles.filterText, filter === tab && styles.filterTextActive]}>{tab}</Text>
           </TouchableOpacity>
         ))}
@@ -329,51 +317,21 @@ export default function TasksScreen() {
               </View>
             ))}
           </View>
-        ) : isReminderTab ? (
-          // ── 提醒 Tab ─────────────────────────────────────────────
-          <>
-            {todayReminders.length === 0 ? (
-              <EmptyState
-                icon="notifications-outline"
-                title="今天没有激活的提醒"
-                subtitle="前往「提醒管理」创建或调整提醒计划"
-                color="#4F46E5"
-              />
-            ) : (
-              <>
-                <Text style={styles.listSectionLabel}>今日激活</Text>
-                {todayReminders.map(r => (
-                  <ReminderCard key={r._id} reminder={r} onToggle={toggleReminder} />
-                ))}
-              </>
-            )}
-
-            {/* 今日之外已启用的提醒 */}
-            {allReminders.filter(r => r.enabled && !r.isActiveToday).length > 0 && (
-              <>
-                <Text style={[styles.listSectionLabel, { marginTop: spacing.md }]}>其他已开启</Text>
-                {allReminders.filter(r => r.enabled && !r.isActiveToday).map(r => (
-                  <ReminderCard key={r._id} reminder={r} onToggle={toggleReminder} />
-                ))}
-              </>
-            )}
-          </>
+        ) : filteredTasks.length === 0 ? (
+          <EmptyState
+            icon="checkmark-circle-outline"
+            title="暂无待办任务"
+            subtitle="您的健康管家会为您安排任务"
+            color={colors.primary}
+          />
         ) : (
-          // ── 任务 Tab ─────────────────────────────────────────────
-          filteredTasks.length === 0 ? (
-            <EmptyState
-              icon={filter === '已完成' ? 'checkmark-circle-outline' : 'clipboard-outline'}
-              title={filter === '已完成' ? '暂无已完成任务' : '暂无随访任务'}
-              subtitle={filter === '已完成' ? '完成任务后会在这里显示' : '医生或健管师会为您安排随访任务'}
-              color={filter === '已完成' ? colors.success : colors.primary}
+          filteredTasks.map(task => (
+            <TaskCard
+              key={task._id || task.id}
+              task={task}
+              onToggle={task.isReminder ? () => {} : toggleTask}
             />
-          ) : (
-            <>
-              {filteredTasks.map(task => (
-                <TaskCard key={task._id || task.id} task={task} onToggle={toggleTask} />
-              ))}
-            </>
-          )
+          ))
         )}
 
         <View style={{ height: spacing.xl * 2 }} />

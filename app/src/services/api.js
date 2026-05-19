@@ -57,7 +57,12 @@ async function request(path, options = {}) {
       if (_onUnauthorized) _onUnauthorized();
       throw new Error('登录已过期，请重新登录');
     }
-    if (!res.ok) throw new Error(data.message + (data.error ? `（${data.error}）` : '') || `请求失败(${res.status})`);
+    if (!res.ok) {
+      const errMsg = data.message + (data.error ? `（${data.error}）` : '') || `请求失败(${res.status})`;
+      const err = new Error(errMsg);
+      if (data.code) err.code = data.code;
+      throw err;
+    }
     return data;
   } catch (err) {
     if (err.name === 'AbortError') throw new Error('请求超时，请检查网络后重试');

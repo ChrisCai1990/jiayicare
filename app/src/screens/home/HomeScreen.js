@@ -17,7 +17,6 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 // ── 快捷服务配置 ─────────────────────────────────────────────────
 const QUICK_SERVICES = [
   { icon: 'folder-open-outline',   label: '健康档案', color: '#0077B6', bg: '#E8F3FB', screen: 'Records' },
-  { icon: 'medkit-outline',        label: '用药计划', color: '#D44000', bg: '#FDF0EB', screen: 'Medication' },
   { icon: 'hardware-chip-outline', label: 'AI 助手',  color: '#7C3AED', bg: '#F2EEFF', screen: 'Chat' },
 ];
 
@@ -75,7 +74,7 @@ const REM_CAT_META = {
 const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
 
 // ── 待办 Tab ──────────────────────────────────────────────────────
-const TASK_TABS = ['今日', '本周', '本月'];
+const TASK_TABS = ['全部', '今日', '本周', '本月'];
 
 // ── Mini 折线图：血压 ─────────────────────────────────────────────
 function BloodPressureChart({ data, onAdd }) {
@@ -330,7 +329,7 @@ export default function HomeScreen({ navigation }) {
   const [sugarTrend, setSugarTrend] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [taskTab, setTaskTab]       = useState('今日');
+  const [taskTab, setTaskTab]       = useState('全部');
   const [moodScore, setMoodScore]   = useState(7);
 
   const loadData = useCallback(async () => {
@@ -460,9 +459,13 @@ export default function HomeScreen({ navigation }) {
 
   // 待办 Tab 过滤
   const filteredTasks = (() => {
-    if (taskTab === '今日') return allPendingTasks.slice(0, allPendingTasks.length);
-    if (taskTab === '本周') return allPendingTasks.slice(0, 5);
-    return allPendingTasks;
+    const today = new Date().toISOString().slice(0, 10);
+    const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+    const monthEnd = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+    if (taskTab === '今日') return allPendingTasks.filter(t => !t.dueDate || t.dueDate <= today);
+    if (taskTab === '本周') return allPendingTasks.filter(t => !t.dueDate || t.dueDate <= weekEnd);
+    if (taskTab === '本月') return allPendingTasks.filter(t => !t.dueDate || t.dueDate <= monthEnd);
+    return allPendingTasks; // 全部
   })();
 
   // 睡眠时长：优先使用真实记录，Demo 用户无记录时展示示例数据
@@ -471,11 +474,11 @@ export default function HomeScreen({ navigation }) {
   const sleepBedTime  = isDemo ? '22:30' : '--:--';
   const sleepWakeTime = isDemo ? '06:45' : '--:--';
   const sleepLabel      = sleepHours == null ? '待录入'
-    : sleepHours < 6  ? '不足' : sleepHours <= 8 ? '良好' : '充足';
+    : sleepHours < 6  ? '偏少' : sleepHours <= 9 ? '良好' : '偏多';
   const sleepLabelColor = sleepHours == null ? colors.textMuted
-    : sleepHours < 6  ? colors.danger : sleepHours <= 8 ? colors.success : '#0077B6';
+    : sleepHours < 6  ? colors.danger : sleepHours <= 9 ? colors.success : '#D97706';
   const sleepBg         = sleepHours == null ? '#F5F5F5'
-    : sleepHours < 6  ? '#FDECEA' : sleepHours <= 8 ? '#E8F5EF' : '#EBF5FB';
+    : sleepHours < 6  ? '#FDECEA' : sleepHours <= 9 ? '#E8F5EF' : '#FEF3E2';
 
   // 情绪标签
   const moodLabel      = moodScore >= 8 ? '愉快' : moodScore >= 6 ? '良好' : '较差';

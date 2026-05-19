@@ -105,6 +105,12 @@ const STATUS_CFG = {
   danger:  { label: '偏高', bg: '#FDECEA', color: '#DC3545' },
   low:     { label: '偏低', bg: '#EBF5FB', color: '#0077B6' },
 };
+// 睡眠专属状态标签
+const SLEEP_STATUS_CFG = {
+  normal:  { label: '良好', bg: '#E8F5EF', color: '#1E6B50' },
+  warning: { label: '偏多', bg: '#FEF3E2', color: '#D97706' },
+  low:     { label: '偏少', bg: '#FDECEA', color: '#DC3545' },
+};
 
 // ── 工具：日期格式化 ──────────────────────────────────────────────
 function fmtDate(str, period) {
@@ -236,7 +242,8 @@ function TrendChart({ data, typeCfg, period }) {
 
 // ── 历史记录条目 ──────────────────────────────────────────────────
 function RecordRow({ record, typeCfg, isLast }) {
-  const st  = STATUS_CFG[record.status] || STATUS_CFG.normal;
+  const stMap = typeCfg.key === 'sleep' ? SLEEP_STATUS_CFG : STATUS_CFG;
+  const st  = stMap[record.status] || stMap.normal;
   const val = typeCfg.getDisplay(record);
   const dt  = record.recordedAt
     ? new Date(record.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
@@ -533,14 +540,6 @@ export default function RecordsScreen({ navigation }) {
           <Text style={styles.pageTitle}>健康档案</Text>
           <Text style={styles.syncInfo}>最后同步：{today}</Text>
         </View>
-        <TouchableOpacity
-          style={styles.addRecordBtn}
-          onPress={() => navigation.navigate('AddRecord')}
-          activeOpacity={0.8}
-        >
-          <Ionicons name="add" size={18} color={colors.white} />
-          <Text style={styles.addRecordBtnText}>录入</Text>
-        </TouchableOpacity>
       </View>
 
       <ScrollView
