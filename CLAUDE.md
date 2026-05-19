@@ -11,30 +11,24 @@ JiayiCare-mono/
 
 ## 部署命令
 
-### 前端 app（每次改前端必须执行两步）
+### 所有服务（push 后 Railway 自动部署）
 ```bash
-cd app
-npx expo export --platform web
-npx vercel deploy dist --prod
+git add <files> && git commit -m "..." && git push origin master
 ```
-
-### 管理后台 admin
-```bash
-cd admin
-npm run build
-npx vercel deploy dist --prod
-```
-
-### 后端 backend
-```bash
-# push 后 Railway 自动部署（已连 GitHub master）
-git add backend/<files> && git commit -m "..." && git push origin master
-```
+- app/ 变更 → jiayihui-app 服务自动重新构建
+- admin/ 变更 → jiayihui-admin 服务自动重新构建
+- backend/ 变更 → backend 服务自动重新构建
 
 ## 线上地址
-- 前端 app：https://dist-jiayihui.vercel.app
-- 管理后台：https://jiayicare-admin.vercel.app
+- 前端 app：https://jiayihui-app-production.up.railway.app
+- 管理后台：https://jiayihui-admin-production.up.railway.app
 - 后端：https://mongodb-production-06f7.up.railway.app/api
+
+## 部署方式（Railway 自动部署）
+- push 代码到 GitHub master 分支后，Railway 自动触发构建部署
+- jiayihui-app 服务：Build=`npm install && npm run build:app` / Start=`npm run serve:app`
+- jiayihui-admin 服务：Build=`npm install && npm run build:admin` / Start=`npm run serve:admin`
+- backend 服务：Railway 连接 GitHub ChrisCai1990/jiayicare master，push 后自动部署
 
 ## 演示账号
 - 手机号：13800138000 / 验证码：123456

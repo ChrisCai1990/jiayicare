@@ -1,19 +1,14 @@
 # JiayiCare 项目完整说明
 
-## 部署命令（每次改前端必须执行两步）
+## 部署命令（push 后 Railway 自动部署）
 ```bash
-# 前端 构建+部署
-cd "D:\Claude CODE\JiayiCare"
-npx expo export --platform web
-npx vercel deploy dist --prod
-
-# 后端 push 后 Railway 自动部署（已连 GitHub master）
-cd "D:\Claude CODE\JiayiCare-backend"
+# 所有服务：push 到 GitHub master 后 Railway 自动构建部署
 git add <files> && git commit -m "..." && git push origin master
 ```
 
 ## 线上地址
-- 前端：https://dist-jiayihui.vercel.app
+- 前端 app：https://jiayihui-app-production.up.railway.app
+- 管理后台：https://jiayihui-admin-production.up.railway.app
 - 后端：https://mongodb-production-06f7.up.railway.app/api
 
 ## 演示账号
