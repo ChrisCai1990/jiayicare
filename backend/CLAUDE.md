@@ -39,9 +39,9 @@ const user = await User.findById(req.user._id).select('-password');
 ### 服务包目录
 ```js
 const PACKAGE_CATALOG = [
-  { id: 'pkg_1y', name: '年度服务包', duration: '12 个月', price: 2980 },
-  { id: 'pkg_6m', name: '半年服务包', duration: '6 个月',  price: 1680 },
-  { id: 'pkg_3m', name: '季度服务包', duration: '3 个月',  price: 980  },
+  { id: 'pkg_1y', name: '年度服务包', duration: '12 个月', price: 3650, originalPrice: 5000 },
+  { id: 'pkg_6m', name: '半年服务包', duration: '6 个月',  price: 1980, originalPrice: 2800 },
+  { id: 'pkg_3m', name: '季度服务包', duration: '3 个月',  price: 1080, originalPrice: 1480 },
 ];
 ```
 

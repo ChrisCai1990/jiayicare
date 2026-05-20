@@ -264,6 +264,10 @@ export default function AddRecordScreen({ navigation, route }) {
           if (activeType.id === 'heartRate') return v > 100 ? 'warning' : v < 60 ? 'low' : 'normal';
           return 'normal';
         })();
+        // 血糖记录时将测量时间段存入 extra.mealType，供趋势图分类展示
+        if (activeType.id === 'bloodSugar' && measureOption) {
+          payload.extra = { mealType: measureOption };
+        }
       }
 
       await recordsAPI.create(payload);

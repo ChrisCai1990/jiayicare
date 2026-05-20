@@ -14,39 +14,39 @@ const PACKAGES = [
     id: 'pkg_1y',
     name: '年度服务包',
     duration: '12 个月',
-    price: 2980,
-    originalPrice: 3980,
+    price: 3650,
+    originalPrice: 5000,
     tag: '最超值',
     tagColor: '#DC3545',
-    features: ['专属健管师全年陪伴', '每月 1 次医生随访', '全场服务 9 折优惠', 'AI 助手无限次使用', '紧急健康咨询绿色通道'],
+    features: ['专属健管师全年陪伴', '专属家庭医生咨询6次', '就医协助服务9折优惠', 'AI助手无限次使用'],
     highlight: true,
   },
   {
     id: 'pkg_6m',
     name: '半年服务包',
     duration: '6 个月',
-    price: 1680,
-    originalPrice: 1980,
+    price: 1980,
+    originalPrice: 2800,
     tag: '推荐',
     tagColor: '#1E6B50',
-    features: ['专属健管师半年陪伴', '每两月 1 次医生随访', '全场服务 95 折优惠', 'AI 助手无限次使用'],
+    features: ['专属健管师半年陪伴', '专属家庭医生咨询3次', '就医协助服务95折', 'AI助手无限次使用'],
     highlight: false,
   },
   {
     id: 'pkg_3m',
     name: '季度服务包',
     duration: '3 个月',
-    price: 980,
-    originalPrice: 1180,
+    price: 1080,
+    originalPrice: 1480,
     tag: '',
     tagColor: '',
-    features: ['专属健管师季度陪伴', '1 次医生随访', 'AI 助手无限次使用'],
+    features: ['专属健管师季度陪伴', '专属家庭医生咨询1次', 'AI助手无限次使用'],
     highlight: false,
   },
 ];
 
 function PackageCard({ pkg, selected, onSelect }) {
-  const discount = Math.round((1 - pkg.price / pkg.originalPrice) * 10);
+  const discount = (pkg.price / pkg.originalPrice * 10).toFixed(1);
   return (
     <TouchableOpacity
       style={[styles.pkgCard, selected && styles.pkgCardSelected, pkg.highlight && styles.pkgCardHighlight]}

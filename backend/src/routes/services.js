@@ -77,9 +77,9 @@ router.get('/', auth, (req, res) => {
 
 // ── 服务包目录（首次开通 & 续费使用）────────────────────────────
 const PACKAGE_CATALOG = [
-  { id: 'pkg_1y', name: '年度服务包', duration: '12 个月', price: 2980, originalPrice: 3980, icon: 'shield-checkmark', category: '服务包' },
-  { id: 'pkg_6m', name: '半年服务包', duration: '6 个月',  price: 1680, originalPrice: 1980, icon: 'shield-checkmark', category: '服务包' },
-  { id: 'pkg_3m', name: '季度服务包', duration: '3 个月',  price: 980,  originalPrice: 1180, icon: 'shield-checkmark', category: '服务包' },
+  { id: 'pkg_1y', name: '年度服务包', duration: '12 个月', price: 3650, originalPrice: 5000, icon: 'shield-checkmark', category: '服务包' },
+  { id: 'pkg_6m', name: '半年服务包', duration: '6 个月',  price: 1980, originalPrice: 2800, icon: 'shield-checkmark', category: '服务包' },
+  { id: 'pkg_3m', name: '季度服务包', duration: '3 个月',  price: 1080, originalPrice: 1480, icon: 'shield-checkmark', category: '服务包' },
 ];
 
 // POST /api/services/order — 提交服务预约（支持单项服务 & 服务包）

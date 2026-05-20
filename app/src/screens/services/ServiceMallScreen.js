@@ -219,7 +219,7 @@ function BannerCard({ hasService, servicePackage, daysLeft, onViewOrders, onActi
         <View style={{ flex: 1 }}>
           <Text style={styles.activateTitle}>开通专属服务包</Text>
           <View style={styles.activatePoints}>
-            {['专属医生随访', '健管师全程陪伴', '全场服务折扣', 'AI 无限次咨询'].map((p, i) => (
+            {['专属家庭医生咨询', '健管师全程陪伴', '全年复查提醒', 'AI无限次咨询'].map((p, i) => (
               <View key={i} style={styles.activatePoint}>
                 <Ionicons name="checkmark-circle" size={12} color={colors.success} />
                 <Text style={styles.activatePointText}>{p}</Text>

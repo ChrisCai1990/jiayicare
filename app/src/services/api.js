@@ -38,16 +38,17 @@ export async function clearToken() {
 }
 
 async function request(path, options = {}) {
+  const { timeout: customTimeout, ...fetchOptions } = options;
   const headers = { 'Content-Type': 'application/json' };
   if (_token) headers['Authorization'] = `Bearer ${_token}`;
 
-  // 15 秒超时，避免 Railway 冷启动时无限挂起
+  // 默认 15 秒超时；上传报告等大文件操作可传入更长超时
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 15000);
+  const timer = setTimeout(() => controller.abort(), customTimeout || 15000);
 
   try {
     const res = await fetch(`${BASE_URL}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers,
       signal: controller.signal,
     });
@@ -150,7 +151,7 @@ export const remindersAPI = {
 export const reportsAPI = {
   list:   ()     => request('/reports'),
   get:    (id)   => request(`/reports/${id}`),
-  create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data) }),
+  create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete: (id)   => request(`/reports/${id}`, { method: 'DELETE' }),
 };
 

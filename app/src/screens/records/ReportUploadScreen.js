@@ -220,9 +220,9 @@ function AIAnalysisCard() {
 }
 
 // ── 上传配置 Modal ────────────────────────────────────────────────
-function UploadConfigModal({ file, onConfirm, onCancel }) {
+function UploadConfigModal({ file, initialType, onConfirm, onCancel }) {
   const [title, setTitle]   = useState(file ? file.name.replace(/\.[^/.]+$/, '') : '');
-  const [type, setType]     = useState('annual');
+  const [type, setType]     = useState(initialType && initialType !== 'all' ? initialType : 'annual');
   const [hospital, setHospital] = useState('');
 
   if (!file) return null;
@@ -294,8 +294,9 @@ function UploadConfigModal({ file, onConfirm, onCancel }) {
   );
 }
 
-export default function ReportUploadScreen({ navigation }) {
+export default function ReportUploadScreen({ navigation, route }) {
   const { isDemo } = useAuth();
+  const initialType = route?.params?.type || null;
   const [reports, setReports]       = useState([]);
   const [uploading, setUploading]   = useState(false);
   const [loading, setLoading]       = useState(true);
@@ -409,7 +410,7 @@ export default function ReportUploadScreen({ navigation }) {
   };
 
   const isRealReport = (r) => !!(r._id);
-  const [typeFilter, setTypeFilter] = useState('all');
+  const [typeFilter, setTypeFilter] = useState(initialType || 'all');
 
   return (
     <SafeAreaView style={styles.container}>
@@ -526,6 +527,7 @@ export default function ReportUploadScreen({ navigation }) {
       {pendingFile && (
         <UploadConfigModal
           file={pendingFile}
+          initialType={typeFilter}
           onConfirm={handleConfirmUpload}
           onCancel={() => { setPendingFile(null); pendingFileData.current = null; }}
         />

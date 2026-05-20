@@ -19,19 +19,34 @@ const CHART_TYPES = [
   {
     key: 'bloodPressure', label: '血压', unit: 'mmHg',
     color: '#DC3545', icon: 'heart-outline',
+    // 第二曲线：舒张压（蓝色）
+    color2: '#0077B6',
+    getVal2: (r) => r.dia ?? r.extra?.dia ?? parseFloat(String(r.value).split('/')[1]) ?? 0,
+    series2Label: '舒张压',
     refLines: [{ val: 140, color: '#DC3545', label: '收缩压上限' }, { val: 90, color: '#22A06B', label: '舒张压上限' }],
-    minY: 60, maxY: 180,
+    minY: 40, maxY: 180,
     getVal: (r) => r.sys ?? r.extra?.sys ?? parseFloat(String(r.value).split('/')[0]) ?? 0,
-    getDisplay: (r) => r.sys && r.dia ? `${r.sys}/${r.dia}` : r.value ?? '-',
+    series1Label: '收缩压',
+    getDisplay: (r) => r.sys && r.dia ? `${r.sys}/${r.dia}` : (r.extra?.sys && r.extra?.dia ? `${r.extra.sys}/${r.extra.dia}` : r.value ?? '-'),
     mockData: mockBloodPressureData,
   },
   {
     key: 'bloodSugar', label: '血糖', unit: 'mmol/L',
     color: '#D97706', icon: 'water-outline',
-    refLines: [{ val: 6.1, color: '#22A06B', label: '正常上限' }, { val: 3.9, color: '#0077B6', label: '低血糖线' }],
-    minY: 2, maxY: 12,
+    // 第二曲线：餐后2小时（橙红色）
+    color2: '#DC3545',
+    series1Label: '空腹',
+    series2Label: '餐后2h',
+    // 数据按 mealType 拆分（见 splitBloodSugar）
+    splitBySeries: true,
+    refLines: [{ val: 6.1, color: '#22A06B', label: '正常上限(空腹)' }, { val: 3.9, color: '#0077B6', label: '低血糖线' }],
+    minY: 2, maxY: 14,
     getVal: (r) => parseFloat(r.value ?? r.extra?.value ?? 0),
-    getDisplay: (r) => String(r.value ?? '-'),
+    getDisplay: (r) => {
+      const v = String(r.value ?? '-');
+      const mt = r.extra?.mealType || (r.note && r.note.includes('餐后') ? '餐后2小时' : '');
+      return mt ? `${v} (${mt === '餐后2小时' ? '餐后' : mt})` : v;
+    },
     mockData: mockBloodSugarData,
   },
   {
@@ -107,9 +122,9 @@ const STATUS_CFG = {
 };
 // 睡眠专属状态标签
 const SLEEP_STATUS_CFG = {
-  normal:  { label: '良好', bg: '#E8F5EF', color: '#1E6B50' },
-  warning: { label: '偏多', bg: '#FEF3E2', color: '#D97706' },
-  low:     { label: '偏少', bg: '#FDECEA', color: '#DC3545' },
+  normal:  { label: '正常',   bg: '#E8F5EF', color: '#1E6B50' },
+  warning: { label: '偏高',   bg: '#FEF3E2', color: '#D97706' },
+  low:     { label: '睡眠不足', bg: '#FDECEA', color: '#DC3545' },
 };
 
 // ── 工具：日期格式化 ──────────────────────────────────────────────
@@ -122,8 +137,32 @@ function fmtDate(str, period) {
   } catch { return str; }
 }
 
-// ── 趋势图组件（折线图）────────────────────────────────────────────
-function TrendChart({ data, typeCfg, period }) {
+// ── 趋势图辅助：绘制单条折线 ─────────────────────────────────────
+function SeriesLine({ pts, color, gradId, chartH, showArea }) {
+  if (pts.length === 0) return null;
+  const polylineStr = pts.map(p => `${p.x},${p.y}`).join(' ');
+  const areaPath = pts.length > 1
+    ? `M ${pts[0].x},${chartH} ` + pts.map(p => `L ${p.x},${p.y}`).join(' ') + ` L ${pts[pts.length - 1].x},${chartH} Z`
+    : '';
+  return (
+    <>
+      {showArea && pts.length > 1 && <Path d={areaPath} fill={`url(#${gradId})`} />}
+      {pts.length > 1 && (
+        <Polyline points={polylineStr} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+      )}
+      {pts.map((p, i) => {
+        const isLast = i === pts.length - 1;
+        return (
+          <Circle key={i} cx={p.x} cy={p.y} r={isLast ? 4.5 : 3}
+            fill={isLast ? color : colors.white} stroke={color} strokeWidth={isLast ? 0 : 1.5} />
+        );
+      })}
+    </>
+  );
+}
+
+// ── 趋势图组件（折线图，支持双曲线）──────────────────────────────
+function TrendChart({ data, data2, typeCfg, period }) {
   if (!data || data.length === 0) {
     return (
       <View style={styles.chartEmpty}>
@@ -136,23 +175,31 @@ function TrendChart({ data, typeCfg, period }) {
   const CHART_H   = 120;
   const Y_LABEL_W = 28;
   const LINE_W    = CHART_INNER_W - Y_LABEL_W;
-  const { minY, maxY, refLines, color, getVal } = typeCfg;
+  const { minY, maxY, refLines, color, getVal, color2, getVal2, series1Label, series2Label } = typeCfg;
+  const hasDualSeries = !!(color2 && (getVal2 || data2));
   const RANGE = maxY - minY;
   const toY   = (v) => CHART_H - ((Math.min(Math.max(v, minY), maxY) - minY) / RANGE) * CHART_H;
-  const toX   = (i) => data.length === 1 ? LINE_W / 2 : (i / (data.length - 1)) * LINE_W;
 
-  // 计算每个数据点的坐标
-  const pts = data.map((d, i) => ({ x: toX(i), y: toY(getVal(d)) }));
-  const polylineStr = pts.map(p => `${p.x},${p.y}`).join(' ');
+  // 系列1（主线）用完整 data 的 x 坐标
+  const allData = hasDualSeries && data2 ? [...data, ...(data2 || [])].sort((a,b) => new Date(a.recordedAt||a.date) - new Date(b.recordedAt||b.date)) : data;
+  const toX = (i, total) => total <= 1 ? LINE_W / 2 : (i / (total - 1)) * LINE_W;
 
-  // 渐变填充路径（线下方区域）
-  const areaPath = pts.length > 1
-    ? `M ${pts[0].x},${CHART_H} ` +
-      pts.map(p => `L ${p.x},${p.y}`).join(' ') +
-      ` L ${pts[pts.length - 1].x},${CHART_H} Z`
-    : '';
+  // 系列1
+  const pts1 = data.map((d, i) => ({ x: toX(i, data.length), y: toY(getVal(d)), d }));
 
-  // X 轴标签：数据少时全显，多时只显首/中/尾
+  // 系列2（如果有）
+  let pts2 = [];
+  if (hasDualSeries) {
+    if (data2 && data2.length > 0) {
+      // 血糖分离模式：data2 有独立数组，用自己的 x 轴
+      pts2 = data2.map((d, i) => ({ x: toX(i, data2.length), y: toY(getVal(d)), d }));
+    } else if (getVal2) {
+      // 血压模式：同一数组，用 getVal2
+      pts2 = data.map((d, i) => ({ x: toX(i, data.length), y: toY(getVal2(d)), d }));
+    }
+  }
+
+  // X 轴标签用系列1的 data
   const xLabelIndices = data.length <= 7
     ? data.map((_, i) => i)
     : [0, Math.floor((data.length - 1) / 2), data.length - 1];
@@ -163,48 +210,31 @@ function TrendChart({ data, typeCfg, period }) {
         {/* 折线图 SVG */}
         <Svg width={LINE_W} height={CHART_H}>
           <Defs>
-            <LinearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+            <LinearGradient id="lineGrad1" x1="0" y1="0" x2="0" y2="1">
               <Stop offset="0" stopColor={color} stopOpacity="0.22" />
               <Stop offset="1" stopColor={color} stopOpacity="0.01" />
             </LinearGradient>
+            {hasDualSeries && (
+              <LinearGradient id="lineGrad2" x1="0" y1="0" x2="0" y2="1">
+                <Stop offset="0" stopColor={color2} stopOpacity="0.18" />
+                <Stop offset="1" stopColor={color2} stopOpacity="0.01" />
+              </LinearGradient>
+            )}
           </Defs>
 
           {/* 参考虚线 */}
           {refLines.map((ref, i) => (
-            <Line key={i}
-              x1={0} y1={toY(ref.val)} x2={LINE_W} y2={toY(ref.val)}
-              stroke={ref.color} strokeWidth={1} strokeDasharray="5,4"
-            />
+            <Line key={i} x1={0} y1={toY(ref.val)} x2={LINE_W} y2={toY(ref.val)}
+              stroke={ref.color} strokeWidth={1} strokeDasharray="5,4" />
           ))}
 
-          {/* 面积填充 */}
-          {pts.length > 1 && <Path d={areaPath} fill="url(#lineGrad)" />}
+          {/* 系列1（主线） */}
+          <SeriesLine pts={pts1} color={color} gradId="lineGrad1" chartH={CHART_H} showArea={!hasDualSeries} />
 
-          {/* 折线 */}
-          {pts.length > 1 && (
-            <Polyline
-              points={polylineStr}
-              fill="none"
-              stroke={color}
-              strokeWidth={2}
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
+          {/* 系列2（如有）*/}
+          {hasDualSeries && pts2.length > 0 && (
+            <SeriesLine pts={pts2} color={color2} gradId="lineGrad2" chartH={CHART_H} showArea={false} />
           )}
-
-          {/* 数据点圆点：最新一个用实心大圆突出显示 */}
-          {pts.map((p, i) => {
-            const isLast = i === pts.length - 1;
-            return (
-              <Circle key={i}
-                cx={p.x} cy={p.y}
-                r={isLast ? 4.5 : 3}
-                fill={isLast ? color : colors.white}
-                stroke={color}
-                strokeWidth={isLast ? 0 : 1.5}
-              />
-            );
-          })}
         </Svg>
 
         {/* Y 轴标签 */}
@@ -218,7 +248,7 @@ function TrendChart({ data, typeCfg, period }) {
       {/* X 轴标签 */}
       <View style={{ width: LINE_W, height: 16, position: 'relative' }}>
         {xLabelIndices.map((idx) => {
-          const x = toX(idx);
+          const x = toX(idx, data.length);
           return (
             <Text key={idx} style={[styles.xLabel, { position: 'absolute', left: x - 16, width: 32, textAlign: 'center' }]}>
               {fmtDate(data[idx].recordedAt || data[idx].date, period)}
@@ -229,6 +259,20 @@ function TrendChart({ data, typeCfg, period }) {
 
       {/* 图例 */}
       <View style={styles.legend}>
+        {hasDualSeries && (
+          <>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendLine, { backgroundColor: color }]} />
+              <Text style={styles.legendText}>{series1Label}</Text>
+            </View>
+            {pts2.length > 0 && (
+              <View style={styles.legendItem}>
+                <View style={[styles.legendLine, { backgroundColor: color2 }]} />
+                <Text style={styles.legendText}>{series2Label}</Text>
+              </View>
+            )}
+          </>
+        )}
         {refLines.map((ref, i) => (
           <View key={i} style={styles.legendItem}>
             <View style={[styles.legendLine, { backgroundColor: ref.color }]} />
@@ -354,6 +398,7 @@ export default function RecordsScreen({ navigation }) {
   const [chartType, setChartType]     = useState('bloodPressure');
   const [chartPeriod, setChartPeriod] = useState('周');
   const [chartData, setChartData]     = useState([]);
+  const [chartData2, setChartData2]   = useState([]); // 血糖餐后 / 血压舒张压用不到（同数组）
   const [chartLoading, setChartLoading] = useState(false);
 
   // 历史记录
@@ -407,13 +452,21 @@ export default function RecordsScreen({ navigation }) {
   // ── 加载趋势图数据 ────────────────────────────────────────────────
   const loadChart = useCallback(async (type, period) => {
     setChartLoading(true);
+    setChartData2([]);
     try {
       const days = period === '周' ? 7 : period === '月' ? 30 : 365;
       const res = await recordsAPI.list({ type, days, limit: 50 });
       if (res?.success && res.data?.length > 0) {
-        // 按时间升序排列
         const sorted = [...res.data].sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt));
-        setChartData(sorted);
+        // 血糖：按 mealType 拆成空腹 / 餐后2小时 两条曲线
+        if (type === 'bloodSugar') {
+          const fasting   = sorted.filter(r => !r.extra?.mealType || r.extra.mealType === '空腹' || r.note?.includes('空腹'));
+          const postMeal  = sorted.filter(r => r.extra?.mealType === '餐后2小时' || r.note?.includes('餐后'));
+          setChartData(fasting.length > 0 ? fasting : sorted);
+          setChartData2(postMeal);
+        } else {
+          setChartData(sorted);
+        }
       } else {
         const cfg = CHART_TYPES.find(t => t.key === type);
         setChartData(isDemo ? (cfg?.mockData || []) : []);
@@ -424,7 +477,7 @@ export default function RecordsScreen({ navigation }) {
     } finally {
       setChartLoading(false);
     }
-  }, []);
+  }, [isDemo]);
 
   // ── 加载历史记录 ──────────────────────────────────────────────────
   const loadHistory = useCallback(async (type) => {
@@ -688,7 +741,12 @@ export default function RecordsScreen({ navigation }) {
             {/* 图表区域 */}
             {chartLoading
               ? <View style={styles.chartEmpty}><ActivityIndicator color={colors.primary} /></View>
-              : <TrendChart data={chartData} typeCfg={currentTypeCfg} period={chartPeriod} />
+              : <TrendChart
+                    data={chartData}
+                    data2={currentTypeCfg.splitBySeries ? chartData2 : undefined}
+                    typeCfg={currentTypeCfg}
+                    period={chartPeriod}
+                  />
             }
           </View>
         </View>
