@@ -7,6 +7,8 @@ import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
 import OrdersPage from './pages/OrdersPage'
 import MessagesPage from './pages/MessagesPage'
+import ServicesPage from './pages/ServicesPage'
+import QuestionnairePage from './pages/QuestionnairePage'
 import Layout from './components/Layout'
 
 // ── Auth Context ─────────────────────────────────────────────────
@@ -70,6 +72,8 @@ export default function App() {
               <Route path="patients/:id" element={<PatientDetailPage />} />
               <Route path="orders" element={<OrdersPage />} />
               <Route path="messages" element={<MessagesPage />} />
+              <Route path="services" element={<ServicesPage />} />
+              <Route path="questionnaires" element={<QuestionnairePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

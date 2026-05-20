@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline, Circle, Path, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { mockBloodPressureData, mockBloodSugarData } from '../../data/mockData';
-import { recordsAPI, userAPI } from '../../services/api';
+import { recordsAPI, userAPI, checkupAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 const { width: W } = Dimensions.get('window');
@@ -409,6 +409,7 @@ export default function RecordsScreen({ navigation }) {
   // 个人档案
   const [profile, setProfile]         = useState(EMPTY_PROFILE);
   const [editingProfile, setEditingProfile] = useState(false);
+  const [checkupPlan, setCheckupPlan] = useState(null);
 
   // 生活方式
   const [lifestyle, setLifestyle]         = useState({});
@@ -447,6 +448,11 @@ export default function RecordsScreen({ navigation }) {
       const res = await userAPI.getMe();
       const ls = res?.data?.lifestyle || res?.lifestyle;
       if (ls) setLifestyle(ls);
+    } catch {}
+    // 加载年度复查计划
+    try {
+      const res = await checkupAPI.get();
+      if (res?.data) setCheckupPlan(res.data);
     } catch {}
   }, []);
 
@@ -722,6 +728,50 @@ export default function RecordsScreen({ navigation }) {
             ))}
           </View>
         </View>
+
+        {/* ── 年度复查计划 ─────────────────────────────────────── */}
+        {checkupPlan && checkupPlan.items?.length > 0 && (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="calendar-outline" size={17} color={colors.info} />
+                <Text style={styles.sectionTitle}>{checkupPlan.title || '年度复查计划'}</Text>
+              </View>
+              <Text style={{ fontSize: 12, color: colors.textMuted }}>
+                {checkupPlan.items.filter(it => it.status === 'done').length}/{checkupPlan.items.length} 已完成
+              </Text>
+            </View>
+            {checkupPlan.note ? (
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: spacing.sm, marginHorizontal: spacing.sm }}>
+                {checkupPlan.note}
+              </Text>
+            ) : null}
+            <View style={styles.profileCard}>
+              {checkupPlan.items.map((item, i, arr) => {
+                const isDone    = item.status === 'done';
+                const isOverdue = item.status === 'overdue';
+                return (
+                  <View key={item._id || i} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>
+                    <View style={styles.profileRowLeft}>
+                      <Ionicons
+                        name={isDone ? 'checkmark-circle' : isOverdue ? 'alert-circle-outline' : 'ellipse-outline'}
+                        size={15}
+                        color={isDone ? colors.success : isOverdue ? colors.danger : colors.textMuted}
+                        style={{ marginRight: 6 }}
+                      />
+                      <Text style={[styles.profileRowLabel, isDone && { textDecorationLine: 'line-through', color: colors.textMuted }]}>
+                        {item.name}
+                      </Text>
+                    </View>
+                    <Text style={{ fontSize: 12, color: isDone ? colors.success : isOverdue ? colors.danger : colors.textMuted }}>
+                      {isDone ? '已完成' : isOverdue ? '已逾期' : (item.targetDate || '待安排')}
+                    </Text>
+                  </View>
+                );
+              })}
+            </View>
+          </View>
+        )}
 
         {/* ── 最新健康指标 ─────────────────────────────────────── */}
         <View style={styles.section}>

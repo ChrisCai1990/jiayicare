@@ -6,6 +6,7 @@ const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
 const Reminder = require('../models/Reminder');
 const ShareToken = require('../models/ShareToken');
+const CheckupPlan = require('../models/CheckupPlan');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 
@@ -379,6 +380,17 @@ router.post('/report/share', auth, async (req, res) => {
     res.json({ success: true, data: { token, shareUrl, expiresAt } });
   } catch (err) {
     res.status(500).json({ success: false, message: '创建分享链接失败', error: err.message });
+  }
+});
+
+// GET /api/user/checkup-plan — 当前年度复查计划
+router.get('/checkup-plan', auth, async (req, res) => {
+  try {
+    const year = new Date().getFullYear();
+    const plan = await CheckupPlan.findOne({ user: req.user._id, year });
+    res.json({ success: true, data: plan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取复查计划失败', error: err.message });
   }
 });
 

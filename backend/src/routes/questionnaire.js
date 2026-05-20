@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const router = express.Router();
 
 // ── 根据问卷答案生成个性化建议 ─────────────────────────────────────
@@ -131,6 +132,60 @@ router.post('/', auth, async (req, res) => {
       message: '问卷提交成功',
       data: { healthScore: newScore, bonusScore, recommendations },
     });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '提交失败', error: err.message });
+  }
+});
+
+// ── 动态问卷（管理员创建的结构化问卷）────────────────────────────
+
+// GET /api/questionnaire/pending — 获取当前用户待填动态问卷
+router.get('/pending', auth, async (req, res) => {
+  try {
+    const questionnaires = await DynamicQuestionnaire.find({
+      status: 'active',
+      $or: [
+        { targetType: 'all' },
+        { targetType: 'specific', targetUsers: req.user._id },
+      ],
+      respondedUsers: { $ne: req.user._id },
+    }).select('title description questions deadline').sort({ createdAt: -1 });
+
+    res.json({ success: true, data: questionnaires });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取问卷失败', error: err.message });
+  }
+});
+
+// POST /api/questionnaire/:id/submit — 提交动态问卷答卷
+router.post('/:id/submit', auth, async (req, res) => {
+  try {
+    const { answers = {} } = req.body;
+
+    const questionnaire = await DynamicQuestionnaire.findById(req.params.id);
+    if (!questionnaire) return res.status(404).json({ success: false, message: '问卷不存在' });
+    if (questionnaire.status !== 'active') {
+      return res.status(400).json({ success: false, message: '该问卷暂未开放' });
+    }
+
+    // 检查是否已提交
+    const existing = await QuestionnaireResponse.findOne({
+      questionnaire: req.params.id, user: req.user._id,
+    });
+    if (existing) return res.status(400).json({ success: false, message: '您已提交过此问卷' });
+
+    const response = await QuestionnaireResponse.create({
+      questionnaire: req.params.id,
+      user: req.user._id,
+      answers,
+    });
+
+    // 标记已答题用户
+    await DynamicQuestionnaire.findByIdAndUpdate(req.params.id, {
+      $addToSet: { respondedUsers: req.user._id },
+    });
+
+    res.json({ success: true, data: response, message: '问卷提交成功，感谢您的填写！' });
   } catch (err) {
     res.status(500).json({ success: false, message: '提交失败', error: err.message });
   }

@@ -166,8 +166,19 @@ export const chatAPI = {
 
 // ── Questionnaire ─────────────────────────────────────────────────
 export const questionnaireAPI = {
+  // 旧版固定问卷（健康初评）
   submit: (answers) =>
     request('/questionnaire', { method: 'POST', body: JSON.stringify({ answers }) }),
+  // 动态问卷（管理员创建的问卷）
+  pending: () =>
+    request('/questionnaire/pending'),
+  submitDynamic: (id, answers) =>
+    request(`/questionnaire/${id}/submit`, { method: 'POST', body: JSON.stringify({ answers }) }),
+};
+
+// ── Checkup Plan / 复查计划 ───────────────────────────────────────
+export const checkupAPI = {
+  get: () => request('/user/checkup-plan'),
 };
 
 // ── Services / 服务商城 ───────────────────────────────────────────

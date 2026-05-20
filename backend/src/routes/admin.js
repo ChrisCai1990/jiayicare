@@ -6,6 +6,9 @@ const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
 const Message = require('../models/Message');
 const Order = require('../models/Order');
+const Service = require('../models/Service');
+const CheckupPlan = require('../models/CheckupPlan');
+const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
 
@@ -211,6 +214,165 @@ router.get('/messages', adminAuth, async (req, res) => {
   ]);
 
   res.json({ success: true, data: messages, total });
+});
+
+// ── 服务商城 CRUD ─────────────────────────────────────────────────
+// GET /api/admin/services
+router.get('/services', adminAuth, async (req, res) => {
+  const services = await Service.find().sort({ sortOrder: 1, createdAt: 1 });
+  res.json({ success: true, data: services });
+});
+
+// POST /api/admin/services
+router.post('/services', adminAuth, async (req, res) => {
+  const { serviceId, category, name, subtitle, price, originalPrice,
+          rating, reviewCount, tag, tagColor, icon, iconColor, features, sortOrder } = req.body;
+  if (!serviceId || !name || !category) {
+    return res.status(400).json({ success: false, message: '服务ID、名称、分类不能为空' });
+  }
+  const existing = await Service.findOne({ serviceId });
+  if (existing) return res.status(400).json({ success: false, message: '服务ID已存在' });
+
+  const service = await Service.create({
+    serviceId, category, name, subtitle, price, originalPrice,
+    rating, reviewCount, tag, tagColor, icon, iconColor,
+    features: features || [], sortOrder: sortOrder || 0,
+  });
+  res.json({ success: true, data: service, message: '服务创建成功' });
+});
+
+// PUT /api/admin/services/:id
+router.put('/services/:id', adminAuth, async (req, res) => {
+  const { category, name, subtitle, price, originalPrice,
+          rating, reviewCount, tag, tagColor, icon, iconColor, features, sortOrder, active } = req.body;
+  const service = await Service.findByIdAndUpdate(
+    req.params.id,
+    { category, name, subtitle, price, originalPrice,
+      rating, reviewCount, tag, tagColor, icon, iconColor, features, sortOrder, active },
+    { new: true }
+  );
+  if (!service) return res.status(404).json({ success: false, message: '服务不存在' });
+  res.json({ success: true, data: service, message: '服务更新成功' });
+});
+
+// PATCH /api/admin/services/:id/toggle
+router.patch('/services/:id/toggle', adminAuth, async (req, res) => {
+  const service = await Service.findById(req.params.id);
+  if (!service) return res.status(404).json({ success: false, message: '服务不存在' });
+  service.active = !service.active;
+  await service.save();
+  res.json({ success: true, data: service, message: service.active ? '服务已上架' : '服务已下架' });
+});
+
+// DELETE /api/admin/services/:id
+router.delete('/services/:id', adminAuth, async (req, res) => {
+  const service = await Service.findByIdAndDelete(req.params.id);
+  if (!service) return res.status(404).json({ success: false, message: '服务不存在' });
+  res.json({ success: true, message: '服务已删除' });
+});
+
+// ── 年度复查计划 ──────────────────────────────────────────────────
+// GET /api/admin/patients/:id/checkup-plan?year=2025
+router.get('/patients/:id/checkup-plan', adminAuth, async (req, res) => {
+  const year = parseInt(req.query.year) || new Date().getFullYear();
+  const plan = await CheckupPlan.findOne({ user: req.params.id, year });
+  res.json({ success: true, data: plan });
+});
+
+// POST /api/admin/checkup-plans — 创建或覆盖某用户年度计划
+router.post('/checkup-plans', adminAuth, async (req, res) => {
+  const { userId, year = new Date().getFullYear(), title, note, items = [] } = req.body;
+  if (!userId) return res.status(400).json({ success: false, message: '请指定患者ID' });
+
+  const plan = await CheckupPlan.findOneAndUpdate(
+    { user: userId, year },
+    { title: title || `${year}年度复查计划`, note: note || '', items, createdBy: req.admin._id },
+    { new: true, upsert: true, runValidators: true }
+  );
+  res.json({ success: true, data: plan, message: '复查计划已保存' });
+});
+
+// PATCH /api/admin/checkup-plans/:planId/items/:itemId — 更新单个复查项状态
+router.patch('/checkup-plans/:planId/items/:itemId', adminAuth, async (req, res) => {
+  const { status, note, targetDate } = req.body;
+  const plan = await CheckupPlan.findById(req.params.planId);
+  if (!plan) return res.status(404).json({ success: false, message: '复查计划不存在' });
+
+  const item = plan.items.id(req.params.itemId);
+  if (!item) return res.status(404).json({ success: false, message: '复查项目不存在' });
+
+  if (status !== undefined)     item.status     = status;
+  if (note !== undefined)       item.note       = note;
+  if (targetDate !== undefined) item.targetDate = targetDate;
+
+  await plan.save();
+  res.json({ success: true, data: plan, message: '复查项已更新' });
+});
+
+// ── 动态问卷管理 ──────────────────────────────────────────────────
+// GET /api/admin/questionnaires
+router.get('/questionnaires', adminAuth, async (req, res) => {
+  const list = await DynamicQuestionnaire.find().sort({ createdAt: -1 })
+    .populate('createdBy', 'name');
+  // 附带回答人数
+  const withCounts = await Promise.all(list.map(async q => {
+    const count = await QuestionnaireResponse.countDocuments({ questionnaire: q._id });
+    return { ...q.toObject(), responseCount: count };
+  }));
+  res.json({ success: true, data: withCounts });
+});
+
+// POST /api/admin/questionnaires
+router.post('/questionnaires', adminAuth, async (req, res) => {
+  const { title, description, questions, targetType, targetUsers, deadline } = req.body;
+  if (!title || !questions?.length) {
+    return res.status(400).json({ success: false, message: '问卷标题和问题不能为空' });
+  }
+  const q = await DynamicQuestionnaire.create({
+    title, description: description || '',
+    questions, targetType: targetType || 'all',
+    targetUsers: targetUsers || [],
+    createdBy: req.admin._id, deadline: deadline || '',
+  });
+  res.json({ success: true, data: q, message: '问卷创建成功' });
+});
+
+// PUT /api/admin/questionnaires/:id
+router.put('/questionnaires/:id', adminAuth, async (req, res) => {
+  const { title, description, questions, targetType, targetUsers, deadline } = req.body;
+  const q = await DynamicQuestionnaire.findByIdAndUpdate(
+    req.params.id,
+    { title, description, questions, targetType, targetUsers, deadline },
+    { new: true }
+  );
+  if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
+  res.json({ success: true, data: q, message: '问卷更新成功' });
+});
+
+// PATCH /api/admin/questionnaires/:id/status
+router.patch('/questionnaires/:id/status', adminAuth, async (req, res) => {
+  const { status } = req.body;
+  if (!['draft', 'active', 'closed'].includes(status)) {
+    return res.status(400).json({ success: false, message: '状态值无效（draft/active/closed）' });
+  }
+  const q = await DynamicQuestionnaire.findByIdAndUpdate(req.params.id, { status }, { new: true });
+  if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
+  res.json({ success: true, data: q, message: '问卷状态已更新' });
+});
+
+// DELETE /api/admin/questionnaires/:id
+router.delete('/questionnaires/:id', adminAuth, async (req, res) => {
+  await DynamicQuestionnaire.findByIdAndDelete(req.params.id);
+  await QuestionnaireResponse.deleteMany({ questionnaire: req.params.id });
+  res.json({ success: true, message: '问卷及答卷已删除' });
+});
+
+// GET /api/admin/questionnaires/:id/responses
+router.get('/questionnaires/:id/responses', adminAuth, async (req, res) => {
+  const responses = await QuestionnaireResponse.find({ questionnaire: req.params.id })
+    .populate('user', 'name phone')
+    .sort({ submittedAt: -1 });
+  res.json({ success: true, data: responses });
 });
 
 module.exports = router;

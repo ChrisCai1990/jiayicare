@@ -143,6 +143,14 @@ export default function PatientDetailPage() {
   const [showMsg, setShowMsg] = useState(false)
   const [showTask, setShowTask] = useState(false)
 
+  // 复查计划状态
+  const [checkupPlan, setCheckupPlan] = useState(null)
+  const [checkupLoaded, setCheckupLoaded] = useState(false)
+  const [checkupItems, setCheckupItems] = useState([]) // 编辑中的 items
+  const [checkupTitle, setCheckupTitle] = useState('')
+  const [checkupNote, setCheckupNote] = useState('')
+  const [savingCheckup, setSavingCheckup] = useState(false)
+
   const load = async () => {
     setLoading(true)
     try { const res = await adminAPI.patientDetail(id); setData(res.data) }
@@ -151,6 +159,19 @@ export default function PatientDetailPage() {
   }
 
   useEffect(() => { load() }, [id])
+
+  // 切换到复查计划 tab 时加载
+  useEffect(() => {
+    if (tab !== 'checkup' || checkupLoaded) return
+    adminAPI.getCheckupPlan(id).then(res => {
+      const plan = res.data
+      setCheckupPlan(plan)
+      setCheckupItems(plan?.items ? plan.items.map(it => ({ ...it, _local: it._id })) : [])
+      setCheckupTitle(plan?.title || `${new Date().getFullYear()}年度复查计划`)
+      setCheckupNote(plan?.note || '')
+      setCheckupLoaded(true)
+    }).catch(err => toast('❌ ' + err.message))
+  }, [tab, id, checkupLoaded])
 
   if (loading) return <div className="loading-wrap"><div className="spinner" /> 加载患者数据...</div>
   if (!data) return <div className="empty-state"><div className="empty-state-icon">😕</div><div>患者数据加载失败</div></div>
@@ -205,6 +226,7 @@ export default function PatientDetailPage() {
           { key: 'tasks',    label: `✅ 任务 (${tasks.length})` },
           { key: 'messages', label: `💬 消息 (${messages.length})` },
           { key: 'orders',   label: `📋 订单 (${orders.length})` },
+          { key: 'checkup',  label: '📅 复查计划' },
         ].map(t => (
           <button key={t.key} className={`tab-btn ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
             {t.label}
@@ -402,6 +424,85 @@ export default function PatientDetailPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Checkup Plan */}
+      {tab === 'checkup' && (
+        <div className="card">
+          <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>📅 年度复查计划</span>
+            <button className="btn btn-primary btn-sm" disabled={savingCheckup} onClick={async () => {
+              setSavingCheckup(true)
+              try {
+                const res = await adminAPI.saveCheckupPlan({
+                  userId: id,
+                  title: checkupTitle,
+                  note: checkupNote,
+                  items: checkupItems.map(({ _local, _id, ...rest }) => rest),
+                })
+                setCheckupPlan(res.data)
+                setCheckupLoaded(false) // 强制重新加载
+                toast('✅ 复查计划已保存')
+                // 重新加载最新数据
+                const fresh = await adminAPI.getCheckupPlan(id)
+                setCheckupPlan(fresh.data)
+                setCheckupItems(fresh.data?.items?.map(it => ({ ...it, _local: it._id })) || [])
+                setCheckupLoaded(true)
+              } catch (err) {
+                toast('❌ ' + err.message)
+              } finally { setSavingCheckup(false) }
+            }}>
+              {savingCheckup ? '保存中...' : '💾 保存计划'}
+            </button>
+          </div>
+
+          {!checkupLoaded ? (
+            <div style={{ textAlign: 'center', padding: 32, color: '#888' }}>加载中...</div>
+          ) : (
+            <>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                <div className="form-group" style={{ flex: 2, margin: 0 }}>
+                  <label className="form-label">计划标题</label>
+                  <input className="form-input" value={checkupTitle} onChange={e => setCheckupTitle(e.target.value)} />
+                </div>
+                <div className="form-group" style={{ flex: 3, margin: 0 }}>
+                  <label className="form-label">备注说明</label>
+                  <input className="form-input" value={checkupNote} onChange={e => setCheckupNote(e.target.value)} placeholder="如：重点关注心功能、每季度复查一次" />
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                {checkupItems.length === 0 && (
+                  <div style={{ textAlign: 'center', color: '#888', padding: 24 }}>暂无复查项目，点击下方添加</div>
+                )}
+                {checkupItems.map((item, idx) => (
+                  <div key={item._local || idx} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', background: '#f9f6f0', borderRadius: 8, border: '1px solid #E0D9CE' }}>
+                    <select value={item.status} style={{ border: '1px solid #ccc', borderRadius: 4, padding: '3px 6px', fontSize: 12,
+                      color: item.status === 'done' ? '#22A06B' : item.status === 'overdue' ? '#DC3545' : '#D97706' }}
+                      onChange={e => {
+                        const items = [...checkupItems]; items[idx] = { ...items[idx], status: e.target.value }; setCheckupItems(items)
+                      }}>
+                      <option value="pending">待完成</option>
+                      <option value="done">已完成</option>
+                      <option value="overdue">已逾期</option>
+                    </select>
+                    <input className="form-input" style={{ flex: 2 }} placeholder="检查项目名称" value={item.name}
+                      onChange={e => { const items = [...checkupItems]; items[idx] = { ...items[idx], name: e.target.value }; setCheckupItems(items) }} />
+                    <input type="month" className="form-input" style={{ width: 140 }} value={item.targetDate || ''}
+                      onChange={e => { const items = [...checkupItems]; items[idx] = { ...items[idx], targetDate: e.target.value }; setCheckupItems(items) }} />
+                    <input className="form-input" style={{ flex: 2 }} placeholder="备注" value={item.note || ''}
+                      onChange={e => { const items = [...checkupItems]; items[idx] = { ...items[idx], note: e.target.value }; setCheckupItems(items) }} />
+                    <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc', flexShrink: 0 }}
+                      onClick={() => setCheckupItems(items => items.filter((_, i) => i !== idx))}>×</button>
+                  </div>
+                ))}
+              </div>
+              <button className="btn btn-ghost" onClick={() => setCheckupItems(prev => [...prev, {
+                _local: Date.now(), name: '', targetDate: '', note: '', status: 'pending'
+              }])}>＋ 添加检查项</button>
+            </>
+          )}
         </div>
       )}
 

@@ -32,4 +32,24 @@ export const adminAPI = {
   orders:           (params = {})        => req('/orders?' + new URLSearchParams(params).toString()),
   updateOrderStatus:(id, status)         => req(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   messages:         (params = {})        => req('/messages?' + new URLSearchParams(params).toString()),
+
+  // 服务商城管理
+  services:           ()         => req('/services'),
+  createService:      (data)     => req('/services', { method: 'POST', body: JSON.stringify(data) }),
+  updateService:      (id, data) => req(`/services/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleService:      (id)       => req(`/services/${id}/toggle`, { method: 'PATCH' }),
+  deleteService:      (id)       => req(`/services/${id}`, { method: 'DELETE' }),
+
+  // 复查计划
+  getCheckupPlan:     (userId, year) => req(`/patients/${userId}/checkup-plan${year ? '?year=' + year : ''}`),
+  saveCheckupPlan:    (data)         => req('/checkup-plans', { method: 'POST', body: JSON.stringify(data) }),
+  updateCheckupItem:  (planId, itemId, data) => req(`/checkup-plans/${planId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // 动态问卷管理
+  questionnaires:            ()         => req('/questionnaires'),
+  createQuestionnaire:       (data)     => req('/questionnaires', { method: 'POST', body: JSON.stringify(data) }),
+  updateQuestionnaire:       (id, data) => req(`/questionnaires/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  setQuestionnaireStatus:    (id, status) => req(`/questionnaires/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  deleteQuestionnaire:       (id)       => req(`/questionnaires/${id}`, { method: 'DELETE' }),
+  questionnaireResponses:    (id)       => req(`/questionnaires/${id}/responses`),
 }

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   SafeAreaView, TextInput, ActivityIndicator,
@@ -185,18 +185,121 @@ function SuccessScreen({ score, bonusScore, recommendations = [], onDone }) {
   );
 }
 
+// ── 问卷选择着陆页 ────────────────────────────────────────────────
+function LandingScreen({ navigation, pendingQs, loading, onSelectStatic, onSelectDynamic }) {
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.pageTitle}>健康问卷</Text>
+        <View style={{ width: 36 }} />
+      </View>
+
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
+        <Text style={{ fontSize: 13, color: colors.textMuted, marginBottom: spacing.sm }}>
+          完成问卷可帮助您的健管师更好地了解您的健康状况
+        </Text>
+
+        {/* 固定健康初评问卷 */}
+        <TouchableOpacity
+          style={[styles.landingCard, { borderColor: colors.primary + '60' }]}
+          onPress={onSelectStatic}
+          activeOpacity={0.85}
+        >
+          <View style={[styles.landingIcon, { backgroundColor: colors.primary + '15' }]}>
+            <Ionicons name="clipboard-outline" size={28} color={colors.primary} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.landingCardTitle}>健康初评问卷</Text>
+            <Text style={styles.landingCardSub}>7道题 · 全面评估健康习惯与慢病风险</Text>
+            <View style={styles.landingCardMeta}>
+              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+              <Text style={styles.landingCardMetaText}>约 3 分钟</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+        </TouchableOpacity>
+
+        {/* 动态问卷 */}
+        {loading && (
+          <View style={{ alignItems: 'center', padding: spacing.lg }}>
+            <ActivityIndicator color={colors.primary} />
+            <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 8 }}>检查待填问卷...</Text>
+          </View>
+        )}
+
+        {!loading && pendingQs.length > 0 && (
+          <>
+            <View style={styles.sectionLabel}>
+              <Ionicons name="notifications-outline" size={14} color={colors.primary} />
+              <Text style={styles.sectionLabelText}>待填问卷 ({pendingQs.length})</Text>
+            </View>
+            {pendingQs.map(dq => (
+              <TouchableOpacity
+                key={dq._id}
+                style={[styles.landingCard, { borderColor: colors.warning + '60' }]}
+                onPress={() => onSelectDynamic(dq)}
+                activeOpacity={0.85}
+              >
+                <View style={[styles.landingIcon, { backgroundColor: colors.warning + '15' }]}>
+                  <Ionicons name="document-text-outline" size={28} color={colors.warning} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.landingCardTitle}>{dq.title}</Text>
+                  {dq.description ? <Text style={styles.landingCardSub}>{dq.description}</Text> : null}
+                  <View style={styles.landingCardMeta}>
+                    <Ionicons name="list-outline" size={12} color={colors.textMuted} />
+                    <Text style={styles.landingCardMetaText}>{dq.questions?.length || 0} 道题</Text>
+                    {dq.deadline ? <>
+                      <Text style={[styles.landingCardMetaText, { color: colors.danger }]}>
+                        · 截止 {dq.deadline}
+                      </Text>
+                    </> : null}
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+              </TouchableOpacity>
+            ))}
+          </>
+        )}
+        <View style={{ height: 40 }} />
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
 export default function QuestionnaireScreen({ navigation }) {
   const { updateUser } = useAuth();
+
+  // 模式：'select' | 'static' | 'dynamic'
+  const [mode, setMode] = useState('select');
+  const [pendingQs, setPendingQs] = useState([]);
+  const [loadingPending, setLoadingPending] = useState(true);
+  const [selectedDynamic, setSelectedDynamic] = useState(null);
+
   const [currentQ, setCurrentQ] = useState(0);
   const [answers, setAnswers] = useState({});
   const [showSummary, setShowSummary] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [submitResult, setSubmitResult] = useState(null); // { score, bonusScore }
+  const [submitResult, setSubmitResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const q = QUESTIONS[currentQ];
-  const answer = answers[q.id];
-  const hasAnswer = q.required
+  // 获取待填动态问卷
+  useEffect(() => {
+    questionnaireAPI.pending()
+      .then(res => setPendingQs(res.data || []))
+      .catch(() => {})
+      .finally(() => setLoadingPending(false));
+  }, []);
+
+  // 当前作答的问题列表
+  const activeQuestions = mode === 'dynamic' ? (selectedDynamic?.questions || []) : QUESTIONS;
+
+  const q = activeQuestions[currentQ] || activeQuestions[0];
+  const answer = q ? answers[q.id] : undefined;
+  const hasAnswer = q?.required
     ? (Array.isArray(answer) ? answer.length > 0
       : (typeof answer === 'object' && answer !== null ? Object.keys(answer).length > 0
       : answer !== undefined))
@@ -210,7 +313,7 @@ export default function QuestionnaireScreen({ navigation }) {
       return;
     }
     setErrorMsg('');
-    if (currentQ < QUESTIONS.length - 1) setCurrentQ(i => i + 1);
+    if (currentQ < activeQuestions.length - 1) setCurrentQ(i => i + 1);
     else setShowSummary(true);
   };
 
@@ -219,23 +322,43 @@ export default function QuestionnaireScreen({ navigation }) {
     if (currentQ > 0) setCurrentQ(i => i - 1);
   };
 
+  const resetQuiz = () => {
+    setCurrentQ(0);
+    setAnswers({});
+    setShowSummary(false);
+    setSubmitResult(null);
+    setErrorMsg('');
+  };
+
   const submit = async () => {
     setSubmitting(true);
     setErrorMsg('');
     try {
-      const res = await questionnaireAPI.submit(answers);
-      if (res.success) {
-        // Update local user health score
-        if (res.data?.healthScore != null) {
-          updateUser({ healthScore: res.data.healthScore });
+      if (mode === 'dynamic' && selectedDynamic) {
+        // 提交动态问卷
+        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, answers);
+        if (res.success) {
+          setSubmitResult({ dynamic: true, message: res.message });
+          // 从待填列表移除
+          setPendingQs(prev => prev.filter(dq => dq._id !== selectedDynamic._id));
+        } else {
+          setErrorMsg(res.message || '提交失败，请重试');
         }
-        setSubmitResult({
-          score: res.data?.healthScore,
-          bonusScore: res.data?.bonusScore,
-          recommendations: res.data?.recommendations || [],
-        });
       } else {
-        setErrorMsg(res.message || '提交失败，请重试');
+        // 提交静态健康初评问卷
+        const res = await questionnaireAPI.submit(answers);
+        if (res.success) {
+          if (res.data?.healthScore != null) {
+            updateUser({ healthScore: res.data.healthScore });
+          }
+          setSubmitResult({
+            score: res.data?.healthScore,
+            bonusScore: res.data?.bonusScore,
+            recommendations: res.data?.recommendations || [],
+          });
+        } else {
+          setErrorMsg(res.message || '提交失败，请重试');
+        }
       }
     } catch (err) {
       setErrorMsg(err.message || '网络错误，请重试');
@@ -244,8 +367,40 @@ export default function QuestionnaireScreen({ navigation }) {
     }
   };
 
-  // Show success screen
+  // 着陆页（问卷选择）
+  if (mode === 'select') {
+    return (
+      <LandingScreen
+        navigation={navigation}
+        pendingQs={pendingQs}
+        loading={loadingPending}
+        onSelectStatic={() => { resetQuiz(); setMode('static'); }}
+        onSelectDynamic={(dq) => { resetQuiz(); setSelectedDynamic(dq); setMode('dynamic'); }}
+      />
+    );
+  }
+
+  // 提交成功页
   if (submitResult) {
+    // 动态问卷成功
+    if (submitResult.dynamic) {
+      return (
+        <SafeAreaView style={styles.container}>
+          <ScrollView contentContainerStyle={styles.successWrap} showsVerticalScrollIndicator={false}>
+            <View style={styles.successIconWrap}>
+              <Ionicons name="checkmark-circle" size={64} color={colors.success} />
+            </View>
+            <Text style={styles.successTitle}>问卷提交成功！</Text>
+            <Text style={styles.successDesc}>{submitResult.message || '感谢您认真填写本次问卷。'}</Text>
+            <TouchableOpacity style={styles.doneBtn} onPress={() => { setMode('select'); setSubmitResult(null); }} activeOpacity={0.85}>
+              <Text style={styles.doneBtnText}>返回问卷列表</Text>
+            </TouchableOpacity>
+            <View style={{ height: 32 }} />
+          </ScrollView>
+        </SafeAreaView>
+      );
+    }
+    // 静态初评问卷成功
     return (
       <SuccessScreen
         score={submitResult.score}
@@ -255,6 +410,8 @@ export default function QuestionnaireScreen({ navigation }) {
       />
     );
   }
+
+  const pageTitle = mode === 'dynamic' ? (selectedDynamic?.title || '健康问卷') : '健康初评问卷';
 
   // Summary page
   if (showSummary) {
@@ -273,7 +430,7 @@ export default function QuestionnaireScreen({ navigation }) {
             <Text style={styles.summaryTitle}>所有问题已回答</Text>
             <Text style={styles.summaryDesc}>请确认您的答案无误后提交</Text>
           </View>
-          {QUESTIONS.map((question, i) => (
+          {activeQuestions.map((question, i) => (
             <View key={question.id} style={styles.summaryItem}>
               <Text style={styles.summaryQ}>{i + 1}. {question.text}</Text>
               <Text style={styles.summaryA}>
@@ -313,16 +470,16 @@ export default function QuestionnaireScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => currentQ === 0 ? navigation.goBack() : prev()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => currentQ === 0 ? setMode('select') : prev()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>健康初评问卷</Text>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
+        <Text style={styles.pageTitle}>{pageTitle}</Text>
+        <TouchableOpacity onPress={() => setMode('select')}>
           <Text style={styles.saveText}>退出</Text>
         </TouchableOpacity>
       </View>
 
-      <ProgressBar current={currentQ + 1} total={QUESTIONS.length} />
+      <ProgressBar current={currentQ + 1} total={activeQuestions.length} />
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         <View style={styles.questionCard}>
@@ -375,7 +532,7 @@ export default function QuestionnaireScreen({ navigation }) {
           onPress={next}
         >
           <Text style={styles.nextBtnText}>
-            {currentQ === QUESTIONS.length - 1 ? '查看汇总' : '下一题'}
+            {currentQ === activeQuestions.length - 1 ? '查看汇总' : '下一题'}
           </Text>
           <Ionicons name="arrow-forward" size={18} color={colors.white} />
         </TouchableOpacity>
@@ -548,6 +705,27 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   doneBtnText: { fontSize: 16, color: colors.white, fontWeight: '700' },
+
+  // Landing screen
+  landingCard: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.white, borderRadius: radius.lg, padding: spacing.lg,
+    borderWidth: 1.5, borderColor: colors.border, ...shadow.xs,
+    marginBottom: spacing.sm,
+  },
+  landingIcon: {
+    width: 52, height: 52, borderRadius: radius.md,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  landingCardTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 3 },
+  landingCardSub: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginBottom: 4 },
+  landingCardMeta: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  landingCardMetaText: { fontSize: 12, color: colors.textMuted },
+  sectionLabel: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: spacing.sm, marginBottom: spacing.xs,
+  },
+  sectionLabelText: { fontSize: 13, fontWeight: '700', color: colors.primary },
 
   // Recommendations
   recsWrap: { width: '100%', marginBottom: spacing.xl },

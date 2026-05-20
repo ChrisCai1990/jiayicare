@@ -3,8 +3,9 @@ const router  = express.Router();
 const auth    = require('../middleware/auth');
 const Task    = require('../models/Task');
 const Order   = require('../models/Order');
+const Service = require('../models/Service');
 
-// ── 服务目录（静态数据，运营配置）────────────────────────────────
+// ── 静态兜底（DB 为空时使用 / 订单查找用）────────────────────────
 const SERVICE_CATALOG = [
   {
     id: 'S1', category: '检测套餐',
@@ -70,9 +71,32 @@ const SERVICE_CATALOG = [
 
 const CATEGORIES = ['全部', '检测套餐', '专家咨询', '上门服务', '健康课程'];
 
-// GET /api/services — 获取服务目录
-router.get('/', auth, (req, res) => {
-  res.json({ success: true, data: { categories: CATEGORIES, services: SERVICE_CATALOG } });
+// GET /api/services — 获取服务目录（DB 优先，首次为空则自动播种）
+router.get('/', auth, async (req, res) => {
+  let dbServices = await Service.find({ active: true }).sort({ sortOrder: 1, createdAt: 1 });
+
+  // 首次加载：数据库为空时自动从静态目录播种
+  if (dbServices.length === 0) {
+    await Service.insertMany(SERVICE_CATALOG.map((s, i) => ({
+      serviceId: s.id, category: s.category, name: s.name,
+      subtitle: s.subtitle, price: s.price, originalPrice: s.originalPrice,
+      rating: s.rating, reviewCount: s.reviewCount,
+      tag: s.tag, tagColor: s.tagColor, icon: s.icon, iconColor: s.iconColor,
+      features: s.features, active: true, sortOrder: i,
+    })));
+    dbServices = await Service.find({ active: true }).sort({ sortOrder: 1 });
+  }
+
+  const categories = ['全部', ...new Set(dbServices.map(s => s.category))];
+  const services = dbServices.map(s => ({
+    id: s.serviceId, _id: s._id, category: s.category, name: s.name,
+    subtitle: s.subtitle, price: s.price, originalPrice: s.originalPrice,
+    rating: s.rating, reviewCount: s.reviewCount,
+    tag: s.tag, tagColor: s.tagColor, icon: s.icon, iconColor: s.iconColor,
+    features: s.features,
+  }));
+
+  res.json({ success: true, data: { categories, services } });
 });
 
 // ── 服务包目录（首次开通 & 续费使用）────────────────────────────
@@ -89,9 +113,14 @@ router.post('/order', auth, async (req, res) => {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
 
-  // 先在单项服务中查找，再在服务包中查找
-  const service = SERVICE_CATALOG.find(s => s.id === serviceId)
-               || PACKAGE_CATALOG.find(p => p.id === serviceId);
+  // 先在 DB 中查找，再回退到静态目录（服务包仅在静态目录）
+  const dbSvc = await Service.findOne({ serviceId });
+  const service = (dbSvc ? {
+    id: dbSvc.serviceId, name: dbSvc.name, price: dbSvc.price,
+    icon: dbSvc.icon || 'star-outline',
+  } : null)
+    || SERVICE_CATALOG.find(s => s.id === serviceId)
+    || PACKAGE_CATALOG.find(p => p.id === serviceId);
   if (!service) {
     return res.status(404).json({ success: false, message: '服务项目不存在' });
   }

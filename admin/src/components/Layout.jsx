@@ -7,6 +7,8 @@ const NAV = [
   { label: '患者管理', icon: '👥', path: '/patients' },
   { label: '订单管理', icon: '📋', path: '/orders' },
   { label: '消息中心', icon: '💬', path: '/messages' },
+  { label: '服务管理', icon: '🛒', path: '/services' },
+  { label: '问卷管理', icon: '📝', path: '/questionnaires' },
 ]
 
 const ROLE_MAP = { doctor: '医生', manager: '健管师', superadmin: '超级管理员' }
