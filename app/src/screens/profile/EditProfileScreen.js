@@ -230,6 +230,15 @@ export default function EditProfileScreen({ navigation }) {
   const [medications,   setMedications]   = useState(Array.isArray(hp.medications)   ? hp.medications   : []);
   const [familyHistory, setFamilyHistory] = useState(Array.isArray(hp.familyHistory) ? hp.familyHistory : []);
   const [surgeries,     setSurgeries]     = useState(Array.isArray(hp.surgeries)     ? hp.surgeries     : []);
+  // 健康档案文字摘要字段（与健康档案页同步显示）
+  const [drugAllergy,   setDrugAllergy]   = useState(hp.drugAllergy    || '');
+  const [foodAllergy,   setFoodAllergy]   = useState(hp.foodAllergy    || '');
+  const [pastHistory,   setPastHistory]   = useState(hp.pastHistory    || '');
+  const [medicHistory,  setMedicHistory]  = useState(hp.medicHistory   || '');
+  const [surgeryHistory,setSurgeryHistory]= useState(hp.surgeryHistory || '');
+  // 女性专属字段
+  const [menstrualHistory,  setMenstrualHistory]   = useState(hp.menstrualHistory   || '');
+  const [reproductiveHistory,setReproductiveHistory]= useState(hp.reproductiveHistory || '');
 
   const [saving, setSaving] = useState(false);
   const [toast, setToast]   = useState('');
@@ -258,11 +267,13 @@ export default function EditProfileScreen({ navigation }) {
           medications,
           familyHistory,
           surgeries,
-          drugAllergy:    hp.drugAllergy    || '',
-          foodAllergy:    hp.foodAllergy    || '',
-          pastHistory:    hp.pastHistory    || '',
-          medicHistory:   hp.medicHistory   || '',
-          surgeryHistory: hp.surgeryHistory || '',
+          drugAllergy,
+          foodAllergy,
+          pastHistory,
+          medicHistory,
+          surgeryHistory,
+          menstrualHistory,
+          reproductiveHistory,
         },
       };
       const res = await userAPI.updateMe(payload);
@@ -410,6 +421,28 @@ export default function EditProfileScreen({ navigation }) {
               onChange={setSurgeries}
             />
           </View>
+
+          {/* ── 健康摘要（文字档案，与健康档案页同步） ────────────── */}
+          <Text style={styles.sectionLabel}>健康摘要</Text>
+          <View style={styles.card}>
+            <Field label="血型" value={bloodType} onChangeText={setBloodType} placeholder="如：A型 Rh+" />
+            <Field label="药物过敏史" value={drugAllergy} onChangeText={setDrugAllergy} placeholder="如：青霉素类、无" />
+            <Field label="食物过敏史" value={foodAllergy} onChangeText={setFoodAllergy} placeholder="如：海鲜、无" />
+            <Field label="既往史" value={pastHistory} onChangeText={setPastHistory} placeholder="如：高血压（2020年）" />
+            <Field label="用药史" value={medicHistory} onChangeText={setMedicHistory} placeholder="如：氨氯地平" />
+            <Field label="手术史" value={surgeryHistory} onChangeText={setSurgeryHistory} placeholder="如：无" />
+          </View>
+
+          {/* ── 女性专属（仅性别为女时显示）──────────────────────── */}
+          {gender === '女' && (
+            <>
+              <Text style={styles.sectionLabel}>女性健康</Text>
+              <View style={styles.card}>
+                <Field label="月经史" value={menstrualHistory} onChangeText={setMenstrualHistory} placeholder="如：初潮14岁，周期28天，规律" />
+                <Field label="生育史" value={reproductiveHistory} onChangeText={setReproductiveHistory} placeholder="如：1孕1产，2020年剖宫产" />
+              </View>
+            </>
+          )}
 
           {/* ── 账号信息 ──────────────────────────────────────────── */}
           <Text style={styles.sectionLabel}>账号信息</Text>

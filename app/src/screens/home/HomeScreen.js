@@ -326,6 +326,12 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [taskTab, setTaskTab]       = useState('全部');
   const [moodScore, setMoodScore]   = useState(7);
+  // 今日健康打卡（localStorage按日存储）
+  const TODAY_KEY = `jy_checkin_${new Date().toISOString().slice(0, 10)}`;
+  const loadCheckin = () => {
+    try { return JSON.parse(localStorage.getItem(TODAY_KEY)) || {}; } catch { return {}; }
+  };
+  const [checkin, setCheckin] = useState(loadCheckin);
 
   const loadData = useCallback(async () => {
     try {
@@ -525,6 +531,62 @@ export default function HomeScreen({ navigation }) {
               )}
             </View>
           </View>
+
+          {/* ── 今日健康打卡 ──────────────────────────────────────── */}
+          {(() => {
+            const CHECKIN_ITEMS = [
+              { key: 'diet',     label: '饮食', icon: 'nutrition-outline', color: '#059669' },
+              { key: 'exercise', label: '运动', icon: 'fitness-outline',   color: '#0369A1' },
+              { key: 'sleep',    label: '睡眠', icon: 'moon-outline',      color: '#4F46E5' },
+              { key: 'water',    label: '饮水', icon: 'water-outline',     color: '#0EA5E9' },
+              { key: 'bowel',    label: '大便', icon: 'leaf-outline',      color: '#059669' },
+              { key: 'alcohol',  label: '戒酒', icon: 'wine-outline',      color: '#9D174D' },
+            ];
+            const doneCount = CHECKIN_ITEMS.filter(i => checkin[i.key]).length;
+            const toggleCheckin = (key) => {
+              const next = { ...checkin, [key]: !checkin[key] };
+              setCheckin(next);
+              try { localStorage.setItem(TODAY_KEY, JSON.stringify(next)); } catch {}
+            };
+            return (
+              <View style={styles.checkinCard}>
+                <View style={styles.checkinHeader}>
+                  <View style={styles.sectionTitleRow}>
+                    <Ionicons name="checkmark-done-outline" size={16} color={colors.primary} />
+                    <Text style={styles.checkinTitle}>今日健康打卡</Text>
+                  </View>
+                  <Text style={styles.checkinProgress}>{doneCount}/{CHECKIN_ITEMS.length}</Text>
+                </View>
+                <View style={styles.checkinGrid}>
+                  {CHECKIN_ITEMS.map(item => {
+                    const done = !!checkin[item.key];
+                    return (
+                      <TouchableOpacity
+                        key={item.key}
+                        style={[styles.checkinItem, done && { backgroundColor: item.color + '15', borderColor: item.color + '40' }]}
+                        onPress={() => toggleCheckin(item.key)}
+                        activeOpacity={0.75}
+                      >
+                        <View style={[styles.checkinIconWrap, { backgroundColor: done ? item.color + '20' : colors.border + '60' }]}>
+                          <Ionicons name={done ? 'checkmark-circle' : item.icon} size={20}
+                            color={done ? item.color : colors.textMuted} />
+                        </View>
+                        <Text style={[styles.checkinItemLabel, done && { color: item.color, fontWeight: '700' }]}>
+                          {item.label}
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+                {doneCount === CHECKIN_ITEMS.length && (
+                  <View style={styles.checkinAllDone}>
+                    <Ionicons name="star" size={14} color="#F39C12" />
+                    <Text style={styles.checkinAllDoneText}>今日打卡全部完成！保持健康好习惯 🎉</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })()}
 
           {/* ── 新用户引导卡（无任何健康数据时显示） ────────────────── */}
           {!isDemo && !bpRec && !bsSrc && !sleepRec && (
@@ -855,6 +917,31 @@ const styles = StyleSheet.create({
   },
   heroTrendLine: { marginLeft: 'auto', alignItems: 'center', gap: 3 },
   heroTrendLabel: { fontSize: 9, color: 'rgba(255,255,255,0.45)' },
+
+  // 今日打卡
+  checkinCard: {
+    backgroundColor: colors.white, borderRadius: radius.lg,
+    padding: spacing.md, marginBottom: spacing.lg,
+    borderWidth: 1, borderColor: colors.border, ...shadow.sm,
+  },
+  checkinHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  checkinTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  checkinProgress: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  checkinGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  checkinItem: {
+    width: '30%', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.background, gap: 5,
+  },
+  checkinIconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
+  checkinItemLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+  checkinAllDone: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginTop: spacing.sm, padding: spacing.sm,
+    backgroundColor: '#FEF9E7', borderRadius: radius.sm,
+  },
+  checkinAllDoneText: { fontSize: 12, color: '#B7791F', fontWeight: '600' },
 
   // 通用 Section
   section: { marginBottom: spacing.lg },

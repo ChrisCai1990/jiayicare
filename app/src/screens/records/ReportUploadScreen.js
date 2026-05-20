@@ -411,6 +411,8 @@ export default function ReportUploadScreen({ navigation, route }) {
 
   const isRealReport = (r) => !!(r._id);
   const [typeFilter, setTypeFilter] = useState(initialType || 'all');
+  // 页面 Tab：体检报告 / 动态监测
+  const [pageTab, setPageTab] = useState('reports');
 
   return (
     <SafeAreaView style={styles.container}>
@@ -418,9 +420,51 @@ export default function ReportUploadScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>体检报告</Text>
+        <Text style={styles.pageTitle}>健康报告</Text>
         <View style={{ width: 32 }} />
       </View>
+
+      {/* 页面 Tab 切换 */}
+      <View style={styles.pageTabs}>
+        {[{ key: 'reports', label: '体检报告' }, { key: 'monitoring', label: '动态监测' }].map(t => (
+          <TouchableOpacity
+            key={t.key}
+            style={[styles.pageTab, pageTab === t.key && styles.pageTabActive]}
+            onPress={() => setPageTab(t.key)}
+          >
+            <Text style={[styles.pageTabText, pageTab === t.key && styles.pageTabTextActive]}>{t.label}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+
+      {/* ── 动态监测 Tab ──────────────────────────────────────────── */}
+      {pageTab === 'monitoring' ? (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
+          {[
+            { key: 'abpm',   label: '动态血压',   subtitle: '24h动态血压监测（ABPM）', icon: 'heart-outline',    color: '#DC3545', bg: '#FDEEEC' },
+            { key: 'cgm',    label: '动态血糖',   subtitle: '持续葡萄糖监测（CGM）',    icon: 'water-outline',    color: '#D97706', bg: '#FEF3E2' },
+            { key: 'holter', label: '动态心电',   subtitle: '24h动态心电监测（Holter）',icon: 'pulse-outline',    color: '#7C3AED', bg: '#F2EEFF' },
+          ].map(item => (
+            <View key={item.key} style={styles.monitorCard}>
+              <View style={[styles.monitorIconWrap, { backgroundColor: item.bg }]}>
+                <Ionicons name={item.icon} size={26} color={item.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.monitorLabel}>{item.label}</Text>
+                <Text style={styles.monitorSubtitle}>{item.subtitle}</Text>
+                <View style={styles.monitorComingSoon}>
+                  <Ionicons name="sync-outline" size={12} color={colors.textMuted} />
+                  <Text style={styles.monitorComingSoonText}>即将支持自动同步</Text>
+                </View>
+              </View>
+              <View style={styles.monitorBadge}>
+                <Text style={styles.monitorBadgeText}>即将开放</Text>
+              </View>
+            </View>
+          ))}
+          <View style={{ height: spacing.xl }} />
+        </ScrollView>
+      ) : (
 
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Upload Zone */}
@@ -518,6 +562,8 @@ export default function ReportUploadScreen({ navigation, route }) {
         <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>
 
+      )} {/* end pageTab === 'reports' conditional */}
+
       <Toast msg={toast} isError={toastError} />
 
       {previewReport && (
@@ -545,6 +591,41 @@ const styles = StyleSheet.create({
   },
   backBtn: { padding: 4 },
   pageTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
+
+  // Page tabs
+  pageTabs: {
+    flexDirection: 'row',
+    backgroundColor: colors.white,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  pageTab: {
+    flex: 1, paddingVertical: 11, alignItems: 'center',
+    borderBottomWidth: 2.5, borderBottomColor: 'transparent',
+  },
+  pageTabActive: { borderBottomColor: colors.primary },
+  pageTabText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
+  pageTabTextActive: { color: colors.primary },
+
+  // 动态监测卡片
+  monitorCard: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.white, borderRadius: radius.md,
+    padding: spacing.md, borderWidth: 1, borderColor: colors.border,
+    ...shadow.sm,
+  },
+  monitorIconWrap: {
+    width: 52, height: 52, borderRadius: radius.md,
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  monitorLabel: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  monitorSubtitle: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
+  monitorComingSoon: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  monitorComingSoonText: { fontSize: 11, color: colors.textMuted },
+  monitorBadge: {
+    backgroundColor: colors.border, borderRadius: radius.full,
+    paddingHorizontal: 8, paddingVertical: 3,
+  },
+  monitorBadgeText: { fontSize: 10, color: colors.textMuted, fontWeight: '600' },
   uploadZone: {
     backgroundColor: colors.white, borderRadius: radius.xl,
     borderWidth: 2, borderColor: colors.primary + '30', borderStyle: 'dashed',

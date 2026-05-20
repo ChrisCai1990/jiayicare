@@ -48,6 +48,9 @@ const userSchema = new mongoose.Schema({
     pastHistory:   { type: String, default: '' },
     medicHistory:  { type: String, default: '' },
     surgeryHistory:{ type: String, default: '' },
+    // 女性专属
+    menstrualHistory:   { type: String, default: '' },
+    reproductiveHistory:{ type: String, default: '' },
   },
   // 生活方式（文字描述，6个维度）
   lifestyle: {

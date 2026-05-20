@@ -222,11 +222,14 @@ export default function TasksScreen() {
     isReminder: true,
   });
 
-  // 合并任务 + 提醒
+  // 合并任务 + 提醒（仅待办）
   const allItems = [
     ...tasks.filter(t => t.status !== 'completed'),
     ...reminders.filter(r => r.enabled).map(reminderToItem),
   ];
+
+  // 已完成任务
+  const completedItems = tasks.filter(t => t.status === 'completed');
 
   const today = new Date().toISOString().slice(0, 10);
   const weekEnd = new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
@@ -325,13 +328,38 @@ export default function TasksScreen() {
             color={colors.primary}
           />
         ) : (
-          filteredTasks.map(task => (
-            <TaskCard
-              key={task._id || task.id}
-              task={task}
-              onToggle={task.isReminder ? () => {} : toggleTask}
-            />
-          ))
+          <>
+            {filteredTasks.map(task => (
+              <TaskCard
+                key={task._id || task.id}
+                task={task}
+                onToggle={task.isReminder ? () => {} : toggleTask}
+              />
+            ))}
+            {filteredTasks.length === 0 && completedItems.length === 0 && (
+              <EmptyState
+                icon="checkmark-circle-outline"
+                title="暂无待办任务"
+                subtitle="您的健康管家会为您安排任务"
+                color={colors.primary}
+              />
+            )}
+            {completedItems.length > 0 && (
+              <View style={styles.completedSection}>
+                <View style={styles.completedHeader}>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                  <Text style={styles.completedHeaderText}>已完成 ({completedItems.length})</Text>
+                </View>
+                {completedItems.map(task => (
+                  <TaskCard
+                    key={task._id || task.id}
+                    task={task}
+                    onToggle={() => {}}
+                  />
+                ))}
+              </View>
+            )}
+          </>
         )}
 
         <View style={{ height: spacing.xl * 2 }} />
@@ -455,6 +483,14 @@ const styles = StyleSheet.create({
   catBadgeText: { fontSize: 10, fontWeight: '700' },
   reminderSchedule: { fontSize: 12, color: colors.textMuted },
   reminderDesc: { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+
+  // Completed section
+  completedSection: { marginTop: spacing.md },
+  completedHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingVertical: spacing.xs, marginBottom: spacing.xs,
+  },
+  completedHeaderText: { fontSize: 12, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
 
   // Skeleton
   loadingWrap: { paddingTop: spacing.md },

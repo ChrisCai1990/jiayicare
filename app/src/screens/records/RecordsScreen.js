@@ -104,6 +104,7 @@ const PROFILE_KEY = 'jy_health_profile';
 const EMPTY_PROFILE = {
   bloodType: '', drugAllergy: '', foodAllergy: '',
   pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '',
+  menstrualHistory: '', reproductiveHistory: '',
 };
 function loadProfileFromStorage() {
   try { return JSON.parse(localStorage.getItem(PROFILE_KEY)) || null; }
@@ -388,7 +389,7 @@ function ProfileEditModal({ visible, profile, onSave, onClose }) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function RecordsScreen({ navigation }) {
-  const { isDemo } = useAuth();
+  const { isDemo, user: authUser } = useAuth();
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [latestVitals, setLatestVitals] = useState(null);
@@ -510,6 +511,14 @@ export default function RecordsScreen({ navigation }) {
 
   useEffect(() => { loadAll(); }, []);
 
+  // 从EditProfile返回时刷新档案数据
+  useEffect(() => {
+    const unsub = navigation.addListener('focus', () => {
+      loadDashboard();
+    });
+    return unsub;
+  }, [navigation, loadDashboard]);
+
   // ── 切换图表类型 ──────────────────────────────────────────────────
   const switchChartType = (type) => {
     setChartType(type);
@@ -618,6 +627,43 @@ export default function RecordsScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} tintColor={colors.primary} />
         }
       >
+        {/* ── 基本信息 ──────────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="person-outline" size={17} color={colors.primary} />
+              <Text style={styles.sectionTitle}>基本信息</Text>
+            </View>
+            <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate('EditProfile')}>
+              <Ionicons name="pencil-outline" size={13} color={colors.primary} />
+              <Text style={styles.editBtnText}>编辑</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.profileCard}>
+            {[
+              { label: '姓名',   value: authUser?.name,                               icon: 'person-outline' },
+              { label: '性别',   value: authUser?.gender,                             icon: 'male-female-outline' },
+              { label: '年龄',   value: authUser?.age ? `${authUser.age} 岁` : null,  icon: 'calendar-outline' },
+              { label: '身高',   value: authUser?.height ? `${authUser.height} cm` : null, icon: 'resize-outline' },
+              { label: '体重',   value: authUser?.weight ? `${authUser.weight} kg` : null, icon: 'barbell-outline' },
+              ...(authUser?.gender === '女' ? [
+                { label: '月经史', value: profile.menstrualHistory,    icon: 'medical-outline' },
+                { label: '生育史', value: profile.reproductiveHistory, icon: 'heart-outline' },
+              ] : []),
+            ].map((item, i, arr) => (
+              <View key={item.label} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>
+                <View style={styles.profileRowLeft}>
+                  <Ionicons name={item.icon} size={13} color={colors.primary} style={{ marginRight: 6 }} />
+                  <Text style={styles.profileRowLabel}>{item.label}</Text>
+                </View>
+                <Text style={[styles.profileRowValue, !item.value && { color: colors.textMuted }]} numberOfLines={1}>
+                  {item.value || '未填写'}
+                </Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
         {/* ── 基础健康档案 ─────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -625,7 +671,7 @@ export default function RecordsScreen({ navigation }) {
               <Ionicons name="person-circle-outline" size={17} color={colors.primary} />
               <Text style={styles.sectionTitle}>基础健康档案</Text>
             </View>
-            <TouchableOpacity style={styles.editBtn} onPress={() => setEditingProfile(true)}>
+            <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate('EditProfile')}>
               <Ionicons name="pencil-outline" size={13} color={colors.primary} />
               <Text style={styles.editBtnText}>编辑</Text>
             </TouchableOpacity>
@@ -787,13 +833,7 @@ export default function RecordsScreen({ navigation }) {
         <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>
 
-      {/* ── 编辑档案 Modal ──────────────────────────────────────── */}
-      <ProfileEditModal
-        visible={editingProfile}
-        profile={profile}
-        onSave={saveProfile}
-        onClose={() => setEditingProfile(false)}
-      />
+      {/* 编辑档案：跳转到 EditProfileScreen */}
 
       {/* ── 编辑生活方式 Modal ───────────────────────────────────── */}
       <Modal visible={editingLifestyle} animationType="slide" transparent onRequestClose={() => setEditingLifestyle(false)}>
