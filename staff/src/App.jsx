@@ -8,6 +8,14 @@ import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
 import NewPatientPage from './pages/NewPatientPage'
 import FollowUpsPage from './pages/FollowUpsPage'
+import PlansPage from './pages/PlansPage'
+import PlanDetailPage from './pages/PlanDetailPage'
+import ReportsPage from './pages/ReportsPage'
+import ServiceRecordsPage from './pages/ServiceRecordsPage'
+import KnowledgePage from './pages/KnowledgePage'
+import QuestionnairePushPage from './pages/QuestionnairePushPage'
+import CommissionPage from './pages/CommissionPage'
+import OperationsPage from './pages/OperationsPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -17,16 +25,11 @@ function AuthProvider({ children }) {
   const [staff, setStaff] = useState(() => {
     try { return JSON.parse(localStorage.getItem('jy_staff_info')) } catch { return null }
   })
-
   const login = (staffInfo) => {
     setStaff(staffInfo)
     localStorage.setItem('jy_staff_info', JSON.stringify(staffInfo))
   }
-  const logout = () => {
-    setStaff(null)
-    clearToken()
-  }
-
+  const logout = () => { setStaff(null); clearToken() }
   return <AuthCtx.Provider value={{ staff, login, logout }}>{children}</AuthCtx.Provider>
 }
 
@@ -70,6 +73,14 @@ export default function App() {
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<PatientDetailPage />} />
               <Route path="followups" element={<FollowUpsPage />} />
+              <Route path="plans" element={<PlansPage />} />
+              <Route path="plans/:id" element={<PlanDetailPage />} />
+              <Route path="reports" element={<ReportsPage />} />
+              <Route path="service-records" element={<ServiceRecordsPage />} />
+              <Route path="knowledge" element={<KnowledgePage />} />
+              <Route path="questionnaires" element={<QuestionnairePushPage />} />
+              <Route path="commission" element={<CommissionPage />} />
+              <Route path="operations" element={<OperationsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>

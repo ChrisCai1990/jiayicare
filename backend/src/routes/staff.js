@@ -1,10 +1,19 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
+const crypto = require('crypto');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
 const HealthRecord = require('../models/HealthRecord');
+const MedicalReport = require('../models/MedicalReport');
+const HealthPlan = require('../models/HealthPlan');
+const KnowledgeItem = require('../models/KnowledgeItem');
+const PushRecord = require('../models/PushRecord');
+const Commission = require('../models/Commission');
+const ServiceRecord = require('../models/ServiceRecord');
+const Order = require('../models/Order');
+const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
 
@@ -372,6 +381,402 @@ router.get('/staff-list', staffAuth, async (req, res) => {
     department: s.department,
   }));
   res.json({ success: true, data: result });
+});
+
+// ════════════════════════════════════════════════════════
+// P2 路由
+// ════════════════════════════════════════════════════════
+
+// ── 健康方案 ──────────────────────────────────────────────
+// GET /api/staff/plans?patientId=&type=&status=
+router.get('/plans', staffAuth, async (req, res) => {
+  const { patientId, type, status, page = 1, limit = 20 } = req.query;
+  const filter = {};
+  if (patientId) filter.patientId = patientId;
+  if (type) filter.type = type;
+  if (status) filter.status = status;
+  // 非超管只能看自己创建的
+  if (req.staff.role !== 'superadmin') filter.staffId = req.staff._id;
+  const skip = (Number(page) - 1) * Number(limit);
+  const [plans, total] = await Promise.all([
+    HealthPlan.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
+      .populate('patientId', 'name phone').populate('staffId', 'name role'),
+    HealthPlan.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: { plans, total } });
+});
+
+// GET /api/staff/plans/:id
+router.get('/plans/:id', staffAuth, async (req, res) => {
+  const plan = await HealthPlan.findById(req.params.id)
+    .populate('patientId', 'name phone gender age').populate('staffId', 'name role title');
+  if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  res.json({ success: true, data: plan });
+});
+
+// POST /api/staff/plans
+router.post('/plans', staffAuth, async (req, res) => {
+  const { patientId, type, title, description, year, startDate, endDate, items, followupFrequency, summary } = req.body;
+  if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '患者、类型、标题不能为空' });
+  const plan = await HealthPlan.create({
+    staffId: req.staff._id, patientId, type, title,
+    description: description || '', year: year || new Date().getFullYear(),
+    startDate: startDate ? new Date(startDate) : null,
+    endDate: endDate ? new Date(endDate) : null,
+    items: (items || []).map(item => ({ ...item, status: 'pending' })),
+    followupFrequency: followupFrequency || '',
+    summary: summary || '',
+    status: 'draft',
+  });
+  res.json({ success: true, data: plan });
+});
+
+// PUT /api/staff/plans/:id
+router.put('/plans/:id', staffAuth, async (req, res) => {
+  const plan = await HealthPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'items', 'followupFrequency', 'summary', 'status'];
+  allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
+  await plan.save();
+  res.json({ success: true, data: plan });
+});
+
+// PATCH /api/staff/plans/:id/push — 推送方案至客户端
+router.patch('/plans/:id/push', staffAuth, async (req, res) => {
+  const plan = await HealthPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  plan.status = 'active';
+  plan.pushedAt = new Date();
+  await plan.save();
+  // 创建推送记录
+  await PushRecord.create({
+    staffId: req.staff._id, patientId: plan.patientId,
+    type: 'plan', planId: plan._id,
+    title: plan.title, content: plan.summary || plan.description,
+  });
+  res.json({ success: true, data: plan });
+});
+
+// PATCH /api/staff/plans/:id/items/:itemId — 更新方案项目状态
+router.patch('/plans/:id/items/:itemId', staffAuth, async (req, res) => {
+  const plan = await HealthPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  const item = plan.items.id(req.params.itemId);
+  if (!item) return res.status(404).json({ success: false, message: '项目不存在' });
+  const { status, reportId, completedAt } = req.body;
+  if (status) item.status = status;
+  if (reportId) item.reportId = reportId;
+  item.completedAt = status === 'completed' ? (completedAt ? new Date(completedAt) : new Date()) : item.completedAt;
+  await plan.save();
+  res.json({ success: true, data: plan });
+});
+
+// DELETE /api/staff/plans/:id
+router.delete('/plans/:id', staffAuth, async (req, res) => {
+  await HealthPlan.findByIdAndDelete(req.params.id);
+  res.json({ success: true, message: '已删除' });
+});
+
+// ── 报告管理 ──────────────────────────────────────────────
+// GET /api/staff/medical-reports?patientId=&status=
+router.get('/medical-reports', staffAuth, async (req, res) => {
+  const { patientId, status, page = 1, limit = 20 } = req.query;
+  const filter = {};
+  if (patientId) filter.user = patientId;
+  if (status === 'unaudited') filter.audit_status = 'unaudited';
+  else if (status === 'audited') filter.audit_status = 'audited';
+  else if (status === 'rejected') filter.audit_status = 'rejected';
+  const skip = (Number(page) - 1) * Number(limit);
+  const [reports, total] = await Promise.all([
+    MedicalReport.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
+      .select('-content') // 不返回文件内容（太大）
+      .populate('user', 'name phone').populate('uploadedBy', 'name role'),
+    MedicalReport.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: { reports, total } });
+});
+
+// GET /api/staff/medical-reports/:id
+router.get('/medical-reports/:id', staffAuth, async (req, res) => {
+  const report = await MedicalReport.findById(req.params.id)
+    .populate('user', 'name phone').populate('uploadedBy', 'name');
+  if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  res.json({ success: true, data: report });
+});
+
+// POST /api/staff/medical-reports — 上传报告（Base64）
+router.post('/medical-reports', staffAuth, async (req, res) => {
+  const { patientId, title, type, hospital, date, fileUrl, content, mimeType, fileSize, planId, planItemId } = req.body;
+  if (!patientId || !title) return res.status(400).json({ success: false, message: '患者和标题不能为空' });
+  const report = await MedicalReport.create({
+    user: patientId, title, type: type || 'other', hospital: hospital || '',
+    date: date || '', fileUrl: fileUrl || '', content: content || '',
+    mimeType: mimeType || '', fileSize: fileSize || '',
+    uploadedBy: req.staff._id, audit_status: 'unaudited',
+    planId: planId || null, planItemId: planItemId || null,
+  });
+  // 如果关联了方案项目，自动标记为待审核
+  if (planId && planItemId) {
+    const plan = await HealthPlan.findById(planId);
+    if (plan) {
+      const item = plan.items.id(planItemId);
+      if (item) { item.reportId = report._id; await plan.save(); }
+    }
+  }
+  res.json({ success: true, data: report });
+});
+
+// PATCH /api/staff/medical-reports/:id/audit — 审核报告
+router.patch('/medical-reports/:id/audit', staffAuth, async (req, res) => {
+  const { action, rejectReason } = req.body; // action: 'approve' | 'reject'
+  const report = await MedicalReport.findById(req.params.id);
+  if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+  if (action === 'approve') {
+    report.audit_status = 'audited';
+    report.audited_by = req.staff.name;
+    report.audited_at = new Date();
+    // 如果关联方案项目，自动完成
+    if (report.planId && report.planItemId) {
+      const plan = await HealthPlan.findById(report.planId);
+      if (plan) {
+        const item = plan.items.id(report.planItemId);
+        if (item) { item.status = 'completed'; item.completedAt = new Date(); await plan.save(); }
+      }
+    }
+  } else {
+    report.audit_status = 'rejected';
+    report.reject_reason = rejectReason || '';
+  }
+  await report.save();
+  res.json({ success: true, data: report });
+});
+
+// ── 科普知识库 ────────────────────────────────────────────
+// GET /api/staff/knowledge?category=&tag=
+router.get('/knowledge', staffAuth, async (req, res) => {
+  const { category, tag, search, page = 1, limit = 20 } = req.query;
+  const filter = {};
+  if (category) filter.category = category;
+  if (tag) filter.tags = tag;
+  if (search) filter.title = { $regex: search, $options: 'i' };
+  const skip = (Number(page) - 1) * Number(limit);
+  const [items, total] = await Promise.all([
+    KnowledgeItem.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
+      .populate('createdBy', 'name role'),
+    KnowledgeItem.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: { items, total } });
+});
+
+// POST /api/staff/knowledge — 创建知识条目
+router.post('/knowledge', staffAuth, async (req, res) => {
+  const { title, category, tags, content, fileUrl, fileType, coverUrl } = req.body;
+  if (!title) return res.status(400).json({ success: false, message: '标题不能为空' });
+  const item = await KnowledgeItem.create({
+    createdBy: req.staff._id, title, category: category || 'other',
+    tags: tags || [], content: content || '',
+    fileUrl: fileUrl || '', fileType: fileType || '', coverUrl: coverUrl || '',
+  });
+  res.json({ success: true, data: item });
+});
+
+// DELETE /api/staff/knowledge/:id
+router.delete('/knowledge/:id', staffAuth, async (req, res) => {
+  await KnowledgeItem.findByIdAndDelete(req.params.id);
+  res.json({ success: true, message: '已删除' });
+});
+
+// POST /api/staff/knowledge/:id/push — 推送给患者
+router.post('/knowledge/:id/push', staffAuth, async (req, res) => {
+  const { patientIds } = req.body; // 数组
+  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择患者' });
+  const item = await KnowledgeItem.findById(req.params.id);
+  if (!item) return res.status(404).json({ success: false, message: '内容不存在' });
+  const records = patientIds.map(pid => ({
+    staffId: req.staff._id, patientId: pid,
+    type: 'knowledge', knowledgeId: item._id,
+    title: item.title, content: item.content?.slice(0, 100) || '',
+  }));
+  await PushRecord.insertMany(records);
+  res.json({ success: true, message: `已推送给 ${patientIds.length} 位患者` });
+});
+
+// ── 问卷推送 ───────────────────────────────────────────────
+// GET /api/staff/questionnaires — 问卷模板列表（复用 admin 问卷）
+router.get('/questionnaires', staffAuth, async (req, res) => {
+  const qs = await DynamicQuestionnaire.find({ status: 'active' }).select('title description').sort({ createdAt: -1 });
+  res.json({ success: true, data: qs });
+});
+
+// POST /api/staff/questionnaires/:id/push — 推送问卷给患者
+router.post('/questionnaires/:id/push', staffAuth, async (req, res) => {
+  const { patientIds, deadline } = req.body;
+  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择患者' });
+  const q = await DynamicQuestionnaire.findById(req.params.id);
+  if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
+  const records = patientIds.map(pid => ({
+    staffId: req.staff._id, patientId: pid,
+    type: 'questionnaire', questionnaireId: q._id,
+    title: q.title, content: deadline ? `截止：${new Date(deadline).toLocaleDateString('zh-CN')}` : '',
+  }));
+  await PushRecord.insertMany(records);
+  res.json({ success: true, message: `问卷已推送给 ${patientIds.length} 位患者` });
+});
+
+// GET /api/staff/push-records?patientId=&type=
+router.get('/push-records', staffAuth, async (req, res) => {
+  const { patientId, type, page = 1, limit = 20 } = req.query;
+  const filter = { staffId: req.staff._id };
+  if (patientId) filter.patientId = patientId;
+  if (type) filter.type = type;
+  const skip = (Number(page) - 1) * Number(limit);
+  const [records, total] = await Promise.all([
+    PushRecord.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
+      .populate('patientId', 'name phone'),
+    PushRecord.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: { records, total } });
+});
+
+// ── 服务记录（就医/专科/心理/运动/中医） ──────────────────
+// GET /api/staff/service-records?patientId=&type=
+router.get('/service-records', staffAuth, async (req, res) => {
+  const { patientId, type, page = 1, limit = 20 } = req.query;
+  const filter = {};
+  if (req.staff.role !== 'superadmin') filter.staffId = req.staff._id;
+  if (patientId) filter.patientId = patientId;
+  if (type) filter.type = type;
+  const skip = (Number(page) - 1) * Number(limit);
+  const [records, total] = await Promise.all([
+    ServiceRecord.find(filter).sort({ date: -1 }).skip(skip).limit(Number(limit))
+      .populate('patientId', 'name phone gender age').populate('staffId', 'name role'),
+    ServiceRecord.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: { records, total } });
+});
+
+// POST /api/staff/service-records
+router.post('/service-records', staffAuth, async (req, res) => {
+  const { patientId, type, date, title, content, result, nextDate, medicalEscort, tcmRecord, specialistRecord } = req.body;
+  if (!patientId || !type) return res.status(400).json({ success: false, message: '患者和类型不能为空' });
+  const record = await ServiceRecord.create({
+    staffId: req.staff._id, patientId, type,
+    date: date ? new Date(date) : new Date(),
+    title: title || '', content: content || '', result: result || '',
+    nextDate: nextDate ? new Date(nextDate) : null,
+    medicalEscort: medicalEscort || {}, tcmRecord: tcmRecord || {}, specialistRecord: specialistRecord || {},
+  });
+  await record.populate('patientId', 'name phone');
+  res.json({ success: true, data: record });
+});
+
+// PUT /api/staff/service-records/:id
+router.put('/service-records/:id', staffAuth, async (req, res) => {
+  const record = await ServiceRecord.findOne({ _id: req.params.id, staffId: req.staff._id });
+  if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+  const allowed = ['date', 'title', 'content', 'result', 'nextDate', 'medicalEscort', 'tcmRecord', 'specialistRecord'];
+  allowed.forEach(k => { if (req.body[k] !== undefined) record[k] = req.body[k]; });
+  await record.save();
+  res.json({ success: true, data: record });
+});
+
+// DELETE /api/staff/service-records/:id
+router.delete('/service-records/:id', staffAuth, async (req, res) => {
+  await ServiceRecord.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
+  res.json({ success: true, message: '已删除' });
+});
+
+// ── 分佣中心 ───────────────────────────────────────────────
+// GET /api/staff/commission/me — 我的分佣记录
+router.get('/commission/me', staffAuth, async (req, res) => {
+  const { page = 1, limit = 20, status } = req.query;
+  const filter = { staffId: req.staff._id };
+  if (status) filter.status = status;
+  const skip = (Number(page) - 1) * Number(limit);
+  const [records, total, totalEarned] = await Promise.all([
+    Commission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
+      .populate('patientId', 'name phone').populate('orderId', 'total'),
+    Commission.countDocuments(filter),
+    Commission.aggregate([
+      { $match: { staffId: req.staff._id, status: { $in: ['confirmed', 'paid'] } } },
+      { $group: { _id: null, total: { $sum: '$commissionAmount' } } },
+    ]),
+  ]);
+  res.json({ success: true, data: { records, total, totalEarned: totalEarned[0]?.total || 0 } });
+});
+
+// GET /api/staff/commission/code — 获取/生成我的推荐码
+router.get('/commission/code', staffAuth, async (req, res) => {
+  // 用 staffId 生成固定推荐码
+  const code = crypto.createHash('md5').update(req.staff._id.toString()).digest('hex').slice(0, 8).toUpperCase();
+  res.json({ success: true, data: { referralCode: code, staffId: req.staff._id, name: req.staff.name } });
+});
+
+// GET /api/staff/commission/team — 管理员查看团队分佣
+router.get('/commission/team', staffAuth, async (req, res) => {
+  if (!['superadmin', 'manager'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '无权限' });
+  }
+  const stats = await Commission.aggregate([
+    { $group: {
+      _id: '$staffId',
+      totalAmount: { $sum: '$commissionAmount' },
+      totalOrders: { $sum: 1 },
+      pending: { $sum: { $cond: [{ $eq: ['$status', 'pending'] }, '$commissionAmount', 0] } },
+      paid: { $sum: { $cond: [{ $eq: ['$status', 'paid'] }, '$commissionAmount', 0] } },
+    }},
+    { $sort: { totalAmount: -1 } },
+  ]);
+  await Admin.populate(stats, { path: '_id', select: 'name role title' });
+  res.json({ success: true, data: stats });
+});
+
+// ── 运营数据看板 ───────────────────────────────────────────
+// GET /api/staff/operations/dashboard
+router.get('/operations/dashboard', staffAuth, async (req, res) => {
+  const OPS_ROLES = ['superadmin', 'manager'];
+  if (!OPS_ROLES.includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '无运营权限' });
+  }
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+  const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
+  const [
+    totalPatients, todayNew, monthNew,
+    diseaseAgg, orderStats,
+  ] = await Promise.all([
+    User.countDocuments(),
+    User.countDocuments({ createdAt: { $gte: today } }),
+    User.countDocuments({ createdAt: { $gte: monthStart } }),
+    User.aggregate([
+      { $match: { chronicDiseases: { $exists: true, $ne: [] } } },
+      { $unwind: '$chronicDiseases' },
+      { $group: { _id: '$chronicDiseases', count: { $sum: 1 } } },
+      { $sort: { count: -1 } }, { $limit: 8 },
+    ]),
+    Order.aggregate([
+      { $match: { status: { $in: ['paid', 'completed'] } } },
+      { $group: {
+        _id: null,
+        total: { $sum: '$total' },
+        thisMonth: { $sum: { $cond: [{ $gte: ['$createdAt', monthStart] }, '$total', 0] } },
+        count: { $sum: 1 },
+      }},
+    ]),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      patients: { total: totalPatients, todayNew, monthNew },
+      diseaseDistribution: diseaseAgg.map(d => ({ disease: d._id, count: d.count })),
+      revenue: {
+        total: orderStats[0]?.total || 0,
+        thisMonth: orderStats[0]?.thisMonth || 0,
+        orderCount: orderStats[0]?.count || 0,
+      },
+    },
+  });
 });
 
 module.exports = router;

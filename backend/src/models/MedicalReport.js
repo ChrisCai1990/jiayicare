@@ -39,11 +39,16 @@ const medicalReportSchema = new mongoose.Schema({
   // 审核状态（由管理员设置）
   audit_status: {
     type: String,
-    enum: ['unaudited', 'audited'],
+    enum: ['unaudited', 'audited', 'rejected'],
     default: 'unaudited',
   },
-  audited_by:  { type: String, default: '' },
-  audited_at:  { type: Date,   default: null },
+  audited_by:   { type: String, default: '' },
+  audited_at:   { type: Date,   default: null },
+  reject_reason:{ type: String, default: '' },
+  // 医护端：上传人 & 关联方案项目
+  uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  planItemId:   { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
+  planId:       { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('MedicalReport', medicalReportSchema);

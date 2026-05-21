@@ -56,6 +56,59 @@ const userSchema = new mongoose.Schema({
   // 联系信息（#34）
   contactPhone:    { type: String, default: '' },  // 联系电话（与登录手机号独立）
   deliveryAddress: { type: String, default: '' },  // 配送地址（快递用）
+  // 患者类型（成人/儿童）
+  patientCategory: { type: String, enum: ['adult', 'child'], default: 'adult' },
+  birthDate: { type: String, default: '' }, // YYYY-MM-DD
+
+  // ── 成人完整健康档案扩展字段 ──────────────────────────────────────
+  // 联系信息扩展
+  address:        { type: String, default: '' },  // 联系地址
+  contactName:    { type: String, default: '' },  // 联系人姓名
+  contactPhone3:  { type: String, default: '' },  // 联系人电话
+  // 血型
+  bloodTypeABO:   { type: String, enum: ['A', 'B', 'O', 'AB', ''], default: '' },
+  bloodTypeRH:    { type: String, enum: ['阳性', '阴性', ''], default: '' },
+  // 既往史（结构化）
+  traumaHistory:     { type: String, default: '' }, // 外伤史
+  transfusionHistory:{ type: String, default: '' }, // 输血史
+  infectiousHistory: { type: String, default: '' }, // 传染病史
+  vaccinationHistory:{ type: String, default: '' }, // 预防接种史
+  // 信仰
+  belief:          { type: String, default: '' },   // 宗教信仰
+  memberType:      { type: String, default: '' },   // 会员类型
+
+  // ── 儿童专属档案 ──────────────────────────────────────────────────
+  childProfile: {
+    // 围产情况
+    motherAge:        { type: Number },
+    gravida:          { type: Number }, // 胎次
+    para:             { type: Number }, // 产次
+    motherPregnancyStatus: { type: String, default: '' }, // 母亲妊娠期健康状况
+    deliveryComplications: { type: String, default: '' }, // 产时并发症
+    // 出生情况
+    gestationalWeeks: { type: Number }, // 出生孕周
+    birthWeight:      { type: Number }, // 出生体重(g)
+    birthLength:      { type: Number }, // 出生身长(cm)
+    birthHeadCirc:    { type: Number }, // 出生头围(cm)
+    birthChestCirc:   { type: Number }, // 出生胸围(cm)
+    deliveryMode:     { type: String, default: '' }, // 分娩方式
+    apgar1min:        { type: Number }, // Apgar 1分钟
+    apgar5min:        { type: Number }, // Apgar 5分钟
+    // 生后情况
+    neonatalConditions:  { type: String, default: '' }, // 新生儿期患病
+    birthDefects:        { type: String, default: '' }, // 出生缺陷
+    hearingScreening:    { type: String, enum: ['通过', '未通过', '未查', ''], default: '' },
+    eyeScreening:        { type: String, default: '' },
+    visionScreening:     { type: String, default: '' },
+    neonatalDiseaseScreen:{ type: String, default: '' },
+    // 遗传背景
+    fatherHeight:     { type: Number },
+    motherHeight:     { type: Number },
+    fatherBirthDate:  { type: String, default: '' },
+    motherBirthDate:  { type: String, default: '' },
+    familyAllergyHistory: { type: String, default: '' },
+  },
+
   // 医护端管理字段
   assignedHealthManager: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健管专员
   assignedFamilyDoctor:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医生

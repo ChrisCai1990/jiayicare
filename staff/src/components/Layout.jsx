@@ -2,10 +2,17 @@ import React from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
 
-const NAV = [
-  { label: '工作台',   icon: '🏠', path: '/home' },
-  { label: '我的患者', icon: '👥', path: '/patients' },
-  { label: '随访记录', icon: '📋', path: '/followups' },
+const ALL_NAV = [
+  { label: '工作台',   icon: '🏠', path: '/home', roles: [] },
+  { label: '我的患者', icon: '👥', path: '/patients', roles: [] },
+  { label: '随访记录', icon: '📋', path: '/followups', roles: [] },
+  { label: '健康方案', icon: '📄', path: '/plans',    roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'] },
+  { label: '报告管理', icon: '🔬', path: '/reports',  roles: ['healthManager','familyDoctor','superadmin'] },
+  { label: '服务记录', icon: '🏥', path: '/service-records', roles: ['medicalAssistant','psychologist','rehabSpecialist','tcmDoctor','specialist','superadmin'] },
+  { label: '科普推送', icon: '📢', path: '/knowledge', roles: ['healthManager','nutritionist','familyDoctor','superadmin'] },
+  { label: '问卷推送', icon: '📝', path: '/questionnaires', roles: ['healthManager','familyDoctor','superadmin'] },
+  { label: '分佣中心', icon: '💰', path: '/commission', roles: [] },
+  { label: '运营看板', icon: '📊', path: '/operations', roles: ['superadmin','manager'] },
 ]
 
 export default function Layout() {
@@ -33,7 +40,9 @@ export default function Layout() {
 
         <nav className="sidebar-nav">
           <div className="sidebar-section-label">功能菜单</div>
-          {NAV.map(item => {
+          {ALL_NAV.filter(item =>
+            item.roles.length === 0 || item.roles.includes(staff?.role)
+          ).map(item => {
             const isActive = loc.pathname === item.path || loc.pathname.startsWith(item.path + '/')
             return (
               <div
