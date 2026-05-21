@@ -85,4 +85,20 @@ export const staffAPI = {
   // Reports & Staff list
   getReports2: () => req('/staff/reports'),
   getStaffList: (p = {}) => req('/staff/staff-list?' + qs(p)),
+
+  // P3 — Personal Center
+  updateMe:     (data)  => req('/staff/me', { method: 'PUT', body: JSON.stringify(data) }),
+  changePassword:(data) => req('/staff/me/password', { method: 'PUT', body: JSON.stringify(data) }),
+
+  // P3 — Products
+  getProducts:    (p = {}) => req('/staff/products?' + qs(p)),
+  pushProduct:    (id, data) => req(`/staff/products/${id}/push`, { method: 'POST', body: JSON.stringify(data) }),
+
+  // P3 — Team
+  getTeam: () => req('/staff/team'),
+
+  // P3 — Patient sub-resources
+  getPatientPlans:          (id) => req(`/staff/patients/${id}/plans`),
+  getPatientReports:        (id) => req(`/staff/patients/${id}/reports`),
+  getPatientServiceRecords: (id) => req(`/staff/patients/${id}/service-records`),
 }

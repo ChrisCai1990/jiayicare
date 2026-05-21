@@ -779,4 +779,118 @@ router.get('/operations/dashboard', staffAuth, async (req, res) => {
   });
 });
 
+// ════════════════════════════════════════════════════════
+// P3 路由
+// ════════════════════════════════════════════════════════
+
+// ── 个人中心 ───────────────────────────────────────────────
+// PUT /api/staff/me — 更新个人信息
+router.put('/me', staffAuth, async (req, res) => {
+  const allowed = ['name', 'title', 'department', 'avatar', 'phone', 'region'];
+  const update = {};
+  allowed.forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
+  await Admin.findByIdAndUpdate(req.staff._id, update);
+  const s = await Admin.findById(req.staff._id).select('-password');
+  res.json({ success: true, data: s });
+});
+
+// PUT /api/staff/me/password — 修改密码
+router.put('/me/password', staffAuth, async (req, res) => {
+  const { oldPassword, newPassword } = req.body;
+  if (!oldPassword || !newPassword) return res.status(400).json({ success: false, message: '请填写原密码和新密码' });
+  const admin = await Admin.findById(req.staff._id);
+  const ok = await admin.comparePassword(oldPassword);
+  if (!ok) return res.status(400).json({ success: false, message: '原密码错误' });
+  admin.password = newPassword;
+  await admin.save();
+  res.json({ success: true, message: '密码已修改' });
+});
+
+// ── 产品推送 ───────────────────────────────────────────────
+// GET /api/staff/products — 服务商城产品列表
+const SERVICE_CATALOG_P3 = [
+  { id: 'S1', category: '检测套餐', name: '心脑血管精准检测套餐', subtitle: '含颈动脉超声 + 心脏彩超 + 血脂全套', price: 980, originalPrice: 1380, icon: '❤️' },
+  { id: 'S2', category: '专家咨询', name: '心内科专家30分钟视频问诊', subtitle: '主任医师一对一，报告解读+用药建议', price: 299, originalPrice: 499, icon: '🩺' },
+  { id: 'S3', category: '上门服务', name: '上门采血 + 基础体检', subtitle: '护士上门抽血，含血常规、血脂、血糖', price: 199, originalPrice: 280, icon: '🏠' },
+  { id: 'S4', category: '健康课程', name: '高血压患者自我管理训练营', subtitle: '4周系统课程，含饮食+运动+用药+监测', price: 399, originalPrice: 598, icon: '📚' },
+  { id: 'S5', category: '检测套餐', name: '糖化血红蛋白 + 胰岛素三项', subtitle: '全面评估血糖控制水平', price: 258, originalPrice: 360, icon: '🩸' },
+  { id: 'S6', category: '专家咨询', name: '营养师一对一方案定制', subtitle: '根据病情定制个性化饮食计划', price: 168, originalPrice: 238, icon: '🥗' },
+  { id: 'pkg_1y', category: '服务包', name: '年度服务包', subtitle: '12个月专属健康管理服务', price: 3650, originalPrice: 5000, icon: '🌟' },
+  { id: 'pkg_6m', category: '服务包', name: '半年服务包', subtitle: '6个月专属健康管理服务', price: 1980, originalPrice: 2800, icon: '⭐' },
+  { id: 'pkg_3m', category: '服务包', name: '季度服务包', subtitle: '3个月专属健康管理服务', price: 1080, originalPrice: 1480, icon: '✨' },
+];
+
+router.get('/products', staffAuth, async (req, res) => {
+  const { category = '' } = req.query;
+  let list = SERVICE_CATALOG_P3;
+  if (category) list = list.filter(p => p.category === category);
+  res.json({ success: true, data: { products: list } });
+});
+
+// POST /api/staff/products/:id/push — 推送产品给患者
+router.post('/products/:id/push', staffAuth, async (req, res) => {
+  const { patientIds } = req.body;
+  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择患者' });
+  const product = SERVICE_CATALOG_P3.find(p => p.id === req.params.id);
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  const records = patientIds.map(pid => ({
+    staffId: req.staff._id, patientId: pid,
+    type: 'product',
+    title: product.name, content: product.subtitle || '',
+  }));
+  await PushRecord.insertMany(records);
+  res.json({ success: true, message: `已推送给 ${patientIds.length} 位患者` });
+});
+
+// ── 团队管理 ───────────────────────────────────────────────
+// GET /api/staff/team — 获取团队成员列表（可见下级）
+router.get('/team', staffAuth, async (req, res) => {
+  const MANAGER_ROLES = ['superadmin', 'familyDoctor', 'nutritionist', 'medicalAssistant', 'healthManager'];
+  if (!MANAGER_ROLES.includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '无权限查看团队' });
+  }
+  const STAFF_ROLES = ['familyDoctor', 'nutritionist', 'healthManager', 'medicalAssistant', 'psychologist', 'rehabSpecialist', 'tcmDoctor', 'specialist', 'healthPlanner'];
+  const filter = req.staff.role === 'superadmin' ? { role: { $in: STAFF_ROLES } } : { role: { $in: STAFF_ROLES }, department: req.staff.department };
+  const members = await Admin.find(filter).select('name role title department avatar createdAt').sort({ role: 1, name: 1 });
+  // 为每个成员统计数据
+  const statsArr = await Promise.all(members.map(async m => {
+    const myFilter = m.role === 'familyDoctor'
+      ? { assignedFamilyDoctor: m._id }
+      : { assignedHealthManager: m._id };
+    const [patientCount, followupCount, planCount] = await Promise.all([
+      User.countDocuments(myFilter),
+      FollowUp.countDocuments({ staffId: m._id }),
+      HealthPlan.countDocuments({ staffId: m._id }),
+    ]);
+    return { _id: m._id, name: m.name, role: m.role, roleLabel: ROLE_LABEL[m.role] || m.role, title: m.title, department: m.department, patientCount, followupCount, planCount };
+  }));
+  res.json({ success: true, data: { members: statsArr, total: statsArr.length } });
+});
+
+// ── 患者档案 - 附属数据 ─────────────────────────────────────
+// GET /api/staff/patients/:id/plans — 患者的健康方案列表
+router.get('/patients/:id/plans', staffAuth, async (req, res) => {
+  const plans = await HealthPlan.find({ patientId: req.params.id })
+    .sort({ createdAt: -1 })
+    .populate('staffId', 'name role');
+  res.json({ success: true, data: plans });
+});
+
+// GET /api/staff/patients/:id/reports — 患者的体检报告列表
+router.get('/patients/:id/reports', staffAuth, async (req, res) => {
+  const reports = await MedicalReport.find({ user: req.params.id })
+    .select('-content')
+    .sort({ createdAt: -1 })
+    .populate('uploadedBy', 'name role');
+  res.json({ success: true, data: reports });
+});
+
+// GET /api/staff/patients/:id/service-records — 患者的服务记录
+router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
+  const records = await ServiceRecord.find({ patientId: req.params.id })
+    .sort({ date: -1 })
+    .populate('staffId', 'name role');
+  res.json({ success: true, data: records });
+});
+
 module.exports = router;

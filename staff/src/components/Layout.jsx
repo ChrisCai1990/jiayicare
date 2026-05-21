@@ -11,8 +11,11 @@ const ALL_NAV = [
   { label: '服务记录', icon: '🏥', path: '/service-records', roles: ['medicalAssistant','psychologist','rehabSpecialist','tcmDoctor','specialist','superadmin'] },
   { label: '科普推送', icon: '📢', path: '/knowledge', roles: ['healthManager','nutritionist','familyDoctor','superadmin'] },
   { label: '问卷推送', icon: '📝', path: '/questionnaires', roles: ['healthManager','familyDoctor','superadmin'] },
+  { label: '产品推送', icon: '🛍', path: '/products',  roles: [] },
   { label: '分佣中心', icon: '💰', path: '/commission', roles: [] },
+  { label: '团队管理', icon: '🫂', path: '/team',      roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'] },
   { label: '运营看板', icon: '📊', path: '/operations', roles: ['superadmin','manager'] },
+  { label: '个人中心', icon: '👤', path: '/profile',   roles: [] },
 ]
 
 export default function Layout() {

@@ -7,6 +7,10 @@ import FollowUpModal from '../components/FollowUpModal'
 const TYPE_MAP = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const STATUS_MAP = { completed: '已完成', missed: '未接通', planned: '计划中' }
 const STATUS_COLOR = { completed: '#22A06B', missed: '#DC3545', planned: '#D97706' }
+const PLAN_TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预', rehab:'运动康复', tcm:'中医方案' }
+const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' }
+const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
+const SR_TYPE_LABEL = { medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊' }
 
 export default function PatientDetailPage() {
   const { id } = useParams()
@@ -14,8 +18,11 @@ export default function PatientDetailPage() {
   const toast = useToast()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('info')  // info | records | followups
+  const [tab, setTab] = useState('info')  // info | records | followups | plans | reports | serviceRecords
   const [followUps, setFollowUps] = useState([])
+  const [plans, setPlans] = useState([])
+  const [reports, setReports] = useState([])
+  const [serviceRecords, setServiceRecords] = useState([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
@@ -39,8 +46,23 @@ export default function PatientDetailPage() {
     } catch {}
   }
 
+  const loadPlans = async () => {
+    try { const res = await staffAPI.getPatientPlans(id); setPlans(res.data) } catch {}
+  }
+  const loadReports = async () => {
+    try { const res = await staffAPI.getPatientReports(id); setReports(res.data) } catch {}
+  }
+  const loadServiceRecords = async () => {
+    try { const res = await staffAPI.getPatientServiceRecords(id); setServiceRecords(res.data) } catch {}
+  }
+
   useEffect(() => { load() }, [id])
-  useEffect(() => { if (tab === 'followups') loadFollowUps() }, [tab])
+  useEffect(() => {
+    if (tab === 'followups') loadFollowUps()
+    else if (tab === 'plans') loadPlans()
+    else if (tab === 'reports') loadReports()
+    else if (tab === 'serviceRecords') loadServiceRecords()
+  }, [tab])
 
   const buildEditForm = (u) => ({
     chronicDiseases: u.chronicDiseases || [],
@@ -114,6 +136,9 @@ export default function PatientDetailPage() {
           { key: 'info', label: '基本信息' },
           { key: 'records', label: '健康记录' },
           { key: 'followups', label: '随访记录' },
+          { key: 'plans', label: '健康方案' },
+          { key: 'reports', label: '体检报告' },
+          { key: 'serviceRecords', label: '服务记录' },
         ].map(t => (
           <button
             key={t.key}
@@ -327,6 +352,101 @@ export default function PatientDetailPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
               暂无随访记录，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => setShowFollowUpModal(true)}>立即添加</span>
             </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Plans Tab ── */}
+      {tab === 'plans' && (
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">健康方案</div>
+          </div>
+          {plans.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康方案</div>
+          ) : (
+            <table className="table">
+              <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
+              <tbody>
+                {plans.map(p => {
+                  const done = p.items?.filter(i => i.status === 'completed').length || 0
+                  const total = p.items?.length || 0
+                  return (
+                    <tr key={p._id}>
+                      <td style={{ fontWeight: 500 }}>{p.title}</td>
+                      <td><span className="badge badge-info">{PLAN_TYPE_LABEL[p.type] || p.type}</span></td>
+                      <td><span style={{ color: PLAN_STATUS_COLOR[p.status], fontWeight: 500, fontSize: 13 }}>{PLAN_STATUS_LABEL[p.status]}</span></td>
+                      <td style={{ textAlign: 'center' }}>{total}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <div style={{ width: 60, height: 6, background: '#f0f0f0', borderRadius: 3 }}>
+                            <div style={{ width: total ? `${(done/total)*100}%` : '0%', height: '100%', background: '#22A06B', borderRadius: 3 }} />
+                          </div>
+                          <span style={{ fontSize: 12, color: '#666' }}>{done}/{total}</span>
+                        </div>
+                      </td>
+                      <td style={{ fontSize: 13, color: '#666' }}>{p.staffId?.name || '-'}</td>
+                      <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(p.createdAt).toLocaleDateString('zh-CN')}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ── Reports Tab ── */}
+      {tab === 'reports' && (
+        <div className="card">
+          <div className="card-header"><div className="card-title">体检报告</div></div>
+          {reports.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无体检报告</div>
+          ) : (
+            <table className="table">
+              <thead><tr><th>报告标题</th><th>类型</th><th>医院</th><th>日期</th><th>审核状态</th><th>上传人</th></tr></thead>
+              <tbody>
+                {reports.map(r => (
+                  <tr key={r._id}>
+                    <td style={{ fontWeight: 500 }}>{r.title}</td>
+                    <td><span className="badge badge-info">{r.type}</span></td>
+                    <td style={{ fontSize: 13, color: '#666' }}>{r.hospital || '-'}</td>
+                    <td style={{ fontSize: 13, color: '#666' }}>{r.date || '-'}</td>
+                    <td>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: r.audit_status === 'audited' ? '#22A06B' : r.audit_status === 'rejected' ? '#DC3545' : '#D97706' }}>
+                        {r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 13, color: '#666' }}>{r.uploadedBy?.name || '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ── Service Records Tab ── */}
+      {tab === 'serviceRecords' && (
+        <div className="card">
+          <div className="card-header"><div className="card-title">服务记录</div></div>
+          {serviceRecords.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无服务记录</div>
+          ) : (
+            <table className="table">
+              <thead><tr><th>服务类型</th><th>标题</th><th>内容摘要</th><th>负责人</th><th>服务日期</th></tr></thead>
+              <tbody>
+                {serviceRecords.map(r => (
+                  <tr key={r._id}>
+                    <td><span className="badge badge-success">{SR_TYPE_LABEL[r.type] || r.type}</span></td>
+                    <td style={{ fontWeight: 500 }}>{r.title || '-'}</td>
+                    <td style={{ fontSize: 13, color: '#666', maxWidth: 200 }}>{r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : '-'}</td>
+                    <td style={{ fontSize: 13, color: '#666' }}>{r.staffId?.name || '-'}</td>
+                    <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
       )}

@@ -16,6 +16,9 @@ import KnowledgePage from './pages/KnowledgePage'
 import QuestionnairePushPage from './pages/QuestionnairePushPage'
 import CommissionPage from './pages/CommissionPage'
 import OperationsPage from './pages/OperationsPage'
+import ProductPushPage from './pages/ProductPushPage'
+import TeamPage from './pages/TeamPage'
+import ProfilePage from './pages/ProfilePage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -81,6 +84,9 @@ export default function App() {
               <Route path="questionnaires" element={<QuestionnairePushPage />} />
               <Route path="commission" element={<CommissionPage />} />
               <Route path="operations" element={<OperationsPage />} />
+              <Route path="products" element={<ProductPushPage />} />
+              <Route path="team" element={<TeamPage />} />
+              <Route path="profile" element={<ProfilePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>
