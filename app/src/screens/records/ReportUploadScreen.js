@@ -311,6 +311,241 @@ function UploadConfigModal({ file, initialType, onConfirm, onCancel }) {
   );
 }
 
+// ── 趋势对比 Tab（#23 体检年度趋势 + #24 影像学对比）────────────────
+const EXAM_TYPES    = ['annual', 'blood', 'body_comp'];
+const IMAGING_TYPES = ['ultrasound', 'radiology', 'mri', 'endoscopy'];
+
+function TrendEmptyState({ text }) {
+  return (
+    <View style={tStyles.emptyWrap}>
+      <Ionicons name="analytics-outline" size={32} color={colors.textMuted} />
+      <Text style={tStyles.emptyText}>{text}</Text>
+    </View>
+  );
+}
+
+// 单条时间线节点（展示一份报告的 keyFindings）
+function TimelineNode({ report, isLast, onPreview, prevReport }) {
+  const tm = TYPE_META[report.type] || TYPE_META.other;
+  const sm = STATUS_META[report.status] || STATUS_META.pending;
+  const findings = report.keyFindings || [];
+
+  // 简单判断是否与上一份有"变化"（findings 文本完全不同算有变化）
+  const hasChange = prevReport &&
+    JSON.stringify(prevReport.keyFindings) !== JSON.stringify(findings);
+
+  return (
+    <View style={tStyles.nodeWrap}>
+      {/* 时间线轴 */}
+      <View style={tStyles.axisCol}>
+        <View style={[tStyles.dot, { backgroundColor: tm.color }]} />
+        {!isLast && <View style={tStyles.line} />}
+      </View>
+
+      {/* 内容卡 */}
+      <TouchableOpacity
+        style={[tStyles.nodeCard, hasChange && { borderLeftColor: colors.warning, borderLeftWidth: 3 }]}
+        onPress={() => onPreview(report)}
+        activeOpacity={0.85}
+      >
+        {/* 标题行 */}
+        <View style={tStyles.nodeHeader}>
+          <View style={tStyles.nodeHeaderLeft}>
+            <Text style={tStyles.nodeDate}>{report.date || '未知日期'}</Text>
+            {!!report.hospital && (
+              <Text style={tStyles.nodeHospital}>{report.hospital}</Text>
+            )}
+          </View>
+          <View style={tStyles.nodeHeaderRight}>
+            <View style={[tStyles.typeBadgeSmall, { backgroundColor: tm.color + '18' }]}>
+              <Text style={[tStyles.typeBadgeSmallText, { color: tm.color }]}>{tm.label}</Text>
+            </View>
+            <View style={[tStyles.statusDotSmall, { backgroundColor: sm.color }]} />
+          </View>
+        </View>
+
+        {/* 关键发现 */}
+        {findings.length > 0 ? (
+          <View style={tStyles.findingsWrap}>
+            {findings.map((f, i) => (
+              <View key={i} style={tStyles.findingRow}>
+                <Ionicons name="ellipse" size={5} color={tm.color} style={{ marginTop: 5 }} />
+                <Text style={tStyles.findingText}>{f}</Text>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <Text style={tStyles.noFindings}>暂无解读摘要，点击查看报告</Text>
+        )}
+
+        {/* 变化提示 */}
+        {hasChange && (
+          <View style={tStyles.changeTag}>
+            <Ionicons name="git-compare-outline" size={11} color={colors.warning} />
+            <Text style={tStyles.changeTagText}>与上次记录有变化</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+// 影像学分组（按类型，内部按日期排列，相邻对比）
+function ImagingGroup({ type, reports, onPreview }) {
+  const [expanded, setExpanded] = useState(true);
+  const tm = TYPE_META[type] || TYPE_META.other;
+  const sorted = [...reports].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  return (
+    <View style={tStyles.imagingGroup}>
+      <TouchableOpacity style={tStyles.imagingGroupHeader} onPress={() => setExpanded(v => !v)} activeOpacity={0.8}>
+        <View style={[tStyles.imagingGroupIcon, { backgroundColor: tm.bg }]}>
+          <Ionicons name={tm.icon} size={16} color={tm.color} />
+        </View>
+        <Text style={tStyles.imagingGroupTitle}>{tm.label}</Text>
+        <Text style={tStyles.imagingGroupCount}>{reports.length}份</Text>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={colors.textMuted} />
+      </TouchableOpacity>
+
+      {expanded && sorted.map((r, i) => (
+        <TimelineNode
+          key={r._id || r.id}
+          report={r}
+          isLast={i === sorted.length - 1}
+          onPreview={onPreview}
+          prevReport={i < sorted.length - 1 ? sorted[i + 1] : null}
+        />
+      ))}
+    </View>
+  );
+}
+
+function TrendsTab({ reports, onPreview }) {
+  const sorted = [...reports].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  const examReports    = sorted.filter(r => EXAM_TYPES.includes(r.type));
+  const imagingReports = sorted.filter(r => IMAGING_TYPES.includes(r.type));
+
+  // 影像学按类型分组
+  const imagingByType = IMAGING_TYPES.reduce((acc, type) => {
+    const group = imagingReports.filter(r => r.type === type);
+    if (group.length > 0) acc[type] = group;
+    return acc;
+  }, {});
+
+  return (
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}>
+      {/* ── #23 体检报告年度趋势 ───────────────────────────────── */}
+      <View>
+        <View style={tStyles.sectionHeader}>
+          <View style={[tStyles.sectionIcon, { backgroundColor: '#EBF5FB' }]}>
+            <Ionicons name="calendar-outline" size={15} color="#0077B6" />
+          </View>
+          <Text style={tStyles.sectionTitle}>体检报告年度趋势</Text>
+          <Text style={tStyles.sectionCount}>{examReports.length} 份</Text>
+        </View>
+        <Text style={tStyles.sectionHint}>涵盖年度体检、血液检查、人体成分，按时间倒序展示，标注关键变化</Text>
+
+        {examReports.length === 0 ? (
+          <TrendEmptyState text="暂无体检类报告，上传后自动生成趋势" />
+        ) : (
+          <View style={tStyles.timelineWrap}>
+            {examReports.map((r, i) => (
+              <TimelineNode
+                key={r._id || r.id}
+                report={r}
+                isLast={i === examReports.length - 1}
+                onPreview={onPreview}
+                prevReport={i < examReports.length - 1 ? examReports[i + 1] : null}
+              />
+            ))}
+          </View>
+        )}
+      </View>
+
+      {/* ── #24 影像学检查对比 ─────────────────────────────────── */}
+      <View>
+        <View style={tStyles.sectionHeader}>
+          <View style={[tStyles.sectionIcon, { backgroundColor: '#F2EEFF' }]}>
+            <Ionicons name="scan-outline" size={15} color="#7C3AED" />
+          </View>
+          <Text style={tStyles.sectionTitle}>影像学检查对比</Text>
+          <Text style={tStyles.sectionCount}>{imagingReports.length} 份</Text>
+        </View>
+        <Text style={tStyles.sectionHint}>超声、放射、磁共振、内镜按检查类型分组，对比历次结论变化</Text>
+
+        {Object.keys(imagingByType).length === 0 ? (
+          <TrendEmptyState text="暂无影像检查报告，上传后自动分组对比" />
+        ) : (
+          <View style={{ gap: spacing.sm }}>
+            {Object.entries(imagingByType).map(([type, reps]) => (
+              <ImagingGroup key={type} type={type} reports={reps} onPreview={onPreview} />
+            ))}
+          </View>
+        )}
+      </View>
+
+      <View style={{ height: spacing.xl }} />
+    </ScrollView>
+  );
+}
+
+// 趋势 Tab 专用样式
+const tStyles = StyleSheet.create({
+  emptyWrap: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
+  emptyText: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
+
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 4 },
+  sectionIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  sectionCount: { fontSize: 12, color: colors.textMuted, fontWeight: '500' },
+  sectionHint: { fontSize: 12, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 17 },
+
+  timelineWrap: { gap: 0 },
+
+  nodeWrap: { flexDirection: 'row', gap: spacing.sm },
+  axisCol: { alignItems: 'center', width: 16, paddingTop: 4 },
+  dot: { width: 10, height: 10, borderRadius: 5, marginBottom: 2 },
+  line: { flex: 1, width: 2, backgroundColor: colors.borderLight, minHeight: 20 },
+
+  nodeCard: {
+    flex: 1, backgroundColor: colors.white,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.sm,
+  },
+  nodeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
+  nodeHeaderLeft: { flex: 1 },
+  nodeHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  nodeDate: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  nodeHospital: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  typeBadgeSmall: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full },
+  typeBadgeSmallText: { fontSize: 10, fontWeight: '700' },
+  statusDotSmall: { width: 7, height: 7, borderRadius: 4 },
+
+  findingsWrap: { gap: 4 },
+  findingRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
+  findingText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  noFindings: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
+
+  changeTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginTop: 8, backgroundColor: colors.warning + '12',
+    borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start',
+  },
+  changeTagText: { fontSize: 11, color: colors.warning, fontWeight: '600' },
+
+  imagingGroup: {
+    backgroundColor: colors.white, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  imagingGroupHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.borderLight,
+  },
+  imagingGroupIcon: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  imagingGroupTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  imagingGroupCount: { fontSize: 12, color: colors.textMuted },
+});
+
 export default function ReportUploadScreen({ navigation, route }) {
   const { isDemo } = useAuth();
   const initialType = route?.params?.type || null;
@@ -447,7 +682,7 @@ export default function ReportUploadScreen({ navigation, route }) {
 
       {/* 页面 Tab 切换 */}
       <View style={styles.pageTabs}>
-        {[{ key: 'reports', label: '体检报告' }, { key: 'monitoring', label: '居家监测' }].map(t => (
+        {[{ key: 'reports', label: '体检报告' }, { key: 'trends', label: '趋势对比' }, { key: 'monitoring', label: '居家监测' }].map(t => (
           <TouchableOpacity
             key={t.key}
             style={[styles.pageTab, pageTab === t.key && styles.pageTabActive]}
@@ -458,8 +693,10 @@ export default function ReportUploadScreen({ navigation, route }) {
         ))}
       </View>
 
-      {/* ── 居家监测 Tab ──────────────────────────────────────────── */}
-      {pageTab === 'monitoring' ? (
+      {/* ── 趋势对比 Tab ──────────────────────────────────────────── */}
+      {pageTab === 'trends' ? (
+        <TrendsTab reports={reports} onPreview={setPreviewReport} />
+      ) : pageTab === 'monitoring' ? (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
           {/* 居家自测设备 */}
           <Text style={styles.monitorSectionTitle}>居家自测设备</Text>
