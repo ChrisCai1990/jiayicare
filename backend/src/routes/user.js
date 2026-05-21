@@ -111,6 +111,16 @@ router.get('/dashboard', auth, async (req, res) => {
     const allReminders = await Reminder.find({ user: userId, enabled: true });
     const todayReminders = allReminders.filter(isActiveToday).slice(0, 10);
 
+    // 是否有任何健康数据（用于前端判断新用户空状态）
+    const hasAnyHealthData = (await HealthRecord.countDocuments({ user: userId })) > 0;
+
+    // BMI 实时计算：优先使用最新体重 HealthRecord，其次 user.weight
+    const latestWeightVal = latestByType.weight ? parseFloat(latestByType.weight.value) : req.user.weight;
+    const heightM = req.user.height ? req.user.height / 100 : null;
+    const bmi = (heightM && latestWeightVal)
+      ? parseFloat((latestWeightVal / (heightM * heightM)).toFixed(1))
+      : null;
+
     // 今日评分打点（同一天不重复写入，最多保留 30 条）
     const today = new Date().toISOString().slice(0, 10);
     const history = req.user.scoreHistory || [];
@@ -128,6 +138,8 @@ router.get('/dashboard', auth, async (req, res) => {
         pendingTasks,
         todayReminders,
         scoreHistory: history.slice(-14),  // 返回最近 14 天
+        has_any_health_data: hasAnyHealthData,
+        bmi,               // 基于最新体重记录实时计算
       },
     });
   } catch (err) {

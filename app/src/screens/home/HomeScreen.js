@@ -411,13 +411,21 @@ export default function HomeScreen({ navigation }) {
   const user  = { ...(dashData?.user || {}), ...(authUser || {}) };
   const allPendingTasks = dashData?.pendingTasks || (isDemo ? mockTasks.filter(t => t.status === 'pending') : []);
   const todayReminders  = dashData?.todayReminders || [];
+  // has_any_health_data：后端返回，用于判断新用户空状态
+  const hasAnyHealthData = dashData?.has_any_health_data ?? isDemo;
   const score = user?.healthScore || (isDemo ? 82 : 0);
+  // 无健康数据时评分显示 "--"（文档#16：新用户不展示假分值）
+  const scoreDisplay = hasAnyHealthData ? score : null;
   const name  = user?.name || '用户';
 
   // ── 实时 BMI 计算 ─────────────────────────────────────────────
-  const bmiVal = (user?.height && user?.weight)
-    ? (user.weight / ((user.height / 100) ** 2)).toFixed(1)
-    : null;
+  // 优先使用后端基于最新体重记录计算的 bmi，其次前端本地计算（用 vitals.weight 再 fallback user.weight）
+  const latestWeightForBmi = vitals.weight ? parseFloat(vitals.weight.value) : user?.weight;
+  const bmiVal = dashData?.bmi != null
+    ? String(dashData.bmi)
+    : (user?.height && latestWeightForBmi)
+      ? (latestWeightForBmi / ((user.height / 100) ** 2)).toFixed(1)
+      : null;
   const bmiStatus = bmiVal
     ? (parseFloat(bmiVal) < 18.5 ? { label: '偏轻', bg: '#EBF5FB', color: '#0077B6' }
       : parseFloat(bmiVal) < 24   ? { label: '正常', bg: '#E8F5EF', color: colors.success }
@@ -518,12 +526,18 @@ export default function HomeScreen({ navigation }) {
               {name}，{statusText} {statusEmoji}
             </Text>
             <View style={styles.heroScoreRow}>
-              <AnimatedNumber value={score} style={styles.heroScoreNum} duration={900} />
+              {scoreDisplay != null ? (
+                <AnimatedNumber value={scoreDisplay} style={styles.heroScoreNum} duration={900} />
+              ) : (
+                <Text style={[styles.heroScoreNum, { color: 'rgba(255,255,255,0.4)' }]}>--</Text>
+              )}
               <View style={styles.heroScoreMeta}>
-                <Text style={styles.heroScoreLabel}>健康评分 / 100</Text>
+                <Text style={styles.heroScoreLabel}>
+                  {scoreDisplay != null ? '健康评分 / 100' : '暂无评分，请录入数据'}
+                </Text>
                 {isDemo && <Text style={styles.heroScoreTrend}>↑ 较上月 +3 分</Text>}
               </View>
-              {scoreHistory.length >= 2 && (
+              {scoreDisplay != null && scoreHistory.length >= 2 && (
                 <View style={styles.heroTrendLine}>
                   <ScoreTrendLine history={scoreHistory} />
                   <Text style={styles.heroTrendLabel}>近{scoreHistory.length}日走势</Text>

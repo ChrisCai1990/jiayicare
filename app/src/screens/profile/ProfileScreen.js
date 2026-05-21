@@ -112,10 +112,6 @@ export default function ProfileScreen({ navigation }) {
 
         {/* ── Header ─────────────────────────────────────────── */}
         <View style={styles.header}>
-          <TouchableOpacity style={styles.settingBtn} onPress={() => navigation.navigate('EditProfile')}>
-            <Ionicons name="create-outline" size={20} color="rgba(255,255,255,0.8)" />
-          </TouchableOpacity>
-
           <View style={styles.headerContent}>
             <AvatarOnDark name={user?.name || '用'} size={76} />
             <Text style={styles.userName}>{user?.name || '用户'}</Text>
@@ -224,7 +220,6 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>账号设置</Text>
           <View style={styles.menuCard}>
-            <MenuItem icon="person-outline"        iconColor="#0077B6" label="编辑资料"            onPress={() => navigation.navigate('EditProfile')} />
             <MenuItem icon="notifications-outline" iconColor="#7C3AED" label="消息通知" value={notifLabel} onPress={() => navigation.navigate('NotificationSettings')} />
             <MenuItem icon="lock-closed-outline"   iconColor="#22A06B" label="账号安全"            onPress={() => navigation.navigate('AccountSecurity')} />
             <MenuItem icon="help-circle-outline"   iconColor="#D97706" label="帮助与反馈"          onPress={() => navigation.navigate('HelpFeedback')} isLast />

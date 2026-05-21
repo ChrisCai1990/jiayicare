@@ -110,7 +110,10 @@ router.post('/login', async (req, res) => {
   if (!user) {
     // 新用户自动注册
     user = await User.create({ phone });
-    seedUserData(user._id).catch(console.error);
+    // 仅演示账号填充演示数据；真实新用户初始为空数据
+    if (isDemo) {
+      seedUserData(user._id).catch(console.error);
+    }
   }
   const isNew = false;
 
