@@ -12,10 +12,9 @@ const { getDefaultConfig } = require('expo/metro-config');
 const config = getDefaultConfig(__dirname);
 
 config.transformer.minifierConfig = {
-  // 完全禁用所有压缩优化，彻底消除 Terser 引发的 TDZ 错误
+  // 完全禁用压缩 + 混淆，用于诊断 TDZ 根因（变量名可读）
   compress: false,
-  // 仍然保留变量名混淆（缩短变量名，减小体积）
-  mangle: true,
+  mangle: false,
 };
 
 module.exports = config;
