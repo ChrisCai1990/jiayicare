@@ -127,9 +127,12 @@ export const supplementsAPI = {
 
 // ── Tasks ─────────────────────────────────────────────────────────
 export const tasksAPI = {
-  list: () => request('/tasks'),
-  complete: (id) => request(`/tasks/${id}/complete`, { method: 'PATCH' }),
-  create: (data) => request('/tasks', { method: 'POST', body: JSON.stringify(data) }),
+  list:       () => request('/tasks'),
+  // 设置任务状态（completed / pending）
+  setStatus:  (id, status) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  complete:   (id) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'completed' }) }),
+  uncomplete: (id) => request(`/tasks/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status: 'pending' }) }),
+  create:     (data) => request('/tasks', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // ── Messages ──────────────────────────────────────────────────────

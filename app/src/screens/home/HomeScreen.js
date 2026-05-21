@@ -860,29 +860,6 @@ export default function HomeScreen({ navigation }) {
             )}
           </View>
 
-          {/* ── 更多入口 ──────────────────────────────────────────── */}
-          <View style={styles.section}>
-            <View style={styles.moreGrid}>
-              {[
-                { icon: 'document-text-outline', label: '健康报告', color: colors.primary, screen: 'HealthReport' },
-                { icon: 'clipboard-outline',     label: '健康问卷', color: colors.primary, screen: 'Questionnaire' },
-                { icon: 'cart-outline',          label: '服务商城', color: colors.primary, screen: 'ServiceMall' },
-                { icon: 'cloud-upload-outline',  label: '上传报告', color: colors.primary, screen: 'ReportUpload' },
-                { icon: 'add-circle-outline',    label: '记录数据', color: colors.primary, screen: 'AddRecord' },
-              ].map((item, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={styles.moreItem}
-                  onPress={() => navigation.navigate(item.screen)}
-                  activeOpacity={0.7}
-                >
-                  <Ionicons name={item.icon} size={20} color={item.color} />
-                  <Text style={styles.moreLabel}>{item.label}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-
         </View>
         <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>

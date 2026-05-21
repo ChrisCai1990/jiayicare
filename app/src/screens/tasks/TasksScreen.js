@@ -180,16 +180,20 @@ export default function TasksScreen() {
 
   const onRefresh = () => { setRefreshing(true); loadData(); };
 
-  // 完成任务（乐观更新）
+  // 切换任务完成状态（乐观更新，支持 pending→completed 和 completed→pending）
   const toggleTask = async (id) => {
+    const current = tasks.find(t => (t._id || t.id) === id);
+    if (!current) return;
+    const nextStatus = current.status === 'completed' ? 'pending' : 'completed';
     setTasks(prev => prev.map(t =>
-      (t._id || t.id) === id ? { ...t, status: 'completed' } : t
+      (t._id || t.id) === id ? { ...t, status: nextStatus, completedAt: nextStatus === 'completed' ? new Date().toISOString() : undefined } : t
     ));
     try {
-      await tasksAPI.complete(id);
+      await tasksAPI.setStatus(id, nextStatus);
     } catch {
+      // 回滚
       setTasks(prev => prev.map(t =>
-        (t._id || t.id) === id ? { ...t, status: 'pending' } : t
+        (t._id || t.id) === id ? { ...t, status: current.status } : t
       ));
     }
   };
@@ -354,7 +358,7 @@ export default function TasksScreen() {
                   <TaskCard
                     key={task._id || task.id}
                     task={task}
-                    onToggle={() => {}}
+                    onToggle={toggleTask}
                   />
                 ))}
               </View>

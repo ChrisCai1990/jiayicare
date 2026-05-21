@@ -38,11 +38,11 @@ const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
 
 const TAB_CONFIG = [
-  { name: 'Home',     label: '首页',    icon: 'home',       component: HomeScreen },
-  { name: 'Records',  label: '健康档案', icon: 'heart',      component: RecordsScreen },
-  { name: 'Tasks',    label: '待办任务', icon: 'checkbox',   component: TasksScreen },
-  { name: 'Messages', label: '消息',    icon: 'chatbubble', component: MessagesScreen },
-  { name: 'Profile',  label: '我的',    icon: 'person',     component: ProfileScreen },
+  { name: 'Home',         label: '首页',    icon: 'home',         component: HomeScreen },
+  { name: 'Records',      label: '健康档案', icon: 'heart',        component: RecordsScreen },
+  { name: 'ReportUpload', label: '上传报告', icon: 'cloud-upload', component: ReportUploadScreen },
+  { name: 'Messages',     label: '消息',    icon: 'chatbubble',   component: MessagesScreen },
+  { name: 'Profile',      label: '我的',    icon: 'person',       component: ProfileScreen },
 ];
 
 function MainTabs() {
@@ -128,7 +128,7 @@ export default function Navigation() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="AddRecord" component={AddRecordScreen} />
             <Stack.Screen name="HealthReport" component={HealthReportScreen} />
-            <Stack.Screen name="ReportUpload" component={ReportUploadScreen} />
+            <Stack.Screen name="Tasks" component={TasksScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="Medication" component={MedicationScreen} />
             <Stack.Screen name="Nutrition" component={NutritionScreen} />

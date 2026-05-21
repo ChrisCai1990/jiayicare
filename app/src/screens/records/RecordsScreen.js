@@ -399,8 +399,26 @@ export default function RecordsScreen({ navigation }) {
   const [chartType, setChartType]     = useState('bloodPressure');
   const [chartPeriod, setChartPeriod] = useState('周');
   const [chartData, setChartData]     = useState([]);
-  const [chartData2, setChartData2]   = useState([]); // 血糖餐后 / 血压舒张压用不到（同数组）
+  const [chartData2, setChartData2]   = useState([]); // 血糖：餐后2h
+  const [chartData3, setChartData3]   = useState([]); // 血糖：睡前
   const [chartLoading, setChartLoading] = useState(false);
+
+  // 血糖自定义参考范围（文档#22，存 localStorage）
+  const SUGAR_RANGE_KEY = 'jy_sugar_ranges';
+  const SUGAR_RANGE_DEFAULT = {
+    fasting:  { min: 3.9, max: 6.1 },
+    postMeal: { min: 3.9, max: 7.8 },
+    bedtime:  { min: 3.9, max: 7.8 },
+  };
+  const loadSugarRanges = () => {
+    try { return JSON.parse(localStorage.getItem(SUGAR_RANGE_KEY)) || SUGAR_RANGE_DEFAULT; }
+    catch { return SUGAR_RANGE_DEFAULT; }
+  };
+  const [sugarRanges, setSugarRanges] = useState(loadSugarRanges);
+  const saveSugarRanges = (ranges) => {
+    setSugarRanges(ranges);
+    try { localStorage.setItem(SUGAR_RANGE_KEY, JSON.stringify(ranges)); } catch {}
+  };
 
   // 历史记录
   const [historyData, setHistoryData] = useState([]);
@@ -465,14 +483,17 @@ export default function RecordsScreen({ navigation }) {
       const res = await recordsAPI.list({ type, days, limit: 50 });
       if (res?.success && res.data?.length > 0) {
         const sorted = [...res.data].sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt));
-        // 血糖：按 mealType 拆成空腹 / 餐后2小时 两条曲线
+        // 血糖：按 mealType 拆成空腹 / 餐后2小时 / 睡前 三条独立系列（文档#22）
         if (type === 'bloodSugar') {
-          const fasting   = sorted.filter(r => !r.extra?.mealType || r.extra.mealType === '空腹' || r.note?.includes('空腹'));
-          const postMeal  = sorted.filter(r => r.extra?.mealType === '餐后2小时' || r.note?.includes('餐后'));
+          const fasting  = sorted.filter(r => !r.extra?.mealType || r.extra.mealType === '空腹' || r.note?.includes('空腹'));
+          const postMeal = sorted.filter(r => r.extra?.mealType === '餐后2小时' || r.note?.includes('餐后'));
+          const bedtime  = sorted.filter(r => r.extra?.mealType === '睡前' || r.note?.includes('睡前'));
           setChartData(fasting.length > 0 ? fasting : sorted);
           setChartData2(postMeal);
+          setChartData3(bedtime);
         } else {
           setChartData(sorted);
+          setChartData3([]);
         }
       } else {
         const cfg = CHART_TYPES.find(t => t.key === type);
@@ -834,16 +855,165 @@ export default function RecordsScreen({ navigation }) {
               </View>
             </View>
 
-            {/* 图表区域 */}
-            {chartLoading
-              ? <View style={styles.chartEmpty}><ActivityIndicator color={colors.primary} /></View>
-              : <TrendChart
-                    data={chartData}
-                    data2={currentTypeCfg.splitBySeries ? chartData2 : undefined}
-                    typeCfg={currentTypeCfg}
+            {/* ── 图表区域（血压/血糖分图，其余单图）────────────── */}
+            {chartLoading ? (
+              <View style={styles.chartEmpty}><ActivityIndicator color={colors.primary} /></View>
+
+            ) : chartType === 'bloodPressure' ? (
+              /* 文档#21：血压拆分为收缩压和舒张压两张独立图 */
+              <>
+                <Text style={styles.splitChartLabel}>收缩压 (mmHg)</Text>
+                <TrendChart
+                  data={chartData}
+                  typeCfg={{ ...currentTypeCfg, color: '#DC3545',
+                    getVal: r => r.extra?.sys ?? parseFloat(String(r.value).split('/')[0]) ?? 0,
+                    refLines: [
+                      { val: 140, color: '#DC3545', label: '正常上限 140' },
+                      { val: 90,  color: '#22A06B', label: '正常下限 90'  },
+                    ],
+                    minY: 60, maxY: 180,
+                    color2: undefined, getVal2: undefined,
+                  }}
+                  period={chartPeriod}
+                />
+                <Text style={[styles.splitChartLabel, { marginTop: spacing.md }]}>舒张压 (mmHg)</Text>
+                <TrendChart
+                  data={chartData}
+                  typeCfg={{ ...currentTypeCfg, color: '#0077B6',
+                    getVal: r => r.extra?.dia ?? parseFloat(String(r.value).split('/')[1]) ?? 0,
+                    refLines: [
+                      { val: 90, color: '#DC3545', label: '正常上限 90' },
+                      { val: 60, color: '#22A06B', label: '正常下限 60' },
+                    ],
+                    minY: 40, maxY: 120,
+                    color2: undefined, getVal2: undefined,
+                  }}
+                  period={chartPeriod}
+                />
+              </>
+
+            ) : chartType === 'bloodSugar' ? (
+              /* 文档#22：血糖拆分为空腹/餐后2h/睡前三张独立图，支持自定义参考范围 */
+              <>
+                {/* 自定义范围说明 */}
+                <View style={styles.sugarRangeRow}>
+                  <Text style={styles.sugarRangeHint}>参考线可自定义 · </Text>
+                  <TouchableOpacity onPress={() => saveSugarRanges(SUGAR_RANGE_DEFAULT)}>
+                    <Text style={styles.sugarRangeReset}>恢复默认</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* 空腹血糖 */}
+                <Text style={styles.splitChartLabel}>空腹血糖 (mmol/L)</Text>
+                <TrendChart
+                  data={chartData}
+                  typeCfg={{ ...currentTypeCfg, color: '#D97706', color2: undefined, getVal2: undefined,
+                    splitBySeries: false,
+                    refLines: [
+                      { val: sugarRanges.fasting.max, color: '#DC3545', label: `上限 ${sugarRanges.fasting.max}` },
+                      { val: sugarRanges.fasting.min, color: '#0077B6', label: `下限 ${sugarRanges.fasting.min}` },
+                    ],
+                    minY: 2, maxY: 14,
+                  }}
+                  period={chartPeriod}
+                />
+                <View style={styles.sugarRangeEditor}>
+                  <Text style={styles.sugarRangeEditorLabel}>范围：</Text>
+                  <TextInput style={styles.sugarRangeInput}
+                    keyboardType="decimal-pad"
+                    value={String(sugarRanges.fasting.min)}
+                    onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, fasting: { ...sugarRanges.fasting, min: n } }); }}
+                  />
+                  <Text style={styles.sugarRangeEditorLabel}> ~ </Text>
+                  <TextInput style={styles.sugarRangeInput}
+                    keyboardType="decimal-pad"
+                    value={String(sugarRanges.fasting.max)}
+                    onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, fasting: { ...sugarRanges.fasting, max: n } }); }}
+                  />
+                  <Text style={styles.sugarRangeEditorLabel}> mmol/L</Text>
+                </View>
+
+                {/* 餐后2小时血糖 */}
+                <Text style={[styles.splitChartLabel, { marginTop: spacing.md }]}>餐后2小时血糖 (mmol/L)</Text>
+                {chartData2.length === 0 ? (
+                  <View style={styles.chartEmpty}>
+                    <Text style={styles.chartEmptyText}>暂无餐后2小时血糖数据</Text>
+                  </View>
+                ) : (
+                  <TrendChart
+                    data={chartData2}
+                    typeCfg={{ ...currentTypeCfg, color: '#DC3545', color2: undefined, getVal2: undefined,
+                      splitBySeries: false,
+                      refLines: [
+                        { val: sugarRanges.postMeal.max, color: '#DC3545', label: `上限 ${sugarRanges.postMeal.max}` },
+                        { val: sugarRanges.postMeal.min, color: '#0077B6', label: `下限 ${sugarRanges.postMeal.min}` },
+                      ],
+                      minY: 2, maxY: 14,
+                    }}
                     period={chartPeriod}
                   />
-            }
+                )}
+                <View style={styles.sugarRangeEditor}>
+                  <Text style={styles.sugarRangeEditorLabel}>范围：</Text>
+                  <TextInput style={styles.sugarRangeInput}
+                    keyboardType="decimal-pad"
+                    value={String(sugarRanges.postMeal.min)}
+                    onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, postMeal: { ...sugarRanges.postMeal, min: n } }); }}
+                  />
+                  <Text style={styles.sugarRangeEditorLabel}> ~ </Text>
+                  <TextInput style={styles.sugarRangeInput}
+                    keyboardType="decimal-pad"
+                    value={String(sugarRanges.postMeal.max)}
+                    onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, postMeal: { ...sugarRanges.postMeal, max: n } }); }}
+                  />
+                  <Text style={styles.sugarRangeEditorLabel}> mmol/L</Text>
+                </View>
+
+                {/* 睡前血糖 */}
+                <Text style={[styles.splitChartLabel, { marginTop: spacing.md }]}>睡前血糖 (mmol/L)</Text>
+                {chartData3.length === 0 ? (
+                  <View style={styles.chartEmpty}>
+                    <Text style={styles.chartEmptyText}>暂无睡前血糖数据</Text>
+                  </View>
+                ) : (
+                  <TrendChart
+                    data={chartData3}
+                    typeCfg={{ ...currentTypeCfg, color: '#7C3AED', color2: undefined, getVal2: undefined,
+                      splitBySeries: false,
+                      refLines: [
+                        { val: sugarRanges.bedtime.max, color: '#DC3545', label: `上限 ${sugarRanges.bedtime.max}` },
+                        { val: sugarRanges.bedtime.min, color: '#0077B6', label: `下限 ${sugarRanges.bedtime.min}` },
+                      ],
+                      minY: 2, maxY: 14,
+                    }}
+                    period={chartPeriod}
+                  />
+                )}
+                <View style={styles.sugarRangeEditor}>
+                  <Text style={styles.sugarRangeEditorLabel}>范围：</Text>
+                  <TextInput style={styles.sugarRangeInput}
+                    keyboardType="decimal-pad"
+                    value={String(sugarRanges.bedtime.min)}
+                    onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, bedtime: { ...sugarRanges.bedtime, min: n } }); }}
+                  />
+                  <Text style={styles.sugarRangeEditorLabel}> ~ </Text>
+                  <TextInput style={styles.sugarRangeInput}
+                    keyboardType="decimal-pad"
+                    value={String(sugarRanges.bedtime.max)}
+                    onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, bedtime: { ...sugarRanges.bedtime, max: n } }); }}
+                  />
+                  <Text style={styles.sugarRangeEditorLabel}> mmol/L</Text>
+                </View>
+              </>
+
+            ) : (
+              /* 其余指标：单图 */
+              <TrendChart
+                data={chartData}
+                typeCfg={currentTypeCfg}
+                period={chartPeriod}
+              />
+            )}
           </View>
         </View>
 
@@ -1033,6 +1203,28 @@ const styles = StyleSheet.create({
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendLine: { width: 14, height: 2 },
   legendText: { fontSize: 10, color: colors.textMuted },
+
+  // 分图标题（血压/血糖拆分图）
+  splitChartLabel: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xs, marginTop: spacing.xs },
+
+  // 血糖自定义参考范围
+  sugarRangeRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.xs },
+  sugarRangeHint: { fontSize: 11, color: colors.textMuted },
+  sugarRangeReset: { fontSize: 11, color: colors.primary, fontWeight: '600' },
+  sugarRangeEditor: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.background, borderRadius: radius.xs,
+    paddingHorizontal: spacing.sm, paddingVertical: 4,
+    marginTop: 4, marginBottom: spacing.xs,
+  },
+  sugarRangeEditorLabel: { fontSize: 11, color: colors.textMuted },
+  sugarRangeInput: {
+    borderWidth: 1, borderColor: colors.border,
+    borderRadius: radius.xs, paddingHorizontal: 8, paddingVertical: 2,
+    fontSize: 12, color: colors.textPrimary,
+    width: 44, textAlign: 'center',
+    backgroundColor: colors.white,
+  },
 
   // History
   historyCard: {
