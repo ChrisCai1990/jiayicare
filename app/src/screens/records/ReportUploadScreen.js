@@ -315,6 +315,63 @@ function UploadConfigModal({ file, initialType, onConfirm, onCancel }) {
 const EXAM_TYPES    = ['annual', 'blood', 'body_comp'];
 const IMAGING_TYPES = ['ultrasound', 'radiology', 'mri', 'endoscopy'];
 
+// 趋势 Tab 专用样式（必须在组件函数之前定义，避免 TDZ）
+const tStyles = StyleSheet.create({
+  emptyWrap: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
+  emptyText: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
+
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 4 },
+  sectionIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  sectionTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  sectionCount: { fontSize: 12, color: colors.textMuted, fontWeight: '500' },
+  sectionHint: { fontSize: 12, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 17 },
+
+  timelineWrap: { gap: 0 },
+
+  nodeWrap: { flexDirection: 'row', gap: spacing.sm },
+  axisCol: { alignItems: 'center', width: 16, paddingTop: 4 },
+  dot: { width: 10, height: 10, borderRadius: 5, marginBottom: 2 },
+  line: { flex: 1, width: 2, backgroundColor: colors.borderLight, minHeight: 20 },
+
+  nodeCard: {
+    flex: 1, backgroundColor: colors.white,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, marginBottom: spacing.sm,
+  },
+  nodeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
+  nodeHeaderLeft: { flex: 1 },
+  nodeHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  nodeDate: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  nodeHospital: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  typeBadgeSmall: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full },
+  typeBadgeSmallText: { fontSize: 10, fontWeight: '700' },
+  statusDotSmall: { width: 7, height: 7, borderRadius: 4 },
+
+  findingsWrap: { gap: 4 },
+  findingRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
+  findingText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+  noFindings: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
+
+  changeTag: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    marginTop: 8, backgroundColor: colors.warning + '12',
+    borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start',
+  },
+  changeTagText: { fontSize: 11, color: colors.warning, fontWeight: '600' },
+
+  imagingGroup: {
+    backgroundColor: colors.white, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  imagingGroupHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.borderLight,
+  },
+  imagingGroupIcon: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
+  imagingGroupTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  imagingGroupCount: { fontSize: 12, color: colors.textMuted },
+});
+
 function TrendEmptyState({ text }) {
   return (
     <View style={tStyles.emptyWrap}>
@@ -488,63 +545,6 @@ function TrendsTab({ reports, onPreview }) {
     </ScrollView>
   );
 }
-
-// 趋势 Tab 专用样式
-const tStyles = StyleSheet.create({
-  emptyWrap: { alignItems: 'center', paddingVertical: spacing.xl, gap: spacing.sm },
-  emptyText: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
-
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: 4 },
-  sectionIcon: { width: 28, height: 28, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  sectionTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.textPrimary },
-  sectionCount: { fontSize: 12, color: colors.textMuted, fontWeight: '500' },
-  sectionHint: { fontSize: 12, color: colors.textMuted, marginBottom: spacing.md, lineHeight: 17 },
-
-  timelineWrap: { gap: 0 },
-
-  nodeWrap: { flexDirection: 'row', gap: spacing.sm },
-  axisCol: { alignItems: 'center', width: 16, paddingTop: 4 },
-  dot: { width: 10, height: 10, borderRadius: 5, marginBottom: 2 },
-  line: { flex: 1, width: 2, backgroundColor: colors.borderLight, minHeight: 20 },
-
-  nodeCard: {
-    flex: 1, backgroundColor: colors.white,
-    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md, marginBottom: spacing.sm,
-  },
-  nodeHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },
-  nodeHeaderLeft: { flex: 1 },
-  nodeHeaderRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  nodeDate: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
-  nodeHospital: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
-  typeBadgeSmall: { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full },
-  typeBadgeSmallText: { fontSize: 10, fontWeight: '700' },
-  statusDotSmall: { width: 7, height: 7, borderRadius: 4 },
-
-  findingsWrap: { gap: 4 },
-  findingRow: { flexDirection: 'row', gap: 6, alignItems: 'flex-start' },
-  findingText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
-  noFindings: { fontSize: 12, color: colors.textMuted, fontStyle: 'italic' },
-
-  changeTag: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    marginTop: 8, backgroundColor: colors.warning + '12',
-    borderRadius: radius.full, paddingHorizontal: 8, paddingVertical: 3, alignSelf: 'flex-start',
-  },
-  changeTagText: { fontSize: 11, color: colors.warning, fontWeight: '600' },
-
-  imagingGroup: {
-    backgroundColor: colors.white, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
-  },
-  imagingGroupHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.borderLight,
-  },
-  imagingGroupIcon: { width: 30, height: 30, borderRadius: 8, alignItems: 'center', justifyContent: 'center' },
-  imagingGroupTitle: { flex: 1, fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  imagingGroupCount: { fontSize: 12, color: colors.textMuted },
-});
 
 export default function ReportUploadScreen({ navigation, route }) {
   const { isDemo } = useAuth();
