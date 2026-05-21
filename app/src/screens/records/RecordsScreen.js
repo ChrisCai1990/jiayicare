@@ -869,8 +869,8 @@ export default function RecordsScreen({ navigation }) {
                   typeCfg={{ ...currentTypeCfg, color: '#DC3545',
                     getVal: r => r.extra?.sys ?? parseFloat(String(r.value).split('/')[0]) ?? 0,
                     refLines: [
-                      { val: 140, color: '#DC3545', label: '正常上限 140' },
-                      { val: 90,  color: '#22A06B', label: '正常下限 90'  },
+                      { val: 140, color: '#DC3545', label: '正常上限' },
+                      { val: 90,  color: '#22A06B', label: '正常下限' },
                     ],
                     minY: 60, maxY: 180,
                     color2: undefined, getVal2: undefined,
@@ -883,8 +883,8 @@ export default function RecordsScreen({ navigation }) {
                   typeCfg={{ ...currentTypeCfg, color: '#0077B6',
                     getVal: r => r.extra?.dia ?? parseFloat(String(r.value).split('/')[1]) ?? 0,
                     refLines: [
-                      { val: 90, color: '#DC3545', label: '正常上限 90' },
-                      { val: 60, color: '#22A06B', label: '正常下限 60' },
+                      { val: 90, color: '#DC3545', label: '正常上限' },
+                      { val: 60, color: '#22A06B', label: '正常下限' },
                     ],
                     minY: 40, maxY: 120,
                     color2: undefined, getVal2: undefined,
@@ -930,42 +930,6 @@ export default function RecordsScreen({ navigation }) {
                     keyboardType="decimal-pad"
                     value={String(sugarRanges.fasting.max)}
                     onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, fasting: { ...sugarRanges.fasting, max: n } }); }}
-                  />
-                  <Text style={styles.sugarRangeEditorLabel}> mmol/L</Text>
-                </View>
-
-                {/* 餐后2小时血糖 */}
-                <Text style={[styles.splitChartLabel, { marginTop: spacing.md }]}>餐后2小时血糖 (mmol/L)</Text>
-                {chartData2.length === 0 ? (
-                  <View style={styles.chartEmpty}>
-                    <Text style={styles.chartEmptyText}>暂无餐后2小时血糖数据</Text>
-                  </View>
-                ) : (
-                  <TrendChart
-                    data={chartData2}
-                    typeCfg={{ ...currentTypeCfg, color: '#DC3545', color2: undefined, getVal2: undefined,
-                      splitBySeries: false,
-                      refLines: [
-                        { val: sugarRanges.postMeal.max, color: '#DC3545', label: `上限 ${sugarRanges.postMeal.max}` },
-                        { val: sugarRanges.postMeal.min, color: '#0077B6', label: `下限 ${sugarRanges.postMeal.min}` },
-                      ],
-                      minY: 2, maxY: 14,
-                    }}
-                    period={chartPeriod}
-                  />
-                )}
-                <View style={styles.sugarRangeEditor}>
-                  <Text style={styles.sugarRangeEditorLabel}>范围：</Text>
-                  <TextInput style={styles.sugarRangeInput}
-                    keyboardType="decimal-pad"
-                    value={String(sugarRanges.postMeal.min)}
-                    onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, postMeal: { ...sugarRanges.postMeal, min: n } }); }}
-                  />
-                  <Text style={styles.sugarRangeEditorLabel}> ~ </Text>
-                  <TextInput style={styles.sugarRangeInput}
-                    keyboardType="decimal-pad"
-                    value={String(sugarRanges.postMeal.max)}
-                    onChangeText={v => { const n = parseFloat(v); if (!isNaN(n)) saveSugarRanges({ ...sugarRanges, postMeal: { ...sugarRanges.postMeal, max: n } }); }}
                   />
                   <Text style={styles.sugarRangeEditorLabel}> mmol/L</Text>
                 </View>

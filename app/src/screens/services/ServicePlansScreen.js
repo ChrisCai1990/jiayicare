@@ -188,14 +188,6 @@ export default function ServicePlansScreen({ navigation }) {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.content}>
-        {/* 说明 */}
-        <View style={styles.introCard}>
-          <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
-          <Text style={styles.introText}>
-            以下方案由嘉医管家专业团队提供，您可根据自身需求选择合适的健康管理服务。点击方案查看详情，如需开通请联系健康管理师。
-          </Text>
-        </View>
-
         {/* 方案列表 */}
         {PLANS.map(plan => (
           <PlanCard

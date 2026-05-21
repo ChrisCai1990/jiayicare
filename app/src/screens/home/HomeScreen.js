@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl, Dimensions,
+  Modal, TextInput, Image, Platform,
 } from 'react-native';
 import Svg, { Rect, Line, Text as SvgText, Defs, LinearGradient, Stop, Polyline, Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -332,6 +333,11 @@ export default function HomeScreen({ navigation }) {
     try { return JSON.parse(localStorage.getItem(TODAY_KEY)) || {}; } catch { return {}; }
   };
   const [checkin, setCheckin] = useState(loadCheckin);
+  // 打卡记录弹窗
+  const [checkinModal, setCheckinModal] = useState(null); // { key, label, icon, color }
+  const [checkinNote, setCheckinNote]   = useState('');
+  const [checkinImage, setCheckinImage] = useState(null);
+  const fileInputRef = useRef(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -557,11 +563,21 @@ export default function HomeScreen({ navigation }) {
               { key: 'bowel',    label: '大便', icon: 'leaf-outline',      color: '#059669' },
               { key: 'alcohol',  label: '戒酒', icon: 'wine-outline',      color: '#9D174D' },
             ];
-            const doneCount = CHECKIN_ITEMS.filter(i => checkin[i.key]).length;
-            const toggleCheckin = (key) => {
-              const next = { ...checkin, [key]: !checkin[key] };
+            const doneCount = CHECKIN_ITEMS.filter(i => checkin[i.key]?.done).length;
+            const openCheckinModal = (item) => {
+              const existing = checkin[item.key] || {};
+              setCheckinNote(existing.note || '');
+              setCheckinImage(existing.image || null);
+              setCheckinModal(item);
+            };
+            const saveCheckin = () => {
+              const next = {
+                ...checkin,
+                [checkinModal.key]: { done: true, note: checkinNote, image: checkinImage }
+              };
               setCheckin(next);
               try { localStorage.setItem(TODAY_KEY, JSON.stringify(next)); } catch {}
+              setCheckinModal(null);
             };
             return (
               <View style={styles.checkinCard}>
@@ -574,12 +590,13 @@ export default function HomeScreen({ navigation }) {
                 </View>
                 <View style={styles.checkinGrid}>
                   {CHECKIN_ITEMS.map(item => {
-                    const done = !!checkin[item.key];
+                    const done = !!checkin[item.key]?.done;
+                    const hasNote = !!(checkin[item.key]?.note || checkin[item.key]?.image);
                     return (
                       <TouchableOpacity
                         key={item.key}
                         style={[styles.checkinItem, done && { backgroundColor: item.color + '15', borderColor: item.color + '40' }]}
-                        onPress={() => toggleCheckin(item.key)}
+                        onPress={() => openCheckinModal(item)}
                         activeOpacity={0.75}
                       >
                         <View style={[styles.checkinIconWrap, { backgroundColor: done ? item.color + '20' : colors.border + '60' }]}>
@@ -589,6 +606,7 @@ export default function HomeScreen({ navigation }) {
                         <Text style={[styles.checkinItemLabel, done && { color: item.color, fontWeight: '700' }]}>
                           {item.label}
                         </Text>
+                        {hasNote && <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: item.color, position: 'absolute', top: 6, right: 6 }} />}
                       </TouchableOpacity>
                     );
                   })}
@@ -599,6 +617,83 @@ export default function HomeScreen({ navigation }) {
                     <Text style={styles.checkinAllDoneText}>今日打卡全部完成！保持健康好习惯 🎉</Text>
                   </View>
                 )}
+
+                {/* 打卡记录弹窗 */}
+                <Modal visible={!!checkinModal} transparent animationType="slide" onRequestClose={() => setCheckinModal(null)}>
+                  <View style={styles.checkinModalOverlay}>
+                    <View style={styles.checkinModalBox}>
+                      {/* 标题 */}
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          {checkinModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: checkinModal.color + '20', alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name={checkinModal.icon} size={18} color={checkinModal.color} />
+                          </View>}
+                          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{checkinModal?.label} 打卡</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => setCheckinModal(null)}>
+                          <Ionicons name="close" size={22} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+
+                      {/* 文字记录 */}
+                      <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>记录内容（可选）</Text>
+                      <TextInput
+                        style={styles.checkinNoteInput}
+                        multiline
+                        numberOfLines={3}
+                        placeholder={`记录今天的${checkinModal?.label}情况...`}
+                        placeholderTextColor={colors.textMuted}
+                        value={checkinNote}
+                        onChangeText={setCheckinNote}
+                      />
+
+                      {/* 图片上传 */}
+                      <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 8, marginTop: 12 }}>上传图片（可选）</Text>
+                      <TouchableOpacity
+                        style={styles.checkinImageBtn}
+                        onPress={() => {
+                          if (Platform.OS === 'web') {
+                            const input = document.createElement('input');
+                            input.type = 'file'; input.accept = 'image/*';
+                            input.onchange = (e) => {
+                              const file = e.target.files[0];
+                              if (!file) return;
+                              const reader = new FileReader();
+                              reader.onload = (ev) => setCheckinImage(ev.target.result);
+                              reader.readAsDataURL(file);
+                            };
+                            input.click();
+                          }
+                        }}
+                      >
+                        {checkinImage ? (
+                          <Image source={{ uri: checkinImage }} style={{ width: '100%', height: 120, borderRadius: 8 }} resizeMode="cover" />
+                        ) : (
+                          <View style={{ alignItems: 'center', gap: 6 }}>
+                            <Ionicons name="camera-outline" size={28} color={colors.textMuted} />
+                            <Text style={{ fontSize: 13, color: colors.textMuted }}>点击上传图片</Text>
+                          </View>
+                        )}
+                      </TouchableOpacity>
+                      {checkinImage && (
+                        <TouchableOpacity onPress={() => setCheckinImage(null)} style={{ alignSelf: 'flex-end', marginTop: 4 }}>
+                          <Text style={{ fontSize: 12, color: colors.danger }}>删除图片</Text>
+                        </TouchableOpacity>
+                      )}
+
+                      {/* 按钮 */}
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setCheckinModal(null)}>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: checkinModal?.color || colors.primary, flex: 2 }]} onPress={saveCheckin}>
+                          <Ionicons name="checkmark" size={18} color="#fff" />
+                          <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>完成打卡</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </Modal>
               </View>
             );
           })()}
@@ -934,6 +1029,30 @@ const styles = StyleSheet.create({
     backgroundColor: '#FEF9E7', borderRadius: radius.sm,
   },
   checkinAllDoneText: { fontSize: 12, color: '#B7791F', fontWeight: '600' },
+
+  // 打卡弹窗
+  checkinModalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  checkinModalBox: {
+    backgroundColor: colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    padding: spacing.lg, paddingBottom: 36,
+  },
+  checkinNoteInput: {
+    borderWidth: 1, borderColor: colors.border, borderRadius: radius.sm,
+    padding: 12, fontSize: 14, color: colors.textPrimary,
+    minHeight: 80, textAlignVertical: 'top', backgroundColor: colors.background,
+  },
+  checkinImageBtn: {
+    borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.sm,
+    borderStyle: 'dashed', minHeight: 80, alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.background, overflow: 'hidden',
+  },
+  checkinModalBtn: {
+    flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 13, borderRadius: radius.md,
+  },
 
   // 通用 Section
   section: { marginBottom: spacing.lg },
