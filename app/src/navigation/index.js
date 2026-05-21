@@ -24,6 +24,7 @@ import NutritionScreen from '../screens/nutrition/NutritionScreen';
 import QuestionnaireScreen from '../screens/questionnaire/QuestionnaireScreen';
 import RemindersScreen from '../screens/reminders/RemindersScreen';
 import ServiceMallScreen from '../screens/services/ServiceMallScreen';
+import ServicePlansScreen from '../screens/services/ServicePlansScreen';
 import EditProfileScreen from '../screens/profile/EditProfileScreen';
 import AccountSecurityScreen from '../screens/profile/AccountSecurityScreen';
 import HelpFeedbackScreen from '../screens/profile/HelpFeedbackScreen';
@@ -135,6 +136,7 @@ export default function Navigation() {
             <Stack.Screen name="Questionnaire" component={QuestionnaireScreen} />
             <Stack.Screen name="Reminders" component={RemindersScreen} />
             <Stack.Screen name="ServiceMall" component={ServiceMallScreen} />
+            <Stack.Screen name="ServicePlans" component={ServicePlansScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="AccountSecurity" component={AccountSecurityScreen} />
             <Stack.Screen name="HelpFeedback" component={HelpFeedbackScreen} />

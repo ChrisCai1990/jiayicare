@@ -58,11 +58,14 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// 删除体检报告
+// 删除体检报告（已审核报告不允许删除）
 router.delete('/:id', auth, async (req, res) => {
   try {
     const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.audit_status === 'audited') {
+      return res.status(403).json({ success: false, message: '已审核报告不可删除，如需处理请联系健康管理师' });
+    }
     await report.deleteOne();
     res.json({ success: true, message: '报告已删除' });
   } catch (err) {

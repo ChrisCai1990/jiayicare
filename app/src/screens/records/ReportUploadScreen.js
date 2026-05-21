@@ -188,14 +188,31 @@ function ReportCard({ report, onDelete, onPreview }) {
         )}
       </View>
       <View style={styles.reportRight}>
-        <View style={[styles.statusBadge, { backgroundColor: sm.color + '15' }]}>
-          <Ionicons name={sm.icon} size={12} color={sm.color} />
-          <Text style={[styles.statusText, { color: sm.color }]}>{sm.label}</Text>
+        <View style={styles.reportRightTop}>
+          <View style={[styles.statusBadge, { backgroundColor: sm.color + '15' }]}>
+            <Ionicons name={sm.icon} size={12} color={sm.color} />
+            <Text style={[styles.statusText, { color: sm.color }]}>{sm.label}</Text>
+          </View>
+          {report.audit_status === 'audited' && (
+            <View style={styles.auditedBadge}>
+              <Ionicons name="shield-checkmark-outline" size={11} color='#0077B6' />
+              <Text style={styles.auditedBadgeText}>已审核</Text>
+            </View>
+          )}
         </View>
         {!!onDelete && (
-          <TouchableOpacity onPress={() => onDelete(report._id || report.id)} style={styles.deleteBtn}>
-            <Ionicons name="trash-outline" size={14} color={colors.danger} />
-          </TouchableOpacity>
+          report.audit_status === 'audited' ? (
+            <TouchableOpacity
+              style={[styles.deleteBtn, styles.deleteBtnDisabled]}
+              onPress={() => onDelete(report._id || report.id, true)}
+            >
+              <Ionicons name="lock-closed-outline" size={14} color={colors.textMuted} />
+            </TouchableOpacity>
+          ) : (
+            <TouchableOpacity onPress={() => onDelete(report._id || report.id, false)} style={styles.deleteBtn}>
+              <Ionicons name="trash-outline" size={14} color={colors.danger} />
+            </TouchableOpacity>
+          )
         )}
       </View>
     </TouchableOpacity>
@@ -397,15 +414,19 @@ export default function ReportUploadScreen({ navigation, route }) {
     }
   };
 
-  const handleDelete = async (id) => {
+  const handleDelete = async (id, isAudited) => {
+    if (isAudited) {
+      showToast('已审核报告不可删除，如需处理请联系健康管理师', true);
+      return;
+    }
     try {
       const res = await reportsAPI.delete(id);
       if (res.success) {
         setReports(prev => prev.filter(r => (r._id || r.id) !== id));
         showToast('已删除');
       }
-    } catch {
-      showToast('删除失败', true);
+    } catch (err) {
+      showToast(err.message || '删除失败', true);
     }
   };
 
@@ -426,7 +447,7 @@ export default function ReportUploadScreen({ navigation, route }) {
 
       {/* 页面 Tab 切换 */}
       <View style={styles.pageTabs}>
-        {[{ key: 'reports', label: '体检报告' }, { key: 'monitoring', label: '动态监测' }].map(t => (
+        {[{ key: 'reports', label: '体检报告' }, { key: 'monitoring', label: '居家监测' }].map(t => (
           <TouchableOpacity
             key={t.key}
             style={[styles.pageTab, pageTab === t.key && styles.pageTabActive]}
@@ -437,9 +458,36 @@ export default function ReportUploadScreen({ navigation, route }) {
         ))}
       </View>
 
-      {/* ── 动态监测 Tab ──────────────────────────────────────────── */}
+      {/* ── 居家监测 Tab ──────────────────────────────────────────── */}
       {pageTab === 'monitoring' ? (
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
+          {/* 居家自测设备 */}
+          <Text style={styles.monitorSectionTitle}>居家自测设备</Text>
+          {[
+            { key: 'bp_home',     label: '血压监测',   subtitle: '家用血压计自测记录',       icon: 'heart-outline',      color: '#DC3545', bg: '#FDEEEC' },
+            { key: 'sugar_home',  label: '血糖监测',   subtitle: '家用血糖仪自测记录',       icon: 'water-outline',      color: '#D97706', bg: '#FEF3E2' },
+            { key: 'weight_home', label: '体重监测',   subtitle: '体重秤自测记录',           icon: 'scale-outline',      color: '#22A06B', bg: '#E8F8F1' },
+            { key: 'sleep_home',  label: '睡眠监测',   subtitle: '睡眠手环/枕头监测记录',    icon: 'moon-outline',       color: '#0077B6', bg: '#E3F2FB' },
+          ].map(item => (
+            <View key={item.key} style={styles.monitorCard}>
+              <View style={[styles.monitorIconWrap, { backgroundColor: item.bg }]}>
+                <Ionicons name={item.icon} size={26} color={item.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.monitorLabel}>{item.label}</Text>
+                <Text style={styles.monitorSubtitle}>{item.subtitle}</Text>
+                <View style={styles.monitorComingSoon}>
+                  <Ionicons name="sync-outline" size={12} color={colors.textMuted} />
+                  <Text style={styles.monitorComingSoonText}>即将支持设备同步</Text>
+                </View>
+              </View>
+              <View style={styles.monitorBadge}>
+                <Text style={styles.monitorBadgeText}>即将开放</Text>
+              </View>
+            </View>
+          ))}
+          {/* 专业动态监测 */}
+          <Text style={[styles.monitorSectionTitle, { marginTop: spacing.sm }]}>专业动态监测</Text>
           {[
             { key: 'abpm',   label: '动态血压',   subtitle: '24h动态血压监测（ABPM）', icon: 'heart-outline',    color: '#DC3545', bg: '#FDEEEC' },
             { key: 'cgm',    label: '动态血糖',   subtitle: '持续葡萄糖监测（CGM）',    icon: 'water-outline',    color: '#D97706', bg: '#FEF3E2' },
@@ -617,6 +665,7 @@ const styles = StyleSheet.create({
     width: 52, height: 52, borderRadius: radius.md,
     alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
+  monitorSectionTitle: { fontSize: 13, fontWeight: '700', color: colors.textMuted, letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: spacing.xs },
   monitorLabel: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
   monitorSubtitle: { fontSize: 12, color: colors.textSecondary, marginBottom: 4 },
   monitorComingSoon: { flexDirection: 'row', alignItems: 'center', gap: 4 },
@@ -686,9 +735,13 @@ const styles = StyleSheet.create({
   findingChip: { backgroundColor: colors.warning + '12', paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full },
   findingText: { fontSize: 10, color: colors.warning, fontWeight: '500' },
   reportRight: { alignItems: 'flex-end', marginLeft: spacing.xs, gap: spacing.xs },
+  reportRightTop: { alignItems: 'flex-end', gap: 4 },
   statusBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
   statusText: { fontSize: 11, fontWeight: '600' },
+  auditedBadge: { flexDirection: 'row', alignItems: 'center', gap: 3, backgroundColor: '#E3F2FB', borderRadius: radius.full, paddingHorizontal: 6, paddingVertical: 2 },
+  auditedBadgeText: { fontSize: 10, fontWeight: '600', color: '#0077B6' },
   deleteBtn: { padding: 4 },
+  deleteBtnDisabled: { opacity: 0.4 },
 
   toast: {
     position: 'absolute', bottom: 40, alignSelf: 'center',

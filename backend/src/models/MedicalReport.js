@@ -36,6 +36,14 @@ const medicalReportSchema = new mongoose.Schema({
   // 文件预览内容（data URI，仅小文件 < 3MB 存储，用于前端预览）
   content: { type: String, default: '' },
   mimeType:{ type: String, default: '' },
+  // 审核状态（由管理员设置）
+  audit_status: {
+    type: String,
+    enum: ['unaudited', 'audited'],
+    default: 'unaudited',
+  },
+  audited_by:  { type: String, default: '' },
+  audited_at:  { type: Date,   default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('MedicalReport', medicalReportSchema);

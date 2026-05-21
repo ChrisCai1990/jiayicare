@@ -730,12 +730,13 @@ export default function RecordsScreen({ navigation }) {
           </View>
           <View style={styles.profileCard}>
             {[
-              { key: 'diet',     label: '饮食', icon: 'nutrition-outline',  color: '#059669' },
-              { key: 'exercise', label: '运动', icon: 'fitness-outline',    color: '#0077B6' },
-              { key: 'sleep',    label: '睡眠', icon: 'moon-outline',       color: '#4F46E5' },
-              { key: 'water',    label: '饮水', icon: 'water-outline',      color: '#0EA5E9' },
-              { key: 'alcohol',  label: '饮酒', icon: 'wine-outline',       color: '#9D174D' },
-              { key: 'smoking',  label: '吸烟', icon: 'flame-outline',      color: '#B45309' },
+              { key: 'diet',     label: '饮食',              icon: 'nutrition-outline',  color: '#059669' },
+              { key: 'exercise', label: '运动',              icon: 'fitness-outline',    color: '#0077B6' },
+              { key: 'sleep',    label: '睡眠',              icon: 'moon-outline',       color: '#4F46E5' },
+              { key: 'water',    label: '饮水',              icon: 'water-outline',      color: '#0EA5E9' },
+              { key: 'alcohol',  label: '饮酒',              icon: 'wine-outline',       color: '#9D174D' },
+              { key: 'smoking',  label: '吸烟',              icon: 'flame-outline',      color: '#B45309' },
+              { key: 'mood',     label: '情绪（初始记录）',  icon: 'happy-outline',      color: '#F59E0B', initialOnly: true },
             ].map((item, i, arr) => (
               <View key={item.key} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>
                 <View style={styles.profileRowLeft}>
@@ -1090,6 +1091,19 @@ export default function RecordsScreen({ navigation }) {
                     />
                   </View>
                 ))}
+                {/* 情绪（初始记录）—— 来自健康初评，只读展示 */}
+                <View style={styles.editField}>
+                  <View style={styles.editFieldLabel}>
+                    <Ionicons name="happy-outline" size={14} color="#F59E0B" style={{ marginRight: 6 }} />
+                    <Text style={styles.editFieldLabelText}>情绪</Text>
+                    <Text style={styles.editFieldInitialTag}>初始记录</Text>
+                  </View>
+                  <View style={[styles.editInput, styles.editInputReadonly]}>
+                    <Text style={{ color: lifestyleDraft.mood ? colors.textPrimary : colors.textMuted, fontSize: 14 }}>
+                      {lifestyleDraft.mood || '来自健康初评，如需修改请联系健康管理师'}
+                    </Text>
+                  </View>
+                </View>
                 <View style={{ height: 20 }} />
               </ScrollView>
               <TouchableOpacity style={styles.saveBtn} onPress={saveLifestyle} activeOpacity={0.85}>
@@ -1263,12 +1277,14 @@ const styles = StyleSheet.create({
   editField: { marginBottom: spacing.md },
   editFieldLabel: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
   editFieldLabelText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  editFieldInitialTag: { fontSize: 10, color: '#F59E0B', fontWeight: '600', backgroundColor: '#FEF3E2', borderRadius: radius.full, paddingHorizontal: 6, paddingVertical: 1, marginLeft: 6 },
   editInput: {
     backgroundColor: colors.background, borderRadius: radius.sm,
     borderWidth: 1.5, borderColor: colors.border,
     paddingHorizontal: spacing.sm, paddingVertical: 10,
     fontSize: 14, color: colors.textPrimary,
   },
+  editInputReadonly: { borderStyle: 'dashed', borderColor: colors.border, opacity: 0.75 },
   saveBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
     backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.sm,

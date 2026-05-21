@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { userAPI, ordersAPI } from '../../services/api';
+import { ordersAPI } from '../../services/api';
 import Avatar, { AvatarOnDark } from '../../components/Avatar';
 
 // ── 菜单条目 ──────────────────────────────────────────────────────
@@ -64,25 +64,23 @@ function LogoutModal({ visible, onConfirm, onCancel }) {
 export default function ProfileScreen({ navigation }) {
   const { user, isDemo, logout } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
-  const [monthlyCount, setMonthlyCount] = useState(null);
   const [pendingOrders, setPendingOrders] = useState(0);
   const [notifLabel, setNotifLabel] = useState('');
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
-  const score = user?.healthScore || 0;
-  const scoreColor = score >= 80 ? colors.success : score >= 60 ? colors.warning : colors.danger;
+  // 健康基金
+  const fund = user?.healthFund || {};
+  const fundTotal    = fund.total    ?? 0;
+  const fundPersonal = fund.personal ?? 0;
+  const fundCorp     = fund.corporate ?? 0;
+  // 会员类型
+  const memberType = hasService ? (user.servicePackage || '标准会员') : '未开通';
+  // 到期日格式化
+  const expiryStr = hasService ? (user.serviceExpiry || '--') : '--';
 
   useEffect(() => {
-    // 本月记录数
-    (async () => {
-      try {
-        const res = await userAPI.getReport('month');
-        if (res.success) setMonthlyCount(res.data.recordCount ?? 0);
-      } catch { setMonthlyCount(0); }
-    })();
-
     // 待跟进订单数
     (async () => {
       try {
@@ -121,21 +119,42 @@ export default function ProfileScreen({ navigation }) {
           </View>
         </View>
 
-        {/* ── 健康概况 ────────────────────────────────────────── */}
+        {/* ── 会员信息卡 ──────────────────────────────────────── */}
         <View style={styles.statsCard}>
-          {[
-            { val: score || '--',    label: '健康评分', color: score ? scoreColor : colors.textMuted },
-            { val: hasService ? daysLeft : '--', label: '服务天数', color: hasService ? colors.primary : colors.textMuted },
-            { val: monthlyCount ?? '--', label: '本月记录', color: monthlyCount > 0 ? colors.textPrimary : colors.textMuted },
-          ].map((s, i) => (
-            <React.Fragment key={i}>
-              {i > 0 && <View style={styles.statsDivider} />}
-              <View style={styles.statItem}>
-                <Text style={[styles.statVal, { color: s.color }]}>{s.val}</Text>
-                <Text style={styles.statLabel}>{s.label}</Text>
-              </View>
-            </React.Fragment>
-          ))}
+          {/* 第一行：会员类型 | 服务天数 | 到期日 */}
+          <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={[styles.statVal, { color: hasService ? colors.primary : colors.textMuted, fontSize: 14 }]} numberOfLines={1}>
+                {memberType}
+              </Text>
+              <Text style={styles.statLabel}>会员类型</Text>
+            </View>
+            <View style={styles.statsDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statVal, { color: hasService ? colors.primary : colors.textMuted }]}>
+                {hasService ? daysLeft : '--'}
+              </Text>
+              <Text style={styles.statLabel}>服务天数</Text>
+            </View>
+            <View style={styles.statsDivider} />
+            <View style={styles.statItem}>
+              <Text style={[styles.statVal, { color: hasService ? colors.textPrimary : colors.textMuted, fontSize: 13 }]} numberOfLines={1}>
+                {expiryStr}
+              </Text>
+              <Text style={styles.statLabel}>到期日</Text>
+            </View>
+          </View>
+          {/* 第二行：健康基金 */}
+          <View style={styles.fundRow}>
+            <View style={styles.fundLeft}>
+              <Ionicons name="wallet-outline" size={14} color="#D97706" />
+              <Text style={styles.fundLabel}>健康基金</Text>
+            </View>
+            <View style={styles.fundRight}>
+              <Text style={styles.fundTotal}>¥{fundTotal.toLocaleString()}</Text>
+              <Text style={styles.fundBreakdown}>自有 ¥{fundPersonal.toLocaleString()} · 企业 ¥{fundCorp.toLocaleString()}</Text>
+            </View>
+          </View>
         </View>
 
         {/* ── 服务包 ──────────────────────────────────────────── */}
@@ -199,6 +218,7 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>健康管理</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="heart-outline"         iconColor="#DC3545" label="健康档案" value="查看全部" onPress={() => navigation.navigate('Records')} />
+            <MenuItem icon="clipboard-outline"     iconColor="#7C3AED" label="服务方案"              onPress={() => navigation.navigate('ServicePlans')} />
             <MenuItem icon="document-text-outline" iconColor="#0077B6" label="体检报告" badge={undefined} onPress={() => navigation.navigate('ReportUpload')} />
             <MenuItem icon="medkit-outline"        iconColor="#D97706" label="用药管理"              onPress={() => navigation.navigate('Medication')} />
             <MenuItem icon="leaf-outline"          iconColor="#22A06B" label="营养素管理"            onPress={() => navigation.navigate('Nutrition')} isLast />
@@ -279,22 +299,32 @@ const styles = StyleSheet.create({
   userName: { fontSize: 22, fontWeight: '700', color: colors.white, marginTop: spacing.sm, letterSpacing: -0.3 },
   userSub: { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
 
-  // 健康概况
+  // 会员信息卡
   statsCard: {
-    flexDirection: 'row',
     backgroundColor: colors.white,
     marginHorizontal: spacing.lg,
     marginTop: -spacing.sm,
     borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border,
-    paddingVertical: spacing.md,
-    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
     overflow: 'hidden',
   },
+  statsRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
   statItem: { flex: 1, alignItems: 'center' },
-  statVal: { fontSize: 24, fontWeight: '800', letterSpacing: -0.5 },
+  statVal: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
   statLabel: { fontSize: 11, color: colors.textMuted, marginTop: 4, fontWeight: '500' },
   statsDivider: { width: 1, backgroundColor: colors.borderLight, marginVertical: 4 },
+  fundRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderTopWidth: 1, borderTopColor: colors.borderLight,
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+    backgroundColor: '#FFFBF5',
+  },
+  fundLeft: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  fundLabel: { fontSize: 12, fontWeight: '600', color: '#D97706' },
+  fundRight: { alignItems: 'flex-end' },
+  fundTotal: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
+  fundBreakdown: { fontSize: 10, color: colors.textMuted, marginTop: 1 },
 
   // Section
   section: { marginTop: spacing.lg, paddingHorizontal: spacing.lg },
