@@ -18,10 +18,14 @@ async function seedAdmins() {
   const count = await Admin.countDocuments();
   if (count > 0) return;
   await Admin.create([
-    { username: 'doctor1',  password: 'jiayi2024', name: '王主任',  role: 'doctor',  title: '心血管内科主任医师' },
-    { username: 'manager1', password: 'jiayi2024', name: '李健管',  role: 'manager', title: '高级健康管理师' },
+    { username: 'superadmin', password: 'jiayi2024', name: '超级管理员', role: 'superadmin', title: '' },
+    { username: 'doctor1',    password: 'jiayi2024', name: '王主任',     role: 'doctor',     title: '心血管内科主任医师' },
+    { username: 'manager1',   password: 'jiayi2024', name: '李健管',     role: 'manager',    title: '高级健康管理师' },
+    // 默认医护账号（供测试）
+    { username: 'staff001', password: 'jiayi2024', name: '张健管', role: 'healthManager', title: '健康管理师' },
+    { username: 'staff002', password: 'jiayi2024', name: '李医生', role: 'familyDoctor',  title: '全科医生' },
   ]);
-  console.log('✅ 已创建默认管理员账号');
+  console.log('✅ 已创建默认账号（含医护端）');
 }
 seedAdmins().catch(console.error);
 
@@ -391,6 +395,77 @@ router.get('/change-logs', adminAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: '获取变更记录失败', error: err.message });
   }
+});
+
+// ── 医护账号管理 ────────────────────────────────────────────────────
+const STAFF_ROLES = [
+  'familyDoctor', 'nutritionist', 'healthManager',
+  'medicalAssistant', 'psychologist', 'rehabSpecialist',
+  'tcmDoctor', 'specialist', 'healthPlanner',
+];
+
+// GET /api/admin/staff — 列出所有医护账号
+router.get('/staff', adminAuth, async (req, res) => {
+  const { role = '' } = req.query;
+  const filter = { role: { $in: STAFF_ROLES } };
+  if (role && STAFF_ROLES.includes(role)) filter.role = role;
+  const list = await Admin.find(filter).select('-password').sort({ createdAt: -1 });
+  res.json({ success: true, data: list });
+});
+
+// POST /api/admin/staff — 新建医护账号（仅 superadmin）
+router.post('/staff', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') {
+    return res.status(403).json({ success: false, message: '仅超级管理员可创建医护账号' });
+  }
+  const { username, password, name, role, title, department, region } = req.body;
+  if (!username || !password || !name || !role) {
+    return res.status(400).json({ success: false, message: '用户名、密码、姓名、角色不能为空' });
+  }
+  if (!STAFF_ROLES.includes(role)) {
+    return res.status(400).json({ success: false, message: '角色无效' });
+  }
+  const existing = await Admin.findOne({ username });
+  if (existing) return res.status(400).json({ success: false, message: '用户名已存在' });
+
+  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '' });
+  res.json({ success: true, data: { _id: staff._id, username: staff.username, name: staff.name, role: staff.role } });
+});
+
+// PUT /api/admin/staff/:id — 更新医护账号信息
+router.put('/staff/:id', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') {
+    return res.status(403).json({ success: false, message: '仅超级管理员可修改医护账号' });
+  }
+  const { name, role, title, department, region, password } = req.body;
+  const update = {};
+  if (name) update.name = name;
+  if (role && STAFF_ROLES.includes(role)) update.role = role;
+  if (title !== undefined) update.title = title;
+  if (department !== undefined) update.department = department;
+  if (region !== undefined) update.region = region;
+
+  const staff = await Admin.findById(req.params.id);
+  if (!staff || !STAFF_ROLES.includes(staff.role)) {
+    return res.status(404).json({ success: false, message: '医护账号不存在' });
+  }
+  Object.assign(staff, update);
+  if (password) staff.password = password; // triggers bcrypt pre-save
+  await staff.save();
+  res.json({ success: true, data: { _id: staff._id, name: staff.name, role: staff.role } });
+});
+
+// DELETE /api/admin/staff/:id — 删除医护账号（仅 superadmin）
+router.delete('/staff/:id', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') {
+    return res.status(403).json({ success: false, message: '仅超级管理员可删除医护账号' });
+  }
+  const staff = await Admin.findById(req.params.id);
+  if (!staff || !STAFF_ROLES.includes(staff.role)) {
+    return res.status(404).json({ success: false, message: '医护账号不存在' });
+  }
+  await staff.deleteOne();
+  res.json({ success: true, message: '账号已删除' });
 });
 
 module.exports = router;

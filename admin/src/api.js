@@ -48,6 +48,12 @@ export const adminAPI = {
   // 用户信息变更记录（#34）
   changeLogs: (params = {}) => req('/change-logs?' + new URLSearchParams(params).toString()),
 
+  // 医护账号管理
+  staffList:   (params = {}) => req('/staff?' + new URLSearchParams(params).toString()),
+  createStaff: (data)        => req('/staff', { method: 'POST', body: JSON.stringify(data) }),
+  updateStaff: (id, data)    => req(`/staff/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteStaff: (id)          => req(`/staff/${id}`, { method: 'DELETE' }),
+
   // 动态问卷管理
   questionnaires:            ()         => req('/questionnaires'),
   createQuestionnaire:       (data)     => req('/questionnaires', { method: 'POST', body: JSON.stringify(data) }),

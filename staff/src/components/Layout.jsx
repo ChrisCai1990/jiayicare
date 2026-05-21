@@ -1,22 +1,15 @@
 import React from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
-import { useAdmin } from '../App'
+import { useStaff } from '../App'
 
 const NAV = [
-  { label: '数据总览', icon: '📊', path: '/dashboard' },
-  { label: '患者管理', icon: '👥', path: '/patients' },
-  { label: '订单管理', icon: '📋', path: '/orders' },
-  { label: '消息中心', icon: '💬', path: '/messages' },
-  { label: '服务管理', icon: '🛒', path: '/services' },
-  { label: '问卷管理', icon: '📝', path: '/questionnaires' },
-  { label: '信息变更记录', icon: '📌', path: '/change-logs' },
-  { label: '医护账号管理', icon: '👨‍⚕️', path: '/staff' },
+  { label: '工作台',   icon: '🏠', path: '/home' },
+  { label: '我的患者', icon: '👥', path: '/patients' },
+  { label: '随访记录', icon: '📋', path: '/followups' },
 ]
 
-const ROLE_MAP = { doctor: '医生', manager: '健管师', superadmin: '超级管理员' }
-
 export default function Layout() {
-  const { admin, logout } = useAdmin()
+  const { staff, logout } = useStaff()
   const nav = useNavigate()
   const loc = useLocation()
 
@@ -27,7 +20,7 @@ export default function Layout() {
     }
   }
 
-  const initials = admin?.name?.slice(0, 1) || 'A'
+  const initials = staff?.name?.slice(0, 1) || 'S'
 
   return (
     <div className="app-layout">
@@ -35,7 +28,7 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="sidebar-logo">
           <div className="sidebar-logo-title">🏥 嘉医管家</div>
-          <div className="sidebar-logo-sub">医护管理后台</div>
+          <div className="sidebar-logo-sub">医护工作台</div>
         </div>
 
         <nav className="sidebar-nav">
@@ -59,9 +52,10 @@ export default function Layout() {
           <div className="sidebar-admin-info">
             <div className="sidebar-admin-avatar">{initials}</div>
             <div>
-              <div className="sidebar-admin-name">{admin?.name || '管理员'}</div>
+              <div className="sidebar-admin-name">{staff?.name || '医护人员'}</div>
               <div className="sidebar-admin-role">
-                {ROLE_MAP[admin?.role] || admin?.role}{admin?.title ? ` · ${admin.title}` : ''}
+                {staff?.roleLabel || staff?.role}
+                {staff?.title ? ` · ${staff.title}` : ''}
               </div>
             </div>
           </div>

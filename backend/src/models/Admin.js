@@ -5,9 +5,30 @@ const adminSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   name:     { type: String, required: true },
-  role:     { type: String, enum: ['doctor', 'manager', 'superadmin'], default: 'doctor' },
-  title:    { type: String, default: '' },
-  avatar:   { type: String, default: '' },
+  // 原管理员角色保留；新增医护端一线角色
+  role: {
+    type: String,
+    enum: [
+      'superadmin',      // 超级管理员
+      'doctor', 'manager', // 旧管理员角色（兼容）
+      'familyDoctor',    // 家庭医生
+      'nutritionist',    // 营养师
+      'healthManager',   // 健管专员
+      'medicalAssistant',// 就医专员
+      'psychologist',    // 心理咨询师
+      'rehabSpecialist', // 运动复健师
+      'tcmDoctor',       // 中医师
+      'specialist',      // 专科医师
+      'healthPlanner',   // 健康规划师
+    ],
+    default: 'healthManager',
+  },
+  title:      { type: String, default: '' },
+  avatar:     { type: String, default: '' },
+  // 医护端扩展字段
+  department: { type: String, default: '' },  // 所属部门
+  managerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 直属上级
+  region:     { type: String, default: '' },  // 所属区域
 }, { timestamps: true });
 
 // 密码哈希

@@ -5,16 +5,20 @@
   "workspaces": [
     "app",
     "admin",
+    "staff",
     "backend"
   ],
   "scripts": {
     "dev:app": "cd app && npx expo start",
     "dev:admin": "cd admin && npm run dev",
+    "dev:staff": "cd staff && npm run dev",
     "dev:backend": "cd backend && npm run dev",
     "serve:app": "npx serve app/dist -s -l $PORT",
     "serve:admin": "npx serve admin/dist -s -l $PORT",
+    "serve:staff": "npx serve staff/dist -s -l $PORT",
     "build:app": "cd app && ../node_modules/.bin/expo export --platform web --output-dir dist",
-    "build:admin": "cd admin && ../node_modules/.bin/vite build"
+    "build:admin": "cd admin && ../node_modules/.bin/vite build",
+    "build:staff": "cd staff && ../node_modules/.bin/vite build"
   },
   "devDependencies": {
     "serve": "^14.2.0"

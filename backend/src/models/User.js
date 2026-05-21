@@ -56,6 +56,19 @@ const userSchema = new mongoose.Schema({
   // 联系信息（#34）
   contactPhone:    { type: String, default: '' },  // 联系电话（与登录手机号独立）
   deliveryAddress: { type: String, default: '' },  // 配送地址（快递用）
+  // 医护端管理字段
+  assignedHealthManager: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健管专员
+  assignedFamilyDoctor:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医生
+  chronicDiseases: { type: [String], default: [] }, // 慢病标签，如 ['高血压','糖尿病']
+  idNumber:        { type: String, default: '' },   // 身份证号
+  source:          { type: String, default: '' },   // 患者来源
+  patientType:     { type: String, enum: ['regular', 'vip', 'trial', ''], default: '' }, // 患者类型
+  remark:          { type: String, default: '' },   // 备注
+  workplace:       { type: String, default: '' },   // 工作单位
+  occupation:      { type: String, default: '' },   // 职业
+  maritalStatus:   { type: String, default: '' },   // 婚姻状况
+  ethnicity:       { type: String, default: '' },   // 民族
+  contactPhone2:   { type: String, default: '' },   // 紧急联系电话
   // 生活方式（文字描述，6个维度）
   lifestyle: {
     diet:     { type: String, default: '' },  // 饮食

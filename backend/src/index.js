@@ -39,6 +39,7 @@ app.use('/api/feedback',      require('./routes/feedback'));
 app.use('/api/system',        require('./routes/system'));
 app.use('/api/share',         require('./routes/share'));
 app.use('/api/admin',         require('./routes/admin'));
+app.use('/api/staff',         require('./routes/staff'));
 
 // 404
 app.use((req, res) => {
