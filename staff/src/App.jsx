@@ -19,6 +19,7 @@ import OperationsPage from './pages/OperationsPage'
 import ProductPushPage from './pages/ProductPushPage'
 import TeamPage from './pages/TeamPage'
 import ProfilePage from './pages/ProfilePage'
+import NotificationsPage from './pages/NotificationsPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -87,6 +88,7 @@ export default function App() {
               <Route path="products" element={<ProductPushPage />} />
               <Route path="team" element={<TeamPage />} />
               <Route path="profile" element={<ProfilePage />} />
+              <Route path="notifications" element={<NotificationsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>

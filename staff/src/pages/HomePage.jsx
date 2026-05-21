@@ -89,8 +89,8 @@ export default function HomePage() {
               {[
                 { icon: '➕', label: '新增患者', path: '/patients/new' },
                 { icon: '📋', label: '记录随访', path: '/followups' },
+                { icon: '🔔', label: '消息通知', path: '/notifications' },
                 { icon: '🛍', label: '产品推送', path: '/products' },
-                { icon: '👤', label: '个人中心', path: '/profile' },
               ].map(item => (
                 <button
                   key={item.label}

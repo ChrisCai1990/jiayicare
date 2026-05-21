@@ -15,6 +15,7 @@ const ALL_NAV = [
   { label: '分佣中心', icon: '💰', path: '/commission', roles: [] },
   { label: '团队管理', icon: '🫂', path: '/team',      roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'] },
   { label: '运营看板', icon: '📊', path: '/operations', roles: ['superadmin','manager'] },
+  { label: '消息通知', icon: '🔔', path: '/notifications', roles: [] },
   { label: '个人中心', icon: '👤', path: '/profile',   roles: [] },
 ]
 

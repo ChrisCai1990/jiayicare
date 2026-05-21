@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { useToast } from '../App'
+import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 
 const TYPE_MAP = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
@@ -16,13 +16,18 @@ export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
   const toast = useToast()
+  const { staff } = useStaff()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('info')  // info | records | followups | plans | reports | serviceRecords
+  const [tab, setTab] = useState('info')  // info | records | followups | plans | reports | serviceRecords | gifts
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
+  const [gifts, setGifts] = useState([])
+  const [showGiftModal, setShowGiftModal] = useState(false)
+  const [showReferralModal, setShowReferralModal] = useState(false)
+  const [staffList, setStaffList] = useState([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
@@ -55,13 +60,21 @@ export default function PatientDetailPage() {
   const loadServiceRecords = async () => {
     try { const res = await staffAPI.getPatientServiceRecords(id); setServiceRecords(res.data) } catch {}
   }
+  const loadGifts = async () => {
+    try { const res = await staffAPI.getPatientGifts(id); setGifts(res.data) } catch {}
+  }
 
   useEffect(() => { load() }, [id])
+  useEffect(() => {
+    // 预加载员工列表（转介用）
+    staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
+  }, [])
   useEffect(() => {
     if (tab === 'followups') loadFollowUps()
     else if (tab === 'plans') loadPlans()
     else if (tab === 'reports') loadReports()
     else if (tab === 'serviceRecords') loadServiceRecords()
+    else if (tab === 'gifts') loadGifts()
   }, [tab])
 
   const buildEditForm = (u) => ({
@@ -116,19 +129,41 @@ export default function PatientDetailPage() {
             <p className="page-subtitle">{user.phone} · {user.gender} · {age}</p>
           </div>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowFollowUpModal(true)}>
-          ＋ 记录随访
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary btn-sm" onClick={() => setShowReferralModal(true)}>🔀 转介</button>
+          <button className="btn btn-primary" onClick={() => setShowFollowUpModal(true)}>＋ 记录随访</button>
+        </div>
       </div>
 
       {/* 慢病标签 */}
       {user.chronicDiseases?.length > 0 && (
-        <div style={{ marginBottom: 16, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {user.chronicDiseases.map(d => (
             <span key={d} className="badge badge-danger">{d}</span>
           ))}
         </div>
       )}
+
+      {/* 服务效期提示 */}
+      {user.serviceExpiry && (() => {
+        const left = Math.ceil((new Date(user.serviceExpiry) - new Date()) / (1000 * 60 * 60 * 24))
+        if (left > 30) return null
+        const color = left <= 0 ? '#DC3545' : left <= 7 ? '#DC3545' : '#D97706'
+        const bg = left <= 0 ? '#FEF2F2' : left <= 7 ? '#FEF2F2' : '#FFFBEB'
+        return (
+          <div style={{ marginBottom: 12, padding: '10px 16px', background: bg, borderRadius: 8, border: `1px solid ${color}20`, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 18 }}>{left <= 0 ? '🔴' : '⏰'}</span>
+            <div>
+              <span style={{ color, fontWeight: 600, fontSize: 14 }}>
+                {left <= 0 ? '服务包已到期' : `服务包还剩 ${left} 天到期`}
+              </span>
+              <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>
+                {user.servicePackage} · 到期：{new Date(user.serviceExpiry).toLocaleDateString('zh-CN')}
+              </span>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Tabs */}
       <div className="tabs" style={{ marginBottom: 20 }}>
@@ -139,6 +174,7 @@ export default function PatientDetailPage() {
           { key: 'plans', label: '健康方案' },
           { key: 'reports', label: '体检报告' },
           { key: 'serviceRecords', label: '服务记录' },
+          { key: 'gifts', label: '权益赠送' },
         ].map(t => (
           <button
             key={t.key}
@@ -451,6 +487,43 @@ export default function PatientDetailPage() {
         </div>
       )}
 
+      {/* ── Gifts Tab ── */}
+      {tab === 'gifts' && (
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">权益赠送记录</div>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowGiftModal(true)}>＋ 赠送权益</button>
+          </div>
+          {gifts.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
+              暂无赠送记录，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => setShowGiftModal(true)}>点击赠送服务或健康基金</span>
+            </div>
+          ) : (
+            <table className="table">
+              <thead><tr><th>赠送类型</th><th>赠送内容</th><th>有效期</th><th>状态</th><th>赠送人</th><th>时间</th></tr></thead>
+              <tbody>
+                {gifts.map(g => (
+                  <tr key={g._id}>
+                    <td><span className={`badge ${g.giftType === 'fund' ? 'badge-warning' : 'badge-success'}`}>{g.giftType === 'fund' ? '健康基金' : '服务'}</span></td>
+                    <td style={{ fontWeight: 500 }}>
+                      {g.giftType === 'fund' ? `¥${g.fundAmount}元` : `${g.serviceName} × ${g.serviceCount}次`}
+                      {g.remark && <div style={{ fontSize: 12, color: '#aaa' }}>{g.remark}</div>}
+                    </td>
+                    <td style={{ fontSize: 13, color: '#666' }}>
+                      {g.validFrom ? new Date(g.validFrom).toLocaleDateString('zh-CN') : '-'}
+                      {g.validTo ? ` ~ ${new Date(g.validTo).toLocaleDateString('zh-CN')}` : ''}
+                    </td>
+                    <td><span style={{ color: g.status === 'active' ? '#22A06B' : g.status === 'used' ? '#0077B6' : '#aaa', fontWeight: 500, fontSize: 13 }}>{g.status === 'active' ? '有效' : g.status === 'used' ? '已使用' : '已过期'}</span></td>
+                    <td style={{ fontSize: 13, color: '#666' }}>{g.staffId?.name || '-'}</td>
+                    <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(g.createdAt).toLocaleDateString('zh-CN')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
       {/* 随访记录弹窗 */}
       {showFollowUpModal && (
         <FollowUpModal
@@ -458,6 +531,27 @@ export default function PatientDetailPage() {
           patientName={user.name}
           onClose={() => setShowFollowUpModal(false)}
           onSaved={handleFollowUpCreated}
+        />
+      )}
+
+      {/* 赠送权益弹窗 */}
+      {showGiftModal && (
+        <GiftModal
+          patientId={id}
+          patientName={user.name}
+          onClose={() => setShowGiftModal(false)}
+          onSaved={() => { setShowGiftModal(false); toast('权益已赠送'); loadGifts() }}
+        />
+      )}
+
+      {/* 转介弹窗 */}
+      {showReferralModal && (
+        <ReferralModal
+          patientId={id}
+          patientName={user.name}
+          staffList={staffList}
+          onClose={() => setShowReferralModal(false)}
+          onSaved={() => { setShowReferralModal(false); toast('转介已发送') }}
         />
       )}
     </div>
@@ -488,4 +582,181 @@ function formatRecordValue(r) {
   if (r.type === 'sleep') return `${r.value} h`
   if (r.type === 'mood') return `${r.value} / 10`
   return r.value ?? '-'
+}
+
+// ── 赠送权益弹窗 ───────────────────────────────────────────
+const SERVICE_OPTIONS = ['就医协助服务', '居家监测套餐', '专家咨询', '陪诊服务', '上门采血', '营养咨询', '其他服务']
+
+function GiftModal({ patientId, patientName, onClose, onSaved }) {
+  const toast = useToast()
+  const [form, setForm] = useState({ giftType: 'service', serviceName: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise', validFrom: '', validTo: '', remark: '' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const handleSubmit = async () => {
+    if (form.giftType === 'service' && !form.serviceName) { setError('请选择赠送服务'); return }
+    if (form.giftType === 'fund' && (!form.fundAmount || Number(form.fundAmount) <= 0)) { setError('请输入有效金额'); return }
+    setSaving(true); setError('')
+    try {
+      await staffAPI.giftToPatient(patientId, { ...form, serviceCount: Number(form.serviceCount), fundAmount: Number(form.fundAmount) })
+      onSaved()
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 460 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">赠送权益 — {patientName}</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">赠送类型</label>
+            <div style={{ display: 'flex', gap: 12 }}>
+              {[['service', '🎁 赠送服务'], ['fund', '💰 健康基金']].map(([v, l]) => (
+                <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: form.giftType === v ? 700 : 400, color: form.giftType === v ? '#1E6B50' : '#666' }}>
+                  <input type="radio" value={v} checked={form.giftType === v} onChange={set('giftType')} /> {l}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          {form.giftType === 'service' ? (
+            <>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">服务类型 *</label>
+                <select className="form-input" value={form.serviceName} onChange={set('serviceName')}>
+                  <option value="">-- 请选择 --</option>
+                  {SERVICE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">赠送次数</label>
+                <input className="form-input" type="number" min={1} max={99} value={form.serviceCount} onChange={set('serviceCount')} />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">金额（元）*</label>
+                <input className="form-input" type="number" min={1} placeholder="如：500" value={form.fundAmount || ''} onChange={set('fundAmount')} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">基金类型</label>
+                <select className="form-input" value={form.fundType} onChange={set('fundType')}>
+                  <option value="enterprise">企业派送</option>
+                  <option value="promotion">促销赠送</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+            </>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">有效期开始</label>
+              <input className="form-input" type="date" value={form.validFrom} onChange={set('validFrom')} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">有效期结束</label>
+              <input className="form-input" type="date" value={form.validTo} onChange={set('validTo')} />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">备注</label>
+            <input className="form-input" placeholder="赠送原因或说明..." value={form.remark} onChange={set('remark')} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '赠送中...' : '确认赠送'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 转介弹窗 ───────────────────────────────────────────────
+const ROLE_LABEL_MAP = {
+  familyDoctor:'家庭医生', nutritionist:'营养师', healthManager:'健管专员',
+  medicalAssistant:'就医专员', psychologist:'心理咨询师', rehabSpecialist:'运动复健师',
+  tcmDoctor:'中医师', specialist:'专科医师', healthPlanner:'健康规划师', superadmin:'超级管理员',
+}
+
+function ReferralModal({ patientId, patientName, staffList, onClose, onSaved }) {
+  const toast = useToast()
+  const [form, setForm] = useState({ toStaffId: '', reason: '', content: '', urgency: 'normal' })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const REASON_PRESETS = ['需要就医协助', '营养干预评估', '心理咨询介入', '运动康复指导', '中医体质评估', '专科会诊', '健康方案制定', '体检报告解读']
+
+  const handleSubmit = async () => {
+    if (!form.toStaffId || !form.reason) { setError('接收人和转介原因不能为空'); return }
+    setSaving(true); setError('')
+    try {
+      await staffAPI.createReferral({ patientId, ...form })
+      onSaved()
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 460 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">🔀 转介 — {patientName}</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">接收人 *</label>
+            <select className="form-input" value={form.toStaffId} onChange={set('toStaffId')}>
+              <option value="">-- 请选择接收医护人员 --</option>
+              {staffList.map(s => (
+                <option key={s._id} value={s._id}>
+                  {s.name} · {ROLE_LABEL_MAP[s.role] || s.role}{s.title ? ` (${s.title})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">转介原因 *</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              {REASON_PRESETS.map(r => (
+                <button key={r} type="button" className="btn btn-secondary btn-sm"
+                  style={{ fontSize: 12, padding: '3px 10px', background: form.reason === r ? '#E8F5EF' : '', border: form.reason === r ? '1px solid #1E6B50' : '' }}
+                  onClick={() => setForm(f => ({ ...f, reason: r }))}>{r}</button>
+              ))}
+            </div>
+            <input className="form-input" placeholder="或手动输入原因..." value={form.reason} onChange={set('reason')} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">详细说明</label>
+            <textarea className="form-input" rows={3} placeholder="病情描述、需要协助的具体内容..." value={form.content} onChange={set('content')} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">紧急程度</label>
+            <div style={{ display: 'flex', gap: 16 }}>
+              {[['normal', '普通'], ['urgent', '🚨 紧急']].map(([v, l]) => (
+                <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', color: form.urgency === v && v === 'urgent' ? '#DC3545' : form.urgency === v ? '#1E6B50' : '#666', fontWeight: form.urgency === v ? 700 : 400 }}>
+                  <input type="radio" value={v} checked={form.urgency === v} onChange={set('urgency')} /> {l}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : '发送转介'}</button>
+        </div>
+      </div>
+    </div>
+  )
 }

@@ -13,6 +13,8 @@ const PushRecord = require('../models/PushRecord');
 const Commission = require('../models/Commission');
 const ServiceRecord = require('../models/ServiceRecord');
 const Order = require('../models/Order');
+const GiftRecord = require('../models/GiftRecord');
+const Referral = require('../models/Referral');
 const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
@@ -891,6 +893,184 @@ router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
     .sort({ date: -1 })
     .populate('staffId', 'name role');
   res.json({ success: true, data: records });
+});
+
+// ════════════════════════════════════════════════════════
+// P4 路由
+// ════════════════════════════════════════════════════════
+
+// ── 赠送服务/健康基金 ───────────────────────────────────────
+// POST /api/staff/patients/:id/gift
+router.post('/patients/:id/gift', staffAuth, async (req, res) => {
+  const { giftType, serviceName, serviceCount, fundAmount, fundType, validFrom, validTo, remark } = req.body;
+  if (!giftType) return res.status(400).json({ success: false, message: '赠送类型不能为空' });
+  const gift = await GiftRecord.create({
+    staffId: req.staff._id, patientId: req.params.id,
+    giftType, serviceName: serviceName || '', serviceCount: serviceCount || 0,
+    fundAmount: fundAmount || 0, fundType: fundType || 'enterprise',
+    validFrom: validFrom ? new Date(validFrom) : null,
+    validTo: validTo ? new Date(validTo) : null,
+    remark: remark || '',
+  });
+  // 如果赠送健康基金，更新患者 healthFund 余额
+  if (giftType === 'fund' && fundAmount > 0) {
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $inc: { healthFundBalance: fundAmount } }
+    );
+  }
+  res.json({ success: true, data: gift });
+});
+
+// GET /api/staff/patients/:id/gifts
+router.get('/patients/:id/gifts', staffAuth, async (req, res) => {
+  const gifts = await GiftRecord.find({ patientId: req.params.id })
+    .sort({ createdAt: -1 })
+    .populate('staffId', 'name role');
+  res.json({ success: true, data: gifts });
+});
+
+// ── 跨角色转介 ──────────────────────────────────────────────
+// POST /api/staff/referrals — 发起转介
+router.post('/referrals', staffAuth, async (req, res) => {
+  const { patientId, toStaffId, reason, content, urgency } = req.body;
+  if (!patientId || !toStaffId || !reason) {
+    return res.status(400).json({ success: false, message: '患者、接收人、原因不能为空' });
+  }
+  const referral = await Referral.create({
+    fromStaffId: req.staff._id, toStaffId, patientId,
+    reason, content: content || '', urgency: urgency || 'normal',
+  });
+  await referral.populate([
+    { path: 'fromStaffId', select: 'name role' },
+    { path: 'toStaffId', select: 'name role' },
+    { path: 'patientId', select: 'name phone' },
+  ]);
+  res.json({ success: true, data: referral });
+});
+
+// GET /api/staff/referrals?direction=sent|received&status=
+router.get('/referrals', staffAuth, async (req, res) => {
+  const { direction = 'received', status = '', page = 1, limit = 20 } = req.query;
+  const filter = direction === 'sent'
+    ? { fromStaffId: req.staff._id }
+    : { toStaffId: req.staff._id };
+  if (status) filter.status = status;
+  const skip = (Number(page) - 1) * Number(limit);
+  const [referrals, total] = await Promise.all([
+    Referral.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
+      .populate('fromStaffId', 'name role title')
+      .populate('toStaffId', 'name role title')
+      .populate('patientId', 'name phone chronicDiseases'),
+    Referral.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: { referrals, total } });
+});
+
+// PATCH /api/staff/referrals/:id — 更新转介状态（接收/完成/拒绝）
+router.patch('/referrals/:id', staffAuth, async (req, res) => {
+  const { status, response } = req.body;
+  const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
+  if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
+  if (status) referral.status = status;
+  if (response !== undefined) referral.response = response;
+  referral.respondedAt = new Date();
+  await referral.save();
+  res.json({ success: true, data: referral });
+});
+
+// ── 服务到期提醒 ────────────────────────────────────────────
+// GET /api/staff/patients/expiring?days=30
+router.get('/patients/expiring', staffAuth, async (req, res) => {
+  const days = Number(req.query.days) || 30;
+  const now = new Date();
+  const cutoff = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+  const staff = req.staff;
+  const myFilter = staff.role === 'superadmin' ? {} :
+    staff.role === 'familyDoctor'
+      ? { assignedFamilyDoctor: staff._id }
+      : { assignedHealthManager: staff._id };
+
+  const patients = await User.find({
+    ...myFilter,
+    serviceExpiry: { $gt: now, $lte: cutoff },
+  }).select('name phone servicePackage serviceExpiry assignedHealthManager assignedFamilyDoctor')
+    .populate('assignedHealthManager', 'name')
+    .populate('assignedFamilyDoctor', 'name')
+    .sort({ serviceExpiry: 1 })
+    .limit(50);
+
+  res.json({ success: true, data: patients });
+});
+
+// ── 通知中心（聚合） ───────────────────────────────────────
+// GET /api/staff/notifications
+router.get('/notifications', staffAuth, async (req, res) => {
+  const staff = req.staff;
+  const now = new Date();
+  const cutoff30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+  const myFilter = staff.role === 'superadmin' ? {} :
+    staff.role === 'familyDoctor'
+      ? { assignedFamilyDoctor: staff._id }
+      : { assignedHealthManager: staff._id };
+
+  const [recentPushes, pendingReferrals, expiringPatients, unreadReferralCount] = await Promise.all([
+    // 最近30条推送记录（含阅读状态）
+    PushRecord.find({ staffId: staff._id })
+      .sort({ createdAt: -1 }).limit(30)
+      .populate('patientId', 'name'),
+    // 待处理转介（发给我的、pending状态）
+    Referral.find({ toStaffId: staff._id, status: 'pending' })
+      .sort({ createdAt: -1 }).limit(20)
+      .populate('fromStaffId', 'name role')
+      .populate('patientId', 'name phone'),
+    // 即将到期患者（30天内）
+    User.find({ ...myFilter, serviceExpiry: { $gt: now, $lte: cutoff30 } })
+      .select('name phone servicePackage serviceExpiry')
+      .sort({ serviceExpiry: 1 }).limit(20),
+    // 未读转介数量
+    Referral.countDocuments({ toStaffId: staff._id, status: 'pending' }),
+  ]);
+
+  res.json({
+    success: true,
+    data: {
+      recentPushes,
+      pendingReferrals,
+      expiringPatients,
+      unreadReferralCount,
+      summary: {
+        pushCount: recentPushes.length,
+        pendingReferralCount: unreadReferralCount,
+        expiringCount: expiringPatients.length,
+      },
+    },
+  });
+});
+
+// ── 获取患者的活跃方案（用于报告关联） ─────────────────────
+// GET /api/staff/patients/:id/active-plan-items
+router.get('/patients/:id/active-plan-items', staffAuth, async (req, res) => {
+  const plans = await HealthPlan.find({ patientId: req.params.id, status: 'active' })
+    .select('title type items');
+  const items = [];
+  plans.forEach(plan => {
+    (plan.items || []).forEach(item => {
+      if (item.status === 'pending') {
+        items.push({
+          planId: plan._id,
+          planTitle: plan.title,
+          planType: plan.type,
+          itemId: item._id,
+          itemName: item.name,
+          scheduledDate: item.scheduledDate,
+        });
+      }
+    });
+  });
+  res.json({ success: true, data: items });
 });
 
 module.exports = router;

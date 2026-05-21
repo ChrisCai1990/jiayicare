@@ -141,11 +141,40 @@ export default function ReportsPage() {
   )
 }
 
+const PLAN_TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预', rehab:'运动康复', tcm:'中医方案' }
+
 function UploadModal({ patients, onClose, onSaved }) {
-  const [form, setForm] = useState({ patientId: '', title: '', type: 'annual', hospital: '', date: '', note: '' })
+  const [form, setForm] = useState({ patientId: '', title: '', type: 'annual', hospital: '', date: '', note: '', planId: '', planItemId: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [planItems, setPlanItems] = useState([])
+  const [loadingItems, setLoadingItems] = useState(false)
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  // 切换患者时加载该患者的待完成方案项目
+  const handlePatientChange = async (e) => {
+    const patientId = e.target.value
+    setForm(f => ({ ...f, patientId, planId: '', planItemId: '' }))
+    if (!patientId) { setPlanItems([]); return }
+    setLoadingItems(true)
+    try {
+      const res = await staffAPI.getActivePlanItems(patientId)
+      setPlanItems(res.data)
+    } catch { setPlanItems([]) }
+    finally { setLoadingItems(false) }
+  }
+
+  // 选择关联项目后自动填充标题
+  const handleItemChange = (e) => {
+    const val = e.target.value
+    if (!val) { setForm(f => ({ ...f, planId: '', planItemId: '' })); return }
+    const [planId, itemId] = val.split('|')
+    const item = planItems.find(i => i.planId.toString() === planId && i.itemId.toString() === itemId)
+    setForm(f => ({
+      ...f, planId, planItemId: itemId,
+      title: f.title || (item ? item.itemName : f.title),
+    }))
+  }
 
   const handleSubmit = async () => {
     if (!form.patientId || !form.title) { setError('患者和标题不能为空'); return }
@@ -159,7 +188,7 @@ function UploadModal({ patients, onClose, onSaved }) {
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
           <h3 className="modal-title">上传报告</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -168,11 +197,32 @@ function UploadModal({ patients, onClose, onSaved }) {
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">选择患者 *</label>
-            <select className="form-input" value={form.patientId} onChange={set('patientId')}>
+            <select className="form-input" value={form.patientId} onChange={handlePatientChange}>
               <option value="">-- 请选择患者 --</option>
               {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
             </select>
           </div>
+
+          {/* 关联待完成项目 */}
+          {form.patientId && (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">关联方案项目（可选）
+                <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 6 }}>关联后审核通过自动标记完成</span>
+              </label>
+              <select className="form-input" value={form.planId && form.planItemId ? `${form.planId}|${form.planItemId}` : ''} onChange={handleItemChange}>
+                <option value="">-- 不关联 --</option>
+                {loadingItems && <option disabled>加载中...</option>}
+                {planItems.map(i => (
+                  <option key={`${i.planId}|${i.itemId}`} value={`${i.planId}|${i.itemId}`}>
+                    [{PLAN_TYPE_LABEL[i.planType] || i.planType}] {i.planTitle} · {i.itemName}
+                    {i.scheduledDate ? ` (${new Date(i.scheduledDate).toLocaleDateString('zh-CN')})` : ''}
+                  </option>
+                ))}
+                {!loadingItems && planItems.length === 0 && <option disabled>暂无待完成项目</option>}
+              </select>
+            </div>
+          )}
+
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">报告标题 *</label>
             <input className="form-input" placeholder="如：2025年度体检报告" value={form.title} onChange={set('title')} />
@@ -197,8 +247,8 @@ function UploadModal({ patients, onClose, onSaved }) {
             <label className="form-label">备注</label>
             <textarea className="form-input" rows={2} value={form.note} onChange={set('note')} />
           </div>
-          <div style={{ padding: '12px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#8AA89C', textAlign: 'center' }}>
-            📎 文件上传功能（PDF/图片）将在后续版本接入云存储后开放
+          <div style={{ padding: '10px 12px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#8AA89C' }}>
+            📎 文件上传（PDF/图片）将在后续版本接入云存储后开放
           </div>
         </div>
         <div className="modal-footer">

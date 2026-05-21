@@ -101,4 +101,20 @@ export const staffAPI = {
   getPatientPlans:          (id) => req(`/staff/patients/${id}/plans`),
   getPatientReports:        (id) => req(`/staff/patients/${id}/reports`),
   getPatientServiceRecords: (id) => req(`/staff/patients/${id}/service-records`),
+
+  // P4 — Gift Service
+  giftToPatient:    (id, data) => req(`/staff/patients/${id}/gift`, { method: 'POST', body: JSON.stringify(data) }),
+  getPatientGifts:  (id)       => req(`/staff/patients/${id}/gifts`),
+
+  // P4 — Referrals
+  createReferral:   (data)     => req('/staff/referrals', { method: 'POST', body: JSON.stringify(data) }),
+  getReferrals:     (p = {})   => req('/staff/referrals?' + qs(p)),
+  updateReferral:   (id, data) => req(`/staff/referrals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // P4 — Notifications
+  getNotifications: ()         => req('/staff/notifications'),
+  getExpiringPatients: (days = 30) => req(`/staff/patients/expiring?days=${days}`),
+
+  // P4 — Active plan items for report linking
+  getActivePlanItems: (patientId) => req(`/staff/patients/${patientId}/active-plan-items`),
 }
