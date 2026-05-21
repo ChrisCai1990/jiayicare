@@ -74,6 +74,62 @@ const PLANS = [
   },
 ];
 
+// ── 样式（必须在所有组件函数之前定义，防止 Railway 生产构建 TDZ）────
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  backBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
+  pageTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
+
+  content: { padding: spacing.lg, gap: spacing.md },
+
+  introCard: {
+    flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start',
+    backgroundColor: colors.primary + '10',
+    borderRadius: radius.sm, padding: spacing.md,
+    borderLeftWidth: 3, borderLeftColor: colors.primary,
+  },
+  introText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
+
+  planCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  planHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.md,
+  },
+  planIconWrap: {
+    width: 44, height: 44, borderRadius: radius.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  planTitleWrap: { flex: 1 },
+  planTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 3 },
+  planDescShort: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
+
+  planBody: {
+    borderTopWidth: 1, borderTopColor: colors.borderLight,
+    padding: spacing.md, gap: spacing.xs,
+  },
+  planItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4 },
+  planItemText: { flex: 1, fontSize: 13, color: colors.textSecondary },
+
+  consultBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    marginTop: spacing.sm, paddingVertical: 10,
+    borderRadius: radius.md, borderWidth: 1.5,
+  },
+  consultBtnText: { fontSize: 13, fontWeight: '600' },
+});
+
 function PlanCard({ plan, expanded, onToggle }) {
   return (
     <View style={styles.planCard}>
@@ -155,58 +211,3 @@ export default function ServicePlansScreen({ navigation }) {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-
-  topBar: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    backgroundColor: colors.background,
-    borderBottomWidth: 1, borderBottomColor: colors.border,
-  },
-  backBtn: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center' },
-  pageTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
-
-  content: { padding: spacing.lg, gap: spacing.md },
-
-  introCard: {
-    flexDirection: 'row', gap: spacing.sm, alignItems: 'flex-start',
-    backgroundColor: colors.primary + '10',
-    borderRadius: radius.sm, padding: spacing.md,
-    borderLeftWidth: 3, borderLeftColor: colors.primary,
-  },
-  introText: { flex: 1, fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
-
-  planCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  planHeader: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    padding: spacing.md,
-  },
-  planIconWrap: {
-    width: 44, height: 44, borderRadius: radius.sm,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  planTitleWrap: { flex: 1 },
-  planTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 3 },
-  planDescShort: { fontSize: 12, color: colors.textMuted, lineHeight: 17 },
-
-  planBody: {
-    borderTopWidth: 1, borderTopColor: colors.borderLight,
-    padding: spacing.md, gap: spacing.xs,
-  },
-  planItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4 },
-  planItemText: { flex: 1, fontSize: 13, color: colors.textSecondary },
-
-  consultBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
-    marginTop: spacing.sm, paddingVertical: 10,
-    borderRadius: radius.md, borderWidth: 1.5,
-  },
-  consultBtnText: { fontSize: 13, fontWeight: '600' },
-});

@@ -9,6 +9,196 @@ import { useAuth } from '../../context/AuthContext';
 import { ordersAPI } from '../../services/api';
 import Avatar, { AvatarOnDark } from '../../components/Avatar';
 
+// ── 样式（必须在所有组件函数之前定义，防止 Railway 生产构建 TDZ）────
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+
+  // Header
+  header: {
+    backgroundColor: '#1A2B24',
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xl,
+    alignItems: 'center',
+    position: 'relative',
+  },
+  settingBtn: {
+    position: 'absolute', top: spacing.sm, right: spacing.lg,
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  headerContent: { alignItems: 'center', paddingTop: spacing.md },
+  userName: { fontSize: 22, fontWeight: '700', color: colors.white, marginTop: spacing.sm, letterSpacing: -0.3 },
+  userSub: { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
+
+  // 会员信息卡
+  statsCard: {
+    backgroundColor: colors.white,
+    marginHorizontal: spacing.lg,
+    marginTop: -spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    paddingTop: spacing.md,
+    overflow: 'hidden',
+  },
+  statsRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
+  statItem: { flex: 1, alignItems: 'center' },
+  statVal: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
+  statLabel: { fontSize: 11, color: colors.textMuted, marginTop: 4, fontWeight: '500' },
+  statsDivider: { width: 1, backgroundColor: colors.borderLight, marginVertical: 4 },
+  fundRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    borderTopWidth: 1, borderTopColor: colors.borderLight,
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+    backgroundColor: '#FFFBF5',
+  },
+  fundLeft: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  fundLabel: { fontSize: 12, fontWeight: '600', color: '#D97706' },
+  fundRight: { alignItems: 'flex-end' },
+  fundTotal: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
+  fundBreakdown: { fontSize: 10, color: colors.textMuted, marginTop: 1 },
+
+  // Section
+  section: { marginTop: spacing.lg, paddingHorizontal: spacing.lg },
+  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
+  sectionTitle: { fontSize: 10, fontWeight: '700', color: colors.textMuted, marginBottom: spacing.sm, letterSpacing: 1.2, textTransform: 'uppercase' },
+  sectionLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  sectionLinkText: { fontSize: 13, color: colors.primary, fontWeight: '500' },
+
+  // 服务包
+  serviceCard: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md,
+    gap: spacing.sm,
+  },
+  serviceIconWrap: {
+    width: 40, height: 40, borderRadius: 12,
+    backgroundColor: colors.primary10,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  serviceInfo: { flex: 1 },
+  serviceName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
+  serviceExpiry: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
+  renewBtn: {
+    paddingHorizontal: 14, paddingVertical: 7,
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+  },
+  renewText: { fontSize: 12, color: colors.white, fontWeight: '700' },
+
+  // 无服务包引导卡
+  noServiceCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.white, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.primary + '40',
+    borderStyle: 'dashed', padding: spacing.md,
+  },
+  noServiceLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
+  noServiceIconWrap: {
+    width: 42, height: 42, borderRadius: 12,
+    backgroundColor: colors.primary + '12',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  noServiceTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  noServiceSub: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  noServiceBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: colors.primary + '12',
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: radius.full,
+  },
+  noServiceBtnText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
+
+  // 家庭成员
+  addFamilyCard: {
+    alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.background,
+    borderRadius: radius.sm, padding: spacing.md,
+    minWidth: 78, borderWidth: 1.5, borderColor: colors.border,
+    borderStyle: 'dashed',
+  },
+  addFamilyCircle: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: colors.primary10,
+    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
+  },
+  addFamilyLabel: { fontSize: 12, color: colors.primary, fontWeight: '500' },
+
+  // 菜单
+  menuCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border,
+    overflow: 'hidden',
+  },
+  menuItem: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.md, paddingVertical: 14,
+  },
+  menuItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  menuIconWrap: {
+    width: 34, height: 34, borderRadius: 9,
+    alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm,
+  },
+  menuLabel: { flex: 1, fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
+  menuRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  menuValue: { fontSize: 12, color: colors.textMuted },
+  menuBadge: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: colors.danger, paddingHorizontal: 5,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  menuBadgeText: { fontSize: 10, color: colors.white, fontWeight: '700' },
+
+  // 退出登录
+  logoutBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    paddingVertical: spacing.md,
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.danger + '40',
+  },
+  logoutText: { fontSize: 15, color: colors.danger, fontWeight: '600' },
+  versionText: { textAlign: 'center', fontSize: 11, color: colors.textMuted, marginTop: spacing.md },
+
+  // 退出确认弹窗
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalCard: {
+    backgroundColor: colors.white,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    width: 280,
+    alignItems: 'center',
+  },
+  modalIconWrap: {
+    width: 60, height: 60, borderRadius: 30,
+    backgroundColor: colors.danger + '12',
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: spacing.md,
+  },
+  modalTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xs },
+  modalDesc: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.lg },
+  modalBtns: { flexDirection: 'row', gap: spacing.sm, width: '100%' },
+  modalCancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center',
+  },
+  modalCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
+  modalConfirmBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    backgroundColor: colors.danger,
+    alignItems: 'center',
+  },
+  modalConfirmText: { fontSize: 15, color: colors.white, fontWeight: '700' },
+});
+
 // ── 菜单条目 ──────────────────────────────────────────────────────
 function MenuItem({ icon, iconColor, label, value, badge, onPress, isLast }) {
   const ic = iconColor || colors.primary;
@@ -277,192 +467,3 @@ export default function ProfileScreen({ navigation }) {
     </SafeAreaView>
   );
 }
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: colors.background },
-
-  // Header
-  header: {
-    backgroundColor: '#1A2B24',
-    paddingTop: spacing.sm,
-    paddingBottom: spacing.xl,
-    alignItems: 'center',
-    position: 'relative',
-  },
-  settingBtn: {
-    position: 'absolute', top: spacing.sm, right: spacing.lg,
-    width: 36, height: 36, borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.15)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  headerContent: { alignItems: 'center', paddingTop: spacing.md },
-  userName: { fontSize: 22, fontWeight: '700', color: colors.white, marginTop: spacing.sm, letterSpacing: -0.3 },
-  userSub: { fontSize: 13, color: 'rgba(255,255,255,0.6)', marginTop: 4 },
-
-  // 会员信息卡
-  statsCard: {
-    backgroundColor: colors.white,
-    marginHorizontal: spacing.lg,
-    marginTop: -spacing.sm,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    paddingTop: spacing.md,
-    overflow: 'hidden',
-  },
-  statsRow: { flexDirection: 'row', paddingHorizontal: spacing.lg, paddingBottom: spacing.md },
-  statItem: { flex: 1, alignItems: 'center' },
-  statVal: { fontSize: 20, fontWeight: '800', letterSpacing: -0.5 },
-  statLabel: { fontSize: 11, color: colors.textMuted, marginTop: 4, fontWeight: '500' },
-  statsDivider: { width: 1, backgroundColor: colors.borderLight, marginVertical: 4 },
-  fundRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    borderTopWidth: 1, borderTopColor: colors.borderLight,
-    paddingHorizontal: spacing.md, paddingVertical: 10,
-    backgroundColor: '#FFFBF5',
-  },
-  fundLeft: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  fundLabel: { fontSize: 12, fontWeight: '600', color: '#D97706' },
-  fundRight: { alignItems: 'flex-end' },
-  fundTotal: { fontSize: 15, fontWeight: '800', color: colors.textPrimary },
-  fundBreakdown: { fontSize: 10, color: colors.textMuted, marginTop: 1 },
-
-  // Section
-  section: { marginTop: spacing.lg, paddingHorizontal: spacing.lg },
-  sectionRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm },
-  sectionTitle: { fontSize: 10, fontWeight: '700', color: colors.textMuted, marginBottom: spacing.sm, letterSpacing: 1.2, textTransform: 'uppercase' },
-  sectionLink: { flexDirection: 'row', alignItems: 'center', gap: 3 },
-  sectionLinkText: { fontSize: 13, color: colors.primary, fontWeight: '500' },
-
-  // 服务包
-  serviceCard: {
-    flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  serviceIconWrap: {
-    width: 40, height: 40, borderRadius: 12,
-    backgroundColor: colors.primary10,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  serviceInfo: { flex: 1 },
-  serviceName: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
-  serviceExpiry: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
-  renewBtn: {
-    paddingHorizontal: 14, paddingVertical: 7,
-    backgroundColor: colors.primary,
-    borderRadius: radius.full,
-  },
-  renewText: { fontSize: 12, color: colors.white, fontWeight: '700' },
-
-  // 无服务包引导卡
-  noServiceCard: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: colors.white, borderRadius: radius.md,
-    borderWidth: 1.5, borderColor: colors.primary + '40',
-    borderStyle: 'dashed', padding: spacing.md,
-  },
-  noServiceLeft: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 },
-  noServiceIconWrap: {
-    width: 42, height: 42, borderRadius: 12,
-    backgroundColor: colors.primary + '12',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  noServiceTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  noServiceSub: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
-  noServiceBtn: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    backgroundColor: colors.primary + '12',
-    paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: radius.full,
-  },
-  noServiceBtnText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
-
-  // 家庭成员
-  addFamilyCard: {
-    alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.background,
-    borderRadius: radius.sm, padding: spacing.md,
-    minWidth: 78, borderWidth: 1.5, borderColor: colors.border,
-    borderStyle: 'dashed',
-  },
-  addFamilyCircle: {
-    width: 44, height: 44, borderRadius: 22,
-    backgroundColor: colors.primary10,
-    alignItems: 'center', justifyContent: 'center', marginBottom: 6,
-  },
-  addFamilyLabel: { fontSize: 12, color: colors.primary, fontWeight: '500' },
-
-  // 菜单
-  menuCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  menuItem: {
-    flexDirection: 'row', alignItems: 'center',
-    paddingHorizontal: spacing.md, paddingVertical: 14,
-  },
-  menuItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
-  menuIconWrap: {
-    width: 34, height: 34, borderRadius: 9,
-    alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm,
-  },
-  menuLabel: { flex: 1, fontSize: 14, color: colors.textPrimary, fontWeight: '500' },
-  menuRight: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  menuValue: { fontSize: 12, color: colors.textMuted },
-  menuBadge: {
-    minWidth: 18, height: 18, borderRadius: 9,
-    backgroundColor: colors.danger, paddingHorizontal: 5,
-    alignItems: 'center', justifyContent: 'center',
-  },
-  menuBadgeText: { fontSize: 10, color: colors.white, fontWeight: '700' },
-
-  // 退出登录
-  logoutBtn: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
-    paddingVertical: spacing.md,
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.danger + '40',
-  },
-  logoutText: { fontSize: 15, color: colors.danger, fontWeight: '600' },
-  versionText: { textAlign: 'center', fontSize: 11, color: colors.textMuted, marginTop: spacing.md },
-
-  // 退出确认弹窗
-  modalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  modalCard: {
-    backgroundColor: colors.white,
-    borderRadius: radius.xl,
-    padding: spacing.xl,
-    width: 280,
-    alignItems: 'center',
-  },
-  modalIconWrap: {
-    width: 60, height: 60, borderRadius: 30,
-    backgroundColor: colors.danger + '12',
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: spacing.md,
-  },
-  modalTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.xs },
-  modalDesc: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', marginBottom: spacing.lg },
-  modalBtns: { flexDirection: 'row', gap: spacing.sm, width: '100%' },
-  modalCancelBtn: {
-    flex: 1, paddingVertical: 12, borderRadius: radius.md,
-    borderWidth: 1.5, borderColor: colors.border,
-    alignItems: 'center',
-  },
-  modalCancelText: { fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
-  modalConfirmBtn: {
-    flex: 1, paddingVertical: 12, borderRadius: radius.md,
-    backgroundColor: colors.danger,
-    alignItems: 'center',
-  },
-  modalConfirmText: { fontSize: 15, color: colors.white, fontWeight: '700' },
-});
