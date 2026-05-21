@@ -418,6 +418,13 @@ export default function HomeScreen({ navigation }) {
   const scoreDisplay = hasAnyHealthData ? score : null;
   const name  = user?.name || '用户';
 
+  // ── 真实最新指标 (fallback to mock) ──────────────────────────────
+  // 注意：必须在 BMI 计算之前声明，避免 const TDZ 错误
+  // 后端返回的是 HealthRecord 文档: { value: "130/80", extra: { sys, dia }, status }
+  const vitals = dashData?.latestVitals || {};
+  const bpRec  = vitals.bloodPressure;
+  const bsSrc  = vitals.bloodSugar;
+
   // ── 实时 BMI 计算 ─────────────────────────────────────────────
   // 优先使用后端基于最新体重记录计算的 bmi，其次前端本地计算（用 vitals.weight 再 fallback user.weight）
   const latestWeightForBmi = vitals.weight ? parseFloat(vitals.weight.value) : user?.weight;
@@ -442,12 +449,6 @@ export default function HomeScreen({ navigation }) {
   const greeting   = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
   const statusEmoji = score >= 80 ? '✨' : score >= 60 ? '💪' : '🌱';
   const statusText  = score >= 80 ? '今天状态不错' : score >= 60 ? '继续保持' : '需要关注';
-
-  // ── 真实最新指标 (fallback to mock) ──────────────────────────────
-  // 后端返回的是 HealthRecord 文档: { value: "130/80", extra: { sys, dia }, status }
-  const vitals = dashData?.latestVitals || {};
-  const bpRec  = vitals.bloodPressure;
-  const bsSrc  = vitals.bloodSugar;
 
   // 血压：优先 extra.sys/dia，否则解析 value 字符串
   const bpSys = bpRec?.extra?.sys ?? (bpRec?.value ? parseFloat(bpRec.value.split('/')[0]) : null);
