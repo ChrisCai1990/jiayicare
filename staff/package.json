@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite --port 5174",
     "build": "vite build",
-    "preview": "vite preview --port 5174"
+    "preview": "vite preview --port 5174",
+    "start": "npx serve dist -s -l $PORT"
   },
   "dependencies": {
     "react": "^18.3.1",
