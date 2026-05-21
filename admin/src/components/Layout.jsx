@@ -9,6 +9,7 @@ const NAV = [
   { label: '消息中心', icon: '💬', path: '/messages' },
   { label: '服务管理', icon: '🛒', path: '/services' },
   { label: '问卷管理', icon: '📝', path: '/questionnaires' },
+  { label: '信息变更记录', icon: '📌', path: '/change-logs' },
 ]
 
 const ROLE_MAP = { doctor: '医生', manager: '健管师', superadmin: '超级管理员' }

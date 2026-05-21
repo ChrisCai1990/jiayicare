@@ -45,6 +45,9 @@ export const adminAPI = {
   saveCheckupPlan:    (data)         => req('/checkup-plans', { method: 'POST', body: JSON.stringify(data) }),
   updateCheckupItem:  (planId, itemId, data) => req(`/checkup-plans/${planId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(data) }),
 
+  // 用户信息变更记录（#34）
+  changeLogs: (params = {}) => req('/change-logs?' + new URLSearchParams(params).toString()),
+
   // 动态问卷管理
   questionnaires:            ()         => req('/questionnaires'),
   createQuestionnaire:       (data)     => req('/questionnaires', { method: 'POST', body: JSON.stringify(data) }),

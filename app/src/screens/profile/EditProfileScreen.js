@@ -221,6 +221,9 @@ export default function EditProfileScreen({ navigation }) {
   const [age, setAge]       = useState(user?.age ? String(user.age) : '');
   const [height, setHeight] = useState(user?.height ? String(user.height) : '');
   const [weight, setWeight] = useState(user?.weight ? String(user.weight) : '');
+  // 联系信息（#34）
+  const [contactPhone,    setContactPhone]    = useState(user?.contactPhone    || '');
+  const [deliveryAddress, setDeliveryAddress] = useState(user?.deliveryAddress || '');
 
   // 健康档案结构化字段
   const hp = user?.healthProfile || {};
@@ -236,9 +239,10 @@ export default function EditProfileScreen({ navigation }) {
   const [pastHistory,   setPastHistory]   = useState(hp.pastHistory    || '');
   const [medicHistory,  setMedicHistory]  = useState(hp.medicHistory   || '');
   const [surgeryHistory,setSurgeryHistory]= useState(hp.surgeryHistory || '');
-  // 女性专属字段
-  const [menstrualHistory,  setMenstrualHistory]   = useState(hp.menstrualHistory   || '');
-  const [reproductiveHistory,setReproductiveHistory]= useState(hp.reproductiveHistory || '');
+  // 女性专属字段（#33）
+  const [menstrualHistory, setMenstrualHistory] = useState(hp.menstrualHistory || '');
+  // 婚育史：优先读新字段 maritalHistory，兼容旧字段 reproductiveHistory
+  const [maritalHistory,   setMaritalHistory]   = useState(hp.maritalHistory || hp.reproductiveHistory || '');
 
   const [saving, setSaving] = useState(false);
   const [toast, setToast]   = useState('');
@@ -260,6 +264,8 @@ export default function EditProfileScreen({ navigation }) {
         age:    age    ? Number(age)    : undefined,
         height: height ? Number(height) : undefined,
         weight: weight ? Number(weight) : undefined,
+        contactPhone:    contactPhone.trim()    || undefined,
+        deliveryAddress: deliveryAddress.trim() || undefined,
         healthProfile: {
           bloodType,
           allergies,
@@ -273,7 +279,7 @@ export default function EditProfileScreen({ navigation }) {
           medicHistory,
           surgeryHistory,
           menstrualHistory,
-          reproductiveHistory,
+          maritalHistory,
         },
       };
       const res = await userAPI.updateMe(payload);
@@ -330,6 +336,10 @@ export default function EditProfileScreen({ navigation }) {
               </View>
             </View>
             <Field label="年龄" value={age} onChangeText={setAge} keyboardType="numeric" unit="岁" />
+            <Field label="联系电话" value={contactPhone} onChangeText={setContactPhone}
+              placeholder="用于快递联系（与登录手机号独立）" keyboardType="phone-pad" />
+            <Field label="配送地址（快递）" value={deliveryAddress} onChangeText={setDeliveryAddress}
+              placeholder="省市区 + 详细地址 + 收件人姓名" />
           </View>
 
           {/* ── 身体数据 ──────────────────────────────────────────── */}
@@ -422,6 +432,44 @@ export default function EditProfileScreen({ navigation }) {
             />
           </View>
 
+          {/* 月经史 + 婚育史（仅女性，#33） */}
+          {gender === '女' && (
+            <>
+              <View style={[styles.card, { marginTop: spacing.sm }]}>
+                <View style={styles.arraySection}>
+                  <View style={styles.arraySectionHeader}>
+                    <View style={[styles.arraySectionIcon, { backgroundColor: '#FDECEA' }]}>
+                      <Ionicons name="rose-outline" size={16} color="#DC3545" />
+                    </View>
+                    <Text style={styles.arraySectionTitle}>月经史</Text>
+                  </View>
+                  <Field
+                    label="月经史详情"
+                    value={menstrualHistory}
+                    onChangeText={setMenstrualHistory}
+                    placeholder="如：初潮14岁，周期28天，规律，无痛经"
+                  />
+                </View>
+              </View>
+              <View style={[styles.card, { marginTop: spacing.sm }]}>
+                <View style={styles.arraySection}>
+                  <View style={styles.arraySectionHeader}>
+                    <View style={[styles.arraySectionIcon, { backgroundColor: '#E8F5EF' }]}>
+                      <Ionicons name="people-outline" size={16} color="#1E6B50" />
+                    </View>
+                    <Text style={styles.arraySectionTitle}>婚育史</Text>
+                  </View>
+                  <Field
+                    label="婚育史详情"
+                    value={maritalHistory}
+                    onChangeText={setMaritalHistory}
+                    placeholder="如：1孕1产，2020年剖宫产，无流产史"
+                  />
+                </View>
+              </View>
+            </>
+          )}
+
           {/* ── 健康摘要（文字档案，与健康档案页同步） ────────────── */}
           <Text style={styles.sectionLabel}>健康摘要</Text>
           <View style={styles.card}>
@@ -432,17 +480,6 @@ export default function EditProfileScreen({ navigation }) {
             <Field label="用药史" value={medicHistory} onChangeText={setMedicHistory} placeholder="如：氨氯地平" />
             <Field label="手术史" value={surgeryHistory} onChangeText={setSurgeryHistory} placeholder="如：无" />
           </View>
-
-          {/* ── 女性专属（仅性别为女时显示）──────────────────────── */}
-          {gender === '女' && (
-            <>
-              <Text style={styles.sectionLabel}>女性健康</Text>
-              <View style={styles.card}>
-                <Field label="月经史" value={menstrualHistory} onChangeText={setMenstrualHistory} placeholder="如：初潮14岁，周期28天，规律" />
-                <Field label="生育史" value={reproductiveHistory} onChangeText={setReproductiveHistory} placeholder="如：1孕1产，2020年剖宫产" />
-              </View>
-            </>
-          )}
 
           {/* ── 账号信息 ──────────────────────────────────────────── */}
           <Text style={styles.sectionLabel}>账号信息</Text>

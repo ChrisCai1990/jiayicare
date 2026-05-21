@@ -50,8 +50,12 @@ const userSchema = new mongoose.Schema({
     surgeryHistory:{ type: String, default: '' },
     // 女性专属
     menstrualHistory:   { type: String, default: '' },
-    reproductiveHistory:{ type: String, default: '' },
+    reproductiveHistory:{ type: String, default: '' }, // 旧字段，兼容保留
+    maritalHistory:     { type: String, default: '' }, // 新字段：婚育史（替代 reproductiveHistory）
   },
+  // 联系信息（#34）
+  contactPhone:    { type: String, default: '' },  // 联系电话（与登录手机号独立）
+  deliveryAddress: { type: String, default: '' },  // 配送地址（快递用）
   // 生活方式（文字描述，6个维度）
   lifestyle: {
     diet:     { type: String, default: '' },  // 饮食

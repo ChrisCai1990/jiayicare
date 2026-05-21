@@ -2,6 +2,7 @@ const express = require('express');
 const crypto = require('crypto');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
+const UserChangeLog = require('../models/UserChangeLog');
 const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
 const Reminder = require('../models/Reminder');
@@ -21,10 +22,11 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
-// 更新用户信息（支持 healthProfile）
+// 更新用户信息（支持 healthProfile + 联系信息变更日志）
 router.put('/me', auth, async (req, res) => {
   try {
-    const { name, age, gender, height, weight, servicePackage, serviceExpiry, healthProfile } = req.body;
+    const { name, age, gender, height, weight, servicePackage, serviceExpiry,
+            contactPhone, deliveryAddress, healthProfile } = req.body;
 
     const updateData = {};
     if (name !== undefined)           updateData.name = name;
@@ -34,29 +36,60 @@ router.put('/me', auth, async (req, res) => {
     if (weight !== undefined)         updateData.weight = weight;
     if (servicePackage !== undefined) updateData.servicePackage = servicePackage;
     if (serviceExpiry !== undefined)  updateData.serviceExpiry = serviceExpiry;
+    // 联系信息（#34）
+    if (contactPhone    !== undefined) updateData.contactPhone    = contactPhone;
+    if (deliveryAddress !== undefined) updateData.deliveryAddress = deliveryAddress;
+
     if (healthProfile !== undefined) {
       const hp = healthProfile;
-      if (hp.bloodType     !== undefined) updateData['healthProfile.bloodType']     = hp.bloodType;
-      if (hp.allergies     !== undefined) updateData['healthProfile.allergies']     = hp.allergies;
-      if (hp.medicalHistory!== undefined) updateData['healthProfile.medicalHistory']= hp.medicalHistory;
-      if (hp.medications   !== undefined) updateData['healthProfile.medications']   = hp.medications;
-      if (hp.familyHistory !== undefined) updateData['healthProfile.familyHistory'] = hp.familyHistory;
-      if (hp.surgeries     !== undefined) updateData['healthProfile.surgeries']     = hp.surgeries;
-      if (hp.drugAllergy   !== undefined) updateData['healthProfile.drugAllergy']   = hp.drugAllergy;
-      if (hp.foodAllergy   !== undefined) updateData['healthProfile.foodAllergy']   = hp.foodAllergy;
-      if (hp.pastHistory   !== undefined) updateData['healthProfile.pastHistory']   = hp.pastHistory;
-      if (hp.medicHistory  !== undefined) updateData['healthProfile.medicHistory']  = hp.medicHistory;
-      if (hp.surgeryHistory!== undefined) updateData['healthProfile.surgeryHistory']= hp.surgeryHistory;
+      if (hp.bloodType          !== undefined) updateData['healthProfile.bloodType']          = hp.bloodType;
+      if (hp.allergies          !== undefined) updateData['healthProfile.allergies']          = hp.allergies;
+      if (hp.medicalHistory     !== undefined) updateData['healthProfile.medicalHistory']     = hp.medicalHistory;
+      if (hp.medications        !== undefined) updateData['healthProfile.medications']        = hp.medications;
+      if (hp.familyHistory      !== undefined) updateData['healthProfile.familyHistory']      = hp.familyHistory;
+      if (hp.surgeries          !== undefined) updateData['healthProfile.surgeries']          = hp.surgeries;
+      if (hp.drugAllergy        !== undefined) updateData['healthProfile.drugAllergy']        = hp.drugAllergy;
+      if (hp.foodAllergy        !== undefined) updateData['healthProfile.foodAllergy']        = hp.foodAllergy;
+      if (hp.pastHistory        !== undefined) updateData['healthProfile.pastHistory']        = hp.pastHistory;
+      if (hp.medicHistory       !== undefined) updateData['healthProfile.medicHistory']       = hp.medicHistory;
+      if (hp.surgeryHistory     !== undefined) updateData['healthProfile.surgeryHistory']     = hp.surgeryHistory;
+      if (hp.menstrualHistory   !== undefined) updateData['healthProfile.menstrualHistory']   = hp.menstrualHistory;
+      if (hp.maritalHistory     !== undefined) updateData['healthProfile.maritalHistory']     = hp.maritalHistory;
+    }
+
+    // 检测联系信息变更，写入变更日志（#34）
+    const changeLogs = [];
+    const FIELD_LABELS = { contactPhone: '联系电话', deliveryAddress: '配送地址' };
+    for (const field of ['contactPhone', 'deliveryAddress']) {
+      if (req.body[field] !== undefined) {
+        const oldVal = String(req.user[field] || '');
+        const newVal = String(req.body[field] || '');
+        if (oldVal !== newVal) {
+          changeLogs.push({
+            userId:    req.user._id,
+            userName:  req.user.name || '',
+            userPhone: req.user.phone || '',
+            field,
+            fieldLabel: FIELD_LABELS[field],
+            oldValue:  oldVal,
+            newValue:  newVal,
+          });
+        }
+      }
     }
 
     // 直接用原生 MongoDB driver，完全绕过 Mongoose schema 类型转换
-    // 这样无论 Railway 上跑的是哪个版本的 User schema，数组字段都能正常写入
     await User.collection.updateOne(
       { _id: req.user._id },
       { $set: updateData }
     );
-    const user = await User.findById(req.user._id).select('-password');
 
+    // 异步写变更日志（不阻塞主响应）
+    if (changeLogs.length > 0) {
+      UserChangeLog.insertMany(changeLogs).catch(e => console.error('变更日志写入失败:', e));
+    }
+
+    const user = await User.findById(req.user._id).select('-password');
     res.json({ success: true, data: user });
   } catch (err) {
     console.error('PUT /user/me error:', err);

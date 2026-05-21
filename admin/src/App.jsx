@@ -9,6 +9,7 @@ import OrdersPage from './pages/OrdersPage'
 import MessagesPage from './pages/MessagesPage'
 import ServicesPage from './pages/ServicesPage'
 import QuestionnairePage from './pages/QuestionnairePage'
+import ChangeLogsPage from './pages/ChangeLogsPage'
 import Layout from './components/Layout'
 
 // ── Auth Context ─────────────────────────────────────────────────
@@ -74,6 +75,7 @@ export default function App() {
               <Route path="messages" element={<MessagesPage />} />
               <Route path="services" element={<ServicesPage />} />
               <Route path="questionnaires" element={<QuestionnairePage />} />
+              <Route path="change-logs" element={<ChangeLogsPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

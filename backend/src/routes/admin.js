@@ -9,6 +9,7 @@ const Order = require('../models/Order');
 const Service = require('../models/Service');
 const CheckupPlan = require('../models/CheckupPlan');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
+const UserChangeLog = require('../models/UserChangeLog');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
 
@@ -373,6 +374,23 @@ router.get('/questionnaires/:id/responses', adminAuth, async (req, res) => {
     .populate('user', 'name phone')
     .sort({ submittedAt: -1 });
   res.json({ success: true, data: responses });
+});
+
+// ── GET /api/admin/change-logs — 用户信息变更记录（#34）──────────
+router.get('/change-logs', adminAuth, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, field } = req.query;
+    const filter = {};
+    if (field) filter.field = field;
+    const logs = await UserChangeLog.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit));
+    const total = await UserChangeLog.countDocuments(filter);
+    res.json({ success: true, data: { logs, total, page: Number(page), limit: Number(limit) } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取变更记录失败', error: err.message });
+  }
 });
 
 module.exports = router;
