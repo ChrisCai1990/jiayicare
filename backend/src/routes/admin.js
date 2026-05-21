@@ -21,13 +21,34 @@ async function seedAdmins() {
     { username: 'superadmin', password: 'jiayi2024', name: '超级管理员', role: 'superadmin', title: '' },
     { username: 'doctor1',    password: 'jiayi2024', name: '王主任',     role: 'doctor',     title: '心血管内科主任医师' },
     { username: 'manager1',   password: 'jiayi2024', name: '李健管',     role: 'manager',    title: '高级健康管理师' },
-    // 默认医护账号（供测试）
     { username: 'staff001', password: 'jiayi2024', name: '张健管', role: 'healthManager', title: '健康管理师' },
     { username: 'staff002', password: 'jiayi2024', name: '李医生', role: 'familyDoctor',  title: '全科医生' },
   ]);
   console.log('✅ 已创建默认账号（含医护端）');
 }
 seedAdmins().catch(console.error);
+
+// ── 确保医护测试账号始终存在（不受首次初始化限制） ─────────────
+async function ensureStaffTestAccounts() {
+  const testAccounts = [
+    { username: 'jy_super',     password: 'jiayi2024', name: '超管测试',   role: 'superadmin',      title: '超级管理员' },
+    { username: 'jy_hm',        password: 'jiayi2024', name: '测试健管',   role: 'healthManager',   title: '健康管理师' },
+    { username: 'jy_fd',        password: 'jiayi2024', name: '测试家医',   role: 'familyDoctor',    title: '全科医生' },
+    { username: 'jy_ns',        password: 'jiayi2024', name: '测试营养',   role: 'nutritionist',    title: '注册营养师' },
+    { username: 'jy_ma',        password: 'jiayi2024', name: '测试就医',   role: 'medicalAssistant',title: '就医专员' },
+    { username: 'jy_hp',        password: 'jiayi2024', name: '测试规划',   role: 'healthPlanner',   title: '健康规划师' },
+    { username: 'jy_tcm',       password: 'jiayi2024', name: '测试中医',   role: 'tcmDoctor',       title: '中医师' },
+    { username: 'jy_rb',        password: 'jiayi2024', name: '测试复健',   role: 'rehabSpecialist', title: '运动复健师' },
+  ];
+  for (const acc of testAccounts) {
+    const exists = await Admin.findOne({ username: acc.username });
+    if (!exists) {
+      await Admin.create(acc);
+      console.log(`✅ 创建测试医护账号: ${acc.username} (${acc.name})`);
+    }
+  }
+}
+ensureStaffTestAccounts().catch(console.error);
 
 // ── POST /api/admin/login ─────────────────────────────────────────
 router.post('/login', async (req, res) => {
