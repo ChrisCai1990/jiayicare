@@ -7,11 +7,15 @@ const serviceRecordSchema = new mongoose.Schema({
   type: {
     type: String,
     enum: [
-      'medical_escort',   // 就医协助（代办/代诊/陪诊）
-      'psychology',       // 心理咨询
-      'rehab',            // 运动复健
-      'tcm',              // 中医评估
-      'specialist',       // 专科会诊
+      'medical_escort',   // 就医协助（代办/代诊/陪诊，旧）
+      'psychology',       // 心理咨询（旧）
+      'rehab',            // 运动复健（旧）
+      'tcm',              // 中医评估（旧）
+      'specialist',       // 专科会诊（旧）
+      'disease_mgmt',     // 专病管理记录（新）
+      'nutrition',        // 营养干预记录（新）
+      'medical_visit',    // 医院就医记录（新）
+      'routine',          // 日常随访记录（新）
     ],
     required: true,
   },

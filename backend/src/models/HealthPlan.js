@@ -21,12 +21,16 @@ const healthPlanSchema = new mongoose.Schema({
   type: {
     type: String,
     enum: [
-      'checkup',      // 体检方案
-      'health',       // 健康管理方案
-      'followup',     // 随访计划
-      'nutrition',    // 营养干预方案
-      'rehab',        // 运动康复方案
-      'tcm',          // 中医方案
+      'checkup',          // 体检方案（旧）
+      'health',           // 健康管理方案（旧）
+      'followup',         // 随访计划（旧）
+      'nutrition',        // 营养干预方案
+      'rehab',            // 运动康复方案（旧）
+      'tcm',              // 中医方案
+      'annual_checkup',   // 年度体检方案（新）
+      'annual_mgmt',      // 年度管理方案（新）
+      'medical_assist',   // 就医协助方案（新）
+      'psychology',       // 心理咨询方案（新）
     ],
     required: true,
   },

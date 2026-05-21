@@ -100,14 +100,14 @@ export default function NewPatientPage() {
   return (
     <div className="page">
       <div className="page-header">
-        <div><h1 className="page-title">新增患者</h1><p className="page-subtitle">完整录入患者档案</p></div>
+        <div><h1 className="page-title">新增会员</h1><p className="page-subtitle">完整录入会员档案</p></div>
         <button className="btn btn-secondary" onClick={() => nav(-1)}>← 返回</button>
       </div>
 
-      {/* 患者类型选择 */}
+      {/* 会员类型选择 */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-body" style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>患者类型：</span>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>会员类型：</span>
           {[{ v: 'adult', l: '成人' }, { v: 'child', l: '儿童（0-18岁）' }].map(opt => (
             <button key={opt.v} type="button"
               onClick={() => setPatientCategory(opt.v)}

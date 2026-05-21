@@ -4,7 +4,7 @@ import { useStaff } from '../App'
 
 const ALL_NAV = [
   { label: '工作台',   icon: '🏠', path: '/home', roles: [] },
-  { label: '我的患者', icon: '👥', path: '/patients', roles: [] },
+  { label: '我的会员', icon: '👥', path: '/patients', roles: [] },
   { label: '随访记录', icon: '📋', path: '/followups', roles: [] },
   { label: '健康方案', icon: '📄', path: '/plans',    roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'] },
   { label: '报告管理', icon: '🔬', path: '/reports',  roles: ['healthManager','familyDoctor','superadmin'] },
@@ -38,8 +38,8 @@ export default function Layout() {
       {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <div className="sidebar-logo-title">🏥 嘉医管家</div>
-          <div className="sidebar-logo-sub">医护工作台</div>
+          <div className="sidebar-logo-title">嘉医汇</div>
+          <div className="sidebar-logo-sub">做家庭医生行业领跑者</div>
         </div>
 
         <nav className="sidebar-nav">

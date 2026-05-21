@@ -40,7 +40,7 @@ export default function HomePage() {
 
       {/* 数据卡片 */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>
-        <StatCard icon="👥" label="我的患者" value={reports?.totalPatients ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
+        <StatCard icon="👥" label="我的会员" value={reports?.totalPatients ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
         <StatCard icon="📞" label="今日随访" value={reports?.todayFollowUps ?? '-'} color="#0077B6" onClick={() => nav('/followups')} />
         <StatCard icon="📅" label="本月随访" value={reports?.monthFollowUps ?? '-'} color="#22A06B" />
         <StatCard icon="⏳" label="计划随访" value={reports?.plannedFollowUps ?? '-'} color="#D97706" onClick={() => nav('/followups?status=planned')} />

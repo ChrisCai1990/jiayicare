@@ -155,7 +155,7 @@ export default function PatientDetailPage() {
             <span style={{ fontSize: 18 }}>{left <= 0 ? '🔴' : '⏰'}</span>
             <div>
               <span style={{ color, fontWeight: 600, fontSize: 14 }}>
-                {left <= 0 ? '服务包已到期' : `服务包还剩 ${left} 天到期`}
+                {left <= 0 ? '会员服务已到期' : `会员服务还剩 ${left} 天到期`}
               </span>
               <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>
                 {user.servicePackage} · 到期：{new Date(user.serviceExpiry).toLocaleDateString('zh-CN')}
@@ -169,11 +169,10 @@ export default function PatientDetailPage() {
       <div className="tabs" style={{ marginBottom: 20 }}>
         {[
           { key: 'info', label: '基本信息' },
-          { key: 'records', label: '健康记录' },
-          { key: 'followups', label: '随访记录' },
+          { key: 'records', label: '健康档案' },
           { key: 'plans', label: '健康方案' },
-          { key: 'reports', label: '体检报告' },
           { key: 'serviceRecords', label: '服务记录' },
+          { key: 'reports', label: '体检报告' },
           { key: 'gifts', label: '权益赠送' },
         ].map(t => (
           <button
@@ -241,7 +240,7 @@ export default function PatientDetailPage() {
                       onChange={e => setEditForm(f => ({ ...f, deliveryAddress: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">患者类型</label>
+                    <label className="form-label">会员类型</label>
                     <select className="form-input" value={editForm.patientType}
                       onChange={e => setEditForm(f => ({ ...f, patientType: e.target.value }))}>
                       <option value="">普通</option>
@@ -250,7 +249,7 @@ export default function PatientDetailPage() {
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">患者来源</label>
+                    <label className="form-label">会员来源</label>
                     <input className="form-input" value={editForm.source}
                       onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))} />
                   </div>
@@ -267,8 +266,8 @@ export default function PatientDetailPage() {
                   <InfoRow label="配送地址" value={user.deliveryAddress || '-'} />
                   <InfoRow label="健管专员" value={user.assignedHealthManager?.name || '-'} />
                   <InfoRow label="家庭医生" value={user.assignedFamilyDoctor?.name || '-'} />
-                  <InfoRow label="患者来源" value={user.source || '-'} />
-                  <InfoRow label="服务包" value={user.servicePackage || '-'} />
+                  <InfoRow label="会员来源" value={user.source || '-'} />
+                  <InfoRow label="会员类型" value={user.servicePackage || '-'} />
                   <InfoRow label="服务到期" value={user.serviceExpiry || '-'} />
                   <InfoRow label="健康评分" value={user.healthScore || '-'} />
                   {user.remark && (
@@ -285,7 +284,7 @@ export default function PatientDetailPage() {
           <div className="card" style={{ gridColumn: 'span 2' }}>
             <div className="card-header">
               <div className="card-title">最近随访</div>
-              <button className="btn btn-secondary btn-sm" onClick={() => setTab('followups')}>查看全部</button>
+              <button className="btn btn-primary btn-sm" onClick={() => setShowFollowUpModal(true)}>＋ 新增随访</button>
             </div>
             <div className="card-body">
               {recentFollowUps?.length > 0 ? (
@@ -318,7 +317,7 @@ export default function PatientDetailPage() {
       {/* ── Records Tab ── */}
       {tab === 'records' && (
         <div className="card">
-          <div className="card-header"><div className="card-title">健康记录（最近10条）</div></div>
+          <div className="card-header"><div className="card-title">健康档案（最近10条）</div></div>
           {recentRecords?.length > 0 ? (
             <table className="table">
               <thead>
@@ -342,52 +341,6 @@ export default function PatientDetailPage() {
             </table>
           ) : (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康记录</div>
-          )}
-        </div>
-      )}
-
-      {/* ── Follow-ups Tab ── */}
-      {tab === 'followups' && (
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">随访记录</div>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowFollowUpModal(true)}>＋ 新增随访</button>
-          </div>
-          {followUps.length > 0 ? (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>随访日期</th>
-                  <th>方式</th>
-                  <th>状态</th>
-                  <th>内容</th>
-                  <th>下次随访</th>
-                  <th>随访人</th>
-                </tr>
-              </thead>
-              <tbody>
-                {followUps.map(f => (
-                  <tr key={f._id}>
-                    <td style={{ fontSize: 13 }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
-                    <td><span className="badge badge-info">{TYPE_MAP[f.type]}</span></td>
-                    <td>
-                      <span style={{ color: STATUS_COLOR[f.status], fontSize: 13, fontWeight: 500 }}>
-                        {STATUS_MAP[f.status]}
-                      </span>
-                    </td>
-                    <td style={{ maxWidth: 260, fontSize: 13 }}>{f.content || '-'}</td>
-                    <td style={{ fontSize: 13, color: '#8AA89C' }}>
-                      {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
-                    </td>
-                    <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          ) : (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
-              暂无随访记录，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => setShowFollowUpModal(true)}>立即添加</span>
-            </div>
           )}
         </div>
       )}

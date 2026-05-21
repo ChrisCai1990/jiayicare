@@ -40,10 +40,10 @@ export default function PatientsPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">我的患者</h1>
-          <p className="page-subtitle">共 {total} 位患者</p>
+          <h1 className="page-title">我的会员</h1>
+          <p className="page-subtitle">共 {total} 位会员</p>
         </div>
-        <button className="btn btn-primary" onClick={() => nav('/patients/new')}>＋ 新增患者</button>
+        <button className="btn btn-primary" onClick={() => nav('/patients/new')}>＋ 新增会员</button>
       </div>
 
       {/* 搜索与过滤 */}
@@ -75,13 +75,13 @@ export default function PatientsPage() {
         </div>
       </div>
 
-      {/* 患者列表 */}
+      {/* 会员列表 */}
       <div className="card">
         {loading ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
         ) : patients.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
-            暂无患者数据，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => nav('/patients/new')}>点击新增患者</span>
+            暂无会员数据，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => nav('/patients/new')}>点击新增会员</span>
           </div>
         ) : (
           <table className="table">
@@ -93,7 +93,7 @@ export default function PatientsPage() {
                 <th>慢病</th>
                 <th>健管专员</th>
                 <th>家庭医生</th>
-                <th>服务包</th>
+                <th>会员类型</th>
                 <th>健康评分</th>
                 <th>操作</th>
               </tr>

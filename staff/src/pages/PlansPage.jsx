@@ -3,7 +3,17 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
-const TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预方案', rehab:'运动康复方案', tcm:'中医方案' }
+const TYPE_LABEL = {
+  annual_checkup:  '年度体检方案',
+  annual_mgmt:     '年度管理方案',
+  nutrition:       '营养干预方案',
+  medical_assist:  '就医协助方案',
+  tcm:             '中医调理方案',
+  rehab:           '运动复健方案',
+  psychology:      '心理咨询方案',
+  // 旧类型兼容展示
+  checkup:'体检方案', health:'健康管理方案', followup:'随访计划',
+}
 const STATUS_LABEL = { draft:'草稿', active:'已推送', completed:'已完成', cancelled:'已取消' }
 const STATUS_COLOR = { draft:'#8AA89C', active:'#1E6B50', completed:'#22A06B', cancelled:'#DC3545' }
 
@@ -43,7 +53,16 @@ export default function PlansPage() {
 
       {/* 类型筛选 */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {[{ v: '', l: '全部' }, ...Object.entries(TYPE_LABEL).map(([v, l]) => ({ v, l }))].map(opt => (
+        {[
+          { v: '', l: '全部' },
+          { v: 'annual_checkup', l: '年度体检方案' },
+          { v: 'annual_mgmt',    l: '年度管理方案' },
+          { v: 'nutrition',      l: '营养干预方案' },
+          { v: 'medical_assist', l: '就医协助方案' },
+          { v: 'tcm',            l: '中医调理方案' },
+          { v: 'rehab',          l: '运动复健方案' },
+          { v: 'psychology',     l: '心理咨询方案' },
+        ].map(opt => (
           <button key={opt.v}
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setTypeFilter(opt.v)}>{opt.l}</button>
@@ -81,7 +100,7 @@ export default function PlansPage() {
 }
 
 function NewPlanModal({ patients, onClose, onSaved }) {
-  const [form, setForm] = useState({ patientId: '', type: 'checkup', title: '', description: '', year: new Date().getFullYear() })
+  const [form, setForm] = useState({ patientId: '', type: 'annual_checkup', title: '', description: '', year: new Date().getFullYear() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -114,7 +133,13 @@ function NewPlanModal({ patients, onClose, onSaved }) {
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">方案类型 *</label>
             <select className="form-input" value={form.type} onChange={set('type')}>
-              {Object.entries(TYPE_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              <option value="annual_checkup">年度体检方案</option>
+              <option value="annual_mgmt">年度管理方案</option>
+              <option value="nutrition">营养干预方案</option>
+              <option value="medical_assist">就医协助方案</option>
+              <option value="tcm">中医调理方案</option>
+              <option value="rehab">运动复健方案</option>
+              <option value="psychology">心理咨询方案</option>
             </select>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>

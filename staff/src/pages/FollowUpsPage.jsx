@@ -88,7 +88,7 @@ export default function FollowUpsPage() {
           <table className="table">
             <thead>
               <tr>
-                <th>患者</th>
+                <th>会员</th>
                 <th>随访日期</th>
                 <th>方式</th>
                 <th>状态</th>
@@ -129,7 +129,7 @@ export default function FollowUpsPage() {
                       className="btn btn-secondary btn-sm"
                       onClick={() => nav(`/patients/${f.patientId?._id}`)}
                     >
-                      查看患者
+                      查看会员
                     </button>
                     <button
                       className="btn btn-danger btn-sm"
