@@ -460,6 +460,22 @@ router.get('/plans', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/user/plans/:planId/items/:itemId/complete — 用户标记方案项为已完成
+router.patch('/plans/:planId/items/:itemId/complete', auth, async (req, res) => {
+  try {
+    const plan = await HealthPlan.findOne({ _id: req.params.planId, patientId: req.user._id });
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    const item = plan.items.id(req.params.itemId);
+    if (!item) return res.status(404).json({ success: false, message: '任务项不存在' });
+    item.status = 'completed';
+    item.completedAt = new Date();
+    await plan.save();
+    res.json({ success: true, data: item });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '操作失败', error: err.message });
+  }
+});
+
 // ── Req 6 & 12: 权益赠送记录（医护端赠送，用户端查看）──────────
 // GET /api/user/gifts
 router.get('/gifts', auth, async (req, res) => {

@@ -217,6 +217,8 @@ export const systemAPI = {
 // ── User: 健康方案 / 权益 / 随访任务 ─────────────────────────────
 export const plansAPI = {
   list: () => request('/user/plans'),
+  completeItem: (planId, itemId) =>
+    request(`/user/plans/${planId}/items/${itemId}/complete`, { method: 'PATCH' }),
 };
 
 export const giftsAPI = {

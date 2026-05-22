@@ -299,12 +299,16 @@ function BmiBar({ value }) {
 }
 
 // ── 任务行 ────────────────────────────────────────────────────────
-function TaskItem({ task, isLast }) {
+function TaskItem({ task, isLast, onPress }) {
   const urgency = URGENCY_CONFIG[task.priority] || URGENCY_CONFIG.low;
   const iconCfg = TASK_ICON_CONFIG[task.type] || TASK_ICON_CONFIG.followup;
 
   return (
-    <TouchableOpacity style={[styles.taskItem, !isLast && styles.taskItemBorder]} activeOpacity={0.7}>
+    <TouchableOpacity
+      style={[styles.taskItem, !isLast && styles.taskItemBorder]}
+      activeOpacity={0.7}
+      onPress={() => onPress && onPress(task)}
+    >
       <View style={[styles.taskIconWrap, { backgroundColor: iconCfg.bg }]}>
         <Ionicons name={iconCfg.icon} size={20} color={iconCfg.color} />
       </View>
@@ -314,8 +318,11 @@ function TaskItem({ task, isLast }) {
           {task.assignee} · {task.dueDate} {task.dueTime}
         </Text>
       </View>
-      <View style={[styles.urgencyBadge, { backgroundColor: urgency.bg }]}>
-        <Text style={[styles.urgencyText, { color: urgency.color }]}>{urgency.label}</Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+        <View style={[styles.urgencyBadge, { backgroundColor: urgency.bg }]}>
+          <Text style={[styles.urgencyText, { color: urgency.color }]}>{urgency.label}</Text>
+        </View>
+        <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
       </View>
     </TouchableOpacity>
   );
@@ -367,6 +374,9 @@ export default function HomeScreen({ navigation }) {
   const [checkinModal, setCheckinModal] = useState(null); // { key, label, icon, color }
   const [checkinNote, setCheckinNote]   = useState('');
   const [checkinImage, setCheckinImage] = useState(null);
+  // 任务详情弹窗
+  const [taskDetailModal, setTaskDetailModal] = useState(null);
+  const [taskCompleting, setTaskCompleting]   = useState(false);
   const fileInputRef = useRef(null);
 
   const loadData = useCallback(async () => {
@@ -491,7 +501,7 @@ export default function HomeScreen({ navigation }) {
 
   // ── 健康管家团队（真实数据）────────────────────────────────────
   const careTeam = [
-    user?.doctor?.name  ? { name: user.doctor.name,  role: user.doctor.title  || '主治医师',  online: true,  bg: TEAM_COLORS[0] } : null,
+    user?.doctor?.name  ? { name: user.doctor.name,  role: user.doctor.title  || '家庭医师',  online: true,  bg: TEAM_COLORS[0] } : null,
     user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家',  online: true,  bg: TEAM_COLORS[1] } : null,
   ].filter(Boolean);
   const hour  = new Date().getHours();
@@ -963,7 +973,7 @@ export default function HomeScreen({ navigation }) {
                 <>
                   {allPendingTaskItems.map((t, i) => {
                     const isLast = i === allPendingTaskItems.length - 1 && todayReminders.length === 0;
-                    return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} />;
+                    return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={setTaskDetailModal} />;
                   })}
                   {todayReminders.map((r, i) => (
                     <ReminderItem
@@ -1025,6 +1035,66 @@ export default function HomeScreen({ navigation }) {
         </View>
         <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>
+
+      {/* ── 任务详情弹窗 ────────────────────────────────────────── */}
+      {taskDetailModal && (() => {
+        const t = taskDetailModal;
+        const iconCfg = TASK_ICON_CONFIG[t.type] || TASK_ICON_CONFIG.followup;
+        const handleComplete = async () => {
+          if (!t._id || t.type === 'followup') return;
+          setTaskCompleting(true);
+          try {
+            await tasksAPI.complete(t._id);
+            setAllTasks(prev => prev.filter(x => x._id !== t._id));
+            setTaskDetailModal(null);
+          } catch {}
+          finally { setTaskCompleting(false); }
+        };
+        return (
+          <Modal visible transparent animationType="slide" onRequestClose={() => setTaskDetailModal(null)}>
+            <View style={styles.taskModalOverlay}>
+              <View style={styles.taskModalCard}>
+                <View style={styles.taskModalHandle} />
+                <View style={styles.taskModalHeader}>
+                  <View style={[styles.taskIconWrap, { backgroundColor: iconCfg.bg }]}>
+                    <Ionicons name={iconCfg.icon} size={22} color={iconCfg.color} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.taskModalTitle}>{t.title}</Text>
+                    <Text style={styles.taskModalMeta}>{t.assignee}{t.dueDate ? ` · ${t.dueDate}` : ''}{t.dueTime ? ` ${t.dueTime}` : ''}</Text>
+                  </View>
+                  <TouchableOpacity onPress={() => setTaskDetailModal(null)}>
+                    <Ionicons name="close" size={22} color={colors.textMuted} />
+                  </TouchableOpacity>
+                </View>
+                {!!t.description && (
+                  <Text style={styles.taskModalDesc}>{t.description}</Text>
+                )}
+                <View style={styles.taskModalFooter}>
+                  <TouchableOpacity
+                    style={styles.taskModalCancelBtn}
+                    onPress={() => setTaskDetailModal(null)}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.taskModalCancelText}>关闭</Text>
+                  </TouchableOpacity>
+                  {t.type !== 'followup' && (
+                    <TouchableOpacity
+                      style={[styles.taskModalCompleteBtn, taskCompleting && { opacity: 0.6 }]}
+                      onPress={handleComplete}
+                      disabled={taskCompleting}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
+                      <Text style={styles.taskModalCompleteText}>标记已完成</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
     </SafeAreaView>
   );
 }
@@ -1289,6 +1359,39 @@ const styles = StyleSheet.create({
     marginTop: 6, paddingHorizontal: 4,
   },
   reminderHintText: { fontSize: 11, color: colors.primary, flex: 1, fontWeight: '500' },
+
+  // 任务详情弹窗
+  taskModalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  taskModalCard: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 24, borderTopRightRadius: 24,
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.xl,
+  },
+  taskModalHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center', marginTop: 12, marginBottom: 16,
+  },
+  taskModalHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, marginBottom: spacing.md },
+  taskModalTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  taskModalMeta: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  taskModalDesc: {
+    fontSize: 14, color: colors.textSecondary, lineHeight: 21,
+    backgroundColor: colors.background, borderRadius: radius.sm,
+    padding: spacing.md, marginBottom: spacing.md,
+  },
+  taskModalFooter: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
+  taskModalCancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, alignItems: 'center',
+  },
+  taskModalCancelText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  taskModalCompleteBtn: {
+    flex: 2, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 12, borderRadius: radius.md,
+    backgroundColor: colors.primary,
+  },
+  taskModalCompleteText: { fontSize: 14, color: colors.white, fontWeight: '700' },
 
   // 更多入口
   moreGrid: {

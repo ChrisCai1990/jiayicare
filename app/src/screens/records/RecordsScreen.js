@@ -52,7 +52,7 @@ const CHART_TYPES = [
   {
     key: 'heartRate', label: '心率', unit: '次/分',
     color: '#7C3AED', icon: 'pulse-outline',
-    refLines: [{ val: 100, color: '#DC3545', label: '偏快线' }, { val: 60, color: '#0077B6', label: '偏慢线' }],
+    refLines: [{ val: 100, color: '#DC3545', label: '偏快 ≥100次/分' }, { val: 60, color: '#0077B6', label: '偏慢 ≤60次/分' }],
     minY: 40, maxY: 140,
     getVal: (r) => parseFloat(r.value ?? 0),
     getDisplay: (r) => String(r.value ?? '-'),
@@ -70,7 +70,7 @@ const CHART_TYPES = [
   {
     key: 'sleep', label: '睡眠', unit: '小时',
     color: '#7B68EE', icon: 'moon-outline',
-    refLines: [{ val: 9, color: '#22A06B', label: '建议上限' }, { val: 7, color: '#D97706', label: '建议下限' }],
+    refLines: [{ val: 9, color: '#22A06B', label: '建议上限 9小时' }, { val: 7, color: '#D97706', label: '建议下限 7小时' }],
     minY: 0, maxY: 12,
     getVal: (r) => parseFloat(r.value ?? 0),
     getDisplay: (r) => r.value != null ? `${r.value}` : '-',
@@ -277,7 +277,7 @@ function TrendChart({ data, data2, typeCfg, period }) {
         {refLines.map((ref, i) => (
           <View key={i} style={styles.legendItem}>
             <View style={[styles.legendLine, { backgroundColor: ref.color }]} />
-            <Text style={styles.legendText}>{ref.label} {ref.val}{typeCfg.unit}</Text>
+            <Text style={styles.legendText}>{ref.label}</Text>
           </View>
         ))}
       </View>
@@ -869,8 +869,8 @@ export default function RecordsScreen({ navigation }) {
                   typeCfg={{ ...currentTypeCfg, color: '#DC3545',
                     getVal: r => r.extra?.sys ?? parseFloat(String(r.value).split('/')[0]) ?? 0,
                     refLines: [
-                      { val: 140, color: '#DC3545', label: '正常上限' },
-                      { val: 90,  color: '#22A06B', label: '正常下限' },
+                      { val: 140, color: '#DC3545', label: '收缩压上限 140mmHg' },
+                      { val: 90,  color: '#22A06B', label: '收缩压下限 90mmHg' },
                     ],
                     minY: 60, maxY: 180,
                     color2: undefined, getVal2: undefined,
@@ -883,8 +883,8 @@ export default function RecordsScreen({ navigation }) {
                   typeCfg={{ ...currentTypeCfg, color: '#0077B6',
                     getVal: r => r.extra?.dia ?? parseFloat(String(r.value).split('/')[1]) ?? 0,
                     refLines: [
-                      { val: 90, color: '#DC3545', label: '正常上限' },
-                      { val: 60, color: '#22A06B', label: '正常下限' },
+                      { val: 90, color: '#DC3545', label: '舒张压上限 90mmHg' },
+                      { val: 60, color: '#22A06B', label: '舒张压下限 60mmHg' },
                     ],
                     minY: 40, maxY: 120,
                     color2: undefined, getVal2: undefined,

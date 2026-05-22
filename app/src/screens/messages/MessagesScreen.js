@@ -125,8 +125,9 @@ function MessageDetailModal({ msg, onClose }) {
 
 // ── 撰写消息 Modal ────────────────────────────────────────────────
 const RECIPIENTS = [
-  { key: 'doctor',  label: '主治医师', icon: 'medical',  color: colors.primary },
-  { key: 'manager', label: '健 管 师', icon: 'person',   color: colors.accent },
+  { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
+  { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
+  { key: 'manager',      label: '健管师',   icon: 'person',            color: colors.accent  },
 ];
 
 function ComposeModal({ visible, onClose, onSent }) {
@@ -191,7 +192,7 @@ function ComposeModal({ visible, onClose, onSent }) {
           <Text style={[styles.composeLabel, { marginTop: 16 }]}>消息内容</Text>
           <TextInput
             style={styles.composeTextArea}
-            placeholder="请输入您想告诉医生或健管师的内容……"
+            placeholder="请输入您想告诉家庭医师、营养师或健管师的内容……"
             placeholderTextColor={colors.textMuted}
             value={content}
             onChangeText={t => { setContent(t); setError(''); }}

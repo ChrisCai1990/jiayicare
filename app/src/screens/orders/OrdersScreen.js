@@ -30,7 +30,7 @@ function fmtDate(str) {
 // ── 订单卡片 ──────────────────────────────────────────────────────
 function OrderCard({ order, onCancel }) {
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
-  const canCancel = order.status === 'pending';
+  const canCancel = order.status === 'pending' || order.status === 'scheduled';
 
   return (
     <View style={styles.orderCard}>
@@ -123,7 +123,7 @@ export default function OrdersScreen({ navigation }) {
   const handleCancel = (order) => {
     Alert.alert(
       '取消预约',
-      `确定要取消「${order.serviceName}」的预约吗？`,
+      '确定取消本次预约吗？取消后可能需要重新预约。',
       [
         { text: '暂不取消', style: 'cancel' },
         {

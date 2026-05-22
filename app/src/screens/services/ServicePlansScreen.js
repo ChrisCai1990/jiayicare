@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator,
-  RefreshControl,
+  RefreshControl, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -110,6 +110,11 @@ const styles = StyleSheet.create({
   planItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4 },
   planItemText: { flex: 1, fontSize: 13, color: colors.textSecondary },
   planItemDone: { textDecorationLine: 'line-through', color: colors.textMuted },
+  planItemCompleteHint: {
+    paddingHorizontal: 8, paddingVertical: 3,
+    borderRadius: radius.full, borderWidth: 1,
+  },
+  planItemCompleteHintText: { fontSize: 10, fontWeight: '600' },
   datesRow: {
     flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm,
     borderTopWidth: 1, borderTopColor: colors.borderLight, paddingTop: spacing.sm,
@@ -135,7 +140,7 @@ const styles = StyleSheet.create({
   loadingWrap: { paddingVertical: spacing.xl * 2, alignItems: 'center' },
 });
 
-function PlanCard({ plan, expanded, onToggle }) {
+function PlanCard({ plan, expanded, onToggle, onItemComplete }) {
   const meta = TYPE_META[plan.type] || DEFAULT_META;
   const sm   = STATUS_META[plan.status] || STATUS_META.draft;
 
@@ -180,7 +185,15 @@ function PlanCard({ plan, expanded, onToggle }) {
 
           {/* 任务项目 */}
           {(plan.items || []).map((item, i) => (
-            <View key={item._id || i} style={styles.planItem}>
+            <TouchableOpacity
+              key={item._id || i}
+              style={styles.planItem}
+              activeOpacity={item.status === 'completed' ? 1 : 0.7}
+              onPress={() => {
+                if (item.status === 'completed' || !item._id) return;
+                onItemComplete && onItemComplete(plan._id, item._id, item.name);
+              }}
+            >
               <Ionicons
                 name={item.status === 'completed' ? 'checkmark-circle' : 'ellipse-outline'}
                 size={15}
@@ -190,7 +203,12 @@ function PlanCard({ plan, expanded, onToggle }) {
                 {item.name}
                 {item.notes ? ` · ${item.notes}` : ''}
               </Text>
-            </View>
+              {item.status !== 'completed' && item._id && (
+                <View style={[styles.planItemCompleteHint, { borderColor: meta.color + '60' }]}>
+                  <Text style={[styles.planItemCompleteHintText, { color: meta.color }]}>完成</Text>
+                </View>
+              )}
+            </TouchableOpacity>
           ))}
 
           {/* 进度 */}
@@ -254,6 +272,36 @@ export default function ServicePlansScreen({ navigation }) {
 
   const toggle = (id) => setExpanded(prev => prev === id ? null : id);
 
+  const handleItemComplete = (planId, itemId, itemName) => {
+    Alert.alert(
+      '确认完成',
+      `确认已完成「${itemName}」？完成后将通知您的健康管理团队。`,
+      [
+        { text: '取消', style: 'cancel' },
+        {
+          text: '确认完成', style: 'default',
+          onPress: async () => {
+            try {
+              await plansAPI.completeItem(planId, itemId);
+              // 更新本地状态
+              setPlans(prev => prev.map(p => {
+                if (p._id !== planId) return p;
+                return {
+                  ...p,
+                  items: (p.items || []).map(item =>
+                    item._id === itemId ? { ...item, status: 'completed' } : item
+                  ),
+                };
+              }));
+            } catch (err) {
+              Alert.alert('操作失败', err.message || '请稍后重试');
+            }
+          },
+        },
+      ]
+    );
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       {/* 顶栏 */}
@@ -298,6 +346,7 @@ export default function ServicePlansScreen({ navigation }) {
                 plan={plan}
                 expanded={expanded === plan._id}
                 onToggle={() => toggle(plan._id)}
+                onItemComplete={handleItemComplete}
               />
             ))
           )}
