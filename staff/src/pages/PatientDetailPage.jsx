@@ -33,12 +33,18 @@ export default function PatientDetailPage() {
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
+  const [editingHealth, setEditingHealth] = useState(false)
+  const [editingLifestyle, setEditingLifestyle] = useState(false)
+  const [healthForm, setHealthForm] = useState({})
+  const [lifestyleForm, setLifestyleForm] = useState({})
 
   const load = async () => {
     try {
       const res = await staffAPI.getPatient(id)
       setData(res.data)
       setEditForm(buildEditForm(res.data.user))
+      setHealthForm(buildHealthForm(res.data.user))
+      setLifestyleForm(buildLifestyleForm(res.data.user))
     } catch (err) {
       toast(err.message || '加载失败')
     } finally {
@@ -89,6 +95,38 @@ export default function PatientDetailPage() {
     deliveryAddress: u.deliveryAddress || '',
     assignedHealthManager: u.assignedHealthManager?._id || '',
     assignedFamilyDoctor: u.assignedFamilyDoctor?._id || '',
+    servicePackage: u.servicePackage || '',
+    serviceExpiry: u.serviceExpiry || '',
+    serviceStartDate: u.serviceStartDate || '',
+  })
+
+  const buildHealthForm = (u) => ({
+    bloodTypeABO: u.bloodTypeABO || '',
+    bloodTypeRH: u.bloodTypeRH || '',
+    traumaHistory: u.traumaHistory || '',
+    transfusionHistory: u.transfusionHistory || '',
+    infectiousHistory: u.infectiousHistory || '',
+    vaccinationHistory: u.vaccinationHistory || '',
+    healthProfile: {
+      drugAllergy: u.healthProfile?.drugAllergy || '',
+      foodAllergy: u.healthProfile?.foodAllergy || '',
+      pastHistory: u.healthProfile?.pastHistory || '',
+      medicHistory: u.healthProfile?.medicHistory || '',
+      surgeryHistory: u.healthProfile?.surgeryHistory || '',
+    },
+  })
+
+  const buildLifestyleForm = (u) => ({
+    lifestyle: {
+      diet: u.lifestyle?.diet || '',
+      exercise: u.lifestyle?.exercise || '',
+      sleep: u.lifestyle?.sleep || '',
+      water: u.lifestyle?.water || '',
+      alcohol: u.lifestyle?.alcohol || '',
+      smoking: u.lifestyle?.smoking || '',
+      bowel: u.lifestyle?.bowel || '',
+      mood: u.lifestyle?.mood || '',
+    },
   })
 
   const handleSave = async () => {
@@ -100,6 +138,24 @@ export default function PatientDetailPage() {
     } catch (err) {
       toast(err.message || '保存失败')
     }
+  }
+
+  const handleSaveHealth = async () => {
+    try {
+      await staffAPI.updatePatient(id, healthForm)
+      toast('健康档案已保存')
+      setEditingHealth(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleSaveLifestyle = async () => {
+    try {
+      await staffAPI.updatePatient(id, lifestyleForm)
+      toast('生活方式已保存')
+      setEditingLifestyle(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
   }
 
   const handleFollowUpCreated = () => {
@@ -242,6 +298,41 @@ export default function PatientDetailPage() {
                       onChange={e => setEditForm(f => ({ ...f, deliveryAddress: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">健管专员</label>
+                    <select className="form-input" value={editForm.assignedHealthManager}
+                      onChange={e => setEditForm(f => ({ ...f, assignedHealthManager: e.target.value }))}>
+                      <option value="">-- 未分配 --</option>
+                      {staffList.filter(s => s.role === 'healthManager').map(s => (
+                        <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">家庭医生</label>
+                    <select className="form-input" value={editForm.assignedFamilyDoctor}
+                      onChange={e => setEditForm(f => ({ ...f, assignedFamilyDoctor: e.target.value }))}>
+                      <option value="">-- 未分配 --</option>
+                      {staffList.filter(s => s.role === 'familyDoctor').map(s => (
+                        <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">服务包</label>
+                    <input className="form-input" placeholder="如：年度服务包" value={editForm.servicePackage}
+                      onChange={e => setEditForm(f => ({ ...f, servicePackage: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">服务开始时间</label>
+                    <input className="form-input" type="date" value={editForm.serviceStartDate}
+                      onChange={e => setEditForm(f => ({ ...f, serviceStartDate: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">服务到期时间</label>
+                    <input className="form-input" type="date" value={editForm.serviceExpiry}
+                      onChange={e => setEditForm(f => ({ ...f, serviceExpiry: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">会员类型</label>
                     <select className="form-input" value={editForm.patientType}
                       onChange={e => setEditForm(f => ({ ...f, patientType: e.target.value }))}>
@@ -269,7 +360,8 @@ export default function PatientDetailPage() {
                   <InfoRow label="健管专员" value={user.assignedHealthManager?.name || '-'} />
                   <InfoRow label="家庭医生" value={user.assignedFamilyDoctor?.name || '-'} />
                   <InfoRow label="会员来源" value={user.source || '-'} />
-                  <InfoRow label="会员类型" value={user.servicePackage || '-'} />
+                  <InfoRow label="服务包" value={user.servicePackage || '-'} />
+                  <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />
                   <InfoRow label="服务到期" value={user.serviceExpiry || '-'} />
                   <InfoRow label="健康评分" value={user.healthScore || '-'} />
                   {user.remark && (
@@ -278,6 +370,142 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </>
+              )}
+            </div>
+          </div>
+
+          {/* 健康档案 */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">健康档案</div>
+              {!editingHealth
+                ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingHealth(true)}>编辑</button>
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveHealth}>保存</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingHealth(false); setHealthForm(buildHealthForm(user)) }}>取消</button>
+                  </div>
+              }
+            </div>
+            <div className="card-body">
+              {editingHealth ? (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>血型 ABO</label>
+                      <select className="form-control" value={healthForm.bloodTypeABO || ''} onChange={e => setHealthForm(p => ({ ...p, bloodTypeABO: e.target.value }))}>
+                        <option value="">未知</option>
+                        {['A','B','O','AB'].map(v => <option key={v} value={v}>{v}</option>)}
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>RH 血型</label>
+                      <select className="form-control" value={healthForm.bloodTypeRH || ''} onChange={e => setHealthForm(p => ({ ...p, bloodTypeRH: e.target.value }))}>
+                        <option value="">未知</option>
+                        <option value="阳性">阳性</option>
+                        <option value="阴性">阴性</option>
+                      </select>
+                    </div>
+                  </div>
+                  {[
+                    { key: 'drugAllergy', label: '药物过敏', nested: true },
+                    { key: 'foodAllergy', label: '食物过敏', nested: true },
+                    { key: 'pastHistory', label: '既往史', nested: true },
+                    { key: 'medicHistory', label: '用药史', nested: true },
+                    { key: 'surgeryHistory', label: '手术史', nested: true },
+                    { key: 'traumaHistory', label: '外伤史', nested: false },
+                    { key: 'transfusionHistory', label: '输血史', nested: false },
+                    { key: 'infectiousHistory', label: '传染病史', nested: false },
+                    { key: 'vaccinationHistory', label: '预防接种史', nested: false },
+                  ].map(({ key, label, nested }) => (
+                    <div key={key}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
+                      <textarea className="form-control" rows={2} value={nested ? (healthForm.healthProfile?.[key] || '') : (healthForm[key] || '')}
+                        onChange={e => {
+                          if (nested) setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, [key]: e.target.value } }))
+                          else setHealthForm(p => ({ ...p, [key]: e.target.value }))
+                        }}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 6 }}>
+                  <div style={{ display: 'flex', gap: 16 }}>
+                    <span style={{ fontSize: 13, color: '#8AA89C' }}>血型：</span>
+                    <span style={{ fontSize: 13 }}>{[user.bloodTypeABO, user.bloodTypeRH].filter(Boolean).join(' ') || '-'}</span>
+                  </div>
+                  {[
+                    { label: '药物过敏', val: user.healthProfile?.drugAllergy },
+                    { label: '食物过敏', val: user.healthProfile?.foodAllergy },
+                    { label: '既往史', val: user.healthProfile?.pastHistory },
+                    { label: '用药史', val: user.healthProfile?.medicHistory },
+                    { label: '手术史', val: user.healthProfile?.surgeryHistory },
+                    { label: '外伤史', val: user.traumaHistory },
+                    { label: '输血史', val: user.transfusionHistory },
+                    { label: '传染病史', val: user.infectiousHistory },
+                    { label: '预防接种史', val: user.vaccinationHistory },
+                  ].map(({ label, val }) => val ? (
+                    <div key={label} style={{ display: 'flex', gap: 8 }}>
+                      <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{label}：</span>
+                      <span style={{ fontSize: 13, color: '#1A2B24' }}>{val}</span>
+                    </div>
+                  ) : null)}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 生活方式 */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">生活方式</div>
+              {!editingLifestyle
+                ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingLifestyle(true)}>编辑</button>
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveLifestyle}>保存</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingLifestyle(false); setLifestyleForm(buildLifestyleForm(user)) }}>取消</button>
+                  </div>
+              }
+            </div>
+            <div className="card-body">
+              {editingLifestyle ? (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  {[
+                    { key: 'diet', label: '饮食习惯' },
+                    { key: 'exercise', label: '运动习惯' },
+                    { key: 'sleep', label: '睡眠习惯' },
+                    { key: 'water', label: '饮水习惯' },
+                    { key: 'alcohol', label: '饮酒情况' },
+                    { key: 'smoking', label: '吸烟情况' },
+                    { key: 'bowel', label: '排便情况' },
+                    { key: 'mood', label: '情绪状态' },
+                  ].map(({ key, label }) => (
+                    <div key={key}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
+                      <input className="form-control" value={lifestyleForm.lifestyle?.[key] || ''}
+                        onChange={e => setLifestyleForm(p => ({ ...p, lifestyle: { ...p.lifestyle, [key]: e.target.value } }))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 6 }}>
+                  {[
+                    { label: '饮食', val: user.lifestyle?.diet },
+                    { label: '运动', val: user.lifestyle?.exercise },
+                    { label: '睡眠', val: user.lifestyle?.sleep },
+                    { label: '饮水', val: user.lifestyle?.water },
+                    { label: '饮酒', val: user.lifestyle?.alcohol },
+                    { label: '吸烟', val: user.lifestyle?.smoking },
+                    { label: '排便', val: user.lifestyle?.bowel },
+                    { label: '情绪', val: user.lifestyle?.mood },
+                  ].map(({ label, val }) => (
+                    <div key={label} style={{ display: 'flex', gap: 8 }}>
+                      <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 40 }}>{label}：</span>
+                      <span style={{ fontSize: 13, color: '#1A2B24' }}>{val || '-'}</span>
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
           </div>

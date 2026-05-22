@@ -122,7 +122,7 @@ const userSchema = new mongoose.Schema({
   maritalStatus:   { type: String, default: '' },   // 婚姻状况
   ethnicity:       { type: String, default: '' },   // 民族
   contactPhone2:   { type: String, default: '' },   // 紧急联系电话
-  // 生活方式（文字描述，6个维度）
+  // 生活方式（文字描述）
   lifestyle: {
     diet:     { type: String, default: '' },  // 饮食
     exercise: { type: String, default: '' },  // 运动
@@ -130,7 +130,10 @@ const userSchema = new mongoose.Schema({
     water:    { type: String, default: '' },  // 饮水
     alcohol:  { type: String, default: '' },  // 饮酒
     smoking:  { type: String, default: '' },  // 吸烟
+    bowel:    { type: String, default: '' },  // 排便
+    mood:     { type: String, default: '' },  // 情绪
   },
+  serviceStartDate: { type: String, default: '' }, // 服务开始时间
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

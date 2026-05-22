@@ -128,6 +128,9 @@ const NUTRITION_FIELDS = [
   { key: 'dietRecord', label: '饮食记录', type: 'textarea', placeholder: '饮食种类、份量、频率...' },
   { key: 'exerciseRecord', label: '运动记录', type: 'textarea', placeholder: '运动类型、时长...' },
   { key: 'sleepRecord', label: '睡眠记录', type: 'textarea', placeholder: '时长、质量...' },
+  { key: 'waterRecord', label: '饮水记录', type: 'textarea', placeholder: '每日饮水量、习惯...' },
+  { key: 'alcoholRecord', label: '饮酒记录', type: 'textarea', placeholder: '频率、种类、饮用量...' },
+  { key: 'bowelRecord', label: '排便记录', type: 'textarea', placeholder: '频率、性状、异常情况...' },
   { key: 'weeklySummary', label: '本周总结与建议', type: 'textarea' },
 ]
 const MEDICAL_VISIT_FIELDS = [
@@ -171,6 +174,9 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
         extras.dietRecord && `饮食记录：${extras.dietRecord}`,
         extras.exerciseRecord && `运动记录：${extras.exerciseRecord}`,
         extras.sleepRecord && `睡眠记录：${extras.sleepRecord}`,
+        extras.waterRecord && `饮水记录：${extras.waterRecord}`,
+        extras.alcoholRecord && `饮酒记录：${extras.alcoholRecord}`,
+        extras.bowelRecord && `排便记录：${extras.bowelRecord}`,
         extras.weeklySummary && `总结建议：${extras.weeklySummary}`,
       ].filter(Boolean).join('\n')
     }

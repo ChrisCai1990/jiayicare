@@ -223,12 +223,28 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     'idNumber', 'workplace', 'occupation', 'maritalStatus',
     'ethnicity', 'contactPhone', 'contactPhone2', 'deliveryAddress',
     'assignedHealthManager', 'assignedFamilyDoctor',
-    'servicePackage', 'serviceExpiry',
+    'servicePackage', 'serviceExpiry', 'serviceStartDate',
+    'bloodTypeABO', 'bloodTypeRH',
+    'traumaHistory', 'transfusionHistory', 'infectiousHistory', 'vaccinationHistory',
   ];
   const updateData = {};
   allowed.forEach(k => {
     if (req.body[k] !== undefined) updateData[k] = req.body[k];
   });
+
+  // 生活方式嵌套字段（逐个展开，避免覆盖其他字段）
+  if (req.body.lifestyle && typeof req.body.lifestyle === 'object') {
+    ['diet', 'exercise', 'sleep', 'water', 'alcohol', 'smoking', 'bowel', 'mood'].forEach(k => {
+      if (req.body.lifestyle[k] !== undefined) updateData[`lifestyle.${k}`] = req.body.lifestyle[k];
+    });
+  }
+
+  // 健康档案字符串字段（仅更新文本，不覆盖数组字段）
+  if (req.body.healthProfile && typeof req.body.healthProfile === 'object') {
+    ['bloodType', 'drugAllergy', 'foodAllergy', 'pastHistory', 'medicHistory', 'surgeryHistory', 'menstrualHistory', 'maritalHistory'].forEach(k => {
+      if (req.body.healthProfile[k] !== undefined) updateData[`healthProfile.${k}`] = req.body.healthProfile[k];
+    });
+  }
 
   await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set: updateData });
   const user = await User.findById(req.params.id)
