@@ -27,6 +27,8 @@ export default function PatientDetailPage() {
   const [gifts, setGifts] = useState([])
   const [showGiftModal, setShowGiftModal] = useState(false)
   const [showReferralModal, setShowReferralModal] = useState(false)
+  const [showReportDetail, setShowReportDetail] = useState(null)
+  const [showSRDetail, setShowSRDetail] = useState(null)
   const [staffList, setStaffList] = useState([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [editing, setEditing] = useState(false)
@@ -108,7 +110,7 @@ export default function PatientDetailPage() {
   }
 
   if (loading) return <div className="page-loading">加载中...</div>
-  if (!data) return <div className="page">患者不存在</div>
+  if (!data) return <div className="page">会员不存在</div>
 
   const { user, recentFollowUps, recentRecords } = data
   const age = user.age ? `${user.age}岁` : '-'
@@ -361,8 +363,8 @@ export default function PatientDetailPage() {
                   const done = p.items?.filter(i => i.status === 'completed').length || 0
                   const total = p.items?.length || 0
                   return (
-                    <tr key={p._id}>
-                      <td style={{ fontWeight: 500 }}>{p.title}</td>
+                    <tr key={p._id} style={{ cursor: 'pointer' }} onClick={() => nav(`/plans/${p._id}`)}>
+                      <td style={{ fontWeight: 500, color: '#1E6B50' }}>{p.title}</td>
                       <td><span className="badge badge-info">{PLAN_TYPE_LABEL[p.type] || p.type}</span></td>
                       <td><span style={{ color: PLAN_STATUS_COLOR[p.status], fontWeight: 500, fontSize: 13 }}>{PLAN_STATUS_LABEL[p.status]}</span></td>
                       <td style={{ textAlign: 'center' }}>{total}</td>
@@ -396,8 +398,8 @@ export default function PatientDetailPage() {
               <thead><tr><th>报告标题</th><th>类型</th><th>医院</th><th>日期</th><th>审核状态</th><th>上传人</th></tr></thead>
               <tbody>
                 {reports.map(r => (
-                  <tr key={r._id}>
-                    <td style={{ fontWeight: 500 }}>{r.title}</td>
+                  <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => setShowReportDetail(r)}>
+                    <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title}</td>
                     <td><span className="badge badge-info">{r.type}</span></td>
                     <td style={{ fontSize: 13, color: '#666' }}>{r.hospital || '-'}</td>
                     <td style={{ fontSize: 13, color: '#666' }}>{r.date || '-'}</td>
@@ -426,9 +428,9 @@ export default function PatientDetailPage() {
               <thead><tr><th>服务类型</th><th>标题</th><th>内容摘要</th><th>负责人</th><th>服务日期</th></tr></thead>
               <tbody>
                 {serviceRecords.map(r => (
-                  <tr key={r._id}>
+                  <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => setShowSRDetail(r)}>
                     <td><span className="badge badge-success">{SR_TYPE_LABEL[r.type] || r.type}</span></td>
-                    <td style={{ fontWeight: 500 }}>{r.title || '-'}</td>
+                    <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
                     <td style={{ fontSize: 13, color: '#666', maxWidth: 200 }}>{r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : '-'}</td>
                     <td style={{ fontSize: 13, color: '#666' }}>{r.staffId?.name || '-'}</td>
                     <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
@@ -495,6 +497,83 @@ export default function PatientDetailPage() {
           onClose={() => setShowGiftModal(false)}
           onSaved={() => { setShowGiftModal(false); toast('权益已赠送'); loadGifts() }}
         />
+      )}
+
+      {/* 体检报告详情弹窗 */}
+      {showReportDetail && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowReportDetail(null) }}>
+          <div className="modal" style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">{showReportDetail.title}</h3>
+              <button className="modal-close" onClick={() => setShowReportDetail(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {[
+                ['类型', showReportDetail.type],
+                ['医院', showReportDetail.hospital || '-'],
+                ['报告日期', showReportDetail.date || '-'],
+                ['审核状态', showReportDetail.audit_status === 'audited' ? '已审核' : showReportDetail.audit_status === 'rejected' ? '已驳回' : '待审核'],
+                ['审核人', showReportDetail.audited_by || '-'],
+                ['驳回原因', showReportDetail.reject_reason || '-'],
+                ['上传人', showReportDetail.uploadedBy?.name || '-'],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
+                  <span style={{ width: 80, color: '#8AA89C', fontSize: 13 }}>{k}</span>
+                  <span style={{ flex: 1, fontSize: 13 }}>{v}</span>
+                </div>
+              ))}
+              {showReportDetail.note && (
+                <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>{showReportDetail.note}</div>
+              )}
+              {(showReportDetail.content || showReportDetail.fileUrl) && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
+                  {showReportDetail.mimeType?.startsWith('image/') || showReportDetail.content?.startsWith('data:image') ? (
+                    <img src={showReportDetail.content || showReportDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', borderRadius: 8 }} />
+                  ) : (
+                    <a href={showReportDetail.content || showReportDetail.fileUrl} target="_blank" rel="noreferrer"
+                      className="btn btn-secondary btn-sm">📎 查看文件</a>
+                  )}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowReportDetail(null)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 服务记录详情弹窗 */}
+      {showSRDetail && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowSRDetail(null) }}>
+          <div className="modal" style={{ maxWidth: 500 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">{showSRDetail.title || '服务记录详情'}</h3>
+              <button className="modal-close" onClick={() => setShowSRDetail(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {[
+                ['服务类型', SR_TYPE_LABEL[showSRDetail.type] || showSRDetail.type],
+                ['负责人', showSRDetail.staffId?.name || '-'],
+                ['服务日期', showSRDetail.date ? new Date(showSRDetail.date).toLocaleDateString('zh-CN') : '-'],
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
+                  <span style={{ width: 80, color: '#8AA89C', fontSize: 13 }}>{k}</span>
+                  <span style={{ flex: 1, fontSize: 13 }}>{v}</span>
+                </div>
+              ))}
+              {showSRDetail.content && (
+                <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                  {showSRDetail.content}
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowSRDetail(null)}>关闭</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 转介弹窗 */}

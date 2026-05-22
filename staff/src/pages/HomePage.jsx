@@ -34,16 +34,15 @@ export default function HomePage() {
           <p className="page-subtitle">{today}</p>
         </div>
         <button className="btn btn-primary" onClick={() => nav('/patients/new')}>
-          ＋ 新增患者
+          ＋ 新增会员
         </button>
       </div>
 
       {/* 数据卡片 */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 24 }}>
         <StatCard icon="👥" label="我的会员" value={reports?.totalPatients ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
         <StatCard icon="📞" label="今日随访" value={reports?.todayFollowUps ?? '-'} color="#0077B6" onClick={() => nav('/followups')} />
-        <StatCard icon="📅" label="本月随访" value={reports?.monthFollowUps ?? '-'} color="#22A06B" />
-        <StatCard icon="⏳" label="计划随访" value={reports?.plannedFollowUps ?? '-'} color="#D97706" onClick={() => nav('/followups?status=planned')} />
+        <StatCard icon="📅" label="本月随访" value={reports?.monthFollowUps ?? '-'} color="#22A06B" onClick={() => nav('/followups')} />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -87,8 +86,7 @@ export default function HomePage() {
           <div className="card-body">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {[
-                { icon: '➕', label: '新增患者', path: '/patients/new' },
-                { icon: '📋', label: '记录随访', path: '/followups' },
+                { icon: '➕', label: '新增会员', path: '/patients/new' },
                 { icon: '🔔', label: '消息通知', path: '/notifications' },
                 { icon: '🛍', label: '产品推送', path: '/products' },
               ].map(item => (

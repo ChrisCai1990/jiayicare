@@ -25,7 +25,7 @@ export default function PlanDetailPage() {
   useEffect(() => { load() }, [id])
 
   const handlePush = async () => {
-    if (!window.confirm('确认推送此方案给患者？')) return
+    if (!window.confirm('确认推送此方案给会员？')) return
     try { await staffAPI.pushPlan(id); toast('方案已推送'); load() }
     catch (err) { toast(err.message) }
   }
@@ -68,7 +68,7 @@ export default function PlanDetailPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {plan.status === 'draft' && (
-            <button className="btn btn-primary" onClick={handlePush}>📤 推送给患者</button>
+            <button className="btn btn-primary" onClick={handlePush}>📤 推送给会员</button>
           )}
           <button className="btn btn-secondary" onClick={handleDelete}>删除</button>
         </div>
@@ -80,7 +80,7 @@ export default function PlanDetailPage() {
           <div className="card-header"><div className="card-title">方案信息</div></div>
           <div className="card-body">
             {[
-              ['患者', plan.patientId?.name + ' · ' + plan.patientId?.phone],
+              ['会员', plan.patientId?.name + ' · ' + plan.patientId?.phone],
               ['类型', TYPE_LABEL[plan.type]],
               ['状态', STATUS_LABEL[plan.status]],
               ['年度', plan.year + ' 年'],

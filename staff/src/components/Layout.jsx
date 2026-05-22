@@ -5,7 +5,7 @@ import { useStaff } from '../App'
 const ALL_NAV = [
   { label: '工作台',   icon: '🏠', path: '/home', roles: [] },
   { label: '我的会员', icon: '👥', path: '/patients', roles: [] },
-  { label: '随访记录', icon: '📋', path: '/followups', roles: [] },
+  { label: '随访管理', icon: '📋', path: '/followups', roles: [] },
   { label: '健康方案', icon: '📄', path: '/plans',    roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'] },
   { label: '报告管理', icon: '🔬', path: '/reports',  roles: ['healthManager','familyDoctor','superadmin'] },
   { label: '服务记录', icon: '🏥', path: '/service-records', roles: ['medicalAssistant','psychologist','rehabSpecialist','tcmDoctor','specialist','superadmin'] },

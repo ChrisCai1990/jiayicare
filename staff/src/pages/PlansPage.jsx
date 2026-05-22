@@ -74,7 +74,7 @@ export default function PlansPage() {
         : plans.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无方案</div>
         : <table className="table">
             <thead><tr>
-              <th>方案名称</th><th>类型</th><th>患者</th><th>状态</th><th>项目数</th><th>创建时间</th><th>操作</th>
+              <th>方案名称</th><th>类型</th><th>会员</th><th>状态</th><th>项目数</th><th>创建时间</th><th>操作</th>
             </tr></thead>
             <tbody>
               {plans.map(p => (
@@ -107,7 +107,7 @@ function NewPlanModal({ patients, onClose, onSaved }) {
 
   const handleSubmit = async e => {
     e.preventDefault()
-    if (!form.patientId || !form.title) { setError('患者和方案名称不能为空'); return }
+    if (!form.patientId || !form.title) { setError('会员和方案名称不能为空'); return }
     setSaving(true); setError('')
     try { await staffAPI.createPlan(form); onSaved() }
     catch (err) { setError(err.message) }
@@ -124,9 +124,9 @@ function NewPlanModal({ patients, onClose, onSaved }) {
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
         <form onSubmit={handleSubmit} className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">选择患者 *</label>
+            <label className="form-label">选择会员 *</label>
             <select className="form-input" value={form.patientId} onChange={set('patientId')} required>
-              <option value="">-- 请选择患者 --</option>
+              <option value="">-- 请选择会员 --</option>
               {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
             </select>
           </div>

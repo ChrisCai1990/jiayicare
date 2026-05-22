@@ -86,7 +86,7 @@ export default function NewPatientPage() {
         delete payload.childProfile
       }
       const res = await staffAPI.createPatient(payload)
-      toast('患者创建成功')
+      toast('会员创建成功')
       nav(`/patients/${res.data._id}`, { replace: true })
     } catch (err) { toast(err.message || '创建失败') }
     finally { setSaving(false) }
@@ -258,8 +258,8 @@ export default function NewPatientPage() {
             <Grid>
               <F label="健管专员" span={2}><select className="form-input" value={form.assignedHealthManager} onChange={set('assignedHealthManager')}><option value="">-- 未分配 --</option>{healthManagers.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="家庭医生" span={2}><select className="form-input" value={form.assignedFamilyDoctor} onChange={set('assignedFamilyDoctor')}><option value="">-- 未分配 --</option>{familyDoctors.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
-              <F label="患者来源"><select className="form-input" value={form.source} onChange={set('source')}><option value="">未填写</option>{SOURCE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></F>
-              <F label="患者类型"><select className="form-input" value={form.patientType} onChange={set('patientType')}><option value="">普通</option><option value="vip">VIP</option><option value="trial">试用</option></select></F>
+              <F label="会员来源"><select className="form-input" value={form.source} onChange={set('source')}><option value="">未填写</option>{SOURCE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></F>
+              <F label="会员类型"><select className="form-input" value={form.patientType} onChange={set('patientType')}><option value="">普通</option><option value="vip">VIP</option><option value="trial">试用</option></select></F>
               <F label="备注" span={2}><textarea className="form-input" rows={3} value={form.remark} onChange={set('remark')} style={{ resize: 'vertical' }} /></F>
             </Grid>
           </Section>
@@ -268,7 +268,7 @@ export default function NewPatientPage() {
 
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12, marginTop: 20 }}>
           <button type="button" className="btn btn-secondary" onClick={() => nav(-1)}>取消</button>
-          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? '保存中...' : '保存患者'}</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? '保存中...' : '保存会员'}</button>
         </div>
       </form>
     </div>

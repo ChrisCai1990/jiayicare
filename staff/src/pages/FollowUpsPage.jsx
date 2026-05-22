@@ -49,7 +49,7 @@ export default function FollowUpsPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">随访记录</h1>
+          <h1 className="page-title">随访管理</h1>
           <p className="page-subtitle">共 {total} 条记录</p>
         </div>
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增随访</button>

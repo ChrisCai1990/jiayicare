@@ -15,6 +15,8 @@ export default function ReportsPage() {
   const [page, setPage] = useState(1)
   const [showUpload, setShowUpload] = useState(false)
   const [showDetail, setShowDetail] = useState(null)
+  const [rejectModal, setRejectModal] = useState(null) // report object pending rejection
+  const [rejectReason, setRejectReason] = useState('')
   const [patients, setPatients] = useState([])
   const limit = 20
 
@@ -58,7 +60,7 @@ export default function ReportsPage() {
         {loading ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
         : reports.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无报告</div>
         : <table className="table">
-            <thead><tr><th>标题</th><th>患者</th><th>类型</th><th>医院</th><th>日期</th><th>审核状态</th><th>上传人</th><th>操作</th></tr></thead>
+            <thead><tr><th>标题</th><th>会员</th><th>类型</th><th>医院</th><th>日期</th><th>审核状态</th><th>上传人</th><th>操作</th></tr></thead>
             <tbody>
               {reports.map(r => (
                 <tr key={r._id}>
@@ -75,18 +77,15 @@ export default function ReportsPage() {
                   </td>
                   <td style={{ color: '#666', fontSize: 13 }}>{r.uploadedBy?.name || '-'}</td>
                   <td>
-                    {r.audit_status === 'unaudited' && (
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
-                        <button className="btn btn-danger btn-sm" onClick={() => {
-                          const reason = window.prompt('请输入驳回原因')
-                          if (reason !== null) handleAudit(r._id, 'reject', reason)
-                        }}>✗ 驳回</button>
-                      </div>
-                    )}
-                    {r.audit_status !== 'unaudited' && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => setShowDetail(r)}>查看</button>
-                    )}
+                      {r.audit_status === 'unaudited' && (
+                        <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
+                      )}
+                      {(r.audit_status === 'unaudited' || r.audit_status === 'audited') && (
+                        <button className="btn btn-danger btn-sm" onClick={() => { setRejectModal(r); setRejectReason('') }}>✗ 驳回</button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -116,7 +115,7 @@ export default function ReportsPage() {
             </div>
             <div className="modal-body">
               {[
-                ['患者', showDetail.user?.name],
+                ['会员', showDetail.user?.name],
                 ['类型', REPORT_TYPE[showDetail.type] || showDetail.type],
                 ['医院', showDetail.hospital || '-'],
                 ['报告日期', showDetail.date || '-'],
@@ -130,9 +129,56 @@ export default function ReportsPage() {
                 </div>
               ))}
               {showDetail.note && <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>{showDetail.note}</div>}
+              {(showDetail.content || showDetail.fileUrl) && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
+                  {showDetail.mimeType?.startsWith('image/') || showDetail.content?.startsWith('data:image') ? (
+                    <img src={showDetail.content || showDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #f0ece4' }} />
+                  ) : showDetail.mimeType === 'application/pdf' || showDetail.fileUrl?.endsWith('.pdf') ? (
+                    <iframe src={showDetail.content || showDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
+                  ) : (showDetail.content || showDetail.fileUrl) ? (
+                    <a href={showDetail.content || showDetail.fileUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">📎 查看文件</a>
+                  ) : null}
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowDetail(null)}>关闭</button>
+              {(showDetail.audit_status === 'unaudited' || showDetail.audit_status === 'audited') && (
+                <button className="btn btn-danger" onClick={() => { setShowDetail(null); setRejectModal(showDetail); setRejectReason('') }}>✗ 驳回</button>
+              )}
+              {showDetail.audit_status === 'unaudited' && (
+                <button className="btn btn-primary" onClick={() => { handleAudit(showDetail._id, 'approve'); setShowDetail(null) }}>✓ 审核通过</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 驳回原因弹窗 */}
+      {rejectModal && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setRejectModal(null) }}>
+          <div className="modal" style={{ maxWidth: 420 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">驳回报告</h3>
+              <button className="modal-close" onClick={() => setRejectModal(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: 8, fontSize: 13, color: '#4A6558' }}>报告：{rejectModal.title}</div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">驳回原因</label>
+                <textarea
+                  className="form-input"
+                  rows={3}
+                  placeholder="请输入驳回原因（可选）"
+                  value={rejectReason}
+                  onChange={e => setRejectReason(e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setRejectModal(null)}>取消</button>
+              <button className="btn btn-danger" onClick={() => { handleAudit(rejectModal._id, 'reject', rejectReason); setRejectModal(null) }}>确认驳回</button>
             </div>
           </div>
         </div>
@@ -177,7 +223,7 @@ function UploadModal({ patients, onClose, onSaved }) {
   }
 
   const handleSubmit = async () => {
-    if (!form.patientId || !form.title) { setError('患者和标题不能为空'); return }
+    if (!form.patientId || !form.title) { setError('会员和标题不能为空'); return }
     setSaving(true); setError('')
     try {
       await staffAPI.uploadReport({ ...form, fileUrl: '', content: '', mimeType: '' })
@@ -196,9 +242,9 @@ function UploadModal({ patients, onClose, onSaved }) {
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">选择患者 *</label>
+            <label className="form-label">选择会员 *</label>
             <select className="form-input" value={form.patientId} onChange={handlePatientChange}>
-              <option value="">-- 请选择患者 --</option>
+              <option value="">-- 请选择会员 --</option>
               {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
             </select>
           </div>

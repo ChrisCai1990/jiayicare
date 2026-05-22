@@ -51,7 +51,7 @@ export default function TeamPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
         {[
           { icon: '👥', label: '团队成员', value: total, color: '#1E6B50' },
-          { icon: '🏥', label: '管理患者总数', value: totalPatients, color: '#0077B6' },
+          { icon: '🏥', label: '管理会员总数', value: totalPatients, color: '#0077B6' },
           { icon: '📋', label: '随访总次数', value: totalFollowups, color: '#22A06B' },
           { icon: '📄', label: '方案总数', value: totalPlans, color: '#D97706' },
         ].map(c => (
@@ -88,7 +88,7 @@ export default function TeamPage() {
                 <th>角色</th>
                 <th>职称</th>
                 <th>部门</th>
-                <th style={{ textAlign: 'center' }}>管理患者</th>
+                <th style={{ textAlign: 'center' }}>管理会员</th>
                 <th style={{ textAlign: 'center' }}>随访次数</th>
                 <th style={{ textAlign: 'center' }}>方案数量</th>
                 <th style={{ textAlign: 'center' }}>工作量指数</th>

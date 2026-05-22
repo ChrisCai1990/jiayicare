@@ -40,7 +40,7 @@ export default function ProductPushPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">产品推送</h1>
-          <p className="page-subtitle">向患者推荐服务商城产品，产生购买后获得分佣</p>
+          <p className="page-subtitle">向会员推荐服务商城产品，产生购买后获得分佣</p>
         </div>
       </div>
 
@@ -115,7 +115,7 @@ export default function ProductPushPage() {
           onClose={() => setPushModal(null)}
           onSaved={async (n) => {
             setPushModal(null)
-            toast(`产品已推送给 ${n} 位患者`)
+            toast(`产品已推送给 ${n} 位会员`)
             await reload()
           }}
         />
@@ -155,7 +155,7 @@ function PushProductModal({ product, patients, onClose, onSaved }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
-          <input className="form-input" placeholder="搜索患者姓名/手机号..." value={search}
+          <input className="form-input" placeholder="搜索会员姓名/手机号..." value={search}
             onChange={e => setSearch(e.target.value)} style={{ marginBottom: 12 }} />
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <button className="btn btn-secondary btn-sm" onClick={() => setSelected(filtered.map(p => p._id))}>全选</button>

@@ -84,7 +84,7 @@ export default function QuestionnairePushPage() {
           questionnaire={pushModal}
           patients={patients}
           onClose={() => setPushModal(null)}
-          onSaved={async (n) => { setPushModal(null); toast(`问卷已推送给 ${n} 位患者`); await reload() }}
+          onSaved={async (n) => { setPushModal(null); toast(`问卷已推送给 ${n} 位会员`); await reload() }}
         />
       )}
     </div>
@@ -117,7 +117,7 @@ function PushQuestionnaireModal({ questionnaire, patients, onClose, onSaved }) {
             <label className="form-label">截止日期（可选）</label>
             <input className="form-input" type="date" value={deadline} onChange={e => setDeadline(e.target.value)} />
           </div>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#4A6558' }}>选择患者（已选 {selected.length} 人）</div>
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: '#4A6558' }}>选择会员（已选 {selected.length} 人）</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <button className="btn btn-secondary btn-sm" onClick={() => setSelected(patients.map(p => p._id))}>全选</button>
             <button className="btn btn-secondary btn-sm" onClick={() => setSelected([])}>清空</button>

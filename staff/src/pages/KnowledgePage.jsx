@@ -87,7 +87,7 @@ export default function KnowledgePage() {
       </div>
 
       {showCreate && <CreateKnowledgeModal onClose={() => setShowCreate(false)} onSaved={() => { setShowCreate(false); toast('内容已创建'); load() }} />}
-      {pushModal && <PushModal item={pushModal} patients={patients} onClose={() => setPushModal(null)} onSaved={(n) => { setPushModal(null); toast(`已推送给 ${n} 位患者`) }} />}
+      {pushModal && <PushModal item={pushModal} patients={patients} onClose={() => setPushModal(null)} onSaved={(n) => { setPushModal(null); toast(`已推送给 ${n} 位会员`) }} />}
     </div>
   )
 }
