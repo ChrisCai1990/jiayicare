@@ -21,7 +21,9 @@ const TYPE_LIST = [
   { key: 'endoscopy',    label: '内镜检查',   icon: 'search-outline',         color: '#059669', bg: '#D1FAE5' },
   { key: 'ecg',          label: '心电图',     icon: 'pulse-outline',          color: '#9D174D', bg: '#FCE7F3' },
   { key: 'pathology',    label: '病理报告',   icon: 'flask-outline',          color: '#B45309', bg: '#FEF3C7' },
-  { key: 'other',        label: '其他',       icon: 'document-outline',       color: '#64748B', bg: '#F1F5F9' },
+  { key: 'functional',  label: '功能医学检测', icon: 'leaf-outline',           color: '#059669', bg: '#D1FAE5' },
+  { key: 'genetic',     label: '基因检测',   icon: 'dna-outline',            color: '#7C3AED', bg: '#F2EEFF' },
+  { key: 'other',       label: '其他',       icon: 'document-outline',       color: '#64748B', bg: '#F1F5F9' },
 ];
 
 const TYPE_META = Object.fromEntries(

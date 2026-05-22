@@ -32,6 +32,7 @@ import NotificationSettingsScreen from '../screens/profile/NotificationSettingsS
 import ComingSoonScreen from '../screens/common/ComingSoonScreen';
 import OrdersScreen from '../screens/orders/OrdersScreen';
 import RenewalScreen from '../screens/services/RenewalScreen';
+import BenefitsScreen from '../screens/profile/BenefitsScreen';
 import PublicReportScreen from '../screens/records/PublicReportScreen';
 import LegalScreen from '../screens/legal/LegalScreen';
 
@@ -145,6 +146,7 @@ export default function Navigation() {
             <Stack.Screen name="Orders" component={OrdersScreen} />
             <Stack.Screen name="Renewal" component={RenewalScreen} />
             <Stack.Screen name="Legal" component={LegalScreen} />
+            <Stack.Screen name="Benefits" component={BenefitsScreen} />
           </>
         )}
       </Stack.Navigator>

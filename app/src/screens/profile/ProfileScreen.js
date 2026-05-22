@@ -408,7 +408,7 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>健康管理</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="heart-outline"         iconColor="#DC3545" label="健康档案" value="查看全部" onPress={() => navigation.navigate('Records')} />
-            <MenuItem icon="clipboard-outline"     iconColor="#7C3AED" label="服务方案"              onPress={() => navigation.navigate('ServicePlans')} />
+            <MenuItem icon="clipboard-outline"     iconColor="#7C3AED" label="健康方案"              onPress={() => navigation.navigate('ServicePlans')} />
             <MenuItem icon="document-text-outline" iconColor="#0077B6" label="体检报告" badge={undefined} onPress={() => navigation.navigate('ReportUpload')} />
             <MenuItem icon="medkit-outline"        iconColor="#D97706" label="用药管理"              onPress={() => navigation.navigate('Medication')} />
             <MenuItem icon="leaf-outline"          iconColor="#22A06B" label="营养素管理"            onPress={() => navigation.navigate('Nutrition')} isLast />
@@ -420,6 +420,7 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>我的服务</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
+            <MenuItem icon="gift-outline"     iconColor="#D97706" label="服务权益"              onPress={() => navigation.navigate('Benefits')} />
             <MenuItem icon="people-outline"  iconColor="#22A06B" label="服务群组"  value="即将开放" onPress={() => navigation.navigate('ComingSoon', { title: '服务群组', desc: '专属健康服务群即将开放，届时可与家庭医生、营养师、健康管理师实时交流。', icon: 'people-outline' })} />
             <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} />
             <MenuItem icon="star-outline"    iconColor="#F39C12" label="评价服务"               onPress={() => navigation.navigate('ComingSoon', { title: '评价服务', desc: '服务评价功能即将上线，帮助我们持续改善服务质量。', icon: 'star-outline' })} isLast />
