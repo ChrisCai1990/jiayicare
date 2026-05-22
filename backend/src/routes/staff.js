@@ -1004,11 +1004,11 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const msg = await Message.create({
-      user:       req.params.id,
-      type:       'system',
-      senderName: req.staff.name || '健康管理团队',
-      content:    content.trim(),
-      unread:     true,
+      user:    req.params.id,
+      type:    'system',
+      sender:  req.staff.name || '健康管理团队',
+      content: content.trim(),
+      unread:  true,
     });
     res.json({ success: true, data: msg });
   } catch (err) {
