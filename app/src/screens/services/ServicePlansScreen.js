@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator,
-  RefreshControl, Alert,
+  RefreshControl, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -31,6 +31,12 @@ const STATUS_META = {
   cancelled: { label: '已取消', color: colors.danger,  bg: '#FDEEEC' },
 };
 
+const ITEM_STATUS_META = {
+  completed: { label: '已完成', color: colors.success, bg: '#E8F5EF', icon: 'checkmark-circle' },
+  pending:   { label: '待完成', color: colors.warning, bg: '#FEF3E2', icon: 'ellipse-outline' },
+  skipped:   { label: '已跳过', color: colors.textMuted, bg: '#F5F5F5', icon: 'remove-circle-outline' },
+};
+
 // ── Demo 兜底数据（无真实方案时展示）─────────────────────────────
 const DEMO_PLANS = [
   {
@@ -38,10 +44,10 @@ const DEMO_PLANS = [
     title: '年度体检方案',
     description: '全面的年度健康筛查，涵盖基础体检、专项检查及报告解读，帮助您及早发现健康风险。',
     items: [
-      { name: '年度综合体检套餐', status: 'pending' },
-      { name: '肿瘤标志物检测', status: 'pending' },
-      { name: '心脑血管专项评估', status: 'pending' },
-      { name: 'AI 体检报告解读', status: 'pending' },
+      { name: '年度综合体检套餐', status: 'pending', notes: '建议在空腹状态下进行，提前预约体检中心' },
+      { name: '肿瘤标志物检测', status: 'pending', notes: '包含AFP、CEA、CA199等常见肿瘤标志物' },
+      { name: '心脑血管专项评估', status: 'pending', notes: '含心电图、颈动脉超声等检查项目' },
+      { name: 'AI 体检报告解读', status: 'pending', notes: '体检完成后上传报告，AI自动解读并推送建议' },
     ],
   },
   {
@@ -49,10 +55,10 @@ const DEMO_PLANS = [
     title: '年度健康管理方案',
     description: '全年持续跟踪管理，定期随访、动态监测与专属健康顾问服务，全程守护您的健康。',
     items: [
-      { name: '季度健康随访（4次/年）', status: 'pending' },
-      { name: '月度健康数据分析报告', status: 'pending' },
-      { name: '专属家庭医生一对一', status: 'pending' },
-      { name: '慢病管理与用药跟踪', status: 'pending' },
+      { name: '季度健康随访（4次/年）', status: 'pending', notes: '每季度由健管师进行一次深度健康随访' },
+      { name: '月度健康数据分析报告', status: 'pending', notes: '每月汇总健康数据，生成个性化分析报告' },
+      { name: '专属家庭医生一对一', status: 'pending', notes: '绑定专属家庭医生，提供个性化健康咨询' },
+      { name: '慢病管理与用药跟踪', status: 'pending', notes: '如有慢性病，定期跟踪用药情况及指标变化' },
     ],
   },
 ];
@@ -107,14 +113,13 @@ const styles = StyleSheet.create({
     padding: spacing.md, gap: spacing.xs,
   },
   planSummary: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginBottom: spacing.sm },
-  planItem: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingVertical: 4 },
+  planItem: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingVertical: 8, paddingHorizontal: spacing.sm,
+    borderRadius: radius.xs,
+  },
   planItemText: { flex: 1, fontSize: 13, color: colors.textSecondary },
   planItemDone: { textDecorationLine: 'line-through', color: colors.textMuted },
-  planItemCompleteHint: {
-    paddingHorizontal: 8, paddingVertical: 3,
-    borderRadius: radius.full, borderWidth: 1,
-  },
-  planItemCompleteHintText: { fontSize: 10, fontWeight: '600' },
   datesRow: {
     flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm,
     borderTopWidth: 1, borderTopColor: colors.borderLight, paddingTop: spacing.sm,
@@ -138,9 +143,115 @@ const styles = StyleSheet.create({
   emptySubText: { fontSize: 12, color: colors.textMuted, textAlign: 'center', lineHeight: 18 },
 
   loadingWrap: { paddingVertical: spacing.xl * 2, alignItems: 'center' },
+
+  // ── 详情弹窗 ─────────────────────────────────────────────────
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
+    paddingBottom: 32,
+    maxHeight: '80%',
+  },
+  modalHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.border, alignSelf: 'center', marginTop: 10, marginBottom: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  modalIconWrap: {
+    width: 40, height: 40, borderRadius: radius.sm,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  modalTitle: { flex: 1, fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  modalStatusChip: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
+  modalStatusText: { fontSize: 11, fontWeight: '700' },
+
+  modalBody: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  modalSectionLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600', marginBottom: 6, marginTop: spacing.sm },
+  modalNotes: {
+    fontSize: 13, color: colors.textSecondary, lineHeight: 20,
+    backgroundColor: colors.background, borderRadius: radius.xs,
+    padding: spacing.sm,
+  },
+  modalNoNotes: { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
+
+  modalFooter: {
+    flexDirection: 'row', gap: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingTop: spacing.md,
+  },
+  modalCloseBtn: {
+    flex: 1, paddingVertical: 11, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border,
+    alignItems: 'center',
+  },
+  modalCloseBtnText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  modalCompleteBtn: {
+    flex: 2, paddingVertical: 11, borderRadius: radius.md,
+    alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6,
+  },
+  modalCompleteBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
+
+  // ── 确认弹窗 ─────────────────────────────────────────────────
+  confirmOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    justifyContent: 'center', alignItems: 'center',
+    paddingHorizontal: spacing.lg,
+  },
+  confirmBox: {
+    backgroundColor: colors.white, borderRadius: radius.md,
+    padding: spacing.lg, width: '100%', maxWidth: 340,
+  },
+  confirmTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  confirmMessage: { fontSize: 13, color: colors.textSecondary, lineHeight: 20, marginBottom: spacing.lg },
+  confirmBtnRow: { flexDirection: 'row', gap: spacing.sm },
+  confirmCancelBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, alignItems: 'center',
+  },
+  confirmCancelText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  confirmOkBtn: {
+    flex: 1, paddingVertical: 10, borderRadius: radius.md,
+    backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center',
+  },
+  confirmOkText: { fontSize: 14, fontWeight: '700', color: colors.white },
 });
 
-function PlanCard({ plan, expanded, onToggle, onItemComplete }) {
+// ── 确认弹窗组件（web 兼容）─────────────────────────────────────
+function ConfirmModal({ visible, title, message, onConfirm, onCancel, loading }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.confirmOverlay}>
+        <View style={styles.confirmBox}>
+          <Text style={styles.confirmTitle}>{title}</Text>
+          <Text style={styles.confirmMessage}>{message}</Text>
+          <View style={styles.confirmBtnRow}>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={onCancel} disabled={loading}>
+              <Text style={styles.confirmCancelText}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmOkBtn, loading && { opacity: 0.6 }]}
+              onPress={onConfirm} disabled={loading}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color={colors.white} />
+                : <Text style={styles.confirmOkText}>确认完成</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+// ── 方案卡片 ─────────────────────────────────────────────────────
+function PlanCard({ plan, expanded, onToggle, onItemPress }) {
   const meta = TYPE_META[plan.type] || DEFAULT_META;
   const sm   = STATUS_META[plan.status] || STATUS_META.draft;
 
@@ -187,33 +298,25 @@ function PlanCard({ plan, expanded, onToggle, onItemComplete }) {
           {(plan.items || []).map((item, i) => (
             <TouchableOpacity
               key={item._id || i}
-              style={styles.planItem}
-              activeOpacity={item.status === 'completed' ? 1 : 0.7}
-              onPress={() => {
-                if (item.status === 'completed' || !item._id) return;
-                onItemComplete && onItemComplete(plan._id, item._id, item.name);
-              }}
+              style={[styles.planItem, { backgroundColor: i % 2 === 0 ? colors.background + '80' : 'transparent' }]}
+              activeOpacity={0.7}
+              onPress={() => onItemPress && onItemPress(item, plan, meta)}
             >
               <Ionicons
                 name={item.status === 'completed' ? 'checkmark-circle' : 'ellipse-outline'}
-                size={15}
+                size={16}
                 color={item.status === 'completed' ? colors.success : meta.color}
               />
               <Text style={[styles.planItemText, item.status === 'completed' && styles.planItemDone]}>
                 {item.name}
-                {item.notes ? ` · ${item.notes}` : ''}
               </Text>
-              {item.status !== 'completed' && item._id && (
-                <View style={[styles.planItemCompleteHint, { borderColor: meta.color + '60' }]}>
-                  <Text style={[styles.planItemCompleteHintText, { color: meta.color }]}>完成</Text>
-                </View>
-              )}
+              <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
             </TouchableOpacity>
           ))}
 
           {/* 进度 */}
           {progressTotal > 0 && (
-            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4 }}>
+            <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 4, paddingHorizontal: spacing.sm }}>
               已完成 {progressDone}/{progressTotal} 项
             </Text>
           )}
@@ -247,10 +350,16 @@ function PlanCard({ plan, expanded, onToggle, onItemComplete }) {
 
 export default function ServicePlansScreen({ navigation }) {
   const { isDemo } = useAuth();
-  const [plans, setPlans]       = useState([]);
-  const [loading, setLoading]   = useState(true);
+  const [plans, setPlans]           = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [expanded, setExpanded] = useState(null);
+  const [expanded, setExpanded]     = useState(null);
+
+  // 详情弹窗：{ item, plan, meta }
+  const [detailModal, setDetailModal]         = useState(null);
+  // 确认弹窗
+  const [confirmVisible, setConfirmVisible]   = useState(false);
+  const [completing, setCompleting]           = useState(false);
 
   const loadPlans = useCallback(async () => {
     try {
@@ -272,35 +381,50 @@ export default function ServicePlansScreen({ navigation }) {
 
   const toggle = (id) => setExpanded(prev => prev === id ? null : id);
 
-  const handleItemComplete = (planId, itemId, itemName) => {
-    Alert.alert(
-      '确认完成',
-      `确认已完成「${itemName}」？完成后将通知您的健康管理团队。`,
-      [
-        { text: '取消', style: 'cancel' },
-        {
-          text: '确认完成', style: 'default',
-          onPress: async () => {
-            try {
-              await plansAPI.completeItem(planId, itemId);
-              // 更新本地状态
-              setPlans(prev => prev.map(p => {
-                if (p._id !== planId) return p;
-                return {
-                  ...p,
-                  items: (p.items || []).map(item =>
-                    item._id === itemId ? { ...item, status: 'completed' } : item
-                  ),
-                };
-              }));
-            } catch (err) {
-              Alert.alert('操作失败', err.message || '请稍后重试');
-            }
-          },
-        },
-      ]
-    );
+  // 打开详情弹窗
+  const handleItemPress = (item, plan, meta) => {
+    setDetailModal({ item, plan, meta });
   };
+
+  // 点击"标记已完成"
+  const handleCompletePress = () => {
+    setConfirmVisible(true);
+  };
+
+  // 确认完成
+  const handleConfirmComplete = async () => {
+    if (!detailModal) return;
+    const { item, plan } = detailModal;
+    if (!item._id || item.status === 'completed') {
+      setConfirmVisible(false);
+      return;
+    }
+    setCompleting(true);
+    try {
+      await plansAPI.completeItem(plan._id, item._id);
+      // 更新本地状态
+      setPlans(prev => prev.map(p => {
+        if (p._id !== plan._id) return p;
+        return {
+          ...p,
+          items: (p.items || []).map(it =>
+            it._id === item._id ? { ...it, status: 'completed' } : it
+          ),
+        };
+      }));
+      // 更新弹窗中的 item 状态
+      setDetailModal(prev => prev ? { ...prev, item: { ...prev.item, status: 'completed' } } : null);
+      setConfirmVisible(false);
+    } catch (err) {
+      // 错误直接关闭确认框，保留详情弹窗
+      setConfirmVisible(false);
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  const isCompleted = detailModal?.item?.status === 'completed';
+  const canComplete = detailModal?.item?._id && !isCompleted;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -346,7 +470,7 @@ export default function ServicePlansScreen({ navigation }) {
                 plan={plan}
                 expanded={expanded === plan._id}
                 onToggle={() => toggle(plan._id)}
-                onItemComplete={handleItemComplete}
+                onItemPress={handleItemPress}
               />
             ))
           )}
@@ -354,6 +478,100 @@ export default function ServicePlansScreen({ navigation }) {
           <View style={{ height: spacing.xl }} />
         </ScrollView>
       )}
+
+      {/* ── 任务详情弹窗 ── */}
+      <Modal
+        visible={!!detailModal}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetailModal(null)}
+      >
+        <View style={styles.modalOverlay}>
+          <TouchableOpacity
+            style={{ flex: 1 }}
+            activeOpacity={1}
+            onPress={() => setDetailModal(null)}
+          />
+          {detailModal && (() => {
+            const { item, meta } = detailModal;
+            const ism = ITEM_STATUS_META[item.status] || ITEM_STATUS_META.pending;
+            return (
+              <View style={styles.modalCard}>
+                <View style={styles.modalHandle} />
+
+                {/* 弹窗标题行 */}
+                <View style={styles.modalHeader}>
+                  <View style={[styles.modalIconWrap, { backgroundColor: meta.bg }]}>
+                    <Ionicons name={meta.icon} size={20} color={meta.color} />
+                  </View>
+                  <Text style={styles.modalTitle} numberOfLines={2}>{item.name}</Text>
+                  <View style={[styles.modalStatusChip, { backgroundColor: ism.bg }]}>
+                    <Text style={[styles.modalStatusText, { color: ism.color }]}>{ism.label}</Text>
+                  </View>
+                </View>
+
+                {/* 弹窗正文 */}
+                <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                  <Text style={styles.modalSectionLabel}>任务说明</Text>
+                  {item.notes ? (
+                    <Text style={styles.modalNotes}>{item.notes}</Text>
+                  ) : (
+                    <Text style={styles.modalNoNotes}>暂无说明，请联系健康管理师了解详情。</Text>
+                  )}
+
+                  {item.completedAt && (
+                    <>
+                      <Text style={styles.modalSectionLabel}>完成时间</Text>
+                      <Text style={styles.modalNotes}>
+                        {new Date(item.completedAt).toLocaleString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </Text>
+                    </>
+                  )}
+
+                  <View style={{ height: spacing.md }} />
+                </ScrollView>
+
+                {/* 按钮行 */}
+                <View style={styles.modalFooter}>
+                  <TouchableOpacity
+                    style={styles.modalCloseBtn}
+                    onPress={() => setDetailModal(null)}
+                  >
+                    <Text style={styles.modalCloseBtnText}>关闭</Text>
+                  </TouchableOpacity>
+
+                  {canComplete && (
+                    <TouchableOpacity
+                      style={[styles.modalCompleteBtn, { backgroundColor: meta.color }]}
+                      onPress={handleCompletePress}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
+                      <Text style={styles.modalCompleteBtnText}>标记已完成</Text>
+                    </TouchableOpacity>
+                  )}
+
+                  {isCompleted && (
+                    <View style={[styles.modalCompleteBtn, { backgroundColor: colors.success + '20', flex: 2 }]}>
+                      <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                      <Text style={[styles.modalCompleteBtnText, { color: colors.success }]}>已完成</Text>
+                    </View>
+                  )}
+                </View>
+              </View>
+            );
+          })()}
+        </View>
+      </Modal>
+
+      {/* ── 确认完成弹窗 ── */}
+      <ConfirmModal
+        visible={confirmVisible}
+        title="确认完成"
+        message={`确认已完成「${detailModal?.item?.name || ''}」？\n完成后将通知您的健康管理团队。`}
+        onConfirm={handleConfirmComplete}
+        onCancel={() => setConfirmVisible(false)}
+        loading={completing}
+      />
     </SafeAreaView>
   );
 }
