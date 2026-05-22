@@ -129,7 +129,7 @@ router.get('/patients/:id', adminAuth, async (req, res) => {
     Message.find({ user: userId }).sort({ createdAt: -1 }).limit(30),
     Order.find({ user: userId }).sort({ createdAt: -1 }).limit(10),
   ]);
-  if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+  if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
   // 最新各类指标
   const latestVitals = {};
@@ -148,7 +148,7 @@ router.post('/patients/:id/message', adminAuth, async (req, res) => {
     return res.status(400).json({ success: false, message: '消息内容不能为空' });
   }
   const user = await User.findById(req.params.id);
-  if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+  if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
   const msgType = req.admin.role === 'manager' ? 'manager' : 'doctor';
   const msg = await Message.create({
@@ -171,7 +171,7 @@ router.post('/patients/:id/task', adminAuth, async (req, res) => {
     return res.status(400).json({ success: false, message: '任务标题不能为空' });
   }
   const user = await User.findById(req.params.id);
-  if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+  if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
   const task = await Task.create({
     user:     req.params.id,
@@ -308,7 +308,7 @@ router.get('/patients/:id/checkup-plan', adminAuth, async (req, res) => {
 // POST /api/admin/checkup-plans — 创建或覆盖某用户年度计划
 router.post('/checkup-plans', adminAuth, async (req, res) => {
   const { userId, year = new Date().getFullYear(), title, note, items = [] } = req.body;
-  if (!userId) return res.status(400).json({ success: false, message: '请指定患者ID' });
+  if (!userId) return res.status(400).json({ success: false, message: '请指定会员ID' });
 
   const plan = await CheckupPlan.findOneAndUpdate(
     { user: userId, year },

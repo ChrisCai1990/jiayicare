@@ -197,7 +197,7 @@ function UploadModal({ patients, onClose, onSaved }) {
   const [loadingItems, setLoadingItems] = useState(false)
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
-  // 切换患者时加载该患者的待完成方案项目
+  // 切换会员时加载该会员的待完成方案项目
   const handlePatientChange = async (e) => {
     const patientId = e.target.value
     setForm(f => ({ ...f, patientId, planId: '', planItemId: '' }))

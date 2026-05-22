@@ -172,7 +172,7 @@ router.post('/patients', staffAuth, async (req, res) => {
 
   const user = await User.create({
     phone,
-    name: name || '患者',
+    name: name || '会员',
     gender: gender || '未知',
     age, height, weight,
     chronicDiseases: chronicDiseases || [],
@@ -201,7 +201,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .select('-__v')
     .populate('assignedHealthManager', 'name title role')
     .populate('assignedFamilyDoctor', 'name title role');
-  if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+  if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
   // 获取最近3条随访记录
   const recentFollowUps = await FollowUp.find({ patientId: user._id })
@@ -314,10 +314,10 @@ router.get('/followups', staffAuth, async (req, res) => {
 // ── POST /api/staff/followups ─────────────────────────────────────
 router.post('/followups', staffAuth, async (req, res) => {
   const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals } = req.body;
-  if (!patientId) return res.status(400).json({ success: false, message: '患者ID不能为空' });
+  if (!patientId) return res.status(400).json({ success: false, message: '会员ID不能为空' });
 
   const patient = await User.findById(patientId);
-  if (!patient) return res.status(404).json({ success: false, message: '患者不存在' });
+  if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
 
   if (status === 'cancelled' && !cancelReason) {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
@@ -469,7 +469,7 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
 // POST /api/staff/plans
 router.post('/plans', staffAuth, async (req, res) => {
   const { patientId, type, title, description, year, startDate, endDate, items, followupFrequency, summary } = req.body;
-  if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '患者、类型、标题不能为空' });
+  if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   const plan = await HealthPlan.create({
     staffId: req.staff._id, patientId, type, title,
     description: description || '', year: year || new Date().getFullYear(),
@@ -559,7 +559,7 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   const { patientId, title, type, hospital, date, fileUrl, content, mimeType, fileSize, planId, planItemId } = req.body;
-  if (!patientId || !title) return res.status(400).json({ success: false, message: '患者和标题不能为空' });
+  if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
   const report = await MedicalReport.create({
     user: patientId, title, type: type || 'other', hospital: hospital || '',
     date: date || '', fileUrl: fileUrl || '', content: content || '',
@@ -638,10 +638,10 @@ router.delete('/knowledge/:id', staffAuth, async (req, res) => {
   res.json({ success: true, message: '已删除' });
 });
 
-// POST /api/staff/knowledge/:id/push — 推送给患者
+// POST /api/staff/knowledge/:id/push — 推送给会员
 router.post('/knowledge/:id/push', staffAuth, async (req, res) => {
   const { patientIds } = req.body; // 数组
-  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择患者' });
+  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const item = await KnowledgeItem.findById(req.params.id);
   if (!item) return res.status(404).json({ success: false, message: '内容不存在' });
   const records = patientIds.map(pid => ({
@@ -650,7 +650,7 @@ router.post('/knowledge/:id/push', staffAuth, async (req, res) => {
     title: item.title, content: item.content?.slice(0, 100) || '',
   }));
   await PushRecord.insertMany(records);
-  res.json({ success: true, message: `已推送给 ${patientIds.length} 位患者` });
+  res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
 });
 
 // ── 问卷推送 ───────────────────────────────────────────────
@@ -660,10 +660,10 @@ router.get('/questionnaires', staffAuth, async (req, res) => {
   res.json({ success: true, data: qs });
 });
 
-// POST /api/staff/questionnaires/:id/push — 推送问卷给患者
+// POST /api/staff/questionnaires/:id/push — 推送问卷给会员
 router.post('/questionnaires/:id/push', staffAuth, async (req, res) => {
   const { patientIds, deadline } = req.body;
-  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择患者' });
+  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const q = await DynamicQuestionnaire.findById(req.params.id);
   if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
   const records = patientIds.map(pid => ({
@@ -672,7 +672,7 @@ router.post('/questionnaires/:id/push', staffAuth, async (req, res) => {
     title: q.title, content: deadline ? `截止：${new Date(deadline).toLocaleDateString('zh-CN')}` : '',
   }));
   await PushRecord.insertMany(records);
-  res.json({ success: true, message: `问卷已推送给 ${patientIds.length} 位患者` });
+  res.json({ success: true, message: `问卷已推送给 ${patientIds.length} 位会员` });
 });
 
 // GET /api/staff/push-records?patientId=&type=
@@ -710,7 +710,7 @@ router.get('/service-records', staffAuth, async (req, res) => {
 // POST /api/staff/service-records
 router.post('/service-records', staffAuth, async (req, res) => {
   const { patientId, type, date, title, content, result, nextDate, medicalEscort, tcmRecord, specialistRecord } = req.body;
-  if (!patientId || !type) return res.status(400).json({ success: false, message: '患者和类型不能为空' });
+  if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
   const record = await ServiceRecord.create({
     staffId: req.staff._id, patientId, type,
     date: date ? new Date(date) : new Date(),
@@ -879,10 +879,10 @@ router.get('/products', staffAuth, async (req, res) => {
   res.json({ success: true, data: { products: list } });
 });
 
-// POST /api/staff/products/:id/push — 推送产品给患者
+// POST /api/staff/products/:id/push — 推送产品给会员
 router.post('/products/:id/push', staffAuth, async (req, res) => {
   const { patientIds } = req.body;
-  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择患者' });
+  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const product = SERVICE_CATALOG_P3.find(p => p.id === req.params.id);
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   const records = patientIds.map(pid => ({
@@ -891,7 +891,7 @@ router.post('/products/:id/push', staffAuth, async (req, res) => {
     title: product.name, content: product.subtitle || '',
   }));
   await PushRecord.insertMany(records);
-  res.json({ success: true, message: `已推送给 ${patientIds.length} 位患者` });
+  res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
 });
 
 // ── 团队管理 ───────────────────────────────────────────────
@@ -985,7 +985,7 @@ router.get('/patients/:id/gifts', staffAuth, async (req, res) => {
 router.post('/referrals', staffAuth, async (req, res) => {
   const { patientId, toStaffId, reason, content, urgency } = req.body;
   if (!patientId || !toStaffId || !reason) {
-    return res.status(400).json({ success: false, message: '患者、接收人、原因不能为空' });
+    return res.status(400).json({ success: false, message: '会员、接收人、原因不能为空' });
   }
   const referral = await Referral.create({
     fromStaffId: req.staff._id, toStaffId, patientId,
