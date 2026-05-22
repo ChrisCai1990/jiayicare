@@ -8,15 +8,31 @@ const Task = require('../models/Task');
 const Reminder = require('../models/Reminder');
 const ShareToken = require('../models/ShareToken');
 const CheckupPlan = require('../models/CheckupPlan');
+const GiftRecord  = require('../models/GiftRecord');
+const HealthPlan  = require('../models/HealthPlan');
+const FollowUp    = require('../models/FollowUp');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dist-maowxvion-jiayihui.vercel.app';
 
-// 获取当前用户信息
+// 获取当前用户信息（含健康基金汇总）
 router.get('/me', auth, async (req, res) => {
   try {
-    res.json({ success: true, data: req.user });
+    // 计算健康基金：企业赠送 = GiftRecord 汇总，自有 = 总余额 - 企业赠送
+    const giftFundAgg = await GiftRecord.aggregate([
+      { $match: { patientId: req.user._id, giftType: 'fund', status: 'active' } },
+      { $group: { _id: '$fundType', total: { $sum: '$fundAmount' } } },
+    ]);
+    const corpFund = (giftFundAgg.find(g => g._id === 'enterprise')?.total || 0)
+                   + (giftFundAgg.find(g => g._id === 'promotion')?.total || 0);
+    const totalBalance = req.user.healthFundBalance || 0;
+    const healthFund = {
+      total:     totalBalance,
+      corporate: Math.min(corpFund, totalBalance),
+      personal:  Math.max(0, totalBalance - corpFund),
+    };
+    res.json({ success: true, data: { ...req.user.toObject(), healthFund } });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取用户信息失败', error: err.message });
   }
@@ -425,6 +441,50 @@ router.post('/report/share', auth, async (req, res) => {
     res.json({ success: true, data: { token, shareUrl, expiresAt } });
   } catch (err) {
     res.status(500).json({ success: false, message: '创建分享链接失败', error: err.message });
+  }
+});
+
+// ── Req 10: 健康方案（医护端创建，用户端展示）────────────────────
+// GET /api/user/plans
+router.get('/plans', auth, async (req, res) => {
+  try {
+    const plans = await HealthPlan.find({ patientId: req.user._id, status: { $in: ['active', 'draft'] } })
+      .select('title type description items status startDate endDate followupFrequency')
+      .populate('staffId', 'name role title')
+      .sort({ createdAt: -1 });
+    res.json({ success: true, data: plans });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取健康方案失败', error: err.message });
+  }
+});
+
+// ── Req 6 & 12: 权益赠送记录（医护端赠送，用户端查看）──────────
+// GET /api/user/gifts
+router.get('/gifts', auth, async (req, res) => {
+  try {
+    const gifts = await GiftRecord.find({ patientId: req.user._id })
+      .sort({ createdAt: -1 })
+      .populate('staffId', 'name role title');
+    res.json({ success: true, data: gifts });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取权益记录失败', error: err.message });
+  }
+});
+
+// ── Req 10: 随访计划作为用户侧待办任务 ─────────────────────────
+// GET /api/user/followup-tasks
+router.get('/followup-tasks', auth, async (req, res) => {
+  try {
+    const followups = await FollowUp.find({
+      patientId: req.user._id,
+      status: { $in: ['planned', 'in_progress'] },
+    })
+      .sort({ date: 1 })
+      .populate('staffId', 'name role title')
+      .populate('assignedTo', 'name role title');
+    res.json({ success: true, data: followups });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取随访任务失败', error: err.message });
   }
 });
 

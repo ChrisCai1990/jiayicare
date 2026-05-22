@@ -24,6 +24,30 @@ const THEME_TEMPLATES = {
   '疫苗接种提醒': '本次随访提醒疫苗接种计划。\n建议接种疫苗：\n接种时间建议：\n注意事项：',
 }
 
+// 打卡项目选项
+const CHECKIN_ITEM_OPTIONS = [
+  { v: 'bloodPressure', l: '血压' },
+  { v: 'bloodSugar',    l: '血糖' },
+  { v: 'heartRate',     l: '心率' },
+  { v: 'weight',        l: '体重' },
+  { v: 'sleep',         l: '睡眠' },
+  { v: 'diet',          l: '饮食' },
+  { v: 'exercise',      l: '运动' },
+  { v: 'water',         l: '饮水' },
+  { v: 'alcohol',       l: '饮酒' },
+]
+
+// 主题对应的默认打卡项目
+const THEME_DEFAULT_CHECKIN = {
+  '日常血压监测': ['bloodPressure'],
+  '日常体重监测': ['weight'],
+  '血糖监测':     ['bloodSugar'],
+  '生活方式指导': ['diet', 'exercise', 'water'],
+  '营养干预跟进': ['diet', 'weight'],
+  '运动康复跟进': ['exercise'],
+  '异常复查':     ['bloodPressure', 'bloodSugar'],
+}
+
 // 空行模板
 const emptyRow = () => ({
   id: Date.now() + Math.random(),
@@ -31,6 +55,7 @@ const emptyRow = () => ({
   theme: '',
   content: '',
   assignedTo: '',
+  checkInItems: [],
 })
 
 export default function FollowUpModal({ patientId, patientName, defaultTheme, onClose, onSaved }) {
@@ -108,6 +133,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           theme: row.theme,
           content: row.content,
           assignedTo: row.assignedTo || null,
+          checkInItems: row.checkInItems || [],
         })
       ))
       onSaved()
@@ -118,9 +144,29 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
 
   const updateRow = (id, key, val) => {
     setPlanRows(rows => rows.map(r => r.id === id ? { ...r, [key]: val } : r))
-    if (key === 'theme' && THEME_TEMPLATES[val]) {
-      setPlanRows(rows => rows.map(r => r.id === id ? { ...r, theme: val, content: r.content || THEME_TEMPLATES[val] } : r))
+    if (key === 'theme') {
+      setPlanRows(rows => rows.map(r => {
+        if (r.id !== id) return r
+        const defaults = THEME_DEFAULT_CHECKIN[val] || []
+        return {
+          ...r,
+          theme: val,
+          content: r.content || (THEME_TEMPLATES[val] || ''),
+          checkInItems: r.checkInItems?.length > 0 ? r.checkInItems : defaults,
+        }
+      }))
     }
+  }
+
+  const toggleCheckinItem = (rowId, itemVal) => {
+    setPlanRows(rows => rows.map(r => {
+      if (r.id !== rowId) return r
+      const current = r.checkInItems || []
+      const next = current.includes(itemVal)
+        ? current.filter(v => v !== itemVal)
+        : [...current, itemVal]
+      return { ...r, checkInItems: next }
+    }))
   }
 
   const addRow = () => setPlanRows(rows => [...rows, emptyRow()])
@@ -292,6 +338,31 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                     <option value="">-- 当前登录人 --</option>
                     {staffOptions}
                   </select>
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <label className="form-label" style={{ fontSize: 12 }}>今日打卡项目（推送给会员）</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                    {CHECKIN_ITEM_OPTIONS.map(opt => {
+                      const selected = (row.checkInItems || []).includes(opt.v)
+                      return (
+                        <button
+                          key={opt.v}
+                          type="button"
+                          onClick={() => toggleCheckinItem(row.id, opt.v)}
+                          style={{
+                            padding: '4px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
+                            border: selected ? '1px solid #1E6B50' : '1px solid #E0D9CE',
+                            background: selected ? '#1E6B50' : '#f9f7f3',
+                            color: selected ? '#fff' : '#4A6558',
+                            fontWeight: selected ? 600 : 400,
+                          }}
+                        >{opt.l}</button>
+                      )
+                    })}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 4 }}>
+                    选中的项目将在会员端"今日健康打卡"中显示
+                  </div>
                 </div>
               </div>
             ))}

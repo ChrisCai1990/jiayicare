@@ -313,7 +313,7 @@ router.get('/followups', staffAuth, async (req, res) => {
 
 // ── POST /api/staff/followups ─────────────────────────────────────
 router.post('/followups', staffAuth, async (req, res) => {
-  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals } = req.body;
+  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals, checkInItems } = req.body;
   if (!patientId) return res.status(400).json({ success: false, message: '会员ID不能为空' });
 
   const patient = await User.findById(patientId);
@@ -336,6 +336,7 @@ router.post('/followups', staffAuth, async (req, res) => {
     nextFollowUpDate: nextFollowUpDate ? new Date(nextFollowUpDate) : null,
     tags: tags || [],
     vitals: vitals || {},
+    checkInItems: checkInItems || [],
   });
 
   await followUp.populate('patientId', 'name phone');
@@ -355,7 +356,7 @@ router.put('/followups/:id', staffAuth, async (req, res) => {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
   }
 
-  const allowed = ['date', 'type', 'status', 'content', 'theme', 'cancelReason', 'assignedTo', 'nextFollowUpDate', 'tags', 'vitals'];
+  const allowed = ['date', 'type', 'status', 'content', 'theme', 'cancelReason', 'assignedTo', 'nextFollowUpDate', 'tags', 'vitals', 'checkInItems'];
   allowed.forEach(k => {
     if (req.body[k] !== undefined) followUp[k] = req.body[k];
   });

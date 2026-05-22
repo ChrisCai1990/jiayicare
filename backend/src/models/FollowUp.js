@@ -28,6 +28,12 @@ const followUpSchema = new mongoose.Schema({
     weight:    { type: Number },  // 体重 kg
     heartRate: { type: Number },  // 心率
   },
+  // 用户端今日打卡项目（由医护端创建随访计划时指定）
+  checkInItems: {
+    type: [String],
+    default: [],
+    // 可选值：bloodPressure / bloodSugar / heartRate / weight / sleep / diet / exercise / water / alcohol
+  },
 }, { timestamps: true });
 
 followUpSchema.index({ staffId: 1, date: -1 });

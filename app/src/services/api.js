@@ -207,6 +207,19 @@ export const systemAPI = {
   push: () => request('/system/push', { method: 'POST' }),
 };
 
+// ── User: 健康方案 / 权益 / 随访任务 ─────────────────────────────
+export const plansAPI = {
+  list: () => request('/user/plans'),
+};
+
+export const giftsAPI = {
+  list: () => request('/user/gifts'),
+};
+
+export const followupTasksAPI = {
+  list: () => request('/user/followup-tasks'),
+};
+
 // ── Share / 健康报告分享 ──────────────────────────────────────────
 export const shareAPI = {
   create:  (period, snapshot) =>
