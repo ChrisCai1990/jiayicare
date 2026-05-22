@@ -13,13 +13,14 @@ async function computeHealthFund(user) {
       { $match: { patientId: user._id, giftType: 'fund', status: 'active' } },
       { $group: { _id: '$fundType', total: { $sum: '$fundAmount' } } },
     ]);
-    const corpFund = (giftFundAgg.find(g => g._id === 'enterprise')?.total || 0)
-                   + (giftFundAgg.find(g => g._id === 'promotion')?.total || 0);
+    // 企业赠送 = fundType === 'enterprise'
+    // 自有基金 = 其余所有类型（promotion / other 等）
+    const enterpriseFund = giftFundAgg.find(g => g._id === 'enterprise')?.total || 0;
     const totalBalance = user.healthFundBalance || 0;
     return {
       total:     totalBalance,
-      corporate: Math.min(corpFund, totalBalance),
-      personal:  Math.max(0, totalBalance - corpFund),
+      corporate: Math.min(enterpriseFund, totalBalance),
+      personal:  Math.max(0, totalBalance - enterpriseFund),
     };
   } catch { return { total: 0, corporate: 0, personal: 0 }; }
 }

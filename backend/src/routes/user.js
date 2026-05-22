@@ -21,18 +21,19 @@ const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dist-maowxvion-jiayihu
 // 获取当前用户信息（含健康基金汇总）
 router.get('/me', auth, async (req, res) => {
   try {
-    // 计算健康基金：企业赠送 = GiftRecord 汇总，自有 = 总余额 - 企业赠送
+    // 计算健康基金分项：
+    //   企业赠送 = fundType === 'enterprise'
+    //   自有基金 = 其余所有类型（promotion / other 等）
     const giftFundAgg = await GiftRecord.aggregate([
       { $match: { patientId: req.user._id, giftType: 'fund', status: 'active' } },
       { $group: { _id: '$fundType', total: { $sum: '$fundAmount' } } },
     ]);
-    const corpFund = (giftFundAgg.find(g => g._id === 'enterprise')?.total || 0)
-                   + (giftFundAgg.find(g => g._id === 'promotion')?.total || 0);
+    const enterpriseFund = giftFundAgg.find(g => g._id === 'enterprise')?.total || 0;
     const totalBalance = req.user.healthFundBalance || 0;
     const healthFund = {
       total:     totalBalance,
-      corporate: Math.min(corpFund, totalBalance),
-      personal:  Math.max(0, totalBalance - corpFund),
+      corporate: Math.min(enterpriseFund, totalBalance),
+      personal:  Math.max(0, totalBalance - enterpriseFund),
     };
     res.json({ success: true, data: { ...req.user.toObject(), healthFund } });
   } catch (err) {
