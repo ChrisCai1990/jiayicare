@@ -2,8 +2,27 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const https = require('https');
 const User = require('../models/User');
+const GiftRecord = require('../models/GiftRecord');
 const { seedUserData } = require('../config/seedData');
 const router = express.Router();
+
+// 计算用户健康基金汇总（与 /user/me 保持一致）
+async function computeHealthFund(user) {
+  try {
+    const giftFundAgg = await GiftRecord.aggregate([
+      { $match: { patientId: user._id, giftType: 'fund', status: 'active' } },
+      { $group: { _id: '$fundType', total: { $sum: '$fundAmount' } } },
+    ]);
+    const corpFund = (giftFundAgg.find(g => g._id === 'enterprise')?.total || 0)
+                   + (giftFundAgg.find(g => g._id === 'promotion')?.total || 0);
+    const totalBalance = user.healthFundBalance || 0;
+    return {
+      total:     totalBalance,
+      corporate: Math.min(corpFund, totalBalance),
+      personal:  Math.max(0, totalBalance - corpFund),
+    };
+  } catch { return { total: 0, corporate: 0, personal: 0 }; }
+}
 
 // 简单 https GET 工具（避免额外依赖）
 function httpsGet(url) {
@@ -121,10 +140,13 @@ router.post('/login', async (req, res) => {
     expiresIn: process.env.JWT_EXPIRES_IN || '30d',
   });
 
+  // 登录响应中同步计算健康基金，避免 App 端需要二次请求 /user/me
+  const healthFund = await computeHealthFund(user);
+
   res.json({
     success: true,
     message: isNew ? '注册成功' : '登录成功',
-    data: { token, user, isNew },
+    data: { token, user: { ...user.toObject(), healthFund }, isNew },
   });
 });
 
@@ -173,7 +195,8 @@ router.post('/wechat', async (req, res) => {
       expiresIn: process.env.JWT_EXPIRES_IN || '30d',
     });
 
-    res.json({ success: true, message: isNew ? '微信登录成功' : '登录成功', data: { token, user, isNew } });
+    const healthFund = await computeHealthFund(user);
+    res.json({ success: true, message: isNew ? '微信登录成功' : '登录成功', data: { token, user: { ...user.toObject(), healthFund }, isNew } });
   } catch (err) {
     res.status(500).json({ success: false, message: '微信登录失败', error: err.message });
   }

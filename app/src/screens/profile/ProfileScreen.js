@@ -259,12 +259,12 @@ export default function ProfileScreen({ navigation }) {
   const [notifLabel, setNotifLabel] = useState('');
 
   // 每次切换到此页时，重新拉取用户数据以刷新健康基金、服务包等动态字段
+  // ⚠️ 不能跳过 demo 账号 —— demo 账号(13800138000)同样有真实健康基金数据
   useFocusEffect(useCallback(() => {
-    if (isDemo) return;
     userAPI.getMe().then(res => {
       if (res.success && res.data) updateUser(res.data);
     }).catch(() => {});
-  }, [isDemo]));
+  }, []));
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
