@@ -32,6 +32,7 @@ export default function PatientDetailPage() {
   const [staffList, setStaffList] = useState([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
+  const [showMessageModal, setShowMessageModal] = useState(false)
   const [auditLoading, setAuditLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectInput, setShowRejectInput] = useState(false)
@@ -209,6 +210,7 @@ export default function PatientDetailPage() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary btn-sm" onClick={() => setShowReferralModal(true)}>🔀 转介</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setShowMessageModal(true)}>💬 发消息</button>
           <button className="btn btn-primary" onClick={() => setShowFollowUpModal(true)}>＋ 记录随访</button>
         </div>
       </div>
@@ -875,6 +877,16 @@ export default function PatientDetailPage() {
         />
       )}
 
+      {/* 发消息弹窗 */}
+      {showMessageModal && (
+        <SendMessageModal
+          patientId={id}
+          patientName={user.name}
+          onClose={() => setShowMessageModal(false)}
+          onSaved={() => { setShowMessageModal(false); toast('消息已发送，会员将在消息中心收到') }}
+        />
+      )}
+
       {/* 上传体检报告弹窗 */}
       {showUploadReport && (
         <UploadReportModal
@@ -911,6 +923,60 @@ function formatRecordValue(r) {
   if (r.type === 'sleep') return `${r.value} h`
   if (r.type === 'mood') return `${r.value} / 10`
   return r.value ?? '-'
+}
+
+// ── 发消息弹窗 ──────────────────────────────────────────────
+function SendMessageModal({ patientId, patientName, onClose, onSaved }) {
+  const toast = useToast()
+  const [content, setContent] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const handleSubmit = async () => {
+    if (!content.trim()) { setError('请输入消息内容'); return }
+    try {
+      setSaving(true); setError('')
+      await staffAPI.sendMessageToPatient(patientId, { content: content.trim() })
+      onSaved()
+    } catch (err) {
+      setError(err.message || '发送失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 460 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">发消息给 {patientName}</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {error && <div className="alert alert-error">{error}</div>}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">消息内容</label>
+            <textarea
+              className="form-input" rows={5}
+              placeholder="输入要发给会员的消息，将显示在会员端消息中心…"
+              value={content}
+              onChange={e => { setContent(e.target.value); setError('') }}
+              style={{ resize: 'vertical' }}
+            />
+            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 4, textAlign: 'right' }}>
+              {content.length}/500
+            </div>
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !content.trim()}>
+            {saving ? '发送中...' : '发送'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── 上传体检报告弹窗 ───────────────────────────────────────

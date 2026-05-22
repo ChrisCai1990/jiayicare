@@ -106,6 +106,9 @@ export const staffAPI = {
   giftToPatient:    (id, data) => req(`/staff/patients/${id}/gift`, { method: 'POST', body: JSON.stringify(data) }),
   getPatientGifts:  (id)       => req(`/staff/patients/${id}/gifts`),
 
+  // P4 — Direct message to patient
+  sendMessageToPatient: (id, data) => req(`/staff/patients/${id}/message`, { method: 'POST', body: JSON.stringify(data) }),
+
   // P4 — Referrals
   createReferral:   (data)     => req('/staff/referrals', { method: 'POST', body: JSON.stringify(data) }),
   getReferrals:     (p = {})   => req('/staff/referrals?' + qs(p)),

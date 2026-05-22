@@ -16,6 +16,7 @@ const Order = require('../models/Order');
 const GiftRecord = require('../models/GiftRecord');
 const Referral = require('../models/Referral');
 const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
+const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
 const Activity       = require('../models/Activity');
 const SessionPackage = require('../models/SessionPackage');
@@ -667,12 +668,24 @@ router.post('/questionnaires/:id/push', staffAuth, async (req, res) => {
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const q = await DynamicQuestionnaire.findById(req.params.id);
   if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
+
+  // 写推送记录
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,
     type: 'questionnaire', questionnaireId: q._id,
     title: q.title, content: deadline ? `截止：${new Date(deadline).toLocaleDateString('zh-CN')}` : '',
   }));
   await PushRecord.insertMany(records);
+
+  // 同步将会员加入问卷 targetUsers，确保 /questionnaire/pending 能查询到
+  const newIds = patientIds.filter(pid => !q.targetUsers?.some(uid => uid.toString() === pid.toString()));
+  if (newIds.length > 0) {
+    await DynamicQuestionnaire.findByIdAndUpdate(q._id, {
+      $addToSet: { targetUsers: { $each: newIds } },
+      $set: { targetType: 'specific', ...(deadline ? { deadline } : {}) },
+    });
+  }
+
   res.json({ success: true, message: `问卷已推送给 ${patientIds.length} 位会员` });
 });
 
@@ -979,6 +992,28 @@ router.get('/patients/:id/gifts', staffAuth, async (req, res) => {
     .sort({ createdAt: -1 })
     .populate('staffId', 'name role');
   res.json({ success: true, data: gifts });
+});
+
+// ── 发送消息给会员 ──────────────────────────────────────────
+// POST /api/staff/patients/:id/message — 给会员发站内消息（显示在用户 MessagesScreen）
+router.post('/patients/:id/message', staffAuth, async (req, res) => {
+  try {
+    const { content, type = 'notice' } = req.body;
+    if (!content?.trim()) return res.status(400).json({ success: false, message: '消息内容不能为空' });
+    const patient = await User.findById(req.params.id);
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+
+    const msg = await Message.create({
+      user:       req.params.id,
+      type:       'system',
+      senderName: req.staff.name || '健康管理团队',
+      content:    content.trim(),
+      unread:     true,
+    });
+    res.json({ success: true, data: msg });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── 跨角色转介 ──────────────────────────────────────────────

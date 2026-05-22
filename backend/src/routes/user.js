@@ -8,8 +8,10 @@ const Task = require('../models/Task');
 const Reminder = require('../models/Reminder');
 const ShareToken = require('../models/ShareToken');
 const CheckupPlan = require('../models/CheckupPlan');
-const GiftRecord  = require('../models/GiftRecord');
-const HealthPlan  = require('../models/HealthPlan');
+const GiftRecord   = require('../models/GiftRecord');
+const HealthPlan   = require('../models/HealthPlan');
+const PushRecord   = require('../models/PushRecord');
+const Message      = require('../models/Message');
 const FollowUp    = require('../models/FollowUp');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
@@ -485,6 +487,32 @@ router.get('/followup-tasks', auth, async (req, res) => {
     res.json({ success: true, data: followups });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取随访任务失败', error: err.message });
+  }
+});
+
+// GET /api/user/push-records — 医护端推送给我的记录（科普/方案/问卷通知等）
+router.get('/push-records', auth, async (req, res) => {
+  try {
+    const records = await PushRecord.find({ patientId: req.user._id })
+      .sort({ createdAt: -1 })
+      .limit(50)
+      .populate('staffId', 'name role title');
+    res.json({ success: true, data: records });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取推送记录失败', error: err.message });
+  }
+});
+
+// PATCH /api/user/push-records/:id/read — 标记推送记录已读
+router.patch('/push-records/:id/read', auth, async (req, res) => {
+  try {
+    await PushRecord.findOneAndUpdate(
+      { _id: req.params.id, patientId: req.user._id },
+      { readAt: new Date() }
+    );
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '操作失败', error: err.message });
   }
 });
 

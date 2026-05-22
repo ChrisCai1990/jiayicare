@@ -139,7 +139,14 @@ export const tasksAPI = {
 export const messagesAPI = {
   list:     ()           => request('/messages'),
   markRead: (id)         => request(`/messages/${id}/read`, { method: 'PATCH' }),
+  markAllRead: ()        => request('/messages/read-all', { method: 'PATCH' }),
   send:     (to, content) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content }) }),
+};
+
+// ── Push Records (医护端推送) ─────────────────────────────────────
+export const pushRecordsAPI = {
+  list:     ()    => request('/user/push-records'),
+  markRead: (id)  => request(`/user/push-records/${id}/read`, { method: 'PATCH' }),
 };
 
 // ── Reminders ────────────────────────────────────────────────────

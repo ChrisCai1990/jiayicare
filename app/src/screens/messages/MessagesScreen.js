@@ -6,17 +6,43 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI } from '../../services/api';
+import { messagesAPI, pushRecordsAPI } from '../../services/api';
 import { mockMessages } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/Avatar';
 import EmptyState from '../../components/EmptyState';
 
 const TYPE_CONFIG = {
-  doctor:  { icon: 'medical',        color: colors.primary },
-  manager: { icon: 'person',         color: colors.accent },
-  system:  { icon: 'notifications',  color: colors.warning },
+  doctor:        { icon: 'medical',           color: colors.primary },
+  manager:       { icon: 'person',            color: colors.accent  },
+  system:        { icon: 'notifications',     color: colors.warning },
+  knowledge:     { icon: 'book-outline',      color: '#22A06B'      },
+  plan:          { icon: 'clipboard-outline', color: '#D97706'      },
+  questionnaire: { icon: 'document-text-outline', color: '#0077B6'  },
+  supplement:    { icon: 'nutrition-outline', color: '#8e44ad'      },
+  product:       { icon: 'bag-outline',       color: '#1E6B50'      },
+  notice:        { icon: 'megaphone-outline', color: '#666'         },
 };
+
+// push records 转换为统一消息格式
+const PUSH_TYPE_LABEL = {
+  knowledge: '健康科普', plan: '健康方案', questionnaire: '问卷调查',
+  supplement: '营养推荐', product: '产品推送', notice: '通知',
+};
+
+function normalizePushRecord(pr) {
+  return {
+    _id: pr._id,
+    isPushRecord: true,
+    type: pr.type,
+    sender: pr.staffId?.name || '健康管理团队',
+    title: PUSH_TYPE_LABEL[pr.type] || '推送通知',
+    content: pr.title + (pr.content ? `\n${pr.content}` : ''),
+    unread: !pr.readAt,
+    time: new Date(pr.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
+    createdAt: pr.createdAt,
+  };
+}
 
 function MessageItem({ msg, onPress }) {
   const conf = TYPE_CONFIG[msg.type] || TYPE_CONFIG.system;
@@ -204,12 +230,26 @@ export default function MessagesScreen({ navigation }) {
   const [selectedMsg, setSelectedMsg] = useState(null);
   const [composing, setComposing] = useState(false);
 
-  const tabs = ['全部', '专属团队', '系统', '服务'];
+  const tabs = ['全部', '专属团队', '系统', '推送'];
 
   const loadMessages = useCallback(async () => {
     try {
-      const res = await messagesAPI.list();
-      if (res.success && res.data.length > 0) setMessages(res.data);
+      const [msgRes, pushRes] = await Promise.allSettled([
+        messagesAPI.list(),
+        pushRecordsAPI.list(),
+      ]);
+
+      const msgData = msgRes.status === 'fulfilled' && msgRes.value?.success
+        ? msgRes.value.data : [];
+      const pushData = pushRes.status === 'fulfilled' && pushRes.value?.success
+        ? pushRes.value.data.map(normalizePushRecord) : [];
+
+      // 合并后按时间排序（最新在前）
+      const all = [...msgData, ...pushData].sort(
+        (a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0)
+      );
+
+      if (all.length > 0) setMessages(all);
       else setMessages(isDemo ? mockMessages : []);
     } catch {
       setMessages(isDemo ? mockMessages : []);
@@ -222,25 +262,25 @@ export default function MessagesScreen({ navigation }) {
 
   const handlePress = async (msg) => {
     const msgId = msg._id || msg.id;
-
-    // Show detail immediately
     setSelectedMsg(msg);
-
-    // Mark as read if unread
     if (msg.unread) {
       setMessages(prev =>
         prev.map(m => (m._id || m.id) === msgId ? { ...m, unread: false } : m)
       );
-      try { await messagesAPI.markRead(msgId); } catch {}
+      try {
+        if (msg.isPushRecord) await pushRecordsAPI.markRead(msgId);
+        else await messagesAPI.markRead(msgId);
+      } catch {}
     }
   };
 
   const unreadCount = messages.filter(m => m.unread).length;
 
+  const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
   const filtered = messages.filter(m => {
     if (activeTab === '专属团队') return m.type === 'doctor' || m.type === 'manager';
     if (activeTab === '系统') return m.type === 'system';
-    if (activeTab === '服务') return m.type === 'service';
+    if (activeTab === '推送') return PUSH_TYPES.has(m.type);
     return true;
   });
 
