@@ -3,12 +3,12 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAdmin } from '../App'
 
 const NAV = [
-  { label: '数据总览', icon: '📊', path: '/dashboard' },
-  { label: '患者管理', icon: '👥', path: '/patients' },
-  { label: '订单管理', icon: '📋', path: '/orders' },
-  { label: '消息中心', icon: '💬', path: '/messages' },
-  { label: '服务管理', icon: '🛒', path: '/services' },
-  { label: '问卷管理', icon: '📝', path: '/questionnaires' },
+  { label: '数据总览',   icon: '📊', path: '/dashboard' },
+  { label: '患者管理',   icon: '👥', path: '/patients' },
+  { label: '订单管理',   icon: '📋', path: '/orders' },
+  { label: '消息中心',   icon: '💬', path: '/messages' },
+  { label: '服务管理',   icon: '🛒', path: '/services' },
+  { label: '问卷管理',   icon: '📝', path: '/questionnaires' },
   { label: '信息变更记录', icon: '📌', path: '/change-logs' },
   { label: '医护账号管理', icon: '👨‍⚕️', path: '/staff' },
 ]
@@ -31,11 +31,18 @@ export default function Layout() {
 
   return (
     <div className="app-layout">
-      {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <div className="sidebar-logo-title">🏥 嘉医管家</div>
-          <div className="sidebar-logo-sub">医护管理后台</div>
+          <div className="sidebar-logo-mark">
+            <svg viewBox="0 0 24 24">
+              <path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z"/>
+              <circle cx="12" cy="9" r="2.5" strokeWidth="2.5" style={{fill:'none',stroke:'#fff'}}/>
+            </svg>
+          </div>
+          <div className="sidebar-logo-text">
+            <div className="sidebar-logo-title">嘉医管家</div>
+            <div className="sidebar-logo-sub">医护管理后台</div>
+          </div>
         </div>
 
         <nav className="sidebar-nav">
@@ -69,7 +76,6 @@ export default function Layout() {
         </div>
       </aside>
 
-      {/* Main */}
       <main className="main-content">
         <Outlet />
       </main>
