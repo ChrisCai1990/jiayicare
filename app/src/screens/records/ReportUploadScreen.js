@@ -151,6 +151,30 @@ const styles = StyleSheet.create({
   deleteBtn: { padding: 4 },
   deleteBtnDisabled: { opacity: 0.4 },
 
+  // 删除确认弹窗
+  confirmOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  confirmBox: {
+    backgroundColor: colors.white, borderRadius: radius.lg,
+    padding: spacing.lg, width: '100%', maxWidth: 320,
+  },
+  confirmTitle:   { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: 8, textAlign: 'center' },
+  confirmMessage: { fontSize: 14, color: colors.textSecondary, lineHeight: 21, textAlign: 'center', marginBottom: spacing.lg },
+  confirmBtnRow:  { flexDirection: 'row', gap: spacing.sm },
+  confirmCancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, alignItems: 'center',
+  },
+  confirmCancelText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  confirmOkBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    backgroundColor: colors.danger, alignItems: 'center',
+  },
+  confirmOkText: { fontSize: 14, color: colors.white, fontWeight: '700' },
+
   toast: {
     position: 'absolute', bottom: 40, alignSelf: 'center',
     flexDirection: 'row', alignItems: 'center', gap: 6,
@@ -236,6 +260,35 @@ function Toast({ msg, isError }) {
       <Ionicons name={isError ? 'alert-circle' : 'checkmark-circle'} size={16} color={colors.white} />
       <Text style={styles.toastText}>{msg}</Text>
     </View>
+  );
+}
+
+function ConfirmDeleteModal({ visible, onConfirm, onCancel, loading }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.confirmOverlay}>
+        <View style={styles.confirmBox}>
+          <Text style={styles.confirmTitle}>删除报告</Text>
+          <Text style={styles.confirmMessage}>确定删除该报告吗？删除后将同步清除关联的指标数据，且不可恢复。</Text>
+          <View style={styles.confirmBtnRow}>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={onCancel} activeOpacity={0.8}>
+              <Text style={styles.confirmCancelText}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmOkBtn, loading && { opacity: 0.6 }]}
+              onPress={onConfirm}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color={colors.white} />
+                : <Text style={styles.confirmOkText}>确认删除</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -753,6 +806,10 @@ export default function ReportUploadScreen({ navigation, route }) {
   const [pendingFile, setPendingFile] = useState(null);
   const pendingFileData = useRef(null); // stores { content, mimeType, sizeStr }
 
+  // Delete confirm modal state
+  const [deleteTarget, setDeleteTarget] = useState(null); // reportId to delete
+  const [deleting, setDeleting] = useState(false);
+
   const showToast = (msg, isError = false) => {
     setToast(msg);
     setToastError(isError);
@@ -842,19 +899,32 @@ export default function ReportUploadScreen({ navigation, route }) {
     }
   };
 
-  const handleDelete = async (id, isAudited) => {
+  const handleDelete = (id, isAudited) => {
     if (isAudited) {
-      showToast('已审核报告不可删除，如需处理请联系健康管理师', true);
+      showToast('已审核，不可删除，请联系健管专员', true);
       return;
     }
+    setDeleteTarget(id);
+  };
+
+  const executeDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
     try {
-      const res = await reportsAPI.delete(id);
+      const res = await reportsAPI.delete(deleteTarget);
       if (res.success) {
-        setReports(prev => prev.filter(r => (r._id || r.id) !== id));
-        showToast('已删除');
+        setReports(prev => prev.filter(r => (r._id || r.id) !== deleteTarget));
+        setDeleteTarget(null);
+        showToast('报告已删除');
+      } else {
+        showToast(res.message || '删除失败', true);
+        setDeleteTarget(null);
       }
     } catch (err) {
-      showToast(err.message || '删除失败', true);
+      showToast(err.message || '删除失败，请重试', true);
+      setDeleteTarget(null);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -1027,7 +1097,7 @@ export default function ReportUploadScreen({ navigation, route }) {
                   <ReportCard
                     key={r._id || r.id}
                     report={r}
-                    onDelete={null}
+                    onDelete={isRealReport(r) ? handleDelete : null}
                     onPreview={setPreviewReport}
                   />
                 ))}
@@ -1056,6 +1126,13 @@ export default function ReportUploadScreen({ navigation, route }) {
           onCancel={() => { setPendingFile(null); pendingFileData.current = null; }}
         />
       )}
+
+      <ConfirmDeleteModal
+        visible={!!deleteTarget}
+        loading={deleting}
+        onConfirm={executeDelete}
+        onCancel={() => setDeleteTarget(null)}
+      />
     </SafeAreaView>
   );
 }

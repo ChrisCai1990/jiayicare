@@ -11,6 +11,8 @@ const healthRecordSchema = new mongoose.Schema({
   status:   { type: String, enum: ['normal', 'warning', 'danger'], default: 'normal' },
   note:     { type: String, default: '' },
   recordedAt: { type: Date, default: Date.now },
+  // 关联报告（如从报告中提取的指标数据，删除报告时级联删除）
+  reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
 }, { timestamps: true });
 
 // 索引：按用户+时间查询

@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
+const HealthRecord = require('../models/HealthRecord');
 const router = express.Router();
 
 // 获取用户体检报告列表（列表不返回 content，避免传输过大）
@@ -66,6 +67,8 @@ router.delete('/:id', auth, async (req, res) => {
     if (report.audit_status === 'audited') {
       return res.status(403).json({ success: false, message: '已审核报告不可删除，如需处理请联系健康管理师' });
     }
+    // 级联删除从该报告提取的关联健康记录（如有）
+    await HealthRecord.deleteMany({ user: req.user._id, reportId: report._id });
     await report.deleteOne();
     res.json({ success: true, message: '报告已删除' });
   } catch (err) {
