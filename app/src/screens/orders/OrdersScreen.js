@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, RefreshControl, Alert,
+  StyleSheet, SafeAreaView, RefreshControl, Modal,
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -25,6 +25,36 @@ function fmtDate(str) {
     const d = new Date(str);
     return `${d.getFullYear()}/${d.getMonth() + 1}/${d.getDate()}`;
   } catch { return str; }
+}
+
+// ── 确认弹窗（替代 Alert.alert，Web 兼容）────────────────────────
+function ConfirmModal({ visible, title, message, onConfirm, onCancel, confirmText = '确定', cancelText = '取消', confirmDanger = false, loading = false }) {
+  return (
+    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+      <View style={styles.confirmOverlay}>
+        <View style={styles.confirmBox}>
+          <Text style={styles.confirmTitle}>{title}</Text>
+          <Text style={styles.confirmMessage}>{message}</Text>
+          <View style={styles.confirmBtnRow}>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={onCancel} activeOpacity={0.8}>
+              <Text style={styles.confirmCancelText}>{cancelText}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.confirmOkBtn, confirmDanger && styles.confirmOkBtnDanger, loading && { opacity: 0.6 }]}
+              onPress={onConfirm}
+              disabled={loading}
+              activeOpacity={0.85}
+            >
+              {loading
+                ? <ActivityIndicator size="small" color={colors.white} />
+                : <Text style={styles.confirmOkText}>{confirmText}</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
 }
 
 // ── 订单卡片 ──────────────────────────────────────────────────────
@@ -95,6 +125,7 @@ function OrderCard({ order, onCancel }) {
           onPress={() => onCancel(order)}
           activeOpacity={0.8}
         >
+          <Ionicons name="close-circle-outline" size={15} color={colors.danger} />
           <Text style={styles.cancelBtnText}>取消预约</Text>
         </TouchableOpacity>
       )}
@@ -104,45 +135,51 @@ function OrderCard({ order, onCancel }) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function OrdersScreen({ navigation }) {
-  const [orders, setOrders]       = useState([]);
-  const [loading, setLoading]     = useState(true);
+  const [orders, setOrders]         = useState([]);
+  const [loading, setLoading]       = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState('全部');
+  const [activeTab, setActiveTab]   = useState('全部');
+
+  // 取消确认弹窗状态
+  const [cancelTarget, setCancelTarget]     = useState(null); // 当前要取消的 order
+  const [cancelling, setCancelling]         = useState(false);
+  const [cancelError, setCancelError]       = useState('');
 
   const loadOrders = useCallback(async () => {
     try {
       const res = await ordersAPI.list();
       if (res.success) setOrders(res.data);
     } catch (err) {
-      Alert.alert('加载失败', err.message || '订单列表加载失败，请下拉刷新重试');
+      // 静默处理：不使用 Alert
     } finally { setLoading(false); setRefreshing(false); }
   }, []);
 
   useEffect(() => { loadOrders(); }, [loadOrders]);
 
+  // 点击"取消预约"按钮 → 打开确认弹窗
   const handleCancel = (order) => {
-    Alert.alert(
-      '取消预约',
-      '确定取消本次预约吗？取消后可能需要重新预约。',
-      [
-        { text: '暂不取消', style: 'cancel' },
-        {
-          text: '确定取消', style: 'destructive',
-          onPress: async () => {
-            try {
-              const res = await ordersAPI.cancel(order._id);
-              if (res.success) {
-                setOrders(prev => prev.map(o =>
-                  o._id === order._id ? { ...o, status: 'cancelled' } : o
-                ));
-              }
-            } catch (err) {
-              Alert.alert('取消失败', err.message || '操作失败，请稍后重试');
-            }
-          },
-        },
-      ]
-    );
+    setCancelTarget(order);
+    setCancelError('');
+  };
+
+  // 确认取消
+  const confirmCancel = async () => {
+    if (!cancelTarget) return;
+    setCancelling(true);
+    setCancelError('');
+    try {
+      const res = await ordersAPI.cancel(cancelTarget._id);
+      if (res.success) {
+        setOrders(prev => prev.map(o =>
+          o._id === cancelTarget._id ? { ...o, status: 'cancelled' } : o
+        ));
+        setCancelTarget(null);
+      }
+    } catch (err) {
+      setCancelError(err.message || '操作失败，请稍后重试');
+    } finally {
+      setCancelling(false);
+    }
   };
 
   const filtered = orders.filter(o => {
@@ -223,6 +260,39 @@ export default function OrdersScreen({ navigation }) {
         )}
         <View style={{ height: spacing.xl }} />
       </ScrollView>
+
+      {/* 取消确认弹窗 */}
+      <ConfirmModal
+        visible={!!cancelTarget}
+        title="取消预约"
+        message="确定取消本次预约吗？取消后可能需要重新预约。"
+        confirmText="确定取消"
+        cancelText="暂不取消"
+        confirmDanger
+        loading={cancelling}
+        onCancel={() => { setCancelTarget(null); setCancelError(''); }}
+        onConfirm={confirmCancel}
+      />
+
+      {/* 取消失败提示（叠加在弹窗内） */}
+      {!!cancelError && !!cancelTarget && (
+        <Modal visible transparent animationType="none">
+          <View style={styles.confirmOverlay}>
+            <View style={styles.confirmBox}>
+              <Ionicons name="alert-circle-outline" size={32} color={colors.danger} style={{ alignSelf: 'center', marginBottom: 8 }} />
+              <Text style={[styles.confirmTitle, { color: colors.danger }]}>取消失败</Text>
+              <Text style={styles.confirmMessage}>{cancelError}</Text>
+              <TouchableOpacity
+                style={[styles.confirmOkBtn, { marginTop: 12 }]}
+                onPress={() => { setCancelTarget(null); setCancelError(''); }}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.confirmOkText}>知道了</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      )}
     </SafeAreaView>
   );
 }
@@ -330,9 +400,36 @@ const styles = StyleSheet.create({
 
   cancelBtn: {
     marginTop: spacing.sm,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
     paddingVertical: 10, borderRadius: radius.md,
     borderWidth: 1.5, borderColor: colors.danger + '60',
-    alignItems: 'center',
   },
   cancelBtnText: { fontSize: 13, color: colors.danger, fontWeight: '600' },
+
+  // 确认弹窗
+  confirmOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: spacing.xl,
+  },
+  confirmBox: {
+    backgroundColor: colors.white,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    width: '100%', maxWidth: 320,
+  },
+  confirmTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary, marginBottom: 8, textAlign: 'center' },
+  confirmMessage: { fontSize: 14, color: colors.textSecondary, lineHeight: 21, textAlign: 'center', marginBottom: spacing.lg },
+  confirmBtnRow: { flexDirection: 'row', gap: spacing.sm },
+  confirmCancelBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, alignItems: 'center',
+  },
+  confirmCancelText: { fontSize: 14, color: colors.textSecondary, fontWeight: '600' },
+  confirmOkBtn: {
+    flex: 1, paddingVertical: 12, borderRadius: radius.md,
+    backgroundColor: colors.primary, alignItems: 'center',
+  },
+  confirmOkBtnDanger: { backgroundColor: colors.danger },
+  confirmOkText: { fontSize: 14, color: colors.white, fontWeight: '700' },
 });
