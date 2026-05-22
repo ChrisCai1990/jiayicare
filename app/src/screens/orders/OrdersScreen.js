@@ -94,29 +94,49 @@ function OrderCard({ order, onCancel }) {
         </View>
       )}
 
-      {/* 进度提示 */}
-      <View style={styles.progressWrap}>
-        {['pending', 'scheduled', 'completed'].map((s, i) => {
-          const conf = STATUS_CONFIG[s];
-          const idx  = ['pending', 'scheduled', 'completed'].indexOf(order.status);
-          const done = i <= idx && order.status !== 'cancelled';
-          return (
-            <React.Fragment key={s}>
-              <View style={styles.progressStep}>
-                <View style={[styles.progressDot, done && styles.progressDotDone]}>
-                  {done && <Ionicons name="checkmark" size={8} color={colors.white} />}
+      {/* 进度条 / 已取消标记 */}
+      {order.status === 'cancelled' ? (
+        <View style={styles.cancelledBar}>
+          <Ionicons name="close-circle" size={15} color={colors.danger} />
+          <Text style={styles.cancelledBarText}>预约已取消</Text>
+        </View>
+      ) : (
+        <View style={styles.progressWrap}>
+          {['pending', 'scheduled', 'completed'].map((s, i) => {
+            const conf    = STATUS_CONFIG[s];
+            const stepIdx = ['pending', 'scheduled', 'completed'].indexOf(order.status);
+            // past = 已完过的步骤（绿色 ✓）
+            const isPast    = i < stepIdx;
+            // current = 当前所在步骤（主色高亮圆点）
+            const isCurrent = i === stepIdx;
+            // future = 还没到的步骤（灰色空心）
+            return (
+              <React.Fragment key={s}>
+                <View style={styles.progressStep}>
+                  <View style={[
+                    styles.progressDot,
+                    isPast    && styles.progressDotPast,
+                    isCurrent && { backgroundColor: conf.color, borderColor: conf.color },
+                  ]}>
+                    {isPast    && <Ionicons name="checkmark" size={8} color={colors.white} />}
+                    {isCurrent && <View style={styles.progressDotInner} />}
+                  </View>
+                  <Text style={[
+                    styles.progressLabel,
+                    isPast    && styles.progressLabelPast,
+                    isCurrent && { color: conf.color, fontWeight: '700' },
+                  ]}>
+                    {conf.label}
+                  </Text>
                 </View>
-                <Text style={[styles.progressLabel, done && styles.progressLabelDone]}>
-                  {conf.label}
-                </Text>
-              </View>
-              {i < 2 && (
-                <View style={[styles.progressLine, i < idx && order.status !== 'cancelled' && styles.progressLineDone]} />
-              )}
-            </React.Fragment>
-          );
-        })}
-      </View>
+                {i < 2 && (
+                  <View style={[styles.progressLine, isPast && styles.progressLineDone]} />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </View>
+      )}
 
       {/* 取消按钮 */}
       {canCancel && (
@@ -384,19 +404,29 @@ const styles = StyleSheet.create({
   },
   progressStep: { alignItems: 'center', gap: 4 },
   progressDot: {
-    width: 18, height: 18, borderRadius: 9,
+    width: 20, height: 20, borderRadius: 10,
     borderWidth: 1.5, borderColor: colors.border,
     backgroundColor: colors.white,
     alignItems: 'center', justifyContent: 'center',
   },
-  progressDotDone: { backgroundColor: colors.success, borderColor: colors.success },
-  progressLabel: { fontSize: 10, color: colors.textMuted, fontWeight: '500' },
-  progressLabelDone: { color: colors.success, fontWeight: '700' },
+  progressDotPast:   { backgroundColor: colors.success, borderColor: colors.success },
+  progressDotInner:  { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.white },
+  progressLabel:     { fontSize: 10, color: colors.textMuted, fontWeight: '500' },
+  progressLabelPast: { color: colors.success, fontWeight: '700' },
   progressLine: {
     flex: 1, height: 2, backgroundColor: colors.borderLight,
-    marginHorizontal: 4, marginBottom: 14,
+    marginHorizontal: 4, marginBottom: 16,
   },
   progressLineDone: { backgroundColor: colors.success },
+
+  // 已取消横幅（替代进度条）
+  cancelledBar: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginTop: spacing.sm, paddingVertical: 8, paddingHorizontal: spacing.sm,
+    backgroundColor: '#FFF0F0', borderRadius: radius.sm,
+    borderWidth: 1, borderColor: colors.danger + '30',
+  },
+  cancelledBarText: { fontSize: 12, color: colors.danger, fontWeight: '600' },
 
   cancelBtn: {
     marginTop: spacing.sm,
