@@ -117,4 +117,20 @@ export const staffAPI = {
 
   // P4 — Active plan items for report linking
   getActivePlanItems: (patientId) => req(`/staff/patients/${patientId}/active-plan-items`),
+
+  // 会员营销
+  getLevels:         ()     => req('/staff/marketing/levels'),
+  createLevel:       (data) => req('/staff/marketing/levels', { method: 'POST', body: JSON.stringify(data) }),
+  updateLevel:       (id,d) => req(`/staff/marketing/levels/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  deleteLevel:       (id)   => req(`/staff/marketing/levels/${id}`, { method: 'DELETE' }),
+
+  getActivities:     (p={}) => req('/staff/marketing/activities?' + qs(p)),
+  createActivity:    (data) => req('/staff/marketing/activities', { method: 'POST', body: JSON.stringify(data) }),
+  updateActivity:    (id,d) => req(`/staff/marketing/activities/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  deleteActivity:    (id)   => req(`/staff/marketing/activities/${id}`, { method: 'DELETE' }),
+
+  getPackages:       ()     => req('/staff/marketing/packages'),
+  createPackage:     (data) => req('/staff/marketing/packages', { method: 'POST', body: JSON.stringify(data) }),
+  updatePackage:     (id,d) => req(`/staff/marketing/packages/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  deletePackage:     (id)   => req(`/staff/marketing/packages/${id}`, { method: 'DELETE' }),
 }

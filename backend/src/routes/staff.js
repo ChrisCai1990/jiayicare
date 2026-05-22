@@ -16,6 +16,9 @@ const Order = require('../models/Order');
 const GiftRecord = require('../models/GiftRecord');
 const Referral = require('../models/Referral');
 const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
+const MemberLevel    = require('../models/MemberLevel');
+const Activity       = require('../models/Activity');
+const SessionPackage = require('../models/SessionPackage');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
 
@@ -269,24 +272,40 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 });
 
 // ── GET /api/staff/followups ──────────────────────────────────────
-// 我的随访列表（含计划中、已完成）
+// 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, async (req, res) => {
-  const { page = 1, limit = 20, status = '', date = '' } = req.query;
-  const filter = { staffId: req.staff._id };
-  if (status) filter.status = status;
-  if (date) {
-    const start = new Date(date);
-    const end = new Date(date);
-    end.setDate(end.getDate() + 1);
-    filter.date = { $gte: start, $lt: end };
+  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '' } = req.query;
+
+  // 如果按患者姓名搜索，先查出匹配的用户ID
+  let patientFilter = {};
+  if (patientName) {
+    const matchedUsers = await User.find({ name: { $regex: patientName, $options: 'i' } }).select('_id');
+    patientFilter = { patientId: { $in: matchedUsers.map(u => u._id) } };
   }
+
+  // 数据权限：当前医护创建的 OR 分配给当前医护的
+  const ownerFilter = { $or: [{ staffId: req.staff._id }, { assignedTo: req.staff._id }] };
+
+  const filter = { ...ownerFilter, ...patientFilter };
+  if (status) {
+    // in_progress 同时包含旧的 missed 状态
+    if (status === 'in_progress') filter.status = { $in: ['in_progress', 'missed'] };
+    else filter.status = status;
+  }
+  if (dateFrom || dateTo) {
+    filter.date = {};
+    if (dateFrom) filter.date.$gte = new Date(dateFrom);
+    if (dateTo) { const end = new Date(dateTo); end.setDate(end.getDate() + 1); filter.date.$lt = end; }
+  }
+
   const skip = (Number(page) - 1) * Number(limit);
   const [followUps, total] = await Promise.all([
     FollowUp.find(filter)
-      .sort({ date: -1 })
+      .sort({ date: 1 })
       .skip(skip)
       .limit(Number(limit))
-      .populate('patientId', 'name phone gender age chronicDiseases'),
+      .populate('patientId', 'name phone gender age chronicDiseases')
+      .populate('assignedTo', 'name role'),
     FollowUp.countDocuments(filter),
   ]);
   res.json({ success: true, data: { followUps, total } });
@@ -294,11 +313,15 @@ router.get('/followups', staffAuth, async (req, res) => {
 
 // ── POST /api/staff/followups ─────────────────────────────────────
 router.post('/followups', staffAuth, async (req, res) => {
-  const { patientId, date, type, status, content, nextFollowUpDate, tags, vitals } = req.body;
+  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals } = req.body;
   if (!patientId) return res.status(400).json({ success: false, message: '患者ID不能为空' });
 
   const patient = await User.findById(patientId);
   if (!patient) return res.status(404).json({ success: false, message: '患者不存在' });
+
+  if (status === 'cancelled' && !cancelReason) {
+    return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
+  }
 
   const followUp = await FollowUp.create({
     staffId: req.staff._id,
@@ -307,6 +330,9 @@ router.post('/followups', staffAuth, async (req, res) => {
     type: type || 'phone',
     status: status || 'completed',
     content: content || '',
+    theme: theme || '',
+    cancelReason: cancelReason || '',
+    assignedTo: assignedTo || null,
     nextFollowUpDate: nextFollowUpDate ? new Date(nextFollowUpDate) : null,
     tags: tags || [],
     vitals: vitals || {},
@@ -318,10 +344,18 @@ router.post('/followups', staffAuth, async (req, res) => {
 
 // ── PUT /api/staff/followups/:id ──────────────────────────────────
 router.put('/followups/:id', staffAuth, async (req, res) => {
-  const followUp = await FollowUp.findOne({ _id: req.params.id, staffId: req.staff._id });
+  // 允许创建人或被分配人更新
+  const followUp = await FollowUp.findOne({
+    _id: req.params.id,
+    $or: [{ staffId: req.staff._id }, { assignedTo: req.staff._id }],
+  });
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
 
-  const allowed = ['date', 'type', 'status', 'content', 'nextFollowUpDate', 'tags', 'vitals'];
+  if (req.body.status === 'cancelled' && !req.body.cancelReason && !followUp.cancelReason) {
+    return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
+  }
+
+  const allowed = ['date', 'type', 'status', 'content', 'theme', 'cancelReason', 'assignedTo', 'nextFollowUpDate', 'tags', 'vitals'];
   allowed.forEach(k => {
     if (req.body[k] !== undefined) followUp[k] = req.body[k];
   });
@@ -1087,6 +1121,75 @@ router.get('/patients/:id/active-plan-items', staffAuth, async (req, res) => {
     });
   });
   res.json({ success: true, data: items });
+});
+
+// ════════════════════════════════════════════════════════
+// 会员营销模块
+// ════════════════════════════════════════════════════════
+
+// ── 会员等级 ────────────────────────────────────────────
+router.get('/marketing/levels', staffAuth, async (req, res) => {
+  const levels = await MemberLevel.find().sort({ sortOrder: 1, minPoints: 1 });
+  res.json({ success: true, data: levels });
+});
+router.post('/marketing/levels', staffAuth, async (req, res) => {
+  const { name, minPoints, color, benefits, sortOrder } = req.body;
+  if (!name) return res.status(400).json({ success: false, message: '等级名称不能为空' });
+  const level = await MemberLevel.create({ name, minPoints: minPoints || 0, color: color || '#8AA89C', benefits: benefits || [], sortOrder: sortOrder || 0 });
+  res.json({ success: true, data: level });
+});
+router.put('/marketing/levels/:id', staffAuth, async (req, res) => {
+  const level = await MemberLevel.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  if (!level) return res.status(404).json({ success: false, message: '等级不存在' });
+  res.json({ success: true, data: level });
+});
+router.delete('/marketing/levels/:id', staffAuth, async (req, res) => {
+  await MemberLevel.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
+// ── 活动管理 ────────────────────────────────────────────
+router.get('/marketing/activities', staffAuth, async (req, res) => {
+  const { isActive } = req.query;
+  const filter = {};
+  if (isActive !== undefined) filter.isActive = isActive === 'true';
+  const activities = await Activity.find(filter).sort({ createdAt: -1 }).populate('createdBy', 'name');
+  res.json({ success: true, data: activities });
+});
+router.post('/marketing/activities', staffAuth, async (req, res) => {
+  if (!req.body.title) return res.status(400).json({ success: false, message: '活动名称不能为空' });
+  const activity = await Activity.create({ ...req.body, createdBy: req.staff._id });
+  res.json({ success: true, data: activity });
+});
+router.put('/marketing/activities/:id', staffAuth, async (req, res) => {
+  const activity = await Activity.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  if (!activity) return res.status(404).json({ success: false, message: '活动不存在' });
+  res.json({ success: true, data: activity });
+});
+router.delete('/marketing/activities/:id', staffAuth, async (req, res) => {
+  await Activity.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
+// ── 次卡套餐 ────────────────────────────────────────────
+router.get('/marketing/packages', staffAuth, async (req, res) => {
+  const packages = await SessionPackage.find().sort({ createdAt: -1 }).populate('createdBy', 'name');
+  res.json({ success: true, data: packages });
+});
+router.post('/marketing/packages', staffAuth, async (req, res) => {
+  const { name, count, price } = req.body;
+  if (!name || !count || !price) return res.status(400).json({ success: false, message: '名称、次数、价格不能为空' });
+  const pkg = await SessionPackage.create({ ...req.body, createdBy: req.staff._id });
+  res.json({ success: true, data: pkg });
+});
+router.put('/marketing/packages/:id', staffAuth, async (req, res) => {
+  const pkg = await SessionPackage.findByIdAndUpdate(req.params.id, req.body, { new: true });
+  if (!pkg) return res.status(404).json({ success: false, message: '套餐不存在' });
+  res.json({ success: true, data: pkg });
+});
+router.delete('/marketing/packages/:id', staffAuth, async (req, res) => {
+  await SessionPackage.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
 });
 
 module.exports = router;

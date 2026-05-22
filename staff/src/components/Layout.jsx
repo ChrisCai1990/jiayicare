@@ -13,6 +13,7 @@ const ALL_NAV = [
   { label: '问卷推送', icon: '📝', path: '/questionnaires', roles: ['healthManager','familyDoctor','superadmin'] },
   { label: '产品推送', icon: '🛍', path: '/products',  roles: [] },
   { label: '分佣中心', icon: '💰', path: '/commission', roles: [] },
+  { label: '会员营销', icon: '🎯', path: '/marketing',  roles: ['superadmin','manager','healthManager','familyDoctor'] },
   { label: '团队管理', icon: '🫂', path: '/team',      roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'] },
   { label: '运营看板', icon: '📊', path: '/operations', roles: ['superadmin','manager'] },
   { label: '消息通知', icon: '🔔', path: '/notifications', roles: [] },

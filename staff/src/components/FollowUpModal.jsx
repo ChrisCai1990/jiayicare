@@ -33,10 +33,10 @@ const emptyRow = () => ({
   assignedTo: '',
 })
 
-export default function FollowUpModal({ patientId, patientName, onClose, onSaved }) {
+export default function FollowUpModal({ patientId, patientName, defaultTheme, onClose, onSaved }) {
   const [patients, setPatients] = useState([])
   const [staffList, setStaffList] = useState([])
-  const [mode, setMode] = useState('record')  // record | plan
+  const [mode, setMode] = useState(defaultTheme ? 'plan' : 'record')  // record | plan
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -51,7 +51,7 @@ export default function FollowUpModal({ patientId, patientName, onClose, onSaved
   })
 
   // 计划模式：多行
-  const [planRows, setPlanRows] = useState([emptyRow()])
+  const [planRows, setPlanRows] = useState([{ ...emptyRow(), theme: defaultTheme || '' }])
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
 
   useEffect(() => {

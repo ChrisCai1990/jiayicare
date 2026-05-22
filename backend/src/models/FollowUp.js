@@ -11,12 +11,13 @@ const followUpSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['completed', 'missed', 'planned'],
+    enum: ['completed', 'missed', 'planned', 'in_progress', 'cancelled'],
     default: 'completed',
   },
-  content: { type: String, default: '' },   // 随访内容记录
-  theme:    { type: String, default: '' },  // 随访主题，如"日常血压监测"
-  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 负责人（可指定其他成员）
+  content:      { type: String, default: '' },  // 随访内容记录
+  theme:        { type: String, default: '' },  // 随访主题
+  cancelReason: { type: String, default: '' },  // 取消原因（cancelled 时必填）
+  assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 负责人
   nextFollowUpDate: { type: Date, default: null },
   tags:     { type: [String], default: [] }, // 标签，如 ['用药提醒','复查提示']
   // 随访时记录的简要体征

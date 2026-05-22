@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
+import FollowUpModal from '../components/FollowUpModal'
 
 const TYPE_LABEL = {
   disease_mgmt:  '专病管理记录',
@@ -27,6 +28,7 @@ export default function ServiceRecordsPage() {
   const [typeFilter, setTypeFilter] = useState(defaultType)
   const [page, setPage] = useState(1)
   const [showModal, setShowModal] = useState(false)
+  const [followUpTarget, setFollowUpTarget] = useState(null) // { patientId, patientName, theme }
   const [patients, setPatients] = useState([])
   const limit = 20
 
@@ -91,7 +93,13 @@ export default function ServiceRecordsPage() {
                   <td style={{ maxWidth: 220, fontSize: 13, color: '#4A6558' }}>
                     {r.content ? (r.content.length > 45 ? r.content.slice(0, 45) + '...' : r.content) : '-'}
                   </td>
-                  <td><button className="btn btn-danger btn-sm" onClick={() => handleDelete(r._id)}>删除</button></td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
+                      onClick={() => setFollowUpTarget({ patientId: r.patientId?._id || r.patientId, patientName: r.patientId?.name || '', theme: r.subject || TYPE_LABEL[r.type] || '' })}>
+                      新建随访
+                    </button>
+                    <button className="btn btn-danger btn-sm" onClick={() => handleDelete(r._id)}>删除</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -110,6 +118,16 @@ export default function ServiceRecordsPage() {
         <ServiceRecordModal patients={patients} defaultType={defaultType || 'disease_mgmt'}
           onClose={() => setShowModal(false)}
           onSaved={() => { setShowModal(false); toast('记录已保存'); load() }} />
+      )}
+
+      {followUpTarget && (
+        <FollowUpModal
+          patientId={followUpTarget.patientId}
+          patientName={followUpTarget.patientName}
+          defaultTheme={followUpTarget.theme}
+          onClose={() => setFollowUpTarget(null)}
+          onSaved={() => { setFollowUpTarget(null); toast('随访计划已创建') }}
+        />
       )}
     </div>
   )
