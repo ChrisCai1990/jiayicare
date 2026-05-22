@@ -146,25 +146,24 @@ router.get('/dashboard', auth, async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // 最新各类指标
-    const latestByType = {};
-    const types = ['bloodPressure', 'bloodSugar', 'heartRate', 'weight', 'sleep'];
-    for (const type of types) {
-      const record = await HealthRecord.findOne({ user: userId, type }).sort({ recordedAt: -1 });
-      latestByType[type] = record || null;
-    }
+    // 最新各类指标 —— 全部并行查询（原串行 for 循环改为 Promise.all）
+    const VITAL_TYPES = ['bloodPressure', 'bloodSugar', 'heartRate', 'weight', 'sleep'];
+    const [vitalResults, pendingTasks, allReminders, hasAnyHealthData] = await Promise.all([
+      Promise.all(
+        VITAL_TYPES.map(type =>
+          HealthRecord.findOne({ user: userId, type }).sort({ recordedAt: -1 }).lean()
+        )
+      ),
+      Task.find({ user: userId, status: 'pending' })
+        .sort({ priority: 1, createdAt: 1 }).limit(5).lean(),
+      Reminder.find({ user: userId, enabled: true }).lean(),
+      HealthRecord.countDocuments({ user: userId }),
+    ]);
 
-    // 今日待办任务（最多5条）
-    const pendingTasks = await Task.find({ user: userId, status: 'pending' })
-      .sort({ priority: 1, createdAt: 1 })
-      .limit(5);
-
-    // 今日激活的提醒（最多10条）
-    const allReminders = await Reminder.find({ user: userId, enabled: true });
+    const latestByType = Object.fromEntries(
+      VITAL_TYPES.map((type, i) => [type, vitalResults[i] || null])
+    );
     const todayReminders = allReminders.filter(isActiveToday).slice(0, 10);
-
-    // 是否有任何健康数据（用于前端判断新用户空状态）
-    const hasAnyHealthData = (await HealthRecord.countDocuments({ user: userId })) > 0;
 
     // BMI 实时计算：优先使用最新体重 HealthRecord，其次 user.weight
     const latestWeightVal = latestByType.weight ? parseFloat(latestByType.weight.value) : req.user.weight;

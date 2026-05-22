@@ -439,40 +439,42 @@ export default function RecordsScreen({ navigation }) {
 
   // ── 加载档案：先读 localStorage，再从服务器合并 ─────────────────
   useEffect(() => {
-    // Demo 用户无本地数据时展示示例档案，真实用户展示空白
+    // 先用本地缓存快速渲染，getMe() 在 loadDashboard 里统一调用，不重复请求
     const local = loadProfileFromStorage();
     const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
     setProfile(local || fallback);
-    // 从服务器拉取最新（优先服务器数据）
-    userAPI.getMe().then(res => {
-      const serverProfile = res?.data?.healthProfile;
-      if (serverProfile && Object.values(serverProfile).some(v => v)) {
-        const merged = { ...(local || fallback), ...serverProfile };
+  }, [isDemo]);
+
+  // ── 加载仪表板数据（三个接口并行，getMe 只调一次）────────────────
+  const loadDashboard = useCallback(async () => {
+    const [dashRes, meRes, checkupRes] = await Promise.allSettled([
+      userAPI.getDashboard(),
+      userAPI.getMe(),
+      checkupAPI.get(),
+    ]);
+
+    // 最新指标
+    if (dashRes.status === 'fulfilled') {
+      const vitals = dashRes.value?.data?.latestVitals || dashRes.value?.latestVitals;
+      if (vitals) setLatestVitals(vitals);
+    }
+    // 生活方式 + 健康档案（合并到一次 getMe）
+    if (meRes.status === 'fulfilled') {
+      const data = meRes.value?.data;
+      if (data?.lifestyle) setLifestyle(data.lifestyle);
+      if (data?.healthProfile && Object.values(data.healthProfile).some(v => v)) {
+        const local = loadProfileFromStorage();
+        const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
+        const merged = { ...(local || fallback), ...data.healthProfile };
         setProfile(merged);
         saveProfileToStorage(merged);
       }
-    }).catch(() => {});
+    }
+    // 年度复查计划
+    if (checkupRes.status === 'fulfilled' && checkupRes.value?.data) {
+      setCheckupPlan(checkupRes.value.data);
+    }
   }, [isDemo]);
-
-  // ── 加载仪表板数据 ────────────────────────────────────────────────
-  const loadDashboard = useCallback(async () => {
-    try {
-      const res = await userAPI.getDashboard();
-      const vitals = res?.data?.latestVitals || res?.latestVitals;
-      if (vitals) setLatestVitals(vitals);
-    } catch {}
-    // 加载生活方式数据
-    try {
-      const res = await userAPI.getMe();
-      const ls = res?.data?.lifestyle || res?.lifestyle;
-      if (ls) setLifestyle(ls);
-    } catch {}
-    // 加载年度复查计划
-    try {
-      const res = await checkupAPI.get();
-      if (res?.data) setCheckupPlan(res.data);
-    } catch {}
-  }, []);
 
   // ── 加载趋势图数据 ────────────────────────────────────────────────
   const loadChart = useCallback(async (type, period) => {
