@@ -1,12 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, radius } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { ordersAPI } from '../../services/api';
+import { ordersAPI, userAPI } from '../../services/api';
 import Avatar, { AvatarOnDark } from '../../components/Avatar';
 
 // ── 样式（必须在所有组件函数之前定义，防止 Railway 生产构建 TDZ）────
@@ -252,10 +253,18 @@ function LogoutModal({ visible, onConfirm, onCancel }) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function ProfileScreen({ navigation }) {
-  const { user, isDemo, logout } = useAuth();
+  const { user, isDemo, logout, updateUser } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
   const [pendingOrders, setPendingOrders] = useState(0);
   const [notifLabel, setNotifLabel] = useState('');
+
+  // 每次切换到此页时，重新拉取用户数据以刷新健康基金、服务包等动态字段
+  useFocusEffect(useCallback(() => {
+    if (isDemo) return;
+    userAPI.getMe().then(res => {
+      if (res.success && res.data) updateUser(res.data);
+    }).catch(() => {});
+  }, [isDemo]));
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
