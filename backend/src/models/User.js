@@ -134,6 +134,9 @@ const userSchema = new mongoose.Schema({
     mood:     { type: String, default: '' },  // 情绪
   },
   serviceStartDate: { type: String, default: '' }, // 服务开始时间
+
+  // 健康基金余额（由医护端 $inc 累加，Mongoose 必须显式定义才能读取）
+  healthFundBalance: { type: Number, default: 0 },
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
