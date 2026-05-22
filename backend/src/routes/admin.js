@@ -10,6 +10,7 @@ const Service = require('../models/Service');
 const CheckupPlan = require('../models/CheckupPlan');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const UserChangeLog = require('../models/UserChangeLog');
+const MedicalReport = require('../models/MedicalReport');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
 
@@ -487,6 +488,74 @@ router.delete('/staff/:id', adminAuth, async (req, res) => {
   }
   await staff.deleteOne();
   res.json({ success: true, message: '账号已删除' });
+});
+
+// ── 体检报告管理 ───────────────────────────────────────────────────
+
+// GET /api/admin/medical-reports?status=&patientId=&page=&limit=
+router.get('/medical-reports', adminAuth, async (req, res) => {
+  try {
+    const { status, patientId, page = 1, limit = 20 } = req.query;
+    const filter = {};
+    if (status) filter.audit_status = status;
+    if (patientId) filter.user = patientId;
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [reports, total] = await Promise.all([
+      MedicalReport.find(filter)
+        .select('-content')
+        .populate('user', 'name phone')
+        .populate('uploadedBy', 'name')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(parseInt(limit)),
+      MedicalReport.countDocuments(filter),
+    ]);
+    res.json({ success: true, data: { reports, total } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/admin/medical-reports/:id — 报告详情（含文件内容）
+router.get('/medical-reports/:id', adminAuth, async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id)
+      .populate('user', 'name phone')
+      .populate('uploadedBy', 'name');
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    res.json({ success: true, data: report });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/admin/medical-reports/:id/audit — 审核报告
+router.patch('/medical-reports/:id/audit', adminAuth, async (req, res) => {
+  try {
+    const { action, rejectReason } = req.body; // action: 'approve' | 'reject'
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+
+    if (action === 'approve') {
+      report.audit_status = 'audited';
+      report.audited_by = req.admin.name;
+      report.audited_at = new Date();
+      report.reject_reason = undefined;
+    } else if (action === 'reject') {
+      report.audit_status = 'rejected';
+      report.audited_by = req.admin.name;
+      report.audited_at = new Date();
+      report.reject_reason = rejectReason || '不符合要求';
+    } else {
+      return res.status(400).json({ success: false, message: 'action 必须是 approve 或 reject' });
+    }
+
+    await report.save();
+    res.json({ success: true, data: report });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 module.exports = router;

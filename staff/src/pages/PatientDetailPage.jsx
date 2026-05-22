@@ -31,6 +31,10 @@ export default function PatientDetailPage() {
   const [showSRDetail, setShowSRDetail] = useState(null)
   const [staffList, setStaffList] = useState([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
+  const [showUploadReport, setShowUploadReport] = useState(false)
+  const [auditLoading, setAuditLoading] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [showRejectInput, setShowRejectInput] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [editingHealth, setEditingHealth] = useState(false)
@@ -163,6 +167,22 @@ export default function PatientDetailPage() {
     toast('随访记录已保存')
     loadFollowUps()
     load()
+  }
+
+  const handleAudit = async (action) => {
+    try {
+      setAuditLoading(true)
+      await staffAPI.auditReport(showReportDetail._id, { action, rejectReason })
+      toast(action === 'approve' ? '已审核通过' : '已驳回')
+      setShowReportDetail(null)
+      setRejectReason('')
+      setShowRejectInput(false)
+      loadReports()
+    } catch (err) {
+      toast(err.message || '操作失败')
+    } finally {
+      setAuditLoading(false)
+    }
   }
 
   if (loading) return <div className="page-loading">加载中...</div>
@@ -618,7 +638,10 @@ export default function PatientDetailPage() {
       {/* ── Reports Tab ── */}
       {tab === 'reports' && (
         <div className="card">
-          <div className="card-header"><div className="card-title">体检报告</div></div>
+          <div className="card-header">
+            <div className="card-title">体检报告</div>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>
+          </div>
           {reports.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无体检报告</div>
           ) : (
@@ -765,8 +788,45 @@ export default function PatientDetailPage() {
                 </div>
               )}
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowReportDetail(null)}>关闭</button>
+            <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
+              {/* 审核操作区：仅当报告待审核时展示 */}
+              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected' && (
+                <>
+                  {showRejectInput ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      <textarea
+                        className="form-input"
+                        rows={2}
+                        placeholder="请填写驳回原因"
+                        value={rejectReason}
+                        onChange={e => setRejectReason(e.target.value)}
+                        style={{ fontSize: 13 }}
+                      />
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button className="btn btn-danger btn-sm" style={{ flex: 1 }}
+                          disabled={auditLoading || !rejectReason.trim()}
+                          onClick={() => handleAudit('reject')}>
+                          确认驳回
+                        </button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setShowRejectInput(false); setRejectReason('') }}>取消</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-primary btn-sm" style={{ flex: 1 }}
+                        disabled={auditLoading}
+                        onClick={() => handleAudit('approve')}>
+                        ✓ 审核通过
+                      </button>
+                      <button className="btn btn-secondary btn-sm" style={{ flex: 1 }}
+                        onClick={() => setShowRejectInput(true)}>
+                        ✕ 驳回
+                      </button>
+                    </div>
+                  )}
+                </>
+              )}
+              <button className="btn btn-secondary" onClick={() => { setShowReportDetail(null); setShowRejectInput(false); setRejectReason('') }}>关闭</button>
             </div>
           </div>
         </div>
@@ -814,6 +874,15 @@ export default function PatientDetailPage() {
           onSaved={() => { setShowReferralModal(false); toast('转介已发送') }}
         />
       )}
+
+      {/* 上传体检报告弹窗 */}
+      {showUploadReport && (
+        <UploadReportModal
+          patientId={id}
+          onClose={() => setShowUploadReport(false)}
+          onSaved={() => { setShowUploadReport(false); toast('报告已上传'); loadReports() }}
+        />
+      )}
     </div>
   )
 }
@@ -842,6 +911,108 @@ function formatRecordValue(r) {
   if (r.type === 'sleep') return `${r.value} h`
   if (r.type === 'mood') return `${r.value} / 10`
   return r.value ?? '-'
+}
+
+// ── 上传体检报告弹窗 ───────────────────────────────────────
+const REPORT_TYPE_OPTIONS = [
+  '血常规', '尿常规', '生化全套', '血脂', '血糖', '肝功能', '肾功能',
+  '心电图', '胸片', '腹部B超', '甲状腺B超', 'CT', 'MRI',
+  '功能医学检测', '基因检测', '其他',
+]
+
+function UploadReportModal({ patientId, onClose, onSaved }) {
+  const toast = useToast()
+  const [form, setForm] = useState({ title: '', type: '', hospital: '', date: '', note: '' })
+  const [fileData, setFileData] = useState(null) // { content, mimeType, fileSize, name }
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const handleFile = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    if (file.size > 10 * 1024 * 1024) { setError('文件不能超过 10MB'); return }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setFileData({ content: ev.target.result, mimeType: file.type, fileSize: file.size, name: file.name })
+      if (!form.title) setForm(f => ({ ...f, title: file.name.replace(/\.[^.]+$/, '') }))
+    }
+    reader.readAsDataURL(file)
+  }
+
+  const handleSubmit = async () => {
+    if (!form.title) { setError('请填写报告标题'); return }
+    try {
+      setSaving(true); setError('')
+      await staffAPI.uploadReport({
+        patientId,
+        title: form.title,
+        type: form.type || '其他',
+        hospital: form.hospital,
+        date: form.date,
+        note: form.note,
+        content: fileData?.content,
+        mimeType: fileData?.mimeType,
+        fileSize: fileData?.fileSize,
+      })
+      onSaved()
+    } catch (err) {
+      setError(err.message || '上传失败')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">上传体检报告</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {error && <div className="alert alert-error">{error}</div>}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">报告标题 *</label>
+            <input className="form-input" value={form.title} onChange={set('title')} placeholder="如：2024年年度体检报告" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">报告类型</label>
+            <select className="form-input" value={form.type} onChange={set('type')}>
+              <option value="">-- 请选择 --</option>
+              {REPORT_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+              <label className="form-label">医院 / 机构</label>
+              <input className="form-input" value={form.hospital} onChange={set('hospital')} placeholder="如：协和医院" />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+              <label className="form-label">报告日期</label>
+              <input className="form-input" type="date" value={form.date} onChange={set('date')} />
+            </div>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">报告文件（图片/PDF，≤10MB）</label>
+            <input type="file" accept="image/*,.pdf" onChange={handleFile}
+              style={{ fontSize: 13, padding: '6px 0' }} />
+            {fileData && <div style={{ fontSize: 12, color: '#22A06B', marginTop: 4 }}>✓ {fileData.name}</div>}
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">备注</label>
+            <textarea className="form-input" rows={2} value={form.note} onChange={set('note')} placeholder="补充说明（可选）" />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? '上传中...' : '确认上传'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── 赠送权益弹窗 ───────────────────────────────────────────
