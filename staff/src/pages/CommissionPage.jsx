@@ -32,7 +32,7 @@ export default function CommissionPage() {
     navigator.clipboard.writeText(referralCode).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000) })
   }
 
-  const shareLink = `https://jiayihui-app-production.up.railway.app?ref=${referralCode}`
+  const shareLink = `http://121.40.156.39?ref=${referralCode}`
 
   if (loading) return <div className="page-loading">加载中...</div>
 

@@ -14,7 +14,7 @@ const { height: SCREEN_H } = Dimensions.get('window');
 // 微信 OAuth 配置（需在微信开放平台申请）
 const WECHAT_APPID = process.env.EXPO_PUBLIC_WECHAT_APPID || '';
 const REDIRECT_URI = encodeURIComponent(
-  (typeof window !== 'undefined' ? window.location.origin : 'https://jiayihui-app-production.up.railway.app') + '/auth/wechat/callback'
+  (typeof window !== 'undefined' ? window.location.origin : 'http://121.40.156.39') + '/auth/wechat/callback'
 );
 // 判断是否在微信浏览器内
 const isInWechat = typeof navigator !== 'undefined' && /MicroMessenger/i.test(navigator.userAgent);

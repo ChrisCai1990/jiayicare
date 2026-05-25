@@ -1,5 +1,5 @@
 // ─── API Service ─────────────────────────────────────────────────
-const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://mongodb-production-06f7.up.railway.app/api';
+const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'http://121.40.156.39/api';
 
 // Simple storage: uses localStorage on web, falls back gracefully
 const storage = {
