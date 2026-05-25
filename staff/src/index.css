@@ -272,34 +272,83 @@ textarea.form-input { resize: vertical; }
   /* 主内容区 */
   .main-content {
     margin-left: 0;
-    padding: 72px 16px 32px;
+    padding: 64px 12px 32px;
   }
 
   /* 页面头部堆叠 */
-  .page-header { flex-direction: column; align-items: flex-start; gap: 12px; }
+  .page-header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 16px; }
   .page-title { font-size: 18px; }
+  .page-header .btn { width: 100%; justify-content: center; }
 
   /* 统计卡片两列 */
-  .stats-grid { grid-template-columns: repeat(2, 1fr); }
-  .stat-card { padding: 14px; gap: 10px; }
-  .stat-card-value { font-size: 22px; }
-  .stat-card-icon { width: 38px; height: 38px; font-size: 18px; }
+  .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat-card { padding: 12px; gap: 8px; }
+  .stat-card-value { font-size: 20px; }
+  .stat-card-icon { width: 36px; height: 36px; font-size: 16px; border-radius: 8px; }
+  .stat-card-label { font-size: 11px; }
+
+  /* 卡片：去掉 overflow:hidden，允许横向滚动 */
+  .card {
+    overflow-x: auto;
+    overflow-y: visible;
+    -webkit-overflow-scrolling: touch;
+    border-radius: var(--radius);
+  }
 
   /* 表格横向滚动 */
-  .card { overflow-x: auto; }
-  .table { min-width: 600px; }
+  .table { min-width: 580px; }
+  .table thead th { font-size: 11px; padding: 8px 10px; }
+  .table tbody td { padding: 10px 10px; font-size: 12px; }
 
-  /* 弹窗全屏 */
+  /* 搜索表单竖排 */
+  .card-body > form {
+    flex-direction: column !important;
+    gap: 10px !important;
+  }
+  .card-body > form > div {
+    width: 100% !important;
+    flex: none !important;
+  }
+  .card-body > form input,
+  .card-body > form select {
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+  .card-body > form > button,
+  .card-body > form > .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  /* 按钮组在表格中压缩 */
+  .table .btn { padding: 4px 8px; font-size: 11px; }
+  .table td[style*="white-space: nowrap"] { white-space: normal !important; }
+
+  /* Tab 栏横向滚动 */
+  .tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
+  .tab-btn { white-space: nowrap; padding: 8px 12px; font-size: 13px; }
+
+  /* 弹窗底部弹出 */
   .modal-overlay { padding: 0; align-items: flex-end; }
-  .modal { border-radius: 16px 16px 0 0; max-width: 100%; }
+  .modal { border-radius: 16px 16px 0 0; max-width: 100%; max-height: 90vh; overflow-y: auto; }
+  .modal-header { padding: 16px 16px 12px; }
+  .modal-body { padding: 0 16px 12px; }
+  .modal-footer { padding: 0 16px 20px; flex-direction: column; }
+  .modal-footer .btn { width: 100%; justify-content: center; }
 
   /* 登录页自适应 */
-  .login-card { width: 90%; padding: 28px 20px; }
+  .login-card { width: 92%; padding: 24px 16px; }
 
-  /* Tabs 可横向滚动 */
-  .tabs { overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
-  .tab-btn { white-space: nowrap; }
+  /* 状态筛选按钮 */
+  .page > div > .btn { font-size: 12px; padding: 5px 10px; }
 
   /* Toast 底部居中 */
-  .toast { right: 16px; left: 16px; bottom: 16px; text-align: center; }
+  .toast { right: 12px; left: 12px; bottom: 12px; text-align: center; }
+
+  /* 分页按钮 */
+  div[style*="justify-content: center"] > .btn { padding: 6px 12px; font-size: 12px; }
+
+  /* 卡片头部 */
+  .card-header { padding: 12px 14px; }
+  .card-body { padding: 14px; }
 }
