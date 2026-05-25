@@ -1,4 +1,4 @@
-const BASE = import.meta.env.VITE_API_URL || 'https://mongodb-production-06f7.up.railway.app/api'
+const BASE = import.meta.env.VITE_API_URL || 'http://121.40.156.39/api'
 
 export const getToken   = ()  => localStorage.getItem('jy_staff_token')
 export const setToken   = (t) => localStorage.setItem('jy_staff_token', t)

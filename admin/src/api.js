@@ -1,4 +1,4 @@
-const BASE = 'https://mongodb-production-06f7.up.railway.app/api/admin'
+const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/admin` : 'http://121.40.156.39/api/admin'
 
 let _token = localStorage.getItem('jy_admin_token') || ''
 
