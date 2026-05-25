@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
 
@@ -24,6 +24,7 @@ export default function Layout() {
   const { staff, logout } = useStaff()
   const nav = useNavigate()
   const loc = useLocation()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -32,12 +33,31 @@ export default function Layout() {
     }
   }
 
+  const handleNavClick = (path) => {
+    nav(path)
+    setSidebarOpen(false)
+  }
+
   const initials = staff?.name?.slice(0, 1) || 'S'
 
   return (
     <div className="app-layout">
+      {/* 移动端顶部栏 */}
+      <header className="mobile-header">
+        <button className="mobile-menu-btn" onClick={() => setSidebarOpen(true)}>
+          <span /><span /><span />
+        </button>
+        <div className="mobile-header-title">嘉医汇</div>
+        <div className="mobile-header-avatar">{initials}</div>
+      </header>
+
+      {/* 遮罩层 */}
+      {sidebarOpen && (
+        <div className="sidebar-overlay" onClick={() => setSidebarOpen(false)} />
+      )}
+
       {/* Sidebar */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-logo">
           <div className="sidebar-logo-title">嘉医汇</div>
           <div className="sidebar-logo-sub">做家庭医生行业领跑者</div>
@@ -53,7 +73,7 @@ export default function Layout() {
               <div
                 key={item.path}
                 className={`sidebar-item ${isActive ? 'active' : ''}`}
-                onClick={() => nav(item.path)}
+                onClick={() => handleNavClick(item.path)}
               >
                 <span className="sidebar-item-icon">{item.icon}</span>
                 <span>{item.label}</span>
