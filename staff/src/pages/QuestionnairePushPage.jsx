@@ -2,6 +2,12 @@ import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
+const STATUS_META = {
+  draft:  { label: '草稿',   color: '#D97706', bg: '#FEF3C7' },
+  active: { label: '已发布', color: '#22A06B', bg: '#ECFDF5' },
+  closed: { label: '已关闭', color: '#8AA89C', bg: '#f5f5f5' },
+}
+
 const fmtAnswer = (a) => {
   if (a === undefined || a === null || a === '') return '未填写'
   if (Array.isArray(a)) return a.join('、')
@@ -189,28 +195,46 @@ export default function QuestionnairePushPage() {
         <div>
           {questionnaires.length === 0 ? (
             <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
-              暂无可用问卷（请超管在管理后台创建并发布问卷）
+              暂无问卷模板，请超管在
+              <a href="http://121.40.156.39:8081" target="_blank" rel="noreferrer" style={{ color: '#1E6B50', margin: '0 4px' }}>管理后台</a>
+              创建并发布问卷
             </div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {questionnaires.map(q => (
-                <div key={q._id} className="card">
-                  <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>{q.title}</div>
-                      {q.description && <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 4 }}>{q.description}</div>}
-                      <div style={{ fontSize: 12, color: '#aaa' }}>
-                        {q.questions?.length || 0} 道题
-                        {q.deadline && <span style={{ color: '#D97706', marginLeft: 8 }}>· 截止 {q.deadline}</span>}
+              {questionnaires.map(q => {
+                const meta = STATUS_META[q.status] || STATUS_META.draft
+                const canPush = q.status === 'active'
+                return (
+                  <div key={q._id} className="card">
+                    <div style={{ padding: '14px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                          <span style={{ fontWeight: 600, fontSize: 15 }}>{q.title}</span>
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: meta.bg, color: meta.color, fontWeight: 600 }}>
+                            {meta.label}
+                          </span>
+                        </div>
+                        {q.description && <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 4 }}>{q.description}</div>}
+                        <div style={{ fontSize: 12, color: '#aaa' }}>
+                          {q.questions?.length || 0} 道题
+                          {q.deadline && <span style={{ color: '#D97706', marginLeft: 8 }}>· 截止 {q.deadline}</span>}
+                          {!canPush && <span style={{ color: '#D97706', marginLeft: 8 }}>· 未发布，暂不可推送</span>}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setViewModal(q)}>📊 查看回答</button>
+                        <button
+                          className="btn btn-primary btn-sm"
+                          onClick={() => canPush && setPushModal(q)}
+                          disabled={!canPush}
+                          style={!canPush ? { opacity: 0.45, cursor: 'not-allowed' } : {}}
+                          title={!canPush ? '请先在管理后台发布此问卷' : ''}
+                        >📤 推送</button>
                       </div>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setViewModal(q)}>📊 查看回答</button>
-                      <button className="btn btn-primary btn-sm" onClick={() => setPushModal(q)}>📤 推送</button>
-                    </div>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           )}
         </div>

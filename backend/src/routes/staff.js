@@ -656,9 +656,9 @@ router.post('/knowledge/:id/push', staffAuth, async (req, res) => {
 });
 
 // ── 问卷推送 ───────────────────────────────────────────────
-// GET /api/staff/questionnaires — 问卷模板列表（复用 admin 问卷）
+// GET /api/staff/questionnaires — 问卷模板列表（含草稿，供医护查看；仅 active 可推送）
 router.get('/questionnaires', staffAuth, async (req, res) => {
-  const qs = await DynamicQuestionnaire.find({ status: 'active' }).select('title description').sort({ createdAt: -1 });
+  const qs = await DynamicQuestionnaire.find().select('title description status questions deadline createdAt').sort({ createdAt: -1 });
   res.json({ success: true, data: qs });
 });
 
