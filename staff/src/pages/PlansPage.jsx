@@ -45,18 +45,10 @@ export default function PlansPage() {
           <h1 className="page-title">健康方案</h1>
           <p className="page-subtitle">共 {total} 个方案</p>
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {typeFilter === 'annual_mgmt' && (
-            <button className="btn btn-primary" onClick={() => setShowAnnualModal(true)}>
-              📋 新建年度管理方案
-            </button>
-          )}
-          <button className="btn btn-secondary" onClick={() => setShowModal(true)}>＋ 新建方案</button>
-        </div>
       </div>
 
-      {/* 类型筛选 */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      {/* 类型筛选 + 新建按钮同行 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {[
           { v: '', l: '全部' },
           { v: 'annual_checkup', l: '年度体检方案' },
@@ -71,6 +63,20 @@ export default function PlansPage() {
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setTypeFilter(opt.v)}>{opt.l}</button>
         ))}
+
+        {/* 新建按钮跟随当前 Tab */}
+        <div style={{ marginLeft: 'auto' }}>
+          {typeFilter === 'annual_mgmt' ? (
+            <button className="btn btn-primary btn-sm" onClick={() => setShowAnnualModal(true)}>
+              ＋ 新建年度管理方案
+            </button>
+          ) : (
+            <button className="btn btn-primary btn-sm"
+              onClick={() => setShowModal(true)}>
+              ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card">
@@ -98,7 +104,7 @@ export default function PlansPage() {
           </table>}
       </div>
 
-      {showModal && <NewPlanModal nav={nav} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
+      {showModal && <NewPlanModal nav={nav} defaultType={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
       {showAnnualModal && <AnnualPlanEntryModal onClose={() => setShowAnnualModal(false)} nav={nav} />}
     </div>
   )
@@ -235,8 +241,8 @@ function PatientSearchInput({ value, onChange }) {
   )
 }
 
-function NewPlanModal({ onClose, onSaved, nav }) {
-  const [form, setForm] = useState({ patientId: '', type: 'annual_checkup', title: '', description: '', year: new Date().getFullYear() })
+function NewPlanModal({ onClose, onSaved, nav, defaultType = 'annual_checkup' }) {
+  const [form, setForm] = useState({ patientId: '', type: defaultType, title: '', description: '', year: new Date().getFullYear() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
