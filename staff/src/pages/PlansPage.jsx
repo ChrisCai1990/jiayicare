@@ -98,7 +98,7 @@ export default function PlansPage() {
           </table>}
       </div>
 
-      {showModal && <NewPlanModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
+      {showModal && <NewPlanModal nav={nav} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
       {showAnnualModal && <AnnualPlanEntryModal onClose={() => setShowAnnualModal(false)} nav={nav} />}
     </div>
   )
@@ -235,15 +235,23 @@ function PatientSearchInput({ value, onChange }) {
   )
 }
 
-function NewPlanModal({ onClose, onSaved }) {
+function NewPlanModal({ onClose, onSaved, nav }) {
   const [form, setForm] = useState({ patientId: '', type: 'annual_checkup', title: '', description: '', year: new Date().getFullYear() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
+  const isAnnualMgmt = form.type === 'annual_mgmt'
+
   const handleSubmit = async e => {
     if (e && e.preventDefault) e.preventDefault()
     if (!form.patientId) { setError('请搜索并选择会员'); return }
+    // 年度管理方案跳转专属配置页，不走 HealthPlan 流程
+    if (isAnnualMgmt) {
+      onClose()
+      nav(`/patients/${form.patientId}/annual-plan`)
+      return
+    }
     if (!form.title) { setError('方案名称不能为空'); return }
     setSaving(true); setError('')
     try { await staffAPI.createPlan(form); onSaved() }
@@ -279,22 +287,33 @@ function NewPlanModal({ onClose, onSaved }) {
               <option value="psychology">心理咨询方案</option>
             </select>
           </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案名称 *</label>
-            <input className="form-input" placeholder="如：2025年度体检方案" value={form.title} onChange={set('title')} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案年度</label>
-            <input className="form-input" type="number" value={form.year} onChange={set('year')} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案说明</label>
-            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={form.description} onChange={set('description')} />
-          </div>
+          {/* 年度管理方案：不需要填名称，直接跳转专属页 */}
+          {isAnnualMgmt ? (
+            <div style={{ background: '#EFF6FF', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#0077B6' }}>
+              💡 年度管理方案将进入专属配置页，包含医疗、监测、疫苗、生活方式等6大模块，每位会员每年独立一份
+            </div>
+          ) : (
+            <>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">方案名称 *</label>
+                <input className="form-input" placeholder="如：2025年度体检方案" value={form.title} onChange={set('title')} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">方案年度</label>
+                <input className="form-input" type="number" value={form.year} onChange={set('year')} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">方案说明</label>
+                <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={form.description} onChange={set('description')} />
+              </div>
+            </>
+          )}
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建方案'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? '创建中...' : isAnnualMgmt ? '进入年度方案配置 →' : '创建方案'}
+          </button>
         </div>
       </div>
     </div>
