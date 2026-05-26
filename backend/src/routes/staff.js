@@ -20,6 +20,7 @@ const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
 const Activity       = require('../models/Activity');
 const SessionPackage = require('../models/SessionPackage');
+const AnnualPlan = require('../models/AnnualPlan');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
 
@@ -1240,6 +1241,34 @@ router.put('/marketing/packages/:id', staffAuth, async (req, res) => {
 router.delete('/marketing/packages/:id', staffAuth, async (req, res) => {
   await SessionPackage.findByIdAndDelete(req.params.id);
   res.json({ success: true });
+});
+
+// ── 年度管理方案 ─────────────────────────────────────────────────────
+router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
+  try {
+    const { year } = req.query;
+    const query = { patientId: req.params.id };
+    if (year) query.year = parseInt(year);
+    const plan = await AnnualPlan.findOne(query).sort({ year: -1 });
+    res.json({ success: true, data: plan || null });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
+  try {
+    const { planType, moduleData, notes, year } = req.body;
+    const targetYear = year || new Date().getFullYear();
+    const plan = await AnnualPlan.findOneAndUpdate(
+      { patientId: req.params.id, year: targetYear },
+      { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.staff._id },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, data: plan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 module.exports = router;

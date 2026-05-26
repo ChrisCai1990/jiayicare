@@ -21,6 +21,7 @@ import TeamPage from './pages/TeamPage'
 import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
 import MarketingPage from './pages/MarketingPage'
+import AnnualPlanPage from './pages/AnnualPlanPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -77,6 +78,7 @@ export default function App() {
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/new" element={<NewPatientPage />} />
               <Route path="patients/:id" element={<PatientDetailPage />} />
+              <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
               <Route path="followups" element={<FollowUpsPage />} />
               <Route path="plans" element={<PlansPage />} />
               <Route path="plans/:id" element={<PlanDetailPage />} />

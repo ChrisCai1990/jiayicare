@@ -254,6 +254,7 @@ export default function PatientDetailPage() {
           { key: 'serviceRecords', label: '服务记录' },
           { key: 'reports', label: '体检报告' },
           { key: 'gifts', label: '权益赠送' },
+          { key: 'annualPlan', label: '年度方案' },
         ].map(t => (
           <button
             key={t.key}
@@ -729,6 +730,21 @@ export default function PatientDetailPage() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* ── Annual Plan Tab ── */}
+      {tab === 'annualPlan' && (
+        <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
+          <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
+          <div style={{ fontSize: 18, fontWeight: 600, color: '#1A2B24', marginBottom: 8 }}>年度健康管理方案</div>
+          <div style={{ color: '#8AA89C', fontSize: 14, marginBottom: 24 }}>为会员制定个性化年度健康管理计划，涵盖医疗、监测、疫苗、生活方式等模块</div>
+          <button
+            className="btn btn-primary"
+            onClick={() => nav(`/patients/${id}/annual-plan`)}
+          >
+            进入年度方案配置 →
+          </button>
         </div>
       )}
 

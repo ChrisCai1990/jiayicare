@@ -122,6 +122,10 @@ export const staffAPI = {
   // P4 — Active plan items for report linking
   getActivePlanItems: (patientId) => req(`/staff/patients/${patientId}/active-plan-items`),
 
+  // Annual Plan
+  getAnnualPlan:  (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
+  saveAnnualPlan: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
+
   // 会员营销
   getLevels:         ()     => req('/staff/marketing/levels'),
   createLevel:       (data) => req('/staff/marketing/levels', { method: 'POST', body: JSON.stringify(data) }),
