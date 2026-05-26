@@ -380,22 +380,44 @@ router.patch('/questionnaires/reorder', adminAuth, async (req, res) => {
 
 // POST /api/admin/questionnaires/:id/copy
 router.post('/questionnaires/:id/copy', adminAuth, async (req, res) => {
-  const orig = await DynamicQuestionnaire.findById(req.params.id);
-  if (!orig) return res.status(404).json({ success: false, message: '问卷不存在' });
-  const maxDoc = await DynamicQuestionnaire.findOne().sort({ sortOrder: -1 }).select('sortOrder');
-  const copy = await DynamicQuestionnaire.create({
-    title: orig.title + '（复制）',
-    description: orig.description,
-    questions: orig.questions,
-    targetType: orig.targetType,
-    targetUsers: orig.targetUsers || [],
-    deadline: orig.deadline || '',
-    scoringEnabled: orig.scoringEnabled || false,
-    status: 'draft',
-    createdBy: req.admin._id,
-    sortOrder: (maxDoc?.sortOrder || 0) + 1,
-  });
-  res.json({ success: true, data: copy, message: '问卷复制成功' });
+  try {
+    const orig = await DynamicQuestionnaire.findById(req.params.id);
+    if (!orig) return res.status(404).json({ success: false, message: '问卷不存在' });
+    const maxDoc = await DynamicQuestionnaire.findOne().sort({ sortOrder: -1 }).select('sortOrder');
+
+    // 规范化选项格式：兼容旧版字符串数组（如 ['男','女']）和新版对象数组
+    const normalizeOpts = (opts) => (opts || []).map(o =>
+      typeof o === 'string'
+        ? { label: o, allowInput: false, exclusive: false, score: 0 }
+        : { label: o.label || '', allowInput: !!o.allowInput, exclusive: !!o.exclusive, score: o.score || 0 }
+    );
+
+    const normalizedQuestions = (orig.questions || []).map(q => {
+      const qObj = q.toObject ? q.toObject() : { ...q };
+      return {
+        ...qObj,
+        options:    normalizeOpts(qObj.options),
+        jumpLogic:  qObj.jumpLogic  || [],
+        scoreEnabled: !!qObj.scoreEnabled,
+      };
+    });
+
+    const copy = await DynamicQuestionnaire.create({
+      title: orig.title + '（复制）',
+      description: orig.description,
+      questions: normalizedQuestions,
+      targetType: orig.targetType,
+      targetUsers: orig.targetUsers || [],
+      deadline: orig.deadline || '',
+      scoringEnabled: orig.scoringEnabled || false,
+      status: 'draft',
+      createdBy: req.admin._id,
+      sortOrder: (maxDoc?.sortOrder || 0) + 1,
+    });
+    res.json({ success: true, data: copy, message: '问卷复制成功' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '复制失败：' + err.message });
+  }
 });
 
 // PUT /api/admin/questionnaires/:id
