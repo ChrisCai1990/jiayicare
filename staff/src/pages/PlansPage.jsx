@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
@@ -25,7 +25,6 @@ export default function PlansPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
-  const [patients, setPatients] = useState([])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -37,9 +36,6 @@ export default function PlansPage() {
   }, [typeFilter])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => {
-    staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {})
-  }, [])
 
   return (
     <div className="page">
@@ -94,20 +90,152 @@ export default function PlansPage() {
           </table>}
       </div>
 
-      {showModal && <NewPlanModal patients={patients} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
+      {showModal && <NewPlanModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
     </div>
   )
 }
 
-function NewPlanModal({ patients, onClose, onSaved }) {
+// ── 会员搜索组件（按姓名或手机号实时搜索） ────────────────────────────
+function PatientSearchInput({ value, onChange }) {
+  const [keyword, setKeyword] = useState('')
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [selectedName, setSelectedName] = useState('')
+  const timerRef = useRef(null)
+  const wrapRef = useRef(null)
+
+  // 点击外部关闭下拉
+  useEffect(() => {
+    const handler = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  // 防抖搜索
+  const handleInput = e => {
+    const kw = e.target.value
+    setKeyword(kw)
+    setOpen(true)
+    if (!kw.trim()) { setResults([]); return }
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = await staffAPI.getPatients({ search: kw, limit: 20 })
+        setResults(res.data.patients || [])
+      } catch { setResults([]) }
+      finally { setSearching(false) }
+    }, 300)
+  }
+
+  const handleSelect = patient => {
+    onChange(patient._id)
+    setSelectedName(`${patient.name}  ${patient.phone}`)
+    setKeyword('')
+    setResults([])
+    setOpen(false)
+  }
+
+  const handleClear = () => {
+    onChange('')
+    setSelectedName('')
+    setKeyword('')
+    setResults([])
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {value && selectedName ? (
+        // 已选中态
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 12px', border: '1px solid #1E6B50', borderRadius: 8,
+          background: '#E8F5EF', fontSize: 14,
+        }}>
+          <span>
+            <span style={{ fontWeight: 600, color: '#1A2B24' }}>{selectedName.split('  ')[0]}</span>
+            <span style={{ color: '#8AA89C', marginLeft: 8, fontSize: 13 }}>{selectedName.split('  ')[1]}</span>
+          </span>
+          <button
+            type="button"
+            onClick={handleClear}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 16, lineHeight: 1, padding: 0 }}
+          >✕</button>
+        </div>
+      ) : (
+        // 搜索输入态
+        <div style={{ position: 'relative' }}>
+          <input
+            className="form-input"
+            type="text"
+            value={keyword}
+            onChange={handleInput}
+            onFocus={() => keyword && setOpen(true)}
+            placeholder="输入姓名或手机号搜索会员..."
+            autoComplete="off"
+          />
+          {searching && (
+            <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#aaa' }}>搜索中...</span>
+          )}
+        </div>
+      )}
+
+      {/* 搜索结果下拉 */}
+      {open && !value && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
+          background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto',
+          marginTop: 4,
+        }}>
+          {results.length === 0 && keyword && !searching && (
+            <div style={{ padding: '12px 16px', color: '#aaa', fontSize: 13 }}>未找到匹配会员</div>
+          )}
+          {results.length === 0 && !keyword && (
+            <div style={{ padding: '12px 16px', color: '#aaa', fontSize: 13 }}>请输入姓名或手机号</div>
+          )}
+          {results.map(p => (
+            <div
+              key={p._id}
+              onMouseDown={() => handleSelect(p)}
+              style={{
+                padding: '10px 16px', cursor: 'pointer', fontSize: 14,
+                display: 'flex', alignItems: 'center', gap: 10,
+                borderBottom: '1px solid #F5F2EC',
+              }}
+              onMouseEnter={e => e.currentTarget.style.background = '#F9F6F0'}
+              onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+            >
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%', background: '#1E6B50',
+                color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 13, fontWeight: 600, flexShrink: 0,
+              }}>{p.name?.[0] || '?'}</div>
+              <div>
+                <div style={{ fontWeight: 600, color: '#1A2B24' }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: '#8AA89C' }}>{p.phone}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function NewPlanModal({ onClose, onSaved }) {
   const [form, setForm] = useState({ patientId: '', type: 'annual_checkup', title: '', description: '', year: new Date().getFullYear() })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const handleSubmit = async e => {
-    e.preventDefault()
-    if (!form.patientId || !form.title) { setError('会员和方案名称不能为空'); return }
+    if (e && e.preventDefault) e.preventDefault()
+    if (!form.patientId) { setError('请搜索并选择会员'); return }
+    if (!form.title) { setError('方案名称不能为空'); return }
     setSaving(true); setError('')
     try { await staffAPI.createPlan(form); onSaved() }
     catch (err) { setError(err.message) }
@@ -122,13 +250,13 @@ function NewPlanModal({ patients, onClose, onSaved }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
-        <form onSubmit={handleSubmit} className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">选择会员 *</label>
-            <select className="form-input" value={form.patientId} onChange={set('patientId')} required>
-              <option value="">-- 请选择会员 --</option>
-              {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
-            </select>
+            <label className="form-label">搜索会员 *</label>
+            <PatientSearchInput
+              value={form.patientId}
+              onChange={pid => setForm(f => ({ ...f, patientId: pid }))}
+            />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">方案类型 *</label>
@@ -144,7 +272,7 @@ function NewPlanModal({ patients, onClose, onSaved }) {
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">方案名称 *</label>
-            <input className="form-input" placeholder="如：2025年度体检方案" value={form.title} onChange={set('title')} required />
+            <input className="form-input" placeholder="如：2025年度体检方案" value={form.title} onChange={set('title')} />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">方案年度</label>
@@ -154,7 +282,7 @@ function NewPlanModal({ patients, onClose, onSaved }) {
             <label className="form-label">方案说明</label>
             <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={form.description} onChange={set('description')} />
           </div>
-        </form>
+        </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建方案'}</button>

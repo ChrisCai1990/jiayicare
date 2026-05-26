@@ -1,5 +1,108 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { staffAPI } from '../api'
+
+// ── 会员搜索组件（按姓名或手机号实时搜索） ────────────────────────────
+function PatientSearchInput({ value, onChange }) {
+  const [keyword, setKeyword] = useState('')
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [selectedName, setSelectedName] = useState('')
+  const timerRef = useRef(null)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    const handler = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleInput = e => {
+    const kw = e.target.value
+    setKeyword(kw)
+    setOpen(true)
+    if (!kw.trim()) { setResults([]); return }
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = await staffAPI.getPatients({ search: kw, limit: 20 })
+        setResults(res.data.patients || [])
+      } catch { setResults([]) }
+      finally { setSearching(false) }
+    }, 300)
+  }
+
+  const handleSelect = patient => {
+    onChange(patient._id)
+    setSelectedName(`${patient.name}  ${patient.phone}`)
+    setKeyword('')
+    setResults([])
+    setOpen(false)
+  }
+
+  const handleClear = () => {
+    onChange('')
+    setSelectedName('')
+    setKeyword('')
+    setResults([])
+  }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {value && selectedName ? (
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '8px 12px', border: '1px solid #1E6B50', borderRadius: 8,
+          background: '#E8F5EF', fontSize: 14,
+        }}>
+          <span>
+            <span style={{ fontWeight: 600, color: '#1A2B24' }}>{selectedName.split('  ')[0]}</span>
+            <span style={{ color: '#8AA89C', marginLeft: 8, fontSize: 13 }}>{selectedName.split('  ')[1]}</span>
+          </span>
+          <button type="button" onClick={handleClear}
+            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 16, lineHeight: 1, padding: 0 }}>✕</button>
+        </div>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <input className="form-input" type="text" value={keyword} onChange={handleInput}
+            onFocus={() => keyword && setOpen(true)}
+            placeholder="输入姓名或手机号搜索..." autoComplete="off" />
+          {searching && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#aaa' }}>搜索中...</span>}
+        </div>
+      )}
+      {open && !value && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 9999,
+          background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 200, overflowY: 'auto', marginTop: 4,
+        }}>
+          {results.length === 0 && keyword && !searching && (
+            <div style={{ padding: '12px 16px', color: '#aaa', fontSize: 13 }}>未找到匹配会员</div>
+          )}
+          {results.length === 0 && !keyword && (
+            <div style={{ padding: '12px 16px', color: '#aaa', fontSize: 13 }}>请输入姓名或手机号</div>
+          )}
+          {results.map(p => (
+            <div key={p._id} onMouseDown={() => handleSelect(p)}
+              style={{ padding: '10px 16px', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #F5F2EC' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#F9F6F0'}
+              onMouseLeave={e => e.currentTarget.style.background = '#fff'}
+            >
+              <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#1E6B50', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600, flexShrink: 0 }}>{p.name?.[0] || '?'}</div>
+              <div>
+                <div style={{ fontWeight: 600, color: '#1A2B24' }}>{p.name}</div>
+                <div style={{ fontSize: 12, color: '#8AA89C' }}>{p.phone}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const today = () => new Date().toISOString().slice(0, 10)
 
@@ -59,7 +162,6 @@ const emptyRow = () => ({
 })
 
 export default function FollowUpModal({ patientId, patientName, defaultTheme, onClose, onSaved }) {
-  const [patients, setPatients] = useState([])
   const [staffList, setStaffList] = useState([])
   const [mode, setMode] = useState(defaultTheme ? 'plan' : 'record')  // record | plan
   const [saving, setSaving] = useState(false)
@@ -80,11 +182,8 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
 
   useEffect(() => {
-    if (!patientId) {
-      staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {})
-    }
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
-  }, [patientId])
+  }, [])
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -210,11 +309,11 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
             {/* 会员选择 */}
             {!patientId && (
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">选择会员 *</label>
-                <select className="form-input" value={form.patientId} onChange={set('patientId')} required>
-                  <option value="">-- 请选择会员 --</option>
-                  {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
-                </select>
+                <label className="form-label">搜索会员 *</label>
+                <PatientSearchInput
+                  value={form.patientId}
+                  onChange={pid => setForm(f => ({ ...f, patientId: pid }))}
+                />
               </div>
             )}
 
@@ -279,11 +378,11 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             {!patientId && (
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">选择会员 *</label>
-                <select className="form-input" value={planPatientId} onChange={e => setPlanPatientId(e.target.value)}>
-                  <option value="">-- 请选择会员 --</option>
-                  {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
-                </select>
+                <label className="form-label">搜索会员 *</label>
+                <PatientSearchInput
+                  value={planPatientId}
+                  onChange={pid => setPlanPatientId(pid)}
+                />
               </div>
             )}
 
