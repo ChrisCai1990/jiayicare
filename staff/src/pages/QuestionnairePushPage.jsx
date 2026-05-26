@@ -16,8 +16,8 @@ const fmtAnswer = (a) => {
 }
 
 const Q_TYPE_LABEL = {
-  radio: '单选题', multi: '多选题', scale: '量表题', matrix: '矩阵题',
-  text: '文本输入', number: '数字输入', date: '日期输入',
+  radio: '单选题', multi: '多选题', dropdown: '下拉选择', scale: '量表题',
+  matrix: '矩阵题', text: '文本输入', number: '数字输入', date: '日期输入',
 }
 
 // ── 问卷详情预览弹窗 ────────────────────────────────────────
@@ -72,8 +72,8 @@ function PreviewModal({ questionnaire, onClose }) {
                       {q.required !== false && <span style={{ color: '#DC3545', marginLeft: 4 }}>*</span>}
                     </div>
 
-                    {/* 单选/多选：展示选项 */}
-                    {(q.type === 'radio' || q.type === 'multi') && (
+                    {/* 单选/多选/下拉：展示选项 */}
+                    {(q.type === 'radio' || q.type === 'multi' || q.type === 'dropdown') && (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {(q.options || []).map((opt, oi) => (
                           <div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#4A6558' }}>

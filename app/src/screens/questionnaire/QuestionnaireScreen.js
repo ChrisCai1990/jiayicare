@@ -125,6 +125,39 @@ function MatrixQuestion({ q, answer = {}, onAnswer }) {
   );
 }
 
+function DropdownQuestion({ q, answer, onAnswer }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View>
+      <TouchableOpacity
+        style={[styles.optionRow, { justifyContent: 'space-between' }, answer && styles.optionRowActive]}
+        onPress={() => setOpen(v => !v)}
+        activeOpacity={0.85}
+      >
+        <Text style={[styles.optionText, answer && styles.optionTextActive]}>
+          {answer || '请选择...'}
+        </Text>
+        <Text style={{ color: colors.textMuted, fontSize: 14 }}>{open ? '▲' : '▼'}</Text>
+      </TouchableOpacity>
+      {open && (
+        <View style={{ borderWidth: 1.5, borderColor: colors.border, borderRadius: 8, marginTop: 4, maxHeight: 240, overflow: 'hidden' }}>
+          <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
+            {(q.options || []).map((opt, i) => (
+              <TouchableOpacity
+                key={i}
+                style={{ padding: 12, borderBottomWidth: i < q.options.length - 1 ? 1 : 0, borderBottomColor: colors.border, backgroundColor: answer === opt ? colors.primary + '10' : colors.white }}
+                onPress={() => { onAnswer(opt); setOpen(false); }}
+              >
+                <Text style={{ fontSize: 14, color: answer === opt ? colors.primary : colors.textPrimary, fontWeight: answer === opt ? '600' : '400' }}>{opt}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+      )}
+    </View>
+  );
+}
+
 function NumberQuestion({ q, answer, onAnswer }) {
   return (
     <TextInput
@@ -520,12 +553,13 @@ export default function QuestionnaireScreen({ navigation }) {
           </Text>
 
           <View style={styles.qAnswer}>
-            {q.type === 'radio'  && <RadioQuestion  q={q} answer={answer} onAnswer={setAnswer} />}
-            {q.type === 'multi'  && <MultiQuestion  q={q} answer={answer} onAnswer={setAnswer} />}
-            {q.type === 'scale'  && <ScaleQuestion  q={q} answer={answer} onAnswer={setAnswer} />}
-            {q.type === 'matrix' && <MatrixQuestion q={q} answer={answer} onAnswer={setAnswer} />}
-            {q.type === 'number' && <NumberQuestion q={q} answer={answer} onAnswer={setAnswer} />}
-            {q.type === 'date'   && <DateQuestion   q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'radio'    && <RadioQuestion    q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'multi'    && <MultiQuestion    q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'dropdown' && <DropdownQuestion q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'scale'    && <ScaleQuestion    q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'matrix'   && <MatrixQuestion   q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'number'   && <NumberQuestion   q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'date'     && <DateQuestion     q={q} answer={answer} onAnswer={setAnswer} />}
             {q.type === 'text'   && (
               <TextInput
                 style={styles.textAnswer}
