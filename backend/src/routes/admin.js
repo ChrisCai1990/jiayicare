@@ -337,14 +337,33 @@ router.patch('/checkup-plans/:planId/items/:itemId', adminAuth, async (req, res)
 });
 
 // ── 动态问卷管理 ──────────────────────────────────────────────────
+
+// 工具函数：规范化选项格式（兼容旧版纯字符串和新版对象格式）
+// 必须用 .lean() 获取原始数据后才能正确处理字符串，否则 Mongoose 会将字符串转为空对象
+function normalizeQOptions(opts) {
+  return (opts || []).map(o =>
+    typeof o === 'string'
+      ? { label: o, allowInput: false, exclusive: false, score: 0 }
+      : { label: o.label || '', allowInput: !!o.allowInput, exclusive: !!o.exclusive, score: o.score || 0 }
+  );
+}
+function normalizeQuestions(questions) {
+  return (questions || []).map(q => ({
+    ...q,
+    options:     normalizeQOptions(q.options),
+    jumpLogic:   q.jumpLogic   || [],
+    scoreEnabled: !!q.scoreEnabled,
+  }));
+}
+
 // GET /api/admin/questionnaires
 router.get('/questionnaires', adminAuth, async (req, res) => {
+  // 用 lean() 获取原始 JS 对象，避免 Mongoose 把旧版字符串选项转为空 subdocument
   const list = await DynamicQuestionnaire.find().sort({ sortOrder: 1, createdAt: -1 })
-    .populate('createdBy', 'name');
-  // 附带回答人数
+    .populate('createdBy', 'name').lean();
   const withCounts = await Promise.all(list.map(async q => {
     const count = await QuestionnaireResponse.countDocuments({ questionnaire: q._id });
-    return { ...q.toObject(), responseCount: count };
+    return { ...q, questions: normalizeQuestions(q.questions), responseCount: count };
   }));
   res.json({ success: true, data: withCounts });
 });
@@ -381,31 +400,15 @@ router.patch('/questionnaires/reorder', adminAuth, async (req, res) => {
 // POST /api/admin/questionnaires/:id/copy
 router.post('/questionnaires/:id/copy', adminAuth, async (req, res) => {
   try {
-    const orig = await DynamicQuestionnaire.findById(req.params.id);
+    // 用 lean() 拿到原始数据，保留旧版字符串选项的实际值
+    const orig = await DynamicQuestionnaire.findById(req.params.id).lean();
     if (!orig) return res.status(404).json({ success: false, message: '问卷不存在' });
-    const maxDoc = await DynamicQuestionnaire.findOne().sort({ sortOrder: -1 }).select('sortOrder');
-
-    // 规范化选项格式：兼容旧版字符串数组（如 ['男','女']）和新版对象数组
-    const normalizeOpts = (opts) => (opts || []).map(o =>
-      typeof o === 'string'
-        ? { label: o, allowInput: false, exclusive: false, score: 0 }
-        : { label: o.label || '', allowInput: !!o.allowInput, exclusive: !!o.exclusive, score: o.score || 0 }
-    );
-
-    const normalizedQuestions = (orig.questions || []).map(q => {
-      const qObj = q.toObject ? q.toObject() : { ...q };
-      return {
-        ...qObj,
-        options:    normalizeOpts(qObj.options),
-        jumpLogic:  qObj.jumpLogic  || [],
-        scoreEnabled: !!qObj.scoreEnabled,
-      };
-    });
+    const maxDoc = await DynamicQuestionnaire.findOne().sort({ sortOrder: -1 }).select('sortOrder').lean();
 
     const copy = await DynamicQuestionnaire.create({
       title: orig.title + '（复制）',
       description: orig.description,
-      questions: normalizedQuestions,
+      questions: normalizeQuestions(orig.questions), // lean() 后字符串选项正确还原
       targetType: orig.targetType,
       targetUsers: orig.targetUsers || [],
       deadline: orig.deadline || '',

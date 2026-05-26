@@ -1,8 +1,8 @@
 const mongoose = require('mongoose');
 
-// 选项结构（兼容旧版纯字符串）
+// 选项结构（兼容旧版纯字符串——label 不设 required，防止旧数据迁移时校验失败）
 const optionSchema = new mongoose.Schema({
-  label:      { type: String, required: true },
+  label:      { type: String, default: '' },
   allowInput: { type: Boolean, default: false }, // 选中后可附加文本
   exclusive:  { type: Boolean, default: false }, // 互斥（选此项则取消其他）
   score:      { type: Number,  default: 0 },     // 该选项得分

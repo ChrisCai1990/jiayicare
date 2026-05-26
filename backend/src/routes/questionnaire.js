@@ -149,7 +149,7 @@ router.get('/pending', auth, async (req, res) => {
         { targetType: 'specific', targetUsers: req.user._id },
       ],
       respondedUsers: { $ne: req.user._id },
-    }).select('title description questions deadline scoringEnabled').sort({ sortOrder: 1, createdAt: -1 });
+    }).select('title description questions deadline scoringEnabled').sort({ sortOrder: 1, createdAt: -1 }).lean();
 
     res.json({ success: true, data: questionnaires });
   } catch (err) {
