@@ -36,8 +36,10 @@ const PRESETS = [
 function OptionsEditor({ options = [], onChange }) {
   const [showBatch, setShowBatch] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
+  const [presetPos, setPresetPos] = useState({ top: 0, left: 0 })
   const [batchText, setBatchText] = useState('')
   const presetsRef = useRef(null)
+  const presetBtnRef = useRef(null)
 
   // 点击外部关闭预设面板
   useEffect(() => {
@@ -46,6 +48,15 @@ function OptionsEditor({ options = [], onChange }) {
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
   }, [showPresets])
+
+  const openPresets = () => {
+    if (presetBtnRef.current) {
+      const rect = presetBtnRef.current.getBoundingClientRect()
+      setPresetPos({ top: rect.bottom + 4, left: rect.left })
+    }
+    setShowPresets(v => !v)
+    setShowBatch(false)
+  }
 
   const applyBatch = () => {
     const lines = batchText.split('\n').map(l => l.trim()).filter(Boolean)
@@ -59,17 +70,18 @@ function OptionsEditor({ options = [], onChange }) {
       {/* 工具栏 */}
       <div style={{ display: 'flex', gap: 6, marginBottom: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         <span style={{ fontSize: 12, color: '#8AA89C' }}>选项</span>
-        <div style={{ position: 'relative' }} ref={presetsRef}>
-          <button className="btn btn-sm btn-ghost" style={{ fontSize: 11 }}
-            onClick={() => { setShowPresets(v => !v); setShowBatch(false) }}>
+        <div style={{ position: 'relative' }}>
+          <button ref={presetBtnRef} className="btn btn-sm btn-ghost" style={{ fontSize: 11 }}
+            onClick={openPresets}>
             📋 插入预设 ▾
           </button>
           {showPresets && (
-            <div style={{
-              position: 'absolute', top: '100%', left: 0, zIndex: 100, marginTop: 4,
+            <div ref={presetsRef} style={{
+              position: 'fixed', top: presetPos.top, left: presetPos.left, zIndex: 9999,
               background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8,
-              padding: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)',
-              display: 'flex', flexDirection: 'column', gap: 2, minWidth: 130,
+              padding: 8, boxShadow: '0 4px 20px rgba(0,0,0,0.15)',
+              display: 'flex', flexDirection: 'column', gap: 2, minWidth: 160,
+              maxHeight: 320, overflowY: 'auto',
             }}>
               {PRESETS.map(p => (
                 <button key={p.label}
