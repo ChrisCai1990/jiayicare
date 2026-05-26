@@ -18,6 +18,16 @@ const Q_TYPE_ICONS = {
   matrix: '⊞', text: '✏', number: '#', date: '📅',
 }
 
+// ── 选项格式规范化（兼容旧版字符串数组）────────────────────────────
+const normalizeOptions = (opts) => {
+  if (!opts) return []
+  return opts.map(o =>
+    typeof o === 'string'
+      ? { label: o, allowInput: false, exclusive: false, score: 0 }
+      : { label: o.label || '', allowInput: !!o.allowInput, exclusive: !!o.exclusive, score: o.score || 0 }
+  )
+}
+
 // ── 预设选项库 ────────────────────────────────────────────────────
 const PRESETS = [
   { label: '性别', options: ['男', '女', '其他'] },
@@ -32,8 +42,9 @@ const PRESETS = [
   { label: '民族', options: ['汉族','壮族','满族','回族','苗族','维吾尔族','土家族','彝族','蒙古族','藏族','布依族','侗族','瑶族','朝鲜族','白族','哈尼族','哈萨克族','黎族','傣族','畲族','傈僳族','仡佬族','东乡族','高山族','拉祜族','水族','佤族','纳西族','羌族','土族','仫佬族','锡伯族','柯尔克孜族','达斡尔族','景颇族','毛南族','撒拉族','布朗族','塔吉克族','阿昌族','普米族','鄂温克族','怒族','京族','基诺族','德昂族','保安族','俄罗斯族','裕固族','乌孜别克族','门巴族','鄂伦春族','独龙族','塔塔尔族','赫哲族','珞巴族','其他'] },
 ]
 
-// ── 选项编辑区（含批量输入 + 预设库） ────────────────────────────
-function OptionsEditor({ options = [], onChange }) {
+// ── 增强版选项编辑区 ────────────────────────────────────────────
+// options: [{label, allowInput, exclusive, score}]
+function OptionsEditor({ options = [], onChange, isMulti = false, scoringEnabled = false }) {
   const [showBatch, setShowBatch] = useState(false)
   const [showPresets, setShowPresets] = useState(false)
   const [presetPos, setPresetPos] = useState({ top: 0, left: 0 })
@@ -41,7 +52,6 @@ function OptionsEditor({ options = [], onChange }) {
   const presetsRef = useRef(null)
   const presetBtnRef = useRef(null)
 
-  // 点击外部关闭预设面板
   useEffect(() => {
     if (!showPresets) return
     const handler = (e) => { if (presetsRef.current && !presetsRef.current.contains(e.target)) setShowPresets(false) }
@@ -60,9 +70,14 @@ function OptionsEditor({ options = [], onChange }) {
 
   const applyBatch = () => {
     const lines = batchText.split('\n').map(l => l.trim()).filter(Boolean)
-    if (lines.length) onChange(lines)
+    if (lines.length) onChange(lines.map(l => ({ label: l, allowInput: false, exclusive: false, score: 0 })))
     setShowBatch(false)
     setBatchText('')
+  }
+
+  const updateOpt = (idx, patch) => {
+    const o = options.map((opt, i) => i === idx ? { ...opt, ...patch } : opt)
+    onChange(o)
   }
 
   return (
@@ -87,7 +102,10 @@ function OptionsEditor({ options = [], onChange }) {
                 <button key={p.label}
                   className="btn btn-sm btn-ghost"
                   style={{ justifyContent: 'flex-start', fontSize: 12, padding: '5px 10px' }}
-                  onClick={() => { onChange(p.options); setShowPresets(false) }}>
+                  onClick={() => {
+                    onChange(p.options.map(l => ({ label: l, allowInput: false, exclusive: false, score: 0 })))
+                    setShowPresets(false)
+                  }}>
                   {p.label}
                   <span style={{ color: '#aaa', marginLeft: 4, fontSize: 11 }}>({p.options.length}项)</span>
                 </button>
@@ -119,26 +137,57 @@ function OptionsEditor({ options = [], onChange }) {
         </div>
       )}
 
+      {/* 列表头 */}
+      <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginBottom: 4, paddingLeft: 22, fontSize: 11, color: '#aaa' }}>
+        <span style={{ flex: 1 }}>选项文字</span>
+        <span style={{ width: 72, textAlign: 'center' }}>可附加输入</span>
+        {isMulti && <span style={{ width: 48, textAlign: 'center' }}>互斥</span>}
+        {scoringEnabled && <span style={{ width: 52, textAlign: 'center' }}>分值</span>}
+        <span style={{ width: 20 }} />
+      </div>
+
       {/* 逐条选项 */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
         {options.map((opt, oi) => (
           <div key={oi} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
             <span style={{ fontSize: 11, color: '#aaa', minWidth: 18, textAlign: 'right' }}>{oi + 1}.</span>
-            <input className="form-input" value={opt} placeholder={`选项 ${oi + 1}`} style={{ flex: 1 }}
-              onChange={e => { const o = [...options]; o[oi] = e.target.value; onChange(o) }}
+            <input className="form-input" value={opt.label} placeholder={`选项 ${oi + 1}`} style={{ flex: 1 }}
+              onChange={e => updateOpt(oi, { label: e.target.value })}
               onKeyDown={e => {
-                // 按 Enter 自动添加下一项
-                if (e.key === 'Enter') { e.preventDefault(); onChange([...options, '']) }
+                if (e.key === 'Enter') { e.preventDefault(); onChange([...options, { label: '', allowInput: false, exclusive: false, score: 0 }]) }
               }}
             />
-            <button style={{ border: 'none', background: 'none', color: '#ccc', cursor: 'pointer', fontSize: 16, padding: '0 4px', lineHeight: 1 }}
+            {/* 可附加输入 */}
+            <div style={{ width: 72, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 3 }}>
+              <input type="checkbox" checked={!!opt.allowInput}
+                onChange={e => updateOpt(oi, { allowInput: e.target.checked })}
+                title="选中此选项后可附加文字输入" />
+              <span style={{ fontSize: 11, color: '#888' }}>可填</span>
+            </div>
+            {/* 互斥（仅多选） */}
+            {isMulti && (
+              <div style={{ width: 48, display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 3 }}>
+                <input type="checkbox" checked={!!opt.exclusive}
+                  onChange={e => updateOpt(oi, { exclusive: e.target.checked })}
+                  title="选此选项时取消其他已选项" />
+                <span style={{ fontSize: 11, color: '#888' }}>互斥</span>
+              </div>
+            )}
+            {/* 分值（仅评分启用时） */}
+            {scoringEnabled && (
+              <input type="number" className="form-input" style={{ width: 52, textAlign: 'center' }}
+                value={opt.score || 0}
+                onChange={e => updateOpt(oi, { score: parseFloat(e.target.value) || 0 })}
+                title="该选项得分" />
+            )}
+            <button style={{ border: 'none', background: 'none', color: '#ccc', cursor: 'pointer', fontSize: 16, padding: '0 4px', lineHeight: 1, width: 20 }}
               onClick={() => onChange(options.filter((_, idx) => idx !== oi))}>×</button>
           </div>
         ))}
       </div>
 
       <button className="btn btn-sm btn-ghost" style={{ alignSelf: 'flex-start', marginTop: 6, fontSize: 12 }}
-        onClick={() => onChange([...options, ''])}>
+        onClick={() => onChange([...options, { label: '', allowInput: false, exclusive: false, score: 0 }])}>
         ＋ 添加选项
       </button>
       <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>提示：在选项框内按 Enter 快速添加下一项</div>
@@ -146,14 +195,62 @@ function OptionsEditor({ options = [], onChange }) {
   )
 }
 
+// ── 跳题逻辑编辑区 ────────────────────────────────────────────────
+function JumpLogicEditor({ jumpLogic = [], options = [], allQuestions = [], currentQIndex, onChange }) {
+  const availableTargets = allQuestions.filter((_, i) => i !== currentQIndex)
+  const optionLabels = options.map(o => (typeof o === 'string' ? o : o.label)).filter(Boolean)
+
+  const addRule = () => onChange([...jumpLogic, { condition: optionLabels[0] || '', jumpTo: availableTargets[0]?.id || '' }])
+  const updateRule = (i, patch) => { const r = [...jumpLogic]; r[i] = { ...r[i], ...patch }; onChange(r) }
+  const removeRule = (i) => onChange(jumpLogic.filter((_, idx) => idx !== i))
+
+  if (optionLabels.length === 0 || availableTargets.length === 0) return null
+
+  return (
+    <div style={{ background: '#f0f9ff', border: '1px solid #bee3f8', borderRadius: 6, padding: 10 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#2b6cb0', marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <span>🔀 跳题逻辑</span>
+        <button className="btn btn-sm btn-ghost" style={{ fontSize: 11, color: '#2b6cb0' }} onClick={addRule}>＋ 添加规则</button>
+      </div>
+      {jumpLogic.length === 0 && (
+        <div style={{ fontSize: 12, color: '#aaa' }}>暂无规则。添加规则可让选择某选项后跳转到指定题目。</div>
+      )}
+      {jumpLogic.map((rule, i) => (
+        <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6, fontSize: 12 }}>
+          <span style={{ color: '#666', whiteSpace: 'nowrap' }}>如果回答</span>
+          <select value={rule.condition}
+            onChange={e => updateRule(i, { condition: e.target.value })}
+            style={{ border: '1px solid #ddd', borderRadius: 4, padding: '3px 6px', fontSize: 12, background: '#fff', flex: 1 }}>
+            {optionLabels.map(l => <option key={l} value={l}>{l}</option>)}
+          </select>
+          <span style={{ color: '#666', whiteSpace: 'nowrap' }}>则跳转到</span>
+          <select value={rule.jumpTo}
+            onChange={e => updateRule(i, { jumpTo: e.target.value })}
+            style={{ border: '1px solid #ddd', borderRadius: 4, padding: '3px 6px', fontSize: 12, background: '#fff', flex: 1 }}>
+            {availableTargets.map((q, qi) => (
+              <option key={q.id} value={q.id}>
+                Q{allQuestions.findIndex(aq => aq.id === q.id) + 1} {q.text ? `· ${q.text.slice(0, 20)}` : ''}
+              </option>
+            ))}
+          </select>
+          <button style={{ border: 'none', background: 'none', color: '#f87171', cursor: 'pointer', fontSize: 14, padding: '0 2px' }}
+            onClick={() => removeRule(i)}>×</button>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── 单题编辑卡 ────────────────────────────────────────────────────
-function QuestionCard({ q, i, total, onUpdate, onRemove, onMove }) {
+function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, scoringEnabled }) {
   const [collapsed, setCollapsed] = useState(false)
 
   const handleTypeChange = (type) => {
     const upd = { type }
     if (type === 'radio' || type === 'multi' || type === 'dropdown') {
-      upd.options = q.options?.length ? q.options : ['', '']
+      upd.options = q.options?.length
+        ? normalizeOptions(q.options)
+        : [{ label: '', allowInput: false, exclusive: false, score: 0 }, { label: '', allowInput: false, exclusive: false, score: 0 }]
     }
     if (type === 'scale')  { upd.min = 1; upd.max = 10; upd.minLabel = ''; upd.maxLabel = '' }
     if (type === 'matrix') { upd.rows = q.rows?.length ? q.rows : ['项目1']; upd.cols = q.cols?.length ? q.cols : ['无', '轻度', '中度', '重度'] }
@@ -163,13 +260,14 @@ function QuestionCard({ q, i, total, onUpdate, onRemove, onMove }) {
     onUpdate(upd)
   }
 
+  const hasOptions = q.type === 'radio' || q.type === 'multi' || q.type === 'dropdown'
+
   return (
     <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, background: '#fff', overflow: 'hidden' }}>
       {/* 题目头部 */}
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 12px', background: '#f9f7f3', borderBottom: collapsed ? 'none' : '1px solid #f0ece4' }}>
         <span style={{ fontWeight: 700, color: '#1E6B50', fontSize: 13, minWidth: 28 }}>Q{i + 1}</span>
 
-        {/* 题型选择 */}
         <select value={q.type} onChange={e => handleTypeChange(e.target.value)}
           style={{ border: '1px solid #ddd', borderRadius: 4, padding: '3px 6px', fontSize: 12, background: '#fff' }}>
           {Object.entries(Q_TYPE_LABELS).map(([k, v]) => (
@@ -177,7 +275,6 @@ function QuestionCard({ q, i, total, onUpdate, onRemove, onMove }) {
           ))}
         </select>
 
-        {/* 题目文字（折叠时预览） */}
         {collapsed ? (
           <span style={{ flex: 1, fontSize: 13, color: '#4A6558', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {q.text || <span style={{ color: '#ccc' }}>（未填写题目）</span>}
@@ -190,7 +287,6 @@ function QuestionCard({ q, i, total, onUpdate, onRemove, onMove }) {
           </label>
         )}
 
-        {/* 操作按钮 */}
         <div style={{ display: 'flex', gap: 2, marginLeft: collapsed ? 0 : undefined, flexShrink: 0 }}>
           <button title="折叠/展开" onClick={() => setCollapsed(v => !v)}
             style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#aaa', fontSize: 14, padding: '2px 4px' }}>
@@ -216,11 +312,34 @@ function QuestionCard({ q, i, total, onUpdate, onRemove, onMove }) {
                 onChange={e => onUpdate({ required: e.target.checked })} />
               必填
             </label>
+            {scoringEnabled && (
+              <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', paddingTop: 8, color: '#2b6cb0' }}>
+                <input type="checkbox" checked={!!q.scoreEnabled}
+                  onChange={e => onUpdate({ scoreEnabled: e.target.checked })} />
+                参与评分
+              </label>
+            )}
           </div>
 
           {/* 单选 / 多选 / 下拉 */}
-          {(q.type === 'radio' || q.type === 'multi' || q.type === 'dropdown') && (
-            <OptionsEditor options={q.options || []} onChange={opts => onUpdate({ options: opts })} />
+          {hasOptions && (
+            <OptionsEditor
+              options={normalizeOptions(q.options)}
+              onChange={opts => onUpdate({ options: opts })}
+              isMulti={q.type === 'multi'}
+              scoringEnabled={scoringEnabled && !!q.scoreEnabled}
+            />
+          )}
+
+          {/* 跳题逻辑（单选/下拉/多选题可设置） */}
+          {hasOptions && (
+            <JumpLogicEditor
+              jumpLogic={q.jumpLogic || []}
+              options={normalizeOptions(q.options)}
+              allQuestions={allQuestions}
+              currentQIndex={i}
+              onChange={rules => onUpdate({ jumpLogic: rules })}
+            />
           )}
 
           {/* 量表 */}
@@ -299,8 +418,9 @@ function AddQuestionBar({ onAdd }) {
     { type: 'date',     label: '日期' },
   ]
   const newQ = (type) => {
-    const base = { id: `q${Date.now()}`, type, text: '', required: true }
-    if (type === 'radio' || type === 'multi' || type === 'dropdown') base.options = ['', '']
+    const base = { id: `q${Date.now()}`, type, text: '', required: true, scoreEnabled: false, jumpLogic: [] }
+    if (type === 'radio' || type === 'multi' || type === 'dropdown')
+      base.options = [{ label: '', allowInput: false, exclusive: false, score: 0 }, { label: '', allowInput: false, exclusive: false, score: 0 }]
     if (type === 'scale')  { base.min = 1; base.max = 10; base.minLabel = ''; base.maxLabel = '' }
     if (type === 'matrix') { base.rows = ['项目1']; base.cols = ['无', '轻度', '中度', '重度'] }
     if (type === 'number' || type === 'text' || type === 'date') base.placeholder = ''
@@ -326,11 +446,17 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!questionnaire?._id
   const [form, setForm] = useState({
-    title:       questionnaire?.title       || '',
-    description: questionnaire?.description || '',
-    questions:   questionnaire?.questions   || [],
-    targetType:  questionnaire?.targetType  || 'all',
-    deadline:    questionnaire?.deadline    || '',
+    title:          questionnaire?.title          || '',
+    description:    questionnaire?.description    || '',
+    questions:      (questionnaire?.questions || []).map(q => ({
+      ...q,
+      options:   normalizeOptions(q.options),
+      jumpLogic: q.jumpLogic || [],
+      scoreEnabled: !!q.scoreEnabled,
+    })),
+    targetType:     questionnaire?.targetType     || 'all',
+    deadline:       questionnaire?.deadline       || '',
+    scoringEnabled: questionnaire?.scoringEnabled || false,
   })
   const [loading, setLoading] = useState(false)
 
@@ -363,7 +489,7 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
 
   return (
     <div className="modal-overlay" onClick={onClose}>
-      <div className="modal" style={{ maxWidth: 780, width: '96%', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
+      <div className="modal" style={{ maxWidth: 820, width: '96%', maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}
         onClick={e => e.stopPropagation()}>
         <div className="modal-header">
           <div className="modal-title">{isEdit ? '✏️ 编辑问卷' : '📝 新建问卷'}</div>
@@ -380,20 +506,33 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
             <textarea className="form-input" rows={2} value={form.description}
               onChange={e => set('description', e.target.value)}
               placeholder="问卷说明（可选）" />
-            <div style={{ display: 'flex', gap: 10 }}>
-              <div style={{ flex: 1 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
                 <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>推送对象</div>
                 <select className="form-input" value={form.targetType} onChange={e => set('targetType', e.target.value)}>
                   <option value="all">全体用户</option>
                   <option value="specific">指定用户（医护端推送时选人）</option>
                 </select>
               </div>
-              <div style={{ flex: 1 }}>
+              <div style={{ flex: 1, minWidth: 160 }}>
                 <div style={{ fontSize: 12, color: '#666', marginBottom: 4 }}>截止日期（可选）</div>
                 <input type="date" className="form-input" value={form.deadline}
                   onChange={e => set('deadline', e.target.value)} />
               </div>
+              <div style={{ minWidth: 140, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div style={{ fontSize: 12, color: '#666' }}>评分功能</div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', paddingTop: 8 }}>
+                  <input type="checkbox" checked={!!form.scoringEnabled}
+                    onChange={e => set('scoringEnabled', e.target.checked)} />
+                  <span style={{ color: form.scoringEnabled ? '#2b6cb0' : '#666' }}>启用评分自动计算</span>
+                </label>
+              </div>
             </div>
+            {form.scoringEnabled && (
+              <div style={{ fontSize: 12, color: '#2b6cb0', background: '#ebf8ff', borderRadius: 6, padding: '6px 10px' }}>
+                💡 启用评分后，可在各题目的"可参与评分"选项中设置选项分值，提交时自动汇总总分。
+              </div>
+            )}
           </div>
 
           {/* 题目列表 */}
@@ -417,9 +556,11 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
                   <QuestionCard
                     key={q.id}
                     q={q} i={i} total={form.questions.length}
+                    allQuestions={form.questions}
                     onUpdate={upd => updateQ(i, upd)}
                     onRemove={() => removeQ(i)}
                     onMove={dir => moveQ(i, dir)}
+                    scoringEnabled={form.scoringEnabled}
                   />
                 ))}
               </div>
@@ -456,7 +597,17 @@ function ResponsesModal({ questionnaire, onClose }) {
   const fmtAnswer = (a) => {
     if (!a && a !== 0) return '未填写'
     if (Array.isArray(a)) return a.join('、')
-    if (typeof a === 'object') return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('；')
+    if (typeof a === 'object') {
+      if (a.value !== undefined) {
+        const inputsStr = Object.entries(a.inputs || {}).map(([k, v]) => `${k}: ${v}`).join('，')
+        return a.value + (inputsStr ? `（备注：${inputsStr}）` : '')
+      }
+      if (a.values !== undefined) {
+        const inputsStr = Object.entries(a.inputs || {}).map(([k, v]) => `${k}: ${v}`).join('，')
+        return a.values.join('、') + (inputsStr ? `（备注：${inputsStr}）` : '')
+      }
+      return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('；')
+    }
     return String(a)
   }
 
@@ -476,7 +627,14 @@ function ResponsesModal({ questionnaire, onClose }) {
             <div key={resp._id} style={{ marginBottom: 20, border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
               <div style={{ background: '#f5f0e8', padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontWeight: 600 }}>{resp.user?.name || '匿名'} · {resp.user?.phone}</span>
-                <span style={{ fontSize: 12, color: '#888' }}>{new Date(resp.submittedAt).toLocaleString('zh-CN')}</span>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                  {resp.totalScore > 0 && (
+                    <span style={{ fontSize: 13, fontWeight: 700, color: '#2b6cb0', background: '#ebf8ff', padding: '2px 8px', borderRadius: 4 }}>
+                      得分：{resp.totalScore}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 12, color: '#888' }}>{new Date(resp.submittedAt).toLocaleString('zh-CN')}</span>
+                </div>
               </div>
               <div style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {questionnaire.questions?.map((q, qi) => (
@@ -505,6 +663,7 @@ export default function QuestionnairePage() {
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [viewingResponses, setViewingResponses] = useState(null)
+  const [reordering, setReordering] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -526,6 +685,28 @@ export default function QuestionnairePage() {
     catch (err) { toast('❌ ' + err.message) }
   }
 
+  const copy = async (q) => {
+    try { await adminAPI.copyQuestionnaire(q._id); toast('✅ 问卷已复制为草稿'); load() }
+    catch (err) { toast('❌ ' + err.message) }
+  }
+
+  // 上移/下移问卷（调整 sortOrder）
+  const moveQuestionnaire = async (idx, dir) => {
+    const newList = [...list]
+    const j = idx + dir
+    if (j < 0 || j >= newList.length) return
+    setReordering(true)
+    try {
+      ;[newList[idx], newList[j]] = [newList[j], newList[idx]]
+      setList(newList) // 乐观更新
+      const items = newList.map((q, i) => ({ id: q._id, sortOrder: i + 1 }))
+      await adminAPI.reorderQuestionnaires(items)
+    } catch (err) {
+      toast('❌ 排序失败：' + err.message)
+      load() // 失败时重新加载
+    } finally { setReordering(false) }
+  }
+
   return (
     <div className="page">
       <div className="page-header">
@@ -541,8 +722,10 @@ export default function QuestionnairePage() {
           <table className="table">
             <thead>
               <tr>
+                <th style={{ width: 56 }}>排序</th>
                 <th>问卷标题</th>
                 <th>题数</th>
+                <th>评分</th>
                 <th>推送对象</th>
                 <th>截止日期</th>
                 <th>回答数</th>
@@ -553,17 +736,26 @@ export default function QuestionnairePage() {
             </thead>
             <tbody>
               {list.length === 0 && (
-                <tr><td colSpan={8} style={{ textAlign: 'center', color: '#888', padding: 32 }}>暂无问卷，点击「新建问卷」开始创建</td></tr>
+                <tr><td colSpan={10} style={{ textAlign: 'center', color: '#888', padding: 32 }}>暂无问卷，点击「新建问卷」开始创建</td></tr>
               )}
-              {list.map(q => {
+              {list.map((q, idx) => {
                 const meta = STATUS_META[q.status] || STATUS_META.draft
                 return (
                   <tr key={q._id}>
+                    <td>
+                      <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
+                        <button onClick={() => moveQuestionnaire(idx, -1)} disabled={idx === 0 || reordering}
+                          style={{ border: 'none', background: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#ddd' : '#888', fontSize: 13, padding: '2px 3px' }}>↑</button>
+                        <button onClick={() => moveQuestionnaire(idx, 1)} disabled={idx === list.length - 1 || reordering}
+                          style={{ border: 'none', background: 'none', cursor: idx === list.length - 1 ? 'default' : 'pointer', color: idx === list.length - 1 ? '#ddd' : '#888', fontSize: 13, padding: '2px 3px' }}>↓</button>
+                      </div>
+                    </td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{q.title}</div>
                       {q.description && <div style={{ fontSize: 12, color: '#888' }}>{q.description.slice(0, 40)}{q.description.length > 40 ? '...' : ''}</div>}
                     </td>
                     <td>{q.questions?.length || 0} 题</td>
+                    <td>{q.scoringEnabled ? <span style={{ color: '#2b6cb0', fontSize: 12 }}>✓ 启用</span> : <span style={{ color: '#ccc', fontSize: 12 }}>—</span>}</td>
                     <td>{q.targetType === 'all' ? '全体' : `指定 ${q.targetUsers?.length || 0} 人`}</td>
                     <td style={{ fontSize: 13 }}>{q.deadline || '—'}</td>
                     <td>
@@ -577,6 +769,7 @@ export default function QuestionnairePage() {
                     <td>
                       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                         <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(q); setShowModal(true) }}>编辑</button>
+                        <button className="btn btn-sm btn-ghost" style={{ color: '#666' }} onClick={() => copy(q)}>复制</button>
                         {q.status === 'draft'  && <button className="btn btn-sm btn-ghost" style={{ color: '#1E6B50' }} onClick={() => setStatus(q, 'active')}>发布</button>}
                         {q.status === 'active' && <button className="btn btn-sm btn-ghost" onClick={() => setStatus(q, 'closed')}>关闭</button>}
                         {q.status === 'closed' && <button className="btn btn-sm btn-ghost" style={{ color: '#1E6B50' }} onClick={() => setStatus(q, 'active')}>重开</button>}

@@ -61,4 +61,6 @@ export const adminAPI = {
   setQuestionnaireStatus:    (id, status) => req(`/questionnaires/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
   deleteQuestionnaire:       (id)       => req(`/questionnaires/${id}`, { method: 'DELETE' }),
   questionnaireResponses:    (id)       => req(`/questionnaires/${id}/responses`),
+  copyQuestionnaire:         (id)       => req(`/questionnaires/${id}/copy`, { method: 'POST' }),
+  reorderQuestionnaires:     (items)    => req('/questionnaires/reorder', { method: 'PATCH', body: JSON.stringify({ items }) }),
 }

@@ -339,7 +339,7 @@ router.patch('/checkup-plans/:planId/items/:itemId', adminAuth, async (req, res)
 // ── 动态问卷管理 ──────────────────────────────────────────────────
 // GET /api/admin/questionnaires
 router.get('/questionnaires', adminAuth, async (req, res) => {
-  const list = await DynamicQuestionnaire.find().sort({ createdAt: -1 })
+  const list = await DynamicQuestionnaire.find().sort({ sortOrder: 1, createdAt: -1 })
     .populate('createdBy', 'name');
   // 附带回答人数
   const withCounts = await Promise.all(list.map(async q => {
@@ -351,27 +351,59 @@ router.get('/questionnaires', adminAuth, async (req, res) => {
 
 // POST /api/admin/questionnaires
 router.post('/questionnaires', adminAuth, async (req, res) => {
-  const { title, description, questions, targetType, targetUsers, deadline } = req.body;
+  const { title, description, questions, targetType, targetUsers, deadline, scoringEnabled, sortOrder } = req.body;
   if (!title || !questions?.length) {
     return res.status(400).json({ success: false, message: '问卷标题和问题不能为空' });
   }
+  const maxDoc = await DynamicQuestionnaire.findOne().sort({ sortOrder: -1 }).select('sortOrder');
+  const newSortOrder = (sortOrder !== undefined && sortOrder !== null) ? sortOrder : ((maxDoc?.sortOrder || 0) + 1);
   const q = await DynamicQuestionnaire.create({
     title, description: description || '',
     questions, targetType: targetType || 'all',
     targetUsers: targetUsers || [],
     createdBy: req.admin._id, deadline: deadline || '',
+    scoringEnabled: !!scoringEnabled,
+    sortOrder: newSortOrder,
   });
   res.json({ success: true, data: q, message: '问卷创建成功' });
 });
 
+// PATCH /api/admin/questionnaires/reorder（批量更新排序）— 必须在 /:id 路由之前
+router.patch('/questionnaires/reorder', adminAuth, async (req, res) => {
+  const { items } = req.body; // [{ id, sortOrder }, ...]
+  if (!Array.isArray(items)) return res.status(400).json({ success: false, message: 'items 必须是数组' });
+  await Promise.all(items.map(({ id, sortOrder }) =>
+    DynamicQuestionnaire.findByIdAndUpdate(id, { sortOrder })
+  ));
+  res.json({ success: true, message: '排序已更新' });
+});
+
+// POST /api/admin/questionnaires/:id/copy
+router.post('/questionnaires/:id/copy', adminAuth, async (req, res) => {
+  const orig = await DynamicQuestionnaire.findById(req.params.id);
+  if (!orig) return res.status(404).json({ success: false, message: '问卷不存在' });
+  const maxDoc = await DynamicQuestionnaire.findOne().sort({ sortOrder: -1 }).select('sortOrder');
+  const copy = await DynamicQuestionnaire.create({
+    title: orig.title + '（复制）',
+    description: orig.description,
+    questions: orig.questions,
+    targetType: orig.targetType,
+    targetUsers: orig.targetUsers || [],
+    deadline: orig.deadline || '',
+    scoringEnabled: orig.scoringEnabled || false,
+    status: 'draft',
+    createdBy: req.admin._id,
+    sortOrder: (maxDoc?.sortOrder || 0) + 1,
+  });
+  res.json({ success: true, data: copy, message: '问卷复制成功' });
+});
+
 // PUT /api/admin/questionnaires/:id
 router.put('/questionnaires/:id', adminAuth, async (req, res) => {
-  const { title, description, questions, targetType, targetUsers, deadline } = req.body;
-  const q = await DynamicQuestionnaire.findByIdAndUpdate(
-    req.params.id,
-    { title, description, questions, targetType, targetUsers, deadline },
-    { new: true }
-  );
+  const { title, description, questions, targetType, targetUsers, deadline, scoringEnabled, sortOrder } = req.body;
+  const updateData = { title, description, questions, targetType, targetUsers, deadline, scoringEnabled: !!scoringEnabled };
+  if (sortOrder !== undefined && sortOrder !== null) updateData.sortOrder = sortOrder;
+  const q = await DynamicQuestionnaire.findByIdAndUpdate(req.params.id, updateData, { new: true });
   if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
   res.json({ success: true, data: q, message: '问卷更新成功' });
 });

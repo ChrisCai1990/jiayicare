@@ -149,7 +149,7 @@ router.get('/pending', auth, async (req, res) => {
         { targetType: 'specific', targetUsers: req.user._id },
       ],
       respondedUsers: { $ne: req.user._id },
-    }).select('title description questions deadline').sort({ createdAt: -1 });
+    }).select('title description questions deadline scoringEnabled').sort({ sortOrder: 1, createdAt: -1 });
 
     res.json({ success: true, data: questionnaires });
   } catch (err) {
@@ -174,10 +174,33 @@ router.post('/:id/submit', auth, async (req, res) => {
     });
     if (existing) return res.status(400).json({ success: false, message: '您已提交过此问卷' });
 
+    // 计算总分（如果问卷启用了评分）
+    let totalScore = 0;
+    if (questionnaire.scoringEnabled) {
+      for (const question of questionnaire.questions) {
+        if (!question.scoreEnabled) continue;
+        if (!['radio', 'multi', 'dropdown'].includes(question.type)) continue;
+        const ans = answers[question.id];
+        const opts = question.options || [];
+        const getOptScore = (label) => {
+          const opt = opts.find(o => (typeof o === 'string' ? o : o.label) === label);
+          return (opt && typeof opt === 'object') ? (opt.score || 0) : 0;
+        };
+        if (question.type === 'radio' || question.type === 'dropdown') {
+          const label = typeof ans === 'string' ? ans : ans?.value;
+          if (label) totalScore += getOptScore(label);
+        } else if (question.type === 'multi') {
+          const labels = Array.isArray(ans) ? ans : (ans?.values || []);
+          for (const label of labels) totalScore += getOptScore(label);
+        }
+      }
+    }
+
     const response = await QuestionnaireResponse.create({
       questionnaire: req.params.id,
       user: req.user._id,
       answers,
+      totalScore,
     });
 
     // 标记已答题用户
@@ -185,7 +208,7 @@ router.post('/:id/submit', auth, async (req, res) => {
       $addToSet: { respondedUsers: req.user._id },
     });
 
-    res.json({ success: true, data: response, message: '问卷提交成功，感谢您的填写！' });
+    res.json({ success: true, data: response, totalScore: questionnaire.scoringEnabled ? totalScore : undefined, message: '问卷提交成功，感谢您的填写！' });
   } catch (err) {
     res.status(500).json({ success: false, message: '提交失败', error: err.message });
   }

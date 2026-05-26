@@ -20,6 +20,12 @@ const QUESTIONS = [
   { id: 'q7', type: 'radio', text: '您家族中是否有以下遗传病史？', options: ['无', '高血压', '糖尿病', '心脏病', '肿瘤', '其他'], required: true },
 ];
 
+// ── 选项格式规范化（兼容对象格式与字符串格式）─────────────────────
+const getOptLabel = (opt) => typeof opt === 'string' ? opt : (opt?.label || '')
+const isOptAllowInput = (opt) => typeof opt === 'object' && !!opt?.allowInput
+const isOptExclusive = (opt) => typeof opt === 'object' && !!opt?.exclusive
+
+// ── 进度条 ────────────────────────────────────────────────────────
 function ProgressBar({ current, total }) {
   const pct = (current / total) * 100;
   return (
@@ -32,43 +38,102 @@ function ProgressBar({ current, total }) {
   );
 }
 
-function RadioQuestion({ q, answer, onAnswer }) {
+// ── 单选题（支持 allowInput）────────────────────────────────────
+function RadioQuestion({ q, answer, onAnswer, inputTexts, onInputText }) {
+  const selectedLabel = typeof answer === 'object' ? answer?.value : answer;
   return (
     <View style={styles.optionList}>
-      {q.options.map(opt => (
-        <TouchableOpacity
-          key={opt}
-          style={[styles.optionRow, answer === opt && styles.optionRowActive]}
-          onPress={() => onAnswer(opt)}
-        >
-          <View style={[styles.radio, answer === opt && styles.radioActive]}>
-            {answer === opt && <View style={styles.radioInner} />}
+      {(q.options || []).map((opt, i) => {
+        const label = getOptLabel(opt);
+        const allowInput = isOptAllowInput(opt);
+        const isSelected = selectedLabel === label;
+        return (
+          <View key={i}>
+            <TouchableOpacity
+              style={[styles.optionRow, isSelected && styles.optionRowActive]}
+              onPress={() => onAnswer(label)}
+            >
+              <View style={[styles.radio, isSelected && styles.radioActive]}>
+                {isSelected && <View style={styles.radioInner} />}
+              </View>
+              <Text style={[styles.optionText, isSelected && styles.optionTextActive]}>{label}</Text>
+            </TouchableOpacity>
+            {isSelected && allowInput && (
+              <TextInput
+                style={[styles.textAnswer, { marginTop: 6, minHeight: 40 }]}
+                placeholder="请在此填写补充说明..."
+                value={inputTexts?.[label] || ''}
+                onChangeText={v => onInputText(label, v)}
+                placeholderTextColor={colors.textMuted}
+              />
+            )}
           </View>
-          <Text style={[styles.optionText, answer === opt && styles.optionTextActive]}>{opt}</Text>
-        </TouchableOpacity>
-      ))}
+        );
+      })}
     </View>
   );
 }
 
-function MultiQuestion({ q, answer = [], onAnswer }) {
+// ── 多选题（支持 exclusive + allowInput）────────────────────────
+function MultiQuestion({ q, answer = [], onAnswer, inputTexts, onInputText }) {
+  const selectedLabels = Array.isArray(answer) ? answer : (answer?.values || []);
+
   const toggle = (opt) => {
-    if (opt === '无') { onAnswer(['无']); return; }
-    const filtered = answer.filter(v => v !== '无');
-    onAnswer(filtered.includes(opt) ? filtered.filter(v => v !== opt) : [...filtered, opt]);
+    const label = getOptLabel(opt);
+    const isExcl = isOptExclusive(opt);
+    // 旧版"无"互斥逻辑 + 新版 exclusive 字段
+    const isOldExclusive = label === '无';
+
+    if (isExcl || isOldExclusive) {
+      // 选互斥选项：清空其他
+      if (selectedLabels.includes(label)) {
+        onAnswer([]);
+      } else {
+        onAnswer([label]);
+      }
+    } else {
+      // 选普通选项：移除所有互斥选项
+      const exclusiveLabels = (q.options || [])
+        .filter(o => isOptExclusive(o) || getOptLabel(o) === '无')
+        .map(getOptLabel);
+      const filtered = selectedLabels.filter(v => !exclusiveLabels.includes(v));
+      if (filtered.includes(label)) {
+        onAnswer(filtered.filter(v => v !== label));
+      } else {
+        onAnswer([...filtered, label]);
+      }
+    }
   };
+
   return (
-    <View style={styles.tagGrid}>
-      {q.options.map(opt => (
-        <TouchableOpacity
-          key={opt}
-          style={[styles.multiTag, answer.includes(opt) && styles.multiTagActive]}
-          onPress={() => toggle(opt)}
-        >
-          {answer.includes(opt) && <Ionicons name="checkmark" size={12} color={colors.primary} />}
-          <Text style={[styles.multiTagText, answer.includes(opt) && styles.multiTagTextActive]}>{opt}</Text>
-        </TouchableOpacity>
-      ))}
+    <View style={styles.optionList}>
+      {(q.options || []).map((opt, i) => {
+        const label = getOptLabel(opt);
+        const allowInput = isOptAllowInput(opt);
+        const isSelected = selectedLabels.includes(label);
+        return (
+          <View key={i}>
+            <TouchableOpacity
+              style={[styles.multiTagRow, isSelected && styles.multiTagRowActive]}
+              onPress={() => toggle(opt)}
+            >
+              <View style={[styles.checkbox, isSelected && styles.checkboxActive]}>
+                {isSelected && <Ionicons name="checkmark" size={12} color={colors.white} />}
+              </View>
+              <Text style={[styles.optionText, isSelected && styles.optionTextActive]}>{label}</Text>
+            </TouchableOpacity>
+            {isSelected && allowInput && (
+              <TextInput
+                style={[styles.textAnswer, { marginTop: 4, minHeight: 40 }]}
+                placeholder="请在此填写补充说明..."
+                value={inputTexts?.[label] || ''}
+                onChangeText={v => onInputText(label, v)}
+                placeholderTextColor={colors.textMuted}
+              />
+            )}
+          </View>
+        );
+      })}
     </View>
   );
 }
@@ -127,30 +192,35 @@ function MatrixQuestion({ q, answer = {}, onAnswer }) {
 
 function DropdownQuestion({ q, answer, onAnswer }) {
   const [open, setOpen] = useState(false);
+  const selectedLabel = typeof answer === 'object' ? answer?.value : answer;
   return (
     <View>
       <TouchableOpacity
-        style={[styles.optionRow, { justifyContent: 'space-between' }, answer && styles.optionRowActive]}
+        style={[styles.optionRow, { justifyContent: 'space-between' }, selectedLabel && styles.optionRowActive]}
         onPress={() => setOpen(v => !v)}
         activeOpacity={0.85}
       >
-        <Text style={[styles.optionText, answer && styles.optionTextActive]}>
-          {answer || '请选择...'}
+        <Text style={[styles.optionText, selectedLabel && styles.optionTextActive]}>
+          {selectedLabel || '请选择...'}
         </Text>
         <Text style={{ color: colors.textMuted, fontSize: 14 }}>{open ? '▲' : '▼'}</Text>
       </TouchableOpacity>
       {open && (
         <View style={{ borderWidth: 1.5, borderColor: colors.border, borderRadius: 8, marginTop: 4, maxHeight: 240, overflow: 'hidden' }}>
           <ScrollView nestedScrollEnabled showsVerticalScrollIndicator>
-            {(q.options || []).map((opt, i) => (
-              <TouchableOpacity
-                key={i}
-                style={{ padding: 12, borderBottomWidth: i < q.options.length - 1 ? 1 : 0, borderBottomColor: colors.border, backgroundColor: answer === opt ? colors.primary + '10' : colors.white }}
-                onPress={() => { onAnswer(opt); setOpen(false); }}
-              >
-                <Text style={{ fontSize: 14, color: answer === opt ? colors.primary : colors.textPrimary, fontWeight: answer === opt ? '600' : '400' }}>{opt}</Text>
-              </TouchableOpacity>
-            ))}
+            {(q.options || []).map((opt, i) => {
+              const label = getOptLabel(opt);
+              const isSelected = selectedLabel === label;
+              return (
+                <TouchableOpacity
+                  key={i}
+                  style={{ padding: 12, borderBottomWidth: i < q.options.length - 1 ? 1 : 0, borderBottomColor: colors.border, backgroundColor: isSelected ? colors.primary + '10' : colors.white }}
+                  onPress={() => { onAnswer(label); setOpen(false); }}
+                >
+                  <Text style={{ fontSize: 14, color: isSelected ? colors.primary : colors.textPrimary, fontWeight: isSelected ? '600' : '400' }}>{label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </ScrollView>
         </View>
       )}
@@ -331,23 +401,24 @@ function LandingScreen({ navigation, pendingQs, loading, onSelectStatic, onSelec
   );
 }
 
+// ── 主屏幕 ────────────────────────────────────────────────────────
 export default function QuestionnaireScreen({ navigation }) {
   const { updateUser } = useAuth();
 
-  // 模式：'select' | 'static' | 'dynamic'
   const [mode, setMode] = useState('select');
   const [pendingQs, setPendingQs] = useState([]);
   const [loadingPending, setLoadingPending] = useState(true);
   const [selectedDynamic, setSelectedDynamic] = useState(null);
 
   const [currentQ, setCurrentQ] = useState(0);
+  const [history, setHistory] = useState([]); // 访问路径历史，用于"上一题"
   const [answers, setAnswers] = useState({});
+  const [inputTexts, setInputTexts] = useState({}); // 附加文本输入 {qId: {optLabel: text}}
   const [showSummary, setShowSummary] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState(null);
   const [errorMsg, setErrorMsg] = useState('');
 
-  // 获取待填动态问卷
   useEffect(() => {
     questionnaireAPI.pending()
       .then(res => setPendingQs(res.data || []))
@@ -355,18 +426,58 @@ export default function QuestionnaireScreen({ navigation }) {
       .finally(() => setLoadingPending(false));
   }, []);
 
-  // 当前作答的问题列表
   const activeQuestions = mode === 'dynamic' ? (selectedDynamic?.questions || []) : QUESTIONS;
 
   const q = activeQuestions[currentQ] || activeQuestions[0];
   const answer = q ? answers[q.id] : undefined;
+
+  // 判断当前题是否已有答案（兼容 allowInput 的对象答案）
+  const getAnswerValue = (ans) => {
+    if (!ans && ans !== 0) return null;
+    if (typeof ans === 'object' && ans !== null) {
+      if (ans.value !== undefined) return ans.value;
+      if (ans.values !== undefined) return ans.values.length > 0 ? ans.values : null;
+    }
+    return ans;
+  };
+  const rawAnswer = getAnswerValue(answer);
   const hasAnswer = q?.required
-    ? (Array.isArray(answer) ? answer.length > 0
-      : (typeof answer === 'object' && answer !== null ? Object.keys(answer).length > 0
-      : (answer !== undefined && answer !== null && answer !== '')))
+    ? (Array.isArray(rawAnswer) ? rawAnswer.length > 0
+      : (typeof rawAnswer === 'object' && rawAnswer !== null ? Object.keys(rawAnswer).length > 0
+      : (rawAnswer !== undefined && rawAnswer !== null && rawAnswer !== '')))
     : true;
 
   const setAnswer = (val) => setAnswers(prev => ({ ...prev, [q.id]: val }));
+
+  const setInputText = (optLabel, text) => {
+    setInputTexts(prev => ({
+      ...prev,
+      [q.id]: { ...(prev[q.id] || {}), [optLabel]: text }
+    }));
+  };
+
+  // 计算跳题后的下一题索引
+  const getNextIndex = (fromIndex, qs, ans) => {
+    const question = qs[fromIndex];
+    if (!question || !question.jumpLogic || question.jumpLogic.length === 0) {
+      return fromIndex + 1;
+    }
+    const currentAnswer = ans[question.id];
+    const answerLabel = typeof currentAnswer === 'string' ? currentAnswer
+      : Array.isArray(currentAnswer) ? currentAnswer
+      : currentAnswer?.value || null;
+
+    for (const rule of question.jumpLogic) {
+      const matched = Array.isArray(answerLabel)
+        ? answerLabel.includes(rule.condition)
+        : answerLabel === rule.condition;
+      if (matched && rule.jumpTo) {
+        const targetIdx = qs.findIndex(q => q.id === rule.jumpTo);
+        if (targetIdx !== -1) return targetIdx;
+      }
+    }
+    return fromIndex + 1;
+  };
 
   const next = () => {
     if (q.required && !hasAnswer) {
@@ -374,40 +485,70 @@ export default function QuestionnaireScreen({ navigation }) {
       return;
     }
     setErrorMsg('');
-    if (currentQ < activeQuestions.length - 1) setCurrentQ(i => i + 1);
-    else setShowSummary(true);
+    const nextIdx = getNextIndex(currentQ, activeQuestions, answers);
+    if (nextIdx < activeQuestions.length) {
+      setHistory(prev => [...prev, currentQ]);
+      setCurrentQ(nextIdx);
+    } else {
+      setShowSummary(true);
+    }
   };
 
   const prev = () => {
     setErrorMsg('');
-    if (currentQ > 0) setCurrentQ(i => i - 1);
+    if (history.length > 0) {
+      const prevIdx = history[history.length - 1];
+      setHistory(h => h.slice(0, -1));
+      setCurrentQ(prevIdx);
+    } else if (currentQ > 0) {
+      setCurrentQ(i => i - 1);
+    }
   };
+
+  const hasPrev = history.length > 0 || currentQ > 0;
 
   const resetQuiz = () => {
     setCurrentQ(0);
+    setHistory([]);
     setAnswers({});
+    setInputTexts({});
     setShowSummary(false);
     setSubmitResult(null);
     setErrorMsg('');
   };
 
+  // 构建最终提交答案（合并 inputTexts）
+  const buildFinalAnswers = () => {
+    const final = {};
+    for (const qId of Object.keys(answers)) {
+      const ans = answers[qId];
+      const inputs = inputTexts[qId];
+      if (!inputs || Object.keys(inputs).length === 0) {
+        final[qId] = ans;
+      } else if (Array.isArray(ans)) {
+        final[qId] = { values: ans, inputs };
+      } else {
+        final[qId] = { value: ans, inputs };
+      }
+    }
+    return final;
+  };
+
   const submit = async () => {
     setSubmitting(true);
     setErrorMsg('');
+    const finalAnswers = buildFinalAnswers();
     try {
       if (mode === 'dynamic' && selectedDynamic) {
-        // 提交动态问卷
-        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, answers);
+        const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers);
         if (res.success) {
-          setSubmitResult({ dynamic: true, message: res.message });
-          // 从待填列表移除
+          setSubmitResult({ dynamic: true, message: res.message, totalScore: res.totalScore });
           setPendingQs(prev => prev.filter(dq => dq._id !== selectedDynamic._id));
         } else {
           setErrorMsg(res.message || '提交失败，请重试');
         }
       } else {
-        // 提交静态健康初评问卷
-        const res = await questionnaireAPI.submit(answers);
+        const res = await questionnaireAPI.submit(finalAnswers);
         if (res.success) {
           if (res.data?.healthScore != null) {
             updateUser({ healthScore: res.data.healthScore });
@@ -428,7 +569,7 @@ export default function QuestionnaireScreen({ navigation }) {
     }
   };
 
-  // 着陆页（问卷选择）
+  // ── 着陆页 ──────────────────────────────────────────────────────
   if (mode === 'select') {
     return (
       <LandingScreen
@@ -441,9 +582,8 @@ export default function QuestionnaireScreen({ navigation }) {
     );
   }
 
-  // 提交成功页
+  // ── 提交成功页 ────────────────────────────────────────────────
   if (submitResult) {
-    // 动态问卷成功
     if (submitResult.dynamic) {
       return (
         <SafeAreaView style={styles.container}>
@@ -453,6 +593,12 @@ export default function QuestionnaireScreen({ navigation }) {
             </View>
             <Text style={styles.successTitle}>问卷提交成功！</Text>
             <Text style={styles.successDesc}>{submitResult.message || '感谢您认真填写本次问卷。'}</Text>
+            {submitResult.totalScore != null && submitResult.totalScore > 0 && (
+              <View style={styles.scoreCard}>
+                <Text style={styles.scoreLabel}>问卷得分</Text>
+                <Text style={styles.scoreNum}>{submitResult.totalScore}</Text>
+              </View>
+            )}
             <TouchableOpacity style={styles.doneBtn} onPress={() => { setMode('select'); setSubmitResult(null); }} activeOpacity={0.85}>
               <Text style={styles.doneBtnText}>返回问卷列表</Text>
             </TouchableOpacity>
@@ -461,7 +607,6 @@ export default function QuestionnaireScreen({ navigation }) {
         </SafeAreaView>
       );
     }
-    // 静态初评问卷成功
     return (
       <SuccessScreen
         score={submitResult.score}
@@ -474,8 +619,25 @@ export default function QuestionnaireScreen({ navigation }) {
 
   const pageTitle = mode === 'dynamic' ? (selectedDynamic?.title || '健康问卷') : '健康初评问卷';
 
-  // Summary page
+  // ── 汇总确认页 ────────────────────────────────────────────────
   if (showSummary) {
+    const fmtAns = (a) => {
+      if (!a && a !== 0) return '未填写';
+      if (typeof a === 'object' && a !== null) {
+        if (a.values) {
+          const inputsStr = Object.entries(a.inputs || {}).map(([k, v]) => `${k}: ${v}`).join('，');
+          return a.values.join('、') + (inputsStr ? `（${inputsStr}）` : '');
+        }
+        if (a.value) {
+          const inputsStr = Object.entries(a.inputs || {}).map(([k, v]) => `${k}: ${v}`).join('，');
+          return a.value + (inputsStr ? `（${inputsStr}）` : '');
+        }
+        return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('；');
+      }
+      if (Array.isArray(a)) return a.join('、');
+      return String(a);
+    };
+
     return (
       <SafeAreaView style={styles.container}>
         <View style={styles.topBar}>
@@ -491,20 +653,15 @@ export default function QuestionnaireScreen({ navigation }) {
             <Text style={styles.summaryTitle}>所有问题已回答</Text>
             <Text style={styles.summaryDesc}>请确认您的答案无误后提交</Text>
           </View>
-          {activeQuestions.map((question, i) => (
-            <View key={question.id} style={styles.summaryItem}>
-              <Text style={styles.summaryQ}>{i + 1}. {question.text}</Text>
-              <Text style={styles.summaryA}>
-                {(() => {
-                  const a = answers[question.id];
-                  if (!a) return '未填写';
-                  if (Array.isArray(a)) return a.join('、');
-                  if (typeof a === 'object') return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('；');
-                  return String(a);
-                })()}
-              </Text>
-            </View>
-          ))}
+          {activeQuestions.map((question, i) => {
+            const finalAns = buildFinalAnswers();
+            return (
+              <View key={question.id} style={styles.summaryItem}>
+                <Text style={styles.summaryQ}>{i + 1}. {question.text}</Text>
+                <Text style={styles.summaryA}>{fmtAns(finalAns[question.id])}</Text>
+              </View>
+            );
+          })}
 
           {!!errorMsg && (
             <View style={styles.errorRow}>
@@ -528,10 +685,11 @@ export default function QuestionnaireScreen({ navigation }) {
     );
   }
 
+  // ── 答题页 ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => currentQ === 0 ? setMode('select') : prev()} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => hasPrev ? prev() : setMode('select')} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <Text style={styles.pageTitle}>{pageTitle}</Text>
@@ -553,14 +711,26 @@ export default function QuestionnaireScreen({ navigation }) {
           </Text>
 
           <View style={styles.qAnswer}>
-            {q.type === 'radio'    && <RadioQuestion    q={q} answer={answer} onAnswer={setAnswer} />}
-            {q.type === 'multi'    && <MultiQuestion    q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'radio' && (
+              <RadioQuestion
+                q={q} answer={answer} onAnswer={setAnswer}
+                inputTexts={inputTexts[q.id]}
+                onInputText={(label, text) => setInputText(label, text)}
+              />
+            )}
+            {q.type === 'multi' && (
+              <MultiQuestion
+                q={q} answer={answer} onAnswer={setAnswer}
+                inputTexts={inputTexts[q.id]}
+                onInputText={(label, text) => setInputText(label, text)}
+              />
+            )}
             {q.type === 'dropdown' && <DropdownQuestion q={q} answer={answer} onAnswer={setAnswer} />}
             {q.type === 'scale'    && <ScaleQuestion    q={q} answer={answer} onAnswer={setAnswer} />}
             {q.type === 'matrix'   && <MatrixQuestion   q={q} answer={answer} onAnswer={setAnswer} />}
             {q.type === 'number'   && <NumberQuestion   q={q} answer={answer} onAnswer={setAnswer} />}
             {q.type === 'date'     && <DateQuestion     q={q} answer={answer} onAnswer={setAnswer} />}
-            {q.type === 'text'   && (
+            {q.type === 'text' && (
               <TextInput
                 style={styles.textAnswer}
                 placeholder={q.placeholder}
@@ -585,7 +755,7 @@ export default function QuestionnaireScreen({ navigation }) {
       </ScrollView>
 
       <View style={styles.footer}>
-        {currentQ > 0 && (
+        {hasPrev && (
           <TouchableOpacity style={styles.prevBtn} onPress={prev}>
             <Ionicons name="arrow-back" size={18} color={colors.primary} />
             <Text style={styles.prevBtnText}>上一题</Text>
@@ -596,7 +766,7 @@ export default function QuestionnaireScreen({ navigation }) {
           onPress={next}
         >
           <Text style={styles.nextBtnText}>
-            {currentQ === activeQuestions.length - 1 ? '查看汇总' : '下一题'}
+            {getNextIndex(currentQ, activeQuestions, answers) >= activeQuestions.length ? '查看汇总' : '下一题'}
           </Text>
           <Ionicons name="arrow-forward" size={18} color={colors.white} />
         </TouchableOpacity>
@@ -618,7 +788,7 @@ const styles = StyleSheet.create({
   progressWrap: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
     paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
-    backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.borderLight,
+    backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.border,
   },
   progressTrack: { flex: 1, height: 6, backgroundColor: colors.border, borderRadius: 3 },
   progressFill: { height: 6, backgroundColor: colors.primary, borderRadius: 3 },
@@ -636,7 +806,7 @@ const styles = StyleSheet.create({
   qText: { fontSize: 16, color: colors.textPrimary, fontWeight: '600', lineHeight: 24, marginBottom: spacing.lg },
   qAnswer: {},
 
-  // Radio
+  // Radio / options
   optionList: { gap: spacing.sm },
   optionRow: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
@@ -651,20 +821,22 @@ const styles = StyleSheet.create({
   },
   radioActive: { borderColor: colors.primary },
   radioInner: { width: 10, height: 10, borderRadius: 5, backgroundColor: colors.primary },
-  optionText: { fontSize: 14, color: colors.textSecondary },
+  optionText: { fontSize: 14, color: colors.textSecondary, flex: 1 },
   optionTextActive: { color: colors.primary, fontWeight: '600' },
 
-  // Multi
-  tagGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  multiTag: {
-    flexDirection: 'row', alignItems: 'center', gap: 4,
-    paddingHorizontal: spacing.md, paddingVertical: 8,
-    borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
-    backgroundColor: colors.background,
+  // Multi select (list style with checkbox)
+  multiTagRow: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    padding: spacing.md, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.background,
   },
-  multiTagActive: { borderColor: colors.primary, backgroundColor: colors.primary + '10' },
-  multiTagText: { fontSize: 13, color: colors.textSecondary },
-  multiTagTextActive: { color: colors.primary, fontWeight: '600' },
+  multiTagRowActive: { borderColor: colors.primary, backgroundColor: colors.primary + '08' },
+  checkbox: {
+    width: 20, height: 20, borderRadius: 4,
+    borderWidth: 2, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  checkboxActive: { borderColor: colors.primary, backgroundColor: colors.primary },
 
   // Scale
   scaleRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, justifyContent: 'space-between' },
@@ -685,7 +857,7 @@ const styles = StyleSheet.create({
   matrixColLabel: { flex: 1, fontSize: 11, color: colors.textMuted, textAlign: 'center' },
   matrixRow: {
     flexDirection: 'row', alignItems: 'center', paddingVertical: spacing.xs,
-    borderTopWidth: 1, borderTopColor: colors.borderLight,
+    borderTopWidth: 1, borderTopColor: colors.border,
   },
   matrixRowLabel: { flex: 2, fontSize: 13, color: colors.textPrimary },
   matrixCell: { flex: 1, alignItems: 'center' },
@@ -728,7 +900,7 @@ const styles = StyleSheet.create({
     flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.xs,
     paddingVertical: 14, borderRadius: radius.md, backgroundColor: colors.primary,
   },
-  nextBtnDisabled: { backgroundColor: colors.textDisabled },
+  nextBtnDisabled: { backgroundColor: colors.textMuted },
   nextBtnText: { fontSize: 15, color: colors.white, fontWeight: '700' },
 
   // Summary
