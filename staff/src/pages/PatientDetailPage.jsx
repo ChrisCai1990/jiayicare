@@ -7,7 +7,12 @@ import FollowUpModal from '../components/FollowUpModal'
 const TYPE_MAP = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const STATUS_MAP = { completed: '已完成', missed: '未接通', planned: '计划中' }
 const STATUS_COLOR = { completed: '#22A06B', missed: '#DC3545', planned: '#D97706' }
-const PLAN_TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预', rehab:'运动康复', tcm:'中医方案' }
+const PLAN_TYPE_LABEL = {
+  annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案',
+  nutrition:'营养干预方案', medical_assist:'就医协助方案',
+  tcm:'中医调理方案', rehab:'运动复健方案', psychology:'心理咨询方案',
+  checkup:'体检方案', health:'健康管理方案', followup:'随访计划',
+}
 const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' }
 const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
 const SR_TYPE_LABEL = { medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊' }
