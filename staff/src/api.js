@@ -64,9 +64,10 @@ export const staffAPI = {
   pushKnowledge:   (id, patientIds) => req(`/staff/knowledge/${id}/push`, { method: 'POST', body: JSON.stringify({ patientIds }) }),
 
   // Questionnaires push
-  getQuestionnaires: ()              => req('/staff/questionnaires'),
-  pushQuestionnaire: (id, data)      => req(`/staff/questionnaires/${id}/push`, { method: 'POST', body: JSON.stringify(data) }),
-  getPushRecords:    (p = {})        => req('/staff/push-records?' + qs(p)),
+  getQuestionnaires:          ()         => req('/staff/questionnaires'),
+  pushQuestionnaire:          (id, data) => req(`/staff/questionnaires/${id}/push`, { method: 'POST', body: JSON.stringify(data) }),
+  getQuestionnaireResponses:  (id)       => req(`/staff/questionnaires/${id}/responses`),
+  getPushRecords:             (p = {})   => req('/staff/push-records?' + qs(p)),
 
   // Service Records
   getServiceRecords:    (p = {}) => req('/staff/service-records?' + qs(p)),

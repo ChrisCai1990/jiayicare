@@ -125,6 +125,34 @@ function MatrixQuestion({ q, answer = {}, onAnswer }) {
   );
 }
 
+function NumberQuestion({ q, answer, onAnswer }) {
+  return (
+    <TextInput
+      style={styles.textAnswer}
+      placeholder={q.placeholder || '请输入数字'}
+      keyboardType="numeric"
+      value={answer !== undefined && answer !== null ? String(answer) : ''}
+      onChangeText={(v) => {
+        const num = parseFloat(v);
+        onAnswer(isNaN(num) ? v : num);
+      }}
+      placeholderTextColor={colors.textMuted}
+    />
+  );
+}
+
+function DateQuestion({ q, answer, onAnswer }) {
+  return (
+    <TextInput
+      style={styles.textAnswer}
+      placeholder={q.placeholder || '请输入日期（如：2024-01-01）'}
+      value={answer || ''}
+      onChangeText={onAnswer}
+      placeholderTextColor={colors.textMuted}
+    />
+  );
+}
+
 // ── 建议类型配置 ──────────────────────────────────────────────────
 const REC_META = {
   warning: { icon: 'warning-outline',      color: '#F59E0B', bg: '#FEF3C7' },
@@ -302,7 +330,7 @@ export default function QuestionnaireScreen({ navigation }) {
   const hasAnswer = q?.required
     ? (Array.isArray(answer) ? answer.length > 0
       : (typeof answer === 'object' && answer !== null ? Object.keys(answer).length > 0
-      : answer !== undefined))
+      : (answer !== undefined && answer !== null && answer !== '')))
     : true;
 
   const setAnswer = (val) => setAnswers(prev => ({ ...prev, [q.id]: val }));
@@ -496,6 +524,8 @@ export default function QuestionnaireScreen({ navigation }) {
             {q.type === 'multi'  && <MultiQuestion  q={q} answer={answer} onAnswer={setAnswer} />}
             {q.type === 'scale'  && <ScaleQuestion  q={q} answer={answer} onAnswer={setAnswer} />}
             {q.type === 'matrix' && <MatrixQuestion q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'number' && <NumberQuestion q={q} answer={answer} onAnswer={setAnswer} />}
+            {q.type === 'date'   && <DateQuestion   q={q} answer={answer} onAnswer={setAnswer} />}
             {q.type === 'text'   && (
               <TextInput
                 style={styles.textAnswer}

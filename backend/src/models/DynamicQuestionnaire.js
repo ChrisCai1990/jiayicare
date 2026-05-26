@@ -3,7 +3,7 @@ const mongoose = require('mongoose');
 // 问题配置（与前端 QuestionnaireScreen QUESTIONS 格式兼容）
 const questionSchema = new mongoose.Schema({
   id:      { type: String, required: true },
-  type:    { type: String, enum: ['radio','multi','scale','matrix','text'], required: true },
+  type:    { type: String, enum: ['radio','multi','scale','matrix','text','number','date'], required: true },
   text:    { type: String, required: true },
   options: [{ type: String }],        // radio / multi 选项
   rows:    [{ type: String }],        // matrix 行

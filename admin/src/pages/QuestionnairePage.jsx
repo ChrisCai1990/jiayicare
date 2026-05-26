@@ -9,12 +9,12 @@ const STATUS_META = {
 }
 
 const Q_TYPE_LABELS = {
-  radio: '单选', multi: '多选', scale: '量表', matrix: '矩阵', text: '文本',
+  radio: '单选', multi: '多选', scale: '量表', matrix: '矩阵', text: '文本', number: '数字', date: '日期',
 }
 
 // ── 问题编辑器 ────────────────────────────────────────────────────
 function QuestionEditor({ questions, onChange }) {
-  const addQ = () => onChange([...questions, { id: `q${Date.now()}`, type: 'radio', text: '', options: ['选项1', '选项2'], required: true }])
+  const addQ = () => onChange([...questions, { id: `q${Date.now()}`, type: 'radio', text: '', options: ['选项1', '选项2'], required: true, placeholder: '' }])
   const updateQ = (i, upd) => { const q = [...questions]; q[i] = { ...q[i], ...upd }; onChange(q) }
   const removeQ = (i) => { const q = [...questions]; q.splice(i, 1); onChange(q) }
   const moveQ   = (i, dir) => {
@@ -37,6 +37,8 @@ function QuestionEditor({ questions, onChange }) {
               if (type === 'radio' || type === 'multi') upd.options = q.options || ['选项1', '选项2']
               if (type === 'scale') { upd.min = 1; upd.max = 10; upd.minLabel = '非常差'; upd.maxLabel = '非常好' }
               if (type === 'matrix') { upd.rows = ['项目1']; upd.cols = ['无', '轻度', '中度', '重度'] }
+              if (type === 'number') { upd.min = undefined; upd.max = undefined; upd.placeholder = '请输入数字' }
+              if (type === 'date') { upd.placeholder = '请选择日期' }
               updateQ(i, upd)
             }} style={{ border: '1px solid #ccc', borderRadius: 4, padding: '2px 6px', fontSize: 12 }}>
               {Object.entries(Q_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -107,6 +109,28 @@ function QuestionEditor({ questions, onChange }) {
           {/* text */}
           {q.type === 'text' && (
             <input className="form-input" placeholder="占位提示文字（可选）" value={q.placeholder || ''}
+              onChange={e => updateQ(i, { placeholder: e.target.value })} />
+          )}
+
+          {/* number */}
+          {q.type === 'number' && (
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: 12 }}>最小值（可选）</span>
+                <input type="number" className="form-input" style={{ width: 80 }} value={q.min ?? ''} onChange={e => updateQ(i, { min: e.target.value === '' ? undefined : Number(e.target.value) })} />
+              </div>
+              <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                <span style={{ fontSize: 12 }}>最大值（可选）</span>
+                <input type="number" className="form-input" style={{ width: 80 }} value={q.max ?? ''} onChange={e => updateQ(i, { max: e.target.value === '' ? undefined : Number(e.target.value) })} />
+              </div>
+              <input className="form-input" style={{ flex: 1 }} placeholder="占位提示（如：请输入您的体重kg）" value={q.placeholder || ''}
+                onChange={e => updateQ(i, { placeholder: e.target.value })} />
+            </div>
+          )}
+
+          {/* date */}
+          {q.type === 'date' && (
+            <input className="form-input" placeholder="占位提示（如：请选择检查日期）" value={q.placeholder || ''}
               onChange={e => updateQ(i, { placeholder: e.target.value })} />
           )}
         </div>

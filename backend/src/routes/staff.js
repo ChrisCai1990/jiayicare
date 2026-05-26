@@ -15,7 +15,7 @@ const ServiceRecord = require('../models/ServiceRecord');
 const Order = require('../models/Order');
 const GiftRecord = require('../models/GiftRecord');
 const Referral = require('../models/Referral');
-const { DynamicQuestionnaire } = require('../models/DynamicQuestionnaire');
+const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
 const Activity       = require('../models/Activity');
@@ -687,6 +687,20 @@ router.post('/questionnaires/:id/push', staffAuth, async (req, res) => {
   }
 
   res.json({ success: true, message: `问卷已推送给 ${patientIds.length} 位会员` });
+});
+
+// GET /api/staff/questionnaires/:id/responses — 查看问卷回答列表（医护端）
+router.get('/questionnaires/:id/responses', staffAuth, async (req, res) => {
+  try {
+    const q = await DynamicQuestionnaire.findById(req.params.id).select('title questions');
+    if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
+    const responses = await QuestionnaireResponse.find({ questionnaire: req.params.id })
+      .populate('user', 'name phone')
+      .sort({ submittedAt: -1 });
+    res.json({ success: true, data: { questionnaire: q, responses } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // GET /api/staff/push-records?patientId=&type=
