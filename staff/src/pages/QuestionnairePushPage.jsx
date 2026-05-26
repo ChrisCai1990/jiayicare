@@ -15,6 +15,147 @@ const fmtAnswer = (a) => {
   return String(a)
 }
 
+const Q_TYPE_LABEL = {
+  radio: '单选题', multi: '多选题', scale: '量表题', matrix: '矩阵题',
+  text: '文本输入', number: '数字输入', date: '日期输入',
+}
+
+// ── 问卷详情预览弹窗 ────────────────────────────────────────
+function PreviewModal({ questionnaire, onClose }) {
+  const meta = STATUS_META[questionnaire.status] || STATUS_META.draft
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 680, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header">
+          <h3 className="modal-title">📋 问卷详情预览</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
+          {/* 基本信息 */}
+          <div style={{ background: '#f9f7f3', borderRadius: 8, padding: '14px 16px', marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+              <span style={{ fontSize: 17, fontWeight: 700, color: '#1A2B24' }}>{questionnaire.title}</span>
+              <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 999, background: meta.bg, color: meta.color, fontWeight: 600, flexShrink: 0 }}>
+                {meta.label}
+              </span>
+            </div>
+            {questionnaire.description && (
+              <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 8, lineHeight: 1.6 }}>{questionnaire.description}</div>
+            )}
+            <div style={{ display: 'flex', gap: 16, fontSize: 12, color: '#8AA89C' }}>
+              <span>共 {questionnaire.questions?.length || 0} 道题</span>
+              {questionnaire.deadline && <span>截止日期：{questionnaire.deadline}</span>}
+            </div>
+          </div>
+
+          {/* 题目列表 */}
+          {(questionnaire.questions || []).length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#aaa', padding: 32 }}>该问卷暂无题目</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {questionnaire.questions.map((q, i) => (
+                <div key={q.id || i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
+                  {/* 题目头 */}
+                  <div style={{ background: '#f5f0e8', padding: '8px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ background: '#1E6B50', color: '#fff', borderRadius: 999, padding: '1px 8px', fontSize: 12, fontWeight: 700 }}>Q{i + 1}</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C', background: '#fff', border: '1px solid #E0D9CE', borderRadius: 4, padding: '1px 6px' }}>
+                      {Q_TYPE_LABEL[q.type] || q.type}
+                    </span>
+                    {q.required === false && (
+                      <span style={{ fontSize: 11, color: '#8AA89C' }}>（选填）</span>
+                    )}
+                  </div>
+                  {/* 题目内容 */}
+                  <div style={{ padding: '10px 14px' }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#1A2B24', marginBottom: 10 }}>
+                      {q.text}
+                      {q.required !== false && <span style={{ color: '#DC3545', marginLeft: 4 }}>*</span>}
+                    </div>
+
+                    {/* 单选/多选：展示选项 */}
+                    {(q.type === 'radio' || q.type === 'multi') && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {(q.options || []).map((opt, oi) => (
+                          <div key={oi} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#4A6558' }}>
+                            <div style={{ width: 16, height: 16, borderRadius: q.type === 'radio' ? '50%' : 3, border: '1.5px solid #CBD5CE', flexShrink: 0 }} />
+                            {opt}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* 量表 */}
+                    {q.type === 'scale' && (
+                      <div>
+                        <div style={{ display: 'flex', gap: 6, marginBottom: 4, flexWrap: 'wrap' }}>
+                          {Array.from({ length: (q.max || 10) - (q.min || 1) + 1 }, (_, k) => k + (q.min || 1)).map(n => (
+                            <div key={n} style={{ width: 32, height: 32, borderRadius: '50%', border: '1.5px solid #CBD5CE', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: '#4A6558' }}>{n}</div>
+                          ))}
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#8AA89C' }}>
+                          <span>{q.minLabel || ''}</span>
+                          <span>{q.maxLabel || ''}</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 矩阵 */}
+                    {q.type === 'matrix' && (
+                      <div style={{ overflowX: 'auto' }}>
+                        <table style={{ borderCollapse: 'collapse', fontSize: 12, minWidth: 300 }}>
+                          <thead>
+                            <tr>
+                              <th style={{ padding: '4px 10px', textAlign: 'left', color: '#8AA89C', fontWeight: 400, borderBottom: '1px solid #E0D9CE' }}></th>
+                              {(q.cols || []).map((col, ci) => (
+                                <th key={ci} style={{ padding: '4px 10px', color: '#4A6558', fontWeight: 600, borderBottom: '1px solid #E0D9CE', textAlign: 'center' }}>{col}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {(q.rows || []).map((row, ri) => (
+                              <tr key={ri}>
+                                <td style={{ padding: '6px 10px', color: '#4A6558', borderBottom: '1px solid #f0ede7' }}>{row}</td>
+                                {(q.cols || []).map((_, ci) => (
+                                  <td key={ci} style={{ padding: '6px 10px', textAlign: 'center', borderBottom: '1px solid #f0ede7' }}>
+                                    <div style={{ width: 14, height: 14, borderRadius: '50%', border: '1.5px solid #CBD5CE', margin: '0 auto' }} />
+                                  </td>
+                                ))}
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+
+                    {/* 数字输入 */}
+                    {q.type === 'number' && (
+                      <div style={{ fontSize: 12, color: '#8AA89C' }}>
+                        数字输入框
+                        {(q.min !== undefined || q.max !== undefined) && (
+                          <span>（范围：{q.min ?? '不限'} ~ {q.max ?? '不限'}）</span>
+                        )}
+                        {q.placeholder && <span>，提示：{q.placeholder}</span>}
+                      </div>
+                    )}
+
+                    {/* 文本/日期 */}
+                    {(q.type === 'text' || q.type === 'date') && q.placeholder && (
+                      <div style={{ fontSize: 12, color: '#8AA89C' }}>提示：{q.placeholder}</div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>关闭</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 查看回答弹窗 ────────────────────────────────────────────
 function ResponsesModal({ questionnaire, onClose }) {
   const [data, setData] = useState(null)
@@ -143,6 +284,7 @@ export default function QuestionnairePushPage() {
   const [loading, setLoading] = useState(true)
   const [pushModal, setPushModal] = useState(null)
   const [viewModal, setViewModal] = useState(null)
+  const [previewModal, setPreviewModal] = useState(null)
   const [activeTab, setActiveTab] = useState('templates')
 
   useEffect(() => {
@@ -221,7 +363,8 @@ export default function QuestionnairePushPage() {
                           {!canPush && <span style={{ color: '#D97706', marginLeft: 8 }}>· 未发布，暂不可推送</span>}
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                      <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setPreviewModal(q)}>🔍 查看详情</button>
                         <button className="btn btn-secondary btn-sm" onClick={() => setViewModal(q)}>📊 查看回答</button>
                         <button
                           className="btn btn-primary btn-sm"
@@ -285,6 +428,14 @@ export default function QuestionnairePushPage() {
           patients={patients}
           onClose={() => setPushModal(null)}
           onSaved={async (n) => { setPushModal(null); toast(`问卷已推送给 ${n} 位会员`); await reload() }}
+        />
+      )}
+
+      {/* 问卷详情预览弹窗 */}
+      {previewModal && (
+        <PreviewModal
+          questionnaire={previewModal}
+          onClose={() => setPreviewModal(null)}
         />
       )}
 
