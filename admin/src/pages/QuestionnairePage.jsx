@@ -14,7 +14,7 @@ const Q_TYPE_LABELS = {
 
 // ── 问题编辑器 ────────────────────────────────────────────────────
 function QuestionEditor({ questions, onChange }) {
-  const addQ = () => onChange([...questions, { id: `q${Date.now()}`, type: 'radio', text: '', options: ['选项1', '选项2'], required: true, placeholder: '' }])
+  const addQ = () => onChange([...questions, { id: `q${Date.now()}`, type: 'radio', text: '', options: ['', ''], required: true, placeholder: '' }])
   const updateQ = (i, upd) => { const q = [...questions]; q[i] = { ...q[i], ...upd }; onChange(q) }
   const removeQ = (i) => { const q = [...questions]; q.splice(i, 1); onChange(q) }
   const moveQ   = (i, dir) => {
@@ -34,7 +34,7 @@ function QuestionEditor({ questions, onChange }) {
             <select value={q.type} onChange={e => {
               const type = e.target.value
               const upd = { type }
-              if (type === 'radio' || type === 'multi') upd.options = q.options || ['选项1', '选项2']
+              if (type === 'radio' || type === 'multi') upd.options = q.options?.length ? q.options : ['', '']
               if (type === 'scale') { upd.min = 1; upd.max = 10; upd.minLabel = '非常差'; upd.maxLabel = '非常好' }
               if (type === 'matrix') { upd.rows = ['项目1']; upd.cols = ['无', '轻度', '中度', '重度'] }
               if (type === 'number') { upd.min = undefined; upd.max = undefined; upd.placeholder = '请输入数字' }
@@ -60,7 +60,7 @@ function QuestionEditor({ questions, onChange }) {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
               {(q.options || []).map((opt, oi) => (
                 <div key={oi} style={{ display: 'flex', gap: 4 }}>
-                  <input className="form-input" value={opt} style={{ flex: 1 }}
+                  <input className="form-input" value={opt} placeholder={`选项 ${oi + 1}`} style={{ flex: 1 }}
                     onChange={e => { const opts = [...q.options]; opts[oi] = e.target.value; updateQ(i, { options: opts }) }} />
                   <button className="btn btn-sm btn-ghost" onClick={() => {
                     const opts = q.options.filter((_, idx) => idx !== oi); updateQ(i, { options: opts })
@@ -68,7 +68,7 @@ function QuestionEditor({ questions, onChange }) {
                 </div>
               ))}
               <button className="btn btn-sm btn-ghost" style={{ alignSelf: 'flex-start' }}
-                onClick={() => updateQ(i, { options: [...(q.options || []), `选项${(q.options || []).length + 1}`] })}>
+                onClick={() => updateQ(i, { options: [...(q.options || []), ''] })}>
                 ＋ 添加选项
               </button>
             </div>
