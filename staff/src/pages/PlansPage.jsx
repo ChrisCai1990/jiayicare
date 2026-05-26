@@ -24,6 +24,7 @@ export default function PlansPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [showAnnualModal, setShowAnnualModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState('')
 
   const load = useCallback(async () => {
@@ -44,7 +45,14 @@ export default function PlansPage() {
           <h1 className="page-title">健康方案</h1>
           <p className="page-subtitle">共 {total} 个方案</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新建方案</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {typeFilter === 'annual_mgmt' && (
+            <button className="btn btn-primary" onClick={() => setShowAnnualModal(true)}>
+              📋 新建年度管理方案
+            </button>
+          )}
+          <button className="btn btn-secondary" onClick={() => setShowModal(true)}>＋ 新建方案</button>
+        </div>
       </div>
 
       {/* 类型筛选 */}
@@ -91,6 +99,7 @@ export default function PlansPage() {
       </div>
 
       {showModal && <NewPlanModal onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
+      {showAnnualModal && <AnnualPlanEntryModal onClose={() => setShowAnnualModal(false)} nav={nav} />}
     </div>
   )
 }
@@ -286,6 +295,48 @@ function NewPlanModal({ onClose, onSaved }) {
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建方案'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 新建年度管理方案入口弹窗（选会员后跳转 AnnualPlanPage） ───────────
+function AnnualPlanEntryModal({ onClose, nav }) {
+  const [patientId, setPatientId] = useState('')
+
+  const handleGo = () => {
+    if (!patientId) return
+    onClose()
+    nav(`/patients/${patientId}/annual-plan`)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 480 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建年度管理方案</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ background: '#EFF6FF', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#0077B6' }}>
+            💡 年度管理方案为每位会员每年独立配置，包含医疗、监测、疫苗、生活方式等6大模块
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">搜索会员 *</label>
+            <PatientSearchInput value={patientId} onChange={setPatientId} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button
+            className="btn btn-primary"
+            onClick={handleGo}
+            disabled={!patientId}
+            style={{ opacity: patientId ? 1 : 0.5 }}
+          >
+            进入年度方案配置 →
+          </button>
         </div>
       </div>
     </div>
