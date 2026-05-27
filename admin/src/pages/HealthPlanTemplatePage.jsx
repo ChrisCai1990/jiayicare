@@ -102,10 +102,10 @@ function PlanContentForm({ type, initialContent, contentRef }) {
                   {opt}
                 </label>
                 {checked && (
-                  <input className="form-input" value={note}
+                  <textarea className="form-input" rows={3} value={note}
                     onChange={e => updateAddons({ ...addons, [opt]: e.target.value })}
                     placeholder={`录入${opt}的具体内容...`}
-                    style={{ marginLeft: 21, width: 'calc(100% - 21px)' }} />
+                    style={{ marginLeft: 21, width: 'calc(100% - 21px)', resize: 'vertical' }} />
                 )}
               </div>
             )
