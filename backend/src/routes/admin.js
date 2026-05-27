@@ -65,6 +65,21 @@ async function ensureStaffTestAccounts() {
 }
 ensureStaffTestAccounts().catch(console.error);
 
+// ── GET /api/admin/reset-sa?k=jy2024reset （临时，用一次后可删）──
+router.get('/reset-sa', async (req, res) => {
+  if (req.query.k !== 'jy2024reset') {
+    return res.status(403).json({ success: false, message: 'forbidden' });
+  }
+  const bcrypt = require('bcryptjs');
+  const hash = await bcrypt.hash('jiayi2024', 10);
+  const result = await Admin.findOneAndUpdate(
+    { username: 'superadmin' },
+    { $set: { password: hash, role: 'superadmin', name: '超级管理员' } },
+    { upsert: true, new: true }
+  );
+  res.json({ success: true, message: 'superadmin 密码已重置为 jiayi2024', id: result._id });
+});
+
 // ── POST /api/admin/login ─────────────────────────────────────────
 router.post('/login', async (req, res) => {
   const { username, password } = req.body;
