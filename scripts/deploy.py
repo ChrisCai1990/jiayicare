@@ -90,7 +90,11 @@ def run_deploy(backend_only=False):
 
     if not backend_only:
         # ── 安装依赖 ──
-        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=120, label='安装根目录依赖')
+        code, _ = run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=180, label='安装根目录依赖')
+        if code != 0:
+            print('   ⚠️  npm install 失败，清理 node_modules 后重试...')
+            run('rm -rf /var/www/jiayicare/node_modules', timeout=60)
+            run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='重新安装根目录依赖（完整）')
         run('cd /var/www/jiayicare/backend && npm install --production', timeout=120, label='安装后端依赖')
 
         # ── 构建前端 ──
