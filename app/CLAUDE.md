@@ -1,15 +1,15 @@
 # JiayiCare 项目完整说明
 
-## 部署命令（push 后 Railway 自动部署）
+## 部署命令（push 后阿里云自动部署）
 ```bash
-# 所有服务：push 到 GitHub master 后 Railway 自动构建部署
 git add <files> && git commit -m "..." && git push origin master
 ```
 
-## 线上地址
-- 前端 app：https://jiayihui-app-production.up.railway.app
-- 管理后台：https://jiayihui-admin-production.up.railway.app
-- 后端：https://mongodb-production-06f7.up.railway.app/api
+## 线上地址（阿里云 ECS 121.40.156.39）
+- 前端 app：http://121.40.156.39
+- 管理后台：http://121.40.156.39:8081
+- 医护端：http://121.40.156.39:8082
+- 后端：http://121.40.156.39/api
 
 ## 演示账号
 - 手机号：13800138000 / 验证码：123456
@@ -152,9 +152,8 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 
 ## ⚠️ 遗留问题
 - **EditProfileScreen 数组字段被注释掉**（allergies/medicalHistory/medications/familyHistory/surgeries）
-  - 原因：Railway 旧 schema 把这些字段定义为 String，发数组会报 Cast 错误
   - 位置：`src/screens/profile/EditProfileScreen.js` handleSave 的 healthProfile 里
-  - 恢复方式：取消注释那5个字段，前提是 Railway 已部署最新 User.js（Mixed 数组类型）
+  - 恢复方式：直接取消注释那5个字段即可（当前后端 User.js 已是 Mixed 数组类型）
 
 ## 待办任务
 - [ ] 用户提出的 UI 修改建议（图片中有多条，已确认：健康档案加睡眠 ✅、睡眠录入加时间 ✅）

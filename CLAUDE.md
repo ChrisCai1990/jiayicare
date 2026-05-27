@@ -18,12 +18,25 @@ JiayiCare-mono/
 
 ## 部署命令
 
-### 所有服务（push 后阿里云自动部署）
+### 标准部署（改了前端或全部改了）
 ```bash
-git add <files> && git commit -m "..." && git push origin master
+git add . && git commit -m "描述" && git push && python scripts/deploy.py
 ```
-- push 后 GitHub Webhook 触发 deploy.sh：`git fetch + git reset --hard origin/master` + build + pm2 restart
-- **注意**：deploy.sh 用 `reset --hard` 而非 `git pull`，服务器本地修改会被覆盖
+
+### 只改了后端（跳过前端构建，更快）
+```bash
+git add . && git commit -m "描述" && git push && python scripts/deploy.py --backend
+```
+
+### 一条命令完成 push + 部署
+```bash
+# push 和部署合并（--push 参数会先执行 git push）
+python scripts/deploy.py --push
+python scripts/deploy.py --push --backend
+```
+
+> `scripts/deploy.py` 通过 SSH 直连服务器执行部署，实时输出日志，自动验证结果。
+> 不依赖 Webhook——Webhook 仍保留作为备份，但不在关键路径上。
 
 ## 线上地址（阿里云 ECS 121.40.156.39）
 - 用户端 app：http://121.40.156.39
@@ -31,15 +44,30 @@ git add <files> && git commit -m "..." && git push origin master
 - 医护端 staff：http://121.40.156.39:8082
 - 后端 API：http://121.40.156.39/api
 
-## 部署方式（GitHub Webhook 自动部署）
-- 服务器：阿里云 ECS，Ubuntu，IP 121.40.156.39，SSH：root@121.40.156.39
-- Webhook 端口：9000，脚本：/var/www/jiayicare/deploy.sh
-- deploy.sh 内容：`git fetch origin master && git reset --hard origin/master` + npm install + build + pm2 restart
-- 后端进程：PM2 管理，进程名 jiayicare-backend（id 0）；webhook-server（id 1）
-- 前端静态文件：Nginx 托管，/var/www/jiayicare/{app,admin,staff}/dist
+## 部署架构
+
+```
+本地开发
+  → git push origin master
+    → [备份] GitHub Webhook → 9000端口 → deploy.sh（不可靠，不依赖）
+    → [主路径] python scripts/deploy.py
+        → SSH 连接 121.40.156.39（root / Jiayi2026!）
+        → git fetch + git reset --hard origin/master
+        → npm install（后端）
+        → npm run build:admin + build:staff（有前端改动时）
+        → pm2 restart jiayicare-backend
+        → 验证：pm2 status + superadmin 密码同步日志
+```
+
+### 服务器信息
+- 系统：阿里云 ECS，Ubuntu
+- IP：121.40.156.39，SSH：root@121.40.156.39，密码：Jiayi2026!
+- PM2 进程：`jiayicare-backend`（id 0）、`webhook-server`（id 1）
+- 前端静态文件：Nginx 托管 `/var/www/jiayicare/{app,admin,staff}/dist`
 - 数据库：本地 MongoDB 27017，库名 jiayicare
-- 后端 .env：/var/www/jiayicare/backend/.env
-- GitHub SSH：服务器使用 Deploy Key（/root/.ssh/github_deploy），已在 GitHub 仓库配置（key id: 152715350）
+- 后端配置：`/var/www/jiayicare/backend/.env`
+- 部署日志：`/var/log/jiayicare-deploy.log`
+- GitHub SSH：服务器 Deploy Key `/root/.ssh/github_deploy`（key id: 152715350）
 
 ## 演示账号
 - 用户端：手机号 13800138000 / 验证码 123456
