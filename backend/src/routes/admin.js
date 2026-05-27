@@ -32,9 +32,11 @@ async function seedAdmins() {
 }
 seedAdmins().catch(console.error);
 
-// ── 确保医护测试账号始终存在（不受首次初始化限制） ─────────────
+// ── 确保关键账号始终存在且密码正确 ──────────────────────────────
 async function ensureStaffTestAccounts() {
   const testAccounts = [
+    // superadmin 主账号——每次启动校验密码，不匹配则重置
+    { username: 'superadmin',   password: 'jiayi2024', name: '超级管理员', role: 'superadmin',      title: '',             resetIfWrong: true },
     { username: 'jy_super',     password: 'jiayi2024', name: '超管测试',   role: 'superadmin',      title: '超级管理员' },
     { username: 'jy_hm',        password: 'jiayi2024', name: '测试健管',   role: 'healthManager',   title: '健康管理师' },
     { username: 'jy_fd',        password: 'jiayi2024', name: '测试家医',   role: 'familyDoctor',    title: '全科医生' },
@@ -47,8 +49,17 @@ async function ensureStaffTestAccounts() {
   for (const acc of testAccounts) {
     const exists = await Admin.findOne({ username: acc.username });
     if (!exists) {
-      await Admin.create(acc);
-      console.log(`✅ 创建测试医护账号: ${acc.username} (${acc.name})`);
+      const { resetIfWrong, ...data } = acc;
+      await Admin.create(data);
+      console.log(`✅ 创建账号: ${acc.username}`);
+    } else if (acc.resetIfWrong) {
+      // 校验密码，不匹配则重置（仅针对 resetIfWrong 标记的账号）
+      const ok = await exists.comparePassword(acc.password);
+      if (!ok) {
+        exists.password = acc.password;
+        await exists.save(); // 触发 bcrypt pre-save
+        console.log(`🔑 重置账号密码: ${acc.username}`);
+      }
     }
   }
 }
