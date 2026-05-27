@@ -15,30 +15,30 @@ const PLAN_TYPES = [
 // ── 各类型的默认 content 结构 ─────────────────────────────────
 const defaultContent = {
   annual_checkup: {
-    packageName: '', packageDesc: '', checkItems: '', addons: '',
+    packageDesc: '', checkItems: '', addons: '',
   },
   health_management: {
-    applicableMemberTypes: '', modules: '',
+    modules: '',
     medicalIssue: '', dailyMonitoring: '', vaccination: '', lifestyle: '', examPlan: '',
   },
   nutrition: {
-    applicablePopulation: '', breakfast: '', lunch: '', dinner: '', snack: '',
+    breakfast: '', lunch: '', dinner: '', snack: '',
     mealTimes: '', dietPrinciple: '', dailyWater: '', cookingMethod: '',
     mealOrder: '', nutritionSupplements: '', exerciseSuggestion: '', allowedFoods: '', forbiddenFoods: '',
   },
   medical_assist: {
-    serviceType: '代办挂号', name: '', datetime: '', staffName: '', tasks: '',
+    name: '', datetime: '', staffName: '', tasks: '',
     hospital: '', department: '', expert: '', hotel: '', transport: '', notes: '',
   },
   rehab: {
-    applicablePopulation: '', goal: '', exercises: '', weeklyFreq: '', duration: '',
+    goal: '', exercises: '', weeklyFreq: '', duration: '',
     precautions: '', progression: '',
   },
   tcm: {
-    constitution: '', chineseMedicine: '', acupuncture: '', diet: '', lifestyle: '', other: '',
+    chineseMedicine: '', acupuncture: '', diet: '', lifestyle: '', other: '',
   },
   psychology: {
-    topic: '', frequency: '', sessionCount: '', duration: '', mode: '线上',
+    frequency: '', sessionCount: '', duration: '', mode: '线上',
     homework: '', assessmentTools: '',
   },
 }
@@ -81,7 +81,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'annual_checkup') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <FieldRow label="套餐名称" fieldKey="packageName" placeholder="如：基础体检套餐" half content={content} set={set} />
       <FieldRow label="状态说明" fieldKey="packageDesc" placeholder="套餐描述" half content={content} set={set} />
       <FieldRow label="包含检查项目" fieldKey="checkItems" rows={4} placeholder="每行一项，如：颈动脉超声&#10;血脂全套&#10;心脏彩超" content={content} set={set} />
       <div className="form-group" style={{ gridColumn: '1/-1' }}>
@@ -107,7 +106,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'health_management') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <FieldRow label="适用会员类型" fieldKey="applicableMemberTypes" placeholder="如：年度会员, 半年会员" half content={content} set={set} />
       <FieldRow label="医疗问题解决" fieldKey="medicalIssue" placeholder="医院、科室、解决目标等" half content={content} set={set} />
       <FieldRow label="日常监测计划" fieldKey="dailyMonitoring" placeholder="血压/血糖/心率，每日频率" half content={content} set={set} />
       <FieldRow label="疫苗接种计划" fieldKey="vaccination" placeholder="疫苗名称、接种时间" half content={content} set={set} />
@@ -119,7 +117,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'nutrition') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <FieldRow label="适用人群" fieldKey="applicablePopulation" placeholder="如：糖尿病、减重、孕期" half content={content} set={set} />
       <FieldRow label="每日饮水量（毫升）" fieldKey="dailyWater" placeholder="如：2000" half content={content} set={set} />
       <FieldRow label="早餐建议" fieldKey="breakfast" rows={3} placeholder="食物种类、份量描述" content={content} set={set} />
       <FieldRow label="午餐建议" fieldKey="lunch" rows={3} placeholder="食物种类、份量描述" content={content} set={set} />
@@ -138,12 +135,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'medical_assist') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <div className="form-group" style={{ gridColumn: '1/-1' }}>
-        <label className="form-label">服务类型</label>
-        <select className="form-input" value={content.serviceType || '代办挂号'} onChange={e => set('serviceType', e.target.value)}>
-          {['代办挂号', '代诊', '陪诊', '体检一站式', '门诊一站式', '住院一站式'].map(s => <option key={s}>{s}</option>)}
-        </select>
-      </div>
       <FieldRow label="医院" fieldKey="hospital" placeholder="医院名称" half content={content} set={set} />
       <FieldRow label="科室" fieldKey="department" placeholder="科室名称" half content={content} set={set} />
       <FieldRow label="专家" fieldKey="expert" placeholder="专家姓名（可选）" half content={content} set={set} />
@@ -158,7 +149,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'rehab') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <FieldRow label="适用人群/病症" fieldKey="applicablePopulation" placeholder="如：膝关节术后" half content={content} set={set} />
       <FieldRow label="复健目标" fieldKey="goal" placeholder="文字描述" half content={content} set={set} />
       <FieldRow label="每周频次" fieldKey="weeklyFreq" placeholder="如：每周3次" half content={content} set={set} />
       <FieldRow label="每次时长（分钟）" fieldKey="duration" placeholder="如：45" half content={content} set={set} />
@@ -170,13 +160,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'tcm') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <div className="form-group" style={{ gridColumn: '1/-1' }}>
-        <label className="form-label">体质类型</label>
-        <select className="form-input" value={content.constitution || ''} onChange={e => set('constitution', e.target.value)}>
-          <option value="">请选择</option>
-          {['平和质', '气虚质', '阳虚质', '阴虚质', '痰湿质', '湿热质', '血瘀质', '气郁质', '特禀质'].map(c => <option key={c}>{c}</option>)}
-        </select>
-      </div>
       <FieldRow label="中药调理（方剂/中成药）" fieldKey="chineseMedicine" rows={3} placeholder="方剂或中成药建议" content={content} set={set} />
       <FieldRow label="针灸/推拿" fieldKey="acupuncture" rows={3} placeholder="建议频次、主要穴位" content={content} set={set} />
       <FieldRow label="饮食宜忌" fieldKey="diet" rows={3} placeholder="推荐食物、禁忌食物" content={content} set={set} />
@@ -187,7 +170,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'psychology') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <FieldRow label="咨询主题" fieldKey="topic" placeholder="如：压力管理、失眠干预" half content={content} set={set} />
       <FieldRow label="咨询频次" fieldKey="frequency" placeholder="如：每周一次，共8次" half content={content} set={set} />
       <FieldRow label="每次时长（分钟）" fieldKey="duration" placeholder="如：50" half content={content} set={set} />
       <div className="form-group">
