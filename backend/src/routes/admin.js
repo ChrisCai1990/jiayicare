@@ -34,32 +34,32 @@ seedAdmins().catch(console.error);
 
 // ── 确保关键账号始终存在且密码正确 ──────────────────────────────
 async function ensureStaffTestAccounts() {
+  // superadmin 每次启动无条件更新密码，防止 DB 中存的是明文或旧哈希
+  const sa = await Admin.findOne({ username: 'superadmin' });
+  if (!sa) {
+    await Admin.create({ username: 'superadmin', password: 'jiayi2024', name: '超级管理员', role: 'superadmin', title: '' });
+    console.log('✅ 创建 superadmin 账号');
+  } else {
+    sa.password = 'jiayi2024';
+    await sa.save(); // 触发 bcrypt pre-save 重新哈希
+    console.log('🔑 superadmin 密码已同步');
+  }
+
   const testAccounts = [
-    // superadmin 主账号——每次启动校验密码，不匹配则重置
-    { username: 'superadmin',   password: 'jiayi2024', name: '超级管理员', role: 'superadmin',      title: '',             resetIfWrong: true },
-    { username: 'jy_super',     password: 'jiayi2024', name: '超管测试',   role: 'superadmin',      title: '超级管理员' },
-    { username: 'jy_hm',        password: 'jiayi2024', name: '测试健管',   role: 'healthManager',   title: '健康管理师' },
-    { username: 'jy_fd',        password: 'jiayi2024', name: '测试家医',   role: 'familyDoctor',    title: '全科医生' },
-    { username: 'jy_ns',        password: 'jiayi2024', name: '测试营养',   role: 'nutritionist',    title: '注册营养师' },
-    { username: 'jy_ma',        password: 'jiayi2024', name: '测试就医',   role: 'medicalAssistant',title: '就医专员' },
-    { username: 'jy_hp',        password: 'jiayi2024', name: '测试规划',   role: 'healthPlanner',   title: '健康规划师' },
-    { username: 'jy_tcm',       password: 'jiayi2024', name: '测试中医',   role: 'tcmDoctor',       title: '中医师' },
-    { username: 'jy_rb',        password: 'jiayi2024', name: '测试复健',   role: 'rehabSpecialist', title: '运动复健师' },
+    { username: 'jy_super', password: 'jiayi2024', name: '超管测试',   role: 'superadmin',       title: '超级管理员' },
+    { username: 'jy_hm',    password: 'jiayi2024', name: '测试健管',   role: 'healthManager',    title: '健康管理师' },
+    { username: 'jy_fd',    password: 'jiayi2024', name: '测试家医',   role: 'familyDoctor',     title: '全科医生' },
+    { username: 'jy_ns',    password: 'jiayi2024', name: '测试营养',   role: 'nutritionist',     title: '注册营养师' },
+    { username: 'jy_ma',    password: 'jiayi2024', name: '测试就医',   role: 'medicalAssistant', title: '就医专员' },
+    { username: 'jy_hp',    password: 'jiayi2024', name: '测试规划',   role: 'healthPlanner',    title: '健康规划师' },
+    { username: 'jy_tcm',   password: 'jiayi2024', name: '测试中医',   role: 'tcmDoctor',        title: '中医师' },
+    { username: 'jy_rb',    password: 'jiayi2024', name: '测试复健',   role: 'rehabSpecialist',  title: '运动复健师' },
   ];
   for (const acc of testAccounts) {
     const exists = await Admin.findOne({ username: acc.username });
     if (!exists) {
-      const { resetIfWrong, ...data } = acc;
-      await Admin.create(data);
-      console.log(`✅ 创建账号: ${acc.username}`);
-    } else if (acc.resetIfWrong) {
-      // 校验密码，不匹配则重置（仅针对 resetIfWrong 标记的账号）
-      const ok = await exists.comparePassword(acc.password);
-      if (!ok) {
-        exists.password = acc.password;
-        await exists.save(); // 触发 bcrypt pre-save
-        console.log(`🔑 重置账号密码: ${acc.username}`);
-      }
+      await Admin.create(acc);
+      console.log(`✅ 创建测试医护账号: ${acc.username}`);
     }
   }
 }
