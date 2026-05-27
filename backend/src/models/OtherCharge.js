@@ -6,9 +6,11 @@ const otherChargeSchema = new mongoose.Schema({
   mnemonic:    { type: String, default: '', trim: true },
   costPrice:   { type: Number, default: 0 },
   retailPrice: { type: Number, default: 0 },
-  unit:        { type: String, default: '次' },
-  categoryId:  { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null },
-  status:      { type: String, enum: ['active', 'inactive'], default: 'active' },
+  unit:                   { type: String, default: '次' },
+  participatesInDiscount: { type: Boolean, default: true },
+  remark:                 { type: String, default: '' },
+  categoryId:             { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null },
+  status:                 { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('OtherCharge', otherChargeSchema);

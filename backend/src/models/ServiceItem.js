@@ -6,9 +6,10 @@ const serviceItemSchema = new mongoose.Schema({
   mnemonic:    { type: String, default: '', trim: true },
   costPrice:   { type: Number, default: 0 },
   retailPrice: { type: Number, default: 0 },
-  unit:        { type: String, default: '次' },
-  duration:    { type: Number, default: 0 }, // 服务时长（分钟）
-  categoryId:  { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null },
+  unit:                   { type: String, default: '次' },
+  duration:               { type: Number, default: 0 }, // 保留旧字段
+  participatesInDiscount: { type: Boolean, default: true },
+  categoryId:             { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null },
   status:      { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, { timestamps: true });
 

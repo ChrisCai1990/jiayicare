@@ -6,10 +6,12 @@ const labTestOrderSchema = new mongoose.Schema({
   mnemonic:    { type: String, default: '', trim: true },
   costPrice:   { type: Number, default: 0 },
   retailPrice: { type: Number, default: 0 },
-  unit:        { type: String, default: '' },
-  items:       [{ type: mongoose.Schema.Types.ObjectId, ref: 'LabTestItem' }],
-  categoryId:  { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null },
-  status:      { type: String, enum: ['active', 'inactive'], default: 'active' },
+  unit:                   { type: String, default: '' },
+  items:                  [{ type: mongoose.Schema.Types.ObjectId, ref: 'LabTestItem' }],
+  participatesInDiscount: { type: Boolean, default: true },
+  remark:                 { type: String, default: '' },
+  categoryId:             { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null },
+  status:                 { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, { timestamps: true });
 
 module.exports = mongoose.model('LabTestOrder', labTestOrderSchema);

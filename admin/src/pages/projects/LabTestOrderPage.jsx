@@ -3,7 +3,7 @@ import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 import { useCategories, StatusBadge } from './_ProjectPage'
 
-const EMPTY = { name: '', mnemonic: '', costPrice: 0, retailPrice: 0, unit: '次', categoryId: '', items: [] }
+const EMPTY = { name: '', mnemonic: '', costPrice: 0, retailPrice: 0, categoryId: '', items: [], participatesInDiscount: true, remark: '' }
 
 export default function LabTestOrderPage() {
   const toast = useToast()
@@ -40,11 +40,20 @@ export default function LabTestOrderPage() {
     setEditId(item._id)
     setForm({
       name: item.name, mnemonic: item.mnemonic || '', costPrice: item.costPrice || 0,
-      retailPrice: item.retailPrice || 0, unit: item.unit || '次',
+      retailPrice: item.retailPrice || 0,
       categoryId: item.categoryId?._id || item.categoryId || '',
       items: (item.items || []).map(i => i._id || i),
+      participatesInDiscount: item.participatesInDiscount !== false,
+      remark: item.remark || '',
     })
     setError(''); setShowModal(true)
+  }
+
+  const autoCalcPrices = () => {
+    const selected = allLabItems.filter(i => form.items.includes(i._id))
+    const costSum = selected.reduce((s, i) => s + (i.costPrice || 0), 0)
+    const retailSum = selected.reduce((s, i) => s + (i.retailPrice || 0), 0)
+    setForm(f => ({ ...f, costPrice: costSum, retailPrice: retailSum }))
   }
 
   const handleSave = async () => {
@@ -139,27 +148,36 @@ export default function LabTestOrderPage() {
                   <input className="form-input" value={form.name} onChange={set('name')} placeholder="如：血脂全套" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">助记码</label>
+                  <label className="form-label">助记码（拼音首字母）</label>
                   <input className="form-input" value={form.mnemonic} onChange={set('mnemonic')} />
                 </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">单位</label>
-                  <input className="form-input" value={form.unit} onChange={set('unit')} />
+                <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', paddingTop: 28 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
+                    <input type="checkbox" checked={form.participatesInDiscount} onChange={e => setForm(f => ({ ...f, participatesInDiscount: e.target.checked }))} />
+                    参与商城折扣活动
+                  </label>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">成本价（元）</label>
+                  <label className="form-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span>成本价（元）</span>
+                    <button type="button" className="btn btn-ghost btn-sm" style={{ fontSize: 11, padding: '1px 8px' }} onClick={autoCalcPrices}>自动计算</button>
+                  </label>
                   <input className="form-input" type="number" step="0.01" value={form.costPrice} onChange={set('costPrice')} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">零售价（元）</label>
+                  <label className="form-label">零售价（元） *</label>
                   <input className="form-input" type="number" step="0.01" value={form.retailPrice} onChange={set('retailPrice')} />
                 </div>
-                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">所属分类</label>
                   <select className="form-input" value={form.categoryId} onChange={set('categoryId')}>
                     <option value="">无</option>
                     {cats.map(c => <option key={c._id} value={c._id}>{'　'.repeat(c.depth)}{c.name}</option>)}
                   </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">备注</label>
+                  <input className="form-input" value={form.remark} onChange={set('remark')} placeholder="选填" />
                 </div>
               </div>
 

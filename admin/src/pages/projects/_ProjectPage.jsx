@@ -41,7 +41,7 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
 
   const buildEmpty = () => {
     const obj = { categoryId: '' }
-    fields.forEach(f => { obj[f.key] = f.defaultValue ?? (f.type === 'number' ? 0 : '') })
+    fields.forEach(f => { obj[f.key] = f.defaultValue ?? (f.type === 'number' ? 0 : f.type === 'checkbox' ? true : '') })
     return obj
   }
 
@@ -59,7 +59,10 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
   const openEdit = item => {
     setEditId(item._id)
     const f = { categoryId: item.categoryId?._id || item.categoryId || '' }
-    fields.forEach(fd => { f[fd.key] = item[fd.key] ?? (fd.type === 'number' ? 0 : '') })
+    fields.forEach(fd => {
+      if (fd.type === 'checkbox') f[fd.key] = item[fd.key] !== false
+      else f[fd.key] = item[fd.key] ?? (fd.type === 'number' ? 0 : '')
+    })
     setForm(f); setError(''); setShowModal(true)
   }
 
@@ -171,6 +174,11 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
                         <option value="">请选择</option>
                         {f.options?.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
+                    ) : f.type === 'checkbox' ? (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14, marginTop: 8 }}>
+                        <input type="checkbox" checked={!!form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.checked }))} />
+                        参与商城折扣活动
+                      </label>
                     ) : (
                       <input className="form-input" value={form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} />
                     )}
