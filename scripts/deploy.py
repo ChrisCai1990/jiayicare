@@ -94,6 +94,11 @@ def run_deploy(backend_only=False):
         run('cd /var/www/jiayicare/backend && npm install --production', timeout=120, label='安装后端依赖')
 
         # ── 构建前端 ──
+        code, _ = run('cd /var/www/jiayicare && npm run build:app 2>&1 | tail -8', timeout=300, label='构建 app 前端（Expo Web）')
+        if code != 0:
+            print('❌ app 构建失败')
+            ssh.close(); sys.exit(1)
+
         code, _ = run('cd /var/www/jiayicare && npm run build:admin 2>&1 | tail -8', timeout=300, label='构建 admin 前端')
         if code != 0:
             print('❌ admin 构建失败')
@@ -122,6 +127,7 @@ def run_deploy(backend_only=False):
 
     ssh.close()
     print('\n🎉 部署完成！')
+    print('   用户端：  http://121.40.156.39')
     print('   超管后台：http://121.40.156.39:8081')
     print('   医护端：  http://121.40.156.39:8082')
     print('   后端API：  http://121.40.156.39/api')
