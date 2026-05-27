@@ -113,6 +113,8 @@ def run_deploy(backend_only=False):
     if not backend_only:
         # ── 安装依赖 ──
         run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装所有依赖')
+        # npm 有时不会物理安装 vite（认为已满足但实际缺失），显式补装
+        run('test -f /var/www/jiayicare/node_modules/.bin/vite || (cd /var/www/jiayicare && npm install vite @vitejs/plugin-react --legacy-peer-deps)', timeout=120, label='确保 vite 存在')
         run('cd /var/www/jiayicare/backend && npm install --omit=dev', timeout=120, label='安装后端依赖')
 
         # ── 构建前端 ──
