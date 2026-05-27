@@ -111,15 +111,14 @@ def run_deploy(backend_only=False):
     print(f'   📌 当前 commit: {log.strip()}')
 
     if not backend_only:
-        # ── 安装依赖 ──
-        # 只在根目录跑一次，覆盖所有 workspace 成员（含 backend）
-        # 不在子目录单独跑 --omit=dev，否则 workspace 会清除根 devDeps（vite 等）
+        # ── 安装依赖（全量清理保证 vite 等 devDeps 正确安装）──
+        run('rm -rf /var/www/jiayicare/node_modules', timeout=60, label='清理旧 node_modules')
         run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装所有依赖')
 
         VITE = '/var/www/jiayicare/node_modules/.bin/vite'
 
         # ── 构建前端 ──
-        code, _ = run(f'cd /var/www/jiayicare/app && npm run export:web 2>&1', timeout=300, label='构建 app 前端（Expo Web）')
+        code, _ = run('cd /var/www/jiayicare/app && npm run export:web 2>&1', timeout=300, label='构建 app 前端（Expo Web）')
         if code != 0:
             print('❌ app 构建失败')
             ssh.close(); sys.exit(1)
@@ -128,9 +127,6 @@ def run_deploy(backend_only=False):
         if code != 0:
             print('❌ admin 构建失败')
             ssh.close(); sys.exit(1)
-
-        # 检查 vite 是否仍存在（admin 构建的嵌套 npm 进程有时会移除它）
-        run(f'test -f {VITE} || (cd /var/www/jiayicare && npm install vite @vitejs/plugin-react --legacy-peer-deps)', timeout=120, label='确保 vite 仍存在')
 
         code, _ = run(f'cd /var/www/jiayicare/staff && {VITE} build 2>&1', timeout=300, label='构建 staff 前端')
         if code != 0:
