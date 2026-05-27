@@ -102,12 +102,12 @@ def run_deploy(backend_only=False):
             print('❌ app 构建失败')
             ssh.close(); sys.exit(1)
 
-        code, _ = run('cd /var/www/jiayicare/admin && npm run build 2>&1 | tail -8', timeout=300, label='构建 admin 前端')
+        code, _ = run('cd /var/www/jiayicare/admin && npx --yes vite build 2>&1 | tail -8', timeout=300, label='构建 admin 前端')
         if code != 0:
             print('❌ admin 构建失败')
             ssh.close(); sys.exit(1)
 
-        code, _ = run('cd /var/www/jiayicare/staff && npm run build 2>&1 | tail -8', timeout=300, label='构建 staff 前端')
+        code, _ = run('cd /var/www/jiayicare/staff && npx --yes vite build 2>&1 | tail -8', timeout=300, label='构建 staff 前端')
         if code != 0:
             print('❌ staff 构建失败')
             ssh.close(); sys.exit(1)
