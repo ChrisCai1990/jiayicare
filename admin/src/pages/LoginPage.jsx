@@ -50,7 +50,7 @@ export default function LoginPage() {
               type="text"
               placeholder="请输入用户名"
               value={username}
-              onChange={e => setUsername(e.target.value)}
+              onChange={e => { setUsername(e.target.value); setError('') }}
               autoComplete="username"
             />
           </div>
@@ -61,7 +61,7 @@ export default function LoginPage() {
               type="password"
               placeholder="请输入密码"
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={e => { setPassword(e.target.value); setError('') }}
               autoComplete="current-password"
             />
           </div>
