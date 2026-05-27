@@ -93,7 +93,8 @@ def run_deploy(backend_only=False):
         # ── 安装依赖 ──
         # 只在根目录跑一次；vite 已写入根 devDependencies，workspace 成员不能单独 install
         # 否则 npm workspace 会把 vite 从根 node_modules 移走
-        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=180, label='安装所有依赖')
+        # --force 防止 npm 以为 "up to date" 而跳过实际安装
+        run('cd /var/www/jiayicare && npm install --legacy-peer-deps --force', timeout=180, label='安装所有依赖')
         run('cd /var/www/jiayicare/backend && npm install --production', timeout=120, label='安装后端依赖')
 
         # ── 构建前端 ──
