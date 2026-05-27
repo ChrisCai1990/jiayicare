@@ -43,6 +43,16 @@ const defaultContent = {
   },
 }
 
+const ADDON_OPTIONS = [
+  '肿瘤风险筛查',
+  '心脑血管病风险筛查',
+  '慢性病风险筛查',
+  '老年痴呆风险筛查',
+  '骨质疏松风险筛查',
+  '其他风险筛查',
+  '功能医学检测',
+]
+
 // ── 表单字段行（必须定义在 PlanContentForm 外部，避免每次渲染产生新引用导致输入框失焦）──
 function FieldRow({ label, fieldKey, placeholder, rows, half, content, set }) {
   return (
@@ -69,7 +79,24 @@ function PlanContentForm({ type, content, onChange }) {
       <T label="套餐名称" fieldKey="packageName" placeholder="如：基础体检套餐" half />
       <T label="状态说明" fieldKey="packageDesc" placeholder="套餐描述" half />
       <T label="包含检查项目" fieldKey="checkItems" rows={4} placeholder="每行一项，如：颈动脉超声&#10;血脂全套&#10;心脏彩超" />
-      <T label="可选加项库" fieldKey="addons" rows={4} placeholder="每行一项，如：同型半胱氨酸（心血管）&#10;颈动脉超声（心脑血管）" />
+      <div className="form-group" style={{ gridColumn: '1/-1' }}>
+        <label className="form-label">可选加项库</label>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', padding: '10px 12px', border: '1px solid #d0c9be', borderRadius: 8, background: '#faf8f5' }}>
+          {ADDON_OPTIONS.map(opt => {
+            const selected = (content.addons || '').split(',').map(s => s.trim()).filter(Boolean)
+            const checked = selected.includes(opt)
+            return (
+              <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: '#333' }}>
+                <input type="checkbox" checked={checked} onChange={() => {
+                  const next = checked ? selected.filter(s => s !== opt) : [...selected, opt]
+                  set('addons', next.join(', '))
+                }} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E6B50' }} />
+                {opt}
+              </label>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 
