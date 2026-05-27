@@ -2,21 +2,25 @@
 """
 JiayiCare 一键部署脚本
 用法：
-  python scripts/deploy.py            # 只部署（不 push）
-  python scripts/deploy.py --push     # git push + 部署
-  python scripts/deploy.py --backend  # 只重启后端（不重新构建前端）
+  python scripts/deploy.py                      # 只部署（不 push）
+  python scripts/deploy.py --push               # git add + commit + push + 部署
+  python scripts/deploy.py --push -m "描述"    # 指定 commit message
+  python scripts/deploy.py --backend            # 只重启后端（不重新构建前端）
 """
 
 import sys
 import time
 import subprocess
 import argparse
+import os
+from datetime import datetime
 
 # ── 配置 ──────────────────────────────────────────────
 HOST     = '121.40.156.39'
 USER     = 'root'
 PASSWORD = 'Jiayi2026!'
 REPO_DIR = '/var/www/jiayicare'
+LOCAL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # ──────────────────────────────────────────────────────
 
 def check_paramiko():
@@ -29,13 +33,30 @@ def check_paramiko():
         import paramiko
         return paramiko
 
-def git_push():
+def git_commit_and_push(message=None):
+    def run_git(args, check=True):
+        return subprocess.run(['git'] + args, cwd=LOCAL_DIR,
+                              capture_output=True, text=True, check=check)
+
+    # 检查是否有改动
+    status = run_git(['status', '--porcelain'])
+    has_changes = bool(status.stdout.strip())
+
+    if has_changes:
+        print('📝 提交代码改动...')
+        run_git(['add', '.'])
+        msg = message or f'update {datetime.now().strftime("%Y-%m-%d %H:%M")}'
+        result = run_git(['commit', '-m', msg], check=False)
+        if result.returncode not in (0, 1):  # 1 = nothing to commit
+            print(f'❌ git commit 失败：\n{result.stderr}')
+            sys.exit(1)
+        print(f'✅ 已提交：{msg}')
+    else:
+        print('ℹ️  没有新改动，跳过 commit')
+
     print('📤 推送代码到 GitHub...')
-    result = subprocess.run(
-        ['git', 'push', 'origin', 'master'],
-        cwd='D:\\Claude CODE\\JiayiCare-mono',
-        capture_output=True, text=True
-    )
+    result = subprocess.run(['git', 'push', 'origin', 'master'],
+                            cwd=LOCAL_DIR, capture_output=True, text=True)
     if result.returncode != 0:
         print(f'❌ git push 失败：\n{result.stderr}')
         sys.exit(1)
@@ -145,12 +166,13 @@ def main():
         sys.stdout.reconfigure(encoding='utf-8', errors='replace')
 
     parser = argparse.ArgumentParser(description='JiayiCare 一键部署')
-    parser.add_argument('--push',    action='store_true', help='部署前先 git push')
+    parser.add_argument('--push',    action='store_true', help='git add + commit + push 后再部署')
+    parser.add_argument('-m', '--message', default=None, help='commit message（默认：update 时间戳）')
     parser.add_argument('--backend', action='store_true', help='只重启后端，不构建前端')
     args = parser.parse_args()
 
     if args.push:
-        git_push()
+        git_commit_and_push(args.message)
 
     run_deploy(backend_only=args.backend)
 

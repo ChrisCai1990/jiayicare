@@ -20,20 +20,23 @@ JiayiCare-mono/
 
 ### 标准部署（改了前端或全部改了）
 ```bash
-git add . && git commit -m "描述" && git push && python scripts/deploy.py
+python scripts/deploy.py --push
+python scripts/deploy.py --push -m "feat: 描述改动"
 ```
 
 ### 只改了后端（跳过前端构建，更快）
 ```bash
-git add . && git commit -m "描述" && git push && python scripts/deploy.py --backend
+python scripts/deploy.py --push --backend
+python scripts/deploy.py --push --backend -m "fix: 描述改动"
 ```
 
-### 一条命令完成 push + 部署
+### 只部署（代码已手动 push 过）
 ```bash
-# push 和部署合并（--push 参数会先执行 git push）
-python scripts/deploy.py --push
-python scripts/deploy.py --push --backend
+python scripts/deploy.py
+python scripts/deploy.py --backend
 ```
+
+> `--push` 会自动执行 git add . → git commit → git push，再 SSH 部署。未指定 `-m` 时 commit message 默认为 `update 时间戳`。
 
 > `scripts/deploy.py` 通过 SSH 直连服务器执行部署，实时输出日志，自动验证结果。
 > 不依赖 Webhook——Webhook 仍保留作为备份，但不在关键路径上。

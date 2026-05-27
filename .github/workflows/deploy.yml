@@ -1,0 +1,37 @@
+name: Deploy to Aliyun
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.ALIYUN_HOST }}
+          username: root
+          key: ${{ secrets.ALIYUN_SSH_KEY }}
+          port: 22
+          script: |
+            set -e
+            cd /var/www/jiayicare
+
+            echo ">>> git pull"
+            git pull origin master
+
+            echo ">>> 安装后端依赖"
+            cd backend && npm install --production && cd ..
+
+            echo ">>> 构建 admin"
+            cd admin && npm install && npm run build && cd ..
+
+            echo ">>> 构建 staff"
+            cd staff && npm install && npm run build && cd ..
+
+            echo ">>> 重启后端"
+            pm2 restart jiayicare-backend
+
+            echo "✅ 部署完成"
