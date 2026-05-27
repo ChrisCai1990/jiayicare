@@ -15,7 +15,7 @@ export default function LabTestItemPage() {
   return (
     <ProjectPage
       title="检验项目"
-      desc="单个检验指标，如"空腹血糖""血红蛋白""
+      desc='单个检验指标，如"空腹血糖""血红蛋白"'
       fields={FIELDS}
       fetchFn={adminAPI.labTestItems}
       createFn={adminAPI.createLabTestItem}
