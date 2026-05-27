@@ -90,10 +90,10 @@ def run_deploy(backend_only=False):
     print(f'   📌 当前 commit: {log.strip()}')
 
     if not backend_only:
-        # ── 安装依赖（各端独立安装，确保 devDependencies 齐全）──
-        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=180, label='安装根目录依赖（app/expo）')
-        run('cd /var/www/jiayicare/admin && npm install', timeout=180, label='安装 admin 依赖')
-        run('cd /var/www/jiayicare/staff && npm install', timeout=180, label='安装 staff 依赖')
+        # ── 安装依赖 ──
+        # 只在根目录跑一次；vite 已写入根 devDependencies，workspace 成员不能单独 install
+        # 否则 npm workspace 会把 vite 从根 node_modules 移走
+        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=180, label='安装所有依赖')
         run('cd /var/www/jiayicare/backend && npm install --production', timeout=120, label='安装后端依赖')
 
         # ── 构建前端 ──
