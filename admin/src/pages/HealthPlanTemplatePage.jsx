@@ -43,10 +43,9 @@ const defaultContent = {
   },
 }
 
-// ── 各类型的表单字段定义 ──────────────────────────────────────
-function PlanContentForm({ type, content, onChange }) {
-  const set = (k, v) => onChange({ ...content, [k]: v })
-  const T = ({ label, fieldKey, placeholder, rows, half }) => (
+// ── 表单字段行（必须定义在 PlanContentForm 外部，避免每次渲染产生新引用导致输入框失焦）──
+function FieldRow({ label, fieldKey, placeholder, rows, half, content, set }) {
+  return (
     <div className="form-group" style={half ? {} : { gridColumn: '1/-1' }}>
       <label className="form-label">{label}</label>
       {rows ? (
@@ -58,6 +57,12 @@ function PlanContentForm({ type, content, onChange }) {
       )}
     </div>
   )
+}
+
+// ── 各类型的表单字段定义 ──────────────────────────────────────
+function PlanContentForm({ type, content, onChange }) {
+  const set = (k, v) => onChange({ ...content, [k]: v })
+  const T = (props) => <FieldRow {...props} content={content} set={set} />
 
   if (type === 'annual_checkup') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -153,11 +158,12 @@ function PlanContentForm({ type, content, onChange }) {
       <T label="咨询主题" fieldKey="topic" placeholder="如：压力管理、失眠干预" half />
       <T label="咨询频次" fieldKey="frequency" placeholder="如：每周一次，共8次" half />
       <T label="每次时长（分钟）" fieldKey="duration" placeholder="如：50" half />
-      <T label="咨询方式" fieldKey="mode" placeholder="" half>
+      <div className="form-group">
+        <label className="form-label">咨询方式</label>
         <select className="form-input" value={content.mode || '线上'} onChange={e => set('mode', e.target.value)}>
           {['线上', '线下', '电话'].map(m => <option key={m}>{m}</option>)}
         </select>
-      </T>
+      </div>
       <T label="作业建议（日常练习）" fieldKey="homework" rows={3} placeholder="如：正念冥想、情绪日记" />
       <T label="评估工具/量表" fieldKey="assessmentTools" rows={3} placeholder="如：GAD-7（焦虑）、PHQ-9（抑郁）" />
     </div>
