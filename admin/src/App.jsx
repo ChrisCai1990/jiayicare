@@ -11,6 +11,8 @@ import ServicesPage from './pages/ServicesPage'
 import QuestionnairePage from './pages/QuestionnairePage'
 import ChangeLogsPage from './pages/ChangeLogsPage'
 import StaffPage from './pages/StaffPage'
+import ProductsPage from './pages/ProductsPage'
+import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import Layout from './components/Layout'
 
 // ── Auth Context ─────────────────────────────────────────────────
@@ -78,6 +80,8 @@ export default function App() {
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
               <Route path="staff" element={<StaffPage />} />
+              <Route path="products" element={<ProductsPage />} />
+              <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

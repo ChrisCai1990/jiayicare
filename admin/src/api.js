@@ -54,6 +54,28 @@ export const adminAPI = {
   updateStaff: (id, data)    => req(`/staff/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteStaff: (id)          => req(`/staff/${id}`, { method: 'DELETE' }),
 
+  // 会员类型管理
+  memberTypes:        ()         => req('/member-types'),
+  createMemberType:   (data)     => req('/member-types', { method: 'POST', body: JSON.stringify(data) }),
+  toggleMemberType:   (id)       => req(`/member-types/${id}/toggle`, { method: 'PATCH' }),
+  deleteMemberType:   (id)       => req(`/member-types/${id}`, { method: 'DELETE' }),
+
+  // 商城产品管理
+  products:           (params = {}) => req('/products?' + new URLSearchParams(params).toString()),
+  createProduct:      (data)     => req('/products', { method: 'POST', body: JSON.stringify(data) }),
+  updateProduct:      (id, data) => req(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleProduct:      (id)       => req(`/products/${id}/toggle`, { method: 'PATCH' }),
+  batchToggleProducts:(ids, status) => req('/products/batch-toggle', { method: 'PATCH', body: JSON.stringify({ ids, status }) }),
+  deleteProduct:      (id)       => req(`/products/${id}`, { method: 'DELETE' }),
+
+  // 健康方案模板管理
+  planTemplates:      (type)     => req('/plan-templates' + (type ? '?type=' + type : '')),
+  createPlanTemplate: (data)     => req('/plan-templates', { method: 'POST', body: JSON.stringify(data) }),
+  updatePlanTemplate: (id, data) => req(`/plan-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  copyPlanTemplate:   (id)       => req(`/plan-templates/${id}/copy`, { method: 'POST' }),
+  togglePlanTemplate: (id)       => req(`/plan-templates/${id}/toggle`, { method: 'PATCH' }),
+  deletePlanTemplate: (id)       => req(`/plan-templates/${id}`, { method: 'DELETE' }),
+
   // 动态问卷管理
   questionnaires:            ()         => req('/questionnaires'),
   createQuestionnaire:       (data)     => req('/questionnaires', { method: 'POST', body: JSON.stringify(data) }),

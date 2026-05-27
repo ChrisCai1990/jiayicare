@@ -3,12 +3,14 @@ import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAdmin } from '../App'
 
 const NAV = [
-  { label: '数据总览',   icon: '📊', path: '/dashboard' },
-  { label: '患者管理',   icon: '👥', path: '/patients' },
-  { label: '订单管理',   icon: '📋', path: '/orders' },
-  { label: '消息中心',   icon: '💬', path: '/messages' },
-  { label: '服务管理',   icon: '🛒', path: '/services' },
-  { label: '问卷管理',   icon: '📝', path: '/questionnaires' },
+  { label: '数据总览',     icon: '📊', path: '/dashboard' },
+  { label: '患者管理',     icon: '👥', path: '/patients' },
+  { label: '订单管理',     icon: '📋', path: '/orders' },
+  { label: '消息中心',     icon: '💬', path: '/messages' },
+  { label: '服务管理',     icon: '🛒', path: '/services' },
+  { label: '商城产品管理', icon: '🏪', path: '/products' },
+  { label: '健康方案模板', icon: '📚', path: '/health-plan-templates' },
+  { label: '问卷管理',     icon: '📝', path: '/questionnaires' },
   { label: '信息变更记录', icon: '📌', path: '/change-logs' },
   { label: '医护账号管理', icon: '👨‍⚕️', path: '/staff' },
 ]

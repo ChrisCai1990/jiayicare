@@ -7,6 +7,9 @@ const Task = require('../models/Task');
 const Message = require('../models/Message');
 const Order = require('../models/Order');
 const Service = require('../models/Service');
+const Product = require('../models/Product');
+const MemberType = require('../models/MemberType');
+const PlanTemplate = require('../models/PlanTemplate');
 const CheckupPlan = require('../models/CheckupPlan');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const UserChangeLog = require('../models/UserChangeLog');
@@ -613,6 +616,168 @@ router.patch('/medical-reports/:id/audit', adminAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// ── 会员类型管理 ──────────────────────────────────────────────────
+
+async function seedMemberTypes() {
+  const count = await MemberType.countDocuments();
+  if (count > 0) return;
+  await MemberType.insertMany([
+    { name: '年度会员', active: true, sortOrder: 0 },
+    { name: '半年会员', active: true, sortOrder: 1 },
+    { name: '季度会员', active: true, sortOrder: 2 },
+  ]);
+}
+seedMemberTypes().catch(console.error);
+
+// GET /api/admin/member-types
+router.get('/member-types', adminAuth, async (req, res) => {
+  const types = await MemberType.find().sort({ sortOrder: 1, createdAt: 1 });
+  res.json({ success: true, data: types });
+});
+
+// POST /api/admin/member-types
+router.post('/member-types', adminAuth, async (req, res) => {
+  const { name, sortOrder } = req.body;
+  if (!name) return res.status(400).json({ success: false, message: '名称不能为空' });
+  const existing = await MemberType.findOne({ name });
+  if (existing) return res.status(400).json({ success: false, message: '该会员类型已存在' });
+  const mt = await MemberType.create({ name, sortOrder: sortOrder || 0 });
+  res.json({ success: true, data: mt });
+});
+
+// PATCH /api/admin/member-types/:id/toggle
+router.patch('/member-types/:id/toggle', adminAuth, async (req, res) => {
+  const mt = await MemberType.findById(req.params.id);
+  if (!mt) return res.status(404).json({ success: false, message: '会员类型不存在' });
+  mt.active = !mt.active;
+  await mt.save();
+  res.json({ success: true, data: mt });
+});
+
+// DELETE /api/admin/member-types/:id
+router.delete('/member-types/:id', adminAuth, async (req, res) => {
+  await MemberType.findByIdAndDelete(req.params.id);
+  res.json({ success: true, message: '已删除' });
+});
+
+// ── 商城产品管理 ──────────────────────────────────────────────────
+
+// GET /api/admin/products
+router.get('/products', adminAuth, async (req, res) => {
+  const { name, category, status } = req.query;
+  const filter = {};
+  if (name) filter.name = new RegExp(name, 'i');
+  if (category) filter.category = category;
+  if (status) filter.status = status;
+  const products = await Product.find(filter).sort({ sortOrder: 1, createdAt: -1 });
+  res.json({ success: true, data: products });
+});
+
+// POST /api/admin/products
+router.post('/products', adminAuth, async (req, res) => {
+  const { name, images, originalPrice, memberPrices, category, sortOrder, features, description, stock, status } = req.body;
+  if (!name || !category || originalPrice === undefined) {
+    return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
+  }
+  const product = await Product.create({
+    name, images: images || [], originalPrice, memberPrices: memberPrices || {},
+    category, sortOrder: sortOrder ?? 999, features: features || [],
+    description: description || '', stock: stock ?? 0, status: status || 'off',
+  });
+  res.json({ success: true, data: product, message: '产品创建成功' });
+});
+
+// PUT /api/admin/products/:id
+router.put('/products/:id', adminAuth, async (req, res) => {
+  const { name, images, originalPrice, memberPrices, category, sortOrder, features, description, stock, status } = req.body;
+  const product = await Product.findByIdAndUpdate(
+    req.params.id,
+    { name, images, originalPrice, memberPrices, category, sortOrder, features, description, stock, status },
+    { new: true }
+  );
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  res.json({ success: true, data: product, message: '产品更新成功' });
+});
+
+// PATCH /api/admin/products/:id/toggle
+router.patch('/products/:id/toggle', adminAuth, async (req, res) => {
+  const product = await Product.findById(req.params.id);
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  product.status = product.status === 'on' ? 'off' : 'on';
+  await product.save();
+  res.json({ success: true, data: product, message: product.status === 'on' ? '产品已上架' : '产品已下架' });
+});
+
+// PATCH /api/admin/products/batch-toggle
+router.patch('/products/batch-toggle', adminAuth, async (req, res) => {
+  const { ids, status } = req.body;
+  if (!ids || !ids.length || !['on', 'off'].includes(status)) {
+    return res.status(400).json({ success: false, message: '参数错误' });
+  }
+  await Product.updateMany({ _id: { $in: ids } }, { status });
+  res.json({ success: true, message: `已批量${status === 'on' ? '上架' : '下架'} ${ids.length} 件产品` });
+});
+
+// DELETE /api/admin/products/:id
+router.delete('/products/:id', adminAuth, async (req, res) => {
+  const product = await Product.findByIdAndDelete(req.params.id);
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  res.json({ success: true, message: '产品已删除' });
+});
+
+// ── 健康方案模板管理 ──────────────────────────────────────────────
+
+// GET /api/admin/plan-templates?type=
+router.get('/plan-templates', adminAuth, async (req, res) => {
+  const { type } = req.query;
+  const filter = type ? { type } : {};
+  const templates = await PlanTemplate.find(filter).sort({ createdAt: -1 });
+  res.json({ success: true, data: templates });
+});
+
+// POST /api/admin/plan-templates
+router.post('/plan-templates', adminAuth, async (req, res) => {
+  const { type, name, status, content } = req.body;
+  if (!type || !name) return res.status(400).json({ success: false, message: '类型和名称不能为空' });
+  const tpl = await PlanTemplate.create({ type, name, status: status || 'active', content: content || {} });
+  res.json({ success: true, data: tpl, message: '模板创建成功' });
+});
+
+// PUT /api/admin/plan-templates/:id
+router.put('/plan-templates/:id', adminAuth, async (req, res) => {
+  const { name, status, content } = req.body;
+  const tpl = await PlanTemplate.findByIdAndUpdate(
+    req.params.id,
+    { name, status, content },
+    { new: true }
+  );
+  if (!tpl) return res.status(404).json({ success: false, message: '模板不存在' });
+  res.json({ success: true, data: tpl, message: '模板更新成功' });
+});
+
+// POST /api/admin/plan-templates/:id/copy
+router.post('/plan-templates/:id/copy', adminAuth, async (req, res) => {
+  const src = await PlanTemplate.findById(req.params.id);
+  if (!src) return res.status(404).json({ success: false, message: '模板不存在' });
+  const copy = await PlanTemplate.create({ type: src.type, name: src.name + '（副本）', status: 'inactive', content: src.content });
+  res.json({ success: true, data: copy, message: '模板已复制' });
+});
+
+// PATCH /api/admin/plan-templates/:id/toggle
+router.patch('/plan-templates/:id/toggle', adminAuth, async (req, res) => {
+  const tpl = await PlanTemplate.findById(req.params.id);
+  if (!tpl) return res.status(404).json({ success: false, message: '模板不存在' });
+  tpl.status = tpl.status === 'active' ? 'inactive' : 'active';
+  await tpl.save();
+  res.json({ success: true, data: tpl });
+});
+
+// DELETE /api/admin/plan-templates/:id
+router.delete('/plan-templates/:id', adminAuth, async (req, res) => {
+  await PlanTemplate.findByIdAndDelete(req.params.id);
+  res.json({ success: true, message: '模板已删除' });
 });
 
 module.exports = router;
