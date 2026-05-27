@@ -90,26 +90,24 @@ def run_deploy(backend_only=False):
     print(f'   📌 当前 commit: {log.strip()}')
 
     if not backend_only:
-        # ── 安装依赖 ──
-        code, _ = run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=180, label='安装根目录依赖')
-        if code != 0:
-            print('   ⚠️  npm install 失败，清理 node_modules 后重试...')
-            run('rm -rf /var/www/jiayicare/node_modules', timeout=60)
-            run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='重新安装根目录依赖（完整）')
+        # ── 安装依赖（各端独立安装，确保 devDependencies 齐全）──
+        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=180, label='安装根目录依赖（app/expo）')
+        run('cd /var/www/jiayicare/admin && npm install', timeout=180, label='安装 admin 依赖')
+        run('cd /var/www/jiayicare/staff && npm install', timeout=180, label='安装 staff 依赖')
         run('cd /var/www/jiayicare/backend && npm install --production', timeout=120, label='安装后端依赖')
 
         # ── 构建前端 ──
-        code, _ = run('cd /var/www/jiayicare && npm run build:app 2>&1 | tail -8', timeout=300, label='构建 app 前端（Expo Web）')
+        code, _ = run('cd /var/www/jiayicare/app && npm run export:web 2>&1 | tail -8', timeout=300, label='构建 app 前端（Expo Web）')
         if code != 0:
             print('❌ app 构建失败')
             ssh.close(); sys.exit(1)
 
-        code, _ = run('cd /var/www/jiayicare && npm run build:admin 2>&1 | tail -8', timeout=300, label='构建 admin 前端')
+        code, _ = run('cd /var/www/jiayicare/admin && npm run build 2>&1 | tail -8', timeout=300, label='构建 admin 前端')
         if code != 0:
             print('❌ admin 构建失败')
             ssh.close(); sys.exit(1)
 
-        code, _ = run('cd /var/www/jiayicare && npm run build:staff 2>&1 | tail -8', timeout=300, label='构建 staff 前端')
+        code, _ = run('cd /var/www/jiayicare/staff && npm run build 2>&1 | tail -8', timeout=300, label='构建 staff 前端')
         if code != 0:
             print('❌ staff 构建失败')
             ssh.close(); sys.exit(1)
