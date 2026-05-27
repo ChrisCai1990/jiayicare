@@ -112,24 +112,21 @@ def run_deploy(backend_only=False):
 
     if not backend_only:
         # ── 安装依赖 ──
-        # 只在根目录跑一次；vite 已写入根 devDependencies，workspace 成员不能单独 install
-        # 否则 npm workspace 会把 vite 从根 node_modules 移走
-        # --force 防止 npm 以为 "up to date" 而跳过实际安装
-        run('cd /var/www/jiayicare && npm install --legacy-peer-deps --force', timeout=180, label='安装所有依赖')
-        run('cd /var/www/jiayicare/backend && npm install --production', timeout=120, label='安装后端依赖')
+        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装所有依赖')
+        run('cd /var/www/jiayicare/backend && npm install --omit=dev', timeout=120, label='安装后端依赖')
 
         # ── 构建前端 ──
-        code, _ = run('cd /var/www/jiayicare/app && npm run export:web 2>&1 | tail -8', timeout=300, label='构建 app 前端（Expo Web）')
+        code, _ = run('cd /var/www/jiayicare/app && npm run export:web 2>&1', timeout=300, label='构建 app 前端（Expo Web）')
         if code != 0:
             print('❌ app 构建失败')
             ssh.close(); sys.exit(1)
 
-        code, _ = run('cd /var/www/jiayicare/admin && /var/www/jiayicare/node_modules/.bin/vite build 2>&1 | tail -8', timeout=300, label='构建 admin 前端')
+        code, _ = run('cd /var/www/jiayicare/admin && /var/www/jiayicare/node_modules/.bin/vite build 2>&1', timeout=300, label='构建 admin 前端')
         if code != 0:
             print('❌ admin 构建失败')
             ssh.close(); sys.exit(1)
 
-        code, _ = run('cd /var/www/jiayicare/staff && /var/www/jiayicare/node_modules/.bin/vite build 2>&1 | tail -8', timeout=300, label='构建 staff 前端')
+        code, _ = run('cd /var/www/jiayicare/staff && /var/www/jiayicare/node_modules/.bin/vite build 2>&1', timeout=300, label='构建 staff 前端')
         if code != 0:
             print('❌ staff 构建失败')
             ssh.close(); sys.exit(1)
