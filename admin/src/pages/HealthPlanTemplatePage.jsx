@@ -85,18 +85,29 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <FieldRow label="包含检查项目" fieldKey="checkItems" rows={4} placeholder="每行一项，如：颈动脉超声&#10;血脂全套&#10;心脏彩超" content={content} set={set} />
       <div className="form-group" style={{ gridColumn: '1/-1' }}>
         <label className="form-label">可选加项库</label>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 20px', padding: '10px 12px', border: '1px solid #d0c9be', borderRadius: 8, background: '#faf8f5' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', border: '1px solid #d0c9be', borderRadius: 8, background: '#faf8f5' }}>
           {ADDON_OPTIONS.map(opt => {
-            const selected = (content.addons || '').split(',').map(s => s.trim()).filter(Boolean)
-            const checked = selected.includes(opt)
+            const addons = content.addons && typeof content.addons === 'object' ? content.addons : {}
+            const checked = opt in addons
+            const note = addons[opt] || ''
+            const updateAddons = (newAddons) => set('addons', newAddons)
             return (
-              <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, color: '#333' }}>
-                <input type="checkbox" checked={checked} onChange={() => {
-                  const next = checked ? selected.filter(s => s !== opt) : [...selected, opt]
-                  set('addons', next.join(', '))
-                }} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E6B50' }} />
-                {opt}
-              </label>
+              <div key={opt}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#333', marginBottom: 4 }}>
+                  <input type="checkbox" checked={checked} onChange={() => {
+                    const next = { ...addons }
+                    if (checked) { delete next[opt] } else { next[opt] = '' }
+                    updateAddons(next)
+                  }} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E6B50' }} />
+                  {opt}
+                </label>
+                {checked && (
+                  <input className="form-input" value={note}
+                    onChange={e => updateAddons({ ...addons, [opt]: e.target.value })}
+                    placeholder={`录入${opt}的具体内容...`}
+                    style={{ marginLeft: 21, width: 'calc(100% - 21px)' }} />
+                )}
+              </div>
             )
           })}
         </div>
