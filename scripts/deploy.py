@@ -76,6 +76,7 @@ def run_deploy(backend_only=False):
         return exit_code, out
 
     # ── 拉取最新代码 ──
+    run(f'cd {REPO_DIR} && git remote prune origin', timeout=15)
     code, _ = run(
         f'cd {REPO_DIR} && git fetch origin master && git reset --hard origin/master',
         timeout=60, label='拉取最新代码'
