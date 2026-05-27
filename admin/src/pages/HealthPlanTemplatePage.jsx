@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { adminAPI } from '../api'
 import { useToast } from '../App'
 
@@ -70,8 +70,14 @@ function FieldRow({ label, fieldKey, placeholder, rows, half, content, set }) {
 }
 
 // ── 各类型的表单字段定义 ──────────────────────────────────────
-function PlanContentForm({ type, content, onChange }) {
-  const set = (k, v) => onChange({ ...content, [k]: v })
+// content state 放在此组件内部，避免每次输入触发 TemplateModal 重渲染导致输入框失焦
+function PlanContentForm({ type, initialContent, contentRef }) {
+  const [content, setContent] = useState(initialContent || defaultContent[type] || {})
+  const set = useCallback((k, v) => setContent(prev => {
+    const next = { ...prev, [k]: v }
+    contentRef.current = next
+    return next
+  }), [contentRef])
 
   if (type === 'annual_checkup') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -204,13 +210,14 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
   const isEdit = !!template?._id
   const [name, setName] = useState(template?.name || '')
   const [status, setStatus] = useState(template?.status || 'active')
-  const [content, setContent] = useState(template?.content || defaultContent[planType] || {})
   const [loading, setLoading] = useState(false)
+  const contentRef = useRef(template?.content || defaultContent[planType] || {})
 
   const typeLabel = PLAN_TYPES.find(t => t.key === planType)?.label || planType
 
   const save = async () => {
     if (!name.trim()) { toast('❌ 模板名称不能为空'); return }
+    const content = contentRef.current
     setLoading(true)
     try {
       if (isEdit) {
@@ -254,7 +261,7 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
 
           <div style={{ borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: '#333', marginBottom: 12 }}>模板内容</div>
-            <PlanContentForm type={planType} content={content} onChange={setContent} />
+            <PlanContentForm type={planType} initialContent={contentRef.current} contentRef={contentRef} />
           </div>
         </div>
         <div className="modal-footer">
