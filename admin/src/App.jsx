@@ -10,10 +10,29 @@ import MessagesPage from './pages/MessagesPage'
 import ServicesPage from './pages/ServicesPage'
 import QuestionnairePage from './pages/QuestionnairePage'
 import ChangeLogsPage from './pages/ChangeLogsPage'
-import StaffPage from './pages/StaffPage'
 import ProductsPage from './pages/ProductsPage'
 import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import Layout from './components/Layout'
+
+// 基本设置
+import CompanyInfoPage   from './pages/settings/CompanyInfoPage'
+import DepartmentPage    from './pages/settings/DepartmentPage'
+import RolePage          from './pages/settings/RolePage'
+import EmployeePage      from './pages/settings/EmployeePage'
+import MemberSettingsPage from './pages/settings/MemberSettingsPage'
+
+// 项目设置
+import CategoryPage       from './pages/projects/CategoryPage'
+import DiseasePage        from './pages/projects/DiseasePage'
+import LabTestItemPage    from './pages/projects/LabTestItemPage'
+import LabTestOrderPage   from './pages/projects/LabTestOrderPage'
+import LabTestPackagePage from './pages/projects/LabTestPackagePage'
+import SpecialExamPage    from './pages/projects/SpecialExamPage'
+import ServiceItemPage    from './pages/projects/ServiceItemPage'
+import OtherChargePage    from './pages/projects/OtherChargePage'
+import ProjectTemplatePage from './pages/projects/ProjectTemplatePage'
+import FollowUpFormPage   from './pages/projects/FollowUpFormPage'
+import FollowUpPlanPage   from './pages/projects/FollowUpPlanPage'
 
 // ── Auth Context ─────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -79,9 +98,28 @@ export default function App() {
               <Route path="services" element={<ServicesPage />} />
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
-              <Route path="staff" element={<StaffPage />} />
               <Route path="products" element={<ProductsPage />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
+
+              {/* 基本设置 */}
+              <Route path="settings/company"     element={<CompanyInfoPage />} />
+              <Route path="settings/departments" element={<DepartmentPage />} />
+              <Route path="settings/roles"       element={<RolePage />} />
+              <Route path="settings/employees"   element={<EmployeePage />} />
+              <Route path="settings/members"     element={<MemberSettingsPage />} />
+
+              {/* 项目设置 */}
+              <Route path="projects/categories"       element={<CategoryPage />} />
+              <Route path="projects/diseases"         element={<DiseasePage />} />
+              <Route path="projects/lab-test-items"   element={<LabTestItemPage />} />
+              <Route path="projects/lab-test-orders"  element={<LabTestOrderPage />} />
+              <Route path="projects/lab-test-packages" element={<LabTestPackagePage />} />
+              <Route path="projects/special-exams"    element={<SpecialExamPage />} />
+              <Route path="projects/service-items"    element={<ServiceItemPage />} />
+              <Route path="projects/other-charges"    element={<OtherChargePage />} />
+              <Route path="projects/templates"        element={<ProjectTemplatePage />} />
+              <Route path="projects/followup-forms"   element={<FollowUpFormPage />} />
+              <Route path="projects/followup-plans"   element={<FollowUpPlanPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

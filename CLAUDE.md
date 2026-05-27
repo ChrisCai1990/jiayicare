@@ -1,37 +1,50 @@
 # JiayiCare Monorepo 完整说明
 
-## 目录结构
+## 目录结构（4个端）
 ```
 JiayiCare-mono/
-├── app/        React Native + Expo 前端（用户端）
-├── admin/      React + Vite 管理后台
+├── app/        React Native + Expo 用户端（患者使用）
+├── admin/      React + Vite 超级管理后台（运营/超管使用）
+├── staff/      React + Vite 医护端（医生/健管师使用）
 ├── backend/    Node.js + Express + MongoDB API
 └── package.json
 ```
 
+### 各端职责
+- **app/**：患者使用的移动端App（健康数据、问诊、服务购买等）
+- **admin/**：超级管理员后台（患者总览、订单、服务管理、商城产品管理、健康方案模板、医护账号管理等）
+- **staff/**：医护人员工作台（随访、患者管理、服务记录、计划、提成等）
+- **backend/**：统一API服务，三端共用
+
 ## 部署命令
 
-### 所有服务（push 后 Railway 自动部署）
+### 所有服务（push 后阿里云自动部署）
 ```bash
 git add <files> && git commit -m "..." && git push origin master
 ```
-- app/ 变更 → jiayihui-app 服务自动重新构建
-- admin/ 变更 → jiayihui-admin 服务自动重新构建
-- backend/ 变更 → backend 服务自动重新构建
+- push 后 GitHub Webhook 触发 deploy.sh：`git fetch + git reset --hard origin/master` + build + pm2 restart
+- **注意**：deploy.sh 用 `reset --hard` 而非 `git pull`，服务器本地修改会被覆盖
 
-## 线上地址
-- 前端 app：https://jiayihui-app-production.up.railway.app
-- 管理后台：https://jiayihui-admin-production.up.railway.app
-- 后端：https://mongodb-production-06f7.up.railway.app/api
+## 线上地址（阿里云 ECS 121.40.156.39）
+- 用户端 app：http://121.40.156.39
+- 超管后台 admin：http://121.40.156.39:8081
+- 医护端 staff：http://121.40.156.39:8082
+- 后端 API：http://121.40.156.39/api
 
-## 部署方式（Railway 自动部署）
-- push 代码到 GitHub master 分支后，Railway 自动触发构建部署
-- jiayihui-app 服务：Build=`npm install && npm run build:app` / Start=`npm run serve:app`
-- jiayihui-admin 服务：Build=`npm install && npm run build:admin` / Start=`npm run serve:admin`
-- backend 服务：Railway 连接 GitHub ChrisCai1990/jiayicare master，push 后自动部署
+## 部署方式（GitHub Webhook 自动部署）
+- 服务器：阿里云 ECS，Ubuntu，IP 121.40.156.39，SSH：root@121.40.156.39
+- Webhook 端口：9000，脚本：/var/www/jiayicare/deploy.sh
+- deploy.sh 内容：`git fetch origin master && git reset --hard origin/master` + npm install + build + pm2 restart
+- 后端进程：PM2 管理，进程名 jiayicare-backend（id 0）；webhook-server（id 1）
+- 前端静态文件：Nginx 托管，/var/www/jiayicare/{app,admin,staff}/dist
+- 数据库：本地 MongoDB 27017，库名 jiayicare
+- 后端 .env：/var/www/jiayicare/backend/.env
+- GitHub SSH：服务器使用 Deploy Key（/root/.ssh/github_deploy），已在 GitHub 仓库配置（key id: 152715350）
 
 ## 演示账号
-- 手机号：13800138000 / 验证码：123456
+- 用户端：手机号 13800138000 / 验证码 123456
+- 超管后台：superadmin / jiayi2024
+- 医护端超管：jy_super / jiayi2024
 
 ---
 
@@ -124,13 +137,26 @@ GET  /api/services             服务商城列表
 POST /api/services/order       下单
 GET  /api/orders               我的订单
 PATCH /api/orders/:id/cancel   取消订单
+
+# 超管后台专用（需 Bearer token + admin role）
+GET/POST        /api/admin/member-types                  会员类型
+GET/POST        /api/admin/products                      商城产品
+PATCH           /api/admin/products/:id                  更新产品
+DELETE          /api/admin/products/:id                  删除产品
+POST            /api/admin/products/batch-toggle         批量上下架
+GET/POST        /api/admin/plan-templates                健康方案模板
+PATCH           /api/admin/plan-templates/:id            更新模板
+DELETE          /api/admin/plan-templates/:id            删除模板
+POST            /api/admin/plan-templates/:id/copy       复制模板
+PATCH           /api/admin/plan-templates/:id/toggle     切换启用状态
 ```
 
-## 后端环境变量（Railway Variables）
-- MONGODB_URI
+## 后端环境变量（/var/www/jiayicare/backend/.env）
+- MONGODB_URI=mongodb://127.0.0.1:27017/jiayicare
 - JWT_SECRET
 - WECHAT_SECRET
 - FRONTEND_URL
+- NODE_ENV=production
 
 ---
 
@@ -149,7 +175,7 @@ PATCH /api/orders/:id/cancel   取消订单
 ## 关键设计决策（避免重复踩坑）
 
 ### PUT /user/me 用原生 driver
-Railway 旧版 schema 把 familyHistory 等定义为 String，直接用 findByIdAndUpdate 会报 Cast 错误。
+直接用 findByIdAndUpdate 对 Mixed 数组字段会报 Cast 错误。
 ```js
 // backend/src/routes/user.js 里用这个，不要用 findByIdAndUpdate：
 await User.collection.updateOne({ _id: req.user._id }, { $set: updateData });
@@ -172,10 +198,19 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 ### 错误显示
 弹窗内的错误要显示在弹窗内部，不能用 toast（toast 会被弹窗遮住）
 
+### 商城产品差异化定价
+`memberPrices` 字段用 `mongoose.Schema.Types.Mixed` 存 JSON 对象（`{ "年度会员": 199, "半年会员": 149 }`），不用嵌套 Schema，避免 Cast 错误。会员类型从 MemberType 集合读取（自动播种：年度/半年/季度会员）。
+
+### 健康方案模板 7 种 type
+`annual_checkup` / `health_management` / `nutrition` / `medical_assist` / `rehab` / `tcm` / `psychology`
+对应：年度体检 / 健康管理 / 营养干预 / 就医协助 / 运动复健 / 中医养生 / 心理咨询
+
+### superadmin 密码
+后端每次启动自动执行 `sa.password = 'jiayi2024'; sa.save()`（触发 bcrypt pre-save 钩子），确保密码哈希始终有效。日志输出 `🔑 superadmin 密码已同步`。
+
 ---
 
 ## ⚠️ 遗留问题
 - **EditProfileScreen 数组字段被注释掉**（allergies/medicalHistory/medications/familyHistory/surgeries）
-  - 原因：Railway 旧 schema 把这些字段定义为 String，发数组会报 Cast 错误
   - 位置：`app/src/screens/profile/EditProfileScreen.js` handleSave 的 healthProfile 里
-  - 恢复方式：取消注释那5个字段，前提是 Railway 已部署最新 User.js（Mixed 数组类型）
+  - 恢复方式：直接取消注释那5个字段即可（当前 User.js 已是 Mixed 数组类型，阿里云部署版本支持）

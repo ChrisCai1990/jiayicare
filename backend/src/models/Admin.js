@@ -26,9 +26,15 @@ const adminSchema = new mongoose.Schema({
   title:      { type: String, default: '' },
   avatar:     { type: String, default: '' },
   // 医护端扩展字段
-  department: { type: String, default: '' },  // 所属部门
-  managerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 直属上级
-  region:     { type: String, default: '' },  // 所属区域
+  department: { type: String, default: '' },  // 所属部门（旧字符串，保留兼容）
+  managerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  region:     { type: String, default: '' },
+  // 新增字段
+  email:        { type: String, default: '' },
+  certNumber:   { type: String, default: '' }, // 证书编号（如医师执业证号）
+  staffStatus:  { type: String, enum: ['active', 'inactive'], default: 'active' },
+  deptId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
+  customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffRole', default: null },
 }, { timestamps: true });
 
 // 密码哈希
