@@ -290,22 +290,32 @@ function ConfirmDeleteModal({ visible, onConfirm, onCancel, loading }) {
   );
 }
 
-function UploadZone({ onPress, uploading }) {
+function UploadZone({ onPress, uploading, typeFilter }) {
+  const tm = typeFilter && typeFilter !== 'all' ? TYPE_META[typeFilter] : null;
+  const title   = uploading ? '上传中…' : tm ? `上传${tm.label}报告` : '上传体检报告';
+  const iconColor = tm?.color || colors.primary;
+  const iconBg    = tm ? tm.bg : colors.primary + '12';
   return (
-    <TouchableOpacity style={styles.uploadZone} onPress={onPress} activeOpacity={0.8} disabled={uploading}>
-      <View style={styles.uploadIconWrap}>
+    <TouchableOpacity
+      style={[styles.uploadZone, tm && { borderColor: tm.color + '50' }]}
+      onPress={onPress} activeOpacity={0.8} disabled={uploading}
+    >
+      <View style={[styles.uploadIconWrap, { backgroundColor: iconBg }]}>
         {uploading
-          ? <ActivityIndicator color={colors.primary} size="large" />
-          : <Ionicons name="cloud-upload-outline" size={32} color={colors.primary} />
+          ? <ActivityIndicator color={iconColor} size="large" />
+          : <Ionicons name={tm ? tm.icon : 'cloud-upload-outline'} size={32} color={iconColor} />
         }
       </View>
-      <Text style={styles.uploadTitle}>{uploading ? '上传中…' : '上传体检报告'}</Text>
+      <Text style={[styles.uploadTitle, tm && { color: tm.color }]}>{title}</Text>
       <Text style={styles.uploadDesc}>支持 PDF、JPG、PNG 格式{'\n'}单文件最大 20MB</Text>
       {!uploading && (
         <View style={styles.uploadBtnRow}>
-          <TouchableOpacity style={styles.uploadOptionBtn} onPress={onPress}>
-            <Ionicons name="document-outline" size={16} color={colors.primary} />
-            <Text style={styles.uploadOptionText}>选择文件</Text>
+          <TouchableOpacity
+            style={[styles.uploadOptionBtn, tm && { borderColor: tm.color + '60', backgroundColor: tm.bg }]}
+            onPress={onPress}
+          >
+            <Ionicons name="document-outline" size={16} color={iconColor} />
+            <Text style={[styles.uploadOptionText, tm && { color: tm.color }]}>选择文件</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -886,6 +896,7 @@ export default function ReportUploadScreen({ navigation, route }) {
       const res = await reportsAPI.create(payload);
       if (res.success) {
         setReports(prev => [res.data, ...prev]);
+        setTypeFilter(type);   // 自动切换到对应 tab
         showToast('上传成功');
       } else {
         showToast('上传失败，请重试', true);
@@ -1015,7 +1026,7 @@ export default function ReportUploadScreen({ navigation, route }) {
       <ScrollView showsVerticalScrollIndicator={false}>
         {/* Upload Zone */}
         <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }}>
-          <UploadZone onPress={handleUpload} uploading={uploading} />
+          <UploadZone onPress={handleUpload} uploading={uploading} typeFilter={typeFilter} />
         </View>
 
         {/* AI Analysis */}
