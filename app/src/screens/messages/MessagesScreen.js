@@ -45,6 +45,7 @@ function normalizePushRecord(pr) {
     price: pr.price || null,
     productName: pr.title || '',
     productId: pr.productId || null,
+    products: pr.products || [],
   };
 }
 
@@ -80,19 +81,213 @@ function MessageItem({ msg, onPress }) {
   );
 }
 
-function MessageDetailModal({ msg, onClose, onBuyIntent }) {
+const CAT_COLOR_MAP = {
+  '检测套餐': '#0077B6', '专家咨询': '#1E6B50', '上门服务': '#22A06B',
+  '健康课程': '#8e44ad', '服务包': '#D97706',
+};
+
+function ProductPushDetail({ msg, onClose }) {
+  // products 数组：新版多产品；兜底：用旧版单产品构造一条
+  const productList = (msg.products && msg.products.length > 0)
+    ? msg.products
+    : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, category: '', icon: '🛍' }] : []);
+
+  const [checkedIds, setCheckedIds] = useState(() => productList.map(p => p.productId));
+  const [paying, setPaying] = useState(false);
+  const [paid, setPaid] = useState(false);
+  const [payError, setPayError] = useState('');
+
+  const toggleItem = (id) =>
+    setCheckedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+
+  const allChecked = checkedIds.length === productList.length;
+  const toggleAll = () =>
+    setCheckedIds(allChecked ? [] : productList.map(p => p.productId));
+
+  const checkedItems = productList.filter(p => checkedIds.includes(p.productId));
+  const total = checkedItems.reduce((s, p) => s + (p.price || 0), 0);
+
+  const handlePay = async () => {
+    if (!checkedIds.length) return;
+    setPaying(true); setPayError('');
+    try {
+      await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds });
+      setPaid(true);
+    } catch (e) {
+      setPayError(e.message || '下单失败，请稍后重试');
+    } finally {
+      setPaying(false);
+    }
+  };
+
+  if (paid) {
+    return (
+      <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+        <View style={styles.detailOverlay}>
+          <View style={[styles.detailCard, { alignItems: 'center', paddingVertical: 40 }]}>
+            <View style={styles.detailHandle} />
+            <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: colors.success + '20', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+              <Ionicons name="checkmark-circle" size={40} color={colors.success} />
+            </View>
+            <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 }}>订单已提交</Text>
+            <Text style={{ fontSize: 14, color: colors.textMuted, marginBottom: 8 }}>
+              共 {checkedItems.length} 项，合计 ¥{total}
+            </Text>
+            <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingHorizontal: 32, lineHeight: 20, marginBottom: 32 }}>
+              健管师将尽快与您确认并安排后续服务
+            </Text>
+            <TouchableOpacity style={[styles.detailBuyBtn, { paddingHorizontal: 40 }]} onPress={onClose} activeOpacity={0.85}>
+              <Text style={styles.detailBuyBtnText}>完成</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.detailOverlay}>
+        <View style={[styles.detailCard, { maxHeight: '85%' }]}>
+          <View style={styles.detailHandle} />
+
+          {/* Header */}
+          <View style={styles.detailHeader}>
+            <View style={styles.detailSenderRow}>
+              <View style={[styles.detailIconWrap, { backgroundColor: colors.primary + '18' }]}>
+                <Ionicons name="bag-outline" size={22} color={colors.primary} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.detailSender}>{msg.sender}</Text>
+                <Text style={styles.detailTime}>{msg.time || '今天'}</Text>
+              </View>
+            </View>
+            <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* 标题 + 全选 */}
+          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm }}>
+            <Text style={styles.detailTitle}>为您推荐以下产品</Text>
+            <TouchableOpacity onPress={toggleAll} activeOpacity={0.7}>
+              <Text style={{ fontSize: 13, color: colors.primary, fontWeight: '600' }}>
+                {allChecked ? '取消全选' : '全选'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 产品列表 */}
+          <ScrollView style={styles.detailBody} showsVerticalScrollIndicator={false}>
+            {productList.map((p) => {
+              const isChecked = checkedIds.includes(p.productId);
+              const catColor = CAT_COLOR_MAP[p.category] || colors.primary;
+              return (
+                <TouchableOpacity
+                  key={p.productId}
+                  onPress={() => toggleItem(p.productId)}
+                  activeOpacity={0.8}
+                  style={{
+                    flexDirection: 'row', alignItems: 'center',
+                    padding: spacing.sm, marginBottom: 8,
+                    borderRadius: radius.sm,
+                    borderWidth: 1.5,
+                    borderColor: isChecked ? colors.primary : colors.border,
+                    backgroundColor: isChecked ? colors.primary + '08' : colors.white,
+                  }}
+                >
+                  {/* 复选框 */}
+                  <View style={{
+                    width: 22, height: 22, borderRadius: 6, marginRight: spacing.sm, flexShrink: 0,
+                    borderWidth: 2, borderColor: isChecked ? colors.primary : '#ccc',
+                    backgroundColor: isChecked ? colors.primary : colors.white,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    {isChecked && <Ionicons name="checkmark" size={13} color={colors.white} />}
+                  </View>
+                  {/* 图标 */}
+                  <View style={{
+                    width: 40, height: 40, borderRadius: 10, marginRight: spacing.sm, flexShrink: 0,
+                    backgroundColor: catColor + '15', alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Text style={{ fontSize: 18 }}>{p.icon || '🛍'}</Text>
+                  </View>
+                  {/* 信息 */}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 2 }}>{p.name}</Text>
+                    {p.category ? (
+                      <View style={{
+                        alignSelf: 'flex-start', backgroundColor: catColor + '18',
+                        borderRadius: 99, paddingHorizontal: 8, paddingVertical: 1,
+                      }}>
+                        <Text style={{ fontSize: 11, color: catColor }}>{p.category}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                  <Text style={{ fontSize: 16, fontWeight: '800', color: colors.primary, marginLeft: spacing.sm }}>
+                    ¥{p.price}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* 错误提示 */}
+          {!!payError && (
+            <Text style={{ fontSize: 12, color: colors.danger, textAlign: 'center', marginBottom: 6 }}>{payError}</Text>
+          )}
+
+          {/* 底部：合计 + 按钮 */}
+          <View style={[styles.detailFooter, { flexDirection: 'column', gap: 10 }]}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: 13, color: colors.textMuted }}>
+                已选 {checkedIds.length}/{productList.length} 项
+              </Text>
+              <Text style={{ fontSize: 18, fontWeight: '800', color: colors.primary }}>
+                合计 ¥{total}
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <TouchableOpacity
+                style={[styles.detailCloseBtn, { flex: 1 }]}
+                onPress={onClose} activeOpacity={0.85}
+              >
+                <Text style={styles.detailCloseBtnText}>关闭</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.detailBuyBtn, { flex: 2, opacity: (!checkedIds.length || paying) ? 0.5 : 1 }]}
+                activeOpacity={0.85}
+                onPress={handlePay}
+                disabled={!checkedIds.length || paying}
+              >
+                <Ionicons name="card-outline" size={16} color={colors.white} />
+                <Text style={styles.detailBuyBtnText}>
+                  {paying ? '提交中...' : `立即支付 ¥${total}`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function MessageDetailModal({ msg, onClose }) {
   if (!msg) return null;
+
+  // 产品推送：专用多选支付界面
+  if (msg.type === 'product') {
+    return <ProductPushDetail msg={msg} onClose={onClose} />;
+  }
+
   const conf = TYPE_CONFIG[msg.type] || TYPE_CONFIG.system;
-  const isProduct = msg.type === 'product' && msg.price;
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.detailOverlay}>
         <View style={styles.detailCard}>
-          {/* Handle */}
           <View style={styles.detailHandle} />
-
-          {/* Header */}
           <View style={styles.detailHeader}>
             <View style={styles.detailSenderRow}>
               <View style={[styles.detailIconWrap, { backgroundColor: conf.color + '18' }]}>
@@ -107,52 +302,14 @@ function MessageDetailModal({ msg, onClose, onBuyIntent }) {
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
-
-          {/* Title */}
-          {msg.title && (
-            <Text style={styles.detailTitle}>{msg.title}</Text>
-          )}
-
-          {/* Product price card */}
-          {isProduct && (
-            <View style={styles.productPriceCard}>
-              <Ionicons name="bag-outline" size={18} color={colors.primary} />
-              <Text style={styles.productPriceText}>推荐价格</Text>
-              <Text style={styles.productPriceNum}>¥{msg.price?.toFixed?.(2) || msg.price}</Text>
-            </View>
-          )}
-
-          {/* Content */}
+          {msg.title && <Text style={styles.detailTitle}>{msg.title}</Text>}
           <ScrollView style={styles.detailBody} showsVerticalScrollIndicator={false}>
             <Text style={styles.detailContent}>{msg.content}</Text>
-            {isProduct && (
-              <Text style={[styles.detailContent, { color: colors.textMuted, fontSize: 12, marginTop: 8 }]}>
-                如需购买，请点击下方「我要购买」，健管师将为您安排后续服务。
-              </Text>
-            )}
           </ScrollView>
-
-          {/* Buttons */}
           <View style={styles.detailFooter}>
-            {isProduct ? (
-              <>
-                <TouchableOpacity style={[styles.detailCloseBtn, { flex: 1 }]} onPress={onClose} activeOpacity={0.85}>
-                  <Text style={styles.detailCloseBtnText}>关闭</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.detailBuyBtn, { flex: 2 }]}
-                  activeOpacity={0.85}
-                  onPress={() => { onClose(); onBuyIntent(msg.productName); }}
-                >
-                  <Ionicons name="card-outline" size={16} color={colors.white} />
-                  <Text style={styles.detailBuyBtnText}>我要购买 ¥{msg.price}</Text>
-                </TouchableOpacity>
-              </>
-            ) : (
-              <TouchableOpacity style={[styles.detailCloseBtn, { flex: 1 }]} onPress={onClose} activeOpacity={0.85}>
-                <Text style={styles.detailCloseBtnText}>关闭</Text>
-              </TouchableOpacity>
-            )}
+            <TouchableOpacity style={[styles.detailCloseBtn, { flex: 1 }]} onPress={onClose} activeOpacity={0.85}>
+              <Text style={styles.detailCloseBtnText}>关闭</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </View>
@@ -275,7 +432,6 @@ export default function MessagesScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMsg, setSelectedMsg] = useState(null);
   const [composing, setComposing] = useState(false);
-  const [composeInit, setComposeInit] = useState('');
 
   const tabs = ['全部', '专属团队', '系统', '推送'];
 
@@ -406,10 +562,6 @@ export default function MessagesScreen({ navigation }) {
         <MessageDetailModal
           msg={selectedMsg}
           onClose={() => setSelectedMsg(null)}
-          onBuyIntent={(productName) => {
-            setComposeInit(`我想购买「${productName}」，请帮我安排。`);
-            setComposing(true);
-          }}
         />
       )}
 
@@ -425,9 +577,9 @@ export default function MessagesScreen({ navigation }) {
       {/* Compose modal */}
       <ComposeModal
         visible={composing}
-        onClose={() => { setComposing(false); setComposeInit(''); }}
-        onSent={() => { setComposing(false); setComposeInit(''); loadMessages(); }}
-        initialContent={composeInit}
+        onClose={() => setComposing(false)}
+        onSent={() => { setComposing(false); loadMessages(); }}
+        initialContent=""
       />
     </SafeAreaView>
   );

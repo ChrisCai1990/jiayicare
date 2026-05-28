@@ -7,7 +7,8 @@ const orderSchema = new mongoose.Schema({
   servicePrice:{ type: Number },
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
-  orderType:   { type: String, enum: ['service', 'package'], default: 'service' },
+  orderType:   { type: String, enum: ['service', 'package', 'product'], default: 'service' },
+  pushRecordId:{ type: mongoose.Schema.Types.ObjectId, ref: 'PushRecord', default: null },
   status: {
     type: String,
     enum: ['pending', 'scheduled', 'completed', 'cancelled'],

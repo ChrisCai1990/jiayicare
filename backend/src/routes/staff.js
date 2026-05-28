@@ -909,7 +909,32 @@ router.get('/products', staffAuth, async (req, res) => {
   res.json({ success: true, data: { products: list } });
 });
 
-// POST /api/staff/products/:id/push — 推送产品给会员
+// POST /api/staff/products/push-bundle — 推送多产品组合给会员
+router.post('/products/push-bundle', staffAuth, async (req, res) => {
+  const { productIds, patientIds } = req.body;
+  if (!productIds?.length) return res.status(400).json({ success: false, message: '请选择产品' });
+  if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
+  const products = await Product.find({ _id: { $in: productIds } });
+  if (!products.length) return res.status(404).json({ success: false, message: '产品不存在' });
+  const productItems = products.map(p => ({
+    productId: p._id.toString(), name: p.name,
+    price: p.originalPrice, category: p.category, icon: '🛍',
+  }));
+  const totalPrice = productItems.reduce((sum, p) => sum + p.price, 0);
+  const title = products.length === 1 ? products[0].name : `产品推荐（${products.length}项）`;
+  const content = productItems.map(p => `${p.name} ¥${p.price}`).join('、');
+  const records = patientIds.map(pid => ({
+    staffId: req.staff._id, patientId: pid,
+    type: 'product', title, content,
+    price: totalPrice,
+    productId: products.length === 1 ? products[0]._id.toString() : null,
+    products: productItems,
+  }));
+  await PushRecord.insertMany(records);
+  res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
+});
+
+// POST /api/staff/products/:id/push — 推送产品给会员（兼容旧版）
 router.post('/products/:id/push', staffAuth, async (req, res) => {
   const { patientIds } = req.body;
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });

@@ -11,6 +11,7 @@ const CheckupPlan = require('../models/CheckupPlan');
 const GiftRecord   = require('../models/GiftRecord');
 const HealthPlan   = require('../models/HealthPlan');
 const PushRecord   = require('../models/PushRecord');
+const Order        = require('../models/Order');
 const Message      = require('../models/Message');
 const FollowUp    = require('../models/FollowUp');
 const { isActiveToday } = require('./reminders');
@@ -531,6 +532,32 @@ router.get('/push-records', auth, async (req, res) => {
     res.json({ success: true, data: records });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取推送记录失败', error: err.message });
+  }
+});
+
+// POST /api/user/push-records/:id/pay — 从推送记录直接下单
+router.post('/push-records/:id/pay', auth, async (req, res) => {
+  try {
+    const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
+    if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
+    const { selectedProductIds } = req.body;
+    if (!selectedProductIds?.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
+    // 从 products 数组里找出选中的项
+    const toPay = (record.products || []).filter(p => selectedProductIds.includes(p.productId));
+    if (!toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中' });
+    const orders = await Order.insertMany(toPay.map(p => ({
+      user: req.user._id,
+      serviceId: p.productId,
+      serviceName: p.name,
+      servicePrice: p.price,
+      orderType: 'product',
+      pushRecordId: record._id,
+      status: 'pending',
+    })));
+    if (!record.readAt) await PushRecord.updateOne({ _id: record._id }, { readAt: new Date() });
+    res.json({ success: true, data: orders, message: `已创建 ${orders.length} 个订单` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '下单失败', error: err.message });
   }
 });
 

@@ -145,8 +145,9 @@ export const messagesAPI = {
 
 // ── Push Records (医护端推送) ─────────────────────────────────────
 export const pushRecordsAPI = {
-  list:     ()    => request('/user/push-records'),
-  markRead: (id)  => request(`/user/push-records/${id}/read`, { method: 'PATCH' }),
+  list:     ()           => request('/user/push-records'),
+  markRead: (id)         => request(`/user/push-records/${id}/read`, { method: 'PATCH' }),
+  pay:      (id, data)   => request(`/user/push-records/${id}/pay`, { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // ── Reminders ────────────────────────────────────────────────────
