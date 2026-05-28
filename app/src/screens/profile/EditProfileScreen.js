@@ -434,42 +434,24 @@ export default function EditProfileScreen({ navigation }) {
             />
           </View>
 
-          {/* 月经史 + 婚育史（仅女性，#33） */}
+          {/* 月经史（仅女性） */}
           {gender === '女' && (
-            <>
-              <View style={[styles.card, { marginTop: spacing.sm }]}>
-                <View style={styles.arraySection}>
-                  <View style={styles.arraySectionHeader}>
-                    <View style={[styles.arraySectionIcon, { backgroundColor: '#FDECEA' }]}>
-                      <Ionicons name="rose-outline" size={16} color="#DC3545" />
-                    </View>
-                    <Text style={styles.arraySectionTitle}>月经史</Text>
+            <View style={[styles.card, { marginTop: spacing.sm }]}>
+              <View style={styles.arraySection}>
+                <View style={styles.arraySectionHeader}>
+                  <View style={[styles.arraySectionIcon, { backgroundColor: '#FDECEA' }]}>
+                    <Ionicons name="rose-outline" size={16} color="#DC3545" />
                   </View>
-                  <Field
-                    label="月经史详情"
-                    value={menstrualHistory}
-                    onChangeText={setMenstrualHistory}
-                    placeholder="如：初潮14岁，周期28天，规律，无痛经"
-                  />
+                  <Text style={styles.arraySectionTitle}>月经史</Text>
                 </View>
+                <Field
+                  label="月经史详情"
+                  value={menstrualHistory}
+                  onChangeText={setMenstrualHistory}
+                  placeholder="如：初潮14岁，周期28天，规律，无痛经"
+                />
               </View>
-              <View style={[styles.card, { marginTop: spacing.sm }]}>
-                <View style={styles.arraySection}>
-                  <View style={styles.arraySectionHeader}>
-                    <View style={[styles.arraySectionIcon, { backgroundColor: '#E8F5EF' }]}>
-                      <Ionicons name="people-outline" size={16} color="#1E6B50" />
-                    </View>
-                    <Text style={styles.arraySectionTitle}>婚育史</Text>
-                  </View>
-                  <Field
-                    label="婚育史详情"
-                    value={maritalHistory}
-                    onChangeText={setMaritalHistory}
-                    placeholder="如：1孕1产，2020年剖宫产，无流产史"
-                  />
-                </View>
-              </View>
-            </>
+            </View>
           )}
 
           {/* ── 健康摘要（文字档案，与健康档案页同步） ────────────── */}
@@ -482,6 +464,7 @@ export default function EditProfileScreen({ navigation }) {
             <Field label="用药史" value={medicHistory} onChangeText={setMedicHistory} placeholder="如：氨氯地平" />
             <Field label="手术史" value={surgeryHistory} onChangeText={setSurgeryHistory} placeholder="如：无" />
             <Field label="传染病史" value={infectiousHistory} onChangeText={setInfectiousHistory} placeholder="如：乙肝（已治愈）、无" />
+            <Field label="婚育史" value={maritalHistory} onChangeText={setMaritalHistory} placeholder="如：已婚，育有1子；未婚" />
           </View>
 
           {/* ── 账号信息 ──────────────────────────────────────────── */}

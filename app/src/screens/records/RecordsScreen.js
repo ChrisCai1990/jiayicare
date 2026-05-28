@@ -88,6 +88,7 @@ const PROFILE_FIELDS = [
   { key: 'familyHistory', label: '家族史',    icon: 'people-outline',      placeholder: '如：父亲：高血压' },
   { key: 'surgeryHistory',     label: '手术史',    icon: 'cut-outline',        placeholder: '如：无' },
   { key: 'infectiousHistory',  label: '传染病史',  icon: 'alert-circle-outline', placeholder: '如：乙肝（已治愈）、无' },
+  { key: 'maritalHistory',     label: '婚育史',    icon: 'people-outline',       placeholder: '如：已婚，育有1子；未婚' },
 ];
 
 const DEFAULT_PROFILE = {
@@ -99,13 +100,14 @@ const DEFAULT_PROFILE = {
   familyHistory: '父亲：高血压、冠心病',
   surgeryHistory:     '无',
   infectiousHistory:  '无',
+  maritalHistory:     '已婚，育有1子',
 };
 
 // ── localStorage 工具 ─────────────────────────────────────────────
 const PROFILE_KEY = 'jy_health_profile';
 const EMPTY_PROFILE = {
   bloodType: '', drugAllergy: '', foodAllergy: '',
-  pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '', infectiousHistory: '',
+  pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '', infectiousHistory: '', maritalHistory: '',
   menstrualHistory: '', reproductiveHistory: '',
 };
 function loadProfileFromStorage() {
@@ -678,8 +680,7 @@ export default function RecordsScreen({ navigation }) {
               { label: '身高',   value: authUser?.height ? `${authUser.height} cm` : null, icon: 'resize-outline' },
               { label: '体重',   value: authUser?.weight ? `${authUser.weight} kg` : null, icon: 'barbell-outline' },
               ...(authUser?.gender === '女' ? [
-                { label: '月经史', value: profile.menstrualHistory,    icon: 'medical-outline' },
-                { label: '婚育史', value: profile.maritalHistory || profile.reproductiveHistory, icon: 'heart-outline' },
+                { label: '月经史', value: profile.menstrualHistory, icon: 'medical-outline' },
               ] : []),
             ].map((item, i, arr) => (
               <View key={item.label} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>
