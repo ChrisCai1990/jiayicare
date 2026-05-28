@@ -16,6 +16,9 @@ const pushRecordSchema = new mongoose.Schema({
   // 内容摘要（用于列表展示）
   title:   { type: String, default: '' },
   content: { type: String, default: '' },
+  // 产品推送附加信息
+  price:     { type: Number, default: null },
+  productId: { type: String, default: null },
   // 阅读状态
   readAt: { type: Date, default: null },
 }, { timestamps: true });

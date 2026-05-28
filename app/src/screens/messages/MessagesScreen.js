@@ -41,6 +41,10 @@ function normalizePushRecord(pr) {
     unread: !pr.readAt,
     time: new Date(pr.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
     createdAt: pr.createdAt,
+    // 产品推送专用
+    price: pr.price || null,
+    productName: pr.title || '',
+    productId: pr.productId || null,
   };
 }
 
@@ -76,9 +80,10 @@ function MessageItem({ msg, onPress }) {
   );
 }
 
-function MessageDetailModal({ msg, onClose }) {
+function MessageDetailModal({ msg, onClose, onBuyIntent }) {
   if (!msg) return null;
   const conf = TYPE_CONFIG[msg.type] || TYPE_CONFIG.system;
+  const isProduct = msg.type === 'product' && msg.price;
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
@@ -108,15 +113,47 @@ function MessageDetailModal({ msg, onClose }) {
             <Text style={styles.detailTitle}>{msg.title}</Text>
           )}
 
+          {/* Product price card */}
+          {isProduct && (
+            <View style={styles.productPriceCard}>
+              <Ionicons name="bag-outline" size={18} color={colors.primary} />
+              <Text style={styles.productPriceText}>推荐价格</Text>
+              <Text style={styles.productPriceNum}>¥{msg.price?.toFixed?.(2) || msg.price}</Text>
+            </View>
+          )}
+
           {/* Content */}
           <ScrollView style={styles.detailBody} showsVerticalScrollIndicator={false}>
             <Text style={styles.detailContent}>{msg.content}</Text>
+            {isProduct && (
+              <Text style={[styles.detailContent, { color: colors.textMuted, fontSize: 12, marginTop: 8 }]}>
+                如需购买，请点击下方「我要购买」，健管师将为您安排后续服务。
+              </Text>
+            )}
           </ScrollView>
 
-          {/* Close button */}
-          <TouchableOpacity style={styles.detailCloseBtn} onPress={onClose} activeOpacity={0.85}>
-            <Text style={styles.detailCloseBtnText}>关闭</Text>
-          </TouchableOpacity>
+          {/* Buttons */}
+          <View style={styles.detailFooter}>
+            {isProduct ? (
+              <>
+                <TouchableOpacity style={[styles.detailCloseBtn, { flex: 1 }]} onPress={onClose} activeOpacity={0.85}>
+                  <Text style={styles.detailCloseBtnText}>关闭</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.detailBuyBtn, { flex: 2 }]}
+                  activeOpacity={0.85}
+                  onPress={() => { onClose(); onBuyIntent(msg.productName); }}
+                >
+                  <Ionicons name="card-outline" size={16} color={colors.white} />
+                  <Text style={styles.detailBuyBtnText}>我要购买 ¥{msg.price}</Text>
+                </TouchableOpacity>
+              </>
+            ) : (
+              <TouchableOpacity style={[styles.detailCloseBtn, { flex: 1 }]} onPress={onClose} activeOpacity={0.85}>
+                <Text style={styles.detailCloseBtnText}>关闭</Text>
+              </TouchableOpacity>
+            )}
+          </View>
         </View>
       </View>
     </Modal>
@@ -130,13 +167,21 @@ const RECIPIENTS = [
   { key: 'manager',      label: '健管师',   icon: 'person',            color: colors.accent  },
 ];
 
-function ComposeModal({ visible, onClose, onSent }) {
-  const [to, setTo]           = useState('doctor');
+function ComposeModal({ visible, onClose, onSent, initialContent = '' }) {
+  const [to, setTo]           = useState('manager');
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError]     = useState('');
 
-  const reset = () => { setTo('doctor'); setContent(''); setError(''); };
+  // 有预填内容时更新
+  useEffect(() => {
+    if (visible && initialContent) {
+      setContent(initialContent);
+      setTo('manager');
+    }
+  }, [visible, initialContent]);
+
+  const reset = () => { setTo('manager'); setContent(''); setError(''); };
 
   const handleClose = () => { reset(); onClose(); };
 
@@ -230,6 +275,7 @@ export default function MessagesScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMsg, setSelectedMsg] = useState(null);
   const [composing, setComposing] = useState(false);
+  const [composeInit, setComposeInit] = useState('');
 
   const tabs = ['全部', '专属团队', '系统', '推送'];
 
@@ -357,7 +403,14 @@ export default function MessagesScreen({ navigation }) {
 
       {/* Message detail modal */}
       {selectedMsg && (
-        <MessageDetailModal msg={selectedMsg} onClose={() => setSelectedMsg(null)} />
+        <MessageDetailModal
+          msg={selectedMsg}
+          onClose={() => setSelectedMsg(null)}
+          onBuyIntent={(productName) => {
+            setComposeInit(`我想购买「${productName}」，请帮我安排。`);
+            setComposing(true);
+          }}
+        />
       )}
 
       {/* Compose FAB */}
@@ -372,8 +425,9 @@ export default function MessagesScreen({ navigation }) {
       {/* Compose modal */}
       <ComposeModal
         visible={composing}
-        onClose={() => setComposing(false)}
-        onSent={() => { setComposing(false); loadMessages(); }}
+        onClose={() => { setComposing(false); setComposeInit(''); }}
+        onSent={() => { setComposing(false); setComposeInit(''); loadMessages(); }}
+        initialContent={composeInit}
       />
     </SafeAreaView>
   );
@@ -505,11 +559,27 @@ const styles = StyleSheet.create({
     fontSize: 15, color: colors.textSecondary,
     lineHeight: 24, letterSpacing: 0.1,
   },
+  detailFooter: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   detailCloseBtn: {
     backgroundColor: colors.primary, borderRadius: radius.md,
-    paddingVertical: 14, alignItems: 'center', marginTop: spacing.sm,
+    paddingVertical: 14, alignItems: 'center',
   },
   detailCloseBtnText: { color: colors.white, fontSize: 16, fontWeight: '700' },
+  detailBuyBtn: {
+    backgroundColor: '#D97706', borderRadius: radius.md,
+    paddingVertical: 14, alignItems: 'center',
+    flexDirection: 'row', justifyContent: 'center', gap: 6,
+  },
+  detailBuyBtnText: { color: colors.white, fontSize: 15, fontWeight: '700' },
+  productPriceCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 8,
+    backgroundColor: '#FEF3E2', borderRadius: radius.sm,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.sm,
+    marginHorizontal: spacing.lg, marginBottom: spacing.sm,
+    borderWidth: 1, borderColor: '#FBBF24',
+  },
+  productPriceText: { fontSize: 13, color: '#92400E', flex: 1 },
+  productPriceNum: { fontSize: 18, fontWeight: '800', color: '#D97706' },
 
   // Compose FAB
   composeFab: {

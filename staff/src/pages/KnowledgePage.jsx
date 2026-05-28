@@ -76,6 +76,9 @@ export default function KnowledgePage() {
                   {item.tags.map(t => <span key={t} style={{ fontSize: 11, padding: '1px 8px', background: '#f0f4f8', borderRadius: 99, color: '#4A6558' }}>{t}</span>)}
                 </div>
               )}
+              {item.coverUrl && (
+                <img src={item.coverUrl} alt="封面" style={{ width: '100%', height: 140, objectFit: 'cover', borderRadius: 6, marginBottom: 8, display: 'block' }} onError={e => { e.target.style.display = 'none' }} />
+              )}
               {item.content && <p style={{ fontSize: 13, color: '#666', lineHeight: 1.6, marginBottom: 8 }}>{item.content.length > 80 ? item.content.slice(0, 80) + '...' : item.content}</p>}
               <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                 <button className="btn btn-primary btn-sm" onClick={() => setPushModal(item)}>📤 推送</button>
@@ -93,7 +96,7 @@ export default function KnowledgePage() {
 }
 
 function CreateKnowledgeModal({ onClose, onSaved }) {
-  const [form, setForm] = useState({ title: '', category: 'other', content: '', tags: '' })
+  const [form, setForm] = useState({ title: '', category: 'other', content: '', tags: '', coverUrl: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -102,7 +105,7 @@ function CreateKnowledgeModal({ onClose, onSaved }) {
     if (!form.title) { setError('标题不能为空'); return }
     setSaving(true); setError('')
     try {
-      await staffAPI.createKnowledge({ ...form, tags: form.tags ? form.tags.split(/[,，]+/).map(t => t.trim()).filter(Boolean) : [] })
+      await staffAPI.createKnowledge({ ...form, tags: form.tags ? form.tags.split(/[,，]+/).map(t => t.trim()).filter(Boolean) : [], coverUrl: form.coverUrl?.trim() || '' })
       onSaved()
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
@@ -130,6 +133,10 @@ function CreateKnowledgeModal({ onClose, onSaved }) {
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">标签（逗号分隔）</label>
             <input className="form-input" placeholder="如：饮食,肝脏,春季" value={form.tags} onChange={set('tags')} />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">图片URL（可选）</label>
+            <input className="form-input" placeholder="https://... 封面图片链接" value={form.coverUrl} onChange={set('coverUrl')} />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">内容</label>

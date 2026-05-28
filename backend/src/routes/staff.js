@@ -918,7 +918,10 @@ router.post('/products/:id/push', staffAuth, async (req, res) => {
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,
     type: 'product',
-    title: product.name, content: product.subtitle || '',
+    title: product.name,
+    content: product.subtitle || '',
+    price: product.originalPrice || null,
+    productId: product._id.toString(),
   }));
   await PushRecord.insertMany(records);
   res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
