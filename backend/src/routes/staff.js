@@ -21,6 +21,7 @@ const MemberLevel    = require('../models/MemberLevel');
 const Activity       = require('../models/Activity');
 const SessionPackage = require('../models/SessionPackage');
 const AnnualPlan = require('../models/AnnualPlan');
+const Product = require('../models/Product');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
 
@@ -888,23 +889,23 @@ router.put('/me/password', staffAuth, async (req, res) => {
 });
 
 // ── 产品推送 ───────────────────────────────────────────────
-// GET /api/staff/products — 服务商城产品列表
-const SERVICE_CATALOG_P3 = [
-  { id: 'S1', category: '检测套餐', name: '心脑血管精准检测套餐', subtitle: '含颈动脉超声 + 心脏彩超 + 血脂全套', price: 980, originalPrice: 1380, icon: '❤️' },
-  { id: 'S2', category: '专家咨询', name: '心内科专家30分钟视频问诊', subtitle: '主任医师一对一，报告解读+用药建议', price: 299, originalPrice: 499, icon: '🩺' },
-  { id: 'S3', category: '上门服务', name: '上门采血 + 基础体检', subtitle: '护士上门抽血，含血常规、血脂、血糖', price: 199, originalPrice: 280, icon: '🏠' },
-  { id: 'S4', category: '健康课程', name: '高血压患者自我管理训练营', subtitle: '4周系统课程，含饮食+运动+用药+监测', price: 399, originalPrice: 598, icon: '📚' },
-  { id: 'S5', category: '检测套餐', name: '糖化血红蛋白 + 胰岛素三项', subtitle: '全面评估血糖控制水平', price: 258, originalPrice: 360, icon: '🩸' },
-  { id: 'S6', category: '专家咨询', name: '营养师一对一方案定制', subtitle: '根据病情定制个性化饮食计划', price: 168, originalPrice: 238, icon: '🥗' },
-  { id: 'pkg_1y', category: '服务包', name: '年度服务包', subtitle: '12个月专属健康管理服务', price: 3650, originalPrice: 5000, icon: '🌟' },
-  { id: 'pkg_6m', category: '服务包', name: '半年服务包', subtitle: '6个月专属健康管理服务', price: 1980, originalPrice: 2800, icon: '⭐' },
-  { id: 'pkg_3m', category: '服务包', name: '季度服务包', subtitle: '3个月专属健康管理服务', price: 1080, originalPrice: 1480, icon: '✨' },
-];
-
+// GET /api/staff/products — 从商城产品集合获取（与管理后台联通）
 router.get('/products', staffAuth, async (req, res) => {
   const { category = '' } = req.query;
-  let list = SERVICE_CATALOG_P3;
-  if (category) list = list.filter(p => p.category === category);
+  const filter = { status: 'on' };
+  if (category) filter.category = category;
+  const products = await Product.find(filter).sort({ sortOrder: 1 });
+  const list = products.map(p => ({
+    id: p._id.toString(),
+    category: p.category,
+    name: p.name,
+    subtitle: p.subtitle || '',
+    price: p.originalPrice,
+    originalPrice: p.originalPrice,
+    icon: '🛍',
+    servicePrices: p.servicePrices || [],
+    features: p.features || [],
+  }));
   res.json({ success: true, data: { products: list } });
 });
 
@@ -912,7 +913,7 @@ router.get('/products', staffAuth, async (req, res) => {
 router.post('/products/:id/push', staffAuth, async (req, res) => {
   const { patientIds } = req.body;
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
-  const product = SERVICE_CATALOG_P3.find(p => p.id === req.params.id);
+  const product = await Product.findById(req.params.id).catch(() => null);
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,

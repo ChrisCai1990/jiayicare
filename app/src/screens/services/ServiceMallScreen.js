@@ -81,13 +81,25 @@ function PurchaseModal({ item, onClose }) {
             </View>
           </View>
 
-          <View style={styles.modalPriceRow}>
-            <Text style={styles.modalPriceLabel}>服务费用</Text>
-            <View style={styles.modalPriceRight}>
-              <Text style={styles.modalOriginal}>¥{item.originalPrice}</Text>
-              <Text style={styles.modalPrice}>¥{item.price}</Text>
+          {item.servicePrices && item.servicePrices.length > 0 ? (
+            <View style={[styles.modalPriceRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 6 }]}>
+              <Text style={styles.modalPriceLabel}>收费项目</Text>
+              {item.servicePrices.map((sp, i) => (
+                <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>{sp.label}</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.danger }}>¥{sp.price}</Text>
+                </View>
+              ))}
             </View>
-          </View>
+          ) : (
+            <View style={styles.modalPriceRow}>
+              <Text style={styles.modalPriceLabel}>服务费用</Text>
+              <View style={styles.modalPriceRight}>
+                {item.price < item.originalPrice && <Text style={styles.modalOriginal}>¥{item.originalPrice}</Text>}
+                <Text style={styles.modalPrice}>¥{item.price}</Text>
+              </View>
+            </View>
+          )}
 
           <View style={styles.modalFeatures}>
             {item.features.map((f, i) => (
@@ -142,6 +154,7 @@ function PurchaseModal({ item, onClose }) {
 
 function ServiceCard({ item, onBuy }) {
   const discount = Math.round((1 - item.price / item.originalPrice) * 10);
+  const hasDiscount = item.price < item.originalPrice;
   return (
     <TouchableOpacity style={styles.serviceCard} activeOpacity={0.85} onPress={() => onBuy(item)}>
       {item.tag ? (
@@ -175,10 +188,12 @@ function ServiceCard({ item, onBuy }) {
           <View style={styles.priceRow}>
             <Text style={styles.priceCurrency}>¥</Text>
             <Text style={styles.priceVal}>{item.price}</Text>
-            <Text style={styles.priceOriginal}>¥{item.originalPrice}</Text>
-            <View style={styles.discountBadge}>
-              <Text style={styles.discountText}>{discount}折</Text>
-            </View>
+            {hasDiscount && <Text style={styles.priceOriginal}>¥{item.originalPrice}</Text>}
+            {hasDiscount && (
+              <View style={styles.discountBadge}>
+                <Text style={styles.discountText}>{discount}折</Text>
+              </View>
+            )}
           </View>
         </View>
         <TouchableOpacity style={styles.buyBtn} onPress={() => onBuy(item)}>

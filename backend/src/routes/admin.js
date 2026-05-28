@@ -1,5 +1,8 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const HealthRecord = require('../models/HealthRecord');
@@ -8,6 +11,7 @@ const Message = require('../models/Message');
 const Order = require('../models/Order');
 const Service = require('../models/Service');
 const Product = require('../models/Product');
+const ProductCategory = require('../models/ProductCategory');
 const MemberType = require('../models/MemberType');
 const PlanTemplate = require('../models/PlanTemplate');
 const CheckupPlan = require('../models/CheckupPlan');
@@ -16,6 +20,24 @@ const UserChangeLog = require('../models/UserChangeLog');
 const MedicalReport = require('../models/MedicalReport');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
+
+// ── 图片上传（multer） ───────────────────────────────────────────
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../../uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: UPLOADS_DIR,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (/^image\//.test(file.mimetype)) cb(null, true);
+    else cb(new Error('只支持图片文件'));
+  },
+});
 
 // ── 初始化默认管理员账号（首次启动时） ──────────────────────────
 async function seedAdmins() {
@@ -688,6 +710,52 @@ router.delete('/member-types/:id', adminAuth, async (req, res) => {
   res.json({ success: true, message: '已删除' });
 });
 
+// ── 图片上传 ──────────────────────────────────────────────────────
+
+// POST /api/admin/upload/image
+router.post('/upload/image', adminAuth, upload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
+  const host = process.env.API_HOST || 'http://121.40.156.39';
+  const url = `${host}/api/uploads/${req.file.filename}`;
+  res.json({ success: true, data: { url } });
+});
+
+// ── 商城产品分类管理 ──────────────────────────────────────────────
+
+const DEFAULT_PRODUCT_CATEGORIES = ['检测套餐', '营养补充', '咨询服务', '上门服务', '健康课程', '中医调理'];
+
+async function getProductCategories() {
+  let cats = await ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 });
+  if (cats.length === 0) {
+    await ProductCategory.insertMany(DEFAULT_PRODUCT_CATEGORIES.map((name, i) => ({ name, sortOrder: i })));
+    cats = await ProductCategory.find().sort({ sortOrder: 1 });
+  }
+  return cats;
+}
+
+// GET /api/admin/product-categories
+router.get('/product-categories', adminAuth, async (req, res) => {
+  const cats = await getProductCategories();
+  res.json({ success: true, data: cats });
+});
+
+// POST /api/admin/product-categories
+router.post('/product-categories', adminAuth, async (req, res) => {
+  const { name } = req.body;
+  if (!name?.trim()) return res.status(400).json({ success: false, message: '分类名称不能为空' });
+  const existing = await ProductCategory.findOne({ name: name.trim() });
+  if (existing) return res.status(400).json({ success: false, message: '该分类名称已存在' });
+  const count = await ProductCategory.countDocuments();
+  const cat = await ProductCategory.create({ name: name.trim(), sortOrder: count * 10 });
+  res.json({ success: true, data: cat, message: '分类创建成功' });
+});
+
+// DELETE /api/admin/product-categories/:id
+router.delete('/product-categories/:id', adminAuth, async (req, res) => {
+  await ProductCategory.findByIdAndDelete(req.params.id);
+  res.json({ success: true, message: '分类已删除' });
+});
+
 // ── 商城产品管理 ──────────────────────────────────────────────────
 
 // GET /api/admin/products
@@ -703,12 +771,13 @@ router.get('/products', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, images, originalPrice, memberPrices, category, sortOrder, features, description, stock, status } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status } = req.body;
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
   }
   const product = await Product.create({
-    name, images: images || [], originalPrice, memberPrices: memberPrices || {},
+    name, subtitle: subtitle || '', images: images || [],
+    originalPrice, servicePrices: servicePrices || [], memberPrices: memberPrices || {},
     category, sortOrder: sortOrder ?? 999, features: features || [],
     description: description || '', stock: stock ?? 0, status: status || 'off',
   });
@@ -717,10 +786,10 @@ router.post('/products', adminAuth, async (req, res) => {
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, images, originalPrice, memberPrices, category, sortOrder, features, description, stock, status } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status } = req.body;
   const product = await Product.findByIdAndUpdate(
     req.params.id,
-    { name, images, originalPrice, memberPrices, category, sortOrder, features, description, stock, status },
+    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status },
     { new: true }
   );
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });

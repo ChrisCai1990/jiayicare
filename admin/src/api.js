@@ -60,6 +60,24 @@ export const adminAPI = {
   toggleMemberType:   (id)       => req(`/member-types/${id}/toggle`, { method: 'PATCH' }),
   deleteMemberType:   (id)       => req(`/member-types/${id}`, { method: 'DELETE' }),
 
+  // 商城产品分类管理
+  productCategories:      ()       => req('/product-categories'),
+  createProductCategory:  (data)   => req('/product-categories', { method: 'POST', body: JSON.stringify(data) }),
+  deleteProductCategory:  (id)     => req(`/product-categories/${id}`, { method: 'DELETE' }),
+
+  // 图片上传（multipart）
+  uploadImage: async (file) => {
+    const fd = new FormData()
+    fd.append('image', file)
+    const headers = {}
+    const token = _token
+    if (token) headers['Authorization'] = `Bearer ${token}`
+    const res = await fetch(`${BASE}/upload/image`, { method: 'POST', headers, body: fd })
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.message || '上传失败')
+    return data
+  },
+
   // 商城产品管理
   products:           (params = {}) => req('/products?' + new URLSearchParams(params).toString()),
   createProduct:      (data)     => req('/products', { method: 'POST', body: JSON.stringify(data) }),

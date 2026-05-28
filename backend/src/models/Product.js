@@ -2,9 +2,11 @@ const mongoose = require('mongoose');
 
 const productSchema = new mongoose.Schema({
   name:          { type: String, required: true },
+  subtitle:      { type: String, default: '' },
   images:        [{ type: String }],
   originalPrice: { type: Number, required: true },
-  memberPrices:  { type: mongoose.Schema.Types.Mixed, default: {} }, // {"年度会员": 980, ...}
+  servicePrices: [{ label: { type: String }, price: { type: Number } }],
+  memberPrices:  { type: mongoose.Schema.Types.Mixed, default: {} },
   category:      { type: String, required: true },
   sortOrder:     { type: Number, default: 999 },
   features:      [{ type: String }],

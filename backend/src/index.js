@@ -3,12 +3,19 @@ require('express-async-errors'); // 让 Express 4 自动捕获 async 路由里�
 const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
+const path = require('path');
+const fs = require('fs');
 const connectDB = require('./config/db');
 
 const app = express();
 
 // 连接数据库
 connectDB();
+
+// 静态文件（上传图片）
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use('/api/uploads', express.static(UPLOADS_DIR));
 
 // 中间件
 app.use(cors());
