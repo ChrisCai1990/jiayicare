@@ -238,7 +238,8 @@ export default function EditProfileScreen({ navigation }) {
   const [foodAllergy,   setFoodAllergy]   = useState(hp.foodAllergy    || '');
   const [pastHistory,   setPastHistory]   = useState(hp.pastHistory    || '');
   const [medicHistory,  setMedicHistory]  = useState(hp.medicHistory   || '');
-  const [surgeryHistory,setSurgeryHistory]= useState(hp.surgeryHistory || '');
+  const [surgeryHistory,    setSurgeryHistory]    = useState(hp.surgeryHistory    || '');
+  const [infectiousHistory, setInfectiousHistory] = useState(hp.infectiousHistory || '');
   // 女性专属字段（#33）
   const [menstrualHistory, setMenstrualHistory] = useState(hp.menstrualHistory || '');
   // 婚育史：优先读新字段 maritalHistory，兼容旧字段 reproductiveHistory
@@ -278,6 +279,7 @@ export default function EditProfileScreen({ navigation }) {
           pastHistory,
           medicHistory,
           surgeryHistory,
+          infectiousHistory,
           menstrualHistory,
           maritalHistory,
         },
@@ -479,6 +481,7 @@ export default function EditProfileScreen({ navigation }) {
             <Field label="既往史" value={pastHistory} onChangeText={setPastHistory} placeholder="如：高血压（2020年）" />
             <Field label="用药史" value={medicHistory} onChangeText={setMedicHistory} placeholder="如：氨氯地平" />
             <Field label="手术史" value={surgeryHistory} onChangeText={setSurgeryHistory} placeholder="如：无" />
+            <Field label="传染病史" value={infectiousHistory} onChangeText={setInfectiousHistory} placeholder="如：乙肝（已治愈）、无" />
           </View>
 
           {/* ── 账号信息 ──────────────────────────────────────────── */}

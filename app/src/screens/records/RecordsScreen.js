@@ -86,7 +86,8 @@ const PROFILE_FIELDS = [
   { key: 'pastHistory',   label: '既往史',    icon: 'time-outline',        placeholder: '如：高血压 (2020年)' },
   { key: 'medicHistory',  label: '用药史',    icon: 'medkit-outline',      placeholder: '如：氨氯地平' },
   { key: 'familyHistory', label: '家族史',    icon: 'people-outline',      placeholder: '如：父亲：高血压' },
-  { key: 'surgeryHistory',label: '手术史',    icon: 'cut-outline',         placeholder: '如：无' },
+  { key: 'surgeryHistory',     label: '手术史',    icon: 'cut-outline',        placeholder: '如：无' },
+  { key: 'infectiousHistory',  label: '传染病史',  icon: 'alert-circle-outline', placeholder: '如：乙肝（已治愈）、无' },
 ];
 
 const DEFAULT_PROFILE = {
@@ -96,14 +97,15 @@ const DEFAULT_PROFILE = {
   pastHistory:   '高血压 (2020年)',
   medicHistory:  '氨氯地平、他汀类',
   familyHistory: '父亲：高血压、冠心病',
-  surgeryHistory:'无',
+  surgeryHistory:     '无',
+  infectiousHistory:  '无',
 };
 
 // ── localStorage 工具 ─────────────────────────────────────────────
 const PROFILE_KEY = 'jy_health_profile';
 const EMPTY_PROFILE = {
   bloodType: '', drugAllergy: '', foodAllergy: '',
-  pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '',
+  pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '', infectiousHistory: '',
   menstrualHistory: '', reproductiveHistory: '',
 };
 function loadProfileFromStorage() {
