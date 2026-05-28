@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { getPinyinInitials } from 'pinyin-pro'
+import { pinyin } from 'pinyin-pro'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 import { useCategories, StatusBadge } from './_ProjectPage'
@@ -8,8 +8,10 @@ const EMPTY = { name: '', mnemonic: '', costPrice: 0, retailPrice: 0, categoryId
 
 function genMnemonic(name) {
   if (!name) return ''
-  try { return getPinyinInitials(name, { toneType: 'none' }).toUpperCase().replace(/[^A-Z]/g, '') }
-  catch { return '' }
+  try {
+    return pinyin(name, { pattern: 'initial', toneType: 'none', type: 'array' })
+      .map(s => s[0]?.toUpperCase() || '').join('').replace(/[^A-Z]/g, '')
+  } catch { return '' }
 }
 
 export default function LabTestOrderPage() {
