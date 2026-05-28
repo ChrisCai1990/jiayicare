@@ -1,9 +1,16 @@
 import React, { useEffect, useState } from 'react'
+import { getPinyinInitials } from 'pinyin-pro'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 import { useCategories, StatusBadge } from './_ProjectPage'
 
 const EMPTY = { name: '', mnemonic: '', costPrice: 0, retailPrice: 0, categoryId: '', items: [], participatesInDiscount: true, remark: '' }
+
+function genMnemonic(name) {
+  if (!name) return ''
+  try { return getPinyinInitials(name, { toneType: 'none' }).toUpperCase().replace(/[^A-Z]/g, '') }
+  catch { return '' }
+}
 
 export default function LabTestOrderPage() {
   const toast = useToast()
@@ -16,12 +23,14 @@ export default function LabTestOrderPage() {
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(EMPTY)
+  const [mnemonicEdited, setMnemonicEdited] = useState(false)
   const [allLabItems, setAllLabItems] = useState([])
+  const [addItemId, setAddItemId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   const loadLabItems = () => {
-    adminAPI.labTestItems({ limit: 200 }).then(r => setAllLabItems(r.data)).catch(() => {})
+    adminAPI.labTestItems({ limit: 500 }).then(r => setAllLabItems(r.data || [])).catch(() => {})
   }
 
   const load = (p = page) => {
@@ -35,7 +44,7 @@ export default function LabTestOrderPage() {
   useEffect(() => { setPage(1); load(1) }, [q])
   useEffect(() => { load() }, [page])
 
-  const openCreate = () => { setEditId(null); setForm(EMPTY); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setForm(EMPTY); setMnemonicEdited(false); setAddItemId(''); setError(''); setShowModal(true) }
   const openEdit = item => {
     setEditId(item._id)
     setForm({
@@ -46,7 +55,7 @@ export default function LabTestOrderPage() {
       participatesInDiscount: item.participatesInDiscount !== false,
       remark: item.remark || '',
     })
-    setError(''); setShowModal(true)
+    setMnemonicEdited(true); setAddItemId(''); setError(''); setShowModal(true)
   }
 
   const autoCalcPrices = () => {
@@ -60,22 +69,45 @@ export default function LabTestOrderPage() {
     if (!form.name.trim()) { setError('名称不能为空'); return }
     setSaving(true); setError('')
     try {
-      if (editId) { await adminAPI.updateLabTestOrder(editId, form); toast('已更新') }
-      else { await adminAPI.createLabTestOrder(form); toast('已创建') }
+      const payload = { ...form }
+      if (!payload.categoryId) payload.categoryId = null
+      if (editId) { await adminAPI.updateLabTestOrder(editId, payload); toast('已更新') }
+      else { await adminAPI.createLabTestOrder(payload); toast('已创建') }
       setShowModal(false); load()
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
   }
 
-  const toggleItem = id => {
-    setForm(f => ({
-      ...f,
-      items: f.items.includes(id) ? f.items.filter(i => i !== id) : [...f.items, id],
-    }))
+  const addItem = () => {
+    if (!addItemId || form.items.includes(addItemId)) return
+    setForm(f => ({ ...f, items: [...f.items, addItemId] }))
+    setAddItemId('')
   }
+  const removeItem = id => setForm(f => ({ ...f, items: f.items.filter(i => i !== id) }))
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const handleNameChange = e => {
+    const name = e.target.value
+    setForm(f => ({ ...f, name, mnemonic: mnemonicEdited ? f.mnemonic : genMnemonic(name) }))
+  }
+  const handleMnemonicChange = e => { setMnemonicEdited(true); setForm(f => ({ ...f, mnemonic: e.target.value })) }
+
+  const handleKeyDown = e => {
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
+      e.preventDefault(); handleSave()
+    }
+  }
+
   const totalPages = Math.ceil(total / 20)
+
+  const selectedItems = form.items.map(id => allLabItems.find(i => i._id === id)).filter(Boolean)
+  const unselectedItems = allLabItems.filter(i => !form.items.includes(i._id))
+
+  const getRefDisplay = item => {
+    const v = item.referenceValue || item.referenceRange || ''
+    return v || '-'
+  }
 
   return (
     <div>
@@ -135,21 +167,21 @@ export default function LabTestOrderPage() {
 
       {showModal && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div className="modal" style={{ maxWidth: 560 }}>
+          <div className="modal" style={{ maxWidth: 620 }} onKeyDown={handleKeyDown}>
             <div className="modal-header">
               <h3 className="modal-title">{editId ? '编辑检验医嘱' : '新增检验医嘱'}</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             {error && <div className="login-err" style={{ margin: '0 20px 12px' }}>⚠️ {error}</div>}
-            <div className="modal-body" style={{ maxHeight: '60vh', overflowY: 'auto' }}>
+            <div className="modal-body" style={{ maxHeight: '65vh', overflowY: 'auto' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">医嘱名称 *</label>
-                  <input className="form-input" value={form.name} onChange={set('name')} placeholder="如：血脂全套" />
+                  <input className="form-input" value={form.name} onChange={handleNameChange} placeholder="如：血脂全套" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">助记码（拼音首字母）</label>
-                  <input className="form-input" value={form.mnemonic} onChange={set('mnemonic')} />
+                  <input className="form-input" value={form.mnemonic} onChange={handleMnemonicChange} placeholder="输入名称后自动生成" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', paddingTop: 28 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
@@ -165,7 +197,7 @@ export default function LabTestOrderPage() {
                   <input className="form-input" type="number" step="0.01" value={form.costPrice} onChange={set('costPrice')} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">零售价（元） *</label>
+                  <label className="form-label">零售价（元）</label>
                   <input className="form-input" type="number" step="0.01" value={form.retailPrice} onChange={set('retailPrice')} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
@@ -181,21 +213,51 @@ export default function LabTestOrderPage() {
                 </div>
               </div>
 
+              {/* 关联检验项目 */}
               <div style={{ marginTop: 16 }}>
-                <label className="form-label">包含检验项目（多选）</label>
-                <div style={{ border: '1px solid #E5E7EB', borderRadius: 8, maxHeight: 200, overflowY: 'auto', padding: 8 }}>
-                  {allLabItems.length === 0 ? (
-                    <div style={{ color: '#aaa', fontSize: 13, padding: 8 }}>暂无检验项目</div>
-                  ) : allLabItems.map(i => (
-                    <label key={i._id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', cursor: 'pointer', borderRadius: 4, ':hover': { background: '#F3F4F6' } }}>
-                      <input type="checkbox" checked={form.items.includes(i._id)} onChange={() => toggleItem(i._id)} />
-                      <span style={{ fontSize: 13 }}>{i.name}</span>
-                      {i.unit && <span style={{ fontSize: 11, color: '#9CA3AF' }}>/{i.unit}</span>}
-                    </label>
-                  ))}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <label className="form-label" style={{ marginBottom: 0 }}>关联检验项目</label>
                 </div>
-                {form.items.length > 0 && (
-                  <div style={{ fontSize: 12, color: '#1E6B50', marginTop: 4 }}>已选 {form.items.length} 项</div>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <select
+                    className="form-input"
+                    style={{ flex: 1 }}
+                    value={addItemId}
+                    onChange={e => setAddItemId(e.target.value)}
+                  >
+                    <option value="">— 选择检验项目 —</option>
+                    {unselectedItems.map(i => (
+                      <option key={i._id} value={i._id}>{i.name}{i.mnemonic ? ` (${i.mnemonic})` : ''}</option>
+                    ))}
+                  </select>
+                  <button type="button" className="btn btn-secondary" onClick={addItem} disabled={!addItemId}>添加</button>
+                </div>
+
+                {selectedItems.length === 0 ? (
+                  <div style={{ color: '#aaa', fontSize: 13, padding: '10px 0' }}>暂未关联检验项目</div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: '#f8fafc' }}>
+                        {['项目名称', '助记码', '单位', '参考值', '操作'].map(h => (
+                          <th key={h} style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB', fontSize: 12 }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedItems.map(i => (
+                        <tr key={i._id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                          <td style={{ padding: '6px 10px', fontWeight: 500 }}>{i.name}</td>
+                          <td style={{ padding: '6px 10px', fontFamily: 'monospace', color: '#6B7280' }}>{i.mnemonic || '-'}</td>
+                          <td style={{ padding: '6px 10px', color: '#6B7280' }}>{i.unit || '-'}</td>
+                          <td style={{ padding: '6px 10px', color: '#6B7280' }}>{getRefDisplay(i)}</td>
+                          <td style={{ padding: '6px 10px' }}>
+                            <button type="button" className="btn btn-danger btn-sm" onClick={() => removeItem(i._id)}>删除</button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 )}
               </div>
             </div>

@@ -489,16 +489,26 @@ function makeProjectCRUD(Model, label) {
   });
 
   router.post(`/${label}`, adminAuth, async (req, res) => {
-    if (!req.body.name) return res.status(400).json({ success: false, message: '名称不能为空' });
-    if (!req.body.mnemonic) req.body.mnemonic = genMnemonic(req.body.name);
-    const doc = await Model.create(req.body);
-    res.json({ success: true, data: doc, message: '创建成功' });
+    try {
+      if (!req.body.name) return res.status(400).json({ success: false, message: '名称不能为空' });
+      if (!req.body.mnemonic) req.body.mnemonic = genMnemonic(req.body.name);
+      if (req.body.categoryId === '' || req.body.categoryId === undefined) req.body.categoryId = null;
+      const doc = await Model.create(req.body);
+      res.json({ success: true, data: doc, message: '创建成功' });
+    } catch (e) {
+      res.status(400).json({ success: false, message: e.message });
+    }
   });
 
   router.put(`/${label}/:id`, adminAuth, async (req, res) => {
-    const doc = await Model.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!doc) return res.status(404).json({ success: false, message: '记录不存在' });
-    res.json({ success: true, data: doc, message: '更新成功' });
+    try {
+      if (req.body.categoryId === '' || req.body.categoryId === undefined) req.body.categoryId = null;
+      const doc = await Model.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
+      if (!doc) return res.status(404).json({ success: false, message: '记录不存在' });
+      res.json({ success: true, data: doc, message: '更新成功' });
+    } catch (e) {
+      res.status(400).json({ success: false, message: e.message });
+    }
   });
 
   router.patch(`/${label}/:id/toggle`, adminAuth, async (req, res) => {
@@ -540,18 +550,28 @@ router.get('/special-exams', adminAuth, async (req, res) => {
 });
 
 router.post('/special-exams', adminAuth, async (req, res) => {
-  if (!req.body.name || !req.body.examType) {
-    return res.status(400).json({ success: false, message: '名称和检查类型不能为空' });
+  try {
+    if (!req.body.name || !req.body.examType) {
+      return res.status(400).json({ success: false, message: '名称和检查类型不能为空' });
+    }
+    if (!req.body.mnemonic) req.body.mnemonic = genMnemonic(req.body.name);
+    if (req.body.categoryId === '' || req.body.categoryId === undefined) req.body.categoryId = null;
+    const doc = await SpecialExam.create(req.body);
+    res.json({ success: true, data: doc, message: '创建成功' });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
   }
-  if (!req.body.mnemonic) req.body.mnemonic = genMnemonic(req.body.name);
-  const doc = await SpecialExam.create(req.body);
-  res.json({ success: true, data: doc, message: '创建成功' });
 });
 
 router.put('/special-exams/:id', adminAuth, async (req, res) => {
-  const doc = await SpecialExam.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  if (!doc) return res.status(404).json({ success: false, message: '记录不存在' });
-  res.json({ success: true, data: doc, message: '更新成功' });
+  try {
+    if (req.body.categoryId === '' || req.body.categoryId === undefined) req.body.categoryId = null;
+    const doc = await SpecialExam.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!doc) return res.status(404).json({ success: false, message: '记录不存在' });
+    res.json({ success: true, data: doc, message: '更新成功' });
+  } catch (e) {
+    res.status(400).json({ success: false, message: e.message });
+  }
 });
 
 router.patch('/special-exams/:id/toggle', adminAuth, async (req, res) => {

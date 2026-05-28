@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
+import { getPinyinInitials } from 'pinyin-pro'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 import { useCategories, StatusBadge } from './_ProjectPage'
@@ -10,9 +11,25 @@ const EMPTY = {
   name: '', mnemonic: '', costPrice: 0, retailPrice: 0, unit: '',
   specimenType: '', tubeColor: '', reportTime: '',
   participatesInDiscount: true,
-  dataType: 'quantitative', referenceValue: '',
+  dataType: 'quantitative',
+  referenceMin: '', referenceMax: '',
+  referenceValue: '',
   criticalValue: '', abnormalValue: '', clinicalSuggestion: '',
   categoryId: '',
+}
+
+function genMnemonic(name) {
+  if (!name) return ''
+  try {
+    return getPinyinInitials(name, { toneType: 'none' }).toUpperCase().replace(/[^A-Z]/g, '')
+  } catch { return '' }
+}
+
+function splitRefValue(val) {
+  if (!val) return { min: '', max: '' }
+  const m = val.match(/^([^-~～]*)[-~～](.*)$/)
+  if (m) return { min: m[1].trim(), max: m[2].trim() }
+  return { min: val, max: '' }
 }
 
 export default function LabTestItemPage() {
@@ -26,6 +43,7 @@ export default function LabTestItemPage() {
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState(EMPTY)
+  const [mnemonicEdited, setMnemonicEdited] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -39,21 +57,26 @@ export default function LabTestItemPage() {
   useEffect(() => { setPage(1); load(1) }, [q])
   useEffect(() => { load() }, [page])
 
-  const openCreate = () => { setEditId(null); setForm(EMPTY); setError(''); setShowModal(true) }
+  const openCreate = () => {
+    setEditId(null); setForm(EMPTY); setMnemonicEdited(false); setError(''); setShowModal(true)
+  }
   const openEdit = item => {
     setEditId(item._id)
+    const rv = item.referenceValue || item.referenceRange || ''
+    const { min, max } = splitRefValue(rv)
     setForm({
       name: item.name || '', mnemonic: item.mnemonic || '',
       costPrice: item.costPrice || 0, retailPrice: item.retailPrice || 0, unit: item.unit || '',
       specimenType: item.specimenType || '', tubeColor: item.tubeColor || '', reportTime: item.reportTime || '',
       participatesInDiscount: item.participatesInDiscount !== false,
       dataType: item.dataType || 'quantitative',
-      referenceValue: item.referenceValue || item.referenceRange || '',
+      referenceMin: min, referenceMax: max,
+      referenceValue: rv,
       criticalValue: item.criticalValue || '', abnormalValue: item.abnormalValue || '',
       clinicalSuggestion: item.clinicalSuggestion || '',
       categoryId: item.categoryId?._id || item.categoryId || '',
     })
-    setError(''); setShowModal(true)
+    setMnemonicEdited(true); setError(''); setShowModal(true)
   }
 
   const handleSave = async () => {
@@ -61,8 +84,18 @@ export default function LabTestItemPage() {
     if (!form.retailPrice && form.retailPrice !== 0) { setError('零售价不能为空'); return }
     setSaving(true); setError('')
     try {
-      if (editId) { await adminAPI.updateLabTestItem(editId, form); toast('已更新') }
-      else { await adminAPI.createLabTestItem(form); toast('已创建') }
+      const payload = { ...form }
+      if (payload.dataType === 'quantitative') {
+        const min = payload.referenceMin?.trim() || ''
+        const max = payload.referenceMax?.trim() || ''
+        payload.referenceValue = min && max ? `${min}-${max}` : (min || max)
+      }
+      delete payload.referenceMin
+      delete payload.referenceMax
+      if (!payload.categoryId) payload.categoryId = null
+
+      if (editId) { await adminAPI.updateLabTestItem(editId, payload); toast('已更新') }
+      else { await adminAPI.createLabTestItem(payload); toast('已创建') }
       setShowModal(false); load()
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
@@ -70,6 +103,22 @@ export default function LabTestItemPage() {
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
   const setCheck = k => e => setForm(f => ({ ...f, [k]: e.target.checked }))
+
+  const handleNameChange = e => {
+    const name = e.target.value
+    setForm(f => ({ ...f, name, mnemonic: mnemonicEdited ? f.mnemonic : genMnemonic(name) }))
+  }
+  const handleMnemonicChange = e => {
+    setMnemonicEdited(true)
+    setForm(f => ({ ...f, mnemonic: e.target.value }))
+  }
+
+  const handleKeyDown = e => {
+    if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA' && e.target.tagName !== 'SELECT') {
+      e.preventDefault(); handleSave()
+    }
+  }
+
   const totalPages = Math.ceil(total / 20)
 
   return (
@@ -137,7 +186,7 @@ export default function LabTestItemPage() {
 
       {showModal && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div className="modal" style={{ maxWidth: 600 }}>
+          <div className="modal" style={{ maxWidth: 600 }} onKeyDown={handleKeyDown}>
             <div className="modal-header">
               <h3 className="modal-title">{editId ? '编辑检验项目' : '新增检验项目'}</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
@@ -148,12 +197,12 @@ export default function LabTestItemPage() {
 
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">项目名称 *</label>
-                  <input className="form-input" value={form.name} onChange={set('name')} placeholder="如：空腹血糖" />
+                  <input className="form-input" value={form.name} onChange={handleNameChange} placeholder="如：空腹血糖" />
                 </div>
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">助记码（拼音首字母）</label>
-                  <input className="form-input" value={form.mnemonic} onChange={set('mnemonic')} placeholder="自动生成，可编辑" />
+                  <input className="form-input" value={form.mnemonic} onChange={handleMnemonicChange} placeholder="输入名称后自动生成" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">单位</label>
@@ -191,21 +240,33 @@ export default function LabTestItemPage() {
                   </select>
                 </div>
 
-                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
-                  <label className="form-label">参考值</label>
-                  {form.dataType === 'quantitative' && (
-                    <input className="form-input" value={form.referenceValue} onChange={set('referenceValue')} placeholder="填写范围，如：3.9-6.1" />
-                  )}
-                  {form.dataType === 'qualitative' && (
+                {form.dataType === 'quantitative' && (
+                  <>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">参考值下限</label>
+                      <input className="form-input" value={form.referenceMin} onChange={set('referenceMin')} placeholder="如：3.9" />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">参考值上限</label>
+                      <input className="form-input" value={form.referenceMax} onChange={set('referenceMax')} placeholder="如：6.1" />
+                    </div>
+                  </>
+                )}
+                {form.dataType === 'qualitative' && (
+                  <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                    <label className="form-label">参考值</label>
                     <select className="form-input" value={form.referenceValue} onChange={set('referenceValue')}>
                       <option value="">请选择</option>
                       {QUALITATIVE_PRESETS.map(p => <option key={p} value={p}>{p}</option>)}
                     </select>
-                  )}
-                  {form.dataType === 'custom' && (
+                  </div>
+                )}
+                {form.dataType === 'custom' && (
+                  <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                    <label className="form-label">参考值</label>
                     <input className="form-input" value={form.referenceValue} onChange={set('referenceValue')} placeholder="自定义文本" />
-                  )}
-                </div>
+                  </div>
+                )}
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">危急值</label>
