@@ -565,9 +565,7 @@ function UploadConfigModal({ file, initialType, onConfirm, onCancel }) {
   );
 }
 
-// ── 趋势对比 Tab（#23 体检年度趋势 + #24 影像学对比）────────────────
-const EXAM_TYPES    = ['annual', 'blood', 'body_comp'];
-const IMAGING_TYPES = ['ultrasound', 'radiology', 'mri', 'endoscopy'];
+// ── 趋势对比 Tab（所有报告类型历年对比）────────────────────────────
 
 // 趋势 Tab 专用样式（必须在组件函数之前定义，避免 TDZ）
 const tStyles = StyleSheet.create({
@@ -732,68 +730,44 @@ function ImagingGroup({ type, reports, onPreview }) {
 }
 
 function TrendsTab({ reports, onPreview }) {
-  const sorted = [...reports].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-  const examReports    = sorted.filter(r => EXAM_TYPES.includes(r.type));
-  const imagingReports = sorted.filter(r => IMAGING_TYPES.includes(r.type));
-
-  // 影像学按类型分组
-  const imagingByType = IMAGING_TYPES.reduce((acc, type) => {
-    const group = imagingReports.filter(r => r.type === type);
-    if (group.length > 0) acc[type] = group;
+  // 按 TYPE_LIST 顺序分组，保留有报告的类型
+  const groupedByType = TYPE_LIST.reduce((acc, tm) => {
+    const group = reports.filter(r => r.type === tm.key);
+    if (group.length > 0) acc.push({ key: tm.key, reports: group });
     return acc;
-  }, {});
+  }, []);
+
+  // 其他未识别类型兜底
+  const knownKeys = new Set(TYPE_LIST.map(t => t.key));
+  const unknownReports = reports.filter(r => !knownKeys.has(r.type));
+  if (unknownReports.length > 0) groupedByType.push({ key: 'other', reports: unknownReports });
+
+  const totalCount = reports.length;
 
   return (
-    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.lg }}>
-      {/* ── #23 体检报告年度趋势 ───────────────────────────────── */}
-      <View>
-        <View style={tStyles.sectionHeader}>
-          <View style={[tStyles.sectionIcon, { backgroundColor: '#EBF5FB' }]}>
-            <Ionicons name="calendar-outline" size={15} color="#0077B6" />
-          </View>
-          <Text style={tStyles.sectionTitle}>体检报告年度趋势</Text>
-          <Text style={tStyles.sectionCount}>{examReports.length} 份</Text>
+    <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md }}>
+      {/* ── 顶部说明 ─── */}
+      <View style={tStyles.sectionHeader}>
+        <View style={[tStyles.sectionIcon, { backgroundColor: colors.primary + '15' }]}>
+          <Ionicons name="analytics-outline" size={15} color={colors.primary} />
         </View>
-        <Text style={tStyles.sectionHint}>涵盖年度体检、血液检查、人体成分，按时间倒序展示，标注关键变化</Text>
-
-        {examReports.length === 0 ? (
-          <TrendEmptyState text="暂无体检类报告，上传后自动生成趋势" />
-        ) : (
-          <View style={tStyles.timelineWrap}>
-            {examReports.map((r, i) => (
-              <TimelineNode
-                key={r._id || r.id}
-                report={r}
-                isLast={i === examReports.length - 1}
-                onPreview={onPreview}
-                prevReport={i < examReports.length - 1 ? examReports[i + 1] : null}
-              />
-            ))}
-          </View>
-        )}
+        <Text style={tStyles.sectionTitle}>历年报告对比</Text>
+        <Text style={tStyles.sectionCount}>{totalCount} 份</Text>
       </View>
+      <Text style={[tStyles.sectionHint, { marginTop: -spacing.xs }]}>
+        同类报告按时间倒序排列，相邻两次有变化时高亮提示
+      </Text>
 
-      {/* ── #24 影像学检查对比 ─────────────────────────────────── */}
-      <View>
-        <View style={tStyles.sectionHeader}>
-          <View style={[tStyles.sectionIcon, { backgroundColor: '#F2EEFF' }]}>
-            <Ionicons name="scan-outline" size={15} color="#7C3AED" />
-          </View>
-          <Text style={tStyles.sectionTitle}>影像学检查对比</Text>
-          <Text style={tStyles.sectionCount}>{imagingReports.length} 份</Text>
+      {/* ── 按类型分组，每组一个可折叠块 ─── */}
+      {groupedByType.length === 0 ? (
+        <TrendEmptyState text="暂无报告，上传报告后自动生成历年对比" />
+      ) : (
+        <View style={{ gap: spacing.sm }}>
+          {groupedByType.map(({ key, reports: reps }) => (
+            <ImagingGroup key={key} type={key} reports={reps} onPreview={onPreview} />
+          ))}
         </View>
-        <Text style={tStyles.sectionHint}>超声、放射、磁共振、内镜按检查类型分组，对比历次结论变化</Text>
-
-        {Object.keys(imagingByType).length === 0 ? (
-          <TrendEmptyState text="暂无影像检查报告，上传后自动分组对比" />
-        ) : (
-          <View style={{ gap: spacing.sm }}>
-            {Object.entries(imagingByType).map(([type, reps]) => (
-              <ImagingGroup key={type} type={type} reports={reps} onPreview={onPreview} />
-            ))}
-          </View>
-        )}
-      </View>
+      )}
 
       <View style={{ height: spacing.xl }} />
     </ScrollView>
