@@ -204,7 +204,8 @@ function ServiceCard({ item, onBuy }) {
   );
 }
 
-function BannerCard({ hasService, servicePackage, daysLeft, onViewOrders, onActivate }) {
+function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrders, onActivate }) {
+  // 已有服务包 → 显示会员权益
   if (hasService) {
     return (
       <View style={styles.banner}>
@@ -223,6 +224,9 @@ function BannerCard({ hasService, servicePackage, daysLeft, onViewOrders, onActi
       </View>
     );
   }
+
+  // 是会员但暂无服务包 → 不展示开通入口
+  if (isMember) return null;
 
   // 未开通：展示服务包权益介绍 + 开通入口
   return (
@@ -260,6 +264,7 @@ export default function ServiceMallScreen({ navigation, route }) {
   const [loadingList, setLoadingList] = useState(true);
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  const isMember  = !!(user?.memberType) || hasService;
   const expiry   = hasService ? new Date(user.serviceExpiry) : null;
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
 
@@ -305,6 +310,7 @@ export default function ServiceMallScreen({ navigation, route }) {
         <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }}>
           <BannerCard
             hasService={hasService}
+            isMember={isMember}
             servicePackage={user?.servicePackage}
             daysLeft={daysLeft}
             onViewOrders={() => navigation.navigate('Orders')}

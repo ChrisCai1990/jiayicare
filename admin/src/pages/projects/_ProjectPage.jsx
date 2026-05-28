@@ -1,7 +1,16 @@
 // 共用模板：检验项目/医嘱/套餐/服务项目/其他收费 页面
 import React, { useEffect, useState } from 'react'
+import { pinyin } from 'pinyin-pro'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
+
+function genMnemonic(name) {
+  if (!name) return ''
+  try {
+    return pinyin(name, { pattern: 'initial', toneType: 'none', type: 'array' })
+      .map(s => s[0]?.toUpperCase() || '').join('').replace(/[^A-Z]/g, '')
+  } catch { return '' }
+}
 
 export function useCategories() {
   const [cats, setCats] = useState([])
@@ -36,8 +45,23 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
   const [form, setForm] = useState({})
+  const [mnemonicEdited, setMnemonicEdited] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+
+  const hasMnemonic = fields.some(f => f.key === 'mnemonic')
+
+  const handleNameChange = (val) => {
+    setForm(p => ({
+      ...p,
+      name: val,
+      ...(hasMnemonic && !mnemonicEdited ? { mnemonic: genMnemonic(val) } : {}),
+    }))
+  }
+  const handleMnemonicChange = (val) => {
+    setMnemonicEdited(true)
+    setForm(p => ({ ...p, mnemonic: val }))
+  }
 
   const buildEmpty = () => {
     const obj = { categoryId: '' }
@@ -55,7 +79,7 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
   useEffect(() => { setPage(1); load(1) }, [q])
   useEffect(() => { load() }, [page])
 
-  const openCreate = () => { setEditId(null); setForm(buildEmpty()); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setForm(buildEmpty()); setMnemonicEdited(false); setError(''); setShowModal(true) }
   const openEdit = item => {
     setEditId(item._id)
     const f = { categoryId: item.categoryId?._id || item.categoryId || '' }
@@ -63,7 +87,7 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
       if (fd.type === 'checkbox') f[fd.key] = item[fd.key] !== false
       else f[fd.key] = item[fd.key] ?? (fd.type === 'number' ? 0 : '')
     })
-    setForm(f); setError(''); setShowModal(true)
+    setForm(f); setMnemonicEdited(true); setError(''); setShowModal(true)
   }
 
   const handleSave = async () => {
@@ -179,8 +203,12 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
                         <input type="checkbox" checked={!!form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.checked }))} />
                         参与商城折扣活动
                       </label>
+                    ) : f.key === 'name' ? (
+                      <input className="form-input" value={form[f.key] || ''} onChange={e => handleNameChange(e.target.value)} placeholder={f.placeholder} />
+                    ) : f.key === 'mnemonic' ? (
+                      <input className="form-input" value={form[f.key] || ''} onChange={e => handleMnemonicChange(e.target.value)} placeholder={f.placeholder} style={{ fontFamily: 'monospace' }} />
                     ) : (
-                      <input className="form-input" value={form[f.key]} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} />
+                      <input className="form-input" value={form[f.key] || ''} onChange={e => setForm(p => ({ ...p, [f.key]: e.target.value }))} placeholder={f.placeholder} />
                     )}
                   </div>
                 ))}

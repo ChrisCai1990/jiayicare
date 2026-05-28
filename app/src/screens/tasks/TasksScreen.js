@@ -284,7 +284,7 @@ function ReminderCard({ reminder, onToggle }) {
 }
 
 // ── 主页面 ────────────────────────────────────────────────────────
-export default function TasksScreen() {
+export default function TasksScreen({ navigation }) {
   const { isDemo } = useAuth();
   const [filter, setFilter]       = useState('全部');
   const [tasks, setTasks]         = useState([]);
@@ -398,9 +398,16 @@ export default function TasksScreen() {
     <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.pageTitle}>待办任务</Text>
-          <Text style={styles.pageSubtitle}>健康管理进度跟踪</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {navigation?.canGoBack?.() && (
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, marginLeft: -4 }}>
+              <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          )}
+          <View>
+            <Text style={styles.pageTitle}>待办任务</Text>
+            <Text style={styles.pageSubtitle}>健康管理进度跟踪</Text>
+          </View>
         </View>
         {filteredTasks.length > 0 && (
           <View style={styles.pendingBadge}>
