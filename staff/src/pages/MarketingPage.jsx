@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
+import { GiftModal } from './PatientDetailPage'
 
 const ACTIVITY_TYPE_LABEL = { discount: '折扣活动', gift: '赠品活动', coupon: '优惠券', points: '积分活动' }
 const SERVICE_TYPE_OPTIONS = [
@@ -432,6 +433,125 @@ function PackagesTab({ toast }) {
   )
 }
 
+// ── 权益赠送 ──────────────────────────────────────────────
+function GiftsTab({ toast }) {
+  const [patients, setPatients] = useState([])
+  const [search, setSearch] = useState('')
+  const [selected, setSelected] = useState(null)
+  const [showGiftModal, setShowGiftModal] = useState(false)
+  const [gifts, setGifts] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  const searchPatients = async (q) => {
+    if (!q.trim()) { setPatients([]); return }
+    try {
+      const res = await staffAPI.getPatients({ search: q, limit: 10 })
+      setPatients(res.data.patients || [])
+    } catch {}
+  }
+
+  const loadGifts = async (patientId) => {
+    setLoading(true)
+    try {
+      const res = await staffAPI.getPatientGifts(patientId)
+      setGifts(res.data)
+    } catch {} finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    const t = setTimeout(() => searchPatients(search), 300)
+    return () => clearTimeout(t)
+  }, [search])
+
+  const selectPatient = (p) => {
+    setSelected(p)
+    setSearch(p.name)
+    setPatients([])
+    loadGifts(p._id)
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '320px 1fr', gap: 20 }}>
+      {/* 选择会员 */}
+      <div className="card">
+        <div className="card-header"><div className="card-title">选择会员</div></div>
+        <div className="card-body" style={{ position: 'relative' }}>
+          <input
+            className="form-input"
+            placeholder="搜索会员姓名或手机号…"
+            value={search}
+            onChange={e => { setSearch(e.target.value); setSelected(null); setGifts([]) }}
+          />
+          {patients.length > 0 && (
+            <div style={{ position: 'absolute', left: 20, right: 20, top: 60, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,.12)', zIndex: 10 }}>
+              {patients.map(p => (
+                <div key={p._id} style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f5f2ec', fontSize: 14 }}
+                  onClick={() => selectPatient(p)}>
+                  <span style={{ fontWeight: 500 }}>{p.name}</span>
+                  <span style={{ color: '#8AA89C', marginLeft: 8, fontSize: 13 }}>{p.phone}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {selected && (
+            <div style={{ marginTop: 16, padding: 12, background: '#f0faf4', borderRadius: 8, border: '1px solid #22A06B30' }}>
+              <div style={{ fontWeight: 600, color: '#1A2B24' }}>{selected.name}</div>
+              <div style={{ fontSize: 13, color: '#8AA89C' }}>{selected.phone} · {selected.servicePackage || '无服务包'}</div>
+              <button className="btn btn-primary btn-sm" style={{ marginTop: 10, width: '100%' }}
+                onClick={() => setShowGiftModal(true)}>＋ 赠送权益</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 赠送记录 */}
+      <div className="card">
+        <div className="card-header"><div className="card-title">{selected ? `${selected.name} 的权益记录` : '权益赠送记录'}</div></div>
+        {!selected ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#aaa', fontSize: 14 }}>请先在左侧搜索并选择会员</div>
+        ) : loading ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中…</div>
+        ) : gifts.length === 0 ? (
+          <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无赠送记录</div>
+        ) : (
+          <table className="table">
+            <thead><tr><th>赠送类型</th><th>赠送内容</th><th>有效期</th><th>状态</th><th>赠送人</th><th>时间</th></tr></thead>
+            <tbody>
+              {gifts.map(g => (
+                <tr key={g._id}>
+                  <td><span className={`badge ${g.giftType === 'fund' ? 'badge-warning' : 'badge-success'}`}>{g.giftType === 'fund' ? '健康基金' : '服务'}</span></td>
+                  <td style={{ fontWeight: 500 }}>
+                    {g.giftType === 'fund' ? `¥${g.fundAmount}元` : `${g.serviceName} × ${g.serviceCount}次`}
+                    {g.remark && <div style={{ fontSize: 12, color: '#aaa' }}>{g.remark}</div>}
+                  </td>
+                  <td style={{ fontSize: 13, color: '#666' }}>
+                    {g.validFrom ? new Date(g.validFrom).toLocaleDateString('zh-CN') : '-'}
+                    {g.validTo ? ` ~ ${new Date(g.validTo).toLocaleDateString('zh-CN')}` : ''}
+                  </td>
+                  <td><span style={{ color: g.status === 'active' ? '#22A06B' : g.status === 'used' ? '#0077B6' : '#aaa', fontWeight: 500, fontSize: 13 }}>
+                    {g.status === 'active' ? '有效' : g.status === 'used' ? '已使用' : '已过期'}
+                  </span></td>
+                  <td style={{ fontSize: 13, color: '#666' }}>{g.staffId?.name || '-'}</td>
+                  <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(g.createdAt).toLocaleDateString('zh-CN')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {showGiftModal && selected && (
+        <GiftModal
+          patientId={selected._id}
+          patientName={selected.name}
+          onClose={() => setShowGiftModal(false)}
+          onSaved={() => { setShowGiftModal(false); toast('权益已赠送'); loadGifts(selected._id) }}
+        />
+      )}
+    </div>
+  )
+}
+
 // ── 主页面 ────────────────────────────────────────────────
 export default function MarketingPage() {
   const toast = useToast()
@@ -442,6 +562,7 @@ export default function MarketingPage() {
     { v: 'activities', l: '🎉 活动管理' },
     { v: 'points',     l: '⭐ 积分管理' },
     { v: 'packages',   l: '🎫 次卡套餐' },
+    { v: 'gifts',      l: '🎁 权益赠送' },
   ]
 
   return (
@@ -449,7 +570,7 @@ export default function MarketingPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">会员营销</h1>
-          <p className="page-subtitle">管理会员等级、活动、积分与次卡套餐</p>
+          <p className="page-subtitle">管理会员等级、活动、积分、次卡套餐与权益赠送</p>
         </div>
       </div>
 
@@ -469,6 +590,7 @@ export default function MarketingPage() {
       {tab === 'activities' && <ActivitiesTab toast={toast} />}
       {tab === 'points'     && <PointsTab     toast={toast} />}
       {tab === 'packages'   && <PackagesTab   toast={toast} />}
+      {tab === 'gifts'      && <GiftsTab      toast={toast} />}
     </div>
   )
 }

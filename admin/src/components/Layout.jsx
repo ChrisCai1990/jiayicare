@@ -7,10 +7,9 @@ const NAV_SECTIONS = [
     label: '功能菜单',
     items: [
       { label: '数据总览',     icon: '📊', path: '/dashboard' },
-      { label: '患者管理',     icon: '👥', path: '/patients' },
+      { label: '会员管理',     icon: '👥', path: '/patients' },
       { label: '订单管理',     icon: '📋', path: '/orders' },
       { label: '消息中心',     icon: '💬', path: '/messages' },
-      { label: '服务管理',     icon: '🛒', path: '/services' },
       { label: '商城产品管理', icon: '🏪', path: '/products' },
       { label: '健康方案模板', icon: '📚', path: '/health-plan-templates' },
       { label: '问卷管理',     icon: '📝', path: '/questionnaires' },

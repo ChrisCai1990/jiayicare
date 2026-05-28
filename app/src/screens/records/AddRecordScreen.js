@@ -6,6 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { recordsAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 const RECORD_TYPES = [
   { id: 'bloodPressure', label: '血压', icon: 'heart', color: colors.danger, fields: [
@@ -174,9 +175,10 @@ const tpStyles = StyleSheet.create({
 });
 
 const TIME_OPTIONS = ['现在', '今日早上', '今日中午', '今日晚上', '昨日'];
-const MEASURE_OPTIONS = { bloodSugar: ['空腹', '餐后2小时', '睡前'], bloodPressure: ['左臂', '右臂'] };
+const MEASURE_OPTIONS = { bloodSugar: ['空腹', '餐后2小时', '睡前', '随机'], bloodPressure: ['左臂', '右臂'] };
 
 export default function AddRecordScreen({ navigation, route }) {
+  const { user } = useAuth();
   const initialType = route?.params?.type
     ? RECORD_TYPES.find(t => t.id === route.params.type) || RECORD_TYPES[0]
     : RECORD_TYPES[0];
@@ -370,6 +372,24 @@ export default function AddRecordScreen({ navigation, route }) {
             );
           })}
 
+          {/* 体重专属：自动计算 BMI */}
+          {activeType.id === 'weight' && values.value && user?.height && (
+            <View style={styles.sleepDurRow}>
+              <Ionicons name="body-outline" size={14} color={colors.warning} />
+              {(() => {
+                const bmi = parseFloat(values.value) / Math.pow(user.height / 100, 2);
+                const bmiLabel = bmi < 18.5 ? '偏瘦' : bmi < 24 ? '正常' : bmi < 28 ? '超重' : '肥胖';
+                const bmiColor = bmi >= 18.5 && bmi < 24 ? colors.success : colors.warning;
+                return (
+                  <Text style={styles.sleepDurText}>
+                    BMI：<Text style={[styles.sleepDurVal, { color: bmiColor }]}>{bmi.toFixed(1)}</Text>
+                    <Text style={styles.sleepDurNormal}>（{bmiLabel}，身高 {user.height} cm）</Text>
+                  </Text>
+                );
+              })()}
+            </View>
+          )}
+
           {/* 睡眠专属：入睡时间 + 醒来时间 + 自动计算时长 */}
           {activeType.id === 'sleep' && (
             <View>
@@ -422,21 +442,23 @@ export default function AddRecordScreen({ navigation, route }) {
           )}
         </View>
 
-        {/* Time */}
-        <View style={styles.section}>
-          <Text style={styles.sectionLabel}>记录时间</Text>
-          <View style={styles.timeRow}>
-            {TIME_OPTIONS.map(t => (
-              <TouchableOpacity
-                key={t}
-                style={[styles.timeChip, time === t && styles.timeChipActive]}
-                onPress={() => setTime(t)}
-              >
-                <Text style={[styles.timeChipText, time === t && styles.timeChipTextActive]}>{t}</Text>
-              </TouchableOpacity>
-            ))}
+        {/* Time - 血糖自动使用当前时间，不显示选择器 */}
+        {activeType.id !== 'bloodSugar' && (
+          <View style={styles.section}>
+            <Text style={styles.sectionLabel}>记录时间</Text>
+            <View style={styles.timeRow}>
+              {TIME_OPTIONS.map(t => (
+                <TouchableOpacity
+                  key={t}
+                  style={[styles.timeChip, time === t && styles.timeChipActive]}
+                  onPress={() => setTime(t)}
+                >
+                  <Text style={[styles.timeChipText, time === t && styles.timeChipTextActive]}>{t}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
-        </View>
+        )}
 
         {/* Note */}
         <View style={styles.section}>

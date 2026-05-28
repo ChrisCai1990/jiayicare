@@ -751,7 +751,7 @@ export default function HomeScreen({ navigation }) {
                   ))}
                 </View>
                 <Text style={styles.moodHint}>
-                  6分以下 · 建议记录 | 6-8分 · 可选记录 | 8分以上 · 无需记录
+                  1分 · 情绪低落 &nbsp;&nbsp;&nbsp; 5分 · 一般 &nbsp;&nbsp;&nbsp; 10分 · 心情愉悦
                 </Text>
               </View>
 

@@ -677,7 +677,7 @@ export default function RecordsScreen({ navigation }) {
               { label: '体重',   value: authUser?.weight ? `${authUser.weight} kg` : null, icon: 'barbell-outline' },
               ...(authUser?.gender === '女' ? [
                 { label: '月经史', value: profile.menstrualHistory,    icon: 'medical-outline' },
-                { label: '生育史', value: profile.reproductiveHistory, icon: 'heart-outline' },
+                { label: '婚育史', value: profile.maritalHistory || profile.reproductiveHistory, icon: 'heart-outline' },
               ] : []),
             ].map((item, i, arr) => (
               <View key={item.label} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>

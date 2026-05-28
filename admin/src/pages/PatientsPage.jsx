@@ -40,8 +40,8 @@ export default function PatientsPage() {
     <>
       <div className="page-header">
         <div>
-          <div className="page-title">👥 患者管理</div>
-          <div className="page-sub">共 {total} 位患者</div>
+          <div className="page-title">👥 会员管理</div>
+          <div className="page-sub">共 {total} 位会员</div>
         </div>
       </div>
 

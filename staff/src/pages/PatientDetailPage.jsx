@@ -15,7 +15,17 @@ const PLAN_TYPE_LABEL = {
 }
 const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' }
 const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
-const SR_TYPE_LABEL = { medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊' }
+const SR_TYPE_LABEL = {
+  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', routine:'日常随访',
+  medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊',
+}
+const SR_CATEGORY = {
+  nutrition:     '营养干预',
+  disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
+  medical_visit: '医院就医', medical_escort: '医院就医',
+  routine:       '日常随访',
+}
+const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7' }
 
 export default function PatientDetailPage() {
   const { id } = useParams()
@@ -24,13 +34,11 @@ export default function PatientDetailPage() {
   const { staff } = useStaff()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('info')  // info | records | followups | plans | reports | serviceRecords | gifts
+  const [tab, setTab] = useState('info')  // info | records | reports | plans | serviceRecords | family | membership | billing
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
-  const [gifts, setGifts] = useState([])
-  const [showGiftModal, setShowGiftModal] = useState(false)
   const [showReferralModal, setShowReferralModal] = useState(false)
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [showSRDetail, setShowSRDetail] = useState(null)
@@ -78,13 +86,8 @@ export default function PatientDetailPage() {
   const loadServiceRecords = async () => {
     try { const res = await staffAPI.getPatientServiceRecords(id); setServiceRecords(res.data) } catch {}
   }
-  const loadGifts = async () => {
-    try { const res = await staffAPI.getPatientGifts(id); setGifts(res.data) } catch {}
-  }
-
   useEffect(() => { load() }, [id])
   useEffect(() => {
-    // 预加载员工列表（转介用）
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
   }, [])
   useEffect(() => {
@@ -92,7 +95,6 @@ export default function PatientDetailPage() {
     else if (tab === 'plans') loadPlans()
     else if (tab === 'reports') loadReports()
     else if (tab === 'serviceRecords') loadServiceRecords()
-    else if (tab === 'gifts') loadGifts()
   }, [tab])
 
   const buildEditForm = (u) => ({
@@ -253,13 +255,14 @@ export default function PatientDetailPage() {
       {/* Tabs */}
       <div className="tabs" style={{ marginBottom: 20 }}>
         {[
-          { key: 'info', label: '基本信息' },
-          { key: 'records', label: '健康档案' },
-          { key: 'plans', label: '健康方案' },
-          { key: 'serviceRecords', label: '服务记录' },
-          { key: 'reports', label: '体检报告' },
-          { key: 'gifts', label: '权益赠送' },
-          { key: 'annualPlan', label: '年度方案' },
+          { key: 'info',          label: '基本信息' },
+          { key: 'records',       label: '健康档案' },
+          { key: 'reports',       label: '体检报告' },
+          { key: 'plans',         label: '管理方案' },
+          { key: 'serviceRecords',label: '服务记录' },
+          { key: 'family',        label: '家庭信息' },
+          { key: 'membership',    label: '会员信息' },
+          { key: 'billing',       label: '收费管理' },
         ].map(t => (
           <button
             key={t.key}
@@ -607,10 +610,10 @@ export default function PatientDetailPage() {
       {tab === 'plans' && (
         <div className="card">
           <div className="card-header">
-            <div className="card-title">健康方案</div>
+            <div className="card-title">管理方案</div>
           </div>
           {plans.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康方案</div>
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无管理方案</div>
           ) : (
             <table className="table">
               <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
@@ -677,79 +680,137 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── Service Records Tab ── */}
-      {tab === 'serviceRecords' && (
-        <div className="card">
-          <div className="card-header"><div className="card-title">服务记录</div></div>
-          {serviceRecords.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无服务记录</div>
-          ) : (
-            <table className="table">
-              <thead><tr><th>服务类型</th><th>标题</th><th>内容摘要</th><th>负责人</th><th>服务日期</th></tr></thead>
-              <tbody>
-                {serviceRecords.map(r => (
-                  <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => setShowSRDetail(r)}>
-                    <td><span className="badge badge-success">{SR_TYPE_LABEL[r.type] || r.type}</span></td>
-                    <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
-                    <td style={{ fontSize: 13, color: '#666', maxWidth: 200 }}>{r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : '-'}</td>
-                    <td style={{ fontSize: 13, color: '#666' }}>{r.staffId?.name || '-'}</td>
-                    <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      )}
-
-      {/* ── Gifts Tab ── */}
-      {tab === 'gifts' && (
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">权益赠送记录</div>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowGiftModal(true)}>＋ 赠送权益</button>
+      {tab === 'serviceRecords' && (() => {
+        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访']
+        const grouped = {}
+        CATS.forEach(c => { grouped[c] = [] })
+        serviceRecords.forEach(r => {
+          const cat = SR_CATEGORY[r.type] || '日常随访'
+          grouped[cat].push(r)
+        })
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {CATS.map(cat => (
+              <div className="card" key={cat}>
+                <div className="card-header">
+                  <div className="card-title" style={{ color: SR_CATEGORY_COLOR[cat] }}>{cat}</div>
+                  <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
+                </div>
+                {grouped[cat].length === 0 ? (
+                  <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{cat}记录</div>
+                ) : (
+                  <table className="table">
+                    <thead><tr><th>类型</th><th>标题</th><th>内容摘要</th><th>负责人</th><th>日期</th></tr></thead>
+                    <tbody>
+                      {grouped[cat].map(r => (
+                        <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => setShowSRDetail(r)}>
+                          <td><span className="badge badge-success" style={{ background: SR_CATEGORY_COLOR[cat] + '20', color: SR_CATEGORY_COLOR[cat] }}>{SR_TYPE_LABEL[r.type] || r.type}</span></td>
+                          <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
+                          <td style={{ fontSize: 13, color: '#666', maxWidth: 200 }}>{r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : '-'}</td>
+                          <td style={{ fontSize: 13, color: '#666' }}>{r.staffId?.name || '-'}</td>
+                          <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            ))}
           </div>
-          {gifts.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
-              暂无赠送记录，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => setShowGiftModal(true)}>点击赠送服务或健康基金</span>
+        )
+      })()}
+
+      {/* ── Family Tab ── */}
+      {tab === 'family' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div className="card">
+            <div className="card-header"><div className="card-title">家庭联系人</div></div>
+            <div className="card-body">
+              <InfoRow label="联系人" value={user.contactName || '-'} />
+              <InfoRow label="联系电话" value={user.contactPhone3 || user.contactPhone2 || '-'} />
+              <InfoRow label="家庭医生" value={user.assignedFamilyDoctor?.name || '-'} />
+              <InfoRow label="家庭医生职称" value={user.assignedFamilyDoctor?.title || '-'} />
             </div>
-          ) : (
-            <table className="table">
-              <thead><tr><th>赠送类型</th><th>赠送内容</th><th>有效期</th><th>状态</th><th>赠送人</th><th>时间</th></tr></thead>
-              <tbody>
-                {gifts.map(g => (
-                  <tr key={g._id}>
-                    <td><span className={`badge ${g.giftType === 'fund' ? 'badge-warning' : 'badge-success'}`}>{g.giftType === 'fund' ? '健康基金' : '服务'}</span></td>
-                    <td style={{ fontWeight: 500 }}>
-                      {g.giftType === 'fund' ? `¥${g.fundAmount}元` : `${g.serviceName} × ${g.serviceCount}次`}
-                      {g.remark && <div style={{ fontSize: 12, color: '#aaa' }}>{g.remark}</div>}
-                    </td>
-                    <td style={{ fontSize: 13, color: '#666' }}>
-                      {g.validFrom ? new Date(g.validFrom).toLocaleDateString('zh-CN') : '-'}
-                      {g.validTo ? ` ~ ${new Date(g.validTo).toLocaleDateString('zh-CN')}` : ''}
-                    </td>
-                    <td><span style={{ color: g.status === 'active' ? '#22A06B' : g.status === 'used' ? '#0077B6' : '#aaa', fontWeight: 500, fontSize: 13 }}>{g.status === 'active' ? '有效' : g.status === 'used' ? '已使用' : '已过期'}</span></td>
-                    <td style={{ fontSize: 13, color: '#666' }}>{g.staffId?.name || '-'}</td>
-                    <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(g.createdAt).toLocaleDateString('zh-CN')}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          </div>
+          <div className="card">
+            <div className="card-header"><div className="card-title">家族疾病史</div></div>
+            <div className="card-body">
+              {user.healthProfile?.familyHistory?.length > 0 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {user.healthProfile.familyHistory.map((h, i) => (
+                    <div key={i} style={{ padding: '8px 12px', background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>
+                      <span style={{ fontWeight: 500 }}>{h.disease || h}</span>
+                      {h.relative && <span style={{ color: '#8AA89C', marginLeft: 8 }}>{h.relative}</span>}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>暂无家族疾病史记录</div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* ── Annual Plan Tab ── */}
-      {tab === 'annualPlan' && (
-        <div className="card" style={{ textAlign: 'center', padding: '40px 20px' }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>📋</div>
-          <div style={{ fontSize: 18, fontWeight: 600, color: '#1A2B24', marginBottom: 8 }}>年度健康管理方案</div>
-          <div style={{ color: '#8AA89C', fontSize: 14, marginBottom: 24 }}>为会员制定个性化年度健康管理计划，涵盖医疗、监测、疫苗、生活方式等模块</div>
-          <button
-            className="btn btn-primary"
-            onClick={() => nav(`/patients/${id}/annual-plan`)}
-          >
-            进入年度方案配置 →
-          </button>
+      {/* ── Membership Tab ── */}
+      {tab === 'membership' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div className="card">
+            <div className="card-header"><div className="card-title">会员基本信息</div></div>
+            <div className="card-body">
+              <InfoRow label="手机号" value={user.phone} />
+              <InfoRow label="会员类型" value={
+                user.memberType || (user.patientType === 'vip' ? 'VIP会员' : user.patientType === 'trial' ? '试用会员' : '普通会员')
+              } />
+              <InfoRow label="服务包" value={user.servicePackage || '-'} />
+              <InfoRow label="服务开始" value={user.serviceStartDate ? new Date(user.serviceStartDate).toLocaleDateString('zh-CN') : '-'} />
+              <InfoRow label="服务到期" value={user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-'} />
+              <InfoRow label="会员来源" value={user.source || '-'} />
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-header"><div className="card-title">账户余额</div></div>
+            <div className="card-body">
+              <div style={{ padding: '16px 0', borderBottom: '1px solid #f5f2ec' }}>
+                <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 4 }}>健康基金余额</div>
+                <div style={{ fontSize: 28, fontWeight: 700, color: '#1E6B50' }}>
+                  ¥{(user.healthFundBalance || 0).toFixed(2)}
+                </div>
+              </div>
+              <div style={{ marginTop: 12, fontSize: 12, color: '#aaa' }}>
+                健康基金可用于就医协助、营养素购买等服务。详细充值和消费记录请在收费管理页查看。
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Billing Tab ── */}
+      {tab === 'billing' && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div className="card">
+            <div className="card-header"><div className="card-title">账户概览</div></div>
+            <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+              {[
+                { label: '健康基金余额', value: `¥${(user.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
+                { label: '服务包', value: user.servicePackage || '未购买', color: '#0077B6' },
+                { label: '服务到期', value: user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-', color: '#D97706' },
+              ].map(item => (
+                <div key={item.label} style={{ padding: 16, background: '#f9f7f3', borderRadius: 10, textAlign: 'center' }}>
+                  <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 6 }}>{item.label}</div>
+                  <div style={{ fontSize: 18, fontWeight: 700, color: item.color }}>{item.value}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="card">
+            <div className="card-header"><div className="card-title">收费记录</div></div>
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#aaa' }}>
+              <div style={{ fontSize: 32, marginBottom: 12 }}>🧾</div>
+              <div style={{ fontSize: 14, marginBottom: 8 }}>营养素、检测及各类服务收费记录</div>
+              <div style={{ fontSize: 13 }}>详细收费模块正在开发中，请在会员营销-次卡套餐处管理</div>
+            </div>
+          </div>
         </div>
       )}
 
@@ -760,16 +821,6 @@ export default function PatientDetailPage() {
           patientName={user.name}
           onClose={() => setShowFollowUpModal(false)}
           onSaved={handleFollowUpCreated}
-        />
-      )}
-
-      {/* 赠送权益弹窗 */}
-      {showGiftModal && (
-        <GiftModal
-          patientId={id}
-          patientName={user.name}
-          onClose={() => setShowGiftModal(false)}
-          onSaved={() => { setShowGiftModal(false); toast('权益已赠送'); loadGifts() }}
         />
       )}
 
@@ -1102,10 +1153,10 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
   )
 }
 
-// ── 赠送权益弹窗 ───────────────────────────────────────────
+// ── 赠送权益弹窗（供 MarketingPage 导出使用）───────────────────────
 const SERVICE_OPTIONS = ['就医协助服务', '居家监测套餐', '专家咨询', '陪诊服务', '上门采血', '营养咨询', '其他服务']
 
-function GiftModal({ patientId, patientName, onClose, onSaved }) {
+export function GiftModal({ patientId, patientName, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({ giftType: 'service', serviceName: '', serviceCount: 1, fundAmount: 0, fundType: 'enterprise', validFrom: '', validTo: '', remark: '' })
   const [saving, setSaving] = useState(false)

@@ -47,7 +47,7 @@ function SendMessageModal({ userId, onClose, onSent }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <div className="modal-title">💬 发送消息给患者</div>
+          <div className="modal-title">💬 发送消息给会员</div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
@@ -173,8 +173,8 @@ export default function PatientDetailPage() {
     }).catch(err => toast('❌ ' + err.message))
   }, [tab, id, checkupLoaded])
 
-  if (loading) return <div className="loading-wrap"><div className="spinner" /> 加载患者数据...</div>
-  if (!data) return <div className="empty-state"><div className="empty-state-icon">😕</div><div>患者数据加载失败</div></div>
+  if (loading) return <div className="loading-wrap"><div className="spinner" /> 加载会员数据...</div>
+  if (!data) return <div className="empty-state"><div className="empty-state-icon">😕</div><div>会员数据加载失败</div></div>
 
   const { user, latestVitals, records, tasks, messages, orders } = data
   const score = user.healthScore
@@ -186,7 +186,7 @@ export default function PatientDetailPage() {
   return (
     <>
       {/* Back */}
-      <button className="back-link" onClick={() => nav('/patients')}>← 返回患者列表</button>
+      <button className="back-link" onClick={() => nav('/patients')}>← 返回会员列表</button>
 
       {/* Patient header */}
       <div className="card" style={{ marginBottom: 20 }}>
@@ -382,7 +382,7 @@ export default function PatientDetailPage() {
                 <div key={m._id} style={{ display: 'flex', flexDirection: 'column', alignItems: isUser ? 'flex-start' : 'flex-end' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                      {isUser ? user.name || '患者' : m.sender} · {fmtTime(m.createdAt)}
+                      {isUser ? user.name || '会员' : m.sender} · {fmtTime(m.createdAt)}
                     </span>
                     {!isUser && <span className="badge badge-green" style={{ fontSize: 10 }}>{m.type === 'doctor' ? '医生' : m.type === 'manager' ? '健管师' : '系统'}</span>}
                   </div>
