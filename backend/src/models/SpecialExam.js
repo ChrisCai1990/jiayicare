@@ -11,6 +11,8 @@ const specialExamSchema = new mongoose.Schema({
   unit:                   { type: String, default: '次' },
   participatesInDiscount: { type: Boolean, default: true },
   referenceRange:         { type: String, default: '' },
+  description:            { type: String, default: '' },
+  conclusion:             { type: String, default: '' },
   categoryId:             { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null },
   status:                 { type: String, enum: ['active', 'inactive'], default: 'active' },
   sortOrder:              { type: Number, default: 0 },

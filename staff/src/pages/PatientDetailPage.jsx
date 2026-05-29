@@ -259,6 +259,7 @@ export default function PatientDetailPage() {
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
           { key: 'plans',         label: '管理方案' },
+          { key: 'followups',     label: '随访记录' },
           { key: 'serviceRecords',label: '服务记录' },
           { key: 'family',        label: '家庭信息' },
           { key: 'membership',    label: '会员信息' },
@@ -616,7 +617,7 @@ export default function PatientDetailPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无管理方案</div>
           ) : (
             <table className="table">
-              <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
+              <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>已阅</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
               <tbody>
                 {plans.map(p => {
                   const done = p.items?.filter(i => i.status === 'completed').length || 0
@@ -626,6 +627,12 @@ export default function PatientDetailPage() {
                       <td style={{ fontWeight: 500, color: '#1E6B50' }}>{p.title}</td>
                       <td><span className="badge badge-info">{PLAN_TYPE_LABEL[p.type] || p.type}</span></td>
                       <td><span style={{ color: PLAN_STATUS_COLOR[p.status], fontWeight: 500, fontSize: 13 }}>{PLAN_STATUS_LABEL[p.status]}</span></td>
+                      <td>
+                        {p.viewedAt
+                          ? <span style={{ fontSize: 12, color: '#22A06B', fontWeight: 500 }}>✓ 已阅<br/><span style={{ color: '#aaa', fontWeight: 400 }}>{new Date(p.viewedAt).toLocaleDateString('zh-CN')}</span></span>
+                          : <span style={{ fontSize: 12, color: '#D97706' }}>未查阅</span>
+                        }
+                      </td>
                       <td style={{ textAlign: 'center' }}>{total}</td>
                       <td>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -640,6 +647,47 @@ export default function PatientDetailPage() {
                     </tr>
                   )
                 })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ── Follow-ups Tab ── */}
+      {tab === 'followups' && (
+        <div className="card">
+          <div className="card-header">
+            <div className="card-title">随访记录</div>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowFollowUpModal(true)}>＋ 新增随访</button>
+          </div>
+          {followUps.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
+              暂无随访记录，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => setShowFollowUpModal(true)}>立即记录</span>
+            </div>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr><th>日期</th><th>方式</th><th>状态</th><th>随访人</th><th>随访内容</th><th>下次随访</th></tr>
+              </thead>
+              <tbody>
+                {followUps.map(f => (
+                  <tr key={f._id}>
+                    <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
+                    <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
+                    <td>
+                      <span style={{ fontSize: 13, fontWeight: 500, color: STATUS_COLOR[f.status] || '#666' }}>
+                        {STATUS_MAP[f.status] || f.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
+                    <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 240 }}>
+                      {f.content ? (f.content.length > 80 ? f.content.slice(0, 80) + '…' : f.content) : '-'}
+                    </td>
+                    <td style={{ fontSize: 12, color: '#8AA89C' }}>
+                      {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}

@@ -415,7 +415,18 @@ export default function ServicePlansScreen({ navigation }) {
 
   useEffect(() => { loadPlans(); }, [loadPlans]);
 
-  const toggle = (id) => setExpanded(prev => prev === id ? null : id);
+  const toggle = (id) => {
+    setExpanded(prev => {
+      const next = prev === id ? null : id;
+      if (next) {
+        plansAPI.view(next).catch(() => {});
+        setPlans(prev2 => prev2.map(p =>
+          p._id === next && !p.viewedAt ? { ...p, viewedAt: new Date().toISOString() } : p
+        ));
+      }
+      return next;
+    });
+  };
 
   // ── 方案确认流程 ──────────────────────────────────────────────
   const handleConfirmPlan = (plan) => setPlanConfirmTarget(plan);

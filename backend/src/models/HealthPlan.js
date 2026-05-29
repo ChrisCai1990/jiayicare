@@ -52,6 +52,7 @@ const healthPlanSchema = new mongoose.Schema({
   // 推送至客户端
   pushedAt:    { type: Date, default: null },
   confirmedAt: { type: Date, default: null }, // 客户确认时间
+  viewedAt:    { type: Date, default: null },  // 客户首次查阅时间
   // 客户端显示摘要
   summary:     { type: String, default: '' },
 }, { timestamps: true });

@@ -101,23 +101,33 @@ router.get('/me', staffAuth, async (req, res) => {
   });
 });
 
+// 获取某员工所有下属 ID（递归一层，支持组长看下属）
+async function getSubordinateIds(staffId) {
+  const subs = await Admin.find({ managerId: staffId }).select('_id');
+  return subs.map(s => s._id);
+}
+
 // ── GET /api/staff/patients ───────────────────────────────────────
-// 查询分配给当前医护人员的患者列表
+// 查询分配给当前医护人员（及其下属）的患者列表
 router.get('/patients', staffAuth, async (req, res) => {
   const { page = 1, limit = 20, search = '', disease = '', type = '' } = req.query;
   const staff = req.staff;
 
-  // 构建过滤条件：根据角色匹配分配字段
+  // 超管看全部，其他角色只看分配给自己（及下属）的患者
+  let staffIds = [staff._id];
+  if (staff.role !== 'superadmin') {
+    const subIds = await getSubordinateIds(staff._id);
+    staffIds = [staff._id, ...subIds];
+  }
+
   const assignFilter = {};
-  if (staff.role === 'familyDoctor') {
-    assignFilter.assignedFamilyDoctor = staff._id;
-  } else if (staff.role === 'healthManager') {
-    assignFilter.assignedHealthManager = staff._id;
-  } else if (staff.role === 'superadmin') {
-    // 超管可以看所有患者，不过滤
-  } else {
-    // 其他角色默认看分配给健管专员字段中有自己的患者
-    assignFilter.assignedHealthManager = staff._id;
+  if (staff.role !== 'superadmin') {
+    if (staff.role === 'familyDoctor') {
+      assignFilter.assignedFamilyDoctor = { $in: staffIds };
+    } else {
+      // healthManager 及所有其他角色（含组长下属）
+      assignFilter.assignedHealthManager = { $in: staffIds };
+    }
   }
 
   const filter = { ...assignFilter };
@@ -205,6 +215,16 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .populate('assignedHealthManager', 'name title role')
     .populate('assignedFamilyDoctor', 'name title role');
   if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+
+  // 权限校验：非超管只能查看分配给自己（或下属）的患者
+  if (req.staff.role !== 'superadmin') {
+    const staffIds = [req.staff._id, ...(await getSubordinateIds(req.staff._id))];
+    const isHM = user.assignedHealthManager && staffIds.some(id => id.equals(user.assignedHealthManager._id || user.assignedHealthManager));
+    const isFD = user.assignedFamilyDoctor && staffIds.some(id => id.equals(user.assignedFamilyDoctor._id || user.assignedFamilyDoctor));
+    if (!isHM && !isFD) {
+      return res.status(403).json({ success: false, message: '无权限查看该会员' });
+    }
+  }
 
   // 获取最近3条随访记录
   const recentFollowUps = await FollowUp.find({ patientId: user._id })

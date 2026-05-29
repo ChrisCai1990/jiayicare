@@ -3,7 +3,16 @@ import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 import { useCategories, StatusBadge } from './_ProjectPage'
 
-const EMPTY = { name: '', mnemonic: '', unit: '次', costPrice: 0, retailPrice: 0, participatesInDiscount: true, categoryId: '' }
+const EXAM_TYPES = [
+  { value: 'ultrasound', label: '超声检查' },
+  { value: 'radiology',  label: '放射检查（X光/CT）' },
+  { value: 'mri',        label: 'MRI磁共振' },
+  { value: 'endoscopy',  label: '内镜检查' },
+  { value: 'pathology',  label: '病理检查' },
+  { value: 'other',      label: '其他' },
+]
+
+const EMPTY = { name: '', mnemonic: '', examType: 'other', unit: '次', costPrice: 0, retailPrice: 0, participatesInDiscount: true, categoryId: '', description: '', conclusion: '' }
 
 export default function SpecialExamPage() {
   const toast = useToast()
@@ -33,16 +42,18 @@ export default function SpecialExamPage() {
   const openEdit = item => {
     setEditId(item._id)
     setForm({
-      name: item.name, mnemonic: item.mnemonic || '', unit: item.unit || '次',
-      costPrice: item.costPrice || 0, retailPrice: item.retailPrice || 0,
+      name: item.name, mnemonic: item.mnemonic || '', examType: item.examType || 'other',
+      unit: item.unit || '次', costPrice: item.costPrice || 0, retailPrice: item.retailPrice || 0,
       participatesInDiscount: item.participatesInDiscount !== false,
       categoryId: item.categoryId?._id || item.categoryId || '',
+      description: item.description || '', conclusion: item.conclusion || '',
     })
     setError(''); setShowModal(true)
   }
 
   const handleSave = async () => {
     if (!form.name.trim()) { setError('检查名称不能为空'); return }
+    if (!form.examType) { setError('请选择检查类型'); return }
     setSaving(true); setError('')
     try {
       if (editId) { await adminAPI.updateSpecialExam(editId, form); toast('已更新') }
@@ -53,6 +64,10 @@ export default function SpecialExamPage() {
   }
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+  const handleNameChange = e => {
+    const name = e.target.value
+    setForm(f => ({ ...f, name, mnemonic: f.mnemonic || '' }))
+  }
   const totalPages = Math.ceil(total / 20)
 
   return (
@@ -127,11 +142,17 @@ export default function SpecialExamPage() {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">检查名称 *</label>
-                  <input className="form-input" value={form.name} onChange={set('name')} placeholder="如：甲状腺超声、胸部CT" />
+                  <input className="form-input" value={form.name} onChange={handleNameChange} placeholder="如：甲状腺超声、胸部CT" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">助记码（拼音首字母）</label>
-                  <input className="form-input" value={form.mnemonic} onChange={set('mnemonic')} />
+                  <label className="form-label">检查类型 *</label>
+                  <select className="form-input" value={form.examType} onChange={set('examType')}>
+                    {EXAM_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">助记码（拼音首字母，可留空自动生成）</label>
+                  <input className="form-input" value={form.mnemonic} onChange={set('mnemonic')} placeholder="如：JZXCS" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">单位</label>
@@ -142,7 +163,7 @@ export default function SpecialExamPage() {
                   <input className="form-input" type="number" step="0.01" value={form.costPrice} onChange={set('costPrice')} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">零售价（元） *</label>
+                  <label className="form-label">零售价（元）</label>
                   <input className="form-input" type="number" step="0.01" value={form.retailPrice} onChange={set('retailPrice')} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
@@ -157,6 +178,14 @@ export default function SpecialExamPage() {
                     <input type="checkbox" checked={form.participatesInDiscount} onChange={e => setForm(f => ({ ...f, participatesInDiscount: e.target.checked }))} />
                     参与商城折扣活动
                   </label>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">检查描述（给医生看的详细说明）</label>
+                  <textarea className="form-input" rows={3} value={form.description} onChange={set('description')} placeholder="检查目的、适应症、注意事项等..." />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">诊断结论（模板/示例）</label>
+                  <textarea className="form-input" rows={3} value={form.conclusion} onChange={set('conclusion')} placeholder="常见诊断结论模板，如：未见明显异常；建议进一步检查..." />
                 </div>
               </div>
             </div>

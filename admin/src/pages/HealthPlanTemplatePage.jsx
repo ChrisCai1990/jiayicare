@@ -19,7 +19,7 @@ const defaultContent = {
   },
   health_management: {
     modules: '',
-    medicalIssue: '', dailyMonitoring: '', vaccination: '', lifestyle: '', examPlan: '',
+    medicalIssue: '', doctor: '', dailyMonitoring: '', vaccination: '', lifestyle: '', examPlan: '',
   },
   nutrition: {
     breakfast: '', lunch: '', dinner: '', snack: '',
@@ -118,6 +118,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   if (type === 'health_management') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
       <FieldRow label="医疗问题解决" fieldKey="medicalIssue" placeholder="医院、科室、解决目标等" half content={content} set={set} />
+      <FieldRow label="主诊医生" fieldKey="doctor" placeholder="主诊医生姓名及科室" half content={content} set={set} />
       <FieldRow label="日常监测计划" fieldKey="dailyMonitoring" placeholder="血压/血糖/心率，每日频率" half content={content} set={set} />
       <FieldRow label="疫苗接种计划" fieldKey="vaccination" placeholder="疫苗名称、接种时间" half content={content} set={set} />
       <FieldRow label="生活方式建议" fieldKey="lifestyle" placeholder="关联科普文章/健康知识推送" rows={3} content={content} set={set} />

@@ -218,6 +218,8 @@ export const systemAPI = {
 // ── User: 健康方案 / 权益 / 随访任务 ─────────────────────────────
 export const plansAPI = {
   list: () => request('/user/plans'),
+  view: (planId) =>
+    request(`/user/plans/${planId}/view`, { method: 'PATCH' }),
   confirm: (planId) =>
     request(`/user/plans/${planId}/confirm`, { method: 'PATCH' }),
   completeItem: (planId, itemId) =>
