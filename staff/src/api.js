@@ -143,6 +143,16 @@ export const staffAPI = {
   getAnnualPlan:  (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   saveAnnualPlan: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  // Abnormal Reviews
+  getAbnormalReviews:    (p = {})   => req('/staff/abnormal-reviews?' + qs(p)),
+  createAbnormalReview:  (data)     => req('/staff/abnormal-reviews', { method: 'POST', body: JSON.stringify(data) }),
+  updateAbnormalReview:  (id, data) => req(`/staff/abnormal-reviews/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteAbnormalReview:  (id)       => req(`/staff/abnormal-reviews/${id}`, { method: 'DELETE' }),
+
+  // Membership management
+  getPatientMembership:    (id)     => req(`/staff/patients/${id}/membership`),
+  updatePatientMembership: (id, d)  => req(`/staff/patients/${id}/membership`, { method: 'PATCH', body: JSON.stringify(d) }),
+
   // 会员营销
   getLevels:         ()     => req('/staff/marketing/levels'),
   createLevel:       (data) => req('/staff/marketing/levels', { method: 'POST', body: JSON.stringify(data) }),

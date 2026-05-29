@@ -35,6 +35,7 @@ import RenewalScreen from '../screens/services/RenewalScreen';
 import BenefitsScreen from '../screens/profile/BenefitsScreen';
 import PublicReportScreen from '../screens/records/PublicReportScreen';
 import LegalScreen from '../screens/legal/LegalScreen';
+import FamilyMembersScreen from '../screens/profile/FamilyMembersScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -147,6 +148,7 @@ export default function Navigation() {
             <Stack.Screen name="Renewal" component={RenewalScreen} />
             <Stack.Screen name="Legal" component={LegalScreen} />
             <Stack.Screen name="Benefits" component={BenefitsScreen} />
+            <Stack.Screen name="FamilyMembers" component={FamilyMembersScreen} />
           </>
         )}
       </Stack.Navigator>

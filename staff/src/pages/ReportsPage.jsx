@@ -17,6 +17,8 @@ export default function ReportsPage() {
   const [showDetail, setShowDetail] = useState(null)
   const [rejectModal, setRejectModal] = useState(null) // report object pending rejection
   const [rejectReason, setRejectReason] = useState('')
+  const [abnormalModal, setAbnormalModal] = useState(null) // report object for abnormal approval
+  const [abnormalItems, setAbnormalItems] = useState([{ name: '', value: '', reference: '', severity: 'mild' }])
   const [patients, setPatients] = useState([])
   const limit = 20
 
@@ -31,11 +33,18 @@ export default function ReportsPage() {
   useEffect(() => { load() }, [load])
   useEffect(() => { staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {}) }, [])
 
-  const handleAudit = async (id, action, rejectReason = '') => {
+  const handleAudit = async (id, action, rejectReason = '', abnItems = []) => {
     try {
-      await staffAPI.auditReport(id, { action, rejectReason })
-      toast(action === 'approve' ? '审核通过' : '已驳回'); load()
+      await staffAPI.auditReport(id, { action, rejectReason, abnormalItems: abnItems })
+      toast(action === 'approve' ? (abnItems.length ? '审核通过（已创建复查任务）' : '审核通过') : '已驳回'); load()
     } catch (err) { toast(err.message) }
+  }
+
+  const handleApproveWithAbnormal = async () => {
+    const items = abnormalItems.filter(i => i.name)
+    await handleAudit(abnormalModal._id, 'approve', '', items)
+    setAbnormalModal(null)
+    setAbnormalItems([{ name: '', value: '', reference: '', severity: 'mild' }])
   }
 
   return (
@@ -80,7 +89,11 @@ export default function ReportsPage() {
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => setShowDetail(r)}>查看</button>
                       {r.audit_status === 'unaudited' && (
-                        <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
+                        <>
+                          <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
+                          <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
+                            onClick={() => { setAbnormalModal(r); setAbnormalItems([{ name: '', value: '', reference: '', severity: 'mild' }]) }}>⚠️ 含异常</button>
+                        </>
                       )}
                       {(r.audit_status === 'unaudited' || r.audit_status === 'audited') && (
                         <button className="btn btn-danger btn-sm" onClick={() => { setRejectModal(r); setRejectReason('') }}>✗ 驳回</button>
@@ -150,6 +163,52 @@ export default function ReportsPage() {
               {showDetail.audit_status === 'unaudited' && (
                 <button className="btn btn-primary" onClick={() => { handleAudit(showDetail._id, 'approve'); setShowDetail(null) }}>✓ 审核通过</button>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 含异常审核通过弹窗 */}
+      {abnormalModal && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setAbnormalModal(null) }}>
+          <div className="modal" style={{ maxWidth: 600 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">⚠️ 标记异常并审核通过</h3>
+              <button className="modal-close" onClick={() => setAbnormalModal(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ marginBottom: 12, fontSize: 13, color: '#4A6558' }}>报告：{abnormalModal.title}</div>
+              <div style={{ marginBottom: 8, fontSize: 12, color: '#8AA89C' }}>填写异常指标后，系统将自动为该患者创建复查任务</div>
+              {abnormalItems.map((item, idx) => (
+                <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'flex-end' }}>
+                  {idx === 0 && ['项目', '检测值', '参考范围', '严重程度', ''].map((h, i) => (
+                    <div key={i} style={{ fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>{h}</div>
+                  ))}
+                  {idx === 0 && <div/>}
+                  <input className="form-input" placeholder="如：空腹血糖" value={item.name}
+                    onChange={e => { const items = [...abnormalItems]; items[idx].name = e.target.value; setAbnormalItems(items) }} />
+                  <input className="form-input" placeholder="如：8.5" value={item.value}
+                    onChange={e => { const items = [...abnormalItems]; items[idx].value = e.target.value; setAbnormalItems(items) }} />
+                  <input className="form-input" placeholder="如：3.9-6.1" value={item.reference}
+                    onChange={e => { const items = [...abnormalItems]; items[idx].reference = e.target.value; setAbnormalItems(items) }} />
+                  <select className="form-input" value={item.severity}
+                    onChange={e => { const items = [...abnormalItems]; items[idx].severity = e.target.value; setAbnormalItems(items) }}>
+                    <option value="mild">轻度</option>
+                    <option value="moderate">中度</option>
+                    <option value="severe">重度</option>
+                  </select>
+                  {abnormalItems.length > 1 && (
+                    <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc', height: 38 }}
+                      onClick={() => setAbnormalItems(items => items.filter((_, i) => i !== idx))}>×</button>
+                  )}
+                </div>
+              ))}
+              <button className="btn btn-ghost btn-sm" onClick={() => setAbnormalItems(items => [...items, { name: '', value: '', reference: '', severity: 'mild' }])}>＋ 添加项目</button>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setAbnormalModal(null)}>取消</button>
+              <button className="btn btn-primary" onClick={() => { handleAudit(abnormalModal._id, 'approve'); setAbnormalModal(null) }}>仅通过（不标记异常）</button>
+              <button className="btn btn-warning" style={{ background: '#D97706', color: '#fff' }} onClick={handleApproveWithAbnormal}>通过 + 创建复查任务</button>
             </div>
           </div>
         </div>

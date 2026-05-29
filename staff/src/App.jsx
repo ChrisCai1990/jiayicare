@@ -22,6 +22,7 @@ import ProfilePage from './pages/ProfilePage'
 import NotificationsPage from './pages/NotificationsPage'
 import MarketingPage from './pages/MarketingPage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
+import AbnormalReviewPage from './pages/AbnormalReviewPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -93,6 +94,7 @@ export default function App() {
               <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="marketing" element={<MarketingPage />} />
+              <Route path="abnormal-reviews" element={<AbnormalReviewPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>

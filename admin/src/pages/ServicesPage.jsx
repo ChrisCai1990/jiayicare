@@ -9,6 +9,7 @@ const EMPTY_FORM = {
   serviceId: '', category: '检测套餐', name: '', subtitle: '',
   price: '', originalPrice: '', tag: '', tagColor: '#E74C3C',
   icon: 'star-outline', iconColor: '#1E6B50', features: '',
+  images: '', description: '',
   sortOrder: 0,
 }
 
@@ -18,6 +19,7 @@ function ServiceModal({ service, onClose, onSaved }) {
   const [form, setForm] = useState(isEdit ? {
     ...service,
     features: (service.features || []).join('\n'),
+    images: (service.images || []).join('\n'),
     price: String(service.price),
     originalPrice: String(service.originalPrice),
   } : EMPTY_FORM)
@@ -37,6 +39,7 @@ function ServiceModal({ service, onClose, onSaved }) {
         price: parseFloat(form.price) || 0,
         originalPrice: parseFloat(form.originalPrice) || 0,
         features: form.features.split('\n').map(s => s.trim()).filter(Boolean),
+        images: form.images.split('\n').map(s => s.trim()).filter(Boolean),
         sortOrder: parseInt(form.sortOrder) || 0,
       }
       if (isEdit) {
@@ -120,6 +123,25 @@ function ServiceModal({ service, onClose, onSaved }) {
             <textarea className="form-input" rows={4} value={form.features}
               onChange={e => set('features', e.target.value)}
               placeholder={'三甲医院专家操作\n24h报告解读\n健管专员跟进'} />
+          </div>
+          <div className="form-group" style={{ gridColumn: '1/-1' }}>
+            <label className="form-label">图文图片（每行一个URL）</label>
+            <textarea className="form-input" rows={3} value={form.images}
+              onChange={e => set('images', e.target.value)}
+              placeholder={'https://example.com/img1.jpg\nhttps://example.com/img2.jpg'} />
+            {form.images && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 6, flexWrap: 'wrap' }}>
+                {form.images.split('\n').map(s => s.trim()).filter(Boolean).map((url, i) => (
+                  <img key={i} src={url} alt="" style={{ height: 60, width: 80, objectFit: 'cover', borderRadius: 6, border: '1px solid #e0d9ce' }} onError={e => e.target.style.display='none'} />
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="form-group" style={{ gridColumn: '1/-1' }}>
+            <label className="form-label">图文详情（支持多段文字）</label>
+            <textarea className="form-input" rows={5} value={form.description}
+              onChange={e => set('description', e.target.value)}
+              placeholder="服务详细介绍，包括服务内容、适合人群、注意事项等..." />
           </div>
         </div>
         <div className="modal-footer">

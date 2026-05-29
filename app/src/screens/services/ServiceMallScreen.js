@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, Modal, TextInput, ActivityIndicator,
+  StyleSheet, SafeAreaView, Modal, TextInput, ActivityIndicator, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow, gradient } from '../../theme';
@@ -17,6 +17,82 @@ function StarRow({ rating }) {
       ))}
       <Text style={styles.ratingNum}>{rating}</Text>
     </View>
+  );
+}
+
+// ── 服务详情弹窗（图文内容）───────────────────────────────────────
+function ServiceDetailModal({ item, onClose, onBuy }) {
+  if (!item) return null;
+  const hasContent = item.description || (item.images && item.images.length > 0);
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalCard, { paddingBottom: 0 }]}>
+          <View style={styles.modalHandle} />
+
+          {/* 标题行 */}
+          <View style={styles.modalServiceRow}>
+            <View style={[styles.modalServiceIcon, { backgroundColor: (item.iconColor || '#1E6B50') + '15' }]}>
+              <Ionicons name={item.icon || 'star-outline'} size={28} color={item.iconColor || '#1E6B50'} />
+            </View>
+            <View style={styles.modalServiceInfo}>
+              <Text style={styles.modalServiceName} numberOfLines={2}>{item.name}</Text>
+              <StarRow rating={item.rating || 5} />
+            </View>
+          </View>
+
+          {/* 图文内容区 */}
+          <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
+            {/* 图片轮播 */}
+            {item.images && item.images.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
+                {item.images.map((url, i) => (
+                  <Image key={i} source={{ uri: url }} style={{ width: 280, height: 180, borderRadius: radius.md, marginRight: spacing.sm }} resizeMode="cover" />
+                ))}
+              </ScrollView>
+            )}
+
+            {/* 描述文字 */}
+            {item.description ? (
+              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 22, marginBottom: spacing.md }}>
+                {item.description}
+              </Text>
+            ) : null}
+
+            {/* 特色功能 */}
+            {!hasContent && (
+              <View style={styles.modalFeatures}>
+                {(item.features || []).map((f, i) => (
+                  <View key={i} style={styles.modalFeatureChip}>
+                    <Ionicons name="checkmark" size={11} color={colors.primary} />
+                    <Text style={styles.modalFeatureText}>{f}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* 价格 */}
+            <View style={[styles.modalPriceRow, { marginBottom: spacing.lg }]}>
+              <Text style={styles.modalPriceLabel}>服务费用</Text>
+              <View style={styles.modalPriceRight}>
+                {item.price < item.originalPrice && <Text style={styles.modalOriginal}>¥{item.originalPrice}</Text>}
+                <Text style={styles.modalPrice}>¥{item.price}</Text>
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* 底部按钮 */}
+          <View style={[styles.modalBtns, { paddingVertical: spacing.lg }]}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
+              <Text style={styles.cancelBtnText}>返回</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.submitBtn} onPress={onBuy} activeOpacity={0.85}>
+              <Text style={styles.submitBtnText}>立即预约</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -152,11 +228,11 @@ function PurchaseModal({ item, onClose }) {
   );
 }
 
-function ServiceCard({ item, onBuy }) {
+function ServiceCard({ item, onDetail, onBuy }) {
   const discount = Math.round((1 - item.price / item.originalPrice) * 10);
   const hasDiscount = item.price < item.originalPrice;
   return (
-    <TouchableOpacity style={styles.serviceCard} activeOpacity={0.85} onPress={() => onBuy(item)}>
+    <TouchableOpacity style={styles.serviceCard} activeOpacity={0.85} onPress={() => onDetail(item)}>
       {item.tag ? (
         <View style={[styles.serviceTag, { backgroundColor: item.tagColor }]}>
           <Text style={styles.serviceTagText}>{item.tag}</Text>
@@ -196,7 +272,7 @@ function ServiceCard({ item, onBuy }) {
             )}
           </View>
         </View>
-        <TouchableOpacity style={styles.buyBtn} onPress={() => onBuy(item)}>
+        <TouchableOpacity style={styles.buyBtn} onPress={() => onDetail(item)}>
           <Text style={styles.buyBtnText}>立即预约</Text>
         </TouchableOpacity>
       </View>
@@ -258,7 +334,8 @@ function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrde
 export default function ServiceMallScreen({ navigation, route }) {
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('全部');
-  const [selectedService, setSelectedService] = useState(null);
+  const [detailService, setDetailService]   = useState(null);   // 详情弹窗
+  const [selectedService, setSelectedService] = useState(null); // 购买弹窗
   const [services, setServices]     = useState(mockServices);
   const [categories, setCategories] = useState(mockServiceCategories);
   const [loadingList, setLoadingList] = useState(true);
@@ -341,12 +418,21 @@ export default function ServiceMallScreen({ navigation, route }) {
             <>
               <Text style={styles.resultCount}>共 {filtered.length} 个服务</Text>
               {filtered.map(s => (
-                <ServiceCard key={s.id} item={s} onBuy={setSelectedService} />
+                <ServiceCard key={s.id} item={s} onDetail={setDetailService} onBuy={setSelectedService} />
               ))}
             </>
           )}
         </View>
       </ScrollView>
+
+      {/* Service Detail Modal */}
+      {detailService && (
+        <ServiceDetailModal
+          item={detailService}
+          onClose={() => setDetailService(null)}
+          onBuy={() => { setSelectedService(detailService); setDetailService(null); }}
+        />
+      )}
 
       {/* Purchase Modal */}
       {selectedService && (

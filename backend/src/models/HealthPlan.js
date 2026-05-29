@@ -13,6 +13,9 @@ const planItemSchema = new mongoose.Schema({
   },
   completedAt: { type: Date, default: null },
   reportId:    { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
+  // 关联检验检查库
+  itemId:      { type: mongoose.Schema.Types.ObjectId, default: null },
+  itemType:    { type: String, default: '' },  // 'labTest' | 'specialExam' | ''
 }, { _id: true });
 
 const healthPlanSchema = new mongoose.Schema({

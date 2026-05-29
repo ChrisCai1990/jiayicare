@@ -1006,35 +1006,7 @@ export default function PatientDetailPage() {
 
       {/* ── Membership Tab ── */}
       {tab === 'membership' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          <div className="card">
-            <div className="card-header"><div className="card-title">会员基本信息</div></div>
-            <div className="card-body">
-              <InfoRow label="手机号" value={user.phone} />
-              <InfoRow label="会员类型" value={
-                user.memberType || (user.patientType === 'vip' ? 'VIP会员' : user.patientType === 'trial' ? '试用会员' : '普通会员')
-              } />
-              <InfoRow label="服务包" value={user.servicePackage || '-'} />
-              <InfoRow label="服务开始" value={user.serviceStartDate ? new Date(user.serviceStartDate).toLocaleDateString('zh-CN') : '-'} />
-              <InfoRow label="服务到期" value={user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-'} />
-              <InfoRow label="会员来源" value={user.source || '-'} />
-            </div>
-          </div>
-          <div className="card">
-            <div className="card-header"><div className="card-title">账户余额</div></div>
-            <div className="card-body">
-              <div style={{ padding: '16px 0', borderBottom: '1px solid #f5f2ec' }}>
-                <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 4 }}>健康基金余额</div>
-                <div style={{ fontSize: 28, fontWeight: 700, color: '#1E6B50' }}>
-                  ¥{(user.healthFundBalance || 0).toFixed(2)}
-                </div>
-              </div>
-              <div style={{ marginTop: 12, fontSize: 12, color: '#aaa' }}>
-                健康基金可用于就医协助、营养素购买等服务。详细充值和消费记录请在收费管理页查看。
-              </div>
-            </div>
-          </div>
-        </div>
+        <MembershipPanel user={user} patientId={id} onRefresh={load} />
       )}
 
       {/* ── Billing Tab ── */}
@@ -1228,6 +1200,84 @@ export default function PatientDetailPage() {
           onSaved={() => { setShowReqModal(false); toast('开单已创建，会员端将显示待上传提示'); loadRequisitions() }}
         />
       )}
+    </div>
+  )
+}
+
+function MembershipPanel({ user, patientId, onRefresh }) {
+  const toast = useToast()
+  const [cardNumber, setCardNumber] = useState(user.cardNumber || '')
+  const [pointsDelta, setPointsDelta] = useState('')
+  const [rechargeDelta, setRechargeDelta] = useState('')
+  const [saving, setSaving] = useState(false)
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      const payload = { cardNumber }
+      if (pointsDelta) payload.pointsDelta = parseInt(pointsDelta)
+      if (rechargeDelta) payload.rechargeDelta = parseFloat(rechargeDelta)
+      await staffAPI.updatePatientMembership(patientId, payload)
+      toast('已更新')
+      setPointsDelta(''); setRechargeDelta('')
+      onRefresh()
+    } catch (err) { toast(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      {/* 会员基本信息 */}
+      <div className="card">
+        <div className="card-header"><div className="card-title">会员基本信息</div></div>
+        <div className="card-body">
+          <InfoRow label="手机号" value={user.phone} />
+          <InfoRow label="会员类型" value={user.memberType || (user.patientType === 'vip' ? 'VIP会员' : user.patientType === 'trial' ? '试用会员' : '普通会员')} />
+          <InfoRow label="服务包" value={user.servicePackage || '-'} />
+          <InfoRow label="服务开始" value={user.serviceStartDate ? new Date(user.serviceStartDate).toLocaleDateString('zh-CN') : '-'} />
+          <InfoRow label="服务到期" value={user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-'} />
+          <InfoRow label="会员来源" value={user.source || '-'} />
+        </div>
+      </div>
+
+      {/* 会员卡 & 积分管理 */}
+      <div className="card">
+        <div className="card-header"><div className="card-title">卡号 & 积分 & 余额</div></div>
+        <div className="card-body">
+          {/* 当前状态 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginBottom: 16 }}>
+            {[
+              { label: '健康基金', value: `¥${(user.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
+              { label: '充值余额', value: `¥${(user.rechargeBalance || 0).toFixed(2)}`, color: '#0077B6' },
+              { label: '积分', value: (user.points || 0).toString(), color: '#D97706' },
+            ].map(s => (
+              <div key={s.label} style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 12px', textAlign: 'center' }}>
+                <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>{s.label}</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: s.color }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* 编辑区 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div>
+              <label className="form-label" style={{ fontSize: 12 }}>会员卡号</label>
+              <input className="form-input" value={cardNumber} onChange={e => setCardNumber(e.target.value)} placeholder="如：JY-2025-001" />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              <div>
+                <label className="form-label" style={{ fontSize: 12 }}>积分变动（+/-）</label>
+                <input className="form-input" type="number" value={pointsDelta} onChange={e => setPointsDelta(e.target.value)} placeholder="如：100 或 -50" />
+              </div>
+              <div>
+                <label className="form-label" style={{ fontSize: 12 }}>充值余额变动（元）</label>
+                <input className="form-input" type="number" value={rechargeDelta} onChange={e => setRechargeDelta(e.target.value)} placeholder="如：500 或 -100" />
+              </div>
+            </div>
+            <button className="btn btn-primary btn-sm" onClick={save} disabled={saving}>{saving ? '保存中...' : '保存更新'}</button>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

@@ -396,14 +396,14 @@ export default function ProfileScreen({ navigation }) {
         <View style={styles.section}>
           <View style={styles.sectionRow}>
             <Text style={styles.sectionTitle}>家庭成员</Text>
-            <TouchableOpacity style={styles.sectionLink} onPress={() => navigation.navigate('ComingSoon', { title: '家庭成员', desc: '家庭成员管理功能即将上线，届时可为家人统一管理健康档案。', icon: 'people-outline' })}>
+            <TouchableOpacity style={styles.sectionLink} onPress={() => navigation.navigate('FamilyMembers')}>
               <Ionicons name="add" size={14} color={colors.primary} />
-              <Text style={styles.sectionLinkText}>添加</Text>
+              <Text style={styles.sectionLinkText}>管理</Text>
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false}
             contentContainerStyle={{ gap: spacing.sm, paddingBottom: 2 }}>
-            <TouchableOpacity style={styles.addFamilyCard} onPress={() => navigation.navigate('ComingSoon', { title: '家庭成员', desc: '家庭成员管理功能即将上线，届时可为家人统一管理健康档案。', icon: 'people-outline' })}>
+            <TouchableOpacity style={styles.addFamilyCard} onPress={() => navigation.navigate('FamilyMembers')}>
               <View style={styles.addFamilyCircle}>
                 <Ionicons name="add" size={20} color={colors.primary} />
               </View>

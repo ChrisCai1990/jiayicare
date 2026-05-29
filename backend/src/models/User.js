@@ -137,6 +137,21 @@ const userSchema = new mongoose.Schema({
 
   // 健康基金余额（由医护端 $inc 累加，Mongoose 必须显式定义才能读取）
   healthFundBalance: { type: Number, default: 0 },
+
+  // ── 会员运营字段 ─────────────────────────────────────────────────
+  cardNumber: { type: String, default: '' },   // 会员卡号
+  points:     { type: Number, default: 0 },    // 积分
+  rechargeBalance: { type: Number, default: 0 }, // 充值余额（元）
+
+  // ── 共享人账户（家庭成员） ─────────────────────────────────────────
+  family: [{
+    name:     { type: String, default: '' },
+    relation: { type: String, default: '' },  // 如：配偶/父亲/母亲/子女
+    phone:    { type: String, default: '' },
+    birthday: { type: String, default: '' },
+    gender:   { type: String, default: '' },
+    notes:    { type: String, default: '' },
+  }],
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

@@ -30,6 +30,7 @@ const SystemConfig      = require('../models/SystemConfig');
 const ExamRequisition   = require('../models/ExamRequisition');
 const LabTestOrder      = require('../models/LabTestOrder');
 const SpecialExam       = require('../models/SpecialExam');
+const AbnormalReview    = require('../models/AbnormalReview');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
 
@@ -630,7 +631,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
 
 // PATCH /api/staff/medical-reports/:id/audit — 审核报告
 router.patch('/medical-reports/:id/audit', staffAuth, async (req, res) => {
-  const { action, rejectReason } = req.body; // action: 'approve' | 'reject'
+  const { action, rejectReason, abnormalItems } = req.body; // action: 'approve' | 'reject'
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
   if (action === 'approve') {
@@ -644,6 +645,16 @@ router.patch('/medical-reports/:id/audit', staffAuth, async (req, res) => {
         const item = plan.items.id(report.planItemId);
         if (item) { item.status = 'completed'; item.completedAt = new Date(); await plan.save(); }
       }
+    }
+    // 如果有异常项目，自动创建复查任务
+    if (abnormalItems && abnormalItems.length > 0) {
+      await AbnormalReview.create({
+        patientId: report.user,
+        reportId:  report._id,
+        staffId:   req.staff._id,
+        title:     `${report.title || '报告'}异常复查`,
+        abnormalItems,
+      });
     }
   } else {
     report.audit_status = 'rejected';
@@ -1408,6 +1419,109 @@ router.put('/marketing/packages/:id', staffAuth, async (req, res) => {
 router.delete('/marketing/packages/:id', staffAuth, async (req, res) => {
   await SessionPackage.findByIdAndDelete(req.params.id);
   res.json({ success: true });
+});
+
+// ── 异常复查模块 ─────────────────────────────────────────────────────
+// GET /api/staff/abnormal-reviews
+router.get('/abnormal-reviews', staffAuth, async (req, res) => {
+  try {
+    const { patientId, status, limit = 50 } = req.query;
+    const filter = {};
+    if (patientId) filter.patientId = patientId;
+    if (status) filter.status = status;
+
+    // 权限过滤：非 superadmin/manager 只看自己管的患者
+    if (!['superadmin', 'manager'].includes(req.staff.role)) {
+      const myPatients = await User.find({ assignedFamilyDoctor: req.staff._id }).select('_id');
+      const myPatientsSet = new Set(myPatients.map(p => p._id.toString()));
+      const managed = await User.find({ assignedHealthManager: req.staff._id }).select('_id');
+      managed.forEach(p => myPatientsSet.add(p._id.toString()));
+      if (!patientId) filter.patientId = { $in: [...myPatientsSet] };
+    }
+
+    const reviews = await AbnormalReview.find(filter)
+      .sort({ createdAt: -1 })
+      .limit(parseInt(limit))
+      .populate('patientId', 'name phone')
+      .populate('staffId', 'name')
+      .populate('reportId', 'title reportDate');
+    res.json({ success: true, data: reviews });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/staff/abnormal-reviews
+router.post('/abnormal-reviews', staffAuth, async (req, res) => {
+  try {
+    const { patientId, reportId, title, abnormalItems, reviewDate, notes } = req.body;
+    if (!patientId) return res.status(400).json({ success: false, message: '请选择患者' });
+    const review = await AbnormalReview.create({
+      patientId, reportId: reportId || null, staffId: req.staff._id,
+      title: title || '异常复查', abnormalItems: abnormalItems || [],
+      reviewDate: reviewDate ? new Date(reviewDate) : null, notes: notes || '',
+    });
+    res.json({ success: true, data: review });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/staff/abnormal-reviews/:id
+router.patch('/abnormal-reviews/:id', staffAuth, async (req, res) => {
+  try {
+    const { status, reviewDate, notes, resolvedNote } = req.body;
+    const update = {};
+    if (status) update.status = status;
+    if (reviewDate) update.reviewDate = new Date(reviewDate);
+    if (notes !== undefined) update.notes = notes;
+    if (resolvedNote !== undefined) update.resolvedNote = resolvedNote;
+    if (status === 'completed') update.resolvedAt = new Date();
+    const review = await AbnormalReview.findByIdAndUpdate(req.params.id, update, { new: true })
+      .populate('patientId', 'name phone')
+      .populate('staffId', 'name');
+    if (!review) return res.status(404).json({ success: false, message: '记录不存在' });
+    res.json({ success: true, data: review });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/staff/abnormal-reviews/:id
+router.delete('/abnormal-reviews/:id', staffAuth, async (req, res) => {
+  await AbnormalReview.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
+});
+
+// ── 会员运营：积分 / 充值余额管理 ──────────────────────────────────────
+// GET /api/staff/patients/:id/membership
+router.get('/patients/:id/membership', staffAuth, async (req, res) => {
+  try {
+    const u = await User.findById(req.params.id).select('name phone cardNumber points rechargeBalance healthFundBalance memberType servicePackage serviceExpiry');
+    if (!u) return res.status(404).json({ success: false, message: '用户不存在' });
+    res.json({ success: true, data: u });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/staff/patients/:id/membership
+router.patch('/patients/:id/membership', staffAuth, async (req, res) => {
+  try {
+    const { cardNumber, pointsDelta, rechargeDelta, note } = req.body;
+    const update = {};
+    if (cardNumber !== undefined) update.cardNumber = cardNumber;
+    const inc = {};
+    if (pointsDelta) inc.points = pointsDelta;
+    if (rechargeDelta) inc.rechargeBalance = rechargeDelta;
+    const ops = { $set: update };
+    if (Object.keys(inc).length) ops.$inc = inc;
+    await User.updateOne({ _id: req.params.id }, ops);
+    const u = await User.findById(req.params.id).select('name cardNumber points rechargeBalance healthFundBalance');
+    res.json({ success: true, data: u });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── 年度管理方案 ─────────────────────────────────────────────────────

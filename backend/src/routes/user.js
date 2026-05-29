@@ -634,4 +634,47 @@ router.get('/requisitions', auth, async (req, res) => {
   }
 });
 
+// ── 共享人账户（家庭成员） ────────────────────────────────────────
+// GET /api/user/family
+router.get('/family', auth, async (req, res) => {
+  try {
+    const u = await User.findById(req.user._id).select('family');
+    res.json({ success: true, data: u?.family || [] });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/user/family — 添加家庭成员
+router.post('/family', auth, async (req, res) => {
+  try {
+    const { name, relation, phone, birthday, gender, notes } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: '姓名不能为空' });
+    await User.collection.updateOne(
+      { _id: req.user._id },
+      { $push: { family: { name, relation: relation || '', phone: phone || '', birthday: birthday || '', gender: gender || '', notes: notes || '' } } }
+    );
+    const u = await User.findById(req.user._id).select('family');
+    res.json({ success: true, data: u.family });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/user/family/:index — 按索引删除家庭成员
+router.delete('/family/:index', auth, async (req, res) => {
+  try {
+    const idx = parseInt(req.params.index);
+    const u = await User.findById(req.user._id).select('family');
+    if (!u) return res.status(404).json({ success: false, message: '用户不存在' });
+    const family = u.family || [];
+    if (idx < 0 || idx >= family.length) return res.status(400).json({ success: false, message: '索引无效' });
+    family.splice(idx, 1);
+    await User.collection.updateOne({ _id: req.user._id }, { $set: { family } });
+    res.json({ success: true, data: family });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

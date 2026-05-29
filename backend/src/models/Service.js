@@ -14,6 +14,8 @@ const serviceSchema = new mongoose.Schema({
   icon:         { type: String, default: 'star-outline' },
   iconColor:    { type: String, default: '#1E6B50' },
   features:     [{ type: String }],
+  images:       [{ type: String }],          // 图文图片 URL 列表
+  description:  { type: String, default: '' }, // 富文本详情
   active:       { type: Boolean, default: true },
   sortOrder:    { type: Number, default: 0 },
 }, { timestamps: true });

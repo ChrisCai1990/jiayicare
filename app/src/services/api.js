@@ -239,6 +239,13 @@ export const requisitionsAPI = {
   list: () => request('/user/requisitions'),
 };
 
+// ── Family Members / 共享人账户 ────────────────────────────────────
+export const familyAPI = {
+  list:   ()        => request('/user/family'),
+  add:    (data)    => request('/user/family', { method: 'POST', body: JSON.stringify(data) }),
+  remove: (index)   => request(`/user/family/${index}`, { method: 'DELETE' }),
+};
+
 // ── Share / 健康报告分享 ──────────────────────────────────────────
 export const shareAPI = {
   create:  (period, snapshot) =>
