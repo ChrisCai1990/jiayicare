@@ -159,10 +159,12 @@ const emptyRow = () => ({
   content: '',
   assignedTo: '',
   checkInItems: [],
+  formId: '',
 })
 
 export default function FollowUpModal({ patientId, patientName, defaultTheme, onClose, onSaved }) {
   const [staffList, setStaffList] = useState([])
+  const [followupForms, setFollowupForms] = useState([])
   const [mode, setMode] = useState(defaultTheme ? 'plan' : 'record')  // record | plan
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -183,6 +185,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
+    staffAPI.getFollowupForms().then(r => setFollowupForms(r.data || [])).catch(() => {})
   }, [])
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -233,6 +236,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           content: row.content,
           assignedTo: row.assignedTo || null,
           checkInItems: row.checkInItems || [],
+          formId: row.formId || null,
         })
       ))
       onSaved()
@@ -430,6 +434,23 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                     onChange={e => updateRow(row.id, 'content', e.target.value)}
                     placeholder="计划随访内容..." style={{ resize: 'vertical' }} />
                 </div>
+                {followupForms.length > 0 && (
+                  <div style={{ marginBottom: 10 }}>
+                    <label className="form-label" style={{ fontSize: 12 }}>关联随访表单（可选）</label>
+                    <select className="form-input" value={row.formId || ''}
+                      onChange={e => updateRow(row.id, 'formId', e.target.value)}>
+                      <option value="">-- 不使用表单 --</option>
+                      {followupForms.map(f => (
+                        <option key={f._id} value={f._id}>{f.name}</option>
+                      ))}
+                    </select>
+                    {row.formId && (
+                      <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 3 }}>
+                        ✓ 已关联「{followupForms.find(f => f._id === row.formId)?.name}」，会员随访时将看到此表单
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div>
                   <label className="form-label" style={{ fontSize: 12 }}>计划人员</label>
                   <select className="form-input" value={row.assignedTo}

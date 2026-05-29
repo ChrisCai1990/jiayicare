@@ -9,10 +9,11 @@ export const clearToken = ()  => {
 
 async function req(path, options = {}) {
   const token = getToken()
+  const isFormData = options.body instanceof FormData
   const res = await fetch(`${BASE}${path}`, {
     ...options,
     headers: {
-      'Content-Type': 'application/json',
+      ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(options.headers || {}),
     },
@@ -57,11 +58,26 @@ export const staffAPI = {
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
   auditReport:   (id, d)  => req(`/staff/medical-reports/${id}/audit`, { method: 'PATCH', body: JSON.stringify(d) }),
 
+  // Upload
+  uploadImage: (file) => {
+    const fd = new FormData(); fd.append('image', file);
+    return req('/staff/upload/image', { method: 'POST', body: fd });
+  },
+
   // Knowledge
   getKnowledge:    (p = {}) => req('/staff/knowledge?' + qs(p)),
   createKnowledge: (data)   => req('/staff/knowledge', { method: 'POST', body: JSON.stringify(data) }),
   deleteKnowledge: (id)     => req(`/staff/knowledge/${id}`, { method: 'DELETE' }),
   pushKnowledge:   (id, patientIds) => req(`/staff/knowledge/${id}/push`, { method: 'POST', body: JSON.stringify({ patientIds }) }),
+
+  // FollowUp Forms (admin-created templates)
+  getFollowupForms: () => req('/staff/followup-forms'),
+
+  // 检查开单
+  getPatientRequisitions: (patientId)     => req(`/staff/patients/${patientId}/requisitions`),
+  createRequisition:      (data)          => req('/staff/requisitions', { method: 'POST', body: JSON.stringify(data) }),
+  cancelRequisition:      (id)            => req(`/staff/requisitions/${id}/cancel`, { method: 'PATCH' }),
+  getRequisitionItems:    (q = '')        => req(`/staff/requisition-items?q=${encodeURIComponent(q)}`),
 
   // Questionnaires push
   getQuestionnaires:          ()         => req('/staff/questionnaires'),

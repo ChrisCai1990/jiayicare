@@ -27,6 +27,135 @@ const SR_CATEGORY = {
 }
 const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7' }
 
+// ── 开单弹窗 ─────────────────────────────────────────────
+function RequisitionModal({ patientId, onClose, onSaved }) {
+  const toast = useToast()
+  const [items, setItems] = useState([])
+  const [title, setTitle] = useState('')
+  const [notes, setNotes] = useState('')
+  const [dueDate, setDueDate] = useState('')
+  const [searchQ, setSearchQ] = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  const timerRef = React.useRef()
+
+  const doSearch = async (q) => {
+    if (!q.trim()) { setSearchResults([]); return }
+    setSearching(true)
+    try {
+      const res = await staffAPI.getRequisitionItems(q)
+      setSearchResults(res.data || [])
+    } catch { setSearchResults([]) }
+    finally { setSearching(false) }
+  }
+
+  const handleSearchInput = e => {
+    const q = e.target.value; setSearchQ(q)
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => doSearch(q), 300)
+  }
+
+  const addItem = (item) => {
+    if (items.find(i => i.itemId === item._id)) return
+    setItems(prev => [...prev, { itemType: item.type, itemId: item._id, itemName: item.name, notes: '' }])
+    setSearchQ(''); setSearchResults([])
+  }
+
+  const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx))
+  const updateItemNotes = (idx, v) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, notes: v } : it))
+
+  const handleSave = async () => {
+    if (!items.length) { setError('请至少添加一个检查项目'); return }
+    setSaving(true); setError('')
+    try {
+      await staffAPI.createRequisition({ patientId, title: title || '检查开单', notes, items, dueDate: dueDate || null })
+      onSaved()
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 600, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建检查开单</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
+        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+              <label className="form-label">开单标题</label>
+              <input className="form-input" placeholder="如：2026年5月体检开单" value={title} onChange={e => setTitle(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">要求完成日期（可选）</label>
+              <input className="form-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">整体备注（可选）</label>
+              <input className="form-input" placeholder="整体注意事项..." value={notes} onChange={e => setNotes(e.target.value)} />
+            </div>
+          </div>
+
+          {/* 搜索添加项目 */}
+          <div>
+            <label className="form-label">搜索并添加检查项目</label>
+            <div style={{ position: 'relative' }}>
+              <input className="form-input" placeholder="输入名称或助记码搜索..." value={searchQ} onChange={handleSearchInput} />
+              {searching && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#aaa' }}>搜索中...</span>}
+              {searchResults.length > 0 && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: 200, overflowY: 'auto', marginTop: 4 }}>
+                  {searchResults.map(item => (
+                    <div key={item._id} onMouseDown={() => addItem(item)} style={{ padding: '8px 14px', cursor: 'pointer', fontSize: 13, display: 'flex', alignItems: 'center', gap: 10, borderBottom: '1px solid #f5f5f5' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
+                      onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                      <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: item.type === 'labTestOrder' ? '#EEF2FF' : '#F0FDF4', color: item.type === 'labTestOrder' ? '#4338CA' : '#166534', fontWeight: 600 }}>{item.typeName}</span>
+                      <span style={{ fontWeight: 500 }}>{item.name}</span>
+                      {item.mnemonic && <span style={{ color: '#8AA89C', fontSize: 12 }}>{item.mnemonic}</span>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 已选项目列表 */}
+          {items.length > 0 ? (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: 8 }}>已添加 {items.length} 个项目</div>
+              {items.map((item, idx) => (
+                <div key={idx} style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 12px', marginBottom: 8, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: item.itemType === 'labTestOrder' ? '#EEF2FF' : '#F0FDF4', color: item.itemType === 'labTestOrder' ? '#4338CA' : '#166534', fontWeight: 600 }}>{item.itemType === 'labTestOrder' ? '检验' : '检查'}</span>
+                      <span style={{ fontWeight: 600, fontSize: 14 }}>{item.itemName}</span>
+                    </div>
+                    <input className="form-input" style={{ fontSize: 12 }} placeholder="注意事项（可选，如：空腹抽血）" value={item.notes} onChange={e => updateItemNotes(idx, e.target.value)} />
+                  </div>
+                  <button type="button" onClick={() => removeItem(idx)} style={{ background: 'none', border: 'none', color: '#DC3545', fontSize: 18, cursor: 'pointer', lineHeight: 1, flexShrink: 0, marginTop: 2 }}>✕</button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={{ padding: '20px', textAlign: 'center', color: '#aaa', fontSize: 13, background: '#f9f7f3', borderRadius: 8 }}>
+              请搜索并添加需要检查的项目
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving || !items.length}>
+            {saving ? '创建中...' : `创建开单（${items.length} 项）`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -39,6 +168,8 @@ export default function PatientDetailPage() {
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
+  const [requisitions, setRequisitions] = useState([])
+  const [showReqModal, setShowReqModal] = useState(false)
   const [showReferralModal, setShowReferralModal] = useState(false)
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [showSRDetail, setShowSRDetail] = useState(null)
@@ -86,6 +217,9 @@ export default function PatientDetailPage() {
   const loadServiceRecords = async () => {
     try { const res = await staffAPI.getPatientServiceRecords(id); setServiceRecords(res.data) } catch {}
   }
+  const loadRequisitions = async () => {
+    try { const res = await staffAPI.getPatientRequisitions(id); setRequisitions(res.data) } catch {}
+  }
   useEffect(() => { load() }, [id])
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
@@ -95,6 +229,7 @@ export default function PatientDetailPage() {
     else if (tab === 'plans') loadPlans()
     else if (tab === 'reports') loadReports()
     else if (tab === 'serviceRecords') loadServiceRecords()
+    else if (tab === 'requisitions') loadRequisitions()
   }, [tab])
 
   const buildEditForm = (u) => ({
@@ -258,6 +393,7 @@ export default function PatientDetailPage() {
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
+          { key: 'requisitions',  label: '检查开单' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
           { key: 'serviceRecords',label: '服务记录' },
@@ -768,6 +904,74 @@ export default function PatientDetailPage() {
         )
       })()}
 
+      {/* ── Requisitions Tab ── */}
+      {tab === 'requisitions' && (
+        <div className="card">
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="card-title">检查开单</div>
+            <button className="btn btn-primary btn-sm" onClick={() => setShowReqModal(true)}>＋ 新建开单</button>
+          </div>
+          {requisitions.length === 0 ? (
+            <div style={{ padding: '40px 16px', textAlign: 'center', color: '#aaa' }}>暂无开单记录</div>
+          ) : (
+            <div style={{ padding: '0 16px 16px' }}>
+              {requisitions.map(r => {
+                const statusMap = { open: { label: '待上传', color: '#D97706' }, partial: { label: '部分上传', color: '#0077B6' }, completed: { label: '已完成', color: '#22A06B' }, cancelled: { label: '已取消', color: '#aaa' } }
+                const sm = statusMap[r.status] || { label: r.status, color: '#aaa' }
+                return (
+                  <div key={r._id} style={{ marginBottom: 16, border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{ background: '#f5f0e8', padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <span style={{ fontWeight: 600, fontSize: 14 }}>{r.title || '检查开单'}</span>
+                        <span style={{ fontSize: 12, marginLeft: 10, color: '#8AA89C' }}>
+                          {new Date(r.createdAt).toLocaleDateString('zh-CN')} · {r.staffId?.name || '-'}开单
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: sm.color, fontWeight: 600 }}>{sm.label}</span>
+                        {r.status === 'open' && (
+                          <button className="btn btn-secondary btn-sm" onClick={async () => {
+                            if (!window.confirm('确定取消此开单？')) return
+                            try { await staffAPI.cancelRequisition(r._id); toast('已取消'); loadRequisitions() }
+                            catch (e) { toast(e.message) }
+                          }}>取消</button>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ padding: '10px 14px' }}>
+                      {r.notes && <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 8 }}>备注：{r.notes}</div>}
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc' }}>
+                            {['检查项目', '类型', '注意事项', '状态'].map(h => (
+                              <th key={h} style={{ textAlign: 'left', padding: '6px 10px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {(r.items || []).map((item, idx) => {
+                            const iStatusMap = { pending: '待上传', uploaded: '已上传', reviewed: '已审核' }
+                            const iStatusColor = { pending: '#D97706', uploaded: '#0077B6', reviewed: '#22A06B' }
+                            return (
+                              <tr key={idx} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                                <td style={{ padding: '6px 10px', fontWeight: 500 }}>{item.itemName}</td>
+                                <td style={{ padding: '6px 10px', color: '#8AA89C', fontSize: 12 }}>{item.itemType === 'labTestOrder' ? '检验医嘱' : '检查医嘱'}</td>
+                                <td style={{ padding: '6px 10px', color: '#4A6558' }}>{item.notes || '-'}</td>
+                                <td style={{ padding: '6px 10px', color: iStatusColor[item.status], fontWeight: 500 }}>{iStatusMap[item.status] || item.status}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Family Tab ── */}
       {tab === 'family' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
@@ -1013,6 +1217,15 @@ export default function PatientDetailPage() {
           patientId={id}
           onClose={() => setShowUploadReport(false)}
           onSaved={() => { setShowUploadReport(false); toast('报告已上传'); loadReports() }}
+        />
+      )}
+
+      {/* 新建开单弹窗 */}
+      {showReqModal && (
+        <RequisitionModal
+          patientId={id}
+          onClose={() => setShowReqModal(false)}
+          onSaved={() => { setShowReqModal(false); toast('开单已创建，会员端将显示待上传提示'); loadRequisitions() }}
         />
       )}
     </div>

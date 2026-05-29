@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { reportsAPI } from '../../services/api';
+import { reportsAPI, requisitionsAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { mockMedicalReports } from '../../data/mockData';
 
@@ -778,6 +778,8 @@ export default function ReportUploadScreen({ navigation, route }) {
   const { isDemo } = useAuth();
   const initialType = route?.params?.type || null;
   const [reports, setReports]       = useState([]);
+  const [requisitions, setRequisitions] = useState([]);
+  const [reqExpanded, setReqExpanded]   = useState(true);
   const [uploading, setUploading]   = useState(false);
   const [loading, setLoading]       = useState(true);
   const [toast, setToast]           = useState('');
@@ -798,6 +800,14 @@ export default function ReportUploadScreen({ navigation, route }) {
     setTimeout(() => setToast(''), 2500);
   };
 
+  const loadRequisitions = useCallback(async () => {
+    if (isDemo) return;
+    try {
+      const res = await requisitionsAPI.list();
+      if (res.success) setRequisitions(res.data || []);
+    } catch { /* ignore */ }
+  }, [isDemo]);
+
   const loadReports = useCallback(async () => {
     try {
       const res = await reportsAPI.list();
@@ -810,7 +820,7 @@ export default function ReportUploadScreen({ navigation, route }) {
     }
   }, [isDemo]);
 
-  useEffect(() => { loadReports(); }, [loadReports]);
+  useEffect(() => { loadReports(); loadRequisitions(); }, [loadReports, loadRequisitions]);
 
   // Step 1: Pick file → show config modal
   const handleUpload = () => {
@@ -925,6 +935,43 @@ export default function ReportUploadScreen({ navigation, route }) {
         <Text style={styles.pageTitle}>健康报告</Text>
         <View style={{ width: 32 }} />
       </View>
+
+      {/* 待上传开单提示 */}
+      {requisitions.filter(r => r.status === 'open' || r.status === 'partial').length > 0 && (
+        <View style={{ backgroundColor: '#FEF3C7', borderBottomWidth: 1, borderBottomColor: '#FDE68A' }}>
+          <TouchableOpacity
+            onPress={() => setReqExpanded(v => !v)}
+            style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.md, paddingBottom: reqExpanded ? spacing.xs : spacing.md }}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="clipboard-outline" size={16} color="#D97706" />
+            <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: '#92400E', marginLeft: 6 }}>
+              待上传检查单（{requisitions.filter(r => r.status === 'open' || r.status === 'partial').reduce((s, r) => s + r.items.filter(i => i.status === 'pending').length, 0)}项待上传）
+            </Text>
+            <Ionicons name={reqExpanded ? 'chevron-up' : 'chevron-down'} size={14} color="#92400E" />
+          </TouchableOpacity>
+          {reqExpanded && requisitions.filter(r => r.status === 'open' || r.status === 'partial').map(r => (
+            <View key={r._id} style={{ paddingHorizontal: spacing.md, paddingBottom: spacing.sm }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: '#1A2B24', marginBottom: 4 }}>
+                {r.title || '检查开单'} · {r.staffId?.name ? r.staffId.name + '开单' : ''} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
+              </Text>
+              {r.items.filter(i => i.status === 'pending').map((item, idx) => (
+                <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingLeft: 8 }}>
+                  <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D97706', marginRight: 8 }} />
+                  <Text style={{ flex: 1, fontSize: 12, color: '#4A6558' }}>{item.itemName}</Text>
+                  {item.notes ? <Text style={{ fontSize: 11, color: '#8AA89C' }}>{item.notes}</Text> : null}
+                  <TouchableOpacity
+                    onPress={handleUpload}
+                    style={{ marginLeft: 8, backgroundColor: '#1E6B50', borderRadius: 4, paddingHorizontal: 8, paddingVertical: 3 }}
+                  >
+                    <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600' }}>上传</Text>
+                  </TouchableOpacity>
+                </View>
+              ))}
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* 页面 Tab 切换 */}
       <View style={styles.pageTabs}>

@@ -6,6 +6,7 @@ const UserChangeLog = require('../models/UserChangeLog');
 const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
 const Reminder = require('../models/Reminder');
+const SystemConfig = require('../models/SystemConfig');
 const ShareToken = require('../models/ShareToken');
 const CheckupPlan = require('../models/CheckupPlan');
 const GiftRecord   = require('../models/GiftRecord');
@@ -13,7 +14,8 @@ const HealthPlan   = require('../models/HealthPlan');
 const PushRecord   = require('../models/PushRecord');
 const Order        = require('../models/Order');
 const Message      = require('../models/Message');
-const FollowUp    = require('../models/FollowUp');
+const FollowUp         = require('../models/FollowUp');
+const ExamRequisition  = require('../models/ExamRequisition');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 
@@ -332,14 +334,32 @@ router.get('/report', auth, async (req, res) => {
     ]);
     const taskRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
 
-    // 简单健康分数：基础60分 + 记录加分 + 任务加分 - 异常扣分
-    let healthScore = 60;
-    healthScore += Math.min(totalRecordCount * 2, 20); // 最多加20分
-    healthScore += Math.round(taskRate * 0.1);          // 最多加10分
-    const dangerCount = metrics.filter((m) => m.status === 'danger').length;
+    // 健康评分：从 SystemConfig 读取权重配置
+    const scoringCfg = await SystemConfig.findOne({ key: 'health_scoring' }).lean();
+    const w = scoringCfg?.value || {};
+    const base           = w.base            ?? 60;
+    const perRecord      = w.perRecord       ?? 2;
+    const maxRecordBonus = w.maxRecordBonus  ?? 20;
+    const taskRateWeight = w.taskRateWeight  ?? 0.1;
+    const dangerPenalty  = w.dangerPenalty   ?? 10;
+    const warningPenalty = w.warningPenalty  ?? 5;
+
+    const dangerCount  = metrics.filter((m) => m.status === 'danger').length;
     const warningCount = metrics.filter((m) => m.status === 'warning').length;
-    healthScore -= dangerCount * 10 + warningCount * 5;
+    let healthScore = base;
+    healthScore += Math.min(totalRecordCount * perRecord, maxRecordBonus);
+    healthScore += Math.round(taskRate * taskRateWeight);
+    healthScore -= dangerCount * dangerPenalty + warningCount * warningPenalty;
     healthScore = Math.max(0, Math.min(100, healthScore));
+
+    // 评分明细（供前端展示）
+    const scoreBreakdown = {
+      base,
+      recordBonus: Math.min(totalRecordCount * perRecord, maxRecordBonus),
+      taskBonus:   Math.round(taskRate * taskRateWeight),
+      dangerDeduct: dangerCount * dangerPenalty,
+      warningDeduct: warningCount * warningPenalty,
+    };
 
     // scoreDelta 用随机小幅波动模拟（实际可存历史分）
     const scoreDelta = Math.floor(Math.random() * 7) - 2;
@@ -351,6 +371,7 @@ router.get('/report', auth, async (req, res) => {
         dateRange,
         healthScore,
         scoreDelta,
+        scoreBreakdown,
         recordCount: totalRecordCount,
         taskCompletion: { total: totalTasks, completed: completedTasks, rate: taskRate },
         metrics,
@@ -597,6 +618,19 @@ router.get('/checkup-plan', auth, async (req, res) => {
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取复查计划失败', error: err.message });
+  }
+});
+
+// ── 检查开单（用户端） ─────────────────────────────────────────
+// GET /api/user/requisitions — 获取自己的开单列表
+router.get('/requisitions', auth, async (req, res) => {
+  try {
+    const reqs = await ExamRequisition.find({ patientId: req.user._id, status: { $ne: 'cancelled' } })
+      .sort({ createdAt: -1 })
+      .populate('staffId', 'name role');
+    res.json({ success: true, data: reqs });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

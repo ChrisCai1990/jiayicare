@@ -18,6 +18,7 @@ const CheckupPlan = require('../models/CheckupPlan');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const UserChangeLog = require('../models/UserChangeLog');
 const MedicalReport = require('../models/MedicalReport');
+const SystemConfig  = require('../models/SystemConfig');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
 
@@ -873,6 +874,41 @@ router.patch('/plan-templates/:id/toggle', adminAuth, async (req, res) => {
 router.delete('/plan-templates/:id', adminAuth, async (req, res) => {
   await PlanTemplate.findByIdAndDelete(req.params.id);
   res.json({ success: true, message: '模板已删除' });
+});
+
+// ── 系统配置 / 健康评分权重 ─────────────────────────────────────
+const DEFAULT_SCORING = {
+  base: 60,
+  perRecord: 2,
+  maxRecordBonus: 20,
+  taskRateWeight: 0.1,
+  dangerPenalty: 10,
+  warningPenalty: 5,
+};
+
+// GET /api/admin/system-config/scoring
+router.get('/system-config/scoring', adminAuth, async (req, res) => {
+  try {
+    const cfg = await SystemConfig.findOne({ key: 'health_scoring' });
+    res.json({ success: true, data: cfg ? cfg.value : DEFAULT_SCORING });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /api/admin/system-config/scoring
+router.put('/system-config/scoring', adminAuth, async (req, res) => {
+  try {
+    const value = { ...DEFAULT_SCORING, ...req.body };
+    await SystemConfig.findOneAndUpdate(
+      { key: 'health_scoring' },
+      { key: 'health_scoring', value, label: '健康评分权重配置' },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, message: '配置已保存' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 module.exports = router;

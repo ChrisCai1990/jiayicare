@@ -98,8 +98,23 @@ export default function KnowledgePage() {
 function CreateKnowledgeModal({ onClose, onSaved }) {
   const [form, setForm] = useState({ title: '', category: 'other', content: '', tags: '', coverUrl: '' })
   const [saving, setSaving] = useState(false)
+  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState('')
+  const [preview, setPreview] = useState('')
+  const fileRef = React.useRef()
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const handleFileChange = async e => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true); setError('')
+    try {
+      const res = await staffAPI.uploadImage(file)
+      setForm(f => ({ ...f, coverUrl: res.data.url }))
+      setPreview(URL.createObjectURL(file))
+    } catch (err) { setError('图片上传失败：' + err.message) }
+    finally { setUploading(false) }
+  }
 
   const handleSubmit = async () => {
     if (!form.title) { setError('标题不能为空'); return }
@@ -135,8 +150,19 @@ function CreateKnowledgeModal({ onClose, onSaved }) {
             <input className="form-input" placeholder="如：饮食,肝脏,春季" value={form.tags} onChange={set('tags')} />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">图片URL（可选）</label>
-            <input className="form-input" placeholder="https://... 封面图片链接" value={form.coverUrl} onChange={set('coverUrl')} />
+            <label className="form-label">封面图片</label>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+              <div style={{ flex: 1 }}>
+                <input className="form-input" placeholder="https://... 图片链接，或点击上传" value={form.coverUrl} onChange={e => { set('coverUrl')(e); setPreview('') }} style={{ marginBottom: 6 }} />
+                <button type="button" className="btn btn-secondary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
+                  {uploading ? '上传中...' : '📷 上传图片'}
+                </button>
+                <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileChange} />
+              </div>
+              {(preview || form.coverUrl) && (
+                <img src={preview || form.coverUrl} alt="预览" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, border: '1px solid #E0D9CE', flexShrink: 0 }} onError={e => e.target.style.display = 'none'} />
+              )}
+            </div>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">内容</label>
@@ -145,7 +171,7 @@ function CreateKnowledgeModal({ onClose, onSaved }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || uploading}>{saving ? '创建中...' : '创建'}</button>
         </div>
       </div>
     </div>

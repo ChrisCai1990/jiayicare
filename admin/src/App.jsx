@@ -15,11 +15,12 @@ import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import Layout from './components/Layout'
 
 // 基本设置
-import CompanyInfoPage   from './pages/settings/CompanyInfoPage'
-import DepartmentPage    from './pages/settings/DepartmentPage'
-import RolePage          from './pages/settings/RolePage'
-import EmployeePage      from './pages/settings/EmployeePage'
+import CompanyInfoPage    from './pages/settings/CompanyInfoPage'
+import DepartmentPage     from './pages/settings/DepartmentPage'
+import RolePage           from './pages/settings/RolePage'
+import EmployeePage       from './pages/settings/EmployeePage'
 import MemberSettingsPage from './pages/settings/MemberSettingsPage'
+import ScoringConfigPage  from './pages/settings/ScoringConfigPage'
 
 // 项目设置
 import CategoryPage       from './pages/projects/CategoryPage'
@@ -106,7 +107,8 @@ export default function App() {
               <Route path="settings/departments" element={<DepartmentPage />} />
               <Route path="settings/roles"       element={<RolePage />} />
               <Route path="settings/employees"   element={<EmployeePage />} />
-              <Route path="settings/members"     element={<MemberSettingsPage />} />
+              <Route path="settings/members"  element={<MemberSettingsPage />} />
+              <Route path="settings/scoring"  element={<ScoringConfigPage />} />
 
               {/* 项目设置 */}
               <Route path="projects/categories"       element={<CategoryPage />} />

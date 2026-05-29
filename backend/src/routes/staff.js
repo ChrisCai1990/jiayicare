@@ -2,6 +2,9 @@ const express = require('express');
 const jwt = require('jsonwebtoken');
 const mongoose = require('mongoose');
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
@@ -22,8 +25,31 @@ const Activity       = require('../models/Activity');
 const SessionPackage = require('../models/SessionPackage');
 const AnnualPlan = require('../models/AnnualPlan');
 const Product = require('../models/Product');
+const FollowUpForm      = require('../models/FollowUpForm');
+const SystemConfig      = require('../models/SystemConfig');
+const ExamRequisition   = require('../models/ExamRequisition');
+const LabTestOrder      = require('../models/LabTestOrder');
+const SpecialExam       = require('../models/SpecialExam');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
+
+// ── 图片上传（multer） ─────────────────────────────────────────
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../../uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const upload = multer({
+  storage: multer.diskStorage({
+    destination: UPLOADS_DIR,
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (file.mimetype.startsWith('image/')) cb(null, true);
+    else cb(new Error('只支持图片文件'));
+  },
+});
 
 // 医护端角色标签
 const ROLE_LABEL = {
@@ -627,6 +653,26 @@ router.patch('/medical-reports/:id/audit', staffAuth, async (req, res) => {
   res.json({ success: true, data: report });
 });
 
+// ── 图片上传 ─────────────────────────────────────────────
+// POST /api/staff/upload/image
+router.post('/upload/image', staffAuth, upload.single('image'), (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
+  const host = process.env.API_HOST || 'http://121.40.156.39';
+  const url = `${host}/api/uploads/${req.file.filename}`;
+  res.json({ success: true, data: { url } });
+});
+
+// ── 随访表单库 ────────────────────────────────────────────
+// GET /api/staff/followup-forms — 获取启用的随访表单列表（供创建随访时选用）
+router.get('/followup-forms', staffAuth, async (req, res) => {
+  try {
+    const forms = await FollowUpForm.find({ status: 'active' }).sort({ createdAt: -1 }).lean();
+    res.json({ success: true, data: forms });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── 科普知识库 ────────────────────────────────────────────
 // GET /api/staff/knowledge?category=&tag=
 router.get('/knowledge', staffAuth, async (req, res) => {
@@ -1015,6 +1061,78 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   res.json({ success: true, data: reports });
 });
 
+// ── 检查开单（ExamRequisition） ───────────────────────────
+// GET /api/staff/patients/:id/requisitions
+router.get('/patients/:id/requisitions', staffAuth, async (req, res) => {
+  try {
+    const reqs = await ExamRequisition.find({ patientId: req.params.id })
+      .sort({ createdAt: -1 })
+      .populate('staffId', 'name role');
+    res.json({ success: true, data: reqs });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/staff/requisitions — 创建开单
+router.post('/requisitions', staffAuth, async (req, res) => {
+  try {
+    const { patientId, title, notes, items, dueDate } = req.body;
+    if (!patientId || !items?.length) {
+      return res.status(400).json({ success: false, message: '请选择会员并添加开单项目' });
+    }
+    const req_ = await ExamRequisition.create({
+      patientId, staffId: req.staff._id,
+      title: title || '检查开单',
+      notes: notes || '',
+      items: items.map(i => ({
+        itemType: i.itemType,
+        itemId:   i.itemId,
+        itemName: i.itemName,
+        notes:    i.notes || '',
+        status:   'pending',
+      })),
+      dueDate: dueDate || null,
+    });
+    res.json({ success: true, data: req_ });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/staff/requisitions/:id/cancel — 取消开单
+router.patch('/requisitions/:id/cancel', staffAuth, async (req, res) => {
+  try {
+    const r = await ExamRequisition.findById(req.params.id);
+    if (!r) return res.status(404).json({ success: false, message: '开单不存在' });
+    r.status = 'cancelled';
+    await r.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/staff/requisition-items — 获取可开单的项目列表（检验医嘱 + 检查医嘱）
+router.get('/requisition-items', staffAuth, async (req, res) => {
+  try {
+    const { q = '' } = req.query;
+    const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
+    const [labOrders, specialExams] = await Promise.all([
+      LabTestOrder.find({ ...filter, status: 'active' }).select('name mnemonic items').limit(100),
+      SpecialExam.find({ ...filter, status: 'active' }).select('name mnemonic examType').limit(100),
+    ]);
+    const result = [
+      ...labOrders.map(o => ({ _id: o._id, name: o.name, mnemonic: o.mnemonic, type: 'labTestOrder', typeName: '检验医嘱' })),
+      ...specialExams.map(e => ({ _id: e._id, name: e.name, mnemonic: e.mnemonic, type: 'specialExam', typeName: '检查医嘱' })),
+    ];
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── User app: 获取待上传开单 ──────────────────────────────
 // GET /api/staff/patients/:id/service-records — 患者的服务记录
 router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
   const records = await ServiceRecord.find({ patientId: req.params.id })

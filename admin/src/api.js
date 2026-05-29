@@ -228,4 +228,8 @@ export const adminAPI = {
   updateFollowupPlan: (id, data) => req(`/followup-plans/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   toggleFollowupPlan: (id)       => req(`/followup-plans/${id}/toggle`, { method: 'PATCH' }),
   deleteFollowupPlan: (id)       => req(`/followup-plans/${id}`, { method: 'DELETE' }),
+
+  // 健康评分配置
+  getScoringConfig:    ()     => req('/system-config/scoring'),
+  updateScoringConfig: (data) => req('/system-config/scoring', { method: 'PUT', body: JSON.stringify(data) }),
 }

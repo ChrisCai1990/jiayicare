@@ -234,6 +234,11 @@ export const followupTasksAPI = {
   list: () => request('/user/followup-tasks'),
 };
 
+// ── Exam Requisitions / 检查开单 ──────────────────────────────────
+export const requisitionsAPI = {
+  list: () => request('/user/requisitions'),
+};
+
 // ── Share / 健康报告分享 ──────────────────────────────────────────
 export const shareAPI = {
   create:  (period, snapshot) =>
