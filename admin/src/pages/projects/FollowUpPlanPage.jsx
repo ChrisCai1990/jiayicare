@@ -3,7 +3,7 @@ import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
 const CYCLE_UNIT_LABEL = { day: '天', week: '周', month: '月' }
-const EMPTY = { name: '', formId: '', cycleDuration: 30, cycleUnit: 'day', defaultRole: '' }
+const EMPTY = { name: '', formId: '', cycleDuration: 30, cycleUnit: 'day', defaultRole: '', notes: '' }
 
 export default function FollowUpPlanPage() {
   const toast = useToast()
@@ -35,7 +35,7 @@ export default function FollowUpPlanPage() {
     setForm({
       name: p.name, formId: p.formId?._id || p.formId || '',
       cycleDuration: p.cycleDuration || 30, cycleUnit: p.cycleUnit || 'day',
-      defaultRole: p.defaultRole || '',
+      defaultRole: p.defaultRole || '', notes: p.notes || '',
     })
     setError(''); setShowModal(true)
   }
@@ -141,9 +141,13 @@ export default function FollowUpPlanPage() {
                   </select>
                 </div>
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
+              <div className="form-group">
                 <label className="form-label">默认随访人员角色</label>
                 <input className="form-input" value={form.defaultRole} onChange={set('defaultRole')} placeholder='如：健管专员' />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">备注</label>
+                <textarea className="form-input" rows={3} value={form.notes} onChange={set('notes')} placeholder='方案用途、注意事项等，如：复查肺CT，安排胸外科专家会诊' style={{ resize: 'vertical' }} />
               </div>
             </div>
             <div className="modal-footer">

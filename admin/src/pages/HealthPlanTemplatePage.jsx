@@ -15,16 +15,22 @@ const PLAN_TYPES = [
 // ── 各类型的默认 content 结构 ─────────────────────────────────
 const defaultContent = {
   annual_checkup: {
-    packageDesc: '', checkItems: '', addons: '',
+    packageName: '', packageDesc: '',
+    checkItems: [], // [{ type:'lab'|'exam', id, name }]
+    addons: [],     // [{ type:'lab'|'exam', id, name, reason }]
   },
   health_management: {
     modules: '',
     medicalIssue: '', doctor: '', dailyMonitoring: '', vaccination: '', lifestyle: '', examPlan: '',
   },
   nutrition: {
-    breakfast: '', lunch: '', dinner: '', snack: '',
-    mealTimes: '', dietPrinciple: '', dailyWater: '', cookingMethod: '',
-    mealOrder: '', nutritionSupplements: '', exerciseSuggestion: '', allowedFoods: '', forbiddenFoods: '',
+    dailyWater: '',
+    breakfastTime: '', breakfast: '',
+    lunchTime: '', lunch: '',
+    dinnerTime: '', dinner: '',
+    snackTime: '', snack: '',
+    dietPrinciple: '', cookingMethod: '', mealOrder: '',
+    nutritionSupplements: '', exerciseSuggestion: '', allowedFoods: '', forbiddenFoods: '',
   },
   medical_assist: {
     name: '', datetime: '', staffName: '', tasks: '',
@@ -43,15 +49,86 @@ const defaultContent = {
   },
 }
 
-const ADDON_OPTIONS = [
-  '肿瘤风险筛查',
-  '心脑血管病风险筛查',
-  '慢性病风险筛查',
-  '老年痴呆风险筛查',
-  '骨质疏松风险筛查',
-  '其他风险筛查',
-  '功能医学检测',
-]
+// 医嘱选择器（检验医嘱 + 检查医嘱，可附带"推荐原因"）
+function OrderSelector({ label, value, onChange, labOrders, examOrders, showReason }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const selected = Array.isArray(value) ? value : []
+
+  const allOptions = [
+    ...labOrders.map(o => ({ ...o, _type: 'lab', _label: '[检验]' })),
+    ...examOrders.map(o => ({ ...o, _type: 'exam', _label: '[检查]' })),
+  ].filter(o => o.status === 'active' && o.name.toLowerCase().includes(search.toLowerCase()))
+
+  const isSelected = id => selected.some(s => s.id === id)
+
+  const toggle = item => {
+    if (isSelected(item._id)) {
+      onChange(selected.filter(s => s.id !== item._id))
+    } else {
+      onChange([...selected, { type: item._type, id: item._id, name: item.name, ...(showReason ? { reason: '' } : {}) }])
+    }
+  }
+
+  const remove = idx => onChange(selected.filter((_, i) => i !== idx))
+
+  const setReason = (idx, reason) => {
+    const next = [...selected]
+    next[idx] = { ...next[idx], reason }
+    onChange(next)
+  }
+
+  return (
+    <div className="form-group" style={{ gridColumn: '1/-1' }}>
+      <label className="form-label">{label}</label>
+      <div style={{ border: '1px solid #d0c9be', borderRadius: 8, padding: 12, background: '#faf8f5' }}>
+        {selected.length === 0 && <div style={{ color: '#aaa', fontSize: 12, marginBottom: 8 }}>暂未添加项目</div>}
+        {selected.map((s, idx) => (
+          <div key={idx} style={{ marginBottom: showReason ? 10 : 6 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 11, color: s.type === 'lab' ? '#0077B6' : '#1E6B50', background: s.type === 'lab' ? '#E8F4FD' : '#E8F5EF', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+                {s.type === 'lab' ? '检验' : '检查'}
+              </span>
+              <span style={{ fontSize: 13, fontWeight: 500 }}>{s.name}</span>
+              <button type="button" onClick={() => remove(idx)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 14, lineHeight: 1 }}>×</button>
+            </div>
+            {showReason && (
+              <input className="form-input" value={s.reason || ''} onChange={e => setReason(idx, e.target.value)}
+                placeholder="推荐原因或说明（选填）"
+                style={{ marginTop: 4, marginLeft: 50, width: 'calc(100% - 50px)', fontSize: 12 }} />
+            )}
+          </div>
+        ))}
+        <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', marginTop: 4 }}
+          onClick={() => setOpen(o => !o)}>
+          {open ? '▲ 收起' : '＋ 添加项目'}
+        </button>
+        {open && (
+          <div style={{ marginTop: 10, border: '1px solid #e0d9ce', borderRadius: 6, background: '#fff', maxHeight: 260, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '8px 10px', borderBottom: '1px solid #f0ece4' }}>
+              <input className="form-input" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="搜索检验/检查医嘱名称..." style={{ fontSize: 12 }} autoFocus />
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {allOptions.length === 0 && <div style={{ padding: 16, color: '#aaa', fontSize: 12, textAlign: 'center' }}>无匹配结果</div>}
+              {allOptions.map(o => (
+                <div key={o._id} onClick={() => toggle(o)} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', cursor: 'pointer',
+                  background: isSelected(o._id) ? '#f0f9f4' : 'transparent',
+                  borderBottom: '1px solid #f8f6f2',
+                }}>
+                  <input type="checkbox" readOnly checked={isSelected(o._id)} style={{ accentColor: '#1E6B50', cursor: 'pointer' }} />
+                  <span style={{ fontSize: 11, color: o._type === 'lab' ? '#0077B6' : '#1E6B50', background: o._type === 'lab' ? '#E8F4FD' : '#E8F5EF', padding: '1px 5px', borderRadius: 4, fontWeight: 600 }}>{o._label}</span>
+                  <span style={{ fontSize: 13 }}>{o.name}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 
 // ── 表单字段行（必须定义在 PlanContentForm 外部，避免每次渲染产生新引用导致输入框失焦）──
 function FieldRow({ label, fieldKey, placeholder, rows, half, content, set }) {
@@ -73,45 +150,49 @@ function FieldRow({ label, fieldKey, placeholder, rows, half, content, set }) {
 // content state 放在此组件内部，避免每次输入触发 TemplateModal 重渲染导致输入框失焦
 function PlanContentForm({ type, initialContent, contentRef }) {
   const [content, setContent] = useState(initialContent || defaultContent[type] || {})
+  const [labOrders, setLabOrders] = useState([])
+  const [examOrders, setExamOrders] = useState([])
   const set = useCallback((k, v) => setContent(prev => {
     const next = { ...prev, [k]: v }
     contentRef.current = next
     return next
   }), [contentRef])
 
+  useEffect(() => {
+    if (type === 'annual_checkup') {
+      Promise.all([
+        adminAPI.labTestOrders({ status: 'active', limit: 500 }),
+        adminAPI.specialExams({ status: 'active', limit: 500 }),
+      ]).then(([labRes, examRes]) => {
+        setLabOrders(labRes.data || [])
+        setExamOrders(examRes.data || [])
+      }).catch(() => {})
+    }
+  }, [type])
+
   if (type === 'annual_checkup') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <FieldRow label="状态说明" fieldKey="packageDesc" placeholder="套餐描述" half content={content} set={set} />
-      <FieldRow label="包含检查项目" fieldKey="checkItems" rows={4} placeholder="每行一项，如：颈动脉超声&#10;血脂全套&#10;心脏彩超" content={content} set={set} />
-      <div className="form-group" style={{ gridColumn: '1/-1' }}>
-        <label className="form-label">可选加项库</label>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '12px 14px', border: '1px solid #d0c9be', borderRadius: 8, background: '#faf8f5' }}>
-          {ADDON_OPTIONS.map(opt => {
-            const addons = content.addons && typeof content.addons === 'object' ? content.addons : {}
-            const checked = opt in addons
-            const note = addons[opt] || ''
-            const updateAddons = (newAddons) => set('addons', newAddons)
-            return (
-              <div key={opt}>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, fontWeight: 500, color: '#333', marginBottom: 4 }}>
-                  <input type="checkbox" checked={checked} onChange={() => {
-                    const next = { ...addons }
-                    if (checked) { delete next[opt] } else { next[opt] = '' }
-                    updateAddons(next)
-                  }} style={{ width: 15, height: 15, cursor: 'pointer', accentColor: '#1E6B50' }} />
-                  {opt}
-                </label>
-                {checked && (
-                  <textarea className="form-input" rows={3} value={note}
-                    onChange={e => updateAddons({ ...addons, [opt]: e.target.value })}
-                    placeholder={`录入${opt}的具体内容...`}
-                    style={{ marginLeft: 21, width: 'calc(100% - 21px)', resize: 'vertical' }} />
-                )}
-              </div>
-            )
-          })}
-        </div>
+      <div className="form-group">
+        <label className="form-label">套餐名称 *</label>
+        <input className="form-input" value={content.packageName || ''} onChange={e => set('packageName', e.target.value)} placeholder="如：心脑血管深度筛查套餐" />
       </div>
+      <FieldRow label="状态说明" fieldKey="packageDesc" placeholder="套餐描述" half content={content} set={set} />
+      <OrderSelector
+        label="包含检查项目"
+        value={content.checkItems}
+        onChange={v => set('checkItems', v)}
+        labOrders={labOrders}
+        examOrders={examOrders}
+        showReason={false}
+      />
+      <OrderSelector
+        label="可选加项库"
+        value={content.addons}
+        onChange={v => set('addons', v)}
+        labOrders={labOrders}
+        examOrders={examOrders}
+        showReason={true}
+      />
     </div>
   )
 
@@ -130,11 +211,27 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   if (type === 'nutrition') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
       <FieldRow label="每日饮水量（毫升）" fieldKey="dailyWater" placeholder="如：2000" half content={content} set={set} />
-      <FieldRow label="早餐建议" fieldKey="breakfast" rows={3} placeholder="食物种类、份量描述" content={content} set={set} />
-      <FieldRow label="午餐建议" fieldKey="lunch" rows={3} placeholder="食物种类、份量描述" content={content} set={set} />
-      <FieldRow label="晚餐建议" fieldKey="dinner" rows={3} placeholder="食物种类、份量描述" content={content} set={set} />
-      <FieldRow label="加餐建议" fieldKey="snack" rows={2} placeholder="时间、食物、份量" content={content} set={set} />
-      <FieldRow label="进餐时间节点" fieldKey="mealTimes" placeholder="如：7:00早餐 / 12:30午餐 / 18:30晚餐" half content={content} set={set} />
+      <div style={{ gridColumn: '1/-1' }} />
+      {[
+        { timeKey: 'breakfastTime', contentKey: 'breakfast', label: '早餐', timePlaceholder: '如：07:00' },
+        { timeKey: 'lunchTime',     contentKey: 'lunch',     label: '午餐', timePlaceholder: '如：12:00' },
+        { timeKey: 'dinnerTime',    contentKey: 'dinner',    label: '晚餐', timePlaceholder: '如：18:30' },
+        { timeKey: 'snackTime',     contentKey: 'snack',     label: '加餐', timePlaceholder: '如：15:00（选填）' },
+      ].map(({ timeKey, contentKey, label, timePlaceholder }) => (
+        <div key={contentKey} className="form-group" style={{ gridColumn: '1/-1', border: '1px solid #ece8e0', borderRadius: 8, padding: 12, background: '#faf8f5' }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: '#333', marginBottom: 8 }}>{label}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 8, alignItems: 'start' }}>
+            <div>
+              <label className="form-label" style={{ fontSize: 11 }}>进餐时间</label>
+              <input className="form-input" value={content[timeKey] || ''} onChange={e => set(timeKey, e.target.value)} placeholder={timePlaceholder} style={{ fontSize: 13 }} />
+            </div>
+            <div>
+              <label className="form-label" style={{ fontSize: 11 }}>食物内容</label>
+              <textarea className="form-input" rows={contentKey === 'snack' ? 2 : 3} value={content[contentKey] || ''} onChange={e => set(contentKey, e.target.value)} placeholder="食物种类、份量描述" style={{ fontSize: 13 }} />
+            </div>
+          </div>
+        </div>
+      ))}
       <FieldRow label="烹饪方式" fieldKey="cookingMethod" placeholder="推荐：蒸煮炖；避免：油炸" half content={content} set={set} />
       <FieldRow label="进餐顺序" fieldKey="mealOrder" placeholder="如：汤→蔬菜→肉→主食" half content={content} set={set} />
       <FieldRow label="膳食总原则" fieldKey="dietPrinciple" placeholder="如：低盐低脂、高纤维" half content={content} set={set} />

@@ -656,21 +656,21 @@ router.get('/followup-plans', adminAuth, async (req, res) => {
 });
 
 router.post('/followup-plans', adminAuth, async (req, res) => {
-  const { name, formId, cycleDuration, cycleUnit, defaultRole } = req.body;
+  const { name, formId, cycleDuration, cycleUnit, defaultRole, notes } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '方案名称不能为空' });
   const plan = await FollowUpPlan.create({
     name, formId: formId || null,
     cycleDuration: cycleDuration || 30, cycleUnit: cycleUnit || 'day',
-    defaultRole: defaultRole || '',
+    defaultRole: defaultRole || '', notes: notes || '',
   });
   res.json({ success: true, data: plan, message: '随访方案已创建' });
 });
 
 router.put('/followup-plans/:id', adminAuth, async (req, res) => {
-  const { name, formId, cycleDuration, cycleUnit, defaultRole, status } = req.body;
+  const { name, formId, cycleDuration, cycleUnit, defaultRole, notes, status } = req.body;
   const plan = await FollowUpPlan.findByIdAndUpdate(
     req.params.id,
-    { name, formId: formId || null, cycleDuration, cycleUnit, defaultRole, status },
+    { name, formId: formId || null, cycleDuration, cycleUnit, defaultRole, notes: notes || '', status },
     { new: true }
   ).populate('formId', 'name');
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
