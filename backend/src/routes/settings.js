@@ -698,23 +698,4 @@ router.delete('/followup-plans/:id', adminAuth, async (req, res) => {
   res.json({ success: true, message: '随访方案已删除' });
 });
 
-// GET /api/admin/requisition-items — 检验医嘱 + 检查医嘱联合搜索
-router.get('/requisition-items', adminAuth, async (req, res) => {
-  try {
-    const { q = '' } = req.query;
-    const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
-    const [labOrders, specialExams] = await Promise.all([
-      LabTestOrder.find({ ...filter, status: 'active' }).select('name').limit(100),
-      SpecialExam.find({ ...filter, status: 'active' }).select('name').limit(100),
-    ]);
-    const result = [
-      ...labOrders.map(o => ({ id: o._id, name: o.name, type: 'lab' })),
-      ...specialExams.map(e => ({ id: e._id, name: e.name, type: 'exam' })),
-    ];
-    res.json({ success: true, data: result });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
 module.exports = router;

@@ -14,7 +14,6 @@ const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
 const MemberType = require('../models/MemberType');
 const PlanTemplate = require('../models/PlanTemplate');
-const HealthPlan = require('../models/HealthPlan');
 const CheckupPlan = require('../models/CheckupPlan');
 const AnnualPlan = require('../models/AnnualPlan');
 const AnnualPlanTemplate = require('../models/AnnualPlanTemplate');
@@ -914,116 +913,21 @@ router.put('/system-config/scoring', adminAuth, async (req, res) => {
   }
 });
 
-// ── 健康方案管理（管理端全局视图） ────────────────────────────────────────
-
-// GET /api/admin/plans
-router.get('/plans', adminAuth, async (req, res) => {
-  try {
-    const { patientId, type, status, page = 1, limit = 20 } = req.query;
-    const filter = {};
-    if (patientId) filter.patientId = patientId;
-    if (type) filter.type = type;
-    if (status) filter.status = status;
-    const skip = (Number(page) - 1) * Number(limit);
-    const [plans, total] = await Promise.all([
-      HealthPlan.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
-        .populate('patientId', 'name phone').populate('staffId', 'name role'),
-      HealthPlan.countDocuments(filter),
-    ]);
-    res.json({ success: true, data: { plans, total } });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// GET /api/admin/plans/:id
-router.get('/plans/:id', adminAuth, async (req, res) => {
-  try {
-    const plan = await HealthPlan.findById(req.params.id)
-      .populate('patientId', 'name phone gender age').populate('staffId', 'name role title');
-    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-    res.json({ success: true, data: plan });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// POST /api/admin/plans
-router.post('/plans', adminAuth, async (req, res) => {
-  try {
-    const { patientId, type, title, description, year, items } = req.body;
-    if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
-    const plan = await HealthPlan.create({
-      patientId, type, title,
-      description: description || '',
-      year: year || new Date().getFullYear(),
-      items: items || [],
-      status: 'draft',
-    });
-    res.json({ success: true, data: plan });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// PUT /api/admin/plans/:id
-router.put('/plans/:id', adminAuth, async (req, res) => {
-  try {
-    const plan = await HealthPlan.findById(req.params.id);
-    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-    const allowed = ['title', 'description', 'year', 'items', 'status'];
-    allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
-    await plan.save();
-    res.json({ success: true, data: plan });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// PATCH /api/admin/plans/:id/push
-router.patch('/plans/:id/push', adminAuth, async (req, res) => {
-  try {
-    const plan = await HealthPlan.findById(req.params.id);
-    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-    plan.status = 'active';
-    plan.pushedAt = new Date();
-    await plan.save();
-    res.json({ success: true, data: plan });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// PATCH /api/admin/plans/:id/items/:itemId
-router.patch('/plans/:id/items/:itemId', adminAuth, async (req, res) => {
-  try {
-    const plan = await HealthPlan.findById(req.params.id);
-    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-    const item = plan.items.id(req.params.itemId);
-    if (!item) return res.status(404).json({ success: false, message: '项目不存在' });
-    const { status } = req.body;
-    if (status) {
-      item.status = status;
-      if (status === 'completed') item.completedAt = new Date();
-    }
-    await plan.save();
-    res.json({ success: true, data: plan });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
-// DELETE /api/admin/plans/:id
-router.delete('/plans/:id', adminAuth, async (req, res) => {
-  try {
-    await HealthPlan.findByIdAndDelete(req.params.id);
-    res.json({ success: true, message: '已删除' });
-  } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
-  }
-});
-
 // ── 年度健康管理方案 ────────────────────────────────────────────────────
+
+// GET /api/admin/annual-plans — 列出所有年度管理方案（供方案模板页展示）
+router.get('/annual-plans', adminAuth, async (req, res) => {
+  try {
+    const plans = await AnnualPlan.find()
+      .sort({ updatedAt: -1 })
+      .limit(200)
+      .populate('patientId', 'name phone');
+    res.json({ success: true, data: plans });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 router.get('/patients/:id/annual-plan', adminAuth, async (req, res) => {
   try {
     const { year } = req.query;

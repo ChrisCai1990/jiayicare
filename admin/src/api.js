@@ -95,15 +95,8 @@ export const adminAPI = {
   getAnnualPlanTemplate:    (id)   => req(`/annual-plan-templates/${id}`),
   saveAnnualPlanTemplate:   (id, data) => req(`/annual-plan-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
-  // 健康方案（全局管理视图）
-  getPlans:           (p = {})   => req('/plans?' + new URLSearchParams(p).toString()),
-  getPlan:            (id)       => req(`/plans/${id}`),
-  createPlan:         (data)     => req('/plans', { method: 'POST', body: JSON.stringify(data) }),
-  updatePlan:         (id, d)    => req(`/plans/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
-  deletePlan:         (id)       => req(`/plans/${id}`, { method: 'DELETE' }),
-  pushPlan:           (id)       => req(`/plans/${id}/push`, { method: 'PATCH' }),
-  updatePlanItem:     (planId, itemId, d) => req(`/plans/${planId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
-  getRequisitionItems:(q = '')   => req('/requisition-items' + (q ? `?q=${encodeURIComponent(q)}` : '')),
+  // 年度管理方案列表（方案模板页专用）
+  listAnnualPlans:    ()         => req('/annual-plans'),
 
   // 健康方案模板管理
   planTemplates:      (type)     => req('/plan-templates' + (type ? '?type=' + type : '')),
