@@ -491,8 +491,18 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                     style={{ fontSize: 13, flex: 1, minWidth: 0 }}
                   />
 
+                  {/* 随访人员 */}
+                  <select
+                    className="form-input"
+                    value={row.assignedTo}
+                    onChange={e => updateRow(row.id, 'assignedTo', e.target.value)}
+                    style={{ fontSize: 13, width: 110, flexShrink: 0 }}
+                  >
+                    <option value="">随访人员</option>
+                    {staffOptions}
+                  </select>
+
                   {/* 备注 */}
-                  <span style={{ fontSize: 13, color: '#4A6558', flexShrink: 0 }}>备注</span>
                   <input
                     className="form-input"
                     placeholder="备注"
