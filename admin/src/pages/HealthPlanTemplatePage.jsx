@@ -305,11 +305,24 @@ function NewPlanModal({ onClose, onSaved, nav, defaultType = 'annual_checkup' })
 
 function AnnualPlanEntryModal({ onClose, nav }) {
   const [patientId, setPatientId] = useState('')
+  const [creating, setCreating] = useState(false)
+  const toast = useToast()
 
-  const handleGo = () => {
-    if (!patientId) return
+  const handleGo = async () => {
     onClose()
-    nav(`/patients/${patientId}/annual-plan`)
+    if (patientId) {
+      nav(`/patients/${patientId}/annual-plan`)
+    } else {
+      setCreating(true)
+      try {
+        const res = await adminAPI.createAnnualPlanTemplate({})
+        nav(`/annual-plan/template/${res.data._id}`)
+      } catch (err) {
+        toast('创建失败：' + (err.message || '未知错误'))
+      } finally {
+        setCreating(false)
+      }
+    }
   }
 
   return (
@@ -321,17 +334,17 @@ function AnnualPlanEntryModal({ onClose, nav }) {
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           <div style={{ background: '#EFF6FF', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#0077B6' }}>
-            💡 年度管理方案为每位会员每年独立配置，包含医疗、监测、疫苗、生活方式等6大模块
+            💡 年度管理方案为每位会员每年独立配置，包含医疗、监测、疫苗、生活方式等6大模块。不选会员则生成通用模板。
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">搜索会员 *</label>
+            <label className="form-label">搜索会员（可选）</label>
             <PatientSearchInput value={patientId} onChange={setPatientId} />
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleGo} disabled={!patientId} style={{ opacity: patientId ? 1 : 0.5 }}>
-            进入年度方案配置 →
+          <button className="btn btn-primary" onClick={handleGo} disabled={creating}>
+            {creating ? '创建中...' : patientId ? '进入会员方案配置 →' : '生成方案模板 →'}
           </button>
         </div>
       </div>

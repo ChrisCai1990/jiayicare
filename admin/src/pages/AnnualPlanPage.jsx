@@ -262,14 +262,15 @@ function ModulePanel({ module: mod, moduleData, onChange }) {
   )
 }
 
-export default function AnnualPlanPage() {
-  const { id } = useParams()
+export default function AnnualPlanPage({ templateMode }) {
+  const { id, templateId } = useParams()
   const nav = useNavigate()
   const toast = useToast()
 
   const currentYear = new Date().getFullYear()
   const [year, setYear] = useState(currentYear)
   const [patient, setPatient] = useState(null)
+  const [templateName, setTemplateName] = useState('年度管理方案模板')
   const [planType, setPlanType] = useState('')
   const [moduleData, setModuleData] = useState({})
   const [notes, setNotes] = useState('')
@@ -281,17 +282,28 @@ export default function AnnualPlanPage() {
     const loadAll = async () => {
       setLoading(true)
       try {
-        const [patRes, planRes] = await Promise.all([
-          adminAPI.patientDetail(id),
-          adminAPI.getAnnualPlan(id, year),
-        ])
-        setPatient(patRes.data?.user || patRes.data)
-        if (planRes.data) {
-          setPlanType(planRes.data.planType || '')
-          setModuleData(planRes.data.moduleData || {})
-          setNotes(planRes.data.notes || '')
+        if (templateMode) {
+          const res = await adminAPI.getAnnualPlanTemplate(templateId)
+          if (res.data) {
+            setPlanType(res.data.planType || '')
+            setModuleData(res.data.moduleData || {})
+            setNotes(res.data.notes || '')
+            setTemplateName(res.data.name || '年度管理方案模板')
+            setYear(res.data.year || currentYear)
+          }
         } else {
-          setPlanType(''); setModuleData({}); setNotes('')
+          const [patRes, planRes] = await Promise.all([
+            adminAPI.patientDetail(id),
+            adminAPI.getAnnualPlan(id, year),
+          ])
+          setPatient(patRes.data?.user || patRes.data)
+          if (planRes.data) {
+            setPlanType(planRes.data.planType || '')
+            setModuleData(planRes.data.moduleData || {})
+            setNotes(planRes.data.notes || '')
+          } else {
+            setPlanType(''); setModuleData({}); setNotes('')
+          }
         }
         setDirty(false)
       } catch (err) {
@@ -301,7 +313,7 @@ export default function AnnualPlanPage() {
       }
     }
     loadAll()
-  }, [id, year])
+  }, [id, templateId, year, templateMode])
 
   const handleModuleChange = useCallback((moduleKey, field, value) => {
     setModuleData(prev => setModuleField(prev, moduleKey, field, value))
@@ -312,8 +324,13 @@ export default function AnnualPlanPage() {
     if (!planType) { toast('请先选择方案类型'); return }
     setSaving(true)
     try {
-      await adminAPI.saveAnnualPlan(id, { planType, moduleData, notes, year })
-      toast('年度方案已保存')
+      if (templateMode) {
+        await adminAPI.saveAnnualPlanTemplate(templateId, { name: templateName, planType, moduleData, notes, year })
+        toast('模板已保存')
+      } else {
+        await adminAPI.saveAnnualPlan(id, { planType, moduleData, notes, year })
+        toast('年度方案已保存')
+      }
       setDirty(false)
     } catch (err) {
       toast('保存失败：' + (err.message || '未知错误'))
@@ -322,19 +339,29 @@ export default function AnnualPlanPage() {
     }
   }
 
+  const backPath = templateMode ? '/health-plan-templates' : `/patients/${id}`
   const patientName = patient?.name || '会员'
 
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px' }}>
       {/* 顶部导航 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <button onClick={() => nav(`/patients/${id}`)}
+        <button onClick={() => nav(backPath)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}>
           ←
         </button>
         <div>
           <div style={{ fontSize: 18, fontWeight: 700, color: '#1A2B24' }}>年度健康管理方案</div>
-          <div style={{ fontSize: 13, color: '#8AA89C', marginTop: 2 }}>{patientName}</div>
+          {templateMode ? (
+            <input
+              value={templateName}
+              onChange={e => { setTemplateName(e.target.value); setDirty(true) }}
+              style={{ fontSize: 13, color: '#8AA89C', marginTop: 2, border: 'none', outline: 'none', background: 'transparent', width: 220, padding: 0 }}
+              placeholder="模板名称"
+            />
+          ) : (
+            <div style={{ fontSize: 13, color: '#8AA89C', marginTop: 2 }}>{patientName}</div>
+          )}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           <select value={year} onChange={e => setYear(Number(e.target.value))}
@@ -395,9 +422,9 @@ export default function AnnualPlanPage() {
 
           {/* 底部保存 */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
-            <button onClick={() => nav(`/patients/${id}`)}
+            <button onClick={() => nav(backPath)}
               style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
-              返回会员详情
+              {templateMode ? '返回方案列表' : '返回会员详情'}
             </button>
             <button onClick={handleSave} disabled={saving}
               style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '10px 28px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}>

@@ -17,6 +17,7 @@ const PlanTemplate = require('../models/PlanTemplate');
 const HealthPlan = require('../models/HealthPlan');
 const CheckupPlan = require('../models/CheckupPlan');
 const AnnualPlan = require('../models/AnnualPlan');
+const AnnualPlanTemplate = require('../models/AnnualPlanTemplate');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const UserChangeLog = require('../models/UserChangeLog');
 const MedicalReport = require('../models/MedicalReport');
@@ -1045,6 +1046,56 @@ router.put('/patients/:id/annual-plan', adminAuth, async (req, res) => {
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     res.json({ success: true, data: plan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 年度方案模板（无需绑定会员） ────────────────────────────────────────
+router.get('/annual-plan-templates', adminAuth, async (req, res) => {
+  try {
+    const templates = await AnnualPlanTemplate.find().sort({ createdAt: -1 });
+    res.json({ success: true, data: templates });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.post('/annual-plan-templates', adminAuth, async (req, res) => {
+  try {
+    const { name, planType, moduleData, notes, year } = req.body;
+    const template = await AnnualPlanTemplate.create({
+      name: name || '年度管理方案模板',
+      planType, moduleData: moduleData || {}, notes: notes || '',
+      year: year || new Date().getFullYear(),
+      createdBy: req.admin._id,
+    });
+    res.json({ success: true, data: template });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/annual-plan-templates/:id', adminAuth, async (req, res) => {
+  try {
+    const template = await AnnualPlanTemplate.findById(req.params.id);
+    if (!template) return res.status(404).json({ success: false, message: '模板不存在' });
+    res.json({ success: true, data: template });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.put('/annual-plan-templates/:id', adminAuth, async (req, res) => {
+  try {
+    const { name, planType, moduleData, notes, year } = req.body;
+    const template = await AnnualPlanTemplate.findByIdAndUpdate(
+      req.params.id,
+      { name, planType, moduleData: moduleData || {}, notes: notes || '', year: year || new Date().getFullYear(), createdBy: req.admin._id },
+      { new: true }
+    );
+    if (!template) return res.status(404).json({ success: false, message: '模板不存在' });
+    res.json({ success: true, data: template });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -90,6 +90,11 @@ export const adminAPI = {
   getAnnualPlan:  (patientId, year) => req(`/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   saveAnnualPlan: (patientId, data) => req(`/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  // 年度方案模板（无会员绑定）
+  createAnnualPlanTemplate: (data) => req('/annual-plan-templates', { method: 'POST', body: JSON.stringify(data) }),
+  getAnnualPlanTemplate:    (id)   => req(`/annual-plan-templates/${id}`),
+  saveAnnualPlanTemplate:   (id, data) => req(`/annual-plan-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
   // 健康方案（全局管理视图）
   getPlans:           (p = {})   => req('/plans?' + new URLSearchParams(p).toString()),
   getPlan:            (id)       => req(`/plans/${id}`),

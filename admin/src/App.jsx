@@ -97,6 +97,7 @@ export default function App() {
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/:id" element={<PatientDetailPage />} />
               <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
+              <Route path="annual-plan/template/:templateId" element={<AnnualPlanPage templateMode />} />
               <Route path="orders" element={<OrdersPage />} />
               <Route path="messages" element={<MessagesPage />} />
               <Route path="services" element={<ServicesPage />} />
