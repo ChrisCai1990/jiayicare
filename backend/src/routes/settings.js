@@ -659,30 +659,25 @@ router.get('/followup-plans', adminAuth, async (req, res) => {
 });
 
 router.post('/followup-plans', adminAuth, async (req, res) => {
-  const { name, formId, cycleType, cycleDuration, cycleUnit, cycleDate, defaultEmployeeId, notes } = req.body;
+  const { name, formId, cycles, defaultEmployeeId } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '方案名称不能为空' });
   const plan = await FollowUpPlan.create({
     name, formId: formId || null,
-    cycleType: cycleType || 'duration',
-    cycleDuration: cycleDuration || 30, cycleUnit: cycleUnit || 'day',
-    cycleDate: cycleDate || null,
+    cycles: cycles?.length ? cycles : [{ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', notes: '' }],
     defaultEmployeeId: defaultEmployeeId || null,
-    notes: notes || '',
   });
   res.json({ success: true, data: plan, message: '随访方案已创建' });
 });
 
 router.put('/followup-plans/:id', adminAuth, async (req, res) => {
-  const { name, formId, cycleType, cycleDuration, cycleUnit, cycleDate, defaultEmployeeId, notes, status } = req.body;
+  const { name, formId, cycles, defaultEmployeeId, status } = req.body;
   const plan = await FollowUpPlan.findByIdAndUpdate(
     req.params.id,
     {
       name, formId: formId || null,
-      cycleType: cycleType || 'duration',
-      cycleDuration, cycleUnit,
-      cycleDate: cycleDate || null,
+      cycles: cycles?.length ? cycles : [{ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', notes: '' }],
       defaultEmployeeId: defaultEmployeeId || null,
-      notes: notes || '', status,
+      status,
     },
     { new: true }
   ).populate('formId', 'name').populate('defaultEmployeeId', 'name role');
