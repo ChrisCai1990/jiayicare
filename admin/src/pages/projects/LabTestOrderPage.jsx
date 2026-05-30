@@ -28,6 +28,7 @@ export default function LabTestOrderPage() {
   const [mnemonicEdited, setMnemonicEdited] = useState(false)
   const [allLabItems, setAllLabItems] = useState([])
   const [addItemId, setAddItemId] = useState('')
+  const [itemSearch, setItemSearch] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -46,7 +47,7 @@ export default function LabTestOrderPage() {
   useEffect(() => { setPage(1); load(1) }, [q])
   useEffect(() => { load() }, [page])
 
-  const openCreate = () => { setEditId(null); setForm(EMPTY); setMnemonicEdited(false); setAddItemId(''); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setForm(EMPTY); setMnemonicEdited(false); setAddItemId(''); setItemSearch(''); setError(''); setShowModal(true) }
   const openEdit = item => {
     setEditId(item._id)
     setForm({
@@ -57,7 +58,7 @@ export default function LabTestOrderPage() {
       participatesInDiscount: item.participatesInDiscount !== false,
       remark: item.remark || '',
     })
-    setMnemonicEdited(true); setAddItemId(''); setError(''); setShowModal(true)
+    setMnemonicEdited(true); setAddItemId(''); setItemSearch(''); setError(''); setShowModal(true)
   }
 
   const autoCalcPrices = () => {
@@ -80,10 +81,12 @@ export default function LabTestOrderPage() {
     finally { setSaving(false) }
   }
 
-  const addItem = () => {
-    if (!addItemId || form.items.includes(addItemId)) return
-    setForm(f => ({ ...f, items: [...f.items, addItemId] }))
+  const addItem = id => {
+    const targetId = id || addItemId
+    if (!targetId || form.items.includes(targetId)) return
+    setForm(f => ({ ...f, items: [...f.items, targetId] }))
     setAddItemId('')
+    setItemSearch('')
   }
   const removeItem = id => setForm(f => ({ ...f, items: f.items.filter(i => i !== id) }))
 
@@ -217,22 +220,48 @@ export default function LabTestOrderPage() {
 
               {/* 关联检验项目 */}
               <div style={{ marginTop: 16 }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                  <label className="form-label" style={{ marginBottom: 0 }}>关联检验项目</label>
-                </div>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <select
+                <label className="form-label" style={{ marginBottom: 8, display: 'block' }}>关联检验项目</label>
+                <div style={{ position: 'relative', marginBottom: 8 }}>
+                  <input
                     className="form-input"
-                    style={{ flex: 1 }}
-                    value={addItemId}
-                    onChange={e => setAddItemId(e.target.value)}
-                  >
-                    <option value="">— 选择检验项目 —</option>
-                    {unselectedItems.map(i => (
-                      <option key={i._id} value={i._id}>{i.name}{i.mnemonic ? ` (${i.mnemonic})` : ''}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="btn btn-secondary" onClick={addItem} disabled={!addItemId}>添加</button>
+                    placeholder="搜索项目名称或助记码"
+                    value={itemSearch}
+                    onChange={e => { setItemSearch(e.target.value); setAddItemId('') }}
+                    autoComplete="off"
+                  />
+                  {itemSearch && (() => {
+                    const kw = itemSearch.toLowerCase()
+                    const matched = unselectedItems.filter(i =>
+                      i.name.toLowerCase().includes(kw) ||
+                      (i.mnemonic || '').toLowerCase().includes(kw)
+                    ).slice(0, 10)
+                    return (
+                      <div style={{
+                        position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 100,
+                        background: '#fff', border: '1px solid #E5E7EB', borderRadius: 6,
+                        boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 220, overflowY: 'auto',
+                      }}>
+                        {matched.length === 0 ? (
+                          <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 13 }}>无匹配项目</div>
+                        ) : matched.map(i => (
+                          <div
+                            key={i._id}
+                            onClick={() => addItem(i._id)}
+                            style={{
+                              padding: '8px 14px', cursor: 'pointer', fontSize: 13,
+                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                              borderBottom: '1px solid #F3F4F6',
+                            }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#F0FDF4'}
+                            onMouseLeave={e => e.currentTarget.style.background = ''}
+                          >
+                            <span>{i.name}</span>
+                            {i.mnemonic && <span style={{ color: '#9CA3AF', fontFamily: 'monospace', fontSize: 11 }}>{i.mnemonic}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  })()}
                 </div>
 
                 {selectedItems.length === 0 ? (

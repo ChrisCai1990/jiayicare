@@ -651,28 +651,41 @@ router.delete('/followup-forms/:id', adminAuth, async (req, res) => {
 
 // ── 随访方案 ────────────────────────────────────────────────────
 router.get('/followup-plans', adminAuth, async (req, res) => {
-  const list = await FollowUpPlan.find().populate('formId', 'name').sort({ createdAt: -1 });
+  const list = await FollowUpPlan.find()
+    .populate('formId', 'name')
+    .populate('defaultEmployeeId', 'name role')
+    .sort({ createdAt: -1 });
   res.json({ success: true, data: list });
 });
 
 router.post('/followup-plans', adminAuth, async (req, res) => {
-  const { name, formId, cycleDuration, cycleUnit, defaultRole, notes } = req.body;
+  const { name, formId, cycleType, cycleDuration, cycleUnit, cycleDate, defaultEmployeeId, notes } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '方案名称不能为空' });
   const plan = await FollowUpPlan.create({
     name, formId: formId || null,
+    cycleType: cycleType || 'duration',
     cycleDuration: cycleDuration || 30, cycleUnit: cycleUnit || 'day',
-    defaultRole: defaultRole || '', notes: notes || '',
+    cycleDate: cycleDate || null,
+    defaultEmployeeId: defaultEmployeeId || null,
+    notes: notes || '',
   });
   res.json({ success: true, data: plan, message: '随访方案已创建' });
 });
 
 router.put('/followup-plans/:id', adminAuth, async (req, res) => {
-  const { name, formId, cycleDuration, cycleUnit, defaultRole, notes, status } = req.body;
+  const { name, formId, cycleType, cycleDuration, cycleUnit, cycleDate, defaultEmployeeId, notes, status } = req.body;
   const plan = await FollowUpPlan.findByIdAndUpdate(
     req.params.id,
-    { name, formId: formId || null, cycleDuration, cycleUnit, defaultRole, notes: notes || '', status },
+    {
+      name, formId: formId || null,
+      cycleType: cycleType || 'duration',
+      cycleDuration, cycleUnit,
+      cycleDate: cycleDate || null,
+      defaultEmployeeId: defaultEmployeeId || null,
+      notes: notes || '', status,
+    },
     { new: true }
-  ).populate('formId', 'name');
+  ).populate('formId', 'name').populate('defaultEmployeeId', 'name role');
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   res.json({ success: true, data: plan, message: '随访方案已更新' });
 });
