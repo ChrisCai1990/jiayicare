@@ -106,14 +106,20 @@ function PatientSearchInput({ value, onChange }) {
 
 const today = () => new Date().toISOString().slice(0, 10)
 
-// 预设随访主题
+// 计算 N 天后的日期
+const addDays = (n) => {
+  const d = new Date()
+  d.setDate(d.getDate() + parseInt(n, 10))
+  return d.toISOString().slice(0, 10)
+}
+
+// 预设随访主题（记录模式用）
 const THEME_OPTIONS = [
   '异常复查', '日常血压监测', '日常体重监测', '血糖监测',
   '用药提醒', '生活方式指导', '营养干预跟进', '心理疏导',
   '运动康复跟进', '疫苗接种提醒',
 ]
 
-// 主题对应的内容模板
 const THEME_TEMPLATES = {
   '异常复查': '本次随访主要确认上次检查异常指标复查情况。\n复查结果：\n会员反馈：\n建议：',
   '日常血压监测': '本次随访记录日常血压情况。\n血压读数：\n会员自述症状：\n用药情况：\n建议：',
@@ -127,49 +133,31 @@ const THEME_TEMPLATES = {
   '疫苗接种提醒': '本次随访提醒疫苗接种计划。\n建议接种疫苗：\n接种时间建议：\n注意事项：',
 }
 
-// 打卡项目选项
-const CHECKIN_ITEM_OPTIONS = [
-  { v: 'bloodPressure', l: '血压' },
-  { v: 'bloodSugar',    l: '血糖' },
-  { v: 'heartRate',     l: '心率' },
-  { v: 'weight',        l: '体重' },
-  { v: 'sleep',         l: '睡眠' },
-  { v: 'diet',          l: '饮食' },
-  { v: 'exercise',      l: '运动' },
-  { v: 'water',         l: '饮水' },
-  { v: 'alcohol',       l: '饮酒' },
-]
-
-// 主题对应的默认打卡项目
-const THEME_DEFAULT_CHECKIN = {
-  '日常血压监测': ['bloodPressure'],
-  '日常体重监测': ['weight'],
-  '血糖监测':     ['bloodSugar'],
-  '生活方式指导': ['diet', 'exercise', 'water'],
-  '营养干预跟进': ['diet', 'weight'],
-  '运动康复跟进': ['exercise'],
-  '异常复查':     ['bloodPressure', 'bloodSugar'],
-}
-
-// 空行模板
+// 计划模式每行空模板
 const emptyRow = () => ({
   id: Date.now() + Math.random(),
-  date: today(),
-  theme: '',
-  content: '',
-  assignedTo: '',
-  checkInItems: [],
-  formId: '',
+  daysAfter: '',   // X天后（与 date 二选一）
+  date: '',        // 具体日期
+  assignedTo: '',  // 计划人员
+  notes: '',       // 备注
 })
+
+const TYPE_OPTIONS = [
+  { v: 'phone',  l: '电话' },
+  { v: 'wechat', l: '微信' },
+  { v: 'visit',  l: '上门' },
+  { v: 'video',  l: '视频' },
+  { v: 'other',  l: '其他' },
+]
 
 export default function FollowUpModal({ patientId, patientName, defaultTheme, onClose, onSaved }) {
   const [staffList, setStaffList] = useState([])
   const [followupForms, setFollowupForms] = useState([])
-  const [mode, setMode] = useState(defaultTheme ? 'plan' : 'record')  // record | plan
+  const [mode, setMode] = useState(defaultTheme ? 'plan' : 'record')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
-  // 单条记录模式
+  // ── 记录模式状态 ──
   const [form, setForm] = useState({
     patientId: patientId || '',
     date: today(),
@@ -179,8 +167,12 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     assignedTo: '',
   })
 
-  // 计划模式：多行
-  const [planRows, setPlanRows] = useState([{ ...emptyRow(), theme: defaultTheme || '' }])
+  // ── 计划模式状态 ──
+  const [planName, setPlanName] = useState('')
+  const [visitTypeForm, setVisitTypeForm] = useState(true)       // 表单随访
+  const [visitTypeRevisit, setVisitTypeRevisit] = useState(false) // 复诊随访
+  const [planFormId, setPlanFormId] = useState('')
+  const [planRows, setPlanRows] = useState([emptyRow()])
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
 
   useEffect(() => {
@@ -198,6 +190,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     }
   }
 
+  // ── 记录模式提交 ──
   const handleSingleSubmit = async (e) => {
     if (e) e.preventDefault()
     const pid = form.patientId
@@ -219,69 +212,88 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     } finally { setSaving(false) }
   }
 
+  // ── 计划模式提交 ──
   const handlePlanSubmit = async () => {
     const pid = planPatientId
     if (!pid) { setError('请选择会员'); return }
-    const validRows = planRows.filter(r => r.date)
-    if (validRows.length === 0) { setError('请至少填写一行计划时间'); return }
+    if (!planName.trim()) { setError('请填写方案名称'); return }
+    if (!visitTypeForm && !visitTypeRevisit) { setError('请至少选择一种随访类型'); return }
+    const validRows = planRows.filter(r => r.daysAfter || r.date)
+    if (validRows.length === 0) { setError('请至少填写一行随访时间'); return }
     setSaving(true); setError('')
     try {
-      await Promise.all(validRows.map(row =>
-        staffAPI.createFollowUp({
+      await Promise.all(validRows.map(row => {
+        const resolvedDate = row.date
+          ? row.date
+          : row.daysAfter ? addDays(parseInt(row.daysAfter, 10)) : today()
+        return staffAPI.createFollowUp({
           patientId: pid,
-          date: row.date,
+          date: resolvedDate,
           type: 'phone',
           status: 'planned',
-          theme: row.theme,
-          content: row.content,
+          theme: planName,
+          content: row.notes,
           assignedTo: row.assignedTo || null,
-          checkInItems: row.checkInItems || [],
-          formId: row.formId || null,
+          formId: visitTypeForm ? (planFormId || null) : null,
         })
-      ))
+      }))
       onSaved()
     } catch (err) {
       setError(err.message || '保存失败')
     } finally { setSaving(false) }
   }
 
-  const updateRow = (id, key, val) => {
+  // ── 计划行操作 ──
+  const updateRow = (id, key, val) =>
     setPlanRows(rows => rows.map(r => r.id === id ? { ...r, [key]: val } : r))
-    if (key === 'theme') {
-      setPlanRows(rows => rows.map(r => {
-        if (r.id !== id) return r
-        const defaults = THEME_DEFAULT_CHECKIN[val] || []
-        return {
-          ...r,
-          theme: val,
-          content: r.content || (THEME_TEMPLATES[val] || ''),
-          checkInItems: r.checkInItems?.length > 0 ? r.checkInItems : defaults,
-        }
-      }))
-    }
-  }
 
-  const toggleCheckinItem = (rowId, itemVal) => {
-    setPlanRows(rows => rows.map(r => {
-      if (r.id !== rowId) return r
-      const current = r.checkInItems || []
-      const next = current.includes(itemVal)
-        ? current.filter(v => v !== itemVal)
-        : [...current, itemVal]
-      return { ...r, checkInItems: next }
-    }))
-  }
+  // 填天数时清日期，填日期时清天数（互斥）
+  const setRowDaysAfter = (id, val) =>
+    setPlanRows(rows => rows.map(r =>
+      r.id === id ? { ...r, daysAfter: val, date: val ? '' : r.date } : r
+    ))
+
+  const setRowDate = (id, val) =>
+    setPlanRows(rows => rows.map(r =>
+      r.id === id ? { ...r, date: val, daysAfter: val ? '' : r.daysAfter } : r
+    ))
 
   const addRow = () => setPlanRows(rows => [...rows, emptyRow()])
-  const removeRow = (id) => setPlanRows(rows => rows.filter(r => r.id !== id))
+  const removeRow = (id) => {
+    if (planRows.length <= 1) return
+    setPlanRows(rows => rows.filter(r => r.id !== id))
+  }
 
   const staffOptions = staffList.map(s => (
     <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>
   ))
 
+  const validPlanCount = planRows.filter(r => r.daysAfter || r.date).length
+
+  // ── 按钮样式 ──
+  const btnMinus = (disabled) => ({
+    width: 28, height: 28, borderRadius: 6,
+    border: `1px solid ${disabled ? '#E0D9CE' : '#DC3545'}`,
+    background: '#fff',
+    color: disabled ? '#ccc' : '#DC3545',
+    cursor: disabled ? 'not-allowed' : 'pointer',
+    fontSize: 18, fontWeight: 700,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, padding: 0,
+  })
+
+  const btnPlus = {
+    width: 28, height: 28, borderRadius: 6,
+    border: '1px solid #1E6B50',
+    background: '#fff', color: '#1E6B50',
+    cursor: 'pointer', fontSize: 18, fontWeight: 700,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexShrink: 0, padding: 0,
+  }
+
   return (
     <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 620, maxHeight: '92vh', overflowY: 'auto' }}>
+      <div className="modal" style={{ maxWidth: 800, maxHeight: '92vh', overflowY: 'auto' }}>
         <div className="modal-header">
           <h3 className="modal-title">
             {patientName ? `随访 · ${patientName}` : '随访'}
@@ -307,10 +319,11 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
 
         {error && <div className="login-err" style={{ margin: '0 20px 12px' }}>⚠️ {error}</div>}
 
-        {/* ── 记录随访模式 ── */}
+        {/* ══════════════════════════════════
+            记录随访模式（不改动）
+        ══════════════════════════════════ */}
         {mode === 'record' && (
           <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {/* 会员选择 */}
             {!patientId && (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">搜索会员 *</label>
@@ -329,16 +342,11 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">随访方式</label>
                 <select className="form-input" value={form.type} onChange={set('type')}>
-                  <option value="phone">电话</option>
-                  <option value="wechat">微信</option>
-                  <option value="visit">上门</option>
-                  <option value="video">视频</option>
-                  <option value="other">其他</option>
+                  {TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
                 </select>
               </div>
             </div>
 
-            {/* 随访主题 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">随访主题</label>
               <select className="form-input" value={form.theme} onChange={e => applyTemplate(e.target.value)}>
@@ -347,7 +355,6 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               </select>
             </div>
 
-            {/* 随访内容 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <label className="form-label" style={{ marginBottom: 0 }}>随访内容</label>
@@ -366,7 +373,6 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               />
             </div>
 
-            {/* 随访人员 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">随访人员（可选，默认为当前登录人）</label>
               <select className="form-input" value={form.assignedTo} onChange={set('assignedTo')}>
@@ -377,130 +383,194 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           </div>
         )}
 
-        {/* ── 新建计划模式 ── */}
+        {/* ══════════════════════════════════
+            新建计划模式（重构）
+        ══════════════════════════════════ */}
         {mode === 'plan' && (
-          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+            {/* 会员选择 */}
             {!patientId && (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">搜索会员 *</label>
-                <PatientSearchInput
-                  value={planPatientId}
-                  onChange={pid => setPlanPatientId(pid)}
-                />
+                <PatientSearchInput value={planPatientId} onChange={pid => setPlanPatientId(pid)} />
               </div>
             )}
 
-            <div style={{ fontSize: 13, color: '#8AA89C', background: '#f9f7f3', borderRadius: 8, padding: '8px 12px' }}>
-              💡 每行生成一条「计划中」随访任务，推送到对应人员的随访记录中
+            {/* 方案名称 */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">方案名称 *</label>
+              <input
+                className="form-input"
+                value={planName}
+                onChange={e => setPlanName(e.target.value)}
+                placeholder="如：高血压月度随访"
+              />
             </div>
 
-            {/* 多行计划 */}
-            {planRows.map((row, idx) => (
-              <div key={row.id} style={{ background: '#f9f7f3', borderRadius: 10, padding: 14, position: 'relative' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 10 }}>
-                  计划 {idx + 1}
-                </div>
-                {planRows.length > 1 && (
-                  <button type="button" onClick={() => removeRow(row.id)}
-                    style={{ position: 'absolute', top: 12, right: 12, background: 'none', border: 'none', fontSize: 16, color: '#DC3545', cursor: 'pointer' }}>
-                    ✕
-                  </button>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
-                  <div>
-                    <label className="form-label" style={{ fontSize: 12 }}>计划时间 *</label>
-                    <input className="form-input" type="date" value={row.date}
-                      onChange={e => updateRow(row.id, 'date', e.target.value)} />
-                  </div>
-                  <div>
-                    <label className="form-label" style={{ fontSize: 12 }}>随访主题</label>
-                    <select className="form-input" value={row.theme} onChange={e => updateRow(row.id, 'theme', e.target.value)}>
-                      <option value="">-- 选择主题 --</option>
-                      {THEME_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <div style={{ marginBottom: 10 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                    <label className="form-label" style={{ fontSize: 12, marginBottom: 0 }}>随访内容</label>
-                    {row.theme && THEME_TEMPLATES[row.theme] && (
-                      <button type="button" onClick={() => updateRow(row.id, 'content', THEME_TEMPLATES[row.theme])}
-                        style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 8px', cursor: 'pointer' }}>
-                        填入模板
-                      </button>
-                    )}
-                  </div>
-                  <textarea className="form-input" rows={3} value={row.content}
-                    onChange={e => updateRow(row.id, 'content', e.target.value)}
-                    placeholder="计划随访内容..." style={{ resize: 'vertical' }} />
-                </div>
-                {followupForms.length > 0 && (
-                  <div style={{ marginBottom: 10 }}>
-                    <label className="form-label" style={{ fontSize: 12 }}>关联随访表单（可选）</label>
-                    <select className="form-input" value={row.formId || ''}
-                      onChange={e => updateRow(row.id, 'formId', e.target.value)}>
-                      <option value="">-- 不使用表单 --</option>
-                      {followupForms.map(f => (
-                        <option key={f._id} value={f._id}>{f.name}</option>
-                      ))}
-                    </select>
-                    {row.formId && (
-                      <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 3 }}>
-                        ✓ 已关联「{followupForms.find(f => f._id === row.formId)?.name}」，会员随访时将看到此表单
-                      </div>
-                    )}
+            {/* 随访类型 */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">随访类型 *</label>
+              <div style={{ display: 'flex', gap: 28, alignItems: 'center', marginTop: 6 }}>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={visitTypeForm}
+                    onChange={e => setVisitTypeForm(e.target.checked)}
+                    style={{ width: 16, height: 16, accentColor: '#1E6B50', cursor: 'pointer' }}
+                  />
+                  <span>表单随访</span>
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 14, cursor: 'pointer', userSelect: 'none' }}>
+                  <input
+                    type="checkbox"
+                    checked={visitTypeRevisit}
+                    onChange={e => setVisitTypeRevisit(e.target.checked)}
+                    style={{ width: 16, height: 16, accentColor: '#1E6B50', cursor: 'pointer' }}
+                  />
+                  <span>复诊随访</span>
+                </label>
+              </div>
+            </div>
+
+            {/* 关联随访表单（仅表单随访时显示） */}
+            {visitTypeForm && (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">随访表单</label>
+                <select className="form-input" value={planFormId} onChange={e => setPlanFormId(e.target.value)}>
+                  <option value="">-- 不使用表单 --</option>
+                  {followupForms.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
+                </select>
+                {planFormId && (
+                  <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 4 }}>
+                    ✓ 已关联「{followupForms.find(f => f._id === planFormId)?.name}」，会员随访时将看到此表单
                   </div>
                 )}
-                <div>
-                  <label className="form-label" style={{ fontSize: 12 }}>计划人员</label>
-                  <select className="form-input" value={row.assignedTo}
-                    onChange={e => updateRow(row.id, 'assignedTo', e.target.value)}>
-                    <option value="">-- 当前登录人 --</option>
+              </div>
+            )}
+
+            {/* ── 计划随访明细 ── */}
+            <div>
+              <div style={{
+                fontSize: 13, fontWeight: 600, color: '#1A2B24',
+                marginBottom: 10, paddingBottom: 8,
+                borderBottom: '1px solid #E0D9CE',
+              }}>
+                计划随访明细
+              </div>
+
+              {/* 表头 */}
+              <div style={{
+                display: 'grid',
+                gridTemplateColumns: '180px 160px 160px 1fr 60px',
+                gap: 8,
+                fontSize: 11, color: '#8AA89C',
+                padding: '0 0 6px 0',
+                marginBottom: 4,
+              }}>
+                <div>* 计划时间（N天后）</div>
+                <div>或 具体日期</div>
+                <div>计划人员</div>
+                <div>备注</div>
+                <div></div>
+              </div>
+
+              {/* 每行 */}
+              {planRows.map((row, idx) => (
+                <div
+                  key={row.id}
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: '180px 160px 160px 1fr 60px',
+                    gap: 8,
+                    alignItems: 'center',
+                    padding: '6px 0',
+                    borderBottom: '1px solid #f5f2ec',
+                  }}
+                >
+                  {/* 天后 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input
+                      className="form-input"
+                      type="number"
+                      min="1"
+                      placeholder="天数"
+                      value={row.daysAfter}
+                      onChange={e => setRowDaysAfter(row.id, e.target.value)}
+                      style={{ fontSize: 13, width: 80, flexShrink: 0 }}
+                    />
+                    <span style={{ fontSize: 12, color: '#4A6558', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
+                      天后随访<br />
+                      <span style={{ fontSize: 10, color: '#aaa' }}>（不含当天）</span>
+                    </span>
+                  </div>
+
+                  {/* 具体日期 */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>或</span>
+                    <input
+                      className="form-input"
+                      type="date"
+                      value={row.date}
+                      onChange={e => setRowDate(row.id, e.target.value)}
+                      style={{ fontSize: 13, flex: 1 }}
+                    />
+                  </div>
+
+                  {/* 计划人员 */}
+                  <select
+                    className="form-input"
+                    value={row.assignedTo}
+                    onChange={e => updateRow(row.id, 'assignedTo', e.target.value)}
+                    style={{ fontSize: 13 }}
+                  >
+                    <option value="">当前登录人</option>
                     {staffOptions}
                   </select>
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <label className="form-label" style={{ fontSize: 12 }}>今日打卡项目（推送给会员）</label>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                    {CHECKIN_ITEM_OPTIONS.map(opt => {
-                      const selected = (row.checkInItems || []).includes(opt.v)
-                      return (
-                        <button
-                          key={opt.v}
-                          type="button"
-                          onClick={() => toggleCheckinItem(row.id, opt.v)}
-                          style={{
-                            padding: '4px 10px', borderRadius: 20, fontSize: 12, cursor: 'pointer',
-                            border: selected ? '1px solid #1E6B50' : '1px solid #E0D9CE',
-                            background: selected ? '#1E6B50' : '#f9f7f3',
-                            color: selected ? '#fff' : '#4A6558',
-                            fontWeight: selected ? 600 : 400,
-                          }}
-                        >{opt.l}</button>
-                      )
-                    })}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 4 }}>
-                    选中的项目将在会员端"今日健康打卡"中显示
-                  </div>
-                </div>
-              </div>
-            ))}
 
-            <button type="button" onClick={addRow}
-              style={{ padding: '10px', borderRadius: 8, border: '1px dashed #1E6B50', background: 'none',
-                color: '#1E6B50', cursor: 'pointer', fontSize: 14, fontWeight: 500 }}>
-              ＋ 新增一行随访计划
-            </button>
+                  {/* 备注 */}
+                  <input
+                    className="form-input"
+                    placeholder="备注（随访内容要点）"
+                    value={row.notes}
+                    onChange={e => updateRow(row.id, 'notes', e.target.value)}
+                    style={{ fontSize: 13 }}
+                  />
+
+                  {/* ± 按钮 */}
+                  <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
+                    <button
+                      type="button"
+                      onClick={() => removeRow(row.id)}
+                      disabled={planRows.length === 1}
+                      style={btnMinus(planRows.length === 1)}
+                    >−</button>
+                    {idx === planRows.length - 1 && (
+                      <button type="button" onClick={addRow} style={btnPlus}>+</button>
+                    )}
+                  </div>
+                </div>
+              ))}
+
+              <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
+                💡 填"天数"将从今天起计算日期（如 30 天后）；或直接选择具体日期，两者互斥
+              </div>
+            </div>
           </div>
         )}
 
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary"
+          <button
+            className="btn btn-primary"
             onClick={mode === 'record' ? handleSingleSubmit : handlePlanSubmit}
-            disabled={saving}>
-            {saving ? '保存中...' : mode === 'record' ? '保存随访记录' : `创建 ${planRows.filter(r => r.date).length} 条计划`}
+            disabled={saving}
+          >
+            {saving
+              ? '保存中...'
+              : mode === 'record'
+              ? '保存随访记录'
+              : `创建 ${validPlanCount} 条计划`}
           </button>
         </div>
       </div>
