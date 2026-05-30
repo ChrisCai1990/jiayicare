@@ -283,6 +283,19 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
+          {/* Annual plan entry */}
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>📋 年度健康管理方案</span>
+              <button className="btn btn-primary btn-sm" onClick={() => nav(`/patients/${id}/annual-plan`)}>
+                配置方案 →
+              </button>
+            </div>
+            <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>
+              配置会员的年度健康管理方案，包含医疗问题解决、全专联合、日常监测、疫苗接种、生活方式、体检方案六大模块
+            </p>
+          </div>
+
           {/* Health profile */}
           {user.healthProfile && (
             <div className="card">

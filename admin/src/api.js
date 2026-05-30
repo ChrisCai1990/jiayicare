@@ -86,6 +86,10 @@ export const adminAPI = {
   batchToggleProducts:(ids, status) => req('/products/batch-toggle', { method: 'PATCH', body: JSON.stringify({ ids, status }) }),
   deleteProduct:      (id)       => req(`/products/${id}`, { method: 'DELETE' }),
 
+  // 年度健康管理方案
+  getAnnualPlan:  (patientId, year) => req(`/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
+  saveAnnualPlan: (patientId, data) => req(`/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
+
   // 健康方案模板管理
   planTemplates:      (type)     => req('/plan-templates' + (type ? '?type=' + type : '')),
   createPlanTemplate: (data)     => req('/plan-templates', { method: 'POST', body: JSON.stringify(data) }),

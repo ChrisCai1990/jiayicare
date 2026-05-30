@@ -12,6 +12,7 @@ import QuestionnairePage from './pages/QuestionnairePage'
 import ChangeLogsPage from './pages/ChangeLogsPage'
 import ProductsPage from './pages/ProductsPage'
 import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
+import AnnualPlanPage from './pages/AnnualPlanPage'
 import Layout from './components/Layout'
 
 // 基本设置
@@ -94,6 +95,7 @@ export default function App() {
               <Route path="dashboard" element={<DashboardPage />} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/:id" element={<PatientDetailPage />} />
+              <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
               <Route path="orders" element={<OrdersPage />} />
               <Route path="messages" element={<MessagesPage />} />
               <Route path="services" element={<ServicesPage />} />
