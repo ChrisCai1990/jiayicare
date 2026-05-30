@@ -90,6 +90,16 @@ export const adminAPI = {
   getAnnualPlan:  (patientId, year) => req(`/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   saveAnnualPlan: (patientId, data) => req(`/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
 
+  // 健康方案（全局管理视图）
+  getPlans:           (p = {})   => req('/plans?' + new URLSearchParams(p).toString()),
+  getPlan:            (id)       => req(`/plans/${id}`),
+  createPlan:         (data)     => req('/plans', { method: 'POST', body: JSON.stringify(data) }),
+  updatePlan:         (id, d)    => req(`/plans/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  deletePlan:         (id)       => req(`/plans/${id}`, { method: 'DELETE' }),
+  pushPlan:           (id)       => req(`/plans/${id}/push`, { method: 'PATCH' }),
+  updatePlanItem:     (planId, itemId, d) => req(`/plans/${planId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
+  getRequisitionItems:(q = '')   => req('/requisition-items' + (q ? `?q=${encodeURIComponent(q)}` : '')),
+
   // 健康方案模板管理
   planTemplates:      (type)     => req('/plan-templates' + (type ? '?type=' + type : '')),
   createPlanTemplate: (data)     => req('/plan-templates', { method: 'POST', body: JSON.stringify(data) }),
