@@ -449,111 +449,76 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               </div>
             )}
 
-            {/* ── 计划随访明细 ── */}
+            {/* ── 计划随访时间 ── */}
             <div>
-              <div style={{
-                fontSize: 13, fontWeight: 600, color: '#1A2B24',
-                marginBottom: 10, paddingBottom: 8,
-                borderBottom: '1px solid #E0D9CE',
-              }}>
-                计划随访明细
-              </div>
-
-              {/* 表头 */}
-              <div style={{
-                display: 'grid',
-                gridTemplateColumns: '180px 160px 160px 1fr 60px',
-                gap: 8,
-                fontSize: 11, color: '#8AA89C',
-                padding: '0 0 6px 0',
-                marginBottom: 4,
-              }}>
-                <div>* 计划时间（N天后）</div>
-                <div>或 具体日期</div>
-                <div>计划人员</div>
-                <div>备注</div>
-                <div></div>
-              </div>
-
-              {/* 每行 */}
               {planRows.map((row, idx) => (
                 <div
                   key={row.id}
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: '180px 160px 160px 1fr 60px',
-                    gap: 8,
+                    display: 'flex',
                     alignItems: 'center',
-                    padding: '6px 0',
-                    borderBottom: '1px solid #f5f2ec',
+                    gap: 8,
+                    padding: '8px 0',
+                    borderBottom: '1px solid #F5F2EC',
                   }}
                 >
-                  {/* 天后 */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <input
-                      className="form-input"
-                      type="number"
-                      min="1"
-                      placeholder="天数"
-                      value={row.daysAfter}
-                      onChange={e => setRowDaysAfter(row.id, e.target.value)}
-                      style={{ fontSize: 13, width: 80, flexShrink: 0 }}
-                    />
-                    <span style={{ fontSize: 12, color: '#4A6558', whiteSpace: 'nowrap', lineHeight: 1.3 }}>
-                      天后随访<br />
-                      <span style={{ fontSize: 10, color: '#aaa' }}>（不含当天）</span>
-                    </span>
-                  </div>
+                  {/* 行标签 */}
+                  <span style={{ fontSize: 13, color: '#1A2B24', width: 96, flexShrink: 0, lineHeight: 1.4 }}>
+                    <span style={{ color: '#DC2626' }}>* </span>计划随访时间
+                  </span>
 
-                  {/* 具体日期 */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <span style={{ fontSize: 11, color: '#bbb', flexShrink: 0 }}>或</span>
-                    <input
-                      className="form-input"
-                      type="date"
-                      value={row.date}
-                      onChange={e => setRowDate(row.id, e.target.value)}
-                      style={{ fontSize: 13, flex: 1 }}
-                    />
-                  </div>
-
-                  {/* 计划人员 */}
-                  <select
-                    className="form-input"
-                    value={row.assignedTo}
-                    onChange={e => updateRow(row.id, 'assignedTo', e.target.value)}
-                    style={{ fontSize: 13 }}
-                  >
-                    <option value="">当前登录人</option>
-                    {staffOptions}
-                  </select>
-
-                  {/* 备注 */}
+                  {/* 随访时间（天数） */}
                   <input
                     className="form-input"
-                    placeholder="备注（随访内容要点）"
+                    type="number"
+                    min="1"
+                    placeholder="随访时间"
+                    value={row.daysAfter}
+                    onChange={e => setRowDaysAfter(row.id, e.target.value)}
+                    style={{ fontSize: 13, width: 88, flexShrink: 0 }}
+                  />
+                  <span style={{ fontSize: 12, color: '#4A6558', whiteSpace: 'nowrap', lineHeight: 1.3, flexShrink: 0 }}>
+                    天后随访<br />
+                    <span style={{ fontSize: 10, color: '#aaa' }}>（不含当天）</span>
+                  </span>
+
+                  {/* 具体日期 */}
+                  <input
+                    className="form-input"
+                    type="date"
+                    value={row.date}
+                    onChange={e => setRowDate(row.id, e.target.value)}
+                    style={{ fontSize: 13, flex: 1, minWidth: 0 }}
+                  />
+
+                  {/* 备注 */}
+                  <span style={{ fontSize: 13, color: '#4A6558', flexShrink: 0 }}>备注</span>
+                  <input
+                    className="form-input"
+                    placeholder="备注"
                     value={row.notes}
                     onChange={e => updateRow(row.id, 'notes', e.target.value)}
-                    style={{ fontSize: 13 }}
+                    style={{ fontSize: 13, flex: 1, minWidth: 0 }}
                   />
 
                   {/* ± 按钮 */}
-                  <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end' }}>
-                    <button
-                      type="button"
-                      onClick={() => removeRow(row.id)}
-                      disabled={planRows.length === 1}
-                      style={btnMinus(planRows.length === 1)}
-                    >−</button>
-                    {idx === planRows.length - 1 && (
-                      <button type="button" onClick={addRow} style={btnPlus}>+</button>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => removeRow(row.id)}
+                    style={{
+                      ...btnMinus(false),
+                      visibility: planRows.length === 1 ? 'hidden' : 'visible',
+                      flexShrink: 0,
+                    }}
+                  >−</button>
+                  {idx === planRows.length - 1 && (
+                    <button type="button" onClick={addRow} style={{ ...btnPlus, flexShrink: 0 }}>+</button>
+                  )}
                 </div>
               ))}
 
               <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
-                💡 填"天数"将从今天起计算日期（如 30 天后）；或直接选择具体日期，两者互斥
+                💡 填天数将从今天起计算随访日期；或直接选择具体日期，两者互斥
               </div>
             </div>
           </div>
