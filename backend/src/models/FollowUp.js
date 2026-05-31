@@ -16,6 +16,8 @@ const followUpSchema = new mongoose.Schema({
   },
   content:      { type: String, default: '' },  // 随访内容记录
   theme:        { type: String, default: '' },  // 随访主题
+  followUpSchemeId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan', default: null },
+  formData:     { type: mongoose.Schema.Types.Mixed, default: null },
   cancelReason: { type: String, default: '' },  // 取消原因（cancelled 时必填）
   assignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 负责人
   nextFollowUpDate: { type: Date, default: null },

@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
@@ -20,12 +20,13 @@ const STATUS_COLOR = { draft:'#8AA89C', active:'#1E6B50', completed:'#22A06B', c
 export default function PlansPage() {
   const nav = useNavigate()
   const toast = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [plans, setPlans] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showAnnualModal, setShowAnnualModal] = useState(false)
-  const [typeFilter, setTypeFilter] = useState('')
+  const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '')
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -61,7 +62,7 @@ export default function PlansPage() {
         ].map(opt => (
           <button key={opt.v}
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setTypeFilter(opt.v)}>{opt.l}</button>
+            onClick={() => { setTypeFilter(opt.v); setSearchParams(opt.v ? { type: opt.v } : {}) }}>{opt.l}</button>
         ))}
 
         {/* 新建按钮跟随当前 Tab */}

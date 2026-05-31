@@ -72,6 +72,7 @@ export const staffAPI = {
 
   // FollowUp Forms (admin-created templates)
   getFollowupForms: () => req('/staff/followup-forms'),
+  getFollowupPlans: () => req('/staff/followup-plans'),
 
   // 检查开单
   getPatientRequisitions: (patientId)     => req(`/staff/patients/${patientId}/requisitions`),

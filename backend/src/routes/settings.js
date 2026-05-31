@@ -652,25 +652,26 @@ router.delete('/followup-forms/:id', adminAuth, async (req, res) => {
 // ── 随访方案 ────────────────────────────────────────────────────
 router.get('/followup-plans', adminAuth, async (req, res) => {
   const list = await FollowUpPlan.find()
-    .populate('formId', 'name')
+    .populate('formId', 'name fields')
     .populate('defaultEmployeeId', 'name role')
     .sort({ createdAt: -1 });
   res.json({ success: true, data: list });
 });
 
 router.post('/followup-plans', adminAuth, async (req, res) => {
-  const { name, formId, cycles, defaultEmployeeId } = req.body;
+  const { name, formId, cycles, defaultEmployeeId, default_content } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '方案名称不能为空' });
   const plan = await FollowUpPlan.create({
     name, formId: formId || null,
     cycles: cycles?.length ? cycles : [{ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', notes: '' }],
     defaultEmployeeId: defaultEmployeeId || null,
+    default_content: default_content || {},
   });
   res.json({ success: true, data: plan, message: '随访方案已创建' });
 });
 
 router.put('/followup-plans/:id', adminAuth, async (req, res) => {
-  const { name, formId, cycles, defaultEmployeeId, status } = req.body;
+  const { name, formId, cycles, defaultEmployeeId, status, default_content } = req.body;
   const plan = await FollowUpPlan.findByIdAndUpdate(
     req.params.id,
     {
@@ -678,9 +679,10 @@ router.put('/followup-plans/:id', adminAuth, async (req, res) => {
       cycles: cycles?.length ? cycles : [{ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', notes: '' }],
       defaultEmployeeId: defaultEmployeeId || null,
       status,
+      default_content: default_content || {},
     },
     { new: true }
-  ).populate('formId', 'name').populate('defaultEmployeeId', 'name role');
+  ).populate('formId', 'name fields').populate('defaultEmployeeId', 'name role');
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   res.json({ success: true, data: plan, message: '随访方案已更新' });
 });

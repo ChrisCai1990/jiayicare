@@ -15,6 +15,7 @@ const followUpPlanSchema = new mongoose.Schema({
   cycles:            { type: [cycleItemSchema], default: [{ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', notes: '' }] },
   defaultRole:       { type: String, default: '' },
   defaultEmployeeId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  default_content:   { type: mongoose.Schema.Types.Mixed, default: {} },
   status:            { type: String, enum: ['active', 'inactive'], default: 'active' },
 }, { timestamps: true });
 

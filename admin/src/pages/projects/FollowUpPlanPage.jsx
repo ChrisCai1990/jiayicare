@@ -11,7 +11,7 @@ const ROLE_LABEL = {
 }
 
 const emptyCycle = () => ({ cycleType: 'duration', cycleDuration: 30, cycleUnit: 'day', cycleDate: '', notes: '' })
-const EMPTY = { name: '', formId: '', cycles: [emptyCycle()], defaultEmployeeId: '' }
+const EMPTY = { name: '', formId: '', cycles: [emptyCycle()], defaultEmployeeId: '', default_content: {} }
 
 // 按钮样式
 const btnStyle = (color, disabled) => ({
@@ -67,6 +67,7 @@ export default function FollowUpPlanPage() {
       formId: p.formId?._id || p.formId || '',
       cycles,
       defaultEmployeeId: p.defaultEmployeeId?._id || p.defaultEmployeeId || '',
+      default_content: p.default_content || {},
     })
     setError(''); setShowModal(true)
   }
@@ -87,6 +88,7 @@ export default function FollowUpPlanPage() {
         name: form.name,
         formId: form.formId || null,
         defaultEmployeeId: form.defaultEmployeeId || null,
+        default_content: form.default_content || {},
         cycles: form.cycles.map(c => ({
           cycleType: c.cycleType,
           cycleDuration: c.cycleType === 'duration' ? Number(c.cycleDuration) : null,
@@ -101,6 +103,12 @@ export default function FollowUpPlanPage() {
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
   }
+
+  // 找到当前选中的表单对象（含 fields）
+  const selectedForm = forms.find(f => f._id === form.formId)
+
+  const setDefaultContent = (fieldLabel, val) =>
+    setForm(f => ({ ...f, default_content: { ...f.default_content, [fieldLabel]: val } }))
 
   const handleToggle = async item => {
     try { await adminAPI.toggleFollowupPlan(item._id); loadAll() } catch (e) { toast(e.message) }
@@ -198,11 +206,87 @@ export default function FollowUpPlanPage() {
               <div className="form-group">
                 <label className="form-label">关联随访表单</label>
                 <select className="form-input" value={form.formId}
-                  onChange={e => setForm(f => ({ ...f, formId: e.target.value }))}>
+                  onChange={e => setForm(f => ({ ...f, formId: e.target.value, default_content: {} }))}>
                   <option value="">不关联</option>
                   {forms.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
                 </select>
               </div>
+
+              {/* 预设内容（基于关联表单的字段动态生成） */}
+              {selectedForm?.fields?.length > 0 && (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ marginBottom: 6 }}>
+                    预设内容
+                    <span style={{ fontSize: 11, color: '#6B7280', fontWeight: 400, marginLeft: 6 }}>
+                      医护创建随访计划时自动填充这些默认值
+                    </span>
+                  </label>
+                  <div style={{ background: '#F9FAFB', border: '1px solid #E5E7EB', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {selectedForm.fields.map((field, fi) => (
+                      <div key={fi} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <label style={{ fontSize: 12, color: '#374151', fontWeight: 500 }}>
+                          {field.label}
+                          {field.required && <span style={{ color: '#DC2626' }}> *</span>}
+                          <span style={{ fontSize: 11, color: '#9CA3AF', marginLeft: 4 }}>（{field.type}）</span>
+                        </label>
+                        {field.type === 'textarea' ? (
+                          <textarea
+                            className="form-input"
+                            rows={2}
+                            style={{ fontSize: 13 }}
+                            placeholder={`${field.label}的预设内容...`}
+                            value={form.default_content[field.label] || ''}
+                            onChange={e => setDefaultContent(field.label, e.target.value)}
+                          />
+                        ) : field.type === 'radio' && field.options?.length > 0 ? (
+                          <select
+                            className="form-input"
+                            style={{ fontSize: 13 }}
+                            value={form.default_content[field.label] || ''}
+                            onChange={e => setDefaultContent(field.label, e.target.value)}
+                          >
+                            <option value="">-- 不预设 --</option>
+                            {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        ) : field.type === 'checkbox' && field.options?.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                            {field.options.map(opt => {
+                              const checked = (form.default_content[field.label] || []).includes(opt)
+                              return (
+                                <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
+                                  <input type="checkbox" checked={checked}
+                                    onChange={e => {
+                                      const cur = form.default_content[field.label] || []
+                                      setDefaultContent(field.label, e.target.checked ? [...cur, opt] : cur.filter(v => v !== opt))
+                                    }} />
+                                  {opt}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        ) : field.type === 'date' ? (
+                          <input
+                            className="form-input"
+                            type="date"
+                            style={{ fontSize: 13 }}
+                            value={form.default_content[field.label] || ''}
+                            onChange={e => setDefaultContent(field.label, e.target.value)}
+                          />
+                        ) : (
+                          <input
+                            className="form-input"
+                            type={field.type === 'number' ? 'number' : 'text'}
+                            style={{ fontSize: 13 }}
+                            placeholder={`${field.label}的预设值...`}
+                            value={form.default_content[field.label] || ''}
+                            onChange={e => setDefaultContent(field.label, e.target.value)}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               {/* 随访周期（多行） */}
               <div className="form-group" style={{ marginBottom: 0 }}>

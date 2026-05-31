@@ -26,6 +26,7 @@ const SessionPackage = require('../models/SessionPackage');
 const AnnualPlan = require('../models/AnnualPlan');
 const Product = require('../models/Product');
 const FollowUpForm      = require('../models/FollowUpForm');
+const FollowUpPlan      = require('../models/FollowUpPlan');
 const SystemConfig      = require('../models/SystemConfig');
 const ExamRequisition   = require('../models/ExamRequisition');
 const LabTestOrder      = require('../models/LabTestOrder');
@@ -363,7 +364,7 @@ router.get('/followups', staffAuth, async (req, res) => {
 
 // ── POST /api/staff/followups ─────────────────────────────────────
 router.post('/followups', staffAuth, async (req, res) => {
-  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals, checkInItems } = req.body;
+  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals, checkInItems, followUpSchemeId, formData } = req.body;
   if (!patientId) return res.status(400).json({ success: false, message: '会员ID不能为空' });
 
   const patient = await User.findById(patientId);
@@ -387,6 +388,8 @@ router.post('/followups', staffAuth, async (req, res) => {
     tags: tags || [],
     vitals: vitals || {},
     checkInItems: checkInItems || [],
+    followUpSchemeId: followUpSchemeId || null,
+    formData: formData || null,
   });
 
   await followUp.populate('patientId', 'name phone');
@@ -679,6 +682,19 @@ router.get('/followup-forms', staffAuth, async (req, res) => {
   try {
     const forms = await FollowUpForm.find({ status: 'active' }).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: forms });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/staff/followup-plans — 获取启用的随访方案列表（含表单结构和预设内容）
+router.get('/followup-plans', staffAuth, async (req, res) => {
+  try {
+    const plans = await FollowUpPlan.find({ status: 'active' })
+      .populate('formId', 'name fields')
+      .sort({ name: 1 })
+      .lean();
+    res.json({ success: true, data: plans });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

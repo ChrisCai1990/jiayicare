@@ -2,11 +2,18 @@ import React, { useState } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
 
+const PLAN_CHILDREN = [
+  { label: '年度体检方案', type: 'annual_checkup' },
+  { label: '年度管理方案', type: 'annual_mgmt' },
+  { label: '营养干预方案', type: 'nutrition' },
+  { label: '就医协助方案', type: 'medical_assist' },
+]
+
 const ALL_NAV = [
   { label: '工作台',   icon: '🏠', path: '/home', roles: [] },
   { label: '我的会员', icon: '👥', path: '/patients', roles: [] },
   { label: '随访管理', icon: '📋', path: '/followups', roles: [] },
-  { label: '健康方案', icon: '📄', path: '/plans',    roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'] },
+  { label: '健康方案', icon: '📄', path: '/plans',    roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'], children: PLAN_CHILDREN },
   { label: '报告管理', icon: '🔬', path: '/reports',  roles: ['healthManager','familyDoctor','superadmin'] },
   { label: '异常复查', icon: '⚠️', path: '/abnormal-reviews', roles: ['healthManager','familyDoctor','superadmin'] },
   { label: '服务记录', icon: '🏥', path: '/service-records', roles: ['medicalAssistant','psychologist','rehabSpecialist','tcmDoctor','specialist','superadmin'] },
@@ -26,6 +33,7 @@ export default function Layout() {
   const nav = useNavigate()
   const loc = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [planExpanded, setPlanExpanded] = useState(true)
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -40,6 +48,9 @@ export default function Layout() {
   }
 
   const initials = staff?.name?.slice(0, 1) || 'S'
+
+  // 获取当前 URL 的 type 参数
+  const currentType = new URLSearchParams(loc.search).get('type') || ''
 
   return (
     <div className="app-layout">
@@ -69,7 +80,46 @@ export default function Layout() {
           {ALL_NAV.filter(item =>
             item.roles.length === 0 || item.roles.includes(staff?.role)
           ).map(item => {
-            const isActive = loc.pathname === item.path || loc.pathname.startsWith(item.path + '/')
+            const isOnPlansPage = loc.pathname === item.path || loc.pathname.startsWith(item.path + '/')
+            const isActive = isOnPlansPage && !item.children
+
+            if (item.children) {
+              // 有子菜单的项（健康方案）
+              const isGroupActive = isOnPlansPage
+              return (
+                <div key={item.path}>
+                  <div
+                    className={`sidebar-item ${isGroupActive ? 'active' : ''}`}
+                    onClick={() => setPlanExpanded(v => !v)}
+                    style={{ justifyContent: 'space-between' }}
+                  >
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span className="sidebar-item-icon">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </span>
+                    <span style={{ fontSize: 10, opacity: 0.6, transition: 'transform 0.2s', display: 'inline-block', transform: planExpanded ? 'rotate(180deg)' : 'rotate(0deg)' }}>▼</span>
+                  </div>
+                  {planExpanded && (
+                    <div style={{ paddingLeft: 16 }}>
+                      {item.children.map(child => {
+                        const childActive = isOnPlansPage && currentType === child.type
+                        return (
+                          <div
+                            key={child.type}
+                            className={`sidebar-item ${childActive ? 'active' : ''}`}
+                            style={{ fontSize: 13, padding: '7px 12px' }}
+                            onClick={() => handleNavClick(`${item.path}?type=${child.type}`)}
+                          >
+                            <span style={{ marginLeft: 4 }}>{child.label}</span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            }
+
             return (
               <div
                 key={item.path}

@@ -174,10 +174,15 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [planFormId, setPlanFormId] = useState('')
   const [planRows, setPlanRows] = useState([emptyRow()])
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
+  // 随访方案模板选择
+  const [followupPlans, setFollowupPlans] = useState([])
+  const [selectedSchemeId, setSelectedSchemeId] = useState('')
+  const [schemeFormData, setSchemeFormData] = useState({}) // 预设内容（可编辑）
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
     staffAPI.getFollowupForms().then(r => setFollowupForms(r.data || [])).catch(() => {})
+    staffAPI.getFollowupPlans().then(r => setFollowupPlans(r.data || [])).catch(() => {})
   }, [])
 
   const set = (k) => (e) => setForm(f => ({ ...f, [k]: e.target.value }))
@@ -188,6 +193,23 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     } else {
       setForm(f => ({ ...f, theme }))
     }
+  }
+
+  // 选择随访方案模板后，自动填充方案名称、关联表单、预设内容
+  const handleSchemeChange = (schemeId) => {
+    setSelectedSchemeId(schemeId)
+    if (!schemeId) {
+      setSchemeFormData({})
+      return
+    }
+    const scheme = followupPlans.find(p => p._id === schemeId)
+    if (!scheme) return
+    if (scheme.name) setPlanName(scheme.name)
+    if (scheme.formId?._id) {
+      setPlanFormId(scheme.formId._id)
+      setVisitTypeForm(true)
+    }
+    setSchemeFormData(scheme.default_content || {})
   }
 
   // ── 记录模式提交 ──
@@ -235,6 +257,8 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           content: row.notes,
           assignedTo: row.assignedTo || null,
           formId: visitTypeForm ? (planFormId || null) : null,
+          followUpSchemeId: selectedSchemeId || null,
+          formData: Object.keys(schemeFormData).length > 0 ? schemeFormData : null,
         })
       }))
       onSaved()
@@ -397,6 +421,26 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               </div>
             )}
 
+            {/* 选择随访方案模板（可选） */}
+            {followupPlans.length > 0 && (
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">随访方案模板（可选）</label>
+                <select
+                  className="form-input"
+                  value={selectedSchemeId}
+                  onChange={e => handleSchemeChange(e.target.value)}
+                >
+                  <option value="">-- 不使用模板 --</option>
+                  {followupPlans.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
+                </select>
+                {selectedSchemeId && (
+                  <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 4 }}>
+                    ✓ 已选择方案，方案名称和表单预设内容已自动填充
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* 方案名称 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">方案名称 *</label>
@@ -437,17 +481,98 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
             {visitTypeForm && (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">随访表单</label>
-                <select className="form-input" value={planFormId} onChange={e => setPlanFormId(e.target.value)}>
+                <select className="form-input" value={planFormId} onChange={e => { setPlanFormId(e.target.value); if (!selectedSchemeId) setSchemeFormData({}) }}>
                   <option value="">-- 不使用表单 --</option>
                   {followupForms.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
                 </select>
                 {planFormId && (
                   <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 4 }}>
-                    ✓ 已关联「{followupForms.find(f => f._id === planFormId)?.name}」，会员随访时将看到此表单
+                    ✓ 已关联「{followupForms.find(f => f._id === planFormId)?.name}」
                   </div>
                 )}
               </div>
             )}
+
+            {/* 动态表单字段预设内容（选了方案模板且方案有关联表单时显示） */}
+            {(() => {
+              const scheme = followupPlans.find(p => p._id === selectedSchemeId)
+              const fields = scheme?.formId?.fields
+              if (!fields?.length) return null
+              return (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">
+                    随访表单内容
+                    <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400, marginLeft: 6 }}>已按方案预设填充，可修改</span>
+                  </label>
+                  <div style={{ background: '#F9F6F0', border: '1px solid #E0D9CE', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {fields.map((field, fi) => (
+                      <div key={fi} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        <label style={{ fontSize: 12, color: '#4A6558', fontWeight: 500 }}>
+                          {field.label}
+                          {field.required && <span style={{ color: '#DC3545' }}> *</span>}
+                        </label>
+                        {field.type === 'textarea' ? (
+                          <textarea
+                            className="form-input"
+                            rows={3}
+                            style={{ fontSize: 13, resize: 'vertical' }}
+                            value={schemeFormData[field.label] || ''}
+                            onChange={e => setSchemeFormData(d => ({ ...d, [field.label]: e.target.value }))}
+                          />
+                        ) : field.type === 'radio' && field.options?.length > 0 ? (
+                          <select
+                            className="form-input"
+                            style={{ fontSize: 13 }}
+                            value={schemeFormData[field.label] || ''}
+                            onChange={e => setSchemeFormData(d => ({ ...d, [field.label]: e.target.value }))}
+                          >
+                            <option value="">-- 请选择 --</option>
+                            {field.options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                          </select>
+                        ) : field.type === 'checkbox' && field.options?.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+                            {field.options.map(opt => {
+                              const cur = schemeFormData[field.label] || []
+                              const checked = Array.isArray(cur) ? cur.includes(opt) : false
+                              return (
+                                <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 13, cursor: 'pointer' }}>
+                                  <input type="checkbox" checked={checked}
+                                    style={{ accentColor: '#1E6B50' }}
+                                    onChange={e => setSchemeFormData(d => ({
+                                      ...d,
+                                      [field.label]: e.target.checked
+                                        ? [...(Array.isArray(cur) ? cur : []), opt]
+                                        : (Array.isArray(cur) ? cur : []).filter(v => v !== opt)
+                                    }))}
+                                  />
+                                  {opt}
+                                </label>
+                              )
+                            })}
+                          </div>
+                        ) : field.type === 'date' ? (
+                          <input
+                            className="form-input"
+                            type="date"
+                            style={{ fontSize: 13 }}
+                            value={schemeFormData[field.label] || ''}
+                            onChange={e => setSchemeFormData(d => ({ ...d, [field.label]: e.target.value }))}
+                          />
+                        ) : (
+                          <input
+                            className="form-input"
+                            type={field.type === 'number' ? 'number' : 'text'}
+                            style={{ fontSize: 13 }}
+                            value={schemeFormData[field.label] || ''}
+                            onChange={e => setSchemeFormData(d => ({ ...d, [field.label]: e.target.value }))}
+                          />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
+            })()}
 
             {/* ── 计划随访时间 ── */}
             <div>
