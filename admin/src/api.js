@@ -106,6 +106,9 @@ export const adminAPI = {
   togglePlanTemplate: (id)       => req(`/plan-templates/${id}/toggle`, { method: 'PATCH' }),
   deletePlanTemplate: (id)       => req(`/plan-templates/${id}`, { method: 'DELETE' }),
 
+  // 随访方案列表（供模板选用）
+  followUpPlans: () => req('/followup-plans'),
+
   // 动态问卷管理
   questionnaires:            ()         => req('/questionnaires'),
   createQuestionnaire:       (data)     => req('/questionnaires', { method: 'POST', body: JSON.stringify(data) }),

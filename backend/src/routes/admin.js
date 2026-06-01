@@ -21,6 +21,7 @@ const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/Dynam
 const UserChangeLog = require('../models/UserChangeLog');
 const MedicalReport = require('../models/MedicalReport');
 const SystemConfig  = require('../models/SystemConfig');
+const FollowUpPlan  = require('../models/FollowUpPlan');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
 
@@ -876,6 +877,16 @@ router.patch('/plan-templates/:id/toggle', adminAuth, async (req, res) => {
 router.delete('/plan-templates/:id', adminAuth, async (req, res) => {
   await PlanTemplate.findByIdAndDelete(req.params.id);
   res.json({ success: true, message: '模板已删除' });
+});
+
+// GET /api/admin/followup-plans — 随访方案列表（供健康管理方案模板选用）
+router.get('/followup-plans', adminAuth, async (req, res) => {
+  try {
+    const plans = await FollowUpPlan.find({ status: 'active' }).sort({ name: 1 }).lean();
+    res.json({ success: true, data: plans });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── 系统配置 / 健康评分权重 ─────────────────────────────────────

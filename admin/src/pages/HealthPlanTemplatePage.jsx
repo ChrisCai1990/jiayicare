@@ -21,8 +21,9 @@ const defaultContent = {
     addons: [],     // [{ type:'lab'|'exam', id, name, reason }]
   },
   health_management: {
-    modules: '',
-    medicalIssue: '', doctor: '', dailyMonitoring: '', vaccination: '', lifestyle: '', examPlan: '',
+    planName: '',
+    planDesc: '',
+    followUpPlans: [],
   },
   nutrition: {
     dailyWater: '',
@@ -48,6 +49,68 @@ const defaultContent = {
     frequency: '', sessionCount: '', duration: '', mode: '线上',
     homework: '', assessmentTools: '',
   },
+}
+
+// 随访方案选择器（从随访方案库选择）
+function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const selected = Array.isArray(value) ? value : []
+
+  const options = allPlans.filter(p =>
+    p.name.toLowerCase().includes(search.toLowerCase()) &&
+    !selected.some(s => s.id === p._id)
+  )
+
+  const add = (plan) => {
+    onChange([...selected, { id: plan._id, name: plan.name }])
+    setSearch('')
+  }
+
+  const remove = (idx) => onChange(selected.filter((_, i) => i !== idx))
+
+  return (
+    <div className="form-group" style={{ gridColumn: '1/-1' }}>
+      <label className="form-label">具体方案</label>
+      <div style={{ border: '1px solid #d0c9be', borderRadius: 8, padding: 12, background: '#faf8f5' }}>
+        {selected.length === 0 && <div style={{ color: '#aaa', fontSize: 12, marginBottom: 8 }}>暂未添加随访方案</div>}
+        {selected.map((s, idx) => (
+          <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, padding: '6px 10px', background: '#fff', borderRadius: 6, border: '1px solid #e0d9ce' }}>
+            <span style={{ fontSize: 13, flex: 1, color: '#1A2B24', fontWeight: 500 }}>{s.name}</span>
+            <button type="button" onClick={() => remove(idx)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+          </div>
+        ))}
+        <button type="button" className="btn btn-ghost" style={{ fontSize: 12, padding: '4px 10px', marginTop: 4 }}
+          onClick={() => setOpen(o => !o)}>
+          {open ? '▲ 收起' : '＋ 添加方案'}
+        </button>
+        {open && (
+          <div style={{ marginTop: 10, border: '1px solid #e0d9ce', borderRadius: 6, background: '#fff', maxHeight: 240, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ padding: '8px 10px', borderBottom: '1px solid #f0ece4' }}>
+              <input className="form-input" value={search} onChange={e => setSearch(e.target.value)}
+                placeholder="搜索随访方案名称..." style={{ fontSize: 12 }} autoFocus />
+            </div>
+            <div style={{ overflowY: 'auto', flex: 1 }}>
+              {loading && <div style={{ padding: 16, color: '#aaa', fontSize: 12, textAlign: 'center' }}>加载中...</div>}
+              {!loading && options.length === 0 && <div style={{ padding: 16, color: '#aaa', fontSize: 12, textAlign: 'center' }}>{search ? '无匹配结果' : '暂无可选随访方案'}</div>}
+              {options.map(p => (
+                <div key={p._id} onClick={() => add(p)} style={{
+                  display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', cursor: 'pointer',
+                  borderBottom: '1px solid #f8f6f2', fontSize: 13,
+                }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f0f9f4'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                >
+                  <span style={{ flex: 1 }}>{p.name}</span>
+                  <span style={{ fontSize: 11, color: '#1E6B50' }}>＋ 添加</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }
 
 // 医嘱选择器（检验医嘱 + 检查医嘱，可附带"推荐原因"）
@@ -152,6 +215,8 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   const [content, setContent] = useState(initialContent || defaultContent[type] || {})
   const [labOrders, setLabOrders] = useState([])
   const [examOrders, setExamOrders] = useState([])
+  const [followUpPlans, setFollowUpPlans] = useState([])
+  const [followUpLoading, setFollowUpLoading] = useState(false)
   const set = useCallback((k, v) => setContent(prev => {
     const next = { ...prev, [k]: v }
     contentRef.current = next
@@ -167,6 +232,13 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         setLabOrders(labRes.data || [])
         setExamOrders(examRes.data || [])
       }).catch(() => {})
+    }
+    if (type === 'health_management') {
+      setFollowUpLoading(true)
+      adminAPI.followUpPlans()
+        .then(res => setFollowUpPlans(res.data || []))
+        .catch(() => {})
+        .finally(() => setFollowUpLoading(false))
     }
   }, [type])
 
@@ -184,13 +256,17 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'health_management') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-      <FieldRow label="医疗问题解决" fieldKey="medicalIssue" placeholder="医院、科室、解决目标等" half content={content} set={set} />
-      <FieldRow label="主诊医生" fieldKey="doctor" placeholder="主诊医生姓名及科室" half content={content} set={set} />
-      <FieldRow label="日常监测计划" fieldKey="dailyMonitoring" placeholder="血压/血糖/心率，每日频率" half content={content} set={set} />
-      <FieldRow label="疫苗接种计划" fieldKey="vaccination" placeholder="疫苗名称、接种时间" half content={content} set={set} />
-      <FieldRow label="生活方式建议" fieldKey="lifestyle" placeholder="关联科普文章/健康知识推送" rows={3} content={content} set={set} />
-      <FieldRow label="体检方案引用" fieldKey="examPlan" placeholder="引用已有年度体检套餐名称" rows={3} content={content} set={set} />
-      <FieldRow label="其他备注" fieldKey="modules" placeholder="补充说明..." rows={2} content={content} set={set} />
+      <div className="form-group">
+        <label className="form-label">方案名称 *</label>
+        <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：慢病管理标准方案" />
+      </div>
+      <FieldRow label="状态说明" fieldKey="planDesc" placeholder="方案适用场景或说明" half content={content} set={set} />
+      <FollowUpPlanSelector
+        value={content.followUpPlans}
+        onChange={v => set('followUpPlans', v)}
+        allPlans={followUpPlans}
+        loading={followUpLoading}
+      />
     </div>
   )
 
