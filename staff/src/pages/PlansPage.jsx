@@ -537,13 +537,13 @@ function NewPlanModal({ onClose, onSaved, type }) {
               </label>
               <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden', background: '#faf8f5' }}>
 
-                {/* 项目滚动列表 */}
+                {/* 项目列表 */}
                 {items.length === 0 && (
                   <div style={{ padding: '12px 14px', color: '#aaa', fontSize: 12, textAlign: 'center' }}>
                     暂无项目，{type === 'annual_checkup' ? '可点击下方"添加项目"从检验/检查库添加' : '可在创建后的方案详情中添加'}
                   </div>
                 )}
-                <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                <div>
                   {items.map((item, idx) => {
                     const tag = itemTag(item)
                     return (
