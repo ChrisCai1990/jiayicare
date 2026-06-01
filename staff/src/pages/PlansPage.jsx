@@ -288,14 +288,23 @@ function NewPlanModal({ onClose, onSaved, type }) {
   const [templateId, setTemplateId]   = useState('')
   const [year, setYear]               = useState(new Date().getFullYear())
   const [description, setDescription] = useState('')
+  const [items, setItems]             = useState([])
   const [templates, setTemplates]     = useState([])
   const [loadingTpls, setLoadingTpls] = useState(false)
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState('')
 
-  const tplType   = TEMPLATE_TYPE_MAP[type] || type
+  // 搜索添加项目（仅 annual_checkup 用）
+  const [showSearch, setShowSearch]       = useState(false)
+  const [searchQ, setSearchQ]             = useState('')
+  const [searchResults, setSearchResults] = useState([])
+  const [searching, setSearching]         = useState(false)
+  const searchTimer = useRef(null)
+
+  const tplType    = TEMPLATE_TYPE_MAP[type] || type
   const modalTitle = MODAL_TITLE[type] || '新建方案'
 
+  // 加载模板列表
   useEffect(() => {
     setLoadingTpls(true)
     staffAPI.getPlanTemplates(tplType)
@@ -304,7 +313,48 @@ function NewPlanModal({ onClose, onSaved, type }) {
       .finally(() => setLoadingTpls(false))
   }, [tplType])
 
+  // 切换模板时重置 items
+  useEffect(() => {
+    const tpl = templates.find(t => t._id === templateId) || null
+    setItems(templateToItems(tpl))
+    setShowSearch(false)
+    setSearchQ('')
+    setSearchResults([])
+  }, [templateId, templates])
+
   const selectedTpl = templates.find(t => t._id === templateId) || null
+  const desc = selectedTpl?.content?.planDesc || selectedTpl?.content?.packageDesc || ''
+
+  // 删除单个项目
+  const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx))
+
+  // 搜索检验/检查项目
+  const handleSearch = (q) => {
+    setSearchQ(q)
+    clearTimeout(searchTimer.current)
+    if (!q.trim()) { setSearchResults([]); return }
+    searchTimer.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const r = await staffAPI.getRequisitionItems(q)
+        setSearchResults(r.data || [])
+      } catch {}
+      finally { setSearching(false) }
+    }, 300)
+  }
+
+  // 从库里添加项目
+  const addFromLibrary = (item) => {
+    setItems(prev => [...prev, {
+      name:     item.name,
+      category: item.type === 'lab' ? '检验检查' : '影像检查',
+      itemId:   item._id || null,
+      itemType: item.type === 'lab' ? 'labTest' : 'specialExam',
+    }])
+    setSearchQ('')
+    setSearchResults([])
+    setShowSearch(false)
+  }
 
   const handleSubmit = async () => {
     if (!patientId)  { setError('请搜索并选择会员'); return }
@@ -314,11 +364,7 @@ function NewPlanModal({ onClose, onSaved, type }) {
     setError('')
     setSaving(true)
     try {
-      await staffAPI.createPlan({
-        patientId, type, title,
-        description, year,
-        items: templateToItems(selectedTpl),
-      })
+      await staffAPI.createPlan({ patientId, type, title, description, year, items })
       onSaved()
     } catch (err) {
       setError(err.message)
@@ -327,19 +373,24 @@ function NewPlanModal({ onClose, onSaved, type }) {
     }
   }
 
-  const desc = selectedTpl?.content?.planDesc || selectedTpl?.content?.packageDesc || ''
-  const checkItemCount = type === 'annual_checkup' ? (selectedTpl?.content?.checkItems?.length || 0) : 0
-  const checkItemPreview = type === 'annual_checkup' ? (selectedTpl?.content?.checkItems || []) : []
+  // item 的类型标签
+  const itemTag = (item) => {
+    const isLab = item.itemType === 'labTest' || item.category === '检验检查'
+    const isFollowUp = item.category === '随访方案'
+    if (isFollowUp) return { label: '随访', color: '#7C3AED', bg: '#F3E8FF' }
+    if (isLab)      return { label: '检验', color: '#0077B6', bg: '#E8F4FD' }
+    return           { label: '检查', color: '#1E6B50', bg: '#E8F5EF' }
+  }
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal">
+      <div className="modal" style={{ maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
           <h3 className="modal-title">{modalTitle}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
-        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
           {/* 搜索会员 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -368,26 +419,107 @@ function NewPlanModal({ onClose, onSaved, type }) {
             )}
           </div>
 
-          {/* 选中模板的简介 */}
+          {/* 模板描述 */}
           {desc && (
             <div style={{ background: '#E8F5EF', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#1E6B50' }}>
               {desc}
             </div>
           )}
 
-          {/* 年度体检方案：检查项目预览 */}
-          {checkItemCount > 0 && (
-            <div style={{ background: '#F9F6F0', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#4A6558' }}>
-              <div style={{ fontWeight: 600, marginBottom: 4 }}>包含 {checkItemCount} 项检查项目，选出后可删减或增加</div>
-              {checkItemPreview.slice(0, 5).map((ci, i) => (
-                <div key={i} style={{ marginTop: 2 }}>
-                  <span style={{ fontSize: 11, color: ci.type === 'lab' ? '#0077B6' : '#1E6B50', background: ci.type === 'lab' ? '#E8F4FD' : '#E8F5EF', padding: '1px 5px', borderRadius: 3, marginRight: 5 }}>
-                    {ci.type === 'lab' ? '检验' : '检查'}
-                  </span>
-                  {ci.name}
+          {/* ── 可编辑项目列表（选中模板后显示）── */}
+          {templateId && (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span>
+                  {type === 'annual_checkup' ? '检查项目' : type === 'annual_mgmt' ? '随访方案节点' : '方案项目'}
+                </span>
+                <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>
+                  共 {items.length} 项，可删减或增加
+                </span>
+              </label>
+              <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden', background: '#faf8f5' }}>
+
+                {/* 项目滚动列表 */}
+                {items.length === 0 && (
+                  <div style={{ padding: '12px 14px', color: '#aaa', fontSize: 12, textAlign: 'center' }}>
+                    暂无项目，{type === 'annual_checkup' ? '可点击下方"添加项目"从检验/检查库添加' : '可在创建后的方案详情中添加'}
+                  </div>
+                )}
+                <div style={{ maxHeight: 220, overflowY: 'auto' }}>
+                  {items.map((item, idx) => {
+                    const tag = itemTag(item)
+                    return (
+                      <div key={idx} style={{
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '8px 12px', borderBottom: '1px solid #F0EDE7', fontSize: 13,
+                      }}>
+                        <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>
+                          {tag.label}
+                        </span>
+                        <span style={{ flex: 1, color: '#1A2B24' }}>{item.name}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeItem(idx)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 17, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+                          onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
+                          onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
+                          title="删除此项"
+                        >×</button>
+                      </div>
+                    )
+                  })}
                 </div>
-              ))}
-              {checkItemCount > 5 && <div style={{ color: '#aaa', marginTop: 2 }}>...还有 {checkItemCount - 5} 项</div>}
+
+                {/* 添加项目区（仅 annual_checkup） */}
+                {type === 'annual_checkup' && (
+                  <div style={{ padding: '8px 12px', borderTop: items.length > 0 ? '1px solid #F0EDE7' : 'none', background: '#fff' }}>
+                    {!showSearch ? (
+                      <button type="button" onClick={() => setShowSearch(true)}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1E6B50', fontSize: 12, padding: 0, fontWeight: 500 }}>
+                        ＋ 添加项目
+                      </button>
+                    ) : (
+                      <div>
+                        <div style={{ position: 'relative' }}>
+                          <input
+                            className="form-input"
+                            autoFocus
+                            value={searchQ}
+                            onChange={e => handleSearch(e.target.value)}
+                            placeholder="搜索检验/检查项目名称..."
+                            style={{ fontSize: 12, paddingRight: 44 }}
+                          />
+                          <button type="button" onClick={() => { setShowSearch(false); setSearchQ(''); setSearchResults([]) }}
+                            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 12 }}>
+                            取消
+                          </button>
+                        </div>
+                        {(searching || searchResults.length > 0 || (searchQ && !searching)) && (
+                          <div style={{ border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff', maxHeight: 180, overflowY: 'auto', marginTop: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+                            {searching && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>搜索中...</div>}
+                            {!searching && searchResults.length === 0 && searchQ && (
+                              <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>无匹配结果</div>
+                            )}
+                            {searchResults.map((r, i) => (
+                              <div key={i} onMouseDown={() => addFromLibrary(r)}
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #F8F6F2' }}
+                                onMouseEnter={e => e.currentTarget.style.background = '#F0F9F4'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                              >
+                                <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 3, fontWeight: 600, color: r.type === 'lab' ? '#0077B6' : '#1E6B50', background: r.type === 'lab' ? '#E8F4FD' : '#E8F5EF' }}>
+                                  {r.type === 'lab' ? '检验' : '检查'}
+                                </span>
+                                <span style={{ flex: 1 }}>{r.name}</span>
+                                <span style={{ fontSize: 11, color: '#1E6B50' }}>＋ 添加</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
