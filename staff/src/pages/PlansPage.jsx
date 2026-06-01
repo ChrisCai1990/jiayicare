@@ -266,6 +266,8 @@ function getTemplateTitle(tpl) {
 function templateToItems(tpl) {
   if (!tpl) return []
   const c = tpl.content || {}
+
+  // ── 年度体检方案 ──────────────────────────────────────────
   if (tpl.type === 'annual_checkup') {
     return (c.checkItems || []).map(ci => ({
       name:     ci.name,
@@ -274,12 +276,108 @@ function templateToItems(tpl) {
       itemType: ci.type === 'lab' ? 'labTest' : 'specialExam',
     }))
   }
+
+  // ── 健康管理方案（随访节点）────────────────────────────────
   if (tpl.type === 'health_management') {
     return (c.followUpPlans || []).map(fp => ({
       name:     fp.name,
       category: '随访方案',
     }))
   }
+
+  // ── 营养干预方案 ──────────────────────────────────────────
+  if (tpl.type === 'nutrition') {
+    const items = []
+    const meals = [
+      { timeKey: 'breakfastTime', key: 'breakfast', label: '早餐' },
+      { timeKey: 'lunchTime',     key: 'lunch',     label: '午餐' },
+      { timeKey: 'dinnerTime',    key: 'dinner',     label: '晚餐' },
+      { timeKey: 'snackTime',     key: 'snack',      label: '加餐' },
+    ]
+    meals.forEach(m => {
+      if (c[m.key]) {
+        const t = c[m.timeKey] ? `（${c[m.timeKey]}）` : ''
+        items.push({ name: `${m.label}${t}：${c[m.key]}`, category: '饮食干预' })
+      }
+    })
+    if (c.dailyWater)           items.push({ name: `每日饮水：${c.dailyWater} ml`, category: '饮食干预' })
+    if (c.dietPrinciple)        items.push({ name: `膳食原则：${c.dietPrinciple}`, category: '饮食干预' })
+    if (c.cookingMethod)        items.push({ name: `烹饪方式：${c.cookingMethod}`, category: '饮食干预' })
+    if (c.mealOrder)            items.push({ name: `进餐顺序：${c.mealOrder}`, category: '饮食干预' })
+    if (c.allowedFoods)         items.push({ name: `推荐食物：${c.allowedFoods}`, category: '饮食干预' })
+    if (c.forbiddenFoods)       items.push({ name: `禁忌食物：${c.forbiddenFoods}`, category: '饮食干预' })
+    if (c.nutritionSupplements) items.push({ name: `营养素补充：${c.nutritionSupplements}`, category: '营养干预' })
+    if (c.exerciseSuggestion)   items.push({ name: `运动建议：${c.exerciseSuggestion}`, category: '运动干预' })
+    return items
+  }
+
+  // ── 就医协助方案 ──────────────────────────────────────────
+  if (tpl.type === 'medical_assist') {
+    const items = []
+    if (c.hospital) {
+      const dept   = c.department ? ` · ${c.department}` : ''
+      const expert = c.expert     ? `（${c.expert}）`    : ''
+      items.push({ name: `就诊：${c.hospital}${dept}${expert}`, category: '就医协助' })
+    }
+    if (c.datetime)  items.push({ name: `就医时间：${c.datetime}`, category: '就医协助' })
+    if (c.staffName) items.push({ name: `服务专员：${c.staffName}`, category: '就医协助' })
+    if (c.tasks) {
+      c.tasks.split('\n').filter(t => t.trim()).forEach(task => {
+        items.push({ name: task.trim(), category: '就医协助' })
+      })
+    }
+    if (c.transport) items.push({ name: `交通接送：${c.transport}`, category: '就医协助' })
+    if (c.hotel)     items.push({ name: `住宿安排：${c.hotel}`, category: '就医协助' })
+    if (c.notes)     items.push({ name: `备注：${c.notes}`, category: '就医协助' })
+    return items
+  }
+
+  // ── 运动复健方案 ──────────────────────────────────────────
+  if (tpl.type === 'rehab') {
+    const items = []
+    if (c.goal)       items.push({ name: `复健目标：${c.goal}`, category: '运动复健' })
+    if (c.weeklyFreq) items.push({ name: `训练频率：${c.weeklyFreq}`, category: '运动复健' })
+    if (c.duration)   items.push({ name: `每次时长：${c.duration} 分钟`, category: '运动复健' })
+    if (c.exercises) {
+      c.exercises.split('\n').filter(e => e.trim()).forEach(ex => {
+        items.push({ name: ex.trim(), category: '运动复健' })
+      })
+    }
+    if (c.precautions)  items.push({ name: `注意事项：${c.precautions}`, category: '运动复健' })
+    if (c.progression)  items.push({ name: `进阶计划：${c.progression}`, category: '运动复健' })
+    return items
+  }
+
+  // ── 中医养生方案 ──────────────────────────────────────────
+  if (tpl.type === 'tcm') {
+    const items = []
+    if (c.chineseMedicine) items.push({ name: `中药调理：${c.chineseMedicine}`, category: '中医养生' })
+    if (c.acupuncture)     items.push({ name: `针灸推拿：${c.acupuncture}`, category: '中医养生' })
+    if (c.diet)            items.push({ name: `饮食宜忌：${c.diet}`, category: '中医养生' })
+    if (c.lifestyle)       items.push({ name: `起居建议：${c.lifestyle}`, category: '中医养生' })
+    if (c.other)           items.push({ name: c.other, category: '中医养生' })
+    return items
+  }
+
+  // ── 心理咨询方案 ──────────────────────────────────────────
+  if (tpl.type === 'psychology') {
+    const items = []
+    if (c.frequency)  items.push({ name: `咨询频次：${c.frequency}`, category: '心理咨询' })
+    if (c.duration)   items.push({ name: `每次时长：${c.duration} 分钟`, category: '心理咨询' })
+    if (c.mode)       items.push({ name: `咨询方式：${c.mode}`, category: '心理咨询' })
+    if (c.homework) {
+      c.homework.split('\n').filter(h => h.trim()).forEach(hw => {
+        items.push({ name: hw.trim(), category: '心理咨询' })
+      })
+    }
+    if (c.assessmentTools) {
+      c.assessmentTools.split('\n').filter(t => t.trim()).forEach(tool => {
+        items.push({ name: `评估工具：${tool.trim()}`, category: '心理咨询' })
+      })
+    }
+    return items
+  }
+
   return []
 }
 
