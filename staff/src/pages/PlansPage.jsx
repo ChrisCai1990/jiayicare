@@ -25,7 +25,6 @@ export default function PlansPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
-  const [showAnnualModal, setShowAnnualModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '')
 
   const load = useCallback(async () => {
@@ -67,16 +66,9 @@ export default function PlansPage() {
 
         {/* 新建按钮跟随当前 Tab */}
         <div style={{ marginLeft: 'auto' }}>
-          {typeFilter === 'annual_mgmt' ? (
-            <button className="btn btn-primary btn-sm" onClick={() => setShowAnnualModal(true)}>
-              ＋ 新建年度管理方案
-            </button>
-          ) : (
-            <button className="btn btn-primary btn-sm"
-              onClick={() => setShowModal(true)}>
-              ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
-            </button>
-          )}
+          <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>
+            ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
+          </button>
         </div>
       </div>
 
@@ -105,8 +97,7 @@ export default function PlansPage() {
           </table>}
       </div>
 
-      {showModal && <NewPlanModal nav={nav} defaultType={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
-      {showAnnualModal && <AnnualPlanEntryModal onClose={() => setShowAnnualModal(false)} nav={nav} />}
+      {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
     </div>
   )
 }
@@ -242,126 +233,181 @@ function PatientSearchInput({ value, onChange }) {
   )
 }
 
-function NewPlanModal({ onClose, onSaved, nav, defaultType = 'annual_checkup' }) {
-  const [form, setForm] = useState({ patientId: '', type: defaultType, title: '', description: '', year: new Date().getFullYear() })
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+// ── 弹窗标题 & 模板类型映射 ────────────────────────────────────────────
+const MODAL_TITLE = {
+  annual_checkup: '新建体检方案',
+  annual_mgmt:    '新建管理方案',
+  nutrition:      '新建营养干预方案',
+  medical_assist: '新建就医协助方案',
+  tcm:            '新建中医调理方案',
+  rehab:          '新建运动复健方案',
+  psychology:     '新建心理咨询方案',
+}
 
-  const isAnnualMgmt = form.type === 'annual_mgmt'
+// plan type → admin 后台模板 type
+const TEMPLATE_TYPE_MAP = {
+  annual_checkup: 'annual_checkup',
+  annual_mgmt:    'health_management',
+  nutrition:      'nutrition',
+  medical_assist: 'medical_assist',
+  tcm:            'tcm',
+  rehab:          'rehab',
+  psychology:     'psychology',
+}
 
-  const handleSubmit = async e => {
-    if (e && e.preventDefault) e.preventDefault()
-    if (!form.patientId) { setError('请搜索并选择会员'); return }
-    // 年度管理方案跳转专属配置页，不走 HealthPlan 流程
-    if (isAnnualMgmt) {
-      onClose()
-      nav(`/patients/${form.patientId}/annual-plan`)
-      return
-    }
-    if (!form.title) { setError('方案名称不能为空'); return }
-    setSaving(true); setError('')
-    try { await staffAPI.createPlan(form); onSaved() }
-    catch (err) { setError(err.message) }
-    finally { setSaving(false) }
+// 从选中的模板推导方案名称
+function getTemplateTitle(tpl) {
+  if (!tpl) return ''
+  const c = tpl.content || {}
+  return c.packageName || c.planName || tpl.name || ''
+}
+
+// 从选中的模板生成方案 items
+function templateToItems(tpl) {
+  if (!tpl) return []
+  const c = tpl.content || {}
+  if (tpl.type === 'annual_checkup') {
+    return (c.checkItems || []).map(ci => ({
+      name:     ci.name,
+      category: ci.type === 'lab' ? '检验检查' : '影像检查',
+      itemId:   ci.id || null,
+      itemType: ci.type === 'lab' ? 'labTest' : 'specialExam',
+    }))
   }
+  if (tpl.type === 'health_management') {
+    return (c.followUpPlans || []).map(fp => ({
+      name:     fp.name,
+      category: '随访方案',
+    }))
+  }
+  return []
+}
+
+function NewPlanModal({ onClose, onSaved, type }) {
+  const [patientId, setPatientId]     = useState('')
+  const [templateId, setTemplateId]   = useState('')
+  const [year, setYear]               = useState(new Date().getFullYear())
+  const [description, setDescription] = useState('')
+  const [templates, setTemplates]     = useState([])
+  const [loadingTpls, setLoadingTpls] = useState(false)
+  const [saving, setSaving]           = useState(false)
+  const [error, setError]             = useState('')
+
+  const tplType   = TEMPLATE_TYPE_MAP[type] || type
+  const modalTitle = MODAL_TITLE[type] || '新建方案'
+
+  useEffect(() => {
+    setLoadingTpls(true)
+    staffAPI.getPlanTemplates(tplType)
+      .then(res => setTemplates(res.data || []))
+      .catch(() => {})
+      .finally(() => setLoadingTpls(false))
+  }, [tplType])
+
+  const selectedTpl = templates.find(t => t._id === templateId) || null
+
+  const handleSubmit = async () => {
+    if (!patientId)  { setError('请搜索并选择会员'); return }
+    if (!templateId) { setError('请选择方案套餐'); return }
+    const title = getTemplateTitle(selectedTpl)
+    if (!title) { setError('所选模板没有名称，请联系管理员'); return }
+    setError('')
+    setSaving(true)
+    try {
+      await staffAPI.createPlan({
+        patientId, type, title,
+        description, year,
+        items: templateToItems(selectedTpl),
+      })
+      onSaved()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const desc = selectedTpl?.content?.planDesc || selectedTpl?.content?.packageDesc || ''
+  const checkItemCount = type === 'annual_checkup' ? (selectedTpl?.content?.checkItems?.length || 0) : 0
+  const checkItemPreview = type === 'annual_checkup' ? (selectedTpl?.content?.checkItems || []) : []
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal">
         <div className="modal-header">
-          <h3 className="modal-title">新建健康方案</h3>
+          <h3 className="modal-title">{modalTitle}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">搜索会员 *</label>
-            <PatientSearchInput
-              value={form.patientId}
-              onChange={pid => setForm(f => ({ ...f, patientId: pid }))}
-            />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案类型 *</label>
-            <select className="form-input" value={form.type} onChange={set('type')}>
-              <option value="annual_checkup">年度体检方案</option>
-              <option value="annual_mgmt">年度管理方案</option>
-              <option value="nutrition">营养干预方案</option>
-              <option value="medical_assist">就医协助方案</option>
-              <option value="tcm">中医调理方案</option>
-              <option value="rehab">运动复健方案</option>
-              <option value="psychology">心理咨询方案</option>
-            </select>
-          </div>
-          {/* 年度管理方案：不需要填名称，直接跳转专属页 */}
-          {isAnnualMgmt ? (
-            <div style={{ background: '#EFF6FF', borderRadius: 8, padding: '12px 14px', fontSize: 13, color: '#0077B6' }}>
-              💡 年度管理方案将进入专属配置页，包含医疗、监测、疫苗、生活方式等6大模块，每位会员每年独立一份
-            </div>
-          ) : (
-            <>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">方案名称 *</label>
-                <input className="form-input" placeholder="如：2025年度体检方案" value={form.title} onChange={set('title')} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">方案年度</label>
-                <input className="form-input" type="number" value={form.year} onChange={set('year')} />
-              </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">方案说明</label>
-                <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={form.description} onChange={set('description')} />
-              </div>
-            </>
-          )}
-        </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? '创建中...' : isAnnualMgmt ? '进入年度方案配置 →' : '创建方案'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
-// ── 新建年度管理方案入口弹窗（选会员后跳转 AnnualPlanPage） ───────────
-function AnnualPlanEntryModal({ onClose, nav }) {
-  const [patientId, setPatientId] = useState('')
-
-  const handleGo = () => {
-    if (!patientId) return
-    onClose()
-    nav(`/patients/${patientId}/annual-plan`)
-  }
-
-  return (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 480 }}>
-        <div className="modal-header">
-          <h3 className="modal-title">新建年度管理方案</h3>
-          <button className="modal-close" onClick={onClose}>✕</button>
-        </div>
-        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div style={{ background: '#EFF6FF', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#0077B6' }}>
-            💡 年度管理方案为每位会员每年独立配置，包含医疗、监测、疫苗、生活方式等6大模块
-          </div>
+          {/* 搜索会员 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">搜索会员 *</label>
             <PatientSearchInput value={patientId} onChange={setPatientId} />
           </div>
+
+          {/* 方案类型（从模板库选）*/}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案类型 *</label>
+            {loadingTpls ? (
+              <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>加载模板中...</div>
+            ) : templates.length === 0 ? (
+              <div style={{ color: '#D97706', fontSize: 13, padding: '8px 12px', background: '#FEF9EC', borderRadius: 8 }}>
+                暂无可用模板，请先在超管后台创建方案模板
+              </div>
+            ) : (
+              <select className="form-input" value={templateId} onChange={e => setTemplateId(e.target.value)}>
+                <option value="">请选择方案套餐</option>
+                {templates.map(t => (
+                  <option key={t._id} value={t._id}>
+                    {t.content?.packageName || t.content?.planName || t.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          {/* 选中模板的简介 */}
+          {desc && (
+            <div style={{ background: '#E8F5EF', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#1E6B50' }}>
+              {desc}
+            </div>
+          )}
+
+          {/* 年度体检方案：检查项目预览 */}
+          {checkItemCount > 0 && (
+            <div style={{ background: '#F9F6F0', borderRadius: 8, padding: '10px 12px', fontSize: 12, color: '#4A6558' }}>
+              <div style={{ fontWeight: 600, marginBottom: 4 }}>包含 {checkItemCount} 项检查项目，选出后可删减或增加</div>
+              {checkItemPreview.slice(0, 5).map((ci, i) => (
+                <div key={i} style={{ marginTop: 2 }}>
+                  <span style={{ fontSize: 11, color: ci.type === 'lab' ? '#0077B6' : '#1E6B50', background: ci.type === 'lab' ? '#E8F4FD' : '#E8F5EF', padding: '1px 5px', borderRadius: 3, marginRight: 5 }}>
+                    {ci.type === 'lab' ? '检验' : '检查'}
+                  </span>
+                  {ci.name}
+                </div>
+              ))}
+              {checkItemCount > 5 && <div style={{ color: '#aaa', marginTop: 2 }}>...还有 {checkItemCount - 5} 项</div>}
+            </div>
+          )}
+
+          {/* 方案年度 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案年度</label>
+            <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
+          </div>
+
+          {/* 方案说明 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案说明</label>
+            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
+          </div>
+
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button
-            className="btn btn-primary"
-            onClick={handleGo}
-            disabled={!patientId}
-            style={{ opacity: patientId ? 1 : 0.5 }}
-          >
-            进入年度方案配置 →
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? '创建中...' : '创建方案'}
           </button>
         </div>
       </div>

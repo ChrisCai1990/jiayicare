@@ -32,6 +32,7 @@ const ExamRequisition   = require('../models/ExamRequisition');
 const LabTestOrder      = require('../models/LabTestOrder');
 const SpecialExam       = require('../models/SpecialExam');
 const AbnormalReview    = require('../models/AbnormalReview');
+const PlanTemplate      = require('../models/PlanTemplate');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
 
@@ -682,6 +683,19 @@ router.get('/followup-forms', staffAuth, async (req, res) => {
   try {
     const forms = await FollowUpForm.find({ status: 'active' }).sort({ createdAt: -1 }).lean();
     res.json({ success: true, data: forms });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/staff/plan-templates?type= — 健康方案模板列表（新建方案时选用）
+router.get('/plan-templates', staffAuth, async (req, res) => {
+  try {
+    const { type } = req.query;
+    const filter = { status: 'active' };
+    if (type) filter.type = type;
+    const templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
+    res.json({ success: true, data: templates });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

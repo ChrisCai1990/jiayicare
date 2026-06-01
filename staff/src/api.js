@@ -74,6 +74,9 @@ export const staffAPI = {
   getFollowupForms: () => req('/staff/followup-forms'),
   getFollowupPlans: () => req('/staff/followup-plans'),
 
+  // 健康方案模板（新建方案时选用）
+  getPlanTemplates: (type) => req('/staff/plan-templates' + (type ? '?type=' + type : '')),
+
   // 检查开单
   getPatientRequisitions: (patientId)     => req(`/staff/patients/${patientId}/requisitions`),
   createRequisition:      (data)          => req('/staff/requisitions', { method: 'POST', body: JSON.stringify(data) }),
