@@ -15,7 +15,9 @@ const planItemSchema = new mongoose.Schema({
   reportId:    { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   // 关联检验检查库
   itemId:      { type: mongoose.Schema.Types.ObjectId, default: null },
-  itemType:    { type: String, default: '' },  // 'labTest' | 'specialExam' | ''
+  itemType:    { type: String, default: '' },  // 'labTest' | 'specialExam' | 'followUpPlan' | ''
+  // 关联随访表（随访节点专用）
+  formId:      { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpForm', default: null },
 }, { _id: true });
 
 const healthPlanSchema = new mongoose.Schema({

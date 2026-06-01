@@ -392,6 +392,10 @@ function NewPlanModal({ onClose, onSaved, type }) {
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState('')
 
+  // 随访方案 + 随访表（annual_mgmt 专用）
+  const [followupPlans, setFollowupPlans] = useState([])
+  const [followupForms, setFollowupForms] = useState([])
+
   // 搜索添加项目（仅 annual_checkup 用）
   const [showSearch, setShowSearch]       = useState(false)
   const [searchQ, setSearchQ]             = useState('')
@@ -411,20 +415,58 @@ function NewPlanModal({ onClose, onSaved, type }) {
       .finally(() => setLoadingTpls(false))
   }, [tplType])
 
-  // 切换模板时重置 items
+  // annual_mgmt：加载随访方案库 + 随访表库
+  useEffect(() => {
+    if (type !== 'annual_mgmt') return
+    Promise.all([
+      staffAPI.getFollowupPlans(),
+      staffAPI.getFollowupForms(),
+    ]).then(([plansRes, formsRes]) => {
+      setFollowupPlans(plansRes.data || [])
+      setFollowupForms(formsRes.data || [])
+    }).catch(() => {})
+  }, [type])
+
+  // 切换模板时重置 items（annual_mgmt 需等随访方案加载完毕）
   useEffect(() => {
     const tpl = templates.find(t => t._id === templateId) || null
-    setItems(templateToItems(tpl))
-    setShowSearch(false)
-    setSearchQ('')
-    setSearchResults([])
-  }, [templateId, templates])
+    if (!tpl) {
+      setItems([])
+      setShowSearch(false); setSearchQ(''); setSearchResults([])
+      return
+    }
+    if (tpl.type === 'health_management') {
+      // 把 followUpPlan 记录中的 formId 一并带入 items
+      setItems((tpl.content?.followUpPlans || []).map(fp => {
+        const plan     = followupPlans.find(p => String(p._id) === String(fp.id))
+        const rawForm  = plan?.formId           // 已 populate：{ _id, name } 或纯 ObjectId 字符串
+        const formId   = rawForm?._id ? String(rawForm._id) : (rawForm ? String(rawForm) : null)
+        return {
+          name:     fp.name,
+          category: '随访方案',
+          itemId:   fp.id   || null,
+          itemType: 'followUpPlan',
+          formId:   formId,
+        }
+      }))
+    } else {
+      setItems(templateToItems(tpl))
+    }
+    setShowSearch(false); setSearchQ(''); setSearchResults([])
+  }, [templateId, templates, followupPlans])
 
   const selectedTpl = templates.find(t => t._id === templateId) || null
   const desc = selectedTpl?.content?.planDesc || selectedTpl?.content?.packageDesc || ''
 
   // 删除单个项目
   const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx))
+
+  // 切换某个随访节点的关联随访表
+  const changeItemForm = (idx, formId) => {
+    setItems(prev => prev.map((item, i) =>
+      i === idx ? { ...item, formId: formId || null } : item
+    ))
+  }
 
   // 搜索检验/检查项目
   const handleSearch = (q) => {
@@ -546,23 +588,45 @@ function NewPlanModal({ onClose, onSaved, type }) {
                 <div>
                   {items.map((item, idx) => {
                     const tag = itemTag(item)
+                    const isFollowUpNode = item.itemType === 'followUpPlan'
                     return (
-                      <div key={idx} style={{
-                        display: 'flex', alignItems: 'center', gap: 8,
-                        padding: '8px 12px', borderBottom: '1px solid #F0EDE7', fontSize: 13,
-                      }}>
-                        <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>
-                          {tag.label}
-                        </span>
-                        <span style={{ flex: 1, color: '#1A2B24' }}>{item.name}</span>
-                        <button
-                          type="button"
-                          onClick={() => removeItem(idx)}
-                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 17, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
-                          onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
-                          onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
-                          title="删除此项"
-                        >×</button>
+                      <div key={idx} style={{ borderBottom: '1px solid #F0EDE7', padding: '8px 12px' }}>
+                        {/* 节点名称行 */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                          <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>
+                            {tag.label}
+                          </span>
+                          <span style={{ flex: 1, color: '#1A2B24' }}>{item.name}</span>
+                          <button
+                            type="button"
+                            onClick={() => removeItem(idx)}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 17, lineHeight: 1, padding: '0 2px', flexShrink: 0 }}
+                            onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
+                            onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
+                            title="删除此项"
+                          >×</button>
+                        </div>
+                        {/* 随访表选择（仅随访节点类型）*/}
+                        {isFollowUpNode && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, paddingLeft: 38 }}>
+                            <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0, whiteSpace: 'nowrap' }}>随访表：</span>
+                            <select
+                              value={item.formId || ''}
+                              onChange={e => changeItemForm(idx, e.target.value)}
+                              onClick={e => e.stopPropagation()}
+                              style={{
+                                flex: 1, fontSize: 12, padding: '3px 8px',
+                                border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff',
+                                color: item.formId ? '#1A2B24' : '#aaa',
+                              }}
+                            >
+                              <option value="">请选择随访表</option>
+                              {followupForms.map(f => (
+                                <option key={f._id} value={f._id}>{f.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
                     )
                   })}
