@@ -381,6 +381,47 @@ function templateToItems(tpl) {
   return []
 }
 
+// 自由文本新增一行项目
+function AddFreeItem({ onAdd }) {
+  const [open, setOpen] = useState(false)
+  const [val, setVal] = useState('')
+  const submit = () => {
+    const name = val.trim()
+    if (!name) return
+    onAdd(name)
+    setVal('')
+    setOpen(false)
+  }
+  if (!open) {
+    return (
+      <button type="button" onClick={() => setOpen(true)}
+        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1E6B50', fontSize: 12, padding: 0, fontWeight: 500 }}>
+        ＋ 添加项目
+      </button>
+    )
+  }
+  return (
+    <div style={{ display: 'flex', gap: 6, flex: 1, alignItems: 'center' }}>
+      <input
+        autoFocus
+        value={val}
+        onChange={e => setVal(e.target.value)}
+        onKeyDown={e => { if (e.key === 'Enter') submit(); if (e.key === 'Escape') setOpen(false) }}
+        placeholder="输入项目内容后按 Enter 添加"
+        style={{ flex: 1, fontSize: 12, padding: '4px 8px', border: '1px solid #E0D9CE', borderRadius: 6, outline: 'none' }}
+      />
+      <button type="button" onClick={submit}
+        style={{ fontSize: 12, padding: '4px 10px', background: '#1E6B50', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
+        添加
+      </button>
+      <button type="button" onClick={() => { setOpen(false); setVal('') }}
+        style={{ fontSize: 12, color: '#aaa', background: 'none', border: 'none', cursor: 'pointer', flexShrink: 0 }}>
+        取消
+      </button>
+    </div>
+  )
+}
+
 function NewPlanModal({ onClose, onSaved, type }) {
   const [patientId, setPatientId]     = useState('')
   const [templateId, setTemplateId]   = useState('')
@@ -605,7 +646,7 @@ function NewPlanModal({ onClose, onSaved, type }) {
                 {/* 项目列表 */}
                 {items.length === 0 && (
                   <div style={{ padding: '12px 14px', color: '#aaa', fontSize: 12, textAlign: 'center' }}>
-                    暂无项目，{type === 'annual_checkup' ? '可点击下方"添加项目"从检验/检查库添加' : '可在创建后的方案详情中添加'}
+                    暂无项目，可点击下方"＋ 添加项目"添加
                   </div>
                 )}
                 <div>
@@ -614,12 +655,17 @@ function NewPlanModal({ onClose, onSaved, type }) {
                     const isFollowUpNode = item.itemType === 'followUpPlan'
                     return (
                       <div key={idx} style={{ borderBottom: '1px solid #F0EDE7', padding: '8px 12px' }}>
-                        {/* 节点名称行 */}
+                        {/* 节点名称行（名称可直接编辑）*/}
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                           <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>
                             {tag.label}
                           </span>
-                          <span style={{ flex: 1, color: '#1A2B24' }}>{item.name}</span>
+                          <input
+                            value={item.name}
+                            onChange={e => setItems(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
+                            style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#1A2B24', fontFamily: 'inherit', padding: 0 }}
+                            placeholder="请填写项目内容"
+                          />
                           <button
                             type="button"
                             onClick={() => removeItem(idx)}
@@ -655,55 +701,60 @@ function NewPlanModal({ onClose, onSaved, type }) {
                   })}
                 </div>
 
-                {/* 添加项目区（仅 annual_checkup） */}
-                {type === 'annual_checkup' && (
-                  <div style={{ padding: '8px 12px', borderTop: items.length > 0 ? '1px solid #F0EDE7' : 'none', background: '#fff' }}>
-                    {!showSearch ? (
-                      <button type="button" onClick={() => setShowSearch(true)}
-                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1E6B50', fontSize: 12, padding: 0, fontWeight: 500 }}>
-                        ＋ 添加项目
-                      </button>
-                    ) : (
-                      <div>
-                        <div style={{ position: 'relative' }}>
-                          <input
-                            className="form-input"
-                            autoFocus
-                            value={searchQ}
-                            onChange={e => handleSearch(e.target.value)}
-                            placeholder="搜索检验/检查项目名称..."
-                            style={{ fontSize: 12, paddingRight: 44 }}
-                          />
-                          <button type="button" onClick={() => { setShowSearch(false); setSearchQ(''); setSearchResults([]) }}
-                            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 12 }}>
-                            取消
-                          </button>
-                        </div>
-                        {(searching || searchResults.length > 0 || (searchQ && !searching)) && (
-                          <div style={{ border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff', maxHeight: 180, overflowY: 'auto', marginTop: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
-                            {searching && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>搜索中...</div>}
-                            {!searching && searchResults.length === 0 && searchQ && (
-                              <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>无匹配结果</div>
-                            )}
-                            {searchResults.map((r, i) => (
-                              <div key={i} onMouseDown={() => addFromLibrary(r)}
-                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #F8F6F2' }}
-                                onMouseEnter={e => e.currentTarget.style.background = '#F0F9F4'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                              >
-                                <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 3, fontWeight: 600, color: r.type === 'lab' ? '#0077B6' : '#1E6B50', background: r.type === 'lab' ? '#E8F4FD' : '#E8F5EF' }}>
-                                  {r.type === 'lab' ? '检验' : '检查'}
-                                </span>
-                                <span style={{ flex: 1 }}>{r.name}</span>
-                                <span style={{ fontSize: 11, color: '#1E6B50' }}>＋ 添加</span>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                {/* 添加项目区 */}
+                <div style={{ padding: '8px 12px', borderTop: items.length > 0 ? '1px solid #F0EDE7' : 'none', background: '#fff' }}>
+                  {!showSearch ? (
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                      {/* 所有类型都支持自由文本新增 */}
+                      <AddFreeItem onAdd={name => setItems(prev => [...prev, { name, category: type === 'annual_checkup' ? '检验检查' : '方案项目' }])} />
+                      {/* 年度体检额外支持从检验/检查库搜索 */}
+                      {type === 'annual_checkup' && (
+                        <button type="button" onClick={() => setShowSearch(true)}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#4A6558', fontSize: 12, padding: 0, whiteSpace: 'nowrap' }}>
+                          从检验库搜索
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ position: 'relative' }}>
+                        <input
+                          className="form-input"
+                          autoFocus
+                          value={searchQ}
+                          onChange={e => handleSearch(e.target.value)}
+                          placeholder="搜索检验/检查项目名称..."
+                          style={{ fontSize: 12, paddingRight: 44 }}
+                        />
+                        <button type="button" onClick={() => { setShowSearch(false); setSearchQ(''); setSearchResults([]) }}
+                          style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 12 }}>
+                          取消
+                        </button>
                       </div>
-                    )}
-                  </div>
-                )}
+                      {(searching || searchResults.length > 0 || (searchQ && !searching)) && (
+                        <div style={{ border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff', maxHeight: 180, overflowY: 'auto', marginTop: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+                          {searching && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>搜索中...</div>}
+                          {!searching && searchResults.length === 0 && searchQ && (
+                            <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>无匹配结果</div>
+                          )}
+                          {searchResults.map((r, i) => (
+                            <div key={i} onMouseDown={() => addFromLibrary(r)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #F8F6F2' }}
+                              onMouseEnter={e => e.currentTarget.style.background = '#F0F9F4'}
+                              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                              <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 3, fontWeight: 600, color: r.type === 'lab' ? '#0077B6' : '#1E6B50', background: r.type === 'lab' ? '#E8F4FD' : '#E8F5EF' }}>
+                                {r.type === 'lab' ? '检验' : '检查'}
+                              </span>
+                              <span style={{ flex: 1 }}>{r.name}</span>
+                              <span style={{ fontSize: 11, color: '#1E6B50' }}>＋ 添加</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           )}
