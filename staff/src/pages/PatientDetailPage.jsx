@@ -246,8 +246,8 @@ export default function PatientDetailPage() {
     patientType: u.patientType || '',
     source: u.source || '',
     remark: u.remark || '',
-    contactPhone: u.contactPhone || '',
     contactPhone2: u.contactPhone2 || '',
+    contactName: u.contactName || '',
     deliveryAddress: u.deliveryAddress || '',
     assignedHealthManager: u.assignedHealthManager?._id || '',
     assignedFamilyDoctor:  u.assignedFamilyDoctor?._id  || '',
@@ -462,14 +462,14 @@ export default function PatientDetailPage() {
               {editing ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">联系电话</label>
-                    <input className="form-input" value={editForm.contactPhone}
-                      onChange={e => setEditForm(f => ({ ...f, contactPhone: e.target.value }))} />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">紧急联系电话</label>
                     <input className="form-input" value={editForm.contactPhone2}
                       onChange={e => setEditForm(f => ({ ...f, contactPhone2: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">紧急联系人</label>
+                    <input className="form-input" value={editForm.contactName}
+                      onChange={e => setEditForm(f => ({ ...f, contactName: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">配送地址</label>
@@ -545,8 +545,8 @@ export default function PatientDetailPage() {
                 </div>
               ) : (
                 <>
-                  <InfoRow label="联系电话" value={user.contactPhone || '-'} />
-                  <InfoRow label="紧急联系" value={user.contactPhone2 || '-'} />
+                  <InfoRow label="紧急联系电话" value={user.contactPhone2 || '-'} />
+                  <InfoRow label="紧急联系人" value={user.contactName || '-'} />
                   <InfoRow label="配送地址" value={user.deliveryAddress || '-'} />
                   <InfoRow label="会员类型" value={user.memberType || '-'} />
                   <InfoRow label="家庭医师" value={user.assignedFamilyDoctor?.name || '-'} />
