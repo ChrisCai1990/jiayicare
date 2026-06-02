@@ -189,6 +189,15 @@ export default function PlanDetailPage() {
     catch (err) { toast(err.message) }
   }
 
+  const handleResetToDraft = async () => {
+    if (!window.confirm('将方案重置为草稿状态，修改后可重新推送给会员。确认？')) return
+    try {
+      await staffAPI.updatePlan(id, { status: 'draft' })
+      toast('已重置为草稿，可修改后重新推送')
+      load()
+    } catch (err) { toast(err.message) }
+  }
+
   if (loading) return <div className="page-loading">加载中...</div>
   if (!plan) return <div className="page">方案不存在</div>
 
@@ -216,6 +225,12 @@ export default function PlanDetailPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           {plan.status === 'draft' && (
             <button className="btn btn-primary" onClick={handlePush}>📤 推送给会员</button>
+          )}
+          {plan.status === 'active' && (
+            <button className="btn btn-secondary" onClick={handleResetToDraft}>✏️ 重新编辑</button>
+          )}
+          {plan.status === 'active' && (
+            <button className="btn btn-primary" onClick={handlePush}>📤 重新推送</button>
           )}
           <button className="btn btn-secondary" onClick={handleDelete}>删除</button>
         </div>

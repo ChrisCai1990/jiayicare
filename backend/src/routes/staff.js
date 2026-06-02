@@ -209,6 +209,7 @@ router.post('/patients', staffAuth, async (req, res) => {
     menstrualHistory, maritalHistory,
     assignedHealthManager, assignedFamilyDoctor, assignedNutritionist,
     patientCategory, childProfile,
+    servicePackage, serviceStartDate, serviceExpiry,
   } = req.body;
 
   if (!phone) return res.status(400).json({ success: false, message: '手机号不能为空' });
@@ -257,6 +258,9 @@ router.post('/patients', staffAuth, async (req, res) => {
     assignedHealthManager: hm,
     assignedFamilyDoctor: fd,
     assignedNutritionist: nn,
+    servicePackage: servicePackage || '',
+    serviceStartDate: serviceStartDate || '',
+    serviceExpiry: serviceExpiry || '',
     onboardingCompleted: true,
   };
 
@@ -342,6 +346,12 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
   const updateData = {};
   allowed.forEach(k => {
     if (req.body[k] !== undefined) updateData[k] = req.body[k];
+  });
+
+  // 归属字段为空字符串时不覆盖（空字符串 = 未指定，不等于"取消分配"）
+  // 取消分配应通过专用的转派功能完成
+  ['assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist'].forEach(k => {
+    if (updateData[k] === '') delete updateData[k];
   });
 
   // 生活方式嵌套字段（逐个展开，避免覆盖其他字段）

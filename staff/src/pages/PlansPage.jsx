@@ -186,7 +186,7 @@ export default function PlansPage() {
                       <td>{p.items?.length || 0} 项</td>
                       <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleDateString('zh-CN')}</td>
                       <td>
-                        <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(`/plans/${p._id}`) }}>查看</button>
+                        <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(`/plans/${p._id}`) }}>编辑</button>
                       </td>
                     </tr>
                   ))}

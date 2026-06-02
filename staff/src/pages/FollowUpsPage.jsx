@@ -37,7 +37,7 @@ export default function FollowUpsPage() {
   const [dateFrom,     setDateFrom]     = useState(todayStr)
   const [dateTo,       setDateTo]       = useState('')
   const [loading,      setLoading]      = useState(true)
-  const [showModal,    setShowModal]    = useState(false)
+  const [showModal,    setShowModal]    = useState(false)  // 保留状态但不再使用新建入口
   // 注：dateFrom 默认今天开始，dateTo 默认空（不限结束），显示所有待随访记录
 
   // 执行随访 modal
@@ -122,7 +122,7 @@ export default function FollowUpsPage() {
           <h1 className="page-title">随访管理</h1>
           <p className="page-subtitle">共 {total} 条记录</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增随访</button>
+        <div style={{ fontSize: 13, color: '#8AA89C' }}>在"待随访"列表中点击"执行随访"完成记录</div>
       </div>
 
       {/* 状态标签 */}
@@ -167,7 +167,7 @@ export default function FollowUpsPage() {
           <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
         ) : followUps.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
-            暂无随访记录，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => setShowModal(true)}>立即创建</span>
+            暂无随访记录
           </div>
         ) : (
           <table className="table">

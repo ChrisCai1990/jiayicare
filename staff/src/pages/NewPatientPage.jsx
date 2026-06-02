@@ -21,7 +21,7 @@ const ETHNICITY_LIST = [
 function parseIdCard(id) {
   id = id.trim()
   if (id.length === 18) {
-    const birthDate = `${id.slice(0,4)}-${id.slice(4,6)}-${id.slice(6,8)}`
+    const birthDate = `${id.slice(6,10)}-${id.slice(10,12)}-${id.slice(12,14)}`
     const gender = parseInt(id[16]) % 2 === 1 ? '男' : '女'
     return { birthDate, gender }
   }
@@ -92,6 +92,7 @@ export default function NewPatientPage() {
     // 管理
     source: '', remark: '',
     assignedHealthManager: '', assignedFamilyDoctor: '', assignedNutritionist: '',
+    servicePackage: '', serviceStartDate: '', serviceExpiry: '',
     // 女性
     menstrualHistory: '', maritalHistory: '',
     // 儿童
@@ -403,6 +404,16 @@ export default function NewPatientPage() {
                   {MEMBER_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </F>
+              <F label="服务包" span={2}>
+                <select className="form-input" value={form.servicePackage} onChange={set('servicePackage')}>
+                  <option value="">-- 未设置 --</option>
+                  <option value="年度服务包">年度服务包</option>
+                  <option value="半年服务包">半年服务包</option>
+                  <option value="季度服务包">季度服务包</option>
+                </select>
+              </F>
+              <F label="服务开始日期"><input className="form-input" type="date" value={form.serviceStartDate} onChange={set('serviceStartDate')} /></F>
+              <F label="服务到期日期"><input className="form-input" type="date" value={form.serviceExpiry} onChange={set('serviceExpiry')} /></F>
               <F label="会员来源"><select className="form-input" value={form.source} onChange={set('source')}><option value="">未填写</option>{SOURCE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></F>
               <F label="备注" span={2}><textarea className="form-input" rows={3} value={form.remark} onChange={set('remark')} style={{ resize: 'vertical' }} /></F>
             </Grid>

@@ -15,6 +15,7 @@ export default function ReportsPage() {
   const [page, setPage] = useState(1)
   const [showUpload, setShowUpload] = useState(false)
   const [showDetail, setShowDetail] = useState(null)
+  const [detailLoading, setDetailLoading] = useState(false)
   const [rejectModal, setRejectModal] = useState(null) // report object pending rejection
   const [rejectReason, setRejectReason] = useState('')
   const [abnormalModal, setAbnormalModal] = useState(null) // report object for abnormal approval
@@ -32,6 +33,16 @@ export default function ReportsPage() {
 
   useEffect(() => { load() }, [load])
   useEffect(() => { staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {}) }, [])
+
+  const openDetail = async (r) => {
+    setDetailLoading(true)
+    setShowDetail(r)
+    try {
+      const res = await staffAPI.getReport(r._id)
+      setShowDetail(res.data)
+    } catch { /* keep partial data */ }
+    finally { setDetailLoading(false) }
+  }
 
   const handleAudit = async (id, action, rejectReason = '', abnItems = []) => {
     try {
@@ -73,7 +84,7 @@ export default function ReportsPage() {
             <tbody>
               {reports.map(r => (
                 <tr key={r._id}>
-                  <td><strong style={{ cursor: 'pointer', color: '#1E6B50' }} onClick={() => setShowDetail(r)}>{r.title}</strong></td>
+                  <td><strong style={{ cursor: 'pointer', color: '#1E6B50' }} onClick={() => openDetail(r)}>{r.title}</strong></td>
                   <td>{r.user?.name} <span style={{ color: '#aaa', fontSize: 12 }}>{r.user?.phone}</span></td>
                   <td><span className="badge badge-info">{REPORT_TYPE[r.type] || r.type}</span></td>
                   <td style={{ color: '#666', fontSize: 13 }}>{r.hospital || '-'}</td>
@@ -87,7 +98,7 @@ export default function ReportsPage() {
                   <td style={{ color: '#666', fontSize: 13 }}>{r.uploadedBy?.name || '-'}</td>
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setShowDetail(r)}>查看</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => openDetail(r)}>查看</button>
                       {r.audit_status === 'unaudited' && (
                         <>
                           <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
@@ -123,7 +134,7 @@ export default function ReportsPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowDetail(null) }}>
           <div className="modal" style={{ maxWidth: 600 }}>
             <div className="modal-header">
-              <h3 className="modal-title">{showDetail.title}</h3>
+              <h3 className="modal-title">{showDetail.title}{detailLoading && <span style={{ fontSize: 12, color: '#aaa', marginLeft: 8 }}>加载中...</span>}</h3>
               <button className="modal-close" onClick={() => setShowDetail(null)}>✕</button>
             </div>
             <div className="modal-body">

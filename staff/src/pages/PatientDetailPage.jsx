@@ -220,6 +220,14 @@ export default function PatientDetailPage() {
   const loadRequisitions = async () => {
     try { const res = await staffAPI.getPatientRequisitions(id); setRequisitions(res.data) } catch {}
   }
+
+  const openReportDetail = async (r) => {
+    setShowReportDetail(r)
+    try {
+      const res = await staffAPI.getReport(r._id)
+      setShowReportDetail(res.data)
+    } catch { /* keep partial */ }
+  }
   useEffect(() => { load() }, [id])
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
@@ -262,6 +270,8 @@ export default function PatientDetailPage() {
       pastHistory: u.healthProfile?.pastHistory || '',
       medicHistory: u.healthProfile?.medicHistory || '',
       surgeryHistory: u.healthProfile?.surgeryHistory || '',
+      menstrualHistory: u.healthProfile?.menstrualHistory || '',
+      maritalHistory: u.healthProfile?.maritalHistory || '',
     },
   })
 
@@ -355,7 +365,6 @@ export default function PatientDetailPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn btn-secondary btn-sm" onClick={() => setShowReferralModal(true)}>🔀 转介</button>
           <button className="btn btn-secondary btn-sm" onClick={() => setShowMessageModal(true)}>💬 发消息</button>
-          <button className="btn btn-primary" onClick={() => setShowFollowUpModal(true)}>＋ 记录随访</button>
         </div>
       </div>
 
@@ -600,6 +609,10 @@ export default function PatientDetailPage() {
                     { key: 'transfusionHistory', label: '输血史', nested: false },
                     { key: 'infectiousHistory', label: '传染病史', nested: false },
                     { key: 'vaccinationHistory', label: '预防接种史', nested: false },
+                    ...(user.gender === '女' ? [
+                      { key: 'menstrualHistory', label: '月经史', nested: true },
+                      { key: 'maritalHistory', label: '婚育史', nested: true },
+                    ] : []),
                   ].map(({ key, label, nested }) => (
                     <div key={key}>
                       <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
@@ -628,6 +641,10 @@ export default function PatientDetailPage() {
                     { label: '输血史', val: user.transfusionHistory },
                     { label: '传染病史', val: user.infectiousHistory },
                     { label: '预防接种史', val: user.vaccinationHistory },
+                    ...(user.gender === '女' ? [
+                      { label: '月经史', val: user.healthProfile?.menstrualHistory },
+                      { label: '婚育史', val: user.healthProfile?.maritalHistory },
+                    ] : []),
                   ].map(({ label, val }) => val ? (
                     <div key={label} style={{ display: 'flex', gap: 8 }}>
                       <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{label}：</span>
@@ -698,7 +715,6 @@ export default function PatientDetailPage() {
           <div className="card" style={{ gridColumn: 'span 2' }}>
             <div className="card-header">
               <div className="card-title">最近随访</div>
-              <button className="btn btn-primary btn-sm" onClick={() => setShowFollowUpModal(true)}>＋ 新增随访</button>
             </div>
             <div className="card-body">
               {recentFollowUps?.length > 0 ? (
@@ -720,7 +736,7 @@ export default function PatientDetailPage() {
                 ))
               ) : (
                 <div style={{ color: '#aaa', textAlign: 'center', padding: '16px 0', fontSize: 14 }}>
-                  暂无随访记录，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => setShowFollowUpModal(true)}>立即记录</span>
+                  暂无随访记录
                 </div>
               )}
             </div>
@@ -810,12 +826,9 @@ export default function PatientDetailPage() {
         <div className="card">
           <div className="card-header">
             <div className="card-title">随访记录</div>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowFollowUpModal(true)}>＋ 新增随访</button>
           </div>
           {followUps.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
-              暂无随访记录，<span style={{ color: '#1E6B50', cursor: 'pointer' }} onClick={() => setShowFollowUpModal(true)}>立即记录</span>
-            </div>
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无随访记录</div>
           ) : (
             <table className="table">
               <thead>
@@ -860,7 +873,7 @@ export default function PatientDetailPage() {
               <thead><tr><th>报告标题</th><th>类型</th><th>医院</th><th>日期</th><th>审核状态</th><th>上传人</th></tr></thead>
               <tbody>
                 {reports.map(r => (
-                  <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => setShowReportDetail(r)}>
+                  <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => openReportDetail(r)}>
                     <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title}</td>
                     <td><span className="badge badge-info">{r.type}</span></td>
                     <td style={{ fontSize: 13, color: '#666' }}>{r.hospital || '-'}</td>
@@ -1094,7 +1107,9 @@ export default function PatientDetailPage() {
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
                   {showReportDetail.mimeType?.startsWith('image/') || showReportDetail.content?.startsWith('data:image') ? (
-                    <img src={showReportDetail.content || showReportDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', borderRadius: 8 }} />
+                    <img src={showReportDetail.content || showReportDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #f0ece4' }} />
+                  ) : showReportDetail.mimeType === 'application/pdf' || showReportDetail.fileUrl?.endsWith('.pdf') ? (
+                    <iframe src={showReportDetail.content || showReportDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
                   ) : (
                     <a href={showReportDetail.content || showReportDetail.fileUrl} target="_blank" rel="noreferrer"
                       className="btn btn-secondary btn-sm">📎 查看文件</a>

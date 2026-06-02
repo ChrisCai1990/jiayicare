@@ -16,7 +16,7 @@ const ALL_NAV = [
   { label: '健康方案', icon: '📄', path: '/plans',    roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'], children: PLAN_CHILDREN },
   { label: '报告管理', icon: '🔬', path: '/reports',  roles: ['healthManager','familyDoctor','superadmin'] },
   { label: '异常复查', icon: '⚠️', path: '/abnormal-reviews', roles: ['healthManager','familyDoctor','superadmin'] },
-  { label: '服务记录', icon: '🏥', path: '/service-records', roles: ['medicalAssistant','psychologist','rehabSpecialist','tcmDoctor','specialist','superadmin'] },
+  { label: '服务记录', icon: '🏥', path: '/service-records', roles: [] },
   { label: '科普推送', icon: '📢', path: '/knowledge', roles: ['healthManager','nutritionist','familyDoctor','superadmin'] },
   { label: '问卷推送', icon: '📝', path: '/questionnaires', roles: ['healthManager','familyDoctor','superadmin'] },
   { label: '产品推送', icon: '🛍', path: '/products',  roles: [] },
