@@ -26,6 +26,7 @@ export default function PlansPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [showCheckupModal, setShowCheckupModal] = useState(false)
+  const [showMedicalModal, setShowMedicalModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '')
 
   const load = useCallback(async () => {
@@ -69,6 +70,7 @@ export default function PlansPage() {
         <div style={{ marginLeft: 'auto' }}>
           <button className="btn btn-primary btn-sm" onClick={() => {
             if (typeFilter === 'annual_checkup') setShowCheckupModal(true)
+            else if (typeFilter === 'medical_assist') setShowMedicalModal(true)
             else setShowModal(true)
           }}>
             ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
@@ -102,6 +104,7 @@ export default function PlansPage() {
       </div>
 
       {showCheckupModal && <AnnualCheckupPlanModal onClose={() => setShowCheckupModal(false)} onSaved={() => { setShowCheckupModal(false); load(); toast('体检方案已创建') }} />}
+      {showMedicalModal && <MedicalAssistPlanModal onClose={() => setShowMedicalModal(false)} onSaved={() => { setShowMedicalModal(false); load(); toast('就医协助方案已创建') }} />}
       {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
     </div>
   )
@@ -384,6 +387,205 @@ function templateToItems(tpl) {
   }
 
   return []
+}
+
+// ── 就医协助方案：两步创建弹窗 ────────────────────────────────────────
+function MedicalAssistPlanModal({ onClose, onSaved }) {
+  const [step, setStep] = useState(1)
+  const [templates, setTemplates] = useState([])
+  const [loadingTpls, setLoadingTpls] = useState(true)
+  const [tplError, setTplError] = useState('')
+  const [selectedTpl, setSelectedTpl] = useState(null)
+
+  // 模板内容字段（与管理端完全一致）
+  const [form, setForm] = useState({
+    name: '', hospital: '', department: '', expert: '',
+    staffName: '', datetime: '', transport: '', tasks: '', hotel: '', notes: '',
+  })
+  const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
+
+  const [patientId, setPatientId] = useState('')
+  const [year, setYear] = useState(new Date().getFullYear())
+  const [description, setDescription] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    staffAPI.getPlanTemplates('medical_assist')
+      .then(res => setTemplates(res.data || []))
+      .catch(err => setTplError(err.message || '加载失败'))
+      .finally(() => setLoadingTpls(false))
+  }, [])
+
+  const selectTemplate = (tpl) => {
+    setSelectedTpl(tpl)
+    const c = tpl.content || {}
+    setForm({
+      name:      tpl.name || '',
+      hospital:  c.hospital  || '',
+      department:c.department|| '',
+      expert:    c.expert    || '',
+      staffName: c.staffName || '',
+      datetime:  c.datetime  || '',
+      transport: c.transport || '',
+      tasks:     c.tasks     || '',
+      hotel:     c.hotel     || '',
+      notes:     c.notes     || '',
+    })
+    setStep(2)
+    setError('')
+  }
+
+  const handleSubmit = async () => {
+    if (!patientId) { setError('请搜索并选择会员'); return }
+    if (!form.name.trim()) { setError('请填写方案名称'); return }
+    setError(''); setSaving(true)
+    try {
+      // items 从内容字段派生
+      const items = []
+      if (form.hospital) {
+        const dept = form.department ? ` · ${form.department}` : ''
+        const exp  = form.expert     ? `（${form.expert}）`    : ''
+        items.push({ name: `就诊：${form.hospital}${dept}${exp}`, category: '就医协助' })
+      }
+      if (form.datetime)  items.push({ name: `就医时间：${form.datetime}`,   category: '就医协助' })
+      if (form.staffName) items.push({ name: `服务专员：${form.staffName}`, category: '就医协助' })
+      if (form.transport) items.push({ name: `交通接送：${form.transport}`, category: '就医协助' })
+      if (form.tasks) form.tasks.split('\n').filter(t => t.trim()).forEach(t =>
+        items.push({ name: t.trim(), category: '就医协助' })
+      )
+      if (form.hotel) items.push({ name: `住宿安排：${form.hotel}`, category: '就医协助' })
+      if (form.notes) items.push({ name: `备注：${form.notes}`,     category: '就医协助' })
+
+      await staffAPI.createPlan({
+        patientId, type: 'medical_assist', title: form.name,
+        description, year, items,
+        content: { ...form },
+      })
+      onSaved()
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
+  const FieldRow = ({ label, fieldKey, rows, placeholder }) => (
+    <div className="form-group" style={{ marginBottom: 0 }}>
+      <label className="form-label">{label}</label>
+      {rows
+        ? <textarea rows={rows} value={form[fieldKey]} onChange={e => set(fieldKey, e.target.value)} placeholder={placeholder} style={{ ...inputStyle, resize: 'vertical' }} />
+        : <input type="text" value={form[fieldKey]} onChange={e => set(fieldKey, e.target.value)} placeholder={placeholder} style={inputStyle} />
+      }
+    </div>
+  )
+
+  // ── Step 1：模板选择 ──────────────────────────────────────────────
+  if (step === 1) return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建就医协助方案 — 选择方案模板</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: 440, overflowY: 'auto' }}>
+          {loadingTpls && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
+          {tplError && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {tplError}</div>}
+          {!loadingTpls && !tplError && templates.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建就医协助方案模板</div>
+          )}
+          {templates.map(tpl => {
+            const c = tpl.content || {}
+            const summary = [c.hospital, c.department, c.expert].filter(Boolean).join(' · ')
+            return (
+              <div key={tpl._id} onClick={() => selectTemplate(tpl)}
+                style={{ border: '1px solid #E0D9CE', borderRadius: 10, padding: '14px 18px', marginBottom: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}
+                onMouseEnter={e => { e.currentTarget.style.border = '1px solid #DC2626'; e.currentTarget.style.background = '#FEF2F2' }}
+                onMouseLeave={e => { e.currentTarget.style.border = '1px solid #E0D9CE'; e.currentTarget.style.background = '#fff' }}
+              >
+                <span style={{ fontSize: 26 }}>🏥</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{tpl.name}</div>
+                  {summary && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{summary}</div>}
+                  {c.datetime && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 2 }}>服务时间：{c.datetime}</div>}
+                </div>
+                <span style={{ color: '#DC2626', fontSize: 18 }}>→</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── Step 2：完整内容表单 ──────────────────────────────────────────
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 600, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建就医协助方案</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
+        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {/* 已选模板 */}
+          <div style={{ background: '#FEF2F2', borderRadius: 8, padding: '8px 14px', fontSize: 13, color: '#DC2626', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>已选模板：<strong>{selectedTpl?.name}</strong></span>
+            <button type="button" onClick={() => setStep(1)}
+              style={{ marginLeft: 'auto', fontSize: 12, color: '#DC2626', background: 'none', border: '1px solid #DC2626', borderRadius: 14, padding: '2px 10px', cursor: 'pointer' }}>
+              更换模板
+            </button>
+          </div>
+
+          {/* 搜索会员 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">搜索会员 *</label>
+            <PatientSearchInput value={patientId} onChange={setPatientId} />
+          </div>
+
+          {/* 方案名称 */}
+          <FieldRow label="方案名称 *" fieldKey="name" placeholder="就医协助方案名称" />
+
+          {/* 两栏布局 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <FieldRow label="医院"     fieldKey="hospital"   placeholder="医院名称" />
+            <FieldRow label="科室"     fieldKey="department" placeholder="科室名称" />
+            <FieldRow label="专家"     fieldKey="expert"     placeholder="专家姓名（可选）" />
+            <FieldRow label="就医专员" fieldKey="staffName"  placeholder="专员姓名（可选）" />
+            <FieldRow label="服务时间" fieldKey="datetime"   placeholder="日期和时间段" />
+            <FieldRow label="交通接送" fieldKey="transport"  placeholder="是否专车、集合地点" />
+          </div>
+
+          {/* 全宽多行字段 */}
+          <FieldRow label="具体服务事项" fieldKey="tasks"  rows={3} placeholder="如：代取报告、陪同检查，每行一项" />
+          <FieldRow label="酒店安排"     fieldKey="hotel"  rows={2} placeholder="是否需要住宿及酒店信息" />
+          <FieldRow label="备注"         fieldKey="notes"  rows={2} placeholder="其他注意事项" />
+
+          {/* 方案年度 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案年度</label>
+            <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
+          </div>
+
+          {/* 方案说明 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案说明</label>
+            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
+          </div>
+
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? '创建中...' : '创建就医协助方案'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── 年度体检方案：两步创建弹窗 ────────────────────────────────────────
