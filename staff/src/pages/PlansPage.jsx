@@ -81,7 +81,7 @@ export default function PlansPage() {
             </tr></thead>
             <tbody>
               {plans.map(p => (
-                <tr key={p._id} onClick={() => nav(`/plans/${p._id}`)} style={{ cursor: 'pointer' }}>
+                <tr key={p._id} onClick={() => nav(p.type === 'annual_mgmt' ? `/plans/mgmt/${p._id}` : `/plans/${p._id}`)} style={{ cursor: 'pointer' }}>
                   <td><strong>{p.title}</strong></td>
                   <td><span className="badge badge-info">{TYPE_LABEL[p.type]}</span></td>
                   <td>{p.patientId?.name || '-'} <span style={{ color: '#aaa', fontSize: 12 }}>{p.patientId?.phone}</span></td>
@@ -89,7 +89,7 @@ export default function PlansPage() {
                   <td>{p.items?.length || 0} 项</td>
                   <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleDateString('zh-CN')}</td>
                   <td>
-                    <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(`/plans/${p._id}`) }}>查看</button>
+                    <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(p.type === 'annual_mgmt' ? `/plans/mgmt/${p._id}` : `/plans/${p._id}`) }}>查看</button>
                   </td>
                 </tr>
               ))}
@@ -504,7 +504,12 @@ function NewPlanModal({ onClose, onSaved, type }) {
     setError('')
     setSaving(true)
     try {
-      await staffAPI.createPlan({ patientId, type, title, description, year, items })
+      // 创建时把模板内容整体带入 plan.content（annual_mgmt 需要 planType，nutrition/medical_assist 需要完整内容）
+      const tplContent = selectedTpl?.content || {}
+      const content = type === 'annual_mgmt'
+        ? { planType: tplContent.planType || '', moduleData: {} }
+        : tplContent
+      await staffAPI.createPlan({ patientId, type, title, description, year, items, content })
       onSaved()
     } catch (err) {
       setError(err.message)

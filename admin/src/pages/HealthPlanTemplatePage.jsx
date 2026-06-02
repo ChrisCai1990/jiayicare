@@ -21,6 +21,7 @@ const defaultContent = {
     addons: [],     // [{ type:'lab'|'exam', id, name, reason }]
   },
   health_management: {
+    planType: '',
     planName: '',
     planDesc: '',
     followUpPlans: [],
@@ -256,6 +257,16 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'health_management') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div className="form-group">
+        <label className="form-label">方案类型 *</label>
+        <select className="form-input" value={content.planType || ''} onChange={e => set('planType', e.target.value)}>
+          <option value="">请选择方案类型</option>
+          <option value="health_reshape">健康重塑方案</option>
+          <option value="young_state">健康年轻态方案</option>
+          <option value="chronic_stable">慢病维稳方案</option>
+          <option value="health_prevention">健康预防方案</option>
+        </select>
+      </div>
       <div className="form-group">
         <label className="form-label">方案名称 *</label>
         <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：慢病管理标准方案" />

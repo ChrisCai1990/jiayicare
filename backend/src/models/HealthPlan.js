@@ -48,6 +48,8 @@ const healthPlanSchema = new mongoose.Schema({
   // 随访计划专属
   followupFrequency: { type: String, default: '' }, // 如"每2周一次"
   followupResponsible: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // 结构化内容（年度管理方案板块数据；营养/就医模板内容）
+  content: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 状态
   status: {
     type: String,

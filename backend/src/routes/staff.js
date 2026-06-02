@@ -523,7 +523,7 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
 
 // POST /api/staff/plans
 router.post('/plans', staffAuth, async (req, res) => {
-  const { patientId, type, title, description, year, startDate, endDate, items, followupFrequency, summary } = req.body;
+  const { patientId, type, title, description, year, startDate, endDate, items, followupFrequency, summary, content } = req.body;
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   const plan = await HealthPlan.create({
     staffId: req.staff._id, patientId, type, title,
@@ -533,6 +533,7 @@ router.post('/plans', staffAuth, async (req, res) => {
     items: (items || []).map(item => ({ ...item, status: 'pending' })),
     followupFrequency: followupFrequency || '',
     summary: summary || '',
+    content: content || {},
     status: 'draft',
   });
   res.json({ success: true, data: plan });
@@ -542,8 +543,9 @@ router.post('/plans', staffAuth, async (req, res) => {
 router.put('/plans/:id', staffAuth, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-  const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'items', 'followupFrequency', 'summary', 'status'];
+  const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
+  plan.markModified('content');
   await plan.save();
   res.json({ success: true, data: plan });
 });
