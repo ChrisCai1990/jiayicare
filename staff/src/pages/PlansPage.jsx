@@ -388,9 +388,11 @@ function NewPlanModal({ onClose, onSaved, type }) {
   const [description, setDescription] = useState('')
   const [items, setItems]             = useState([])
   const [templates, setTemplates]     = useState([])
-  const [loadingTpls, setLoadingTpls] = useState(false)
+  const [loadingTpls, setLoadingTpls] = useState(true)   // 初始 true 避免首帧闪"暂无模板"
+  const [tplError, setTplError]       = useState('')
   const [saving, setSaving]           = useState(false)
   const [error, setError]             = useState('')
+  const [freeTitle, setFreeTitle]     = useState('')   // 无模板时的纯文字标题
 
   // 随访方案 + 随访表（annual_mgmt 专用）
   const [followupPlans, setFollowupPlans] = useState([])
@@ -409,9 +411,10 @@ function NewPlanModal({ onClose, onSaved, type }) {
   // 加载模板列表
   useEffect(() => {
     setLoadingTpls(true)
+    setTplError('')
     staffAPI.getPlanTemplates(tplType)
       .then(res => setTemplates(res.data || []))
-      .catch(() => {})
+      .catch(err => setTplError(err.message || '加载失败，请刷新重试'))
       .finally(() => setLoadingTpls(false))
   }, [tplType])
 
@@ -496,20 +499,31 @@ function NewPlanModal({ onClose, onSaved, type }) {
     setShowSearch(false)
   }
 
+  const noTemplates = !loadingTpls && templates.length === 0
+
   const handleSubmit = async () => {
-    if (!patientId)  { setError('请搜索并选择会员'); return }
-    if (!templateId) { setError('请选择方案套餐'); return }
-    const title = getTemplateTitle(selectedTpl)
-    if (!title) { setError('所选模板没有名称，请联系管理员'); return }
+    if (!patientId) { setError('请搜索并选择会员'); return }
+    let title, content, planItems
+    if (noTemplates) {
+      // 降级：无模板时直接用自填标题创建
+      if (!freeTitle.trim()) { setError('请填写方案名称'); return }
+      title = freeTitle.trim()
+      content = {}
+      planItems = []
+    } else {
+      if (!templateId) { setError('请选择方案套餐'); return }
+      title = getTemplateTitle(selectedTpl)
+      if (!title) { setError('所选模板没有名称，请联系管理员'); return }
+      const tplContent = selectedTpl?.content || {}
+      content = type === 'annual_mgmt'
+        ? { planType: tplContent.planType || '', moduleData: {} }
+        : tplContent
+      planItems = items
+    }
     setError('')
     setSaving(true)
     try {
-      // 创建时把模板内容整体带入 plan.content（annual_mgmt 需要 planType，nutrition/medical_assist 需要完整内容）
-      const tplContent = selectedTpl?.content || {}
-      const content = type === 'annual_mgmt'
-        ? { planType: tplContent.planType || '', moduleData: {} }
-        : tplContent
-      await staffAPI.createPlan({ patientId, type, title, description, year, items, content })
+      await staffAPI.createPlan({ patientId, type, title, description, year, items: planItems, content })
       onSaved()
     } catch (err) {
       setError(err.message)
@@ -548,6 +562,10 @@ function NewPlanModal({ onClose, onSaved, type }) {
             <label className="form-label">方案类型 *</label>
             {loadingTpls ? (
               <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>加载模板中...</div>
+            ) : tplError ? (
+              <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>
+                ⚠️ {tplError}（请退出重新登录后再试）
+              </div>
             ) : templates.length === 0 ? (
               <div style={{ color: '#D97706', fontSize: 13, padding: '8px 12px', background: '#FEF9EC', borderRadius: 8 }}>
                 暂无可用模板，请先在超管后台创建方案模板
