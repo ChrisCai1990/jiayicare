@@ -791,6 +791,9 @@ function NutritionPlanModal({ onClose, onSaved }) {
   )
 }
 
+// 随访表字段类型标签
+const FIELD_TYPE_LABEL = { text: '单行文本', textarea: '多行文本', number: '数字', radio: '单选', checkbox: '多选', date: '日期' }
+
 // 随访方案周期格式化
 function formatCycle(plan) {
   if (!plan?.cycles?.length) return null
@@ -999,10 +1002,46 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
                         <option value="">请选择随访表</option>
                         {followupForms.map(f => <option key={f._id} value={f._id}>{f.name}{f.fields?.length ? ` (${f.fields.length}题)` : ''}</option>)}
                       </select>
-                      {fieldCnt > 0 && (
-                        <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{fieldCnt} 题</span>
-                      )}
                     </div>
+                    {/* 选中随访表后展开完整题目结构 */}
+                    {form && form.fields?.length > 0 && (
+                      <div style={{ marginTop: 8, paddingLeft: 38 }}>
+                        <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, background: '#faf8f5', overflow: 'hidden' }}>
+                          <div style={{ padding: '6px 12px', background: '#F0F9F4', borderBottom: '1px solid #E0D9CE', fontSize: 11, color: '#1E6B50', fontWeight: 600 }}>
+                            📋 {form.name}（共 {form.fields.length} 题）
+                          </div>
+                          {form.fields.map((field, fi) => (
+                            <div key={fi} style={{ padding: '8px 12px', borderBottom: fi < form.fields.length - 1 ? '1px solid #F5F2EC' : 'none' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
+                                <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{fi + 1}.</span>
+                                <span style={{ fontSize: 12, color: '#1A2B24', flex: 1 }}>
+                                  {field.label}
+                                  {field.required && <span style={{ color: '#DC2626', marginLeft: 2 }}>*</span>}
+                                </span>
+                                <span style={{ fontSize: 10, color: '#aaa', background: '#F5F2EC', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
+                                  {FIELD_TYPE_LABEL[field.type] || field.type}
+                                </span>
+                              </div>
+                              {(field.type === 'radio' || field.type === 'checkbox') && field.options?.length > 0 && (
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px 10px', paddingLeft: 16 }}>
+                                  {field.options.map((opt, oi) => (
+                                    <span key={oi} style={{ fontSize: 11, color: '#4A6558' }}>
+                                      {field.type === 'radio' ? '○' : '☐'} {opt}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {/* 提示：未选随访表时 */}
+                    {!n.formId && (
+                      <div style={{ marginTop: 4, paddingLeft: 38, fontSize: 11, color: '#aaa' }}>
+                        请在上方选择随访表后查看题目结构
+                      </div>
+                    )}
                   </div>
                 )
               })}
