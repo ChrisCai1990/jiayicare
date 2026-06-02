@@ -121,6 +121,7 @@ export const supplementsAPI = {
   list: (status) => request(`/supplements${status ? '?status=' + status : ''}`),
   create: (data) => request('/supplements', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/supplements/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  checkin: (id) => request(`/supplements/${id}/checkin`, { method: 'POST' }),
   stop: (id, data) => request(`/supplements/${id}/stop`, { method: 'PATCH', body: JSON.stringify(data) }),
   delete: (id) => request(`/supplements/${id}`, { method: 'DELETE' }),
 };

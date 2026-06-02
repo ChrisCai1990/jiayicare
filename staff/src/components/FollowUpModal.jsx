@@ -174,6 +174,8 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [planFormId, setPlanFormId] = useState('')
   const [planRows, setPlanRows] = useState([emptyRow()])
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
+  // 打卡任务
+  const [checkInItems, setCheckInItems] = useState([])
   // 随访方案模板选择
   const [followupPlans, setFollowupPlans] = useState([])
   const [selectedSchemeId, setSelectedSchemeId] = useState('')
@@ -259,6 +261,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           formId: visitTypeForm ? (planFormId || null) : null,
           followUpSchemeId: selectedSchemeId || null,
           formData: Object.keys(schemeFormData).length > 0 ? schemeFormData : null,
+          checkInItems: checkInItems.length > 0 ? checkInItems : undefined,
         })
       }))
       onSaved()
@@ -460,6 +463,52 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                   <span>复诊随访</span>
                 </label>
               </div>
+            </div>
+
+            {/* 打卡任务设置 */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">打卡任务（可选）</label>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 6 }}>
+                {[
+                  { key: 'diet',          label: '饮食' },
+                  { key: 'exercise',      label: '运动' },
+                  { key: 'sleep',         label: '睡眠' },
+                  { key: 'alcohol',       label: '烟酒' },
+                  { key: 'weight',        label: '体重' },
+                  { key: 'bloodPressure', label: '血压' },
+                  { key: 'bloodSugar',    label: '血糖' },
+                  { key: 'heartRate',     label: '心率' },
+                  { key: 'water',         label: '饮水' },
+                ].map(({ key, label }) => {
+                  const checked = checkInItems.includes(key)
+                  return (
+                    <label key={key} style={{
+                      display: 'flex', alignItems: 'center', gap: 5,
+                      padding: '5px 12px', borderRadius: 99, cursor: 'pointer', fontSize: 13,
+                      border: `1.5px solid ${checked ? '#1E6B50' : '#E0D9CE'}`,
+                      background: checked ? '#E8F5EF' : '#fff',
+                      color: checked ? '#1E6B50' : '#4A6558',
+                      fontWeight: checked ? 600 : 400,
+                      userSelect: 'none',
+                    }}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={e => setCheckInItems(prev =>
+                          e.target.checked ? [...prev, key] : prev.filter(k => k !== key)
+                        )}
+                        style={{ display: 'none' }}
+                      />
+                      {checked ? '✓ ' : ''}{label}
+                    </label>
+                  )
+                })}
+              </div>
+              {checkInItems.length > 0 && (
+                <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 4 }}>
+                  已选 {checkInItems.length} 项，将出现在会员首页今日打卡
+                </div>
+              )}
             </div>
 
             {/* 关联随访表单（仅表单随访时显示） */}

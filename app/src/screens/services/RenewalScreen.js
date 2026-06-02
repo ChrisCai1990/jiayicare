@@ -198,12 +198,16 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess }) {
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function RenewalScreen({ navigation }) {
   const { user } = useAuth();
-  const [selected, setSelected]   = useState(PACKAGES[0]);
+  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  // 续约时只展示与当前会员类型一致的套餐；新开通展示全部
+  const availablePackages = hasService
+    ? PACKAGES.filter(p => p.id === user.servicePackage)
+    : PACKAGES;
+  const [selected, setSelected]   = useState(availablePackages[0] || PACKAGES[0]);
   const [confirming, setConfirming] = useState(false);
   const [success, setSuccess]     = useState(false);
   const [orderNo, setOrderNo]     = useState('');
 
-  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
   const isExpired = hasService && daysLeft === 0;
@@ -289,7 +293,7 @@ export default function RenewalScreen({ navigation }) {
               color={isExpired ? colors.danger : isExpiring ? colors.warning : colors.success}
             />
             <View style={{ flex: 1 }}>
-              <Text style={styles.statusCardTitle}>{user.servicePackage}</Text>
+              <Text style={styles.statusCardTitle}>{availablePackages[0]?.name || user.servicePackage}</Text>
               <Text style={styles.statusCardSub}>
                 {isExpired ? '服务包已到期，续费后立即恢复全部功能'
                   : isExpiring ? `服务包将于 ${daysLeft} 天后到期`
@@ -301,7 +305,7 @@ export default function RenewalScreen({ navigation }) {
 
         {/* 选择套餐 */}
         <Text style={styles.sectionTitle}>选择续费套餐</Text>
-        {PACKAGES.map(pkg => (
+        {availablePackages.map(pkg => (
           <PackageCard
             key={pkg.id}
             pkg={pkg}

@@ -1724,10 +1724,59 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
       { new: true }
     );
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
+    // 同步写 PushRecord，让用户在消息中心收到通知
+    const existing = await PushRecord.findOne({ patientId: req.params.id, type: 'plan', questionnaireId: null,
+      title: `${targetYear}年度管理方案` });
+    if (!existing) {
+      await PushRecord.create({
+        staffId: req.staff._id, patientId: req.params.id,
+        type: 'plan',
+        title: `${targetYear}年度管理方案`,
+        content: '您的年度健康管理方案已发布，请前往"健康方案"查看。',
+      });
+    }
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+// ── GET /api/staff/patients/:id/orders ───────────────────────────
+// 获取指定患者的服务订单（供医护端查看并安排）
+router.get('/patients/:id/orders', staffAuth, async (req, res) => {
+  try {
+    const orders = await Order.find({ user: req.params.id })
+      .sort({ createdAt: -1 })
+      .limit(30);
+    res.json({ success: true, data: orders });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── PATCH /api/staff/orders/:id/start ────────────────────────────
+// 医护端启动服务（pending → scheduled）或标记完成（scheduled → completed）
+router.patch('/orders/:id/start', staffAuth, async (req, res) => {
+  try {
+    const { action = 'schedule', scheduledAt, note } = req.body;
+    const STATUS_MAP = { schedule: 'scheduled', complete: 'completed' };
+    const newStatus = STATUS_MAP[action] || 'scheduled';
+    const update = { status: newStatus, handledBy: req.staff._id };
+    if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
+    if (newStatus === 'completed') update.completedAt = new Date();
+    if (note) update.note = note;
+    const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true })
+      .populate('user', 'name phone');
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    res.json({ success: true, data: order, message: newStatus === 'completed' ? '服务已完成' : '服务已安排' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 推送年度管理方案时同步写 PushRecord ──────────────────────────
+// (仅对 handlePush 的补充；主路由保持不变)
+// 此处已通过 PATCH /patients/:id/annual-plan/push 处理，
+// Fix 7 将在该路由中追加 PushRecord 写入（见下方 patch）
 
 module.exports = router;

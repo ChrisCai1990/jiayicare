@@ -274,8 +274,9 @@ export default function ProfileScreen({ navigation }) {
   const fundTotal    = fund.total    ?? 0;
   const fundPersonal = fund.personal ?? 0;
   const fundCorp     = fund.corporate ?? 0;
-  // 会员类型
-  const memberType = hasService ? (user.servicePackage || '标准会员') : '未开通';
+  // 会员类型（服务包 ID → 显示名）
+  const PACKAGE_LABELS = { pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员' };
+  const memberType = hasService ? (PACKAGE_LABELS[user.servicePackage] || user.servicePackage || '标准会员') : '未开通';
   // 到期日格式化
   const expiryStr = hasService ? (user.serviceExpiry || '--') : '--';
 
@@ -364,7 +365,7 @@ export default function ProfileScreen({ navigation }) {
                 <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
               </View>
               <View style={styles.serviceInfo}>
-                <Text style={styles.serviceName} numberOfLines={1}>{user.servicePackage}</Text>
+                <Text style={styles.serviceName} numberOfLines={1}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
                 <Text style={styles.serviceExpiry}>
                   到期 {user.serviceExpiry} · 剩余 {daysLeft} 天
                 </Text>

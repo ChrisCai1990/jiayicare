@@ -37,6 +37,18 @@ router.put('/:id', auth, async (req, res) => {
   res.json({ success: true, data: item, message: '更新成功' });
 });
 
+// 今日打卡（标记今日已服）
+router.post('/:id/checkin', auth, async (req, res) => {
+  const today = new Date().toISOString().split('T')[0];
+  const item = await Supplement.findOneAndUpdate(
+    { _id: req.params.id, user: req.user._id, stopped: false },
+    { lastCheckinDate: today },
+    { new: true }
+  );
+  if (!item) return res.status(404).json({ success: false, message: '记录不存在或已停用' });
+  res.json({ success: true, data: item, message: '打卡成功' });
+});
+
 // 标记停用
 router.patch('/:id/stop', auth, async (req, res) => {
   const today = new Date().toISOString().split('T')[0];

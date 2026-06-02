@@ -52,8 +52,10 @@ const EMPTY_FORM = {
   frequency: '每日1次', startDate: '', note: '',
 };
 
-function SupCard({ item, onStop, onDelete, stopped }) {
+function SupCard({ item, onStop, onDelete, onCheckin, stopped }) {
   const itemId = item._id || item.id;
+  const today = new Date().toISOString().split('T')[0];
+  const takenToday = item.lastCheckinDate === today;
   return (
     <View style={[styles.card, stopped && styles.cardStopped]}>
       <View style={styles.cardHeader}>
@@ -65,6 +67,7 @@ function SupCard({ item, onStop, onDelete, stopped }) {
             <Text style={[styles.cardName, stopped && { color: colors.textMuted }]}>{item.name}</Text>
             {item.brand ? <Text style={styles.brandBadge}>{item.brand}</Text> : null}
             {stopped && <Text style={styles.stoppedBadge}>已停用</Text>}
+            {!stopped && takenToday && <Text style={[styles.brandBadge, { backgroundColor: '#D1FAE5', color: '#059669' }]}>今日已服</Text>}
           </View>
           <Text style={styles.cardDose}>
             {item.dosage} · {item.method || '随餐'} · {item.frequency}
@@ -79,6 +82,16 @@ function SupCard({ item, onStop, onDelete, stopped }) {
       </View>
       {!stopped && (
         <View style={styles.cardActions}>
+          <TouchableOpacity
+            style={[styles.checkinBtn, takenToday && styles.checkinBtnDone]}
+            onPress={() => !takenToday && onCheckin(itemId, item.name)}
+            activeOpacity={takenToday ? 1 : 0.75}
+          >
+            <Ionicons name={takenToday ? 'checkmark-circle' : 'checkmark-circle-outline'} size={14} color={takenToday ? '#059669' : '#22A06B'} />
+            <Text style={[styles.checkinBtnText, takenToday && { color: '#059669' }]}>
+              {takenToday ? '今日已服 ✓' : '今日已服'}
+            </Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.stopBtn} onPress={() => onStop(itemId, item.name)}>
             <Ionicons name="stop-circle-outline" size={14} color={colors.warning} />
             <Text style={styles.stopBtnText}>标记停用</Text>
@@ -122,6 +135,15 @@ export default function NutritionScreen({ navigation }) {
   const activeItems  = items.filter(i => !i.stopped);
   const stoppedItems = items.filter(i => i.stopped);
   const displayed    = tab === 'active' ? activeItems : stoppedItems;
+
+  const handleCheckin = async (id, name) => {
+    const today = new Date().toISOString().split('T')[0];
+    setItems(prev => prev.map(i =>
+      (i._id || i.id) === id ? { ...i, lastCheckinDate: today } : i
+    ));
+    showToast('success', `「${name}」已记录今日服用`);
+    try { await supplementsAPI.checkin(id); } catch {}
+  };
 
   const handleStop = async (id, name) => {
     const today = new Date().toISOString().split('T')[0];
@@ -235,8 +257,8 @@ export default function NutritionScreen({ navigation }) {
         ) : displayed.length === 0 ? (
           <View style={styles.emptyWrap}>
             <Ionicons name="leaf-outline" size={48} color={colors.border} />
-            <Text style={styles.emptyText}>{tab === 'active' ? '暂无进行中的营养素记录' : '暂无已停用的营养素记录'}</Text>
-            {tab === 'active' && <Text style={styles.emptySubtext}>点击右上角 + 添加营养素记录</Text>}
+            <Text style={styles.emptyText}>{tab === 'active' ? '暂无进行中的营养素方案' : '暂无已停用的营养素记录'}</Text>
+            {tab === 'active' && <Text style={styles.emptySubtext}>营养素方案将由医护团队为您配置并推送{'\n'}您也可点击右上角 + 自行记录</Text>}
           </View>
         ) : (
           displayed.map(item => (
@@ -244,6 +266,7 @@ export default function NutritionScreen({ navigation }) {
               key={item._id || item.id}
               item={item}
               stopped={tab === 'stopped'}
+              onCheckin={handleCheckin}
               onStop={handleStop}
               onDelete={handleDelete}
             />
@@ -409,7 +432,16 @@ const styles = StyleSheet.create({
   cardActions: {
     marginTop: spacing.sm, paddingTop: spacing.sm,
     borderTopWidth: 1, borderTopColor: colors.borderLight,
+    flexDirection: 'row', gap: spacing.sm,
   },
+  checkinBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: 10, paddingVertical: 5,
+    borderRadius: radius.full, borderWidth: 1.5, borderColor: '#22A06B',
+    backgroundColor: '#E8F5EF',
+  },
+  checkinBtnDone: { borderColor: '#059669', backgroundColor: '#D1FAE5' },
+  checkinBtnText: { fontSize: 12, color: '#22A06B', fontWeight: '600' },
   stopBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     alignSelf: 'flex-start',

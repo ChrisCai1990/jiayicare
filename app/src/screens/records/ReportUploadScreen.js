@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { reportsAPI, requisitionsAPI } from '../../services/api';
+import { reportsAPI, requisitionsAPI, plansAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import { mockMedicalReports } from '../../data/mockData';
 
@@ -780,6 +780,7 @@ export default function ReportUploadScreen({ navigation, route }) {
   const [reports, setReports]       = useState([]);
   const [requisitions, setRequisitions] = useState([]);
   const [reqExpanded, setReqExpanded]   = useState(true);
+  const [annualCheckupPlans, setAnnualCheckupPlans] = useState([]);
   const [uploading, setUploading]   = useState(false);
   const [loading, setLoading]       = useState(true);
   const [toast, setToast]           = useState('');
@@ -803,8 +804,17 @@ export default function ReportUploadScreen({ navigation, route }) {
   const loadRequisitions = useCallback(async () => {
     if (isDemo) return;
     try {
-      const res = await requisitionsAPI.list();
-      if (res.success) setRequisitions(res.data || []);
+      const [reqRes, plansRes] = await Promise.allSettled([
+        requisitionsAPI.list(),
+        plansAPI.list(),
+      ]);
+      if (reqRes.status === 'fulfilled' && reqRes.value?.success) {
+        setRequisitions(reqRes.value.data || []);
+      }
+      if (plansRes.status === 'fulfilled' && plansRes.value?.success) {
+        const checkupPlans = (plansRes.value.data || []).filter(p => p.type === 'annual_checkup' || p.type === 'checkup');
+        setAnnualCheckupPlans(checkupPlans);
+      }
     } catch { /* ignore */ }
   }, [isDemo]);
 
@@ -1069,6 +1079,31 @@ export default function ReportUploadScreen({ navigation, route }) {
             </View>
           ))}
         </View>
+
+        {/* 医护端推送的年度体检方案 */}
+        {annualCheckupPlans.length > 0 && (
+          <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }}>
+            <Text style={[styles.sectionTitle, { marginBottom: spacing.sm }]}>医护推送的体检方案</Text>
+            {annualCheckupPlans.map(plan => (
+              <View key={plan._id} style={{ flexDirection: 'row', alignItems: 'flex-start', backgroundColor: '#E3F2FB', borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, borderLeftWidth: 4, borderLeftColor: '#0077B6' }}>
+                <Ionicons name="clipboard-outline" size={20} color="#0077B6" style={{ marginRight: spacing.sm, marginTop: 2 }} />
+                <View style={{ flex: 1 }}>
+                  <Text style={{ fontWeight: '700', fontSize: 14, color: '#1A2B24' }}>{plan.title}</Text>
+                  {plan.description ? <Text style={{ fontSize: 12, color: '#4A6558', marginTop: 2 }}>{plan.description}</Text> : null}
+                  {plan.staffId?.name ? <Text style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>由 {plan.staffId.name} 推送</Text> : null}
+                  {(plan.items || []).length > 0 && (
+                    <Text style={{ fontSize: 12, color: '#0077B6', marginTop: 4 }}>
+                      共 {plan.items.length} 项体检任务，{plan.items.filter(i => i.status === 'completed').length} 项已完成
+                    </Text>
+                  )}
+                </View>
+                <View style={{ backgroundColor: plan.status === 'active' ? '#22A06B' : '#D97706', borderRadius: radius.full, paddingHorizontal: 7, paddingVertical: 2 }}>
+                  <Text style={{ fontSize: 10, color: '#fff', fontWeight: '700' }}>{plan.status === 'active' ? '进行中' : '待确认'}</Text>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
 
         {/* Reports List */}
         <View style={{ marginTop: spacing.sm }}>

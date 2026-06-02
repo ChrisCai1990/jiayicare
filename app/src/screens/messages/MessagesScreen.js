@@ -273,7 +273,7 @@ function ProductPushDetail({ msg, onClose }) {
   );
 }
 
-function MessageDetailModal({ msg, onClose }) {
+function MessageDetailModal({ msg, onClose, navigation }) {
   if (!msg) return null;
 
   // 产品推送：专用多选支付界面
@@ -282,6 +282,35 @@ function MessageDetailModal({ msg, onClose }) {
   }
 
   const conf = TYPE_CONFIG[msg.type] || TYPE_CONFIG.system;
+
+  // 方案/问卷类型的行动按钮
+  const renderActionBtn = () => {
+    if (msg.type === 'plan' && navigation) {
+      return (
+        <TouchableOpacity
+          style={[styles.detailCloseBtn, { flex: 2, backgroundColor: '#D97706', borderWidth: 0 }]}
+          onPress={() => { onClose(); navigation.navigate('ServicePlans'); }}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.detailCloseBtnText, { color: colors.white }]}>查看健康方案</Text>
+        </TouchableOpacity>
+      );
+    }
+    if (msg.type === 'questionnaire' && navigation) {
+      return (
+        <TouchableOpacity
+          style={[styles.detailCloseBtn, { flex: 2, backgroundColor: '#0077B6', borderWidth: 0 }]}
+          onPress={() => { onClose(); navigation.navigate('Questionnaire'); }}
+          activeOpacity={0.85}
+        >
+          <Text style={[styles.detailCloseBtnText, { color: colors.white }]}>填写问卷</Text>
+        </TouchableOpacity>
+      );
+    }
+    return null;
+  };
+
+  const actionBtn = renderActionBtn();
 
   return (
     <Modal visible animationType="slide" transparent onRequestClose={onClose}>
@@ -304,12 +333,13 @@ function MessageDetailModal({ msg, onClose }) {
           </View>
           {msg.title && <Text style={styles.detailTitle}>{msg.title}</Text>}
           <ScrollView style={styles.detailBody} showsVerticalScrollIndicator={false}>
-            <Text style={styles.detailContent}>{msg.content}</Text>
+            <Text style={styles.detailContent}>{msg.content || '（暂无详细内容，请点击下方按钮查看）'}</Text>
           </ScrollView>
           <View style={styles.detailFooter}>
             <TouchableOpacity style={[styles.detailCloseBtn, { flex: 1 }]} onPress={onClose} activeOpacity={0.85}>
               <Text style={styles.detailCloseBtnText}>关闭</Text>
             </TouchableOpacity>
+            {actionBtn}
           </View>
         </View>
       </View>
@@ -562,6 +592,7 @@ export default function MessagesScreen({ navigation }) {
         <MessageDetailModal
           msg={selectedMsg}
           onClose={() => setSelectedMsg(null)}
+          navigation={navigation}
         />
       )}
 

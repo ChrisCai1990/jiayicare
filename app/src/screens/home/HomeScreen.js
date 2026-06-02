@@ -529,8 +529,8 @@ export default function HomeScreen({ navigation }) {
   // 睡眠时长：优先使用真实记录，Demo 用户无记录时展示示例数据
   const sleepRec      = dashData?.latestVitals?.sleep;
   const sleepHours    = sleepRec ? parseFloat(sleepRec.value) : (isDemo ? 8.3 : null);
-  const sleepBedTime  = isDemo ? '22:30' : '--:--';
-  const sleepWakeTime = isDemo ? '06:45' : '--:--';
+  const sleepBedTime  = sleepRec?.extra?.sleepTime || (isDemo ? '22:30' : '--:--');
+  const sleepWakeTime = sleepRec?.extra?.wakeTime  || (isDemo ? '06:45' : '--:--');
   const sleepLabel      = sleepHours == null ? '待录入'
     : sleepHours < 6  ? '偏少' : sleepHours <= 9 ? '良好' : '偏多';
   const sleepLabelColor = sleepHours == null ? colors.textMuted

@@ -163,11 +163,12 @@ export default function PatientDetailPage() {
   const { staff } = useStaff()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('info')  // info | records | reports | plans | serviceRecords | family | membership | billing
+  const [tab, setTab] = useState('info')  // info | records | reports | plans | serviceRecords | orders | family | membership | billing
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
+  const [patientOrders, setPatientOrders] = useState([])
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
   const [showReferralModal, setShowReferralModal] = useState(false)
@@ -238,6 +239,7 @@ export default function PatientDetailPage() {
     else if (tab === 'reports') loadReports()
     else if (tab === 'serviceRecords') loadServiceRecords()
     else if (tab === 'requisitions') loadRequisitions()
+    else if (tab === 'orders') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
   }, [tab])
 
   const buildEditForm = (u) => ({
@@ -408,6 +410,7 @@ export default function PatientDetailPage() {
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
           { key: 'serviceRecords',label: '服务记录' },
+          { key: 'orders',        label: '服务订单' },
           { key: 'family',        label: '家庭信息' },
           { key: 'membership',    label: '会员信息' },
           { key: 'billing',       label: '收费管理' },
@@ -1006,6 +1009,89 @@ export default function PatientDetailPage() {
           )}
         </div>
       )}
+
+      {/* ── Orders Tab ── */}
+      {tab === 'orders' && (() => {
+        const ORDER_STATUS = { pending:'待安排', scheduled:'已安排', completed:'已完成', cancelled:'已取消' }
+        const ORDER_STATUS_COLOR = { pending:'#D97706', scheduled:'#0077B6', completed:'#22A06B', cancelled:'#DC3545' }
+        return (
+          <div className="card">
+            <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div className="card-title">服务订单</div>
+              <span style={{ fontSize: 12, color: '#8AA89C' }}>
+                待安排 {patientOrders.filter(o => o.status === 'pending').length} 条
+              </span>
+            </div>
+            {patientOrders.length === 0 ? (
+              <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无服务订单</div>
+            ) : patientOrders.map((order, i) => (
+              <div key={order._id} style={{ padding: '14px 16px', borderBottom: i < patientOrders.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
+                  <div>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>
+                      {order.serviceName || order.serviceId}
+                    </span>
+                    {order.servicePrice != null && (
+                      <span style={{ marginLeft: 8, fontSize: 13, color: '#D97706', fontWeight: 700 }}>
+                        ¥{order.servicePrice}
+                      </span>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 99, fontWeight: 600,
+                    background: (ORDER_STATUS_COLOR[order.status] || '#aaa') + '20',
+                    color: ORDER_STATUS_COLOR[order.status] || '#aaa' }}>
+                    {ORDER_STATUS[order.status] || order.status}
+                  </span>
+                </div>
+                {order.note && (
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>{order.note}</div>
+                )}
+                <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>
+                  下单：{new Date(order.createdAt).toLocaleDateString('zh-CN')}
+                  {order.scheduledAt && ` · 安排：${new Date(order.scheduledAt).toLocaleDateString('zh-CN')}`}
+                </div>
+                {order.status === 'pending' && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={async () => {
+                        try {
+                          await staffAPI.startOrder(order._id, { action: 'schedule' })
+                          setPatientOrders(prev => prev.map(o =>
+                            o._id === order._id ? { ...o, status: 'scheduled', scheduledAt: new Date().toISOString() } : o
+                          ))
+                          toast('已安排服务，会员端状态已更新')
+                        } catch (err) { toast(err.message || '操作失败') }
+                      }}
+                    >
+                      🚀 启动服务
+                    </button>
+                  </div>
+                )}
+                {order.status === 'scheduled' && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      className="btn btn-sm"
+                      style={{ background: '#22A06B', color: '#fff', border: 'none' }}
+                      onClick={async () => {
+                        try {
+                          await staffAPI.startOrder(order._id, { action: 'complete' })
+                          setPatientOrders(prev => prev.map(o =>
+                            o._id === order._id ? { ...o, status: 'completed', completedAt: new Date().toISOString() } : o
+                          ))
+                          toast('服务已完成')
+                        } catch (err) { toast(err.message || '操作失败') }
+                      }}
+                    >
+                      ✓ 标记完成
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* ── Family Tab ── */}
       {tab === 'family' && (

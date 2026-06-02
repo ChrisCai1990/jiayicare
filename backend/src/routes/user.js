@@ -176,6 +176,15 @@ router.get('/dashboard', auth, async (req, res) => {
       ? parseFloat((latestWeightVal / (heightM * heightM)).toFixed(1))
       : null;
 
+    // 若无健康评分但已有健康记录，自动计算基础分并持久化
+    if (!req.user.healthScore && hasAnyHealthData > 0) {
+      const base = 60;
+      const recordBonus = Math.min(hasAnyHealthData * 2, 20);
+      const calculatedScore = Math.min(100, base + recordBonus);
+      await User.findByIdAndUpdate(userId, { $set: { healthScore: calculatedScore } });
+      req.user = Object.assign(req.user.toObject ? req.user.toObject() : req.user, { healthScore: calculatedScore });
+    }
+
     // 今日评分打点（同一天不重复写入，最多保留 30 条）
     const today = new Date().toISOString().slice(0, 10);
     const history = req.user.scoreHistory || [];
