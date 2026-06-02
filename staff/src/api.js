@@ -144,8 +144,9 @@ export const staffAPI = {
   getActivePlanItems: (patientId) => req(`/staff/patients/${patientId}/active-plan-items`),
 
   // Annual Plan
-  getAnnualPlan:  (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
-  saveAnnualPlan: (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
+  getAnnualHealthPlans: (year)         => req(`/staff/annual-health-plans` + (year ? `?year=${year}` : '')),
+  getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
+  saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Abnormal Reviews
   getAbnormalReviews:    (p = {})   => req('/staff/abnormal-reviews?' + qs(p)),

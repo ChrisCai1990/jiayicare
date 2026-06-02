@@ -272,33 +272,55 @@ function ModulePanel({ moduleKey, data, onChange }) {
 }
 
 // ── 主页面 ────────────────────────────────────────────────────────────
-export default function AnnualMgmtPlanPage() {
-  const { id } = useParams()   // plan._id (HealthPlan)
+// patientMode=true：id 为 patientId，读写 AnnualPlan 模型（年度健康管理 Tab 入口）
+// patientMode=false：id 为 HealthPlan._id（年度管理方案 Tab 入口，旧流程）
+export default function AnnualMgmtPlanPage({ patientMode = false }) {
+  const { id } = useParams()
   const nav = useNavigate()
   const toast = useToast()
 
-  const [plan, setPlan]           = useState(null)
-  const [planType, setPlanType]   = useState('')
+  const [patient, setPatient]       = useState(null)
+  const [plan, setPlan]             = useState(null)
+  const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
-  const [loading, setLoading]     = useState(true)
-  const [saving, setSaving]       = useState(false)
-  const [dirty, setDirty]         = useState(false)
+  const [year, setYear]             = useState(new Date().getFullYear())
+  const [loading, setLoading]       = useState(true)
+  const [saving, setSaving]         = useState(false)
+  const [dirty, setDirty]           = useState(false)
 
-  // 加载方案
   useEffect(() => {
     setLoading(true)
-    staffAPI.getPlan(id)
-      .then(res => {
-        const p = res.data
-        setPlan(p)
-        const c = p.content || {}
-        setPlanType(c.planType || '')
-        setModuleData(c.moduleData || {})
+    if (patientMode) {
+      Promise.all([
+        staffAPI.getPatient(id),
+        staffAPI.getAnnualPlan(id, year),
+      ]).then(([patRes, planRes]) => {
+        setPatient(patRes.data)
+        const p = planRes.data
+        if (p) {
+          setPlanType(p.planType || '')
+          setModuleData(p.moduleData || {})
+        } else {
+          setPlanType('')
+          setModuleData({})
+        }
         setDirty(false)
-      })
-      .catch(err => toast(err.message || '加载失败'))
-      .finally(() => setLoading(false))
-  }, [id])
+      }).catch(err => toast(err.message || '加载失败'))
+        .finally(() => setLoading(false))
+    } else {
+      staffAPI.getPlan(id)
+        .then(res => {
+          const p = res.data
+          setPlan(p)
+          const c = p.content || {}
+          setPlanType(c.planType || '')
+          setModuleData(c.moduleData || {})
+          setDirty(false)
+        })
+        .catch(err => toast(err.message || '加载失败'))
+        .finally(() => setLoading(false))
+    }
+  }, [id, patientMode, year])
 
   const handleModuleChange = useCallback((moduleKey, fieldKey, value) => {
     setModuleData(prev => ({
@@ -317,9 +339,11 @@ export default function AnnualMgmtPlanPage() {
     if (!planType) { toast('请先选择方案类型'); return }
     setSaving(true)
     try {
-      await staffAPI.updatePlan(id, {
-        content: { planType, moduleData },
-      })
+      if (patientMode) {
+        await staffAPI.saveAnnualPlan(id, { planType, moduleData, year })
+      } else {
+        await staffAPI.updatePlan(id, { content: { planType, moduleData } })
+      }
       toast('方案已保存')
       setDirty(false)
     } catch (err) {
@@ -330,9 +354,12 @@ export default function AnnualMgmtPlanPage() {
   }
 
   const currentModuleKeys = PLAN_TYPE_MODULES[planType] || []
-  const patientName = plan?.patientId?.name || '会员'
-  const planTitle = plan?.title || '年度管理方案'
+  const patientName = patientMode ? (patient?.name || '会员') : (plan?.patientId?.name || '会员')
+  const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
   const activePlanType = PLAN_TYPES.find(pt => pt.key === planType)
+  const backPath = patientMode ? '/plans?tab=annual_health_mgmt' : '/plans?type=annual_mgmt'
+
+  const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
 
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>加载中...</div>
 
@@ -342,16 +369,25 @@ export default function AnnualMgmtPlanPage() {
       {/* 顶部导航 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
         <button
-          onClick={() => nav('/plans?type=annual_mgmt')}
+          onClick={() => nav(backPath)}
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}
         >←</button>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#1A2B24' }}>{planTitle || '健康管理方案'}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#1A2B24' }}>{planTitle}</div>
           <div style={{ fontSize: 13, color: '#8AA89C', marginTop: 2 }}>
             {patientName}
             {activePlanType && <span style={{ marginLeft: 8, color: activePlanType.color, fontWeight: 600 }}>{activePlanType.icon} {activePlanType.name}</span>}
           </div>
         </div>
+        {patientMode && (
+          <select
+            value={year}
+            onChange={e => { setYear(parseInt(e.target.value)); setDirty(false) }}
+            style={{ marginLeft: 12, padding: '6px 12px', borderRadius: 8, border: '1px solid #E0D9CE', fontSize: 14, background: '#fff', cursor: 'pointer' }}
+          >
+            {yearOptions.map(y => <option key={y} value={y}>{y}年</option>)}
+          </select>
+        )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
           <button
@@ -420,7 +456,7 @@ export default function AnnualMgmtPlanPage() {
       {/* 底部保存 */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
         <button
-          onClick={() => nav('/plans?type=annual_mgmt')}
+          onClick={() => nav(backPath)}
           style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}
         >
           返回方案列表

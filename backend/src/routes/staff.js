@@ -1556,6 +1556,20 @@ router.patch('/patients/:id/membership', staffAuth, async (req, res) => {
   }
 });
 
+// ── 年度健康管理方案（全局列表）────────────────────────────────────────
+router.get('/annual-health-plans', staffAuth, async (req, res) => {
+  try {
+    const year = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
+    const plans = await AnnualPlan.find({ year })
+      .populate('patientId', 'name phone')
+      .populate('createdBy', 'name')
+      .sort({ updatedAt: -1 });
+    res.json({ success: true, data: plans });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── 年度管理方案 ─────────────────────────────────────────────────────
 router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   try {

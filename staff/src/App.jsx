@@ -84,6 +84,7 @@ export default function App() {
               <Route path="followups" element={<FollowUpsPage />} />
               <Route path="plans" element={<PlansPage />} />
               <Route path="plans/mgmt/:id" element={<AnnualMgmtPlanPage />} />
+              <Route path="patients/:id/annual-health" element={<AnnualMgmtPlanPage patientMode />} />
               <Route path="plans/:id" element={<PlanDetailPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="service-records" element={<ServiceRecordsPage />} />
