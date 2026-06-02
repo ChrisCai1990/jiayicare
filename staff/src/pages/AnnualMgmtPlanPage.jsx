@@ -346,7 +346,7 @@ export default function AnnualMgmtPlanPage() {
           style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 20, color: '#4A6558', padding: 4 }}
         >←</button>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: '#1A2B24' }}>{planTitle}</div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: '#1A2B24' }}>{planTitle || '健康管理方案'}</div>
           <div style={{ fontSize: 13, color: '#8AA89C', marginTop: 2 }}>
             {patientName}
             {activePlanType && <span style={{ marginLeft: 8, color: activePlanType.color, fontWeight: 600 }}>{activePlanType.icon} {activePlanType.name}</span>}

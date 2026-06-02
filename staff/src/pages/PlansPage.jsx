@@ -5,7 +5,7 @@ import { useToast } from '../App'
 
 const TYPE_LABEL = {
   annual_checkup:  '年度体检方案',
-  annual_mgmt:     '年度管理方案',
+  annual_mgmt:     '健康管理方案',
   nutrition:       '营养干预方案',
   medical_assist:  '就医协助方案',
   tcm:             '中医调理方案',
@@ -56,7 +56,7 @@ export default function PlansPage() {
         {[
           { v: '', l: '全部' },
           { v: 'annual_checkup', l: '年度体检方案' },
-          { v: 'annual_mgmt',    l: '年度管理方案' },
+          { v: 'annual_mgmt',    l: '健康管理方案' },
           { v: 'nutrition',      l: '营养干预方案' },
           { v: 'medical_assist', l: '就医协助方案' },
           { v: 'tcm',            l: '中医调理方案' },
@@ -250,7 +250,7 @@ function PatientSearchInput({ value, onChange }) {
 // ── 弹窗标题 & 模板类型映射 ────────────────────────────────────────────
 const MODAL_TITLE = {
   annual_checkup: '新建体检方案',
-  annual_mgmt:    '新建管理方案',
+  annual_mgmt:    '新建健康管理方案',
   nutrition:      '新建营养干预方案',
   medical_assist: '新建就医协助方案',
   tcm:            '新建中医调理方案',
@@ -791,7 +791,18 @@ function NutritionPlanModal({ onClose, onSaved }) {
   )
 }
 
-// ── 年度管理方案：两步创建弹窗 ───────────────────────────────────────
+// 随访方案周期格式化
+function formatCycle(plan) {
+  if (!plan?.cycles?.length) return null
+  const c = plan.cycles[0]
+  if (c.cycleType === 'date') {
+    return c.cycleDate ? new Date(c.cycleDate).toLocaleDateString('zh-CN') + ' 执行' : '固定日期（待定）'
+  }
+  const unitMap = { day: '天', week: '周', month: '个月' }
+  return `每 ${c.cycleDuration} ${unitMap[c.cycleUnit] || c.cycleUnit}`
+}
+
+// ── 健康管理方案：两步创建弹窗 ───────────────────────────────────────
 const ANNUAL_MGMT_TYPE_LABELS = {
   health_reshape:    '健康重塑方案',
   young_state:       '健康年轻态方案',
@@ -867,13 +878,13 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 520 }}>
         <div className="modal-header">
-          <h3 className="modal-title">新建年度管理方案 — 选择方案模板</h3>
+          <h3 className="modal-title">新建健康管理方案 — 选择方案模板</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ maxHeight: 440, overflowY: 'auto' }}>
           {loadingTpls && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
           {tplError && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {tplError}</div>}
-          {!loadingTpls && !tplError && templates.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建年度管理方案模板</div>}
+          {!loadingTpls && !tplError && templates.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建健康管理方案模板</div>}
           {templates.map(tpl => {
             const c = tpl.content || {}
             const ts = ANNUAL_MGMT_TYPE_COLORS[c.planType] || { color: '#666', bg: '#f0f0f0' }
@@ -906,7 +917,7 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 580, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
-          <h3 className="modal-title">新建年度管理方案</h3>
+          <h3 className="modal-title">新建健康管理方案</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
@@ -940,34 +951,61 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
             </label>
             <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden', background: '#faf8f5' }}>
               {nodes.length === 0 && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>暂无随访节点</div>}
-              {nodes.map((n, idx) => (
-                <div key={idx} style={{ padding: '8px 12px', borderBottom: '1px solid #F0EDE7' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 5 }}>
-                    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: '#7C3AED', background: '#F3E8FF' }}>随访</span>
-                    <input
-                      value={n.name}
-                      onChange={e => setNodes(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
-                      style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
-                    />
-                    <button type="button" onClick={() => setNodes(prev => prev.filter((_, i) => i !== idx))}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
-                      onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
-                      onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
-                    >×</button>
+              {nodes.map((n, idx) => {
+                const planData = followupPlans.find(p => String(p._id) === String(n.id))
+                const cycle    = formatCycle(planData)
+                const role     = planData?.defaultRole || ''
+                const form     = followupForms.find(f => f._id === n.formId)
+                const fieldCnt = form?.fields?.length || 0
+                return (
+                  <div key={idx} style={{ padding: '10px 12px', borderBottom: '1px solid #F0EDE7' }}>
+                    {/* 节点名称行 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 6 }}>
+                      <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: '#7C3AED', background: '#F3E8FF' }}>随访</span>
+                      <input
+                        value={n.name}
+                        onChange={e => setNodes(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
+                        style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0, fontWeight: 500 }}
+                      />
+                      <button type="button" onClick={() => setNodes(prev => prev.filter((_, i) => i !== idx))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
+                        onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
+                        onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
+                      >×</button>
+                    </div>
+                    {/* 周期 / 角色 标签行 */}
+                    {(cycle || role) && (
+                      <div style={{ display: 'flex', gap: 8, paddingLeft: 38, marginBottom: 6, flexWrap: 'wrap' }}>
+                        {cycle && (
+                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 10, color: '#1E6B50', background: '#E8F5EF', fontWeight: 500 }}>
+                            ⏱ {cycle}
+                          </span>
+                        )}
+                        {role && (
+                          <span style={{ fontSize: 11, padding: '1px 8px', borderRadius: 10, color: '#0077B6', background: '#EFF6FF', fontWeight: 500 }}>
+                            👤 {role}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {/* 随访表选择 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 38 }}>
+                      <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0, whiteSpace: 'nowrap' }}>随访表：</span>
+                      <select
+                        value={n.formId || ''}
+                        onChange={e => setNodes(prev => prev.map((it, i) => i === idx ? { ...it, formId: e.target.value || null } : it))}
+                        style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff', color: n.formId ? '#1A2B24' : '#aaa' }}
+                      >
+                        <option value="">请选择随访表</option>
+                        {followupForms.map(f => <option key={f._id} value={f._id}>{f.name}{f.fields?.length ? ` (${f.fields.length}题)` : ''}</option>)}
+                      </select>
+                      {fieldCnt > 0 && (
+                        <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{fieldCnt} 题</span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 38 }}>
-                    <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0, whiteSpace: 'nowrap' }}>随访表：</span>
-                    <select
-                      value={n.formId || ''}
-                      onChange={e => setNodes(prev => prev.map((it, i) => i === idx ? { ...it, formId: e.target.value || null } : it))}
-                      style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff', color: n.formId ? '#1A2B24' : '#aaa' }}
-                    >
-                      <option value="">请选择随访表</option>
-                      {followupForms.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
-                    </select>
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
           {/* 方案年度 */}
@@ -984,7 +1022,7 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建年度管理方案'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建健康管理方案'}</button>
         </div>
       </div>
     </div>
