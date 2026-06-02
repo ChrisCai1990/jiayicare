@@ -5,7 +5,7 @@ import { useToast } from '../App'
 
 const TYPE_LABEL = {
   annual_checkup:  '年度体检方案',
-  annual_mgmt:     '健康管理方案',
+  annual_mgmt:     '年度管理方案',
   nutrition:       '营养干预方案',
   medical_assist:  '就医协助方案',
   tcm:             '中医调理方案',
@@ -56,7 +56,7 @@ export default function PlansPage() {
         {[
           { v: '', l: '全部' },
           { v: 'annual_checkup', l: '年度体检方案' },
-          { v: 'annual_mgmt',    l: '健康管理方案' },
+          { v: 'annual_mgmt',    l: '年度管理方案' },
           { v: 'nutrition',      l: '营养干预方案' },
           { v: 'medical_assist', l: '就医协助方案' },
           { v: 'tcm',            l: '中医调理方案' },
@@ -250,7 +250,7 @@ function PatientSearchInput({ value, onChange }) {
 // ── 弹窗标题 & 模板类型映射 ────────────────────────────────────────────
 const MODAL_TITLE = {
   annual_checkup: '新建体检方案',
-  annual_mgmt:    '新建健康管理方案',
+  annual_mgmt:    '新建年度管理方案',
   nutrition:      '新建营养干预方案',
   medical_assist: '新建就医协助方案',
   tcm:            '新建中医调理方案',
@@ -881,7 +881,7 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 520 }}>
         <div className="modal-header">
-          <h3 className="modal-title">新建健康管理方案 — 选择方案模板</h3>
+          <h3 className="modal-title">新建年度管理方案 — 选择方案模板</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ maxHeight: 440, overflowY: 'auto' }}>
@@ -920,7 +920,7 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal" style={{ maxWidth: 580, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
-          <h3 className="modal-title">新建健康管理方案</h3>
+          <h3 className="modal-title">新建年度管理方案</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
@@ -1061,7 +1061,7 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建健康管理方案'}</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建年度管理方案'}</button>
         </div>
       </div>
     </div>
