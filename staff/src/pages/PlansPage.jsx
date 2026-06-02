@@ -25,6 +25,7 @@ export default function PlansPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [showCheckupModal, setShowCheckupModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '')
 
   const load = useCallback(async () => {
@@ -66,7 +67,10 @@ export default function PlansPage() {
 
         {/* 新建按钮跟随当前 Tab */}
         <div style={{ marginLeft: 'auto' }}>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowModal(true)}>
+          <button className="btn btn-primary btn-sm" onClick={() => {
+            if (typeFilter === 'annual_checkup') setShowCheckupModal(true)
+            else setShowModal(true)
+          }}>
             ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
           </button>
         </div>
@@ -97,6 +101,7 @@ export default function PlansPage() {
           </table>}
       </div>
 
+      {showCheckupModal && <AnnualCheckupPlanModal onClose={() => setShowCheckupModal(false)} onSaved={() => { setShowCheckupModal(false); load(); toast('体检方案已创建') }} />}
       {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
     </div>
   )
@@ -379,6 +384,362 @@ function templateToItems(tpl) {
   }
 
   return []
+}
+
+// ── 年度体检方案：两步创建弹窗 ────────────────────────────────────────
+function AnnualCheckupPlanModal({ onClose, onSaved }) {
+  const [step, setStep] = useState(1)
+  const [templates, setTemplates] = useState([])
+  const [loadingTpls, setLoadingTpls] = useState(true)
+  const [tplError, setTplError] = useState('')
+  const [selectedTpl, setSelectedTpl] = useState(null)
+
+  // 表单字段
+  const [patientId, setPatientId] = useState('')
+  const [packageName, setPackageName] = useState('')
+  const [packageDesc, setPackageDesc] = useState('')
+  const [checkItems, setCheckItems] = useState([])   // { type, id, name }
+  const [addons, setAddons] = useState([])            // { type, id, name, reason }
+  const [year, setYear] = useState(new Date().getFullYear())
+  const [description, setDescription] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  // 检查项目搜索
+  const [showItemSearch, setShowItemSearch] = useState(false)
+  const [itemQ, setItemQ] = useState('')
+  const [itemResults, setItemResults] = useState([])
+  const [itemSearching, setItemSearching] = useState(false)
+  const itemTimer = useRef(null)
+
+  // 加项库搜索
+  const [showAddonSearch, setShowAddonSearch] = useState(false)
+  const [addonQ, setAddonQ] = useState('')
+  const [addonResults, setAddonResults] = useState([])
+  const [addonSearching, setAddonSearching] = useState(false)
+  const addonTimer = useRef(null)
+
+  useEffect(() => {
+    staffAPI.getPlanTemplates('annual_checkup')
+      .then(res => setTemplates(res.data || []))
+      .catch(err => setTplError(err.message || '加载失败'))
+      .finally(() => setLoadingTpls(false))
+  }, [])
+
+  const selectTemplate = (tpl) => {
+    setSelectedTpl(tpl)
+    const c = tpl.content || {}
+    setPackageName(c.packageName || tpl.name || '')
+    setPackageDesc(c.packageDesc || '')
+    setCheckItems((c.checkItems || []).map(ci => ({ ...ci })))
+    setAddons((c.addons || []).map(a => ({ ...a })))
+    setStep(2)
+    setError('')
+  }
+
+  // 检查项目搜索
+  const handleItemSearch = (q) => {
+    setItemQ(q)
+    clearTimeout(itemTimer.current)
+    if (!q.trim()) { setItemResults([]); return }
+    itemTimer.current = setTimeout(async () => {
+      setItemSearching(true)
+      try { const r = await staffAPI.getRequisitionItems(q); setItemResults(r.data || []) }
+      catch {} finally { setItemSearching(false) }
+    }, 300)
+  }
+  const addCheckItem = (item) => {
+    setCheckItems(prev => [...prev, { type: item.type, id: item._id, name: item.name }])
+    setItemQ(''); setItemResults([]); setShowItemSearch(false)
+  }
+
+  // 加项库搜索
+  const handleAddonSearch = (q) => {
+    setAddonQ(q)
+    clearTimeout(addonTimer.current)
+    if (!q.trim()) { setAddonResults([]); return }
+    addonTimer.current = setTimeout(async () => {
+      setAddonSearching(true)
+      try { const r = await staffAPI.getRequisitionItems(q); setAddonResults(r.data || []) }
+      catch {} finally { setAddonSearching(false) }
+    }, 300)
+  }
+  const addAddon = (item) => {
+    setAddons(prev => [...prev, { type: item.type, id: item._id, name: item.name, reason: '' }])
+    setAddonQ(''); setAddonResults([]); setShowAddonSearch(false)
+  }
+
+  const handleSubmit = async () => {
+    if (!patientId) { setError('请搜索并选择会员'); return }
+    if (!packageName.trim()) { setError('请填写套餐名称'); return }
+    setError(''); setSaving(true)
+    try {
+      const items = checkItems.map(ci => ({
+        name: ci.name,
+        category: ci.type === 'lab' ? '检验检查' : '影像检查',
+        itemId: ci.id || null,
+        itemType: ci.type === 'lab' ? 'labTest' : 'specialExam',
+      }))
+      await staffAPI.createPlan({
+        patientId, type: 'annual_checkup', title: packageName,
+        description, year, items,
+        content: { packageName, packageDesc, checkItems, addons },
+      })
+      onSaved()
+    } catch (err) { setError(err.message) }
+    finally { setSaving(false) }
+  }
+
+  // 通用标签样式
+  const typeTag = (t) => t === 'lab'
+    ? { label: '检验', color: '#0077B6', bg: '#E8F4FD' }
+    : { label: '检查', color: '#1E6B50', bg: '#E8F5EF' }
+
+  // 内联搜索下拉
+  const SearchDropdown = ({ results, searching, q, onSelect }) => (
+    (searching || results.length > 0 || (q && !searching)) ? (
+      <div style={{ border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff', maxHeight: 180, overflowY: 'auto', marginTop: 4, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
+        {searching && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>搜索中...</div>}
+        {!searching && results.length === 0 && q && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>无匹配结果</div>}
+        {results.map((r, i) => {
+          const tag = typeTag(r.type)
+          return (
+            <div key={i} onMouseDown={() => onSelect(r)}
+              style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 14px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #F8F6F2' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#F0F9F4'}
+              onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+            >
+              <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 3, fontWeight: 600, color: tag.color, background: tag.bg }}>{tag.label}</span>
+              <span style={{ flex: 1 }}>{r.name}</span>
+              <span style={{ fontSize: 11, color: '#1E6B50' }}>＋ 添加</span>
+            </div>
+          )
+        })}
+      </div>
+    ) : null
+  )
+
+  // ── Step 1：模板选择 ──────────────────────────────────────────────
+  if (step === 1) return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 560 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建体检方案 — 选择套餐模板</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: 480, overflowY: 'auto' }}>
+          {loadingTpls && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
+          {tplError && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {tplError}</div>}
+          {!loadingTpls && !tplError && templates.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建年度体检方案模板</div>
+          )}
+          {templates.map(tpl => {
+            const c = tpl.content || {}
+            const name = c.packageName || tpl.name
+            const desc = c.packageDesc || ''
+            const count = c.checkItems?.length || 0
+            return (
+              <div key={tpl._id} onClick={() => selectTemplate(tpl)}
+                style={{
+                  border: '1px solid #E0D9CE', borderRadius: 10, padding: '14px 18px',
+                  marginBottom: 10, cursor: 'pointer', transition: 'all 0.15s',
+                  display: 'flex', alignItems: 'center', gap: 14,
+                }}
+                onMouseEnter={e => { e.currentTarget.style.border = '1px solid #1E6B50'; e.currentTarget.style.background = '#F0F9F4' }}
+                onMouseLeave={e => { e.currentTarget.style.border = '1px solid #E0D9CE'; e.currentTarget.style.background = '#fff' }}
+              >
+                <span style={{ fontSize: 28 }}>🔬</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{name}</div>
+                  {desc && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{desc}</div>}
+                  <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>
+                    包含 <strong>{count}</strong> 项检查项目
+                    {(c.addons?.length > 0) && <span style={{ marginLeft: 8, color: '#8AA89C' }}>· {c.addons.length} 项可选加项</span>}
+                  </div>
+                </div>
+                <span style={{ color: '#1E6B50', fontSize: 18 }}>→</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+        </div>
+      </div>
+    </div>
+  )
+
+  // ── Step 2：完整表单 ──────────────────────────────────────────────
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 600, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建体检方案</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
+        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+          {/* 已选模板提示 */}
+          <div style={{ background: '#E8F5EF', borderRadius: 8, padding: '8px 14px', fontSize: 13, color: '#1E6B50', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>已选套餐：<strong>{selectedTpl?.content?.packageName || selectedTpl?.name}</strong></span>
+            <button type="button" onClick={() => setStep(1)}
+              style={{ marginLeft: 'auto', fontSize: 12, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 14, padding: '2px 10px', cursor: 'pointer' }}>
+              更换模板
+            </button>
+          </div>
+
+          {/* 搜索会员 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">搜索会员 *</label>
+            <PatientSearchInput value={patientId} onChange={setPatientId} />
+          </div>
+
+          {/* 套餐名称 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">套餐名称 *</label>
+            <input className="form-input" value={packageName} onChange={e => setPackageName(e.target.value)} placeholder="如：心脑血管深度筛查套餐" />
+          </div>
+
+          {/* 状态说明 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">状态说明</label>
+            <input className="form-input" value={packageDesc} onChange={e => setPackageDesc(e.target.value)} placeholder="套餐描述" />
+          </div>
+
+          {/* 包含检查项目 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>包含检查项目</span>
+              <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>共 {checkItems.length} 项</span>
+            </label>
+            <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, background: '#faf8f5', overflow: 'hidden' }}>
+              {checkItems.length === 0 && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>暂无检查项目</div>}
+              {checkItems.map((ci, idx) => {
+                const tag = typeTag(ci.type)
+                return (
+                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', borderBottom: '1px solid #F0EDE7', fontSize: 13 }}>
+                    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>{tag.label}</span>
+                    <input
+                      value={ci.name}
+                      onChange={e => setCheckItems(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
+                      style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
+                    />
+                    <button type="button" onClick={() => setCheckItems(prev => prev.filter((_, i) => i !== idx))}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
+                      onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
+                    >×</button>
+                  </div>
+                )
+              })}
+              {/* 添加区 */}
+              <div style={{ padding: '8px 12px', background: '#fff', borderTop: checkItems.length > 0 ? '1px solid #F0EDE7' : 'none' }}>
+                {!showItemSearch ? (
+                  <button type="button" onClick={() => setShowItemSearch(true)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1E6B50', fontSize: 12, padding: 0, fontWeight: 500 }}>
+                    ＋ 从检验/检查库添加
+                  </button>
+                ) : (
+                  <div>
+                    <div style={{ position: 'relative' }}>
+                      <input className="form-input" autoFocus value={itemQ} onChange={e => handleItemSearch(e.target.value)}
+                        placeholder="搜索检验/检查项目名称..." style={{ fontSize: 12, paddingRight: 44 }} />
+                      <button type="button" onClick={() => { setShowItemSearch(false); setItemQ(''); setItemResults([]) }}
+                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 12 }}>
+                        取消
+                      </button>
+                    </div>
+                    <SearchDropdown results={itemResults} searching={itemSearching} q={itemQ} onSelect={addCheckItem} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 可选加项库 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>可选加项库</span>
+              <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>共 {addons.length} 项</span>
+            </label>
+            <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, background: '#faf8f5', overflow: 'hidden' }}>
+              {addons.length === 0 && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>暂无加项</div>}
+              {addons.map((a, idx) => {
+                const tag = typeTag(a.type)
+                return (
+                  <div key={idx} style={{ padding: '8px 12px', borderBottom: '1px solid #F0EDE7' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+                      <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: tag.color, background: tag.bg }}>{tag.label}</span>
+                      <input
+                        value={a.name}
+                        onChange={e => setAddons(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
+                        style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
+                      />
+                      <button type="button" onClick={() => setAddons(prev => prev.filter((_, i) => i !== idx))}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
+                        onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
+                        onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
+                      >×</button>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 5, paddingLeft: 42 }}>
+                      <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>推荐原因：</span>
+                      <input
+                        value={a.reason || ''}
+                        onChange={e => setAddons(prev => prev.map((it, i) => i === idx ? { ...it, reason: e.target.value } : it))}
+                        placeholder="选填说明"
+                        style={{ flex: 1, border: 'none', borderBottom: '1px solid #E0D9CE', outline: 'none', background: 'transparent', fontSize: 12, fontFamily: 'inherit', padding: '2px 0' }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+              <div style={{ padding: '8px 12px', background: '#fff', borderTop: addons.length > 0 ? '1px solid #F0EDE7' : 'none' }}>
+                {!showAddonSearch ? (
+                  <button type="button" onClick={() => setShowAddonSearch(true)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#1E6B50', fontSize: 12, padding: 0, fontWeight: 500 }}>
+                    ＋ 添加可选加项
+                  </button>
+                ) : (
+                  <div>
+                    <div style={{ position: 'relative' }}>
+                      <input className="form-input" autoFocus value={addonQ} onChange={e => handleAddonSearch(e.target.value)}
+                        placeholder="搜索可选加项名称..." style={{ fontSize: 12, paddingRight: 44 }} />
+                      <button type="button" onClick={() => { setShowAddonSearch(false); setAddonQ(''); setAddonResults([]) }}
+                        style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 12 }}>
+                        取消
+                      </button>
+                    </div>
+                    <SearchDropdown results={addonResults} searching={addonSearching} q={addonQ} onSelect={addAddon} />
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* 方案年度 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案年度</label>
+            <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
+          </div>
+
+          {/* 方案说明 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案说明</label>
+            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
+          </div>
+
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            {saving ? '创建中...' : '创建体检方案'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // 自由文本新增一行项目
