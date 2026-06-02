@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff, useToast } from '../App'
 
@@ -9,8 +10,16 @@ const ROLE_LABEL = {
 }
 
 export default function ProfilePage() {
-  const { staff, login } = useStaff()
+  const { staff, login, logout } = useStaff()
+  const nav = useNavigate()
   const toast = useToast()
+
+  const handleLogout = () => {
+    if (window.confirm('确定要退出登录吗？')) {
+      logout()
+      nav('/login')
+    }
+  }
   const [editing, setEditing] = useState(false)
   const [form, setForm] = useState({ name: staff?.name || '', title: staff?.title || '', department: staff?.department || '' })
   const [saving, setSaving] = useState(false)
@@ -149,6 +158,30 @@ export default function ProfilePage() {
                 </div>
               ))}
             </div>
+          </div>
+        </div>
+
+        {/* 退出登录 */}
+        <div className="card" style={{ gridColumn: 'span 2' }}>
+          <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>退出登录</div>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>
+                当前账号：{staff?.name || '-'} · {staff?.roleLabel || staff?.role}
+              </div>
+            </div>
+            <button
+              onClick={handleLogout}
+              style={{
+                padding: '8px 24px', borderRadius: 8, border: '1px solid #DC3545',
+                background: '#fff', color: '#DC3545', fontWeight: 600, fontSize: 14,
+                cursor: 'pointer', transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => { e.target.style.background = '#DC3545'; e.target.style.color = '#fff' }}
+              onMouseLeave={e => { e.target.style.background = '#fff'; e.target.style.color = '#DC3545' }}
+            >
+              退出登录
+            </button>
           </div>
         </div>
       </div>
