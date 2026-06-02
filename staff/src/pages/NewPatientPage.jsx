@@ -35,7 +35,7 @@ export default function NewPatientPage() {
     smoking: '', drinking: '', exercise: '',
     // 管理
     source: '', patientType: '', remark: '',
-    assignedHealthManager: '', assignedFamilyDoctor: '',
+    assignedHealthManager: '', assignedFamilyDoctor: '', assignedNutritionist: '',
     // 女性
     menstrualHistory: '', maritalHistory: '',
     // 儿童
@@ -72,7 +72,8 @@ export default function NewPatientPage() {
         weight: form.weight ? Number(form.weight) : undefined,
         chronicDiseases: selectedDiseases,
         assignedHealthManager: form.assignedHealthManager || undefined,
-        assignedFamilyDoctor: form.assignedFamilyDoctor || undefined,
+        assignedFamilyDoctor:  form.assignedFamilyDoctor  || undefined,
+        assignedNutritionist:  form.assignedNutritionist  || undefined,
       }
       if (patientCategory === 'child') {
         // 清理儿童档案数字字段
@@ -94,6 +95,7 @@ export default function NewPatientPage() {
 
   const healthManagers = staffList.filter(s => s.role === 'healthManager')
   const familyDoctors  = staffList.filter(s => s.role === 'familyDoctor')
+  const nutritionists  = staffList.filter(s => s.role === 'nutritionist')
   const isChild = patientCategory === 'child'
   const isFemale = form.gender === '女'
 
@@ -258,6 +260,7 @@ export default function NewPatientPage() {
             <Grid>
               <F label="健管专员" span={2}><select className="form-input" value={form.assignedHealthManager} onChange={set('assignedHealthManager')}><option value="">-- 未分配 --</option>{healthManagers.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="家庭医生" span={2}><select className="form-input" value={form.assignedFamilyDoctor} onChange={set('assignedFamilyDoctor')}><option value="">-- 未分配 --</option>{familyDoctors.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
+              <F label="营养师" span={2}><select className="form-input" value={form.assignedNutritionist} onChange={set('assignedNutritionist')}><option value="">-- 未分配 --</option>{nutritionists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="会员来源"><select className="form-input" value={form.source} onChange={set('source')}><option value="">未填写</option>{SOURCE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></F>
               <F label="会员类型"><select className="form-input" value={form.patientType} onChange={set('patientType')}><option value="">普通</option><option value="vip">VIP</option><option value="trial">试用</option></select></F>
               <F label="备注" span={2}><textarea className="form-input" rows={3} value={form.remark} onChange={set('remark')} style={{ resize: 'vertical' }} /></F>

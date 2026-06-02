@@ -112,6 +112,7 @@ const userSchema = new mongoose.Schema({
   // 医护端管理字段
   assignedHealthManager: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健管专员
   assignedFamilyDoctor:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医生
+  assignedNutritionist:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 营养师
   chronicDiseases: { type: [String], default: [] }, // 慢病标签，如 ['高血压','糖尿病']
   idNumber:        { type: String, default: '' },   // 身份证号
   source:          { type: String, default: '' },   // 患者来源

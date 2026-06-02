@@ -241,7 +241,8 @@ export default function PatientDetailPage() {
     contactPhone2: u.contactPhone2 || '',
     deliveryAddress: u.deliveryAddress || '',
     assignedHealthManager: u.assignedHealthManager?._id || '',
-    assignedFamilyDoctor: u.assignedFamilyDoctor?._id || '',
+    assignedFamilyDoctor:  u.assignedFamilyDoctor?._id  || '',
+    assignedNutritionist:  u.assignedNutritionist?._id  || '',
     servicePackage: u.servicePackage || '',
     serviceExpiry: u.serviceExpiry || '',
     serviceStartDate: u.serviceStartDate || '',
@@ -486,6 +487,16 @@ export default function PatientDetailPage() {
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">营养师</label>
+                    <select className="form-input" value={editForm.assignedNutritionist}
+                      onChange={e => setEditForm(f => ({ ...f, assignedNutritionist: e.target.value }))}>
+                      <option value="">-- 未分配 --</option>
+                      {staffList.filter(s => s.role === 'nutritionist').map(s => (
+                        <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务包</label>
                     <input className="form-input" placeholder="如：年度服务包" value={editForm.servicePackage}
                       onChange={e => setEditForm(f => ({ ...f, servicePackage: e.target.value }))} />
@@ -527,6 +538,7 @@ export default function PatientDetailPage() {
                   <InfoRow label="配送地址" value={user.deliveryAddress || '-'} />
                   <InfoRow label="健管专员" value={user.assignedHealthManager?.name || '-'} />
                   <InfoRow label="家庭医生" value={user.assignedFamilyDoctor?.name || '-'} />
+                  <InfoRow label="营养师" value={user.assignedNutritionist?.name || '-'} />
                   <InfoRow label="会员来源" value={user.source || '-'} />
                   <InfoRow label="服务包" value={user.servicePackage || '-'} />
                   <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />

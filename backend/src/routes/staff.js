@@ -153,6 +153,8 @@ router.get('/patients', staffAuth, async (req, res) => {
   if (staff.role !== 'superadmin') {
     if (staff.role === 'familyDoctor') {
       assignFilter.assignedFamilyDoctor = { $in: staffIds };
+    } else if (staff.role === 'nutritionist') {
+      assignFilter.assignedNutritionist = { $in: staffIds };
     } else {
       // healthManager 及所有其他角色（含组长下属）
       assignFilter.assignedHealthManager = { $in: staffIds };
@@ -179,9 +181,10 @@ router.get('/patients', staffAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
-      .select('name phone gender age height weight healthScore servicePackage serviceExpiry chronicDiseases patientType assignedHealthManager assignedFamilyDoctor source createdAt contactPhone')
+      .select('name phone gender age height weight healthScore servicePackage serviceExpiry chronicDiseases patientType assignedHealthManager assignedFamilyDoctor assignedNutritionist source createdAt contactPhone')
       .populate('assignedHealthManager', 'name title')
-      .populate('assignedFamilyDoctor', 'name title'),
+      .populate('assignedFamilyDoctor', 'name title')
+      .populate('assignedNutritionist', 'name title'),
     User.countDocuments(filter),
   ]);
 
@@ -197,7 +200,7 @@ router.post('/patients', staffAuth, async (req, res) => {
     chronicDiseases, patientType, source, remark,
     idNumber, workplace, occupation, maritalStatus,
     ethnicity, contactPhone, contactPhone2, deliveryAddress,
-    assignedHealthManager, assignedFamilyDoctor,
+    assignedHealthManager, assignedFamilyDoctor, assignedNutritionist,
   } = req.body;
 
   if (!phone) return res.status(400).json({ success: false, message: '手机号不能为空' });
@@ -206,11 +209,13 @@ router.post('/patients', staffAuth, async (req, res) => {
   const existing = await User.findOne({ phone });
   if (existing) return res.status(400).json({ success: false, message: '该手机号已存在' });
 
-  // 自动分配：如果创建者是健管专员或家庭医生，默认分配给自己
+  // 自动分配：如果创建者是对应角色，默认分配给自己
   const hm = assignedHealthManager ||
     (staff.role === 'healthManager' ? staff._id : null);
   const fd = assignedFamilyDoctor ||
     (staff.role === 'familyDoctor' ? staff._id : null);
+  const nn = assignedNutritionist ||
+    (staff.role === 'nutritionist' ? staff._id : null);
 
   const user = await User.create({
     phone,
@@ -231,6 +236,7 @@ router.post('/patients', staffAuth, async (req, res) => {
     deliveryAddress: deliveryAddress || '',
     assignedHealthManager: hm,
     assignedFamilyDoctor: fd,
+    assignedNutritionist: nn,
     onboardingCompleted: true,
   });
 
@@ -242,7 +248,8 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   const user = await User.findById(req.params.id)
     .select('-__v')
     .populate('assignedHealthManager', 'name title role')
-    .populate('assignedFamilyDoctor', 'name title role');
+    .populate('assignedFamilyDoctor', 'name title role')
+    .populate('assignedNutritionist', 'name title role');
   if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
   // 权限校验：非超管只能查看分配给自己（或下属）的患者
@@ -277,7 +284,7 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     'chronicDiseases', 'patientType', 'source', 'remark',
     'idNumber', 'workplace', 'occupation', 'maritalStatus',
     'ethnicity', 'contactPhone', 'contactPhone2', 'deliveryAddress',
-    'assignedHealthManager', 'assignedFamilyDoctor',
+    'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
     'servicePackage', 'serviceExpiry', 'serviceStartDate',
     'bloodTypeABO', 'bloodTypeRH',
     'traumaHistory', 'transfusionHistory', 'infectiousHistory', 'vaccinationHistory',
@@ -304,7 +311,8 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
   await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set: updateData });
   const user = await User.findById(req.params.id)
     .populate('assignedHealthManager', 'name title')
-    .populate('assignedFamilyDoctor', 'name title');
+    .populate('assignedFamilyDoctor', 'name title')
+    .populate('assignedNutritionist', 'name title');
   res.json({ success: true, data: user });
 });
 
