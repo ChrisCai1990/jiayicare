@@ -27,6 +27,8 @@ export default function PlansPage() {
   const [showModal, setShowModal] = useState(false)
   const [showCheckupModal, setShowCheckupModal] = useState(false)
   const [showMedicalModal, setShowMedicalModal] = useState(false)
+  const [showNutritionModal, setShowNutritionModal] = useState(false)
+  const [showAnnualMgmtModal, setShowAnnualMgmtModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState(searchParams.get('type') || '')
 
   const load = useCallback(async () => {
@@ -69,8 +71,10 @@ export default function PlansPage() {
         {/* 新建按钮跟随当前 Tab */}
         <div style={{ marginLeft: 'auto' }}>
           <button className="btn btn-primary btn-sm" onClick={() => {
-            if (typeFilter === 'annual_checkup') setShowCheckupModal(true)
+            if      (typeFilter === 'annual_checkup') setShowCheckupModal(true)
             else if (typeFilter === 'medical_assist') setShowMedicalModal(true)
+            else if (typeFilter === 'nutrition')      setShowNutritionModal(true)
+            else if (typeFilter === 'annual_mgmt')    setShowAnnualMgmtModal(true)
             else setShowModal(true)
           }}>
             ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
@@ -103,8 +107,10 @@ export default function PlansPage() {
           </table>}
       </div>
 
-      {showCheckupModal && <AnnualCheckupPlanModal onClose={() => setShowCheckupModal(false)} onSaved={() => { setShowCheckupModal(false); load(); toast('体检方案已创建') }} />}
-      {showMedicalModal && <MedicalAssistPlanModal onClose={() => setShowMedicalModal(false)} onSaved={() => { setShowMedicalModal(false); load(); toast('就医协助方案已创建') }} />}
+      {showCheckupModal    && <AnnualCheckupPlanModal  onClose={() => setShowCheckupModal(false)}    onSaved={() => { setShowCheckupModal(false);    load(); toast('体检方案已创建') }} />}
+      {showMedicalModal    && <MedicalAssistPlanModal  onClose={() => setShowMedicalModal(false)}    onSaved={() => { setShowMedicalModal(false);    load(); toast('就医协助方案已创建') }} />}
+      {showNutritionModal  && <NutritionPlanModal      onClose={() => setShowNutritionModal(false)}  onSaved={() => { setShowNutritionModal(false);  load(); toast('营养干预方案已创建') }} />}
+      {showAnnualMgmtModal && <AnnualMgmtPlanModal     onClose={() => setShowAnnualMgmtModal(false)} onSaved={() => { setShowAnnualMgmtModal(false); load(); toast('年度管理方案已创建') }} />}
       {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); load(); toast('方案已创建') }} />}
     </div>
   )
@@ -582,6 +588,403 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
             {saving ? '创建中...' : '创建就医协助方案'}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 营养干预方案：两步创建弹窗 ───────────────────────────────────────
+const MEALS = [
+  { timeKey: 'breakfastTime', contentKey: 'breakfast', label: '早餐', timePlaceholder: '如：07:00' },
+  { timeKey: 'lunchTime',     contentKey: 'lunch',     label: '午餐', timePlaceholder: '如：12:00' },
+  { timeKey: 'dinnerTime',    contentKey: 'dinner',    label: '晚餐', timePlaceholder: '如：18:30' },
+  { timeKey: 'snackTime',     contentKey: 'snack',     label: '加餐', timePlaceholder: '如：15:00（选填）', rows: 2 },
+]
+const NUTRITION_INIT = {
+  dailyWater: '',
+  breakfastTime: '', breakfast: '',
+  lunchTime: '',     lunch: '',
+  dinnerTime: '',    dinner: '',
+  snackTime: '',     snack: '',
+  cookingMethod: '', mealOrder: '', dietPrinciple: '',
+  nutritionSupplements: '', exerciseSuggestion: '',
+  allowedFoods: '', forbiddenFoods: '',
+}
+
+function NutritionPlanModal({ onClose, onSaved }) {
+  const [step, setStep]               = useState(1)
+  const [templates, setTemplates]     = useState([])
+  const [loadingTpls, setLoadingTpls] = useState(true)
+  const [tplError, setTplError]       = useState('')
+  const [selectedTpl, setSelectedTpl] = useState(null)
+  const [form, setForm]               = useState(NUTRITION_INIT)
+  const set                           = (k, v) => setForm(p => ({ ...p, [k]: v }))
+  const [planTitle, setPlanTitle]     = useState('')
+  const [patientId, setPatientId]     = useState('')
+  const [year, setYear]               = useState(new Date().getFullYear())
+  const [description, setDescription] = useState('')
+  const [saving, setSaving]           = useState(false)
+  const [error, setError]             = useState('')
+
+  useEffect(() => {
+    staffAPI.getPlanTemplates('nutrition')
+      .then(res => setTemplates(res.data || []))
+      .catch(err => setTplError(err.message || '加载失败'))
+      .finally(() => setLoadingTpls(false))
+  }, [])
+
+  const selectTemplate = (tpl) => {
+    setSelectedTpl(tpl)
+    const c = tpl.content || {}
+    setPlanTitle(tpl.name || '')
+    setForm({ ...NUTRITION_INIT, ...Object.fromEntries(Object.keys(NUTRITION_INIT).map(k => [k, c[k] || ''])) })
+    setStep(2); setError('')
+  }
+
+  const handleSubmit = async () => {
+    if (!patientId)        { setError('请搜索并选择会员'); return }
+    if (!planTitle.trim()) { setError('请填写方案名称'); return }
+    setError(''); setSaving(true)
+    try {
+      const items = []
+      MEALS.forEach(m => {
+        if (form[m.contentKey]) {
+          const t = form[m.timeKey] ? `（${form[m.timeKey]}）` : ''
+          items.push({ name: `${m.label}${t}：${form[m.contentKey]}`, category: '饮食干预' })
+        }
+      })
+      if (form.dailyWater)           items.push({ name: `每日饮水：${form.dailyWater} ml`, category: '饮食干预' })
+      if (form.dietPrinciple)        items.push({ name: `膳食原则：${form.dietPrinciple}`, category: '饮食干预' })
+      if (form.nutritionSupplements) items.push({ name: `营养素：${form.nutritionSupplements}`, category: '营养干预' })
+      if (form.exerciseSuggestion)   items.push({ name: `运动：${form.exerciseSuggestion}`, category: '运动干预' })
+      await staffAPI.createPlan({ patientId, type: 'nutrition', title: planTitle, description, year, items, content: { ...form } })
+      onSaved()
+    } catch (err) { setError(err.message) } finally { setSaving(false) }
+  }
+
+  const iStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
+
+  if (step === 1) return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建营养干预方案 — 选择方案模板</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: 440, overflowY: 'auto' }}>
+          {loadingTpls && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
+          {tplError && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {tplError}</div>}
+          {!loadingTpls && !tplError && templates.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建营养干预方案模板</div>}
+          {templates.map(tpl => {
+            const c = tpl.content || {}
+            return (
+              <div key={tpl._id} onClick={() => selectTemplate(tpl)}
+                style={{ border: '1px solid #E0D9CE', borderRadius: 10, padding: '14px 18px', marginBottom: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}
+                onMouseEnter={e => { e.currentTarget.style.border = '1px solid #7C3AED'; e.currentTarget.style.background = '#F3E8FF' }}
+                onMouseLeave={e => { e.currentTarget.style.border = '1px solid #E0D9CE'; e.currentTarget.style.background = '#fff' }}
+              >
+                <span style={{ fontSize: 26 }}>🥗</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{tpl.name}</div>
+                  {c.dietPrinciple && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{c.dietPrinciple}</div>}
+                  {c.dailyWater && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 2 }}>每日饮水：{c.dailyWater} ml</div>}
+                </div>
+                <span style={{ color: '#7C3AED', fontSize: 18 }}>→</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>取消</button></div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 620, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建营养干预方案</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
+        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* 已选模板 */}
+          <div style={{ background: '#F3E8FF', borderRadius: 8, padding: '8px 14px', fontSize: 13, color: '#7C3AED', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>已选模板：<strong>{selectedTpl?.name}</strong></span>
+            <button type="button" onClick={() => setStep(1)} style={{ marginLeft: 'auto', fontSize: 12, color: '#7C3AED', background: 'none', border: '1px solid #7C3AED', borderRadius: 14, padding: '2px 10px', cursor: 'pointer' }}>更换模板</button>
+          </div>
+          {/* 搜索会员 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">搜索会员 *</label>
+            <PatientSearchInput value={patientId} onChange={setPatientId} />
+          </div>
+          {/* 方案名称 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案名称 *</label>
+            <input className="form-input" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="营养干预方案名称" />
+          </div>
+          {/* 每日饮水 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">每日饮水量（毫升）</label>
+            <input className="form-input" value={form.dailyWater} onChange={e => set('dailyWater', e.target.value)} placeholder="如：2000" />
+          </div>
+          {/* 三餐安排 */}
+          {MEALS.map(m => (
+            <div key={m.contentKey} style={{ border: '1px solid #ece8e0', borderRadius: 8, padding: 12, background: '#faf8f5' }}>
+              <div style={{ fontWeight: 600, fontSize: 13, color: '#333', marginBottom: 8 }}>{m.label}</div>
+              <div style={{ display: 'grid', gridTemplateColumns: '160px 1fr', gap: 8 }}>
+                <div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>进餐时间</div>
+                  <input value={form[m.timeKey]} onChange={e => set(m.timeKey, e.target.value)} placeholder={m.timePlaceholder} style={iStyle} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>食物内容</div>
+                  <textarea rows={m.rows || 3} value={form[m.contentKey]} onChange={e => set(m.contentKey, e.target.value)} placeholder="食物种类、份量描述" style={{ ...iStyle, resize: 'vertical' }} />
+                </div>
+              </div>
+            </div>
+          ))}
+          {/* 两栏简单字段 */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {[
+              { k: 'cookingMethod', l: '烹饪方式',   p: '推荐：蒸煮炖；避免：油炸' },
+              { k: 'mealOrder',     l: '进餐顺序',   p: '如：汤→蔬菜→肉→主食' },
+              { k: 'dietPrinciple', l: '膳食总原则', p: '如：低盐低脂、高纤维' },
+            ].map(({ k, l, p }) => (
+              <div key={k} className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">{l}</label>
+                <input className="form-input" value={form[k]} onChange={e => set(k, e.target.value)} placeholder={p} />
+              </div>
+            ))}
+          </div>
+          {/* 全宽 textarea */}
+          {[
+            { k: 'nutritionSupplements', l: '营养素补充建议', p: '营养素名称、剂量、用法', rows: 3 },
+            { k: 'exerciseSuggestion',   l: '运动建议',       p: '运动类型、频率、时长、强度', rows: 3 },
+            { k: 'allowedFoods',         l: '推荐食物',       p: '逗号分隔', rows: 2 },
+            { k: 'forbiddenFoods',       l: '禁忌食物',       p: '逗号分隔', rows: 2 },
+          ].map(({ k, l, p, rows }) => (
+            <div key={k} className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">{l}</label>
+              <textarea className="form-input" rows={rows} value={form[k]} onChange={e => set(k, e.target.value)} placeholder={p} />
+            </div>
+          ))}
+          {/* 方案年度 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案年度</label>
+            <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
+          </div>
+          {/* 方案说明 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案说明</label>
+            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建营养干预方案'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 年度管理方案：两步创建弹窗 ───────────────────────────────────────
+const ANNUAL_MGMT_TYPE_LABELS = {
+  health_reshape:    '健康重塑方案',
+  young_state:       '健康年轻态方案',
+  chronic_stable:    '慢病维稳方案',
+  health_prevention: '健康预防方案',
+}
+const ANNUAL_MGMT_TYPE_COLORS = {
+  health_reshape:    { color: '#1E6B50', bg: '#E8F5EF' },
+  young_state:       { color: '#7C3AED', bg: '#F3E8FF' },
+  chronic_stable:    { color: '#DC2626', bg: '#FEF2F2' },
+  health_prevention: { color: '#0077B6', bg: '#EFF6FF' },
+}
+
+function AnnualMgmtPlanModal({ onClose, onSaved }) {
+  const [step, setStep]               = useState(1)
+  const [templates, setTemplates]     = useState([])
+  const [loadingTpls, setLoadingTpls] = useState(true)
+  const [tplError, setTplError]       = useState('')
+  const [selectedTpl, setSelectedTpl] = useState(null)
+
+  const [patientId, setPatientId]     = useState('')
+  const [planName, setPlanName]       = useState('')
+  const [planDesc, setPlanDesc]       = useState('')
+  const [planType, setPlanType]       = useState('')
+  const [nodes, setNodes]             = useState([])  // { id, name, formId }
+  const [year, setYear]               = useState(new Date().getFullYear())
+  const [description, setDescription] = useState('')
+  const [saving, setSaving]           = useState(false)
+  const [error, setError]             = useState('')
+
+  const [followupPlans, setFollowupPlans] = useState([])
+  const [followupForms, setFollowupForms] = useState([])
+
+  useEffect(() => {
+    staffAPI.getPlanTemplates('health_management')
+      .then(res => setTemplates(res.data || []))
+      .catch(err => setTplError(err.message || '加载失败'))
+      .finally(() => setLoadingTpls(false))
+    Promise.all([staffAPI.getFollowupPlans(), staffAPI.getFollowupForms()])
+      .then(([pr, fr]) => { setFollowupPlans(pr.data || []); setFollowupForms(fr.data || []) })
+      .catch(() => {})
+  }, [])
+
+  const selectTemplate = (tpl) => {
+    setSelectedTpl(tpl)
+    const c = tpl.content || {}
+    setPlanType(c.planType || '')
+    setPlanName(c.planName || tpl.name || '')
+    setPlanDesc(c.planDesc || '')
+    setNodes((c.followUpPlans || []).map(fp => {
+      const plan   = followupPlans.find(p => String(p._id) === String(fp.id))
+      const raw    = plan?.formId
+      const formId = raw?._id ? String(raw._id) : (raw ? String(raw) : null)
+      return { id: fp.id, name: fp.name, formId }
+    }))
+    setStep(2); setError('')
+  }
+
+  const handleSubmit = async () => {
+    if (!patientId)       { setError('请搜索并选择会员'); return }
+    if (!planName.trim()) { setError('请填写方案名称'); return }
+    setError(''); setSaving(true)
+    try {
+      const items = nodes.map(n => ({ name: n.name, category: '随访方案', itemId: n.id || null, itemType: 'followUpPlan', formId: n.formId || null }))
+      await staffAPI.createPlan({ patientId, type: 'annual_mgmt', title: planName, description, year, items, content: { planType, moduleData: {} } })
+      onSaved()
+    } catch (err) { setError(err.message) } finally { setSaving(false) }
+  }
+
+  const typeStyle = ANNUAL_MGMT_TYPE_COLORS[planType] || { color: '#1A2B24', bg: '#F0F0F0' }
+
+  if (step === 1) return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建年度管理方案 — 选择方案模板</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: 440, overflowY: 'auto' }}>
+          {loadingTpls && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
+          {tplError && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {tplError}</div>}
+          {!loadingTpls && !tplError && templates.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建年度管理方案模板</div>}
+          {templates.map(tpl => {
+            const c = tpl.content || {}
+            const ts = ANNUAL_MGMT_TYPE_COLORS[c.planType] || { color: '#666', bg: '#f0f0f0' }
+            return (
+              <div key={tpl._id} onClick={() => selectTemplate(tpl)}
+                style={{ border: '1px solid #E0D9CE', borderRadius: 10, padding: '14px 18px', marginBottom: 10, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}
+                onMouseEnter={e => { e.currentTarget.style.border = `1px solid ${ts.color}`; e.currentTarget.style.background = ts.bg }}
+                onMouseLeave={e => { e.currentTarget.style.border = '1px solid #E0D9CE'; e.currentTarget.style.background = '#fff' }}
+              >
+                <span style={{ fontSize: 26 }}>📋</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{c.planName || tpl.name}</span>
+                    {c.planType && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, fontWeight: 600, color: ts.color, background: ts.bg }}>{ANNUAL_MGMT_TYPE_LABELS[c.planType]}</span>}
+                  </div>
+                  {c.planDesc && <div style={{ fontSize: 12, color: '#8AA89C' }}>{c.planDesc}</div>}
+                  <div style={{ fontSize: 12, color: '#4A6558', marginTop: 2 }}>随访方案节点：{c.followUpPlans?.length || 0} 个</div>
+                </div>
+                <span style={{ color: ts.color, fontSize: 18 }}>→</span>
+              </div>
+            )
+          })}
+        </div>
+        <div className="modal-footer"><button className="btn btn-secondary" onClick={onClose}>取消</button></div>
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal" style={{ maxWidth: 580, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header">
+          <h3 className="modal-title">新建年度管理方案</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
+        <div className="modal-body" style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* 已选模板 */}
+          <div style={{ background: typeStyle.bg, borderRadius: 8, padding: '8px 14px', fontSize: 13, color: typeStyle.color, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>已选模板：<strong>{selectedTpl?.content?.planName || selectedTpl?.name}</strong></span>
+            {planType && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, fontWeight: 600, color: typeStyle.color, border: `1px solid ${typeStyle.color}` }}>{ANNUAL_MGMT_TYPE_LABELS[planType]}</span>}
+            <button type="button" onClick={() => setStep(1)} style={{ marginLeft: 'auto', fontSize: 12, color: typeStyle.color, background: 'none', border: `1px solid ${typeStyle.color}`, borderRadius: 14, padding: '2px 10px', cursor: 'pointer' }}>更换模板</button>
+          </div>
+          {/* 搜索会员 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">搜索会员 *</label>
+            <PatientSearchInput value={patientId} onChange={setPatientId} />
+          </div>
+          {/* 方案名称 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案名称 *</label>
+            <input className="form-input" value={planName} onChange={e => setPlanName(e.target.value)} placeholder="年度管理方案名称" />
+          </div>
+          {/* 状态说明 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">状态说明</label>
+            <input className="form-input" value={planDesc} onChange={e => setPlanDesc(e.target.value)} placeholder="方案适用场景或说明" />
+          </div>
+          {/* 随访方案节点列表 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span>随访方案节点</span>
+              <span style={{ fontWeight: 400, color: '#8AA89C', fontSize: 12 }}>共 {nodes.length} 个</span>
+            </label>
+            <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden', background: '#faf8f5' }}>
+              {nodes.length === 0 && <div style={{ padding: '10px 14px', color: '#aaa', fontSize: 12 }}>暂无随访节点</div>}
+              {nodes.map((n, idx) => (
+                <div key={idx} style={{ padding: '8px 12px', borderBottom: '1px solid #F0EDE7' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 5 }}>
+                    <span style={{ fontSize: 11, padding: '1px 6px', borderRadius: 3, flexShrink: 0, fontWeight: 600, color: '#7C3AED', background: '#F3E8FF' }}>随访</span>
+                    <input
+                      value={n.name}
+                      onChange={e => setNodes(prev => prev.map((it, i) => i === idx ? { ...it, name: e.target.value } : it))}
+                      style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontFamily: 'inherit', padding: 0 }}
+                    />
+                    <button type="button" onClick={() => setNodes(prev => prev.filter((_, i) => i !== idx))}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#ccc', fontSize: 16, padding: '0 2px' }}
+                      onMouseEnter={e => e.currentTarget.style.color = '#DC3545'}
+                      onMouseLeave={e => e.currentTarget.style.color = '#ccc'}
+                    >×</button>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, paddingLeft: 38 }}>
+                    <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0, whiteSpace: 'nowrap' }}>随访表：</span>
+                    <select
+                      value={n.formId || ''}
+                      onChange={e => setNodes(prev => prev.map((it, i) => i === idx ? { ...it, formId: e.target.value || null } : it))}
+                      style={{ flex: 1, fontSize: 12, padding: '3px 8px', border: '1px solid #E0D9CE', borderRadius: 6, background: '#fff', color: n.formId ? '#1A2B24' : '#aaa' }}
+                    >
+                      <option value="">请选择随访表</option>
+                      {followupForms.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+          {/* 方案年度 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案年度</label>
+            <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
+          </div>
+          {/* 方案说明 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案说明</label>
+            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={() => setStep(1)}>← 重新选模板</button>
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '创建中...' : '创建年度管理方案'}</button>
         </div>
       </div>
     </div>
