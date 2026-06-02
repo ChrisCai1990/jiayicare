@@ -34,27 +34,25 @@ export default function PlansPage() {
   const nav = useNavigate()
   const toast = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
-
-  // 顶层 Tab：'plans'（普通方案列表）| 'annual_health_mgmt'（年度健康管理）
-  const activeTab = searchParams.get('tab') || 'plans'
   const typeFilter = searchParams.get('type') || ''
 
+  const isAnnualMgmt = typeFilter === 'annual_mgmt'
+
   // 普通方案列表
-  const [plans, setPlans] = useState([])
-  const [total, setTotal] = useState(0)
+  const [plans, setPlans]   = useState([])
+  const [total, setTotal]   = useState(0)
   const [loading, setLoading] = useState(true)
 
-  // 年度健康管理列表
-  const [ahPlans, setAhPlans]   = useState([])
+  // 年度管理方案列表（AnnualPlan 模型）
+  const [ahPlans, setAhPlans]     = useState([])
   const [ahLoading, setAhLoading] = useState(false)
-  const [ahYear, setAhYear]     = useState(new Date().getFullYear())
+  const [ahYear, setAhYear]       = useState(new Date().getFullYear())
 
   // 弹窗
   const [showModal, setShowModal]               = useState(false)
   const [showCheckupModal, setShowCheckupModal] = useState(false)
   const [showMedicalModal, setShowMedicalModal] = useState(false)
   const [showNutritionModal, setShowNutritionModal] = useState(false)
-  const [showAnnualMgmtModal, setShowAnnualMgmtModal] = useState(false)
   const [showAhModal, setShowAhModal]           = useState(false)
 
   const loadPlans = useCallback(async () => {
@@ -76,17 +74,9 @@ export default function PlansPage() {
   }, [ahYear])
 
   useEffect(() => {
-    if (activeTab === 'annual_health_mgmt') loadAhPlans()
+    if (isAnnualMgmt) loadAhPlans()
     else loadPlans()
-  }, [activeTab, loadPlans, loadAhPlans])
-
-  const switchTab = (tab) => {
-    if (tab === 'annual_health_mgmt') setSearchParams({ tab })
-    else setSearchParams({})
-  }
-  const switchType = (type) => {
-    setSearchParams(type ? { type } : {})
-  }
+  }, [isAnnualMgmt, loadPlans, loadAhPlans])
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
 
@@ -95,31 +85,41 @@ export default function PlansPage() {
       <div className="page-header">
         <div>
           <h1 className="page-title">健康方案</h1>
-          <p className="page-subtitle">{activeTab === 'annual_health_mgmt' ? `${ahPlans.length} 份年度健康管理方案` : `共 ${total} 个方案`}</p>
+          <p className="page-subtitle">{isAnnualMgmt ? `${ahPlans.length} 份年度管理方案` : `共 ${total} 个方案`}</p>
         </div>
       </div>
 
-      {/* 顶层 Tab 切换 */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 16, borderBottom: '2px solid #E0D9CE', paddingBottom: 0 }}>
+      {/* 类型筛选 + 新建按钮同行 */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
         {[
-          { key: 'plans',               label: '健康方案' },
-          { key: 'annual_health_mgmt',  label: '年度健康管理' },
-        ].map(t => (
-          <button
-            key={t.key}
-            onClick={() => switchTab(t.key)}
-            style={{
-              padding: '8px 18px', fontSize: 14, fontWeight: 600, border: 'none', cursor: 'pointer',
-              background: 'none', borderBottom: activeTab === t.key ? '2px solid #1E6B50' : '2px solid transparent',
-              color: activeTab === t.key ? '#1E6B50' : '#8AA89C',
-              marginBottom: -2, borderRadius: 0,
-            }}
-          >{t.label}</button>
+          { v: '', l: '全部' },
+          { v: 'annual_checkup', l: '年度体检方案' },
+          { v: 'annual_mgmt',    l: '年度管理方案' },
+          { v: 'nutrition',      l: '营养干预方案' },
+          { v: 'medical_assist', l: '就医协助方案' },
+          { v: 'tcm',            l: '中医调理方案' },
+          { v: 'rehab',          l: '运动复健方案' },
+          { v: 'psychology',     l: '心理咨询方案' },
+        ].map(opt => (
+          <button key={opt.v}
+            className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setSearchParams(opt.v ? { type: opt.v } : {})}>{opt.l}</button>
         ))}
+        <div style={{ marginLeft: 'auto' }}>
+          <button className="btn btn-primary btn-sm" onClick={() => {
+            if      (typeFilter === 'annual_checkup') setShowCheckupModal(true)
+            else if (typeFilter === 'medical_assist') setShowMedicalModal(true)
+            else if (typeFilter === 'nutrition')      setShowNutritionModal(true)
+            else if (typeFilter === 'annual_mgmt')    setShowAhModal(true)
+            else setShowModal(true)
+          }}>
+            ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
+          </button>
+        </div>
       </div>
 
-      {/* ── 年度健康管理 Tab ── */}
-      {activeTab === 'annual_health_mgmt' && (
+      {/* ── 年度管理方案（AnnualPlan） ── */}
+      {isAnnualMgmt && (
         <>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
             <select
@@ -129,15 +129,12 @@ export default function PlansPage() {
             >
               {yearOptions.map(y => <option key={y} value={y}>{y}年</option>)}
             </select>
-            <div style={{ marginLeft: 'auto' }}>
-              <button className="btn btn-primary btn-sm" onClick={() => setShowAhModal(true)}>＋ 新建年度健康管理方案</button>
-            </div>
           </div>
           <div className="card">
             {ahLoading
               ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
               : ahPlans.length === 0
-                ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无 {ahYear} 年度健康管理方案</div>
+                ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无 {ahYear} 年度管理方案</div>
                 : <table className="table">
                     <thead><tr>
                       <th>会员</th><th>联系方式</th><th>方案类型</th><th>年度</th><th>负责人</th><th>最后更新</th><th>操作</th>
@@ -169,36 +166,9 @@ export default function PlansPage() {
         </>
       )}
 
-      {/* ── 普通健康方案 Tab ── */}
-      {activeTab === 'plans' && (
+      {/* ── 其他方案列表 ── */}
+      {!isAnnualMgmt && (
         <>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-            {[
-              { v: '', l: '全部' },
-              { v: 'annual_checkup', l: '年度体检方案' },
-              { v: 'annual_mgmt',    l: '年度管理方案' },
-              { v: 'nutrition',      l: '营养干预方案' },
-              { v: 'medical_assist', l: '就医协助方案' },
-              { v: 'tcm',            l: '中医调理方案' },
-              { v: 'rehab',          l: '运动复健方案' },
-              { v: 'psychology',     l: '心理咨询方案' },
-            ].map(opt => (
-              <button key={opt.v}
-                className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => switchType(opt.v)}>{opt.l}</button>
-            ))}
-            <div style={{ marginLeft: 'auto' }}>
-              <button className="btn btn-primary btn-sm" onClick={() => {
-                if      (typeFilter === 'annual_checkup') setShowCheckupModal(true)
-                else if (typeFilter === 'medical_assist') setShowMedicalModal(true)
-                else if (typeFilter === 'nutrition')      setShowNutritionModal(true)
-                else if (typeFilter === 'annual_mgmt')    setShowAnnualMgmtModal(true)
-                else setShowModal(true)
-              }}>
-                ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
-              </button>
-            </div>
-          </div>
           <div className="card">
             {loading ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
             : plans.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无方案</div>
@@ -208,7 +178,7 @@ export default function PlansPage() {
                 </tr></thead>
                 <tbody>
                   {plans.map(p => (
-                    <tr key={p._id} onClick={() => nav(p.type === 'annual_mgmt' ? `/plans/mgmt/${p._id}` : `/plans/${p._id}`)} style={{ cursor: 'pointer' }}>
+                    <tr key={p._id} onClick={() => nav(`/plans/${p._id}`)} style={{ cursor: 'pointer' }}>
                       <td><strong>{p.title}</strong></td>
                       <td><span className="badge badge-info">{TYPE_LABEL[p.type]}</span></td>
                       <td>{p.patientId?.name || '-'} <span style={{ color: '#aaa', fontSize: 12 }}>{p.patientId?.phone}</span></td>
@@ -216,17 +186,16 @@ export default function PlansPage() {
                       <td>{p.items?.length || 0} 项</td>
                       <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleDateString('zh-CN')}</td>
                       <td>
-                        <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(p.type === 'annual_mgmt' ? `/plans/mgmt/${p._id}` : `/plans/${p._id}`) }}>查看</button>
+                        <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(`/plans/${p._id}`) }}>查看</button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>}
           </div>
-          {showCheckupModal    && <AnnualCheckupPlanModal  onClose={() => setShowCheckupModal(false)}    onSaved={() => { setShowCheckupModal(false);    loadPlans(); toast('体检方案已创建') }} />}
-          {showMedicalModal    && <MedicalAssistPlanModal  onClose={() => setShowMedicalModal(false)}    onSaved={() => { setShowMedicalModal(false);    loadPlans(); toast('就医协助方案已创建') }} />}
-          {showNutritionModal  && <NutritionPlanModal      onClose={() => setShowNutritionModal(false)}  onSaved={() => { setShowNutritionModal(false);  loadPlans(); toast('营养干预方案已创建') }} />}
-          {showAnnualMgmtModal && <AnnualMgmtPlanModal     onClose={() => setShowAnnualMgmtModal(false)} onSaved={() => { setShowAnnualMgmtModal(false); loadPlans(); toast('年度管理方案已创建') }} />}
+          {showCheckupModal   && <AnnualCheckupPlanModal onClose={() => setShowCheckupModal(false)}   onSaved={() => { setShowCheckupModal(false);   loadPlans(); toast('体检方案已创建') }} />}
+          {showMedicalModal   && <MedicalAssistPlanModal onClose={() => setShowMedicalModal(false)}   onSaved={() => { setShowMedicalModal(false);   loadPlans(); toast('就医协助方案已创建') }} />}
+          {showNutritionModal && <NutritionPlanModal     onClose={() => setShowNutritionModal(false)} onSaved={() => { setShowNutritionModal(false); loadPlans(); toast('营养干预方案已创建') }} />}
           {showModal && <NewPlanModal type={typeFilter || 'annual_checkup'} onClose={() => setShowModal(false)} onSaved={() => { setShowModal(false); loadPlans(); toast('方案已创建') }} />}
         </>
       )}
@@ -241,7 +210,7 @@ function SelectPatientForAhModal({ year, onClose, onSelected }) {
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
         <div className="modal-header">
-          <h3 className="modal-title">新建年度健康管理方案 — {year}年</h3>
+          <h3 className="modal-title">新建年度管理方案 — {year}年</h3>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">
