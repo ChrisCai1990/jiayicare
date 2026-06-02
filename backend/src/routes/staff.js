@@ -1166,12 +1166,48 @@ router.get('/team', staffAuth, async (req, res) => {
 });
 
 // ── 患者档案 - 附属数据 ─────────────────────────────────────
-// GET /api/staff/patients/:id/plans — 患者的健康方案列表
+// GET /api/staff/patients/:id/plans — 患者的健康方案列表（含年度管理方案）
 router.get('/patients/:id/plans', staffAuth, async (req, res) => {
-  const plans = await HealthPlan.find({ patientId: req.params.id })
-    .sort({ createdAt: -1 })
-    .populate('staffId', 'name role');
-  res.json({ success: true, data: plans });
+  const [healthPlans, annualPlans] = await Promise.all([
+    HealthPlan.find({ patientId: req.params.id })
+      .sort({ createdAt: -1 })
+      .populate('staffId', 'name role'),
+    AnnualPlan.find({ patientId: req.params.id })
+      .sort({ year: -1 })
+      .populate('pushedBy', 'name role'),
+  ]);
+
+  const PLAN_TYPE_LABEL = {
+    health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
+    chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案',
+  };
+  const MODULE_NAME = {
+    medical_treatment: '医疗问题解决', specialist_collab: '全专联合会诊',
+    abnormal_followup: '异常复查提醒', vaccine: '疫苗接种',
+    monitoring: '日常监测', lifestyle: '生活方式评估',
+    medication: '药物服用', nutrition_supplement: '营养素补充',
+    annual_checkup: '年度体检', functional_medicine: '功能医学检测',
+    quarterly_eval: '季度评估',
+  };
+
+  const annualMapped = annualPlans.map(ap => ({
+    _id: ap._id,
+    title: `${ap.year}年 年度管理方案${ap.planType ? ` · ${PLAN_TYPE_LABEL[ap.planType] || ''}` : ''}`,
+    type: 'annual_mgmt',
+    status: ap.pushedAt ? 'active' : 'draft',
+    year: ap.year,
+    planType: ap.planType,
+    moduleData: ap.moduleData,
+    staffId: ap.pushedBy,
+    pushedAt: ap.pushedAt,
+    isAnnualPlan: true,
+    createdAt: ap.createdAt,
+    items: Object.entries(ap.moduleData || {})
+      .filter(([, v]) => v && v.enabled)
+      .map(([key]) => ({ name: MODULE_NAME[key] || key, status: 'pending' })),
+  }));
+
+  res.json({ success: true, data: [...annualMapped, ...healthPlans] });
 });
 
 // GET /api/staff/patients/:id/reports — 患者的体检报告列表

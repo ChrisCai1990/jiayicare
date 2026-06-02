@@ -791,14 +791,20 @@ export default function PatientDetailPage() {
                   const done = p.items?.filter(i => i.status === 'completed').length || 0
                   const total = p.items?.length || 0
                   return (
-                    <tr key={p._id} style={{ cursor: 'pointer' }} onClick={() => nav(`/plans/${p._id}`)}>
-                      <td style={{ fontWeight: 500, color: '#1E6B50' }}>{p.title}</td>
+                    <tr key={p._id} style={{ cursor: 'pointer' }}
+                      onClick={() => p.isAnnualPlan ? nav(`/patients/${id}/annual-health`) : nav(`/plans/${p._id}`)}>
+                      <td style={{ fontWeight: 500, color: '#1E6B50' }}>
+                        {p.title}
+                        {p.isAnnualPlan && <span style={{ marginLeft: 6, fontSize: 11, color: '#1E6B50', background: '#E8F5EF', padding: '1px 6px', borderRadius: 4 }}>年度</span>}
+                      </td>
                       <td><span className="badge badge-info">{PLAN_TYPE_LABEL[p.type] || p.type}</span></td>
                       <td><span style={{ color: PLAN_STATUS_COLOR[p.status], fontWeight: 500, fontSize: 13 }}>{PLAN_STATUS_LABEL[p.status]}</span></td>
                       <td>
-                        {p.viewedAt
-                          ? <span style={{ fontSize: 12, color: '#22A06B', fontWeight: 500 }}>✓ 已阅<br/><span style={{ color: '#aaa', fontWeight: 400 }}>{new Date(p.viewedAt).toLocaleDateString('zh-CN')}</span></span>
-                          : <span style={{ fontSize: 12, color: '#D97706' }}>未查阅</span>
+                        {p.isAnnualPlan
+                          ? <span style={{ fontSize: 12, color: '#8AA89C' }}>-</span>
+                          : p.viewedAt
+                            ? <span style={{ fontSize: 12, color: '#22A06B', fontWeight: 500 }}>✓ 已阅<br/><span style={{ color: '#aaa', fontWeight: 400 }}>{new Date(p.viewedAt).toLocaleDateString('zh-CN')}</span></span>
+                            : <span style={{ fontSize: 12, color: '#D97706' }}>未查阅</span>
                         }
                       </td>
                       <td style={{ textAlign: 'center' }}>{total}</td>
