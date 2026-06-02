@@ -122,7 +122,7 @@ export default function FollowUpsPage() {
           <h1 className="page-title">随访管理</h1>
           <p className="page-subtitle">共 {total} 条记录</p>
         </div>
-        <div style={{ fontSize: 13, color: '#8AA89C' }}>在"待随访"列表中点击"执行随访"完成记录</div>
+        <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增随访</button>
       </div>
 
       {/* 状态标签 */}

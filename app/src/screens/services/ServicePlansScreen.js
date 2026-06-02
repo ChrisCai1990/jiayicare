@@ -399,9 +399,55 @@ export default function ServicePlansScreen({ navigation }) {
 
   const loadPlans = useCallback(async () => {
     try {
-      const res = await plansAPI.list();
-      if (res.success && res.data?.length > 0) {
-        setPlans(res.data);
+      const [res, annualRes] = await Promise.all([
+        plansAPI.list().catch(() => ({ success: false, data: [] })),
+        plansAPI.listAnnualMgmt().catch(() => ({ success: false, data: [] })),
+      ]);
+
+      // 将年度管理方案转换为统一展示格式
+      const annualMgmtPlans = (annualRes.success && annualRes.data?.length > 0)
+        ? annualRes.data.map(ap => ({
+            _id: ap._id,
+            title: `${ap.year}年 年度管理方案`,
+            type: 'annual_mgmt',
+            status: 'active',
+            description: ap.planType ? {
+              health_reshape: '健康重塑方案',
+              young_state: '健康年轻态方案',
+              chronic_stable: '慢病维稳方案',
+              health_prevention: '健康预防方案',
+            }[ap.planType] || '' : '',
+            staffId: ap.pushedBy,
+            pushedAt: ap.pushedAt,
+            year: ap.year,
+            moduleData: ap.moduleData || {},
+            items: Object.entries(ap.moduleData || {})
+              .filter(([, v]) => v && v.enabled)
+              .map(([key, v]) => ({
+                _id: key,
+                name: {
+                  medical_treatment: '医疗问题解决',
+                  specialist_collab: '全专联合会诊',
+                  abnormal_followup: '异常复查提醒',
+                  vaccine: '疫苗接种',
+                  monitoring: '日常监测',
+                  lifestyle: '生活方式评估',
+                  medication: '药物服用',
+                  nutrition_supplement: '营养素补充',
+                  annual_checkup: '年度体检',
+                  functional_medicine: '功能医学检测',
+                  quarterly_eval: '季度评估',
+                }[key] || key,
+                status: 'pending',
+              })),
+          }))
+        : [];
+
+      const healthPlans = (res.success && res.data?.length > 0) ? res.data : [];
+      const allPlans = [...annualMgmtPlans, ...healthPlans];
+
+      if (allPlans.length > 0) {
+        setPlans(allPlans);
       } else {
         setPlans(isDemo ? DEMO_PLANS : []);
       }

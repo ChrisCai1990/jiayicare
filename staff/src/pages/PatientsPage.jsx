@@ -61,10 +61,12 @@ export default function PatientsPage() {
             </div>
             <div className="form-group" style={{ flex: '1 1 160px', marginBottom: 0 }}>
               <label className="form-label">慢病筛选</label>
-              <select className="form-input" value={disease} onChange={e => { setDisease(e.target.value); setPage(1) }}>
-                <option value="">全部慢病</option>
-                {DISEASE_TAGS.map(d => <option key={d} value={d}>{d}</option>)}
-              </select>
+              <input
+                className="form-input"
+                placeholder="输入慢病名称，如高尿酸"
+                value={disease}
+                onChange={e => { setDisease(e.target.value); setPage(1) }}
+              />
             </div>
             <button type="submit" className="btn btn-primary" style={{ height: 38 }}>搜索</button>
             <button type="button" className="btn btn-secondary" style={{ height: 38 }}

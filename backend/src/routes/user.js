@@ -16,6 +16,7 @@ const Order        = require('../models/Order');
 const Message      = require('../models/Message');
 const FollowUp         = require('../models/FollowUp');
 const ExamRequisition  = require('../models/ExamRequisition');
+const AnnualPlan       = require('../models/AnnualPlan');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 
@@ -465,6 +466,18 @@ router.post('/report/share', auth, async (req, res) => {
     res.json({ success: true, data: { token, shareUrl, expiresAt } });
   } catch (err) {
     res.status(500).json({ success: false, message: '创建分享链接失败', error: err.message });
+  }
+});
+
+// GET /api/user/annual-mgmt-plans — 年度管理方案（已推送）
+router.get('/annual-mgmt-plans', auth, async (req, res) => {
+  try {
+    const plans = await AnnualPlan.find({ patientId: req.user._id, pushedAt: { $ne: null } })
+      .populate('pushedBy', 'name role title')
+      .sort({ year: -1 });
+    res.json({ success: true, data: plans });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取年度管理方案失败', error: err.message });
   }
 });
 

@@ -153,7 +153,7 @@ const TYPE_OPTIONS = [
 export default function FollowUpModal({ patientId, patientName, defaultTheme, onClose, onSaved }) {
   const [staffList, setStaffList] = useState([])
   const [followupForms, setFollowupForms] = useState([])
-  const [mode, setMode] = useState(defaultTheme ? 'plan' : 'record')
+  const [mode, setMode] = useState('plan')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -325,21 +325,6 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
 
-        {/* 模式切换 */}
-        <div style={{ display: 'flex', gap: 0, margin: '0 20px 16px', borderRadius: 8, overflow: 'hidden', border: '1px solid #E0D9CE' }}>
-          {[{ key: 'record', label: '📝 记录随访' }, { key: 'plan', label: '📅 新建计划' }].map(m => (
-            <button
-              key={m.key}
-              type="button"
-              onClick={() => { setMode(m.key); setError('') }}
-              style={{
-                flex: 1, padding: '10px', border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500,
-                background: mode === m.key ? '#1E6B50' : '#f9f7f3',
-                color: mode === m.key ? '#fff' : '#4A6558',
-              }}
-            >{m.label}</button>
-          ))}
-        </div>
 
         {error && <div className="login-err" style={{ margin: '0 20px 12px' }}>⚠️ {error}</div>}
 
