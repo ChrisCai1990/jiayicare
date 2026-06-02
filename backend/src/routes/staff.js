@@ -348,10 +348,18 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     if (req.body[k] !== undefined) updateData[k] = req.body[k];
   });
 
-  // 归属字段为空字符串时不覆盖（空字符串 = 未指定，不等于"取消分配"）
-  // 取消分配应通过专用的转派功能完成
+  // 归属字段：空字符串跳过（不清空原值），有值则必须转为 ObjectId
+  // 原因：User.collection.updateOne 绕过 Mongoose 类型转换，字符串无法匹配 ObjectId 查询
   ['assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist'].forEach(k => {
-    if (updateData[k] === '') delete updateData[k];
+    if (updateData[k] === '' || updateData[k] === null || updateData[k] === undefined) {
+      delete updateData[k];
+    } else {
+      try {
+        updateData[k] = new mongoose.Types.ObjectId(updateData[k]);
+      } catch (e) {
+        delete updateData[k]; // 无效ID，跳过
+      }
+    }
   });
 
   // 生活方式嵌套字段（逐个展开，避免覆盖其他字段）

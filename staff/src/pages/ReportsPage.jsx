@@ -132,12 +132,12 @@ export default function ReportsPage() {
       {/* 详情弹窗 */}
       {showDetail && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowDetail(null) }}>
-          <div className="modal" style={{ maxWidth: 600 }}>
-            <div className="modal-header">
+          <div className="modal" style={{ maxWidth: 600, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header" style={{ flexShrink: 0 }}>
               <h3 className="modal-title">{showDetail.title}{detailLoading && <span style={{ fontSize: 12, color: '#aaa', marginLeft: 8 }}>加载中...</span>}</h3>
               <button className="modal-close" onClick={() => setShowDetail(null)}>✕</button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               {[
                 ['会员', showDetail.user?.name],
                 ['类型', REPORT_TYPE[showDetail.type] || showDetail.type],
@@ -157,7 +157,7 @@ export default function ReportsPage() {
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
                   {showDetail.mimeType?.startsWith('image/') || showDetail.content?.startsWith('data:image') ? (
-                    <img src={showDetail.content || showDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #f0ece4' }} />
+                    <img src={showDetail.content || showDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8, border: '1px solid #f0ece4', display: 'block' }} />
                   ) : showDetail.mimeType === 'application/pdf' || showDetail.fileUrl?.endsWith('.pdf') ? (
                     <iframe src={showDetail.content || showDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
                   ) : (showDetail.content || showDetail.fileUrl) ? (

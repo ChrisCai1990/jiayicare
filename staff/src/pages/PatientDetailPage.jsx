@@ -1080,12 +1080,12 @@ export default function PatientDetailPage() {
       {/* 体检报告详情弹窗 */}
       {showReportDetail && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowReportDetail(null) }}>
-          <div className="modal" style={{ maxWidth: 560 }}>
-            <div className="modal-header">
+          <div className="modal" style={{ maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header" style={{ flexShrink: 0 }}>
               <h3 className="modal-title">{showReportDetail.title}</h3>
               <button className="modal-close" onClick={() => setShowReportDetail(null)}>✕</button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               {[
                 ['类型', showReportDetail.type],
                 ['医院', showReportDetail.hospital || '-'],
@@ -1107,7 +1107,7 @@ export default function PatientDetailPage() {
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
                   {showReportDetail.mimeType?.startsWith('image/') || showReportDetail.content?.startsWith('data:image') ? (
-                    <img src={showReportDetail.content || showReportDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid #f0ece4' }} />
+                    <img src={showReportDetail.content || showReportDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8, border: '1px solid #f0ece4', display: 'block' }} />
                   ) : showReportDetail.mimeType === 'application/pdf' || showReportDetail.fileUrl?.endsWith('.pdf') ? (
                     <iframe src={showReportDetail.content || showReportDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
                   ) : (
