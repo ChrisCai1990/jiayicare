@@ -5,6 +5,59 @@ import { useToast } from '../App'
 
 const DISEASE_TAGS = ['高血压', '糖尿病', '高血脂', '高尿酸', '脂肪肝', '睡眠呼吸暂停', '冠心病', '慢性肾病', '慢阻肺', '骨质疏松', '痛风', '甲状腺疾病']
 const SOURCE_OPTIONS = ['主动咨询', '健康讲座', '员工福利', '家属推荐', '医院转诊', '线上推广', '其他']
+const MEMBER_TYPE_OPTIONS = ['优享', '悦享', '尊享', '卓越']
+
+// 中国56个民族
+const ETHNICITY_LIST = [
+  '汉族','壮族','满族','回族','苗族','维吾尔族','土家族','彝族','蒙古族','藏族',
+  '布依族','侗族','瑶族','朝鲜族','白族','哈尼族','哈萨克族','黎族','傣族','畲族',
+  '傈僳族','仡佬族','东乡族','高山族','拉祜族','水族','佤族','纳西族','羌族','土族',
+  '仫佬族','锡伯族','柯尔克孜族','达斡尔族','景颇族','毛南族','撒拉族','布朗族','塔吉克族',
+  '阿昌族','普米族','鄂温克族','怒族','京族','基诺族','德昂族','保安族','俄罗斯族',
+  '裕固族','乌孜别克族','门巴族','鄂伦春族','独龙族','塔塔尔族','赫哲族','珞巴族','其他',
+]
+
+// 身份证号解析：返回 { birthDate, gender } 或 null
+function parseIdCard(id) {
+  id = id.trim()
+  if (id.length === 18) {
+    const birthDate = `${id.slice(0,4)}-${id.slice(4,6)}-${id.slice(6,8)}`
+    const gender = parseInt(id[16]) % 2 === 1 ? '男' : '女'
+    return { birthDate, gender }
+  }
+  if (id.length === 15) {
+    const birthDate = `19${id.slice(6,8)}-${id.slice(8,10)}-${id.slice(10,12)}`
+    const gender = parseInt(id[14]) % 2 === 1 ? '男' : '女'
+    return { birthDate, gender }
+  }
+  return null
+}
+
+// 校验身份证格式
+function validateIdCard(id) {
+  if (!id) return true // 非必填
+  id = id.trim()
+  if (id.length === 15) return /^\d{15}$/.test(id)
+  if (id.length !== 18) return false
+  if (!/^\d{17}[\dXx]$/.test(id)) return false
+  // 校验码
+  const w = [7,9,10,5,8,4,2,1,6,3,7,9,10,5,8,4,2]
+  const c = '10X98765432'
+  const sum = Array.from(id.slice(0,17)).reduce((s, d, i) => s + d * w[i], 0)
+  return c[sum % 11] === id[17].toUpperCase()
+}
+
+// 根据出生日期计算周岁
+function calcAge(birthDate) {
+  if (!birthDate) return ''
+  const today = new Date()
+  const birth = new Date(birthDate)
+  if (isNaN(birth)) return ''
+  let age = today.getFullYear() - birth.getFullYear()
+  const m = today.getMonth() - birth.getMonth()
+  if (m < 0 || (m === 0 && today.getDate() < birth.getDate())) age--
+  return age >= 0 ? String(age) : ''
+}
 
 export default function NewPatientPage() {
   const nav = useNavigate()
@@ -12,7 +65,10 @@ export default function NewPatientPage() {
   const [saving, setSaving] = useState(false)
   const [staffList, setStaffList] = useState([])
   const [selectedDiseases, setSelectedDiseases] = useState([])
-  const [patientCategory, setPatientCategory] = useState('adult') // 'adult' | 'child'
+  const [patientCategory, setPatientCategory] = useState('adult')
+  const [idError, setIdError] = useState('')
+  const [ethnicitySearch, setEthnicitySearch] = useState('')
+  const [showEthnicityList, setShowEthnicityList] = useState(false)
 
   const [form, setForm] = useState({
     // 基本
@@ -32,9 +88,9 @@ export default function NewPatientPage() {
     // 既往史
     traumaHistory: '', transfusionHistory: '', infectiousHistory: '', vaccinationHistory: '',
     // 生活史
-    smoking: '', drinking: '', exercise: '',
+    lifestyle: { diet: '', exercise: '', sleep: '', water: '', alcohol: '', smoking: '', bowel: '', mood: '' },
     // 管理
-    source: '', patientType: '', remark: '',
+    source: '', remark: '',
     assignedHealthManager: '', assignedFamilyDoctor: '', assignedNutritionist: '',
     // 女性
     menstrualHistory: '', maritalHistory: '',
@@ -56,12 +112,44 @@ export default function NewPatientPage() {
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
   const setChild = k => e => setForm(f => ({ ...f, childProfile: { ...f.childProfile, [k]: e.target.value } }))
+  const setLifestyle = k => e => setForm(f => ({ ...f, lifestyle: { ...f.lifestyle, [k]: e.target.value } }))
   const toggleDisease = d => setSelectedDiseases(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])
+
+  // 出生日期变化 → 自动计算年龄
+  const handleBirthDateChange = e => {
+    const val = e.target.value
+    setForm(f => ({ ...f, birthDate: val, age: calcAge(val) }))
+  }
+
+  // 身份证号输入 → 校验 + 自动填充
+  const handleIdNumberChange = e => {
+    const val = e.target.value
+    setForm(f => ({ ...f, idNumber: val }))
+    setIdError('')
+    if (val.length === 15 || val.length === 18) {
+      if (!validateIdCard(val)) {
+        setIdError('身份证号格式或校验码不正确')
+        return
+      }
+      const parsed = parseIdCard(val)
+      if (parsed) {
+        const age = calcAge(parsed.birthDate)
+        setForm(f => ({
+          ...f,
+          idNumber: val,
+          birthDate: parsed.birthDate,
+          age,
+          gender: parsed.gender,
+        }))
+      }
+    }
+  }
 
   const handleSubmit = async e => {
     e.preventDefault()
     if (!form.phone) return toast('手机号不能为空')
     if (!/^1[3-9]\d{9}$/.test(form.phone)) return toast('手机号格式不正确')
+    if (form.idNumber && !validateIdCard(form.idNumber)) return toast('身份证号格式不正确')
     setSaving(true)
     try {
       const payload = {
@@ -74,9 +162,21 @@ export default function NewPatientPage() {
         assignedHealthManager: form.assignedHealthManager || undefined,
         assignedFamilyDoctor:  form.assignedFamilyDoctor  || undefined,
         assignedNutritionist:  form.assignedNutritionist  || undefined,
+        // 健康档案字段上移到 healthProfile
+        healthProfile: {
+          drugAllergy: form.drugAllergy,
+          foodAllergy: form.foodAllergy,
+          menstrualHistory: form.menstrualHistory,
+          maritalHistory: form.maritalHistory,
+        },
       }
+      // 清理不再单独传的字段（避免重复）
+      delete payload.drugAllergy
+      delete payload.foodAllergy
+      delete payload.menstrualHistory
+      delete payload.maritalHistory
+
       if (patientCategory === 'child') {
-        // 清理儿童档案数字字段
         const cp = { ...payload.childProfile }
         ;['motherAge','gravida','para','gestationalWeeks','birthWeight','birthLength','birthHeadCirc','birthChestCirc','apgar1min','apgar5min','fatherHeight','motherHeight'].forEach(k => {
           if (cp[k]) cp[k] = Number(cp[k])
@@ -99,6 +199,10 @@ export default function NewPatientPage() {
   const isChild = patientCategory === 'child'
   const isFemale = form.gender === '女'
 
+  const filteredEthnicities = ethnicitySearch
+    ? ETHNICITY_LIST.filter(e => e.includes(ethnicitySearch))
+    : ETHNICITY_LIST
+
   return (
     <div className="page">
       <div className="page-header">
@@ -106,10 +210,10 @@ export default function NewPatientPage() {
         <button className="btn btn-secondary" onClick={() => nav(-1)}>← 返回</button>
       </div>
 
-      {/* 会员类型选择 */}
+      {/* 会员类型选择（成人/儿童） */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-body" style={{ display: 'flex', gap: 16, alignItems: 'center' }}>
-          <span style={{ fontWeight: 600, fontSize: 14 }}>会员类型：</span>
+          <span style={{ fontWeight: 600, fontSize: 14 }}>档案类型：</span>
           {[{ v: 'adult', l: '成人' }, { v: 'child', l: '儿童（0-18岁）' }].map(opt => (
             <button key={opt.v} type="button"
               onClick={() => setPatientCategory(opt.v)}
@@ -128,16 +232,46 @@ export default function NewPatientPage() {
               <F label="姓名 *" span={2}><input className="form-input" placeholder="真实姓名" value={form.name} onChange={set('name')} required /></F>
               <F label="手机号 *" span={2}><input className="form-input" placeholder={isChild ? '监护人手机号（作为登录账号）' : '手机号（登录账号）'} value={form.phone} onChange={set('phone')} required /></F>
               <F label="性别"><select className="form-input" value={form.gender} onChange={set('gender')}><option value="未知">未知</option><option value="男">男</option><option value="女">女</option></select></F>
-              <F label="出生日期"><input className="form-input" type="date" value={form.birthDate} onChange={set('birthDate')} /></F>
-              <F label="年龄"><input className="form-input" type="number" placeholder="岁" value={form.age} onChange={set('age')} min={0} max={150} /></F>
-              <F label="身份证号"><input className="form-input" placeholder={isChild ? '可选' : '可选'} value={form.idNumber} onChange={set('idNumber')} /></F>
+              <F label="出生日期"><input className="form-input" type="date" value={form.birthDate} onChange={handleBirthDateChange} /></F>
+              <F label="年龄（岁）"><input className="form-input" type="number" placeholder="自动计算" value={form.age} onChange={set('age')} min={0} max={150} readOnly={!!form.birthDate} style={{ background: form.birthDate ? '#f5f5f5' : undefined }} /></F>
+              <F label="身份证号">
+                <input className="form-input" placeholder="输入后自动识别性别和出生日期" value={form.idNumber} onChange={handleIdNumberChange} maxLength={18} />
+                {idError && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{idError}</div>}
+              </F>
               <F label="身高(cm)"><input className="form-input" type="number" value={form.height} onChange={set('height')} /></F>
               <F label="体重(kg)"><input className="form-input" type="number" value={form.weight} onChange={set('weight')} /></F>
               {!isChild && <>
                 <F label="婚姻状况"><select className="form-input" value={form.maritalStatus} onChange={set('maritalStatus')}><option value="">未填写</option><option>未婚</option><option>已婚</option><option>离异</option><option>丧偶</option></select></F>
-                <F label="民族"><input className="form-input" placeholder="如：汉族" value={form.ethnicity} onChange={set('ethnicity')} /></F>
+                {/* 民族：可搜索下拉 */}
+                <F label="民族">
+                  <div style={{ position: 'relative' }}>
+                    <input
+                      className="form-input"
+                      placeholder="搜索或选择民族"
+                      value={form.ethnicity}
+                      onChange={e => { setForm(f => ({ ...f, ethnicity: e.target.value })); setEthnicitySearch(e.target.value); setShowEthnicityList(true) }}
+                      onFocus={() => setShowEthnicityList(true)}
+                      onBlur={() => setTimeout(() => setShowEthnicityList(false), 150)}
+                      autoComplete="off"
+                    />
+                    {showEthnicityList && (
+                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: 180, overflowY: 'auto', marginTop: 2 }}>
+                        {filteredEthnicities.map(eth => (
+                          <div key={eth} onMouseDown={() => { setForm(f => ({ ...f, ethnicity: eth })); setEthnicitySearch(''); setShowEthnicityList(false) }}
+                            style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f5f5f5' }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
+                            onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                            {eth}
+                          </div>
+                        ))}
+                        {filteredEthnicities.length === 0 && (
+                          <div style={{ padding: '8px 12px', color: '#aaa', fontSize: 13 }}>未找到，可直接输入</div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </F>
                 <F label="信仰"><input className="form-input" placeholder="宗教信仰" value={form.belief} onChange={set('belief')} /></F>
-                <F label="会员类型"><input className="form-input" placeholder="如：年度会员" value={form.memberType} onChange={set('memberType')} /></F>
                 <F label="工作单位" span={2}><input className="form-input" value={form.workplace} onChange={set('workplace')} /></F>
                 <F label="工作岗位"><input className="form-input" value={form.occupation} onChange={set('occupation')} /></F>
               </>}
@@ -189,9 +323,11 @@ export default function NewPatientPage() {
           {!isChild && (
             <Section title="生活方式">
               <Grid>
-                <F label="吸烟史" span={2}><input className="form-input" placeholder="如：不吸烟 / 每天10支" value={form.smoking} onChange={set('smoking')} /></F>
-                <F label="饮酒史" span={2}><input className="form-input" placeholder="如：偶尔饮酒" value={form.drinking} onChange={set('drinking')} /></F>
-                <F label="运动习惯" span={2}><input className="form-input" placeholder="如：每周跑步3次" value={form.exercise} onChange={set('exercise')} /></F>
+                <F label="饮食习惯" span={2}><input className="form-input" placeholder="如：清淡为主" value={form.lifestyle.diet} onChange={setLifestyle('diet')} /></F>
+                <F label="运动习惯" span={2}><input className="form-input" placeholder="如：每周跑步3次" value={form.lifestyle.exercise} onChange={setLifestyle('exercise')} /></F>
+                <F label="睡眠习惯" span={2}><input className="form-input" placeholder="如：23:00入睡，7小时" value={form.lifestyle.sleep} onChange={setLifestyle('sleep')} /></F>
+                <F label="吸烟情况"><input className="form-input" placeholder="如：不吸烟" value={form.lifestyle.smoking} onChange={setLifestyle('smoking')} /></F>
+                <F label="饮酒情况"><input className="form-input" placeholder="如：偶尔饮酒" value={form.lifestyle.alcohol} onChange={setLifestyle('alcohol')} /></F>
               </Grid>
             </Section>
           )}
@@ -258,11 +394,16 @@ export default function NewPatientPage() {
           {/* 管理信息 */}
           <Section title="管理信息">
             <Grid>
-              <F label="健管专员" span={2}><select className="form-input" value={form.assignedHealthManager} onChange={set('assignedHealthManager')}><option value="">-- 未分配 --</option>{healthManagers.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
-              <F label="家庭医生" span={2}><select className="form-input" value={form.assignedFamilyDoctor} onChange={set('assignedFamilyDoctor')}><option value="">-- 未分配 --</option>{familyDoctors.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
+              <F label="家庭医师" span={2}><select className="form-input" value={form.assignedFamilyDoctor} onChange={set('assignedFamilyDoctor')}><option value="">-- 未分配 --</option>{familyDoctors.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="营养师" span={2}><select className="form-input" value={form.assignedNutritionist} onChange={set('assignedNutritionist')}><option value="">-- 未分配 --</option>{nutritionists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
+              <F label="健管专员" span={2}><select className="form-input" value={form.assignedHealthManager} onChange={set('assignedHealthManager')}><option value="">-- 未分配 --</option>{healthManagers.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
+              <F label="会员类型" span={2}>
+                <select className="form-input" value={form.memberType} onChange={set('memberType')}>
+                  <option value="">-- 未设置 --</option>
+                  {MEMBER_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </F>
               <F label="会员来源"><select className="form-input" value={form.source} onChange={set('source')}><option value="">未填写</option>{SOURCE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></F>
-              <F label="会员类型"><select className="form-input" value={form.patientType} onChange={set('patientType')}><option value="">普通</option><option value="vip">VIP</option><option value="trial">试用</option></select></F>
               <F label="备注" span={2}><textarea className="form-input" rows={3} value={form.remark} onChange={set('remark')} style={{ resize: 'vertical' }} /></F>
             </Grid>
           </Section>

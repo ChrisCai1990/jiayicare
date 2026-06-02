@@ -234,6 +234,7 @@ export default function PatientDetailPage() {
 
   const buildEditForm = (u) => ({
     chronicDiseases: u.chronicDiseases || [],
+    memberType: u.memberType || '',
     patientType: u.patientType || '',
     source: u.source || '',
     remark: u.remark || '',
@@ -467,17 +468,18 @@ export default function PatientDetailPage() {
                       onChange={e => setEditForm(f => ({ ...f, deliveryAddress: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">健管专员</label>
-                    <select className="form-input" value={editForm.assignedHealthManager}
-                      onChange={e => setEditForm(f => ({ ...f, assignedHealthManager: e.target.value }))}>
-                      <option value="">-- 未分配 --</option>
-                      {staffList.filter(s => s.role === 'healthManager').map(s => (
-                        <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
-                      ))}
+                    <label className="form-label">会员类型</label>
+                    <select className="form-input" value={editForm.memberType || ''}
+                      onChange={e => setEditForm(f => ({ ...f, memberType: e.target.value }))}>
+                      <option value="">-- 未设置 --</option>
+                      <option value="优享">优享</option>
+                      <option value="悦享">悦享</option>
+                      <option value="尊享">尊享</option>
+                      <option value="卓越">卓越</option>
                     </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">家庭医生</label>
+                    <label className="form-label">家庭医师</label>
                     <select className="form-input" value={editForm.assignedFamilyDoctor}
                       onChange={e => setEditForm(f => ({ ...f, assignedFamilyDoctor: e.target.value }))}>
                       <option value="">-- 未分配 --</option>
@@ -492,6 +494,16 @@ export default function PatientDetailPage() {
                       onChange={e => setEditForm(f => ({ ...f, assignedNutritionist: e.target.value }))}>
                       <option value="">-- 未分配 --</option>
                       {staffList.filter(s => s.role === 'nutritionist').map(s => (
+                        <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">健管专员</label>
+                    <select className="form-input" value={editForm.assignedHealthManager}
+                      onChange={e => setEditForm(f => ({ ...f, assignedHealthManager: e.target.value }))}>
+                      <option value="">-- 未分配 --</option>
+                      {staffList.filter(s => s.role === 'healthManager').map(s => (
                         <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
                       ))}
                     </select>
@@ -512,15 +524,6 @@ export default function PatientDetailPage() {
                       onChange={e => setEditForm(f => ({ ...f, serviceExpiry: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">会员类型</label>
-                    <select className="form-input" value={editForm.patientType}
-                      onChange={e => setEditForm(f => ({ ...f, patientType: e.target.value }))}>
-                      <option value="">普通</option>
-                      <option value="vip">VIP</option>
-                      <option value="trial">试用</option>
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">会员来源</label>
                     <input className="form-input" value={editForm.source}
                       onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))} />
@@ -536,9 +539,10 @@ export default function PatientDetailPage() {
                   <InfoRow label="联系电话" value={user.contactPhone || '-'} />
                   <InfoRow label="紧急联系" value={user.contactPhone2 || '-'} />
                   <InfoRow label="配送地址" value={user.deliveryAddress || '-'} />
-                  <InfoRow label="健管专员" value={user.assignedHealthManager?.name || '-'} />
-                  <InfoRow label="家庭医生" value={user.assignedFamilyDoctor?.name || '-'} />
+                  <InfoRow label="会员类型" value={user.memberType || '-'} />
+                  <InfoRow label="家庭医师" value={user.assignedFamilyDoctor?.name || '-'} />
                   <InfoRow label="营养师" value={user.assignedNutritionist?.name || '-'} />
+                  <InfoRow label="健管专员" value={user.assignedHealthManager?.name || '-'} />
                   <InfoRow label="会员来源" value={user.source || '-'} />
                   <InfoRow label="服务包" value={user.servicePackage || '-'} />
                   <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />
@@ -1209,7 +1213,12 @@ export default function PatientDetailPage() {
         <RequisitionModal
           patientId={id}
           onClose={() => setShowReqModal(false)}
-          onSaved={() => { setShowReqModal(false); toast('开单已创建，会员端将显示待上传提示'); loadRequisitions() }}
+          onSaved={() => {
+            setShowReqModal(false)
+            toast('开单已创建，请上传对应报告')
+            loadRequisitions()
+            setTab('requisitions')
+          }}
         />
       )}
     </div>

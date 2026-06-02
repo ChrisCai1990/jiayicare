@@ -584,7 +584,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   }
 
   const inputStyle = { width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit' }
-  const FieldRow = ({ label, fieldKey, rows, placeholder }) => (
+  // 注意：作为函数调用而非 JSX 组件，避免每次 render 创建新组件导致输入框失焦
+  const renderField = (label, fieldKey, rows, placeholder) => (
     <div className="form-group" style={{ marginBottom: 0 }}>
       <label className="form-label">{label}</label>
       {rows
@@ -662,22 +663,22 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           </div>
 
           {/* 方案名称 */}
-          <FieldRow label="方案名称 *" fieldKey="name" placeholder="就医协助方案名称" />
+          {renderField('方案名称 *', 'name', 0, '就医协助方案名称')}
 
           {/* 两栏布局 */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <FieldRow label="医院"     fieldKey="hospital"   placeholder="医院名称" />
-            <FieldRow label="科室"     fieldKey="department" placeholder="科室名称" />
-            <FieldRow label="专家"     fieldKey="expert"     placeholder="专家姓名（可选）" />
-            <FieldRow label="就医专员" fieldKey="staffName"  placeholder="专员姓名（可选）" />
-            <FieldRow label="服务时间" fieldKey="datetime"   placeholder="日期和时间段" />
-            <FieldRow label="交通接送" fieldKey="transport"  placeholder="是否专车、集合地点" />
+            {renderField('医院',     'hospital',   0, '医院名称')}
+            {renderField('科室',     'department', 0, '科室名称')}
+            {renderField('专家',     'expert',     0, '专家姓名（可选）')}
+            {renderField('就医专员', 'staffName',  0, '专员姓名（可选）')}
+            {renderField('服务时间', 'datetime',   0, '日期和时间段')}
+            {renderField('交通接送', 'transport',  0, '是否专车、集合地点')}
           </div>
 
           {/* 全宽多行字段 */}
-          <FieldRow label="具体服务事项" fieldKey="tasks"  rows={3} placeholder="如：代取报告、陪同检查，每行一项" />
-          <FieldRow label="酒店安排"     fieldKey="hotel"  rows={2} placeholder="是否需要住宿及酒店信息" />
-          <FieldRow label="备注"         fieldKey="notes"  rows={2} placeholder="其他注意事项" />
+          {renderField('具体服务事项', 'tasks', 3, '如：代取报告、陪同检查，每行一项')}
+          {renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
+          {renderField('备注',         'notes', 2, '其他注意事项')}
 
           {/* 方案年度 */}
           <div className="form-group" style={{ marginBottom: 0 }}>

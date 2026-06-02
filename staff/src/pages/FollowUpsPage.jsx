@@ -35,9 +35,10 @@ export default function FollowUpsPage() {
   const [statusTab,    setStatusTab]    = useState('planned')
   const [patientName,  setPatientName]  = useState('')
   const [dateFrom,     setDateFrom]     = useState(todayStr)
-  const [dateTo,       setDateTo]       = useState(todayStr)
+  const [dateTo,       setDateTo]       = useState('')
   const [loading,      setLoading]      = useState(true)
   const [showModal,    setShowModal]    = useState(false)
+  // 注：dateFrom 默认今天开始，dateTo 默认空（不限结束），显示所有待随访记录
 
   // 执行随访 modal
   const [execItem,     setExecItem]     = useState(null)
@@ -154,7 +155,7 @@ export default function FollowUpsPage() {
             </div>
             <button className="btn btn-primary btn-sm" type="submit">搜索</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => {
-              setPatientName(''); setDateFrom(''); setDateTo(''); setPage(1)
+              setPatientName(''); setDateFrom(todayStr); setDateTo(''); setPage(1)
             }}>重置</button>
           </form>
         </div>
@@ -218,10 +219,8 @@ export default function FollowUpsPage() {
                       <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
                         onClick={() => openCancel(f)}>取消</button>
                     )}
-                    <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
+                    <button className="btn btn-secondary btn-sm"
                       onClick={() => nav(`/patients/${f.patientId?._id}`)}>查看会员</button>
-                    <button className="btn btn-danger btn-sm"
-                      onClick={() => handleDelete(f._id)}>删除</button>
                   </td>
                 </tr>
               ))}

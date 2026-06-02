@@ -286,7 +286,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [year, setYear]             = useState(new Date().getFullYear())
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
+  const [pushing, setPushing]       = useState(false)
   const [dirty, setDirty]           = useState(false)
+  const [pushedAt, setPushedAt]     = useState(null)
 
   useEffect(() => {
     setLoading(true)
@@ -300,9 +302,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         if (p) {
           setPlanType(p.planType || '')
           setModuleData(p.moduleData || {})
+          setPushedAt(p.pushedAt || null)
         } else {
           setPlanType('')
           setModuleData({})
+          setPushedAt(null)
         }
         setDirty(false)
       }).catch(err => toast(err.message || '加载失败'))
@@ -353,6 +357,22 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
 
+  const handlePush = async () => {
+    if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
+    if (!planType) { toast('请先选择方案类型并保存'); return }
+    if (!window.confirm('确定将此年度管理方案推送给客户？客户端将立即可见。')) return
+    setPushing(true)
+    try {
+      const res = await staffAPI.pushAnnualPlan(id, year)
+      setPushedAt(res.data?.pushedAt || new Date().toISOString())
+      toast('方案已推送给客户')
+    } catch (err) {
+      toast(err.message || '推送失败，请先保存方案')
+    } finally {
+      setPushing(false)
+    }
+  }
+
   const currentModuleKeys = PLAN_TYPE_MODULES[planType] || []
   const patientName = patientMode ? (patient?.name || '会员') : (plan?.patientId?.name || '会员')
   const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
@@ -389,7 +409,21 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           </select>
         )}
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+          {pushedAt && !dirty && (
+            <span style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', padding: '4px 10px', borderRadius: 20 }}>
+              ✓ 已推送 {new Date(pushedAt).toLocaleDateString('zh-CN')}
+            </span>
+          )}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
+          {patientMode && (
+            <button
+              onClick={handlePush}
+              disabled={pushing || dirty || !planType}
+              style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType) ? 0.5 : 1 }}
+            >
+              {pushing ? '推送中...' : pushedAt && !dirty ? '重新推送' : '推送给客户'}
+            </button>
+          )}
           <button
             onClick={handleSave}
             disabled={saving}
@@ -461,6 +495,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         >
           返回方案列表
         </button>
+        {patientMode && (
+          <button
+            onClick={handlePush}
+            disabled={pushing || dirty || !planType}
+            style={{ background: '#0077B6', color: '#fff', border: 'none', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType) ? 0.5 : 1 }}
+          >
+            {pushing ? '推送中...' : '推送给客户'}
+          </button>
+        )}
         <button
           onClick={handleSave}
           disabled={saving}

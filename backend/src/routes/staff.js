@@ -197,15 +197,22 @@ router.post('/patients', staffAuth, async (req, res) => {
   const staff = req.staff;
   const {
     name, phone, gender, age, height, weight,
+    birthDate, idNumber, maritalStatus, ethnicity, belief, memberType,
     chronicDiseases, patientType, source, remark,
-    idNumber, workplace, occupation, maritalStatus,
-    ethnicity, contactPhone, contactPhone2, deliveryAddress,
+    workplace, occupation,
+    address, contactPhone, contactPhone2, contactName, contactPhone3, deliveryAddress,
+    bloodTypeABO, bloodTypeRH,
+    drugAllergy, foodAllergy,
+    traumaHistory, transfusionHistory, infectiousHistory, vaccinationHistory,
+    smoking, drinking, exercise,
+    lifestyle, healthProfile,
+    menstrualHistory, maritalHistory,
     assignedHealthManager, assignedFamilyDoctor, assignedNutritionist,
+    patientCategory, childProfile,
   } = req.body;
 
   if (!phone) return res.status(400).json({ success: false, message: '手机号不能为空' });
 
-  // 检查手机号是否已存在
   const existing = await User.findOne({ phone });
   if (existing) return res.status(400).json({ success: false, message: '该手机号已存在' });
 
@@ -217,29 +224,69 @@ router.post('/patients', staffAuth, async (req, res) => {
   const nn = assignedNutritionist ||
     (staff.role === 'nutritionist' ? staff._id : null);
 
-  const user = await User.create({
+  const createData = {
     phone,
     name: name || '会员',
     gender: gender || '未知',
     age, height, weight,
+    birthDate: birthDate || '',
+    idNumber: idNumber || '',
+    maritalStatus: maritalStatus || '',
+    ethnicity: ethnicity || '',
+    belief: belief || '',
+    memberType: memberType || '',
     chronicDiseases: chronicDiseases || [],
     patientType: patientType || '',
     source: source || '',
     remark: remark || '',
-    idNumber: idNumber || '',
     workplace: workplace || '',
     occupation: occupation || '',
-    maritalStatus: maritalStatus || '',
-    ethnicity: ethnicity || '',
+    address: address || '',
     contactPhone: contactPhone || '',
     contactPhone2: contactPhone2 || '',
+    contactName: contactName || '',
+    contactPhone3: contactPhone3 || '',
     deliveryAddress: deliveryAddress || '',
+    bloodTypeABO: bloodTypeABO || '',
+    bloodTypeRH: bloodTypeRH || '',
+    traumaHistory: traumaHistory || '',
+    transfusionHistory: transfusionHistory || '',
+    infectiousHistory: infectiousHistory || '',
+    vaccinationHistory: vaccinationHistory || '',
+    patientCategory: patientCategory || 'adult',
     assignedHealthManager: hm,
     assignedFamilyDoctor: fd,
     assignedNutritionist: nn,
     onboardingCompleted: true,
-  });
+  };
 
+  // 生活方式（嵌套）
+  if (lifestyle && typeof lifestyle === 'object') {
+    createData.lifestyle = lifestyle;
+  } else {
+    // 兼容旧版顶层字段
+    if (smoking !== undefined) createData['lifestyle.smoking'] = smoking;
+    if (drinking !== undefined) createData['lifestyle.alcohol'] = drinking;
+    if (exercise !== undefined) createData['lifestyle.exercise'] = exercise;
+  }
+
+  // 健康档案（嵌套）
+  const hp = {};
+  if (drugAllergy !== undefined)  hp.drugAllergy  = drugAllergy;
+  if (foodAllergy !== undefined)  hp.foodAllergy  = foodAllergy;
+  if (menstrualHistory !== undefined) hp.menstrualHistory = menstrualHistory;
+  if (maritalHistory !== undefined)   hp.maritalHistory   = maritalHistory;
+  if (healthProfile && typeof healthProfile === 'object') {
+    Object.assign(hp, healthProfile);
+  }
+  if (Object.keys(hp).length > 0) createData.healthProfile = hp;
+
+  // 儿童档案
+  if (patientCategory === 'child' && childProfile) {
+    createData.childProfile = childProfile;
+  }
+
+  const user = await User.create(createData);
   res.json({ success: true, data: user });
 });
 
@@ -255,9 +302,11 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   // 权限校验：非超管只能查看分配给自己（或下属）的患者
   if (req.staff.role !== 'superadmin') {
     const staffIds = [req.staff._id, ...(await getSubordinateIds(req.staff._id))];
-    const isHM = user.assignedHealthManager && staffIds.some(id => id.equals(user.assignedHealthManager._id || user.assignedHealthManager));
-    const isFD = user.assignedFamilyDoctor && staffIds.some(id => id.equals(user.assignedFamilyDoctor._id || user.assignedFamilyDoctor));
-    if (!isHM && !isFD) {
+    const matches = (field) => field && staffIds.some(id => id.equals(field._id || field));
+    const isHM = matches(user.assignedHealthManager);
+    const isFD = matches(user.assignedFamilyDoctor);
+    const isNN = matches(user.assignedNutritionist);
+    if (!isHM && !isFD && !isNN) {
       return res.status(403).json({ success: false, message: '无权限查看该会员' });
     }
   }
@@ -281,9 +330,10 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 router.put('/patients/:id', staffAuth, async (req, res) => {
   const allowed = [
     'name', 'gender', 'age', 'height', 'weight',
+    'birthDate', 'memberType', 'belief',
     'chronicDiseases', 'patientType', 'source', 'remark',
     'idNumber', 'workplace', 'occupation', 'maritalStatus',
-    'ethnicity', 'contactPhone', 'contactPhone2', 'deliveryAddress',
+    'ethnicity', 'address', 'contactPhone', 'contactPhone2', 'contactName', 'contactPhone3', 'deliveryAddress',
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
     'servicePackage', 'serviceExpiry', 'serviceStartDate',
     'bloodTypeABO', 'bloodTypeRH',
@@ -427,11 +477,14 @@ router.put('/followups/:id', staffAuth, async (req, res) => {
 });
 
 // ── DELETE /api/staff/followups/:id ──────────────────────────────
+// 软删除：状态改为 cancelled，不物理删除
 router.delete('/followups/:id', staffAuth, async (req, res) => {
   const followUp = await FollowUp.findOne({ _id: req.params.id, staffId: req.staff._id });
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
-  await followUp.deleteOne();
-  res.json({ success: true, message: '已删除' });
+  followUp.status = 'cancelled';
+  if (!followUp.cancelReason) followUp.cancelReason = '手动删除';
+  await followUp.save();
+  res.json({ success: true, message: '已取消' });
 });
 
 // ── GET /api/staff/reports ────────────────────────────────────────
@@ -1600,6 +1653,23 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.staff._id },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
+    res.json({ success: true, data: plan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── PATCH /api/staff/patients/:id/annual-plan/push ────────────────
+router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
+  try {
+    const { year } = req.query;
+    const targetYear = year ? parseInt(year) : new Date().getFullYear();
+    const plan = await AnnualPlan.findOneAndUpdate(
+      { patientId: req.params.id, year: targetYear },
+      { pushedAt: new Date(), pushedBy: req.staff._id },
+      { new: true }
+    );
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
