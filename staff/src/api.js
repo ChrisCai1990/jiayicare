@@ -19,6 +19,13 @@ async function req(path, options = {}) {
     },
   })
   const data = await res.json()
+  if (res.status === 401) {
+    // Token 过期或无效：清空登录状态并跳回登录页
+    clearToken()
+    localStorage.removeItem('jy_staff_info')
+    window.location.href = '/login'
+    throw new Error(data.message || 'Token 无效或已过期，请重新登录')
+  }
   if (!res.ok) throw new Error(data.message || '请求失败')
   return data
 }
