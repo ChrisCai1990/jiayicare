@@ -241,6 +241,15 @@ export const requisitionsAPI = {
   list: () => request('/user/requisitions'),
 };
 
+// ── Screening / 专项筛查 ──────────────────────────────────────────
+export const screeningAPI = {
+  list:     ()                      => request('/screening'),
+  select:   (data)                  => request('/screening', { method: 'POST', body: JSON.stringify(data) }),
+  deselect: (id)                    => request(`/screening/${id}`, { method: 'DELETE' }),
+  upload:   (id, data)              => request(`/screening/${id}/report`, { method: 'PATCH', body: JSON.stringify(data), timeout: 60000 }),
+  complete: (id, note)              => request(`/screening/${id}/complete`, { method: 'PATCH', body: JSON.stringify({ note }) }),
+};
+
 // ── Family Members / 共享人账户 ────────────────────────────────────
 export const familyAPI = {
   list:   ()        => request('/user/family'),

@@ -801,6 +801,24 @@ export default function RecordsScreen({ navigation }) {
           </View>
         )}
 
+        {/* ── 专项筛查入口 ─────────────────────────────────────── */}
+        <TouchableOpacity
+          style={styles.screeningEntry}
+          onPress={() => navigation.navigate('SpecialScreening')}
+          activeOpacity={0.8}
+        >
+          <View style={styles.screeningEntryLeft}>
+            <View style={styles.screeningEntryIcon}>
+              <Ionicons name="flask-outline" size={20} color={colors.white} />
+            </View>
+            <View>
+              <Text style={styles.screeningEntryTitle}>专项筛查</Text>
+              <Text style={styles.screeningEntrySub}>肿瘤·心脑血管·慢性病·健康促进</Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.primary} />
+        </TouchableOpacity>
+
         {/* ── 最新健康指标 ─────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -1143,6 +1161,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 7,
   },
   addRecordBtnText: { color: colors.white, fontSize: 13, fontWeight: '700' },
+
+  // 专项筛查入口卡片
+  screeningEntry: {
+    marginHorizontal: spacing.md, marginTop: spacing.md,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md,
+    borderLeftWidth: 4, borderLeftColor: colors.primary,
+    ...shadow.card,
+  },
+  screeningEntryLeft:  { flexDirection: 'row', alignItems: 'center', gap: 12 },
+  screeningEntryIcon:  { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: colors.primary, justifyContent: 'center', alignItems: 'center' },
+  screeningEntryTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  screeningEntrySub:   { fontSize: 12, color: colors.textMuted, marginTop: 2 },
 
   // Section
   section: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
