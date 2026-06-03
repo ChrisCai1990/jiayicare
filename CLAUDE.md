@@ -41,11 +41,11 @@ python scripts/deploy.py --backend
 > `scripts/deploy.py` 通过 SSH 直连服务器执行部署，实时输出日志，自动验证结果。
 > 不依赖 Webhook——Webhook 仍保留作为备份，但不在关键路径上。
 
-## 线上地址（阿里云 ECS 121.40.156.39）
-- 用户端 app：http://121.40.156.39
-- 超管后台 admin：http://121.40.156.39:8081
-- 医护端 staff：http://121.40.156.39:8082
-- 后端 API：http://121.40.156.39/api
+## 线上地址
+- 用户端 app：https://jiaycare.com
+- 超管后台 admin：https://admin.jiaycare.com
+- 医护端 staff：https://staff.jiaycare.com
+- 后端 API：https://jiaycare.com/api
 
 ## 部署架构
 
