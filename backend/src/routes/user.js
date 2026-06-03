@@ -78,6 +78,8 @@ router.put('/me', auth, async (req, res) => {
       if (hp.surgeryHistory     !== undefined) updateData['healthProfile.surgeryHistory']     = hp.surgeryHistory;
       if (hp.menstrualHistory   !== undefined) updateData['healthProfile.menstrualHistory']   = hp.menstrualHistory;
       if (hp.maritalHistory     !== undefined) updateData['healthProfile.maritalHistory']     = hp.maritalHistory;
+      // infectiousHistory 是顶层字段，用户端通过 healthProfile 传入时同步写入
+      if (hp.infectiousHistory  !== undefined) updateData['infectiousHistory']                = hp.infectiousHistory;
     }
 
     // 检测联系信息变更，写入变更日志（#34）

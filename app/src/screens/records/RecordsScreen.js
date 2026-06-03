@@ -741,6 +741,7 @@ export default function RecordsScreen({ navigation }) {
               { key: 'water',    label: '饮水',              icon: 'water-outline',      color: '#0EA5E9' },
               { key: 'alcohol',  label: '饮酒',              icon: 'wine-outline',       color: '#9D174D' },
               { key: 'smoking',  label: '吸烟',              icon: 'flame-outline',      color: '#B45309' },
+              { key: 'bowel',    label: '排便',              icon: 'list-outline',       color: '#7C5C3D' },
               { key: 'mood',     label: '情绪（初始记录）',  icon: 'happy-outline',      color: '#F59E0B', initialOnly: true },
             ].map((item, i, arr) => (
               <View key={item.key} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>
@@ -1077,6 +1078,7 @@ export default function RecordsScreen({ navigation }) {
                   { key: 'water',    label: '饮水',  icon: 'water-outline',      placeholder: '如：白水为主，每日约2000毫升' },
                   { key: 'alcohol',  label: '饮酒',  icon: 'wine-outline',       placeholder: '如：红酒，每次100ml，每周1次，未曾醉酒' },
                   { key: 'smoking',  label: '吸烟',  icon: 'flame-outline',      placeholder: '如：不吸烟 / 卷烟，每日10支，2010年起' },
+                  { key: 'bowel',    label: '排便',  icon: 'list-outline',       placeholder: '如：1次/日，成形，无特殊' },
                 ].map(field => (
                   <View key={field.key} style={styles.editField}>
                     <View style={styles.editFieldLabel}>

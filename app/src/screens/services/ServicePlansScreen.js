@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, ActivityIndicator,
-  RefreshControl, Modal,
+  RefreshControl, Modal, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -253,7 +253,7 @@ function ConfirmModal({ visible, title, message, confirmText, confirmColor, onCo
 }
 
 // ── 方案卡片 ─────────────────────────────────────────────────────
-function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming }) {
+function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult }) {
   const meta = TYPE_META[plan.type] || DEFAULT_META;
   const sm   = STATUS_META[plan.status] || STATUS_META.draft;
   const isDraft = plan.status === 'draft';
@@ -368,6 +368,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
               <TouchableOpacity
                 style={[s.consultBtn, { borderColor: meta.color + '60', flex: 1 }]}
                 activeOpacity={0.8}
+                onPress={() => onConsult && onConsult(plan)}
               >
                 <Ionicons name="chatbubble-ellipses-outline" size={14} color={meta.color} />
                 <Text style={[s.consultBtnText, { color: meta.color }]}>咨询健康管理师</Text>
@@ -512,6 +513,16 @@ export default function ServicePlansScreen({ navigation }) {
     setPlanConfirmTarget(null);
   };
 
+  // ── 咨询入口 ─────────────────────────────────────────────────
+  const handleConsult = (plan) => {
+    const hasStaff = plan.staffId?.name || plan.staffId;
+    if (!hasStaff) {
+      Alert.alert('提示', '您当前暂未分配健康管理师，请联系服务团队进行分配后再咨询。');
+      return;
+    }
+    navigation.navigate('Messages');
+  };
+
   // ── 任务项完成流程 ────────────────────────────────────────────
   const handleItemPress = (item, plan, meta) => setDetailModal({ item, plan, meta });
 
@@ -578,6 +589,7 @@ export default function ServicePlansScreen({ navigation }) {
                 onItemPress={handleItemPress}
                 onConfirmPlan={handleConfirmPlan}
                 confirming={confirmingPlanId === plan._id}
+                onConsult={handleConsult}
               />
             ))
           )}
