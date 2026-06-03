@@ -1,5 +1,19 @@
 const express = require('express');
 const crypto = require('crypto');
+
+// 解析血型字符串 "A型 Rh+" → { abo: 'A', rh: '阳性' }
+function parseBloodType(str) {
+  if (!str) return {};
+  const s = str.toUpperCase();
+  let abo = '';
+  for (const t of ['AB', 'A', 'B', 'O']) {
+    if (s.includes(t)) { abo = t; break; }
+  }
+  let rh = '';
+  if (s.includes('+') || s.includes('阳') || s.includes('POS')) rh = '阳性';
+  else if (s.includes('-') || s.includes('阴') || s.includes('NEG')) rh = '阴性';
+  return { abo, rh };
+}
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const UserChangeLog = require('../models/UserChangeLog');
@@ -65,7 +79,12 @@ router.put('/me', auth, async (req, res) => {
 
     if (healthProfile !== undefined) {
       const hp = healthProfile;
-      if (hp.bloodType          !== undefined) updateData['healthProfile.bloodType']          = hp.bloodType;
+      if (hp.bloodType          !== undefined) {
+        updateData['healthProfile.bloodType'] = hp.bloodType;
+        const { abo, rh } = parseBloodType(hp.bloodType);
+        if (abo) updateData['bloodTypeABO'] = abo;
+        if (rh)  updateData['bloodTypeRH']  = rh;
+      }
       if (hp.allergies          !== undefined) updateData['healthProfile.allergies']          = hp.allergies;
       if (hp.medicalHistory     !== undefined) updateData['healthProfile.medicalHistory']     = hp.medicalHistory;
       if (hp.medications        !== undefined) updateData['healthProfile.medications']        = hp.medications;

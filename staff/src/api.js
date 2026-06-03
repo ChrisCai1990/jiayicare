@@ -38,10 +38,12 @@ export const staffAPI = {
   me: () => req('/staff/me'),
 
   // Patients
-  getPatients:   (p = {}) => req('/staff/patients?' + qs(p)),
-  getPatient:    (id)     => req(`/staff/patients/${id}`),
-  createPatient: (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
-  updatePatient: (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  getPatients:        (p = {}) => req('/staff/patients?' + qs(p)),
+  getPatient:         (id)     => req(`/staff/patients/${id}`),
+  createPatient:      (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
+  updatePatient:      (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  searchRegistered:   (q)      => req('/staff/patients/search-registered?q=' + encodeURIComponent(q || '')),
+  assignPatient:      (data)   => req('/staff/patients/assign', { method: 'POST', body: JSON.stringify(data) }),
 
   // Follow-ups
   getFollowUps:        (p = {}) => req('/staff/followups?' + qs(p)),

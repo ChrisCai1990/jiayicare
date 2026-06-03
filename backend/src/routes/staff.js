@@ -191,6 +191,44 @@ router.get('/patients', staffAuth, async (req, res) => {
   res.json({ success: true, data: { patients, total, page: Number(page), limit: Number(limit) } });
 });
 
+// ── GET /api/staff/patients/search-registered — 搜索已注册但未分配给我的用户
+router.get('/patients/search-registered', staffAuth, async (req, res) => {
+  const q = (req.query.q || '').trim();
+  if (!q) return res.json({ success: true, data: [] });
+  const filter = {
+    $or: [
+      { name: { $regex: q, $options: 'i' } },
+      { phone: { $regex: q, $options: 'i' } },
+    ],
+  };
+  const users = await User.find(filter)
+    .select('name phone gender age healthScore assignedHealthManager assignedFamilyDoctor assignedNutritionist')
+    .limit(20);
+  res.json({ success: true, data: users });
+});
+
+// ── POST /api/staff/patients/assign — 将已注册用户分配给当前医护
+router.post('/patients/assign', staffAuth, async (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ success: false, message: '缺少 userId' });
+  const user = await User.findById(userId);
+  if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+
+  const role = req.staff.role;
+  const fieldMap = {
+    health_manager: 'assignedHealthManager',
+    nutritionist:   'assignedNutritionist',
+    family_doctor:  'assignedFamilyDoctor',
+    superadmin:     'assignedHealthManager',
+  };
+  const field = fieldMap[role] || 'assignedHealthManager';
+  await User.collection.updateOne(
+    { _id: user._id },
+    { $set: { [field]: req.staff._id } }
+  );
+  res.json({ success: true, message: '分配成功' });
+});
+
 // ── POST /api/staff/patients ──────────────────────────────────────
 // 新建患者（录入）
 router.post('/patients', staffAuth, async (req, res) => {
@@ -371,7 +409,7 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
 
   // 健康档案字符串字段（仅更新文本，不覆盖数组字段）
   if (req.body.healthProfile && typeof req.body.healthProfile === 'object') {
-    ['bloodType', 'drugAllergy', 'foodAllergy', 'pastHistory', 'medicHistory', 'surgeryHistory', 'menstrualHistory', 'maritalHistory'].forEach(k => {
+    ['bloodType', 'drugAllergy', 'foodAllergy', 'pastHistory', 'medicHistory', 'surgeryHistory', 'menstrualHistory', 'maritalHistory', 'familyHistoryNote'].forEach(k => {
       if (req.body.healthProfile[k] !== undefined) updateData[`healthProfile.${k}`] = req.body.healthProfile[k];
     });
   }
@@ -436,7 +474,22 @@ router.get('/followups', staffAuth, async (req, res) => {
       .populate('assignedTo', 'name role'),
     FollowUp.countDocuments(filter),
   ]);
-  res.json({ success: true, data: { followUps, total } });
+
+  // 获取本页患者最近一次打卡（健康记录）时间
+  const patientIds = [...new Set(followUps.map(f => f.patientId?._id).filter(Boolean))];
+  const lastRecords = await HealthRecord.aggregate([
+    { $match: { userId: { $in: patientIds } } },
+    { $sort: { recordedAt: -1 } },
+    { $group: { _id: '$userId', lastAt: { $first: '$recordedAt' } } },
+  ]);
+  const lastRecordMap = {};
+  lastRecords.forEach(r => { lastRecordMap[String(r._id)] = r.lastAt; });
+  const followUpsWithRecord = followUps.map(f => ({
+    ...f.toObject(),
+    patientLastRecord: f.patientId ? (lastRecordMap[String(f.patientId._id)] || null) : null,
+  }));
+
+  res.json({ success: true, data: { followUps: followUpsWithRecord, total } });
 });
 
 // ── POST /api/staff/followups ─────────────────────────────────────

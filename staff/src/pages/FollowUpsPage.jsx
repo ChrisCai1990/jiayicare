@@ -178,6 +178,7 @@ export default function FollowUpsPage() {
                 <th>随访主题</th>
                 <th>计划人员</th>
                 <th>状态</th>
+                <th>近期打卡</th>
                 <th>内容摘要</th>
                 <th>操作</th>
               </tr>
@@ -206,6 +207,14 @@ export default function FollowUpsPage() {
                     {f.status === 'cancelled' && f.cancelReason && (
                       <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{f.cancelReason}</div>
                     )}
+                  </td>
+                  <td>
+                    {f.patientLastRecord ? (() => {
+                      const days = Math.floor((Date.now() - new Date(f.patientLastRecord)) / 86400000)
+                      const color = days === 0 ? '#22A06B' : days <= 3 ? '#D97706' : '#aaa'
+                      const label = days === 0 ? '今日已打卡' : `${days}天前`
+                      return <span style={{ fontSize: 12, color, fontWeight: days <= 1 ? 600 : 400 }}>{label}</span>
+                    })() : <span style={{ fontSize: 12, color: '#ccc' }}>暂无记录</span>}
                   </td>
                   <td style={{ maxWidth: 180, fontSize: 13, color: '#4A6558' }}>
                     {f.content ? (f.content.length > 35 ? f.content.slice(0, 35) + '…' : f.content) : '-'}

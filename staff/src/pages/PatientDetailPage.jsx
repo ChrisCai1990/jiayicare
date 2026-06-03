@@ -274,6 +274,7 @@ export default function PatientDetailPage() {
       surgeryHistory: u.healthProfile?.surgeryHistory || '',
       menstrualHistory: u.healthProfile?.menstrualHistory || '',
       maritalHistory: u.healthProfile?.maritalHistory || '',
+      familyHistoryNote: u.healthProfile?.familyHistoryNote || '',
     },
   })
 
@@ -612,6 +613,7 @@ export default function PatientDetailPage() {
                     { key: 'transfusionHistory', label: '输血史', nested: false },
                     { key: 'infectiousHistory', label: '传染病史', nested: false },
                     { key: 'vaccinationHistory', label: '预防接种史', nested: false },
+                    { key: 'familyHistoryNote', label: '家族史备注', nested: true },
                     ...(user.gender === '女' ? [
                       { key: 'menstrualHistory', label: '月经史', nested: true },
                       { key: 'maritalHistory', label: '婚育史', nested: true },
@@ -644,6 +646,7 @@ export default function PatientDetailPage() {
                     { label: '输血史', val: user.transfusionHistory },
                     { label: '传染病史', val: user.infectiousHistory },
                     { label: '预防接种史', val: user.vaccinationHistory },
+                    { label: '家族史备注', val: user.healthProfile?.familyHistoryNote },
                     ...(user.gender === '女' ? [
                       { label: '月经史', val: user.healthProfile?.menstrualHistory },
                       { label: '婚育史', val: user.healthProfile?.maritalHistory },
