@@ -82,6 +82,10 @@ function SupCard({ item, onStop, onDelete, onCheckin, stopped }) {
       </View>
       {!stopped && (
         <View style={styles.cardActions}>
+          <TouchableOpacity style={styles.stopBtn} onPress={() => onStop(itemId, item.name)}>
+            <Ionicons name="stop-circle-outline" size={14} color={colors.warning} />
+            <Text style={styles.stopBtnText}>标记停用</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={[styles.checkinBtn, takenToday && styles.checkinBtnDone]}
             onPress={() => !takenToday && onCheckin(itemId, item.name)}
@@ -91,10 +95,6 @@ function SupCard({ item, onStop, onDelete, onCheckin, stopped }) {
             <Text style={[styles.checkinBtnText, takenToday && { color: '#059669' }]}>
               {takenToday ? '今日已服 ✓' : '今日已服'}
             </Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.stopBtn} onPress={() => onStop(itemId, item.name)}>
-            <Ionicons name="stop-circle-outline" size={14} color={colors.warning} />
-            <Text style={styles.stopBtnText}>标记停用</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -430,9 +430,9 @@ const styles = StyleSheet.create({
   stopDateText: { fontSize: 11, color: colors.warning },
   cardNote: { fontSize: 11, color: '#22A06B', marginTop: 2 },
   cardActions: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     marginTop: spacing.sm, paddingTop: spacing.sm,
     borderTopWidth: 1, borderTopColor: colors.borderLight,
-    flexDirection: 'row', gap: spacing.sm,
   },
   checkinBtn: {
     flexDirection: 'row', alignItems: 'center', gap: 4,

@@ -274,8 +274,12 @@ export default function ProfileScreen({ navigation }) {
   const fundTotal    = fund.total    ?? 0;
   const fundPersonal = fund.personal ?? 0;
   const fundCorp     = fund.corporate ?? 0;
-  // 会员类型（服务包 ID → 显示名）
-  const PACKAGE_LABELS = { pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员' };
+  // 会员类型（服务包 ID / 方案类型 → 显示名）
+  const PACKAGE_LABELS = {
+    pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员',
+    health_prevention: '健康预防计划', chronic_stable: '慢病维稳计划',
+    young_state: '健康年轻态计划', health_reshape: '健康重塑计划',
+  };
   const memberType = hasService ? (PACKAGE_LABELS[user.servicePackage] || user.servicePackage || '标准会员') : '未开通';
   // 到期日格式化
   const expiryStr = hasService ? (user.serviceExpiry || '--') : '--';

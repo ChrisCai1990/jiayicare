@@ -86,6 +86,7 @@ export default function NewPatientPage() {
     // 过敏史
     drugAllergy: '', foodAllergy: '',
     // 既往史
+    pastHistory: '', medicHistory: '', surgeryHistory: '',
     traumaHistory: '', transfusionHistory: '', infectiousHistory: '', vaccinationHistory: '',
     // 生活史
     lifestyle: { diet: '', exercise: '', sleep: '', water: '', alcohol: '', smoking: '', bowel: '', mood: '' },
@@ -169,6 +170,9 @@ export default function NewPatientPage() {
           foodAllergy: form.foodAllergy,
           menstrualHistory: form.menstrualHistory,
           maritalHistory: form.maritalHistory,
+          pastHistory: form.pastHistory,
+          medicHistory: form.medicHistory,
+          surgeryHistory: form.surgeryHistory,
         },
       }
       // 清理不再单独传的字段（避免重复）
@@ -176,6 +180,9 @@ export default function NewPatientPage() {
       delete payload.foodAllergy
       delete payload.menstrualHistory
       delete payload.maritalHistory
+      delete payload.pastHistory
+      delete payload.medicHistory
+      delete payload.surgeryHistory
 
       if (patientCategory === 'child') {
         const cp = { ...payload.childProfile }
@@ -284,9 +291,8 @@ export default function NewPatientPage() {
             <Grid>
               <F label="联系电话" span={2}><input className="form-input" placeholder="与登录手机号可不同" value={form.contactPhone} onChange={set('contactPhone')} /></F>
               <F label="联系地址" span={2}><input className="form-input" value={form.address} onChange={set('address')} /></F>
-              <F label="联系人"><input className="form-input" value={form.contactName} onChange={set('contactName')} /></F>
-              <F label="联系人电话"><input className="form-input" value={form.contactPhone3} onChange={set('contactPhone3')} /></F>
-              <F label="紧急联系电话" span={2}><input className="form-input" value={form.contactPhone2} onChange={set('contactPhone2')} /></F>
+              <F label="紧急联系人"><input className="form-input" placeholder="紧急联系人姓名" value={form.contactName} onChange={set('contactName')} /></F>
+              <F label="紧急联系人电话"><input className="form-input" value={form.contactPhone2} onChange={set('contactPhone2')} /></F>
               <F label="配送地址（快递）" span={2}><input className="form-input" value={form.deliveryAddress} onChange={set('deliveryAddress')} /></F>
             </Grid>
           </Section>
@@ -311,8 +317,11 @@ export default function NewPatientPage() {
           </Section>
 
           {!isChild && (
-            <Section title="既往史">
+            <Section title="既往史" span={2}>
               <Grid>
+                <F label="既往史" span={2}><textarea className="form-input" rows={2} placeholder="如：高血压病史10年" value={form.pastHistory} onChange={set('pastHistory')} /></F>
+                <F label="用药史" span={2}><textarea className="form-input" rows={2} placeholder="如：长期服用降压药" value={form.medicHistory} onChange={set('medicHistory')} /></F>
+                <F label="手术史" span={2}><textarea className="form-input" rows={2} placeholder="如：2010年阑尾切除术" value={form.surgeryHistory} onChange={set('surgeryHistory')} /></F>
                 <F label="外伤史" span={2}><textarea className="form-input" rows={2} value={form.traumaHistory} onChange={set('traumaHistory')} /></F>
                 <F label="输血史" span={2}><textarea className="form-input" rows={2} value={form.transfusionHistory} onChange={set('transfusionHistory')} /></F>
                 <F label="传染病史" span={2}><textarea className="form-input" rows={2} value={form.infectiousHistory} onChange={set('infectiousHistory')} /></F>
@@ -327,8 +336,10 @@ export default function NewPatientPage() {
                 <F label="饮食习惯" span={2}><input className="form-input" placeholder="如：清淡为主" value={form.lifestyle.diet} onChange={setLifestyle('diet')} /></F>
                 <F label="运动习惯" span={2}><input className="form-input" placeholder="如：每周跑步3次" value={form.lifestyle.exercise} onChange={setLifestyle('exercise')} /></F>
                 <F label="睡眠习惯" span={2}><input className="form-input" placeholder="如：23:00入睡，7小时" value={form.lifestyle.sleep} onChange={setLifestyle('sleep')} /></F>
+                <F label="饮水情况"><input className="form-input" placeholder="如：每日2000ml" value={form.lifestyle.water} onChange={setLifestyle('water')} /></F>
                 <F label="吸烟情况"><input className="form-input" placeholder="如：不吸烟" value={form.lifestyle.smoking} onChange={setLifestyle('smoking')} /></F>
                 <F label="饮酒情况"><input className="form-input" placeholder="如：偶尔饮酒" value={form.lifestyle.alcohol} onChange={setLifestyle('alcohol')} /></F>
+                <F label="情绪状态（初始记录）" span={2}><input className="form-input" placeholder="如：情绪稳定，偶有焦虑" value={form.lifestyle.mood} onChange={setLifestyle('mood')} /></F>
               </Grid>
             </Section>
           )}
@@ -404,12 +415,13 @@ export default function NewPatientPage() {
                   {MEMBER_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
               </F>
-              <F label="服务包" span={2}>
+              <F label="服务包类型" span={2}>
                 <select className="form-input" value={form.servicePackage} onChange={set('servicePackage')}>
                   <option value="">-- 未设置 --</option>
-                  <option value="年度服务包">年度服务包</option>
-                  <option value="半年服务包">半年服务包</option>
-                  <option value="季度服务包">季度服务包</option>
+                  <option value="health_prevention">健康预防计划</option>
+                  <option value="chronic_stable">慢病维稳计划</option>
+                  <option value="young_state">健康年轻态计划</option>
+                  <option value="health_reshape">健康重塑计划</option>
                 </select>
               </F>
               <F label="服务开始日期"><input className="form-input" type="date" value={form.serviceStartDate} onChange={set('serviceStartDate')} /></F>

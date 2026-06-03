@@ -493,6 +493,12 @@ export default function MessagesScreen({ navigation }) {
 
   useEffect(() => { loadMessages(); }, [loadMessages]);
 
+  // 切回消息页时自动刷新（同步医护端最新推送）
+  useEffect(() => {
+    const unsub = navigation?.addListener?.('focus', () => { loadMessages(); });
+    return unsub;
+  }, [navigation, loadMessages]);
+
   const handlePress = async (msg) => {
     const msgId = msg._id || msg.id;
     setSelectedMsg(msg);

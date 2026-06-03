@@ -413,7 +413,7 @@ export default function ServicePlansScreen({ navigation }) {
         annual_checkup: '年度体检', functional_medicine: '功能医学检测',
         quarterly_eval: '季度评估',
       };
-      // 字段标签映射（过滤掉内部字段 notes，内容较长的隐私字段不展示）
+      // 字段标签映射
       const FIELD_LABEL = {
         visit_time: '就医时间', hospital: '就医医院', department: '就诊科室',
         expert: '专家姓名', reason: '原因', coordinator: '协调专员',
@@ -424,11 +424,12 @@ export default function ServicePlansScreen({ navigation }) {
         chemical_name: '药品名', brand_name: '商品名',
         body_composition: '人体成分', diet_analysis: '膳食调研',
         assist: '就医协助', order_dept: '开单科室', order_expert: '开单专家',
+        notes: '备注',
       };
       const buildNotes = (key, v) => {
         const lines = [];
         Object.entries(v).forEach(([fk, fv]) => {
-          if (fk === 'enabled' || fk === 'notes' || !fv || fv === false) return;
+          if (fk === 'enabled' || !fv || fv === false) return;
           const label = FIELD_LABEL[fk] || fk;
           const val = fv === true ? '是' : String(fv);
           lines.push(`${label}：${val}`);

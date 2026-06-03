@@ -199,10 +199,9 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess }) {
 export default function RenewalScreen({ navigation }) {
   const { user } = useAuth();
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
-  // 续约时只展示与当前会员类型一致的套餐；新开通展示全部
-  const availablePackages = hasService
-    ? PACKAGES.filter(p => p.id === user.servicePackage)
-    : PACKAGES;
+  // 续约时只展示与当前订阅套餐一致的选项；方案类型用户 or 新开通用户展示全部
+  const matchedPackages = PACKAGES.filter(p => p.id === user?.servicePackage);
+  const availablePackages = (hasService && matchedPackages.length > 0) ? matchedPackages : PACKAGES;
   const [selected, setSelected]   = useState(availablePackages[0] || PACKAGES[0]);
   const [confirming, setConfirming] = useState(false);
   const [success, setSuccess]     = useState(false);
