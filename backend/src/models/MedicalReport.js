@@ -21,6 +21,8 @@ const medicalReportSchema = new mongoose.Schema({
       'other',       // 其他
       // 兼容旧数据
       'followup', 'imaging',
+      // 专项筛查分类
+      'tumor', 'cardiovascular', 'chronic', 'health_promote',
     ],
     default: 'annual',
   },
@@ -50,8 +52,9 @@ const medicalReportSchema = new mongoose.Schema({
   reject_reason:{ type: String, default: '' },
   // 医护端：上传人 & 关联方案项目
   uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
-  planItemId:   { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
-  planId:       { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
+  planItemId:       { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
+  planId:           { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
+  screeningItemId:  { type: mongoose.Schema.Types.ObjectId, ref: 'UserScreeningItem', default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('MedicalReport', medicalReportSchema);
