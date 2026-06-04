@@ -33,8 +33,8 @@ router.post('/', auth, async (req, res) => {
     const { title, type, hospital, date, pages, fileSize, fileUrl, keyFindings, note, content, mimeType } = req.body;
     if (!title) return res.status(400).json({ success: false, message: '报告标题不能为空' });
 
-    // content 只存储小于 3MB 的文件（base64 后约 4MB），超出则忽略
-    const safeContent = content && content.length < 4 * 1024 * 1024 ? content : '';
+    // content 存储小于 10MB 的 base64（对应约 7.5MB 原始文件），超出则忽略
+    const safeContent = content && content.length < 10 * 1024 * 1024 ? content : '';
 
     const report = await MedicalReport.create({
       user: req.user._id,

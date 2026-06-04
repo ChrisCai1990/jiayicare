@@ -121,7 +121,7 @@ function ReportPreviewModal({ report, onClose }) {
                 resizeMode="contain"
               />
             ) : hasContent && isPdf ? (
-              // Web 上用 iframe 嵌入 PDF
+              // PDF 在新窗口打开
               <View style={styles.previewPdfWrap}>
                 <Ionicons name="document-text" size={48} color={colors.primary} />
                 <Text style={styles.previewPdfText}>PDF 报告</Text>
@@ -135,11 +135,15 @@ function ReportPreviewModal({ report, onClose }) {
               </View>
             ) : (
               <View style={styles.previewNoContent}>
-                <Ionicons name="document-outline" size={48} color={colors.textMuted} />
-                <Text style={styles.previewNoContentTitle}>该报告暂无预览</Text>
+                <Ionicons name="image-outline" size={48} color={colors.textMuted} />
+                <Text style={styles.previewNoContentTitle}>
+                  {mimeType ? '文件较大，无法在线预览' : '该报告暂无预览'}
+                </Text>
                 <Text style={styles.previewNoContentDesc}>
-                  {report.hospital ? `${report.hospital} · ` : ''}{report.date}
-                  {'\n'}{report.pages ? `${report.pages} 页` : ''}{report.fileSize ? ` · ${report.fileSize}` : ''}
+                  {mimeType
+                    ? `文件格式：${mimeType.split('/')[1]?.toUpperCase() || mimeType}\n文件大小：${report.fileSize || '-'}\n如需查看原件，请联系健管师`
+                    : `${report.hospital ? `${report.hospital} · ` : ''}${report.date || ''}`
+                  }
                 </Text>
               </View>
             )}
@@ -344,7 +348,7 @@ export default function ReportUploadScreen({ navigation }) {
         : `${sizeKB.toFixed(0)}KB`;
       const mimeType = file.type || '';
       let content = '';
-      if (file.size < 3 * 1024 * 1024) {
+      if (file.size < 7 * 1024 * 1024) { // 读取 7MB 以内的文件（base64 后约 9.3MB）
         try {
           content = await new Promise((resolve, reject) => {
             const reader = new FileReader();

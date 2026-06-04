@@ -153,18 +153,30 @@ export default function ReportsPage() {
                 </div>
               ))}
               {showDetail.note && <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>{showDetail.note}</div>}
-              {(showDetail.content || showDetail.fileUrl) && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
-                  {showDetail.mimeType?.startsWith('image/') || showDetail.content?.startsWith('data:image') ? (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
+                {(showDetail.content || showDetail.fileUrl) ? (
+                  showDetail.mimeType?.startsWith('image/') || showDetail.content?.startsWith('data:image') ? (
                     <img src={showDetail.content || showDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8, border: '1px solid #f0ece4', display: 'block' }} />
                   ) : showDetail.mimeType === 'application/pdf' || showDetail.fileUrl?.endsWith('.pdf') ? (
-                    <iframe src={showDetail.content || showDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
-                  ) : (showDetail.content || showDetail.fileUrl) ? (
-                    <a href={showDetail.content || showDetail.fileUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">📎 查看文件</a>
-                  ) : null}
-                </div>
-              )}
+                    <>
+                      <iframe src={showDetail.content || showDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
+                      {(showDetail.content || showDetail.fileUrl) && (
+                        <a href={showDetail.content || showDetail.fileUrl} target="_blank" rel="noreferrer" download className="btn btn-secondary btn-sm" style={{ marginTop: 8, display: 'inline-block' }}>⬇️ 下载 PDF</a>
+                      )}
+                    </>
+                  ) : (
+                    <a href={showDetail.content || showDetail.fileUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">📎 查看/下载文件</a>
+                  )
+                ) : (
+                  <div style={{ padding: '12px 14px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#8AA89C' }}>
+                    <span style={{ fontSize: 16, marginRight: 6 }}>⚠️</span>
+                    原始文件未存储（可能因文件过大被跳过）。
+                    {showDetail.mimeType && <span style={{ marginLeft: 4 }}>格式：{showDetail.mimeType}，大小：{showDetail.fileSize || '-'}</span>}
+                    <span style={{ display: 'block', marginTop: 4 }}>如需查看，请要求会员重新上传较小的文件（≤7MB）。</span>
+                  </div>
+                )}
+              </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowDetail(null)}>关闭</button>
@@ -271,12 +283,15 @@ function UploadModal({ patients, onClose, onSaved }) {
   const handleFileChange = (e) => {
     const file = e.target.files[0]
     if (!file) return
-    if (file.size > 5 * 1024 * 1024) { setError('文件不能超过5MB'); return }
+    if (file.size > 7 * 1024 * 1024) { setError('文件不能超过7MB，请压缩后重试'); return }
+    const ALLOWED = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp']
+    if (file.type && !ALLOWED.includes(file.type)) { setError(`不支持的格式 ${file.type}，请上传 JPG/PNG/PDF`); return }
+    setError('')
     const reader = new FileReader()
     reader.onload = (ev) => {
       setFileData({ content: ev.target.result, mimeType: file.type, fileSize: Math.round(file.size / 1024) + 'KB', name: file.name })
-      setError('')
     }
+    reader.onerror = () => setError('文件读取失败，请重试')
     reader.readAsDataURL(file)
   }
 

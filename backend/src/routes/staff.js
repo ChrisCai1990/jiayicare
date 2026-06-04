@@ -760,9 +760,9 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     const { patientId, title, type, hospital, date, fileUrl, content, mimeType, fileSize, planId, planItemId } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
 
-    // base64 内容限制 5MB（约 6.7MB 原始大小）
-    if (content && content.length > 6.7 * 1024 * 1024) {
-      return res.status(400).json({ success: false, message: '文件过大，请压缩后重试（最大约5MB）' });
+    // base64 内容限制（约 7MB 原始文件 → 9.3MB base64）
+    if (content && content.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ success: false, message: '文件过大，请压缩后重试（最大约7MB）' });
     }
     const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp'];
     if (mimeType && !ALLOWED_MIME.includes(mimeType)) {
