@@ -891,6 +891,7 @@ export default function PatientDetailPage() {
 
       {/* ── Records Tab ── */}
       {tab === 'records' && (
+        <>
         <div className="card">
           <div className="card-header"><div className="card-title">健康档案（最近10条）</div></div>
           {recentRecords?.length > 0 ? (
@@ -942,6 +943,7 @@ export default function PatientDetailPage() {
             </table>
           )}
         </div>
+        </>
       )}
 
       {/* ── Medications Tab ── */}
