@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, Modal, ActivityIndicator,
@@ -7,6 +7,14 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { servicesAPI } from '../../services/api';
+
+// 命名型服务方案（非通用服务包），需要在商城中单独配置
+const NAMED_PLAN_LABELS = {
+  health_prevention: '健康预防计划',
+  chronic_stable:    '慢病维稳计划',
+  young_state:       '健康年轻态计划',
+  health_reshape:    '健康重塑计划',
+};
 
 // ── 续费套餐配置 ──────────────────────────────────────────────────
 const PACKAGES = [
@@ -199,6 +207,7 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess }) {
 export default function RenewalScreen({ navigation }) {
   const { user } = useAuth();
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  const isNamedPlan = !!(user?.servicePackage && NAMED_PLAN_LABELS[user.servicePackage]);
   // 续约时只展示与当前订阅套餐一致的选项；方案类型用户 or 新开通用户展示全部
   const matchedPackages = PACKAGES.filter(p => p.id === user?.servicePackage);
   const availablePackages = (hasService && matchedPackages.length > 0) ? matchedPackages : PACKAGES;
@@ -206,6 +215,20 @@ export default function RenewalScreen({ navigation }) {
   const [confirming, setConfirming] = useState(false);
   const [success, setSuccess]     = useState(false);
   const [orderNo, setOrderNo]     = useState('');
+  const [renewProduct, setRenewProduct] = useState(null);  // 命名方案的续约商城产品
+  const [productLoading, setProductLoading] = useState(false);
+
+  // 如果是命名型方案，查找对应商城产品
+  useEffect(() => {
+    if (!isNamedPlan) return;
+    setProductLoading(true);
+    servicesAPI.list().then(res => {
+      const products = res?.data || res || [];
+      const planLabel = NAMED_PLAN_LABELS[user.servicePackage] || '';
+      const matched = products.find(p => p.name?.includes(planLabel) || p.tags?.includes(user.servicePackage));
+      setRenewProduct(matched || null);
+    }).catch(() => {}).finally(() => setProductLoading(false));
+  }, [isNamedPlan, user?.servicePackage]);
 
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
@@ -302,16 +325,46 @@ export default function RenewalScreen({ navigation }) {
           </View>
         )}
 
-        {/* 选择套餐 */}
-        <Text style={styles.sectionTitle}>选择续费套餐</Text>
-        {availablePackages.map(pkg => (
-          <PackageCard
-            key={pkg.id}
-            pkg={pkg}
-            selected={selected?.id === pkg.id}
-            onSelect={setSelected}
-          />
-        ))}
+        {/* 命名型方案续约（young_state等） */}
+        {isNamedPlan ? (
+          <View>
+            <Text style={styles.sectionTitle}>续约</Text>
+            {productLoading ? (
+              <View style={{ padding: spacing.lg, alignItems: 'center' }}>
+                <ActivityIndicator color={colors.primary} />
+              </View>
+            ) : renewProduct ? (
+              <TouchableOpacity
+                style={{ backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.lg, alignItems: 'center' }}
+                onPress={() => navigation.navigate('ServiceMall', { highlightId: renewProduct._id })}
+              >
+                <Text style={{ color: colors.white, fontSize: 15, fontWeight: '700' }}>前往商城续约 →</Text>
+                <Text style={{ color: colors.white + 'cc', fontSize: 13, marginTop: 4 }}>{renewProduct.name}</Text>
+              </TouchableOpacity>
+            ) : (
+              <View style={{ backgroundColor: '#FEF3E2', borderRadius: radius.md, padding: spacing.lg, alignItems: 'center', gap: spacing.sm }}>
+                <Ionicons name="information-circle-outline" size={32} color={colors.warning} />
+                <Text style={{ fontSize: 14, fontWeight: '600', color: '#92400E' }}>暂不可续约，请联系健康管家</Text>
+                <Text style={{ fontSize: 12, color: '#B45309', textAlign: 'center' }}>
+                  您当前的服务方案（{NAMED_PLAN_LABELS[user?.servicePackage]}）需由健康管家协助续约，请直接联系您的专属管家。
+                </Text>
+              </View>
+            )}
+          </View>
+        ) : (
+          /* 标准服务包续约 */
+          <View>
+            <Text style={styles.sectionTitle}>选择续费套餐</Text>
+            {availablePackages.map(pkg => (
+              <PackageCard
+                key={pkg.id}
+                pkg={pkg}
+                selected={selected?.id === pkg.id}
+                onSelect={setSelected}
+              />
+            ))}
+          </View>
+        )}
 
         {/* 权益说明 */}
         <View style={styles.benefitCard}>

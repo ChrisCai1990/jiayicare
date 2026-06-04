@@ -4,6 +4,31 @@ import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 
+// ── 简易 SVG 折线趋势图 ───────────────────────────────────────────
+function MiniTrendChart({ data, color = '#1E6B50', label }) {
+  if (!data || data.length < 2) return null;
+  const W = 260, H = 80, PAD = 8;
+  const vals = data.map(d => d.y);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const xs = data.map((_, i) => PAD + (i / (data.length - 1)) * (W - PAD * 2));
+  const ys = vals.map(v => H - PAD - ((v - min) / range) * (H - PAD * 2));
+  const pts = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
+  const last = data[data.length - 1];
+  return (
+    <div style={{ display: 'inline-block', marginRight: 16, marginBottom: 12 }}>
+      <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4, fontWeight: 600 }}>{label}</div>
+      <svg width={W} height={H} style={{ border: '1px solid #f0ece4', borderRadius: 8, background: '#faf9f6' }}>
+        <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={pts} />
+        {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r="3" fill={color} />)}
+        <text x={xs[xs.length-1]} y={ys[ys.length-1] - 6} textAnchor="middle" fontSize="10" fill={color}>{last.y}</text>
+        <text x={PAD} y={H - 2} fontSize="9" fill="#aaa">{data[0].x}</text>
+        <text x={W - PAD} y={H - 2} textAnchor="end" fontSize="9" fill="#aaa">{last.x}</text>
+      </svg>
+    </div>
+  );
+}
+
 const TYPE_MAP = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const SERVICE_PACKAGE_LABELS = {
   health_prevention: '健康预防计划', chronic_stable: '慢病维稳计划',
@@ -334,7 +359,7 @@ export default function PatientDetailPage() {
 
   const buildInsuranceForm = (u) => ({
     basic_insurance: u.basic_insurance || '',
-    commercial_medical_arr: u.commercial_medical ? u.commercial_medical.split(',').filter(Boolean) : [],
+    commercial_medical: u.commercial_medical || '',
     critical_illness: u.critical_illness || '',
   })
 
@@ -353,7 +378,7 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.updatePatient(id, {
         basic_insurance: insuranceForm.basic_insurance,
-        commercial_medical: insuranceForm.commercial_medical_arr.join(','),
+        commercial_medical: insuranceForm.commercial_medical,
         critical_illness: insuranceForm.critical_illness,
       })
       toast('医疗保障信息已保存')
@@ -752,17 +777,13 @@ export default function PatientDetailPage() {
                     </div>
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>医疗险（可多选）</label>
+                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>医疗险（三选一）</label>
                     <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                      {['高端医疗险', '百万医疗险'].map(opt => (
+                      {['高端医疗险', '百万医疗险', '未购买'].map(opt => (
                         <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
-                          <input type="checkbox"
-                            checked={insuranceForm.commercial_medical_arr?.includes(opt)}
-                            onChange={() => {
-                              const arr = insuranceForm.commercial_medical_arr || []
-                              const next = arr.includes(opt) ? arr.filter(x => x !== opt) : [...arr, opt]
-                              setInsuranceForm(p => ({ ...p, commercial_medical_arr: next }))
-                            }} />
+                          <input type="radio" name="ins_commercial" value={opt}
+                            checked={insuranceForm.commercial_medical === opt}
+                            onChange={() => setInsuranceForm(p => ({ ...p, commercial_medical: opt }))} />
                           {opt}
                         </label>
                       ))}
@@ -892,8 +913,74 @@ export default function PatientDetailPage() {
       {/* ── Records Tab ── */}
       {tab === 'records' && (
         <>
+        {/* 专项筛查结果（四大分类）在前 */}
         <div className="card">
-          <div className="card-header"><div className="card-title">健康档案（最近10条）</div></div>
+          <div className="card-header"><div className="card-title">专项筛查结果</div></div>
+          {screeningItems.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#aaa' }}>暂无专项筛查数据</div>
+          ) : (() => {
+            const CATEGORIES = ['肿瘤筛查', '心脑血管筛查', '慢性病筛查', '其他筛查'];
+            const grouped = {};
+            CATEGORIES.forEach(c => { grouped[c] = [] });
+            screeningItems.forEach(s => {
+              const cat = s.category || '其他筛查';
+              if (!grouped[cat]) grouped[cat] = [];
+              grouped[cat].push(s);
+            });
+            return (
+              <div>
+                {CATEGORIES.map(cat => grouped[cat]?.length > 0 && (
+                  <div key={cat} style={{ marginBottom: 16 }}>
+                    <div style={{ padding: '6px 16px', background: '#f5f2ec', fontWeight: 600, fontSize: 13, color: '#4A6558' }}>{cat}</div>
+                    <table className="table" style={{ marginBottom: 0 }}>
+                      <thead><tr><th>筛查项目</th><th>结果</th><th>记录时间</th><th>查看报告</th></tr></thead>
+                      <tbody>
+                        {grouped[cat].map(s => (
+                          <tr key={s._id}>
+                            <td style={{ fontWeight: 500 }}>{s.label || s.itemKey}</td>
+                            <td style={{ fontSize: 13, color: s.abnormal ? '#DC3545' : '#1A2B24' }}>{s.result || s.value || '-'}</td>
+                            <td style={{ color: '#8AA89C', fontSize: 12 }}>{s.recordedAt ? new Date(s.recordedAt).toLocaleDateString('zh-CN') : '-'}</td>
+                            <td>{s.reportId ? <a href="#" style={{ fontSize: 12, color: '#1E6B50' }} onClick={e => { e.preventDefault(); setTab('reports') }}>查看</a> : '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+              </div>
+            )
+          })()}
+        </div>
+
+        {/* 健康趋势图 */}
+        {recentRecords?.length >= 2 && (() => {
+          const byType = {};
+          recentRecords.forEach(r => {
+            if (!byType[r.type]) byType[r.type] = [];
+            const dateStr = new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+            let y;
+            if (r.type === 'bloodPressure') y = r.extra?.sys || 0;
+            else y = parseFloat(r.value) || 0;
+            if (y > 0) byType[r.type].push({ x: dateStr, y });
+          });
+          const TYPE_COLORS = { bloodPressure: '#DC3545', bloodSugar: '#D97706', weight: '#0077B6', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309' };
+          const charts = Object.entries(byType).filter(([, arr]) => arr.length >= 2).reverse();
+          if (!charts.length) return null;
+          return (
+            <div className="card" style={{ marginTop: 16 }}>
+              <div className="card-header"><div className="card-title">健康数据趋势</div></div>
+              <div style={{ padding: '12px 16px', overflowX: 'auto' }}>
+                {charts.map(([type, arr]) => (
+                  <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={RECORD_TYPE_LABEL[type] || type} />
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* 日常健康打卡数据 */}
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-header"><div className="card-title">日常健康打卡数据（最近30条）</div></div>
           {recentRecords?.length > 0 ? (
             <table className="table">
               <thead>
@@ -916,31 +1003,7 @@ export default function PatientDetailPage() {
               </tbody>
             </table>
           ) : (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康记录</div>
-          )}
-        </div>
-
-        {/* 专项筛查结果 */}
-        <div className="card" style={{ marginTop: 16 }}>
-          <div className="card-header"><div className="card-title">专项筛查结果</div></div>
-          {screeningItems.length === 0 ? (
-            <div style={{ padding: 30, textAlign: 'center', color: '#aaa' }}>暂无专项筛查数据</div>
-          ) : (
-            <table className="table">
-              <thead><tr><th>筛查项目</th><th>分类</th><th>结果</th><th>记录时间</th></tr></thead>
-              <tbody>
-                {screeningItems.slice(0, 20).map(s => (
-                  <tr key={s._id}>
-                    <td style={{ fontWeight: 500 }}>{s.label || s.itemKey}</td>
-                    <td><span className="badge badge-info">{s.category || '-'}</span></td>
-                    <td style={{ fontSize: 13 }}>{s.result || s.value || '-'}</td>
-                    <td style={{ color: '#8AA89C', fontSize: 12 }}>
-                      {s.recordedAt ? new Date(s.recordedAt).toLocaleDateString('zh-CN') : '-'}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康打卡记录</div>
           )}
         </div>
         </>
@@ -1157,7 +1220,7 @@ export default function PatientDetailPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无管理方案</div>
           ) : (
             <table className="table">
-              <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>已阅</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
+              <thead><tr><th>方案名称</th><th>类型</th><th>状态</th><th>已阅</th><th>已确认</th><th>项目数</th><th>完成</th><th>负责人</th><th>创建时间</th></tr></thead>
               <tbody>
                 {plans.map(p => {
                   const done = p.items?.filter(i => i.status === 'completed').length || 0
@@ -1177,6 +1240,12 @@ export default function PatientDetailPage() {
                           : p.viewedAt
                             ? <span style={{ fontSize: 12, color: '#22A06B', fontWeight: 500 }}>✓ 已阅<br/><span style={{ color: '#aaa', fontWeight: 400 }}>{new Date(p.viewedAt).toLocaleDateString('zh-CN')}</span></span>
                             : <span style={{ fontSize: 12, color: '#D97706' }}>未查阅</span>
+                        }
+                      </td>
+                      <td>
+                        {p.confirmedAt
+                          ? <span style={{ fontSize: 12, color: '#22A06B', fontWeight: 500 }}>✓ 已确认<br/><span style={{ color: '#aaa', fontWeight: 400 }}>{new Date(p.confirmedAt).toLocaleDateString('zh-CN')}</span></span>
+                          : <span style={{ fontSize: 12, color: '#D97706' }}>待确认</span>
                         }
                       </td>
                       <td style={{ textAlign: 'center' }}>{total}</td>

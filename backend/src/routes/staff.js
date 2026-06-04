@@ -370,7 +370,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   // 最近健康记录（血压、血糖、体重）
   const recentRecords = await HealthRecord.find({ userId: user._id })
     .sort({ recordedAt: -1 })
-    .limit(10)
+    .limit(30)
     .select('type value extra recordedAt');
 
   res.json({ success: true, data: { user, recentFollowUps, recentRecords } });
@@ -790,9 +790,28 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
   }
 });
 
+// PATCH /api/staff/medical-reports/:id — 修改报告信息（审核通过前可用）
+router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.audit_status === 'audited') return res.status(403).json({ success: false, message: '已审核通过的报告不可修改' });
+    const { title, type, hospital, date, note } = req.body;
+    if (title !== undefined) report.title = title;
+    if (type !== undefined) report.type = type;
+    if (hospital !== undefined) report.hospital = hospital;
+    if (date !== undefined) report.date = date;
+    if (note !== undefined) report.note = note;
+    await report.save();
+    res.json({ success: true, data: report });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // PATCH /api/staff/medical-reports/:id/audit — 审核报告
 router.patch('/medical-reports/:id/audit', staffAuth, async (req, res) => {
-  const { action, rejectReason, abnormalItems } = req.body; // action: 'approve' | 'reject'
+  const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
   if (action === 'approve') {
@@ -807,15 +826,35 @@ router.patch('/medical-reports/:id/audit', staffAuth, async (req, res) => {
         if (item) { item.status = 'completed'; item.completedAt = new Date(); await plan.save(); }
       }
     }
-    // 如果有异常项目，自动创建复查任务
+    // 如果有异常项目，自动创建复查任务 + 用户待办任务
     if (abnormalItems && abnormalItems.length > 0) {
-      await AbnormalReview.create({
-        patientId: report.user,
-        reportId:  report._id,
-        staffId:   req.staff._id,
-        title:     `${report.title || '报告'}异常复查`,
-        abnormalItems,
+      const staffName = req.staff.name || req.staff.username || '健管师';
+      const reviewTitle = `${report.title || '报告'}异常复查`;
+      const task = await Task.create({
+        user:        report.user,
+        title:       reviewTitle,
+        description: reviewReason || notes || '',
+        category:    'followup_abnormal',
+        type:        'followup_abnormal',
+        priority:    'high',
+        status:      'pending',
+        dueDate:     reviewDate ? new Date(reviewDate).toISOString().slice(0, 10) : null,
+        assignee:    staffName,
       });
+      const review = await AbnormalReview.create({
+        patientId:        report.user,
+        reportId:         report._id,
+        staffId:          req.staff._id,
+        taskId:           task._id,
+        title:            reviewTitle,
+        reviewReason:     reviewReason     || '',
+        reviewHospital:   reviewHospital   || '',
+        reviewDepartment: reviewDepartment || '',
+        abnormalItems,
+        reviewDate:       reviewDate ? new Date(reviewDate) : null,
+        notes:            notes || '',
+      });
+      await Task.findByIdAndUpdate(task._id, { abnormalReviewId: review._id });
     }
   } else {
     report.audit_status = 'rejected';
@@ -1276,6 +1315,7 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
     moduleData: ap.moduleData,
     staffId: ap.pushedBy,
     pushedAt: ap.pushedAt,
+    confirmedAt: ap.confirmedAt || null,
     isAnnualPlan: true,
     createdAt: ap.createdAt,
     items: Object.entries(ap.moduleData || {})

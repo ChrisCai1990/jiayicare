@@ -114,7 +114,8 @@ router.get('/me', auth, async (req, res) => {
 router.put('/me', auth, async (req, res) => {
   try {
     const { name, age, gender, height, weight, servicePackage, serviceExpiry,
-            contactPhone, deliveryAddress, healthProfile } = req.body;
+            contactPhone, deliveryAddress, healthProfile,
+            bloodTypeABO, bloodTypeRH } = req.body;
 
     const updateData = {};
     if (name !== undefined)           updateData.name = name;
@@ -127,6 +128,9 @@ router.put('/me', auth, async (req, res) => {
     // 联系信息（#34）
     if (contactPhone    !== undefined) updateData.contactPhone    = contactPhone;
     if (deliveryAddress !== undefined) updateData.deliveryAddress = deliveryAddress;
+    // 血型独立字段（用户端直接传入 ABO/RH）
+    if (bloodTypeABO !== undefined) updateData.bloodTypeABO = bloodTypeABO;
+    if (bloodTypeRH  !== undefined) updateData.bloodTypeRH  = bloodTypeRH;
 
     if (healthProfile !== undefined) {
       const hp = healthProfile;
@@ -140,6 +144,7 @@ router.put('/me', auth, async (req, res) => {
       if (hp.medicalHistory     !== undefined) updateData['healthProfile.medicalHistory']     = hp.medicalHistory;
       if (hp.medications        !== undefined) updateData['healthProfile.medications']        = hp.medications;
       if (hp.familyHistory      !== undefined) updateData['healthProfile.familyHistory']      = hp.familyHistory;
+      if (hp.familyHistoryNote  !== undefined) updateData['healthProfile.familyHistoryNote']  = hp.familyHistoryNote;
       if (hp.surgeries          !== undefined) updateData['healthProfile.surgeries']          = hp.surgeries;
       if (hp.drugAllergy        !== undefined) updateData['healthProfile.drugAllergy']        = hp.drugAllergy;
       if (hp.foodAllergy        !== undefined) updateData['healthProfile.foodAllergy']        = hp.foodAllergy;

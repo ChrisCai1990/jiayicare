@@ -20,6 +20,10 @@ export default function ReportsPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [abnormalModal, setAbnormalModal] = useState(null) // report object for abnormal approval
   const [abnormalItems, setAbnormalItems] = useState([{ name: '', value: '', reference: '', severity: 'mild' }])
+  const [abnormalExtra, setAbnormalExtra] = useState({ reviewReason: '', reviewHospital: '', reviewDepartment: '', reviewDate: '', notes: '' })
+  const [editModal, setEditModal] = useState(null) // report object being edited
+  const [editForm, setEditForm] = useState({ title: '', type: 'annual', hospital: '', date: '', note: '' })
+  const [editSaving, setEditSaving] = useState(false)
   const [patients, setPatients] = useState([])
   const limit = 20
 
@@ -44,18 +48,29 @@ export default function ReportsPage() {
     finally { setDetailLoading(false) }
   }
 
-  const handleAudit = async (id, action, rejectReason = '', abnItems = []) => {
+  const handleAudit = async (id, action, rejectReason = '', abnItems = [], extra = {}) => {
     try {
-      await staffAPI.auditReport(id, { action, rejectReason, abnormalItems: abnItems })
+      await staffAPI.auditReport(id, { action, rejectReason, abnormalItems: abnItems, ...extra })
       toast(action === 'approve' ? (abnItems.length ? '审核通过（已创建复查任务）' : '审核通过') : '已驳回'); load()
     } catch (err) { toast(err.message) }
   }
 
   const handleApproveWithAbnormal = async () => {
     const items = abnormalItems.filter(i => i.name)
-    await handleAudit(abnormalModal._id, 'approve', '', items)
+    await handleAudit(abnormalModal._id, 'approve', '', items, abnormalExtra)
     setAbnormalModal(null)
     setAbnormalItems([{ name: '', value: '', reference: '', severity: 'mild' }])
+    setAbnormalExtra({ reviewReason: '', reviewHospital: '', reviewDepartment: '', reviewDate: '', notes: '' })
+  }
+
+  const handleEditSave = async () => {
+    if (!editForm.title.trim()) { toast('标题不能为空'); return }
+    setEditSaving(true)
+    try {
+      await staffAPI.updateReport(editModal._id, editForm)
+      toast('修改成功'); setEditModal(null); load()
+    } catch (err) { toast(err.message) }
+    finally { setEditSaving(false) }
   }
 
   return (
@@ -99,6 +114,9 @@ export default function ReportsPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => openDetail(r)}>查看</button>
+                      {r.audit_status !== 'audited' && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => { setEditModal(r); setEditForm({ title: r.title || '', type: r.type || 'annual', hospital: r.hospital || '', date: r.date || '', note: r.note || '' }) }}>✏️ 修改</button>
+                      )}
                       {r.audit_status === 'unaudited' && (
                         <>
                           <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
@@ -155,27 +173,39 @@ export default function ReportsPage() {
               {showDetail.note && <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>{showDetail.note}</div>}
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
-                {(showDetail.content || showDetail.fileUrl) ? (
-                  showDetail.mimeType?.startsWith('image/') || showDetail.content?.startsWith('data:image') ? (
-                    <img src={showDetail.content || showDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8, border: '1px solid #f0ece4', display: 'block' }} />
-                  ) : showDetail.mimeType === 'application/pdf' || showDetail.fileUrl?.endsWith('.pdf') ? (
+                {(() => {
+                  const src = showDetail.content || showDetail.fileUrl;
+                  if (!src) {
+                    return (
+                      <div style={{ padding: '12px 14px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#8AA89C' }}>
+                        <span style={{ fontSize: 16, marginRight: 6 }}>⚠️</span>
+                        原始文件未存储（可能因文件过大被跳过）。
+                        {showDetail.mimeType && <span style={{ marginLeft: 4 }}>格式：{showDetail.mimeType}，大小：{showDetail.fileSize || '-'}</span>}
+                        <span style={{ display: 'block', marginTop: 4 }}>如需查看，请要求会员重新上传较小的文件（≤7MB）。</span>
+                      </div>
+                    );
+                  }
+                  const url = showDetail.fileUrl || '';
+                  const isImage = showDetail.mimeType?.startsWith('image/') || src.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(url);
+                  const isPdf = showDetail.mimeType === 'application/pdf' || url.endsWith('.pdf') || src.startsWith('data:application/pdf');
+                  if (isImage) return (
                     <>
-                      <iframe src={showDetail.content || showDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
-                      {(showDetail.content || showDetail.fileUrl) && (
-                        <a href={showDetail.content || showDetail.fileUrl} target="_blank" rel="noreferrer" download className="btn btn-secondary btn-sm" style={{ marginTop: 8, display: 'inline-block' }}>⬇️ 下载 PDF</a>
-                      )}
+                      <img src={src} alt="报告" style={{ maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8, border: '1px solid #f0ece4', display: 'block' }}
+                        onError={e => { e.target.style.display = 'none'; e.target.nextSibling.style.display = 'block'; }} />
+                      <div style={{ display: 'none', padding: '12px 14px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#8AA89C' }}>
+                        图片加载失败。<a href={src} target="_blank" rel="noreferrer" style={{ color: '#1E6B50', marginLeft: 4 }}>点击直接打开 →</a>
+                      </div>
+                      <a href={src} target="_blank" rel="noreferrer" download className="btn btn-secondary btn-sm" style={{ marginTop: 8, display: 'inline-block' }}>⬇️ 下载图片</a>
                     </>
-                  ) : (
-                    <a href={showDetail.content || showDetail.fileUrl} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">📎 查看/下载文件</a>
-                  )
-                ) : (
-                  <div style={{ padding: '12px 14px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#8AA89C' }}>
-                    <span style={{ fontSize: 16, marginRight: 6 }}>⚠️</span>
-                    原始文件未存储（可能因文件过大被跳过）。
-                    {showDetail.mimeType && <span style={{ marginLeft: 4 }}>格式：{showDetail.mimeType}，大小：{showDetail.fileSize || '-'}</span>}
-                    <span style={{ display: 'block', marginTop: 4 }}>如需查看，请要求会员重新上传较小的文件（≤7MB）。</span>
-                  </div>
-                )}
+                  );
+                  if (isPdf) return (
+                    <>
+                      <iframe src={src} title="PDF报告" style={{ width: '100%', height: 420, border: '1px solid #f0ece4', borderRadius: 8 }} />
+                      <a href={src} target="_blank" rel="noreferrer" download className="btn btn-secondary btn-sm" style={{ marginTop: 8, display: 'inline-block' }}>⬇️ 下载 PDF</a>
+                    </>
+                  );
+                  return <a href={src} target="_blank" rel="noreferrer" className="btn btn-secondary btn-sm">📎 查看/下载文件</a>;
+                })()}
               </div>
             </div>
             <div className="modal-footer">
@@ -194,17 +224,19 @@ export default function ReportsPage() {
       {/* 含异常审核通过弹窗 */}
       {abnormalModal && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setAbnormalModal(null) }}>
-          <div className="modal" style={{ maxWidth: 600 }}>
-            <div className="modal-header">
+          <div className="modal" style={{ maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header" style={{ flexShrink: 0 }}>
               <h3 className="modal-title">⚠️ 标记异常并审核通过</h3>
               <button className="modal-close" onClick={() => setAbnormalModal(null)}>✕</button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               <div style={{ marginBottom: 12, fontSize: 13, color: '#4A6558' }}>报告：{abnormalModal.title}</div>
-              <div style={{ marginBottom: 8, fontSize: 12, color: '#8AA89C' }}>填写异常指标后，系统将自动为该患者创建复查任务</div>
+              <div style={{ marginBottom: 12, fontSize: 12, color: '#8AA89C' }}>填写异常指标后，系统将自动为该患者创建复查任务</div>
+
+              {/* 异常项目列表 */}
               {abnormalItems.map((item, idx) => (
                 <div key={idx} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'flex-end' }}>
-                  {idx === 0 && ['项目', '检测值', '参考范围', '严重程度', ''].map((h, i) => (
+                  {idx === 0 && ['复查项目 *', '检测值', '参考范围', '严重程度', ''].map((h, i) => (
                     <div key={i} style={{ fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>{h}</div>
                   ))}
                   {idx === 0 && <div/>}
@@ -226,12 +258,83 @@ export default function ReportsPage() {
                   )}
                 </div>
               ))}
-              <button className="btn btn-ghost btn-sm" onClick={() => setAbnormalItems(items => [...items, { name: '', value: '', reference: '', severity: 'mild' }])}>＋ 添加项目</button>
+              <button className="btn btn-ghost btn-sm" style={{ marginBottom: 16 }} onClick={() => setAbnormalItems(items => [...items, { name: '', value: '', reference: '', severity: 'mild' }])}>＋ 添加项目</button>
+
+              {/* 复查详情 */}
+              <div style={{ borderTop: '1px solid #f0ece4', paddingTop: 12, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">复查原因</label>
+                  <input className="form-input" placeholder="说明需要复查的原因" value={abnormalExtra.reviewReason}
+                    onChange={e => setAbnormalExtra(x => ({ ...x, reviewReason: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">建议复查医院</label>
+                  <input className="form-input" placeholder="如：北京协和医院" value={abnormalExtra.reviewHospital}
+                    onChange={e => setAbnormalExtra(x => ({ ...x, reviewHospital: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">开单科室 / 专家</label>
+                  <input className="form-input" placeholder="如：内分泌科" value={abnormalExtra.reviewDepartment}
+                    onChange={e => setAbnormalExtra(x => ({ ...x, reviewDepartment: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">建议复查时间</label>
+                  <input className="form-input" type="date" value={abnormalExtra.reviewDate}
+                    onChange={e => setAbnormalExtra(x => ({ ...x, reviewDate: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">注意事项</label>
+                  <input className="form-input" placeholder="如：空腹就诊" value={abnormalExtra.notes}
+                    onChange={e => setAbnormalExtra(x => ({ ...x, notes: e.target.value }))} />
+                </div>
+              </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ flexShrink: 0 }}>
               <button className="btn btn-secondary" onClick={() => setAbnormalModal(null)}>取消</button>
               <button className="btn btn-primary" onClick={() => { handleAudit(abnormalModal._id, 'approve'); setAbnormalModal(null) }}>仅通过（不标记异常）</button>
               <button className="btn btn-warning" style={{ background: '#D97706', color: '#fff' }} onClick={handleApproveWithAbnormal}>通过 + 创建复查任务</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 修改报告弹窗 */}
+      {editModal && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditModal(null) }}>
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">修改报告信息</h3>
+              <button className="modal-close" onClick={() => setEditModal(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">报告标题 *</label>
+                <input className="form-input" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">报告类型</label>
+                  <select className="form-input" value={editForm.type} onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
+                    {Object.entries(REPORT_TYPE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">报告日期</label>
+                  <input className="form-input" type="date" value={editForm.date} onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
+                </div>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">医院</label>
+                <input className="form-input" value={editForm.hospital} onChange={e => setEditForm(f => ({ ...f, hospital: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">备注</label>
+                <textarea className="form-input" rows={2} value={editForm.note} onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setEditModal(null)}>取消</button>
+              <button className="btn btn-primary" onClick={handleEditSave} disabled={editSaving}>{editSaving ? '保存中...' : '保存修改'}</button>
             </div>
           </div>
         </div>

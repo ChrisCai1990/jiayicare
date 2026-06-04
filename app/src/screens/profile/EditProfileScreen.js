@@ -227,11 +227,14 @@ export default function EditProfileScreen({ navigation }) {
 
   // 健康档案结构化字段
   const hp = user?.healthProfile || {};
+  const [bloodTypeABO,  setBloodTypeABO]  = useState(user?.bloodTypeABO || '');
+  const [bloodTypeRH,   setBloodTypeRH]   = useState(user?.bloodTypeRH  || '');
   const [bloodType,     setBloodType]     = useState(hp.bloodType || '');
   const [allergies,     setAllergies]     = useState(Array.isArray(hp.allergies)     ? hp.allergies     : []);
   const [medicalHistory,setMedicalHistory]= useState(Array.isArray(hp.medicalHistory)? hp.medicalHistory: []);
   const [medications,   setMedications]   = useState(Array.isArray(hp.medications)   ? hp.medications   : []);
   const [familyHistory, setFamilyHistory] = useState(Array.isArray(hp.familyHistory) ? hp.familyHistory : []);
+  const [familyHistoryNote, setFamilyHistoryNote] = useState(hp.familyHistoryNote || '');
   const [surgeries,     setSurgeries]     = useState(Array.isArray(hp.surgeries)     ? hp.surgeries     : []);
   // 健康档案文字摘要字段（与健康档案页同步显示）
   const [drugAllergy,   setDrugAllergy]   = useState(hp.drugAllergy    || '');
@@ -267,12 +270,15 @@ export default function EditProfileScreen({ navigation }) {
         weight: weight ? Number(weight) : undefined,
         contactPhone:    contactPhone.trim()    || undefined,
         deliveryAddress: deliveryAddress.trim() || undefined,
+        bloodTypeABO,
+        bloodTypeRH,
         healthProfile: {
-          bloodType,
+          bloodType: bloodTypeABO && bloodTypeRH ? `${bloodTypeABO}型 Rh${bloodTypeRH === '阳性' ? '+' : '-'}` : bloodType,
           allergies,
           medicalHistory,
           medications,
           familyHistory,
+          familyHistoryNote,
           surgeries,
           drugAllergy,
           foodAllergy,
@@ -356,12 +362,26 @@ export default function EditProfileScreen({ navigation }) {
 
           {/* 血型 */}
           <View style={styles.card}>
-            <Field
-              label="血型"
-              value={bloodType}
-              onChangeText={setBloodType}
-              placeholder="如：A型 Rh+"
-            />
+            <View style={styles.field}>
+              <Text style={styles.fieldLabel}>ABO 血型</Text>
+              <View style={styles.genderRow}>
+                {['', 'A', 'B', 'O', 'AB'].map(v => (
+                  <TouchableOpacity key={v} style={[styles.genderChip, bloodTypeABO === v && styles.genderChipActive]} onPress={() => setBloodTypeABO(v)}>
+                    <Text style={[styles.genderChipText, bloodTypeABO === v && styles.genderChipTextActive]}>{v || '未知'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+            <View style={[styles.field, { borderBottomWidth: 0 }]}>
+              <Text style={styles.fieldLabel}>RH 血型</Text>
+              <View style={styles.genderRow}>
+                {['', '阳性', '阴性'].map(v => (
+                  <TouchableOpacity key={v} style={[styles.genderChip, bloodTypeRH === v && styles.genderChipActive]} onPress={() => setBloodTypeRH(v)}>
+                    <Text style={[styles.genderChipText, bloodTypeRH === v && styles.genderChipTextActive]}>{v || '未知'}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
           </View>
 
           {/* 过敏史 */}
@@ -408,16 +428,20 @@ export default function EditProfileScreen({ navigation }) {
 
           {/* 家族史 */}
           <View style={[styles.card, { marginTop: spacing.sm }]}>
-            <ArraySection
-              title="家族史"
-              icon="people-outline"
-              color="#D97706"
-              bg="#FEF3E2"
-              items={familyHistory}
-              fields={FAMILY_FIELDS}
-              displayFn={r => [r.relative && `${r.relative}：`, r.disease].filter(Boolean).join('')}
-              onChange={setFamilyHistory}
-            />
+            <View style={styles.arraySection}>
+              <View style={styles.arraySectionHeader}>
+                <View style={[styles.arraySectionIcon, { backgroundColor: '#FEF3E2' }]}>
+                  <Ionicons name="people-outline" size={16} color="#D97706" />
+                </View>
+                <Text style={styles.arraySectionTitle}>家族史</Text>
+              </View>
+              <Field
+                label="家族史详情"
+                value={familyHistoryNote}
+                onChangeText={setFamilyHistoryNote}
+                placeholder="如：父亲患高血压，母亲患糖尿病"
+              />
+            </View>
           </View>
 
           {/* 手术史 */}
@@ -457,7 +481,6 @@ export default function EditProfileScreen({ navigation }) {
           {/* ── 健康摘要（文字档案，与健康档案页同步） ────────────── */}
           <Text style={styles.sectionLabel}>健康摘要</Text>
           <View style={styles.card}>
-            <Field label="血型" value={bloodType} onChangeText={setBloodType} placeholder="如：A型 Rh+" />
             <Field label="药物过敏史" value={drugAllergy} onChangeText={setDrugAllergy} placeholder="如：青霉素类、无" />
             <Field label="食物过敏史" value={foodAllergy} onChangeText={setFoodAllergy} placeholder="如：海鲜、无" />
             <Field label="既往史" value={pastHistory} onChangeText={setPastHistory} placeholder="如：高血压（2020年）" />
@@ -485,7 +508,7 @@ export default function EditProfileScreen({ navigation }) {
                   <View style={styles.field}>
                     <Text style={styles.fieldLabel}>医疗险</Text>
                     <View style={[styles.fieldRow, { justifyContent: 'space-between' }]}>
-                      <Text style={styles.readonlyText}>{user.commercial_medical.split(',').join('、')}</Text>
+                      <Text style={styles.readonlyText}>{user.commercial_medical}</Text>
                       <Text style={styles.readonlyHint}>医护录入</Text>
                     </View>
                   </View>

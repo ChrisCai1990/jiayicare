@@ -550,12 +550,19 @@ export default function TasksScreen({ navigation }) {
                 {/* 异常复查专属详情 */}
                 {detailTask.abnormalReviewId && (() => {
                   const ar = detailTask.abnormalReviewId;
+                  const SEVERITY = { mild: '轻度', moderate: '中度', severe: '重度' };
                   return (
                     <>
                       {!!ar.reviewReason && (
                         <>
                           <Text style={styles.modalSectionLabel}>复查原因</Text>
                           <Text style={styles.modalContent}>{ar.reviewReason}</Text>
+                        </>
+                      )}
+                      {!!ar.reviewDate && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>建议复查时间</Text>
+                          <Text style={styles.modalContent}>{new Date(ar.reviewDate).toLocaleDateString('zh-CN')}</Text>
                         </>
                       )}
                       {!!ar.reviewHospital && (
@@ -574,9 +581,12 @@ export default function TasksScreen({ navigation }) {
                         <>
                           <Text style={styles.modalSectionLabel}>异常检查项目</Text>
                           {ar.abnormalItems.map((item, idx) => (
-                            <View key={idx} style={{ paddingVertical: 4, paddingHorizontal: 12, backgroundColor: '#FFF5F5', borderRadius: 8, marginBottom: 6 }}>
-                              <Text style={{ color: '#DC3545', fontWeight: '600', fontSize: 14 }}>{item.name}</Text>
-                              {!!item.value && <Text style={{ color: '#4A6558', fontSize: 13, marginTop: 2 }}>检测值：{item.value}{!!item.reference ? `（参考：${item.reference}）` : ''}</Text>}
+                            <View key={idx} style={{ paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#FFF5F5', borderRadius: 8, marginBottom: 6 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Text style={{ color: '#DC3545', fontWeight: '600', fontSize: 14 }}>{item.name}</Text>
+                                {!!item.severity && <Text style={{ fontSize: 11, color: '#DC3545', backgroundColor: '#FDEEEC', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>{SEVERITY[item.severity] || item.severity}</Text>}
+                              </View>
+                              {!!item.value && <Text style={{ color: '#4A6558', fontSize: 13, marginTop: 2 }}>检测值：{item.value}{!!item.reference ? `（参考范围：${item.reference}）` : ''}</Text>}
                             </View>
                           ))}
                         </>
