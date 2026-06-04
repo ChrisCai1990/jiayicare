@@ -8,12 +8,16 @@ const abnormalItemSchema = new mongoose.Schema({
 }, { _id: false });
 
 const abnormalReviewSchema = new mongoose.Schema({
-  patientId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User',          required: true },
-  reportId:      { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport',  default: null },
-  staffId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Admin',          required: true },
-  title:         { type: String, default: '' },
-  abnormalItems: [abnormalItemSchema],
-  reviewDate:    { type: Date, default: null },
+  patientId:        { type: mongoose.Schema.Types.ObjectId, ref: 'User',          required: true },
+  reportId:         { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport',  default: null },
+  staffId:          { type: mongoose.Schema.Types.ObjectId, ref: 'Admin',          required: true },
+  taskId:           { type: mongoose.Schema.Types.ObjectId, ref: 'Task',           default: null },
+  title:            { type: String, default: '' },
+  reviewReason:     { type: String, default: '' },
+  reviewHospital:   { type: String, default: '' },
+  reviewDepartment: { type: String, default: '' },
+  abnormalItems:    [abnormalItemSchema],
+  reviewDate:       { type: Date, default: null },
   status: {
     type: String,
     enum: ['pending', 'scheduled', 'completed', 'cancelled'],

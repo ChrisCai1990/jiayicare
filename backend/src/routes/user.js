@@ -562,12 +562,27 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
   }
 });
 
+// PATCH /api/user/annual-mgmt-plans/:id/confirm — 用户确认年度管理方案
+router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
+  try {
+    const plan = await AnnualPlan.findOne({ _id: req.params.id, patientId: req.user._id });
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    if (!plan.confirmedAt) {
+      plan.confirmedAt = new Date();
+      await plan.save();
+    }
+    res.json({ success: true, data: plan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '操作失败' });
+  }
+});
+
 // ── Req 10: 健康方案（医护端创建，用户端展示）────────────────────
 // GET /api/user/plans
 router.get('/plans', auth, async (req, res) => {
   try {
     const plans = await HealthPlan.find({ patientId: req.user._id, status: { $in: ['active', 'draft'] } })
-      .select('title type description items status startDate endDate followupFrequency')
+      .select('title type description items status startDate endDate followupFrequency confirmedAt pushedAt')
       .populate('staffId', 'name role title')
       .sort({ createdAt: -1 });
     res.json({ success: true, data: plans });

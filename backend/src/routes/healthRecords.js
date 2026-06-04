@@ -77,18 +77,18 @@ router.post('/', auth, async (req, res) => {
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
     });
 
-    // 打卡后自动同步随访计划状态：找今日 planned 且含该 checkIn 类型的随访，更新为 in_progress
+    // 打卡后自动同步随访计划状态：找今日含该 checkIn 类型的随访，更新为 completed
     try {
       const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
       const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
       await FollowUp.updateMany(
         {
           patientId: req.user._id,
-          status: 'planned',
+          status: { $in: ['planned', 'in_progress'] },
           date: { $gte: todayStart, $lte: todayEnd },
           checkInItems: type,
         },
-        { $set: { status: 'in_progress' } }
+        { $set: { status: 'completed' } }
       );
     } catch { /* 不阻断主流程 */ }
 

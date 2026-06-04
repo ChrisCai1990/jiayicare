@@ -182,7 +182,10 @@ export default function PlansPage() {
                       <td><strong>{p.title}</strong></td>
                       <td><span className="badge badge-info">{TYPE_LABEL[p.type]}</span></td>
                       <td>{p.patientId?.name || '-'} <span style={{ color: '#aaa', fontSize: 12 }}>{p.patientId?.phone}</span></td>
-                      <td><span style={{ color: STATUS_COLOR[p.status], fontWeight: 500 }}>{STATUS_LABEL[p.status]}</span></td>
+                      <td>
+                        <span style={{ color: STATUS_COLOR[p.status], fontWeight: 500 }}>{STATUS_LABEL[p.status]}</span>
+                        {p.confirmedAt && <span style={{ marginLeft: 6, fontSize: 11, color: '#22A06B', background: '#E8F5EF', padding: '1px 6px', borderRadius: 8 }}>已确认</span>}
+                      </td>
                       <td>{p.items?.length || 0} 项</td>
                       <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleDateString('zh-CN')}</td>
                       <td>

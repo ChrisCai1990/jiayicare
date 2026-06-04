@@ -257,6 +257,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
   const meta = TYPE_META[plan.type] || DEFAULT_META;
   const sm   = STATUS_META[plan.status] || STATUS_META.draft;
   const isDraft = plan.status === 'draft';
+  const needsConfirm = !plan.confirmedAt && (plan.pushedAt || plan.status === 'active' || isDraft);
 
   const formatDate = (d) => d
     ? new Date(d).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
@@ -326,10 +327,18 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
           ) : (
             <View style={s.emptyItems}>
               <Ionicons name="list-outline" size={32} color={colors.border} />
-              {plan.notes ? (
-                <Text style={[s.emptyItemsText, { textAlign: 'left', lineHeight: 20, color: '#4A6558' }]}>{plan.notes}</Text>
+              {(plan.description || plan.notes) ? (
+                <>
+                  {!!plan.description && plan.description !== '个人专属健康管理方案' && (
+                    <Text style={[s.emptyItemsText, { fontWeight: '600', color: '#1A2B24', marginBottom: 4 }]}>{plan.description}</Text>
+                  )}
+                  {!!plan.notes && (
+                    <Text style={[s.emptyItemsText, { textAlign: 'left', lineHeight: 20, color: '#4A6558' }]}>{plan.notes}</Text>
+                  )}
+                  <Text style={[s.emptyItemsText, { color: colors.textMuted, marginTop: 8 }]}>如有疑问请联系健管师</Text>
+                </>
               ) : (
-                <Text style={s.emptyItemsText}>方案内容由您的健管师配置，如有疑问请咨询健管师</Text>
+                <Text style={s.emptyItemsText}>方案内容正在配置中，如有疑问请联系健管师</Text>
               )}
             </View>
           )}
@@ -355,7 +364,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
 
           {/* 底部按钮行 */}
           <View style={s.planFooter}>
-            {isDraft ? (
+            {needsConfirm ? (
               <TouchableOpacity
                 style={[s.confirmBtn, confirming && { opacity: 0.6 }]}
                 onPress={() => onConfirmPlan && onConfirmPlan(plan)}
@@ -368,6 +377,11 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                 }
                 <Text style={s.confirmBtnText}>{confirming ? '确认中…' : '确认方案'}</Text>
               </TouchableOpacity>
+            ) : plan.confirmedAt ? (
+              <View style={[s.consultBtn, { borderColor: colors.success + '60', flex: 1, backgroundColor: '#E8F5EF' }]}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                <Text style={[s.consultBtnText, { color: colors.success }]}>已确认</Text>
+              </View>
             ) : (
               <TouchableOpacity
                 style={[s.consultBtn, { borderColor: meta.color + '60', flex: 1 }]}
@@ -456,6 +470,9 @@ export default function ServicePlansScreen({ navigation }) {
             staffId: ap.pushedBy,
             pushedAt: ap.pushedAt,
             year: ap.year,
+            notes: ap.notes || '',
+            confirmedAt: ap.confirmedAt || null,
+            pushedAt: ap.pushedAt || null,
             items: Object.entries(ap.moduleData || {})
               .filter(([, v]) => v && v.enabled)
               .map(([key, v]) => ({
@@ -503,16 +520,20 @@ export default function ServicePlansScreen({ navigation }) {
 
   const doConfirmPlan = async () => {
     if (!planConfirmTarget) return;
-    const { _id, title } = planConfirmTarget;
-    if (!_id.startsWith('demo')) {
+    const { _id, type } = planConfirmTarget;
+    if (!String(_id).startsWith('demo')) {
       setConfirmingPlanId(_id);
       try {
-        await plansAPI.confirm(_id);
+        if (type === 'annual_mgmt') {
+          await plansAPI.confirmAnnualMgmt(_id);
+        } else {
+          await plansAPI.confirm(_id);
+        }
       } catch { /* 静默失败，乐观更新 */ }
       finally { setConfirmingPlanId(null); }
     }
     setPlans(prev => prev.map(p =>
-      p._id === _id ? { ...p, status: 'active', confirmedAt: new Date().toISOString() } : p
+      p._id === _id ? { ...p, confirmedAt: new Date().toISOString() } : p
     ));
     setPlanConfirmTarget(null);
   };

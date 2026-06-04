@@ -164,6 +164,9 @@ export default function PlanDetailPage() {
   const [plan, setPlan] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showAddItem, setShowAddItem] = useState(false)
+  const [editMode, setEditMode] = useState(false)
+  const [editForm, setEditForm] = useState({})
+  const [saving, setSaving] = useState(false)
 
   const load = async () => {
     try { const r = await staffAPI.getPlan(id); setPlan(r.data) }
@@ -198,6 +201,23 @@ export default function PlanDetailPage() {
     } catch (err) { toast(err.message) }
   }
 
+  const startEdit = () => {
+    setEditForm({ title: plan.title, description: plan.description || '', notes: plan.notes || '' })
+    setEditMode(true)
+  }
+
+  const saveEdit = async () => {
+    if (!editForm.title?.trim()) { toast('方案标题不能为空'); return }
+    setSaving(true)
+    try {
+      await staffAPI.updatePlan(id, editForm)
+      toast('已保存')
+      setEditMode(false)
+      load()
+    } catch (err) { toast(err.message) }
+    finally { setSaving(false) }
+  }
+
   if (loading) return <div className="page-loading">加载中...</div>
   if (!plan) return <div className="page">方案不存在</div>
 
@@ -223,6 +243,9 @@ export default function PlanDetailPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {plan.status === 'draft' && !editMode && (
+            <button className="btn btn-secondary" onClick={startEdit}>✏️ 编辑信息</button>
+          )}
           {plan.status === 'draft' && (
             <button className="btn btn-primary" onClick={handlePush}>📤 推送给会员</button>
           )}
@@ -241,19 +264,42 @@ export default function PlanDetailPage() {
         <div className="card">
           <div className="card-header"><div className="card-title">方案信息</div></div>
           <div className="card-body">
-            {[
-              ['会员', plan.patientId?.name + ' · ' + plan.patientId?.phone],
-              ['类型', TYPE_LABEL[plan.type]],
-              ['状态', STATUS_LABEL[plan.status]],
-              ['年度', plan.year + ' 年'],
-              ['制定人', plan.staffId?.name],
-              ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
-            ].map(([k, v]) => (
-              <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f5f2ec', fontSize: 14 }}>
-                <span style={{ color: '#8AA89C' }}>{k}</span>
-                <span style={{ fontWeight: 500 }}>{v}</span>
-              </div>
-            ))}
+            {editMode ? (
+              <>
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label className="form-label">方案标题 *</label>
+                  <input className="form-input" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 12 }}>
+                  <label className="form-label">方案描述</label>
+                  <textarea className="form-input" rows={3} placeholder="方案整体说明..." value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 16 }}>
+                  <label className="form-label">备注</label>
+                  <textarea className="form-input" rows={2} placeholder="补充备注..." value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
+                </div>
+                <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setEditMode(false)} disabled={saving}>取消</button>
+                  <button className="btn btn-primary btn-sm" onClick={saveEdit} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+                </div>
+              </>
+            ) : (
+              [
+                ['会员', plan.patientId?.name + ' · ' + plan.patientId?.phone],
+                ['类型', TYPE_LABEL[plan.type]],
+                ['状态', STATUS_LABEL[plan.status]],
+                ['年度', plan.year + ' 年'],
+                ['制定人', plan.staffId?.name],
+                ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
+                ...(plan.description ? [['描述', plan.description]] : []),
+                ...(plan.notes ? [['备注', plan.notes]] : []),
+              ].map(([k, v]) => (
+                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f5f2ec', fontSize: 14 }}>
+                  <span style={{ color: '#8AA89C' }}>{k}</span>
+                  <span style={{ fontWeight: 500, maxWidth: '65%', textAlign: 'right' }}>{v}</span>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

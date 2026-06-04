@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Task = require('../models/Task');
+const AbnormalReview = require('../models/AbnormalReview');
 const router = express.Router();
 
 // 获取任务列表
@@ -8,7 +9,8 @@ router.get('/', auth, async (req, res) => {
   const { status } = req.query;
   const query = { user: req.user._id };
   if (status) query.status = status;
-  const tasks = await Task.find(query).sort({ createdAt: -1 });
+  const tasks = await Task.find(query).sort({ createdAt: -1 })
+    .populate('abnormalReviewId', 'title reviewReason reviewHospital reviewDepartment reviewDate abnormalItems notes status');
   res.json({ success: true, data: tasks });
 });
 
@@ -25,8 +27,16 @@ router.patch('/:id/status', auth, async (req, res) => {
     { _id: req.params.id, user: req.user._id },
     { status, ...(status === 'completed' && { completedAt: new Date() }) },
     { new: true }
-  );
+  ).populate('abnormalReviewId', 'title reviewReason reviewHospital reviewDepartment reviewDate abnormalItems notes status');
   if (!task) return res.status(404).json({ success: false, message: '任务不存在' });
+
+  // 同步异常复查状态
+  if (task.abnormalReviewId && status === 'completed') {
+    await AbnormalReview.findByIdAndUpdate(task.abnormalReviewId._id || task.abnormalReviewId, {
+      status: 'completed', resolvedAt: new Date(),
+    });
+  }
+
   res.json({ success: true, data: task });
 });
 

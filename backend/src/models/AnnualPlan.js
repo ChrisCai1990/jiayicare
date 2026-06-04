@@ -8,8 +8,9 @@ const annualPlanSchema = new mongoose.Schema({
   moduleData: { type: mongoose.Schema.Types.Mixed, default: {} }, // { moduleKey: { enabled, field1, field2... } }
   notes:      { type: String, default: '' },
   createdBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
-  pushedAt:   { type: Date, default: null },
-  pushedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  pushedAt:    { type: Date, default: null },
+  pushedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  confirmedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 // 同一会员同一年度只有一份（upsert）

@@ -547,11 +547,60 @@ export default function TasksScreen({ navigation }) {
                   )}
                 </View>
 
-                <Text style={styles.modalSectionLabel}>任务描述</Text>
-                {detailTask.description
-                  ? <Text style={styles.modalContent}>{detailTask.description}</Text>
-                  : <Text style={styles.modalNoContent}>暂无详细描述，请联系健康管理师了解详情。</Text>
-                }
+                {/* 异常复查专属详情 */}
+                {detailTask.abnormalReviewId && (() => {
+                  const ar = detailTask.abnormalReviewId;
+                  return (
+                    <>
+                      {!!ar.reviewReason && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>复查原因</Text>
+                          <Text style={styles.modalContent}>{ar.reviewReason}</Text>
+                        </>
+                      )}
+                      {!!ar.reviewHospital && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>建议复查医院</Text>
+                          <Text style={styles.modalContent}>{ar.reviewHospital}</Text>
+                        </>
+                      )}
+                      {!!ar.reviewDepartment && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>开单科室 / 专家</Text>
+                          <Text style={styles.modalContent}>{ar.reviewDepartment}</Text>
+                        </>
+                      )}
+                      {ar.abnormalItems?.length > 0 && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>异常检查项目</Text>
+                          {ar.abnormalItems.map((item, idx) => (
+                            <View key={idx} style={{ paddingVertical: 4, paddingHorizontal: 12, backgroundColor: '#FFF5F5', borderRadius: 8, marginBottom: 6 }}>
+                              <Text style={{ color: '#DC3545', fontWeight: '600', fontSize: 14 }}>{item.name}</Text>
+                              {!!item.value && <Text style={{ color: '#4A6558', fontSize: 13, marginTop: 2 }}>检测值：{item.value}{!!item.reference ? `（参考：${item.reference}）` : ''}</Text>}
+                            </View>
+                          ))}
+                        </>
+                      )}
+                      {!!ar.notes && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>注意事项</Text>
+                          <Text style={styles.modalContent}>{ar.notes}</Text>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* 普通任务描述 */}
+                {!detailTask.abnormalReviewId && (
+                  <>
+                    <Text style={styles.modalSectionLabel}>任务描述</Text>
+                    {detailTask.description
+                      ? <Text style={styles.modalContent}>{detailTask.description}</Text>
+                      : <Text style={styles.modalNoContent}>暂无详细描述，请联系健康管理师了解详情。</Text>
+                    }
+                  </>
+                )}
 
                 {detailTask.completedAt && (
                   <>

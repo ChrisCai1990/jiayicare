@@ -9,6 +9,7 @@ const SEVERITY_COLOR = { mild: '#D97706', moderate: '#DC3545', severe: '#7c0a02'
 
 const EMPTY_FORM = {
   patientId: '', title: '', reviewDate: '', notes: '',
+  reviewReason: '', reviewHospital: '', reviewDepartment: '',
   abnormalItems: [{ name: '', value: '', reference: '', severity: 'mild' }],
 }
 
@@ -67,6 +68,18 @@ function CreateModal({ patients, onClose, onSaved }) {
             <div className="form-group" style={{ gridColumn: '1/-1' }}>
               <label className="form-label">任务标题</label>
               <input className="form-input" placeholder="如：血糖异常复查" value={form.title} onChange={e => setField('title', e.target.value)} />
+            </div>
+            <div className="form-group" style={{ gridColumn: '1/-1' }}>
+              <label className="form-label">复查原因</label>
+              <input className="form-input" placeholder="如：空腹血糖偏高，需进一步排查糖尿病" value={form.reviewReason} onChange={e => setField('reviewReason', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">建议复查医院</label>
+              <input className="form-input" placeholder="如：北京协和医院" value={form.reviewHospital} onChange={e => setField('reviewHospital', e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">开单科室 / 专家</label>
+              <input className="form-input" placeholder="如：内分泌科 / 张主任" value={form.reviewDepartment} onChange={e => setField('reviewDepartment', e.target.value)} />
             </div>
           </div>
 

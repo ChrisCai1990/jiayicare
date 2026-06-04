@@ -10,8 +10,9 @@ const taskSchema = new mongoose.Schema({
   status:      { type: String, enum: ['pending', 'completed', 'cancelled'], default: 'pending' },
   dueDate:     { type: String },
   dueTime:     { type: String },
-  assignee:    { type: String },
-  completedAt: { type: Date },
+  assignee:          { type: String },
+  completedAt:       { type: Date },
+  abnormalReviewId:  { type: mongoose.Schema.Types.ObjectId, ref: 'AbnormalReview', default: null },
 }, { timestamps: true });
 
 taskSchema.index({ user: 1, status: 1 });
