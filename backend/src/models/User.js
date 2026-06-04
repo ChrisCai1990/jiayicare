@@ -140,6 +140,11 @@ const userSchema = new mongoose.Schema({
   // 健康基金余额（由医护端 $inc 累加，Mongoose 必须显式定义才能读取）
   healthFundBalance: { type: Number, default: 0 },
 
+  // ── 医疗保障信息（需求15）───────────────────────────────────────
+  basic_insurance:   { type: String, default: '' }, // 基础医疗保障：城镇医疗保险/居民医疗保险/自费
+  commercial_medical:{ type: String, default: '' }, // 商业医疗险（多选逗号分隔）：高端医疗险,百万医疗险
+  critical_illness:  { type: String, default: '' }, // 重疾险：有/无
+
   // ── 会员运营字段 ─────────────────────────────────────────────────
   cardNumber: { type: String, default: '' },   // 会员卡号
   points:     { type: Number, default: 0 },    // 积分

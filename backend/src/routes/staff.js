@@ -32,6 +32,7 @@ const ExamRequisition   = require('../models/ExamRequisition');
 const LabTestOrder      = require('../models/LabTestOrder');
 const SpecialExam       = require('../models/SpecialExam');
 const AbnormalReview    = require('../models/AbnormalReview');
+const Task              = require('../models/Task');
 const PlanTemplate      = require('../models/PlanTemplate');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
@@ -248,6 +249,7 @@ router.post('/patients', staffAuth, async (req, res) => {
     assignedHealthManager, assignedFamilyDoctor, assignedNutritionist,
     patientCategory, childProfile,
     servicePackage, serviceStartDate, serviceExpiry,
+    basic_insurance, commercial_medical, critical_illness,
   } = req.body;
 
   if (!phone) return res.status(400).json({ success: false, message: '手机号不能为空' });
@@ -300,6 +302,9 @@ router.post('/patients', staffAuth, async (req, res) => {
     serviceStartDate: serviceStartDate || '',
     serviceExpiry: serviceExpiry || '',
     onboardingCompleted: true,
+    basic_insurance: basic_insurance || '',
+    commercial_medical: commercial_medical || '',
+    critical_illness: critical_illness || '',
   };
 
   // 生活方式（嵌套）
@@ -380,6 +385,7 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     'servicePackage', 'serviceExpiry', 'serviceStartDate',
     'bloodTypeABO', 'bloodTypeRH',
     'traumaHistory', 'transfusionHistory', 'infectiousHistory', 'vaccinationHistory',
+    'basic_insurance', 'commercial_medical', 'critical_illness',
   ];
   const updateData = {};
   allowed.forEach(k => {
@@ -1668,13 +1674,43 @@ router.get('/abnormal-reviews', staffAuth, async (req, res) => {
 // POST /api/staff/abnormal-reviews
 router.post('/abnormal-reviews', staffAuth, async (req, res) => {
   try {
-    const { patientId, reportId, title, abnormalItems, reviewDate, notes } = req.body;
+    const {
+      patientId, reportId, title, abnormalItems, reviewDate, notes,
+      reviewReason, reviewHospital, reviewDepartment,
+    } = req.body;
     if (!patientId) return res.status(400).json({ success: false, message: '请选择患者' });
+
+    const staffName = req.staff.name || req.staff.username || '健管师';
+    const reviewTitle = title || '异常复查提醒';
+
+    // 给患者创建待办任务
+    const task = await Task.create({
+      user:        patientId,
+      title:       reviewTitle,
+      description: reviewReason || notes || '',
+      category:    'followup_abnormal',
+      type:        'followup_abnormal',
+      priority:    'high',
+      status:      'pending',
+      dueDate:     reviewDate ? new Date(reviewDate).toISOString().slice(0, 10) : null,
+      assignee:    staffName,
+    });
+
     const review = await AbnormalReview.create({
       patientId, reportId: reportId || null, staffId: req.staff._id,
-      title: title || '异常复查', abnormalItems: abnormalItems || [],
-      reviewDate: reviewDate ? new Date(reviewDate) : null, notes: notes || '',
+      taskId: task._id,
+      title: reviewTitle,
+      reviewReason:     reviewReason     || '',
+      reviewHospital:   reviewHospital   || '',
+      reviewDepartment: reviewDepartment || '',
+      abnormalItems: abnormalItems || [],
+      reviewDate: reviewDate ? new Date(reviewDate) : null,
+      notes: notes || '',
     });
+
+    // 将 abnormalReviewId 写回 Task
+    await Task.findByIdAndUpdate(task._id, { abnormalReviewId: review._id });
+
     res.json({ success: true, data: review });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

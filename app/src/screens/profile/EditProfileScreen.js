@@ -467,6 +467,42 @@ export default function EditProfileScreen({ navigation }) {
             <Field label="婚育史" value={maritalHistory} onChangeText={setMaritalHistory} placeholder="如：已婚，育有1子；未婚" />
           </View>
 
+          {/* ── 医疗保障信息（只读，由医护人员录入） ───────────────── */}
+          {(user?.basic_insurance || user?.commercial_medical || user?.critical_illness) && (
+            <>
+              <Text style={styles.sectionLabel}>医疗保障信息</Text>
+              <View style={styles.card}>
+                {!!user.basic_insurance && (
+                  <View style={styles.field}>
+                    <Text style={styles.fieldLabel}>基础医疗保障</Text>
+                    <View style={[styles.fieldRow, { justifyContent: 'space-between' }]}>
+                      <Text style={styles.readonlyText}>{user.basic_insurance}</Text>
+                      <Text style={styles.readonlyHint}>医护录入</Text>
+                    </View>
+                  </View>
+                )}
+                {!!user.commercial_medical && (
+                  <View style={styles.field}>
+                    <Text style={styles.fieldLabel}>医疗险</Text>
+                    <View style={[styles.fieldRow, { justifyContent: 'space-between' }]}>
+                      <Text style={styles.readonlyText}>{user.commercial_medical.split(',').join('、')}</Text>
+                      <Text style={styles.readonlyHint}>医护录入</Text>
+                    </View>
+                  </View>
+                )}
+                {!!user.critical_illness && (
+                  <View style={[styles.field, { borderBottomWidth: 0 }]}>
+                    <Text style={styles.fieldLabel}>重疾险</Text>
+                    <View style={[styles.fieldRow, { justifyContent: 'space-between' }]}>
+                      <Text style={styles.readonlyText}>{user.critical_illness}</Text>
+                      <Text style={styles.readonlyHint}>医护录入</Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+            </>
+          )}
+
           {/* ── 账号信息 ──────────────────────────────────────────── */}
           <Text style={styles.sectionLabel}>账号信息</Text>
           <View style={styles.card}>

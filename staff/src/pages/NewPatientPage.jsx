@@ -98,6 +98,8 @@ export default function NewPatientPage() {
     familyHistoryNote: '',
     // 女性
     menstrualHistory: '', maritalHistory: '',
+    // 医疗保障
+    basic_insurance: '', commercial_medical: [], critical_illness: '',
     // 儿童
     childProfile: {
       motherAge: '', gravida: '', para: '',
@@ -118,6 +120,10 @@ export default function NewPatientPage() {
   const setChild = k => e => setForm(f => ({ ...f, childProfile: { ...f.childProfile, [k]: e.target.value } }))
   const setLifestyle = k => e => setForm(f => ({ ...f, lifestyle: { ...f.lifestyle, [k]: e.target.value } }))
   const toggleDisease = d => setSelectedDiseases(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d])
+  const toggleCommercial = v => setForm(f => {
+    const arr = f.commercial_medical.includes(v) ? f.commercial_medical.filter(x => x !== v) : [...f.commercial_medical, v]
+    return { ...f, commercial_medical: arr }
+  })
 
   // 出生日期变化 → 自动计算年龄
   const handleBirthDateChange = e => {
@@ -163,6 +169,7 @@ export default function NewPatientPage() {
         height: form.height ? Number(form.height) : undefined,
         weight: form.weight ? Number(form.weight) : undefined,
         chronicDiseases: selectedDiseases,
+        commercial_medical: form.commercial_medical.join(','),
         assignedHealthManager: form.assignedHealthManager || undefined,
         assignedFamilyDoctor:  form.assignedFamilyDoctor  || undefined,
         assignedNutritionist:  form.assignedNutritionist  || undefined,
@@ -405,6 +412,44 @@ export default function NewPatientPage() {
                   <input className="form-input" value={form.childProfile.eyeScreening} onChange={setChild('eyeScreening')} placeholder="正常/异常" />
                 </div>
               </div>
+            </Section>
+          )}
+
+          {/* 医疗保障信息（仅成人） */}
+          {!isChild && (
+            <Section title="医疗保障信息" span={2}>
+              <Grid>
+                <F label="基础医疗保障" span={2}>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                    {['城镇医疗保险', '居民医疗保险', '自费'].map(opt => (
+                      <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
+                        <input type="radio" name="basic_insurance" value={opt} checked={form.basic_insurance === opt} onChange={() => setForm(f => ({ ...f, basic_insurance: opt }))} />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                </F>
+                <F label="医疗险（可多选）" span={2}>
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 4 }}>
+                    {['高端医疗险', '百万医疗险'].map(opt => (
+                      <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
+                        <input type="checkbox" checked={form.commercial_medical.includes(opt)} onChange={() => toggleCommercial(opt)} />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                </F>
+                <F label="重疾险" span={2}>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+                    {['有', '无'].map(opt => (
+                      <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
+                        <input type="radio" name="critical_illness" value={opt} checked={form.critical_illness === opt} onChange={() => setForm(f => ({ ...f, critical_illness: opt }))} />
+                        {opt}{opt === '有' ? '（已购买重大疾病保险）' : '（未购买）'}
+                      </label>
+                    ))}
+                  </div>
+                </F>
+              </Grid>
             </Section>
           )}
 

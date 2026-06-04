@@ -191,8 +191,10 @@ export default function PatientDetailPage() {
   const [editForm, setEditForm] = useState({})
   const [editingHealth, setEditingHealth] = useState(false)
   const [editingLifestyle, setEditingLifestyle] = useState(false)
+  const [editingInsurance, setEditingInsurance] = useState(false)
   const [healthForm, setHealthForm] = useState({})
   const [lifestyleForm, setLifestyleForm] = useState({})
+  const [insuranceForm, setInsuranceForm] = useState({})
 
   const load = async () => {
     try {
@@ -201,6 +203,7 @@ export default function PatientDetailPage() {
       setEditForm(buildEditForm(res.data.user))
       setHealthForm(buildHealthForm(res.data.user))
       setLifestyleForm(buildLifestyleForm(res.data.user))
+      setInsuranceForm(buildInsuranceForm(res.data.user))
     } catch (err) {
       toast(err.message || '加载失败')
     } finally {
@@ -297,6 +300,12 @@ export default function PatientDetailPage() {
     },
   })
 
+  const buildInsuranceForm = (u) => ({
+    basic_insurance: u.basic_insurance || '',
+    commercial_medical_arr: u.commercial_medical ? u.commercial_medical.split(',').filter(Boolean) : [],
+    critical_illness: u.critical_illness || '',
+  })
+
   const handleSave = async () => {
     try {
       await staffAPI.updatePatient(id, editForm)
@@ -306,6 +315,19 @@ export default function PatientDetailPage() {
     } catch (err) {
       toast(err.message || '保存失败')
     }
+  }
+
+  const handleSaveInsurance = async () => {
+    try {
+      await staffAPI.updatePatient(id, {
+        basic_insurance: insuranceForm.basic_insurance,
+        commercial_medical: insuranceForm.commercial_medical_arr.join(','),
+        critical_illness: insuranceForm.critical_illness,
+      })
+      toast('医疗保障信息已保存')
+      setEditingInsurance(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
   }
 
   const handleSaveHealth = async () => {
@@ -663,6 +685,84 @@ export default function PatientDetailPage() {
                       <span style={{ fontSize: 13, color: '#1A2B24' }}>{val}</span>
                     </div>
                   ) : null)}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 医疗保障信息 */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">医疗保障信息</div>
+              {!editingInsurance
+                ? <button className="btn btn-secondary btn-sm" onClick={() => { setEditingInsurance(true); setInsuranceForm(buildInsuranceForm(user)) }}>编辑</button>
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveInsurance}>保存</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingInsurance(false); setInsuranceForm(buildInsuranceForm(user)) }}>取消</button>
+                  </div>
+              }
+            </div>
+            <div className="card-body">
+              {editingInsurance ? (
+                <div style={{ display: 'grid', gap: 14 }}>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>基础医疗保障（三选一）</label>
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                      {['城镇医疗保险', '居民医疗保险', '自费'].map(opt => (
+                        <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
+                          <input type="radio" name="ins_basic" value={opt}
+                            checked={insuranceForm.basic_insurance === opt}
+                            onChange={() => setInsuranceForm(p => ({ ...p, basic_insurance: opt }))} />
+                          {opt}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>医疗险（可多选）</label>
+                    <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+                      {['高端医疗险', '百万医疗险'].map(opt => (
+                        <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
+                          <input type="checkbox"
+                            checked={insuranceForm.commercial_medical_arr?.includes(opt)}
+                            onChange={() => {
+                              const arr = insuranceForm.commercial_medical_arr || []
+                              const next = arr.includes(opt) ? arr.filter(x => x !== opt) : [...arr, opt]
+                              setInsuranceForm(p => ({ ...p, commercial_medical_arr: next }))
+                            }} />
+                          {opt}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>重疾险（二选一）</label>
+                    <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                      {['有', '无'].map(opt => (
+                        <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
+                          <input type="radio" name="ins_critical" value={opt}
+                            checked={insuranceForm.critical_illness === opt}
+                            onChange={() => setInsuranceForm(p => ({ ...p, critical_illness: opt }))} />
+                          {opt}{opt === '有' ? '（已购买重大疾病保险）' : '（未购买）'}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'grid', gap: 8 }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 80 }}>基础医疗保障：</span>
+                    <span style={{ fontSize: 13, color: '#1A2B24' }}>{user.basic_insurance || '-'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 80 }}>医疗险：</span>
+                    <span style={{ fontSize: 13, color: '#1A2B24' }}>{user.commercial_medical || '-'}</span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 80 }}>重疾险：</span>
+                    <span style={{ fontSize: 13, color: '#1A2B24' }}>{user.critical_illness || '-'}</span>
+                  </div>
                 </div>
               )}
             </div>
