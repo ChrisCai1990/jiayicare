@@ -333,31 +333,21 @@ function LandingScreen({ navigation, pendingQs, loading, onSelectStatic, onSelec
           完成问卷可帮助您的健管师更好地了解您的健康状况
         </Text>
 
-        {/* 固定健康初评问卷 */}
-        <TouchableOpacity
-          style={[styles.landingCard, { borderColor: colors.primary + '60' }]}
-          onPress={onSelectStatic}
-          activeOpacity={0.85}
-        >
-          <View style={[styles.landingIcon, { backgroundColor: colors.primary + '15' }]}>
-            <Ionicons name="clipboard-outline" size={28} color={colors.primary} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.landingCardTitle}>健康初评问卷</Text>
-            <Text style={styles.landingCardSub}>7道题 · 全面评估健康习惯与慢病风险</Text>
-            <View style={styles.landingCardMeta}>
-              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
-              <Text style={styles.landingCardMetaText}>约 3 分钟</Text>
-            </View>
-          </View>
-          <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-        </TouchableOpacity>
-
-        {/* 动态问卷 */}
+        {/* 动态问卷（由医护端推送）*/}
         {loading && (
           <View style={{ alignItems: 'center', padding: spacing.lg }}>
             <ActivityIndicator color={colors.primary} />
             <Text style={{ fontSize: 13, color: colors.textMuted, marginTop: 8 }}>检查待填问卷...</Text>
+          </View>
+        )}
+
+        {!loading && pendingQs.length === 0 && (
+          <View style={{ alignItems: 'center', paddingVertical: 48, gap: 12 }}>
+            <Ionicons name="checkmark-circle-outline" size={48} color={colors.textMuted} />
+            <Text style={{ fontSize: 15, color: colors.textSecondary, fontWeight: '600' }}>暂无待填问卷</Text>
+            <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center' }}>
+              您的健管师会在需要时向您推送问卷，届时将在此显示
+            </Text>
           </View>
         )}
 
@@ -441,11 +431,13 @@ export default function QuestionnaireScreen({ navigation }) {
     return ans;
   };
   const rawAnswer = getAnswerValue(answer);
-  const hasAnswer = q?.required
-    ? (Array.isArray(rawAnswer) ? rawAnswer.length > 0
-      : (typeof rawAnswer === 'object' && rawAnswer !== null ? Object.keys(rawAnswer).length > 0
-      : (rawAnswer !== undefined && rawAnswer !== null && rawAnswer !== '')))
-    : true;
+  const hasAnswer = !q?.required ? true
+    : q?.type === 'multi'
+      // 多选题：直接检查 answer 数组长度，避免经过 getAnswerValue 转换后丢失信息
+      ? (Array.isArray(answer) ? answer.length > 0 : Array.isArray(rawAnswer) ? rawAnswer.length > 0 : false)
+      : (Array.isArray(rawAnswer) ? rawAnswer.length > 0
+        : (typeof rawAnswer === 'object' && rawAnswer !== null ? Object.keys(rawAnswer).length > 0
+        : (rawAnswer !== undefined && rawAnswer !== null && rawAnswer !== '')));
 
   const setAnswer = (val) => setAnswers(prev => ({ ...prev, [q.id]: val }));
 

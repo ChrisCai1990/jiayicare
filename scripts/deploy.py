@@ -97,6 +97,7 @@ def run_deploy(backend_only=False):
         return exit_code, out
 
     # ── 拉取最新代码 ──
+    run(f'rm -f {REPO_DIR}/.git/index.lock', timeout=5)  # 清除残留锁文件
     run(f'cd {REPO_DIR} && git remote prune origin', timeout=15)
     code, _ = run(
         f'cd {REPO_DIR} && git fetch origin master && git reset --hard origin/master',

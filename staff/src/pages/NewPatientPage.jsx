@@ -94,6 +94,8 @@ export default function NewPatientPage() {
     source: '', remark: '',
     assignedHealthManager: '', assignedFamilyDoctor: '', assignedNutritionist: '',
     servicePackage: '', serviceStartDate: '', serviceExpiry: '',
+    // 家族史
+    familyHistoryNote: '',
     // 女性
     menstrualHistory: '', maritalHistory: '',
     // 儿童
@@ -173,6 +175,7 @@ export default function NewPatientPage() {
           pastHistory: form.pastHistory,
           medicHistory: form.medicHistory,
           surgeryHistory: form.surgeryHistory,
+          familyHistoryNote: form.familyHistoryNote,
         },
       }
       // 清理不再单独传的字段（避免重复）
@@ -322,6 +325,7 @@ export default function NewPatientPage() {
                 <F label="既往史" span={2}><textarea className="form-input" rows={2} placeholder="如：高血压病史10年" value={form.pastHistory} onChange={set('pastHistory')} /></F>
                 <F label="用药史" span={2}><textarea className="form-input" rows={2} placeholder="如：长期服用降压药" value={form.medicHistory} onChange={set('medicHistory')} /></F>
                 <F label="手术史" span={2}><textarea className="form-input" rows={2} placeholder="如：2010年阑尾切除术" value={form.surgeryHistory} onChange={set('surgeryHistory')} /></F>
+                <F label="家族史" span={2}><textarea className="form-input" rows={2} placeholder="如：父亲有高血压、糖尿病，母亲有乳腺癌" value={form.familyHistoryNote} onChange={set('familyHistoryNote')} /></F>
                 <F label="外伤史" span={2}><textarea className="form-input" rows={2} value={form.traumaHistory} onChange={set('traumaHistory')} /></F>
                 <F label="输血史" span={2}><textarea className="form-input" rows={2} value={form.transfusionHistory} onChange={set('transfusionHistory')} /></F>
                 <F label="传染病史" span={2}><textarea className="form-input" rows={2} value={form.infectiousHistory} onChange={set('infectiousHistory')} /></F>
@@ -339,6 +343,7 @@ export default function NewPatientPage() {
                 <F label="饮水情况"><input className="form-input" placeholder="如：每日2000ml" value={form.lifestyle.water} onChange={setLifestyle('water')} /></F>
                 <F label="吸烟情况"><input className="form-input" placeholder="如：不吸烟" value={form.lifestyle.smoking} onChange={setLifestyle('smoking')} /></F>
                 <F label="饮酒情况"><input className="form-input" placeholder="如：偶尔饮酒" value={form.lifestyle.alcohol} onChange={setLifestyle('alcohol')} /></F>
+                <F label="排便情况"><input className="form-input" placeholder="如：每日1次，成形" value={form.lifestyle.bowel} onChange={setLifestyle('bowel')} /></F>
                 <F label="情绪状态（初始记录）" span={2}><input className="form-input" placeholder="如：情绪稳定，偶有焦虑" value={form.lifestyle.mood} onChange={setLifestyle('mood')} /></F>
               </Grid>
             </Section>

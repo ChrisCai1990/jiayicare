@@ -747,24 +747,38 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
 
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
-  const { patientId, title, type, hospital, date, fileUrl, content, mimeType, fileSize, planId, planItemId } = req.body;
-  if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
-  const report = await MedicalReport.create({
-    user: patientId, title, type: type || 'other', hospital: hospital || '',
-    date: date || '', fileUrl: fileUrl || '', content: content || '',
-    mimeType: mimeType || '', fileSize: fileSize || '',
-    uploadedBy: req.staff._id, audit_status: 'unaudited',
-    planId: planId || null, planItemId: planItemId || null,
-  });
-  // 如果关联了方案项目，自动标记为待审核
-  if (planId && planItemId) {
-    const plan = await HealthPlan.findById(planId);
-    if (plan) {
-      const item = plan.items.id(planItemId);
-      if (item) { item.reportId = report._id; await plan.save(); }
+  try {
+    const { patientId, title, type, hospital, date, fileUrl, content, mimeType, fileSize, planId, planItemId } = req.body;
+    if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
+
+    // base64 内容限制 5MB（约 6.7MB 原始大小）
+    if (content && content.length > 6.7 * 1024 * 1024) {
+      return res.status(400).json({ success: false, message: '文件过大，请压缩后重试（最大约5MB）' });
     }
+    const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp'];
+    if (mimeType && !ALLOWED_MIME.includes(mimeType)) {
+      return res.status(400).json({ success: false, message: `不支持的文件格式（${mimeType}）` });
+    }
+
+    const report = await MedicalReport.create({
+      user: patientId, title, type: type || 'other', hospital: hospital || '',
+      date: date || '', fileUrl: fileUrl || '', content: content || '',
+      mimeType: mimeType || '', fileSize: fileSize || '',
+      uploadedBy: req.staff._id, audit_status: 'unaudited',
+      planId: planId || null, planItemId: planItemId || null,
+    });
+    if (planId && planItemId) {
+      const plan = await HealthPlan.findById(planId);
+      if (plan) {
+        const item = plan.items.id(planItemId);
+        if (item) { item.reportId = report._id; await plan.save(); }
+      }
+    }
+    res.json({ success: true, data: report });
+  } catch (err) {
+    console.error('上传报告失败:', err);
+    res.status(500).json({ success: false, message: '上传失败：' + (err.message || '服务器内部错误') });
   }
-  res.json({ success: true, data: report });
 });
 
 // PATCH /api/staff/medical-reports/:id/audit — 审核报告

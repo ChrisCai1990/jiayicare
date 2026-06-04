@@ -28,25 +28,32 @@ router.patch('/read-all', auth, async (req, res) => {
   res.json({ success: true, message: '全部已读' });
 });
 
-// 用户发送消息（给医生/健管师）
+// 用户发送消息（给医生/营养师/健管师）
 router.post('/', auth, async (req, res) => {
   try {
     const { to, content } = req.body;
     if (!content?.trim()) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
-    if (!['doctor', 'manager'].includes(to)) {
+    const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager'];
+    if (!VALID_RECIPIENTS.includes(to)) {
       return res.status(400).json({ success: false, message: '收件人无效' });
     }
 
+    // 检查营养师是否已分配
+    if (to === 'nutritionist' && !req.user.assignedNutritionist) {
+      return res.status(400).json({ success: false, message: '暂未分配营养师，请联系健管专员' });
+    }
+
+    const TITLE_MAP = { doctor: '家庭医师', nutritionist: '营养师', manager: '健管师' };
     const senderName = req.user.name || req.user.phone;
     const msg = await Message.create({
       user:    req.user._id,
       type:    'user',
       sender:  senderName,
-      title:   `用户留言 → ${to === 'doctor' ? '主治医师' : '健管师'}`,
+      title:   `用户留言 → ${TITLE_MAP[to]}`,
       content: content.trim(),
-      unread:  false,   // 已发送，用户自己发的不算未读
+      unread:  false,
     });
 
     console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);

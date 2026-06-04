@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const HealthRecord = require('../models/HealthRecord');
+const FollowUp = require('../models/FollowUp');
 const router = express.Router();
 
 // 获取记录列表（支持按类型/时间筛选）
@@ -75,6 +76,21 @@ router.post('/', auth, async (req, res) => {
       note: note || '',
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
     });
+
+    // 打卡后自动同步随访计划状态：找今日 planned 且含该 checkIn 类型的随访，更新为 in_progress
+    try {
+      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+      const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
+      await FollowUp.updateMany(
+        {
+          patientId: req.user._id,
+          status: 'planned',
+          date: { $gte: todayStart, $lte: todayEnd },
+          checkInItems: type,
+        },
+        { $set: { status: 'in_progress' } }
+      );
+    } catch { /* 不阻断主流程 */ }
 
     res.status(201).json({ success: true, data: record, message: '记录成功' });
   } catch (err) {

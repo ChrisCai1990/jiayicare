@@ -326,7 +326,11 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
           ) : (
             <View style={s.emptyItems}>
               <Ionicons name="list-outline" size={32} color={colors.border} />
-              <Text style={s.emptyItemsText}>医护团队正在整理具体任务项</Text>
+              {plan.notes ? (
+                <Text style={[s.emptyItemsText, { textAlign: 'left', lineHeight: 20, color: '#4A6558' }]}>{plan.notes}</Text>
+              ) : (
+                <Text style={s.emptyItemsText}>方案内容由您的健管师配置，如有疑问请咨询健管师</Text>
+              )}
             </View>
           )}
 

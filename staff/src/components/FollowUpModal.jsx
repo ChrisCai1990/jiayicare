@@ -527,16 +527,18 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               </div>
             )}
 
-            {/* 动态表单字段预设内容（选了方案模板且方案有关联表单时显示） */}
+            {/* 动态表单字段预设内容（选了方案模板 或 直接选了随访表单时显示） */}
             {(() => {
               const scheme = followupPlans.find(p => p._id === selectedSchemeId)
+              // 优先用方案关联的表单，如没有则用直接选择的表单
               const fields = scheme?.formId?.fields
+                || (planFormId ? followupForms.find(f => f._id === planFormId)?.fields : null)
               if (!fields?.length) return null
               return (
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">
                     随访表单内容
-                    <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400, marginLeft: 6 }}>已按方案预设填充，可修改</span>
+                    <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400, marginLeft: 6 }}>填写后将随随访计划保存</span>
                   </label>
                   <div style={{ background: '#F9F6F0', border: '1px solid #E0D9CE', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                     {fields.map((field, fi) => (

@@ -499,11 +499,18 @@ export default function HomeScreen({ navigation }) {
       :                              { label: '肥胖', bg: '#FDECEA', color: colors.danger })
     : { label: '待记录', bg: '#F5F5F5', color: colors.textMuted };
 
-  // ── 健康管家团队（真实数据）────────────────────────────────────
-  const careTeam = [
-    user?.doctor?.name  ? { name: user.doctor.name,  role: user.doctor.title  || '家庭医师',  online: true,  bg: TEAM_COLORS[0] } : null,
-    user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家',  online: true,  bg: TEAM_COLORS[1] } : null,
-  ].filter(Boolean);
+  // ── 健康管家团队（优先使用后端返回的 careTeam，兼容旧 doctor/manager 字段）
+  const careTeam = (() => {
+    const BG_COLORS = TEAM_COLORS;
+    if (user?.careTeam?.length > 0) {
+      return user.careTeam.map((m, i) => ({ name: m.name, role: m.role, online: true, bg: BG_COLORS[i % BG_COLORS.length] }));
+    }
+    // 兼容旧格式
+    return [
+      user?.doctor?.name  ? { name: user.doctor.name,  role: user.doctor.title  || '家庭医师', online: true, bg: BG_COLORS[0] } : null,
+      user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家', online: true, bg: BG_COLORS[1] } : null,
+    ].filter(Boolean);
+  })();
   const hour  = new Date().getHours();
   const greeting   = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
   const statusEmoji = score >= 80 ? '✨' : score >= 60 ? '💪' : '🌱';

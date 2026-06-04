@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { tasksAPI, remindersAPI } from '../../services/api';
+import { tasksAPI, remindersAPI, followupTasksAPI } from '../../services/api';
 import { mockTasks } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import EmptyState from '../../components/EmptyState';
@@ -289,6 +289,7 @@ export default function TasksScreen({ navigation }) {
   const [filter, setFilter]       = useState('全部');
   const [tasks, setTasks]         = useState([]);
   const [reminders, setReminders] = useState([]);
+  const [followupTasks, setFollowupTasks] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -298,9 +299,10 @@ export default function TasksScreen({ navigation }) {
 
   const loadData = useCallback(async () => {
     try {
-      const [taskRes, remRes] = await Promise.allSettled([
+      const [taskRes, remRes, fuRes] = await Promise.allSettled([
         tasksAPI.list(),
         remindersAPI.list(),
+        followupTasksAPI.list(),
       ]);
       if (taskRes.status === 'fulfilled' && taskRes.value?.success) {
         setTasks(taskRes.value.data);
@@ -311,6 +313,9 @@ export default function TasksScreen({ navigation }) {
         setReminders(remRes.value.data);
       } else {
         setReminders([]);
+      }
+      if (fuRes.status === 'fulfilled' && fuRes.value?.success) {
+        setFollowupTasks(fuRes.value.data || []);
       }
     } catch {
       setTasks(isDemo ? mockTasks : []);
@@ -373,7 +378,25 @@ export default function TasksScreen({ navigation }) {
     status: 'pending', assignee: '', isReminder: true,
   });
 
-  const allItems     = [...tasks.filter(t => t.status !== 'completed'), ...reminders.filter(r => r.enabled).map(reminderToItem)];
+  const followupToItem = (f) => ({
+    _id: f._id,
+    title: f.theme || '随访计划',
+    type: 'followup',
+    description: f.content || (f.checkInItems?.length ? `打卡项目：${f.checkInItems.join('、')}` : ''),
+    dueDate: f.date ? new Date(f.date).toISOString().slice(0, 10) : null,
+    dueTime: '',
+    priority: 'medium',
+    status: f.status === 'completed' ? 'completed' : (f.status === 'in_progress' ? 'in_progress' : 'pending'),
+    assignee: f.staffId?.name || '',
+    isFollowup: true,
+  });
+
+  const pendingFollowups = followupTasks.filter(f => f.status !== 'completed' && f.status !== 'cancelled');
+  const allItems     = [
+    ...tasks.filter(t => t.status !== 'completed'),
+    ...reminders.filter(r => r.enabled).map(reminderToItem),
+    ...pendingFollowups.map(followupToItem),
+  ];
   const completedItems = tasks.filter(t => t.status === 'completed');
 
   const today    = new Date().toISOString().slice(0, 10);

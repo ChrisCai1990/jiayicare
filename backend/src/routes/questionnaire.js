@@ -139,17 +139,15 @@ router.post('/', auth, async (req, res) => {
 
 // ── 动态问卷（管理员创建的结构化问卷）────────────────────────────
 
-// GET /api/questionnaire/pending — 获取当前用户待填动态问卷
+// GET /api/questionnaire/pending — 获取当前用户待填动态问卷（仅显示已推送给该用户的）
 router.get('/pending', auth, async (req, res) => {
   try {
     const questionnaires = await DynamicQuestionnaire.find({
       status: 'active',
-      $or: [
-        { targetType: 'all' },
-        { targetType: 'specific', targetUsers: req.user._id },
-      ],
+      targetType: 'specific',
+      targetUsers: req.user._id,
       respondedUsers: { $ne: req.user._id },
-    }).select('title description questions deadline scoringEnabled').sort({ sortOrder: 1, createdAt: -1 }).lean();
+    }).select('title description questions deadline scoringEnabled createdBy').sort({ sortOrder: 1, createdAt: -1 }).lean();
 
     res.json({ success: true, data: questionnaires });
   } catch (err) {

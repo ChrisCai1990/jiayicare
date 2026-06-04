@@ -280,7 +280,9 @@ export default function ProfileScreen({ navigation }) {
     health_prevention: '健康预防计划', chronic_stable: '慢病维稳计划',
     young_state: '健康年轻态计划', health_reshape: '健康重塑计划',
   };
-  const memberType = hasService ? (PACKAGE_LABELS[user.servicePackage] || user.servicePackage || '标准会员') : '未开通';
+  const memberType = hasService
+    ? (user.memberType || PACKAGE_LABELS[user.servicePackage] || user.servicePackage || '标准会员')
+    : '未开通';
   // 到期日格式化
   const expiryStr = hasService ? (user.serviceExpiry || '--') : '--';
 

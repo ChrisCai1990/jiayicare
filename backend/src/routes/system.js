@@ -100,16 +100,22 @@ router.post('/push', auth, async (req, res) => {
       }
     }
 
-    // ── 5. 近7天无健康记录 ──────────────────────────────────────────
-    const recentCount = await HealthRecord.countDocuments({
-      user: userId,
-      recordedAt: { $gt: sevenDaysAgo },
-    });
-    if (recentCount === 0) {
-      await maybeCreate(
-        '健康记录提醒',
-        '您已超过7天未记录健康数据。坚持定期监测血压、血糖等指标，有助于及早发现健康变化。点击首页"+"立即录入。'
-      );
+    // ── 5. 近7天无健康记录（仅对注册超过7天且有历史数据的用户提醒）──────────
+    const userCreatedAt = req.user.createdAt || new Date(0);
+    const accountAgeMs = now - new Date(userCreatedAt).getTime();
+    const accountAgeDays = accountAgeMs / 86400000;
+    if (accountAgeDays > 7) {
+      const totalRecordCount = await HealthRecord.countDocuments({ user: userId });
+      const recentCount = await HealthRecord.countDocuments({
+        user: userId,
+        recordedAt: { $gt: sevenDaysAgo },
+      });
+      if (totalRecordCount > 0 && recentCount === 0) {
+        await maybeCreate(
+          '健康记录提醒',
+          '您已超过7天未记录健康数据。坚持定期监测血压、血糖等指标，有助于及早发现健康变化。点击首页"+"立即录入。'
+        );
+      }
     }
 
     res.json({ success: true, pushed, message: pushed.length > 0 ? `推送 ${pushed.length} 条系统通知` : '暂无新通知' });

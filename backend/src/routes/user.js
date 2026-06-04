@@ -15,6 +15,7 @@ function parseBloodType(str) {
   return { abo, rh };
 }
 const auth = require('../middleware/auth');
+const Admin = require('../models/Admin');
 const User = require('../models/User');
 const UserChangeLog = require('../models/UserChangeLog');
 const HealthRecord = require('../models/HealthRecord');
@@ -36,12 +37,20 @@ const router = express.Router();
 
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://dist-maowxvion-jiayihui.vercel.app';
 
-// 获取当前用户信息（含健康基金汇总）
+// 服务包 ID → 中文名称映射
+const SERVICE_PACKAGE_LABELS = {
+  health_prevention: '健康预防计划',
+  chronic_stable:    '慢病维稳计划',
+  young_state:       '健康年轻态计划',
+  health_reshape:    '健康重塑计划',
+  pkg_1y:            '年度服务包',
+  pkg_6m:            '半年服务包',
+  pkg_3m:            '季度服务包',
+};
+
+// 获取当前用户信息（含健康基金汇总 + 责任团队真实数据）
 router.get('/me', auth, async (req, res) => {
   try {
-    // 计算健康基金分项：
-    //   企业赠送 = fundType === 'enterprise'
-    //   自有基金 = 其余所有类型（promotion / other 等）
     const giftFundAgg = await GiftRecord.aggregate([
       { $match: { patientId: req.user._id, giftType: 'fund', status: 'active' } },
       { $group: { _id: '$fundType', total: { $sum: '$fundAmount' } } },
@@ -53,7 +62,49 @@ router.get('/me', auth, async (req, res) => {
       corporate: Math.min(enterpriseFund, totalBalance),
       personal:  Math.max(0, totalBalance - enterpriseFund),
     };
-    res.json({ success: true, data: { ...req.user.toObject(), healthFund } });
+
+    // 查询已分配的责任人员信息（实时 populate）
+    const staffIds = [
+      req.user.assignedFamilyDoctor,
+      req.user.assignedNutritionist,
+      req.user.assignedHealthManager,
+    ].filter(Boolean);
+
+    const staffMap = {};
+    if (staffIds.length > 0) {
+      const staffList = await Admin.find({ _id: { $in: staffIds } }).select('name title role').lean();
+      staffList.forEach(s => { staffMap[String(s._id)] = s; });
+    }
+
+    const toStaffInfo = (id, roleLabel) => {
+      if (!id) return null;
+      const s = staffMap[String(id)];
+      if (!s) return null;
+      return { name: s.name, title: s.title || roleLabel };
+    };
+
+    const userData = req.user.toObject();
+    // 覆盖 doctor / manager 字段为真实分配数据
+    const fdInfo = toStaffInfo(req.user.assignedFamilyDoctor, '家庭医师');
+    const nsInfo = toStaffInfo(req.user.assignedNutritionist, '营养师');
+    const hmInfo = toStaffInfo(req.user.assignedHealthManager, '健管专员');
+
+    if (fdInfo) userData.doctor = { name: fdInfo.name, title: fdInfo.title };
+    if (hmInfo) userData.manager = { name: hmInfo.name, title: hmInfo.title };
+
+    // 附加完整团队字段（供 app 展示营养师）
+    userData.careTeam = [
+      fdInfo ? { name: fdInfo.name, role: fdInfo.title || '家庭医师' } : null,
+      nsInfo ? { name: nsInfo.name, role: nsInfo.title || '营养师' }   : null,
+      hmInfo ? { name: hmInfo.name, role: hmInfo.title || '健管专员' } : null,
+    ].filter(Boolean);
+
+    // 服务包名称映射（英文代码→中文）
+    if (userData.servicePackage && SERVICE_PACKAGE_LABELS[userData.servicePackage]) {
+      userData.servicePackageLabel = SERVICE_PACKAGE_LABELS[userData.servicePackage];
+    }
+
+    res.json({ success: true, data: { ...userData, healthFund } });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取用户信息失败', error: err.message });
   }

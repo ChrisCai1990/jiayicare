@@ -138,6 +138,7 @@ const DISEASE_MGMT_FIELDS = [
   { key: 'hospital', label: '医院', type: 'text' },
   { key: 'department', label: '科室', type: 'text' },
   { key: 'doctor', label: '医生', type: 'text' },
+  { key: 'result', label: '检查结果', type: 'textarea', placeholder: '检查结论、影像学结果等' },
   { key: 'medication', label: '用药意见', type: 'textarea' },
   { key: 'monthlyPlan', label: '本月管理方案', type: 'textarea' },
 ]
@@ -156,6 +157,7 @@ const MEDICAL_VISIT_FIELDS = [
   { key: 'department', label: '科室', type: 'text' },
   { key: 'doctor', label: '医生', type: 'text' },
   { key: 'reason', label: '就医原因', type: 'textarea' },
+  { key: 'result', label: '检查结果', type: 'textarea', placeholder: '检查结论、影像学结果等' },
   { key: 'expertAnalysis', label: '专家分析', type: 'textarea' },
   { key: 'guidance', label: '指导意见', type: 'textarea' },
   { key: 'followupPlan', label: '随访计划', type: 'textarea', placeholder: '下次就医/复查时间及内容' },
@@ -182,6 +184,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
         extras.hospital && `医院：${extras.hospital}`,
         extras.department && `科室：${extras.department}`,
         extras.doctor && `医生：${extras.doctor}`,
+        extras.result && `检查结果：${extras.result}`,
         extras.medication && `用药意见：${extras.medication}`,
         extras.monthlyPlan && `本月方案：${extras.monthlyPlan}`,
       ].filter(Boolean).join('\n')
@@ -204,6 +207,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
         extras.department && `科室：${extras.department}`,
         extras.doctor && `医生：${extras.doctor}`,
         extras.reason && `就医原因：${extras.reason}`,
+        extras.result && `检查结果：${extras.result}`,
         extras.expertAnalysis && `专家分析：${extras.expertAnalysis}`,
         extras.guidance && `指导意见：${extras.guidance}`,
         extras.followupPlan && `随访计划：${extras.followupPlan}`,

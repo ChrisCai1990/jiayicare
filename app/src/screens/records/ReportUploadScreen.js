@@ -345,8 +345,9 @@ function ReportPreviewModal({ report, onClose }) {
 
   if (!report) return null;
   const tm = TYPE_META[report.type] || TYPE_META.annual;
-  const isImage = mimeType.startsWith('image/');
-  const isPdf   = mimeType === 'application/pdf';
+  // 优先用 mimeType，fallback 到 content 前缀检测（兼容 mimeType 未存储的旧数据）
+  const isImage = mimeType.startsWith('image/') || content.startsWith('data:image/');
+  const isPdf   = mimeType === 'application/pdf' || content.startsWith('data:application/pdf');
   const hasContent = !!content;
 
   return (

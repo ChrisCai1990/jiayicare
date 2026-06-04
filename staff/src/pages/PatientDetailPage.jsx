@@ -5,6 +5,12 @@ import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 
 const TYPE_MAP = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
+const SERVICE_PACKAGE_LABELS = {
+  health_prevention: '健康预防计划', chronic_stable: '慢病维稳计划',
+  young_state: '健康年轻态计划', health_reshape: '健康重塑计划',
+  pkg_1y: '年度服务包', pkg_6m: '半年服务包', pkg_3m: '季度服务包',
+}
+const getServicePackageLabel = (pkg) => SERVICE_PACKAGE_LABELS[pkg] || pkg || '-'
 const STATUS_MAP = { completed: '已完成', missed: '未接通', planned: '计划中' }
 const STATUS_COLOR = { completed: '#22A06B', missed: '#DC3545', planned: '#D97706' }
 const PLAN_TYPE_LABEL = {
@@ -394,7 +400,7 @@ export default function PatientDetailPage() {
                 {left <= 0 ? '会员服务已到期' : `会员服务还剩 ${left} 天到期`}
               </span>
               <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>
-                {user.servicePackage} · 到期：{new Date(user.serviceExpiry).toLocaleDateString('zh-CN')}
+                {getServicePackageLabel(user.servicePackage)} · 到期：{new Date(user.serviceExpiry).toLocaleDateString('zh-CN')}
               </span>
             </div>
           </div>
@@ -557,7 +563,7 @@ export default function PatientDetailPage() {
                   <InfoRow label="营养师" value={user.assignedNutritionist?.name || '-'} />
                   <InfoRow label="健管专员" value={user.assignedHealthManager?.name || '-'} />
                   <InfoRow label="会员来源" value={user.source || '-'} />
-                  <InfoRow label="服务包" value={user.servicePackage || '-'} />
+                  <InfoRow label="服务包" value={getServicePackageLabel(user.servicePackage)} />
                   <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />
                   <InfoRow label="服务到期" value={user.serviceExpiry || '-'} />
                   <InfoRow label="健康评分" value={user.healthScore || '-'} />
@@ -613,7 +619,7 @@ export default function PatientDetailPage() {
                     { key: 'transfusionHistory', label: '输血史', nested: false },
                     { key: 'infectiousHistory', label: '传染病史', nested: false },
                     { key: 'vaccinationHistory', label: '预防接种史', nested: false },
-                    { key: 'familyHistoryNote', label: '家族史备注', nested: true },
+                    { key: 'familyHistoryNote', label: '家族史', nested: true },
                     ...(user.gender === '女' ? [
                       { key: 'menstrualHistory', label: '月经史', nested: true },
                       { key: 'maritalHistory', label: '婚育史', nested: true },
@@ -646,7 +652,7 @@ export default function PatientDetailPage() {
                     { label: '输血史', val: user.transfusionHistory },
                     { label: '传染病史', val: user.infectiousHistory },
                     { label: '预防接种史', val: user.vaccinationHistory },
-                    { label: '家族史备注', val: user.healthProfile?.familyHistoryNote },
+                    { label: '家族史', val: user.healthProfile?.familyHistoryNote },
                     ...(user.gender === '女' ? [
                       { label: '月经史', val: user.healthProfile?.menstrualHistory },
                       { label: '婚育史', val: user.healthProfile?.maritalHistory },
@@ -1141,7 +1147,7 @@ export default function PatientDetailPage() {
             <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
               {[
                 { label: '健康基金余额', value: `¥${(user.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
-                { label: '服务包', value: user.servicePackage || '未购买', color: '#0077B6' },
+                { label: '服务包', value: getServicePackageLabel(user.servicePackage) || '未购买', color: '#0077B6' },
                 { label: '服务到期', value: user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-', color: '#D97706' },
               ].map(item => (
                 <div key={item.label} style={{ padding: 16, background: '#f9f7f3', borderRadius: 10, textAlign: 'center' }}>
@@ -1364,7 +1370,7 @@ function MembershipPanel({ user, patientId, onRefresh }) {
         <div className="card-body">
           <InfoRow label="手机号" value={user.phone} />
           <InfoRow label="会员类型" value={user.memberType || (user.patientType === 'vip' ? 'VIP会员' : user.patientType === 'trial' ? '试用会员' : '普通会员')} />
-          <InfoRow label="服务包" value={user.servicePackage || '-'} />
+          <InfoRow label="服务包" value={getServicePackageLabel(user.servicePackage)} />
           <InfoRow label="服务开始" value={user.serviceStartDate ? new Date(user.serviceStartDate).toLocaleDateString('zh-CN') : '-'} />
           <InfoRow label="服务到期" value={user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-'} />
           <InfoRow label="会员来源" value={user.source || '-'} />

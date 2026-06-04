@@ -261,11 +261,24 @@ const PLAN_TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', f
 
 function UploadModal({ patients, onClose, onSaved }) {
   const [form, setForm] = useState({ patientId: '', title: '', type: 'annual', hospital: '', date: '', note: '', planId: '', planItemId: '' })
+  const [fileData, setFileData] = useState(null) // { content, mimeType, fileSize, name }
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [planItems, setPlanItems] = useState([])
   const [loadingItems, setLoadingItems] = useState(false)
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const handleFileChange = (e) => {
+    const file = e.target.files[0]
+    if (!file) return
+    if (file.size > 5 * 1024 * 1024) { setError('文件不能超过5MB'); return }
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      setFileData({ content: ev.target.result, mimeType: file.type, fileSize: Math.round(file.size / 1024) + 'KB', name: file.name })
+      setError('')
+    }
+    reader.readAsDataURL(file)
+  }
 
   // 切换会员时加载该会员的待完成方案项目
   const handlePatientChange = async (e) => {
@@ -296,7 +309,13 @@ function UploadModal({ patients, onClose, onSaved }) {
     if (!form.patientId || !form.title) { setError('会员和标题不能为空'); return }
     setSaving(true); setError('')
     try {
-      await staffAPI.uploadReport({ ...form, fileUrl: '', content: '', mimeType: '' })
+      await staffAPI.uploadReport({
+        ...form,
+        content: fileData?.content || '',
+        mimeType: fileData?.mimeType || '',
+        fileSize: fileData?.fileSize || '',
+        fileUrl: '',
+      })
       onSaved()
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
@@ -363,8 +382,19 @@ function UploadModal({ patients, onClose, onSaved }) {
             <label className="form-label">备注</label>
             <textarea className="form-input" rows={2} value={form.note} onChange={set('note')} />
           </div>
-          <div style={{ padding: '10px 12px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#8AA89C' }}>
-            📎 文件上传（PDF/图片）将在后续版本接入云存储后开放
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">选择文件（PDF/图片，最大5MB）</label>
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              onChange={handleFileChange}
+              style={{ display: 'block', width: '100%', padding: '8px 0', fontSize: 13 }}
+            />
+            {fileData && (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#22A06B' }}>
+                ✅ 已选择：{fileData.name} ({fileData.fileSize})
+              </div>
+            )}
           </div>
         </div>
         <div className="modal-footer">

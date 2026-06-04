@@ -470,6 +470,10 @@ export default function RecordsScreen({ navigation }) {
         const local = loadProfileFromStorage();
         const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
         const merged = { ...(local || fallback), ...data.healthProfile };
+        // 医护端录入的家族史备注（familyHistoryNote）同步显示到用户端
+        if (!merged.familyHistory && data.healthProfile.familyHistoryNote) {
+          merged.familyHistory = data.healthProfile.familyHistoryNote;
+        }
         setProfile(merged);
         saveProfileToStorage(merged);
       }
