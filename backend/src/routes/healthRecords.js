@@ -77,19 +77,52 @@ router.post('/', auth, async (req, res) => {
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
     });
 
-    // 打卡后自动同步随访计划状态：找今日含该 checkIn 类型的随访，更新为 completed
+    // 打卡后自动同步随访计划状态：找今日（CST UTC+8）含该 checkIn 类型的随访，更新为 completed
     try {
-      const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
-      const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
-      await FollowUp.updateMany(
-        {
-          patientId: req.user._id,
-          status: { $in: ['planned', 'in_progress'] },
-          date: { $gte: todayStart, $lte: todayEnd },
-          checkInItems: type,
-        },
-        { $set: { status: 'completed' } }
-      );
+      // 用 UTC+8 算今日边界，避免服务器时区误差
+      const CST_OFFSET = 8 * 60 * 60 * 1000;
+      const nowCST  = new Date(Date.now() + CST_OFFSET);
+      const dateStr = nowCST.toISOString().split('T')[0]; // YYYY-MM-DD (CST)
+      // 今日 00:00 ~ 23:59:59 (CST) 转为 UTC 存入 MongoDB
+      const todayStart = new Date(dateStr + 'T00:00:00+08:00');
+      const todayEnd   = new Date(dateStr + 'T23:59:59.999+08:00');
+      const matched = await FollowUp.find({
+        patientId: req.user._id,
+        status: { $in: ['planned', 'in_progress'] },
+        date: { $gte: todayStart, $lte: todayEnd },
+        checkInItems: type,
+      });
+      if (matched.length > 0) {
+        const ids = matched.map(f => f._id);
+        await FollowUp.updateMany({ _id: { $in: ids } }, { $set: { status: 'completed', completedAt: new Date() } });
+
+        // 若有 repeatDaily=true 的随访，为明天自动创建 planned 记录
+        const tomorrowStr = new Date(Date.now() + CST_OFFSET + 86400000).toISOString().split('T')[0];
+        const tomorrowDate = new Date(tomorrowStr + 'T08:00:00+08:00');
+        for (const fu of matched.filter(f => f.repeatDaily)) {
+          // 检查明天是否已存在同一患者同一 checkInItems 的 planned 记录
+          const exists = await FollowUp.findOne({
+            patientId: fu.patientId,
+            staffId: fu.staffId,
+            date: { $gte: new Date(tomorrowStr + 'T00:00:00+08:00'), $lte: new Date(tomorrowStr + 'T23:59:59+08:00') },
+            checkInItems: { $all: fu.checkInItems },
+            status: 'planned',
+          });
+          if (!exists) {
+            await FollowUp.create({
+              patientId: fu.patientId,
+              staffId:   fu.staffId,
+              assignedTo:fu.assignedTo,
+              date: tomorrowDate,
+              type: fu.type,
+              status: 'planned',
+              theme: fu.theme,
+              checkInItems: fu.checkInItems,
+              repeatDaily: true,
+            });
+          }
+        }
+      }
     } catch { /* 不阻断主流程 */ }
 
     res.status(201).json({ success: true, data: record, message: '记录成功' });

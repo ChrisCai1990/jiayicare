@@ -133,6 +133,21 @@ const THEME_TEMPLATES = {
   '疫苗接种提醒': '本次随访提醒疫苗接种计划。\n建议接种疫苗：\n接种时间建议：\n注意事项：',
 }
 
+// 每日重复开关
+function RepeatDailyToggle({ value, onChange }) {
+  return (
+    <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', userSelect: 'none', fontSize: 12, color: value ? '#1E6B50' : '#8AA89C' }}>
+      <div
+        onClick={() => onChange(!value)}
+        style={{ width: 32, height: 18, borderRadius: 9, background: value ? '#1E6B50' : '#ddd', position: 'relative', transition: 'background 0.2s', cursor: 'pointer', flexShrink: 0 }}
+      >
+        <div style={{ position: 'absolute', top: 2, left: value ? 16 : 2, width: 14, height: 14, borderRadius: '50%', background: '#fff', transition: 'left 0.2s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
+      </div>
+      每日自动重复（完成当天后自动创建明日任务）
+    </label>
+  )
+}
+
 // 计划模式每行空模板
 const emptyRow = () => ({
   id: Date.now() + Math.random(),
@@ -176,6 +191,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
   // 打卡任务
   const [checkInItems, setCheckInItems] = useState([])
+  const [repeatDaily, setRepeatDaily]   = useState(false)
   // 随访方案模板选择
   const [followupPlans, setFollowupPlans] = useState([])
   const [selectedSchemeId, setSelectedSchemeId] = useState('')
@@ -262,6 +278,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           followUpSchemeId: selectedSchemeId || null,
           formData: Object.keys(schemeFormData).length > 0 ? schemeFormData : null,
           checkInItems: checkInItems.length > 0 ? checkInItems : undefined,
+          repeatDaily: checkInItems.length > 0 ? repeatDaily : undefined,
         })
       }))
       onSaved()
@@ -505,8 +522,11 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                 })}
               </div>
               {checkInItems.length > 0 && (
-                <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 4 }}>
-                  已选 {checkInItems.length} 项，将出现在会员首页今日打卡
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 6, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 11, color: '#1E6B50' }}>
+                    已选 {checkInItems.length} 项，将出现在会员首页今日打卡
+                  </div>
+                  <RepeatDailyToggle value={repeatDaily} onChange={setRepeatDaily} />
                 </div>
               )}
             </div>

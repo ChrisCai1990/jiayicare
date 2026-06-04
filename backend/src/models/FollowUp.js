@@ -36,6 +36,9 @@ const followUpSchema = new mongoose.Schema({
     default: [],
     // 可选值：bloodPressure / bloodSugar / heartRate / weight / sleep / diet / exercise / water / alcohol
   },
+  // 每日自动重复（针对"每日血压/血糖监测"场景）
+  repeatDaily:  { type: Boolean, default: false },
+  completedAt:  { type: Date, default: null },  // 实际完成时间
 }, { timestamps: true });
 
 followUpSchema.index({ staffId: 1, date: -1 });
