@@ -253,7 +253,7 @@ function ConfirmModal({ visible, title, message, confirmText, confirmColor, onCo
 }
 
 // ── 方案卡片 ─────────────────────────────────────────────────────
-function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult }) {
+function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew }) {
   const meta = TYPE_META[plan.type] || DEFAULT_META;
   const sm   = STATUS_META[plan.status] || STATUS_META.draft;
   const isDraft = plan.status === 'draft';
@@ -378,9 +378,19 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                 <Text style={s.confirmBtnText}>{confirming ? '确认中…' : '确认方案'}</Text>
               </TouchableOpacity>
             ) : plan.confirmedAt ? (
-              <View style={[s.consultBtn, { borderColor: colors.success + '60', flex: 1, backgroundColor: '#E8F5EF' }]}>
-                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                <Text style={[s.consultBtnText, { color: colors.success }]}>已确认</Text>
+              <View style={{ flexDirection: 'row', flex: 1, gap: 8 }}>
+                <View style={[s.consultBtn, { borderColor: colors.success + '60', flex: 1, backgroundColor: '#E8F5EF' }]}>
+                  <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                  <Text style={[s.consultBtnText, { color: colors.success }]}>已确认</Text>
+                </View>
+                <TouchableOpacity
+                  style={[s.consultBtn, { borderColor: colors.primary + '60', flex: 1 }]}
+                  activeOpacity={0.8}
+                  onPress={() => onRenew && onRenew(plan)}
+                >
+                  <Ionicons name="refresh-outline" size={14} color={colors.primary} />
+                  <Text style={[s.consultBtnText, { color: colors.primary }]}>续约</Text>
+                </TouchableOpacity>
               </View>
             ) : (
               <TouchableOpacity
@@ -615,6 +625,7 @@ export default function ServicePlansScreen({ navigation }) {
                 onConfirmPlan={handleConfirmPlan}
                 confirming={confirmingPlanId === plan._id}
                 onConsult={handleConsult}
+                onRenew={() => navigation.navigate('Renewal')}
               />
             ))
           )}

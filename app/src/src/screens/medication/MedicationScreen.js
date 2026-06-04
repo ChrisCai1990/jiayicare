@@ -31,9 +31,10 @@ function MedCard({ med, onCheck, onDelete }) {
   const compColor = compliance >= 90 ? colors.success : compliance >= 75 ? colors.warning : colors.danger;
   const todayChecked = med.todayChecked || false;
   const medId = med._id || med.id;
+  const isStaffCreated = !!med.createdByStaff;
 
   return (
-    <TouchableOpacity activeOpacity={0.9} onLongPress={() => onDelete(medId, med.name)}>
+    <TouchableOpacity activeOpacity={0.9} onLongPress={() => !isStaffCreated && onDelete(medId, med.name)}>
       <View style={[styles.medCard, todayChecked && styles.medCardDone]}>
         <View style={styles.medHeader}>
           <View style={styles.medLeft}>
@@ -41,19 +42,28 @@ function MedCard({ med, onCheck, onDelete }) {
               <Ionicons name="medkit" size={20} color={todayChecked ? colors.success : colors.primary} />
             </View>
             <View style={styles.medInfo}>
-              <Text style={styles.medName}>{med.name}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <Text style={styles.medName}>{med.name}</Text>
+                {isStaffCreated && (
+                  <View style={{ backgroundColor: '#E8F5EF', paddingHorizontal: 5, paddingVertical: 1, borderRadius: 4 }}>
+                    <Text style={{ fontSize: 10, color: colors.primary, fontWeight: '600' }}>医嘱</Text>
+                  </View>
+                )}
+              </View>
               <Text style={styles.medDose}>
-                {med.dose || med.dosage} · {med.freq || med.frequency || '每日1次'} · {med.time || med.timing || med.scheduledTime || '早饭后'}
+                {med.dose || med.dosage} · {med.freq || med.frequency || '每日1次'} · {med.time || med.timing || med.scheduledTime || ''}
               </Text>
               {(med.purpose || med.note) ? <Text style={styles.medPurpose}>{med.purpose || med.note}</Text> : null}
             </View>
           </View>
-          <TouchableOpacity
-            onPress={() => onDelete(medId, med.name)}
-            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-          >
-            <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
-          </TouchableOpacity>
+          {!isStaffCreated && (
+            <TouchableOpacity
+              onPress={() => onDelete(medId, med.name)}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          )}
         </View>
 
         <View style={styles.medFooter}>

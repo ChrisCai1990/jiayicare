@@ -3,13 +3,13 @@ const auth = require('../middleware/auth');
 const Medication = require('../models/Medication');
 const router = express.Router();
 
-// 获取用药列表（含全生命周期：进行中 + 已停用）
+// 获取用药列表（含全生命周期：进行中 + 已停用，包括医护录入）
 router.get('/', auth, async (req, res) => {
   const { status } = req.query; // 'active' | 'stopped' | all
   const filter = { user: req.user._id, active: true };
   if (status === 'active')  filter.stopped = false;
   if (status === 'stopped') filter.stopped = true;
-  const meds = await Medication.find(filter).sort({ createdAt: -1 });
+  const meds = await Medication.find(filter).sort({ createdByStaff: -1, createdAt: -1 });
   res.json({ success: true, data: meds });
 });
 

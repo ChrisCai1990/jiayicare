@@ -9,7 +9,7 @@ router.get('/', auth, async (req, res) => {
   const filter = { user: req.user._id };
   if (status === 'active')   filter.stopped = false;
   if (status === 'stopped')  filter.stopped = true;
-  const items = await Supplement.find(filter).sort({ createdAt: -1 });
+  const items = await Supplement.find(filter).sort({ createdByStaff: -1, createdAt: -1 });
   res.json({ success: true, data: items });
 });
 

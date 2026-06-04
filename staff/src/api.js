@@ -186,4 +186,20 @@ export const staffAPI = {
   createPackage:     (data) => req('/staff/marketing/packages', { method: 'POST', body: JSON.stringify(data) }),
   updatePackage:     (id,d) => req(`/staff/marketing/packages/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   deletePackage:     (id)   => req(`/staff/marketing/packages/${id}`, { method: 'DELETE' }),
+
+  // 患者药物管理
+  getPatientMedications:    (id)       => req(`/staff/patients/${id}/medications`),
+  createPatientMedication:  (id, data) => req(`/staff/patients/${id}/medications`, { method: 'POST', body: JSON.stringify(data) }),
+  updatePatientMedication:  (id, medId, data) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deletePatientMedication:  (id, medId) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'DELETE' }),
+
+  // 患者营养素管理
+  getPatientSupplements:    (id)       => req(`/staff/patients/${id}/supplements`),
+  createPatientSupplement:  (id, data) => req(`/staff/patients/${id}/supplements`, { method: 'POST', body: JSON.stringify(data) }),
+  updatePatientSupplement:  (id, supId, data) => req(`/staff/patients/${id}/supplements/${supId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deletePatientSupplement:  (id, supId) => req(`/staff/patients/${id}/supplements/${supId}`, { method: 'DELETE' }),
+
+  // 患者专项筛查 & 日常打卡（医护端查看）
+  getPatientScreening:      (id)       => req(`/staff/patients/${id}/screening`),
+  getPatientHealthRecords:  (id, p={}) => req(`/staff/patients/${id}/health-records?` + qs(p)),
 }

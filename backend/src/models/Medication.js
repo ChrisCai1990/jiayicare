@@ -11,11 +11,16 @@ const medicationSchema = new mongoose.Schema({
   timing:       { type: String },                    // 服药时机（早饭后等）
   startDate:    { type: String },                    // 开始使用日期
   // 停用信息
+  endDate:      { type: String, default: '' },       // 计划结束日期
+  purpose:      { type: String, default: '' },       // 用药目的/说明
   stopped:      { type: Boolean, default: false },   // 是否已停用
   stopDate:     { type: String, default: '' },       // 停用日期
   stopReason:   { type: String, default: '' },       // 停用原因（可选）
   note:         { type: String, default: '' },
   active:       { type: Boolean, default: true },
+  // 医护端录入标识
+  createdByStaff: { type: Boolean, default: false },
+  staffId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   // 今日打卡记录
   checkIns: [{
     date:   { type: String }, // YYYY-MM-DD

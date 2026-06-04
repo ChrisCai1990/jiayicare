@@ -169,7 +169,7 @@ export default function PatientDetailPage() {
   const { staff } = useStaff()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('info')  // info | records | reports | plans | serviceRecords | orders | family | membership | billing
+  const [tab, setTab] = useState('info')  // info | records | reports | medications | requisitions | plans | followups | serviceRecords | orders | family | membership | billing
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
@@ -195,6 +195,20 @@ export default function PatientDetailPage() {
   const [healthForm, setHealthForm] = useState({})
   const [lifestyleForm, setLifestyleForm] = useState({})
   const [insuranceForm, setInsuranceForm] = useState({})
+  // 药物 & 营养素
+  const [medications, setMedications] = useState([])
+  const [supplements, setSupplements] = useState([])
+  const [medSubTab, setMedSubTab] = useState('med') // 'med' | 'sup'
+  const [showMedModal, setShowMedModal] = useState(false)
+  const [showSupModal, setShowSupModal] = useState(false)
+  const [editingMed, setEditingMed] = useState(null)
+  const [editingSup, setEditingSup] = useState(null)
+  const [medForm, setMedForm] = useState({})
+  const [supForm, setSupForm] = useState({})
+  const [medSaving, setMedSaving] = useState(false)
+  // 专项筛查 & 打卡记录
+  const [screeningItems, setScreeningItems] = useState([])
+  const [healthRecords, setHealthRecords] = useState([])
 
   const load = async () => {
     try {
@@ -230,6 +244,22 @@ export default function PatientDetailPage() {
   const loadRequisitions = async () => {
     try { const res = await staffAPI.getPatientRequisitions(id); setRequisitions(res.data) } catch {}
   }
+  const loadMedications = async () => {
+    try { const r = await staffAPI.getPatientMedications(id); setMedications(r.data || []) } catch {}
+  }
+  const loadSupplements = async () => {
+    try { const r = await staffAPI.getPatientSupplements(id); setSupplements(r.data || []) } catch {}
+  }
+  const loadScreening = async () => {
+    try {
+      const [sr, hr] = await Promise.allSettled([
+        staffAPI.getPatientScreening(id),
+        staffAPI.getPatientHealthRecords(id, { limit: 30 }),
+      ])
+      if (sr.status === 'fulfilled') setScreeningItems(sr.value.data || [])
+      if (hr.status === 'fulfilled') setHealthRecords(hr.value.data || [])
+    } catch {}
+  }
 
   const openReportDetail = async (r) => {
     setShowReportDetail(r)
@@ -248,6 +278,8 @@ export default function PatientDetailPage() {
     else if (tab === 'reports') loadReports()
     else if (tab === 'serviceRecords') loadServiceRecords()
     else if (tab === 'requisitions') loadRequisitions()
+    else if (tab === 'medications') { loadMedications(); loadSupplements() }
+    else if (tab === 'records') loadScreening()
     else if (tab === 'orders') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
   }, [tab])
 
@@ -435,6 +467,7 @@ export default function PatientDetailPage() {
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
+          { key: 'medications',   label: '药物及营养素' },
           { key: 'requisitions',  label: '检查开单' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
@@ -883,6 +916,231 @@ export default function PatientDetailPage() {
             </table>
           ) : (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康记录</div>
+          )}
+        </div>
+
+        {/* 专项筛查结果 */}
+        <div className="card" style={{ marginTop: 16 }}>
+          <div className="card-header"><div className="card-title">专项筛查结果</div></div>
+          {screeningItems.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#aaa' }}>暂无专项筛查数据</div>
+          ) : (
+            <table className="table">
+              <thead><tr><th>筛查项目</th><th>分类</th><th>结果</th><th>记录时间</th></tr></thead>
+              <tbody>
+                {screeningItems.slice(0, 20).map(s => (
+                  <tr key={s._id}>
+                    <td style={{ fontWeight: 500 }}>{s.label || s.itemKey}</td>
+                    <td><span className="badge badge-info">{s.category || '-'}</span></td>
+                    <td style={{ fontSize: 13 }}>{s.result || s.value || '-'}</td>
+                    <td style={{ color: '#8AA89C', fontSize: 12 }}>
+                      {s.recordedAt ? new Date(s.recordedAt).toLocaleDateString('zh-CN') : '-'}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ── Medications Tab ── */}
+      {tab === 'medications' && (
+        <div>
+          {/* 子 tab 切换 */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+            {[{ key: 'med', label: '💊 药物管理' }, { key: 'sup', label: '🥗 营养素管理' }].map(t => (
+              <button key={t.key}
+                className={`btn btn-sm ${medSubTab === t.key ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setMedSubTab(t.key)}>{t.label}</button>
+            ))}
+            <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
+              onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setShowSupModal(true) } }}>
+              ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
+            </button>
+          </div>
+
+          {medSubTab === 'med' && (
+            <div className="card" style={{ padding: 0 }}>
+              {medications.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用药记录</div>
+              ) : (
+                <table className="table">
+                  <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>开始日期</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    {medications.map(m => (
+                      <tr key={m._id}>
+                        <td style={{ fontWeight: 600 }}>{m.name}</td>
+                        <td style={{ color: '#666' }}>{m.brandName || '-'}</td>
+                        <td>{m.dosage}</td>
+                        <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
+                        <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || m.note || '-'}</td>
+                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.endDate ? ` → ${m.endDate}` : ''}</td>
+                        <td>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: m.stopped ? '#aaa' : '#22A06B' }}>
+                            {m.stopped ? '已停用' : '服用中'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => {
+                              setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
+                              setEditingMed(m._id); setShowMedModal(true)
+                            }}>编辑</button>
+                            {!m.stopped && (
+                              <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
+                                onClick={async () => { if (window.confirm('确认停用此药物？')) { await staffAPI.updatePatientMedication(id, m._id, { stopped: true }); loadMedications() } }}>
+                                停用
+                              </button>
+                            )}
+                            <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
+                              onClick={async () => { if (window.confirm('确认删除？')) { await staffAPI.deletePatientMedication(id, m._id); loadMedications() } }}>
+                              删除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {medSubTab === 'sup' && (
+            <div className="card" style={{ padding: 0 }}>
+              {supplements.length === 0 ? (
+                <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无营养素记录</div>
+              ) : (
+                <table className="table">
+                  <thead><tr><th>营养素名称</th><th>品牌</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>开始日期</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    {supplements.map(s => (
+                      <tr key={s._id}>
+                        <td style={{ fontWeight: 600 }}>{s.name}</td>
+                        <td style={{ color: '#666' }}>{s.brand || '-'}</td>
+                        <td>{s.dosage}</td>
+                        <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
+                        <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || s.note || '-'}</td>
+                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.startDate || '-'}{s.endDate ? ` → ${s.endDate}` : ''}</td>
+                        <td>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: s.stopped ? '#aaa' : '#22A06B' }}>
+                            {s.stopped ? '已停用' : '补充中'}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn btn-secondary btn-sm" onClick={() => {
+                              setSupForm({ name: s.name, brand: s.brand || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
+                              setEditingSup(s._id); setShowSupModal(true)
+                            }}>编辑</button>
+                            {!s.stopped && (
+                              <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
+                                onClick={async () => { if (window.confirm('确认停用？')) { await staffAPI.updatePatientSupplement(id, s._id, { stopped: true }); loadSupplements() } }}>
+                                停用
+                              </button>
+                            )}
+                            <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
+                              onClick={async () => { if (window.confirm('确认删除？')) { await staffAPI.deletePatientSupplement(id, s._id); loadSupplements() } }}>
+                              删除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
+
+          {/* 新增/编辑药物弹窗 */}
+          {showMedModal && (
+            <div className="modal-overlay" onClick={() => setShowMedModal(false)}>
+              <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3 className="modal-title">{editingMed ? '编辑药物' : '新增药物'}</h3>
+                  <button className="modal-close" onClick={() => setShowMedModal(false)}>✕</button>
+                </div>
+                <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {[
+                    { k: 'name', label: '药品化学名 *', full: false, placeholder: '如：苯磺酸氨氯地平' },
+                    { k: 'brandName', label: '商品名', full: false, placeholder: '如：络活喜' },
+                    { k: 'dosage', label: '剂量 *', full: false, placeholder: '如：5mg' },
+                    { k: 'method', label: '用药方式', full: false, placeholder: '如：口服' },
+                    { k: 'frequency', label: '频次 *', full: false, placeholder: '如：每日1次' },
+                    { k: 'timing', label: '服药时机', full: false, placeholder: '如：早饭后' },
+                    { k: 'startDate', label: '开始日期', full: false, type: 'date' },
+                    { k: 'endDate', label: '计划结束日期', full: false, type: 'date' },
+                    { k: 'purpose', label: '用药目的', full: true, placeholder: '如：控制血压' },
+                    { k: 'note', label: '备注', full: true, placeholder: '注意事项' },
+                  ].map(({ k, label, full, placeholder, type }) => (
+                    <div key={k} className="form-group" style={{ gridColumn: full ? '1/-1' : 'auto', marginBottom: 0 }}>
+                      <label className="form-label">{label}</label>
+                      <input className="form-input" type={type || 'text'} placeholder={placeholder} value={medForm[k] || ''}
+                        onChange={e => setMedForm(f => ({ ...f, [k]: e.target.value }))} />
+                    </div>
+                  ))}
+                </div>
+                <div className="modal-footer">
+                  <button className="btn btn-ghost" onClick={() => setShowMedModal(false)}>取消</button>
+                  <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
+                    if (!medForm.name || !medForm.dosage || !medForm.frequency) { toast('请填写必填项'); return }
+                    setMedSaving(true)
+                    try {
+                      if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
+                      else await staffAPI.createPatientMedication(id, medForm)
+                      setShowMedModal(false); loadMedications()
+                    } catch (err) { toast(err.message) }
+                    finally { setMedSaving(false) }
+                  }}>{medSaving ? '保存中...' : '保存'}</button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 新增/编辑营养素弹窗 */}
+          {showSupModal && (
+            <div className="modal-overlay" onClick={() => setShowSupModal(false)}>
+              <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3 className="modal-title">{editingSup ? '编辑营养素' : '新增营养素'}</h3>
+                  <button className="modal-close" onClick={() => setShowSupModal(false)}>✕</button>
+                </div>
+                <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  {[
+                    { k: 'name', label: '营养素名称 *', full: false, placeholder: '如：维生素C' },
+                    { k: 'brand', label: '品牌', full: false, placeholder: '如：汤臣倍健' },
+                    { k: 'dosage', label: '剂量 *', full: false, placeholder: '如：500mg' },
+                    { k: 'method', label: '使用方式', full: false, placeholder: '如：随餐' },
+                    { k: 'frequency', label: '频次 *', full: false, placeholder: '如：每日1次' },
+                    { k: 'startDate', label: '开始日期', full: false, type: 'date' },
+                    { k: 'endDate', label: '计划结束日期', full: false, type: 'date' },
+                    { k: 'purpose', label: '补充目的', full: true, placeholder: '如：提高免疫力' },
+                    { k: 'note', label: '备注', full: true, placeholder: '注意事项' },
+                  ].map(({ k, label, full, placeholder, type }) => (
+                    <div key={k} className="form-group" style={{ gridColumn: full ? '1/-1' : 'auto', marginBottom: 0 }}>
+                      <label className="form-label">{label}</label>
+                      <input className="form-input" type={type || 'text'} placeholder={placeholder} value={supForm[k] || ''}
+                        onChange={e => setSupForm(f => ({ ...f, [k]: e.target.value }))} />
+                    </div>
+                  ))}
+                </div>
+                <div className="modal-footer">
+                  <button className="btn btn-ghost" onClick={() => setShowSupModal(false)}>取消</button>
+                  <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
+                    if (!supForm.name || !supForm.dosage || !supForm.frequency) { toast('请填写必填项'); return }
+                    setMedSaving(true)
+                    try {
+                      if (editingSup) await staffAPI.updatePatientSupplement(id, editingSup, supForm)
+                      else await staffAPI.createPatientSupplement(id, supForm)
+                      setShowSupModal(false); loadSupplements()
+                    } catch (err) { toast(err.message) }
+                    finally { setMedSaving(false) }
+                  }}>{medSaving ? '保存中...' : '保存'}</button>
+                </div>
+              </div>
+            </div>
           )}
         </div>
       )}

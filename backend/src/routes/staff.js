@@ -34,6 +34,9 @@ const SpecialExam       = require('../models/SpecialExam');
 const AbnormalReview    = require('../models/AbnormalReview');
 const Task              = require('../models/Task');
 const PlanTemplate      = require('../models/PlanTemplate');
+const Medication        = require('../models/Medication');
+const Supplement        = require('../models/Supplement');
+const UserScreeningItem = require('../models/UserScreeningItem');
 const staffAuth = require('../middleware/staffAuth');
 const router = express.Router();
 
@@ -1877,9 +1880,101 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
   }
 });
 
-// ── 推送年度管理方案时同步写 PushRecord ──────────────────────────
-// (仅对 handlePush 的补充；主路由保持不变)
-// 此处已通过 PATCH /patients/:id/annual-plan/push 处理，
-// Fix 7 将在该路由中追加 PushRecord 写入（见下方 patch）
+// ── 患者药物管理（医护端 CRUD）────────────────────────────────────
+router.get('/patients/:id/medications', staffAuth, async (req, res) => {
+  try {
+    const meds = await Medication.find({ user: req.params.id, active: true }).sort({ createdAt: -1 });
+    res.json({ success: true, data: meds });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/patients/:id/medications', staffAuth, async (req, res) => {
+  try {
+    const { name, brandName, dosage, method, frequency, timing, startDate, endDate, purpose, note } = req.body;
+    if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
+    const med = await Medication.create({
+      user: req.params.id, name, brandName: brandName || '', dosage, method: method || '口服',
+      frequency, timing: timing || '', startDate: startDate || '', endDate: endDate || '',
+      purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
+    });
+    res.status(201).json({ success: true, data: med });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
+  try {
+    const med = await Medication.findOneAndUpdate(
+      { _id: req.params.medId, user: req.params.id },
+      { $set: req.body }, { new: true }
+    );
+    if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
+    res.json({ success: true, data: med });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
+  try {
+    await Medication.findOneAndUpdate({ _id: req.params.medId, user: req.params.id }, { active: false });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 患者营养素管理（医护端 CRUD）──────────────────────────────────
+router.get('/patients/:id/supplements', staffAuth, async (req, res) => {
+  try {
+    const sups = await Supplement.find({ user: req.params.id, stopped: false }).sort({ createdAt: -1 });
+    res.json({ success: true, data: sups });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
+  try {
+    const { name, brand, dosage, method, frequency, startDate, endDate, purpose, note } = req.body;
+    if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '名称、剂量、频次不能为空' });
+    const sup = await Supplement.create({
+      user: req.params.id, name, brand: brand || '', dosage, method: method || '随餐',
+      frequency, startDate: startDate || '', endDate: endDate || '',
+      purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
+    });
+    res.status(201).json({ success: true, data: sup });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => {
+  try {
+    const sup = await Supplement.findOneAndUpdate(
+      { _id: req.params.supId, user: req.params.id },
+      { $set: req.body }, { new: true }
+    );
+    if (!sup) return res.status(404).json({ success: false, message: '记录不存在' });
+    res.json({ success: true, data: sup });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.delete('/patients/:id/supplements/:supId', staffAuth, async (req, res) => {
+  try {
+    await Supplement.findOneAndUpdate({ _id: req.params.supId, user: req.params.id }, { stopped: true });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 患者专项筛查结果（医护端查看）────────────────────────────────
+router.get('/patients/:id/screening', staffAuth, async (req, res) => {
+  try {
+    const items = await UserScreeningItem.find({ user: req.params.id }).sort({ recordedAt: -1 });
+    res.json({ success: true, data: items });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 患者日常打卡记录（医护端查看）────────────────────────────────
+router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
+  try {
+    const { limit = 30, type } = req.query;
+    const q = { user: req.params.id };
+    if (type) q.type = type;
+    const records = await HealthRecord.find(q).sort({ recordedAt: -1 }).limit(Number(limit));
+    res.json({ success: true, data: records });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 
 module.exports = router;

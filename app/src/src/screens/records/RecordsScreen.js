@@ -65,7 +65,8 @@ const CHART_TYPES = [
 
 // ── 个人档案字段 ──────────────────────────────────────────────────
 const PROFILE_FIELDS = [
-  { key: 'bloodType',     label: '血型',     icon: 'water',              placeholder: '如：A 型 Rh+' },
+  { key: 'bloodTypeABO',  label: 'ABO 血型',  icon: 'water',              placeholder: 'A / B / O / AB' },
+  { key: 'bloodTypeRH',   label: 'RH 血型',   icon: 'water-outline',      placeholder: '阳性 / 阴性' },
   { key: 'drugAllergy',   label: '药物过敏史', icon: 'medical',            placeholder: '如：青霉素类、无' },
   { key: 'foodAllergy',   label: '食物过敏史', icon: 'restaurant-outline',  placeholder: '如：海鲜、无' },
   { key: 'pastHistory',   label: '既往史',    icon: 'time-outline',        placeholder: '如：高血压 (2020年)' },
@@ -75,7 +76,8 @@ const PROFILE_FIELDS = [
 ];
 
 const DEFAULT_PROFILE = {
-  bloodType:     'A 型 Rh+',
+  bloodTypeABO:  'A',
+  bloodTypeRH:   '阳性',
   drugAllergy:   '青霉素类',
   foodAllergy:   '无',
   pastHistory:   '高血压 (2020年)',
@@ -87,7 +89,7 @@ const DEFAULT_PROFILE = {
 // ── localStorage 工具 ─────────────────────────────────────────────
 const PROFILE_KEY = 'jy_health_profile';
 const EMPTY_PROFILE = {
-  bloodType: '', drugAllergy: '', foodAllergy: '',
+  bloodTypeABO: '', bloodTypeRH: '', drugAllergy: '', foodAllergy: '',
   pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '',
 };
 function loadProfileFromStorage() {
@@ -368,7 +370,11 @@ export default function RecordsScreen({ navigation }) {
     setProfile(local || fallback);
     // 从服务器拉取最新（优先服务器数据）
     userAPI.getMe().then(res => {
-      const serverProfile = res?.data?.healthProfile;
+      const u = res?.data;
+      const serverProfile = u?.healthProfile || {};
+      // bloodTypeABO/RH 是 User 顶层字段
+      if (u?.bloodTypeABO) serverProfile.bloodTypeABO = u.bloodTypeABO;
+      if (u?.bloodTypeRH)  serverProfile.bloodTypeRH  = u.bloodTypeRH;
       if (serverProfile && Object.values(serverProfile).some(v => v)) {
         const merged = { ...(local || fallback), ...serverProfile };
         setProfile(merged);
