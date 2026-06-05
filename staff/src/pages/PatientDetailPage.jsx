@@ -511,14 +511,14 @@ export default function PatientDetailPage() {
 
   const handleSaveLifestyle = async () => {
     try {
-      // 自动生成综合概述（若医护未手动填写）
       const d = lifestyleForm.lifestyle_data || {}
       if (!d.summaryOverride) {
         const flags = buildLifestyleSummary(d)
         lifestyleForm.lifestyle_data = { ...d, autoSummaryFlags: flags }
       }
       await staffAPI.updatePatient(id, lifestyleForm)
-      toast('生活方式已保存')
+      await staffAPI.recalculateScore(id)
+      toast('生活方式已保存，评分已更新')
       setEditingLifestyle(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
@@ -527,7 +527,8 @@ export default function PatientDetailPage() {
   const handleSaveLabValues = async () => {
     try {
       await staffAPI.updatePatient(id, { labValues: labForm })
-      toast('体检指标已保存')
+      await staffAPI.recalculateScore(id)
+      toast('体检指标已保存，评分已更新')
       setEditingLabValues(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
@@ -536,7 +537,8 @@ export default function PatientDetailPage() {
   const handleSaveDiseaseSeverity = async () => {
     try {
       await staffAPI.updatePatient(id, { chronicDiseaseSeverity: severityForm })
-      toast('慢病分级已保存')
+      await staffAPI.recalculateScore(id)
+      toast('慢病分级已保存，评分已更新')
       setEditingDiseaseSeverity(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }

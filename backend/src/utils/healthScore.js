@@ -121,13 +121,13 @@ function getLabDeduction(labValues) {
     }
   }
 
-  // 肌酐 Cr - 用 CKD 分期更直观，支持填分期 1-5
+  // 肌酐 Cr - 用 CKD 分期，3-4期均为 -6（文档：肾损伤3-4期-6）
   if (v.ckdStage != null && v.ckdStage !== '') {
     const stage = parseInt(v.ckdStage);
     if (!isNaN(stage)) {
-      if (stage >= 4) total -= 6;
-      else if (stage >= 3) total -= 3;
-      else if (stage >= 2) total -= 1;
+      if (stage >= 3) total -= 6;       // 3/4/5期均为重度 -6
+      else if (stage >= 2) total -= 2;  // 2期中度
+      else if (stage >= 1) total -= 1;  // 1期轻度
     }
   }
 
@@ -160,14 +160,14 @@ function getLifestyleDeduction(lifestyleData, weight, height) {
     total -= 8;
   }
 
-  // 饮酒: 0 / -3 / -6
+  // 饮酒: 0 / -3 / -6（＜1天/周 = 偶尔少量 = 0）
   const drinking = d.drinkingFrequency || '';
-  if (!drinking || drinking === '不喝酒') {
+  if (!drinking || drinking === '不喝酒' || drinking.includes('＜1天')) {
     // 0
-  } else if (drinking.includes('＜1天') || drinking.includes('1-3天')) {
+  } else if (drinking.includes('1-3天')) {
     total -= 3;
   } else {
-    total -= 6;
+    total -= 6; // 3天/周及以上 / 每天喝
   }
 
   // 体力活动: 0 / -4 / -8
@@ -201,7 +201,8 @@ function getLifestyleDeduction(lifestyleData, weight, height) {
   }
   total += dietDeduction;
 
-  // 睡眠质量: 0 / -3 / -6
+  // 睡眠质量: 0 / -3 / -6（单一维度，上限 -6，综合时长和规律性取最大值）
+  let sleepDeduction = 0;
   const wake = d.wakeTime || '';
   const sleep = d.sleepTime || '';
   if (wake && sleep) {
@@ -212,11 +213,12 @@ function getLifestyleDeduction(lifestyleData, weight, height) {
       let sleepMin = sh * 60 + sm;
       if (sleepMin > wakeMin) sleepMin -= 1440;
       const hours = (wakeMin - sleepMin) / 60;
-      if (hours < 5 || hours > 10) total -= 6;
-      else if (hours < 6 || hours > 9) total -= 3;
+      if (hours < 5 || hours > 10) sleepDeduction = -6;
+      else if (hours < 6 || hours > 9) sleepDeduction = -3;
     } catch (e) {}
   }
-  if (d.scheduleRegularity === '不规律') total -= 3;
+  if (d.scheduleRegularity === '不规律') sleepDeduction = Math.min(sleepDeduction, -3);
+  total += sleepDeduction;
 
   // 心理压力: 0 / -2 / -4
   const stress = d.psychStress || '';
