@@ -295,6 +295,12 @@ export default function PatientDetailPage() {
   // 专项筛查 & 打卡记录
   const [screeningItems, setScreeningItems] = useState([])
   const [healthRecords, setHealthRecords] = useState([])
+  // 健康评分
+  const [scoreLoading, setScoreLoading] = useState(false)
+  const [editingLabValues, setEditingLabValues] = useState(false)
+  const [labForm, setLabForm] = useState({})
+  const [editingDiseaseSeverity, setEditingDiseaseSeverity] = useState(false)
+  const [severityForm, setSeverityForm] = useState({})
 
   const load = async () => {
     try {
@@ -304,6 +310,8 @@ export default function PatientDetailPage() {
       setHealthForm(buildHealthForm(res.data.user))
       setLifestyleForm(buildLifestyleForm(res.data.user))
       setInsuranceForm(buildInsuranceForm(res.data.user))
+      setLabForm(res.data.user.labValues || {})
+      setSeverityForm(res.data.user.chronicDiseaseSeverity || {})
     } catch (err) {
       toast(err.message || '加载失败')
     } finally {
@@ -511,6 +519,37 @@ export default function PatientDetailPage() {
       setEditingLifestyle(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleSaveLabValues = async () => {
+    try {
+      await staffAPI.updatePatient(id, { labValues: labForm })
+      toast('体检指标已保存')
+      setEditingLabValues(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleSaveDiseaseSeverity = async () => {
+    try {
+      await staffAPI.updatePatient(id, { chronicDiseaseSeverity: severityForm })
+      toast('慢病分级已保存')
+      setEditingDiseaseSeverity(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleRecalculateScore = async () => {
+    try {
+      setScoreLoading(true)
+      await staffAPI.recalculateScore(id)
+      toast('健康评分已重新计算')
+      load()
+    } catch (err) {
+      toast(err.message || '计算失败')
+    } finally {
+      setScoreLoading(false)
+    }
   }
 
   const handleFollowUpCreated = () => {
@@ -754,7 +793,13 @@ export default function PatientDetailPage() {
                   <InfoRow label="服务包" value={getServicePackageLabel(user.servicePackage)} />
                   <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />
                   <InfoRow label="服务到期" value={user.serviceExpiry || '-'} />
-                  <InfoRow label="健康评分" value={user.healthScore || '-'} />
+                  <InfoRow label="健康评分" value={(() => {
+                    const s = user.healthScore
+                    const g = user.healthScoreDetail?.grade
+                    if (!s) return '-'
+                    const c = { '优': '#22A06B', '良': '#1E6B50', '中': '#D97706', '差': '#DC3545' }[g] || '#8AA89C'
+                    return <span>{s}分 {g && <span style={{ marginLeft: 6, padding: '1px 8px', borderRadius: 10, background: c + '20', color: c, fontSize: 12, fontWeight: 600 }}>{g}</span>}</span>
+                  })()} />
                   {user.remark && (
                     <div style={{ marginTop: 8, padding: '8px 12px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#4A6558' }}>
                       📝 {user.remark}
@@ -968,6 +1013,224 @@ export default function PatientDetailPage() {
       {/* ── Records Tab ── */}
       {tab === 'records' && (
         <>
+        {/* ── 健康评分卡片 ── */}
+        {(() => {
+          const detail = user.healthScoreDetail || {}
+          const score = user.healthScore || 0
+          const grade = detail.grade || (score >= 90 ? '优' : score >= 75 ? '良' : score >= 60 ? '中' : score > 0 ? '差' : '-')
+          const gradeColor = { '优': '#22A06B', '良': '#1E6B50', '中': '#D97706', '差': '#DC3545' }[grade] || '#8AA89C'
+          return (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-header">
+                <div className="card-title">健康评分</div>
+                <button className="btn btn-primary btn-sm" onClick={handleRecalculateScore} disabled={scoreLoading}>
+                  {scoreLoading ? '计算中...' : '重新计算'}
+                </button>
+              </div>
+              <div style={{ padding: '16px 20px' }}>
+                {score > 0 ? (
+                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 32, flexWrap: 'wrap' }}>
+                    {/* 总分 */}
+                    <div style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 48, fontWeight: 700, color: gradeColor, lineHeight: 1 }}>{score}</div>
+                      <div style={{ fontSize: 13, color: '#8AA89C', marginTop: 4 }}>满分100</div>
+                      <div style={{ marginTop: 8, padding: '3px 12px', background: gradeColor + '20', borderRadius: 12, color: gradeColor, fontWeight: 600, fontSize: 15, display: 'inline-block' }}>
+                        {grade}
+                      </div>
+                    </div>
+                    {/* 分项明细 */}
+                    {detail.deductions && (
+                      <div style={{ flex: 1, minWidth: 200 }}>
+                        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>评分构成</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 24px' }}>
+                          {[
+                            ['基础健康分（初始60）', `${60 + (detail.deductions?.chronic || 0) + (detail.deductions?.lab || 0)}`],
+                            ['生活方式分（初始40）', `${40 + (detail.deductions?.lifestyle || 0)}`],
+                            ['慢性病扣分', `${detail.deductions?.chronic || 0}`],
+                            ['体检指标扣分', `${detail.deductions?.lab || 0}`],
+                            ['生活方式扣分', `${detail.deductions?.lifestyle || 0}`],
+                            ['年龄性别调整', `${detail.ageGenderAdj >= 0 ? '+' : ''}${detail.ageGenderAdj || 0}`],
+                          ].map(([label, val]) => (
+                            <div key={label} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '2px 0', borderBottom: '1px solid #f0ede6' }}>
+                              <span style={{ color: '#4A6558' }}>{label}</span>
+                              <span style={{ fontWeight: 600, color: String(val).startsWith('-') ? '#DC3545' : '#1A2B24' }}>{val}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {detail.calculatedAt && (
+                          <div style={{ fontSize: 11, color: '#aaa', marginTop: 8 }}>
+                            计算时间：{new Date(detail.calculatedAt).toLocaleString('zh-CN')}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    {/* 趋势 */}
+                    {user.scoreHistory?.length >= 2 && (
+                      <div>
+                        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>评分趋势</div>
+                        {(() => {
+                          const hist = [...(user.scoreHistory || [])].slice(-8).reverse()
+                          const W = 180, H = 60, PAD = 6
+                          const vals = hist.map(h => h.score)
+                          const min = Math.min(...vals, 0), max = Math.max(...vals, 100)
+                          const range = max - min || 1
+                          const xs = hist.map((_, i) => PAD + (i / Math.max(hist.length - 1, 1)) * (W - PAD * 2))
+                          const ys = vals.map(v => H - PAD - ((v - min) / range) * (H - PAD * 2))
+                          const pts = xs.map((x, i) => `${x},${ys[i]}`).join(' ')
+                          return (
+                            <svg width={W} height={H} style={{ display: 'block' }}>
+                              <polyline fill="none" stroke="#1E6B50" strokeWidth="2" points={pts} />
+                              {hist.map((h, i) => (
+                                <circle key={i} cx={xs[i]} cy={ys[i]} r={3} fill="#1E6B50" />
+                              ))}
+                            </svg>
+                          )
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
+                    暂无评分，请先录入体检指标和生活方式数据，然后点击「重新计算」
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* ── 体检关键指标 ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <div className="card-title">体检关键指标</div>
+            {!editingLabValues
+              ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingLabValues(true)}>编辑</button>
+              : <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary btn-sm" onClick={handleSaveLabValues}>保存</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditingLabValues(false); setLabForm(user.labValues || {}) }}>取消</button>
+                </div>
+            }
+          </div>
+          <div style={{ padding: '12px 20px' }}>
+            {editingLabValues ? (
+              <div>
+                <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>填写最近一次体检结果（用于健康评分，留空表示正常）</div>
+                {(() => {
+                  const F = ({ label, field, unit, placeholder }) => (
+                    <div>
+                      <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}{unit ? ` (${unit})` : ''}</span>
+                      <input className="form-control" value={labForm[field] || ''} placeholder={placeholder || ''}
+                        onChange={e => setLabForm(f => ({ ...f, [field]: e.target.value }))} style={{ fontSize: 13 }} />
+                    </div>
+                  )
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px' }}>
+                      <F label="空腹血糖 FPG" field="fpg" unit="mmol/L" placeholder="如 5.6" />
+                      <F label="总胆固醇 TC" field="tc" unit="mmol/L" placeholder="如 4.8" />
+                      <F label="低密度脂蛋白 LDL-C" field="ldl" unit="mmol/L" placeholder="如 2.8" />
+                      <F label="甘油三酯 TG" field="tg" unit="mmol/L" placeholder="如 1.2" />
+                      <F label="尿酸 UA" field="ua" unit="μmol/L" placeholder="如 350" />
+                      <F label="谷丙转氨酶 ALT" field="alt" unit="U/L" placeholder="如 25" />
+                      <F label="收缩压 SBP" field="sbp" unit="mmHg" placeholder="如 120" />
+                      <F label="舒张压 DBP" field="dbp" unit="mmHg" placeholder="如 80" />
+                      <div>
+                        <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>肾功能（CKD分期）</span>
+                        <select className="form-control" value={labForm.ckdStage || ''}
+                          onChange={e => setLabForm(f => ({ ...f, ckdStage: e.target.value }))} style={{ fontSize: 13 }}>
+                          <option value="">正常/未查</option>
+                          <option value="1">1期（轻度）</option>
+                          <option value="2">2期（轻中度）</option>
+                          <option value="3">3期（中度）</option>
+                          <option value="4">4期（重度）</option>
+                          <option value="5">5期（终末期）</option>
+                        </select>
+                      </div>
+                      <div>
+                        <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>检测日期</span>
+                        <input className="form-control" type="date" value={labForm.labDate || ''}
+                          onChange={e => setLabForm(f => ({ ...f, labDate: e.target.value }))} style={{ fontSize: 13 }} />
+                      </div>
+                    </div>
+                  )
+                })()}
+              </div>
+            ) : (
+              <div>
+                {user.labValues && Object.keys(user.labValues).some(k => user.labValues[k] && k !== 'labDate') ? (
+                  <div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px 16px' }}>
+                      {[
+                        ['空腹血糖', user.labValues.fpg, 'mmol/L', 6.1],
+                        ['总胆固醇', user.labValues.tc, 'mmol/L', 5.2],
+                        ['LDL-C', user.labValues.ldl, 'mmol/L', 3.4],
+                        ['甘油三酯', user.labValues.tg, 'mmol/L', 1.7],
+                        ['尿酸', user.labValues.ua, 'μmol/L', user.gender === '女' ? 360 : 420],
+                        ['ALT', user.labValues.alt, 'U/L', 40],
+                        ['收缩压', user.labValues.sbp, 'mmHg', 120],
+                        ['舒张压', user.labValues.dbp, 'mmHg', 80],
+                      ].filter(([,v]) => v != null && v !== '').map(([label, val, unit, normal]) => {
+                        const isHigh = parseFloat(val) > normal
+                        return (
+                          <div key={label} style={{ padding: '6px 10px', background: isHigh ? '#FEF2F2' : '#f9f7f3', borderRadius: 8, borderLeft: `3px solid ${isHigh ? '#DC3545' : '#22A06B'}` }}>
+                            <div style={{ fontSize: 11, color: '#8AA89C' }}>{label}</div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: isHigh ? '#DC3545' : '#1A2B24' }}>{val} <span style={{ fontSize: 11, fontWeight: 400 }}>{unit}</span></div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {user.labValues.labDate && (
+                      <div style={{ fontSize: 12, color: '#aaa', marginTop: 8 }}>检测日期：{user.labValues.labDate}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
+                    暂无体检指标记录，点击「编辑」录入
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── 慢病分级 ── */}
+        {user.chronicDiseases?.length > 0 && (
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <div className="card-title">慢病分级（用于评分）</div>
+              {!editingDiseaseSeverity
+                ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingDiseaseSeverity(true)}>编辑</button>
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveDiseaseSeverity}>保存</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingDiseaseSeverity(false); setSeverityForm(user.chronicDiseaseSeverity || {}) }}>取消</button>
+                  </div>
+              }
+            </div>
+            <div style={{ padding: '12px 20px' }}>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>设置每种慢性病的严重程度，影响基础健康分扣分幅度</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px' }}>
+                {user.chronicDiseases.map(disease => (
+                  <div key={disease}>
+                    <div style={{ fontSize: 13, color: '#1A2B24', fontWeight: 500, marginBottom: 4 }}>{disease}</div>
+                    {editingDiseaseSeverity ? (
+                      <select className="form-control" style={{ fontSize: 13 }}
+                        value={severityForm[disease] || 1}
+                        onChange={e => setSeverityForm(f => ({ ...f, [disease]: parseInt(e.target.value) }))}>
+                        <option value={1}>一级（早/轻症，无并发症）</option>
+                        <option value={2}>二级（中症，有并发症风险）</option>
+                        <option value={3}>三级（重症/终末期）</option>
+                      </select>
+                    ) : (
+                      <span style={{ fontSize: 13, color: '#4A6558' }}>
+                        {['一级（轻症）','二级（中症）','三级（重症）'][(user.chronicDiseaseSeverity?.[disease] || 1) - 1]}
+                      </span>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，打卡数据在下方 */}
         {(() => {
           const ld = editingLifestyle ? (lifestyleForm.lifestyle_data || {}) : (user.lifestyle_data || {})

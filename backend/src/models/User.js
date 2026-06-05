@@ -139,6 +139,16 @@ const userSchema = new mongoose.Schema({
   lifestyle_data: { type: mongoose.Schema.Types.Mixed, default: {} },
   serviceStartDate: { type: String, default: '' }, // 服务开始时间
 
+  // ── 健康评分相关 ─────────────────────────────────────────────────
+  // 慢病严重度: { '高血压': 1, '糖尿病': 2, ... }  1=轻/早 2=中 3=重
+  chronicDiseaseSeverity: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // 体检关键指标（最近一次）: fpg,tc,ldl,tg,ua,alt,ckdStage,sbp,dbp,labDate
+  labValues: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // 评分明细（最近一次计算结果）
+  healthScoreDetail: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // 奖励加分（连续打卡等行为激励）
+  healthScoreBonus: { type: Number, default: 0 },
+
   // 健康基金余额（由医护端 $inc 累加，Mongoose 必须显式定义才能读取）
   healthFundBalance: { type: Number, default: 0 },
 

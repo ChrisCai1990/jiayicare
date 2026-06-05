@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const { calculateHealthScore } = require('../utils/healthScore');
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
@@ -389,6 +390,7 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     'bloodTypeABO', 'bloodTypeRH',
     'traumaHistory', 'transfusionHistory', 'infectiousHistory', 'vaccinationHistory',
     'basic_insurance', 'commercial_medical', 'critical_illness',
+    'chronicDiseaseSeverity', 'labValues', 'healthScoreBonus',
   ];
   const updateData = {};
   allowed.forEach(k => {
@@ -434,6 +436,37 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     .populate('assignedFamilyDoctor', 'name title')
     .populate('assignedNutritionist', 'name title');
   res.json({ success: true, data: user });
+});
+
+// ── POST /api/staff/patients/:id/recalculate-score ────────────────
+router.post('/patients/:id/recalculate-score', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+
+    const detail = calculateHealthScore(user);
+
+    // 写回评分 + 明细 + 历史
+    const today = new Date().toISOString().slice(0, 10);
+    const history = (user.scoreHistory || []).filter(h => h.date !== today);
+    history.push({ score: detail.total, date: today });
+    if (history.length > 30) history.splice(0, history.length - 30);
+
+    await User.collection.updateOne(
+      { _id: user._id },
+      { $set: {
+          healthScore: detail.total,
+          healthScoreDetail: detail,
+          scoreHistory: history,
+        }
+      }
+    );
+
+    res.json({ success: true, data: detail });
+  } catch (err) {
+    console.error('recalculate-score error:', err);
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── GET /api/staff/patients/:id/followups ─────────────────────────
