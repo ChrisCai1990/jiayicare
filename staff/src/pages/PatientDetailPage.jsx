@@ -426,6 +426,14 @@ export default function PatientDetailPage() {
     const meals = ['breakfast', 'lunch', 'dinner']
     const missedMeals = meals.filter(m => d[`${m}Detail`] === '少吃' || d[`${m}Detail`] === '不吃')
     if (missedMeals.length > 0) flags.push('三餐不规律或经常少吃/不吃某一餐')
+    // 能量摄入不足/节食：有2餐及以上少吃或不吃
+    const severelyMissed = meals.filter(m => d[`${m}Detail`] === '不吃')
+    const lightMissed = meals.filter(m => d[`${m}Detail`] === '少吃')
+    if (severelyMissed.length >= 1 || lightMissed.length >= 2) flags.push('每日摄入能量不足/节食')
+    // 外卖/外食频率高：应酬≥3次/周，或三餐中≥2餐为外卖/饭店
+    const eatOutMeals = meals.filter(m => d[`${m}Detail`] === '外卖' || d[`${m}Detail`] === '饭店或外卖')
+    const highEntertainment = d.entertainment === '3-5次/周' || d.entertainment === '6-7次/周'
+    if (eatOutMeals.length >= 2 || highEntertainment) flags.push('外卖/外食频率高（每周≥5次）')
     // 饮水不足
     if (d.dailyWater === '1500毫升内') flags.push('饮水量不足（＜1500毫升/天）')
     // 蔬菜摄入不足
