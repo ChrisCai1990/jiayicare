@@ -458,9 +458,12 @@ export default function PatientDetailPage() {
     // 过敏/忌口
     const hasAllergy = (d.foodAllergens || []).some(a => a !== '无') || d.dietaryRestrictions === '有'
     if (hasAllergy) flags.push('有食物过敏、忌口或营养干预史')
-    // 营养干预史
     if (d.nutritionHistory && d.nutritionHistory.trim()) flags.push('有食物过敏、忌口或营养干预史')
-    // 排便（来自旧 lifestyle 字段，由医护手填故不自动判断）
+    // 排便
+    if (d.bowelRegularity === '便秘/腹泻') flags.push('排便不规律或便秘')
+    else if (d.bowelRegularity === '偶尔不规律') flags.push('排便偶有不规律')
+    // 心理压力
+    if (d.psychStress && d.psychStress !== '正常') flags.push('存在心理压力或情绪问题')
     return [...new Set(flags)]
   }
 
@@ -1401,6 +1404,14 @@ export default function PatientDetailPage() {
                       <LsRadio label="每日饮水量" value={ld.dailyWater} editing={editingLifestyle}
                         options={['1500毫升内', '1500-1700毫升', '1800-2000毫升', '2500毫升', '3000毫升以上']}
                         onChange={v => setLd({ dailyWater: v })} />
+                    </div>
+                    <div style={row2}>
+                      <LsRadio label="心理压力" value={ld.psychStress} editing={editingLifestyle}
+                        options={['正常', '中等压力/焦虑', '严重抑郁/焦虑']}
+                        onChange={v => setLd({ psychStress: v })} />
+                      <LsRadio label="排便规律性" value={ld.bowelRegularity} editing={editingLifestyle}
+                        options={['规律（1-2次/日）', '偶尔不规律', '便秘/腹泻']}
+                        onChange={v => setLd({ bowelRegularity: v })} />
                     </div>
                   </div>
                 )}

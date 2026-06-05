@@ -218,8 +218,10 @@ function getLifestyleDeduction(lifestyleData, weight, height) {
   }
   if (d.scheduleRegularity === '不规律') total -= 3;
 
-  // 心理压力: 默认不扣（无问卷字段），保留扩展口
-  // total += 0;
+  // 心理压力: 0 / -2 / -4
+  const stress = d.psychStress || '';
+  if (stress === '严重抑郁/焦虑') total -= 4;
+  else if (stress === '中等压力/焦虑') total -= 2;
 
   return Math.max(total, -40);
 }

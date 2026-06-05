@@ -622,6 +622,15 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.heroScoreLabel}>
                   {scoreDisplay != null ? '健康评分 / 100' : '暂无评分，请录入数据'}
                 </Text>
+                {scoreDisplay != null && (() => {
+                  const grade = user?.healthScoreDetail?.grade || (scoreDisplay >= 90 ? '优' : scoreDisplay >= 75 ? '良' : scoreDisplay >= 60 ? '中' : '差')
+                  const gradeColors = { '优': '#22A06B', '良': '#86EFAC', '中': '#FCD34D', '差': '#FCA5A5' }
+                  return (
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: gradeColors[grade] || '#fff', marginTop: 2 }}>
+                      {grade}
+                    </Text>
+                  )
+                })()}
                 {isDemo && <Text style={styles.heroScoreTrend}>↑ 较上月 +3 分</Text>}
               </View>
               {scoreDisplay != null && scoreHistory.length >= 2 && (

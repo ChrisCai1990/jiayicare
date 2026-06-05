@@ -101,6 +101,7 @@ export default function PatientsPage() {
   const [disease, setDisease] = useState('')
   const [loading, setLoading] = useState(true)
   const [showAssign, setShowAssign] = useState(false)
+  const [sortByScore, setSortByScore] = useState(false) // 按评分从低到高排序（高危优先）
   const limit = 20
 
   const load = useCallback(async () => {
@@ -188,12 +189,14 @@ export default function PatientsPage() {
                 <th>健管专员</th>
                 <th>家庭医生</th>
                 <th>会员类型</th>
-                <th>健康评分</th>
+                <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setSortByScore(s => !s)}>
+                  健康评分 {sortByScore ? '↑低→高' : '↓'}
+                </th>
                 <th>操作</th>
               </tr>
             </thead>
             <tbody>
-              {patients.map(p => (
+              {[...patients].sort((a, b) => sortByScore ? (a.healthScore || 999) - (b.healthScore || 999) : 0).map(p => (
                 <tr key={p._id} onClick={() => nav(`/patients/${p._id}`)} style={{ cursor: 'pointer' }}>
                   <td>
                     <strong>{p.name}</strong>
