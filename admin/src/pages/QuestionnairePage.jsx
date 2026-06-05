@@ -405,38 +405,79 @@ function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, s
   )
 }
 
-// ── 快捷添加按钮栏 ────────────────────────────────────────────────
-function AddQuestionBar({ onAdd }) {
-  const QUICK = [
-    { type: 'radio',    label: '单选' },
-    { type: 'multi',    label: '多选' },
-    { type: 'dropdown', label: '下拉' },
-    { type: 'scale',    label: '量表' },
-    { type: 'matrix',   label: '矩阵' },
-    { type: 'text',     label: '文本' },
-    { type: 'number',   label: '数字' },
-    { type: 'date',     label: '日期' },
-  ]
-  const newQ = (type) => {
-    const base = { id: `q${Date.now()}`, type, text: '', required: true, scoreEnabled: false, jumpLogic: [] }
-    if (type === 'radio' || type === 'multi' || type === 'dropdown')
-      base.options = [{ label: '', allowInput: false, exclusive: false, score: 0 }, { label: '', allowInput: false, exclusive: false, score: 0 }]
-    if (type === 'scale')  { base.min = 1; base.max = 10; base.minLabel = ''; base.maxLabel = '' }
-    if (type === 'matrix') { base.rows = ['项目1']; base.cols = ['无', '轻度', '中度', '重度'] }
-    if (type === 'number' || type === 'text' || type === 'date') base.placeholder = ''
-    onAdd(base)
-  }
+// ── 公共：创建新题目对象 ──────────────────────────────────────────
+const QUICK_TYPES = [
+  { type: 'radio',    label: '单选' },
+  { type: 'multi',    label: '多选' },
+  { type: 'dropdown', label: '下拉' },
+  { type: 'scale',    label: '量表' },
+  { type: 'matrix',   label: '矩阵' },
+  { type: 'text',     label: '文本' },
+  { type: 'number',   label: '数字' },
+  { type: 'date',     label: '日期' },
+]
 
+const makeNewQ = (type) => {
+  const base = { id: `q${Date.now()}`, type, text: '', required: true, scoreEnabled: false, jumpLogic: [] }
+  if (type === 'radio' || type === 'multi' || type === 'dropdown')
+    base.options = [{ label: '', allowInput: false, exclusive: false, score: 0 }, { label: '', allowInput: false, exclusive: false, score: 0 }]
+  if (type === 'scale')  { base.min = 1; base.max = 10; base.minLabel = ''; base.maxLabel = '' }
+  if (type === 'matrix') { base.rows = ['项目1']; base.cols = ['无', '轻度', '中度', '重度'] }
+  if (type === 'number' || type === 'text' || type === 'date') base.placeholder = ''
+  return base
+}
+
+// ── 快捷添加按钮栏（底部） ────────────────────────────────────────
+function AddQuestionBar({ onAdd }) {
   return (
     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center', padding: '10px 0' }}>
       <span style={{ fontSize: 12, color: '#8AA89C', marginRight: 4 }}>添加题目：</span>
-      {QUICK.map(q => (
+      {QUICK_TYPES.map(q => (
         <button key={q.type} className="btn btn-sm btn-ghost"
           style={{ fontSize: 12, padding: '4px 10px' }}
-          onClick={() => newQ(q.type)}>
+          onClick={() => onAdd(makeNewQ(q.type))}>
           {Q_TYPE_ICONS[q.type]} {q.label}
         </button>
       ))}
+    </div>
+  )
+}
+
+// ── 题目间插入条 ──────────────────────────────────────────────────
+function InsertBar({ onInsert }) {
+  const [expanded, setExpanded] = useState(false)
+
+  if (!expanded) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '2px 0', opacity: 0.6 }}
+        onMouseEnter={e => e.currentTarget.style.opacity = 1}
+        onMouseLeave={e => e.currentTarget.style.opacity = 0.6}>
+        <div style={{ flex: 1, height: 1, background: '#E0D9CE' }} />
+        <button
+          onClick={() => setExpanded(true)}
+          style={{ border: '1px dashed #C5BDB0', background: '#fff', borderRadius: 12, padding: '2px 12px', fontSize: 11, color: '#8AA89C', cursor: 'pointer', whiteSpace: 'nowrap', lineHeight: '18px' }}>
+          ＋ 在此插入题目
+        </button>
+        <div style={{ flex: 1, height: 1, background: '#E0D9CE' }} />
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ border: '1px dashed #1E6B50', borderRadius: 8, padding: '8px 12px', background: '#f4faf7' }}>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span style={{ fontSize: 12, color: '#1E6B50', marginRight: 4 }}>插入题型：</span>
+        {QUICK_TYPES.map(q => (
+          <button key={q.type} className="btn btn-sm btn-ghost"
+            style={{ fontSize: 12, padding: '4px 10px' }}
+            onClick={() => { onInsert(makeNewQ(q.type)); setExpanded(false) }}>
+            {Q_TYPE_ICONS[q.type]} {q.label}
+          </button>
+        ))}
+        <button
+          style={{ marginLeft: 'auto', border: 'none', background: 'none', color: '#aaa', cursor: 'pointer', fontSize: 16, padding: '0 4px' }}
+          onClick={() => setExpanded(false)}>✕</button>
+      </div>
     </div>
   )
 }
@@ -463,6 +504,11 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
   const addQ    = (q) => set('questions', [...form.questions, q])
+  const insertQ = (afterIndex, q) => {
+    const qs = [...form.questions]
+    qs.splice(afterIndex, 0, q)
+    set('questions', qs)
+  }
   const updateQ = (i, upd) => { const qs = [...form.questions]; qs[i] = { ...qs[i], ...upd }; set('questions', qs) }
   const removeQ = (i) => set('questions', form.questions.filter((_, idx) => idx !== i))
   const moveQ   = (i, dir) => {
@@ -551,17 +597,19 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
                 还没有题目，从下方按题型添加
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                 {form.questions.map((q, i) => (
-                  <QuestionCard
-                    key={q.id}
-                    q={q} i={i} total={form.questions.length}
-                    allQuestions={form.questions}
-                    onUpdate={upd => updateQ(i, upd)}
-                    onRemove={() => removeQ(i)}
-                    onMove={dir => moveQ(i, dir)}
-                    scoringEnabled={form.scoringEnabled}
-                  />
+                  <React.Fragment key={q.id}>
+                    <QuestionCard
+                      q={q} i={i} total={form.questions.length}
+                      allQuestions={form.questions}
+                      onUpdate={upd => updateQ(i, upd)}
+                      onRemove={() => removeQ(i)}
+                      onMove={dir => moveQ(i, dir)}
+                      scoringEnabled={form.scoringEnabled}
+                    />
+                    <InsertBar onInsert={newQ => insertQ(i + 1, newQ)} />
+                  </React.Fragment>
                 ))}
               </div>
             )}
