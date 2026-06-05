@@ -355,7 +355,29 @@ export default function PatientDetailPage() {
       bowel: u.lifestyle?.bowel || '',
       mood: u.lifestyle?.mood || '',
     },
+    lifestyle_data: u.lifestyle_data || {},
   })
+
+  // 生活方式：自动生成综合概述
+  const buildLifestyleSummary = (d) => {
+    const flags = []
+    const meals = ['breakfast', 'lunch', 'dinner']
+    const missedMeals = meals.filter(m => d[`${m}Detail`] === 'skip' || d[`${m}Detail`] === 'less')
+    if (missedMeals.length > 0) flags.push('三餐不规律或经常少吃/不吃某一餐')
+    if (d.dailyWater === '1500以内') flags.push('饮水量不足（＜1500毫升/天）')
+    const lowVeg = ['500及以上'].indexOf(d.dailyVegetables) === -1 && d.dailyVegetables
+    if (lowVeg && d.dailyVegetables === '300以内') flags.push('蔬菜、水果、粗杂粮、奶制品摄入不足')
+    if (d.dailyStaple === '400以上') flags.push('精制主食摄入过多')
+    const badHabits = d.badDietHabits || []
+    if (badHabits.length > 0) flags.push('存在不良饮食习惯（油炸、甜品、腌制、重油、偏咸、夜宵等）')
+    if (d.scheduleRegularity === '不规律' || d.exerciseFrequency === '无') flags.push('作息不规律或运动不足')
+    const hasAllergy = (d.foodAllergens || []).some(a => a !== '无') || d.dietaryRestrictions === '有'
+    if (hasAllergy) flags.push('有食物过敏、忌口或营养干预史')
+    return flags
+  }
+
+  // 生活方式：活动标签页
+  const [lifestyleTab, setLifestyleTab] = React.useState('diet')
 
   const buildInsuranceForm = (u) => ({
     basic_insurance: u.basic_insurance || '',
@@ -398,6 +420,12 @@ export default function PatientDetailPage() {
 
   const handleSaveLifestyle = async () => {
     try {
+      // 自动生成综合概述（若医护未手动填写）
+      const d = lifestyleForm.lifestyle_data || {}
+      if (!d.summaryOverride) {
+        const flags = buildLifestyleSummary(d)
+        lifestyleForm.lifestyle_data = { ...d, autoSummaryFlags: flags }
+      }
       await staffAPI.updatePatient(id, lifestyleForm)
       toast('生活方式已保存')
       setEditingLifestyle(false)
@@ -823,11 +851,11 @@ export default function PatientDetailPage() {
           </div>
 
           {/* 生活方式 */}
-          <div className="card">
+          <div className="card" style={{ gridColumn: 'span 2' }}>
             <div className="card-header">
-              <div className="card-title">生活方式</div>
+              <div className="card-title">生活方式（膳食调查）</div>
               {!editingLifestyle
-                ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingLifestyle(true)}>编辑</button>
+                ? <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑</button>
                 : <div style={{ display: 'flex', gap: 8 }}>
                     <button className="btn btn-primary btn-sm" onClick={handleSaveLifestyle}>保存</button>
                     <button className="btn btn-secondary btn-sm" onClick={() => { setEditingLifestyle(false); setLifestyleForm(buildLifestyleForm(user)) }}>取消</button>
@@ -835,45 +863,263 @@ export default function PatientDetailPage() {
               }
             </div>
             <div className="card-body">
-              {editingLifestyle ? (
-                <div style={{ display: 'grid', gap: 8 }}>
-                  {[
-                    { key: 'diet', label: '饮食习惯' },
-                    { key: 'exercise', label: '运动习惯' },
-                    { key: 'sleep', label: '睡眠习惯' },
-                    { key: 'water', label: '饮水习惯' },
-                    { key: 'alcohol', label: '饮酒情况' },
-                    { key: 'smoking', label: '吸烟情况' },
-                    { key: 'bowel', label: '排便情况' },
-                    { key: 'mood', label: '情绪状态' },
-                  ].map(({ key, label }) => (
-                    <div key={key}>
-                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
-                      <input className="form-control" value={lifestyleForm.lifestyle?.[key] || ''}
-                        onChange={e => setLifestyleForm(p => ({ ...p, lifestyle: { ...p.lifestyle, [key]: e.target.value } }))}
-                      />
+              {/* 子板块标签页 */}
+              {(() => {
+                const ld = editingLifestyle ? (lifestyleForm.lifestyle_data || {}) : (user.lifestyle_data || {})
+                const setLd = (patch) => setLifestyleForm(p => ({ ...p, lifestyle_data: { ...(p.lifestyle_data || {}), ...patch } }))
+                const tabs = [
+                  { key: 'diet', label: '膳食调查' },
+                  { key: 'exercise', label: '运动与作息' },
+                  { key: 'alcohol', label: '烟酒与应酬' },
+                  { key: 'nutrition', label: '营养素与过敏' },
+                  { key: 'summary', label: '综合概述' },
+                ]
+                const tabStyle = (k) => ({
+                  padding: '6px 14px', fontSize: 13, cursor: 'pointer', borderBottom: lifestyleTab === k ? '2px solid #1E6B50' : '2px solid transparent',
+                  color: lifestyleTab === k ? '#1E6B50' : '#8AA89C', fontWeight: lifestyleTab === k ? 600 : 400, background: 'none', border: 'none', borderBottom: lifestyleTab === k ? '2px solid #1E6B50' : '2px solid transparent',
+                })
+                const labelStyle = { fontSize: 12, color: '#8AA89C', marginBottom: 4, display: 'block' }
+                const rowStyle = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginBottom: 12 }
+                const row3Style = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 16px', marginBottom: 12 }
+
+                // 单选组件
+                const Radio = ({ field, options, label }) => (
+                  <div>
+                    <span style={labelStyle}>{label}</span>
+                    {editingLifestyle ? (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
+                        {options.map(o => (
+                          <label key={o} style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                            <input type="radio" name={field} checked={ld[field] === o} onChange={() => setLd({ [field]: o })} />
+                            {o}
+                          </label>
+                        ))}
+                      </div>
+                    ) : (
+                      <span style={{ fontSize: 13, color: '#1A2B24' }}>{ld[field] || '-'}</span>
+                    )}
+                  </div>
+                )
+
+                // 多选组件
+                const Checkbox = ({ field, options, label }) => {
+                  const current = ld[field] || []
+                  return (
+                    <div>
+                      <span style={labelStyle}>{label}</span>
+                      {editingLifestyle ? (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px' }}>
+                          {options.map(o => (
+                            <label key={o} style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer' }}>
+                              <input type="checkbox" checked={current.includes(o)}
+                                onChange={e => setLd({ [field]: e.target.checked ? [...current, o] : current.filter(x => x !== o) })} />
+                              {o}
+                            </label>
+                          ))}
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 13, color: '#1A2B24' }}>{current.length ? current.join('、') : '-'}</span>
+                      )}
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: 6 }}>
-                  {[
-                    { label: '饮食', val: user.lifestyle?.diet },
-                    { label: '运动', val: user.lifestyle?.exercise },
-                    { label: '睡眠', val: user.lifestyle?.sleep },
-                    { label: '饮水', val: user.lifestyle?.water },
-                    { label: '饮酒', val: user.lifestyle?.alcohol },
-                    { label: '吸烟', val: user.lifestyle?.smoking },
-                    { label: '排便', val: user.lifestyle?.bowel },
-                    { label: '情绪', val: user.lifestyle?.mood },
-                  ].map(({ label, val }) => (
-                    <div key={label} style={{ display: 'flex', gap: 8 }}>
-                      <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 40 }}>{label}：</span>
-                      <span style={{ fontSize: 13, color: '#1A2B24' }}>{val || '-'}</span>
+                  )
+                }
+
+                // 文本输入组件
+                const TextInput = ({ field, label, placeholder, multiline }) => (
+                  <div>
+                    <span style={labelStyle}>{label}</span>
+                    {editingLifestyle ? (
+                      multiline
+                        ? <textarea className="form-control" rows={3} value={ld[field] || ''} placeholder={placeholder || ''}
+                            onChange={e => setLd({ [field]: e.target.value })} style={{ resize: 'vertical' }} />
+                        : <input className="form-control" value={ld[field] || ''} placeholder={placeholder || ''}
+                            onChange={e => setLd({ [field]: e.target.value })} />
+                    ) : (
+                      <span style={{ fontSize: 13, color: '#1A2B24' }}>{ld[field] || '-'}</span>
+                    )}
+                  </div>
+                )
+
+                return (
+                  <>
+                    {/* Tab 导航 */}
+                    <div style={{ display: 'flex', borderBottom: '1px solid #e0d9ce', marginBottom: 16, overflowX: 'auto' }}>
+                      {tabs.map(t => (
+                        <button key={t.key} style={tabStyle(t.key)} onClick={() => setLifestyleTab(t.key)}>{t.label}</button>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              )}
+
+                    {/* 膳食调查 */}
+                    {lifestyleTab === 'diet' && (
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginBottom: 10 }}>三餐 & 加餐</div>
+                        <div style={rowStyle}>
+                          <TextInput field="breakfastTime" label="早餐时间" placeholder="如 07:30" />
+                          <Radio field="breakfastDetail" label="早餐就餐方式" options={['居家', '外卖', '少吃', '不吃']} />
+                          <TextInput field="breakfastDesc" label="早餐品类描述" placeholder="如 粥、鸡蛋、包子" />
+                          <Radio field="morningSnack" label="上午加餐" options={['是', '否']} />
+                        </div>
+                        <div style={rowStyle}>
+                          <TextInput field="lunchTime" label="午餐时间" placeholder="如 12:00" />
+                          <Radio field="lunchDetail" label="午餐就餐方式" options={['居家', '饭店或外卖', '少吃', '不吃']} />
+                          <TextInput field="lunchDesc" label="午餐品类描述" placeholder="如 米饭、炒菜" />
+                          <Radio field="afternoonSnack" label="下午加餐" options={['是', '否']} />
+                        </div>
+                        <div style={rowStyle}>
+                          <TextInput field="dinnerTime" label="晚餐时间" placeholder="如 18:30" />
+                          <Radio field="dinnerDetail" label="晚餐就餐方式" options={['居家', '饭店或外卖', '少吃', '不吃']} />
+                          <TextInput field="dinnerDesc" label="晚餐品类描述" placeholder="如 汤、蔬菜" />
+                          <Radio field="eveningSnack" label="晚间加餐" options={['是', '否']} />
+                        </div>
+
+                        <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', margin: '12px 0 10px' }}>食物摄入量</div>
+                        <div style={rowStyle}>
+                          <Radio field="dailyStaple" label="每日主食摄入量" options={['250克以内', '250-400克', '400克以上', '几乎不吃']} />
+                          <Radio field="dailyVegetables" label="每日蔬菜摄入量" options={['500克及以上', '300-500克', '300克以内', '几乎不吃']} />
+                          <Radio field="dailyMeat" label="每日荤菜摄入量" options={['80克以内', '80-150克', '150克及以上', '几乎不吃']} />
+                        </div>
+                        <div style={rowStyle}>
+                          <div>
+                            <span style={labelStyle}>吃水果频次</span>
+                            <Radio field="fruitFrequency" label="" options={['3天/周及以上', '每天吃', '几乎不吃']} />
+                          </div>
+                          <div>
+                            <span style={labelStyle}>水果摄入量</span>
+                            <Radio field="fruitAmount" label="" options={['200克以内', '200-350克', '350克以上']} />
+                          </div>
+                          <div>
+                            <span style={labelStyle}>鸡蛋摄入频次</span>
+                            <Radio field="eggFrequency" label="" options={['1-3天/周', '3-5天/周', '每天都吃']} />
+                          </div>
+                          <div>
+                            <span style={labelStyle}>鸡蛋摄入量</span>
+                            <Radio field="eggAmount" label="" options={['1个', '2-3个', '4个以上']} />
+                          </div>
+                          <Radio field="dairyAmount" label="奶制品摄入量" options={['＜300毫升/天', '300-500毫升/天', '＞500毫升', '几乎不喝']} />
+                        </div>
+                        <div style={rowStyle}>
+                          <div>
+                            <span style={labelStyle}>坚果摄入频次</span>
+                            <Radio field="nutFrequency" label="" options={['一周2-3天', '每天吃', '几乎不吃']} />
+                          </div>
+                          <div>
+                            <span style={labelStyle}>坚果摄入量</span>
+                            <Radio field="nutAmount" label="" options={['10克', '20-30克', '50克以上']} />
+                          </div>
+                          <div>
+                            <span style={labelStyle}>粗杂粮摄入频次</span>
+                            <Radio field="grainFrequency" label="" options={['每天吃', '1-2天/周', '3天/周及以上', '几乎不吃']} />
+                          </div>
+                          <div>
+                            <span style={labelStyle}>粗杂粮摄入量</span>
+                            <Radio field="grainAmount" label="" options={['50-100克', '100-200克', '200-250克', '300克以上']} />
+                          </div>
+                        </div>
+
+                        <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', margin: '12px 0 10px' }}>饮食习惯</div>
+                        <div style={rowStyle}>
+                          <Radio field="dietaryRestrictions" label="忌口" options={['无', '有']} />
+                          <TextInput field="dietaryRestrictionsDesc" label="忌口具体说明" placeholder="如 不吃海鲜、不吃辣" />
+                        </div>
+                        <div style={{ marginBottom: 12 }}>
+                          <Checkbox field="badDietHabits" label="不良饮食习惯（可多选）"
+                            options={['三餐不规律', '常吃夜宵', '常吃外卖', '进餐速度过快', '常吃油炸食品', '常吃甜品及含糖饮料', '常吃腌制食品', '常吃动物内脏', '饮食重油', '口味偏咸']} />
+                        </div>
+                        <Radio field="entertainment" label="应酬频率" options={['1-2次/周', '3-5次/周', '6-7次/周', '无或偶尔']} />
+                      </div>
+                    )}
+
+                    {/* 运动与作息 */}
+                    {lifestyleTab === 'exercise' && (
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginBottom: 10 }}>运动</div>
+                        <div style={rowStyle}>
+                          <TextInput field="exerciseType" label="运动类型" placeholder="如 跑步、瑜伽、游泳" />
+                          <Radio field="exerciseFrequency" label="运动频率" options={['1-2天/周', '3-5天/周', '6-7天/周', '无']} />
+                          <TextInput field="exerciseDuration" label="每次时长（分钟）" placeholder="如 30" />
+                        </div>
+                        <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', margin: '12px 0 10px' }}>作息</div>
+                        <div style={rowStyle}>
+                          <TextInput field="wakeTime" label="起床时间" placeholder="如 07:00" />
+                          <TextInput field="sleepTime" label="入睡时间" placeholder="如 23:00" />
+                          <Radio field="scheduleRegularity" label="作息规律性" options={['规律', '不规律']} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 烟酒与应酬 */}
+                    {lifestyleTab === 'alcohol' && (
+                      <div>
+                        <div style={rowStyle}>
+                          <Radio field="smokingStatus" label="吸烟情况" options={['＜10支/日', '10-20支/日', '20-30支/日', '30支以上/日', '不吸烟', '戒烟']} />
+                        </div>
+                        <div style={rowStyle}>
+                          <Radio field="drinkingFrequency" label="饮酒频率" options={['＜1天/周', '1-3天/周', '3天/周及以上', '每天喝', '不喝酒']} />
+                          <Checkbox field="drinkingType" label="饮酒类型" options={['红酒', '白酒', '啤酒', '其它']} />
+                        </div>
+                        <Radio field="entertainmentFreq" label="应酬频率" options={['1-2次/周', '3-5次/周', '6-7次/周', '无或偶尔']} />
+                      </div>
+                    )}
+
+                    {/* 营养素与过敏 */}
+                    {lifestyleTab === 'nutrition' && (
+                      <div>
+                        <div style={rowStyle}>
+                          <TextInput field="nutritionHistory" label="营养干预史" placeholder="描述既往营养干预情况" multiline />
+                          <TextInput field="dailyDietAssessment" label="每日膳食摄入量评估" placeholder="描述" multiline />
+                          <TextInput field="nutrientOverview" label="营养素摄入概况" placeholder="描述" multiline />
+                        </div>
+                        <div style={{ marginBottom: 12 }}>
+                          <Checkbox field="foodAllergens" label="食物过敏源（可多选）" options={['无', '海鲜', '坚果', '奶制品', '蛋类', '芒果', '其它']} />
+                        </div>
+                        <div style={rowStyle}>
+                          <Radio field="glutenAllergy" label="麸质过敏" options={['是', '否', '不详']} />
+                          <Radio field="dailyWater" label="每日饮水量" options={['1500毫升内', '1500-1700毫升', '1800-2000毫升', '2500毫升', '3000毫升以上']} />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 综合概述 */}
+                    {lifestyleTab === 'summary' && (
+                      <div>
+                        <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 10 }}>
+                          系统根据填写内容自动生成，医护可手动覆盖编辑。
+                        </div>
+                        {editingLifestyle ? (
+                          <div>
+                            <div style={{ marginBottom: 10 }}>
+                              <label style={labelStyle}>手动概述（填写后覆盖自动生成）</label>
+                              <textarea className="form-control" rows={5}
+                                value={ld.summaryOverride || ''}
+                                placeholder="留空则使用自动生成概述"
+                                onChange={e => setLd({ summaryOverride: e.target.value })}
+                                style={{ resize: 'vertical' }} />
+                            </div>
+                            <div style={{ fontSize: 12, color: '#8AA89C' }}>预览（自动生成）：</div>
+                            <div style={{ marginTop: 6 }}>
+                              {buildLifestyleSummary(ld).map((f, i) => (
+                                <div key={i} style={{ fontSize: 13, color: '#4A6558', padding: '3px 0' }}>☑ {f}</div>
+                              ))}
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            {ld.summaryOverride ? (
+                              <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{ld.summaryOverride}</div>
+                            ) : (
+                              (ld.autoSummaryFlags || buildLifestyleSummary(ld)).length > 0
+                                ? (ld.autoSummaryFlags || buildLifestyleSummary(ld)).map((f, i) => (
+                                    <div key={i} style={{ fontSize: 13, color: '#4A6558', padding: '3px 0' }}>☑ {f}</div>
+                                  ))
+                                : <div style={{ fontSize: 13, color: '#aaa' }}>暂无概述，请先填写各板块信息。</div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           </div>
 

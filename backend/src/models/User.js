@@ -124,17 +124,19 @@ const userSchema = new mongoose.Schema({
   maritalStatus:   { type: String, default: '' },   // 婚姻状况
   ethnicity:       { type: String, default: '' },   // 民族
   contactPhone2:   { type: String, default: '' },   // 紧急联系电话
-  // 生活方式（文字描述）
+  // 生活方式（文字描述，旧字段保留兼容）
   lifestyle: {
-    diet:     { type: String, default: '' },  // 饮食
-    exercise: { type: String, default: '' },  // 运动
-    sleep:    { type: String, default: '' },  // 睡眠
-    water:    { type: String, default: '' },  // 饮水
-    alcohol:  { type: String, default: '' },  // 饮酒
-    smoking:  { type: String, default: '' },  // 吸烟
-    bowel:    { type: String, default: '' },  // 排便
-    mood:     { type: String, default: '' },  // 情绪
+    diet:     { type: String, default: '' },
+    exercise: { type: String, default: '' },
+    sleep:    { type: String, default: '' },
+    water:    { type: String, default: '' },
+    alcohol:  { type: String, default: '' },
+    smoking:  { type: String, default: '' },
+    bowel:    { type: String, default: '' },
+    mood:     { type: String, default: '' },
   },
+  // 生活方式详细结构化数据（膳食调查表融合后新字段）
+  lifestyle_data: { type: mongoose.Schema.Types.Mixed, default: {} },
   serviceStartDate: { type: String, default: '' }, // 服务开始时间
 
   // 健康基金余额（由医护端 $inc 累加，Mongoose 必须显式定义才能读取）

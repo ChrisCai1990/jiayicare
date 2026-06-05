@@ -3,6 +3,7 @@ const jwt = require('jsonwebtoken');
 const https = require('https');
 const User = require('../models/User');
 const GiftRecord = require('../models/GiftRecord');
+const VerificationCode = require('../models/VerificationCode');
 const { seedUserData } = require('../config/seedData');
 const router = express.Router();
 
@@ -13,8 +14,6 @@ async function computeHealthFund(user) {
       { $match: { patientId: user._id, giftType: 'fund', status: 'active' } },
       { $group: { _id: '$fundType', total: { $sum: '$fundAmount' } } },
     ]);
-    // 企业赠送 = fundType === 'enterprise'
-    // 自有基金 = 其余所有类型（promotion / other 等）
     const enterpriseFund = giftFundAgg.find(g => g._id === 'enterprise')?.total || 0;
     const totalBalance = user.healthFundBalance || 0;
     return {
@@ -38,9 +37,6 @@ function httpsGet(url) {
   });
 }
 
-// 内存存储验证码（演示用，生产环境建议用 Redis）
-const codStore = new Map();
-
 // 阿里云短信发送
 async function sendSmsAliyun(phone, code) {
   const Dysmsapi = require('@alicloud/dysmsapi20170525');
@@ -55,8 +51,8 @@ async function sendSmsAliyun(phone, code) {
   const client = new Dysmsapi.default(config);
   const request = new Dysmsapi.SendSmsRequest({
     phoneNumbers:  phone,
-    signName:      process.env.ALIYUN_SMS_SIGN,       // 如：嘉医汇
-    templateCode:  process.env.ALIYUN_SMS_TEMPLATE,   // 如：SMS_123456789
+    signName:      process.env.ALIYUN_SMS_SIGN,
+    templateCode:  process.env.ALIYUN_SMS_TEMPLATE,
     templateParam: JSON.stringify({ code }),
   });
 
@@ -87,7 +83,12 @@ router.post('/send-code', async (req, res) => {
   const isDemo = phone === '13800138000';
   const code = isDemo ? '123456' : String(Math.floor(100000 + Math.random() * 900000));
 
-  codStore.set(phone, { code, expiry: Date.now() + 5 * 60 * 1000 });
+  // 持久化到 MongoDB（TTL 索引自动清理过期记录，服务重启不丢失）
+  await VerificationCode.findOneAndUpdate(
+    { phone },
+    { code, expiresAt: new Date(Date.now() + 5 * 60 * 1000) },
+    { upsert: true }
+  );
 
   // 真实短信模式
   if (!isDemo && smsEnabled()) {
@@ -115,33 +116,30 @@ router.post('/login', async (req, res) => {
     return res.status(400).json({ success: false, message: '手机号和验证码不能为空' });
   }
 
-  // 验证码校验
-  const stored = codStore.get(phone);
-  if (!stored || stored.code !== code || Date.now() > stored.expiry) {
+  // 验证码校验（从 MongoDB 读取，服务重启后依然有效）
+  const stored = await VerificationCode.findOne({ phone });
+  if (!stored || stored.code !== code || stored.expiresAt < new Date()) {
     return res.status(400).json({ success: false, message: '验证码错误或已过期' });
   }
-  codStore.delete(phone);
+  await VerificationCode.deleteOne({ phone }); // 一次性使用
 
-  // 查找用户（当前开放注册：内部测试阶段，新手机号自动创建账号）
-  // TODO: 测试完成后将下方注释恢复为关闭注册逻辑
-  let user = await User.findOne({ phone });
+  // 查找用户（新手机号自动创建账号）
   const isDemo = phone === '13800138000';
+  let user = await User.findOne({ phone });
+  const isNew = !user; // 修复：在创建前判断，而非硬编码 false
 
-  if (!user) {
-    // 新用户自动注册
+  if (isNew) {
     user = await User.create({ phone });
     // 仅演示账号填充演示数据；真实新用户初始为空数据
     if (isDemo) {
       seedUserData(user._id).catch(console.error);
     }
   }
-  const isNew = false;
 
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRES_IN || '30d',
   });
 
-  // 登录响应中同步计算健康基金，避免 App 端需要二次请求 /user/me
   const healthFund = await computeHealthFund(user);
 
   res.json({
@@ -153,7 +151,6 @@ router.post('/login', async (req, res) => {
 
 // ── 微信网页授权登录 ──────────────────────────────────────────────
 // POST /auth/wechat  body: { code }
-// 前端用微信 OAuth code 换取 access_token + openid，创建或关联账号
 router.post('/wechat', async (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ success: false, message: '缺少 code' });
@@ -185,10 +182,8 @@ router.post('/wechat', async (req, res) => {
       user = await User.create({
         wechatOpenid: openid,
         name: wxUser.nickname || '微信用户',
-        // 手机号需用户后续绑定
       });
     } else if (wxUser.nickname && !user.name) {
-      // 补全昵称
       user = await User.findByIdAndUpdate(user._id, { name: wxUser.nickname }, { new: true });
     }
 
@@ -197,7 +192,11 @@ router.post('/wechat', async (req, res) => {
     });
 
     const healthFund = await computeHealthFund(user);
-    res.json({ success: true, message: isNew ? '微信登录成功' : '登录成功', data: { token, user: { ...user.toObject(), healthFund }, isNew } });
+    res.json({
+      success: true,
+      message: isNew ? '微信注册成功' : '登录成功',
+      data: { token, user: { ...user.toObject(), healthFund }, isNew },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: '微信登录失败', error: err.message });
   }

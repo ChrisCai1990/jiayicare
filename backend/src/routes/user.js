@@ -201,7 +201,17 @@ router.put('/me', auth, async (req, res) => {
 router.post('/onboarding', auth, async (req, res) => {
   try {
     const { name, age, gender, height, weight, conditions, smoking, drinking, exercise, familyHistory, medications } = req.body;
-    const score = 60 + Math.floor(Math.random() * 25);
+
+    // 健康评分：基于 Onboarding 填写的真实数据计算，不再随机
+    let score = 85;
+    if (smoking === true || smoking === 'true' || smoking === 'yes') score -= 8;
+    if (drinking === true || drinking === 'true' || drinking === 'yes') score -= 5;
+    if (Array.isArray(conditions) && conditions.length > 0) score -= Math.min(conditions.length * 5, 20);
+    else if (typeof conditions === 'string' && conditions.trim()) score -= 5;
+    if (Array.isArray(familyHistory) && familyHistory.length > 0) score -= Math.min(familyHistory.length * 3, 10);
+    else if (typeof familyHistory === 'string' && familyHistory.trim()) score -= 3;
+    if (exercise === 'none' || exercise === false || exercise === 'false') score -= 3;
+    score = Math.max(45, Math.min(90, score)); // 范围限定在 45~90
     const updateData = {
       healthScore: score,
       onboardingCompleted: true,

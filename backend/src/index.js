@@ -17,8 +17,28 @@ const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../uploa
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use('/api/uploads', express.static(UPLOADS_DIR));
 
-// 中间件
-app.use(cors());
+// 中间件 — CORS 白名单（生产域名 + 本地开发端口）
+const ALLOWED_ORIGINS = [
+  'https://jiaycare.com',
+  'https://admin.jiaycare.com',
+  'https://staff.jiaycare.com',
+  // 本地开发
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:5174',
+  'http://localhost:5175',
+  'http://localhost:8081',
+  'http://localhost:8082',
+  'http://localhost:19006', // Expo web
+];
+app.use(cors({
+  origin: (origin, callback) => {
+    // origin 为空表示非浏览器请求（curl、移动端原生、服务器间调用）
+    if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
+    callback(new Error(`CORS: origin ${origin} not allowed`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 app.use(morgan('dev'));

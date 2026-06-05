@@ -157,7 +157,7 @@ function calcStatus(type, value, extra) {
   if (type === 'bloodSugar') {
     if (v >= 7.0) return 'danger';
     if (v >= 6.1) return 'warning';
-    if (v < 3.9)  return 'warning';
+    if (v < 3.9)  return 'danger';   // 低血糖（< 3.9 mmol/L）危及生命，等级应为 danger
     return 'normal';
   }
   if (type === 'heartRate') {

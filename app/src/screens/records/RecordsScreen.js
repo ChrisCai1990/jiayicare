@@ -435,6 +435,7 @@ export default function RecordsScreen({ navigation }) {
 
   // 生活方式
   const [lifestyle, setLifestyle]         = useState({});
+  const [lifestyleData, setLifestyleData] = useState({});
   const [editingLifestyle, setEditingLifestyle] = useState(false);
   const [lifestyleDraft, setLifestyleDraft] = useState({});
 
@@ -466,6 +467,7 @@ export default function RecordsScreen({ navigation }) {
     if (meRes.status === 'fulfilled') {
       const data = meRes.value?.data;
       if (data?.lifestyle) setLifestyle(data.lifestyle);
+      if (data?.lifestyle_data) setLifestyleData(data.lifestyle_data);
       if (data?.healthProfile && Object.values(data.healthProfile).some(v => v)) {
         const local = loadProfileFromStorage();
         const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
@@ -738,26 +740,59 @@ export default function RecordsScreen({ navigation }) {
             </TouchableOpacity>
           </View>
           <View style={styles.profileCard}>
-            {[
-              { key: 'diet',     label: '饮食',              icon: 'nutrition-outline',  color: '#059669' },
-              { key: 'exercise', label: '运动',              icon: 'fitness-outline',    color: '#0077B6' },
-              { key: 'sleep',    label: '睡眠',              icon: 'moon-outline',       color: '#4F46E5' },
-              { key: 'water',    label: '饮水',              icon: 'water-outline',      color: '#0EA5E9' },
-              { key: 'alcohol',  label: '饮酒',              icon: 'wine-outline',       color: '#9D174D' },
-              { key: 'smoking',  label: '吸烟',              icon: 'flame-outline',      color: '#B45309' },
-              { key: 'bowel',    label: '排便',              icon: 'list-outline',       color: '#7C5C3D' },
-              { key: 'mood',     label: '情绪（初始记录）',  icon: 'happy-outline',      color: '#F59E0B', initialOnly: true },
-            ].map((item, i, arr) => (
-              <View key={item.key} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>
-                <View style={styles.profileRowLeft}>
-                  <Ionicons name={item.icon} size={13} color={item.color} style={{ marginRight: 6 }} />
-                  <Text style={styles.profileRowLabel}>{item.label}</Text>
+            {(() => {
+              const d = lifestyleData || {};
+              // 从结构化数据构建可读文本，若无则降级到旧字段
+              const dietParts = [];
+              const mealMap = { 居家: '居家', 外卖: '外卖', '饭店或外卖': '外食', 少吃: '少吃', 不吃: '不吃' };
+              if (d.breakfastDetail) dietParts.push(`早${mealMap[d.breakfastDetail] || d.breakfastDetail}`);
+              if (d.lunchDetail) dietParts.push(`午${mealMap[d.lunchDetail] || d.lunchDetail}`);
+              if (d.dinnerDetail) dietParts.push(`晚${mealMap[d.dinnerDetail] || d.dinnerDetail}`);
+              const dietVal = dietParts.length ? dietParts.join('、') : lifestyle.diet;
+
+              const exParts = [];
+              if (d.exerciseType) exParts.push(d.exerciseType);
+              if (d.exerciseFrequency && d.exerciseFrequency !== '无') exParts.push(d.exerciseFrequency);
+              if (d.exerciseDuration) exParts.push(`${d.exerciseDuration}分钟/次`);
+              const exVal = exParts.length ? exParts.join('，') : lifestyle.exercise;
+
+              const sleepParts = [];
+              if (d.sleepTime) sleepParts.push(`入睡${d.sleepTime}`);
+              if (d.wakeTime) sleepParts.push(`起床${d.wakeTime}`);
+              if (d.scheduleRegularity) sleepParts.push(d.scheduleRegularity);
+              const sleepVal = sleepParts.length ? sleepParts.join('，') : lifestyle.sleep;
+
+              const waterVal = d.dailyWater || lifestyle.water;
+
+              const smokeParts = [];
+              if (d.smokingStatus) smokeParts.push(`吸烟：${d.smokingStatus}`);
+              if (d.drinkingFrequency) smokeParts.push(`饮酒：${d.drinkingFrequency}`);
+              const smokeVal = smokeParts.length ? smokeParts.join('；') : (lifestyle.alcohol || lifestyle.smoking);
+
+              const allergenList = (d.foodAllergens || []).filter(a => a !== '无');
+              const allergyVal = allergenList.length ? allergenList.join('、') : '无';
+
+              const items = [
+                { label: '饮食',   icon: 'nutrition-outline', color: '#059669', val: dietVal },
+                { label: '运动',   icon: 'fitness-outline',   color: '#0077B6', val: exVal },
+                { label: '睡眠',   icon: 'moon-outline',      color: '#4F46E5', val: sleepVal },
+                { label: '饮水',   icon: 'water-outline',     color: '#0EA5E9', val: waterVal },
+                { label: '排便',   icon: 'list-outline',      color: '#7C5C3D', val: lifestyle.bowel },
+                { label: '烟酒',   icon: 'wine-outline',      color: '#9D174D', val: smokeVal },
+                { label: '过敏史', icon: 'alert-circle-outline', color: '#B45309', val: allergyVal },
+              ];
+              return items.map((item, i) => (
+                <View key={item.label} style={[styles.profileRow, i < items.length - 1 && styles.profileRowBorder]}>
+                  <View style={styles.profileRowLeft}>
+                    <Ionicons name={item.icon} size={13} color={item.color} style={{ marginRight: 6 }} />
+                    <Text style={styles.profileRowLabel}>{item.label}</Text>
+                  </View>
+                  <Text style={[styles.profileRowValue, !item.val && { color: colors.textMuted }]} numberOfLines={1}>
+                    {item.val || '未填写'}
+                  </Text>
                 </View>
-                <Text style={[styles.profileRowValue, !lifestyle[item.key] && { color: colors.textMuted }]} numberOfLines={1}>
-                  {lifestyle[item.key] || '未填写'}
-                </Text>
-              </View>
-            ))}
+              ));
+            })()}
           </View>
         </View>
 

@@ -14,8 +14,12 @@ router.get('/:token', async (req, res) => {
       return res.status(404).json({ success: false, message: '分享链接已失效或不存在' });
     }
 
-    // 增加访问次数
-    await ShareToken.findByIdAndUpdate(share._id, { $inc: { views: 1 } });
+    // 增加访问次数，{ new: true } 返回更新后的文档（避免返回旧值 +1 的估算）
+    const updated = await ShareToken.findByIdAndUpdate(
+      share._id,
+      { $inc: { views: 1 } },
+      { new: true }
+    );
 
     res.json({
       success: true,
@@ -24,7 +28,7 @@ router.get('/:token', async (req, res) => {
         userName: share.userName,
         period: share.period,
         expiresAt: share.expiresAt,
-        views: share.views + 1,
+        views: updated.views,  // 使用数据库返回的真实值
         sharedAt: share.createdAt,
       },
     });

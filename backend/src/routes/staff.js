@@ -416,6 +416,11 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     });
   }
 
+  // 生活方式详细结构化数据（膳食调查表融合）
+  if (req.body.lifestyle_data !== undefined) {
+    updateData['lifestyle_data'] = req.body.lifestyle_data;
+  }
+
   // 健康档案字符串字段（仅更新文本，不覆盖数组字段）
   if (req.body.healthProfile && typeof req.body.healthProfile === 'object') {
     ['bloodType', 'drugAllergy', 'foodAllergy', 'pastHistory', 'medicHistory', 'surgeryHistory', 'menstrualHistory', 'maritalHistory', 'familyHistoryNote'].forEach(k => {
