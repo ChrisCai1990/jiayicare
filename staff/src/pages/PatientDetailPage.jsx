@@ -875,8 +875,11 @@ export default function PatientDetailPage() {
                   { key: 'summary', label: '综合概述' },
                 ]
                 const tabStyle = (k) => ({
-                  padding: '6px 14px', fontSize: 13, cursor: 'pointer', borderBottom: lifestyleTab === k ? '2px solid #1E6B50' : '2px solid transparent',
-                  color: lifestyleTab === k ? '#1E6B50' : '#8AA89C', fontWeight: lifestyleTab === k ? 600 : 400, background: 'none', border: 'none', borderBottom: lifestyleTab === k ? '2px solid #1E6B50' : '2px solid transparent',
+                  padding: '6px 14px', fontSize: 13, cursor: 'pointer',
+                  color: lifestyleTab === k ? '#1E6B50' : '#8AA89C',
+                  fontWeight: lifestyleTab === k ? 600 : 400,
+                  background: 'none', border: 'none',
+                  borderBottom: lifestyleTab === k ? '2px solid #1E6B50' : '2px solid transparent',
                 })
                 const labelStyle = { fontSize: 12, color: '#8AA89C', marginBottom: 4, display: 'block' }
                 const rowStyle = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginBottom: 12 }
