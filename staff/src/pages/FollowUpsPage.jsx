@@ -62,10 +62,26 @@ function DetailModal({ item, onClose }) {
             </>
           )}
           {item.status === 'cancelled' && <Row label="取消原因" value={item.cancelReason} />}
+          {/* 随访表单完整数据（formData） */}
+          {item.formData && Object.keys(item.formData).length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 700, marginBottom: 8, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访表单完整内容</div>
+              {Object.entries(item.formData).map(([k, v]) => {
+                if (v === null || v === undefined || v === '') return null
+                if (Array.isArray(v)) {
+                  return v.length > 0 ? <Row key={k} label={k} value={v.join('、')} /> : null
+                }
+                if (typeof v === 'object') {
+                  const sub = Object.entries(v).filter(([, sv]) => sv !== null && sv !== undefined && sv !== '').map(([sk, sv]) => `${sk}: ${sv}`).join('；')
+                  return sub ? <Row key={k} label={k} value={sub} /> : null
+                }
+                return <Row key={k} label={k} value={String(v)} />
+              })}
+            </div>
+          )}
           {/* 扩展字段（随访表单 extras） */}
           {item.extras && Object.keys(item.extras).length > 0 && (
-            <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 700, marginBottom: 8 }}>随访表单数据</div>
+            <div style={{ marginTop: 8 }}>
               {Object.entries(item.extras).map(([k, v]) => (
                 typeof v === 'object' ? null :
                 <Row key={k} label={k} value={String(v)} />

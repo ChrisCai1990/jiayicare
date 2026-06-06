@@ -270,10 +270,13 @@ export const familyAPI = {
 
 // 系统内家庭成员关联（需求6/18）
 export const familyLinksAPI = {
-  list:   ()                        => request('/user/family-links'),
-  search: (q)                       => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
-  add:    (linkedUserId, relation)  => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),
-  remove: (linkId)                  => request(`/user/family-links/${linkId}`, { method: 'DELETE' }),
+  list:           ()                       => request('/user/family-links'),
+  search:         (q)                      => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
+  add:            (linkedUserId, relation) => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),
+  remove:         (linkId)                 => request(`/user/family-links/${linkId}`, { method: 'DELETE' }),
+  pendingInvites: ()                       => request('/user/family-links/pending-invites'),
+  acceptInvite:   (inviteId)              => request(`/user/family-links/invites/${inviteId}/accept`, { method: 'PATCH' }),
+  rejectInvite:   (inviteId)              => request(`/user/family-links/invites/${inviteId}/reject`, { method: 'PATCH' }),
 };
 
 // ── Share / 健康报告分享 ──────────────────────────────────────────

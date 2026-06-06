@@ -934,9 +934,9 @@ export default function PatientDetailPage() {
                     </div>
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>医疗险（三选一）</label>
+                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>商业医疗险（四选一）</label>
                     <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
-                      {['高端医疗险', '百万医疗险', '未购买'].map(opt => (
+                      {['百万医疗险', '高端医疗险（亚洲版）', '高端医疗险（全球版）', '未购买'].map(opt => (
                         <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
                           <input type="radio" name="ins_commercial" value={opt}
                             checked={insuranceForm.commercial_medical === opt}
@@ -947,14 +947,14 @@ export default function PatientDetailPage() {
                     </div>
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>重疾险（二选一）</label>
+                    <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>重疾险（三选一）</label>
                     <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
-                      {['有', '无'].map(opt => (
+                      {['大陆险', '港险', '未购买'].map(opt => (
                         <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
                           <input type="radio" name="ins_critical" value={opt}
                             checked={insuranceForm.critical_illness === opt}
                             onChange={() => setInsuranceForm(p => ({ ...p, critical_illness: opt }))} />
-                          {opt}{opt === '有' ? '（已购买重大疾病保险）' : '（未购买）'}
+                          {opt}
                         </label>
                       ))}
                     </div>

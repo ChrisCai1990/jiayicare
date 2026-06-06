@@ -46,9 +46,13 @@ router.post('/', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: '收件人无效' });
     }
 
-    // 检查营养师是否已分配
-    if (to === 'nutritionist' && !req.user.assignedNutritionist) {
-      return res.status(400).json({ success: false, message: '暂未分配营养师，请联系健管专员' });
+    // 检查营养师是否已分配（re-fetch确保最新状态）
+    if (to === 'nutritionist') {
+      const User = require('../models/User');
+      const freshUser = await User.findById(req.user._id).select('assignedNutritionist');
+      if (!freshUser?.assignedNutritionist) {
+        return res.status(400).json({ success: false, message: '暂未分配营养师，请联系健管专员' });
+      }
     }
 
     const TITLE_MAP = { doctor: '家庭医师', nutritionist: '营养师', manager: '健管师' };

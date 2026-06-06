@@ -2116,4 +2116,64 @@ router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// ── 日常健康打卡总览（新增需求）────────────────────────────────────
+// GET /api/staff/checkin-overview?date=&patientName=&page=&limit=
+router.get('/checkin-overview', staffAuth, async (req, res) => {
+  try {
+    const { date, patientName, page = 1, limit = 50 } = req.query;
+    const staff = req.staff;
+
+    // 确定当前医护人员管辖的患者
+    const patientFilter = {};
+    if (staff.role === 'healthManager') patientFilter.assignedHealthManager = staff._id;
+    else if (staff.role === 'familyDoctor') patientFilter.assignedFamilyDoctor = staff._id;
+    else if (staff.role === 'nutritionist') patientFilter.assignedNutritionist = staff._id;
+    if (patientName) patientFilter.name = new RegExp(patientName, 'i');
+
+    const patients = await User.find(patientFilter).select('name phone').lean();
+    const patientIds = patients.map(p => p._id);
+    const patientMap = {};
+    patients.forEach(p => { patientMap[String(p._id)] = p; });
+
+    // 日期筛选
+    const recordFilter = { user: { $in: patientIds } };
+    if (date) {
+      const start = new Date(date); start.setHours(0, 0, 0, 0);
+      const end   = new Date(date); end.setHours(23, 59, 59, 999);
+      recordFilter.recordedAt = { $gte: start, $lte: end };
+    }
+
+    // 每个患者最新一条打卡记录
+    const latestRecords = await HealthRecord.aggregate([
+      { $match: recordFilter },
+      { $sort: { recordedAt: -1 } },
+      { $group: { _id: '$user', latestRecord: { $first: '$$ROOT' }, recordCount: { $sum: 1 } } },
+      { $sort: { 'latestRecord.recordedAt': -1 } },
+      { $skip: (Number(page) - 1) * Number(limit) },
+      { $limit: Number(limit) },
+    ]);
+
+    // 拼接患者信息和摘要
+    const result = latestRecords.map(r => {
+      const patient = patientMap[String(r._id)] || {};
+      const rec = r.latestRecord;
+      const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水' };
+      const summary = `${TYPE_LABEL[rec.type] || rec.type} ${rec.value}${rec.unit || ''}`;
+      return {
+        patientId: r._id,
+        patientName: patient.name || '-',
+        patientPhone: patient.phone || '-',
+        latestRecordAt: rec.recordedAt,
+        summary,
+        type: rec.type,
+        value: rec.value,
+        unit: rec.unit,
+        recordCount: r.recordCount,
+      };
+    });
+
+    res.json({ success: true, data: result, total: result.length });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 module.exports = router;

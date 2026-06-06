@@ -881,7 +881,7 @@ router.get('/family-links/search', auth, async (req, res) => {
   }
 });
 
-// POST /api/user/family-links — 添加已注册用户为家庭成员（双向）
+// POST /api/user/family-links — 向已注册用户发送家庭成员邀请（需确认）
 router.post('/family-links', auth, async (req, res) => {
   try {
     const { linkedUserId, relation } = req.body;
@@ -889,20 +889,91 @@ router.post('/family-links', auth, async (req, res) => {
     if (String(linkedUserId) === String(req.user._id)) return res.status(400).json({ success: false, message: '不能关联自己' });
 
     const [userA, userB] = await Promise.all([
-      User.findById(req.user._id).select('familyLinks name'),
-      User.findById(linkedUserId).select('familyLinks name'),
+      User.findById(req.user._id).select('familyLinks familyInvites name'),
+      User.findById(linkedUserId).select('familyLinks familyInvites name'),
     ]);
     if (!userB) return res.status(404).json({ success: false, message: '用户不存在' });
     if (userA.familyLinks.find(l => String(l.linkedUser) === String(linkedUserId))) {
       return res.status(400).json({ success: false, message: '已是家庭成员' });
     }
+    // 检查是否已有待处理邀请
+    const hasExistingInvite = (userB.familyInvites || []).find(
+      inv => String(inv.fromUser) === String(req.user._id) && inv.status === 'pending'
+    );
+    if (hasExistingInvite) {
+      return res.status(400).json({ success: false, message: '已发送过邀请，等待对方确认' });
+    }
 
-    userA.familyLinks.push({ linkedUser: linkedUserId, relation: relation || '' });
-    if (!userB.familyLinks.find(l => String(l.linkedUser) === String(req.user._id))) {
-      userB.familyLinks.push({ linkedUser: req.user._id, relation: '' });
+    if (!userB.familyInvites) userB.familyInvites = [];
+    userB.familyInvites.push({
+      fromUser: req.user._id,
+      fromName: req.user.name || req.user.phone,
+      relation: relation || '',
+      status: 'pending',
+    });
+    await userB.save();
+    res.json({ success: true, message: `邀请已发送，等待 ${userB.name} 确认` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/user/family-links/pending-invites — 查看收到的待确认邀请
+router.get('/family-links/pending-invites', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('familyInvites');
+    const pending = (user?.familyInvites || [])
+      .filter(inv => inv.status === 'pending')
+      .map(inv => ({
+        _id: inv._id,
+        fromUser: inv.fromUser,
+        fromName: inv.fromName,
+        relation: inv.relation,
+        createdAt: inv.createdAt,
+      }));
+    res.json({ success: true, data: pending });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/user/family-links/invites/:inviteId/accept — 接受邀请
+router.patch('/family-links/invites/:inviteId/accept', auth, async (req, res) => {
+  try {
+    const userB = await User.findById(req.user._id).select('familyLinks familyInvites name');
+    const invite = userB.familyInvites.id(req.params.inviteId);
+    if (!invite || invite.status !== 'pending') {
+      return res.status(404).json({ success: false, message: '邀请不存在或已处理' });
+    }
+    const userA = await User.findById(invite.fromUser).select('familyLinks name');
+    if (!userA) return res.status(404).json({ success: false, message: '邀请方用户不存在' });
+
+    invite.status = 'accepted';
+    // 双向建立关联
+    if (!userA.familyLinks.find(l => String(l.linkedUser) === String(req.user._id))) {
+      userA.familyLinks.push({ linkedUser: req.user._id, relation: '' });
+    }
+    if (!userB.familyLinks.find(l => String(l.linkedUser) === String(invite.fromUser))) {
+      userB.familyLinks.push({ linkedUser: invite.fromUser, relation: invite.relation || '' });
     }
     await Promise.all([userA.save(), userB.save()]);
-    res.json({ success: true, message: `已成功添加 ${userB.name} 为家庭成员` });
+    res.json({ success: true, message: '已接受邀请，家庭成员关联成功' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/user/family-links/invites/:inviteId/reject — 拒绝邀请
+router.patch('/family-links/invites/:inviteId/reject', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).select('familyInvites');
+    const invite = user.familyInvites.id(req.params.inviteId);
+    if (!invite || invite.status !== 'pending') {
+      return res.status(404).json({ success: false, message: '邀请不存在或已处理' });
+    }
+    invite.status = 'rejected';
+    await user.save();
+    res.json({ success: true, message: '已拒绝邀请' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

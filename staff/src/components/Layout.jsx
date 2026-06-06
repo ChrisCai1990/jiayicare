@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
+import { staffAPI } from '../api'
 
 const PLAN_CHILDREN = [
   { label: '年度体检方案', type: 'annual_checkup' },
@@ -24,6 +25,7 @@ const ALL_NAV = [
   { label: '会员营销', icon: '🎯', path: '/marketing',  roles: ['superadmin','manager','healthManager','familyDoctor'] },
   { label: '团队管理', icon: '🫂', path: '/team',      roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'] },
   { label: '运营看板', icon: '📊', path: '/operations', roles: ['superadmin','manager'] },
+  { label: '日常健康打卡', icon: '📊', path: '/daily-checkin', roles: [] },
   { label: '消息通知', icon: '🔔', path: '/notifications', roles: [] },
   { label: '个人中心', icon: '👤', path: '/profile',   roles: [] },
 ]
@@ -34,6 +36,20 @@ export default function Layout() {
   const loc = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [planExpanded, setPlanExpanded] = useState(true)
+  const [notifBadge, setNotifBadge] = useState(0)
+
+  useEffect(() => {
+    const fetch = async () => {
+      try {
+        const r = await staffAPI.getNotifications()
+        const s = r.data?.summary || {}
+        setNotifBadge((s.pendingReferralCount || 0) + (s.unreadMessageCount || 0))
+      } catch {}
+    }
+    fetch()
+    const timer = setInterval(fetch, 60000)
+    return () => clearInterval(timer)
+  }, [])
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -127,7 +143,12 @@ export default function Layout() {
                 onClick={() => handleNavClick(item.path)}
               >
                 <span className="sidebar-item-icon">{item.icon}</span>
-                <span>{item.label}</span>
+                <span style={{ flex: 1 }}>{item.label}</span>
+                {item.path === '/notifications' && notifBadge > 0 && (
+                  <span style={{ background: '#DC3545', color: '#fff', borderRadius: 99, fontSize: 11, fontWeight: 700, padding: '1px 7px', minWidth: 20, textAlign: 'center' }}>
+                    {notifBadge}
+                  </span>
+                )}
               </div>
             )
           })}

@@ -474,7 +474,8 @@ export default function RecordsScreen({ navigation }) {
         const local = loadProfileFromStorage();
         const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
         const merged = { ...(local || fallback), ...data.healthProfile };
-        if (!merged.familyHistory && data.healthProfile.familyHistoryNote) {
+        const fhEmpty = !merged.familyHistory || (Array.isArray(merged.familyHistory) && merged.familyHistory.length === 0);
+        if (fhEmpty && data.healthProfile.familyHistoryNote) {
           merged.familyHistory = data.healthProfile.familyHistoryNote;
         }
         if (data.bloodTypeABO) merged.bloodTypeABO = data.bloodTypeABO;

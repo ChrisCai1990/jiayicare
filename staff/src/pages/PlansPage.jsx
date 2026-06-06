@@ -14,8 +14,9 @@ const TYPE_LABEL = {
   // 旧类型兼容展示
   checkup:'体检方案', health:'健康管理方案', followup:'随访计划',
 }
-const STATUS_LABEL = { draft:'草稿', active:'已推送', completed:'已完成', cancelled:'已取消' }
-const STATUS_COLOR = { draft:'#8AA89C', active:'#1E6B50', completed:'#22A06B', cancelled:'#DC3545' }
+const STATUS_LABEL = { draft:'草稿', active:'已推送', confirmed:'已确认', completed:'已完成', cancelled:'已取消' }
+const STATUS_COLOR = { draft:'#8AA89C', active:'#1E6B50', confirmed:'#22A06B', completed:'#22A06B', cancelled:'#DC3545' }
+const getPlanStatus = (p) => p.confirmedAt ? 'confirmed' : p.status
 
 const ANNUAL_PLAN_TYPE_LABEL = {
   health_reshape:    '健康重塑方案',
@@ -183,8 +184,7 @@ export default function PlansPage() {
                       <td><span className="badge badge-info">{TYPE_LABEL[p.type]}</span></td>
                       <td>{p.patientId?.name || '-'} <span style={{ color: '#aaa', fontSize: 12 }}>{p.patientId?.phone}</span></td>
                       <td>
-                        <span style={{ color: STATUS_COLOR[p.status], fontWeight: 500 }}>{STATUS_LABEL[p.status]}</span>
-                        {p.confirmedAt && <span style={{ marginLeft: 6, fontSize: 11, color: '#22A06B', background: '#E8F5EF', padding: '1px 6px', borderRadius: 8 }}>已确认</span>}
+                        <span style={{ color: STATUS_COLOR[getPlanStatus(p)], fontWeight: 500 }}>{STATUS_LABEL[getPlanStatus(p)]}</span>
                       </td>
                       <td>{p.items?.length || 0} 项</td>
                       <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleDateString('zh-CN')}</td>

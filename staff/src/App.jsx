@@ -24,6 +24,7 @@ import MarketingPage from './pages/MarketingPage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import AnnualMgmtPlanPage from './pages/AnnualMgmtPlanPage'
 import AbnormalReviewPage from './pages/AbnormalReviewPage'
+import DailyCheckinPage from './pages/DailyCheckinPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -98,6 +99,7 @@ export default function App() {
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="marketing" element={<MarketingPage />} />
               <Route path="abnormal-reviews" element={<AbnormalReviewPage />} />
+              <Route path="daily-checkin" element={<DailyCheckinPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
           </Routes>

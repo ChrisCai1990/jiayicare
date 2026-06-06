@@ -67,6 +67,7 @@ export default function NewPatientPage() {
   const [selectedDiseases, setSelectedDiseases] = useState([])
   const [patientCategory, setPatientCategory] = useState('adult')
   const [idError, setIdError] = useState('')
+  const [birthDateError, setBirthDateError] = useState('')
   const [ethnicitySearch, setEthnicitySearch] = useState('')
   const [showEthnicityList, setShowEthnicityList] = useState(false)
 
@@ -99,7 +100,7 @@ export default function NewPatientPage() {
     // 女性
     menstrualHistory: '', maritalHistory: '',
     // 医疗保障
-    basic_insurance: '', commercial_medical: [], critical_illness: '',
+    basic_insurance: '', commercial_medical: '', critical_illness: '',
     // 儿童
     childProfile: {
       motherAge: '', gravida: '', para: '',
@@ -125,9 +126,17 @@ export default function NewPatientPage() {
     return { ...f, commercial_medical: arr }
   })
 
-  // 出生日期变化 → 自动计算年龄
+  // 出生日期变化 → 自动计算年龄 + 校验
   const handleBirthDateChange = e => {
     const val = e.target.value
+    setBirthDateError('')
+    if (val) {
+      const year = parseInt(val.split('-')[0])
+      const now = new Date().getFullYear()
+      if (isNaN(year) || year < 1900 || year > now) {
+        setBirthDateError(`年份须在 1900–${now} 之间`)
+      }
+    }
     setForm(f => ({ ...f, birthDate: val, age: calcAge(val) }))
   }
 
@@ -170,7 +179,7 @@ export default function NewPatientPage() {
         height: form.height ? Number(form.height) : undefined,
         weight: form.weight ? Number(form.weight) : undefined,
         chronicDiseases: selectedDiseases,
-        commercial_medical: form.commercial_medical.join(','),
+        commercial_medical: form.commercial_medical,
         assignedHealthManager: form.assignedHealthManager || undefined,
         assignedFamilyDoctor:  form.assignedFamilyDoctor  || undefined,
         assignedNutritionist:  form.assignedNutritionist  || undefined,
@@ -251,7 +260,13 @@ export default function NewPatientPage() {
               <F label="姓名 *" span={2}><input className="form-input" placeholder="真实姓名" value={form.name} onChange={set('name')} required /></F>
               <F label="手机号 *" span={2}><input className="form-input" placeholder={isChild ? '监护人手机号（作为登录账号）' : '手机号（登录账号）'} value={form.phone} onChange={set('phone')} required /></F>
               <F label="性别"><select className="form-input" value={form.gender} onChange={set('gender')}><option value="未知">未知</option><option value="男">男</option><option value="女">女</option></select></F>
-              <F label="出生日期"><input className="form-input" type="date" value={form.birthDate} onChange={handleBirthDateChange} /></F>
+              <F label="出生日期">
+                <input className="form-input" type="date" value={form.birthDate}
+                  onChange={handleBirthDateChange}
+                  max={new Date().toISOString().slice(0, 10)}
+                  min="1900-01-01" />
+                {birthDateError && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{birthDateError}</div>}
+              </F>
               <F label="年龄（岁）"><input className="form-input" type="number" placeholder="自动计算" value={form.age} onChange={set('age')} min={0} max={150} readOnly={!!form.birthDate} style={{ background: form.birthDate ? '#f5f5f5' : undefined }} /></F>
               <F label="身份证号">
                 <input className="form-input" placeholder="输入后自动识别性别和出生日期" value={form.idNumber} onChange={handleIdNumberChange} maxLength={18} />
@@ -430,22 +445,22 @@ export default function NewPatientPage() {
                     ))}
                   </div>
                 </F>
-                <F label="医疗险（可多选）" span={2}>
+                <F label="商业医疗险（四选一）" span={2}>
                   <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 4 }}>
-                    {['高端医疗险', '百万医疗险'].map(opt => (
+                    {['百万医疗险', '高端医疗险（亚洲版）', '高端医疗险（全球版）', '未购买'].map(opt => (
                       <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
-                        <input type="checkbox" checked={form.commercial_medical.includes(opt)} onChange={() => toggleCommercial(opt)} />
+                        <input type="radio" name="commercial_medical" value={opt} checked={form.commercial_medical === opt} onChange={() => setForm(f => ({ ...f, commercial_medical: opt }))} />
                         {opt}
                       </label>
                     ))}
                   </div>
                 </F>
-                <F label="重疾险" span={2}>
+                <F label="重疾险（三选一）" span={2}>
                   <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
-                    {['有', '无'].map(opt => (
+                    {['大陆险', '港险', '未购买'].map(opt => (
                       <label key={opt} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14, color: '#1A2B24' }}>
                         <input type="radio" name="critical_illness" value={opt} checked={form.critical_illness === opt} onChange={() => setForm(f => ({ ...f, critical_illness: opt }))} />
-                        {opt}{opt === '有' ? '（已购买重大疾病保险）' : '（未购买）'}
+                        {opt}
                       </label>
                     ))}
                   </div>

@@ -128,7 +128,7 @@ function AddLinkModal({ onClose, onSaved }) {
             </TouchableOpacity>
             {selected && (
               <TouchableOpacity style={[styles.saveBtn, saving && { opacity: 0.6 }]} onPress={confirm} disabled={saving}>
-                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>确认添加</Text>}
+                {saving ? <ActivityIndicator color="#fff" /> : <Text style={styles.saveBtnText}>发送邀请</Text>}
               </TouchableOpacity>
             )}
           </View>
@@ -166,18 +166,48 @@ function LinkCard({ link, onDelete }) {
 }
 
 export default function FamilyMembersScreen({ navigation }) {
-  const [links, setLinks]     = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showAdd, setShowAdd] = useState(false);
+  const [links, setLinks]           = useState([]);
+  const [pendingInvites, setPendingInvites] = useState([]);
+  const [loading, setLoading]       = useState(true);
+  const [showAdd, setShowAdd]       = useState(false);
+  const [handlingInvite, setHandlingInvite] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await familyLinksAPI.list();
-      setLinks(res.data || []);
+      const [linkRes, invRes] = await Promise.allSettled([
+        familyLinksAPI.list(),
+        familyLinksAPI.pendingInvites(),
+      ]);
+      if (linkRes.status === 'fulfilled') setLinks(linkRes.value.data || []);
+      if (invRes.status === 'fulfilled') setPendingInvites(invRes.value.data || []);
     } catch {}
     finally { setLoading(false); }
   }, []);
+
+  const handleAcceptInvite = async (inviteId) => {
+    setHandlingInvite(inviteId);
+    try {
+      await familyLinksAPI.acceptInvite(inviteId);
+      load();
+    } catch (e) {
+      Alert.alert('操作失败', e.message);
+    } finally { setHandlingInvite(null); }
+  };
+
+  const handleRejectInvite = async (inviteId) => {
+    Alert.alert('拒绝邀请', '确定拒绝此家庭成员邀请？', [
+      { text: '取消', style: 'cancel' },
+      { text: '拒绝', style: 'destructive', onPress: async () => {
+        setHandlingInvite(inviteId);
+        try {
+          await familyLinksAPI.rejectInvite(inviteId);
+          load();
+        } catch (e) { Alert.alert('操作失败', e.message); }
+        finally { setHandlingInvite(null); }
+      }},
+    ]);
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -210,9 +240,49 @@ export default function FamilyMembersScreen({ navigation }) {
       <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg }}>
         <Text style={styles.subtext}>只能关联系统内已注册的客户，双向建立家庭成员关系，方便后续健康基金和就医协助服务共享。</Text>
 
+        {/* 待确认邀请 */}
+        {pendingInvites.length > 0 && (
+          <View style={{ marginBottom: spacing.lg }}>
+            <Text style={[styles.sectionLabel, { color: colors.warning, fontWeight: '700' }]}>
+              待确认邀请（{pendingInvites.length}）
+            </Text>
+            {pendingInvites.map(inv => (
+              <View key={inv._id} style={[styles.memberCard, { borderLeftWidth: 3, borderLeftColor: colors.warning }]}>
+                <View style={[styles.memberIcon, { backgroundColor: colors.warning + '15' }]}>
+                  <Ionicons name="mail-outline" size={22} color={colors.warning} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.memberName}>{inv.fromName}</Text>
+                  {inv.relation ? <Text style={styles.memberMeta}>邀请关系：{inv.relation}</Text> : null}
+                  <Text style={[styles.memberLinked, { color: colors.warning }]}>待您确认</Text>
+                </View>
+                <View style={{ gap: spacing.xs }}>
+                  <TouchableOpacity
+                    style={{ backgroundColor: colors.success, borderRadius: radius.xs, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center' }}
+                    onPress={() => handleAcceptInvite(inv._id)}
+                    disabled={handlingInvite === inv._id}
+                  >
+                    {handlingInvite === inv._id
+                      ? <ActivityIndicator size="small" color="#fff" />
+                      : <Text style={{ color: '#fff', fontWeight: '700', fontSize: 12 }}>接受</Text>
+                    }
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={{ borderWidth: 1, borderColor: colors.danger, borderRadius: radius.xs, paddingHorizontal: 12, paddingVertical: 6, alignItems: 'center' }}
+                    onPress={() => handleRejectInvite(inv._id)}
+                    disabled={!!handlingInvite}
+                  >
+                    <Text style={{ color: colors.danger, fontWeight: '600', fontSize: 12 }}>拒绝</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ))}
+          </View>
+        )}
+
         {loading ? (
           <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
-        ) : links.length === 0 ? (
+        ) : links.length === 0 && pendingInvites.length === 0 ? (
           <View style={styles.emptyState}>
             <Ionicons name="people-outline" size={48} color={colors.textMuted} />
             <Text style={styles.emptyTitle}>暂未关联家庭成员</Text>
@@ -221,14 +291,14 @@ export default function FamilyMembersScreen({ navigation }) {
               <Text style={styles.emptyBtnText}>立即添加</Text>
             </TouchableOpacity>
           </View>
-        ) : (
+        ) : links.length > 0 ? (
           <>
             <Text style={styles.sectionLabel}>共 {links.length} 位家庭成员</Text>
             {links.map(link => (
               <LinkCard key={link._id} link={link} onDelete={() => handleDelete(link)} />
             ))}
           </>
-        )}
+        ) : null}
       </ScrollView>
 
       {showAdd && <AddLinkModal onClose={() => setShowAdd(false)} onSaved={load} />}

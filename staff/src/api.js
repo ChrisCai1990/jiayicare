@@ -209,4 +209,7 @@ export const staffAPI = {
   getPatientFamilyLinks:    (id)            => req(`/staff/patients/${id}/family-links`),
   addFamilyLink:            (id, data)      => req(`/staff/patients/${id}/family-links`, { method: 'POST', body: JSON.stringify(data) }),
   removeFamilyLink:         (id, linkId)    => req(`/staff/patients/${id}/family-links/${linkId}`, { method: 'DELETE' }),
+
+  // 日常健康打卡总览
+  getCheckinOverview: (p = {}) => req('/staff/checkin-overview?' + qs(p)),
 }

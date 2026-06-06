@@ -4,7 +4,7 @@ import { staffAPI } from '../api'
 import { useToast } from '../App'
 
 const TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预方案', rehab:'运动康复方案', tcm:'中医方案', annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案', medical_assist:'就医协助方案', psychology:'心理咨询方案' }
-const STATUS_LABEL = { draft:'草稿', active:'推送中', completed:'已完成', cancelled:'已取消' }
+const STATUS_LABEL = { draft:'草稿', active:'已推送', completed:'已完成', cancelled:'已取消' }
 const ITEM_STATUS = { pending:'待完成', completed:'已完成', skipped:'已跳过' }
 const ITEM_STATUS_COLOR = { pending:'#D97706', completed:'#22A06B', skipped:'#aaa' }
 
@@ -290,10 +290,11 @@ export default function PlanDetailPage() {
               [
                 ['会员', plan.patientId?.name + ' · ' + plan.patientId?.phone],
                 ['类型', TYPE_LABEL[plan.type]],
-                ['状态', STATUS_LABEL[plan.status]],
+                ['状态', plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
                 ['年度', plan.year + ' 年'],
                 ['制定人', plan.staffId?.name],
                 ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
+                ...(plan.confirmedAt ? [['会员确认时间', new Date(plan.confirmedAt).toLocaleDateString('zh-CN')]] : []),
                 ...(plan.description ? [['描述', plan.description]] : []),
                 ...(plan.notes ? [['备注', plan.notes]] : []),
               ].map(([k, v]) => (

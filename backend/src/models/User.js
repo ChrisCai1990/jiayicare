@@ -182,6 +182,14 @@ const userSchema = new mongoose.Schema({
     relation:   { type: String, default: '' },
     createdAt:  { type: Date, default: Date.now },
   }],
+  // ── 待确认的家庭成员邀请（需求6）──────────────────────────────────
+  familyInvites: [{
+    fromUser:  { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    fromName:  { type: String, default: '' },
+    relation:  { type: String, default: '' },
+    createdAt: { type: Date, default: Date.now },
+    status:    { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+  }],
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);
