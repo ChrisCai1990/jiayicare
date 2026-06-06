@@ -2055,4 +2055,59 @@ router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// ── 家庭成员关联（需求18）────────────────────────────────────────
+// GET /api/staff/patients/:id/family-links
+router.get('/patients/:id/family-links', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .populate('familyLinks.linkedUser', 'name phone gender birthDate');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    res.json({ success: true, data: user.familyLinks || [] });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/staff/patients/:id/family-links
+router.post('/patients/:id/family-links', staffAuth, async (req, res) => {
+  try {
+    const { linkedUserId, relation } = req.body;
+    if (!linkedUserId) return res.status(400).json({ success: false, message: 'linkedUserId 必填' });
+    const [userA, userB] = await Promise.all([
+      User.findById(req.params.id),
+      User.findById(linkedUserId),
+    ]);
+    if (!userA || !userB) return res.status(404).json({ success: false, message: '患者不存在' });
+    // A → B
+    if (!userA.familyLinks.find(l => String(l.linkedUser) === String(linkedUserId))) {
+      userA.familyLinks.push({ linkedUser: linkedUserId, relation: relation || '' });
+      await userA.save();
+    }
+    // B → A（双向关联）
+    if (!userB.familyLinks.find(l => String(l.linkedUser) === String(req.params.id))) {
+      userB.familyLinks.push({ linkedUser: req.params.id, relation: relation || '' });
+      await userB.save();
+    }
+    res.json({ success: true, message: '已添加家庭成员关联' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/patients/:id/family-links/:linkId
+router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) => {
+  try {
+    const userA = await User.findById(req.params.id);
+    if (!userA) return res.status(404).json({ success: false, message: '患者不存在' });
+    const link = userA.familyLinks.id(req.params.linkId);
+    if (!link) return res.status(404).json({ success: false, message: '关联不存在' });
+    const linkedUserId = link.linkedUser;
+    link.deleteOne();
+    await userA.save();
+    // 反向移除
+    const userB = await User.findById(linkedUserId);
+    if (userB) {
+      const reverse = userB.familyLinks.find(l => String(l.linkedUser) === String(req.params.id));
+      if (reverse) { reverse.deleteOne(); await userB.save(); }
+    }
+    res.json({ success: true, message: '已移除' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 module.exports = router;

@@ -241,6 +241,15 @@ function DetailPanel({ review, onClose, onUpdated }) {
           <span style={{ color: STATUS_COLOR[review.status], fontWeight: 600, fontSize: 13 }}>{STATUS_LABEL[review.status]}</span>
         </div>
 
+        {/* 复查详情 */}
+        {(review.reviewReason || review.reviewHospital || review.reviewDepartment) && (
+          <div style={{ background: '#f9f7f3', borderRadius: 10, padding: 12, marginBottom: 16, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {review.reviewReason && <div style={{ gridColumn: '1/-1' }}><span style={{ fontSize: 11, color: '#8AA89C' }}>复查原因</span><div style={{ fontSize: 13, marginTop: 2 }}>{review.reviewReason}</div></div>}
+            {review.reviewHospital && <div><span style={{ fontSize: 11, color: '#8AA89C' }}>建议医院</span><div style={{ fontSize: 13, marginTop: 2 }}>{review.reviewHospital}</div></div>}
+            {review.reviewDepartment && <div><span style={{ fontSize: 11, color: '#8AA89C' }}>开单科室 / 专家</span><div style={{ fontSize: 13, marginTop: 2 }}>{review.reviewDepartment}</div></div>}
+          </div>
+        )}
+
         {/* 异常项目表 */}
         <div style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 8 }}>异常指标</div>

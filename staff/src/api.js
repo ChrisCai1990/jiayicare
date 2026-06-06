@@ -204,4 +204,9 @@ export const staffAPI = {
   // 患者专项筛查 & 日常打卡（医护端查看）
   getPatientScreening:      (id)       => req(`/staff/patients/${id}/screening`),
   getPatientHealthRecords:  (id, p={}) => req(`/staff/patients/${id}/health-records?` + qs(p)),
+
+  // 家庭成员关联（需求18）
+  getPatientFamilyLinks:    (id)            => req(`/staff/patients/${id}/family-links`),
+  addFamilyLink:            (id, data)      => req(`/staff/patients/${id}/family-links`, { method: 'POST', body: JSON.stringify(data) }),
+  removeFamilyLink:         (id, linkId)    => req(`/staff/patients/${id}/family-links/${linkId}`, { method: 'DELETE' }),
 }

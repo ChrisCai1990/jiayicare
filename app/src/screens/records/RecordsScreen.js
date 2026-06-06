@@ -80,7 +80,8 @@ const CHART_TYPES = [
 
 // ── 个人档案字段 ──────────────────────────────────────────────────
 const PROFILE_FIELDS = [
-  { key: 'bloodType',     label: '血型',     icon: 'water',              placeholder: '如：A 型 Rh+' },
+  { key: 'bloodTypeABO',  label: 'ABO 血型',  icon: 'water',              placeholder: '如：A / B / O / AB' },
+  { key: 'bloodTypeRH',   label: 'RH 血型',   icon: 'water-outline',      placeholder: '如：阳性 / 阴性' },
   { key: 'drugAllergy',   label: '药物过敏史', icon: 'medical',            placeholder: '如：青霉素类、无' },
   { key: 'foodAllergy',   label: '食物过敏史', icon: 'restaurant-outline',  placeholder: '如：海鲜、无' },
   { key: 'pastHistory',   label: '既往史',    icon: 'time-outline',        placeholder: '如：高血压 (2020年)' },
@@ -106,7 +107,7 @@ const DEFAULT_PROFILE = {
 // ── localStorage 工具 ─────────────────────────────────────────────
 const PROFILE_KEY = 'jy_health_profile';
 const EMPTY_PROFILE = {
-  bloodType: '', drugAllergy: '', foodAllergy: '',
+  bloodTypeABO: '', bloodTypeRH: '', bloodType: '', drugAllergy: '', foodAllergy: '',
   pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '', infectiousHistory: '', maritalHistory: '',
   menstrualHistory: '', reproductiveHistory: '',
 };
@@ -432,6 +433,7 @@ export default function RecordsScreen({ navigation }) {
   const [profile, setProfile]         = useState(EMPTY_PROFILE);
   const [editingProfile, setEditingProfile] = useState(false);
   const [checkupPlan, setCheckupPlan] = useState(null);
+  const [medInsurance, setMedInsurance] = useState({ basic_insurance: '', commercial_medical: '', critical_illness: '' });
 
   // 生活方式
   const [lifestyle, setLifestyle]         = useState({});
@@ -472,12 +474,21 @@ export default function RecordsScreen({ navigation }) {
         const local = loadProfileFromStorage();
         const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
         const merged = { ...(local || fallback), ...data.healthProfile };
-        // 医护端录入的家族史备注（familyHistoryNote）同步显示到用户端
         if (!merged.familyHistory && data.healthProfile.familyHistoryNote) {
           merged.familyHistory = data.healthProfile.familyHistoryNote;
         }
+        if (data.bloodTypeABO) merged.bloodTypeABO = data.bloodTypeABO;
+        if (data.bloodTypeRH)  merged.bloodTypeRH  = data.bloodTypeRH;
         setProfile(merged);
         saveProfileToStorage(merged);
+      }
+      // 医疗保障信息（用户根级字段）
+      if (data) {
+        setMedInsurance({
+          basic_insurance:    data.basic_insurance    || '',
+          commercial_medical: data.commercial_medical || '',
+          critical_illness:   data.critical_illness   || '',
+        });
       }
     }
     // 年度复查计划
@@ -726,6 +737,33 @@ export default function RecordsScreen({ navigation }) {
             ))}
           </View>
         </View>
+
+        {/* ── 医疗保障信息（只读）────────────────────────────────── */}
+        {(medInsurance.basic_insurance || medInsurance.commercial_medical || medInsurance.critical_illness) ? (
+          <View style={styles.section}>
+            <View style={styles.sectionHeader}>
+              <View style={styles.sectionTitleRow}>
+                <Ionicons name="shield-checkmark-outline" size={17} color="#0077B6" />
+                <Text style={styles.sectionTitle}>医疗保障信息</Text>
+              </View>
+            </View>
+            <View style={styles.profileCard}>
+              {[
+                { label: '基础医疗保障', value: medInsurance.basic_insurance },
+                { label: '商业医疗险', value: medInsurance.commercial_medical },
+                { label: '重疾险', value: medInsurance.critical_illness },
+              ].filter(r => r.value).map((row, i, arr) => (
+                <View key={row.label} style={[styles.profileRow, i < arr.length - 1 && styles.profileRowBorder]}>
+                  <View style={styles.profileRowLeft}>
+                    <Ionicons name="checkmark-circle-outline" size={13} color="#0077B6" style={{ marginRight: 6 }} />
+                    <Text style={styles.profileRowLabel}>{row.label}</Text>
+                  </View>
+                  <Text style={styles.profileRowValue}>{row.value}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        ) : null}
 
         {/* ── 生活方式 ─────────────────────────────────────────── */}
         <View style={styles.section}>

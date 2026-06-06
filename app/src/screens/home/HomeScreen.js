@@ -71,16 +71,21 @@ const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
 
 // ── 打卡项目定义 ─────────────────────────────────────────────────
 const CHECKIN_DEFS = {
-  bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',     color: '#DC3545', measureType: 'bloodPressure' },
-  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',     color: '#F39C12', measureType: 'bloodSugar'    },
-  heartRate:     { key: 'heartRate',     label: '心率', icon: 'heart-outline',     color: '#DC3545', measureType: 'heartRate'     },
-  weight:        { key: 'weight',        label: '体重', icon: 'scale-outline',     color: '#059669', measureType: 'weight'        },
-  sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',      color: '#4F46E5', measureType: 'sleep'         },
-  diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline', color: '#059669', measureType: null            },
-  exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',   color: '#0369A1', measureType: null            },
-  water:         { key: 'water',         label: '饮水', icon: 'water-outline',     color: '#0EA5E9', measureType: null            },
-  alcohol:       { key: 'alcohol',       label: '饮酒', icon: 'wine-outline',      color: '#9D174D', measureType: null            },
+  diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食打卡' },
+  exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动打卡' },
+  sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',          color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠打卡' },
+  weight:        { key: 'weight',        label: '体重', icon: 'scale-outline',         color: '#059669', measureType: 'weight',        category: 'vitals',    recordLabel: '体重打卡' },
+  bowel:         { key: 'bowel',         label: '排便', icon: 'leaf-outline',          color: '#92400E', measureType: null,            category: 'lifestyle', recordLabel: '排便打卡' },
+  water:         { key: 'water',         label: '饮水', icon: 'water-outline',         color: '#0EA5E9', measureType: null,            category: 'lifestyle', recordLabel: '饮水打卡' },
+  smoking:       { key: 'smoking',       label: '吸烟', icon: 'warning-outline',       color: '#6B7280', measureType: null,            category: 'lifestyle', recordLabel: '吸烟记录' },
+  alcohol:       { key: 'alcohol',       label: '饮酒', icon: 'wine-outline',          color: '#9D174D', measureType: null,            category: 'lifestyle', recordLabel: '饮酒记录' },
+  bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',         color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压打卡' },
+  heartRate:     { key: 'heartRate',     label: '心率', icon: 'heart-outline',         color: '#DC3545', measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率打卡' },
+  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',         color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖打卡' },
 };
+
+// 11个固定打卡项目（顺序按需求文档）
+const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
 
 // 主题关键词 → 打卡类型（兜底匹配，不依赖 checkInItems 字段）
 function deriveCheckInFromTheme(theme) {
@@ -549,19 +554,8 @@ export default function HomeScreen({ navigation }) {
   const moodLabel      = moodScore >= 8 ? '愉快' : moodScore >= 6 ? '良好' : '较差';
   const moodLabelColor = moodScore >= 8 ? '#0077B6' : moodScore >= 6 ? colors.success : colors.warning;
 
-  // ── 动态打卡项目（来自随访计划）─────────────────────────────────
-  const dynamicCheckinItems = (() => {
-    if (followupPlans.length === 0) return [];
-    const typeSet = new Set();
-    for (const plan of followupPlans) {
-      if (plan.checkInItems && plan.checkInItems.length > 0) {
-        plan.checkInItems.forEach(t => typeSet.add(t));
-      } else if (plan.theme) {
-        deriveCheckInFromTheme(plan.theme).forEach(t => typeSet.add(t));
-      }
-    }
-    return [...typeSet].map(t => CHECKIN_DEFS[t]).filter(Boolean);
-  })();
+  // ── 固定打卡项目（11项，始终显示）────────────────────────────────
+  const dynamicCheckinItems = FIXED_CHECKIN_KEYS.map(k => CHECKIN_DEFS[k]).filter(Boolean);
 
   // ── 合并待办：Task 表任务 + 随访计划（作为任务展示）─────────────
   const allPendingTaskItems = [
@@ -824,13 +818,25 @@ export default function HomeScreen({ navigation }) {
               setCheckinImage(existing.image || null);
               setCheckinModal(item);
             };
-            const saveCheckin = () => {
+            const saveCheckin = async () => {
+              const item = checkinModal;
               const next = {
                 ...checkin,
-                [checkinModal.key]: { done: true, note: checkinNote, image: checkinImage }
+                [item.key]: { done: true, note: checkinNote, image: checkinImage }
               };
               setCheckin(next);
               try { localStorage.setItem(TODAY_KEY, JSON.stringify(next)); } catch {}
+              // 同步到后端健康档案
+              try {
+                await recordsAPI.create({
+                  category: item.category || 'lifestyle',
+                  type: item.key,
+                  label: item.recordLabel || item.label,
+                  value: checkinNote || '已打卡',
+                  note: checkinNote || '',
+                  status: 'normal',
+                });
+              } catch { /* 静默失败，本地已保存 */ }
               setCheckinModal(null);
             };
             return (

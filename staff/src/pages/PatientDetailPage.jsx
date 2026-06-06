@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
@@ -2082,34 +2082,7 @@ export default function PatientDetailPage() {
 
       {/* ── Family Tab ── */}
       {tab === 'family' && (
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-          <div className="card">
-            <div className="card-header"><div className="card-title">家庭联系人</div></div>
-            <div className="card-body">
-              <InfoRow label="联系人" value={user.contactName || '-'} />
-              <InfoRow label="联系电话" value={user.contactPhone3 || user.contactPhone2 || '-'} />
-              <InfoRow label="家庭医生" value={user.assignedFamilyDoctor?.name || '-'} />
-              <InfoRow label="家庭医生职称" value={user.assignedFamilyDoctor?.title || '-'} />
-            </div>
-          </div>
-          <div className="card">
-            <div className="card-header"><div className="card-title">家族疾病史</div></div>
-            <div className="card-body">
-              {user.healthProfile?.familyHistory?.length > 0 ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                  {user.healthProfile.familyHistory.map((h, i) => (
-                    <div key={i} style={{ padding: '8px 12px', background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>
-                      <span style={{ fontWeight: 500 }}>{h.disease || h}</span>
-                      {h.relative && <span style={{ color: '#8AA89C', marginLeft: 8 }}>{h.relative}</span>}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>暂无家族疾病史记录</div>
-              )}
-            </div>
-          </div>
-        </div>
+        <FamilyTab patientId={id} user={user} onRefresh={load} />
       )}
 
       {/* ── Membership Tab ── */}
@@ -2409,6 +2382,8 @@ function InfoRow({ label, value }) {
 const RECORD_TYPE_LABEL = {
   bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率',
   weight: '体重', sleep: '睡眠', mood: '情绪',
+  diet: '饮食', exercise: '运动', water: '饮水',
+  alcohol: '饮酒', bowel: '排便', smoking: '吸烟',
 }
 
 function formatRecordValue(r) {
@@ -2750,6 +2725,147 @@ function ReferralModal({ patientId, patientName, staffList, onClose, onSaved }) 
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '发送中...' : '发送转介'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 家庭成员 Tab ────────────────────────────────────────────────────
+function FamilyTab({ patientId, user, onRefresh }) {
+  const toast = useToast()
+  const [members, setMembers] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [showAdd, setShowAdd] = useState(false)
+  const [addSearch, setAddSearch] = useState('')
+  const [addResults, setAddResults] = useState([])
+  const [addRelation, setAddRelation] = useState('')
+  const [addTarget, setAddTarget] = useState(null)
+  const [saving, setSaving] = useState(false)
+  const searchTimer = useRef(null)
+
+  const load = async () => {
+    setLoading(true)
+    try {
+      const res = await staffAPI.getPatientFamilyLinks(patientId)
+      setMembers(res.data || [])
+    } catch { setMembers([]) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [patientId])
+
+  const handleSearch = (kw) => {
+    setAddSearch(kw)
+    setAddTarget(null)
+    clearTimeout(searchTimer.current)
+    if (!kw.trim()) { setAddResults([]); return }
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const res = await staffAPI.getPatients({ search: kw, limit: 20 })
+        setAddResults((res.data.patients || []).filter(p => p._id !== patientId))
+      } catch { setAddResults([]) }
+    }, 300)
+  }
+
+  const handleAdd = async () => {
+    if (!addTarget) { toast('请先搜索并选择会员'); return }
+    if (!addRelation.trim()) { toast('请填写关系'); return }
+    setSaving(true)
+    try {
+      await staffAPI.addFamilyLink(patientId, { linkedUserId: addTarget._id, relation: addRelation })
+      toast('已添加家庭成员')
+      setShowAdd(false); setAddSearch(''); setAddResults([]); setAddTarget(null); setAddRelation('')
+      load()
+    } catch (err) { toast(err.message || '添加失败') }
+    finally { setSaving(false) }
+  }
+
+  const handleRemove = async (linkId) => {
+    if (!window.confirm('确定移除此家庭成员关联？')) return
+    try {
+      await staffAPI.removeFamilyLink(patientId, linkId)
+      toast('已移除')
+      load()
+    } catch (err) { toast(err.message || '移除失败') }
+  }
+
+  const calcAge = (birthDate) => {
+    if (!birthDate) return '-'
+    const birth = new Date(birthDate)
+    if (isNaN(birth)) return '-'
+    const today = new Date()
+    let age = today.getFullYear() - birth.getFullYear()
+    if (today.getMonth() < birth.getMonth() || (today.getMonth() === birth.getMonth() && today.getDate() < birth.getDate())) age--
+    return age >= 0 ? `${age}岁` : '-'
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+      {/* 家庭联系人 */}
+      <div className="card">
+        <div className="card-header"><div className="card-title">紧急联系人</div></div>
+        <div className="card-body">
+          <InfoRow label="联系人" value={user.contactName || '-'} />
+          <InfoRow label="联系电话" value={user.contactPhone2 || user.contactPhone3 || '-'} />
+          <InfoRow label="家庭医师" value={user.assignedFamilyDoctor?.name || '-'} />
+          <InfoRow label="家庭医师职称" value={user.assignedFamilyDoctor?.title || '-'} />
+        </div>
+      </div>
+
+      {/* 系统内家庭成员 */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">家庭成员（系统内客户）</div>
+          <button className="btn btn-primary btn-sm" onClick={() => setShowAdd(v => !v)}>＋ 添加成员</button>
+        </div>
+        <div className="card-body">
+          {showAdd && (
+            <div style={{ background: '#f9f7f3', borderRadius: 10, padding: 14, marginBottom: 14 }}>
+              <div className="form-group">
+                <label className="form-label">搜索会员（姓名/手机号）</label>
+                <input className="form-input" value={addSearch} onChange={e => handleSearch(e.target.value)} placeholder="输入姓名或手机号..." autoComplete="off" />
+                {addResults.length > 0 && !addTarget && (
+                  <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, marginTop: 4, maxHeight: 160, overflowY: 'auto', background: '#fff' }}>
+                    {addResults.map(p => (
+                      <div key={p._id} onClick={() => { setAddTarget(p); setAddSearch(`${p.name}  ${p.phone}`) }}
+                        style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f5f2ec' }}
+                        onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
+                        onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                        <strong>{p.name}</strong><span style={{ color: '#8AA89C', marginLeft: 8 }}>{p.phone}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="form-group">
+                <label className="form-label">关系</label>
+                <input className="form-input" value={addRelation} onChange={e => setAddRelation(e.target.value)} placeholder="如：配偶、父亲、母亲、子女..." />
+              </div>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-ghost btn-sm" onClick={() => { setShowAdd(false); setAddSearch(''); setAddResults([]); setAddTarget(null); setAddRelation('') }}>取消</button>
+                <button className="btn btn-primary btn-sm" onClick={handleAdd} disabled={saving}>{saving ? '添加中...' : '确认添加'}</button>
+              </div>
+            </div>
+          )}
+
+          {loading ? <div style={{ color: '#aaa', padding: '12px 0', fontSize: 13 }}>加载中...</div>
+          : members.length === 0 ? <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>暂无关联家庭成员</div>
+          : members.map(m => {
+            const linked = m.linkedUser
+            return (
+              <div key={m._id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f5f2ec' }}>
+                <div>
+                  <span style={{ fontWeight: 600, fontSize: 14 }}>{linked?.name || '-'}</span>
+                  <span style={{ color: '#8AA89C', fontSize: 12, marginLeft: 8 }}>{m.relation}</span>
+                  <div style={{ fontSize: 12, color: '#aaa', marginTop: 2 }}>
+                    {linked?.gender || ''}{linked?.gender ? ' · ' : ''}{linked?.birthDate ? calcAge(linked.birthDate) : ''}{linked?.phone ? ' · ' + linked.phone : ''}
+                  </div>
+                </div>
+                <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc', fontSize: 12 }}
+                  onClick={() => handleRemove(m._id)}>移除</button>
+              </div>
+            )
+          })}
         </div>
       </div>
     </div>

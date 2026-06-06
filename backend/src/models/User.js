@@ -162,14 +162,20 @@ const userSchema = new mongoose.Schema({
   points:     { type: Number, default: 0 },    // 积分
   rechargeBalance: { type: Number, default: 0 }, // 充值余额（元）
 
-  // ── 共享人账户（家庭成员） ─────────────────────────────────────────
+  // ── 共享人账户（家庭成员，旧版） ─────────────────────────────────
   family: [{
     name:     { type: String, default: '' },
-    relation: { type: String, default: '' },  // 如：配偶/父亲/母亲/子女
+    relation: { type: String, default: '' },
     phone:    { type: String, default: '' },
     birthday: { type: String, default: '' },
     gender:   { type: String, default: '' },
     notes:    { type: String, default: '' },
+  }],
+  // ── 系统内家庭成员关联（需求18）───────────────────────────────────
+  familyLinks: [{
+    linkedUser: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    relation:   { type: String, default: '' },
+    createdAt:  { type: Date, default: Date.now },
   }],
 }, { timestamps: true });
 
