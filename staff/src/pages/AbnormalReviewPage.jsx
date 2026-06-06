@@ -1,6 +1,82 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
+
+function PatientSearchInput({ value, onChange }) {
+  const [keyword, setKeyword] = useState('')
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [selectedName, setSelectedName] = useState('')
+  const timerRef = useRef(null)
+  const wrapRef = useRef(null)
+
+  useEffect(() => {
+    const handler = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const handleInput = e => {
+    const kw = e.target.value
+    setKeyword(kw)
+    setOpen(true)
+    if (!kw.trim()) { setResults([]); return }
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      setSearching(true)
+      try {
+        const res = await staffAPI.getPatients({ search: kw, limit: 20 })
+        setResults(res.data.patients || [])
+      } catch { setResults([]) }
+      finally { setSearching(false) }
+    }, 300)
+  }
+
+  const handleSelect = patient => {
+    onChange(patient._id)
+    setSelectedName(`${patient.name}  ${patient.phone}`)
+    setKeyword(''); setResults([]); setOpen(false)
+  }
+
+  const handleClear = () => { onChange(''); setSelectedName(''); setKeyword(''); setResults([]) }
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {value && selectedName ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', border: '1px solid #1E6B50', borderRadius: 8, background: '#E8F5EF', fontSize: 14 }}>
+          <span>
+            <span style={{ fontWeight: 600, color: '#1A2B24' }}>{selectedName.split('  ')[0]}</span>
+            <span style={{ color: '#8AA89C', marginLeft: 8, fontSize: 13 }}>{selectedName.split('  ')[1]}</span>
+          </span>
+          <button type="button" onClick={handleClear} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 16, lineHeight: 1, padding: 0 }}>✕</button>
+        </div>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <input className="form-input" type="text" value={keyword} onChange={handleInput} onFocus={() => keyword && setOpen(true)}
+            placeholder="输入姓名或手机号搜索会员..." autoComplete="off" />
+          {searching && <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#aaa' }}>搜索中...</div>}
+          {open && results.length > 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: 200, overflowY: 'auto', marginTop: 2 }}>
+              {results.map(p => (
+                <div key={p._id} onMouseDown={() => handleSelect(p)}
+                  style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f5f2ec' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
+                  onMouseLeave={e => e.currentTarget.style.background = ''}>
+                  <span style={{ fontWeight: 600 }}>{p.name}</span>
+                  <span style={{ color: '#8AA89C', marginLeft: 8 }}>{p.phone}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {open && !searching && keyword && results.length === 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#aaa' }}>未找到匹配会员</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const STATUS_LABEL = { pending: '待处理', scheduled: '已预约', completed: '已完成', cancelled: '已取消' }
 const STATUS_COLOR = { pending: '#D97706', scheduled: '#0077B6', completed: '#22A06B', cancelled: '#aaa' }
@@ -13,7 +89,7 @@ const EMPTY_FORM = {
   abnormalItems: [{ name: '', value: '', reference: '', severity: 'mild' }],
 }
 
-function CreateModal({ patients, onClose, onSaved }) {
+function CreateModal({ onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
@@ -56,10 +132,7 @@ function CreateModal({ patients, onClose, onSaved }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-group">
               <label className="form-label">患者 *</label>
-              <select className="form-input" value={form.patientId} onChange={e => setField('patientId', e.target.value)}>
-                <option value="">请选择患者</option>
-                {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
-              </select>
+              <PatientSearchInput value={form.patientId} onChange={v => setField('patientId', v)} />
             </div>
             <div className="form-group">
               <label className="form-label">计划复查日期</label>
@@ -345,7 +418,7 @@ export default function AbnormalReviewPage() {
       </div>
 
       {showCreate && (
-        <CreateModal patients={patients} onClose={() => setShowCreate(false)} onSaved={load} />
+        <CreateModal onClose={() => setShowCreate(false)} onSaved={load} />
       )}
       {selected && (
         <DetailPanel review={selected} onClose={() => setSelected(null)} onUpdated={() => { setSelected(null); load() }} />

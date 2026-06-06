@@ -383,6 +383,7 @@ export default function TasksScreen({ navigation }) {
     title: f.theme || '随访计划',
     type: 'followup',
     description: f.content || (f.checkInItems?.length ? `打卡项目：${f.checkInItems.join('、')}` : ''),
+    followupType: f.type || '',
     dueDate: f.date ? new Date(f.date).toISOString().slice(0, 10) : null,
     dueTime: '',
     priority: 'medium',
@@ -601,8 +602,28 @@ export default function TasksScreen({ navigation }) {
                   );
                 })()}
 
+                {/* 随访任务专属详情 */}
+                {detailTask.isFollowup && !detailTask.abnormalReviewId && (() => {
+                  const FOLLOWUP_TYPE = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他随访' };
+                  return (
+                    <>
+                      {!!detailTask.followupType && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>随访方式</Text>
+                          <Text style={styles.modalContent}>{FOLLOWUP_TYPE[detailTask.followupType] || detailTask.followupType}</Text>
+                        </>
+                      )}
+                      <Text style={styles.modalSectionLabel}>具体内容</Text>
+                      {detailTask.description
+                        ? <Text style={styles.modalContent}>{detailTask.description}</Text>
+                        : <Text style={styles.modalNoContent}>健管师将在随访时与您沟通具体内容。</Text>
+                      }
+                    </>
+                  );
+                })()}
+
                 {/* 普通任务描述 */}
-                {!detailTask.abnormalReviewId && (
+                {!detailTask.abnormalReviewId && !detailTask.isFollowup && (
                   <>
                     <Text style={styles.modalSectionLabel}>任务描述</Text>
                     {detailTask.description

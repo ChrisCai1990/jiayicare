@@ -29,6 +29,7 @@ export default function ServiceRecordsPage() {
   const [page, setPage] = useState(1)
   const [showModal, setShowModal] = useState(false)
   const [followUpTarget, setFollowUpTarget] = useState(null) // { patientId, patientName, theme }
+  const [detailRecord, setDetailRecord] = useState(null)
   const [patients, setPatients] = useState([])
   const limit = 20
 
@@ -95,6 +96,10 @@ export default function ServiceRecordsPage() {
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
+                      onClick={() => setDetailRecord(r)}>
+                      查看
+                    </button>
+                    <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
                       onClick={() => setFollowUpTarget({ patientId: r.patientId?._id || r.patientId, patientName: r.patientId?.name || '', theme: r.subject || TYPE_LABEL[r.type] || '' })}>
                       新建随访
                     </button>
@@ -118,6 +123,37 @@ export default function ServiceRecordsPage() {
         <ServiceRecordModal patients={patients} defaultType={defaultType || 'disease_mgmt'}
           onClose={() => setShowModal(false)}
           onSaved={() => { setShowModal(false); toast('记录已保存'); load() }} />
+      )}
+
+      {detailRecord && (
+        <div className="modal-overlay" onClick={() => setDetailRecord(null)}>
+          <div className="modal" style={{ maxWidth: 600, width: '96%' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div className="modal-title">服务记录详情</div>
+              <button className="modal-close" onClick={() => setDetailRecord(null)}>×</button>
+            </div>
+            <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                <div><span style={{ fontSize: 12, color: '#8AA89C' }}>会员</span><div style={{ fontWeight: 600, marginTop: 2 }}>{detailRecord.patientId?.name} · {detailRecord.patientId?.phone}</div></div>
+                <div><span style={{ fontSize: 12, color: '#8AA89C' }}>类型</span><div style={{ marginTop: 2 }}><span style={{ padding: '2px 10px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: (TYPE_COLOR[detailRecord.type] || '#666') + '20', color: TYPE_COLOR[detailRecord.type] || '#666' }}>{TYPE_LABEL[detailRecord.type] || detailRecord.type}</span></div></div>
+                <div><span style={{ fontSize: 12, color: '#8AA89C' }}>日期</span><div style={{ marginTop: 2 }}>{new Date(detailRecord.date).toLocaleDateString('zh-CN')}</div></div>
+                <div><span style={{ fontSize: 12, color: '#8AA89C' }}>主题</span><div style={{ fontWeight: 500, marginTop: 2 }}>{detailRecord.title || '-'}</div></div>
+              </div>
+              {detailRecord.content && (
+                <div>
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>完整内容</div>
+                  <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 14, fontSize: 13, color: '#1A2B24', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{detailRecord.content}</div>
+                </div>
+              )}
+              {detailRecord.staffId?.name && (
+                <div style={{ fontSize: 12, color: '#8AA89C' }}>记录人：{detailRecord.staffId.name}</div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setDetailRecord(null)}>关闭</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {followUpTarget && (

@@ -621,13 +621,13 @@ router.patch('/plans/:planId/view', auth, async (req, res) => {
   }
 });
 
-// PATCH /api/user/plans/:planId/confirm — 用户确认方案（draft → active）
+// PATCH /api/user/plans/:planId/confirm — 用户确认方案
 router.patch('/plans/:planId/confirm', auth, async (req, res) => {
   try {
     const plan = await HealthPlan.findOne({ _id: req.params.planId, patientId: req.user._id });
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
-    if (plan.status !== 'draft') return res.json({ success: true, data: plan }); // 已确认则直接返回
-    plan.status = 'active';
+    if (plan.confirmedAt) return res.json({ success: true, data: plan }); // 已确认则直接返回
+    if (plan.status === 'draft') plan.status = 'active';
     plan.confirmedAt = new Date();
     await plan.save();
     res.json({ success: true, data: plan });

@@ -236,7 +236,10 @@ export default function PlanDetailPage() {
     <div className="page">
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button className="btn btn-secondary btn-sm" onClick={() => nav('/plans')}>← 返回</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => nav('/plans')}>← 返回方案列表</button>
+          {plan.patientId?._id && (
+            <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${plan.patientId._id}`)}>↩ 返回会员详情</button>
+          )}
           <div>
             <h1 className="page-title">{plan.title}</h1>
             <p className="page-subtitle">{TYPE_LABEL[plan.type]} · {plan.patientId?.name} · {plan.year}年</p>

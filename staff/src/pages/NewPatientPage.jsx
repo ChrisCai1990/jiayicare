@@ -160,6 +160,7 @@ export default function NewPatientPage() {
     if (!form.phone) return toast('手机号不能为空')
     if (!/^1[3-9]\d{9}$/.test(form.phone)) return toast('手机号格式不正确')
     if (form.idNumber && !validateIdCard(form.idNumber)) return toast('身份证号格式不正确')
+    if (form.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate)) return toast('出生日期格式须为 YYYY-MM-DD')
     setSaving(true)
     try {
       const payload = {
