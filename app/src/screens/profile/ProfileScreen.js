@@ -436,6 +436,8 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>我的服务</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
+            <MenuItem icon="ribbon-outline"   iconColor="#E91E63" label="365 健康会员"          onPress={() => navigation.navigate('Member365')} />
+            <MenuItem icon="document-text-outline" iconColor="#7C3AED" label="体检报告（年度）" onPress={() => navigation.navigate('MedicalReports')} />
             <MenuItem icon="gift-outline"     iconColor="#D97706" label="服务权益"              onPress={() => navigation.navigate('Benefits')} />
             <MenuItem icon="people-outline"  iconColor="#22A06B" label="服务群组"  value="即将开放" onPress={() => navigation.navigate('ComingSoon', { title: '服务群组', desc: '专属健康服务群即将开放，届时可与家庭医生、营养师、健康管理师实时交流。', icon: 'people-outline' })} />
             <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} />

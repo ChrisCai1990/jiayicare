@@ -758,6 +758,30 @@ router.get('/requisitions', auth, async (req, res) => {
   }
 });
 
+// ── 365 会员（需求20）──────────────────────────────────────────────
+// GET /api/user/member365 — 获取当前 365 会员状态
+router.get('/member365', auth, async (req, res) => {
+  const u = await User.findById(req.user._id).select('member365Status member365StartAt member365ExpiresAt isRegisteredClient name phone');
+  const now = new Date();
+  let status = u.member365Status;
+  if (status === 'active' && u.member365ExpiresAt && new Date(u.member365ExpiresAt) < now) {
+    status = 'expired';
+    await User.collection.updateOne({ _id: u._id }, { $set: { member365Status: 'expired' } });
+  }
+  res.json({ success: true, data: { status, startAt: u.member365StartAt, expiresAt: u.member365ExpiresAt, isRegisteredClient: u.isRegisteredClient, name: u.name, phone: u.phone } });
+});
+
+// POST /api/user/member365/apply — 申请 365 会员（创建待支付订单）
+router.post('/member365/apply', auth, async (req, res) => {
+  const u = await User.findById(req.user._id).select('member365Status isRegisteredClient name phone');
+  if (u.isRegisteredClient) return res.status(400).json({ success: false, message: '您已是正式会员，无需申请' });
+  if (u.member365Status === 'active') return res.status(400).json({ success: false, message: '您的 365 会员仍在有效期内' });
+  if (u.member365Status === 'pending') return res.status(400).json({ success: false, message: '申请已提交，等待审核激活' });
+
+  await User.collection.updateOne({ _id: u._id }, { $set: { member365Status: 'pending' } });
+  res.json({ success: true, message: '申请已提交！请扫码支付 365 元年费，客服核实后 24 小时内激活。' });
+});
+
 // ── 共享人账户（家庭成员） ────────────────────────────────────────
 // GET /api/user/family
 router.get('/family', auth, async (req, res) => {

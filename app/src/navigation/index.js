@@ -38,6 +38,8 @@ import PublicReportScreen from '../screens/records/PublicReportScreen';
 import LegalScreen from '../screens/legal/LegalScreen';
 import FamilyMembersScreen from '../screens/profile/FamilyMembersScreen';
 import SpecialScreeningScreen from '../screens/records/SpecialScreeningScreen';
+import MedicalReportsScreen from '../screens/records/MedicalReportsScreen';
+import Member365Screen from '../screens/services/Member365Screen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -172,6 +174,8 @@ export default function Navigation() {
             <Stack.Screen name="Benefits" component={BenefitsScreen} />
             <Stack.Screen name="FamilyMembers" component={FamilyMembersScreen} />
             <Stack.Screen name="SpecialScreening" component={SpecialScreeningScreen} />
+            <Stack.Screen name="MedicalReports" component={MedicalReportsScreen} />
+            <Stack.Screen name="Member365" component={Member365Screen} />
           </>
         )}
       </Stack.Navigator>

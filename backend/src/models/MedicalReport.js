@@ -1,8 +1,35 @@
 const mongoose = require('mongoose');
 
+// 报告解析后的单条项目（检验/检查值）
+const reportItemSchema = new mongoose.Schema({
+  name:           { type: String, default: '' }, // 项目名称
+  value:          { type: String, default: '' }, // 检测值（字符串保留原始格式）
+  unit:           { type: String, default: '' }, // 单位
+  referenceRange: { type: String, default: '' }, // 参考范围
+  status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown' },
+  itemType:       { type: String, enum: ['lab', 'imaging', 'data'], default: 'lab' }, // 检验/影像文字/数据曲线类
+}, { _id: false });
+
 const medicalReportSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   title: { type: String, required: true },
+
+  // ── 年度/类目结构（需求23）───────────────────────────────────────
+  reportYear:      { type: Number, default: null },   // 报告年份（如 2025）
+  checkDate:       { type: String, default: '' },     // 检查日期
+  institution:     { type: String, default: '' },     // 检查机构
+  screeningCategory: {
+    type: String,
+    enum: ['tumor', 'cardiovascular', 'brain_vessel', 'chronic', 'other_routine', 'health_promote', ''],
+    default: '',
+  },
+  reportItems:     [reportItemSchema],                // 解析后的各项结果
+  aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
+  aiStatus:        { type: String, enum: ['none', 'pending', 'reviewed', 'rejected'], default: 'none' },
+  reviewedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  reviewedAt:      { type: Date, default: null },
+  reviewNote:      { type: String, default: '' },
+
   type: {
     type: String,
     enum: [

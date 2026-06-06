@@ -162,10 +162,18 @@ export const remindersAPI = {
 
 // ── Medical Reports ───────────────────────────────────────────────
 export const reportsAPI = {
-  list:   ()     => request('/reports'),
-  get:    (id)   => request(`/reports/${id}`),
-  create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
-  delete: (id)   => request(`/reports/${id}`, { method: 'DELETE' }),
+  list:        ()     => request('/reports'),
+  byCategory:  ()     => request('/reports/by-category'),
+  get:         (id)   => request(`/reports/${id}`),
+  create:      (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
+  delete:      (id)   => request(`/reports/${id}`, { method: 'DELETE' }),
+  parseAI:     (id)   => request(`/reports/${id}/parse-ai`, { method: 'POST' }),
+};
+
+// ── 365 会员（需求20）────────────────────────────────────────────
+export const member365API = {
+  status: ()     => request('/user/member365'),
+  apply:  ()     => request('/user/member365/apply', { method: 'POST' }),
 };
 
 // ── AI Chat ───────────────────────────────────────────────────────

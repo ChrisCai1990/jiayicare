@@ -35,6 +35,7 @@ import OtherChargePage    from './pages/projects/OtherChargePage'
 import ProjectTemplatePage from './pages/projects/ProjectTemplatePage'
 import FollowUpFormPage   from './pages/projects/FollowUpFormPage'
 import FollowUpPlanPage   from './pages/projects/FollowUpPlanPage'
+import Member365Page      from './pages/Member365Page'
 
 // ── Auth Context ─────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -102,7 +103,8 @@ export default function App() {
               <Route path="services" element={<ServicesPage />} />
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
-              <Route path="products" element={<ProductsPage />} />
+              <Route path="products"   element={<ProductsPage />} />
+              <Route path="member365" element={<Member365Page />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
 
               {/* 基本设置 */}

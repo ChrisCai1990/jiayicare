@@ -1865,22 +1865,60 @@ export default function PatientDetailPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无体检报告</div>
           ) : (
             <table className="table">
-              <thead><tr><th>报告标题</th><th>类型</th><th>医院</th><th>日期</th><th>审核状态</th><th>上传人</th></tr></thead>
+              <thead><tr><th>报告标题</th><th>年份/类目</th><th>机构/日期</th><th>审核状态</th><th>AI解析</th><th>操作</th></tr></thead>
               <tbody>
-                {reports.map(r => (
-                  <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => openReportDetail(r)}>
-                    <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title}</td>
-                    <td><span className="badge badge-info">{r.type}</span></td>
-                    <td style={{ fontSize: 13, color: '#666' }}>{r.hospital || '-'}</td>
-                    <td style={{ fontSize: 13, color: '#666' }}>{r.date || '-'}</td>
-                    <td>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: r.audit_status === 'audited' ? '#22A06B' : r.audit_status === 'rejected' ? '#DC3545' : '#D97706' }}>
-                        {r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: 13, color: '#666' }}>{r.uploadedBy?.name || '-'}</td>
-                  </tr>
-                ))}
+                {reports.map(r => {
+                  const catLabel = { tumor: '肿瘤筛查', cardiovascular: '心血管', brain_vessel: '脑血管', chronic: '慢性病', other_routine: '常规筛查', health_promote: '健康促进' };
+                  const aiColor = { none: '#ccc', pending: '#D97706', reviewed: '#22A06B', rejected: '#DC3545' };
+                  const aiLabel = { none: '未解析', pending: '待审核', reviewed: '已审核', rejected: '已驳回' };
+                  return (
+                    <tr key={r._id}>
+                      <td style={{ fontWeight: 500, color: '#1E6B50', cursor: 'pointer' }} onClick={() => openReportDetail(r)}>{r.title}</td>
+                      <td style={{ fontSize: 12, color: '#4A6558' }}>
+                        {r.reportYear ? `${r.reportYear}年` : '-'}
+                        {r.screeningCategory ? <><br/><span style={{ color: '#8AA89C' }}>{catLabel[r.screeningCategory] || r.screeningCategory}</span></> : ''}
+                      </td>
+                      <td style={{ fontSize: 12, color: '#666' }}>
+                        {r.institution || r.hospital || '-'}
+                        {r.checkDate || r.date ? <><br/>{r.checkDate || r.date}</> : ''}
+                      </td>
+                      <td>
+                        <span style={{ fontSize: 12, fontWeight: 500, color: r.audit_status === 'audited' ? '#22A06B' : r.audit_status === 'rejected' ? '#DC3545' : '#D97706' }}>
+                          {r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'}
+                        </span>
+                      </td>
+                      <td>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: aiColor[r.aiStatus] || '#ccc' }}>
+                          {aiLabel[r.aiStatus] || '—'}
+                        </span>
+                        {r.aiSummary && r.aiStatus === 'pending' && (
+                          <div style={{ fontSize: 11, color: '#8AA89C', maxWidth: 180, marginTop: 2 }}>{r.aiSummary.slice(0, 60)}…</div>
+                        )}
+                      </td>
+                      <td style={{ whiteSpace: 'nowrap' }}>
+                        {r.aiStatus === 'pending' && (
+                          <>
+                            <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
+                              onClick={async () => {
+                                try {
+                                  await staffAPI.updateReport(r._id, { aiStatus: 'reviewed' });
+                                  loadReports();
+                                } catch (e) { toast(e.message); }
+                              }}>批准AI</button>
+                            <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc', marginRight: 4 }}
+                              onClick={async () => {
+                                try {
+                                  await staffAPI.updateReport(r._id, { aiStatus: 'rejected' });
+                                  loadReports();
+                                } catch (e) { toast(e.message); }
+                              }}>驳回</button>
+                          </>
+                        )}
+                        <button className="btn btn-secondary btn-sm" onClick={() => openReportDetail(r)}>查看</button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}
