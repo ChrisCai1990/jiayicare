@@ -2,7 +2,87 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const HealthRecord = require('../models/HealthRecord');
 const FollowUp = require('../models/FollowUp');
+const User = require('../models/User');
 const router = express.Router();
+
+// ── 健康评分计算（需求1）──────────────────────────────────────────
+async function recalcHealthScore(userId) {
+  try {
+    const [user, recentRecords] = await Promise.all([
+      User.findById(userId),
+      HealthRecord.find({
+        user: userId,
+        recordedAt: { $gte: new Date(Date.now() - 30 * 86400000) },
+      }).sort({ recordedAt: -1 }),
+    ]);
+    if (!user) return;
+
+    let score = 100;
+
+    // 血压维度（-15）
+    const bpRec = recentRecords.find(r => r.type === 'bloodPressure');
+    if (bpRec) {
+      const sys = bpRec.extra?.sys || parseFloat(String(bpRec.value).split('/')[0]) || 0;
+      if (sys >= 160)      score -= 15;
+      else if (sys >= 140) score -= 10;
+      else if (sys >= 130) score -= 5;
+      else if (sys < 90)   score -= 5;
+    }
+
+    // 血糖维度（-15）
+    const bsRec = recentRecords.find(r => r.type === 'bloodSugar');
+    if (bsRec) {
+      const v = parseFloat(bsRec.value);
+      if (v >= 11.1)     score -= 15;
+      else if (v >= 7.0) score -= 10;
+      else if (v >= 6.1) score -= 5;
+      else if (v < 3.9)  score -= 10;
+    }
+
+    // BMI 维度（体重 + 身高）（-10）
+    const wRec = recentRecords.find(r => r.type === 'weight');
+    const h = user.height || 0;
+    if (wRec && h > 0) {
+      const bmi = parseFloat(wRec.value) / ((h / 100) ** 2);
+      if (bmi >= 30)         score -= 10;
+      else if (bmi >= 28)    score -= 5;
+      else if (bmi < 18.5)   score -= 5;
+    }
+
+    // 睡眠维度（-10）
+    const sleepRec = recentRecords.find(r => r.type === 'sleep');
+    if (sleepRec) {
+      const h = parseFloat(sleepRec.value);
+      if (h < 5)      score -= 10;
+      else if (h < 7) score -= 5;
+    }
+
+    // 运动打卡加分（近30天3次+）
+    const exerciseCount = recentRecords.filter(r => r.type === 'exercise').length;
+    if (exerciseCount >= 10) score += 5;
+    else if (exerciseCount >= 3) score += 3;
+
+    // 慢病扣分（-15上限）
+    const diseases = user.chronicDiseases || [];
+    score -= Math.min(diseases.length * 3, 15);
+
+    // 吸烟/饮酒（生活方式打卡）
+    const smokingCount = recentRecords.filter(r => r.type === 'smoking').length;
+    const alcoholCount = recentRecords.filter(r => r.type === 'alcohol').length;
+    if (smokingCount > 0) score -= 5;
+    if (alcoholCount > 0) score -= 3;
+
+    score = Math.max(40, Math.min(100, Math.round(score)));
+
+    // 持久化 + 更新评分历史
+    const today = new Date().toISOString().slice(0, 10);
+    let history = user.scoreHistory || [];
+    history = history.filter(h => h.date !== today);
+    history = [...history, { score, date: today }].slice(-30);
+
+    await User.findByIdAndUpdate(userId, { $set: { healthScore: score, scoreHistory: history } });
+  } catch { /* 不阻断主流程 */ }
+}
 
 // 获取记录列表（支持按类型/时间筛选）
 router.get('/', auth, async (req, res) => {
@@ -124,6 +204,9 @@ router.post('/', auth, async (req, res) => {
         }
       }
     } catch { /* 不阻断主流程 */ }
+
+    // 异步重算健康评分（不阻断响应）
+    recalcHealthScore(req.user._id).catch(() => {});
 
     res.status(201).json({ success: true, data: record, message: '记录成功' });
   } catch (err) {

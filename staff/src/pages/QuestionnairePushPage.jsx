@@ -156,8 +156,8 @@ function PreviewModal({ questionnaire, onClose }) {
   )
 }
 
-// ── 查看回答弹窗 ────────────────────────────────────────────
-function ResponsesModal({ questionnaire, onClose }) {
+// ── 查看回答弹窗（支持全部 / 指定患者）────────────────────────────
+function ResponsesModal({ questionnaire, filterPatientId, onClose }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -169,19 +169,41 @@ function ResponsesModal({ questionnaire, onClose }) {
   }, [questionnaire._id])
 
   const q = data?.questionnaire
-  const responses = data?.responses || []
+  const allResponses = data?.responses || []
+  const responses = filterPatientId
+    ? allResponses.filter(r => String(r.user?._id) === String(filterPatientId))
+    : allResponses
+
+  // 导出为 CSV
+  const exportCSV = () => {
+    if (!q || responses.length === 0) return
+    const headers = ['会员姓名', '手机号', '提交时间', ...(q.questions || []).map((qn, i) => `Q${i+1}.${qn.text}`)]
+    const rows = responses.map(resp => [
+      resp.user?.name || '匿名',
+      resp.user?.phone || '-',
+      resp.submittedAt ? new Date(resp.submittedAt).toLocaleString('zh-CN') : '-',
+      ...(q.questions || []).map(qn => fmtAnswer(resp.answers?.[qn.id])),
+    ])
+    const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `${questionnaire.title}_答卷.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 760, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header">
-          <h3 className="modal-title">📊 答卷详情 · {questionnaire.title}</h3>
+          <h3 className="modal-title">📊 答卷详情 · {questionnaire.title}{filterPatientId ? ' · 指定会员' : ''}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
           {loading && <div style={{ textAlign: 'center', padding: 32, color: '#aaa' }}>加载中...</div>}
           {!loading && responses.length === 0 && (
-            <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>暂无会员提交答卷</div>
+            <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>
+              {filterPatientId ? '该会员尚未提交答卷' : '暂无会员提交答卷'}
+            </div>
           )}
           {responses.map((resp) => (
             <div key={resp._id} style={{ marginBottom: 16, border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
@@ -204,7 +226,10 @@ function ResponsesModal({ questionnaire, onClose }) {
           ))}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>关闭</button>
+          {!loading && responses.length > 0 && (
+            <button className="btn btn-secondary" onClick={exportCSV}>⬇ 导出 CSV</button>
+          )}
+          <button className="btn btn-primary" onClick={onClose}>关闭</button>
         </div>
       </div>
     </div>
@@ -283,7 +308,7 @@ export default function QuestionnairePushPage() {
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
   const [pushModal, setPushModal] = useState(null)
-  const [viewModal, setViewModal] = useState(null)
+  const [viewModal, setViewModal] = useState(null)   // { questionnaire, filterPatientId? }
   const [previewModal, setPreviewModal] = useState(null)
   const [activeTab, setActiveTab] = useState('templates')
 
@@ -365,7 +390,7 @@ export default function QuestionnairePushPage() {
                       </div>
                       <div style={{ display: 'flex', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}>
                         <button className="btn btn-secondary btn-sm" onClick={() => setPreviewModal(q)}>🔍 查看详情</button>
-                        <button className="btn btn-secondary btn-sm" onClick={() => setViewModal(q)}>📊 查看回答</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setViewModal({ ...q, filterPatientId: null })}>📊 查看回答</button>
                         <button
                           className="btn btn-primary btn-sm"
                           onClick={() => canPush && setPushModal(q)}
@@ -396,6 +421,7 @@ export default function QuestionnairePushPage() {
                   <th>会员</th>
                   <th>推送时间</th>
                   <th>状态</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -412,6 +438,14 @@ export default function QuestionnairePushPage() {
                         ? <span style={{ fontSize: 12, color: '#22A06B', fontWeight: 500 }}>✓ 已读</span>
                         : <span style={{ fontSize: 12, color: '#D97706' }}>待查看</span>
                       }
+                    </td>
+                    <td>
+                      {r.questionnaireId && (
+                        <button className="btn btn-secondary btn-sm"
+                          onClick={() => setViewModal({ _id: r.questionnaireId, title: r.title, filterPatientId: r.patientId?._id })}>
+                          查看答案
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -443,6 +477,7 @@ export default function QuestionnairePushPage() {
       {viewModal && (
         <ResponsesModal
           questionnaire={viewModal}
+          filterPatientId={viewModal.filterPatientId}
           onClose={() => setViewModal(null)}
         />
       )}

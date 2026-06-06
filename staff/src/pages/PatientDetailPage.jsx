@@ -255,7 +255,7 @@ export default function PatientDetailPage() {
   const { staff } = useStaff()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('info')  // info | records | reports | medications | requisitions | plans | followups | serviceRecords | orders | family | membership | billing
+  const [tab, setTab] = useState('info')  // info | records | reports | medications | requisitions | plans | followups | serviceRecords | consumption | family | membership
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
@@ -374,7 +374,7 @@ export default function PatientDetailPage() {
     else if (tab === 'requisitions') loadRequisitions()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
     else if (tab === 'records') loadScreening()
-    else if (tab === 'orders') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
+    else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
   }, [tab])
 
   const buildEditForm = (u) => ({
@@ -648,11 +648,10 @@ export default function PatientDetailPage() {
           { key: 'requisitions',  label: '检查开单' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
-          { key: 'serviceRecords',label: '服务记录' },
-          { key: 'orders',        label: '服务订单' },
+          { key: 'serviceRecords', label: '服务记录' },
+          { key: 'consumption',   label: '消费记录' },
           { key: 'family',        label: '家庭信息' },
           { key: 'membership',    label: '会员信息' },
-          { key: 'billing',       label: '收费管理' },
         ].map(t => (
           <button
             key={t.key}
@@ -1998,84 +1997,103 @@ export default function PatientDetailPage() {
       )}
 
       {/* ── Orders Tab ── */}
-      {tab === 'orders' && (() => {
+      {/* ── 消费记录 Tab（需求17：合并服务订单+收费管理）── */}
+      {tab === 'consumption' && (() => {
         const ORDER_STATUS = { pending:'待安排', scheduled:'已安排', completed:'已完成', cancelled:'已取消' }
         const ORDER_STATUS_COLOR = { pending:'#D97706', scheduled:'#0077B6', completed:'#22A06B', cancelled:'#DC3545' }
+        const thisYear = new Date().getFullYear()
+        const yearOrders = patientOrders.filter(o => new Date(o.createdAt).getFullYear() === thisYear)
+        const yearTotal  = yearOrders.reduce((s, o) => s + (o.servicePrice || 0), 0)
         return (
-          <div className="card">
-            <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div className="card-title">服务订单</div>
-              <span style={{ fontSize: 12, color: '#8AA89C' }}>
-                待安排 {patientOrders.filter(o => o.status === 'pending').length} 条
-              </span>
-            </div>
-            {patientOrders.length === 0 ? (
-              <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无服务订单</div>
-            ) : patientOrders.map((order, i) => (
-              <div key={order._id} style={{ padding: '14px 16px', borderBottom: i < patientOrders.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 }}>
-                  <div>
-                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>
-                      {order.serviceName || order.serviceId}
-                    </span>
-                    {order.servicePrice != null && (
-                      <span style={{ marginLeft: 8, fontSize: 13, color: '#D97706', fontWeight: 700 }}>
-                        ¥{order.servicePrice}
-                      </span>
-                    )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {/* 账户概览 */}
+            <div className="card">
+              <div className="card-header"><div className="card-title">账户概览</div></div>
+              <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+                {[
+                  { label: '健康基金余额', value: `¥${(user.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
+                  { label: `${thisYear}年消费总额`, value: `¥${yearTotal.toFixed(2)}`, color: '#DC3545' },
+                  { label: '服务包', value: getServicePackageLabel(user.servicePackage) || '未购买', color: '#0077B6' },
+                  { label: '服务到期', value: user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-', color: '#D97706' },
+                ].map(item => (
+                  <div key={item.label} style={{ padding: 14, background: '#f9f7f3', borderRadius: 10, textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>{item.label}</div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: item.color }}>{item.value}</div>
                   </div>
-                  <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 99, fontWeight: 600,
-                    background: (ORDER_STATUS_COLOR[order.status] || '#aaa') + '20',
-                    color: ORDER_STATUS_COLOR[order.status] || '#aaa' }}>
-                    {ORDER_STATUS[order.status] || order.status}
-                  </span>
-                </div>
-                {order.note && (
-                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>{order.note}</div>
-                )}
-                <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>
-                  下单：{new Date(order.createdAt).toLocaleDateString('zh-CN')}
-                  {order.scheduledAt && ` · 安排：${new Date(order.scheduledAt).toLocaleDateString('zh-CN')}`}
-                </div>
-                {order.status === 'pending' && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={async () => {
-                        try {
-                          await staffAPI.startOrder(order._id, { action: 'schedule' })
-                          setPatientOrders(prev => prev.map(o =>
-                            o._id === order._id ? { ...o, status: 'scheduled', scheduledAt: new Date().toISOString() } : o
-                          ))
-                          toast('已安排服务，会员端状态已更新')
-                        } catch (err) { toast(err.message || '操作失败') }
-                      }}
-                    >
-                      🚀 启动服务
-                    </button>
-                  </div>
-                )}
-                {order.status === 'scheduled' && (
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <button
-                      className="btn btn-sm"
-                      style={{ background: '#22A06B', color: '#fff', border: 'none' }}
-                      onClick={async () => {
-                        try {
-                          await staffAPI.startOrder(order._id, { action: 'complete' })
-                          setPatientOrders(prev => prev.map(o =>
-                            o._id === order._id ? { ...o, status: 'completed', completedAt: new Date().toISOString() } : o
-                          ))
-                          toast('服务已完成')
-                        } catch (err) { toast(err.message || '操作失败') }
-                      }}
-                    >
-                      ✓ 标记完成
-                    </button>
-                  </div>
-                )}
+                ))}
               </div>
-            ))}
+            </div>
+
+            {/* 服务购买记录 */}
+            <div className="card">
+              <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <div className="card-title">服务购买记录</div>
+                <span style={{ fontSize: 12, color: '#8AA89C' }}>待安排 {patientOrders.filter(o => o.status === 'pending').length} 条</span>
+              </div>
+              {patientOrders.length === 0 ? (
+                <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无购买记录</div>
+              ) : (
+                <table className="table">
+                  <thead><tr><th>产品名称</th><th>金额</th><th>下单时间</th><th>状态</th><th>操作</th></tr></thead>
+                  <tbody>
+                    {patientOrders.map(order => (
+                      <tr key={order._id}>
+                        <td style={{ fontWeight: 500 }}>{order.serviceName || order.serviceId}</td>
+                        <td style={{ color: '#D97706', fontWeight: 600 }}>
+                          {order.servicePrice != null ? `¥${order.servicePrice}` : '-'}
+                        </td>
+                        <td style={{ fontSize: 13, color: '#8AA89C' }}>{new Date(order.createdAt).toLocaleDateString('zh-CN')}</td>
+                        <td>
+                          <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 99, fontWeight: 600,
+                            background: (ORDER_STATUS_COLOR[order.status] || '#aaa') + '20',
+                            color: ORDER_STATUS_COLOR[order.status] || '#aaa' }}>
+                            {ORDER_STATUS[order.status] || order.status}
+                          </span>
+                        </td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          {order.status === 'pending' && (
+                            <button className="btn btn-primary btn-sm" onClick={async () => {
+                              try {
+                                await staffAPI.startOrder(order._id, { action: 'schedule' })
+                                setPatientOrders(prev => prev.map(o => o._id === order._id ? { ...o, status: 'scheduled', scheduledAt: new Date().toISOString() } : o))
+                                toast('已安排服务')
+                              } catch (err) { toast(err.message || '操作失败') }
+                            }}>启动服务</button>
+                          )}
+                          {order.status === 'scheduled' && (
+                            <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
+                              try {
+                                await staffAPI.startOrder(order._id, { action: 'complete' })
+                                setPatientOrders(prev => prev.map(o => o._id === order._id ? { ...o, status: 'completed' } : o))
+                                toast('服务已完成')
+                              } catch (err) { toast(err.message || '操作失败') }
+                            }}>标记完成</button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+            {/* 健康基金收支 */}
+            <div className="card">
+              <div className="card-header"><div className="card-title">健康基金</div></div>
+              <div className="card-body">
+                <div style={{ display: 'flex', gap: 16, marginBottom: 12 }}>
+                  <div style={{ flex: 1, padding: 14, background: '#E8F5EF', borderRadius: 10, textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, color: '#1E6B50', marginBottom: 4 }}>当前余额</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#1E6B50' }}>¥{(user.healthFundBalance || 0).toFixed(2)}</div>
+                  </div>
+                  <div style={{ flex: 1, padding: 14, background: '#FEF3E2', borderRadius: 10, textAlign: 'center' }}>
+                    <div style={{ fontSize: 12, color: '#D97706', marginBottom: 4 }}>充值余额</div>
+                    <div style={{ fontSize: 20, fontWeight: 800, color: '#D97706' }}>¥{(user.rechargeBalance || 0).toFixed(2)}</div>
+                  </div>
+                </div>
+                <div style={{ fontSize: 13, color: '#8AA89C', textAlign: 'center' }}>健康基金收支明细请在财务模块管理</div>
+              </div>
+            </div>
           </div>
         )
       })()}
@@ -2088,35 +2106,6 @@ export default function PatientDetailPage() {
       {/* ── Membership Tab ── */}
       {tab === 'membership' && (
         <MembershipPanel user={user} patientId={id} onRefresh={load} />
-      )}
-
-      {/* ── Billing Tab ── */}
-      {tab === 'billing' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="card">
-            <div className="card-header"><div className="card-title">账户概览</div></div>
-            <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-              {[
-                { label: '健康基金余额', value: `¥${(user.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
-                { label: '服务包', value: getServicePackageLabel(user.servicePackage) || '未购买', color: '#0077B6' },
-                { label: '服务到期', value: user.serviceExpiry ? new Date(user.serviceExpiry).toLocaleDateString('zh-CN') : '-', color: '#D97706' },
-              ].map(item => (
-                <div key={item.label} style={{ padding: 16, background: '#f9f7f3', borderRadius: 10, textAlign: 'center' }}>
-                  <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 6 }}>{item.label}</div>
-                  <div style={{ fontSize: 18, fontWeight: 700, color: item.color }}>{item.value}</div>
-                </div>
-              ))}
-            </div>
-          </div>
-          <div className="card">
-            <div className="card-header"><div className="card-title">收费记录</div></div>
-            <div style={{ padding: '40px 20px', textAlign: 'center', color: '#aaa' }}>
-              <div style={{ fontSize: 32, marginBottom: 12 }}>🧾</div>
-              <div style={{ fontSize: 14, marginBottom: 8 }}>营养素、检测及各类服务收费记录</div>
-              <div style={{ fontSize: 13 }}>详细收费模块正在开发中，请在会员营销-次卡套餐处管理</div>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* 随访记录弹窗 */}

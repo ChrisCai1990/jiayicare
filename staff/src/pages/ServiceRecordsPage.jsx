@@ -1,7 +1,58 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+
+function PatientSearchInput({ value, onChange }) {
+  const [keyword, setKeyword] = useState('')
+  const [results, setResults] = useState([])
+  const [searching, setSearching] = useState(false)
+  const [open, setOpen] = useState(false)
+  const [selectedName, setSelectedName] = useState('')
+  const timerRef = useRef(null)
+  const wrapRef = useRef(null)
+  useEffect(() => {
+    const h = e => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false) }
+    document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h)
+  }, [])
+  const handleInput = e => {
+    const kw = e.target.value; setKeyword(kw); setOpen(true)
+    if (!kw.trim()) { setResults([]); return }
+    clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(async () => {
+      setSearching(true)
+      try { const r = await staffAPI.getPatients({ search: kw, limit: 20 }); setResults(r.data.patients || []) }
+      catch { setResults([]) } finally { setSearching(false) }
+    }, 300)
+  }
+  const handleSelect = p => { onChange(p._id); setSelectedName(`${p.name}  ${p.phone}`); setKeyword(''); setResults([]); setOpen(false) }
+  const handleClear = () => { onChange(''); setSelectedName(''); setKeyword(''); setResults([]) }
+  return (
+    <div ref={wrapRef} style={{ position: 'relative' }}>
+      {value && selectedName ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', border: '1px solid #1E6B50', borderRadius: 8, background: '#E8F5EF', fontSize: 14 }}>
+          <span><span style={{ fontWeight: 600 }}>{selectedName.split('  ')[0]}</span><span style={{ color: '#8AA89C', marginLeft: 8, fontSize: 13 }}>{selectedName.split('  ')[1]}</span></span>
+          <button type="button" onClick={handleClear} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 16, padding: 0 }}>✕</button>
+        </div>
+      ) : (
+        <div style={{ position: 'relative' }}>
+          <input className="form-input" type="text" value={keyword} onChange={handleInput} onFocus={() => keyword && setOpen(true)} placeholder="输入姓名或手机号搜索会员..." autoComplete="off" />
+          {searching && <div style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 11, color: '#aaa' }}>搜索中...</div>}
+          {open && results.length > 0 && (
+            <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: 200, overflowY: 'auto', marginTop: 2 }}>
+              {results.map(p => (
+                <div key={p._id} onMouseDown={() => handleSelect(p)} style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 13, borderBottom: '1px solid #f5f2ec' }}
+                  onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'} onMouseLeave={e => e.currentTarget.style.background = ''}>
+                  <span style={{ fontWeight: 600 }}>{p.name}</span><span style={{ color: '#8AA89C', marginLeft: 8 }}>{p.phone}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const TYPE_LABEL = {
   disease_mgmt:  '专病管理记录',
@@ -26,6 +77,7 @@ export default function ServiceRecordsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [typeFilter, setTypeFilter] = useState(defaultType)
+  const [patientFilter, setPatientFilter] = useState('')
   const [page, setPage] = useState(1)
   const [showModal, setShowModal] = useState(false)
   const [followUpTarget, setFollowUpTarget] = useState(null) // { patientId, patientName, theme }
@@ -36,10 +88,12 @@ export default function ServiceRecordsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await staffAPI.getServiceRecords({ type: typeFilter, page, limit })
+      const params = { type: typeFilter, page, limit }
+      if (patientFilter) params.patientId = patientFilter
+      const res = await staffAPI.getServiceRecords(params)
       setRecords(res.data.records); setTotal(res.data.total)
     } finally { setLoading(false) }
-  }, [typeFilter, page])
+  }, [typeFilter, patientFilter, page])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {}) }, [])
@@ -60,10 +114,10 @@ export default function ServiceRecordsPage() {
         <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增记录</button>
       </div>
 
-      {/* 类型筛选 */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
+      {/* 筛选栏 */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
         {[
-          { v: '', l: '全部' },
+          { v: '', l: '全部类型' },
           { v: 'disease_mgmt',  l: '专病管理' },
           { v: 'nutrition',     l: '营养干预' },
           { v: 'medical_visit', l: '医院就医' },
@@ -72,6 +126,9 @@ export default function ServiceRecordsPage() {
           <button key={opt.v} className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => { setTypeFilter(opt.v); setPage(1) }}>{opt.l}</button>
         ))}
+        <div style={{ flex: 1, minWidth: 200, maxWidth: 280 }}>
+          <PatientSearchInput value={patientFilter} onChange={v => { setPatientFilter(v); setPage(1) }} />
+        </div>
       </div>
 
       <div className="card">
@@ -201,6 +258,274 @@ const MEDICAL_VISIT_FIELDS = [
 const ROUTINE_PERIODS = ['双周', '月度', '季度']
 const ROUTINE_METHODS = ['电话', '微信', '线下', '视频']
 
+// ── 双周随访表单 ────────────────────────────────────────────────
+function BiWeeklyForm({ extras, setExtra }) {
+  const E = (k, label, type='text', placeholder='', options) => (
+    <div className="form-group" style={{ marginBottom: 8 }}>
+      <label className="form-label" style={{ fontSize: 12 }}>{label}</label>
+      {type === 'select' ? (
+        <select className="form-input" value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)}>
+          <option value="">请选择</option>
+          {options.map(o => <option key={o}>{o}</option>)}
+        </select>
+      ) : type === 'textarea' ? (
+        <textarea className="form-input" rows={2} placeholder={placeholder} value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)} style={{ resize: 'vertical' }} />
+      ) : (
+        <input className="form-input" placeholder={placeholder} value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)} />
+      )}
+    </div>
+  )
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+      <Section13 title="当前重点关注">
+        {E('bi_focus', '当前重点关注事项', 'textarea')}
+      </Section13>
+
+      <Section13 title="微行动计划反馈（最多3项）">
+        {[1,2,3].map(n => (
+          <div key={n} style={{ background: '#f9f7f3', borderRadius: 8, padding: 10, marginBottom: 8 }}>
+            <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 6 }}>行动 {n}</div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+              {E(`bi_a${n}_desc`, '具体描述', 'text')}
+              {E(`bi_a${n}_done`, '完成情况', 'select', '', ['完成', '部分完成', '未做'])}
+              {E(`bi_a${n}_diff`, '遇到的困难', 'text')}
+              {E(`bi_a${n}_eff`, '效果感受', 'select', '', ['好', '中', '差'])}
+            </div>
+          </div>
+        ))}
+      </Section13>
+
+      <Section13 title="关键指标快照">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {E('bi_weight_trend', '体重趋势', 'select', '', ['下降', '稳定', '上升'])}
+          {E('bi_weight_val', '体重数值 (kg)', 'text')}
+          {E('bi_bp', '血压情况', 'text', '如：120/80')}
+          {E('bi_sleep', '睡眠评分', 'select', '', ['良好', '一般', '较差'])}
+          {E('bi_bowel', '大便情况', 'select', '', ['规律', '偶有异常', '持续异常'])}
+          {E('bi_energy', '主观精力', 'select', '', ['充沛', '一般', '疲乏'])}
+          {E('bi_mood', '情绪状态', 'select', '', ['良好', '一般', '较差'])}
+        </div>
+        {E('bi_discomfort', '新发不适', 'textarea', '如无请填"无"')}
+      </Section13>
+
+      <Section13 title="药物及营养素补充">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {E('bi_med_use', '是否服药', 'select', '', ['是', '否'])}
+          {E('bi_med_regular', '服药规律性', 'select', '', ['规律', '偶尔漏服', '经常漏服'])}
+          {E('bi_med_reaction', '不良反应', 'text', '如无请填"无"')}
+          {E('bi_med_other', '其他药物', 'text')}
+          {E('bi_supp_use', '是否用营养素', 'select', '', ['是', '否'])}
+          {E('bi_supp_regular', '营养素规律性', 'select', '', ['规律', '偶尔漏服', '经常漏服'])}
+          {E('bi_supp_effect', '改善情况', 'select', '', ['明显改善', '略有改善', '无变化'])}
+          {E('bi_supp_other', '其他营养素', 'text')}
+        </div>
+      </Section13>
+
+      <Section13 title="周期生活事件影响">
+        {E('bi_events', '影响健康计划的生活事件', 'text', '如出差、应酬、情绪波动等')}
+        {E('bi_impact', '对健康计划的影响', 'textarea')}
+        {E('bi_challenge', '当前最大挑战', 'textarea')}
+        {E('bi_support', '最需要的支持', 'textarea')}
+      </Section13>
+
+      <Section13 title="下两周微调方案">
+        {E('bi_keep', '保持项', 'textarea')}
+        {E('bi_adjust', '调整项', 'textarea')}
+        {E('bi_attention', '特别关注提醒', 'textarea')}
+      </Section13>
+
+      <Section13 title="快速记录">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {E('bi_comm_status', '沟通状态', 'select', '', ['顺畅', '一般', '困难'])}
+          {E('bi_urgency', '紧急度', 'select', '', ['正常', '需关注', '紧急'])}
+          {E('bi_next_focus', '下期随访重点', 'text')}
+          {E('bi_staff', '随访人员', 'text')}
+          {E('bi_duration', '随访时长(分钟)', 'text')}
+          {E('bi_next_date', '预约下次随访日期', 'text', 'YYYY-MM-DD')}
+        </div>
+      </Section13>
+    </div>
+  )
+}
+
+// ── 月度随访表单 ────────────────────────────────────────────────
+function MonthlyForm({ extras, setExtra }) {
+  const E = (k, label, type='text', placeholder='', options) => (
+    <div className="form-group" style={{ marginBottom: 8 }}>
+      <label className="form-label" style={{ fontSize: 12 }}>{label}</label>
+      {type === 'select' ? (
+        <select className="form-input" value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)}>
+          <option value="">请选择</option>
+          {options.map(o => <option key={o}>{o}</option>)}
+        </select>
+      ) : type === 'textarea' ? (
+        <textarea className="form-input" rows={2} placeholder={placeholder} value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)} style={{ resize: 'vertical' }} />
+      ) : (
+        <input className="form-input" placeholder={placeholder} value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)} />
+      )}
+    </div>
+  )
+  return (
+    <div>
+      <Section13 title="本月核心目标回顾">
+        {E('mo_goal_review', '本月核心目标回顾', 'textarea')}
+      </Section13>
+
+      <Section13 title="月度核心指标追踪">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {E('mo_weight', '体重 (kg)', 'text')}
+          {E('mo_weight_diff', '对比上月', 'text', '如：-0.5kg')}
+          {E('mo_exercise_pct', '运动完成度 (%)', 'text')}
+          {E('mo_exercise_barrier', '运动障碍', 'text')}
+          {E('mo_exercise_eval', '运动评估', 'select', '', ['超额完成', '基本完成', '部分完成', '未完成'])}
+          {E('mo_diet_regular', '饮食规律性', 'select', '', ['规律', '基本规律', '不规律'])}
+          {E('mo_diet_progress', '本月进步点', 'text')}
+          {E('mo_diet_challenge', '主要挑战', 'text')}
+          {E('mo_supp', '营养素摄入情况', 'text')}
+          {E('mo_sleep', '睡眠质量', 'select', '', ['良好', '一般', '较差'])}
+          {E('mo_sleep_eval', '睡眠评估', 'textarea')}
+          {E('mo_sleep_issue', '睡眠主要问题', 'text')}
+          {E('mo_stress_source', '压力来源', 'text')}
+          {E('mo_stress_level', '压力水平', 'select', '', ['低', '中', '高', '极高'])}
+          {E('mo_smoke_alcohol', '烟酒习惯变化', 'text')}
+        </div>
+      </Section13>
+
+      <Section13 title="下月健康计划">
+        {E('mo_next_goal', '核心目标（1-2个）', 'textarea')}
+        {E('mo_next_action', '具体行动方案', 'textarea')}
+        {E('mo_next_support', '所需支持', 'text', '如：饮食指导、运动方案、心理支持')}
+      </Section13>
+
+      <Section13 title="快速评估">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {E('mo_compliance', '客户配合度', 'select', '', ['高', '中', '低'])}
+          {E('mo_risk', '风险等级', 'select', '', ['低风险', '中风险', '高风险'])}
+          {E('mo_next_focus', '下次随访重点', 'text')}
+          {E('mo_staff', '随访人员', 'text')}
+          {E('mo_duration', '随访时长(分钟)', 'text')}
+          {E('mo_next_date', '预约下次随访时间', 'text', 'YYYY-MM-DD')}
+        </div>
+      </Section13>
+    </div>
+  )
+}
+
+// ── 季度随访表单 ────────────────────────────────────────────────
+function QuarterlyForm({ extras, setExtra }) {
+  const E = (k, label, type='text', placeholder='', options) => (
+    <div className="form-group" style={{ marginBottom: 8 }}>
+      <label className="form-label" style={{ fontSize: 12 }}>{label}</label>
+      {type === 'select' ? (
+        <select className="form-input" value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)}>
+          <option value="">请选择</option>
+          {options.map(o => <option key={o}>{o}</option>)}
+        </select>
+      ) : type === 'textarea' ? (
+        <textarea className="form-input" rows={2} placeholder={placeholder} value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)} style={{ resize: 'vertical' }} />
+      ) : (
+        <input className="form-input" placeholder={placeholder} value={extras[k] || ''} onChange={e => setExtra(k, e.target.value)} />
+      )}
+    </div>
+  )
+  const QUARTERLY_CHECKS = ['季度健康趋势总结', '重大健康变化筛查', '年度体检/就医提醒', '服务升级机会评估']
+  const selected = (extras.q_checks || '').split(',').filter(Boolean)
+  const toggleCheck = v => {
+    const next = selected.includes(v) ? selected.filter(x => x !== v) : [...selected, v]
+    setExtra('q_checks', next.join(','))
+  }
+
+  return (
+    <div>
+      <Section13 title="主观健康状况评估">
+        {E('q_last_progress', '上期重点问题进展', 'textarea')}
+        {E('q_discomfort', '明显不适症状', 'textarea', '如无请填"无"')}
+        {E('q_patient_feedback', '客户自主反馈', 'textarea')}
+        {E('q_compare', '与前次对比变化', 'textarea')}
+      </Section13>
+
+      <Section13 title="量化健康指标">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {E('q_bp', '血压 (mmHg)', 'text', '如：120/80')}
+          {E('q_bp_trend', '血压变化趋势', 'select', '', ['改善', '稳定', '恶化'])}
+          {E('q_weight', '体重 (kg)', 'text')}
+          {E('q_bmi', 'BMI', 'text')}
+          {E('q_weight_trend', '体重变化趋势', 'select', '', ['改善', '稳定', '恶化'])}
+          {E('q_sleep_hours', '睡眠时长 (小时)', 'text')}
+          {E('q_sleep_onset', '入睡困难', 'select', '', ['无', '偶尔', '经常'])}
+          {E('q_sleep_interrupt', '睡眠中断', 'select', '', ['无', '偶尔', '经常'])}
+          {E('q_sleep_improve', '睡眠改善情况', 'select', '', ['明显改善', '略有改善', '无变化', '有所恶化'])}
+          {E('q_bowel_freq', '大便次数/天', 'text')}
+          {E('q_bowel_shape', '大便性状', 'select', '', ['正常', '偏稀', '偏干', '不规律'])}
+          {E('q_urine', '小便', 'select', '', ['正常', '次数多', '不畅'])}
+        </div>
+      </Section13>
+
+      <Section13 title="生活方式评估">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {E('q_meal_regular', '三餐规律性', 'select', '', ['规律', '基本规律', '不规律'])}
+          {E('q_veg_fruit', '蔬果摄入', 'select', '', ['充足', '一般', '不足'])}
+          {E('q_water', '饮水情况', 'text', '每日约 ml')}
+          {E('q_diet_special', '特殊饮食关注', 'text')}
+          {E('q_supp', '营养素摄入情况', 'text')}
+          {E('q_ex_freq', '运动频率', 'text', '如：3次/周')}
+          {E('q_ex_type', '运动类型', 'text')}
+          {E('q_ex_duration', '每次时长(分钟)', 'text')}
+          {E('q_ex_adherence', '运动坚持情况', 'select', '', ['良好', '一般', '较差'])}
+          {E('q_ex_barrier', '运动障碍', 'text')}
+          {E('q_smoke', '吸烟', 'select', '', ['无', '已戒', '减少', '未变', '增加'])}
+          {E('q_alcohol', '饮酒', 'select', '', ['无', '已戒', '减少', '未变', '增加'])}
+          {E('q_stress_level', '总体压力水平', 'select', '', ['低', '中', '高', '极高'])}
+          {E('q_stress_source', '主要压力源', 'text')}
+          {E('q_mood', '情绪状态', 'select', '', ['良好', '一般', '焦虑', '抑郁倾向'])}
+        </div>
+      </Section13>
+
+      <Section13 title="健康指导与计划调整">
+        {E('q_highlight', '本期亮点与进步', 'textarea')}
+        {E('q_problems', '主要问题与风险', 'textarea')}
+        {E('q_guidance', '具体指导建议', 'textarea')}
+        {E('q_next_goal', '下周期健康目标（SMART原则）', 'textarea')}
+      </Section13>
+
+      <Section13 title="季度随访重点完成情况">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          {QUARTERLY_CHECKS.map(item => (
+            <label key={item} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13, padding: '4px 10px', borderRadius: 6, border: `1px solid ${selected.includes(item) ? '#1E6B50' : '#E0D9CE'}`, background: selected.includes(item) ? '#E8F5EF' : '#fff' }}>
+              <input type="checkbox" checked={selected.includes(item)} onChange={() => toggleCheck(item)} style={{ margin: 0 }} />
+              {item}
+            </label>
+          ))}
+        </div>
+      </Section13>
+
+      <Section13 title="总结与跟进安排">
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {E('q_openness', '沟通开放度', 'select', '', ['高', '中', '低'])}
+          {E('q_execution', '计划执行力', 'select', '', ['强', '中', '弱'])}
+          {E('q_self_mgmt', '自我管理意识', 'select', '', ['强', '中', '弱'])}
+          {E('q_risk', '风险等级评估', 'select', '', ['低风险', '中风险', '高风险'])}
+          {E('q_referral', '内部转介建议', 'text', '如需要')}
+          {E('q_key_focus', '重点关注', 'text')}
+          {E('q_prepare', '需准备资料', 'text')}
+          {E('q_staff', '随访人员', 'text')}
+          {E('q_duration', '随访时长(分钟)', 'text')}
+          {E('q_next_date', '下次随访日期', 'text', 'YYYY-MM-DD')}
+        </div>
+      </Section13>
+    </div>
+  )
+}
+
+function Section13({ title, children }) {
+  return (
+    <div style={{ marginBottom: 12 }}>
+      <div style={{ fontSize: 12, fontWeight: 700, color: '#1E6B50', background: '#E8F5EF', padding: '4px 10px', borderRadius: '6px 6px 0 0', marginBottom: 0 }}>{title}</div>
+      <div style={{ border: '1px solid #E0D9CE', borderTop: 'none', borderRadius: '0 0 6px 6px', padding: 10 }}>{children}</div>
+    </div>
+  )
+}
+
 function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
   const [type, setType] = useState(defaultType)
   const [patientId, setPatientId] = useState('')
@@ -250,13 +575,12 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
       ].filter(Boolean).join('\n')
     }
     if (type === 'routine') {
-      return [
-        `周期：${routinePeriod}`,
-        `方式：${routineMethod}`,
-        extras.mainContent && `沟通内容：${extras.mainContent}`,
-        extras.feedback && `会员反馈：${extras.feedback}`,
-        extras.adjustment && `方案调整：${extras.adjustment}`,
-      ].filter(Boolean).join('\n')
+      const lines = [`【${routinePeriod}随访】方式：${routineMethod}`]
+      // 把 extras 中所有有值的字段格式化为摘要
+      Object.entries(extras).forEach(([k, v]) => {
+        if (v && typeof v === 'string') lines.push(`${k}：${v}`)
+      })
+      return lines.join('\n')
     }
     return extras.content || ''
   }
@@ -306,12 +630,12 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
     ))
     if (type === 'routine') return (
       <>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>
           <div>
-            <label className="form-label" style={{ fontSize: 12 }}>随访周期</label>
+            <label className="form-label" style={{ fontSize: 12 }}>随访周期 *</label>
             <div style={{ display: 'flex', gap: 6 }}>
               {ROUTINE_PERIODS.map(p => (
-                <button key={p} type="button" onClick={() => setRoutinePeriod(p)}
+                <button key={p} type="button" onClick={() => { setRoutinePeriod(p); setExtras({}) }}
                   style={{ flex: 1, padding: '6px 4px', borderRadius: 6, border: `1px solid ${routinePeriod === p ? '#1E6B50' : '#E0D9CE'}`,
                     background: routinePeriod === p ? '#1E6B50' : '#f9f7f3', color: routinePeriod === p ? '#fff' : '#4A6558', fontSize: 12, cursor: 'pointer' }}>
                   {p}
@@ -332,16 +656,9 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
             </div>
           </div>
         </div>
-        {[
-          { key: 'mainContent', label: '主要沟通内容', rows: 3 },
-          { key: 'feedback', label: '会员反馈', rows: 2 },
-          { key: 'adjustment', label: '是否需要调整方案', rows: 2 },
-        ].map(f => (
-          <div key={f.key} className="form-group" style={{ marginBottom: 10 }}>
-            <label className="form-label" style={{ fontSize: 12 }}>{f.label}</label>
-            <textarea className="form-input" rows={f.rows} value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} style={{ resize: 'vertical' }} />
-          </div>
-        ))}
+        {routinePeriod === '双周' && <BiWeeklyForm extras={extras} setExtra={setExtra} />}
+        {routinePeriod === '月度' && <MonthlyForm extras={extras} setExtra={setExtra} />}
+        {routinePeriod === '季度' && <QuarterlyForm extras={extras} setExtra={setExtra} />}
       </>
     )
     return null
@@ -360,10 +677,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
               <label className="form-label">选择会员 *</label>
-              <select className="form-input" value={patientId} onChange={e => setPatientId(e.target.value)}>
-                <option value="">-- 请选择会员 --</option>
-                {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
-              </select>
+              <PatientSearchInput value={patientId} onChange={setPatientId} />
             </div>
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">记录日期</label>
