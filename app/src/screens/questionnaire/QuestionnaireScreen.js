@@ -534,7 +534,7 @@ export default function QuestionnaireScreen({ navigation }) {
       if (mode === 'dynamic' && selectedDynamic) {
         const res = await questionnaireAPI.submitDynamic(selectedDynamic._id, finalAnswers);
         if (res.success) {
-          setSubmitResult({ dynamic: true, message: res.message, totalScore: res.totalScore });
+          setSubmitResult({ dynamic: true, message: res.message, totalScore: res.totalScore, scoreRange: res.scoreRange || null });
           setPendingQs(prev => prev.filter(dq => dq._id !== selectedDynamic._id));
         } else {
           setErrorMsg(res.message || '提交失败，请重试');
@@ -589,6 +589,14 @@ export default function QuestionnaireScreen({ navigation }) {
               <View style={styles.scoreCard}>
                 <Text style={styles.scoreLabel}>问卷得分</Text>
                 <Text style={styles.scoreNum}>{submitResult.totalScore}</Text>
+                {submitResult.scoreRange && (
+                  <View style={{ marginTop: 8, backgroundColor: '#E8F5EF', borderRadius: 8, padding: 10, alignItems: 'center' }}>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.primary }}>{submitResult.scoreRange.label}</Text>
+                    {!!submitResult.scoreRange.description && (
+                      <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 4, textAlign: 'center' }}>{submitResult.scoreRange.description}</Text>
+                    )}
+                  </View>
+                )}
               </View>
             )}
             <TouchableOpacity style={styles.doneBtn} onPress={() => { setMode('select'); setSubmitResult(null); }} activeOpacity={0.85}>

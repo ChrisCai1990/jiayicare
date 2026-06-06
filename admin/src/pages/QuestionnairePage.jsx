@@ -498,6 +498,7 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
     targetType:     questionnaire?.targetType     || 'all',
     deadline:       questionnaire?.deadline       || '',
     scoringEnabled: questionnaire?.scoringEnabled || false,
+    scoreRanges:    questionnaire?.scoreRanges    || [],
   })
   const [loading, setLoading] = useState(false)
 
@@ -577,6 +578,48 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
             {form.scoringEnabled && (
               <div style={{ fontSize: 12, color: '#2b6cb0', background: '#ebf8ff', borderRadius: 6, padding: '6px 10px' }}>
                 💡 启用评分后，可在各题目的"可参与评分"选项中设置选项分值，提交时自动汇总总分。
+              </div>
+            )}
+            {form.scoringEnabled && (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: '#4A6558' }}>分值段含义配置</span>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() =>
+                    set('scoreRanges', [...form.scoreRanges, { minScore: 0, maxScore: 100, label: '', description: '' }])
+                  }>＋ 添加分值段</button>
+                </div>
+                {form.scoreRanges.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#aaa', padding: '8px 0' }}>未配置分值含义，用户提交后只显示分数，不显示解读。</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {form.scoreRanges.map((sr, idx) => (
+                      <div key={idx} style={{ display: 'grid', gridTemplateColumns: '80px 80px 1fr 1fr auto', gap: 8, alignItems: 'flex-end', background: '#f9f7f3', padding: 8, borderRadius: 6 }}>
+                        <div>
+                          {idx === 0 && <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>最低分</div>}
+                          <input className="form-input" type="number" value={sr.minScore} placeholder="0"
+                            onChange={e => { const r = [...form.scoreRanges]; r[idx] = { ...r[idx], minScore: Number(e.target.value) }; set('scoreRanges', r) }} />
+                        </div>
+                        <div>
+                          {idx === 0 && <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>最高分</div>}
+                          <input className="form-input" type="number" value={sr.maxScore} placeholder="100"
+                            onChange={e => { const r = [...form.scoreRanges]; r[idx] = { ...r[idx], maxScore: Number(e.target.value) }; set('scoreRanges', r) }} />
+                        </div>
+                        <div>
+                          {idx === 0 && <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>标签（如：健康风险高）</div>}
+                          <input className="form-input" value={sr.label} placeholder="标签"
+                            onChange={e => { const r = [...form.scoreRanges]; r[idx] = { ...r[idx], label: e.target.value }; set('scoreRanges', r) }} />
+                        </div>
+                        <div>
+                          {idx === 0 && <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>说明（如：建议尽快就医）</div>}
+                          <input className="form-input" value={sr.description} placeholder="说明"
+                            onChange={e => { const r = [...form.scoreRanges]; r[idx] = { ...r[idx], description: e.target.value }; set('scoreRanges', r) }} />
+                        </div>
+                        <button type="button" className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
+                          onClick={() => set('scoreRanges', form.scoreRanges.filter((_, i) => i !== idx))}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>

@@ -43,6 +43,13 @@ const questionnaireSchema = new mongoose.Schema({
   deadline:    { type: String, default: '' },
   sortOrder:   { type: Number, default: 0 },        // 问卷排序
   scoringEnabled: { type: Boolean, default: false }, // 启用评分
+  scoreRanges: [{                                    // 分值段含义（需求19）
+    minScore:    { type: Number, required: true },
+    maxScore:    { type: Number, required: true },
+    label:       { type: String, default: '' },   // 如：健康风险高
+    description: { type: String, default: '' },   // 如：需要专业干预
+    _id: false,
+  }],
 }, { timestamps: true });
 
 // 答卷记录

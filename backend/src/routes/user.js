@@ -801,4 +801,109 @@ router.delete('/family/:index', auth, async (req, res) => {
   }
 });
 
+// ── 系统内家庭成员关联（需求6/18）──────────────────────────────────
+// GET /api/user/family-links — 获取已关联的家庭成员
+router.get('/family-links', auth, async (req, res) => {
+  try {
+    const u = await User.findById(req.user._id)
+      .populate('familyLinks.linkedUser', 'name phone gender birthDate')
+      .select('familyLinks');
+    const links = (u?.familyLinks || []).map(l => ({
+      _id: l._id,
+      relation: l.relation,
+      createdAt: l.createdAt,
+      user: l.linkedUser ? {
+        _id: l.linkedUser._id,
+        name: l.linkedUser.name,
+        phone: l.linkedUser.phone,
+        gender: l.linkedUser.gender,
+        age: l.linkedUser.birthDate
+          ? Math.floor((Date.now() - new Date(l.linkedUser.birthDate)) / (365.25 * 86400000))
+          : null,
+      } : null,
+    })).filter(l => l.user);
+    res.json({ success: true, data: links });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/user/family-links/search?q=手机号或姓名 — 搜索已注册用户
+router.get('/family-links/search', auth, async (req, res) => {
+  try {
+    const q = (req.query.q || '').trim();
+    if (!q) return res.json({ success: true, data: [] });
+    const query = {
+      _id: { $ne: req.user._id },
+      $or: [
+        { phone: { $regex: q, $options: 'i' } },
+        { name:  { $regex: q, $options: 'i' } },
+      ],
+    };
+    const users = await User.find(query).select('name phone gender birthDate').limit(10);
+    const alreadyLinked = new Set(
+      (await User.findById(req.user._id).select('familyLinks')).familyLinks.map(l => String(l.linkedUser))
+    );
+    res.json({ success: true, data: users.map(u => ({
+      _id: u._id,
+      name: u.name,
+      phone: u.phone,
+      gender: u.gender,
+      age: u.birthDate ? Math.floor((Date.now() - new Date(u.birthDate)) / (365.25 * 86400000)) : null,
+      alreadyLinked: alreadyLinked.has(String(u._id)),
+    })) });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/user/family-links — 添加已注册用户为家庭成员（双向）
+router.post('/family-links', auth, async (req, res) => {
+  try {
+    const { linkedUserId, relation } = req.body;
+    if (!linkedUserId) return res.status(400).json({ success: false, message: '请选择要关联的用户' });
+    if (String(linkedUserId) === String(req.user._id)) return res.status(400).json({ success: false, message: '不能关联自己' });
+
+    const [userA, userB] = await Promise.all([
+      User.findById(req.user._id).select('familyLinks name'),
+      User.findById(linkedUserId).select('familyLinks name'),
+    ]);
+    if (!userB) return res.status(404).json({ success: false, message: '用户不存在' });
+    if (userA.familyLinks.find(l => String(l.linkedUser) === String(linkedUserId))) {
+      return res.status(400).json({ success: false, message: '已是家庭成员' });
+    }
+
+    userA.familyLinks.push({ linkedUser: linkedUserId, relation: relation || '' });
+    if (!userB.familyLinks.find(l => String(l.linkedUser) === String(req.user._id))) {
+      userB.familyLinks.push({ linkedUser: req.user._id, relation: '' });
+    }
+    await Promise.all([userA.save(), userB.save()]);
+    res.json({ success: true, message: `已成功添加 ${userB.name} 为家庭成员` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/user/family-links/:linkId — 解除家庭成员关联（双向）
+router.delete('/family-links/:linkId', auth, async (req, res) => {
+  try {
+    const userA = await User.findById(req.user._id).select('familyLinks');
+    const link = userA.familyLinks.id(req.params.linkId);
+    if (!link) return res.status(404).json({ success: false, message: '关联不存在' });
+    const linkedUserId = link.linkedUser;
+    userA.familyLinks.pull(req.params.linkId);
+
+    const userB = await User.findById(linkedUserId).select('familyLinks');
+    if (userB) {
+      const reverse = userB.familyLinks.find(l => String(l.linkedUser) === String(req.user._id));
+      if (reverse) userB.familyLinks.pull(reverse._id);
+      await userB.save();
+    }
+    await userA.save();
+    res.json({ success: true, message: '已解除家庭成员关联' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;

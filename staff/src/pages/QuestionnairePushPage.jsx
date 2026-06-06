@@ -177,17 +177,41 @@ function ResponsesModal({ questionnaire, filterPatientId, onClose }) {
   // 导出为 CSV
   const exportCSV = () => {
     if (!q || responses.length === 0) return
-    const headers = ['会员姓名', '手机号', '提交时间', ...(q.questions || []).map((qn, i) => `Q${i+1}.${qn.text}`)]
+    const headers = ['会员姓名', '手机号', '提交时间', ...(q.questions || []).map((qn, i) => `Q${i+1}.${qn.text}`), ...(q.scoringEnabled ? ['总分'] : [])]
     const rows = responses.map(resp => [
       resp.user?.name || '匿名',
       resp.user?.phone || '-',
       resp.submittedAt ? new Date(resp.submittedAt).toLocaleString('zh-CN') : '-',
       ...(q.questions || []).map(qn => fmtAnswer(resp.answers?.[qn.id])),
+      ...(q.scoringEnabled ? [resp.totalScore ?? ''] : []),
     ])
     const csv = [headers, ...rows].map(row => row.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n')
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a'); a.href = url; a.download = `${questionnaire.title}_答卷.csv`; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // 导出为 Excel（利用 CSV + xls MIME 兼容方案，无需额外依赖）
+  const exportExcel = () => {
+    if (!q || responses.length === 0) return
+    const headers = ['会员姓名', '手机号', '提交时间', ...(q.questions || []).map((qn, i) => `Q${i+1}.${qn.text}`), ...(q.scoringEnabled ? ['总分'] : [])]
+    const rows = responses.map(resp => [
+      resp.user?.name || '匿名',
+      resp.user?.phone || '-',
+      resp.submittedAt ? new Date(resp.submittedAt).toLocaleString('zh-CN') : '-',
+      ...(q.questions || []).map(qn => fmtAnswer(resp.answers?.[qn.id])),
+      ...(q.scoringEnabled ? [resp.totalScore ?? ''] : []),
+    ])
+    // 生成 HTML table，Excel 可直接打开
+    const tHead = `<tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr>`
+    const tBody = rows.map(row => `<tr>${row.map(v => `<td>${String(v).replace(/</g, '&lt;')}</td>`).join('')}</tr>`).join('')
+    const html = `<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">
+      <head><meta charset="utf-8"/></head>
+      <body><table border="1">${tHead}${tBody}</table></body></html>`
+    const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href = url; a.download = `${questionnaire.title}_答卷.xls`; a.click()
     URL.revokeObjectURL(url)
   }
 
@@ -227,7 +251,10 @@ function ResponsesModal({ questionnaire, filterPatientId, onClose }) {
         </div>
         <div className="modal-footer">
           {!loading && responses.length > 0 && (
-            <button className="btn btn-secondary" onClick={exportCSV}>⬇ 导出 CSV</button>
+            <>
+              <button className="btn btn-secondary" onClick={exportExcel}>⬇ 导出 Excel</button>
+              <button className="btn btn-secondary" onClick={exportCSV}>⬇ 导出 CSV</button>
+            </>
           )}
           <button className="btn btn-primary" onClick={onClose}>关闭</button>
         </div>

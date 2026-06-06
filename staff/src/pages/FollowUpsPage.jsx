@@ -24,6 +24,66 @@ const TYPE_OPTIONS = [
   { v: 'other',  l: '其他' },
 ]
 
+function DetailModal({ item, onClose }) {
+  if (!item) return null
+  const FOLLOWUP_TYPE = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他随访' }
+  const ROUTINE_PERIOD = { 双周: '双周随访', 月度: '月度随访', 季度: '季度随访' }
+
+  const Row = ({ label, value }) => value ? (
+    <div style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid #f0ece4' }}>
+      <span style={{ minWidth: 90, fontSize: 12, color: '#8AA89C', flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 13, color: '#1A2B24', whiteSpace: 'pre-line', flex: 1 }}>{value}</span>
+    </div>
+  ) : null
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 600, width: '96%' }}>
+        <div className="modal-header">
+          <h3 className="modal-title">随访详情 · {item.patientId?.name}</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
+          <Row label="会员" value={`${item.patientId?.name}  ${item.patientId?.phone || ''}`} />
+          <Row label="计划日期" value={new Date(item.date).toLocaleDateString('zh-CN')} />
+          <Row label="随访主题" value={item.theme} />
+          <Row label="随访方式" value={FOLLOWUP_TYPE[item.type] || item.type} />
+          {item.routinePeriod && <Row label="周期类型" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
+          <Row label="负责人员" value={item.assignedTo?.name} />
+          <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
+          {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.join('、')} />}
+          <Row label="计划内容" value={item.content} />
+          {item.status === 'completed' && (
+            <>
+              <div style={{ margin: '12px 0 6px', fontSize: 12, color: '#1E6B50', fontWeight: 700, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访结果</div>
+              <Row label="执行方式" value={FOLLOWUP_TYPE[item.executedType] || item.executedType} />
+              <Row label="随访记录" value={item.executedContent} />
+              <Row label="完成时间" value={item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : ''} />
+            </>
+          )}
+          {item.status === 'cancelled' && <Row label="取消原因" value={item.cancelReason} />}
+          {/* 扩展字段（随访表单 extras） */}
+          {item.extras && Object.keys(item.extras).length > 0 && (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 700, marginBottom: 8 }}>随访表单数据</div>
+              {Object.entries(item.extras).map(([k, v]) => (
+                typeof v === 'object' ? null :
+                <Row key={k} label={k} value={String(v)} />
+              ))}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>关闭</button>
+          <button className="btn btn-ghost" onClick={() => { onClose(); }}>
+            跳转会员详情
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function FollowUpsPage() {
   const nav   = useNavigate()
   const toast = useToast()
@@ -49,6 +109,9 @@ export default function FollowUpsPage() {
   const [cancelItem,   setCancelItem]   = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelSaving, setCancelSaving] = useState(false)
+
+  // 查看详情
+  const [detailItem, setDetailItem] = useState(null)
 
   const limit = 20
 
@@ -228,6 +291,8 @@ export default function FollowUpsPage() {
                       <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
                         onClick={() => openCancel(f)}>取消</button>
                     )}
+                    <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
+                      onClick={() => setDetailItem(f)}>查看详情</button>
                     <button className="btn btn-secondary btn-sm"
                       onClick={() => nav(`/patients/${f.patientId?._id}`)}>查看会员</button>
                   </td>
@@ -248,6 +313,9 @@ export default function FollowUpsPage() {
           <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>下一页</button>
         </div>
       )}
+
+      {/* 随访详情弹窗 */}
+      <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />
 
       {/* 新增随访弹窗 */}
       {showModal && (

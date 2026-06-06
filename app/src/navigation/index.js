@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
 import { colors } from '../theme';
+import { messagesAPI } from '../services/api';
 
 import LoginScreen from '../screens/auth/LoginScreen';
 import OnboardingScreen from '../screens/onboarding/OnboardingScreen';
@@ -50,6 +51,18 @@ const TAB_CONFIG = [
 ];
 
 function MainTabs() {
+  const { token } = useAuth();
+  const [unreadCount, setUnreadCount] = React.useState(0);
+
+  React.useEffect(() => {
+    if (!token) return;
+    let mounted = true;
+    const fetch = () => messagesAPI.unreadCount().then(r => { if (mounted) setUnreadCount(r.count || 0); }).catch(() => {});
+    fetch();
+    const timer = setInterval(fetch, 60000); // 每分钟刷新
+    return () => { mounted = false; clearInterval(timer); };
+  }, [token]);
+
   return (
     <Tab.Navigator
       screenOptions={({ route }) => ({
@@ -80,7 +93,15 @@ function MainTabs() {
           key={tab.name}
           name={tab.name}
           component={tab.component}
-          options={{ tabBarLabel: tab.label }}
+          options={{
+            tabBarLabel: tab.label,
+            ...(tab.name === 'Messages' && unreadCount > 0
+              ? { tabBarBadge: unreadCount > 99 ? '99+' : unreadCount }
+              : {}),
+          }}
+          listeners={tab.name === 'Messages' ? {
+            tabPress: () => setUnreadCount(0),
+          } : undefined}
         />
       ))}
     </Tab.Navigator>

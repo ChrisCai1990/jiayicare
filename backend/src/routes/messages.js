@@ -3,6 +3,12 @@ const auth = require('../middleware/auth');
 const Message = require('../models/Message');
 const router = express.Router();
 
+// 获取未读消息数（轻量接口，用于导航角标）
+router.get('/unread-count', auth, async (req, res) => {
+  const count = await Message.countDocuments({ user: req.user._id, unread: true });
+  res.json({ success: true, count });
+});
+
 // 获取消息列表
 router.get('/', auth, async (req, res) => {
   const { type } = req.query;

@@ -138,10 +138,11 @@ export const tasksAPI = {
 
 // ── Messages ──────────────────────────────────────────────────────
 export const messagesAPI = {
-  list:     ()           => request('/messages'),
-  markRead: (id)         => request(`/messages/${id}/read`, { method: 'PATCH' }),
-  markAllRead: ()        => request('/messages/read-all', { method: 'PATCH' }),
-  send:     (to, content) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content }) }),
+  list:        ()            => request('/messages'),
+  unreadCount: ()            => request('/messages/unread-count'),
+  markRead:    (id)          => request(`/messages/${id}/read`, { method: 'PATCH' }),
+  markAllRead: ()            => request('/messages/read-all', { method: 'PATCH' }),
+  send:        (to, content) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content }) }),
 };
 
 // ── Push Records (医护端推送) ─────────────────────────────────────
@@ -257,6 +258,14 @@ export const familyAPI = {
   list:   ()        => request('/user/family'),
   add:    (data)    => request('/user/family', { method: 'POST', body: JSON.stringify(data) }),
   remove: (index)   => request(`/user/family/${index}`, { method: 'DELETE' }),
+};
+
+// 系统内家庭成员关联（需求6/18）
+export const familyLinksAPI = {
+  list:   ()                        => request('/user/family-links'),
+  search: (q)                       => request(`/user/family-links/search?q=${encodeURIComponent(q)}`),
+  add:    (linkedUserId, relation)  => request('/user/family-links', { method: 'POST', body: JSON.stringify({ linkedUserId, relation }) }),
+  remove: (linkId)                  => request(`/user/family-links/${linkId}`, { method: 'DELETE' }),
 };
 
 // ── Share / 健康报告分享 ──────────────────────────────────────────

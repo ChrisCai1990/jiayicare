@@ -206,7 +206,12 @@ router.post('/:id/submit', auth, async (req, res) => {
       $addToSet: { respondedUsers: req.user._id },
     });
 
-    res.json({ success: true, data: response, totalScore: questionnaire.scoringEnabled ? totalScore : undefined, message: '问卷提交成功，感谢您的填写！' });
+    let scoreRange = null;
+    if (questionnaire.scoringEnabled && questionnaire.scoreRanges?.length > 0) {
+      scoreRange = questionnaire.scoreRanges.find(r => totalScore >= r.minScore && totalScore <= r.maxScore) || null;
+    }
+
+    res.json({ success: true, data: response, totalScore: questionnaire.scoringEnabled ? totalScore : undefined, scoreRange, message: '问卷提交成功，感谢您的填写！' });
   } catch (err) {
     res.status(500).json({ success: false, message: '提交失败', error: err.message });
   }
