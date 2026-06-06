@@ -229,14 +229,65 @@ function ResponsesModal({ questionnaire, filterPatientId, onClose }) {
               {filterPatientId ? '该会员尚未提交答卷' : '暂无会员提交答卷'}
             </div>
           )}
+          {/* 评分统计汇总 */}
+          {!loading && !filterPatientId && q?.scoringEnabled && responses.length > 0 && (() => {
+            const scores = responses.map(r => r.totalScore ?? 0)
+            const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1)
+            const min = Math.min(...scores), max = Math.max(...scores)
+            const ranges = q.scoreRanges || []
+            return (
+              <div style={{ background: '#f5f0e8', border: '1px solid #E0D9CE', borderRadius: 8, padding: '12px 16px', marginBottom: 16 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', marginBottom: 10 }}>📊 评分统计汇总（{responses.length} 份）</div>
+                <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', marginBottom: 10 }}>
+                  {[['平均分', avg], ['最高分', max], ['最低分', min]].map(([l, v]) => (
+                    <div key={l} style={{ textAlign: 'center' }}>
+                      <div style={{ fontSize: 22, fontWeight: 800, color: '#1E6B50' }}>{v}</div>
+                      <div style={{ fontSize: 12, color: '#8AA89C' }}>{l}</div>
+                    </div>
+                  ))}
+                </div>
+                {ranges.length > 0 && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 2 }}>分值段分布</div>
+                    {ranges.map((r, i) => {
+                      const count = scores.filter(s => s >= r.minScore && s <= r.maxScore).length
+                      const pct = Math.round((count / scores.length) * 100)
+                      return (
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 12, color: '#4A6558', minWidth: 90 }}>{r.minScore}-{r.maxScore}分</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: '#1A2B24', minWidth: 50 }}>{r.label}</span>
+                          <div style={{ flex: 1, background: '#E0D9CE', borderRadius: 4, height: 8 }}>
+                            <div style={{ width: `${pct}%`, height: 8, borderRadius: 4, background: '#1E6B50' }} />
+                          </div>
+                          <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 55 }}>{count}人 ({pct}%)</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+          {/* 个人评分展示 */}
           {responses.map((resp) => (
             <div key={resp._id} style={{ marginBottom: 16, border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
-              <div style={{ background: '#f5f0e8', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ background: '#f5f0e8', padding: '8px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}>
                 <span style={{ fontWeight: 600, fontSize: 14 }}>
                   {resp.user?.name || '匿名'}
                   {resp.user?.phone && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 8 }}>{resp.user.phone}</span>}
                 </span>
-                <span style={{ fontSize: 12, color: '#8AA89C' }}>{new Date(resp.submittedAt).toLocaleString('zh-CN')}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  {q?.scoringEnabled && resp.totalScore != null && (
+                    <span style={{ fontSize: 12, fontWeight: 700, color: '#1E6B50', background: '#E8F5EF', padding: '2px 8px', borderRadius: 99 }}>
+                      {resp.totalScore} 分
+                      {(() => {
+                        const sr = (q.scoreRanges || []).find(r => resp.totalScore >= r.minScore && resp.totalScore <= r.maxScore)
+                        return sr ? <span style={{ marginLeft: 4, color: '#4A6558' }}>· {sr.label}</span> : null
+                      })()}
+                    </span>
+                  )}
+                  <span style={{ fontSize: 12, color: '#8AA89C' }}>{new Date(resp.submittedAt).toLocaleString('zh-CN')}</span>
+                </div>
               </div>
               <div style={{ padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {(q?.questions || []).map((question, qi) => (

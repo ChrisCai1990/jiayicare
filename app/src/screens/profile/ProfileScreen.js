@@ -113,6 +113,28 @@ const styles = StyleSheet.create({
   },
   noServiceBtnText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
 
+  // 365会员推广卡
+  member365Card: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: '#FFF0F5', borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: '#E91E63' + '50',
+    padding: spacing.md,
+  },
+  member365IconWrap: {
+    width: 42, height: 42, borderRadius: 12,
+    backgroundColor: '#E91E63',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  member365Title: { fontSize: 14, fontWeight: '700', color: '#1A2B24' },
+  member365Slogan: { fontSize: 11, color: '#E91E63', marginTop: 2, fontWeight: '500' },
+  member365Btn: {
+    flexDirection: 'row', alignItems: 'center', gap: 2,
+    backgroundColor: '#FCE4EC',
+    paddingHorizontal: 10, paddingVertical: 6,
+    borderRadius: radius.full,
+  },
+  member365BtnText: { fontSize: 12, color: '#E91E63', fontWeight: '700' },
+
   // 家庭成员
   addFamilyCard: {
     alignItems: 'center', justifyContent: 'center',
@@ -381,19 +403,23 @@ export default function ProfileScreen({ navigation }) {
               </TouchableOpacity>
             </View>
           ) : (
-            <TouchableOpacity style={styles.noServiceCard} onPress={() => navigation.navigate('ServiceMall')} activeOpacity={0.85}>
-              <View style={styles.noServiceLeft}>
-                <View style={styles.noServiceIconWrap}>
-                  <Ionicons name="shield-outline" size={22} color={colors.primary} />
+            <TouchableOpacity
+              style={styles.member365Card}
+              onPress={() => navigation.navigate('Member365')}
+              activeOpacity={0.85}
+            >
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
+                <View style={styles.member365IconWrap}>
+                  <Ionicons name="ribbon" size={22} color="#fff" />
                 </View>
-                <View>
-                  <Text style={styles.noServiceTitle}>开通专属服务包</Text>
-                  <Text style={styles.noServiceSub}>获得医生随访、健管服务与专属权益</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.member365Title}>365 健康会员</Text>
+                  <Text style={styles.member365Slogan}>每天一块钱，开启健康之门</Text>
                 </View>
               </View>
-              <View style={styles.noServiceBtn}>
-                <Text style={styles.noServiceBtnText}>了解详情</Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+              <View style={styles.member365Btn}>
+                <Text style={styles.member365BtnText}>立即开通</Text>
+                <Ionicons name="chevron-forward" size={14} color="#E91E63" />
               </View>
             </TouchableOpacity>
           )}
