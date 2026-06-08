@@ -273,7 +273,7 @@ function ProductPushDetail({ msg, onClose }) {
   );
 }
 
-function MessageDetailModal({ msg, onClose, navigation }) {
+function MessageDetailModal({ msg, onClose, navigation, onReply }) {
   if (!msg) return null;
 
   // 产品推送：专用多选支付界面
@@ -339,6 +339,19 @@ function MessageDetailModal({ msg, onClose, navigation }) {
             <TouchableOpacity style={[styles.detailCloseBtn, { flex: 1 }]} onPress={onClose} activeOpacity={0.85}>
               <Text style={styles.detailCloseBtnText}>关闭</Text>
             </TouchableOpacity>
+            {(msg.type === 'doctor' || msg.type === 'manager') && onReply && (
+              <TouchableOpacity
+                style={[styles.detailCloseBtn, { flex: 1.5, backgroundColor: colors.primary, borderWidth: 0 }]}
+                onPress={() => {
+                  const to = msg.type === 'doctor' ? 'doctor' : 'manager';
+                  onReply(to);
+                  onClose();
+                }}
+                activeOpacity={0.85}
+              >
+                <Text style={[styles.detailCloseBtnText, { color: colors.white }]}>回复</Text>
+              </TouchableOpacity>
+            )}
             {actionBtn}
           </View>
         </View>
@@ -354,19 +367,19 @@ const RECIPIENTS = [
   { key: 'manager',      label: '健管师',   icon: 'person',            color: colors.accent  },
 ];
 
-function ComposeModal({ visible, onClose, onSent, initialContent = '' }) {
-  const [to, setTo]           = useState('manager');
+function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo = 'manager' }) {
+  const [to, setTo]           = useState(initialTo);
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError]     = useState('');
 
-  // 有预填内容时更新
+  // 有预填内容/收件人时更新
   useEffect(() => {
-    if (visible && initialContent) {
-      setContent(initialContent);
-      setTo('manager');
+    if (visible) {
+      setContent(initialContent || '');
+      setTo(initialTo || 'manager');
     }
-  }, [visible, initialContent]);
+  }, [visible, initialContent, initialTo]);
 
   const reset = () => { setTo('manager'); setContent(''); setError(''); };
 
@@ -462,6 +475,7 @@ export default function MessagesScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedMsg, setSelectedMsg] = useState(null);
   const [composing, setComposing] = useState(false);
+  const [replyTo, setReplyTo] = useState('manager');
 
   const tabs = ['全部', '专属团队', '系统', '推送'];
 
@@ -599,6 +613,7 @@ export default function MessagesScreen({ navigation }) {
           msg={selectedMsg}
           onClose={() => setSelectedMsg(null)}
           navigation={navigation}
+          onReply={(to) => { setReplyTo(to); setComposing(true); }}
         />
       )}
 
@@ -611,12 +626,14 @@ export default function MessagesScreen({ navigation }) {
         <Ionicons name="create-outline" size={22} color={colors.white} />
       </TouchableOpacity>
 
+      {/* Compose FAB 点击时重置 replyTo */}
       {/* Compose modal */}
       <ComposeModal
         visible={composing}
-        onClose={() => setComposing(false)}
-        onSent={() => { setComposing(false); loadMessages(); }}
+        onClose={() => { setComposing(false); setReplyTo('manager'); }}
+        onSent={() => { setComposing(false); setReplyTo('manager'); loadMessages(); }}
         initialContent=""
+        initialTo={replyTo}
       />
     </SafeAreaView>
   );

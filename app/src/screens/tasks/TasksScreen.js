@@ -382,8 +382,10 @@ export default function TasksScreen({ navigation }) {
     _id: f._id,
     title: f.theme || '随访计划',
     type: 'followup',
-    description: f.content || (f.checkInItems?.length ? `打卡项目：${f.checkInItems.join('、')}` : ''),
+    description: f.content || '',
     followupType: f.type || '',
+    followupPeriod: f.followupPeriod || '',
+    checkInItems: f.checkInItems || [],
     dueDate: f.date ? new Date(f.date).toISOString().slice(0, 10) : null,
     dueTime: '',
     priority: 'medium',
@@ -605,6 +607,7 @@ export default function TasksScreen({ navigation }) {
                 {/* 随访任务专属详情 */}
                 {detailTask.isFollowup && !detailTask.abnormalReviewId && (() => {
                   const FOLLOWUP_TYPE = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他随访' };
+                  const FOLLOWUP_PERIOD = { biweekly: '双周随访', monthly: '月度随访', quarterly: '季度随访', annual: '年度随访' };
                   return (
                     <>
                       {!!detailTask.followupType && (
@@ -613,11 +616,34 @@ export default function TasksScreen({ navigation }) {
                           <Text style={styles.modalContent}>{FOLLOWUP_TYPE[detailTask.followupType] || detailTask.followupType}</Text>
                         </>
                       )}
+                      {!!detailTask.followupPeriod && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>随访周期</Text>
+                          <Text style={styles.modalContent}>{FOLLOWUP_PERIOD[detailTask.followupPeriod] || detailTask.followupPeriod}</Text>
+                        </>
+                      )}
                       <Text style={styles.modalSectionLabel}>具体内容</Text>
                       {detailTask.description
                         ? <Text style={styles.modalContent}>{detailTask.description}</Text>
                         : <Text style={styles.modalNoContent}>健管师将在随访时与您沟通具体内容。</Text>
                       }
+                      {!!(detailTask.checkInItems?.length) && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>打卡项目</Text>
+                          {detailTask.checkInItems.map((item, i) => (
+                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary }} />
+                              <Text style={styles.modalContent}>{item}</Text>
+                            </View>
+                          ))}
+                        </>
+                      )}
+                      {!!detailTask.assignee && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>负责人员</Text>
+                          <Text style={styles.modalContent}>{detailTask.assignee}</Text>
+                        </>
+                      )}
                     </>
                   );
                 })()}

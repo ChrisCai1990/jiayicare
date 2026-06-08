@@ -254,6 +254,7 @@ router.post('/patients', staffAuth, async (req, res) => {
     patientCategory, childProfile,
     servicePackage, serviceStartDate, serviceExpiry,
     basic_insurance, commercial_medical, critical_illness,
+    initialBloodPressure, initialHeartRate, initialWeight, initialSleepHours, initialMoodScore,
   } = req.body;
 
   if (!phone) return res.status(400).json({ success: false, message: '手机号不能为空' });
@@ -338,6 +339,32 @@ router.post('/patients', staffAuth, async (req, res) => {
   }
 
   const user = await User.create(createData);
+
+  // 创建初始健康记录（建档时预填，用户首次登录即可见）
+  const today = new Date().toISOString().split('T')[0];
+  const initRecords = [];
+  if (initialBloodPressure && /^\d+\/\d+$/.test(initialBloodPressure.trim())) {
+    const [sys, dia] = initialBloodPressure.trim().split('/').map(Number);
+    if (!isNaN(sys) && !isNaN(dia)) {
+      initRecords.push({ userId: user._id, type: 'bloodPressure', category: 'vitals', label: '血压', unit: 'mmHg', value: initialBloodPressure.trim(), extra: { sys, dia }, status: 'normal', recordedAt: new Date() });
+    }
+  }
+  if (initialHeartRate && !isNaN(Number(initialHeartRate))) {
+    initRecords.push({ userId: user._id, type: 'heartRate', category: 'vitals', label: '心率', unit: '次/分', value: String(initialHeartRate), status: 'normal', recordedAt: new Date() });
+  }
+  if (initialWeight && !isNaN(Number(initialWeight))) {
+    initRecords.push({ userId: user._id, type: 'weight', category: 'vitals', label: '体重', unit: 'kg', value: String(initialWeight), status: 'normal', recordedAt: new Date() });
+  }
+  if (initialSleepHours && !isNaN(Number(initialSleepHours))) {
+    initRecords.push({ userId: user._id, type: 'sleep', category: 'lifestyle', label: '睡眠', unit: '小时', value: String(initialSleepHours), status: 'normal', recordedAt: new Date() });
+  }
+  if (initialMoodScore && !isNaN(Number(initialMoodScore))) {
+    initRecords.push({ userId: user._id, type: 'mood', category: 'lifestyle', label: '情绪', unit: '分', value: String(initialMoodScore), status: 'normal', recordedAt: new Date() });
+  }
+  if (initRecords.length > 0) {
+    await HealthRecord.insertMany(initRecords);
+  }
+
   res.json({ success: true, data: user });
 });
 
@@ -2175,5 +2202,51 @@ router.get('/checkin-overview', staffAuth, async (req, res) => {
     res.json({ success: true, data: result, total: result.length });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
+
+// ── 用户留言收件箱：查看分配给自己的患者发来的消息 ──────────────────
+// GET /api/staff/user-messages
+router.get('/user-messages', staffAuth, async (req, res) => {
+  try {
+    const staff = req.staff;
+
+    // 找到分配给该医护人员的患者
+    const myFilter =
+      staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: staff._id } :
+      staff.role === 'nutritionist'    ? { assignedNutritionist: staff._id } :
+      staff.role === 'healthManager' || staff.role === 'medicalAssistant'
+                                       ? { assignedHealthManager: staff._id } :
+                                         { $or: [ { assignedFamilyDoctor: staff._id }, { assignedHealthManager: staff._id }, { assignedNutritionist: staff._id } ] };
+
+    const myPatients = await User.find(myFilter).select('_id name phone').lean();
+    const patientIds = myPatients.map(p => p._id);
+    const patientMap = {};
+    myPatients.forEach(p => { patientMap[String(p._id)] = p; });
+
+    // 按角色过滤：家庭医生看 doctor 留言，营养师看 nutritionist，其他看 manager
+    const recipientFilter =
+      staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
+      staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
+      {};
+
+    const messages = await Message.find({ user: { $in: patientIds }, type: 'user', ...recipientFilter })
+      .sort({ createdAt: -1 })
+      .limit(100)
+      .lean();
+
+    const result = messages.map(m => ({
+      ...m,
+      patientName: patientMap[String(m.user)]?.name || '未知',
+      patientPhone: patientMap[String(m.user)]?.phone || '',
+    }));
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 我发出的转介（发起方查看进度）───────────────────────────────────
+// GET /api/staff/referrals?direction=sent
+// 已由 /referrals 路由支持 direction=sent 参数，无需新增路由
 
 module.exports = router;

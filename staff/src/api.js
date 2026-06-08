@@ -212,4 +212,10 @@ export const staffAPI = {
 
   // 日常健康打卡总览
   getCheckinOverview: (p = {}) => req('/staff/checkin-overview?' + qs(p)),
+
+  // 用户留言收件箱
+  getUserMessages: () => req('/staff/user-messages'),
+
+  // 我发出的转介
+  getSentReferrals: (p = {}) => req('/staff/referrals?direction=sent&' + qs(p)),
 }

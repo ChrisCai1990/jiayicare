@@ -1,12 +1,16 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
+const PushRecord = require('../models/PushRecord');
 const router = express.Router();
 
-// 获取未读消息数（轻量接口，用于导航角标）
+// 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
-  const count = await Message.countDocuments({ user: req.user._id, unread: true });
-  res.json({ success: true, count });
+  const [msgCount, pushCount] = await Promise.all([
+    Message.countDocuments({ user: req.user._id, unread: true }),
+    PushRecord.countDocuments({ patientId: req.user._id, readAt: null }),
+  ]);
+  res.json({ success: true, count: msgCount + pushCount });
 });
 
 // 获取消息列表
@@ -64,6 +68,7 @@ router.post('/', auth, async (req, res) => {
       title:   `用户留言 → ${TITLE_MAP[to]}`,
       content: content.trim(),
       unread:  false,
+      recipient: to,  // 便于 staff 端按角色过滤
     });
 
     console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);

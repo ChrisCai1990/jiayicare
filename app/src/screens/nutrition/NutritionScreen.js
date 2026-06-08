@@ -52,7 +52,7 @@ const EMPTY_FORM = {
   frequency: '每日1次', startDate: '', note: '',
 };
 
-function SupCard({ item, onStop, onDelete, onCheckin, stopped }) {
+function SupCard({ item, onStop, onCheckin, stopped }) {
   const itemId = item._id || item.id;
   const today = new Date().toISOString().split('T')[0];
   const takenToday = item.lastCheckinDate === today;
@@ -76,9 +76,6 @@ function SupCard({ item, onStop, onDelete, onCheckin, stopped }) {
           {stopped && item.stopDate ? <Text style={styles.stopDateText}>停用：{item.stopDate}</Text> : null}
           {item.note ? <Text style={styles.cardNote}>{item.note}</Text> : null}
         </View>
-        <TouchableOpacity onPress={() => onDelete(itemId, item.name)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
       </View>
       {!stopped && (
         <View style={styles.cardActions}>
@@ -152,12 +149,6 @@ export default function NutritionScreen({ navigation }) {
     ));
     showToast('warn', `「${name}」已标记停用`);
     try { await supplementsAPI.stop(id, { stopDate: today }); } catch {}
-  };
-
-  const handleDelete = async (id, name) => {
-    setItems(prev => prev.filter(i => (i._id || i.id) !== id));
-    showToast('warn', `已删除「${name}」`);
-    try { await supplementsAPI.delete(id); } catch {}
   };
 
   const handleAdd = async () => {
@@ -268,7 +259,6 @@ export default function NutritionScreen({ navigation }) {
               stopped={tab === 'stopped'}
               onCheckin={handleCheckin}
               onStop={handleStop}
-              onDelete={handleDelete}
             />
           ))
         )}

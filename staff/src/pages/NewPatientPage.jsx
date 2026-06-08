@@ -95,6 +95,8 @@ export default function NewPatientPage() {
     source: '', remark: '',
     assignedHealthManager: '', assignedFamilyDoctor: '', assignedNutritionist: '',
     servicePackage: '', serviceStartDate: '', serviceExpiry: '',
+    // 初始健康数据（建档时预填，用户首次登录即可见）
+    initialBloodPressure: '', initialHeartRate: '', initialWeight: '', initialSleepHours: '', initialMoodScore: '',
     // 家族史
     familyHistoryNote: '',
     // 女性
@@ -494,6 +496,30 @@ export default function NewPatientPage() {
               <F label="服务到期日期"><input className="form-input" type="date" value={form.serviceExpiry} onChange={set('serviceExpiry')} /></F>
               <F label="会员来源"><select className="form-input" value={form.source} onChange={set('source')}><option value="">未填写</option>{SOURCE_OPTIONS.map(s => <option key={s}>{s}</option>)}</select></F>
               <F label="备注" span={2}><textarea className="form-input" rows={3} value={form.remark} onChange={set('remark')} style={{ resize: 'vertical' }} /></F>
+            </Grid>
+          </Section>
+
+          {/* 初始健康数据 */}
+          <Section title="初始健康数据（可选）">
+            <p style={{ margin: '0 0 12px', fontSize: 13, color: '#8AA89C' }}>
+              建档时预填，用户首次登录后可直接看到，无需二次录入。
+            </p>
+            <Grid>
+              <F label="血压（收缩压/舒张压）" span={2}>
+                <input className="form-input" placeholder="如：120/80" value={form.initialBloodPressure} onChange={set('initialBloodPressure')} />
+              </F>
+              <F label="心率（次/分）" span={2}>
+                <input className="form-input" type="number" placeholder="如：72" value={form.initialHeartRate} onChange={set('initialHeartRate')} />
+              </F>
+              <F label="体重（kg）" span={2}>
+                <input className="form-input" type="number" placeholder="如：65.5" value={form.initialWeight} onChange={set('initialWeight')} />
+              </F>
+              <F label="睡眠时长（小时）" span={2}>
+                <input className="form-input" type="number" step="0.5" placeholder="如：7.5" value={form.initialSleepHours} onChange={set('initialSleepHours')} />
+              </F>
+              <F label="情绪评分（1-10分）" span={2}>
+                <input className="form-input" type="number" min="1" max="10" placeholder="如：7" value={form.initialMoodScore} onChange={set('initialMoodScore')} />
+              </F>
             </Grid>
           </Section>
 

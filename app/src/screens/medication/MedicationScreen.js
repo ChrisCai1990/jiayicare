@@ -55,7 +55,7 @@ const EMPTY_FORM = {
   frequency: '每日1次', timing: '早饭后', startDate: '', note: '',
 };
 
-function MedCard({ med, onCheck, onStop, onDelete, stopped }) {
+function MedCard({ med, onCheck, onStop, stopped }) {
   const medId = med._id || med.id;
   const todayChecked = !stopped && (med.todayChecked || false);
 
@@ -81,9 +81,6 @@ function MedCard({ med, onCheck, onStop, onDelete, stopped }) {
           {stopped && med.stopDate ? <Text style={styles.stopDateText}>停用：{med.stopDate}</Text> : null}
           {med.note ? <Text style={styles.medNote}>{med.note}</Text> : null}
         </View>
-        <TouchableOpacity onPress={() => onDelete(medId, med.name)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-          <Ionicons name="trash-outline" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
       </View>
 
       {!stopped && (
@@ -178,12 +175,6 @@ export default function MedicationScreen({ navigation }) {
     ));
     showToast('warn', `「${name}」已标记停用`);
     try { await medicationsAPI.stop(id, { stopDate: today }); } catch {}
-  };
-
-  const handleDelete = async (id, name) => {
-    setMeds(prev => prev.filter(m => (m._id || m.id) !== id));
-    showToast('warn', `已删除「${name}」`);
-    try { await medicationsAPI.delete(id); } catch {}
   };
 
   const handleAdd = async () => {
@@ -295,7 +286,6 @@ export default function MedicationScreen({ navigation }) {
               stopped={tab === 'stopped'}
               onCheck={handleCheck}
               onStop={handleStop}
-              onDelete={handleDelete}
             />
           ))
         )}

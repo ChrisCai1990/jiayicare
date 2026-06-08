@@ -16,10 +16,21 @@ export default function NotificationsPage() {
   const [tab, setTab] = useState('referrals')
   const [respondModal, setRespondModal] = useState(null)
   const [detailModal, setDetailModal] = useState(null)   // push 消息详情
+  const [sentReferrals, setSentReferrals] = useState([])
+  const [userMessages, setUserMessages] = useState([])
 
   const load = async () => {
     setLoading(true)
-    try { setData((await staffAPI.getNotifications()).data) }
+    try {
+      const [notifRes, sentRes, msgRes] = await Promise.allSettled([
+        staffAPI.getNotifications(),
+        staffAPI.getSentReferrals(),
+        staffAPI.getUserMessages(),
+      ])
+      if (notifRes.status === 'fulfilled') setData(notifRes.value.data)
+      if (sentRes.status === 'fulfilled') setSentReferrals(sentRes.value.data || [])
+      if (msgRes.status === 'fulfilled') setUserMessages(msgRes.value.data || [])
+    }
     catch (err) { toast(err.message) }
     finally { setLoading(false) }
   }
@@ -98,6 +109,18 @@ export default function NotificationsPage() {
           ⏰ 到期提醒
           {summary.expiringCount > 0 && (
             <span style={{ marginLeft: 4, background: '#DC3545', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{summary.expiringCount}</span>
+          )}
+        </button>
+        <button className={`tab-btn ${tab === 'sent' ? 'active' : ''}`} onClick={() => setTab('sent')}>
+          📨 我发出的转介
+          {sentReferrals.length > 0 && (
+            <span style={{ marginLeft: 4, background: '#8e44ad', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{sentReferrals.length}</span>
+          )}
+        </button>
+        <button className={`tab-btn ${tab === 'userMsgs' ? 'active' : ''}`} onClick={() => setTab('userMsgs')}>
+          💬 用户留言
+          {userMessages.length > 0 && (
+            <span style={{ marginLeft: 4, background: '#0077B6', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{userMessages.length}</span>
           )}
         </button>
       </div>
@@ -210,6 +233,74 @@ export default function NotificationsPage() {
                     </tr>
                   )
                 })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {/* ── 我发出的转介 ── */}
+      {tab === 'sent' && (
+        <div className="card">
+          {sentReferrals.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无发出的转介记录</div>
+          ) : sentReferrals.map((r, i) => (
+            <div key={r._id} style={{ padding: '16px', borderBottom: i < sentReferrals.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <span style={{ fontWeight: 600, fontSize: 15 }}>{r.reason}</span>
+                    <span style={{ fontSize: 12, color: REFERRAL_STATUS_COLOR[r.status], fontWeight: 600 }}>
+                      · {REFERRAL_STATUS_LABEL[r.status]}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
+                    会员：<strong style={{ cursor: 'pointer', color: '#1E6B50' }} onClick={() => nav(`/patients/${r.patientId?._id}`)}>{r.patientId?.name}</strong>
+                    <span style={{ color: '#aaa', marginLeft: 6 }}>{r.patientId?.phone}</span>
+                  </div>
+                  {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
+                  <div style={{ fontSize: 12, color: '#aaa' }}>
+                    接收方：{r.toStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
+                  </div>
+                  {r.response && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B' }}>
+                      <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>对方回复</div>
+                      <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ── 用户留言 ── */}
+      {tab === 'userMsgs' && (
+        <div className="card">
+          {userMessages.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用户留言</div>
+          ) : (
+            <table className="table">
+              <thead>
+                <tr><th>用户</th><th>留言内容</th><th>时间</th><th>操作</th></tr>
+              </thead>
+              <tbody>
+                {userMessages.map(m => (
+                  <tr key={m._id}>
+                    <td>
+                      <strong>{m.patientName}</strong>
+                      <div style={{ fontSize: 12, color: '#aaa' }}>{m.patientPhone}</div>
+                    </td>
+                    <td style={{ maxWidth: 320, whiteSpace: 'pre-wrap', fontSize: 13, color: '#4A6558' }}>{m.content}</td>
+                    <td style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>
+                      {new Date(m.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </td>
+                    <td>
+                      <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${m.user}`)}>查看档案</button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           )}
