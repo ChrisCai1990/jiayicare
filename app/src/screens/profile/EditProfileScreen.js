@@ -486,7 +486,16 @@ export default function EditProfileScreen({ navigation }) {
             <Field label="既往史" value={pastHistory} onChangeText={setPastHistory} placeholder="如：高血压（2020年）" />
             <Field label="用药史" value={medicHistory} onChangeText={setMedicHistory} placeholder="如：氨氯地平" />
             <Field label="手术史" value={surgeryHistory} onChangeText={setSurgeryHistory} placeholder="如：无" />
-            <Field label="传染病史" value={infectiousHistory} onChangeText={setInfectiousHistory} placeholder="如：乙肝（已治愈）、无" />
+            {/* 传染病史由医护端录入，用户端只读 */}
+            {!!infectiousHistory && (
+              <View style={styles.field}>
+                <Text style={styles.fieldLabel}>传染病史</Text>
+                <View style={[styles.fieldRow, { justifyContent: 'space-between' }]}>
+                  <Text style={styles.readonlyText}>{infectiousHistory}</Text>
+                  <Text style={styles.readonlyHint}>医护录入</Text>
+                </View>
+              </View>
+            )}
             <Field label="婚育史" value={maritalHistory} onChangeText={setMaritalHistory} placeholder="如：已婚，育有1子；未婚" />
           </View>
 

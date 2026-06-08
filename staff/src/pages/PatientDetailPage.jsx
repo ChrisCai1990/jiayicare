@@ -268,6 +268,7 @@ export default function PatientDetailPage() {
   const [showSRDetail, setShowSRDetail] = useState(null)
   const [staffList, setStaffList] = useState([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
+  const [followUpDetail, setFollowUpDetail] = useState(null)
   const [showUploadReport, setShowUploadReport] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [auditLoading, setAuditLoading] = useState(false)
@@ -1827,11 +1828,11 @@ export default function PatientDetailPage() {
           ) : (
             <table className="table">
               <thead>
-                <tr><th>日期</th><th>方式</th><th>状态</th><th>随访人</th><th>随访内容</th><th>下次随访</th></tr>
+                <tr><th>日期</th><th>方式</th><th>状态</th><th>随访人</th><th>随访内容</th><th>下次随访</th><th>操作</th></tr>
               </thead>
               <tbody>
                 {followUps.map(f => (
-                  <tr key={f._id}>
+                  <tr key={f._id} style={{ cursor: 'pointer' }} onClick={() => setFollowUpDetail(f)}>
                     <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                     <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
                     <td>
@@ -1840,11 +1841,14 @@ export default function PatientDetailPage() {
                       </span>
                     </td>
                     <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
-                    <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 240 }}>
-                      {f.content ? (f.content.length > 80 ? f.content.slice(0, 80) + '…' : f.content) : '-'}
+                    <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 200 }}>
+                      {f.content ? (f.content.length > 60 ? f.content.slice(0, 60) + '…' : f.content) : '-'}
                     </td>
                     <td style={{ fontSize: 12, color: '#8AA89C' }}>
                       {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
+                    </td>
+                    <td onClick={e => e.stopPropagation()}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
                     </td>
                   </tr>
                 ))}
@@ -2149,6 +2153,80 @@ export default function PatientDetailPage() {
       {/* ── Membership Tab ── */}
       {tab === 'membership' && (
         <MembershipPanel user={user} patientId={id} onRefresh={load} />
+      )}
+
+      {/* 随访详情弹窗 */}
+      {followUpDetail && (
+        <div className="modal-overlay" onClick={() => setFollowUpDetail(null)}>
+          <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">随访详情</h3>
+              <button className="modal-close" onClick={() => setFollowUpDetail(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {/* 基本信息 */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                {[
+                  { label: '随访日期', value: new Date(followUpDetail.date).toLocaleDateString('zh-CN') },
+                  { label: '随访方式', value: TYPE_MAP[followUpDetail.type] || followUpDetail.type || '-' },
+                  { label: '随访状态', value: STATUS_MAP[followUpDetail.status] || followUpDetail.status || '-' },
+                  { label: '随访人员', value: followUpDetail.staffId?.name || '-' },
+                  { label: '随访主题', value: followUpDetail.theme || followUpDetail.planName || '-' },
+                  { label: '下次随访', value: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toLocaleDateString('zh-CN') : '-' },
+                ].map(({ label, value }) => (
+                  <div key={label}>
+                    <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3 }}>{label}</div>
+                    <div style={{ fontSize: 14, color: '#1A2B24', fontWeight: 500 }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+              {/* 随访内容 */}
+              {followUpDetail.content && (
+                <div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>随访内容</div>
+                  <div style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
+                    {followUpDetail.content}
+                  </div>
+                </div>
+              )}
+              {/* 打卡项目 */}
+              {followUpDetail.checkInItems?.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>打卡项目</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {followUpDetail.checkInItems.map((item, i) => (
+                      <span key={i} style={{ padding: '2px 10px', borderRadius: 99, background: '#E8F5EF', color: '#1E6B50', fontSize: 12, fontWeight: 500 }}>{item}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* 表单内容（formData） */}
+              {followUpDetail.formData && Object.keys(followUpDetail.formData).length > 0 && (
+                <div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>表单内容</div>
+                  <div style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {Object.entries(followUpDetail.formData).map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', gap: 8 }}>
+                        <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 80 }}>{k}</span>
+                        <span style={{ fontSize: 13, color: '#1A2B24', flex: 1 }}>{String(v)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* 备注 */}
+              {followUpDetail.notes && (
+                <div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>备注</div>
+                  <div style={{ fontSize: 13, color: '#4A6558' }}>{followUpDetail.notes}</div>
+                </div>
+              )}
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setFollowUpDetail(null)}>关闭</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 随访记录弹窗 */}
