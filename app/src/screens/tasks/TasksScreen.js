@@ -625,7 +625,7 @@ export default function TasksScreen({ navigation }) {
                       <Text style={styles.modalSectionLabel}>具体内容</Text>
                       {detailTask.description
                         ? <Text style={styles.modalContent}>{detailTask.description}</Text>
-                        : <Text style={styles.modalNoContent}>健管师将在随访时与您沟通具体内容。</Text>
+                        : <Text style={styles.modalNoContent}>健管师会在随访前与您联系，届时沟通具体安排。</Text>
                       }
                       {!!(detailTask.checkInItems?.length) && (
                         <>

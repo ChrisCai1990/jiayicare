@@ -683,13 +683,14 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                     {staffOptions}
                   </select>
 
-                  {/* 备注 */}
+                  {/* 计划说明（会员可见） */}
                   <input
                     className="form-input"
-                    placeholder="备注"
+                    placeholder="计划说明（用户可见）"
                     value={row.notes}
                     onChange={e => updateRow(row.id, 'notes', e.target.value)}
-                    style={{ fontSize: 13, flex: 1, minWidth: 0 }}
+                    style={{ fontSize: 13, flex: 1, minWidth: 0, borderColor: '#1E6B50' }}
+                    title="此内容会显示给用户，请填写本次随访的目的或说明"
                   />
 
                   {/* ± 按钮 */}
