@@ -204,6 +204,7 @@ export const staffAPI = {
   // 患者专项筛查 & 日常打卡（医护端查看）
   getPatientScreening:      (id)       => req(`/staff/patients/${id}/screening`),
   getPatientHealthRecords:  (id, p={}) => req(`/staff/patients/${id}/health-records?` + qs(p)),
+  createPatientHealthRecord: (id, data) => req(`/staff/patients/${id}/health-records`, { method: 'POST', body: JSON.stringify(data) }),
 
   // 家庭成员关联（需求18）
   getPatientFamilyLinks:    (id)            => req(`/staff/patients/${id}/family-links`),
@@ -215,6 +216,9 @@ export const staffAPI = {
 
   // 用户留言收件箱
   getUserMessages: () => req('/staff/user-messages'),
+
+  // 回复用户留言
+  replyToUser: (userId, content) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content }) }),
 
   // 我发出的转介
   getSentReferrals: (p = {}) => req('/staff/referrals?direction=sent&' + qs(p)),

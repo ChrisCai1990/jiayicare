@@ -396,7 +396,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .populate('staffId', 'name role');
 
   // 最近健康记录（血压、血糖、体重）
-  const recentRecords = await HealthRecord.find({ userId: user._id })
+  const recentRecords = await HealthRecord.find({ user: user._id })
     .sort({ recordedAt: -1 })
     .limit(30)
     .select('type value extra recordedAt');
@@ -413,7 +413,7 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     'idNumber', 'workplace', 'occupation', 'maritalStatus',
     'ethnicity', 'address', 'contactPhone', 'contactPhone2', 'contactName', 'contactPhone3', 'deliveryAddress',
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
-    'servicePackage', 'serviceExpiry', 'serviceStartDate',
+    'servicePackage', 'serviceExpiry', 'serviceStartDate', 'isRegisteredClient',
     'bloodTypeABO', 'bloodTypeRH',
     'traumaHistory', 'transfusionHistory', 'infectiousHistory', 'vaccinationHistory',
     'basic_insurance', 'commercial_medical', 'critical_illness',
@@ -2088,6 +2088,41 @@ router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// ── 医护端代患者录入初始健康数据（与用户端格式一致）─────────────────
+// POST /api/staff/patients/:id/health-records
+router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
+  try {
+    const { type, value, extra, note } = req.body;
+    if (!type || value === undefined) {
+      return res.status(400).json({ success: false, message: 'type 和 value 必填' });
+    }
+    const VALID_TYPES = ['bloodPressure', 'bloodSugar', 'heartRate', 'weight', 'sleep', 'mood'];
+    if (!VALID_TYPES.includes(type)) {
+      return res.status(400).json({ success: false, message: '无效的数据类型' });
+    }
+    const TYPE_META = {
+      bloodPressure: { category: 'vitals',     label: '血压',  unit: 'mmHg' },
+      bloodSugar:    { category: 'vitals',     label: '血糖',  unit: 'mmol/L' },
+      heartRate:     { category: 'vitals',     label: '心率',  unit: '次/分' },
+      weight:        { category: 'metabolism', label: '体重',  unit: 'kg' },
+      sleep:         { category: 'lifestyle',  label: '睡眠',  unit: '小时' },
+      mood:          { category: 'lifestyle',  label: '情绪',  unit: '分' },
+    };
+    const meta = TYPE_META[type];
+    const record = await HealthRecord.create({
+      user:     req.params.id,
+      category: meta.category,
+      type,
+      label:    meta.label,
+      unit:     meta.unit,
+      value:    String(value),
+      extra:    extra || {},
+      note:     note || '',
+    });
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 家庭成员关联（需求18）────────────────────────────────────────
 // GET /api/staff/patients/:id/family-links
 router.get('/patients/:id/family-links', staffAuth, async (req, res) => {
@@ -2240,6 +2275,42 @@ router.get('/user-messages', staffAuth, async (req, res) => {
     }));
 
     res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 医护端回复用户留言 ──────────────────────────────────────────────
+// POST /api/staff/user-messages/:userId/reply
+router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content?.trim()) {
+      return res.status(400).json({ success: false, message: '回复内容不能为空' });
+    }
+    const patient = await User.findById(req.params.userId).select('name');
+    if (!patient) return res.status(404).json({ success: false, message: '用户不存在' });
+
+    const staff = req.staff;
+    const typeMap = {
+      familyDoctor: 'doctor',
+      nutritionist: 'manager',
+      healthManager: 'manager',
+      medicalAssistant: 'manager',
+    };
+    const msgType = typeMap[staff.role] || 'doctor';
+    const senderLabel = staff.title ? `${staff.name}（${staff.title}）` : staff.name;
+
+    await Message.create({
+      user:    req.params.userId,
+      type:    msgType,
+      sender:  senderLabel,
+      title:   `${staff.name} 回复了您的留言`,
+      content: content.trim(),
+      unread:  true,
+    });
+
+    res.json({ success: true, message: '回复已发送' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

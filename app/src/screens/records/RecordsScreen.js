@@ -480,6 +480,8 @@ export default function RecordsScreen({ navigation }) {
         }
         if (data.bloodTypeABO) merged.bloodTypeABO = data.bloodTypeABO;
         if (data.bloodTypeRH)  merged.bloodTypeRH  = data.bloodTypeRH;
+        // infectiousHistory 是顶层字段，staff 端写入，需从 user 根级读取
+        if (data.infectiousHistory) merged.infectiousHistory = data.infectiousHistory;
         setProfile(merged);
         saveProfileToStorage(merged);
       }

@@ -18,6 +18,7 @@ export default function NotificationsPage() {
   const [detailModal, setDetailModal] = useState(null)   // push 消息详情
   const [sentReferrals, setSentReferrals] = useState([])
   const [userMessages, setUserMessages] = useState([])
+  const [replyModal, setReplyModal] = useState(null)   // { userId, userName }
 
   const load = async () => {
     setLoading(true)
@@ -296,7 +297,8 @@ export default function NotificationsPage() {
                     <td style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>
                       {new Date(m.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </td>
-                    <td>
+                    <td style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-primary btn-sm" onClick={() => setReplyModal({ userId: m.user, userName: m.patientName })}>回复</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${m.user}`)}>查看档案</button>
                     </td>
                   </tr>
@@ -315,6 +317,16 @@ export default function NotificationsPage() {
       {/* 推送消息详情弹窗 */}
       {detailModal && (
         <PushDetailModal push={detailModal} onClose={() => setDetailModal(null)} onNavigate={nav} />
+      )}
+
+      {/* 回复用户留言弹窗 */}
+      {replyModal && (
+        <ReplyModal
+          userId={replyModal.userId}
+          userName={replyModal.userName}
+          onClose={() => setReplyModal(null)}
+          onSent={() => { setReplyModal(null); toast('回复已发送') }}
+        />
       )}
     </div>
   )
@@ -433,6 +445,50 @@ function PushDetailModal({ push, onClose, onNavigate }) {
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>关闭</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 回复用户留言弹窗 ──
+function ReplyModal({ userId, userName, onClose, onSent }) {
+  const [content, setContent] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [err, setErr] = useState('')
+
+  const handleSubmit = async () => {
+    if (!content.trim()) { setErr('请输入回复内容'); return }
+    setSubmitting(true)
+    try {
+      await staffAPI.replyToUser(userId, content.trim())
+      onSent()
+    } catch (e) {
+      setErr(e.message || '发送失败')
+    } finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 440 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">回复 {userName}</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">回复内容</label>
+            <textarea className="form-input" rows={4} value={content}
+              onChange={e => { setContent(e.target.value); setErr('') }}
+              placeholder="输入回复内容，用户将在消息中心收到您的回复..." />
+          </div>
+          {err && <div style={{ color: '#DC3545', fontSize: 13, marginTop: 6 }}>{err}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? '发送中...' : '发送回复'}
+          </button>
         </div>
       </div>
     </div>

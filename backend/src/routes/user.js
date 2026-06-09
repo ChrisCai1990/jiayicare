@@ -912,6 +912,19 @@ router.post('/family-links', auth, async (req, res) => {
       status: 'pending',
     });
     await userB.save();
+
+    // 发送系统消息通知被邀请方
+    const senderName = req.user.name || req.user.phone;
+    const relationText = relation ? `（${relation}）` : '';
+    await Message.create({
+      user:    linkedUserId,
+      type:    'system',
+      sender:  '系统通知',
+      title:   '家庭成员邀请',
+      content: `${senderName} 邀请您成为家庭成员${relationText}，请前往「我的 → 家庭成员」确认或拒绝。`,
+      unread:  true,
+    });
+
     res.json({ success: true, message: `邀请已发送，等待 ${userB.name} 确认` });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

@@ -13,12 +13,27 @@ export default function HomePage() {
   const nav = useNavigate()
   const [reports, setReports] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [pendingReferralCount, setPendingReferralCount] = useState(0)
+  const [unreadMsgCount, setUnreadMsgCount] = useState(0)
 
   useEffect(() => {
     staffAPI.getReports()
       .then(r => setReports(r.data))
       .catch(console.error)
       .finally(() => setLoading(false))
+
+    // 拉取待处理转介数 + 未读用户留言数
+    Promise.allSettled([
+      staffAPI.getNotifications(),
+      staffAPI.getUserMessages(),
+    ]).then(([notifRes, msgRes]) => {
+      if (notifRes.status === 'fulfilled') {
+        setPendingReferralCount(notifRes.value.data?.summary?.pendingReferralCount || 0)
+      }
+      if (msgRes.status === 'fulfilled') {
+        setUnreadMsgCount(msgRes.value.data?.length || 0)
+      }
+    })
   }, [])
 
   if (loading) return <div className="page-loading">加载中...</div>
@@ -86,21 +101,33 @@ export default function HomePage() {
           <div className="card-body">
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               {[
-                { icon: '➕', label: '新增会员', path: '/patients/new' },
-                { icon: '🔔', label: '消息通知', path: '/notifications' },
-                { icon: '🛍', label: '产品推送', path: '/products' },
+                { icon: '➕', label: '新增会员', path: '/patients/new', badge: 0 },
+                { icon: '🔔', label: '消息通知', path: '/notifications', badge: pendingReferralCount + unreadMsgCount },
+                { icon: '🛍', label: '产品推送', path: '/products', badge: 0 },
               ].map(item => (
                 <button
                   key={item.label}
                   className="quick-btn"
                   onClick={() => nav(item.path)}
                   style={{
-                    padding: '16px 12px', borderRadius: 12, border: '1px solid #E0D9CE',
-                    background: '#f9f7f3', cursor: 'pointer', textAlign: 'center',
+                    padding: '16px 12px', borderRadius: 12,
+                    border: item.badge > 0 ? '1.5px solid #D97706' : '1px solid #E0D9CE',
+                    background: item.badge > 0 ? '#FFFBF5' : '#f9f7f3',
+                    cursor: 'pointer', textAlign: 'center',
                     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
                     fontSize: 13, color: '#1A2B24', transition: 'all 0.15s',
+                    position: 'relative',
                   }}
                 >
+                  {item.badge > 0 && (
+                    <span style={{
+                      position: 'absolute', top: 8, right: 8,
+                      background: '#DC3545', color: '#fff',
+                      borderRadius: 99, fontSize: 11, fontWeight: 700,
+                      minWidth: 18, height: 18, lineHeight: '18px',
+                      textAlign: 'center', padding: '0 4px',
+                    }}>{item.badge}</span>
+                  )}
                   <span style={{ fontSize: 24 }}>{item.icon}</span>
                   <span>{item.label}</span>
                 </button>
