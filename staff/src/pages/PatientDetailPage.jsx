@@ -803,7 +803,7 @@ export default function PatientDetailPage() {
                         try {
                           await staffAPI.updatePatient(user._id, { isRegisteredClient: !user.isRegisteredClient })
                           toast(`已${!user.isRegisteredClient ? '标记为正式客户' : '取消正式客户标记'}`)
-                          loadData()
+                          load()
                         } catch (e) { toast(e.message) }
                       }}>切换</button>
                     </span>

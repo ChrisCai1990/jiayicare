@@ -88,7 +88,7 @@ const PROFILE_FIELDS = [
   { key: 'medicHistory',  label: '用药史',    icon: 'medkit-outline',      placeholder: '如：氨氯地平' },
   { key: 'familyHistory', label: '家族史',    icon: 'people-outline',      placeholder: '如：父亲：高血压' },
   { key: 'surgeryHistory',     label: '手术史',    icon: 'cut-outline',        placeholder: '如：无' },
-  { key: 'infectiousHistory',  label: '传染病史',  icon: 'alert-circle-outline', placeholder: '如：乙肝（已治愈）、无' },
+  { key: 'infectiousHistory',  label: '传染病史',  icon: 'alert-circle-outline', placeholder: '如：乙肝（已治愈）、无', readonly: true },
   { key: 'maritalHistory',     label: '婚育史',    icon: 'people-outline',       placeholder: '如：已婚，育有1子；未婚' },
 ];
 
@@ -370,13 +370,24 @@ function ProfileEditModal({ visible, profile, onSave, onClose }) {
                     <Ionicons name={field.icon} size={14} color={colors.primary} style={{ marginRight: 6 }} />
                     <Text style={styles.editFieldLabelText}>{field.label}</Text>
                   </View>
-                  <TextInput
-                    style={styles.editInput}
-                    value={draft[field.key] || ''}
-                    onChangeText={(v) => setField(field.key, v)}
-                    placeholder={field.placeholder}
-                    placeholderTextColor={colors.textDisabled}
-                  />
+                  {field.readonly ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <Text style={[styles.editInput, { color: colors.textSecondary, flex: 1 }]}>
+                        {draft[field.key] || '暂无（由医护录入）'}
+                      </Text>
+                      <Text style={{ fontSize: 11, color: colors.textMuted, backgroundColor: colors.border, paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99 }}>
+                        医护录入
+                      </Text>
+                    </View>
+                  ) : (
+                    <TextInput
+                      style={styles.editInput}
+                      value={draft[field.key] || ''}
+                      onChangeText={(v) => setField(field.key, v)}
+                      placeholder={field.placeholder}
+                      placeholderTextColor={colors.textDisabled}
+                    />
+                  )}
                 </View>
               ))}
               <View style={{ height: 20 }} />
@@ -593,7 +604,12 @@ export default function RecordsScreen({ navigation }) {
     saveProfileToStorage(draft);
     setEditingProfile(false);
     try {
-      await userAPI.updateMe({ healthProfile: draft });
+      // 排除 readonly 字段（由医护录入，用户不可覆盖）
+      const readonlyKeys = PROFILE_FIELDS.filter(f => f.readonly).map(f => f.key);
+      const payload = Object.fromEntries(
+        Object.entries(draft).filter(([k]) => !readonlyKeys.includes(k))
+      );
+      await userAPI.updateMe({ healthProfile: payload });
     } catch {}
   };
 
