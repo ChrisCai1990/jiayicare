@@ -221,10 +221,13 @@ router.post('/patients/assign', staffAuth, async (req, res) => {
 
   const role = req.staff.role;
   const fieldMap = {
-    health_manager: 'assignedHealthManager',
-    nutritionist:   'assignedNutritionist',
-    family_doctor:  'assignedFamilyDoctor',
-    superadmin:     'assignedHealthManager',
+    healthManager:    'assignedHealthManager',
+    nutritionist:     'assignedNutritionist',
+    familyDoctor:     'assignedFamilyDoctor',
+    superadmin:       'assignedHealthManager',
+    // 兼容旧格式（如有历史数据）
+    health_manager:   'assignedHealthManager',
+    family_doctor:    'assignedFamilyDoctor',
   };
   const field = fieldMap[role] || 'assignedHealthManager';
   await User.collection.updateOne(

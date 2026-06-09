@@ -813,6 +813,7 @@ router.post('/family', auth, async (req, res) => {
 router.delete('/family/:index', auth, async (req, res) => {
   try {
     const idx = parseInt(req.params.index);
+    if (isNaN(idx)) return res.status(400).json({ success: false, message: '索引无效' });
     const u = await User.findById(req.user._id).select('family');
     if (!u) return res.status(404).json({ success: false, message: '用户不存在' });
     const family = u.family || [];
