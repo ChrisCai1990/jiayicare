@@ -206,6 +206,17 @@ const userSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now },
     status:    { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
   }],
+
+  // ── 档案审核（3.1）──────────────────────────────────────────────────
+  archiveReviewStatus: { type: String, enum: ['pending', 'reviewed'], default: 'pending' },
+  archiveReviewedAt:   { type: Date, default: null },
+  archiveReviewedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+
+  // ── 身体成分（4.2）──────────────────────────────────────────────────
+  bodyComposition: { type: mongoose.Schema.Types.Mixed, default: {} },
+
+  // ── AI健康汇总分析（4.4）───────────────────────────────────────────
+  aiHealthSummary: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 
 module.exports = mongoose.model('User', userSchema);

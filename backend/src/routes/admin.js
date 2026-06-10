@@ -573,6 +573,10 @@ router.put('/staff/:id', adminAuth, async (req, res) => {
   if (!staff || !STAFF_ROLES.includes(staff.role)) {
     return res.status(404).json({ success: false, message: '医护账号不存在' });
   }
+  if (phone && phone !== staff.phone) {
+    const dup = await Admin.findOne({ phone, _id: { $ne: staff._id } });
+    if (dup) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
+  }
   Object.assign(staff, update);
   if (password) staff.password = password; // triggers bcrypt pre-save
   await staff.save();

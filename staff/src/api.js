@@ -222,4 +222,18 @@ export const staffAPI = {
 
   // 我发出的转介
   getSentReferrals: (p = {}) => req('/staff/referrals?direction=sent&' + qs(p)),
+
+  // 3.1 档案审核
+  archiveReview: (id, action) => req(`/staff/patients/${id}/archive-review`, { method: 'PATCH', body: JSON.stringify({ action }) }),
+
+  // 4.2 身体成分
+  saveBodyComposition: (id, data) => req(`/staff/patients/${id}/body-composition`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // 4.4 AI健康汇总
+  generateAIHealthSummary: (id) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST' }),
+  updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // 4.3 专项筛查
+  getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),
+  createScreeningRecord: (id, data) => req(`/staff/patients/${id}/screening-records`, { method: 'POST', body: JSON.stringify(data) }),
 }

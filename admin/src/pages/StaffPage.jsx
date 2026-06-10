@@ -68,6 +68,14 @@ export default function StaffPage() {
       setError('用户名、密码、姓名不能为空')
       return
     }
+    if (!form.phone) {
+      setError('手机号不能为空（作为唯一识别码）')
+      return
+    }
+    if (!/^1[3-9]\d{9}$/.test(form.phone)) {
+      setError('手机号格式不正确')
+      return
+    }
     setSaving(true)
     setError('')
     try {
@@ -215,8 +223,8 @@ export default function StaffPage() {
                   <input className="form-input" placeholder="如：北京区" value={form.region} onChange={set('region')} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
-                  <label className="form-label">手机号（唯一识别码）</label>
-                  <input className="form-input" type="tel" placeholder="11位手机号" value={form.phone} onChange={set('phone')} />
+                  <label className="form-label">手机号 *（唯一识别码）</label>
+                  <input className="form-input" type="tel" placeholder="11位手机号" value={form.phone} onChange={set('phone')} required />
                 </div>
               </div>
             </form>

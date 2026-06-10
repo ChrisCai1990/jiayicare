@@ -301,6 +301,10 @@ export default function PatientDetailPage() {
   const [medSaving, setMedSaving] = useState(false)
   // 专项筛查 & 打卡记录
   const [screeningItems, setScreeningItems] = useState([])
+  const [screeningReports, setScreeningReports] = useState([])
+  const [showScreeningForm, setShowScreeningForm] = useState(false)
+  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: 'tumor', checkDate: '', hospital: '', note: '', reportItems: [] })
+  const [screeningSaving, setScreeningSaving] = useState(false)
   const [healthRecords, setHealthRecords] = useState([])
   // 健康评分
   const [scoreLoading, setScoreLoading] = useState(false)
@@ -308,6 +312,13 @@ export default function PatientDetailPage() {
   const [labForm, setLabForm] = useState({})
   const [editingDiseaseSeverity, setEditingDiseaseSeverity] = useState(false)
   const [severityForm, setSeverityForm] = useState({})
+  // 4.2 身体成分
+  const [editingBodyComp, setEditingBodyComp] = useState(false)
+  const [bodyCompForm, setBodyCompForm] = useState({})
+  // 4.4 AI健康汇总
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
+  const [editingAISummary, setEditingAISummary] = useState(false)
+  const [aiSummaryForm, setAiSummaryForm] = useState({})
 
   const load = async () => {
     try {
@@ -321,6 +332,8 @@ export default function PatientDetailPage() {
       setInsuranceForm(buildInsuranceForm(res.data.user))
       setLabForm(res.data.user.labValues || {})
       setSeverityForm(res.data.user.chronicDiseaseSeverity || {})
+      setBodyCompForm(res.data.user.bodyComposition || {})
+      setAiSummaryForm(res.data.user.aiHealthSummary || {})
     } catch (err) {
       toast(err.message || '加载失败')
     } finally {
@@ -355,12 +368,14 @@ export default function PatientDetailPage() {
   }
   const loadScreening = async () => {
     try {
-      const [sr, hr] = await Promise.allSettled([
+      const [sr, hr, scr] = await Promise.allSettled([
         staffAPI.getPatientScreening(id),
         staffAPI.getPatientHealthRecords(id, { limit: 30 }),
+        staffAPI.getScreeningReports(id),
       ])
       if (sr.status === 'fulfilled') setScreeningItems(sr.value.data || [])
       if (hr.status === 'fulfilled') setHealthRecords(hr.value.data || [])
+      if (scr.status === 'fulfilled') setScreeningReports(scr.value.data || [])
     } catch {}
   }
 
@@ -603,6 +618,61 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
   }
 
+  // 3.1 档案审核
+  const handleArchiveReview = async () => {
+    try {
+      await staffAPI.archiveReview(id, 'approve')
+      toast('档案已审核确认')
+      load()
+    } catch (err) { toast(err.message || '审核失败') }
+  }
+
+  // 4.2 身体成分
+  const handleSaveBodyComp = async () => {
+    try {
+      await staffAPI.saveBodyComposition(id, bodyCompForm)
+      toast('身体成分数据已保存')
+      setEditingBodyComp(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  // 4.4 AI汇总
+  const handleGenerateAISummary = async () => {
+    try {
+      setAiSummaryLoading(true)
+      const res = await staffAPI.generateAIHealthSummary(id)
+      setAiSummaryForm(res.data)
+      toast('AI分析已生成')
+      load()
+    } catch (err) { toast(err.message || 'AI生成失败，请确认 ANTHROPIC_API_KEY 已配置') }
+    finally { setAiSummaryLoading(false) }
+  }
+
+  const handleSaveAISummary = async (approve = false) => {
+    try {
+      const payload = { ...aiSummaryForm, ...(approve ? { action: 'approve' } : {}) }
+      await staffAPI.updateAIHealthSummary(id, payload)
+      toast(approve ? '分析报告已审核确认' : '分析报告已保存')
+      setEditingAISummary(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  // 4.3 录入筛查结果
+  const handleSaveScreeningRecord = async () => {
+    if (!screeningForm.title || !screeningForm.screeningCategory) return toast('标题和分类不能为空')
+    try {
+      setScreeningSaving(true)
+      await staffAPI.createScreeningRecord(id, screeningForm)
+      toast('筛查结果已录入')
+      setShowScreeningForm(false)
+      setScreeningForm({ title: '', screeningCategory: 'tumor', checkDate: '', hospital: '', note: '', reportItems: [] })
+      loadScreening()
+    } catch (err) { toast(err.message || '录入失败') }
+    finally { setScreeningSaving(false) }
+  }
+
   const handleRecalculateScore = async () => {
     try {
       setScoreLoading(true)
@@ -808,6 +878,25 @@ export default function PatientDetailPage() {
                   <InfoRow label="所在行业" value={user.occupation || '-'} />
                   <InfoRow label="每年体检" value={user.hasAnnualCheckup || '-'} />
                 </>
+              )}
+            </div>
+            {/* 3.1 档案审核区 */}
+            <div style={{ borderTop: '1px solid #E0D9CE', padding: '12px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ fontSize: 13, color: '#4A6558' }}>
+                档案审核状态：
+                <span style={{ marginLeft: 6, fontWeight: 600, color: user.archiveReviewStatus === 'reviewed' ? '#22A06B' : '#D97706' }}>
+                  {user.archiveReviewStatus === 'reviewed' ? '✓ 已审核' : '待审核'}
+                </span>
+                {user.archiveReviewedAt && (
+                  <span style={{ marginLeft: 8, fontSize: 12, color: '#aaa' }}>
+                    {new Date(user.archiveReviewedAt).toLocaleDateString('zh-CN')}
+                  </span>
+                )}
+              </div>
+              {user.archiveReviewStatus !== 'reviewed' ? (
+                <button className="btn btn-primary btn-sm" onClick={handleArchiveReview}>审核确认</button>
+              ) : (
+                <button className="btn btn-secondary btn-sm" onClick={async () => { await staffAPI.archiveReview(id, 'reset'); toast('已重置为待审核'); load() }}>重置</button>
               )}
             </div>
           </div>
@@ -1366,32 +1455,57 @@ export default function PatientDetailPage() {
                         onChange={e => setLabForm(f => ({ ...f, [field]: e.target.value }))} style={{ fontSize: 13 }} />
                     </div>
                   )
+                  const TF = ({ label, field, unit, placeholder }) => (
+                    <div>
+                      <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}{unit ? ` (${unit})` : ''}</span>
+                      <textarea className="form-control" rows={2} value={labForm[field] || ''} placeholder={placeholder || ''}
+                        onChange={e => setLabForm(f => ({ ...f, [field]: e.target.value }))} style={{ fontSize: 13 }} />
+                    </div>
+                  )
                   return (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px' }}>
-                      <F label="空腹血糖 FPG" field="fpg" unit="mmol/L" placeholder="如 5.6" />
-                      <F label="总胆固醇 TC" field="tc" unit="mmol/L" placeholder="如 4.8" />
-                      <F label="低密度脂蛋白 LDL-C" field="ldl" unit="mmol/L" placeholder="如 2.8" />
-                      <F label="甘油三酯 TG" field="tg" unit="mmol/L" placeholder="如 1.2" />
-                      <F label="尿酸 UA" field="ua" unit="μmol/L" placeholder="如 350" />
-                      <F label="谷丙转氨酶 ALT" field="alt" unit="U/L" placeholder="如 25" />
-                      <F label="收缩压 SBP" field="sbp" unit="mmHg" placeholder="如 120" />
-                      <F label="舒张压 DBP" field="dbp" unit="mmHg" placeholder="如 80" />
-                      <div>
-                        <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>肾功能（CKD分期）</span>
-                        <select className="form-control" value={labForm.ckdStage || ''}
-                          onChange={e => setLabForm(f => ({ ...f, ckdStage: e.target.value }))} style={{ fontSize: 13 }}>
-                          <option value="">正常/未查</option>
-                          <option value="1">1期（轻度）</option>
-                          <option value="2">2期（轻中度）</option>
-                          <option value="3">3期（中度）</option>
-                          <option value="4">4期（重度）</option>
-                          <option value="5">5期（终末期）</option>
-                        </select>
+                    <div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>血糖 / 血脂 / 血压</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px', marginBottom: 16 }}>
+                        <F label="空腹血糖 FPG" field="fpg" unit="mmol/L" placeholder="如 5.6" />
+                        <F label="糖化血红蛋白 HbA1c" field="hba1c" unit="%" placeholder="如 5.4" />
+                        <F label="总胆固醇 TC" field="tc" unit="mmol/L" placeholder="如 4.8" />
+                        <F label="低密度脂蛋白 LDL-C" field="ldl" unit="mmol/L" placeholder="如 2.8" />
+                        <F label="高密度脂蛋白 HDL-C" field="hdl" unit="mmol/L" placeholder="如 1.3" />
+                        <F label="甘油三酯 TG" field="tg" unit="mmol/L" placeholder="如 1.2" />
+                        <F label="收缩压 SBP" field="sbp" unit="mmHg" placeholder="如 120" />
+                        <F label="舒张压 DBP" field="dbp" unit="mmHg" placeholder="如 80" />
+                        <F label="腰围" field="waist" unit="cm" placeholder="如 80" />
+                      </div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>肝肾 / 代谢</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px', marginBottom: 16 }}>
+                        <F label="谷丙转氨酶 ALT" field="alt" unit="U/L" placeholder="如 25" />
+                        <F label="谷草转氨酶 AST" field="ast" unit="U/L" placeholder="如 22" />
+                        <F label="γ-谷氨酰转肽酶 GGT" field="ggt" unit="U/L" placeholder="如 30" />
+                        <F label="尿酸 UA" field="ua" unit="μmol/L" placeholder="如 350" />
+                        <F label="同型半胱氨酸 Hcy" field="hcy" unit="μmol/L" placeholder="如 10" />
+                        <F label="脂蛋白磷脂酶A2 Lp-PLA2" field="lpla2" unit="U/L" placeholder="如 180" />
+                        <div>
+                          <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>肾功能（CKD分期）</span>
+                          <select className="form-control" value={labForm.ckdStage || ''}
+                            onChange={e => setLabForm(f => ({ ...f, ckdStage: e.target.value }))} style={{ fontSize: 13 }}>
+                            <option value="">正常/未查</option>
+                            <option value="1">1期（轻度）</option>
+                            <option value="2">2期（轻中度）</option>
+                            <option value="3">3期（中度）</option>
+                            <option value="4">4期（重度）</option>
+                            <option value="5">5期（终末期）</option>
+                          </select>
+                        </div>
+                      </div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>超声</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 20px', marginBottom: 16 }}>
+                        <TF label="肝脏超声" field="liverUs" placeholder="如：脂肪肝（轻度）" />
+                        <TF label="颈动脉超声" field="carotiUs" placeholder="如：内膜增厚，IMT 0.9mm" />
                       </div>
                       <div>
                         <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>检测日期</span>
                         <input className="form-control" type="date" value={labForm.labDate || ''}
-                          onChange={e => setLabForm(f => ({ ...f, labDate: e.target.value }))} style={{ fontSize: 13 }} />
+                          onChange={e => setLabForm(f => ({ ...f, labDate: e.target.value }))} style={{ fontSize: 13, width: 200 }} />
                       </div>
                     </div>
                   )
@@ -1404,15 +1518,22 @@ export default function PatientDetailPage() {
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px 16px' }}>
                       {[
                         ['空腹血糖', user.labValues.fpg, 'mmol/L', 6.1],
+                        ['HbA1c', user.labValues.hba1c, '%', 6.5],
                         ['总胆固醇', user.labValues.tc, 'mmol/L', 5.2],
                         ['LDL-C', user.labValues.ldl, 'mmol/L', 3.4],
+                        ['HDL-C', user.labValues.hdl, 'mmol/L', null],
                         ['甘油三酯', user.labValues.tg, 'mmol/L', 1.7],
-                        ['尿酸', user.labValues.ua, 'μmol/L', user.gender === '女' ? 360 : 420],
-                        ['ALT', user.labValues.alt, 'U/L', 40],
                         ['收缩压', user.labValues.sbp, 'mmHg', 120],
                         ['舒张压', user.labValues.dbp, 'mmHg', 80],
+                        ['腰围', user.labValues.waist, 'cm', null],
+                        ['ALT', user.labValues.alt, 'U/L', 40],
+                        ['AST', user.labValues.ast, 'U/L', 40],
+                        ['GGT', user.labValues.ggt, 'U/L', 50],
+                        ['尿酸', user.labValues.ua, 'μmol/L', user.gender === '女' ? 360 : 420],
+                        ['Hcy', user.labValues.hcy, 'μmol/L', 15],
+                        ['Lp-PLA2', user.labValues.lpla2, 'U/L', 200],
                       ].filter(([,v]) => v != null && v !== '').map(([label, val, unit, normal]) => {
-                        const isHigh = parseFloat(val) > normal
+                        const isHigh = normal != null && parseFloat(val) > normal
                         return (
                           <div key={label} style={{ padding: '6px 10px', background: isHigh ? '#FEF2F2' : '#f9f7f3', borderRadius: 8, borderLeft: `3px solid ${isHigh ? '#DC3545' : '#22A06B'}` }}>
                             <div style={{ fontSize: 11, color: '#8AA89C' }}>{label}</div>
@@ -1421,6 +1542,12 @@ export default function PatientDetailPage() {
                         )
                       })}
                     </div>
+                    {(user.labValues.liverUs || user.labValues.carotiUs) && (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
+                        {user.labValues.liverUs && <div style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8 }}><span style={{ fontSize: 11, color: '#8AA89C', display: 'block' }}>肝脏超声</span><span style={{ fontSize: 13 }}>{user.labValues.liverUs}</span></div>}
+                        {user.labValues.carotiUs && <div style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8 }}><span style={{ fontSize: 11, color: '#8AA89C', display: 'block' }}>颈动脉超声</span><span style={{ fontSize: 13 }}>{user.labValues.carotiUs}</span></div>}
+                      </div>
+                    )}
                     {user.labValues.labDate && (
                       <div style={{ fontSize: 12, color: '#aaa', marginTop: 8 }}>检测日期：{user.labValues.labDate}</div>
                     )}
@@ -1429,6 +1556,64 @@ export default function PatientDetailPage() {
                   <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
                     暂无体检指标记录，点击「编辑」录入
                   </div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── 4.2 身体成分指标 ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <div className="card-title">身体成分指标</div>
+            {!editingBodyComp
+              ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingBodyComp(true)}>编辑</button>
+              : <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary btn-sm" onClick={handleSaveBodyComp}>保存</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditingBodyComp(false); setBodyCompForm(user.bodyComposition || {}) }}>取消</button>
+                </div>
+            }
+          </div>
+          <div style={{ padding: '12px 20px' }}>
+            {editingBodyComp ? (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px' }}>
+                {[
+                  { label: '骨骼肌量', field: 'skelMuscle', unit: 'kg', placeholder: '如 28.5' },
+                  { label: '内脏脂肪等级/指数', field: 'visceralFat', unit: '', placeholder: '如 9级 或 指数110' },
+                  { label: '体脂率', field: 'bodyFatRate', unit: '%', placeholder: '如 25.3' },
+                ].map(({ label, field, unit, placeholder }) => (
+                  <div key={field}>
+                    <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}{unit ? ` (${unit})` : ''}</span>
+                    <input className="form-control" value={bodyCompForm[field] || ''} placeholder={placeholder}
+                      onChange={e => setBodyCompForm(f => ({ ...f, [field]: e.target.value }))} style={{ fontSize: 13 }} />
+                  </div>
+                ))}
+                <div>
+                  <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>测量日期</span>
+                  <input className="form-control" type="date" value={bodyCompForm.measuredAt || ''}
+                    onChange={e => setBodyCompForm(f => ({ ...f, measuredAt: e.target.value }))} style={{ fontSize: 13 }} />
+                </div>
+              </div>
+            ) : (
+              <div>
+                {user.bodyComposition && (user.bodyComposition.skelMuscle || user.bodyComposition.visceralFat || user.bodyComposition.bodyFatRate) ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px 16px' }}>
+                    {[
+                      ['骨骼肌量', user.bodyComposition.skelMuscle, 'kg'],
+                      ['内脏脂肪', user.bodyComposition.visceralFat, ''],
+                      ['体脂率', user.bodyComposition.bodyFatRate, '%'],
+                    ].filter(([,v]) => v != null && v !== '').map(([label, val, unit]) => (
+                      <div key={label} style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8, borderLeft: '3px solid #1E6B50' }}>
+                        <div style={{ fontSize: 11, color: '#8AA89C' }}>{label}</div>
+                        <div style={{ fontSize: 14, fontWeight: 600 }}>{val}{unit && <span style={{ fontSize: 11, fontWeight: 400 }}> {unit}</span>}</div>
+                      </div>
+                    ))}
+                    {user.bodyComposition.measuredAt && (
+                      <div style={{ fontSize: 12, color: '#aaa', gridColumn: 'span 3', marginTop: 4 }}>测量日期：{user.bodyComposition.measuredAt}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>暂无身体成分数据，点击「编辑」录入</div>
                 )}
               </div>
             )}
@@ -1700,44 +1885,199 @@ export default function PatientDetailPage() {
           )
         })()}
 
-        {/* 专项筛查结果（四大分类）在前 */}
-        <div className="card">
-          <div className="card-header"><div className="card-title">专项筛查结果</div></div>
-          {screeningItems.length === 0 ? (
-            <div style={{ padding: 30, textAlign: 'center', color: '#aaa' }}>暂无专项筛查数据</div>
-          ) : (() => {
-            const CATEGORIES = ['肿瘤筛查', '心脑血管筛查', '慢性病筛查', '其他筛查'];
-            const grouped = {};
-            CATEGORIES.forEach(c => { grouped[c] = [] });
-            screeningItems.forEach(s => {
-              const cat = s.category || '其他筛查';
-              if (!grouped[cat]) grouped[cat] = [];
-              grouped[cat].push(s);
-            });
-            return (
-              <div>
-                {CATEGORIES.map(cat => grouped[cat]?.length > 0 && (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ padding: '6px 16px', background: '#f5f2ec', fontWeight: 600, fontSize: 13, color: '#4A6558' }}>{cat}</div>
-                    <table className="table" style={{ marginBottom: 0 }}>
-                      <thead><tr><th>筛查项目</th><th>结果</th><th>记录时间</th><th>查看报告</th></tr></thead>
-                      <tbody>
-                        {grouped[cat].map(s => (
-                          <tr key={s._id}>
-                            <td style={{ fontWeight: 500 }}>{s.label || s.itemKey}</td>
-                            <td style={{ fontSize: 13, color: s.abnormal ? '#DC3545' : '#1A2B24' }}>{s.result || s.value || '-'}</td>
-                            <td style={{ color: '#8AA89C', fontSize: 12 }}>{s.recordedAt ? new Date(s.recordedAt).toLocaleDateString('zh-CN') : '-'}</td>
-                            <td>{s.reportId ? <a href="#" style={{ fontSize: 12, color: '#1E6B50' }} onClick={e => { e.preventDefault(); setTab('reports') }}>查看</a> : '-'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
+        {/* ── 4.4 AI健康汇总分析 ── */}
+        {(() => {
+          const ais = user.aiHealthSummary || {}
+          const hasData = ais.trend || ais.risks || ais.plan
+          return (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-header">
+                <div className="card-title">AI健康汇总分析</div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {!editingAISummary && hasData && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setAiSummaryForm({ ...ais }); setEditingAISummary(true) }}>编辑</button>
+                  )}
+                  {editingAISummary && (
+                    <>
+                      <button className="btn btn-secondary btn-sm" onClick={() => setEditingAISummary(false)}>取消</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => handleSaveAISummary(false)}>保存草稿</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(true)}>审核确认</button>
+                    </>
+                  )}
+                  <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={handleGenerateAISummary}>
+                    {aiSummaryLoading ? '生成中...' : (hasData ? '重新生成' : '生成AI分析')}
+                  </button>
+                </div>
               </div>
-            )
-          })()}
-        </div>
+              <div style={{ padding: '12px 20px' }}>
+                {hasData ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                    {ais.approvedAt && (
+                      <div style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', borderRadius: 6, padding: '4px 10px' }}>
+                        ✓ 已审核确认 {ais.approvedBy && `by ${ais.approvedBy}`} · {new Date(ais.approvedAt).toLocaleDateString('zh-CN')}
+                      </div>
+                    )}
+                    {[
+                      { key: 'trend', label: '健康趋势分析', color: '#0077B6' },
+                      { key: 'risks', label: '风险提示', color: '#DC3545' },
+                      { key: 'plan', label: '管理方案初稿', color: '#1E6B50' },
+                    ].map(({ key, label, color }) => (
+                      <div key={key}>
+                        <div style={{ fontSize: 12, color, fontWeight: 600, marginBottom: 4 }}>{label}</div>
+                        {editingAISummary ? (
+                          <textarea className="form-control" rows={4} value={aiSummaryForm[key] || ''}
+                            onChange={e => setAiSummaryForm(f => ({ ...f, [key]: e.target.value }))}
+                            style={{ fontSize: 13 }} />
+                        ) : (
+                          <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.7, background: '#f9f7f3', borderRadius: 8, padding: '8px 12px', whiteSpace: 'pre-wrap', borderLeft: `3px solid ${color}` }}>
+                            {ais[key]}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {ais.generatedAt && (
+                      <div style={{ fontSize: 12, color: '#aaa' }}>生成时间：{new Date(ais.generatedAt).toLocaleString('zh-CN')}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: 20 }}>
+                    点击「生成AI分析」，自动读取体检指标和健康档案，生成健康趋势分析、风险提示和管理方案初稿
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* ── 4.3 专项筛查结果（时间轴，按分类） ── */}
+        {(() => {
+          const CAT_MAP = {
+            tumor:          { label: '肿瘤筛查',    color: '#7C3AED' },
+            cardiovascular: { label: '心脑血管筛查', color: '#DC3545' },
+            brain_vessel:   { label: '心脑血管筛查', color: '#DC3545' },
+            chronic:        { label: '慢性病筛查',   color: '#D97706' },
+            other_routine:  { label: '其他筛查',    color: '#0077B6' },
+            health_promote: { label: '其他筛查',    color: '#0077B6' },
+          }
+          const CATS = [
+            { key: 'tumor',          label: '肿瘤筛查',    color: '#7C3AED' },
+            { key: 'cardiovascular', label: '心脑血管筛查', color: '#DC3545' },
+            { key: 'chronic',        label: '慢性病筛查',   color: '#D97706' },
+            { key: 'other',          label: '其他筛查',    color: '#0077B6' },
+          ]
+          const grouped = { tumor: [], cardiovascular: [], chronic: [], other: [] }
+          screeningReports.forEach(r => {
+            const cat = r.screeningCategory
+            if (cat === 'tumor') grouped.tumor.push(r)
+            else if (cat === 'cardiovascular' || cat === 'brain_vessel') grouped.cardiovascular.push(r)
+            else if (cat === 'chronic') grouped.chronic.push(r)
+            else grouped.other.push(r)
+          })
+          const hasAny = screeningReports.length > 0
+          return (
+            <div className="card" style={{ marginBottom: 16 }}>
+              <div className="card-header">
+                <div className="card-title">专项筛查结果</div>
+                <button className="btn btn-primary btn-sm" onClick={() => setShowScreeningForm(true)}>+ 录入筛查结果</button>
+              </div>
+              {!hasAny ? (
+                <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无专项筛查记录，点击「录入筛查结果」添加</div>
+              ) : (
+                <div>
+                  {CATS.map(({ key, label, color }) => grouped[key].length > 0 && (
+                    <div key={key} style={{ marginBottom: 4 }}>
+                      <div style={{ padding: '8px 20px', background: '#f5f2ec', fontWeight: 600, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
+                        {label}
+                      </div>
+                      <div style={{ padding: '0 20px' }}>
+                        {grouped[key].map((r, i) => (
+                          <div key={r._id} style={{ display: 'flex', gap: 16, padding: '12px 0', borderBottom: i < grouped[key].length - 1 ? '1px solid #f0ece4' : 'none' }}>
+                            <div style={{ width: 2, background: color, borderRadius: 2, alignSelf: 'stretch', minHeight: 20, flexShrink: 0 }} />
+                            <div style={{ flex: 1 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                                <div style={{ fontWeight: 600, fontSize: 14 }}>{r.title}</div>
+                                <div style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap', marginLeft: 12 }}>{r.checkDate || (r.createdAt && new Date(r.createdAt).toLocaleDateString('zh-CN'))}</div>
+                              </div>
+                              {r.hospital && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>📍 {r.hospital}</div>}
+                              {r.reportItems?.length > 0 && (
+                                <div style={{ marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                                  {r.reportItems.map((item, j) => (
+                                    <span key={j} style={{
+                                      padding: '2px 10px', borderRadius: 20, fontSize: 12,
+                                      background: item.status === 'abnormal' ? '#FEF2F2' : '#f9f7f3',
+                                      color: item.status === 'abnormal' ? '#DC3545' : '#4A6558',
+                                      border: `1px solid ${item.status === 'abnormal' ? '#FECACA' : '#E0D9CE'}`,
+                                    }}>
+                                      {item.name}{item.value && `：${item.value}`}{item.unit && ` ${item.unit}`}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {r.note && <div style={{ fontSize: 13, color: '#4A6558', marginTop: 6 }}>{r.note}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })()}
+
+        {/* 录入筛查结果 Modal */}
+        {showScreeningForm && (
+          <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowScreeningForm(false) }}>
+            <div className="modal" style={{ maxWidth: 560 }}>
+              <div className="modal-header">
+                <h3 className="modal-title">录入筛查结果</h3>
+                <button className="modal-close" onClick={() => setShowScreeningForm(false)}>✕</button>
+              </div>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">检查名称 *</label>
+                  <input className="form-input" placeholder="如：肺部低剂量CT、颈动脉超声" value={screeningForm.title}
+                    onChange={e => setScreeningForm(f => ({ ...f, title: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">筛查分类 *</label>
+                  <select className="form-input" value={screeningForm.screeningCategory}
+                    onChange={e => setScreeningForm(f => ({ ...f, screeningCategory: e.target.value }))}>
+                    <option value="tumor">肿瘤筛查</option>
+                    <option value="cardiovascular">心脑血管筛查</option>
+                    <option value="chronic">慢性病筛查</option>
+                    <option value="other_routine">其他筛查</option>
+                  </select>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">检查日期</label>
+                    <input className="form-input" type="date" value={screeningForm.checkDate}
+                      onChange={e => setScreeningForm(f => ({ ...f, checkDate: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">检查机构</label>
+                    <input className="form-input" placeholder="如：北京协和医院" value={screeningForm.hospital}
+                      onChange={e => setScreeningForm(f => ({ ...f, hospital: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">主要结论/备注</label>
+                  <textarea className="form-input" rows={3} placeholder="如：未见明显异常；左叶结节3mm，建议随访" value={screeningForm.note}
+                    onChange={e => setScreeningForm(f => ({ ...f, note: e.target.value }))} />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-ghost" onClick={() => setShowScreeningForm(false)}>取消</button>
+                <button className="btn btn-primary" onClick={handleSaveScreeningRecord} disabled={screeningSaving}>
+                  {screeningSaving ? '保存中...' : '保存'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* 健康趋势图 */}
         {recentRecords?.length >= 2 && (() => {

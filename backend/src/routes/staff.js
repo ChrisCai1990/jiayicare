@@ -418,9 +418,12 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
     'servicePackage', 'serviceExpiry', 'serviceStartDate', 'isRegisteredClient',
     'bloodTypeABO', 'bloodTypeRH',
-    'traumaHistory', 'transfusionHistory', 'infectiousHistory', 'vaccinationHistory',
+    'traumaHistory', 'transfusionHistory', 'poisoningHistory', 'infectiousHistory', 'vaccinationHistory', 'otherDiseaseHistory',
     'basic_insurance', 'commercial_medical', 'critical_illness',
     'chronicDiseaseSeverity', 'labValues', 'healthScoreBonus',
+    'education', 'hasAnnualCheckup',
+    'healthConcern', 'healthConcernFor', 'expectedService', 'hasHomeMonitor', 'hasMedicineCabinet',
+    'bodyComposition',
   ];
   const updateData = {};
   allowed.forEach(k => {
@@ -453,11 +456,17 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     updateData['lifestyle_data'] = req.body.lifestyle_data;
   }
 
-  // 健康档案字符串字段（仅更新文本，不覆盖数组字段）
+  // 健康档案字段（字符串 + 数组）
   if (req.body.healthProfile && typeof req.body.healthProfile === 'object') {
-    ['bloodType', 'drugAllergy', 'foodAllergy', 'pastHistory', 'medicHistory', 'surgeryHistory', 'menstrualHistory', 'maritalHistory', 'familyHistoryNote'].forEach(k => {
+    const strFields = ['bloodType', 'drugAllergy', 'foodAllergy', 'pastHistory', 'medicHistory', 'surgeryHistory',
+      'menstrualHistory', 'maritalHistory', 'familyHistoryNote', 'sexualHistory', 'supplementHistory',
+      'recentMedication', 'recentSupplement'];
+    strFields.forEach(k => {
       if (req.body.healthProfile[k] !== undefined) updateData[`healthProfile.${k}`] = req.body.healthProfile[k];
     });
+    if (Array.isArray(req.body.healthProfile.recentSymptoms)) {
+      updateData['healthProfile.recentSymptoms'] = req.body.healthProfile.recentSymptoms;
+    }
   }
 
   await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set: updateData });
@@ -2324,5 +2333,185 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
 // ── 我发出的转介（发起方查看进度）───────────────────────────────────
 // GET /api/staff/referrals?direction=sent
 // 已由 /referrals 路由支持 direction=sent 参数，无需新增路由
+
+// ── 3.1 档案审核：健管专员确认AI自动读取的健康档案信息 ─────────────
+// PATCH /api/staff/patients/:id/archive-review
+router.patch('/patients/:id/archive-review', staffAuth, async (req, res) => {
+  try {
+    const { action } = req.body; // 'approve' | 'reset'
+    const status = action === 'reset' ? 'pending' : 'reviewed';
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { archiveReviewStatus: status, archiveReviewedAt: new Date(), archiveReviewedBy: req.staff._id } }
+    );
+    res.json({ success: true, data: { archiveReviewStatus: status } });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 4.2 身体成分保存 ──────────────────────────────────────────────
+// PATCH /api/staff/patients/:id/body-composition
+router.patch('/patients/:id/body-composition', staffAuth, async (req, res) => {
+  try {
+    const { skelMuscle, visceralFat, bodyFatRate, measuredAt } = req.body;
+    const bc = {};
+    if (skelMuscle  !== undefined) bc.skelMuscle  = skelMuscle;
+    if (visceralFat !== undefined) bc.visceralFat = visceralFat;
+    if (bodyFatRate !== undefined) bc.bodyFatRate  = bodyFatRate;
+    if (measuredAt  !== undefined) bc.measuredAt   = measuredAt;
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { bodyComposition: bc } }
+    );
+    res.json({ success: true, data: bc });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 4.4 AI健康汇总分析：生成 ──────────────────────────────────────
+// POST /api/staff/patients/:id/ai-health-summary
+router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .populate('assignedHealthManager', 'name')
+      .populate('assignedFamilyDoctor', 'name')
+      .populate('assignedNutritionist', 'name');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+    const lv = user.labValues || {};
+    const bc = user.bodyComposition || {};
+    const labSummary = [
+      lv.fpg && `空腹血糖 ${lv.fpg} mmol/L`,
+      lv.hba1c && `糖化血红蛋白 ${lv.hba1c}%`,
+      lv.sbp && `血压 ${lv.sbp}/${lv.dbp} mmHg`,
+      lv.tc && `总胆固醇 ${lv.tc} mmol/L`,
+      lv.ldl && `LDL-C ${lv.ldl} mmol/L`,
+      lv.hdl && `HDL-C ${lv.hdl} mmol/L`,
+      lv.tg && `甘油三酯 ${lv.tg} mmol/L`,
+      lv.ua && `尿酸 ${lv.ua} μmol/L`,
+      lv.alt && `ALT ${lv.alt} U/L`,
+      lv.ast && `AST ${lv.ast} U/L`,
+      lv.ggt && `GGT ${lv.ggt} U/L`,
+      lv.hcy && `同型半胱氨酸 ${lv.hcy} μmol/L`,
+      lv.lpla2 && `Lp-PLA2 ${lv.lpla2} U/L`,
+      lv.waist && `腰围 ${lv.waist} cm`,
+      lv.liverUs && `肝脏超声：${lv.liverUs}`,
+      lv.carotiUs && `颈动脉超声：${lv.carotiUs}`,
+      bc.skelMuscle && `骨骼肌量 ${bc.skelMuscle} kg`,
+      bc.visceralFat && `内脏脂肪 ${bc.visceralFat}`,
+      bc.bodyFatRate && `体脂率 ${bc.bodyFatRate}%`,
+    ].filter(Boolean).join('、') || '暂无体检数据';
+
+    const prompt = `你是一位经验丰富的家庭医生，请根据以下患者健康档案生成一份专业的健康分析报告。
+
+【患者基本信息】
+姓名：${user.name}，性别：${user.gender}，年龄：${user.age || '未知'}岁
+慢性病：${user.chronicDiseases?.join('、') || '无'}
+
+【最近体检指标】
+${labSummary}
+
+【健康需求】
+${user.healthConcern || '未填写'}
+
+【既往史】
+${user.healthProfile?.pastHistory || '无'}
+
+请按以下JSON格式输出（仅输出JSON，不要加任何其他文字）：
+{
+  "trend": "健康趋势分析（100-200字，分析主要指标变化情况和整体健康走势）",
+  "risks": "风险提示（100-200字，列出主要异常项及可能后果）",
+  "plan": "管理方案初稿（200-300字，包含复查建议、生活方式干预、药物/营养素建议等）"
+}`;
+
+    const message = await client.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      messages: [{ role: 'user', content: prompt }],
+    });
+
+    let summary = { trend: '', risks: '', plan: '' };
+    try {
+      const text = message.content[0].text.trim();
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) summary = JSON.parse(jsonMatch[0]);
+    } catch {}
+
+    summary.generatedAt = new Date();
+    summary.approvedAt = null;
+    summary.approvedBy = null;
+
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { aiHealthSummary: summary } }
+    );
+    res.json({ success: true, data: summary });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 4.4 AI健康汇总分析：审核/更新 ────────────────────────────────
+// PATCH /api/staff/patients/:id/ai-health-summary
+router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
+  try {
+    const { trend, risks, plan, action } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const current = user.aiHealthSummary || {};
+    const updated = {
+      ...current,
+      ...(trend !== undefined ? { trend } : {}),
+      ...(risks !== undefined ? { risks } : {}),
+      ...(plan  !== undefined ? { plan  } : {}),
+    };
+    if (action === 'approve') {
+      updated.approvedAt = new Date();
+      updated.approvedBy = req.staff.name;
+    }
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { aiHealthSummary: updated } }
+    );
+    res.json({ success: true, data: updated });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 4.3 专项筛查：录入筛查结果（无需上传文件） ────────────────────
+// POST /api/staff/patients/:id/screening-records
+router.post('/patients/:id/screening-records', staffAuth, async (req, res) => {
+  try {
+    const { title, screeningCategory, checkDate, hospital, reportItems, note } = req.body;
+    if (!title || !screeningCategory) {
+      return res.status(400).json({ success: false, message: '标题和筛查分类必填' });
+    }
+    const report = await MedicalReport.create({
+      user:             req.params.id,
+      title,
+      type:             screeningCategory,
+      screeningCategory,
+      checkDate:        checkDate || '',
+      hospital:         hospital  || '',
+      reportItems:      reportItems || [],
+      note:             note || '',
+      audit_status:     'unaudited',
+      uploadedBy:       req.staff._id,
+    });
+    res.json({ success: true, data: report });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 4.3 专项筛查结果：按筛查分类查询报告 ─────────────────────────
+// GET /api/staff/patients/:id/screening-reports
+router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
+  try {
+    const reports = await MedicalReport.find({
+      user: req.params.id,
+      screeningCategory: { $exists: true, $ne: '' },
+    }).sort({ checkDate: -1, createdAt: -1 }).lean();
+    res.json({ success: true, data: reports });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 
 module.exports = router;

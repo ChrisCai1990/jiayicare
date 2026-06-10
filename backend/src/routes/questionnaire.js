@@ -2,6 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const User = require('../models/User');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
+const PushRecord = require('../models/PushRecord');
 const router = express.Router();
 
 // ── 根据问卷答案生成个性化建议 ─────────────────────────────────────
@@ -139,13 +140,27 @@ router.post('/', auth, async (req, res) => {
 
 // ── 动态问卷（管理员创建的结构化问卷）────────────────────────────
 
-// GET /api/questionnaire/pending — 获取当前用户待填动态问卷（仅显示已推送给该用户的）
+// GET /api/questionnaire/pending — 获取当前用户待填动态问卷
+// 以 PushRecord 为准：只显示通过推送操作显式发给该用户的问卷，避免历史遗留数据污染
 router.get('/pending', auth, async (req, res) => {
   try {
+    // 1. 找到所有推送给该用户的问卷 ID（去重）
+    const pushRecords = await PushRecord.find({
+      patientId: req.user._id,
+      type: 'questionnaire',
+      questionnaireId: { $ne: null },
+    }).select('questionnaireId').lean();
+
+    const pushedIds = [...new Set(pushRecords.map(r => String(r.questionnaireId)))];
+
+    if (!pushedIds.length) {
+      return res.json({ success: true, data: [] });
+    }
+
+    // 2. 只查这些问卷里还未回答的
     const questionnaires = await DynamicQuestionnaire.find({
+      _id: { $in: pushedIds },
       status: 'active',
-      targetType: 'specific',
-      targetUsers: req.user._id,
       respondedUsers: { $ne: req.user._id },
     }).select('title description questions deadline scoringEnabled createdBy').sort({ sortOrder: 1, createdAt: -1 }).lean();
 
