@@ -80,15 +80,17 @@ export default function NewPatientPage() {
     // 联系
     address: '', contactPhone: '', contactPhone2: '', contactName: '', contactPhone3: '',
     deliveryAddress: '',
-    // 职业
-    workplace: '', occupation: '',
+    // 职业与教育
+    workplace: '', occupation: '', education: '', hasAnnualCheckup: '',
     // 血型
     bloodTypeABO: '', bloodTypeRH: '',
     // 过敏史
     drugAllergy: '', foodAllergy: '',
     // 既往史
     pastHistory: '', medicHistory: '', surgeryHistory: '',
-    traumaHistory: '', transfusionHistory: '', infectiousHistory: '', vaccinationHistory: '',
+    traumaHistory: '', transfusionHistory: '', poisoningHistory: '',
+    infectiousHistory: '', vaccinationHistory: '', otherDiseaseHistory: '',
+    supplementHistory: '',
     // 生活史
     lifestyle: { diet: '', exercise: '', sleep: '', water: '', alcohol: '', smoking: '', bowel: '', mood: '' },
     // 管理
@@ -100,7 +102,7 @@ export default function NewPatientPage() {
     // 家族史
     familyHistoryNote: '',
     // 女性
-    menstrualHistory: '', maritalHistory: '',
+    menstrualHistory: '', maritalHistory: '', sexualHistory: '',
     // 医疗保障
     basic_insurance: '', commercial_medical: '', critical_illness: '',
     // 儿童
@@ -191,10 +193,12 @@ export default function NewPatientPage() {
           foodAllergy: form.foodAllergy,
           menstrualHistory: form.menstrualHistory,
           maritalHistory: form.maritalHistory,
+          sexualHistory: form.sexualHistory,
           pastHistory: form.pastHistory,
           medicHistory: form.medicHistory,
           surgeryHistory: form.surgeryHistory,
           familyHistoryNote: form.familyHistoryNote,
+          supplementHistory: form.supplementHistory,
         },
       }
       // 清理不再单独传的字段（避免重复）
@@ -202,9 +206,11 @@ export default function NewPatientPage() {
       delete payload.foodAllergy
       delete payload.menstrualHistory
       delete payload.maritalHistory
+      delete payload.sexualHistory
       delete payload.pastHistory
       delete payload.medicHistory
       delete payload.surgeryHistory
+      delete payload.supplementHistory
 
       if (patientCategory === 'child') {
         const cp = { ...payload.childProfile }
@@ -308,8 +314,23 @@ export default function NewPatientPage() {
                   </div>
                 </F>
                 <F label="信仰"><input className="form-input" placeholder="宗教信仰" value={form.belief} onChange={set('belief')} /></F>
-                <F label="工作单位" span={2}><input className="form-input" value={form.workplace} onChange={set('workplace')} /></F>
-                <F label="工作岗位"><input className="form-input" value={form.occupation} onChange={set('occupation')} /></F>
+                <F label="所在企业" span={2}><input className="form-input" value={form.workplace} onChange={set('workplace')} /></F>
+                <F label="所在行业"><input className="form-input" value={form.occupation} onChange={set('occupation')} /></F>
+                <F label="学历">
+                  <select className="form-input" value={form.education} onChange={set('education')}>
+                    <option value="">未填写</option>
+                    {['小学','初中','高中','大专','本科','硕士','博士'].map(v => <option key={v}>{v}</option>)}
+                  </select>
+                </F>
+                <F label="是否每年健康体检" span={2}>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                    {['是','否'].map(v => (
+                      <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+                        <input type="radio" name="hasAnnualCheckup" value={v} checked={form.hasAnnualCheckup === v} onChange={() => setForm(f => ({ ...f, hasAnnualCheckup: v }))} />{v}
+                      </label>
+                    ))}
+                  </div>
+                </F>
               </>}
             </Grid>
           </Section>
@@ -348,13 +369,16 @@ export default function NewPatientPage() {
             <Section title="既往史" span={2}>
               <Grid>
                 <F label="既往史" span={2}><textarea className="form-input" rows={2} placeholder="如：高血压病史10年" value={form.pastHistory} onChange={set('pastHistory')} /></F>
-                <F label="用药史" span={2}><textarea className="form-input" rows={2} placeholder="如：长期服用降压药" value={form.medicHistory} onChange={set('medicHistory')} /></F>
+                <F label="是否长期服用中药或西药" span={2}><textarea className="form-input" rows={2} placeholder="是/否，是则填写具体药物名称" value={form.medicHistory} onChange={set('medicHistory')} /></F>
+                <F label="是否有长期服用营养补剂" span={2}><textarea className="form-input" rows={2} placeholder="是/否，是则填写具体补剂名称" value={form.supplementHistory} onChange={set('supplementHistory')} /></F>
                 <F label="手术史" span={2}><textarea className="form-input" rows={2} placeholder="如：2010年阑尾切除术" value={form.surgeryHistory} onChange={set('surgeryHistory')} /></F>
                 <F label="家族史" span={2}><textarea className="form-input" rows={2} placeholder="如：父亲有高血压、糖尿病，母亲有乳腺癌" value={form.familyHistoryNote} onChange={set('familyHistoryNote')} /></F>
                 <F label="外伤史" span={2}><textarea className="form-input" rows={2} value={form.traumaHistory} onChange={set('traumaHistory')} /></F>
                 <F label="输血史" span={2}><textarea className="form-input" rows={2} value={form.transfusionHistory} onChange={set('transfusionHistory')} /></F>
+                <F label="中毒史" span={2}><textarea className="form-input" rows={2} value={form.poisoningHistory} onChange={set('poisoningHistory')} /></F>
                 <F label="传染病史" span={2}><textarea className="form-input" rows={2} value={form.infectiousHistory} onChange={set('infectiousHistory')} /></F>
                 <F label="预防接种史" span={2}><textarea className="form-input" rows={2} value={form.vaccinationHistory} onChange={set('vaccinationHistory')} /></F>
+                <F label="其他特殊疾病史" span={2}><textarea className="form-input" rows={2} placeholder="如：自身免疫病、罕见病等" value={form.otherDiseaseHistory} onChange={set('otherDiseaseHistory')} /></F>
               </Grid>
             </Section>
           )}
@@ -377,8 +401,17 @@ export default function NewPatientPage() {
           {!isChild && isFemale && (
             <Section title="女性健康（仅女性）">
               <Grid>
+                <F label="是否有性生活史" span={2}>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                    {['是','否'].map(v => (
+                      <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+                        <input type="radio" name="sexualHistory" value={v} checked={form.sexualHistory === v} onChange={() => setForm(f => ({ ...f, sexualHistory: v }))} />{v}
+                      </label>
+                    ))}
+                  </div>
+                </F>
                 <F label="月经史" span={2}><textarea className="form-input" rows={2} placeholder="初潮、周期、经期、末次月经等" value={form.menstrualHistory} onChange={set('menstrualHistory')} /></F>
-                <F label="婚育史" span={2}><textarea className="form-input" rows={2} placeholder="孕产次、分娩方式、流产史等" value={form.maritalHistory} onChange={set('maritalHistory')} /></F>
+                <F label="生育史" span={2}><textarea className="form-input" rows={2} placeholder="孕产次、分娩方式、流产史等" value={form.maritalHistory} onChange={set('maritalHistory')} /></F>
               </Grid>
             </Section>
           )}

@@ -276,6 +276,8 @@ export default function PatientDetailPage() {
   const [showRejectInput, setShowRejectInput] = useState(false)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({})
+  const [editingBasicInfo, setEditingBasicInfo] = useState(false)
+  const [basicInfoForm, setBasicInfoForm] = useState({})
   const [editingHealth, setEditingHealth] = useState(false)
   const [editingLifestyle, setEditingLifestyle] = useState(false)
   const [editingInsurance, setEditingInsurance] = useState(false)
@@ -308,6 +310,7 @@ export default function PatientDetailPage() {
       const res = await staffAPI.getPatient(id)
       setData(res.data)
       setEditForm(buildEditForm(res.data.user))
+      setBasicInfoForm(buildBasicInfoForm(res.data.user))
       setHealthForm(buildHealthForm(res.data.user))
       setLifestyleForm(buildLifestyleForm(res.data.user))
       setInsuranceForm(buildInsuranceForm(res.data.user))
@@ -395,13 +398,41 @@ export default function PatientDetailPage() {
     serviceStartDate: u.serviceStartDate || '',
   })
 
+  const buildBasicInfoForm = (u) => ({
+    name: u.name || '',
+    gender: u.gender || '未知',
+    birthDate: u.birthDate || '',
+    idNumber: u.idNumber || '',
+    maritalStatus: u.maritalStatus || '',
+    ethnicity: u.ethnicity || '',
+    workplace: u.workplace || '',
+    occupation: u.occupation || '',
+    education: u.education || '',
+    hasAnnualCheckup: u.hasAnnualCheckup || '',
+    height: u.height || '',
+    weight: u.weight || '',
+    address: u.address || '',
+    contactPhone: u.contactPhone || '',
+  })
+
+  const handleSaveBasicInfo = async () => {
+    try {
+      await staffAPI.updatePatient(id, basicInfoForm)
+      toast('基本信息已保存')
+      setEditingBasicInfo(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+  }
+
   const buildHealthForm = (u) => ({
     bloodTypeABO: u.bloodTypeABO || '',
     bloodTypeRH: u.bloodTypeRH || '',
     traumaHistory: u.traumaHistory || '',
     transfusionHistory: u.transfusionHistory || '',
+    poisoningHistory: u.poisoningHistory || '',
     infectiousHistory: u.infectiousHistory || '',
     vaccinationHistory: u.vaccinationHistory || '',
+    otherDiseaseHistory: u.otherDiseaseHistory || '',
     healthProfile: {
       drugAllergy: u.healthProfile?.drugAllergy || '',
       foodAllergy: u.healthProfile?.foodAllergy || '',
@@ -410,7 +441,9 @@ export default function PatientDetailPage() {
       surgeryHistory: u.healthProfile?.surgeryHistory || '',
       menstrualHistory: u.healthProfile?.menstrualHistory || '',
       maritalHistory: u.healthProfile?.maritalHistory || '',
+      sexualHistory: u.healthProfile?.sexualHistory || '',
       familyHistoryNote: u.healthProfile?.familyHistoryNote || '',
+      supplementHistory: u.healthProfile?.supplementHistory || '',
     },
   })
 
@@ -671,20 +704,86 @@ export default function PatientDetailPage() {
           <div className="card">
             <div className="card-header">
               <div className="card-title">基本资料</div>
+              {!editingBasicInfo
+                ? <button className="btn btn-secondary btn-sm" onClick={() => { setEditingBasicInfo(true); setBasicInfoForm(buildBasicInfoForm(user)) }}>编辑</button>
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveBasicInfo}>保存</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingBasicInfo(false); setBasicInfoForm(buildBasicInfoForm(user)) }}>取消</button>
+                  </div>
+              }
             </div>
             <div className="card-body">
-              <InfoRow label="姓名" value={user.name} />
-              <InfoRow label="手机号" value={user.phone} />
-              <InfoRow label="性别" value={user.gender} />
-              <InfoRow label="年龄" value={age} />
-              <InfoRow label="身高" value={user.height ? `${user.height} cm` : '-'} />
-              <InfoRow label="体重" value={user.weight ? `${user.weight} kg` : '-'} />
-              {bmi && <InfoRow label="BMI" value={bmi} />}
-              <InfoRow label="身份证" value={user.idNumber || '-'} />
-              <InfoRow label="婚姻状况" value={user.maritalStatus || '-'} />
-              <InfoRow label="民族" value={user.ethnicity || '-'} />
-              <InfoRow label="工作单位" value={user.workplace || '-'} />
-              <InfoRow label="职业" value={user.occupation || '-'} />
+              {editingBasicInfo ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[
+                    { key: 'name', label: '姓名' },
+                    { key: 'idNumber', label: '身份证号' },
+                    { key: 'birthDate', label: '出生日期', type: 'date' },
+                    { key: 'height', label: '身高(cm)', type: 'number' },
+                    { key: 'weight', label: '体重(kg)', type: 'number' },
+                    { key: 'address', label: '联系地址' },
+                    { key: 'contactPhone', label: '联系电话' },
+                    { key: 'workplace', label: '所在企业' },
+                    { key: 'occupation', label: '所在行业' },
+                  ].map(({ key, label, type }) => (
+                    <div key={key} className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
+                      <input className="form-input" type={type || 'text'} value={basicInfoForm[key] || ''}
+                        onChange={e => setBasicInfoForm(f => ({ ...f, [key]: e.target.value }))} />
+                    </div>
+                  ))}
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>性别</label>
+                    <select className="form-input" value={basicInfoForm.gender || '未知'} onChange={e => setBasicInfoForm(f => ({ ...f, gender: e.target.value }))}>
+                      <option value="未知">未知</option><option value="男">男</option><option value="女">女</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>婚姻状况</label>
+                    <select className="form-input" value={basicInfoForm.maritalStatus || ''} onChange={e => setBasicInfoForm(f => ({ ...f, maritalStatus: e.target.value }))}>
+                      <option value="">未填写</option><option>未婚</option><option>已婚</option><option>离异</option><option>丧偶</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>民族</label>
+                    <input className="form-input" value={basicInfoForm.ethnicity || ''} onChange={e => setBasicInfoForm(f => ({ ...f, ethnicity: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>学历</label>
+                    <select className="form-input" value={basicInfoForm.education || ''} onChange={e => setBasicInfoForm(f => ({ ...f, education: e.target.value }))}>
+                      <option value="">未填写</option>
+                      {['小学','初中','高中','大专','本科','硕士','博士'].map(v => <option key={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>是否每年健康体检</label>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                      {['是','否'].map(v => (
+                        <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                          <input type="radio" checked={basicInfoForm.hasAnnualCheckup === v} onChange={() => setBasicInfoForm(f => ({ ...f, hasAnnualCheckup: v }))} />{v}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <InfoRow label="姓名" value={user.name} />
+                  <InfoRow label="手机号" value={user.phone} />
+                  <InfoRow label="性别" value={user.gender} />
+                  <InfoRow label="年龄" value={age} />
+                  <InfoRow label="身高" value={user.height ? `${user.height} cm` : '-'} />
+                  <InfoRow label="体重" value={user.weight ? `${user.weight} kg` : '-'} />
+                  {bmi && <InfoRow label="BMI" value={bmi} />}
+                  <InfoRow label="身份证" value={user.idNumber || '-'} />
+                  <InfoRow label="婚姻状况" value={user.maritalStatus || '-'} />
+                  <InfoRow label="民族" value={user.ethnicity || '-'} />
+                  <InfoRow label="学历" value={user.education || '-'} />
+                  <InfoRow label="所在企业" value={user.workplace || '-'} />
+                  <InfoRow label="所在行业" value={user.occupation || '-'} />
+                  <InfoRow label="每年体检" value={user.hasAnnualCheckup || '-'} />
+                </>
+              )}
             </div>
           </div>
 
@@ -865,16 +964,20 @@ export default function PatientDetailPage() {
                     { key: 'drugAllergy', label: '药物过敏', nested: true },
                     { key: 'foodAllergy', label: '食物过敏', nested: true },
                     { key: 'pastHistory', label: '既往史', nested: true },
-                    { key: 'medicHistory', label: '用药史', nested: true },
+                    { key: 'medicHistory', label: '是否长期服用中药或西药', nested: true },
+                    { key: 'supplementHistory', label: '是否有长期服用营养补剂', nested: true },
                     { key: 'surgeryHistory', label: '手术史', nested: true },
                     { key: 'traumaHistory', label: '外伤史', nested: false },
                     { key: 'transfusionHistory', label: '输血史', nested: false },
+                    { key: 'poisoningHistory', label: '中毒史', nested: false },
                     { key: 'infectiousHistory', label: '传染病史', nested: false },
                     { key: 'vaccinationHistory', label: '预防接种史', nested: false },
+                    { key: 'otherDiseaseHistory', label: '其他特殊疾病史', nested: false },
                     { key: 'familyHistoryNote', label: '家族史', nested: true },
                     ...(user.gender === '女' ? [
+                      { key: 'sexualHistory', label: '是否有性生活史', nested: true },
                       { key: 'menstrualHistory', label: '月经史', nested: true },
-                      { key: 'maritalHistory', label: '婚育史', nested: true },
+                      { key: 'maritalHistory', label: '生育史', nested: true },
                     ] : []),
                   ].map(({ key, label, nested }) => (
                     <div key={key}>
@@ -898,16 +1001,20 @@ export default function PatientDetailPage() {
                     { label: '药物过敏', val: user.healthProfile?.drugAllergy },
                     { label: '食物过敏', val: user.healthProfile?.foodAllergy },
                     { label: '既往史', val: user.healthProfile?.pastHistory },
-                    { label: '用药史', val: user.healthProfile?.medicHistory },
+                    { label: '长期用药（中/西药）', val: user.healthProfile?.medicHistory },
+                    { label: '长期服用营养补剂', val: user.healthProfile?.supplementHistory },
                     { label: '手术史', val: user.healthProfile?.surgeryHistory },
                     { label: '外伤史', val: user.traumaHistory },
                     { label: '输血史', val: user.transfusionHistory },
+                    { label: '中毒史', val: user.poisoningHistory },
                     { label: '传染病史', val: user.infectiousHistory },
                     { label: '预防接种史', val: user.vaccinationHistory },
+                    { label: '其他特殊疾病史', val: user.otherDiseaseHistory },
                     { label: '家族史', val: user.healthProfile?.familyHistoryNote },
                     ...(user.gender === '女' ? [
+                      { label: '性生活史', val: user.healthProfile?.sexualHistory },
                       { label: '月经史', val: user.healthProfile?.menstrualHistory },
-                      { label: '婚育史', val: user.healthProfile?.maritalHistory },
+                      { label: '生育史', val: user.healthProfile?.maritalHistory },
                     ] : []),
                   ].map(({ label, val }) => val ? (
                     <div key={label} style={{ display: 'flex', gap: 8 }}>
@@ -2585,6 +2692,14 @@ const REPORT_TYPE_OPTIONS = [
   '心电图', '胸片', '腹部B超', '甲状腺B超', 'CT', 'MRI',
   '功能医学检测', '基因检测', '其他',
 ]
+// 中文展示名 → 后端 enum 值
+const REPORT_TYPE_MAP = {
+  '血常规': 'blood', '尿常规': 'other', '生化全套': 'blood',
+  '血脂': 'blood', '血糖': 'blood', '肝功能': 'blood', '肾功能': 'blood',
+  '心电图': 'ecg', '胸片': 'radiology', '腹部B超': 'ultrasound',
+  '甲状腺B超': 'ultrasound', 'CT': 'radiology', 'MRI': 'mri',
+  '功能医学检测': 'functional', '基因检测': 'genetic', '其他': 'other',
+}
 
 function UploadReportModal({ patientId, onClose, onSaved }) {
   const toast = useToast()

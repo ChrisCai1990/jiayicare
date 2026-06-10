@@ -30,6 +30,7 @@ const adminSchema = new mongoose.Schema({
   managerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   region:     { type: String, default: '' },
   // 新增字段
+  phone:        { type: String, default: '' },  // 手机号（唯一识别码）
   email:        { type: String, default: '' },
   certNumber:   { type: String, default: '' }, // 证书编号（如医师执业证号）
   staffStatus:  { type: String, enum: ['active', 'inactive'], default: 'active' },

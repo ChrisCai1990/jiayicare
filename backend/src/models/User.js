@@ -51,8 +51,10 @@ const userSchema = new mongoose.Schema({
     // 女性专属
     menstrualHistory:   { type: String, default: '' },
     reproductiveHistory:{ type: String, default: '' }, // 旧字段，兼容保留
-    maritalHistory:     { type: String, default: '' }, // 新字段：婚育史（替代 reproductiveHistory）
+    maritalHistory:     { type: String, default: '' }, // 生育史（孕产次、分娩方式等）
+    sexualHistory:      { type: String, default: '' }, // 是否有性生活史
     familyHistoryNote:  { type: String, default: '' }, // 医护端录入的家族史文字备注
+    supplementHistory:  { type: String, default: '' }, // 是否有长期服用营养补剂
   },
   // 联系信息（#34）
   contactPhone:    { type: String, default: '' },  // 联系电话（与登录手机号独立）
@@ -72,7 +74,9 @@ const userSchema = new mongoose.Schema({
   // 既往史（结构化）
   traumaHistory:     { type: String, default: '' }, // 外伤史
   transfusionHistory:{ type: String, default: '' }, // 输血史
+  poisoningHistory:  { type: String, default: '' }, // 中毒史
   infectiousHistory: { type: String, default: '' }, // 传染病史
+  otherDiseaseHistory:{ type: String, default: '' },// 其他特殊疾病史
   vaccinationHistory:{ type: String, default: '' }, // 预防接种史
   // 信仰
   belief:          { type: String, default: '' },   // 宗教信仰
@@ -124,8 +128,10 @@ const userSchema = new mongoose.Schema({
   source:          { type: String, default: '' },   // 患者来源
   patientType:     { type: String, enum: ['regular', 'vip', 'trial', ''], default: '' }, // 患者类型
   remark:          { type: String, default: '' },   // 备注
-  workplace:       { type: String, default: '' },   // 工作单位
-  occupation:      { type: String, default: '' },   // 职业
+  workplace:       { type: String, default: '' },   // 所在企业
+  occupation:      { type: String, default: '' },   // 所在行业
+  education:       { type: String, default: '' },   // 学历
+  hasAnnualCheckup:{ type: String, default: '' },   // 是否每年有健康体检的习惯
   maritalStatus:   { type: String, default: '' },   // 婚姻状况
   ethnicity:       { type: String, default: '' },   // 民族
   contactPhone2:   { type: String, default: '' },   // 紧急联系电话

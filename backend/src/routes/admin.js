@@ -537,7 +537,7 @@ router.post('/staff', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可创建医护账号' });
   }
-  const { username, password, name, role, title, department, region } = req.body;
+  const { username, password, name, role, title, department, region, phone } = req.body;
   if (!username || !password || !name || !role) {
     return res.status(400).json({ success: false, message: '用户名、密码、姓名、角色不能为空' });
   }
@@ -546,8 +546,12 @@ router.post('/staff', adminAuth, async (req, res) => {
   }
   const existing = await Admin.findOne({ username });
   if (existing) return res.status(400).json({ success: false, message: '用户名已存在' });
+  if (phone) {
+    const existingPhone = await Admin.findOne({ phone });
+    if (existingPhone) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
+  }
 
-  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '' });
+  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '', phone: phone || '' });
   res.json({ success: true, data: { _id: staff._id, username: staff.username, name: staff.name, role: staff.role } });
 });
 
@@ -556,13 +560,14 @@ router.put('/staff/:id', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可修改医护账号' });
   }
-  const { name, role, title, department, region, password } = req.body;
+  const { name, role, title, department, region, password, phone } = req.body;
   const update = {};
   if (name) update.name = name;
   if (role && STAFF_ROLES.includes(role)) update.role = role;
   if (title !== undefined) update.title = title;
   if (department !== undefined) update.department = department;
   if (region !== undefined) update.region = region;
+  if (phone !== undefined) update.phone = phone;
 
   const staff = await Admin.findById(req.params.id);
   if (!staff || !STAFF_ROLES.includes(staff.role)) {

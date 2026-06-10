@@ -18,7 +18,7 @@ const STAFF_ROLES = Object.keys(ROLE_LABEL)
 
 const EMPTY_FORM = {
   username: '', password: '', name: '', role: 'healthManager',
-  title: '', department: '', region: '',
+  title: '', department: '', region: '', phone: '',
 }
 
 export default function StaffPage() {
@@ -57,7 +57,7 @@ export default function StaffPage() {
 
   const openEdit = (s) => {
     setEditId(s._id)
-    setForm({ username: s.username, password: '', name: s.name, role: s.role, title: s.title || '', department: s.department || '', region: s.region || '' })
+    setForm({ username: s.username, password: '', name: s.name, role: s.role, title: s.title || '', department: s.department || '', region: s.region || '', phone: s.phone || '' })
     setError('')
     setShowModal(true)
   }
@@ -72,7 +72,7 @@ export default function StaffPage() {
     setError('')
     try {
       if (editId) {
-        const payload = { name: form.name, role: form.role, title: form.title, department: form.department, region: form.region }
+        const payload = { name: form.name, role: form.role, title: form.title, department: form.department, region: form.region, phone: form.phone }
         if (form.password) payload.password = form.password
         await adminAPI.updateStaff(editId, payload)
         toast('账号已更新')
@@ -131,7 +131,7 @@ export default function StaffPage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['姓名', '用户名', '角色', '职称', '部门', '地区', '创建时间', '操作'].map(h => (
+                {['姓名', '手机号', '用户名', '角色', '职称', '部门', '地区', '创建时间', '操作'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                 ))}
               </tr>
@@ -140,6 +140,7 @@ export default function StaffPage() {
               {list.map(s => (
                 <tr key={s._id}>
                   <td style={{ padding: '12px 14px', fontWeight: 600 }}>{s.name}</td>
+                  <td style={{ padding: '12px 14px', color: '#6B7280' }}>{s.phone || '-'}</td>
                   <td style={{ padding: '12px 14px', color: '#6B7280', fontFamily: 'monospace' }}>{s.username}</td>
                   <td style={{ padding: '12px 14px' }}>
                     <span style={{
@@ -212,6 +213,10 @@ export default function StaffPage() {
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">负责区域</label>
                   <input className="form-input" placeholder="如：北京区" value={form.region} onChange={set('region')} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">手机号（唯一识别码）</label>
+                  <input className="form-input" type="tel" placeholder="11位手机号" value={form.phone} onChange={set('phone')} />
                 </div>
               </div>
             </form>
