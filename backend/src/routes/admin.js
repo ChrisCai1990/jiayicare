@@ -466,6 +466,9 @@ router.post('/questionnaires/:id/copy', adminAuth, async (req, res) => {
 // PUT /api/admin/questionnaires/:id
 router.put('/questionnaires/:id', adminAuth, async (req, res) => {
   const { title, description, questions, targetType, targetUsers, deadline, scoringEnabled, sortOrder } = req.body;
+  if (questions !== undefined && (!Array.isArray(questions) || questions.length === 0)) {
+    return res.status(400).json({ success: false, message: '问卷至少需要包含一道题目' });
+  }
   const updateData = { title, description, questions, targetType, targetUsers, deadline, scoringEnabled: !!scoringEnabled };
   if (sortOrder !== undefined && sortOrder !== null) updateData.sortOrder = sortOrder;
   const q = await DynamicQuestionnaire.findByIdAndUpdate(req.params.id, updateData, { new: true });

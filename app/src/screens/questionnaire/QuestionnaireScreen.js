@@ -685,6 +685,26 @@ export default function QuestionnaireScreen({ navigation }) {
     );
   }
 
+  // ── 防白屏：问卷无题目或当前题目不存在 ────────────────────────────
+  // 用 useEffect 来触发状态变化，避免在 render 中直接 setState
+  React.useEffect(() => {
+    if (!q && !showSummary && !submitResult && mode !== 'select') {
+      setShowSummary(true);
+    }
+  }, [q, showSummary, submitResult, mode]);
+
+  if (!q) {
+    // 还没进入 summary，先渲染 loading 占位，下一帧 useEffect 会触发 setShowSummary
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <ActivityIndicator color={colors.primary} />
+          <Text style={{ marginTop: 12, fontSize: 13, color: colors.textMuted }}>加载问卷...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   // ── 答题页 ────────────────────────────────────────────────────
   return (
     <SafeAreaView style={styles.container}>
