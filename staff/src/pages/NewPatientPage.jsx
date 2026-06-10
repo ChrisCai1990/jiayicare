@@ -103,6 +103,11 @@ export default function NewPatientPage() {
     familyHistoryNote: '',
     // 女性
     menstrualHistory: '', maritalHistory: '', sexualHistory: '',
+    // 其他健康信息（近期状态）
+    recentSymptoms: [], recentMedication: '', recentSupplement: '',
+    // 健康需求
+    healthConcern: '', healthConcernFor: '', expectedService: '',
+    hasHomeMonitor: '', hasMedicineCabinet: '',
     // 医疗保障
     basic_insurance: '', commercial_medical: '', critical_illness: '',
     // 儿童
@@ -199,6 +204,9 @@ export default function NewPatientPage() {
           surgeryHistory: form.surgeryHistory,
           familyHistoryNote: form.familyHistoryNote,
           supplementHistory: form.supplementHistory,
+          recentSymptoms: form.recentSymptoms,
+          recentMedication: form.recentMedication,
+          recentSupplement: form.recentSupplement,
         },
       }
       // 清理不再单独传的字段（避免重复）
@@ -211,6 +219,9 @@ export default function NewPatientPage() {
       delete payload.medicHistory
       delete payload.surgeryHistory
       delete payload.supplementHistory
+      delete payload.recentSymptoms
+      delete payload.recentMedication
+      delete payload.recentSupplement
 
       if (patientCategory === 'child') {
         const cp = { ...payload.childProfile }
@@ -463,6 +474,48 @@ export default function NewPatientPage() {
                   <input className="form-input" value={form.childProfile.eyeScreening} onChange={setChild('eyeScreening')} placeholder="正常/异常" />
                 </div>
               </div>
+            </Section>
+          )}
+
+          {/* 其他健康信息（仅成人） */}
+          {!isChild && (
+            <Section title="其他健康信息" span={2}>
+              <Grid>
+                <F label="最近3个月是否有以下躯体症状" span={2}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
+                    {['头痛','头晕','胸闷','乏力','失眠','焦虑/抑郁','消化不良','关节疼痛','皮肤问题','其他'].map(s => (
+                      <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 13, padding: '4px 10px', borderRadius: 20, border: `1px solid ${form.recentSymptoms.includes(s) ? '#1E6B50' : '#E0D9CE'}`, background: form.recentSymptoms.includes(s) ? '#E8F5EF' : '#fff', color: form.recentSymptoms.includes(s) ? '#1E6B50' : '#4A6558' }}>
+                        <input type="checkbox" style={{ display: 'none' }} checked={form.recentSymptoms.includes(s)}
+                          onChange={e => setForm(f => ({ ...f, recentSymptoms: e.target.checked ? [...f.recentSymptoms, s] : f.recentSymptoms.filter(x => x !== s) }))} />
+                        {s}
+                      </label>
+                    ))}
+                  </div>
+                </F>
+                <F label="最近1个月是否有服用中药或西药" span={2}><textarea className="form-input" rows={2} placeholder="是/否，是则填写具体" value={form.recentMedication} onChange={set('recentMedication')} /></F>
+                <F label="最近1个月是否有服用营养补剂" span={2}><textarea className="form-input" rows={2} placeholder="是/否，是则填写具体" value={form.recentSupplement} onChange={set('recentSupplement')} /></F>
+              </Grid>
+            </Section>
+          )}
+
+          {/* 健康需求（仅成人） */}
+          {!isChild && (
+            <Section title="健康需求" span={2}>
+              <Grid>
+                <F label="本人比较关注的健康问题" span={2}><textarea className="form-input" rows={2} placeholder="如：血糖控制、体重管理、睡眠改善" value={form.healthConcern} onChange={set('healthConcern')} /></F>
+                <F label="更关注谁的健康问题" span={2}><input className="form-input" placeholder="如：自己、父母、子女" value={form.healthConcernFor} onChange={set('healthConcernFor')} /></F>
+                <F label="期望得到怎样的家庭医生服务" span={2}><textarea className="form-input" rows={2} placeholder="如：定期随访、慢病管理、就医协助" value={form.expectedService} onChange={set('expectedService')} /></F>
+                <F label="是否配备居家检测设备" span={2}><textarea className="form-input" rows={2} placeholder="是/否，是则填写设备类型（如血压计、血糖仪）" value={form.hasHomeMonitor} onChange={set('hasHomeMonitor')} /></F>
+                <F label="是否配备居家小药箱" span={2}>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                    {['是','否'].map(v => (
+                      <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+                        <input type="radio" name="hasMedicineCabinet" value={v} checked={form.hasMedicineCabinet === v} onChange={() => setForm(f => ({ ...f, hasMedicineCabinet: v }))} />{v}
+                      </label>
+                    ))}
+                  </div>
+                </F>
+              </Grid>
             </Section>
           )}
 

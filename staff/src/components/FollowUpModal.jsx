@@ -180,6 +180,8 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     theme: '',
     content: '',
     assignedTo: '',
+    participants: '',
+    interviewMinutes: '',
   })
 
   // ── 计划模式状态 ──
@@ -245,6 +247,8 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
         theme: form.theme,
         content: form.content,
         assignedTo: form.assignedTo || null,
+        participants: form.participants || '',
+        interviewMinutes: form.interviewMinutes || '',
       })
       onSaved()
     } catch (err) {
@@ -409,6 +413,19 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                 {staffOptions}
               </select>
             </div>
+
+            {form.type === 'visit' && (
+              <>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">参与人员（面谈时填写）</label>
+                  <input className="form-input" placeholder="如：张医生、李健管、王客户" value={form.participants} onChange={set('participants')} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">面谈纪要</label>
+                  <textarea className="form-input" rows={4} placeholder="记录面谈的主要议题、结论、行动项等..." value={form.interviewMinutes} onChange={set('interviewMinutes')} style={{ resize: 'vertical' }} />
+                </div>
+              </>
+            )}
           </div>
         )}
 

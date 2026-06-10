@@ -55,7 +55,17 @@ const userSchema = new mongoose.Schema({
     sexualHistory:      { type: String, default: '' }, // 是否有性生活史
     familyHistoryNote:  { type: String, default: '' }, // 医护端录入的家族史文字备注
     supplementHistory:  { type: String, default: '' }, // 是否有长期服用营养补剂
+    // 其他健康信息（近期状态）
+    recentSymptoms:     { type: [String], default: [] }, // 最近3个月躯体症状（多选）
+    recentMedication:   { type: String, default: '' },   // 最近1个月是否服用中药或西药
+    recentSupplement:   { type: String, default: '' },   // 最近1个月是否服用营养补剂
   },
+  // 健康需求
+  healthConcern:       { type: String, default: '' }, // 本人比较关注的健康问题
+  healthConcernFor:    { type: String, default: '' }, // 更关注谁的健康问题
+  expectedService:     { type: String, default: '' }, // 期望得到怎样的家庭医生服务
+  hasHomeMonitor:      { type: String, default: '' }, // 是否配备居家检测设备
+  hasMedicineCabinet:  { type: String, default: '' }, // 是否配备居家小药箱
   // 联系信息（#34）
   contactPhone:    { type: String, default: '' },  // 联系电话（与登录手机号独立）
   deliveryAddress: { type: String, default: '' },  // 配送地址（快递用）

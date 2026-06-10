@@ -39,6 +39,8 @@ const followUpSchema = new mongoose.Schema({
   // 每日自动重复（针对"每日血压/血糖监测"场景）
   repeatDaily:  { type: Boolean, default: false },
   completedAt:  { type: Date, default: null },  // 实际完成时间
+  participants: { type: String, default: '' },  // 面谈参与人员（逗号分隔）
+  interviewMinutes: { type: String, default: '' }, // 面谈纪要
 }, { timestamps: true });
 
 followUpSchema.index({ staffId: 1, date: -1 });

@@ -278,6 +278,10 @@ export default function PatientDetailPage() {
   const [editForm, setEditForm] = useState({})
   const [editingBasicInfo, setEditingBasicInfo] = useState(false)
   const [basicInfoForm, setBasicInfoForm] = useState({})
+  const [editingHealthNeeds, setEditingHealthNeeds] = useState(false)
+  const [healthNeedsForm, setHealthNeedsForm] = useState({})
+  const [editingTitleReportId, setEditingTitleReportId] = useState(null)
+  const [editingTitleValue, setEditingTitleValue] = useState('')
   const [editingHealth, setEditingHealth] = useState(false)
   const [editingLifestyle, setEditingLifestyle] = useState(false)
   const [editingInsurance, setEditingInsurance] = useState(false)
@@ -311,6 +315,7 @@ export default function PatientDetailPage() {
       setData(res.data)
       setEditForm(buildEditForm(res.data.user))
       setBasicInfoForm(buildBasicInfoForm(res.data.user))
+      setHealthNeedsForm(buildHealthNeedsForm(res.data.user))
       setHealthForm(buildHealthForm(res.data.user))
       setLifestyleForm(buildLifestyleForm(res.data.user))
       setInsuranceForm(buildInsuranceForm(res.data.user))
@@ -424,6 +429,15 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
   }
 
+  const handleSaveHealthNeeds = async () => {
+    try {
+      await staffAPI.updatePatient(id, healthNeedsForm)
+      toast('健康需求已保存')
+      setEditingHealthNeeds(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+  }
+
   const buildHealthForm = (u) => ({
     bloodTypeABO: u.bloodTypeABO || '',
     bloodTypeRH: u.bloodTypeRH || '',
@@ -444,7 +458,18 @@ export default function PatientDetailPage() {
       sexualHistory: u.healthProfile?.sexualHistory || '',
       familyHistoryNote: u.healthProfile?.familyHistoryNote || '',
       supplementHistory: u.healthProfile?.supplementHistory || '',
+      recentSymptoms: u.healthProfile?.recentSymptoms || [],
+      recentMedication: u.healthProfile?.recentMedication || '',
+      recentSupplement: u.healthProfile?.recentSupplement || '',
     },
+  })
+
+  const buildHealthNeedsForm = (u) => ({
+    healthConcern: u.healthConcern || '',
+    healthConcernFor: u.healthConcernFor || '',
+    expectedService: u.expectedService || '',
+    hasHomeMonitor: u.hasHomeMonitor || '',
+    hasMedicineCabinet: u.hasMedicineCabinet || '',
   })
 
   const buildLifestyleForm = (u) => ({
@@ -990,6 +1015,35 @@ export default function PatientDetailPage() {
                       />
                     </div>
                   ))}
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginTop: 8, marginBottom: 4 }}>近期健康状态</div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>最近3个月躯体症状</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                      {['头痛','头晕','胸闷','乏力','失眠','焦虑/抑郁','消化不良','关节疼痛','皮肤问题','其他'].map(s => {
+                        const checked = (healthForm.healthProfile?.recentSymptoms || []).includes(s)
+                        return (
+                          <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${checked ? '#1E6B50' : '#E0D9CE'}`, background: checked ? '#E8F5EF' : '#fff', color: checked ? '#1E6B50' : '#4A6558' }}>
+                            <input type="checkbox" style={{ display: 'none' }} checked={checked}
+                              onChange={e => {
+                                const cur = healthForm.healthProfile?.recentSymptoms || []
+                                const next = e.target.checked ? [...cur, s] : cur.filter(x => x !== s)
+                                setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, recentSymptoms: next } }))
+                              }} />{s}
+                          </label>
+                        )
+                      })}
+                    </div>
+                  </div>
+                  {[
+                    { key: 'recentMedication', label: '最近1个月是否服用中药或西药' },
+                    { key: 'recentSupplement', label: '最近1个月是否服用营养补剂' },
+                  ].map(({ key, label }) => (
+                    <div key={key}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
+                      <textarea className="form-control" rows={2} value={healthForm.healthProfile?.[key] || ''}
+                        onChange={e => setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, [key]: e.target.value } }))} />
+                    </div>
+                  ))}
                 </div>
               ) : (
                 <div style={{ display: 'grid', gap: 6 }}>
@@ -1016,6 +1070,9 @@ export default function PatientDetailPage() {
                       { label: '月经史', val: user.healthProfile?.menstrualHistory },
                       { label: '生育史', val: user.healthProfile?.maritalHistory },
                     ] : []),
+                    { label: '近期躯体症状', val: (user.healthProfile?.recentSymptoms || []).join('、') },
+                    { label: '近期用药（中/西药）', val: user.healthProfile?.recentMedication },
+                    { label: '近期营养补剂', val: user.healthProfile?.recentSupplement },
                   ].map(({ label, val }) => val ? (
                     <div key={label} style={{ display: 'flex', gap: 8 }}>
                       <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{label}：</span>
@@ -1101,7 +1158,67 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
-          {/* 生活方式卡片已移至「健康档案」Tab，此处不再展示 */}
+          {/* 健康需求 */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">健康需求</div>
+              {!editingHealthNeeds
+                ? <button className="btn btn-secondary btn-sm" onClick={() => { setEditingHealthNeeds(true); setHealthNeedsForm(buildHealthNeedsForm(user)) }}>编辑</button>
+                : <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-primary btn-sm" onClick={handleSaveHealthNeeds}>保存</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingHealthNeeds(false)}>取消</button>
+                  </div>
+              }
+            </div>
+            <div className="card-body">
+              {editingHealthNeeds ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {[
+                    { key: 'healthConcern', label: '关注的健康问题', rows: 2 },
+                    { key: 'healthConcernFor', label: '更关注谁的健康', rows: 1 },
+                    { key: 'expectedService', label: '期望家庭医生服务', rows: 2 },
+                    { key: 'hasHomeMonitor', label: '居家检测设备', rows: 2 },
+                  ].map(({ key, label, rows }) => (
+                    <div key={key}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
+                      {rows > 1
+                        ? <textarea className="form-input" rows={rows} value={healthNeedsForm[key] || ''} onChange={e => setHealthNeedsForm(f => ({ ...f, [key]: e.target.value }))} />
+                        : <input className="form-input" value={healthNeedsForm[key] || ''} onChange={e => setHealthNeedsForm(f => ({ ...f, [key]: e.target.value }))} />
+                      }
+                    </div>
+                  ))}
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>居家小药箱</label>
+                    <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                      {['是','否'].map(v => (
+                        <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
+                          <input type="radio" checked={healthNeedsForm.hasMedicineCabinet === v} onChange={() => setHealthNeedsForm(f => ({ ...f, hasMedicineCabinet: v }))} />{v}
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  {[
+                    ['关注的健康问题', user.healthConcern],
+                    ['更关注谁的健康', user.healthConcernFor],
+                    ['期望服务', user.expectedService],
+                    ['居家检测设备', user.hasHomeMonitor],
+                    ['居家小药箱', user.hasMedicineCabinet],
+                  ].map(([label, val]) => val ? (
+                    <div key={label} style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid #f5f2ec' }}>
+                      <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 90 }}>{label}：</span>
+                      <span style={{ fontSize: 13, color: '#1A2B24', flex: 1 }}>{val}</span>
+                    </div>
+                  ) : null)}
+                  {!user.healthConcern && !user.expectedService && (
+                    <div style={{ color: '#ccc', fontSize: 13 }}>暂未填写</div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
 
           {/* 最近随访 */}
           <div className="card" style={{ gridColumn: 'span 2' }}>
@@ -2036,6 +2153,26 @@ export default function PatientDetailPage() {
                               )}
                             </td>
                             <td style={{ whiteSpace: 'nowrap' }}>
+                              {r.audit_status !== 'audited' && (
+                                editingTitleReportId === r._id ? (
+                                  <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+                                    <input style={{ fontSize: 12, padding: '2px 6px', border: '1px solid #E0D9CE', borderRadius: 4, width: 140 }}
+                                      value={editingTitleValue}
+                                      onChange={e => setEditingTitleValue(e.target.value)}
+                                      onKeyDown={async e => {
+                                        if (e.key === 'Enter') {
+                                          try { await staffAPI.updateReport(r._id, { title: editingTitleValue }); setEditingTitleReportId(null); loadReports() } catch (err) { toast(err.message) }
+                                        } else if (e.key === 'Escape') { setEditingTitleReportId(null) }
+                                      }} autoFocus />
+                                    <button className="btn btn-primary btn-sm"
+                                      onClick={async () => { try { await staffAPI.updateReport(r._id, { title: editingTitleValue }); setEditingTitleReportId(null); loadReports() } catch (err) { toast(err.message) } }}>✓</button>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingTitleReportId(null)}>✕</button>
+                                  </span>
+                                ) : (
+                                  <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }}
+                                    onClick={() => { setEditingTitleReportId(r._id); setEditingTitleValue(r.title) }}>改标题</button>
+                                )
+                              )}
                               {r.aiStatus === 'pending' && (
                                 <>
                                   <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
@@ -2295,6 +2432,7 @@ export default function PatientDetailPage() {
                   { label: '随访方式', value: TYPE_MAP[followUpDetail.type] || followUpDetail.type || '-' },
                   { label: '随访状态', value: STATUS_MAP[followUpDetail.status] || followUpDetail.status || '-' },
                   { label: '随访人员', value: followUpDetail.staffId?.name || '-' },
+                  { label: '参与人员', value: followUpDetail.participants || '-' },
                   { label: '随访主题', value: followUpDetail.theme || followUpDetail.planName || '-' },
                   { label: '下次随访', value: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toLocaleDateString('zh-CN') : '-' },
                 ].map(({ label, value }) => (
@@ -2310,6 +2448,15 @@ export default function PatientDetailPage() {
                   <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>随访内容</div>
                   <div style={{ background: '#f9f7f3', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>
                     {followUpDetail.content}
+                  </div>
+                </div>
+              )}
+              {/* 面谈纪要（上门/面谈时显示） */}
+              {followUpDetail.interviewMinutes && (
+                <div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>面谈纪要</div>
+                  <div style={{ background: '#f0f8f4', borderRadius: 8, padding: '10px 14px', fontSize: 14, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap', borderLeft: '3px solid #1E6B50' }}>
+                    {followUpDetail.interviewMinutes}
                   </div>
                 </div>
               )}
