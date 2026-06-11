@@ -1056,182 +1056,6 @@ export default function PatientDetailPage() {
             </div>
           </div>
 
-          {/* 健康档案 */}
-          <div className="card">
-            <div className="card-header">
-              <div className="card-title">健康档案</div>
-              {!editingHealth
-                ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingHealth(true)}>编辑</button>
-                : <div style={{ display: 'flex', gap: 8 }}>
-                    <button className="btn btn-primary btn-sm" onClick={handleSaveHealth}>保存</button>
-                    <button className="btn btn-secondary btn-sm" onClick={() => { setEditingHealth(false); setHealthForm(buildHealthForm(user)) }}>取消</button>
-                  </div>
-              }
-            </div>
-            <div className="card-body">
-              {editingHealth ? (
-                <div style={{ display: 'grid', gap: 8 }}>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 12, color: '#8AA89C' }}>血型 ABO</label>
-                      <select className="form-control" value={healthForm.bloodTypeABO || ''} onChange={e => setHealthForm(p => ({ ...p, bloodTypeABO: e.target.value }))}>
-                        <option value="">未知</option>
-                        {['A','B','O','AB'].map(v => <option key={v} value={v}>{v}</option>)}
-                      </select>
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <label style={{ fontSize: 12, color: '#8AA89C' }}>RH 血型</label>
-                      <select className="form-control" value={healthForm.bloodTypeRH || ''} onChange={e => setHealthForm(p => ({ ...p, bloodTypeRH: e.target.value }))}>
-                        <option value="">未知</option>
-                        <option value="阳性">阳性</option>
-                        <option value="阴性">阴性</option>
-                      </select>
-                    </div>
-                  </div>
-                  {[
-                    { key: 'drugAllergy', label: '药物过敏', nested: true },
-                    { key: 'foodAllergy', label: '食物过敏', nested: true },
-                    { key: 'pastHistory', label: '既往史', nested: true },
-                    { key: 'medicHistory', label: '是否长期服用中药或西药', nested: true },
-                    { key: 'supplementHistory', label: '是否有长期服用营养补剂', nested: true },
-                    { key: 'surgeryHistory', label: '手术史', nested: true },
-                    { key: 'traumaHistory', label: '外伤史', nested: false },
-                    { key: 'transfusionHistory', label: '输血史', nested: false },
-                    { key: 'poisoningHistory', label: '中毒史', nested: false },
-                    { key: 'infectiousHistory', label: '传染病史', nested: false },
-                    { key: 'vaccinationHistory', label: '预防接种史', nested: false },
-                    { key: 'otherDiseaseHistory', label: '其他特殊疾病史', nested: false },
-                    { key: 'familyHistoryNote', label: '家族史', nested: true },
-                    ...(user.gender === '女' ? [
-                      { key: 'sexualHistory', label: '是否有性生活史', nested: true },
-                      { key: 'menstrualHistory', label: '月经史', nested: true },
-                      { key: 'maritalHistory', label: '生育史', nested: true },
-                    ] : []),
-                  ].map(({ key, label, nested }) => (
-                    <div key={key}>
-                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
-                      <textarea className="form-control" rows={2} value={nested ? (healthForm.healthProfile?.[key] || '') : (healthForm[key] || '')}
-                        onChange={e => {
-                          if (nested) setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, [key]: e.target.value } }))
-                          else setHealthForm(p => ({ ...p, [key]: e.target.value }))
-                        }}
-                      />
-                    </div>
-                  ))}
-                  <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginTop: 8, marginBottom: 4 }}>近期健康状态</div>
-                  <div>
-                    <label style={{ fontSize: 12, color: '#8AA89C' }}>最近3个月躯体症状</label>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                      {/* 无躯体症状 — 互斥选项 */}
-                      {(() => {
-                        const symptoms = healthForm.healthProfile?.recentSymptoms || []
-                        const noSymptom = symptoms.includes('无躯体症状')
-                        const otherEntry = symptoms.find(s => s.startsWith('其他'))
-                        const otherText = otherEntry ? otherEntry.replace(/^其他[:：]?/, '') : ''
-                        const OPTS = ['头痛','头晕','胸闷','乏力','失眠','焦虑/抑郁','消化不良','关节疼痛','皮肤问题']
-                        const updateSymptoms = (next) => setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, recentSymptoms: next } }))
-                        return (
-                          <>
-                            <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${noSymptom ? '#1E6B50' : '#E0D9CE'}`, background: noSymptom ? '#E8F5EF' : '#fff', color: noSymptom ? '#1E6B50' : '#4A6558' }}>
-                              <input type="checkbox" style={{ display: 'none' }} checked={noSymptom}
-                                onChange={e => updateSymptoms(e.target.checked ? ['无躯体症状'] : [])} />
-                              无躯体症状
-                            </label>
-                            {OPTS.map(s => {
-                              const checked = !noSymptom && symptoms.includes(s)
-                              return (
-                                <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${checked ? '#1E6B50' : '#E0D9CE'}`, background: checked ? '#E8F5EF' : '#fff', color: checked ? '#1E6B50' : '#4A6558' }}>
-                                  <input type="checkbox" style={{ display: 'none' }} checked={checked}
-                                    onChange={e => {
-                                      const cur = symptoms.filter(x => x !== '无躯体症状')
-                                      updateSymptoms(e.target.checked ? [...cur, s] : cur.filter(x => x !== s))
-                                    }} />{s}
-                                </label>
-                              )
-                            })}
-                            {/* 其他 + 文本框 */}
-                            {(() => {
-                              const otherChecked = !noSymptom && symptoms.some(s => s.startsWith('其他'))
-                              return (
-                                <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${otherChecked ? '#1E6B50' : '#E0D9CE'}`, background: otherChecked ? '#E8F5EF' : '#fff', color: otherChecked ? '#1E6B50' : '#4A6558' }}>
-                                  <input type="checkbox" style={{ display: 'none' }} checked={otherChecked}
-                                    onChange={e => {
-                                      const cur = symptoms.filter(x => x !== '无躯体症状' && !x.startsWith('其他'))
-                                      updateSymptoms(e.target.checked ? [...cur, '其他'] : cur)
-                                    }} />
-                                  其他
-                                  {otherChecked && (
-                                    <input
-                                      type="text"
-                                      placeholder="请说明"
-                                      value={otherText}
-                                      onClick={e => e.preventDefault()}
-                                      onChange={e => {
-                                        const cur = symptoms.filter(x => x !== '无躯体症状' && !x.startsWith('其他'))
-                                        const text = e.target.value
-                                        updateSymptoms([...cur, text ? `其他：${text}` : '其他'])
-                                      }}
-                                      style={{ marginLeft: 4, border: 'none', outline: 'none', background: 'transparent', fontSize: 12, width: 100, color: '#1A2B24' }}
-                                    />
-                                  )}
-                                </label>
-                              )
-                            })()}
-                          </>
-                        )
-                      })()}
-                    </div>
-                  </div>
-                  {[
-                    { key: 'recentMedication', label: '最近1个月是否服用中药或西药' },
-                    { key: 'recentSupplement', label: '最近1个月是否服用营养补剂' },
-                  ].map(({ key, label }) => (
-                    <div key={key}>
-                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
-                      <textarea className="form-control" rows={2} value={healthForm.healthProfile?.[key] || ''}
-                        onChange={e => setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, [key]: e.target.value } }))} />
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div style={{ display: 'grid', gap: 6 }}>
-                  <div style={{ display: 'flex', gap: 16 }}>
-                    <span style={{ fontSize: 13, color: '#8AA89C' }}>血型：</span>
-                    <span style={{ fontSize: 13 }}>{[user.bloodTypeABO, user.bloodTypeRH].filter(Boolean).join(' ') || '-'}</span>
-                  </div>
-                  {[
-                    { label: '药物过敏', val: user.healthProfile?.drugAllergy },
-                    { label: '食物过敏', val: user.healthProfile?.foodAllergy },
-                    { label: '既往史', val: user.healthProfile?.pastHistory },
-                    { label: '长期用药（中/西药）', val: user.healthProfile?.medicHistory },
-                    { label: '长期服用营养补剂', val: user.healthProfile?.supplementHistory },
-                    { label: '手术史', val: user.healthProfile?.surgeryHistory },
-                    { label: '外伤史', val: user.traumaHistory },
-                    { label: '输血史', val: user.transfusionHistory },
-                    { label: '中毒史', val: user.poisoningHistory },
-                    { label: '传染病史', val: user.infectiousHistory },
-                    { label: '预防接种史', val: user.vaccinationHistory },
-                    { label: '其他特殊疾病史', val: user.otherDiseaseHistory },
-                    { label: '家族史', val: user.healthProfile?.familyHistoryNote },
-                    ...(user.gender === '女' ? [
-                      { label: '性生活史', val: user.healthProfile?.sexualHistory },
-                      { label: '月经史', val: user.healthProfile?.menstrualHistory },
-                      { label: '生育史', val: user.healthProfile?.maritalHistory },
-                    ] : []),
-                    { label: '近期躯体症状', val: (user.healthProfile?.recentSymptoms || []).join('、') },
-                    { label: '近期用药（中/西药）', val: user.healthProfile?.recentMedication },
-                    { label: '近期营养补剂', val: user.healthProfile?.recentSupplement },
-                  ].map(({ label, val }) => val ? (
-                    <div key={label} style={{ display: 'flex', gap: 8 }}>
-                      <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{label}：</span>
-                      <span style={{ fontSize: 13, color: '#1A2B24' }}>{val}</span>
-                    </div>
-                  ) : null)}
-                </div>
-              )}
-            </div>
-          </div>
-
           {/* 医疗保障信息 */}
           <div className="card">
             <div className="card-header">
@@ -1513,6 +1337,180 @@ export default function PatientDetailPage() {
             </div>
           )
         })()}
+
+        {/* ── 健康档案 ── */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <div className="card-title">健康档案</div>
+            {!editingHealth
+              ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingHealth(true)}>编辑</button>
+              : <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-primary btn-sm" onClick={handleSaveHealth}>保存</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditingHealth(false); setHealthForm(buildHealthForm(user)) }}>取消</button>
+                </div>
+            }
+          </div>
+          <div className="card-body">
+            {editingHealth ? (
+              <div style={{ display: 'grid', gap: 8 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>血型 ABO</label>
+                    <select className="form-control" value={healthForm.bloodTypeABO || ''} onChange={e => setHealthForm(p => ({ ...p, bloodTypeABO: e.target.value }))}>
+                      <option value="">未知</option>
+                      {['A','B','O','AB'].map(v => <option key={v} value={v}>{v}</option>)}
+                    </select>
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>RH 血型</label>
+                    <select className="form-control" value={healthForm.bloodTypeRH || ''} onChange={e => setHealthForm(p => ({ ...p, bloodTypeRH: e.target.value }))}>
+                      <option value="">未知</option>
+                      <option value="阳性">阳性</option>
+                      <option value="阴性">阴性</option>
+                    </select>
+                  </div>
+                </div>
+                {[
+                  { key: 'drugAllergy', label: '药物过敏', nested: true },
+                  { key: 'foodAllergy', label: '食物过敏', nested: true },
+                  { key: 'pastHistory', label: '既往史', nested: true },
+                  { key: 'medicHistory', label: '是否长期服用中药或西药', nested: true },
+                  { key: 'supplementHistory', label: '是否有长期服用营养补剂', nested: true },
+                  { key: 'surgeryHistory', label: '手术史', nested: true },
+                  { key: 'traumaHistory', label: '外伤史', nested: false },
+                  { key: 'transfusionHistory', label: '输血史', nested: false },
+                  { key: 'poisoningHistory', label: '中毒史', nested: false },
+                  { key: 'infectiousHistory', label: '传染病史', nested: false },
+                  { key: 'vaccinationHistory', label: '预防接种史', nested: false },
+                  { key: 'otherDiseaseHistory', label: '其他特殊疾病史', nested: false },
+                  { key: 'familyHistoryNote', label: '家族史', nested: true },
+                  ...(user.gender === '女' ? [
+                    { key: 'sexualHistory', label: '是否有性生活史', nested: true },
+                    { key: 'menstrualHistory', label: '月经史', nested: true },
+                    { key: 'maritalHistory', label: '生育史', nested: true },
+                  ] : []),
+                ].map(({ key, label, nested }) => (
+                  <div key={key}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
+                    <textarea className="form-control" rows={2} value={nested ? (healthForm.healthProfile?.[key] || '') : (healthForm[key] || '')}
+                      onChange={e => {
+                        if (nested) setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, [key]: e.target.value } }))
+                        else setHealthForm(p => ({ ...p, [key]: e.target.value }))
+                      }}
+                    />
+                  </div>
+                ))}
+                <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginTop: 8, marginBottom: 4 }}>近期健康状态</div>
+                <div>
+                  <label style={{ fontSize: 12, color: '#8AA89C' }}>最近3个月躯体症状</label>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                    {(() => {
+                      const symptoms = healthForm.healthProfile?.recentSymptoms || []
+                      const noSymptom = symptoms.includes('无躯体症状')
+                      const otherEntry = symptoms.find(s => s.startsWith('其他'))
+                      const otherText = otherEntry ? otherEntry.replace(/^其他[:：]?/, '') : ''
+                      const OPTS = ['头痛','头晕','胸闷','乏力','失眠','焦虑/抑郁','消化不良','关节疼痛','皮肤问题']
+                      const updateSymptoms = (next) => setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, recentSymptoms: next } }))
+                      return (
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${noSymptom ? '#1E6B50' : '#E0D9CE'}`, background: noSymptom ? '#E8F5EF' : '#fff', color: noSymptom ? '#1E6B50' : '#4A6558' }}>
+                            <input type="checkbox" style={{ display: 'none' }} checked={noSymptom}
+                              onChange={e => updateSymptoms(e.target.checked ? ['无躯体症状'] : [])} />
+                            无躯体症状
+                          </label>
+                          {OPTS.map(s => {
+                            const checked = !noSymptom && symptoms.includes(s)
+                            return (
+                              <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${checked ? '#1E6B50' : '#E0D9CE'}`, background: checked ? '#E8F5EF' : '#fff', color: checked ? '#1E6B50' : '#4A6558' }}>
+                                <input type="checkbox" style={{ display: 'none' }} checked={checked}
+                                  onChange={e => {
+                                    const cur = symptoms.filter(x => x !== '无躯体症状')
+                                    updateSymptoms(e.target.checked ? [...cur, s] : cur.filter(x => x !== s))
+                                  }} />{s}
+                              </label>
+                            )
+                          })}
+                          {(() => {
+                            const otherChecked = !noSymptom && symptoms.some(s => s.startsWith('其他'))
+                            return (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 12, padding: '3px 8px', borderRadius: 20, border: `1px solid ${otherChecked ? '#1E6B50' : '#E0D9CE'}`, background: otherChecked ? '#E8F5EF' : '#fff', color: otherChecked ? '#1E6B50' : '#4A6558' }}>
+                                <input type="checkbox" style={{ display: 'none' }} checked={otherChecked}
+                                  onChange={e => {
+                                    const cur = symptoms.filter(x => x !== '无躯体症状' && !x.startsWith('其他'))
+                                    updateSymptoms(e.target.checked ? [...cur, '其他'] : cur)
+                                  }} />
+                                其他
+                                {otherChecked && (
+                                  <input
+                                    type="text"
+                                    placeholder="请说明"
+                                    value={otherText}
+                                    onClick={e => e.preventDefault()}
+                                    onChange={e => {
+                                      const cur = symptoms.filter(x => x !== '无躯体症状' && !x.startsWith('其他'))
+                                      const text = e.target.value
+                                      updateSymptoms([...cur, text ? `其他：${text}` : '其他'])
+                                    }}
+                                    style={{ marginLeft: 4, border: 'none', outline: 'none', background: 'transparent', fontSize: 12, width: 100, color: '#1A2B24' }}
+                                  />
+                                )}
+                              </label>
+                            )
+                          })()}
+                        </>
+                      )
+                    })()}
+                  </div>
+                </div>
+                {[
+                  { key: 'recentMedication', label: '最近1个月是否服用中药或西药' },
+                  { key: 'recentSupplement', label: '最近1个月是否服用营养补剂' },
+                ].map(({ key, label }) => (
+                  <div key={key}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
+                    <textarea className="form-control" rows={2} value={healthForm.healthProfile?.[key] || ''}
+                      onChange={e => setHealthForm(p => ({ ...p, healthProfile: { ...p.healthProfile, [key]: e.target.value } }))} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 16 }}>
+                  <span style={{ fontSize: 13, color: '#8AA89C' }}>血型：</span>
+                  <span style={{ fontSize: 13 }}>{[user.bloodTypeABO, user.bloodTypeRH].filter(Boolean).join(' ') || '-'}</span>
+                </div>
+                {[
+                  { label: '药物过敏', val: user.healthProfile?.drugAllergy },
+                  { label: '食物过敏', val: user.healthProfile?.foodAllergy },
+                  { label: '既往史', val: user.healthProfile?.pastHistory },
+                  { label: '长期用药（中/西药）', val: user.healthProfile?.medicHistory },
+                  { label: '长期服用营养补剂', val: user.healthProfile?.supplementHistory },
+                  { label: '手术史', val: user.healthProfile?.surgeryHistory },
+                  { label: '外伤史', val: user.traumaHistory },
+                  { label: '输血史', val: user.transfusionHistory },
+                  { label: '中毒史', val: user.poisoningHistory },
+                  { label: '传染病史', val: user.infectiousHistory },
+                  { label: '预防接种史', val: user.vaccinationHistory },
+                  { label: '其他特殊疾病史', val: user.otherDiseaseHistory },
+                  { label: '家族史', val: user.healthProfile?.familyHistoryNote },
+                  ...(user.gender === '女' ? [
+                    { label: '性生活史', val: user.healthProfile?.sexualHistory },
+                    { label: '月经史', val: user.healthProfile?.menstrualHistory },
+                    { label: '生育史', val: user.healthProfile?.maritalHistory },
+                  ] : []),
+                  { label: '近期躯体症状', val: (user.healthProfile?.recentSymptoms || []).join('、') },
+                  { label: '近期用药（中/西药）', val: user.healthProfile?.recentMedication },
+                  { label: '近期营养补剂', val: user.healthProfile?.recentSupplement },
+                ].map(({ label, val }) => val ? (
+                  <div key={label} style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{label}：</span>
+                    <span style={{ fontSize: 13, color: '#1A2B24' }}>{val}</span>
+                  </div>
+                ) : null)}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，打卡数据在下方 */}
         {(() => {
