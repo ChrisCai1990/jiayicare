@@ -1342,10 +1342,10 @@ export default function PatientDetailPage() {
           )
         })()}
 
-        {/* ── 健康档案 ── */}
+        {/* ── 基本档案 ── */}
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
-            <div className="card-title">健康档案</div>
+            <div className="card-title">基本档案</div>
             {!editingHealth
               ? <button className="btn btn-secondary btn-sm" onClick={() => setEditingHealth(true)}>编辑</button>
               : <div style={{ display: 'flex', gap: 8 }}>
@@ -1477,42 +1477,54 @@ export default function PatientDetailPage() {
                   </div>
                 ))}
               </div>
-            ) : (
-              <div style={{ display: 'grid', gap: 6 }}>
-                <div style={{ display: 'flex', gap: 16 }}>
-                  <span style={{ fontSize: 13, color: '#8AA89C' }}>血型：</span>
-                  <span style={{ fontSize: 13 }}>{[user.bloodTypeABO, user.bloodTypeRH].filter(Boolean).join(' ') || '-'}</span>
+            ) : (() => {
+              const Field = ({ label, val, full }) => !val ? null : (
+                <div style={{ gridColumn: full ? '1 / -1' : undefined, display: 'flex', gap: 0, flexDirection: 'column', padding: '4px 0' }}>
+                  <span style={{ fontSize: 11, color: '#8AA89C', marginBottom: 1 }}>{label}</span>
+                  <span style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.4 }}>{val}</span>
                 </div>
-                {[
-                  { label: '药物过敏', val: user.healthProfile?.drugAllergy },
-                  { label: '食物过敏', val: user.healthProfile?.foodAllergy },
-                  { label: '既往史', val: user.healthProfile?.pastHistory },
-                  { label: '长期用药（中/西药）', val: user.healthProfile?.medicHistory },
-                  { label: '长期服用营养补剂', val: user.healthProfile?.supplementHistory },
-                  { label: '手术史', val: user.healthProfile?.surgeryHistory },
-                  { label: '外伤史', val: user.traumaHistory },
-                  { label: '输血史', val: user.transfusionHistory },
-                  { label: '中毒史', val: user.poisoningHistory },
-                  { label: '传染病史', val: user.infectiousHistory },
-                  { label: '预防接种史', val: user.vaccinationHistory },
-                  { label: '其他特殊疾病史', val: user.otherDiseaseHistory },
-                  { label: '家族史', val: user.healthProfile?.familyHistoryNote },
-                  ...(user.gender === '女' ? [
-                    { label: '性生活史', val: user.healthProfile?.sexualHistory },
-                    { label: '月经史', val: user.healthProfile?.menstrualHistory },
-                    { label: '生育史', val: user.healthProfile?.maritalHistory },
-                  ] : []),
-                  { label: '近期躯体症状', val: (user.healthProfile?.recentSymptoms || []).join('、') },
-                  { label: '近期用药（中/西药）', val: user.healthProfile?.recentMedication },
-                  { label: '近期营养补剂', val: user.healthProfile?.recentSupplement },
-                ].map(({ label, val }) => val ? (
-                  <div key={label} style={{ display: 'flex', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>{label}：</span>
-                    <span style={{ fontSize: 13, color: '#1A2B24' }}>{val}</span>
-                  </div>
-                ) : null)}
-              </div>
-            )}
+              )
+              const SecTitle = ({ title }) => (
+                <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 600, color: '#1E6B50', borderBottom: '1px solid #f0ece4', paddingBottom: 4, marginTop: 6 }}>{title}</div>
+              )
+              const bloodType = [user.bloodTypeABO, user.bloodTypeRH].filter(Boolean).join(' ')
+              const symptoms = (user.healthProfile?.recentSymptoms || []).join('、')
+              return (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 24px' }}>
+                  <SecTitle title="基础信息" />
+                  <Field label="血型" val={bloodType || '-'} />
+                  <Field label="药物过敏" val={user.healthProfile?.drugAllergy} />
+                  <Field label="食物过敏" val={user.healthProfile?.foodAllergy} />
+
+                  <SecTitle title="病史" />
+                  <Field label="既往史" val={user.healthProfile?.pastHistory} full />
+                  <Field label="手术史" val={user.healthProfile?.surgeryHistory} />
+                  <Field label="外伤史" val={user.traumaHistory} />
+                  <Field label="输血史" val={user.transfusionHistory} />
+                  <Field label="中毒史" val={user.poisoningHistory} />
+                  <Field label="传染病史" val={user.infectiousHistory} />
+                  <Field label="预防接种史" val={user.vaccinationHistory} />
+                  <Field label="其他特殊疾病史" val={user.otherDiseaseHistory} full />
+                  <Field label="家族史" val={user.healthProfile?.familyHistoryNote} full />
+
+                  <SecTitle title="用药及补剂" />
+                  <Field label="长期用药（中/西药）" val={user.healthProfile?.medicHistory} />
+                  <Field label="长期服用营养补剂" val={user.healthProfile?.supplementHistory} />
+
+                  {user.gender === '女' && <>
+                    <SecTitle title="女性专项" />
+                    <Field label="性生活史" val={user.healthProfile?.sexualHistory} />
+                    <Field label="月经史" val={user.healthProfile?.menstrualHistory} />
+                    <Field label="生育史" val={user.healthProfile?.maritalHistory} />
+                  </>}
+
+                  <SecTitle title="近期健康状态" />
+                  <Field label="躯体症状" val={symptoms} full />
+                  <Field label="近期用药（中/西药）" val={user.healthProfile?.recentMedication} />
+                  <Field label="近期营养补剂" val={user.healthProfile?.recentSupplement} />
+                </div>
+              )
+            })()}
           </div>
         </div>
 
