@@ -534,32 +534,31 @@ export default function MessagesScreen({ navigation }) {
   };
 
   const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
-  const CHAT_TYPES = new Set(['doctor', 'manager', 'nutritionist']);
+  // 只在通知列表显示系统和推送，其余（chat类、user自己发的）只进线程
+  const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
 
-  // 每个医护角色对应的最新消息 + 未读数
   const ROLES = [
     { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
     { key: 'manager',      label: '健管师',   icon: 'person',            color: '#D97706'      },
     { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
   ];
+
   const roleInfo = (roleKey) => {
-    const typeMap = { doctor: 'doctor', manager: 'manager', nutritionist: 'nutritionist' };
-    const t = typeMap[roleKey];
-    const msgs = messages.filter(m => m.type === t);
-    const last = msgs[0]; // 已按时间倒序
+    const msgs = messages.filter(m => m.type === roleKey);
+    const last = msgs[0];
     const unread = msgs.filter(m => m.unread).length;
     return { last, unread };
   };
 
-  // 非聊天消息（系统、推送）
-  const notifMessages = messages.filter(m => !CHAT_TYPES.has(m.type));
+  const notifMessages = messages.filter(m => NOTIF_TYPES.has(m.type));
   const filtered = notifMessages.filter(m => {
     if (activeTab === '系统') return m.type === 'system';
     if (activeTab === '推送') return PUSH_TYPES.has(m.type);
     return true;
   });
 
-  const totalUnread = messages.filter(m => m.unread).length;
+  const chatUnread = messages.filter(m => ['doctor','manager','nutritionist'].includes(m.type) && m.unread).length;
+  const notifUnread = notifMessages.filter(m => m.unread).length;
 
   const fmtMsgTime = (t) => {
     if (!t) return '';
@@ -567,115 +566,101 @@ export default function MessagesScreen({ navigation }) {
     const diffDays = Math.floor((now - d) / 86400000);
     if (diffDays === 0) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     if (diffDays === 1) return '昨天';
-    if (diffDays < 7) return ['日','一','二','三','四','五','六'][d.getDay()] ? `周${'日一二三四五六'[d.getDay()]}` : '';
+    if (diffDays < 7) return `${'日一二三四五六'[d.getDay()] ? `周${'日一二三四五六'[d.getDay()]}` : ''}`;
     return `${d.getMonth()+1}/${d.getDate()}`;
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
-        <View>
-          <Text style={styles.pageTitle}>消息</Text>
-        </View>
-        {totalUnread > 0 && (
-          <View style={styles.unreadBadge}>
-            <Text style={styles.unreadBadgeText}>{totalUnread}</Text>
-          </View>
-        )}
+        <Text style={styles.pageTitle}>消息</Text>
       </View>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
+        style={{ flex: 1 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadMessages(); }} tintColor={colors.primary} />}
       >
-        {/* AI 助手 */}
-        <TouchableOpacity style={styles.chatRow} onPress={() => navigation.navigate('Chat')} activeOpacity={0.75}>
-          <View style={[styles.chatAvatar, { backgroundColor: colors.primary }]}>
-            <Ionicons name="sparkles" size={22} color={colors.white} />
-          </View>
-          <View style={styles.chatBody}>
-            <View style={styles.chatTopRow}>
-              <Text style={styles.chatName}>AI 健康助手</Text>
-              <Text style={styles.chatTime}>24小时</Text>
+        {/* ── 对话区 ─────────────────────────────── */}
+        <View style={styles.sectionCard}>
+          {/* AI 助手行 */}
+          <TouchableOpacity style={styles.chatRow} onPress={() => navigation.navigate('Chat')} activeOpacity={0.7}>
+            <View style={[styles.chatAvatar, { backgroundColor: '#1A2B24' }]}>
+              <Ionicons name="sparkles" size={20} color="#fff" />
             </View>
-            <Text style={styles.chatPreview} numberOfLines={1}>随时问我健康问题，智能分析您的健康数据</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-        </TouchableOpacity>
+            <View style={styles.chatBody}>
+              <Text style={styles.chatName}>AI 健康助手</Text>
+              <Text style={styles.chatPreview} numberOfLines={1}>随时问我健康问题，24小时在线</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+          </TouchableOpacity>
 
-        {/* 分隔 */}
-        <View style={{ height: 8, backgroundColor: '#F0EDE8' }} />
+          <View style={styles.sectionDivider} />
 
-        {/* 与医护对话 - 微信会话行 */}
-        {ROLES.map((r, i) => {
-          const { last, unread } = roleInfo(r.key);
-          return (
-            <TouchableOpacity
-              key={r.key}
-              style={[styles.chatRow, i < ROLES.length - 1 && styles.chatRowBorder]}
-              onPress={() => setThreadRole(r.key)}
-              activeOpacity={0.75}
-            >
-              {/* 头像 */}
-              <View style={[styles.chatAvatar, { backgroundColor: r.color }]}>
-                <Ionicons name={r.icon} size={22} color={colors.white} />
+          {/* 医护对话行 */}
+          {ROLES.map((r, i) => {
+            const { last, unread } = roleInfo(r.key);
+            return (
+              <View key={r.key}>
+                <TouchableOpacity style={styles.chatRow} onPress={() => setThreadRole(r.key)} activeOpacity={0.7}>
+                  <View style={[styles.chatAvatar, { backgroundColor: r.color }]}>
+                    <Ionicons name={r.icon} size={20} color="#fff" />
+                    {unread > 0 && <View style={styles.avatarBadge}><Text style={styles.avatarBadgeText}>{unread > 99 ? '99+' : unread}</Text></View>}
+                  </View>
+                  <View style={styles.chatBody}>
+                    <View style={styles.chatTopRow}>
+                      <Text style={styles.chatName}>{r.label}</Text>
+                      <Text style={styles.chatTime}>{fmtMsgTime(last?.createdAt)}</Text>
+                    </View>
+                    <Text style={[styles.chatPreview, unread > 0 && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
+                      {last?.content || last?.title || '暂无消息'}
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+                </TouchableOpacity>
+                {i < ROLES.length - 1 && <View style={styles.rowDivider} />}
               </View>
-              {/* 内容 */}
-              <View style={styles.chatBody}>
-                <View style={styles.chatTopRow}>
-                  <Text style={styles.chatName}>{r.label}</Text>
-                  <Text style={styles.chatTime}>{last ? fmtMsgTime(last.createdAt) : ''}</Text>
-                </View>
-                <Text style={[styles.chatPreview, unread > 0 && { color: colors.textSecondary }]} numberOfLines={1}>
-                  {last ? (last.content || last.title || '…') : '点击开始对话'}
-                </Text>
-              </View>
-              {/* 未读角标 */}
-              {unread > 0 ? (
-                <View style={styles.unreadBubble}>
-                  <Text style={styles.unreadBubbleText}>{unread > 99 ? '99+' : unread}</Text>
-                </View>
-              ) : (
-                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-              )}
-            </TouchableOpacity>
-          );
-        })}
-
-        {/* 分隔 */}
-        <View style={{ height: 8, backgroundColor: '#F0EDE8' }} />
-
-        {/* 通知消息 Tabs */}
-        <View style={[styles.tabs, { marginTop: 0 }]}>
-          {['全部', '系统', '推送'].map(tab => (
-            <TouchableOpacity key={tab} style={[styles.tab, activeTab === tab && styles.tabActive]} onPress={() => setActiveTab(tab)}>
-              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-            </TouchableOpacity>
-          ))}
+            );
+          })}
         </View>
 
-        {filtered.length === 0 ? (
-          <EmptyState icon="chatbubble-ellipses-outline" title="暂无通知" subtitle="系统消息和推送通知会显示在这里" color={colors.primary} />
-        ) : (
-          filtered.map((msg, i) => (
-            <MessageItem key={msg._id || msg.id || i} msg={msg} onPress={handlePress} />
-          ))
+        {/* ── 通知区 ─────────────────────────────── */}
+        {notifMessages.length > 0 && (
+          <>
+            <View style={styles.sectionLabel}>
+              <Text style={styles.sectionLabelText}>通知</Text>
+              {notifUnread > 0 && <View style={styles.sectionBadge}><Text style={styles.sectionBadgeText}>{notifUnread}</Text></View>}
+            </View>
+
+            <View style={[styles.tabs, { marginHorizontal: spacing.md, borderRadius: radius.sm, backgroundColor: '#EEEAE3', padding: 3, borderBottomWidth: 0 }]}>
+              {['全部', '系统', '推送'].map(tab => (
+                <TouchableOpacity key={tab} style={[{ flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: radius.xs }, activeTab === tab && { backgroundColor: colors.white }]} onPress={() => setActiveTab(tab)}>
+                  <Text style={[{ fontSize: 13, color: colors.textMuted, fontWeight: '500' }, activeTab === tab && { color: colors.textPrimary, fontWeight: '600' }]}>{tab}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <View style={[styles.sectionCard, { marginTop: 10 }]}>
+              {filtered.length === 0 ? (
+                <View style={{ padding: 32, alignItems: 'center' }}>
+                  <Text style={{ fontSize: 13, color: colors.textMuted }}>暂无{activeTab === '系统' ? '系统' : activeTab === '推送' ? '推送' : ''}通知</Text>
+                </View>
+              ) : filtered.map((msg, i) => (
+                <View key={msg._id || msg.id || i}>
+                  <MessageItem msg={msg} onPress={handlePress} />
+                  {i < filtered.length - 1 && <View style={styles.rowDivider} />}
+                </View>
+              ))}
+            </View>
+          </>
         )}
+
         <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>
 
-      {/* Message detail modal */}
       {selectedMsg && (
-        <MessageDetailModal
-          msg={selectedMsg}
-          onClose={() => setSelectedMsg(null)}
-          navigation={navigation}
-          onReply={(to) => { setReplyTo(to); setComposing(true); }}
-        />
+        <MessageDetailModal msg={selectedMsg} onClose={() => setSelectedMsg(null)} navigation={navigation} onReply={(to) => { setReplyTo(to); setComposing(true); }} />
       )}
-
-      {/* 对话线程 Modal */}
       {threadRole && (
         <ConversationThreadModal role={threadRole} onClose={() => { setThreadRole(null); loadMessages(); }} />
       )}
@@ -813,11 +798,10 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.md, paddingBottom: spacing.md,
+    paddingTop: spacing.md, paddingBottom: spacing.xs,
     backgroundColor: colors.background,
-    borderBottomWidth: 1, borderBottomColor: colors.borderLight,
   },
-  pageTitle: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
+  pageTitle: { fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.3 },
   pageSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
   unreadBadge: {
     minWidth: 22, height: 22, borderRadius: 11,
@@ -876,13 +860,41 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     alignItems: 'center', justifyContent: 'center',
   },
+  // 分组卡片
+  sectionCard: {
+    backgroundColor: colors.white,
+    marginHorizontal: spacing.md,
+    marginTop: 12,
+    borderRadius: radius.md,
+    overflow: 'hidden',
+  },
+  sectionDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#EEEAE3', marginLeft: 70 },
+  rowDivider: { height: StyleSheet.hairlineWidth, backgroundColor: '#EEEAE3', marginLeft: 70 },
+  sectionLabel: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingHorizontal: spacing.lg, paddingTop: 20, paddingBottom: 8,
+  },
+  sectionLabelText: { fontSize: 12, color: colors.textMuted, fontWeight: '600', letterSpacing: 0.5, textTransform: 'uppercase' },
+  sectionBadge: {
+    minWidth: 18, height: 18, borderRadius: 9,
+    backgroundColor: colors.danger,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+  },
+  sectionBadgeText: { fontSize: 11, color: '#fff', fontWeight: '700' },
+  // 头像红点
+  avatarBadge: {
+    position: 'absolute', top: -3, right: -3,
+    minWidth: 16, height: 16, borderRadius: 8,
+    backgroundColor: colors.danger, borderWidth: 1.5, borderColor: colors.background,
+    alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3,
+  },
+  avatarBadgeText: { fontSize: 9, color: '#fff', fontWeight: '700' },
   tabs: {
     flexDirection: 'row',
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
     backgroundColor: colors.background,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.borderLight,
+    borderBottomWidth: 0,
     gap: spacing.md,
   },
   tab: {
@@ -896,11 +908,9 @@ const styles = StyleSheet.create({
   msgItem: {
     flexDirection: 'row', alignItems: 'center',
     backgroundColor: colors.white,
-    paddingHorizontal: spacing.md, paddingVertical: 14,
-    borderBottomWidth: 1, borderBottomColor: colors.borderLight,
-    borderLeftWidth: 3, borderLeftColor: 'transparent',
+    paddingHorizontal: spacing.md, paddingVertical: 13,
   },
-  msgItemUnread: { backgroundColor: colors.white, borderLeftColor: colors.primary },
+  msgItemUnread: { backgroundColor: colors.white },
   msgAvatarWrap: { position: 'relative', marginRight: spacing.sm },
   msgTypeIcon: {
     position: 'absolute', bottom: -1, right: -1,
