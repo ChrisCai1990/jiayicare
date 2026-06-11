@@ -481,7 +481,8 @@ export default function MessagesScreen({ navigation }) {
   const [selectedMsg, setSelectedMsg] = useState(null);
   const [composing, setComposing] = useState(false);
   const [replyTo, setReplyTo] = useState('manager');
-  const [threadRole, setThreadRole] = useState(null); // 打开线程的 role key
+  const [threadRole, setThreadRole] = useState(null);
+  const [showNotifModal, setShowNotifModal] = useState(false);
 
   const tabs = ['全部', '专属团队', '系统', '推送'];
 
@@ -534,8 +535,8 @@ export default function MessagesScreen({ navigation }) {
   };
 
   const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
-  // 只在通知列表显示系统和推送，其余（chat类、user自己发的）只进线程
   const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
+  const CHAT_ROLE_TYPES = new Set(['doctor', 'manager', 'nutritionist']);
 
   const ROLES = [
     { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
@@ -544,26 +545,23 @@ export default function MessagesScreen({ navigation }) {
   ];
 
   const roleInfo = (roleKey) => {
-    const msgs = messages.filter(m => m.type === roleKey);
-    const last = msgs[0];
-    const unread = msgs.filter(m => m.unread).length;
+    // 包括该角色发来的消息和用户自己发给该角色的消息（type:'user' + recipient=roleKey）
+    const incoming = messages.filter(m => m.type === roleKey);
+    const last = incoming[0];
+    const unread = incoming.filter(m => m.unread).length;
     return { last, unread };
   };
 
   const notifMessages = messages.filter(m => NOTIF_TYPES.has(m.type));
-  const filtered = notifMessages.filter(m => {
-    if (activeTab === '系统') return m.type === 'system';
-    if (activeTab === '推送') return PUSH_TYPES.has(m.type);
-    return true;
-  });
-
-  const chatUnread = messages.filter(m => ['doctor','manager','nutritionist'].includes(m.type) && m.unread).length;
   const notifUnread = notifMessages.filter(m => m.unread).length;
 
   const fmtMsgTime = (t) => {
     if (!t) return '';
     const d = new Date(t), now = new Date();
-    const diffDays = Math.floor((now - d) / 86400000);
+    const diffMs = now - d;
+    if (diffMs < 60000) return '刚刚';
+    if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}分钟前`;
+    const diffDays = Math.floor(diffMs / 86400000);
     if (diffDays === 0) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
     if (diffDays === 1) return '昨天';
     if (diffDays < 7) return `${'日一二三四五六'[d.getDay()] ? `周${'日一二三四五六'[d.getDay()]}` : ''}`;
@@ -581,9 +579,8 @@ export default function MessagesScreen({ navigation }) {
         style={{ flex: 1 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadMessages(); }} tintColor={colors.primary} />}
       >
-        {/* ── 对话区 ─────────────────────────────── */}
         <View style={styles.sectionCard}>
-          {/* AI 助手行 */}
+          {/* AI 助手 */}
           <TouchableOpacity style={styles.chatRow} onPress={() => navigation.navigate('Chat')} activeOpacity={0.7}>
             <View style={[styles.chatAvatar, { backgroundColor: '#1A2B24' }]}>
               <Ionicons name="sparkles" size={20} color="#fff" />
@@ -597,7 +594,7 @@ export default function MessagesScreen({ navigation }) {
 
           <View style={styles.sectionDivider} />
 
-          {/* 医护对话行 */}
+          {/* 医护对话 */}
           {ROLES.map((r, i) => {
             const { last, unread } = roleInfo(r.key);
             return (
@@ -605,7 +602,11 @@ export default function MessagesScreen({ navigation }) {
                 <TouchableOpacity style={styles.chatRow} onPress={() => setThreadRole(r.key)} activeOpacity={0.7}>
                   <View style={[styles.chatAvatar, { backgroundColor: r.color }]}>
                     <Ionicons name={r.icon} size={20} color="#fff" />
-                    {unread > 0 && <View style={styles.avatarBadge}><Text style={styles.avatarBadgeText}>{unread > 99 ? '99+' : unread}</Text></View>}
+                    {unread > 0 && (
+                      <View style={styles.avatarBadge}>
+                        <Text style={styles.avatarBadgeText}>{unread > 99 ? '99+' : unread}</Text>
+                      </View>
+                    )}
                   </View>
                   <View style={styles.chatBody}>
                     <View style={styles.chatTopRow}>
@@ -622,49 +623,155 @@ export default function MessagesScreen({ navigation }) {
               </View>
             );
           })}
+
+          <View style={styles.sectionDivider} />
+
+          {/* 系统通知（折叠为一行） */}
+          <TouchableOpacity style={styles.chatRow} onPress={() => setShowNotifModal(true)} activeOpacity={0.7}>
+            <View style={[styles.chatAvatar, { backgroundColor: '#8A4AC7' }]}>
+              <Ionicons name="notifications" size={20} color="#fff" />
+              {notifUnread > 0 && (
+                <View style={styles.avatarBadge}>
+                  <Text style={styles.avatarBadgeText}>{notifUnread > 99 ? '99+' : notifUnread}</Text>
+                </View>
+              )}
+            </View>
+            <View style={styles.chatBody}>
+              <View style={styles.chatTopRow}>
+                <Text style={styles.chatName}>系统通知</Text>
+                <Text style={styles.chatTime}>{fmtMsgTime(notifMessages[0]?.createdAt)}</Text>
+              </View>
+              <Text style={[styles.chatPreview, notifUnread > 0 && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
+                {notifMessages[0]?.content || notifMessages[0]?.title || '暂无通知'}
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+          </TouchableOpacity>
         </View>
-
-        {/* ── 通知区 ─────────────────────────────── */}
-        {notifMessages.length > 0 && (
-          <>
-            <View style={styles.sectionLabel}>
-              <Text style={styles.sectionLabelText}>通知</Text>
-              {notifUnread > 0 && <View style={styles.sectionBadge}><Text style={styles.sectionBadgeText}>{notifUnread}</Text></View>}
-            </View>
-
-            <View style={[styles.tabs, { marginHorizontal: spacing.md, borderRadius: radius.sm, backgroundColor: '#EEEAE3', padding: 3, borderBottomWidth: 0 }]}>
-              {['全部', '系统', '推送'].map(tab => (
-                <TouchableOpacity key={tab} style={[{ flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: radius.xs }, activeTab === tab && { backgroundColor: colors.white }]} onPress={() => setActiveTab(tab)}>
-                  <Text style={[{ fontSize: 13, color: colors.textMuted, fontWeight: '500' }, activeTab === tab && { color: colors.textPrimary, fontWeight: '600' }]}>{tab}</Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            <View style={[styles.sectionCard, { marginTop: 10 }]}>
-              {filtered.length === 0 ? (
-                <View style={{ padding: 32, alignItems: 'center' }}>
-                  <Text style={{ fontSize: 13, color: colors.textMuted }}>暂无{activeTab === '系统' ? '系统' : activeTab === '推送' ? '推送' : ''}通知</Text>
-                </View>
-              ) : filtered.map((msg, i) => (
-                <View key={msg._id || msg.id || i}>
-                  <MessageItem msg={msg} onPress={handlePress} />
-                  {i < filtered.length - 1 && <View style={styles.rowDivider} />}
-                </View>
-              ))}
-            </View>
-          </>
-        )}
 
         <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>
 
       {selectedMsg && (
-        <MessageDetailModal msg={selectedMsg} onClose={() => setSelectedMsg(null)} navigation={navigation} onReply={(to) => { setReplyTo(to); setComposing(true); }} />
+        <MessageDetailModal msg={selectedMsg} onClose={() => setSelectedMsg(null)} navigation={navigation} onReply={(to) => { setReplyTo(to); }} />
       )}
       {threadRole && (
         <ConversationThreadModal role={threadRole} onClose={() => { setThreadRole(null); loadMessages(); }} />
       )}
+      {/* 系统通知列表 Modal */}
+      <NotificationListModal
+        visible={showNotifModal}
+        messages={notifMessages}
+        onClose={() => setShowNotifModal(false)}
+        onPress={(msg) => { setShowNotifModal(false); setSelectedMsg(msg); }}
+        onMarkRead={async (msg) => {
+          if (!msg.unread) return;
+          try {
+            if (msg.isPushRecord) await pushRecordsAPI.markRead(msg._id);
+            else await messagesAPI.markRead(msg._id);
+            loadMessages();
+          } catch {}
+        }}
+      />
     </SafeAreaView>
+  );
+}
+
+// ── 系统通知列表 Modal ────────────────────────────────────────────
+const NOTIF_TYPE_CONFIG = {
+  system:        { icon: 'notifications',         color: '#8A4AC7', label: '系统' },
+  knowledge:     { icon: 'book-outline',          color: '#22A06B', label: '科普' },
+  plan:          { icon: 'clipboard-outline',     color: '#D97706', label: '方案' },
+  questionnaire: { icon: 'document-text-outline', color: '#0077B6', label: '问卷' },
+  supplement:    { icon: 'nutrition-outline',     color: '#8e44ad', label: '营养' },
+  product:       { icon: 'bag-outline',           color: '#1E6B50', label: '产品' },
+  notice:        { icon: 'megaphone-outline',     color: '#666',    label: '通知' },
+};
+
+function NotificationListModal({ visible, messages, onClose, onPress, onMarkRead }) {
+  const [tab, setTab] = useState('全部');
+  const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
+
+  const filtered = messages.filter(m => {
+    if (tab === '系统') return m.type === 'system';
+    if (tab === '推送') return PUSH_TYPES.has(m.type);
+    return true;
+  });
+
+  const fmtTime = t => {
+    if (!t) return '';
+    const d = new Date(t), now = new Date();
+    const diffDays = Math.floor((now - d) / 86400000);
+    if (diffDays === 0) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 1) return '昨天';
+    return `${d.getMonth()+1}/${d.getDate()}`;
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* Header */}
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: spacing.lg, paddingVertical: spacing.md, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.border, backgroundColor: colors.white }}>
+          <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+            <Ionicons name="chevron-back" size={24} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={{ flex: 1, fontSize: 17, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginRight: 24 }}>系统通知</Text>
+        </View>
+
+        {/* Tab 胶囊 */}
+        <View style={{ flexDirection: 'row', marginHorizontal: spacing.lg, marginVertical: spacing.sm, backgroundColor: '#EEEAE3', borderRadius: radius.sm, padding: 3 }}>
+          {['全部', '系统', '推送'].map(t => (
+            <TouchableOpacity key={t} style={[{ flex: 1, paddingVertical: 7, alignItems: 'center', borderRadius: radius.xs }, tab === t && { backgroundColor: colors.white }]} onPress={() => setTab(t)}>
+              <Text style={[{ fontSize: 13, color: colors.textMuted, fontWeight: '500' }, tab === t && { color: colors.textPrimary, fontWeight: '600' }]}>{t}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+          {filtered.length === 0 ? (
+            <View style={{ padding: 60, alignItems: 'center' }}>
+              <Ionicons name="notifications-off-outline" size={40} color={colors.textMuted} />
+              <Text style={{ fontSize: 14, color: colors.textMuted, marginTop: 12 }}>暂无通知</Text>
+            </View>
+          ) : (
+            <View style={{ backgroundColor: colors.white, marginHorizontal: spacing.md, marginTop: spacing.xs, borderRadius: radius.md, overflow: 'hidden' }}>
+              {filtered.map((msg, i) => {
+                const conf = NOTIF_TYPE_CONFIG[msg.type] || NOTIF_TYPE_CONFIG.system;
+                return (
+                  <View key={msg._id || msg.id || i}>
+                    <TouchableOpacity
+                      style={{ flexDirection: 'row', alignItems: 'flex-start', padding: spacing.md, backgroundColor: msg.unread ? '#FAFFFE' : colors.white }}
+                      activeOpacity={0.7}
+                      onPress={() => { onMarkRead(msg); onPress(msg); }}
+                    >
+                      {/* 图标 */}
+                      <View style={{ width: 42, height: 42, borderRadius: 10, backgroundColor: conf.color + '18', alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm, flexShrink: 0 }}>
+                        <Ionicons name={conf.icon} size={20} color={conf.color} />
+                        {msg.unread && <View style={{ position: 'absolute', top: -2, right: -2, width: 8, height: 8, borderRadius: 4, backgroundColor: colors.danger, borderWidth: 1.5, borderColor: colors.white }} />}
+                      </View>
+                      {/* 内容 */}
+                      <View style={{ flex: 1 }}>
+                        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <Text style={{ fontSize: 14, fontWeight: msg.unread ? '600' : '500', color: colors.textPrimary }}>
+                            {msg.sender || msg.title || conf.label}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: colors.textMuted }}>{fmtTime(msg.createdAt)}</Text>
+                        </View>
+                        <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 19 }} numberOfLines={3}>
+                          {msg.content}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                    {i < filtered.length - 1 && <View style={{ height: StyleSheet.hairlineWidth, backgroundColor: colors.borderLight, marginLeft: 58 }} />}
+                  </View>
+                );
+              })}
+            </View>
+          )}
+          <View style={{ height: spacing.xl * 2 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </Modal>
   );
 }
 
