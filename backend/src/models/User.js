@@ -214,6 +214,8 @@ const userSchema = new mongoose.Schema({
 
   // ── 身体成分（4.2）──────────────────────────────────────────────────
   bodyComposition: { type: mongoose.Schema.Types.Mixed, default: {} },
+  bodyCompHistory: { type: [mongoose.Schema.Types.Mixed], default: [] }, // 历史记录 [{...fields, recordedAt}]
+  labHistory:      { type: [mongoose.Schema.Types.Mixed], default: [] }, // 体检指标历史 [{...fields, recordedAt}]
 
   // ── AI健康汇总分析（4.4）───────────────────────────────────────────
   aiHealthSummary: { type: mongoose.Schema.Types.Mixed, default: {} },

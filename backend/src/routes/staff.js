@@ -87,7 +87,7 @@ router.post('/login', async (req, res) => {
     'tcmDoctor', 'specialist', 'healthPlanner',
   ];
 
-  const admin = await Admin.findOne({ username });
+  const admin = await Admin.findOne({ $or: [{ username }, { phone: username }] });
   if (!admin || !(await admin.comparePassword(password))) {
     return res.status(401).json({ success: false, message: '用户名或密码错误' });
   }
@@ -469,7 +469,21 @@ router.put('/patients/:id', staffAuth, async (req, res) => {
     }
   }
 
-  await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set: updateData });
+  // 新增体检指标记录时推入历史
+  const pushOps = {};
+  if (req.body.labValues !== undefined && req.body._addLabHistory) {
+    const entry = { ...req.body.labValues, recordedAt: new Date() };
+    pushOps['labHistory'] = entry;
+  }
+  if (req.body.bodyComposition !== undefined && req.body._addBodyCompHistory) {
+    const entry = { ...req.body.bodyComposition, recordedAt: new Date() };
+    pushOps['bodyCompHistory'] = entry;
+  }
+
+  const ops = { $set: updateData };
+  if (Object.keys(pushOps).length > 0) ops.$push = pushOps;
+
+  await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, ops);
   const user = await User.findById(req.params.id)
     .populate('assignedHealthManager', 'name title')
     .populate('assignedFamilyDoctor', 'name title')
