@@ -483,13 +483,62 @@ export default function NewPatientPage() {
               <Grid>
                 <F label="最近3个月是否有以下躯体症状" span={2}>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
-                    {['头痛','头晕','胸闷','乏力','失眠','焦虑/抑郁','消化不良','关节疼痛','皮肤问题','其他'].map(s => (
-                      <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 13, padding: '4px 10px', borderRadius: 20, border: `1px solid ${form.recentSymptoms.includes(s) ? '#1E6B50' : '#E0D9CE'}`, background: form.recentSymptoms.includes(s) ? '#E8F5EF' : '#fff', color: form.recentSymptoms.includes(s) ? '#1E6B50' : '#4A6558' }}>
-                        <input type="checkbox" style={{ display: 'none' }} checked={form.recentSymptoms.includes(s)}
-                          onChange={e => setForm(f => ({ ...f, recentSymptoms: e.target.checked ? [...f.recentSymptoms, s] : f.recentSymptoms.filter(x => x !== s) }))} />
-                        {s}
-                      </label>
-                    ))}
+                    {(() => {
+                      const symptoms = form.recentSymptoms || []
+                      const noSymptom = symptoms.includes('无躯体症状')
+                      const otherEntry = symptoms.find(s => s.startsWith('其他'))
+                      const otherText = otherEntry ? otherEntry.replace(/^其他[:：]?/, '') : ''
+                      const OPTS = ['头痛','头晕','胸闷','乏力','失眠','焦虑/抑郁','消化不良','关节疼痛','皮肤问题']
+                      const updateSymptoms = next => setForm(f => ({ ...f, recentSymptoms: next }))
+                      return (
+                        <>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 13, padding: '4px 10px', borderRadius: 20, border: `1px solid ${noSymptom ? '#1E6B50' : '#E0D9CE'}`, background: noSymptom ? '#E8F5EF' : '#fff', color: noSymptom ? '#1E6B50' : '#4A6558' }}>
+                            <input type="checkbox" style={{ display: 'none' }} checked={noSymptom}
+                              onChange={e => updateSymptoms(e.target.checked ? ['无躯体症状'] : [])} />
+                            无躯体症状
+                          </label>
+                          {OPTS.map(s => {
+                            const checked = !noSymptom && symptoms.includes(s)
+                            return (
+                              <label key={s} style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 13, padding: '4px 10px', borderRadius: 20, border: `1px solid ${checked ? '#1E6B50' : '#E0D9CE'}`, background: checked ? '#E8F5EF' : '#fff', color: checked ? '#1E6B50' : '#4A6558' }}>
+                                <input type="checkbox" style={{ display: 'none' }} checked={checked}
+                                  onChange={e => {
+                                    const cur = symptoms.filter(x => x !== '无躯体症状')
+                                    updateSymptoms(e.target.checked ? [...cur, s] : cur.filter(x => x !== s))
+                                  }} />{s}
+                              </label>
+                            )
+                          })}
+                          {(() => {
+                            const otherChecked = !noSymptom && symptoms.some(s => s.startsWith('其他'))
+                            return (
+                              <label style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'pointer', fontSize: 13, padding: '4px 10px', borderRadius: 20, border: `1px solid ${otherChecked ? '#1E6B50' : '#E0D9CE'}`, background: otherChecked ? '#E8F5EF' : '#fff', color: otherChecked ? '#1E6B50' : '#4A6558' }}>
+                                <input type="checkbox" style={{ display: 'none' }} checked={otherChecked}
+                                  onChange={e => {
+                                    const cur = symptoms.filter(x => x !== '无躯体症状' && !x.startsWith('其他'))
+                                    updateSymptoms(e.target.checked ? [...cur, '其他'] : cur)
+                                  }} />
+                                其他
+                                {otherChecked && (
+                                  <input
+                                    type="text"
+                                    placeholder="请说明"
+                                    value={otherText}
+                                    onClick={e => e.preventDefault()}
+                                    onChange={e => {
+                                      const cur = symptoms.filter(x => x !== '无躯体症状' && !x.startsWith('其他'))
+                                      const text = e.target.value
+                                      updateSymptoms([...cur, text ? `其他：${text}` : '其他'])
+                                    }}
+                                    style={{ marginLeft: 4, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, width: 100, color: '#1A2B24' }}
+                                  />
+                                )}
+                              </label>
+                            )
+                          })()}
+                        </>
+                      )
+                    })()}
                   </div>
                 </F>
                 <F label="最近1个月是否有服用中药或西药" span={2}><textarea className="form-input" rows={2} placeholder="是/否，是则填写具体" value={form.recentMedication} onChange={set('recentMedication')} /></F>
