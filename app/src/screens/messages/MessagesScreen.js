@@ -775,7 +775,7 @@ function NotificationListModal({ visible, messages, onClose, onPress, onMarkRead
   );
 }
 
-// ── 对话线程 Modal ────────────────────────────────────────────────
+// ── 对话线程（全屏，对齐 ChatScreen 风格）────────────────────────
 const ROLE_META = {
   doctor:       { label: '家庭医师', icon: 'medical',           color: colors.primary },
   manager:      { label: '健管师',   icon: 'person',            color: '#D97706'      },
@@ -783,18 +783,17 @@ const ROLE_META = {
 };
 
 function ConversationThreadModal({ role, onClose }) {
-  const [messages, setMessages] = useState([]);
+  const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [content, setContent] = useState('');
+  const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [error, setError] = useState('');
   const scrollRef = useRef(null);
   const meta = ROLE_META[role] || ROLE_META.manager;
 
   const loadThread = async () => {
     try {
       const res = await messagesAPI.getThread(role);
-      setMessages(res.data || []);
+      setMsgs(res.data || []);
       setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: false }), 100);
     } catch {}
     finally { setLoading(false); }
@@ -802,103 +801,152 @@ function ConversationThreadModal({ role, onClose }) {
 
   useEffect(() => { loadThread(); }, [role]);
 
-  const handleSend = async () => {
-    if (!content.trim()) return;
-    setSending(true); setError('');
+  const send = async () => {
+    if (!input.trim() || sending) return;
+    setSending(true);
     try {
-      await messagesAPI.send(role, content.trim());
-      setContent('');
+      await messagesAPI.send(role, input.trim());
+      setInput('');
       await loadThread();
       setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 150);
-    } catch (e) {
-      setError(e.message || '发送失败');
-    } finally { setSending(false); }
+    } catch {}
+    finally { setSending(false); }
   };
 
-  const fmtTime = t => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
   return (
-    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
-          <SafeAreaView style={{ backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%', flex: 1, marginTop: 60 }}>
-            {/* Header */}
-            <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, gap: spacing.sm }}>
-              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: meta.color + '18', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name={meta.icon} size={18} color={meta.color} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>与{meta.label}对话</Text>
-                <Text style={{ fontSize: 11, color: colors.textMuted }}>消息将发送给您的{meta.label}</Text>
-              </View>
-              <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
-                <Ionicons name="close" size={22} color={colors.textSecondary} />
-              </TouchableOpacity>
+    <Modal visible animationType="slide" transparent={false} onRequestClose={onClose}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
+        {/* TopBar — 与 ChatScreen 一致 */}
+        <View style={threadStyles.topBar}>
+          <TouchableOpacity onPress={onClose} style={threadStyles.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <View style={{ alignItems: 'center', flex: 1 }}>
+            <Text style={threadStyles.topTitle}>{meta.label}</Text>
+            <View style={threadStyles.onlineRow}>
+              <View style={threadStyles.onlineDot} />
+              <Text style={threadStyles.onlineText}>在线</Text>
             </View>
+          </View>
+          <View style={{ width: 36 }} />
+        </View>
 
-            {/* 消息区 */}
-            <ScrollView ref={scrollRef} style={{ flex: 1, paddingHorizontal: spacing.md }} contentContainerStyle={{ paddingVertical: spacing.md, gap: 12 }} showsVerticalScrollIndicator={false}>
-              {loading ? (
-                <ActivityIndicator color={colors.primary} style={{ padding: 40 }} />
-              ) : messages.length === 0 ? (
-                <View style={{ alignItems: 'center', paddingVertical: 40 }}>
-                  <Ionicons name="chatbubbles-outline" size={40} color={colors.textMuted} />
-                  <Text style={{ color: colors.textMuted, marginTop: 12, fontSize: 14 }}>暂无消息，发送第一条吧</Text>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          {/* 消息列表 */}
+          <ScrollView
+            ref={scrollRef}
+            showsVerticalScrollIndicator={false}
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: spacing.lg, gap: 4 }}
+          >
+            {loading ? (
+              <ActivityIndicator color={meta.color} style={{ padding: 60 }} />
+            ) : msgs.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 60 }}>
+                <View style={{ width: 64, height: 64, borderRadius: 32, backgroundColor: meta.color + '18', alignItems: 'center', justifyContent: 'center', marginBottom: 16 }}>
+                  <Ionicons name={meta.icon} size={28} color={meta.color} />
                 </View>
-              ) : messages.map(m => {
-                const isMine = m.type === 'user';
-                return (
-                  <View key={m._id} style={{ flexDirection: isMine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 8 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 }}>{meta.label}</Text>
+                <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', lineHeight: 20 }}>
+                  发送消息，您的{meta.label}{'\n'}会在工作时间内回复您
+                </Text>
+              </View>
+            ) : msgs.map((m, i) => {
+              const isMine = m.type === 'user';
+              const fmtT = new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+              // 时间戳：与上条消息间隔 > 5 分钟才显示
+              const showTime = i === 0 || (new Date(m.createdAt) - new Date(msgs[i-1].createdAt)) > 300000;
+              return (
+                <View key={m._id}>
+                  {showTime && (
+                    <Text style={threadStyles.timestamp}>{fmtT}</Text>
+                  )}
+                  <View style={[threadStyles.msgRow, isMine && threadStyles.msgRowUser]}>
                     {!isMine && (
-                      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: meta.color + '18', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <Ionicons name={meta.icon} size={14} color={meta.color} />
+                      <View style={[threadStyles.avatar, { backgroundColor: meta.color + '20' }]}>
+                        <Ionicons name={meta.icon} size={16} color={meta.color} />
                       </View>
                     )}
-                    <View style={{ maxWidth: '75%' }}>
-                      <Text style={{ fontSize: 10, color: colors.textMuted, marginBottom: 3, textAlign: isMine ? 'right' : 'left' }}>
-                        {isMine ? '我' : m.sender} · {fmtTime(m.createdAt)}
-                      </Text>
-                      <View style={{
-                        padding: spacing.sm, borderRadius: isMine ? 16 : 4,
-                        borderTopRightRadius: isMine ? 4 : 16, borderTopLeftRadius: isMine ? 16 : 4,
-                        backgroundColor: isMine ? colors.primary : colors.white,
-                        ...shadow.xs,
-                      }}>
-                        <Text style={{ fontSize: 14, color: isMine ? colors.white : colors.textPrimary, lineHeight: 20 }}>{m.content}</Text>
-                      </View>
+                    <View style={[threadStyles.bubble, isMine ? threadStyles.bubbleUser : threadStyles.bubbleAI]}>
+                      {!isMine && <Text style={[threadStyles.bubbleName, { color: meta.color }]}>{m.sender || meta.label}</Text>}
+                      <Text style={[threadStyles.bubbleText, isMine && threadStyles.bubbleTextUser]}>{m.content}</Text>
                     </View>
                   </View>
-                );
-              })}
-            </ScrollView>
+                </View>
+              );
+            })}
+          </ScrollView>
 
-            {/* 输入框 */}
-            <View style={{ flexDirection: 'row', alignItems: 'flex-end', padding: spacing.sm, gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.white }}>
-              <TextInput
-                style={{ flex: 1, minHeight: 40, maxHeight: 100, borderRadius: radius.sm, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: spacing.sm, paddingVertical: 8, fontSize: 14, color: colors.textPrimary, backgroundColor: colors.background }}
-                placeholder={`发消息给${meta.label}…`}
-                placeholderTextColor={colors.textMuted}
-                value={content}
-                onChangeText={t => { setContent(t); setError(''); }}
-                multiline
-                textAlignVertical="top"
-              />
-              <TouchableOpacity
-                style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: content.trim() ? colors.primary : colors.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                onPress={handleSend}
-                disabled={sending || !content.trim()}
-                activeOpacity={0.85}
-              >
-                {sending ? <ActivityIndicator color={colors.white} size="small" /> : <Ionicons name="send" size={18} color={colors.white} />}
-              </TouchableOpacity>
-            </View>
-            {!!error && <Text style={{ color: colors.danger, fontSize: 12, paddingHorizontal: spacing.md, paddingBottom: 4 }}>{error}</Text>}
-          </SafeAreaView>
-        </View>
-      </KeyboardAvoidingView>
+          {/* 输入栏 — 与 ChatScreen 一致 */}
+          <View style={threadStyles.inputBar}>
+            <TextInput
+              style={threadStyles.inputField}
+              placeholder={`发消息给${meta.label}…`}
+              placeholderTextColor={colors.textMuted}
+              value={input}
+              onChangeText={setInput}
+              multiline
+              maxLength={500}
+              textAlignVertical="top"
+              onKeyPress={({ nativeEvent }) => { if (nativeEvent.key === 'Enter' && !nativeEvent.shiftKey) send(); }}
+            />
+            <TouchableOpacity
+              style={[threadStyles.sendBtn, (!input.trim() || sending) && threadStyles.sendBtnDisabled]}
+              onPress={send}
+              disabled={!input.trim() || sending}
+              activeOpacity={0.85}
+            >
+              {sending
+                ? <ActivityIndicator size="small" color={colors.white} />
+                : <Ionicons name="send" size={18} color={colors.white} />}
+            </TouchableOpacity>
+          </View>
+        </KeyboardAvoidingView>
+      </SafeAreaView>
     </Modal>
   );
 }
+
+const threadStyles = StyleSheet.create({
+  topBar: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  topTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  onlineRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
+  onlineText: { fontSize: 11, color: colors.success, fontWeight: '500' },
+  timestamp: { textAlign: 'center', fontSize: 11, color: colors.textMuted, marginVertical: 12 },
+  msgRow: { flexDirection: 'row', marginBottom: spacing.sm, alignItems: 'flex-end' },
+  msgRowUser: { flexDirection: 'row-reverse' },
+  avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm, marginBottom: 2 },
+  bubble: { maxWidth: '75%', borderRadius: radius.md, padding: spacing.sm, ...shadow.xs },
+  bubbleAI: { backgroundColor: colors.white, borderBottomLeftRadius: 4 },
+  bubbleUser: { backgroundColor: colors.primary, borderBottomRightRadius: 4 },
+  bubbleName: { fontSize: 11, fontWeight: '700', marginBottom: 4, letterSpacing: 0.3 },
+  bubbleText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
+  bubbleTextUser: { color: colors.white },
+  inputBar: {
+    flexDirection: 'row', alignItems: 'flex-end', gap: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.sm,
+    backgroundColor: colors.white, borderTopWidth: 1, borderTopColor: colors.border,
+  },
+  inputField: {
+    flex: 1, backgroundColor: colors.background, borderRadius: radius.md,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.xs + 2,
+    fontSize: 14, color: colors.textPrimary, maxHeight: 100,
+    borderWidth: 1.5, borderColor: colors.border,
+  },
+  sendBtn: {
+    width: 40, height: 40, borderRadius: 20,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadow.sm,
+  },
+  sendBtnDisabled: { backgroundColor: colors.textMuted || '#ccc' },
+});
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
