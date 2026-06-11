@@ -336,6 +336,7 @@ export default function PatientDetailPage() {
   const [trendLoading, setTrendLoading] = useState(false)
   const [trendStartDate, setTrendStartDate] = useState('')
   const [trendEndDate, setTrendEndDate] = useState('')
+  const [showAllLab, setShowAllLab] = useState(false)
   // 健康评分
   const [scoreLoading, setScoreLoading] = useState(false)
   const [editingLabValues, setEditingLabValues] = useState(false)
@@ -2123,7 +2124,7 @@ export default function PatientDetailPage() {
                     <LabField label="谷丙转氨酶 ALT" unit="U/L" placeholder="如 25" value={labForm.alt || ''} onChange={e => setLabForm(f => ({ ...f, alt: e.target.value }))} />
                     <LabField label="谷草转氨酶 AST" unit="U/L" placeholder="如 22" value={labForm.ast || ''} onChange={e => setLabForm(f => ({ ...f, ast: e.target.value }))} />
                     <LabField label="γ-谷氨酰转肽酶 GGT" unit="U/L" placeholder="如 30" value={labForm.ggt || ''} onChange={e => setLabForm(f => ({ ...f, ggt: e.target.value }))} />
-                    <LabField label="肌酐 Cr" unit="μmol/L" placeholder="如 75" value={labForm.cr || ''} onChange={e => setLabForm(f => ({ ...f, cr: e.target.value }))} />
+                    <LabField label="血肌酐" unit="μmol/L" placeholder="如 75" value={labForm.cr || ''} onChange={e => setLabForm(f => ({ ...f, cr: e.target.value }))} />
                     <LabField label="尿酸 UA" unit="μmol/L" placeholder="如 350" value={labForm.ua || ''} onChange={e => setLabForm(f => ({ ...f, ua: e.target.value }))} />
                     <LabField label="同型半胱氨酸 Hcy" unit="μmol/L" placeholder="如 10" value={labForm.hcy || ''} onChange={e => setLabForm(f => ({ ...f, hcy: e.target.value }))} />
                     <LabField label="脂蛋白磷脂酶A2 Lp-PLA2" unit="ng/mL" placeholder="如 180" value={labForm.lpla2 || ''} onChange={e => setLabForm(f => ({ ...f, lpla2: e.target.value }))} />
@@ -2170,7 +2171,7 @@ export default function PatientDetailPage() {
                 { key: 'ldl',     label: 'LDL-C',          unit: 'mmol/L', check: v => parseFloat(v) >= 3.4,  ref: '<3.4' },
                 { key: 'hdl',     label: 'HDL-C',          unit: 'mmol/L', check: v => parseFloat(v) < (gender === 'F' ? 1.3 : 1.0), ref: gender === 'F' ? '≥1.3' : '≥1.0' },
                 { key: 'ua',      label: '尿酸 UA',         unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 360 : 420), ref: gender === 'F' ? '≤360' : '≤420' },
-                { key: 'cr',      label: '肌酐 Cr',         unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 97 : 106),  ref: gender === 'F' ? '≤97' : '≤106' },
+                { key: 'cr',      label: '血肌酐',           unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 97 : 106),  ref: gender === 'F' ? '≤97' : '≤106' },
                 { key: 'alt',     label: 'ALT',             unit: 'U/L',    check: v => parseFloat(v) > 40,    ref: '≤40' },
                 { key: 'ast',     label: 'AST',             unit: 'U/L',    check: v => parseFloat(v) > 40,    ref: '≤40' },
                 { key: 'ggt',     label: 'GGT',             unit: 'U/L',    check: v => parseFloat(v) > 50,    ref: '≤50' },
@@ -2204,8 +2205,7 @@ export default function PatientDetailPage() {
               }
 
               // 展示的项（默认只显示异常，有体重就加上）
-              const [showAll, setShowAll] = React.useState(false)
-              const displayDefs = showAll ? filledDefs : [
+              const displayDefs = showAllLab ? filledDefs : [
                 ...abnormalDefs,
                 ...(lv.weight ? [LAB_DEFS.find(d => d.key === 'weight')] : []),
               ].filter((d, i, arr) => arr.findIndex(x => x.key === d.key) === i)
@@ -2226,8 +2226,8 @@ export default function PatientDetailPage() {
                         : <span style={{ fontSize: 13, color: '#22A06B', fontWeight: 600 }}>✓ 所有指标正常</span>}
                       <span style={{ fontSize: 12, color: '#aaa' }}>共录入 {filledDefs.length} 项</span>
                     </div>
-                    <button className="btn btn-secondary btn-sm" onClick={() => setShowAll(s => !s)}>
-                      {showAll ? '只看异常' : `查看全部 ${filledDefs.length} 项`}
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowAllLab(s => !s)}>
+                      {showAllLab ? '只看异常' : `查看全部 ${filledDefs.length} 项`}
                     </button>
                   </div>
 
