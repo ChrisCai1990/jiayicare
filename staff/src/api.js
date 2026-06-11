@@ -235,5 +235,15 @@ export const staffAPI = {
 
   // 4.3 专项筛查
   getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),
-  createScreeningRecord: (id, data) => req(`/staff/patients/${id}/screening-records`, { method: 'POST', body: JSON.stringify(data) }),
+  createScreeningRecord: (id, data, file) => {
+    if (file) {
+      const fd = new FormData()
+      Object.entries(data).forEach(([k, v]) => {
+        fd.append(k, Array.isArray(v) ? JSON.stringify(v) : (v ?? ''))
+      })
+      fd.append('file', file)
+      return req(`/staff/patients/${id}/screening-records`, { method: 'POST', body: fd })
+    }
+    return req(`/staff/patients/${id}/screening-records`, { method: 'POST', body: JSON.stringify(data) })
+  },
 }

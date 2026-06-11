@@ -59,6 +59,27 @@ const upload = multer({
   },
 });
 
+// 专项筛查文件上传（图片 + PDF，最大 20MB）
+const uploadScreening = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(UPLOADS_DIR, 'screening');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
+      cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('只支持图片（JPG/PNG）或 PDF 文件'));
+  },
+});
+
 // 医护端角色标签
 const ROLE_LABEL = {
   familyDoctor:    '家庭医生',
@@ -2503,14 +2524,17 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 4.3 专项筛查：录入筛查结果（无需上传文件） ────────────────────
+// ── 4.3 专项筛查：录入筛查结果（支持图片/PDF上传） ────────────────
 // POST /api/staff/patients/:id/screening-records
-router.post('/patients/:id/screening-records', staffAuth, async (req, res) => {
+router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single('file'), async (req, res) => {
   try {
-    const { title, screeningCategory, checkDate, hospital, reportItems, note } = req.body;
+    const { title, screeningCategory, checkDate, hospital, note } = req.body;
+    const reportItems = req.body.reportItems ? JSON.parse(req.body.reportItems) : [];
     if (!title || !screeningCategory) {
       return res.status(400).json({ success: false, message: '标题和筛查分类必填' });
     }
+    const fileUrl  = req.file ? `/api/uploads/screening/${req.file.filename}` : '';
+    const mimeType = req.file ? req.file.mimetype : '';
     const report = await MedicalReport.create({
       user:             req.params.id,
       title,
@@ -2518,8 +2542,10 @@ router.post('/patients/:id/screening-records', staffAuth, async (req, res) => {
       screeningCategory,
       checkDate:        checkDate || '',
       hospital:         hospital  || '',
-      reportItems:      reportItems || [],
+      reportItems,
       note:             note || '',
+      fileUrl,
+      mimeType,
       audit_status:     'unaudited',
       uploadedBy:       req.staff._id,
     });

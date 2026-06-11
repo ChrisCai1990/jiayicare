@@ -322,6 +322,7 @@ export default function PatientDetailPage() {
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: 'tumor', checkDate: '', hospital: '', note: '', reportItems: [] })
+  const [screeningFile, setScreeningFile] = useState(null)
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
   const [screeningSearchResults, setScreeningSearchResults] = useState([])
@@ -695,10 +696,11 @@ export default function PatientDetailPage() {
     if (!screeningForm.screeningCategory) return toast('请选择筛查分类')
     try {
       setScreeningSaving(true)
-      await staffAPI.createScreeningRecord(id, screeningForm)
+      await staffAPI.createScreeningRecord(id, screeningForm, screeningFile)
       toast('筛查结果已录入')
       setShowScreeningForm(false)
       setScreeningForm({ title: '', screeningCategory: 'tumor', checkDate: '', hospital: '', note: '', reportItems: [] })
+      setScreeningFile(null)
       setScreeningSearchQ(''); setScreeningSearchResults([])
       loadScreening()
     } catch (err) { toast(err.message || '录入失败') }
@@ -1813,6 +1815,19 @@ export default function PatientDetailPage() {
                                       {r.hospital && <span style={{ fontSize: 12, color: '#8AA89C' }}>📍 {r.hospital}</span>}
                                     </div>
                                     {r.note && <div style={{ fontSize: 13, color: '#4A6558' }}>{r.note}</div>}
+                                    {r.fileUrl && (
+                                      <div style={{ marginTop: 4 }}>
+                                        {r.mimeType === 'application/pdf' ? (
+                                          <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#1E6B50', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                            📄 查看报告PDF
+                                          </a>
+                                        ) : (
+                                          <a href={r.fileUrl} target="_blank" rel="noopener noreferrer">
+                                            <img src={r.fileUrl} alt="报告" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'pointer' }} />
+                                          </a>
+                                        )}
+                                      </div>
+                                    )}
                                     {r.reportItems?.length > 0 && (
                                       <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                         {r.reportItems.map((item, j) => (
@@ -1917,6 +1932,29 @@ export default function PatientDetailPage() {
                   <label className="form-label">主要结论/备注</label>
                   <textarea className="form-input" rows={3} placeholder="如：未见明显异常；左叶结节3mm，建议随访" value={screeningForm.note}
                     onChange={e => setScreeningForm(f => ({ ...f, note: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">上传报告（图片或 PDF，可选）</label>
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+                    style={{ display: 'none' }}
+                    id="screening-file-input"
+                    onChange={e => setScreeningFile(e.target.files[0] || null)}
+                  />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+                    <label htmlFor="screening-file-input" style={{ cursor: 'pointer', padding: '6px 14px', borderRadius: 8, border: '1px solid #E0D9CE', background: '#fff', fontSize: 13, color: '#4A6558' }}>
+                      选择文件
+                    </label>
+                    {screeningFile ? (
+                      <span style={{ fontSize: 13, color: '#1E6B50' }}>
+                        {screeningFile.name}
+                        <button onClick={() => setScreeningFile(null)} style={{ marginLeft: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#DC3545', fontSize: 12 }}>✕</button>
+                      </span>
+                    ) : (
+                      <span style={{ fontSize: 12, color: '#8AA89C' }}>未选择文件</span>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="modal-footer">
