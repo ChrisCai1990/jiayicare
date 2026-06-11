@@ -533,104 +533,136 @@ export default function MessagesScreen({ navigation }) {
     }
   };
 
-  const unreadCount = messages.filter(m => m.unread).length;
-
   const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
-  const filtered = messages.filter(m => {
-    if (activeTab === '专属团队') return m.type === 'doctor' || m.type === 'manager';
+  const CHAT_TYPES = new Set(['doctor', 'manager', 'nutritionist']);
+
+  // 每个医护角色对应的最新消息 + 未读数
+  const ROLES = [
+    { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
+    { key: 'manager',      label: '健管师',   icon: 'person',            color: '#D97706'      },
+    { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
+  ];
+  const roleInfo = (roleKey) => {
+    const typeMap = { doctor: 'doctor', manager: 'manager', nutritionist: 'nutritionist' };
+    const t = typeMap[roleKey];
+    const msgs = messages.filter(m => m.type === t);
+    const last = msgs[0]; // 已按时间倒序
+    const unread = msgs.filter(m => m.unread).length;
+    return { last, unread };
+  };
+
+  // 非聊天消息（系统、推送）
+  const notifMessages = messages.filter(m => !CHAT_TYPES.has(m.type));
+  const filtered = notifMessages.filter(m => {
     if (activeTab === '系统') return m.type === 'system';
     if (activeTab === '推送') return PUSH_TYPES.has(m.type);
     return true;
   });
 
+  const totalUnread = messages.filter(m => m.unread).length;
+
+  const fmtMsgTime = (t) => {
+    if (!t) return '';
+    const d = new Date(t), now = new Date();
+    const diffDays = Math.floor((now - d) / 86400000);
+    if (diffDays === 0) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    if (diffDays === 1) return '昨天';
+    if (diffDays < 7) return ['日','一','二','三','四','五','六'][d.getDay()] ? `周${'日一二三四五六'[d.getDay()]}` : '';
+    return `${d.getMonth()+1}/${d.getDate()}`;
+  };
+
   return (
     <SafeAreaView style={styles.container}>
+      {/* Header */}
       <View style={styles.header}>
         <View>
-          <Text style={styles.pageTitle}>消息中心</Text>
-          <Text style={styles.pageSubtitle}>来自医生和健管师的通知</Text>
+          <Text style={styles.pageTitle}>消息</Text>
         </View>
-        {unreadCount > 0 && (
+        {totalUnread > 0 && (
           <View style={styles.unreadBadge}>
-            <View style={styles.unreadDotSmall} />
-            <Text style={styles.unreadBadgeText}>{unreadCount} 条未读</Text>
+            <Text style={styles.unreadBadgeText}>{totalUnread}</Text>
           </View>
         )}
       </View>
 
-      {/* AI Health Chat entry */}
-      <TouchableOpacity style={styles.aiCard} onPress={() => navigation.navigate('Chat')}>
-        <View style={styles.aiLeft}>
-          <View style={styles.aiIconWrap}>
-            <Ionicons name="sparkles" size={24} color={colors.white} />
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadMessages(); }} tintColor={colors.primary} />}
+      >
+        {/* AI 助手 */}
+        <TouchableOpacity style={styles.chatRow} onPress={() => navigation.navigate('Chat')} activeOpacity={0.75}>
+          <View style={[styles.chatAvatar, { backgroundColor: colors.primary }]}>
+            <Ionicons name="sparkles" size={22} color={colors.white} />
           </View>
-          <View>
-            <Text style={styles.aiTitle}>AI 健康助手</Text>
-            <Text style={styles.aiSubtitle}>随时问我健康问题，24小时在线</Text>
+          <View style={styles.chatBody}>
+            <View style={styles.chatTopRow}>
+              <Text style={styles.chatName}>AI 健康助手</Text>
+              <Text style={styles.chatTime}>24小时</Text>
+            </View>
+            <Text style={styles.chatPreview} numberOfLines={1}>随时问我健康问题，智能分析您的健康数据</Text>
           </View>
-        </View>
-        <View style={styles.aiArrow}>
-          <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.7)" />
-        </View>
-      </TouchableOpacity>
+          <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+        </TouchableOpacity>
 
-      {/* 与医护对话入口 */}
-      <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
-        <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '600', marginBottom: 8, letterSpacing: 0.4 }}>与医护对话</Text>
-        <View style={{ flexDirection: 'row', gap: 10 }}>
-          {[
-            { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
-            { key: 'manager',      label: '健管师',   icon: 'person',            color: '#D97706'      },
-            { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
-          ].map(r => (
-            <TouchableOpacity key={r.key} style={{ flex: 1, backgroundColor: colors.white, borderRadius: radius.sm, padding: spacing.sm, alignItems: 'center', gap: 4, ...shadow.xs, borderWidth: 1, borderColor: colors.border }} activeOpacity={0.8} onPress={() => setThreadRole(r.key)}>
-              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: r.color + '18', alignItems: 'center', justifyContent: 'center' }}>
-                <Ionicons name={r.icon} size={18} color={r.color} />
+        {/* 分隔 */}
+        <View style={{ height: 8, backgroundColor: '#F0EDE8' }} />
+
+        {/* 与医护对话 - 微信会话行 */}
+        {ROLES.map((r, i) => {
+          const { last, unread } = roleInfo(r.key);
+          return (
+            <TouchableOpacity
+              key={r.key}
+              style={[styles.chatRow, i < ROLES.length - 1 && styles.chatRowBorder]}
+              onPress={() => setThreadRole(r.key)}
+              activeOpacity={0.75}
+            >
+              {/* 头像 */}
+              <View style={[styles.chatAvatar, { backgroundColor: r.color }]}>
+                <Ionicons name={r.icon} size={22} color={colors.white} />
               </View>
-              <Text style={{ fontSize: 12, color: colors.textPrimary, fontWeight: '600' }}>{r.label}</Text>
-              <Text style={{ fontSize: 10, color: colors.textMuted }}>点击对话</Text>
+              {/* 内容 */}
+              <View style={styles.chatBody}>
+                <View style={styles.chatTopRow}>
+                  <Text style={styles.chatName}>{r.label}</Text>
+                  <Text style={styles.chatTime}>{last ? fmtMsgTime(last.createdAt) : ''}</Text>
+                </View>
+                <Text style={[styles.chatPreview, unread > 0 && { color: colors.textSecondary }]} numberOfLines={1}>
+                  {last ? (last.content || last.title || '…') : '点击开始对话'}
+                </Text>
+              </View>
+              {/* 未读角标 */}
+              {unread > 0 ? (
+                <View style={styles.unreadBubble}>
+                  <Text style={styles.unreadBubbleText}>{unread > 99 ? '99+' : unread}</Text>
+                </View>
+              ) : (
+                <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
+              )}
+            </TouchableOpacity>
+          );
+        })}
+
+        {/* 分隔 */}
+        <View style={{ height: 8, backgroundColor: '#F0EDE8' }} />
+
+        {/* 通知消息 Tabs */}
+        <View style={[styles.tabs, { marginTop: 0 }]}>
+          {['全部', '系统', '推送'].map(tab => (
+            <TouchableOpacity key={tab} style={[styles.tab, activeTab === tab && styles.tabActive]} onPress={() => setActiveTab(tab)}>
+              <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
             </TouchableOpacity>
           ))}
         </View>
-      </View>
 
-      {/* Tabs */}
-      <View style={styles.tabs}>
-        {tabs.map(tab => (
-          <TouchableOpacity
-            key={tab}
-            style={[styles.tab, activeTab === tab && styles.tabActive]}
-            onPress={() => setActiveTab(tab)}
-          >
-            <Text style={[styles.tabText, activeTab === tab && styles.tabTextActive]}>{tab}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        style={styles.list}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => { setRefreshing(true); loadMessages(); }}
-            tintColor={colors.primary}
-          />
-        }
-      >
         {filtered.length === 0 ? (
-          <EmptyState
-            icon="chatbubble-ellipses-outline"
-            title="暂无消息"
-            subtitle="来自医生和健管师的消息会显示在这里"
-            color={colors.primary}
-          />
+          <EmptyState icon="chatbubble-ellipses-outline" title="暂无通知" subtitle="系统消息和推送通知会显示在这里" color={colors.primary} />
         ) : (
           filtered.map((msg, i) => (
             <MessageItem key={msg._id || msg.id || i} msg={msg} onPress={handlePress} />
           ))
         )}
-        <View style={{ height: spacing.xl }} />
+        <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>
 
       {/* Message detail modal */}
@@ -645,27 +677,8 @@ export default function MessagesScreen({ navigation }) {
 
       {/* 对话线程 Modal */}
       {threadRole && (
-        <ConversationThreadModal role={threadRole} onClose={() => setThreadRole(null)} />
+        <ConversationThreadModal role={threadRole} onClose={() => { setThreadRole(null); loadMessages(); }} />
       )}
-
-      {/* Compose FAB */}
-      <TouchableOpacity
-        style={styles.composeFab}
-        onPress={() => setComposing(true)}
-        activeOpacity={0.85}
-      >
-        <Ionicons name="create-outline" size={22} color={colors.white} />
-      </TouchableOpacity>
-
-      {/* Compose FAB 点击时重置 replyTo */}
-      {/* Compose modal */}
-      <ComposeModal
-        visible={composing}
-        onClose={() => { setComposing(false); setReplyTo('manager'); }}
-        onSent={() => { setComposing(false); setReplyTo('manager'); loadMessages(); }}
-        initialContent=""
-        initialTo={replyTo}
-      />
     </SafeAreaView>
   );
 }
@@ -807,14 +820,38 @@ const styles = StyleSheet.create({
   pageTitle: { fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
   pageSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
   unreadBadge: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    backgroundColor: colors.warning10,
-    paddingHorizontal: 12, paddingVertical: 6,
-    borderRadius: radius.full,
-    borderWidth: 1, borderColor: colors.warning + '40',
+    minWidth: 22, height: 22, borderRadius: 11,
+    backgroundColor: colors.danger,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 6,
   },
   unreadDotSmall: { width: 7, height: 7, borderRadius: 4, backgroundColor: colors.warning },
-  unreadBadgeText: { fontSize: 12, color: colors.warning, fontWeight: '600' },
+  unreadBadgeText: { fontSize: 12, color: colors.white, fontWeight: '700' },
+
+  // 会话行（微信风格）
+  chatRow: {
+    flexDirection: 'row', alignItems: 'center',
+    backgroundColor: colors.white,
+    paddingHorizontal: spacing.md, paddingVertical: 12,
+  },
+  chatRowBorder: { borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: colors.borderLight, marginLeft: 72 },
+  chatAvatar: {
+    width: 50, height: 50, borderRadius: 12,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: spacing.sm, flexShrink: 0,
+  },
+  chatBody: { flex: 1, minWidth: 0 },
+  chatTopRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 },
+  chatName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary },
+  chatTime: { fontSize: 11, color: colors.textMuted },
+  chatPreview: { fontSize: 13, color: colors.textMuted },
+  unreadBubble: {
+    minWidth: 20, height: 20, borderRadius: 10,
+    backgroundColor: colors.danger,
+    alignItems: 'center', justifyContent: 'center',
+    paddingHorizontal: 5, marginLeft: spacing.xs,
+  },
+  unreadBubbleText: { fontSize: 11, color: colors.white, fontWeight: '700' },
   aiCard: {
     flexDirection: 'row',
     alignItems: 'center',
