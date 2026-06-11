@@ -2529,7 +2529,8 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single('file'), async (req, res) => {
   try {
     const { title, screeningCategory, checkDate, hospital, note } = req.body;
-    const reportItems = req.body.reportItems ? JSON.parse(req.body.reportItems) : [];
+    const raw = req.body.reportItems;
+    const reportItems = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
     if (!title || !screeningCategory) {
       return res.status(400).json({ success: false, message: '标题和筛查分类必填' });
     }
