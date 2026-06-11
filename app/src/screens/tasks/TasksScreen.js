@@ -384,13 +384,15 @@ export default function TasksScreen({ navigation }) {
     type: 'followup',
     description: f.content || '',
     followupType: f.type || '',
-    followupPeriod: f.followupPeriod || '',
     checkInItems: f.checkInItems || [],
+    tags: f.tags || [],
+    nextFollowUpDate: f.nextFollowUpDate || null,
+    interviewMinutes: f.interviewMinutes || '',
     dueDate: f.date ? new Date(f.date).toISOString().slice(0, 10) : null,
     dueTime: '',
     priority: 'medium',
     status: f.status === 'completed' ? 'completed' : (f.status === 'in_progress' ? 'in_progress' : 'pending'),
-    assignee: f.staffId?.name || '',
+    assignee: f.staffId?.name || f.assignedTo?.name || '',
     isFollowup: true,
   });
 
@@ -607,41 +609,72 @@ export default function TasksScreen({ navigation }) {
                 {/* 随访任务专属详情 */}
                 {detailTask.isFollowup && !detailTask.abnormalReviewId && (() => {
                   const FOLLOWUP_TYPE = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他随访' };
-                  const FOLLOWUP_PERIOD = { biweekly: '双周随访', monthly: '月度随访', quarterly: '季度随访', annual: '年度随访' };
+                  const CHECKIN_LABEL = { bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', weight: '体重', sleep: '睡眠', diet: '饮食', exercise: '运动', water: '饮水', alcohol: '饮酒', bowel: '排便', smoking: '吸烟', mood: '情绪' };
                   return (
                     <>
-                      {!!detailTask.followupType && (
-                        <>
-                          <Text style={styles.modalSectionLabel}>随访方式</Text>
-                          <Text style={styles.modalContent}>{FOLLOWUP_TYPE[detailTask.followupType] || detailTask.followupType}</Text>
-                        </>
-                      )}
-                      {!!detailTask.followupPeriod && (
-                        <>
-                          <Text style={styles.modalSectionLabel}>随访周期</Text>
-                          <Text style={styles.modalContent}>{FOLLOWUP_PERIOD[detailTask.followupPeriod] || detailTask.followupPeriod}</Text>
-                        </>
-                      )}
-                      <Text style={styles.modalSectionLabel}>具体内容</Text>
+                      {/* 基本信息行 */}
+                      <View style={[styles.metaRow, { flexWrap: 'wrap' }]}>
+                        {!!detailTask.followupType && (
+                          <View style={styles.metaChip}>
+                            <Ionicons name="call-outline" size={13} color={colors.primary} />
+                            <Text style={styles.metaChipText}>{FOLLOWUP_TYPE[detailTask.followupType] || detailTask.followupType}</Text>
+                          </View>
+                        )}
+                        {!!detailTask.assignee && (
+                          <View style={styles.metaChip}>
+                            <Ionicons name="person-circle-outline" size={13} color={colors.textSecondary} />
+                            <Text style={styles.metaChipText}>负责：{detailTask.assignee}</Text>
+                          </View>
+                        )}
+                        {!!detailTask.nextFollowUpDate && (
+                          <View style={styles.metaChip}>
+                            <Ionicons name="arrow-forward-circle-outline" size={13} color={colors.info} />
+                            <Text style={styles.metaChipText}>下次：{new Date(detailTask.nextFollowUpDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* 随访内容 */}
+                      <Text style={styles.modalSectionLabel}>随访内容</Text>
                       {detailTask.description
                         ? <Text style={styles.modalContent}>{detailTask.description}</Text>
-                        : <Text style={styles.modalNoContent}>健管师会在随访前与您联系，届时沟通具体安排。</Text>
+                        : <Text style={styles.modalNoContent}>健管师会在随访时与您详细沟通，如有疑问可提前联系。</Text>
                       }
+
+                      {/* 打卡项目 */}
                       {!!(detailTask.checkInItems?.length) && (
                         <>
-                          <Text style={styles.modalSectionLabel}>打卡项目</Text>
-                          {detailTask.checkInItems.map((item, i) => (
-                            <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                              <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: colors.primary }} />
-                              <Text style={styles.modalContent}>{item}</Text>
-                            </View>
-                          ))}
+                          <Text style={styles.modalSectionLabel}>需要打卡的项目</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {detailTask.checkInItems.map((item, i) => (
+                              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '12', paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.full }}>
+                                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: colors.primary }} />
+                                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '500' }}>{CHECKIN_LABEL[item] || item}</Text>
+                              </View>
+                            ))}
+                          </View>
                         </>
                       )}
-                      {!!detailTask.assignee && (
+
+                      {/* 标签 */}
+                      {!!(detailTask.tags?.length) && (
                         <>
-                          <Text style={styles.modalSectionLabel}>负责人员</Text>
-                          <Text style={styles.modalContent}>{detailTask.assignee}</Text>
+                          <Text style={styles.modalSectionLabel}>重点关注</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {detailTask.tags.map((tag, i) => (
+                              <View key={i} style={{ backgroundColor: '#FEF3E2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full }}>
+                                <Text style={{ fontSize: 12, color: '#D97706', fontWeight: '500' }}>{tag}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </>
+                      )}
+
+                      {/* 面谈纪要 */}
+                      {!!detailTask.interviewMinutes && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>上次随访纪要</Text>
+                          <Text style={styles.modalContent}>{detailTask.interviewMinutes}</Text>
                         </>
                       )}
                     </>

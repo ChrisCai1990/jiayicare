@@ -220,6 +220,8 @@ export const staffAPI = {
 
   // 回复用户留言
   replyToUser: (userId, content) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content }) }),
+  // 获取用户对话线程
+  getUserMessageThread: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
 
   // 我发出的转介
   getSentReferrals: (p = {}) => req('/staff/referrals?direction=sent&' + qs(p)),

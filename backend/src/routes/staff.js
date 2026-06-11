@@ -2174,9 +2174,14 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
 // ── 患者日常打卡记录（医护端查看）────────────────────────────────
 router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   try {
-    const { limit = 30, type } = req.query;
+    const { limit = 30, type, startDate, endDate } = req.query;
     const q = { user: req.params.id };
     if (type) q.type = type;
+    if (startDate || endDate) {
+      q.recordedAt = {};
+      if (startDate) q.recordedAt.$gte = new Date(startDate);
+      if (endDate) { const e = new Date(endDate); e.setHours(23, 59, 59, 999); q.recordedAt.$lte = e; }
+    }
     const records = await HealthRecord.find(q).sort({ recordedAt: -1 }).limit(Number(limit));
     res.json({ success: true, data: records });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -2382,6 +2387,17 @@ router.get('/user-messages', staffAuth, async (req, res) => {
   }
 });
 
+// ── 获取某用户的对话线程（按 roleKey 区分）────────────────────────
+// GET /api/staff/user-messages/:userId/thread?role=manager
+router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
+  try {
+    const { role = 'manager' } = req.query;
+    const conversationId = `${req.params.userId}_${role}`;
+    const messages = await Message.find({ conversationId }).sort({ createdAt: 1 }).limit(100);
+    res.json({ success: true, data: messages, conversationId });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 医护端回复用户留言 ──────────────────────────────────────────────
 // POST /api/staff/user-messages/:userId/reply
 router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
@@ -2396,11 +2412,14 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     const staff = req.staff;
     const typeMap = {
       familyDoctor: 'doctor',
-      nutritionist: 'manager',
+      nutritionist: 'nutritionist',
       healthManager: 'manager',
       medicalAssistant: 'manager',
     };
-    const msgType = typeMap[staff.role] || 'doctor';
+    const msgType = typeMap[staff.role] || 'manager';
+    // 根据消息类型确定 conversationId 中的 role key（与用户端发送时一致）
+    const roleKey = msgType === 'doctor' ? 'doctor' : msgType === 'nutritionist' ? 'nutritionist' : 'manager';
+    const conversationId = `${req.params.userId}_${roleKey}`;
     const senderLabel = staff.title ? `${staff.name}（${staff.title}）` : staff.name;
 
     await Message.create({
@@ -2410,6 +2429,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       title:   `${staff.name} 回复了您的留言`,
       content: content.trim(),
       unread:  true,
+      conversationId,
     });
 
     res.json({ success: true, message: '回复已发送' });

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
@@ -18,7 +18,8 @@ export default function NotificationsPage() {
   const [detailModal, setDetailModal] = useState(null)   // push 消息详情
   const [sentReferrals, setSentReferrals] = useState([])
   const [userMessages, setUserMessages] = useState([])
-  const [replyModal, setReplyModal] = useState(null)   // { userId, userName }
+  const [replyModal, setReplyModal] = useState(null)   // { userId, userName, roleKey }
+  const [threadModal, setThreadModal] = useState(null) // { userId, userName, roleKey }
 
   const load = async () => {
     setLoading(true)
@@ -276,35 +277,46 @@ export default function NotificationsPage() {
         </div>
       )}
 
-      {/* ── 用户留言 ── */}
+      {/* ── 用户留言（会话模式）── */}
       {tab === 'userMsgs' && (
         <div className="card">
           {userMessages.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用户留言</div>
           ) : (
-            <table className="table">
-              <thead>
-                <tr><th>用户</th><th>留言内容</th><th>时间</th><th>操作</th></tr>
-              </thead>
-              <tbody>
-                {userMessages.map(m => (
-                  <tr key={m._id}>
-                    <td>
-                      <strong>{m.patientName}</strong>
-                      <div style={{ fontSize: 12, color: '#aaa' }}>{m.patientPhone}</div>
-                    </td>
-                    <td style={{ maxWidth: 320, whiteSpace: 'pre-wrap', fontSize: 13, color: '#4A6558' }}>{m.content}</td>
-                    <td style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>
-                      {new Date(m.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                    <td style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-primary btn-sm" onClick={() => setReplyModal({ userId: m.user, userName: m.patientName })}>回复</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${m.user}`)}>查看档案</button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {userMessages.map((m, i) => {
+                const roleKey = m.recipient === 'doctor' ? 'doctor' : m.recipient === 'nutritionist' ? 'nutritionist' : 'manager'
+                return (
+                  <div key={m._id} style={{ padding: '14px 20px', borderBottom: i < userMessages.length - 1 ? '1px solid #f5f2ec' : 'none',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+                    cursor: 'pointer', transition: 'background 0.1s' }}
+                    onClick={() => setThreadModal({ userId: m.user, userName: m.patientName, roleKey })}
+                    onMouseEnter={e => e.currentTarget.style.background = '#faf9f6'}
+                    onMouseLeave={e => e.currentTarget.style.background = ''}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
+                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1E6B5018', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
+                        {m.patientName?.[0] || '?'}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>{m.patientName}</span>
+                          <span style={{ fontSize: 11, color: '#aaa' }}>{m.patientPhone}</span>
+                          <span style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '1px 7px', borderRadius: 99 }}>
+                            {roleKey === 'doctor' ? '家庭医师' : roleKey === 'nutritionist' ? '营养师' : '健管师'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 13, color: '#4A6558', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.content}</div>
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, color: '#aaa' }}>{new Date(m.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); setThreadModal({ userId: m.user, userName: m.patientName, roleKey }) }}>查看对话</button>
+                      <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(`/patients/${m.user}`) }}>档案</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           )}
         </div>
       )}
@@ -319,7 +331,19 @@ export default function NotificationsPage() {
         <PushDetailModal push={detailModal} onClose={() => setDetailModal(null)} onNavigate={nav} />
       )}
 
-      {/* 回复用户留言弹窗 */}
+      {/* 对话线程弹窗 */}
+      {threadModal && (
+        <ThreadModal
+          userId={threadModal.userId}
+          userName={threadModal.userName}
+          roleKey={threadModal.roleKey}
+          onClose={() => setThreadModal(null)}
+          onSent={() => { toast('回复已发送'); /* 不关闭，线程会自动刷新 */ }}
+          onNavigate={nav}
+        />
+      )}
+
+      {/* 回复用户留言弹窗（保留备用） */}
       {replyModal && (
         <ReplyModal
           userId={replyModal.userId}
@@ -489,6 +513,105 @@ function ReplyModal({ userId, userName, onClose, onSent }) {
           <button className="btn btn-primary" onClick={handleSubmit} disabled={submitting}>
             {submitting ? '发送中...' : '发送回复'}
           </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 对话线程弹窗 ──
+function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate }) {
+  const [messages, setMessages] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [content, setContent] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [err, setErr] = useState('')
+  const bottomRef = useRef(null)
+
+  const ROLE_LABEL = { doctor: '家庭医师', nutritionist: '营养师', manager: '健管师' }
+
+  const loadThread = async () => {
+    try {
+      const res = await staffAPI.getUserMessageThread(userId, roleKey)
+      setMessages(res.data || [])
+    } catch { /* ignore */ }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => { loadThread() }, [userId, roleKey])
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+
+  const handleSend = async () => {
+    if (!content.trim()) { setErr('请输入回复内容'); return }
+    setSubmitting(true); setErr('')
+    try {
+      await staffAPI.replyToUser(userId, content.trim())
+      setContent('')
+      onSent()
+      await loadThread()
+    } catch (e) { setErr(e.message || '发送失败') }
+    finally { setSubmitting(false) }
+  }
+
+  const fmtTime = t => new Date(t).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 520, display: 'flex', flexDirection: 'column', maxHeight: '80vh' }}>
+        <div className="modal-header" style={{ flexShrink: 0 }}>
+          <div>
+            <h3 className="modal-title">与 {userName} 的对话</h3>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>频道：{ROLE_LABEL[roleKey] || roleKey}</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}`); onClose() }}>查看档案</button>}
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12, background: '#faf9f6' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>加载中...</div>
+          ) : messages.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#aaa', padding: 40 }}>暂无消息记录</div>
+          ) : messages.map(m => {
+            const isUser = m.type === 'user'
+            return (
+              <div key={m._id} style={{ display: 'flex', flexDirection: isUser ? 'row' : 'row-reverse', alignItems: 'flex-end', gap: 8 }}>
+                <div style={{ width: 32, height: 32, borderRadius: '50%', background: isUser ? '#E0D9CE' : '#1E6B5020',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 600,
+                  color: isUser ? '#4A6558' : '#1E6B50', flexShrink: 0 }}>
+                  {isUser ? (userName?.[0] || '?') : '医'}
+                </div>
+                <div style={{ maxWidth: '72%' }}>
+                  <div style={{ fontSize: 11, color: '#aaa', marginBottom: 3, textAlign: isUser ? 'left' : 'right' }}>
+                    {isUser ? userName : m.sender} · {fmtTime(m.createdAt)}
+                  </div>
+                  <div style={{
+                    padding: '10px 14px', borderRadius: isUser ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
+                    background: isUser ? '#fff' : '#1E6B50', color: isUser ? '#1A2B24' : '#fff',
+                    fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+                  }}>{m.content}</div>
+                </div>
+              </div>
+            )
+          })}
+          <div ref={bottomRef} />
+        </div>
+
+        <div style={{ flexShrink: 0, padding: '12px 20px', borderTop: '1px solid #f0ede8', background: '#fff' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <textarea className="form-input" rows={2} value={content}
+              onChange={e => { setContent(e.target.value); setErr('') }}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}
+              placeholder="输入回复，Enter 发送，Shift+Enter 换行..."
+              style={{ flex: 1, resize: 'none', fontSize: 13 }} />
+            <button className="btn btn-primary" onClick={handleSend} disabled={submitting} style={{ alignSelf: 'stretch' }}>
+              {submitting ? '…' : '发送'}
+            </button>
+          </div>
+          {err && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{err}</div>}
         </div>
       </div>
     </div>

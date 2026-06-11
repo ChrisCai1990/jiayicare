@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl, Modal,
@@ -476,6 +476,7 @@ export default function MessagesScreen({ navigation }) {
   const [selectedMsg, setSelectedMsg] = useState(null);
   const [composing, setComposing] = useState(false);
   const [replyTo, setReplyTo] = useState('manager');
+  const [threadRole, setThreadRole] = useState(null); // 打开线程的 role key
 
   const tabs = ['全部', '专属团队', '系统', '推送'];
 
@@ -568,6 +569,26 @@ export default function MessagesScreen({ navigation }) {
         </View>
       </TouchableOpacity>
 
+      {/* 与医护对话入口 */}
+      <View style={{ paddingHorizontal: spacing.lg, paddingVertical: spacing.sm }}>
+        <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '600', marginBottom: 8, letterSpacing: 0.4 }}>与医护对话</Text>
+        <View style={{ flexDirection: 'row', gap: 10 }}>
+          {[
+            { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
+            { key: 'manager',      label: '健管师',   icon: 'person',            color: '#D97706'      },
+            { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
+          ].map(r => (
+            <TouchableOpacity key={r.key} style={{ flex: 1, backgroundColor: colors.white, borderRadius: radius.sm, padding: spacing.sm, alignItems: 'center', gap: 4, ...shadow.xs, borderWidth: 1, borderColor: colors.border }} activeOpacity={0.8} onPress={() => setThreadRole(r.key)}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: r.color + '18', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={r.icon} size={18} color={r.color} />
+              </View>
+              <Text style={{ fontSize: 12, color: colors.textPrimary, fontWeight: '600' }}>{r.label}</Text>
+              <Text style={{ fontSize: 10, color: colors.textMuted }}>点击对话</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      </View>
+
       {/* Tabs */}
       <View style={styles.tabs}>
         {tabs.map(tab => (
@@ -617,6 +638,11 @@ export default function MessagesScreen({ navigation }) {
         />
       )}
 
+      {/* 对话线程 Modal */}
+      {threadRole && (
+        <ConversationThreadModal role={threadRole} onClose={() => setThreadRole(null)} />
+      )}
+
       {/* Compose FAB */}
       <TouchableOpacity
         style={styles.composeFab}
@@ -636,6 +662,131 @@ export default function MessagesScreen({ navigation }) {
         initialTo={replyTo}
       />
     </SafeAreaView>
+  );
+}
+
+// ── 对话线程 Modal ────────────────────────────────────────────────
+const ROLE_META = {
+  doctor:       { label: '家庭医师', icon: 'medical',           color: colors.primary },
+  manager:      { label: '健管师',   icon: 'person',            color: '#D97706'      },
+  nutritionist: { label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
+};
+
+function ConversationThreadModal({ role, onClose }) {
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [content, setContent] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const scrollRef = useRef(null);
+  const meta = ROLE_META[role] || ROLE_META.manager;
+
+  const loadThread = async () => {
+    try {
+      const res = await messagesAPI.getThread(role);
+      setMessages(res.data || []);
+      setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: false }), 100);
+    } catch {}
+    finally { setLoading(false); }
+  };
+
+  useEffect(() => { loadThread(); }, [role]);
+
+  const handleSend = async () => {
+    if (!content.trim()) return;
+    setSending(true); setError('');
+    try {
+      await messagesAPI.send(role, content.trim());
+      setContent('');
+      await loadThread();
+      setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 150);
+    } catch (e) {
+      setError(e.message || '发送失败');
+    } finally { setSending(false); }
+  };
+
+  const fmtTime = t => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' }}>
+          <SafeAreaView style={{ backgroundColor: colors.background, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%', flex: 1, marginTop: 60 }}>
+            {/* Header */}
+            <View style={{ flexDirection: 'row', alignItems: 'center', padding: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border, gap: spacing.sm }}>
+              <View style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: meta.color + '18', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={meta.icon} size={18} color={meta.color} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>与{meta.label}对话</Text>
+                <Text style={{ fontSize: 11, color: colors.textMuted }}>消息将发送给您的{meta.label}</Text>
+              </View>
+              <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+
+            {/* 消息区 */}
+            <ScrollView ref={scrollRef} style={{ flex: 1, paddingHorizontal: spacing.md }} contentContainerStyle={{ paddingVertical: spacing.md, gap: 12 }} showsVerticalScrollIndicator={false}>
+              {loading ? (
+                <ActivityIndicator color={colors.primary} style={{ padding: 40 }} />
+              ) : messages.length === 0 ? (
+                <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+                  <Ionicons name="chatbubbles-outline" size={40} color={colors.textMuted} />
+                  <Text style={{ color: colors.textMuted, marginTop: 12, fontSize: 14 }}>暂无消息，发送第一条吧</Text>
+                </View>
+              ) : messages.map(m => {
+                const isMine = m.type === 'user';
+                return (
+                  <View key={m._id} style={{ flexDirection: isMine ? 'row-reverse' : 'row', alignItems: 'flex-end', gap: 8 }}>
+                    {!isMine && (
+                      <View style={{ width: 32, height: 32, borderRadius: 16, backgroundColor: meta.color + '18', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <Ionicons name={meta.icon} size={14} color={meta.color} />
+                      </View>
+                    )}
+                    <View style={{ maxWidth: '75%' }}>
+                      <Text style={{ fontSize: 10, color: colors.textMuted, marginBottom: 3, textAlign: isMine ? 'right' : 'left' }}>
+                        {isMine ? '我' : m.sender} · {fmtTime(m.createdAt)}
+                      </Text>
+                      <View style={{
+                        padding: spacing.sm, borderRadius: isMine ? 16 : 4,
+                        borderTopRightRadius: isMine ? 4 : 16, borderTopLeftRadius: isMine ? 16 : 4,
+                        backgroundColor: isMine ? colors.primary : colors.white,
+                        ...shadow.xs,
+                      }}>
+                        <Text style={{ fontSize: 14, color: isMine ? colors.white : colors.textPrimary, lineHeight: 20 }}>{m.content}</Text>
+                      </View>
+                    </View>
+                  </View>
+                );
+              })}
+            </ScrollView>
+
+            {/* 输入框 */}
+            <View style={{ flexDirection: 'row', alignItems: 'flex-end', padding: spacing.sm, gap: spacing.xs, borderTopWidth: 1, borderTopColor: colors.border, backgroundColor: colors.white }}>
+              <TextInput
+                style={{ flex: 1, minHeight: 40, maxHeight: 100, borderRadius: radius.sm, borderWidth: 1.5, borderColor: colors.border, paddingHorizontal: spacing.sm, paddingVertical: 8, fontSize: 14, color: colors.textPrimary, backgroundColor: colors.background }}
+                placeholder={`发消息给${meta.label}…`}
+                placeholderTextColor={colors.textMuted}
+                value={content}
+                onChangeText={t => { setContent(t); setError(''); }}
+                multiline
+                textAlignVertical="top"
+              />
+              <TouchableOpacity
+                style={{ width: 44, height: 44, borderRadius: 22, backgroundColor: content.trim() ? colors.primary : colors.border, alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                onPress={handleSend}
+                disabled={sending || !content.trim()}
+                activeOpacity={0.85}
+              >
+                {sending ? <ActivityIndicator color={colors.white} size="small" /> : <Ionicons name="send" size={18} color={colors.white} />}
+              </TouchableOpacity>
+            </View>
+            {!!error && <Text style={{ color: colors.danger, fontSize: 12, paddingHorizontal: spacing.md, paddingBottom: 4 }}>{error}</Text>}
+          </SafeAreaView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
   );
 }
 

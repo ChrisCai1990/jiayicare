@@ -331,6 +331,11 @@ export default function PatientDetailPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
+  // 趋势图
+  const [trendRecords, setTrendRecords] = useState(null) // null=未加载，[]+=已加载
+  const [trendLoading, setTrendLoading] = useState(false)
+  const [trendStartDate, setTrendStartDate] = useState('')
+  const [trendEndDate, setTrendEndDate] = useState('')
   // 健康评分
   const [scoreLoading, setScoreLoading] = useState(false)
   const [editingLabValues, setEditingLabValues] = useState(false)
@@ -1655,6 +1660,10 @@ export default function PatientDetailPage() {
                       <LsText label="入睡时间" value={ld.sleepTime} editing={editingLifestyle} placeholder="如 23:00" onChange={v => setLd({ sleepTime: v })} />
                       <LsRadio label="作息规律性" value={ld.scheduleRegularity} editing={editingLifestyle} options={['规律', '不规律']} onChange={v => setLd({ scheduleRegularity: v })} />
                     </div>
+                    <div style={{ marginTop: 12 }}>
+                      <LsText label="备注" value={ld.exerciseRemark} editing={editingLifestyle}
+                        placeholder="如：膝盖有伤，不适合跑步；夜班工作，作息不规律" onChange={v => setLd({ exerciseRemark: v })} />
+                    </div>
                   </div>
                 )}
 
@@ -1673,6 +1682,10 @@ export default function PatientDetailPage() {
                       <LsCheckbox label="饮酒类型" value={ld.drinkingType || []} editing={editingLifestyle}
                         options={['红酒', '白酒', '啤酒', '其它']}
                         onChange={v => setLd({ drinkingType: v })} />
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      <LsText label="饮酒量" value={ld.drinkingAmount} editing={editingLifestyle}
+                        placeholder="如：每次100ml、每次2两" onChange={v => setLd({ drinkingAmount: v })} />
                     </div>
                     <LsRadio label="应酬频率" value={ld.entertainmentFreq} editing={editingLifestyle}
                       options={['1-2次/周', '3-5次/周', '6-7次/周', '无或偶尔']}
@@ -1706,6 +1719,10 @@ export default function PatientDetailPage() {
                       <LsRadio label="排便规律性" value={ld.bowelRegularity} editing={editingLifestyle}
                         options={['规律（1-2次/日）', '偶尔不规律', '便秘/腹泻']}
                         onChange={v => setLd({ bowelRegularity: v })} />
+                    </div>
+                    <div style={{ marginTop: 12 }}>
+                      <LsText label="大便形状" value={ld.bowelShape} editing={editingLifestyle}
+                        placeholder="如：成形香蕉形、松散、稀水样" onChange={v => setLd({ bowelShape: v })} />
                     </div>
                   </div>
                 )}
@@ -2314,27 +2331,101 @@ export default function PatientDetailPage() {
         )}
 
         {/* 健康趋势图 */}
-        {recentRecords?.length >= 2 && (() => {
-          const byType = {};
-          recentRecords.forEach(r => {
-            if (!byType[r.type]) byType[r.type] = [];
-            const dateStr = new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
-            let y;
-            if (r.type === 'bloodPressure') y = r.extra?.sys || 0;
-            else y = parseFloat(r.value) || 0;
-            if (y > 0) byType[r.type].push({ x: dateStr, y });
-          });
+        {(() => {
+          const srcRecords = trendRecords ?? recentRecords ?? [];
           const TYPE_COLORS = { bloodPressure: '#DC3545', bloodSugar: '#D97706', weight: '#0077B6', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309' };
-          const charts = Object.entries(byType).filter(([, arr]) => arr.length >= 2).reverse();
-          if (!charts.length) return null;
+
+          const buildCharts = (records) => {
+            const byType = {};
+            records.forEach(r => {
+              if (!byType[r.type]) byType[r.type] = [];
+              const dateStr = new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
+              let y = r.type === 'bloodPressure' ? (r.extra?.sys || 0) : parseFloat(r.value) || 0;
+              if (y > 0) byType[r.type].push({ x: dateStr, y });
+            });
+            return Object.entries(byType).filter(([, arr]) => arr.length >= 2).reverse();
+          };
+
+          const charts = buildCharts(srcRecords);
+
+          const loadTrend = async () => {
+            setTrendLoading(true);
+            try {
+              const params = { limit: 500 };
+              if (trendStartDate) params.startDate = trendStartDate;
+              if (trendEndDate) params.endDate = trendEndDate;
+              const res = await staffAPI.getPatientHealthRecords(id, params);
+              setTrendRecords(res.data || []);
+            } catch { /* ignore */ }
+            finally { setTrendLoading(false); }
+          };
+
+          const exportCSV = () => {
+            const rows = [['日期', '类型', '数值', '单位']];
+            srcRecords.forEach(r => {
+              const date = new Date(r.recordedAt).toLocaleString('zh-CN');
+              const label = RECORD_TYPE_LABEL[r.type] || r.type;
+              const val = r.type === 'bloodPressure' ? `${r.extra?.sys || ''}/${r.extra?.dia || ''}` : (r.value || '');
+              rows.push([date, label, val, r.unit || '']);
+            });
+            const csv = rows.map(r => r.map(c => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+            const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = `健康数据_${user.name || id}_${new Date().toLocaleDateString('zh-CN')}.csv`;
+            a.click();
+          };
+
+          const downloadCharts = () => {
+            const wrap = document.getElementById('trend-chart-wrap');
+            if (!wrap) return;
+            const svgs = wrap.querySelectorAll('svg');
+            if (!svgs.length) return;
+            // 合并所有 SVG 为一个并下载
+            const W = 280, rowH = 120, pad = 16;
+            const total = svgs.length;
+            const svgContent = Array.from(svgs).map((svg, i) => {
+              const inner = svg.innerHTML;
+              return `<g transform="translate(0,${i * rowH})">${inner}</g>`;
+            }).join('');
+            const combined = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${total * rowH + pad}" style="background:#faf9f6">${svgContent}</svg>`;
+            const blob = new Blob([combined], { type: 'image/svg+xml' });
+            const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+            a.download = `趋势图_${user.name || id}_${new Date().toLocaleDateString('zh-CN')}.svg`;
+            a.click();
+          };
+
           return (
             <div className="card" style={{ marginTop: 16 }}>
-              <div className="card-header"><div className="card-title">健康数据趋势</div></div>
-              <div style={{ padding: '12px 16px', overflowX: 'auto' }}>
-                {charts.map(([type, arr]) => (
-                  <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={RECORD_TYPE_LABEL[type] || type} />
-                ))}
+              <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div className="card-title">健康数据趋势</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <input type="date" className="form-control" style={{ width: 136, fontSize: 12, padding: '4px 8px' }}
+                    value={trendStartDate} onChange={e => setTrendStartDate(e.target.value)} placeholder="开始日期" />
+                  <span style={{ fontSize: 12, color: '#aaa' }}>—</span>
+                  <input type="date" className="form-control" style={{ width: 136, fontSize: 12, padding: '4px 8px' }}
+                    value={trendEndDate} onChange={e => setTrendEndDate(e.target.value)} placeholder="结束日期" />
+                  <button className="btn btn-primary btn-sm" onClick={loadTrend} disabled={trendLoading}>
+                    {trendLoading ? '加载中…' : '查询'}
+                  </button>
+                  {srcRecords.length > 0 && <>
+                    <button className="btn btn-secondary btn-sm" onClick={exportCSV} title="导出 CSV">导出数据</button>
+                    {charts.length > 0 && <button className="btn btn-secondary btn-sm" onClick={downloadCharts} title="下载趋势图">下载图表</button>}
+                  </>}
+                </div>
               </div>
+              {trendLoading ? (
+                <div style={{ padding: 40, textAlign: 'center', color: '#aaa', fontSize: 13 }}>加载中…</div>
+              ) : charts.length >= 1 ? (
+                <div id="trend-chart-wrap" style={{ padding: '12px 16px', overflowX: 'auto' }}>
+                  {charts.map(([type, arr]) => (
+                    <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={RECORD_TYPE_LABEL[type] || type} />
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '16px 20px', fontSize: 13, color: '#aaa' }}>
+                  {trendRecords !== null ? '所选时间段内无趋势数据（需同类型至少2条记录）' : '选择时间段后点击查询，或查看默认最近30条数据'}
+                </div>
+              )}
             </div>
           );
         })()}

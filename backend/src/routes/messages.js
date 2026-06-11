@@ -23,6 +23,18 @@ router.get('/', auth, async (req, res) => {
   res.json({ success: true, data: messages, unreadCount });
 });
 
+// 获取与某个角色的完整对话线程
+router.get('/thread/:role', auth, async (req, res) => {
+  const { role } = req.params;
+  const VALID = ['doctor', 'nutritionist', 'manager'];
+  if (!VALID.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
+  const conversationId = `${req.user._id}_${role}`;
+  const messages = await Message.find({ conversationId }).sort({ createdAt: 1 }).limit(100);
+  // 标记所有未读为已读
+  await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
+  res.json({ success: true, data: messages, conversationId });
+});
+
 // 标记已读
 router.patch('/:id/read', auth, async (req, res) => {
   await Message.findOneAndUpdate(
@@ -61,6 +73,7 @@ router.post('/', auth, async (req, res) => {
 
     const TITLE_MAP = { doctor: '家庭医师', nutritionist: '营养师', manager: '健管师' };
     const senderName = req.user.name || req.user.phone;
+    const conversationId = `${req.user._id}_${to}`;
     const msg = await Message.create({
       user:    req.user._id,
       type:    'user',
@@ -68,7 +81,8 @@ router.post('/', auth, async (req, res) => {
       title:   `用户留言 → ${TITLE_MAP[to]}`,
       content: content.trim(),
       unread:  false,
-      recipient: to,  // 便于 staff 端按角色过滤
+      recipient: to,
+      conversationId,
     });
 
     console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);
