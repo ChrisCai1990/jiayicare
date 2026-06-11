@@ -328,6 +328,7 @@ export default function PatientDetailPage() {
   const [screeningSearchResults, setScreeningSearchResults] = useState([])
   const [screeningSearching, setScreeningSearching] = useState(false)
   const [expandedRecord, setExpandedRecord] = useState(null) // 展开详情的记录 _id
+  const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
   // 健康评分
@@ -1857,15 +1858,17 @@ export default function PatientDetailPage() {
                                           </table>
                                         )}
                                         {fullUrl && (
-                                          <div style={{ marginTop: 6 }}>
+                                          <div style={{ marginTop: 8 }}>
                                             {r.mimeType === 'application/pdf' ? (
-                                              <a href={fullUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#1E6B50', textDecoration: 'none' }}>
-                                                📄 查看报告PDF
+                                              <a href={fullUrl} target="_blank" rel="noopener noreferrer"
+                                                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', textDecoration: 'none', cursor: 'pointer' }}>
+                                                📄 查看报告 PDF
                                               </a>
                                             ) : (
-                                              <a href={fullUrl} target="_blank" rel="noopener noreferrer">
-                                                <img src={fullUrl} alt="报告" style={{ maxWidth: 220, maxHeight: 160, borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'pointer' }} />
-                                              </a>
+                                              <button onClick={() => setPreviewImageUrl(fullUrl)}
+                                                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', cursor: 'pointer' }}>
+                                                🖼 查看报告图片
+                                              </button>
                                             )}
                                           </div>
                                         )}
@@ -2747,6 +2750,18 @@ export default function PatientDetailPage() {
               </tbody>
             </table>
           )}
+        </div>
+      )}
+
+      {/* 报告图片灯箱 */}
+      {previewImageUrl && (
+        <div onClick={() => setPreviewImageUrl(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
+          <img src={previewImageUrl} alt="报告" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()} />
+          <button onClick={() => setPreviewImageUrl(null)}
+            style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            ✕
+          </button>
         </div>
       )}
 
