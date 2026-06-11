@@ -536,28 +536,6 @@ export default function MessagesScreen({ navigation }) {
 
   const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
   const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
-  const CHAT_ROLE_TYPES = new Set(['doctor', 'manager', 'nutritionist']);
-
-  const ROLES = [
-    { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
-    { key: 'manager',      label: '健管师',   icon: 'person',            color: '#D97706'      },
-    { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
-  ];
-
-  const roleInfo = (roleKey) => {
-    // 该角色类型的消息 OR conversationId 以 _roleKey 结尾（医护主动发起时）
-    const incoming = messages.filter(m =>
-      m.type === roleKey ||
-      (m.conversationId && m.conversationId.endsWith(`_${roleKey}`))
-    );
-    const last = incoming[0];
-    const unread = incoming.filter(m => m.unread).length;
-    return { last, unread };
-  };
-
-  // 有 conversationId 的消息属于对话线程，不放进通知列表
-  const notifMessages = messages.filter(m => NOTIF_TYPES.has(m.type) && !m.conversationId);
-  const notifUnread = notifMessages.filter(m => m.unread).length;
 
   const fmtMsgTime = (t) => {
     if (!t) return '';
@@ -572,10 +550,59 @@ export default function MessagesScreen({ navigation }) {
     return `${d.getMonth()+1}/${d.getDate()}`;
   };
 
+  // 构建统一会话列表
+  const ROLE_DEFS = [
+    { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
+    { key: 'manager',      label: '健管师',   icon: 'person',            color: '#D97706'      },
+    { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
+  ];
+
+  const notifMessages = messages.filter(m => NOTIF_TYPES.has(m.type) && !m.conversationId);
+
+  // 每个角色的最新消息和未读数
+  const roleConvs = ROLE_DEFS.map(r => {
+    const msgs = messages.filter(m =>
+      m.type === r.key ||
+      (m.conversationId && m.conversationId.endsWith(`_${r.key}`))
+    );
+    const last = msgs[0];
+    const unread = msgs.filter(m => m.unread).length;
+    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role' };
+  });
+
+  // 系统通知行
+  const notifLast = notifMessages[0];
+  const notifUnread = notifMessages.filter(m => m.unread).length;
+  const notifConv = {
+    key: '__notif__', label: '系统通知', icon: 'notifications', color: '#8A4AC7',
+    last: notifLast, unread: notifUnread,
+    lastTime: notifLast ? new Date(notifLast.createdAt).getTime() : 0,
+    kind: 'notif',
+  };
+
+  // AI 助手行（置顶）
+  const aiConv = {
+    key: '__ai__', label: 'AI 健康助手', icon: 'sparkles', color: '#1A2B24',
+    last: null, unread: 0, lastTime: Infinity, kind: 'ai',
+  };
+
+  // 全部合并，AI 置顶，其余按最新消息时间倒序
+  const convList = [
+    aiConv,
+    ...[...roleConvs, notifConv].sort((a, b) => b.lastTime - a.lastTime),
+  ];
+
+  const totalUnread = messages.filter(m => m.unread).length;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.pageTitle}>消息</Text>
+        {totalUnread > 0 && (
+          <View style={styles.unreadBadge}>
+            <Text style={styles.unreadBadgeText}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
+          </View>
+        )}
       </View>
 
       <ScrollView
@@ -583,74 +610,41 @@ export default function MessagesScreen({ navigation }) {
         style={{ flex: 1 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadMessages(); }} tintColor={colors.primary} />}
       >
-        <View style={styles.sectionCard}>
-          {/* AI 助手 */}
-          <TouchableOpacity style={styles.chatRow} onPress={() => navigation.navigate('Chat')} activeOpacity={0.7}>
-            <View style={[styles.chatAvatar, { backgroundColor: '#1A2B24' }]}>
-              <Ionicons name="sparkles" size={20} color="#fff" />
-            </View>
-            <View style={styles.chatBody}>
-              <Text style={styles.chatName}>AI 健康助手</Text>
-              <Text style={styles.chatPreview} numberOfLines={1}>随时问我健康问题，24小时在线</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
-          </TouchableOpacity>
+        <View style={[styles.sectionCard, { marginTop: 8 }]}>
+          {convList.map((conv, i) => {
+            const preview = conv.last?.content || conv.last?.title || (conv.kind === 'ai' ? '随时问我健康问题，24小时在线' : conv.kind === 'notif' ? '暂无通知' : '暂无消息');
+            const onPress = conv.kind === 'ai'
+              ? () => navigation.navigate('Chat')
+              : conv.kind === 'notif'
+              ? () => setShowNotifModal(true)
+              : () => setThreadRole(conv.key);
 
-          <View style={styles.sectionDivider} />
-
-          {/* 医护对话 */}
-          {ROLES.map((r, i) => {
-            const { last, unread } = roleInfo(r.key);
             return (
-              <View key={r.key}>
-                <TouchableOpacity style={styles.chatRow} onPress={() => setThreadRole(r.key)} activeOpacity={0.7}>
-                  <View style={[styles.chatAvatar, { backgroundColor: r.color }]}>
-                    <Ionicons name={r.icon} size={20} color="#fff" />
-                    {unread > 0 && (
+              <View key={conv.key}>
+                <TouchableOpacity style={styles.chatRow} onPress={onPress} activeOpacity={0.7}>
+                  <View style={[styles.chatAvatar, { backgroundColor: conv.color }]}>
+                    <Ionicons name={conv.icon} size={20} color="#fff" />
+                    {conv.unread > 0 && (
                       <View style={styles.avatarBadge}>
-                        <Text style={styles.avatarBadgeText}>{unread > 99 ? '99+' : unread}</Text>
+                        <Text style={styles.avatarBadgeText}>{conv.unread > 99 ? '99+' : conv.unread}</Text>
                       </View>
                     )}
                   </View>
                   <View style={styles.chatBody}>
                     <View style={styles.chatTopRow}>
-                      <Text style={styles.chatName}>{r.label}</Text>
-                      <Text style={styles.chatTime}>{fmtMsgTime(last?.createdAt)}</Text>
+                      <Text style={styles.chatName}>{conv.label}</Text>
+                      {conv.last && <Text style={styles.chatTime}>{fmtMsgTime(conv.last.createdAt)}</Text>}
                     </View>
-                    <Text style={[styles.chatPreview, unread > 0 && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
-                      {last?.content || last?.title || '暂无消息'}
+                    <Text style={[styles.chatPreview, conv.unread > 0 && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
+                      {preview}
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
                 </TouchableOpacity>
-                {i < ROLES.length - 1 && <View style={styles.rowDivider} />}
+                {i < convList.length - 1 && <View style={styles.rowDivider} />}
               </View>
             );
           })}
-
-          <View style={styles.sectionDivider} />
-
-          {/* 系统通知（折叠为一行） */}
-          <TouchableOpacity style={styles.chatRow} onPress={() => setShowNotifModal(true)} activeOpacity={0.7}>
-            <View style={[styles.chatAvatar, { backgroundColor: '#8A4AC7' }]}>
-              <Ionicons name="notifications" size={20} color="#fff" />
-              {notifUnread > 0 && (
-                <View style={styles.avatarBadge}>
-                  <Text style={styles.avatarBadgeText}>{notifUnread > 99 ? '99+' : notifUnread}</Text>
-                </View>
-              )}
-            </View>
-            <View style={styles.chatBody}>
-              <View style={styles.chatTopRow}>
-                <Text style={styles.chatName}>系统通知</Text>
-                <Text style={styles.chatTime}>{fmtMsgTime(notifMessages[0]?.createdAt)}</Text>
-              </View>
-              <Text style={[styles.chatPreview, notifUnread > 0 && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
-                {notifMessages[0]?.content || notifMessages[0]?.title || '暂无通知'}
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
-          </TouchableOpacity>
         </View>
 
         <View style={{ height: spacing.xl * 2 }} />
@@ -662,7 +656,6 @@ export default function MessagesScreen({ navigation }) {
       {threadRole && (
         <ConversationThreadModal role={threadRole} onClose={() => { setThreadRole(null); loadMessages(); }} />
       )}
-      {/* 系统通知列表 Modal */}
       <NotificationListModal
         visible={showNotifModal}
         messages={notifMessages}
