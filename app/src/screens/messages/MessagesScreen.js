@@ -446,6 +446,11 @@ function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo
             maxLength={500}
             textAlignVertical="top"
             autoFocus
+            onKeyPress={({ nativeEvent }) => {
+              if (nativeEvent.key === 'Enter' && !nativeEvent.shiftKey) {
+                send();
+              }
+            }}
           />
           <Text style={styles.composeCharCount}>{content.length}/500</Text>
 
