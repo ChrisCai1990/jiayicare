@@ -3955,39 +3955,39 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
   const [open, setOpen] = React.useState(false)
   const [type, setType] = React.useState('bloodPressure')
   const [saving, setSaving] = React.useState(false)
-  const [vals, setVals] = React.useState({
-    bloodPressure: { sys: '', dia: '' },
-    bloodSugar:    { val: '' },
-    heartRate:     { val: '' },
-    weight:        { val: '' },
-    sleep:         { sleepTime: '', wakeTime: '' },
-  })
 
   const TYPES = [
-    { key: 'bloodPressure', label: '血压', unit: 'mmHg' },
-    { key: 'bloodSugar',    label: '血糖', unit: 'mmol/L' },
-    { key: 'heartRate',     label: '心率', unit: '次/分' },
-    { key: 'weight',        label: '体重', unit: 'kg' },
-    { key: 'sleep',         label: '睡眠', unit: '小时' },
+    { key: 'bloodPressure', label: '血压',  unit: 'mmHg',   kind: 'bp' },
+    { key: 'bloodSugar',    label: '血糖',  unit: 'mmol/L', kind: 'num', placeholder: '如 5.8' },
+    { key: 'heartRate',     label: '心率',  unit: '次/分',  kind: 'num', placeholder: '如 72' },
+    { key: 'weight',        label: '体重',  unit: 'kg',     kind: 'num', placeholder: '如 65.0' },
+    { key: 'sleep',         label: '睡眠',  unit: '小时',   kind: 'sleep' },
+    { key: 'diet',          label: '饮食',  unit: '',       kind: 'text', placeholder: '如：三餐规律，以主食蔬菜为主，少油少盐' },
+    { key: 'exercise',      label: '运动',  unit: '',       kind: 'text', placeholder: '如：跑步，每周3次，每次30分钟' },
+    { key: 'water',         label: '饮水',  unit: '',       kind: 'text', placeholder: '如：白水为主，每日约2000毫升' },
+    { key: 'bowel',         label: '排便',  unit: '',       kind: 'text', placeholder: '如：1次/日，成形，无特殊' },
+    { key: 'smoking',       label: '吸烟',  unit: '',       kind: 'text', placeholder: '如：不吸烟 / 每日10支，2010年起' },
+    { key: 'alcohol',       label: '饮酒',  unit: '',       kind: 'text', placeholder: '如：红酒，每次100ml，每周1次' },
   ]
 
+  const initVals = () => Object.fromEntries(TYPES.map(t =>
+    [t.key, t.kind === 'bp' ? { sys: '', dia: '' } : t.kind === 'sleep' ? { sleepTime: '', wakeTime: '' } : { val: '' }]
+  ))
+
+  const [vals, setVals] = React.useState(initVals)
   const setField = (field, v) => setVals(p => ({ ...p, [type]: { ...p[type], [field]: v } }))
-  const reset = () => setVals({
-    bloodPressure: { sys: '', dia: '' },
-    bloodSugar:    { val: '' },
-    heartRate:     { val: '' },
-    weight:        { val: '' },
-    sleep:         { sleepTime: '', wakeTime: '' },
-  })
+  const reset = () => setVals(initVals())
+
+  const curType = TYPES.find(t => t.key === type)
 
   const handleSave = async () => {
     let value, extra = {}
     const cur = vals[type]
-    if (type === 'bloodPressure') {
+    if (curType.kind === 'bp') {
       if (!cur.sys || !cur.dia) { toastFn('请填写收缩压和舒张压'); return }
       value = cur.sys + '/' + cur.dia
       extra = { sys: Number(cur.sys), dia: Number(cur.dia) }
-    } else if (type === 'sleep') {
+    } else if (curType.kind === 'sleep') {
       if (!cur.sleepTime || !cur.wakeTime) { toastFn('请填写入睡和起床时间'); return }
       const [sh, sm] = cur.sleepTime.split(':').map(Number)
       const [wh, wm] = cur.wakeTime.split(':').map(Number)
@@ -3995,7 +3995,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
       value = dur.toFixed(1)
       extra = { sleepTime: cur.sleepTime, wakeTime: cur.wakeTime }
     } else {
-      if (!cur.val) { toastFn('请填写数值'); return }
+      if (!cur.val) { toastFn('请填写内容'); return }
       value = cur.val
     }
     setSaving(true)
@@ -4013,7 +4013,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
         <div className="card-body" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <div style={{ fontWeight: 600, fontSize: 14 }}>初始健康数据录入</div>
-            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>录入后直接同步到用户端，格式与用户填写完全一致</div>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>录入后直接同步到用户端，格式与用户打卡完全一致</div>
           </div>
           <button className="btn btn-primary btn-sm" onClick={() => setOpen(true)}>+ 录入数据</button>
         </div>
@@ -4028,9 +4028,9 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
         <button className="btn btn-secondary btn-sm" onClick={() => { setOpen(false); reset() }}>取消</button>
       </div>
       <div className="card-body">
-        <div style={{ marginBottom: 12 }}>
-          <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>数据类型</label>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <div style={{ marginBottom: 14 }}>
+          <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>数据类型</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {TYPES.map(t => (
               <button key={t.key}
                 className={'btn btn-sm ' + (type === t.key ? 'btn-primary' : 'btn-secondary')}
@@ -4039,7 +4039,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
           </div>
         </div>
 
-        {type === 'bloodPressure' && (
+        {curType.kind === 'bp' && (
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>收缩压（高压）</label>
@@ -4055,7 +4055,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
           </div>
         )}
 
-        {type === 'sleep' && (
+        {curType.kind === 'sleep' && (
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>入睡时间</label>
@@ -4070,19 +4070,25 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
           </div>
         )}
 
-        {type !== 'bloodPressure' && type !== 'sleep' && (
+        {curType.kind === 'num' && (
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
             <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>
-                {(TYPES.find(t => t.key === type) || {}).label}
-              </label>
+              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{curType.label}</label>
               <input className="form-control" type="number" step="0.1" value={vals[type].val}
                 onChange={e => setField('val', e.target.value)} style={{ width: 150 }}
-                placeholder={type === 'bloodSugar' ? '如 5.8' : type === 'weight' ? '如 65.0' : '如 75'} />
+                placeholder={curType.placeholder} />
             </div>
-            <span style={{ color: '#8AA89C', fontSize: 13, marginBottom: 8 }}>
-              {(TYPES.find(t => t.key === type) || {}).unit}
-            </span>
+            <span style={{ color: '#8AA89C', fontSize: 13, marginBottom: 8 }}>{curType.unit}</span>
+          </div>
+        )}
+
+        {curType.kind === 'text' && (
+          <div>
+            <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{curType.label}</label>
+            <textarea className="form-control" rows={2} value={vals[type].val}
+              onChange={e => setField('val', e.target.value)}
+              placeholder={curType.placeholder}
+              style={{ width: '100%' }} />
           </div>
         )}
 
