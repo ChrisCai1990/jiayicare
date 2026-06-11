@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { staffAPI } from '../api'
+import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 
@@ -1815,19 +1815,22 @@ export default function PatientDetailPage() {
                                       {r.hospital && <span style={{ fontSize: 12, color: '#8AA89C' }}>📍 {r.hospital}</span>}
                                     </div>
                                     {r.note && <div style={{ fontSize: 13, color: '#4A6558' }}>{r.note}</div>}
-                                    {r.fileUrl && (
-                                      <div style={{ marginTop: 4 }}>
-                                        {r.mimeType === 'application/pdf' ? (
-                                          <a href={r.fileUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#1E6B50', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                            📄 查看报告PDF
-                                          </a>
-                                        ) : (
-                                          <a href={r.fileUrl} target="_blank" rel="noopener noreferrer">
-                                            <img src={r.fileUrl} alt="报告" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'pointer' }} />
-                                          </a>
-                                        )}
-                                      </div>
-                                    )}
+                                    {r.fileUrl && (() => {
+                                      const fullUrl = r.fileUrl.startsWith('/') ? API_ORIGIN + r.fileUrl : r.fileUrl
+                                      return (
+                                        <div style={{ marginTop: 4 }}>
+                                          {r.mimeType === 'application/pdf' ? (
+                                            <a href={fullUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#1E6B50', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                              📄 查看报告PDF
+                                            </a>
+                                          ) : (
+                                            <a href={fullUrl} target="_blank" rel="noopener noreferrer">
+                                              <img src={fullUrl} alt="报告" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'pointer' }} />
+                                            </a>
+                                          )}
+                                        </div>
+                                      )
+                                    })()}
                                     {r.reportItems?.length > 0 && (
                                       <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                                         {r.reportItems.map((item, j) => (

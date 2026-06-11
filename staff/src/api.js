@@ -1,4 +1,5 @@
 const BASE = import.meta.env.VITE_API_URL || 'http://121.40.156.39/api'
+export const API_ORIGIN = BASE.replace(/\/api$/, '')
 
 export const getToken   = ()  => localStorage.getItem('jy_staff_token')
 export const setToken   = (t) => localStorage.setItem('jy_staff_token', t)
