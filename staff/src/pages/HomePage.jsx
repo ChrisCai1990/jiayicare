@@ -15,6 +15,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true)
   const [pendingReferralCount, setPendingReferralCount] = useState(0)
   const [unreadMsgCount, setUnreadMsgCount] = useState(0)
+  const [checkinRecords, setCheckinRecords] = useState([])
 
   useEffect(() => {
     staffAPI.getReports()
@@ -22,7 +23,10 @@ export default function HomePage() {
       .catch(console.error)
       .finally(() => setLoading(false))
 
-    // 拉取待处理转介数 + 未读用户留言数
+    staffAPI.getCheckinOverview({})
+      .then(r => setCheckinRecords(r.data || []))
+      .catch(() => {})
+
     Promise.allSettled([
       staffAPI.getNotifications(),
       staffAPI.getUserMessages(),
@@ -54,10 +58,61 @@ export default function HomePage() {
       </div>
 
       {/* 数据卡片 */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)', marginBottom: 24 }}>
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>
         <StatCard icon="👥" label="我的会员" value={reports?.totalPatients ?? '-'} color="#1E6B50" onClick={() => nav('/patients')} />
         <StatCard icon="📞" label="今日随访" value={reports?.todayFollowUps ?? '-'} color="#0077B6" onClick={() => nav('/followups')} />
         <StatCard icon="📅" label="本月随访" value={reports?.monthFollowUps ?? '-'} color="#22A06B" onClick={() => nav('/followups')} />
+        <StatCard icon="✅" label="今日打卡" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
+      </div>
+
+      {/* 今日健康打卡 */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div className="card-title">今日健康打卡</div>
+          <button className="btn btn-secondary btn-sm" onClick={() => nav('/daily-checkin')}>查看全部</button>
+        </div>
+        <div className="card-body" style={{ padding: checkinRecords.length === 0 ? '20px 20px' : '8px 20px' }}>
+          {checkinRecords.length === 0 ? (
+            <div style={{ color: '#aaa', textAlign: 'center', fontSize: 14 }}>今日暂无客户打卡</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {checkinRecords.slice(0, 5).map((r, i) => (
+                <div key={String(r.patientId)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 0',
+                    borderBottom: i < Math.min(checkinRecords.length, 5) - 1 ? '1px solid #f0ede8' : 'none',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => nav(`/patients/${r.patientId}?tab=records`)}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60 }}>{r.patientName}</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>{r.patientPhone}</span>
+                    <span style={{ fontSize: 12, color: '#aaa' }}>
+                      {new Date(r.latestRecordAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>
+                      已打 {r.doneItems.length} 项
+                    </span>
+                    {r.missingItems.length > 0 && (
+                      <span style={{ fontSize: 12, color: '#D97706', background: '#D9780618', padding: '2px 8px', borderRadius: 99 }}>
+                        未完成 {r.missingItems.length} 项
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+              {checkinRecords.length > 5 && (
+                <div style={{ textAlign: 'center', padding: '10px 0 2px', fontSize: 13, color: '#8AA89C', cursor: 'pointer' }}
+                  onClick={() => nav('/daily-checkin')}>
+                  还有 {checkinRecords.length - 5} 位客户 →
+                </div>
+              )}
+            </div>
+          )}
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
