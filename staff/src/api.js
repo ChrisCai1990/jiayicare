@@ -236,6 +236,7 @@ export const staffAPI = {
 
   // 4.3 专项筛查
   getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),
+  getProjectSubItems:    (type, id) => req(`/staff/requisition-items/${type}/${id}/sub-items`),
   createScreeningRecord: (id, data, file) => {
     if (file) {
       const fd = new FormData()

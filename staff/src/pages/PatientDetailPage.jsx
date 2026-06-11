@@ -1925,9 +1925,16 @@ export default function PatientDetailPage() {
                         {screeningSearchResults.length > 0 && (
                           <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: 180, overflowY: 'auto', marginTop: 4 }}>
                             {screeningSearchResults.map(item => (
-                              <div key={item._id} onMouseDown={() => {
+                              <div key={item._id} onMouseDown={async () => {
                                 setScreeningForm(f => ({ ...f, title: item.name }))
                                 setScreeningSearchQ(''); setScreeningSearchResults([])
+                                // 自动带出子项目
+                                if (item.type === 'labTestPackage' || item.type === 'labTestOrder') {
+                                  try {
+                                    const r = await staffAPI.getProjectSubItems(item.type, item._id)
+                                    if (r.data?.length) setScreeningForm(f => ({ ...f, title: item.name, reportItems: r.data }))
+                                  } catch {}
+                                }
                               }} style={{ padding: '8px 14px', cursor: 'pointer', fontSize: 13, display: 'flex', gap: 8, borderBottom: '1px solid #f5f5f5' }}
                                 onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
                                 onMouseLeave={e => e.currentTarget.style.background = '#fff'}>

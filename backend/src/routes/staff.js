@@ -31,6 +31,8 @@ const FollowUpPlan      = require('../models/FollowUpPlan');
 const SystemConfig      = require('../models/SystemConfig');
 const ExamRequisition   = require('../models/ExamRequisition');
 const LabTestOrder      = require('../models/LabTestOrder');
+const LabTestPackage    = require('../models/LabTestPackage');
+const LabTestItem       = require('../models/LabTestItem');
 const SpecialExam       = require('../models/SpecialExam');
 const AbnormalReview    = require('../models/AbnormalReview');
 const Task              = require('../models/Task');
@@ -1518,20 +1520,52 @@ router.patch('/requisitions/:id/cancel', staffAuth, async (req, res) => {
   }
 });
 
-// GET /api/staff/requisition-items — 获取可开单的项目列表（检验医嘱 + 检查医嘱）
+// GET /api/staff/requisition-items — 获取可开单的项目列表（检验医嘱 + 检查医嘱 + 套餐）
 router.get('/requisition-items', staffAuth, async (req, res) => {
   try {
     const { q = '' } = req.query;
     const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
-    const [labOrders, specialExams] = await Promise.all([
-      LabTestOrder.find({ ...filter, status: 'active' }).select('name mnemonic items').limit(100),
-      SpecialExam.find({ ...filter, status: 'active' }).select('name mnemonic examType').limit(100),
+    const [labOrders, specialExams, packages] = await Promise.all([
+      LabTestOrder.find({ ...filter, status: 'active' }).select('name mnemonic items').limit(50),
+      SpecialExam.find({ ...filter, status: 'active' }).select('name mnemonic examType').limit(50),
+      LabTestPackage.find({ ...filter, status: 'active' }).select('name mnemonic labTestItems').limit(50),
     ]);
     const result = [
+      ...packages.map(p => ({ _id: p._id, name: p.name, mnemonic: p.mnemonic, type: 'labTestPackage', typeName: '套餐', itemCount: p.labTestItems?.length || 0 })),
       ...labOrders.map(o => ({ _id: o._id, name: o.name, mnemonic: o.mnemonic, type: 'labTestOrder', typeName: '检验医嘱' })),
       ...specialExams.map(e => ({ _id: e._id, name: e.name, mnemonic: e.mnemonic, type: 'specialExam', typeName: '检查医嘱' })),
     ];
     res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// GET /api/staff/requisition-items/:type/:id/sub-items — 获取套餐/医嘱的子项目（用于预填检验项目）
+router.get('/requisition-items/:type/:id/sub-items', staffAuth, async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    let items = [];
+    if (type === 'labTestPackage') {
+      const pkg = await LabTestPackage.findById(id).populate('labTestItems', 'name unit referenceValue referenceRange');
+      items = (pkg?.labTestItems || []).map(i => ({
+        name: i.name,
+        value: '',
+        unit: i.unit || '',
+        referenceRange: i.referenceRange || i.referenceValue || '',
+        status: 'normal',
+      }));
+    } else if (type === 'labTestOrder') {
+      const order = await LabTestOrder.findById(id).populate('items', 'name unit referenceValue referenceRange');
+      items = (order?.items || []).map(i => ({
+        name: i.name,
+        value: '',
+        unit: i.unit || '',
+        referenceRange: i.referenceRange || i.referenceValue || '',
+        status: 'normal',
+      }));
+    }
+    res.json({ success: true, data: items });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
