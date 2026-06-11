@@ -2310,7 +2310,7 @@ router.get('/checkin-overview', staffAuth, async (req, res) => {
     const records = await HealthRecord.find({
       user: { $in: patientIds },
       recordedAt: { $gte: start, $lte: end },
-    }).select('user type value unit recordedAt').sort({ recordedAt: -1 }).lean();
+    }).select('user type value unit recordedAt imageUrl extra').sort({ recordedAt: -1 }).lean();
 
     // 按患者分组
     const byPatient = {};

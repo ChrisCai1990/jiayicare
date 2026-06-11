@@ -2438,20 +2438,34 @@ export default function PatientDetailPage() {
               <thead>
                 <tr>
                   <th>类型</th>
-                  <th>数值</th>
+                  <th>数值 / 备注</th>
+                  <th>图片</th>
                   <th>记录时间</th>
                 </tr>
               </thead>
               <tbody>
-                {recentRecords.map(r => (
-                  <tr key={r._id}>
-                    <td><span className="badge badge-info">{RECORD_TYPE_LABEL[r.type] || r.type}</span></td>
-                    <td>{formatRecordValue(r)}</td>
-                    <td style={{ color: '#8AA89C', fontSize: 13 }}>
-                      {new Date(r.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                    </td>
-                  </tr>
-                ))}
+                {recentRecords.map(r => {
+                  const imgUrl = r.imageUrl || r.extra?.imageUrl || ''
+                  return (
+                    <tr key={r._id}>
+                      <td><span className="badge badge-info">{RECORD_TYPE_LABEL[r.type] || r.type}</span></td>
+                      <td>{formatRecordValue(r)}</td>
+                      <td>
+                        {imgUrl ? (
+                          <img
+                            src={imgUrl}
+                            alt="打卡图片"
+                            style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', border: '1px solid #E0D9CE' }}
+                            onClick={() => setPreviewImageUrl(imgUrl)}
+                          />
+                        ) : <span style={{ color: '#ccc', fontSize: 12 }}>—</span>}
+                      </td>
+                      <td style={{ color: '#8AA89C', fontSize: 13 }}>
+                        {new Date(r.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           ) : (

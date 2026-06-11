@@ -835,6 +835,8 @@ export default function HomeScreen({ navigation }) {
                   value: checkinNote || '已打卡',
                   note: checkinNote || '',
                   status: 'normal',
+                  imageUrl: checkinImage || '',
+                  extra: checkinImage ? { imageUrl: checkinImage } : undefined,
                 });
               } catch { /* 静默失败，本地已保存 */ }
               setCheckinModal(null);
