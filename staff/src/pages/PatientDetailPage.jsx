@@ -355,18 +355,26 @@ export default function PatientDetailPage() {
 
   const load = async () => {
     try {
-      const res = await staffAPI.getPatient(id)
-      setData(res.data)
-      setEditForm(buildEditForm(res.data.user))
-      setBasicInfoForm(buildBasicInfoForm(res.data.user))
-      setHealthNeedsForm(buildHealthNeedsForm(res.data.user))
-      setHealthForm(buildHealthForm(res.data.user))
-      setLifestyleForm(buildLifestyleForm(res.data.user))
-      setInsuranceForm(buildInsuranceForm(res.data.user))
-      setLabForm(res.data.user.labValues || {})
-      setSeverityForm(res.data.user.chronicDiseaseSeverity || {})
-      setBodyCompForm(res.data.user.bodyComposition || {})
-      setAiSummaryForm(res.data.user.aiHealthSummary || {})
+      const [res, scrRes] = await Promise.allSettled([
+        staffAPI.getPatient(id),
+        staffAPI.getScreeningReports(id),
+      ])
+      if (res.status === 'fulfilled') {
+        setData(res.value.data)
+        setEditForm(buildEditForm(res.value.data.user))
+        setBasicInfoForm(buildBasicInfoForm(res.value.data.user))
+        setHealthNeedsForm(buildHealthNeedsForm(res.value.data.user))
+        setHealthForm(buildHealthForm(res.value.data.user))
+        setLifestyleForm(buildLifestyleForm(res.value.data.user))
+        setInsuranceForm(buildInsuranceForm(res.value.data.user))
+        setLabForm(res.value.data.user.labValues || {})
+        setSeverityForm(res.value.data.user.chronicDiseaseSeverity || {})
+        setBodyCompForm(res.value.data.user.bodyComposition || {})
+        setAiSummaryForm(res.value.data.user.aiHealthSummary || {})
+      } else {
+        throw res.reason
+      }
+      if (scrRes.status === 'fulfilled') setScreeningReports(scrRes.value.data || [])
     } catch (err) {
       toast(err.message || '加载失败')
     } finally {
@@ -2154,6 +2162,68 @@ export default function PatientDetailPage() {
                 </div>
               </div>
             ) : (() => {
+              // ── 从专项筛查 reportItems 派生指标值 ──
+              // 按检查日期倒序，每个 key 取最新一条
+              const REPORT_KEY_MAP = {
+                fpg:   ['空腹血糖','空腹葡萄糖','GLU','FPG','Glu(空腹)'],
+                hba1c: ['糖化血红蛋白','HbA1c','HBA1C','HbA1c(%)'],
+                tc:    ['总胆固醇','TC','CHOL','胆固醇'],
+                tg:    ['甘油三酯','TG','三酰甘油','TRIG'],
+                ldl:   ['低密度脂蛋白','LDL','LDL-C','LDL-胆固醇'],
+                hdl:   ['高密度脂蛋白','HDL','HDL-C','HDL-胆固醇'],
+                alt:   ['谷丙转氨酶','ALT','丙氨酸转氨酶','丙氨酸氨基转移酶'],
+                ast:   ['谷草转氨酶','AST','天冬氨酸转氨酶','门冬氨酸氨基转移酶'],
+                ggt:   ['γ-谷氨酰转肽酶','GGT','γ-GT','γGT','谷氨酰转肽酶'],
+                ua:    ['尿酸','UA','SUA'],
+                cr:    ['血肌酐','肌酐','CREA','Cr','Scr'],
+                hcy:   ['同型半胱氨酸','Hcy','HCY'],
+                lpla2: ['Lp-PLA2','脂蛋白磷脂酶A2','LPLA2'],
+                sbp:   ['收缩压','SBP','收缩压(mmHg)'],
+                dbp:   ['舒张压','DBP','舒张压(mmHg)'],
+                weight:['体重','Weight','BW'],
+              }
+              // 超声：按标题匹配整条报告的 note
+              const US_TITLE_MAP = {
+                liverUs:  ['肝脏超声','肝胆超声','腹部超声','肝脏彩超','肝胆彩超'],
+                carotiUs: ['颈动脉超声','颈动脉彩超','颈部血管超声'],
+              }
+              // 排序报告（最新在前）
+              const sortedReports = [...screeningReports].sort((a, b) =>
+                new Date(b.checkDate || b.createdAt || 0) - new Date(a.checkDate || a.createdAt || 0)
+              )
+              // 从 reportItems 派生数值指标
+              const derived = {}
+              for (const [key, names] of Object.entries(REPORT_KEY_MAP)) {
+                for (const report of sortedReports) {
+                  const item = (report.reportItems || []).find(ri =>
+                    names.some(n => ri.name && ri.name.includes(n))
+                  )
+                  if (item && item.value) {
+                    derived[key] = {
+                      value: item.value,
+                      unit: item.unit || '',
+                      date: report.checkDate || report.date || '',
+                      source: report.title || '专项筛查',
+                      abnormal: item.status === 'abnormal',
+                    }
+                    break
+                  }
+                }
+              }
+              // 从报告标题派生超声文字
+              for (const [key, titles] of Object.entries(US_TITLE_MAP)) {
+                for (const report of sortedReports) {
+                  if (titles.some(t => (report.title || '').includes(t))) {
+                    const text = report.note || (report.reportItems || []).map(ri => ri.name + (ri.value ? '：' + ri.value : '')).join('；')
+                    if (text) {
+                      derived[key] = { value: text, date: report.checkDate || '', source: report.title }
+                      break
+                    }
+                  }
+                }
+              }
+
+              // 合并：labValues 优先（手动录入），derived 作为来源补充展示
               const lv = user.labValues || {}
               const history = user.labHistory || []
               const gender = user.gender === '女' ? 'F' : 'M'
@@ -2181,9 +2251,19 @@ export default function PatientDetailPage() {
                 { key: 'carotiUs',label: '颈动脉超声',       unit: '',       isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
               ]
 
-              // 有值的项
-              const filledDefs = LAB_DEFS.filter(d => lv[d.key] != null && lv[d.key] !== '')
-              const abnormalDefs = filledDefs.filter(d => d.check && d.check(lv[d.key]))
+              // 合并值：labValues 手动优先，无值则从专项筛查派生
+              const getVal = (key) => {
+                if (lv[key] != null && lv[key] !== '') return { val: String(lv[key]), fromScreening: false, sourceLabel: '' }
+                if (derived[key]) return { val: derived[key].value, fromScreening: true, sourceLabel: derived[key].source || '筛查' }
+                return null
+              }
+
+              // 有值的项（含筛查派生）
+              const filledDefs = LAB_DEFS.filter(d => getVal(d.key) !== null)
+              const abnormalDefs = filledDefs.filter(d => {
+                const v = getVal(d.key)
+                return v && d.check && d.check(v.val)
+              })
               const hasData = filledDefs.length > 0
 
               // 按 key 组织历史趋势数据
@@ -2196,10 +2276,11 @@ export default function PatientDetailPage() {
                       pts.push({ x: dateStr, y: parseFloat(h[key]) || 0 })
                     }
                   })
-                // 加当前值
-                if (lv[key] != null && lv[key] !== '') {
-                  const today = lv.labDate ? new Date(lv.labDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '当前'
-                  pts.push({ x: today, y: parseFloat(lv[key]) || 0 })
+                // 加当前值（手动录入优先）
+                const cur = getVal(key)
+                if (cur) {
+                  const today = lv.labDate ? new Date(lv.labDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : (derived[key]?.date ? new Date(derived[key].date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '当前')
+                  pts.push({ x: today, y: parseFloat(cur.val) || 0 })
                 }
                 return pts
               }
@@ -2207,8 +2288,8 @@ export default function PatientDetailPage() {
               // 展示的项（默认只显示异常，有体重就加上）
               const displayDefs = showAllLab ? filledDefs : [
                 ...abnormalDefs,
-                ...(lv.weight ? [LAB_DEFS.find(d => d.key === 'weight')] : []),
-              ].filter((d, i, arr) => arr.findIndex(x => x.key === d.key) === i)
+                ...(getVal('weight') ? [LAB_DEFS.find(d => d.key === 'weight')] : []),
+              ].filter((d, i, arr) => d && arr.findIndex(x => x && x.key === d.key) === i)
 
               if (!hasData) return (
                 <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
@@ -2237,8 +2318,10 @@ export default function PatientDetailPage() {
 
                   {/* 数值指标卡片 */}
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px 12px' }}>
-                    {displayDefs.filter(d => !d.isText).map(d => {
-                      const val = lv[d.key]
+                    {displayDefs.filter(d => d && !d.isText).map(d => {
+                      const cur = getVal(d.key)
+                      if (!cur) return null
+                      const { val, fromScreening, sourceLabel } = cur
                       const isAbnormal = d.check && d.check(val)
                       const pts = trendData(d.key)
                       const bgColor = isAbnormal ? '#FEF2F2' : d.key === 'weight' ? '#f9f7f3' : '#f0faf5'
@@ -2253,6 +2336,9 @@ export default function PatientDetailPage() {
                           <div style={{ fontSize: 15, fontWeight: 700, color: textColor }}>
                             {val} <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C' }}>{d.unit}</span>
                           </div>
+                          {fromScreening && (
+                            <div style={{ fontSize: 10, color: '#0077B6', marginTop: 2 }}>来源：{sourceLabel}</div>
+                          )}
                           {pts.length >= 2 && (
                             <div style={{ marginTop: 4 }}>
                               <MiniTrendChart data={pts} color={borderColor} label="" />
@@ -2265,16 +2351,21 @@ export default function PatientDetailPage() {
 
                   {/* 文字指标（超声） */}
                   {(() => {
-                    const textDefs = displayDefs.filter(d => d.isText)
+                    const textDefs = displayDefs.filter(d => d && d.isText)
                     if (!textDefs.length) return null
                     return (
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', marginTop: 8 }}>
                         {textDefs.map(d => {
-                          const val = lv[d.key]
+                          const cur = getVal(d.key)
+                          if (!cur) return null
+                          const { val, fromScreening, sourceLabel } = cur
                           const isAbnormal = d.check && d.check(val)
                           return (
                             <div key={d.key} style={{ padding: '8px 12px', background: isAbnormal ? '#FEF2F2' : '#f9f7f3', borderRadius: 8, borderLeft: `3px solid ${isAbnormal ? '#DC3545' : '#aaa'}` }}>
-                              <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3 }}>{d.label}</div>
+                              <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3, display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{d.label}</span>
+                                {fromScreening && <span style={{ color: '#0077B6', fontSize: 10 }}>{sourceLabel}</span>}
+                              </div>
                               <div style={{ fontSize: 13, color: isAbnormal ? '#DC3545' : '#1A2B24', fontWeight: isAbnormal ? 600 : 400 }}>{val}</div>
                             </div>
                           )
