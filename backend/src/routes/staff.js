@@ -2273,13 +2273,18 @@ router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) 
 });
 
 // ── 日常健康打卡总览（新增需求）────────────────────────────────────
-// GET /api/staff/checkin-overview?date=&patientName=&page=&limit=
+// GET /api/staff/checkin-overview?date=&patientName=
+// 返回当天（默认今天）每位客户的打卡汇总：已打卡项、未打卡项、最近打卡时间
 router.get('/checkin-overview', staffAuth, async (req, res) => {
   try {
-    const { date, patientName, page = 1, limit = 50 } = req.query;
+    const { date, patientName } = req.query;
     const staff = req.staff;
 
-    // 确定当前医护人员管辖的患者
+    // 全部打卡类型（与用户端一致）
+    const ALL_CHECKIN_TYPES = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
+    const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒' };
+
+    // 管辖患者
     const patientFilter = {};
     if (staff.role === 'healthManager') patientFilter.assignedHealthManager = staff._id;
     else if (staff.role === 'familyDoctor') patientFilter.assignedFamilyDoctor = staff._id;
@@ -2291,42 +2296,45 @@ router.get('/checkin-overview', staffAuth, async (req, res) => {
     const patientMap = {};
     patients.forEach(p => { patientMap[String(p._id)] = p; });
 
-    // 日期筛选
-    const recordFilter = { user: { $in: patientIds } };
-    if (date) {
-      const start = new Date(date); start.setHours(0, 0, 0, 0);
-      const end   = new Date(date); end.setHours(23, 59, 59, 999);
-      recordFilter.recordedAt = { $gte: start, $lte: end };
-    }
+    // 日期范围（默认今天）
+    const targetDate = date ? new Date(date) : new Date();
+    const start = new Date(targetDate); start.setHours(0, 0, 0, 0);
+    const end   = new Date(targetDate); end.setHours(23, 59, 59, 999);
 
-    // 每个患者最新一条打卡记录
-    const latestRecords = await HealthRecord.aggregate([
-      { $match: recordFilter },
-      { $sort: { recordedAt: -1 } },
-      { $group: { _id: '$user', latestRecord: { $first: '$$ROOT' }, recordCount: { $sum: 1 } } },
-      { $sort: { 'latestRecord.recordedAt': -1 } },
-      { $skip: (Number(page) - 1) * Number(limit) },
-      { $limit: Number(limit) },
-    ]);
+    // 拉取当天所有打卡记录
+    const records = await HealthRecord.find({
+      user: { $in: patientIds },
+      recordedAt: { $gte: start, $lte: end },
+    }).select('user type value unit recordedAt').sort({ recordedAt: -1 }).lean();
 
-    // 拼接患者信息和摘要
-    const result = latestRecords.map(r => {
-      const patient = patientMap[String(r._id)] || {};
-      const rec = r.latestRecord;
-      const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水' };
-      const summary = `${TYPE_LABEL[rec.type] || rec.type} ${rec.value}${rec.unit || ''}`;
-      return {
-        patientId: r._id,
-        patientName: patient.name || '-',
-        patientPhone: patient.phone || '-',
-        latestRecordAt: rec.recordedAt,
-        summary,
-        type: rec.type,
-        value: rec.value,
-        unit: rec.unit,
-        recordCount: r.recordCount,
-      };
+    // 按患者分组
+    const byPatient = {};
+    records.forEach(r => {
+      const uid = String(r.user);
+      if (!byPatient[uid]) byPatient[uid] = { latestAt: r.recordedAt, types: {} };
+      if (r.recordedAt > byPatient[uid].latestAt) byPatient[uid].latestAt = r.recordedAt;
+      if (!byPatient[uid].types[r.type]) byPatient[uid].types[r.type] = r; // 取每种类型第一条（最新）
     });
+
+    // 只返回有打卡记录的患者，按最近打卡时间倒序
+    const result = Object.entries(byPatient)
+      .map(([uid, data]) => {
+        const patient = patientMap[uid] || {};
+        const doneTypes = Object.keys(data.types);
+        const missingTypes = ALL_CHECKIN_TYPES.filter(t => !doneTypes.includes(t));
+        return {
+          patientId: uid,
+          patientName: patient.name || '-',
+          patientPhone: patient.phone || '-',
+          latestRecordAt: data.latestAt,
+          doneItems: doneTypes.map(t => ({
+            type: t, label: TYPE_LABEL[t] || t,
+            value: data.types[t].value, unit: data.types[t].unit || '',
+          })),
+          missingItems: missingTypes.map(t => ({ type: t, label: TYPE_LABEL[t] || t })),
+        };
+      })
+      .sort((a, b) => new Date(b.latestRecordAt) - new Date(a.latestRecordAt));
 
     res.json({ success: true, data: result, total: result.length });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
