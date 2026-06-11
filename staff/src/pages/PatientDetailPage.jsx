@@ -327,6 +327,7 @@ export default function PatientDetailPage() {
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
   const [screeningSearchResults, setScreeningSearchResults] = useState([])
   const [screeningSearching, setScreeningSearching] = useState(false)
+  const [expandedRecord, setExpandedRecord] = useState(null) // 展开详情的记录 _id
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
   // 健康评分
@@ -1807,42 +1808,72 @@ export default function PatientDetailPage() {
                                 <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{records.length} 次记录）</span>
                               </div>
                               {/* 时间轴：每次检查结果 */}
-                              {records.map((r, i) => (
-                                <div key={r._id} style={{ display: 'flex', gap: 10, padding: '6px 0 6px 12px', borderLeft: `2px solid ${i === 0 ? color : '#E0D9CE'}` }}>
-                                  <div style={{ flex: 1 }}>
-                                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 2 }}>
+                              {records.map((r, i) => {
+                                const isExpanded = expandedRecord === r._id
+                                const fullUrl = r.fileUrl ? (r.fileUrl.startsWith('/') ? API_ORIGIN + r.fileUrl : r.fileUrl) : null
+                                const STATUS_TEXT = { normal: '正常', abnormal: '异常', attention: '注意', unknown: '' }
+                                const STATUS_COLOR_MAP = { normal: '#22A06B', abnormal: '#DC3545', attention: '#D97706', unknown: '#8AA89C' }
+                                return (
+                                  <div key={r._id} style={{ padding: '8px 0 8px 12px', borderLeft: `2px solid ${i === 0 ? color : '#E0D9CE'}`, marginBottom: 4 }}>
+                                    {/* 摘要行，可点击展开 */}
+                                    <div
+                                      onClick={() => setExpandedRecord(isExpanded ? null : r._id)}
+                                      style={{ display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
+                                    >
                                       <span style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>{r.checkDate || (r.createdAt && new Date(r.createdAt).toLocaleDateString('zh-CN'))}</span>
                                       {r.hospital && <span style={{ fontSize: 12, color: '#8AA89C' }}>📍 {r.hospital}</span>}
+                                      {r.note && <span style={{ fontSize: 13, color: '#4A6558', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.note}</span>}
+                                      {r.reportItems?.length > 0 && (
+                                        <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{r.reportItems.length} 项</span>
+                                      )}
+                                      <span style={{ fontSize: 12, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                                     </div>
-                                    {r.note && <div style={{ fontSize: 13, color: '#4A6558' }}>{r.note}</div>}
-                                    {r.fileUrl && (() => {
-                                      const fullUrl = r.fileUrl.startsWith('/') ? API_ORIGIN + r.fileUrl : r.fileUrl
-                                      return (
-                                        <div style={{ marginTop: 4 }}>
-                                          {r.mimeType === 'application/pdf' ? (
-                                            <a href={fullUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#1E6B50', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                              📄 查看报告PDF
-                                            </a>
-                                          ) : (
-                                            <a href={fullUrl} target="_blank" rel="noopener noreferrer">
-                                              <img src={fullUrl} alt="报告" style={{ maxWidth: 160, maxHeight: 120, borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'pointer' }} />
-                                            </a>
-                                          )}
-                                        </div>
-                                      )
-                                    })()}
-                                    {r.reportItems?.length > 0 && (
-                                      <div style={{ marginTop: 4, display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                                        {r.reportItems.map((item, j) => (
-                                          <span key={j} style={{ padding: '1px 8px', borderRadius: 12, fontSize: 12, background: item.status === 'abnormal' ? '#FEF2F2' : '#f9f7f3', color: item.status === 'abnormal' ? '#DC3545' : '#4A6558', border: `1px solid ${item.status === 'abnormal' ? '#FECACA' : '#E0D9CE'}` }}>
-                                            {item.name}{item.value && `：${item.value}`}{item.unit && ` ${item.unit}`}
-                                          </span>
-                                        ))}
+                                    {/* 展开详情 */}
+                                    {isExpanded && (
+                                      <div style={{ marginTop: 10 }}>
+                                        {r.note && <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 8 }}>结论：{r.note}</div>}
+                                        {r.reportItems?.length > 0 && (
+                                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
+                                            <thead>
+                                              <tr style={{ background: '#f5f2ec' }}>
+                                                <th style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>项目</th>
+                                                <th style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>结果</th>
+                                                <th style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>参考范围</th>
+                                                <th style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>状态</th>
+                                              </tr>
+                                            </thead>
+                                            <tbody>
+                                              {r.reportItems.map((item, j) => (
+                                                <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
+                                                  <td style={{ padding: '5px 10px', color: '#1A2B24' }}>{item.name}</td>
+                                                  <td style={{ padding: '5px 10px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
+                                                    {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
+                                                  </td>
+                                                  <td style={{ padding: '5px 10px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
+                                                  <td style={{ padding: '5px 10px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
+                                                </tr>
+                                              ))}
+                                            </tbody>
+                                          </table>
+                                        )}
+                                        {fullUrl && (
+                                          <div style={{ marginTop: 6 }}>
+                                            {r.mimeType === 'application/pdf' ? (
+                                              <a href={fullUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: '#1E6B50', textDecoration: 'none' }}>
+                                                📄 查看报告PDF
+                                              </a>
+                                            ) : (
+                                              <a href={fullUrl} target="_blank" rel="noopener noreferrer">
+                                                <img src={fullUrl} alt="报告" style={{ maxWidth: 220, maxHeight: 160, borderRadius: 6, border: '1px solid #E0D9CE', cursor: 'pointer' }} />
+                                              </a>
+                                            )}
+                                          </div>
+                                        )}
                                       </div>
                                     )}
                                   </div>
-                                </div>
-                              ))}
+                                )
+                              })}
                             </div>
                           ))}
                         </div>
@@ -1933,8 +1964,45 @@ export default function PatientDetailPage() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">主要结论/备注</label>
-                  <textarea className="form-input" rows={3} placeholder="如：未见明显异常；左叶结节3mm，建议随访" value={screeningForm.note}
+                  <textarea className="form-input" rows={2} placeholder="如：未见明显异常；左叶结节3mm，建议随访" value={screeningForm.note}
                     onChange={e => setScreeningForm(f => ({ ...f, note: e.target.value }))} />
+                </div>
+                {/* 具体检验项目 */}
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <label className="form-label" style={{ marginBottom: 0 }}>具体检验项目（可选）</label>
+                    <button type="button" className="btn btn-secondary btn-sm"
+                      onClick={() => setScreeningForm(f => ({ ...f, reportItems: [...f.reportItems, { name: '', value: '', unit: '', referenceRange: '', status: 'normal' }] }))}>
+                      + 添加项目
+                    </button>
+                  </div>
+                  {screeningForm.reportItems.length > 0 && (
+                    <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 0, background: '#f5f2ec', padding: '4px 8px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
+                        <span>项目名称</span><span>结果</span><span>单位</span><span>参考范围</span><span>状态</span><span />
+                      </div>
+                      {screeningForm.reportItems.map((item, idx) => (
+                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 4, padding: '4px 8px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
+                          <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="如 TSH" value={item.name}
+                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, reportItems: a } })} />
+                          <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="如 2.5" value={item.value}
+                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], value: e.target.value }; return { ...f, reportItems: a } })} />
+                          <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="mIU/L" value={item.unit}
+                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], unit: e.target.value }; return { ...f, reportItems: a } })} />
+                          <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="0.27-4.20" value={item.referenceRange}
+                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], referenceRange: e.target.value }; return { ...f, reportItems: a } })} />
+                          <select className="form-input" style={{ padding: '3px 4px', fontSize: 12 }} value={item.status}
+                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], status: e.target.value }; return { ...f, reportItems: a } })}>
+                            <option value="normal">正常</option>
+                            <option value="abnormal">异常</option>
+                            <option value="attention">注意</option>
+                          </select>
+                          <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                            onClick={() => setScreeningForm(f => ({ ...f, reportItems: f.reportItems.filter((_, i) => i !== idx) }))}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">上传报告（图片或 PDF，可选）</label>
