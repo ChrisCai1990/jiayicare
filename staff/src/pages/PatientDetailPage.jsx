@@ -3847,11 +3847,13 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
   const [open, setOpen] = React.useState(false)
   const [type, setType] = React.useState('bloodPressure')
   const [saving, setSaving] = React.useState(false)
-  const [sys, setSys] = React.useState('')
-  const [dia, setDia] = React.useState('')
-  const [sleepTime, setSleepTime] = React.useState('')
-  const [wakeTime, setWakeTime] = React.useState('')
-  const [val, setVal] = React.useState('')
+  const [vals, setVals] = React.useState({
+    bloodPressure: { sys: '', dia: '' },
+    bloodSugar:    { val: '' },
+    heartRate:     { val: '' },
+    weight:        { val: '' },
+    sleep:         { sleepTime: '', wakeTime: '' },
+  })
 
   const TYPES = [
     { key: 'bloodPressure', label: '血压', unit: 'mmHg' },
@@ -3861,24 +3863,32 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
     { key: 'sleep',         label: '睡眠', unit: '小时' },
   ]
 
-  const reset = () => { setSys(''); setDia(''); setSleepTime(''); setWakeTime(''); setVal('') }
+  const setField = (field, v) => setVals(p => ({ ...p, [type]: { ...p[type], [field]: v } }))
+  const reset = () => setVals({
+    bloodPressure: { sys: '', dia: '' },
+    bloodSugar:    { val: '' },
+    heartRate:     { val: '' },
+    weight:        { val: '' },
+    sleep:         { sleepTime: '', wakeTime: '' },
+  })
 
   const handleSave = async () => {
     let value, extra = {}
+    const cur = vals[type]
     if (type === 'bloodPressure') {
-      if (!sys || !dia) { toastFn('请填写收缩压和舒张压'); return }
-      value = sys + '/' + dia
-      extra = { sys: Number(sys), dia: Number(dia) }
+      if (!cur.sys || !cur.dia) { toastFn('请填写收缩压和舒张压'); return }
+      value = cur.sys + '/' + cur.dia
+      extra = { sys: Number(cur.sys), dia: Number(cur.dia) }
     } else if (type === 'sleep') {
-      if (!sleepTime || !wakeTime) { toastFn('请填写入睡和起床时间'); return }
-      const [sh, sm] = sleepTime.split(':').map(Number)
-      const [wh, wm] = wakeTime.split(':').map(Number)
+      if (!cur.sleepTime || !cur.wakeTime) { toastFn('请填写入睡和起床时间'); return }
+      const [sh, sm] = cur.sleepTime.split(':').map(Number)
+      const [wh, wm] = cur.wakeTime.split(':').map(Number)
       const dur = ((wh * 60 + wm) - (sh * 60 + sm) + 1440) % 1440 / 60
       value = dur.toFixed(1)
-      extra = { sleepTime, wakeTime }
+      extra = { sleepTime: cur.sleepTime, wakeTime: cur.wakeTime }
     } else {
-      if (!val) { toastFn('请填写数值'); return }
-      value = val
+      if (!cur.val) { toastFn('请填写数值'); return }
+      value = cur.val
     }
     setSaving(true)
     try {
@@ -3916,7 +3926,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
             {TYPES.map(t => (
               <button key={t.key}
                 className={'btn btn-sm ' + (type === t.key ? 'btn-primary' : 'btn-secondary')}
-                onClick={() => { setType(t.key); reset() }}>{t.label}</button>
+                onClick={() => setType(t.key)}>{t.label}</button>
             ))}
           </div>
         </div>
@@ -3925,13 +3935,13 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>收缩压（高压）</label>
-              <input className="form-control" type="number" placeholder="如 120" value={sys}
-                onChange={e => setSys(e.target.value)} style={{ width: 120 }} />
+              <input className="form-control" type="number" placeholder="如 120" value={vals.bloodPressure.sys}
+                onChange={e => setField('sys', e.target.value)} style={{ width: 120 }} />
             </div>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>舒张压（低压）</label>
-              <input className="form-control" type="number" placeholder="如 80" value={dia}
-                onChange={e => setDia(e.target.value)} style={{ width: 120 }} />
+              <input className="form-control" type="number" placeholder="如 80" value={vals.bloodPressure.dia}
+                onChange={e => setField('dia', e.target.value)} style={{ width: 120 }} />
             </div>
             <span style={{ color: '#8AA89C', fontSize: 13, marginBottom: 8 }}>mmHg</span>
           </div>
@@ -3941,13 +3951,13 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
           <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>入睡时间</label>
-              <input className="form-control" type="time" value={sleepTime}
-                onChange={e => setSleepTime(e.target.value)} style={{ width: 130 }} />
+              <input className="form-control" type="time" value={vals.sleep.sleepTime}
+                onChange={e => setField('sleepTime', e.target.value)} style={{ width: 130 }} />
             </div>
             <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>起床时间</label>
-              <input className="form-control" type="time" value={wakeTime}
-                onChange={e => setWakeTime(e.target.value)} style={{ width: 130 }} />
+              <input className="form-control" type="time" value={vals.sleep.wakeTime}
+                onChange={e => setField('wakeTime', e.target.value)} style={{ width: 130 }} />
             </div>
           </div>
         )}
@@ -3958,8 +3968,8 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>
                 {(TYPES.find(t => t.key === type) || {}).label}
               </label>
-              <input className="form-control" type="number" step="0.1" value={val}
-                onChange={e => setVal(e.target.value)} style={{ width: 150 }}
+              <input className="form-control" type="number" step="0.1" value={vals[type].val}
+                onChange={e => setField('val', e.target.value)} style={{ width: 150 }}
                 placeholder={type === 'bloodSugar' ? '如 5.8' : type === 'weight' ? '如 65.0' : '如 75'} />
             </div>
             <span style={{ color: '#8AA89C', fontSize: 13, marginBottom: 8 }}>
