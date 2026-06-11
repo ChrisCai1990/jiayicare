@@ -545,14 +545,18 @@ export default function MessagesScreen({ navigation }) {
   ];
 
   const roleInfo = (roleKey) => {
-    // 包括该角色发来的消息和用户自己发给该角色的消息（type:'user' + recipient=roleKey）
-    const incoming = messages.filter(m => m.type === roleKey);
+    // 该角色类型的消息 OR conversationId 以 _roleKey 结尾（医护主动发起时）
+    const incoming = messages.filter(m =>
+      m.type === roleKey ||
+      (m.conversationId && m.conversationId.endsWith(`_${roleKey}`))
+    );
     const last = incoming[0];
     const unread = incoming.filter(m => m.unread).length;
     return { last, unread };
   };
 
-  const notifMessages = messages.filter(m => NOTIF_TYPES.has(m.type));
+  // 有 conversationId 的消息属于对话线程，不放进通知列表
+  const notifMessages = messages.filter(m => NOTIF_TYPES.has(m.type) && !m.conversationId);
   const notifUnread = notifMessages.filter(m => m.unread).length;
 
   const fmtMsgTime = (t) => {
