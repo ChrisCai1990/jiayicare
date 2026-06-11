@@ -2251,39 +2251,35 @@ export default function PatientDetailPage() {
                 { key: 'carotiUs',label: '颈动脉超声',       unit: '',       isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
               ]
 
-              // 合并值：labValues 手动优先，无值则从专项筛查派生
+              // 只从专项筛查派生值，不读 labValues
               const getVal = (key) => {
-                if (lv[key] != null && lv[key] !== '') return { val: String(lv[key]), fromScreening: false, sourceLabel: '' }
-                if (derived[key]) return { val: derived[key].value, fromScreening: true, sourceLabel: derived[key].source || '筛查' }
+                if (derived[key]) return { val: derived[key].value, sourceLabel: derived[key].source || '筛查', date: derived[key].date || '' }
                 return null
               }
 
-              // 有值的项（含筛查派生）
+              // 趋势：从所有筛查报告里按时间收集该 key 的历次值（旧→新）
+              const trendData = (key) => {
+                const names = REPORT_KEY_MAP[key] || []
+                if (!names.length) return []
+                const pts = []
+                ;[...sortedReports].reverse().forEach(report => {
+                  const item = (report.reportItems || []).find(ri => names.some(n => ri.name && ri.name.includes(n)))
+                  if (item && item.value && parseFloat(item.value)) {
+                    const d = report.checkDate || report.date || ''
+                    const dateStr = d ? new Date(d).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '?'
+                    pts.push({ x: dateStr, y: parseFloat(item.value) })
+                  }
+                })
+                return pts
+              }
+
+              // 有值的项（仅筛查派生）
               const filledDefs = LAB_DEFS.filter(d => getVal(d.key) !== null)
               const abnormalDefs = filledDefs.filter(d => {
                 const v = getVal(d.key)
                 return v && d.check && d.check(v.val)
               })
               const hasData = filledDefs.length > 0
-
-              // 按 key 组织历史趋势数据
-              const trendData = (key) => {
-                const pts = []
-                ;[...(history || [])].sort((a, b) => new Date(a.recordedAt || a.labDate || 0) - new Date(b.recordedAt || b.labDate || 0))
-                  .forEach(h => {
-                    if (h[key] != null && h[key] !== '') {
-                      const dateStr = (h.recordedAt ? new Date(h.recordedAt) : new Date(h.labDate)).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
-                      pts.push({ x: dateStr, y: parseFloat(h[key]) || 0 })
-                    }
-                  })
-                // 加当前值（手动录入优先）
-                const cur = getVal(key)
-                if (cur) {
-                  const today = lv.labDate ? new Date(lv.labDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : (derived[key]?.date ? new Date(derived[key].date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '当前')
-                  pts.push({ x: today, y: parseFloat(cur.val) || 0 })
-                }
-                return pts
-              }
 
               // 展示的项（默认只显示异常，有体重就加上）
               const displayDefs = showAllLab ? filledDefs : [
@@ -2293,7 +2289,7 @@ export default function PatientDetailPage() {
 
               if (!hasData) return (
                 <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
-                  暂无体检指标记录，点击「+ 新增记录」录入
+                  暂无筛查指标数据，请在「专项筛查结果」中录入报告项目
                 </div>
               )
 
@@ -2305,7 +2301,7 @@ export default function PatientDetailPage() {
                       {abnormalDefs.length > 0
                         ? <span style={{ fontSize: 13, fontWeight: 600, color: '#DC3545' }}>⚠️ {abnormalDefs.length} 项异常</span>
                         : <span style={{ fontSize: 13, color: '#22A06B', fontWeight: 600 }}>✓ 所有指标正常</span>}
-                      <span style={{ fontSize: 12, color: '#aaa' }}>共录入 {filledDefs.length} 项</span>
+                      <span style={{ fontSize: 12, color: '#aaa' }}>来自专项筛查，共 {filledDefs.length} 项</span>
                     </div>
                     <button className="btn btn-secondary btn-sm" onClick={() => setShowAllLab(s => !s)}>
                       {showAllLab ? '只看异常' : `查看全部 ${filledDefs.length} 项`}
@@ -2321,7 +2317,7 @@ export default function PatientDetailPage() {
                     {displayDefs.filter(d => d && !d.isText).map(d => {
                       const cur = getVal(d.key)
                       if (!cur) return null
-                      const { val, fromScreening, sourceLabel } = cur
+                      const { val, sourceLabel, date } = cur
                       const isAbnormal = d.check && d.check(val)
                       const pts = trendData(d.key)
                       const bgColor = isAbnormal ? '#FEF2F2' : d.key === 'weight' ? '#f9f7f3' : '#f0faf5'
@@ -2336,9 +2332,7 @@ export default function PatientDetailPage() {
                           <div style={{ fontSize: 15, fontWeight: 700, color: textColor }}>
                             {val} <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C' }}>{d.unit}</span>
                           </div>
-                          {fromScreening && (
-                            <div style={{ fontSize: 10, color: '#0077B6', marginTop: 2 }}>来源：{sourceLabel}</div>
-                          )}
+                          {sourceLabel && <div style={{ fontSize: 10, color: '#8AA89C', marginTop: 2 }}>{sourceLabel}{date ? `  ${date}` : ''}</div>}
                           {pts.length >= 2 && (
                             <div style={{ marginTop: 4 }}>
                               <MiniTrendChart data={pts} color={borderColor} label="" />
@@ -2358,13 +2352,13 @@ export default function PatientDetailPage() {
                         {textDefs.map(d => {
                           const cur = getVal(d.key)
                           if (!cur) return null
-                          const { val, fromScreening, sourceLabel } = cur
+                          const { val, sourceLabel, date } = cur
                           const isAbnormal = d.check && d.check(val)
                           return (
                             <div key={d.key} style={{ padding: '8px 12px', background: isAbnormal ? '#FEF2F2' : '#f9f7f3', borderRadius: 8, borderLeft: `3px solid ${isAbnormal ? '#DC3545' : '#aaa'}` }}>
                               <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3, display: 'flex', justifyContent: 'space-between' }}>
                                 <span>{d.label}</span>
-                                {fromScreening && <span style={{ color: '#0077B6', fontSize: 10 }}>{sourceLabel}</span>}
+                                <span style={{ fontSize: 10 }}>{sourceLabel}{date ? `  ${date}` : ''}</span>
                               </div>
                               <div style={{ fontSize: 13, color: isAbnormal ? '#DC3545' : '#1A2B24', fontWeight: isAbnormal ? 600 : 400 }}>{val}</div>
                             </div>
