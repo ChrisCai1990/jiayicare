@@ -458,8 +458,7 @@ export default function ServicePlansScreen({ navigation }) {
       const buildNotes = (key, v) => {
         const lines = [];
         Object.entries(v).forEach(([fk, fv]) => {
-          // 'notes' 是医护内部备注字段（internal），不展示给用户
-          if (fk === 'enabled' || fk === 'notes' || !fv || fv === false) return;
+          if (fk === 'enabled' || !fv || fv === false) return;
           const label = FIELD_LABEL[fk] || fk;
           const val = fv === true ? '是' : String(fv);
           lines.push(`${label}：${val}`);
@@ -485,7 +484,7 @@ export default function ServicePlansScreen({ navigation }) {
             confirmedAt: ap.confirmedAt || null,
             pushedAt: ap.pushedAt || null,
             items: Object.entries(ap.moduleData || {})
-              .filter(([, v]) => v && v.enabled)
+              .filter(([, v]) => v && v.enabled !== false)
               .map(([key, v]) => ({
                 _id: key,
                 name: MODULE_NAME[key] || key,
