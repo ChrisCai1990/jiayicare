@@ -2102,7 +2102,14 @@ export default function PatientDetailPage() {
               <div>
                 <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>填写最近一次体检结果（用于健康评分，留空表示正常）</div>
                 <div>
-                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>血糖 / 血脂 / 血压</div>
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>体征 / 血压</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px', marginBottom: 16 }}>
+                    <LabField label="体重" unit="kg" placeholder="如 65" value={labForm.weight || ''} onChange={e => setLabForm(f => ({ ...f, weight: e.target.value }))} />
+                    <LabField label="收缩压 SBP" unit="mmHg" placeholder="如 120" value={labForm.sbp || ''} onChange={e => setLabForm(f => ({ ...f, sbp: e.target.value }))} />
+                    <LabField label="舒张压 DBP" unit="mmHg" placeholder="如 80" value={labForm.dbp || ''} onChange={e => setLabForm(f => ({ ...f, dbp: e.target.value }))} />
+                    <LabField label="腰围" unit="cm" placeholder="如 80" value={labForm.waist || ''} onChange={e => setLabForm(f => ({ ...f, waist: e.target.value }))} />
+                  </div>
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>血糖 / 血脂</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px', marginBottom: 16 }}>
                     <LabField label="空腹血糖 FPG" unit="mmol/L" placeholder="如 5.6" value={labForm.fpg || ''} onChange={e => setLabForm(f => ({ ...f, fpg: e.target.value }))} />
                     <LabField label="糖化血红蛋白 HbA1c" unit="%" placeholder="如 5.4" value={labForm.hba1c || ''} onChange={e => setLabForm(f => ({ ...f, hba1c: e.target.value }))} />
@@ -2110,18 +2117,16 @@ export default function PatientDetailPage() {
                     <LabField label="低密度脂蛋白 LDL-C" unit="mmol/L" placeholder="如 2.8" value={labForm.ldl || ''} onChange={e => setLabForm(f => ({ ...f, ldl: e.target.value }))} />
                     <LabField label="高密度脂蛋白 HDL-C" unit="mmol/L" placeholder="如 1.3" value={labForm.hdl || ''} onChange={e => setLabForm(f => ({ ...f, hdl: e.target.value }))} />
                     <LabField label="甘油三酯 TG" unit="mmol/L" placeholder="如 1.2" value={labForm.tg || ''} onChange={e => setLabForm(f => ({ ...f, tg: e.target.value }))} />
-                    <LabField label="收缩压 SBP" unit="mmHg" placeholder="如 120" value={labForm.sbp || ''} onChange={e => setLabForm(f => ({ ...f, sbp: e.target.value }))} />
-                    <LabField label="舒张压 DBP" unit="mmHg" placeholder="如 80" value={labForm.dbp || ''} onChange={e => setLabForm(f => ({ ...f, dbp: e.target.value }))} />
-                    <LabField label="腰围" unit="cm" placeholder="如 80" value={labForm.waist || ''} onChange={e => setLabForm(f => ({ ...f, waist: e.target.value }))} />
                   </div>
                   <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>肝肾 / 代谢</div>
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px', marginBottom: 16 }}>
                     <LabField label="谷丙转氨酶 ALT" unit="U/L" placeholder="如 25" value={labForm.alt || ''} onChange={e => setLabForm(f => ({ ...f, alt: e.target.value }))} />
                     <LabField label="谷草转氨酶 AST" unit="U/L" placeholder="如 22" value={labForm.ast || ''} onChange={e => setLabForm(f => ({ ...f, ast: e.target.value }))} />
                     <LabField label="γ-谷氨酰转肽酶 GGT" unit="U/L" placeholder="如 30" value={labForm.ggt || ''} onChange={e => setLabForm(f => ({ ...f, ggt: e.target.value }))} />
+                    <LabField label="肌酐 Cr" unit="μmol/L" placeholder="如 75" value={labForm.cr || ''} onChange={e => setLabForm(f => ({ ...f, cr: e.target.value }))} />
                     <LabField label="尿酸 UA" unit="μmol/L" placeholder="如 350" value={labForm.ua || ''} onChange={e => setLabForm(f => ({ ...f, ua: e.target.value }))} />
                     <LabField label="同型半胱氨酸 Hcy" unit="μmol/L" placeholder="如 10" value={labForm.hcy || ''} onChange={e => setLabForm(f => ({ ...f, hcy: e.target.value }))} />
-                    <LabField label="脂蛋白磷脂酶A2 Lp-PLA2" unit="U/L" placeholder="如 180" value={labForm.lpla2 || ''} onChange={e => setLabForm(f => ({ ...f, lpla2: e.target.value }))} />
+                    <LabField label="脂蛋白磷脂酶A2 Lp-PLA2" unit="ng/mL" placeholder="如 180" value={labForm.lpla2 || ''} onChange={e => setLabForm(f => ({ ...f, lpla2: e.target.value }))} />
                     <div>
                       <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>肾功能（CKD分期）</span>
                       <select className="form-control" value={labForm.ckdStage || ''}
@@ -2147,70 +2152,141 @@ export default function PatientDetailPage() {
                   </div>
                 </div>
               </div>
-            ) : (
-              <div>
-                {user.labValues && Object.keys(user.labValues).some(k => user.labValues[k] && k !== 'labDate') ? (
-                  <div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px 16px' }}>
-                      {[
-                        ['空腹血糖', user.labValues.fpg, 'mmol/L', 6.1],
-                        ['HbA1c', user.labValues.hba1c, '%', 6.5],
-                        ['总胆固醇', user.labValues.tc, 'mmol/L', 5.2],
-                        ['LDL-C', user.labValues.ldl, 'mmol/L', 3.4],
-                        ['HDL-C', user.labValues.hdl, 'mmol/L', null],
-                        ['甘油三酯', user.labValues.tg, 'mmol/L', 1.7],
-                        ['收缩压', user.labValues.sbp, 'mmHg', 120],
-                        ['舒张压', user.labValues.dbp, 'mmHg', 80],
-                        ['腰围', user.labValues.waist, 'cm', null],
-                        ['ALT', user.labValues.alt, 'U/L', 40],
-                        ['AST', user.labValues.ast, 'U/L', 40],
-                        ['GGT', user.labValues.ggt, 'U/L', 50],
-                        ['尿酸', user.labValues.ua, 'μmol/L', user.gender === '女' ? 360 : 420],
-                        ['Hcy', user.labValues.hcy, 'μmol/L', 15],
-                        ['Lp-PLA2', user.labValues.lpla2, 'U/L', 200],
-                      ].filter(([,v]) => v != null && v !== '').map(([label, val, unit, normal]) => {
-                        const isHigh = normal != null && parseFloat(val) > normal
-                        return (
-                          <div key={label} style={{ padding: '6px 10px', background: isHigh ? '#FEF2F2' : '#f9f7f3', borderRadius: 8, borderLeft: `3px solid ${isHigh ? '#DC3545' : '#22A06B'}` }}>
-                            <div style={{ fontSize: 11, color: '#8AA89C' }}>{label}</div>
-                            <div style={{ fontSize: 14, fontWeight: 600, color: isHigh ? '#DC3545' : '#1A2B24' }}>{val} <span style={{ fontSize: 11, fontWeight: 400 }}>{unit}</span></div>
-                          </div>
-                        )
-                      })}
+            ) : (() => {
+              const lv = user.labValues || {}
+              const history = user.labHistory || []
+              const gender = user.gender === '女' ? 'F' : 'M'
+              const ABNORMAL_KEYWORDS = ['异常','增生','结节','增厚','囊肿','脂肪肝','钙化','斑块','狭窄','病变','硬化','肿大','回声','低回声']
+
+              // 17 项指标定义：key / label / unit / 判断函数
+              const LAB_DEFS = [
+                { key: 'weight',  label: '体重',           unit: 'kg',     check: () => null },  // 个体化，仅展示
+                { key: 'sbp',     label: '收缩压',          unit: 'mmHg',   check: v => parseFloat(v) >= 130 },
+                { key: 'dbp',     label: '舒张压',          unit: 'mmHg',   check: v => parseFloat(v) >= 80 },
+                { key: 'fpg',     label: '空腹血糖',        unit: 'mmol/L', check: v => parseFloat(v) > 6.1,  ref: '≤6.1' },
+                { key: 'hba1c',   label: 'HbA1c',          unit: '%',      check: v => parseFloat(v) >= 6.5,  ref: '<6.5' },
+                { key: 'tc',      label: '总胆固醇 TC',     unit: 'mmol/L', check: v => parseFloat(v) >= 5.2,  ref: '<5.2' },
+                { key: 'tg',      label: '甘油三酯 TG',     unit: 'mmol/L', check: v => parseFloat(v) >= 1.7,  ref: '<1.7' },
+                { key: 'ldl',     label: 'LDL-C',          unit: 'mmol/L', check: v => parseFloat(v) >= 3.4,  ref: '<3.4' },
+                { key: 'hdl',     label: 'HDL-C',          unit: 'mmol/L', check: v => parseFloat(v) < (gender === 'F' ? 1.3 : 1.0), ref: gender === 'F' ? '≥1.3' : '≥1.0' },
+                { key: 'ua',      label: '尿酸 UA',         unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 360 : 420), ref: gender === 'F' ? '≤360' : '≤420' },
+                { key: 'cr',      label: '肌酐 Cr',         unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 97 : 106),  ref: gender === 'F' ? '≤97' : '≤106' },
+                { key: 'alt',     label: 'ALT',             unit: 'U/L',    check: v => parseFloat(v) > 40,    ref: '≤40' },
+                { key: 'ast',     label: 'AST',             unit: 'U/L',    check: v => parseFloat(v) > 40,    ref: '≤40' },
+                { key: 'ggt',     label: 'GGT',             unit: 'U/L',    check: v => parseFloat(v) > 50,    ref: '≤50' },
+                { key: 'hcy',     label: '同型半胱氨酸 Hcy', unit: 'μmol/L', check: v => parseFloat(v) > 15,    ref: '≤15' },
+                { key: 'lpla2',   label: 'Lp-PLA2',         unit: 'ng/mL',  check: v => parseFloat(v) > 200,   ref: '≤200' },
+                { key: 'liverUs', label: '肝脏超声',         unit: '',       isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
+                { key: 'carotiUs',label: '颈动脉超声',       unit: '',       isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
+              ]
+
+              // 有值的项
+              const filledDefs = LAB_DEFS.filter(d => lv[d.key] != null && lv[d.key] !== '')
+              const abnormalDefs = filledDefs.filter(d => d.check && d.check(lv[d.key]))
+              const hasData = filledDefs.length > 0
+
+              // 按 key 组织历史趋势数据
+              const trendData = (key) => {
+                const pts = []
+                ;[...(history || [])].sort((a, b) => new Date(a.recordedAt || a.labDate || 0) - new Date(b.recordedAt || b.labDate || 0))
+                  .forEach(h => {
+                    if (h[key] != null && h[key] !== '') {
+                      const dateStr = (h.recordedAt ? new Date(h.recordedAt) : new Date(h.labDate)).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+                      pts.push({ x: dateStr, y: parseFloat(h[key]) || 0 })
+                    }
+                  })
+                // 加当前值
+                if (lv[key] != null && lv[key] !== '') {
+                  const today = lv.labDate ? new Date(lv.labDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '当前'
+                  pts.push({ x: today, y: parseFloat(lv[key]) || 0 })
+                }
+                return pts
+              }
+
+              // 展示的项（默认只显示异常，有体重就加上）
+              const [showAll, setShowAll] = React.useState(false)
+              const displayDefs = showAll ? filledDefs : [
+                ...abnormalDefs,
+                ...(lv.weight ? [LAB_DEFS.find(d => d.key === 'weight')] : []),
+              ].filter((d, i, arr) => arr.findIndex(x => x.key === d.key) === i)
+
+              if (!hasData) return (
+                <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
+                  暂无体检指标记录，点击「+ 新增记录」录入
+                </div>
+              )
+
+              return (
+                <div>
+                  {/* 摘要行 */}
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                      {abnormalDefs.length > 0
+                        ? <span style={{ fontSize: 13, fontWeight: 600, color: '#DC3545' }}>⚠️ {abnormalDefs.length} 项异常</span>
+                        : <span style={{ fontSize: 13, color: '#22A06B', fontWeight: 600 }}>✓ 所有指标正常</span>}
+                      <span style={{ fontSize: 12, color: '#aaa' }}>共录入 {filledDefs.length} 项</span>
                     </div>
-                    {(user.labValues.liverUs || user.labValues.carotiUs) && (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginTop: 8 }}>
-                        {user.labValues.liverUs && <div style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8 }}><span style={{ fontSize: 11, color: '#8AA89C', display: 'block' }}>肝脏超声</span><span style={{ fontSize: 13 }}>{user.labValues.liverUs}</span></div>}
-                        {user.labValues.carotiUs && <div style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8 }}><span style={{ fontSize: 11, color: '#8AA89C', display: 'block' }}>颈动脉超声</span><span style={{ fontSize: 13 }}>{user.labValues.carotiUs}</span></div>}
+                    <button className="btn btn-secondary btn-sm" onClick={() => setShowAll(s => !s)}>
+                      {showAll ? '只看异常' : `查看全部 ${filledDefs.length} 项`}
+                    </button>
+                  </div>
+
+                  {displayDefs.length === 0 && !showAll && (
+                    <div style={{ fontSize: 13, color: '#22A06B', textAlign: 'center', padding: '12px 0' }}>✓ 所有指标均在正常范围内</div>
+                  )}
+
+                  {/* 数值指标卡片 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px 12px' }}>
+                    {displayDefs.filter(d => !d.isText).map(d => {
+                      const val = lv[d.key]
+                      const isAbnormal = d.check && d.check(val)
+                      const pts = trendData(d.key)
+                      const bgColor = isAbnormal ? '#FEF2F2' : d.key === 'weight' ? '#f9f7f3' : '#f0faf5'
+                      const borderColor = isAbnormal ? '#DC3545' : d.key === 'weight' ? '#aaa' : '#22A06B'
+                      const textColor = isAbnormal ? '#DC3545' : '#1A2B24'
+                      return (
+                        <div key={d.key} style={{ padding: '10px 12px', background: bgColor, borderRadius: 8, borderLeft: `3px solid ${borderColor}` }}>
+                          <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
+                            <span>{d.label}</span>
+                            {d.ref && <span style={{ color: isAbnormal ? '#DC354560' : '#8AA89C' }}>参考 {d.ref}</span>}
+                          </div>
+                          <div style={{ fontSize: 15, fontWeight: 700, color: textColor }}>
+                            {val} <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C' }}>{d.unit}</span>
+                          </div>
+                          {pts.length >= 2 && (
+                            <div style={{ marginTop: 4 }}>
+                              <MiniTrendChart data={pts} color={borderColor} label="" />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+
+                  {/* 文字指标（超声） */}
+                  {(() => {
+                    const textDefs = displayDefs.filter(d => d.isText)
+                    if (!textDefs.length) return null
+                    return (
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', marginTop: 8 }}>
+                        {textDefs.map(d => {
+                          const val = lv[d.key]
+                          const isAbnormal = d.check && d.check(val)
+                          return (
+                            <div key={d.key} style={{ padding: '8px 12px', background: isAbnormal ? '#FEF2F2' : '#f9f7f3', borderRadius: 8, borderLeft: `3px solid ${isAbnormal ? '#DC3545' : '#aaa'}` }}>
+                              <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3 }}>{d.label}</div>
+                              <div style={{ fontSize: 13, color: isAbnormal ? '#DC3545' : '#1A2B24', fontWeight: isAbnormal ? 600 : 400 }}>{val}</div>
+                            </div>
+                          )
+                        })}
                       </div>
-                    )}
-                    {user.labValues.labDate && (
-                      <div style={{ fontSize: 12, color: '#aaa', marginTop: 8 }}>检测日期：{user.labValues.labDate}</div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>
-                    暂无体检指标记录，点击「+ 新增记录」录入
-                  </div>
-                )}
-                {/* 历史复查记录 */}
-                {!editingLabValues && (user.labHistory || []).length > 0 && (
-                  <div style={{ marginTop: 12, borderTop: '1px solid #f0ece4', paddingTop: 10 }}>
-                    <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>历史复查记录（{(user.labHistory || []).length} 条）</div>
-                    {[...(user.labHistory || [])].reverse().map((h, i) => (
-                      <div key={i} style={{ fontSize: 12, padding: '6px 0', borderBottom: '1px solid #f9f7f3', display: 'flex', flexWrap: 'wrap', gap: '4px 16px', color: '#4A6558' }}>
-                        <span style={{ color: '#aaa', minWidth: 90 }}>{h.recordedAt ? new Date(h.recordedAt).toLocaleDateString('zh-CN') : h.labDate || '-'}</span>
-                        {h.fpg && <span>血糖:{h.fpg}</span>}
-                        {h.tc && <span>TC:{h.tc}</span>}
-                        {h.ldl && <span>LDL:{h.ldl}</span>}
-                        {h.sbp && <span>血压:{h.sbp}/{h.dbp}</span>}
-                        {h.ua && <span>尿酸:{h.ua}</span>}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                    )
+                  })()}
+
+                  {lv.labDate && <div style={{ fontSize: 12, color: '#aaa', marginTop: 10 }}>检测日期：{lv.labDate}</div>}
+                </div>
+              )
+            })()}
           </div>
         </div>
 
