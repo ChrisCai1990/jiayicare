@@ -1754,17 +1754,19 @@ export default function PatientDetailPage() {
             health_promote: { label: '其他筛查',    color: '#0077B6' },
           }
           const CATS = [
-            { key: 'tumor',          label: '肿瘤筛查',    color: '#7C3AED' },
-            { key: 'cardiovascular', label: '心脑血管筛查', color: '#DC3545' },
-            { key: 'chronic',        label: '慢性病筛查',   color: '#D97706' },
-            { key: 'other',          label: '其他筛查',    color: '#0077B6' },
+            { key: 'tumor',          label: '肿瘤筛查',      color: '#7C3AED' },
+            { key: 'cardiovascular', label: '心脑血管筛查',   color: '#DC3545' },
+            { key: 'chronic',        label: '慢性病筛查',     color: '#D97706' },
+            { key: 'functional',     label: '功能医学检测',   color: '#0891B2' },
+            { key: 'other',          label: '其他筛查',      color: '#0077B6' },
           ]
-          const grouped = { tumor: [], cardiovascular: [], chronic: [], other: [] }
+          const grouped = { tumor: [], cardiovascular: [], chronic: [], functional: [], other: [] }
           screeningReports.forEach(r => {
             const cat = r.screeningCategory
             if (cat === 'tumor') grouped.tumor.push(r)
             else if (cat === 'cardiovascular' || cat === 'brain_vessel') grouped.cardiovascular.push(r)
             else if (cat === 'chronic') grouped.chronic.push(r)
+            else if (cat === 'functional') grouped.functional.push(r)
             else grouped.other.push(r)
           })
           const hasAny = screeningReports.length > 0
@@ -1957,6 +1959,7 @@ export default function PatientDetailPage() {
                     <option value="tumor">肿瘤筛查</option>
                     <option value="cardiovascular">心脑血管筛查</option>
                     <option value="chronic">慢性病筛查</option>
+                    <option value="functional">功能医学检测</option>
                     <option value="other_routine">其他筛查</option>
                   </select>
                 </div>

@@ -20,7 +20,7 @@ const medicalReportSchema = new mongoose.Schema({
   institution:     { type: String, default: '' },     // 检查机构
   screeningCategory: {
     type: String,
-    enum: ['tumor', 'cardiovascular', 'brain_vessel', 'chronic', 'other_routine', 'health_promote', ''],
+    enum: ['tumor', 'cardiovascular', 'brain_vessel', 'chronic', 'functional', 'other_routine', 'health_promote', ''],
     default: '',
   },
   reportItems:     [reportItemSchema],                // 解析后的各项结果
@@ -49,7 +49,7 @@ const medicalReportSchema = new mongoose.Schema({
       // 兼容旧数据
       'followup', 'imaging',
       // 专项筛查分类
-      'tumor', 'cardiovascular', 'chronic', 'health_promote',
+      'tumor', 'cardiovascular', 'chronic', 'functional', 'health_promote',
     ],
     default: 'annual',
   },
