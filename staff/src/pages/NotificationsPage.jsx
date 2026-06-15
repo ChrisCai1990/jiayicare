@@ -284,10 +284,13 @@ export default function NotificationsPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用户留言</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
-              {userMessages.map((m, i) => {
+              {Object.values(userMessages.reduce((acc, m) => {
+                if (!acc[m.user] || new Date(m.createdAt) > new Date(acc[m.user].createdAt)) acc[m.user] = m
+                return acc
+              }, {})).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((m, i, arr) => {
                 const roleKey = m.recipient === 'doctor' ? 'doctor' : m.recipient === 'nutritionist' ? 'nutritionist' : 'manager'
                 return (
-                  <div key={m._id} style={{ padding: '14px 20px', borderBottom: i < userMessages.length - 1 ? '1px solid #f5f2ec' : 'none',
+                  <div key={m.user} style={{ padding: '14px 20px', borderBottom: i < arr.length - 1 ? '1px solid #f5f2ec' : 'none',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
                     cursor: 'pointer', transition: 'background 0.1s' }}
                     onClick={() => setThreadModal({ userId: m.user, userName: m.patientName, roleKey })}
