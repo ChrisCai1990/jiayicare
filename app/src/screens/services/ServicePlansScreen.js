@@ -262,8 +262,13 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
   const formatDate = (d) => d
     ? new Date(d).toLocaleDateString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric' })
     : '未设置';
-  const progressDone  = (plan.items || []).filter(i => i.status === 'completed').length;
-  const progressTotal = (plan.items || []).length;
+  // 合并标准项目 + 加项（content.addons）
+  const addonItems = (plan.content?.addons || []).map((a, i) => ({
+    _id: `addon_${i}`, name: a.name, notes: a.reason || '', status: 'pending', isAddon: true,
+  }));
+  const allItems = [...(plan.items || []), ...addonItems];
+  const progressDone  = allItems.filter(i => i.status === 'completed').length;
+  const progressTotal = allItems.length;
 
   return (
     <View style={[s.planCard, isDraft && { borderColor: colors.warning + '60' }]}>
@@ -311,7 +316,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
 
           {/* 任务项列表 */}
           {progressTotal > 0 ? (
-            (plan.items || []).map((item, i) => (
+            allItems.map((item, i) => (
               <TouchableOpacity
                 key={item._id || i}
                 style={[s.planItem, { backgroundColor: i % 2 === 0 ? colors.background + '80' : 'transparent', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }]}
@@ -327,6 +332,11 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                   <Text style={[s.planItemText, item.status === 'completed' && s.planItemDone, { flex: 1 }]}>
                     {item.name}
                   </Text>
+                  {item.isAddon && (
+                    <View style={{ backgroundColor: '#FEF3E2', borderRadius: 4, paddingHorizontal: 5, paddingVertical: 1, marginRight: 4 }}>
+                      <Text style={{ fontSize: 10, color: '#D97706', fontWeight: '600' }}>加项</Text>
+                    </View>
+                  )}
                   <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
                 </View>
                 {!!item.notes && (
