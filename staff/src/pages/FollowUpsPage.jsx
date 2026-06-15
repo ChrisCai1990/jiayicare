@@ -6,6 +6,7 @@ import FollowUpModal from '../components/FollowUpModal'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
+const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 const STATUS_COLOR = { planned: '#D97706', in_progress: '#0077B6', missed: '#0077B6', completed: '#22A06B', cancelled: '#8AA89C' }
 
 const STATUS_TABS = [
@@ -51,7 +52,7 @@ function DetailModal({ item, onClose }) {
           {item.routinePeriod && <Row label="周期类型" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
           <Row label="负责人员" value={item.assignedTo?.name} />
           <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
-          {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.join('、')} />}
+          {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
           <Row label="计划内容" value={item.content} />
           {item.status === 'completed' && (
             <>

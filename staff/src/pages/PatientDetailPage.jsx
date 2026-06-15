@@ -4,6 +4,8 @@ import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 
+const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
+
 // ── 生活方式表单子组件（定义在组件外，引用稳定，避免每次渲染重新挂载）─────
 const LS_LABEL_STYLE = { fontSize: 12, color: '#8AA89C', marginBottom: 4, display: 'block' }
 
@@ -3420,7 +3422,7 @@ export default function PatientDetailPage() {
                   <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>打卡项目</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {followUpDetail.checkInItems.map((item, i) => (
-                      <span key={i} style={{ padding: '2px 10px', borderRadius: 99, background: '#E8F5EF', color: '#1E6B50', fontSize: 12, fontWeight: 500 }}>{item}</span>
+                      <span key={i} style={{ padding: '2px 10px', borderRadius: 99, background: '#E8F5EF', color: '#1E6B50', fontSize: 12, fontWeight: 500 }}>{CHECKIN_LABEL[item] || item}</span>
                     ))}
                   </div>
                 </div>
