@@ -210,6 +210,13 @@ export const adminAPI = {
   toggleSpecialExam: (id)       => req(`/special-exams/${id}/toggle`, { method: 'PATCH' }),
   deleteSpecialExam: (id)       => req(`/special-exams/${id}`, { method: 'DELETE' }),
 
+  // 功能医学检测
+  functionalMedicineTests:      (params = {}) => req('/functional-medicine-tests?' + new URLSearchParams(params).toString()),
+  createFunctionalMedicineTest: (data)     => req('/functional-medicine-tests', { method: 'POST', body: JSON.stringify(data) }),
+  updateFunctionalMedicineTest: (id, data) => req(`/functional-medicine-tests/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleFunctionalMedicineTest: (id)       => req(`/functional-medicine-tests/${id}/toggle`, { method: 'PATCH' }),
+  deleteFunctionalMedicineTest: (id)       => req(`/functional-medicine-tests/${id}`, { method: 'DELETE' }),
+
   // 服务项目
   serviceItems:      (params = {}) => req('/service-items?' + new URLSearchParams(params).toString()),
   createServiceItem: (data)     => req('/service-items', { method: 'POST', body: JSON.stringify(data) }),

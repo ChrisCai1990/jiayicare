@@ -30,6 +30,7 @@ import LabTestItemPage    from './pages/projects/LabTestItemPage'
 import LabTestOrderPage   from './pages/projects/LabTestOrderPage'
 import LabTestPackagePage from './pages/projects/LabTestPackagePage'
 import SpecialExamPage    from './pages/projects/SpecialExamPage'
+import FunctionalMedicinePage from './pages/projects/FunctionalMedicinePage'
 import ServiceItemPage    from './pages/projects/ServiceItemPage'
 import OtherChargePage    from './pages/projects/OtherChargePage'
 import ProjectTemplatePage from './pages/projects/ProjectTemplatePage'
@@ -122,6 +123,7 @@ export default function App() {
               <Route path="projects/lab-test-orders"  element={<LabTestOrderPage />} />
               <Route path="projects/lab-test-packages" element={<LabTestPackagePage />} />
               <Route path="projects/special-exams"    element={<SpecialExamPage />} />
+              <Route path="projects/functional-medicine" element={<FunctionalMedicinePage />} />
               <Route path="projects/service-items"    element={<ServiceItemPage />} />
               <Route path="projects/other-charges"    element={<OtherChargePage />} />
               <Route path="projects/templates"        element={<ProjectTemplatePage />} />

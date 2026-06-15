@@ -1697,7 +1697,7 @@ router.patch('/referrals/:id', staffAuth, async (req, res) => {
   const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
   if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
   if (status) referral.status = status;
-  if (response !== undefined) referral.response = response;
+  if (response !== undefined && response.trim()) referral.response = response.trim();
   referral.respondedAt = new Date();
   await referral.save();
   res.json({ success: true, data: referral });

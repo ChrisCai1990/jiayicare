@@ -37,6 +37,7 @@ const NAV_SECTIONS = [
       { label: '检验医嘱',     icon: '📄', path: '/projects/lab-test-orders' },
       { label: '专项检查套餐', icon: '📦', path: '/projects/lab-test-packages' },
       { label: '检查医嘱',     icon: '🔬', path: '/projects/special-exams' },
+      { label: '功能医学检测', icon: '🧬', path: '/projects/functional-medicine' },
       { label: '服务项目',     icon: '🤝', path: '/projects/service-items' },
       { label: '其他收费',     icon: '💰', path: '/projects/other-charges' },
       { label: '项目模板',     icon: '📋', path: '/projects/templates' },

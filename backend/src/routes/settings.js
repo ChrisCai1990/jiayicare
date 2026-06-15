@@ -15,6 +15,7 @@ const LabTestItem    = require('../models/LabTestItem');
 const LabTestOrder   = require('../models/LabTestOrder');
 const LabTestPackage = require('../models/LabTestPackage');
 const SpecialExam    = require('../models/SpecialExam');
+const FunctionalMedicineTest = require('../models/FunctionalMedicineTest');
 const ServiceItem    = require('../models/ServiceItem');
 const OtherCharge    = require('../models/OtherCharge');
 const ProjectTemplate = require('../models/ProjectTemplate');
@@ -698,6 +699,49 @@ router.patch('/followup-plans/:id/toggle', adminAuth, async (req, res) => {
 router.delete('/followup-plans/:id', adminAuth, async (req, res) => {
   await FollowUpPlan.findByIdAndDelete(req.params.id);
   res.json({ success: true, message: '随访方案已删除' });
+});
+
+// ── 功能医学检测 ──────────────────────────────────────────────
+router.get('/functional-medicine-tests', adminAuth, async (req, res) => {
+  const { q = '', status, page = 1, limit = 20 } = req.query;
+  const filter = { deleted: { $ne: true } };
+  if (q) filter.name = { $regex: q, $options: 'i' };
+  if (status) filter.status = status;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const [list, total] = await Promise.all([
+    FunctionalMedicineTest.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)),
+    FunctionalMedicineTest.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: list, total });
+});
+
+router.post('/functional-medicine-tests', adminAuth, async (req, res) => {
+  try {
+    if (!req.body.name?.trim()) return res.status(400).json({ success: false, message: '检测名称不能为空' });
+    const doc = await FunctionalMedicineTest.create(req.body);
+    res.json({ success: true, data: doc, message: '创建成功' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+router.put('/functional-medicine-tests/:id', adminAuth, async (req, res) => {
+  try {
+    const doc = await FunctionalMedicineTest.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!doc) return res.status(404).json({ success: false, message: '记录不存在' });
+    res.json({ success: true, data: doc, message: '已更新' });
+  } catch (e) { res.status(500).json({ success: false, message: e.message }); }
+});
+
+router.patch('/functional-medicine-tests/:id/toggle', adminAuth, async (req, res) => {
+  const doc = await FunctionalMedicineTest.findById(req.params.id);
+  if (!doc) return res.status(404).json({ success: false, message: '记录不存在' });
+  doc.status = doc.status === 'active' ? 'inactive' : 'active';
+  await doc.save();
+  res.json({ success: true, data: doc });
+});
+
+router.delete('/functional-medicine-tests/:id', adminAuth, async (req, res) => {
+  await FunctionalMedicineTest.findByIdAndUpdate(req.params.id, { deleted: true });
+  res.json({ success: true, message: '已删除' });
 });
 
 module.exports = router;

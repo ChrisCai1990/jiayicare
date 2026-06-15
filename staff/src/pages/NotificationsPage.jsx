@@ -292,7 +292,13 @@ export default function NotificationsPage() {
                       <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>对方回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
                       <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
                     </div>
-                  ) : r.status !== 'pending' ? null : (
+                  ) : r.status === 'completed' ? (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#22A06B' }}>✓ 已完成，对方未填写回复说明</div>
+                  ) : r.status === 'accepted' ? (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#0077B6' }}>已接受，等待完成...</div>
+                  ) : r.status === 'rejected' ? (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#DC3545' }}>已拒绝，未填写原因</div>
+                  ) : (
                     <div style={{ marginTop: 6, fontSize: 12, color: '#aaa' }}>等待对方回复...</div>
                   )}
                 </div>
