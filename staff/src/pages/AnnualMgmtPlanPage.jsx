@@ -289,6 +289,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [pushing, setPushing]       = useState(false)
   const [dirty, setDirty]           = useState(false)
   const [pushedAt, setPushedAt]     = useState(null)
+  const [confirmedAt, setConfirmedAt] = useState(null)
 
   useEffect(() => {
     setLoading(true)
@@ -303,10 +304,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPlanType(p.planType || '')
           setModuleData(p.moduleData || {})
           setPushedAt(p.pushedAt || null)
+          setConfirmedAt(p.confirmedAt || null)
         } else {
           setPlanType('')
           setModuleData({})
           setPushedAt(null)
+          setConfirmedAt(null)
         }
         setDirty(false)
       }).catch(err => toast(err.message || '加载失败'))
@@ -414,6 +417,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               ✓ 已推送 {new Date(pushedAt).toLocaleDateString('zh-CN')}
             </span>
           )}
+          {confirmedAt ? (
+            <span style={{ fontSize: 12, color: '#1E6B50', background: '#D1FAE5', padding: '4px 10px', borderRadius: 20, fontWeight: 600 }}>
+              ✓ 客户已确认 {new Date(confirmedAt).toLocaleDateString('zh-CN')}
+            </span>
+          ) : pushedAt && !dirty ? (
+            <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 10px', borderRadius: 20 }}>
+              待客户确认
+            </span>
+          ) : null}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
           {patientMode && (
             <button
