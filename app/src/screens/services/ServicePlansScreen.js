@@ -274,14 +274,26 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
         </View>
         <View style={s.planTitleWrap}>
           <View style={s.planTitleRow}>
-            <Text style={s.planTitle} numberOfLines={1}>{plan.title}</Text>
+            <Text style={s.planTitle} numberOfLines={1}>{plan.year ? `${plan.year}年 年度管理方案` : plan.title}</Text>
             <View style={[s.statusChip, { backgroundColor: sm.bg }]}>
               <Text style={[s.statusChipText, { color: sm.color }]}>{sm.label}</Text>
             </View>
           </View>
-          <Text style={s.planDesc} numberOfLines={expanded ? 0 : 1}>
-            {plan.description || meta.label}
-          </Text>
+          {plan.year && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+              <View style={{ backgroundColor: meta.bg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
+                <Text style={{ fontSize: 11, color: meta.color, fontWeight: '600' }}>{plan.year} 年度</Text>
+              </View>
+              {plan.description && plan.description !== '个人专属健康管理方案' && (
+                <Text style={{ fontSize: 12, color: colors.textMuted }}>{plan.description}</Text>
+              )}
+            </View>
+          )}
+          {!plan.year && (
+            <Text style={s.planDesc} numberOfLines={expanded ? 0 : 1}>
+              {plan.description || meta.label}
+            </Text>
+          )}
           {plan.staffId?.name && (
             <Text style={s.planStaff}>由 {plan.staffId.name} 制定</Text>
           )}
@@ -309,19 +321,26 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
             (plan.items || []).map((item, i) => (
               <TouchableOpacity
                 key={item._id || i}
-                style={[s.planItem, { backgroundColor: i % 2 === 0 ? colors.background + '80' : 'transparent' }]}
+                style={[s.planItem, { backgroundColor: i % 2 === 0 ? colors.background + '80' : 'transparent', flexDirection: 'column', alignItems: 'flex-start', gap: 0 }]}
                 activeOpacity={0.7}
                 onPress={() => onItemPress && onItemPress(item, plan, meta)}
               >
-                <Ionicons
-                  name={item.status === 'completed' ? 'checkmark-circle' : 'ellipse-outline'}
-                  size={16}
-                  color={item.status === 'completed' ? colors.success : meta.color}
-                />
-                <Text style={[s.planItemText, item.status === 'completed' && s.planItemDone]}>
-                  {item.name}
-                </Text>
-                <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, width: '100%' }}>
+                  <Ionicons
+                    name={item.status === 'completed' ? 'checkmark-circle' : 'ellipse-outline'}
+                    size={16}
+                    color={item.status === 'completed' ? colors.success : meta.color}
+                  />
+                  <Text style={[s.planItemText, item.status === 'completed' && s.planItemDone, { flex: 1 }]}>
+                    {item.name}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={14} color={colors.textMuted} />
+                </View>
+                {!!item.notes && (
+                  <Text style={{ fontSize: 11, color: colors.textMuted, lineHeight: 17, marginTop: 4, marginLeft: 24, paddingRight: 20 }} numberOfLines={3}>
+                    {item.notes}
+                  </Text>
+                )}
               </TouchableOpacity>
             ))
           ) : (
@@ -444,16 +463,21 @@ export default function ServicePlansScreen({ navigation }) {
       };
       // 字段标签映射
       const FIELD_LABEL = {
-        visit_time: '就医时间', hospital: '就医医院', department: '就诊科室',
+        visit_time: '就医时间', hospital: '就医/体检医院', department: '就诊科室',
         expert: '专家姓名', reason: '原因', coordinator: '协调专员',
         plan_time: '计划时间', plan_method: '方式', purpose: '目的',
         items: '项目', time: '时间', frequency: '频率',
         name: '名称', brand: '品牌', dose: '剂量',
-        escort: '陪检服务', institution: '机构',
+        escort: '陪检服务', institution: '体检机构',
         chemical_name: '药品名', brand_name: '商品名',
         body_composition: '人体成分', diet_analysis: '膳食调研',
         assist: '就医协助', order_dept: '开单科室', order_expert: '开单专家',
         notes: '备注',
+        // annual_checkup / functional_medicine 模块字段
+        date: '计划时间', focus: '重点关注', staff: '评估人员',
+        goal: '干预目标', plan: '干预计划',
+        // monitoring / vaccine 模块字段
+        other: '其他项目',
       };
       const buildNotes = (key, v) => {
         const lines = [];
