@@ -274,26 +274,19 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
         </View>
         <View style={s.planTitleWrap}>
           <View style={s.planTitleRow}>
-            <Text style={s.planTitle} numberOfLines={1}>{plan.year ? `${plan.year}年 年度管理方案` : plan.title}</Text>
+            <Text style={s.planTitle} numberOfLines={1}>{plan.title}</Text>
             <View style={[s.statusChip, { backgroundColor: sm.bg }]}>
               <Text style={[s.statusChipText, { color: sm.color }]}>{sm.label}</Text>
             </View>
           </View>
           {plan.year && (
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-              <View style={{ backgroundColor: meta.bg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2 }}>
-                <Text style={{ fontSize: 11, color: meta.color, fontWeight: '600' }}>{plan.year} 年度</Text>
-              </View>
-              {plan.description && plan.description !== '个人专属健康管理方案' && (
-                <Text style={{ fontSize: 12, color: colors.textMuted }}>{plan.description}</Text>
-              )}
+            <View style={{ backgroundColor: meta.bg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 2 }}>
+              <Text style={{ fontSize: 11, color: meta.color, fontWeight: '600' }}>{plan.year} 年度</Text>
             </View>
           )}
-          {!plan.year && (
-            <Text style={s.planDesc} numberOfLines={expanded ? 0 : 1}>
-              {plan.description || meta.label}
-            </Text>
-          )}
+          <Text style={s.planDesc} numberOfLines={expanded ? 0 : 1}>
+            {plan.description || meta.label}
+          </Text>
           {plan.staffId?.name && (
             <Text style={s.planStaff}>由 {plan.staffId.name} 制定</Text>
           )}
