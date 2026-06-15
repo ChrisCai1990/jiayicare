@@ -180,7 +180,7 @@ export default function LabTestPackagePage() {
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
-          <h2 style={{ fontSize: 20, fontWeight: 700 }}>专项检查套餐</h2>
+          <h2 style={{ fontSize: 20, fontWeight: 700 }}>专项筛查项目</h2>
           <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>一组检验医嘱和检查医嘱的集合，如"高血压筛查套餐"</p>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -240,7 +240,7 @@ export default function LabTestPackagePage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
           <div className="modal" style={{ maxWidth: 680 }} onKeyDown={handleKeyDown}>
             <div className="modal-header">
-              <h3 className="modal-title">{editId ? '编辑专项检查套餐' : '新增专项检查套餐'}</h3>
+              <h3 className="modal-title">{editId ? '编辑专项筛查项目' : '新增专项筛查项目'}</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             {error && <div className="login-err" style={{ margin: '0 20px 12px' }}>⚠️ {error}</div>}

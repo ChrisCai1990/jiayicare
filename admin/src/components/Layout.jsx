@@ -35,7 +35,7 @@ const NAV_SECTIONS = [
       { label: '疾病名称库',   icon: '🩺', path: '/projects/diseases' },
       { label: '检验项目',     icon: '🧪', path: '/projects/lab-test-items' },
       { label: '检验医嘱',     icon: '📄', path: '/projects/lab-test-orders' },
-      { label: '专项检查套餐', icon: '📦', path: '/projects/lab-test-packages' },
+      { label: '专项筛查项目', icon: '📦', path: '/projects/lab-test-packages' },
       { label: '检查医嘱',     icon: '🔬', path: '/projects/special-exams' },
       { label: '功能医学检测', icon: '🧬', path: '/projects/functional-medicine' },
       { label: '服务项目',     icon: '🤝', path: '/projects/service-items' },
