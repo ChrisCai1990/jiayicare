@@ -571,6 +571,8 @@ export default function HomeScreen({ navigation }) {
         : '',
       dueTime: '',
       priority: 'medium',
+      followupType: plan.type,
+      checkInItems: plan.checkInItems,
     })),
   ];
 
@@ -1091,8 +1093,44 @@ export default function HomeScreen({ navigation }) {
                     <Ionicons name="close" size={22} color={colors.textMuted} />
                   </TouchableOpacity>
                 </View>
-                {!!t.description && (
-                  <Text style={styles.taskModalDesc}>{t.description}</Text>
+                {t.type === 'followup' ? (
+                  <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
+                    {!!t.followupType && (
+                      <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                        <Text style={{ fontSize: 13, color: colors.textMuted, width: 64 }}>随访方式</Text>
+                        <Text style={{ fontSize: 13, color: colors.textPrimary, flex: 1 }}>
+                          {{ phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他' }[t.followupType] || t.followupType}
+                        </Text>
+                      </View>
+                    )}
+                    {t.checkInItems?.length > 0 && (
+                      <View style={{ flexDirection: 'row', marginBottom: 10 }}>
+                        <Text style={{ fontSize: 13, color: colors.textMuted, width: 64 }}>打卡项目</Text>
+                        <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                          {t.checkInItems.map((k, i) => (
+                            <View key={i} style={{ backgroundColor: '#E8F5EF', paddingHorizontal: 10, paddingVertical: 3, borderRadius: 99 }}>
+                              <Text style={{ fontSize: 12, color: '#1E6B50' }}>
+                                {{'diet':'饮食','exercise':'运动','sleep':'睡眠','alcohol':'烟酒','weight':'体重','bloodPressure':'血压','bloodSugar':'血糖','heartRate':'心率','water':'饮水'}[k] || k}
+                              </Text>
+                            </View>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+                    {!!t.description && (
+                      <View style={{ flexDirection: 'row', marginBottom: 4 }}>
+                        <Text style={{ fontSize: 13, color: colors.textMuted, width: 64 }}>备注</Text>
+                        <Text style={{ fontSize: 13, color: colors.textPrimary, flex: 1 }}>{t.description}</Text>
+                      </View>
+                    )}
+                    {!t.followupType && !t.checkInItems?.length && !t.description && (
+                      <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingVertical: 8 }}>暂无详细内容</Text>
+                    )}
+                  </View>
+                ) : (
+                  !!t.description && (
+                    <Text style={styles.taskModalDesc}>{t.description}</Text>
+                  )
                 )}
                 <View style={styles.taskModalFooter}>
                   <TouchableOpacity
