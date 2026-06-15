@@ -1624,12 +1624,25 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
     const patient = await User.findById(req.params.id);
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
 
+    const typeMap = {
+      doctor: 'doctor', chiefPhysician: 'doctor', physician: 'doctor',
+      nutritionist: 'nutritionist',
+      manager: 'manager', healthManager: 'manager', medicalAssistant: 'manager',
+    };
+    const staff = req.staff;
+    const msgType = typeMap[staff.role] || 'manager';
+    const roleKey = msgType === 'doctor' ? 'doctor' : msgType === 'nutritionist' ? 'nutritionist' : 'manager';
+    const conversationId = `${req.params.id}_${roleKey}`;
+    const senderLabel = staff.title ? `${staff.name}（${staff.title}）` : (staff.name || '健康管理团队');
+
     const msg = await Message.create({
-      user:    req.params.id,
-      type:    'system',
-      sender:  req.staff.name || '健康管理团队',
-      content: content.trim(),
-      unread:  true,
+      user:           req.params.id,
+      type:           msgType,
+      sender:         senderLabel,
+      content:        content.trim(),
+      unread:         true,
+      conversationId,
+      recipient:      roleKey,
     });
     res.json({ success: true, data: msg });
   } catch (err) {
