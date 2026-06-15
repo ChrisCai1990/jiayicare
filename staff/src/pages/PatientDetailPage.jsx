@@ -394,6 +394,9 @@ export default function PatientDetailPage() {
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
   const [screeningSearchResults, setScreeningSearchResults] = useState([])
   const [screeningSearching, setScreeningSearching] = useState(false)
+  const [screeningAutoMatches, setScreeningAutoMatches] = useState([])  // L3选完后自动匹配的后台项目
+  const [screeningAutoLoading, setScreeningAutoLoading] = useState(false)
+  const [screeningLinkedItem, setScreeningLinkedItem] = useState(null)  // 已关联的后台项目
   const [expandedRecord, setExpandedRecord] = useState(null) // 展开详情的记录 _id
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
   const screeningSearchTimer = useRef(null)
@@ -785,6 +788,8 @@ export default function PatientDetailPage() {
       setShowScreeningForm(false)
       setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [] })
       setScreeningFile(null)
+      setScreeningLinkedItem(null)
+      setScreeningAutoMatches([])
       loadScreening()
     } catch (err) { toast(err.message || '录入失败') }
     finally { setScreeningSaving(false) }
@@ -2072,9 +2077,18 @@ export default function PatientDetailPage() {
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <label className="form-label">第三层：具体项目 *</label>
                       <select className="form-input" value={screeningForm.screeningL3}
-                        onChange={e => {
+                        onChange={async e => {
                           const l3 = e.target.value
-                          setScreeningForm(f => ({ ...f, screeningL3: l3, title: l3 }))
+                          setScreeningForm(f => ({ ...f, screeningL3: l3, title: l3, reportItems: [] }))
+                          setScreeningLinkedItem(null)
+                          setScreeningAutoMatches([])
+                          if (!l3) return
+                          setScreeningAutoLoading(true)
+                          try {
+                            const r = await staffAPI.getRequisitionItems(l3)
+                            setScreeningAutoMatches(r.data || [])
+                          } catch { setScreeningAutoMatches([]) }
+                          finally { setScreeningAutoLoading(false) }
                         }}>
                         <option value="">请选择</option>
                         {l2Node.items.map(item => <option key={item} value={item}>{item}</option>)}
@@ -2092,6 +2106,56 @@ export default function PatientDetailPage() {
                       {screeningForm.screeningL3 && ` › `}
                     </span>
                     <span style={{ fontWeight: 600 }}>{screeningForm.title}</span>
+                  </div>
+                )}
+                {/* 关联后台项目 */}
+                {screeningForm.title && (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label" style={{ marginBottom: 6 }}>关联后台项目（检验医嘱 / 检查医嘱 / 套餐）</label>
+                    {screeningLinkedItem ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: '#EEF2FF', borderRadius: 6, border: '1px solid #C7D2FE' }}>
+                        <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: screeningLinkedItem.type === 'labTestOrder' ? '#EEF2FF' : screeningLinkedItem.type === 'specialExam' ? '#FEF3E2' : '#F0FDF4', color: screeningLinkedItem.type === 'labTestOrder' ? '#4338CA' : screeningLinkedItem.type === 'specialExam' ? '#92400E' : '#166534', fontWeight: 600 }}>
+                          {screeningLinkedItem.typeName}
+                        </span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', flex: 1 }}>{screeningLinkedItem.name}</span>
+                        {screeningLinkedItem.mnemonic && <span style={{ fontSize: 11, color: '#8AA89C' }}>{screeningLinkedItem.mnemonic}</span>}
+                        <button type="button" style={{ background: 'none', border: 'none', color: '#8AA89C', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}
+                          onClick={() => { setScreeningLinkedItem(null); setScreeningForm(f => ({ ...f, reportItems: [] })) }}>✕</button>
+                      </div>
+                    ) : (
+                      <>
+                        {screeningAutoLoading && <div style={{ fontSize: 12, color: '#8AA89C', padding: '6px 0' }}>正在匹配后台项目...</div>}
+                        {!screeningAutoLoading && screeningAutoMatches.length > 0 && (
+                          <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
+                            {screeningAutoMatches.map(item => (
+                              <div key={item._id}
+                                onClick={async () => {
+                                  setScreeningLinkedItem(item)
+                                  if (item.type === 'labTestPackage' || item.type === 'labTestOrder') {
+                                    try {
+                                      const r = await staffAPI.getProjectSubItems(item.type, item._id)
+                                      if (r.data?.length) setScreeningForm(f => ({ ...f, reportItems: r.data }))
+                                    } catch {}
+                                  }
+                                }}
+                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0ece4', fontSize: 13 }}
+                                onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
+                                onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                                <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: item.type === 'labTestOrder' ? '#EEF2FF' : item.type === 'specialExam' ? '#FEF3E2' : '#F0FDF4', color: item.type === 'labTestOrder' ? '#4338CA' : item.type === 'specialExam' ? '#92400E' : '#166534', fontWeight: 600, flexShrink: 0 }}>
+                                  {item.typeName}
+                                </span>
+                                <span style={{ fontWeight: 500, flex: 1 }}>{item.name}</span>
+                                {item.mnemonic && <span style={{ color: '#8AA89C', fontSize: 12 }}>{item.mnemonic}</span>}
+                                {item.itemCount > 0 && <span style={{ fontSize: 11, color: '#8AA89C' }}>{item.itemCount} 项</span>}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {!screeningAutoLoading && screeningAutoMatches.length === 0 && screeningForm.title && (
+                          <div style={{ fontSize: 12, color: '#8AA89C', padding: '4px 0' }}>后台暂无匹配项目，可手动添加检验项目</div>
+                        )}
+                      </>
+                    )}
                   </div>
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
