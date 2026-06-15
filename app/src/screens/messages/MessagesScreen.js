@@ -520,6 +520,12 @@ export default function MessagesScreen({ navigation }) {
     return unsub;
   }, [navigation, loadMessages]);
 
+  // 15 秒轮询，保持列表实时
+  useEffect(() => {
+    const timer = setInterval(() => { loadMessages(); }, 15000);
+    return () => clearInterval(timer);
+  }, [loadMessages]);
+
   const handlePress = async (msg) => {
     const msgId = msg._id || msg.id;
     setSelectedMsg(msg);
@@ -797,23 +803,44 @@ function ConversationThreadModal({ role, onClose }) {
     finally { setLoading(false); }
   };
 
-  // SSE 实时推送
+  // SSE 实时推送（含自动重连）
   useEffect(() => {
     if (!token) return;
     const BASE_URL = (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) || 'https://jiaycare.com/api';
     const url = `${BASE_URL}/messages/stream/${role}?token=${token}`;
-    const es = new EventSource(url);
-    es.onmessage = (e) => {
-      if (!e.data || e.data.startsWith(':')) return;
+    let es = null;
+    let reconnectTimer = null;
+
+    function connect() {
       try {
-        const { type, data } = JSON.parse(e.data);
-        if (type === 'message') {
-          setMsgs(prev => [...prev, data]);
-          setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 100);
-        }
+        es = new EventSource(url);
+        es.onmessage = (e) => {
+          if (!e.data) return;
+          try {
+            const { type, data } = JSON.parse(e.data);
+            if (type === 'message') {
+              setMsgs(prev => {
+                // 去重：同一条消息不重复插入
+                if (prev.some(m => m._id === data._id)) return prev;
+                return [...prev, data];
+              });
+              setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 100);
+            }
+          } catch {}
+        };
+        es.onerror = () => {
+          es?.close();
+          // 5 秒后重连
+          reconnectTimer = setTimeout(connect, 5000);
+        };
       } catch {}
+    }
+
+    connect();
+    return () => {
+      clearTimeout(reconnectTimer);
+      es?.close();
     };
-    return () => es.close();
   }, [role, token]);
 
   useEffect(() => { loadThread(); }, [role]);
@@ -821,12 +848,18 @@ function ConversationThreadModal({ role, onClose }) {
   const send = async () => {
     if (!input.trim() || sending) return;
     setSending(true);
+    const text = input.trim();
+    setInput('');
     try {
-      await messagesAPI.send(role, input.trim());
-      setInput('');
-      await loadThread();
-      setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 150);
-    } catch {}
+      const res = await messagesAPI.send(role, text);
+      // 乐观插入（SSE 会同步推送同一条，去重逻辑会过滤）
+      if (res?.data) {
+        setMsgs(prev => prev.some(m => m._id === res.data._id) ? prev : [...prev, res.data]);
+        setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 100);
+      }
+    } catch {
+      setInput(text); // 发送失败时还原输入
+    }
     finally { setSending(false); }
   };
 
