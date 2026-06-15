@@ -4,8 +4,8 @@ import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 import { useCategories, StatusBadge } from './_ProjectPage'
 
-// orders = 检验医嘱 (LabTestOrder), specialExams = 检查医嘱 (SpecialExam)
-const EMPTY = { name: '', mnemonic: '', remark: '', categoryId: '', orders: [], specialExams: [] }
+// orders = 检验医嘱 (LabTestOrder), specialExams = 检查医嘱 (SpecialExam), functionalTests = 功能医学检测
+const EMPTY = { name: '', mnemonic: '', remark: '', categoryId: '', orders: [], specialExams: [], functionalTests: [] }
 
 function SearchableSelect({ options, onSelect, placeholder }) {
   const [search, setSearch] = useState('')
@@ -70,12 +70,14 @@ export default function LabTestPackagePage() {
   const [mnemonicEdited, setMnemonicEdited] = useState(false)
   const [allOrders, setAllOrders] = useState([])
   const [allSpecialExams, setAllSpecialExams] = useState([])
+  const [allFunctionalTests, setAllFunctionalTests] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     adminAPI.labTestOrders({ limit: 500, status: 'active' }).then(r => setAllOrders(r.data || [])).catch(() => {})
     adminAPI.specialExams({ limit: 500, status: 'active' }).then(r => setAllSpecialExams(r.data || [])).catch(() => {})
+    adminAPI.functionalMedicineTests({ limit: 500, status: 'active' }).then(r => setAllFunctionalTests(r.data || [])).catch(() => {})
   }, [])
 
   const load = (p = page) => {
@@ -96,6 +98,7 @@ export default function LabTestPackagePage() {
       categoryId: item.categoryId?._id || item.categoryId || '',
       orders: (item.orders || []).map(i => i._id || i),
       specialExams: (item.specialExams || []).map(i => i._id || i),
+      functionalTests: (item.functionalTests || []).map(i => i._id || i),
     })
     setMnemonicEdited(true); setError(''); setShowModal(true)
   }
@@ -125,6 +128,12 @@ export default function LabTestPackagePage() {
   }
   const removeExam = id => setForm(f => ({ ...f, specialExams: f.specialExams.filter(i => i !== id) }))
 
+  const addFunctionalTest = id => {
+    if (!id || form.functionalTests.includes(id)) return
+    setForm(f => ({ ...f, functionalTests: [...f.functionalTests, id] }))
+  }
+  const removeFunctionalTest = id => setForm(f => ({ ...f, functionalTests: f.functionalTests.filter(i => i !== id) }))
+
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const handleNameChange = e => {
@@ -143,8 +152,10 @@ export default function LabTestPackagePage() {
 
   const selectedOrders = form.orders.map(id => allOrders.find(i => i._id === id)).filter(Boolean)
   const selectedExams = form.specialExams.map(id => allSpecialExams.find(i => i._id === id)).filter(Boolean)
+  const selectedFunctionalTests = (form.functionalTests || []).map(id => allFunctionalTests.find(i => i._id === id)).filter(Boolean)
   const unselectedOrders = allOrders.filter(i => !form.orders.includes(i._id))
   const unselectedExams = allSpecialExams.filter(i => !form.specialExams.includes(i._id))
+  const unselectedFunctionalTests = allFunctionalTests.filter(i => !(form.functionalTests || []).includes(i._id))
 
   const itemCount = item => (item.orders?.length || 0) + (item.specialExams?.length || 0)
 
@@ -292,6 +303,42 @@ export default function LabTestPackagePage() {
                 {selectedExams.length === 0
                   ? <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>暂未关联检查医嘱</div>
                   : <ItemTable rows={selectedExams} onRemove={removeExam} />
+                }
+              </div>
+
+              {/* 关联功能医学检测 */}
+              <div style={{ marginTop: 20 }}>
+                <label className="form-label">关联功能医学检测</label>
+                <SearchableSelect
+                  options={unselectedFunctionalTests}
+                  onSelect={addFunctionalTest}
+                  placeholder="输入检测名称搜索..."
+                />
+                {selectedFunctionalTests.length === 0
+                  ? <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>暂未关联功能医学检测</div>
+                  : (
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13, marginTop: 8 }}>
+                      <thead>
+                        <tr style={{ background: '#f8fafc' }}>
+                          {['检测名称', '检测机构', '检测时间', '操作'].map(h => (
+                            <th key={h} style={{ textAlign: 'left', padding: '6px 10px', fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB', fontSize: 12 }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {selectedFunctionalTests.map(i => (
+                          <tr key={i._id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                            <td style={{ padding: '6px 10px', fontWeight: 500 }}>{i.name}</td>
+                            <td style={{ padding: '6px 10px', color: '#6B7280' }}>{i.institution || '-'}</td>
+                            <td style={{ padding: '6px 10px', color: '#6B7280' }}>{i.testTiming || '-'}</td>
+                            <td style={{ padding: '6px 10px' }}>
+                              <button type="button" className="btn btn-danger btn-sm" onClick={() => removeFunctionalTest(i._id)}>删除</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )
                 }
               </div>
             </div>
