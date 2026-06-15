@@ -2396,9 +2396,11 @@ router.get('/user-messages', staffAuth, async (req, res) => {
       ...m,
       patientName: patientMap[String(m.user)]?.name || '未知',
       patientPhone: patientMap[String(m.user)]?.phone || '',
+      staffUnread: !m.staffReadAt,
     }));
 
-    res.json({ success: true, data: result });
+    const unreadCount = result.filter(m => m.staffUnread).length;
+    res.json({ success: true, data: result, unreadCount });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -2411,7 +2413,26 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
     const { role = 'manager' } = req.query;
     const conversationId = `${req.params.userId}_${role}`;
     const messages = await Message.find({ conversationId }).sort({ createdAt: 1 }).limit(100);
+    // 标记该会话所有用户消息为医护已读
+    await Message.updateMany(
+      { conversationId, type: 'user', staffReadAt: null },
+      { staffReadAt: new Date() }
+    );
     res.json({ success: true, data: messages, conversationId });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 标记某用户的留言为医护已读 ──────────────────────────────────────
+// PATCH /api/staff/user-messages/:userId/read
+router.patch('/user-messages/:userId/read', staffAuth, async (req, res) => {
+  try {
+    const { role = 'manager' } = req.body;
+    const conversationId = `${req.params.userId}_${role}`;
+    await Message.updateMany(
+      { conversationId, type: 'user', staffReadAt: null },
+      { staffReadAt: new Date() }
+    );
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

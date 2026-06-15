@@ -42,6 +42,13 @@ export default function NotificationsPage() {
 
   useEffect(() => { load() }, [])
 
+  const refreshUserMessages = async () => {
+    try {
+      const res = await staffAPI.getUserMessages()
+      if (res.data) setUserMessages(res.data)
+    } catch {}
+  }
+
   const handleRespond = async (id, status, response) => {
     try {
       await staffAPI.updateReferral(id, { status, response })
@@ -303,24 +310,33 @@ export default function NotificationsPage() {
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
               {Object.values(userMessages.reduce((acc, m) => {
-                if (!acc[m.user] || new Date(m.createdAt) > new Date(acc[m.user].createdAt)) acc[m.user] = m
+                const key = `${m.user}_${m.recipient || 'manager'}`
+                if (!acc[key] || new Date(m.createdAt) > new Date(acc[key].createdAt)) {
+                  acc[key] = { ...m, hasUnread: m.staffUnread }
+                } else if (m.staffUnread) {
+                  acc[key].hasUnread = true
+                }
                 return acc
               }, {})).sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)).map((m, i, arr) => {
                 const roleKey = m.recipient === 'doctor' ? 'doctor' : m.recipient === 'nutritionist' ? 'nutritionist' : 'manager'
                 return (
-                  <div key={m.user} style={{ padding: '14px 20px', borderBottom: i < arr.length - 1 ? '1px solid #f5f2ec' : 'none',
+                  <div key={`${m.user}_${roleKey}`} style={{ padding: '14px 20px', borderBottom: i < arr.length - 1 ? '1px solid #f5f2ec' : 'none',
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
-                    cursor: 'pointer', transition: 'background 0.1s' }}
+                    cursor: 'pointer', transition: 'background 0.1s',
+                    background: m.hasUnread ? '#FFFBF5' : '' }}
                     onClick={() => setThreadModal({ userId: m.user, userName: m.patientName, roleKey })}
                     onMouseEnter={e => e.currentTarget.style.background = '#faf9f6'}
-                    onMouseLeave={e => e.currentTarget.style.background = ''}>
+                    onMouseLeave={e => e.currentTarget.style.background = m.hasUnread ? '#FFFBF5' : ''}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 1, minWidth: 0 }}>
-                      <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1E6B5018', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, flexShrink: 0 }}>
-                        {m.patientName?.[0] || '?'}
+                      <div style={{ position: 'relative', flexShrink: 0 }}>
+                        <div style={{ width: 40, height: 40, borderRadius: '50%', background: '#1E6B5018', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>
+                          {m.patientName?.[0] || '?'}
+                        </div>
+                        {m.hasUnread && <div style={{ position: 'absolute', top: 0, right: 0, width: 10, height: 10, borderRadius: '50%', background: '#DC3545', border: '2px solid #fff' }} />}
                       </div>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 3 }}>
-                          <span style={{ fontWeight: 600, fontSize: 14 }}>{m.patientName}</span>
+                          <span style={{ fontWeight: m.hasUnread ? 700 : 600, fontSize: 14 }}>{m.patientName}</span>
                           <span style={{ fontSize: 11, color: '#aaa' }}>{m.patientPhone}</span>
                           <span style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '1px 7px', borderRadius: 99 }}>
                             {roleKey === 'doctor' ? '家庭医师' : roleKey === 'nutritionist' ? '营养师' : '健管师'}
@@ -358,7 +374,7 @@ export default function NotificationsPage() {
           userId={threadModal.userId}
           userName={threadModal.userName}
           roleKey={threadModal.roleKey}
-          onClose={() => setThreadModal(null)}
+          onClose={() => { setThreadModal(null); refreshUserMessages() }}
           onSent={() => { toast('回复已发送'); /* 不关闭，线程会自动刷新 */ }}
           onNavigate={nav}
         />

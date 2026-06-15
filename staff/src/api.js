@@ -224,6 +224,8 @@ export const staffAPI = {
   replyToUser: (userId, content) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content }) }),
   // 获取用户对话线程
   getUserMessageThread: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
+  // 标记某用户留言为已读
+  markUserMessagesRead: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/read`, { method: 'PATCH', body: JSON.stringify({ role }) }),
 
   // 我发出的转介
   getSentReferrals: (p = {}) => req('/staff/referrals?direction=sent&' + qs(p)),

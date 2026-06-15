@@ -6,8 +6,9 @@ const messageSchema = new mongoose.Schema({
   sender:  { type: String, required: true },
   title:   { type: String },
   content: { type: String, required: true },
-  unread:    { type: Boolean, default: true },
-  readAt:    { type: Date },
+  unread:      { type: Boolean, default: true },
+  readAt:      { type: Date },
+  staffReadAt: { type: Date },  // 医护端已读时间（null = 医护未读）
   recipient: { type: String },  // 用户留言的目标角色：doctor/nutritionist/manager
   conversationId: { type: String, index: true, default: null }, // {userId}_{role} 会话线程标识
 }, { timestamps: true });

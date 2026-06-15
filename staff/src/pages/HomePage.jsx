@@ -35,7 +35,7 @@ export default function HomePage() {
         setPendingReferralCount(notifRes.value.data?.summary?.pendingReferralCount || 0)
       }
       if (msgRes.status === 'fulfilled') {
-        setUnreadMsgCount(msgRes.value.data?.length || 0)
+        setUnreadMsgCount(msgRes.value.unreadCount ?? msgRes.value.data?.filter(m => m.staffUnread)?.length ?? 0)
       }
     })
   }, [])
