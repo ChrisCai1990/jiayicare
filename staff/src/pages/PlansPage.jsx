@@ -138,7 +138,7 @@ export default function PlansPage() {
                 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无 {ahYear} 年度管理方案</div>
                 : <table className="table">
                     <thead><tr>
-                      <th>会员</th><th>联系方式</th><th>方案类型</th><th>年度</th><th>负责人</th><th>最后更新</th><th>操作</th>
+                      <th>会员</th><th>联系方式</th><th>方案类型</th><th>年度</th><th>推送状态</th><th>负责人</th><th>最后更新</th><th>操作</th>
                     </tr></thead>
                     <tbody>
                       {ahPlans.map(p => (
@@ -153,6 +153,13 @@ export default function PlansPage() {
                               : <span style={{ fontSize: 12, color: '#aaa' }}>未选择</span>}
                           </td>
                           <td style={{ color: '#666' }}>{p.year} 年</td>
+                          <td>
+                            {p.confirmedAt
+                              ? <span style={{ fontSize: 12, fontWeight: 600, color: '#1E6B50', background: '#E8F5EF', padding: '2px 8px', borderRadius: 20 }}>✓ 客户已确认</span>
+                              : p.pushedAt
+                                ? <span style={{ fontSize: 12, fontWeight: 600, color: '#D97706', background: '#FEF9EC', padding: '2px 8px', borderRadius: 20 }}>已推送·待确认</span>
+                                : <span style={{ fontSize: 12, color: '#aaa' }}>未推送</span>}
+                          </td>
                           <td style={{ color: '#666', fontSize: 13 }}>{p.createdBy?.name || '-'}</td>
                           <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.updatedAt).toLocaleDateString('zh-CN')}</td>
                           <td>
