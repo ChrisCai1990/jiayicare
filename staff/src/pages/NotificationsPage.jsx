@@ -17,6 +17,7 @@ export default function NotificationsPage() {
   const [respondModal, setRespondModal] = useState(null)
   const [detailModal, setDetailModal] = useState(null)   // push 消息详情
   const [sentReferrals, setSentReferrals] = useState([])
+  const [allReceivedReferrals, setAllReceivedReferrals] = useState([])
   const [userMessages, setUserMessages] = useState([])
   const [replyModal, setReplyModal] = useState(null)   // { userId, userName, roleKey }
   const [threadModal, setThreadModal] = useState(null) // { userId, userName, roleKey }
@@ -24,13 +25,15 @@ export default function NotificationsPage() {
   const load = async () => {
     setLoading(true)
     try {
-      const [notifRes, sentRes, msgRes] = await Promise.allSettled([
+      const [notifRes, sentRes, receivedRes, msgRes] = await Promise.allSettled([
         staffAPI.getNotifications(),
         staffAPI.getSentReferrals(),
+        staffAPI.getReferrals({ direction: 'received', limit: 50 }),
         staffAPI.getUserMessages(),
       ])
       if (notifRes.status === 'fulfilled') setData(notifRes.value.data)
-      if (sentRes.status === 'fulfilled') setSentReferrals(sentRes.value.data || [])
+      if (sentRes.status === 'fulfilled') setSentReferrals(sentRes.value.data?.referrals || [])
+      if (receivedRes.status === 'fulfilled') setAllReceivedReferrals(receivedRes.value.data?.referrals || [])
       if (msgRes.status === 'fulfilled') setUserMessages(msgRes.value.data || [])
     }
     catch (err) { toast(err.message) }
@@ -130,10 +133,10 @@ export default function NotificationsPage() {
       {/* ── 收到的转介 ── */}
       {tab === 'referrals' && (
         <div className="card">
-          {pendingReferrals.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无待处理转介 ✓</div>
-          ) : pendingReferrals.map((r, i) => (
-            <div key={r._id} style={{ padding: '16px', borderBottom: i < pendingReferrals.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
+          {allReceivedReferrals.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无收到的转介 ✓</div>
+          ) : allReceivedReferrals.map((r, i) => (
+            <div key={r._id} style={{ padding: '16px', borderBottom: i < allReceivedReferrals.length - 1 ? '1px solid #f5f2ec' : 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div style={{ flex: 1 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
@@ -141,20 +144,32 @@ export default function NotificationsPage() {
                       <span style={{ fontSize: 11, background: '#DC3545', color: '#fff', padding: '1px 8px', borderRadius: 99, fontWeight: 600 }}>紧急</span>
                     )}
                     <span style={{ fontWeight: 600, fontSize: 15 }}>{r.reason}</span>
-                    <span style={{ fontSize: 12, color: REFERRAL_STATUS_COLOR[r.status] }}>· {REFERRAL_STATUS_LABEL[r.status]}</span>
+                    <span style={{ fontSize: 12, color: REFERRAL_STATUS_COLOR[r.status], fontWeight: 600 }}>· {REFERRAL_STATUS_LABEL[r.status]}</span>
                   </div>
                   <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
                     会员：<strong style={{ cursor: 'pointer', color: '#1E6B50' }} onClick={() => nav(`/patients/${r.patientId?._id}`)}>{r.patientId?.name}</strong>
                     <span style={{ color: '#aaa', marginLeft: 6 }}>{r.patientId?.phone}</span>
                   </div>
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
+                  {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     来自：{r.fromStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                   </div>
+                  {r.response && (
+                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B' }}>
+                      <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>我的回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
+                      <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
+                    </div>
+                  )}
                 </div>
-                <div style={{ display: 'flex', gap: 6, marginLeft: 12 }}>
-                  <button className="btn btn-primary btn-sm" onClick={() => setRespondModal({ ...r, action: 'accept' })}>接受</button>
-                  <button className="btn btn-danger btn-sm" onClick={() => setRespondModal({ ...r, action: 'reject' })}>拒绝</button>
+                <div style={{ display: 'flex', gap: 6, marginLeft: 12, flexDirection: 'column', alignItems: 'flex-end' }}>
+                  {r.status === 'pending' && <>
+                    <button className="btn btn-primary btn-sm" onClick={() => setRespondModal({ ...r, action: 'accept' })}>接受</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => setRespondModal({ ...r, action: 'reject' })}>拒绝</button>
+                  </>}
+                  {r.status === 'accepted' && (
+                    <button className="btn btn-secondary btn-sm" onClick={() => setRespondModal({ ...r, action: 'complete' })}>完成转介</button>
+                  )}
                 </div>
               </div>
             </div>
@@ -261,14 +276,17 @@ export default function NotificationsPage() {
                     <span style={{ color: '#aaa', marginLeft: 6 }}>{r.patientId?.phone}</span>
                   </div>
                   {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>{r.content}</div>}
+                  {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     接收方：{r.toStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                   </div>
-                  {r.response && (
+                  {r.response ? (
                     <div style={{ marginTop: 8, padding: '8px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B' }}>
-                      <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>对方回复</div>
+                      <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>对方回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
                       <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
                     </div>
+                  ) : r.status !== 'pending' ? null : (
+                    <div style={{ marginTop: 6, fontSize: 12, color: '#aaa' }}>等待对方回复...</div>
                   )}
                 </div>
               </div>
@@ -364,10 +382,14 @@ function RespondModal({ referral, onClose, onRespond }) {
   const [response, setResponse] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const isAccept = referral.action === 'accept'
+  const isComplete = referral.action === 'complete'
+  const isReject = referral.action === 'reject'
+
+  const nextStatus = isAccept ? 'accepted' : isComplete ? 'completed' : 'rejected'
 
   const handleSubmit = async () => {
     setSubmitting(true)
-    try { await onRespond(referral._id, isAccept ? 'accepted' : 'rejected', response) }
+    try { await onRespond(referral._id, nextStatus, response) }
     finally { setSubmitting(false) }
   }
 
@@ -375,7 +397,9 @@ function RespondModal({ referral, onClose, onRespond }) {
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 440 }}>
         <div className="modal-header">
-          <h3 className="modal-title">{isAccept ? '✓ 接受转介' : '✗ 拒绝转介'}</h3>
+          <h3 className="modal-title">
+            {isAccept ? '✓ 接受转介' : isComplete ? '✅ 完成转介' : '✗ 拒绝转介'}
+          </h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
@@ -383,18 +407,21 @@ function RespondModal({ referral, onClose, onRespond }) {
             <div style={{ fontWeight: 600, marginBottom: 4 }}>{referral.reason}</div>
             <div style={{ fontSize: 13, color: '#666' }}>会员：{referral.patientId?.name}</div>
             {referral.content && <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{referral.content}</div>}
+            {referral.attachedHealthInfo && <AttachedHealthInfoView info={referral.attachedHealthInfo} />}
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">{isAccept ? '接受说明（可选）' : '拒绝原因 *'}</label>
+            <label className="form-label">
+              {isAccept ? '接受说明（可选）' : isComplete ? '完成说明 / 处理结果' : '拒绝原因 *'}
+            </label>
             <textarea className="form-input" rows={3} value={response} onChange={e => setResponse(e.target.value)}
-              placeholder={isAccept ? '说明接诊安排或计划...' : '请说明拒绝原因...'} />
+              placeholder={isAccept ? '说明接诊安排或计划...' : isComplete ? '填写会诊结论或后续建议...' : '请说明拒绝原因...'} />
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className={`btn ${isAccept ? 'btn-primary' : 'btn-danger'}`}
-            onClick={handleSubmit} disabled={submitting || (!isAccept && !response)}>
-            {submitting ? '提交中...' : isAccept ? '确认接受' : '确认拒绝'}
+          <button className={`btn ${isReject ? 'btn-danger' : 'btn-primary'}`}
+            onClick={handleSubmit} disabled={submitting || (isReject && !response)}>
+            {submitting ? '提交中...' : isAccept ? '确认接受' : isComplete ? '确认完成' : '确认拒绝'}
           </button>
         </div>
       </div>
@@ -617,6 +644,47 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
           {err && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{err}</div>}
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── 附带健康档案展示组件 ──
+const HEALTH_SECTION_LABELS = {
+  medicalHistory:  '既往病史',
+  allergies:       '过敏史',
+  medications:     '当前用药',
+  surgeries:       '手术史',
+  familyHistory:   '家族史',
+  recentSymptoms:  '近期症状',
+  basicInfo:       '基本信息',
+}
+
+function AttachedHealthInfoView({ info }) {
+  if (!info) return null
+  const sections = Object.keys(info).filter(k => {
+    const v = info[k]
+    return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
+  })
+  if (sections.length === 0) return null
+
+  return (
+    <div style={{ marginTop: 8, padding: '10px 12px', background: '#f0f6ff', borderRadius: 6, borderLeft: '3px solid #0077B6' }}>
+      <div style={{ fontSize: 11, color: '#0077B6', fontWeight: 600, marginBottom: 6 }}>附带健康档案</div>
+      {sections.map(k => {
+        const v = info[k]
+        const label = HEALTH_SECTION_LABELS[k] || k
+        let display = ''
+        if (Array.isArray(v)) {
+          display = v.map(item => typeof item === 'object' ? Object.values(item).filter(Boolean).join(' · ') : item).join('；')
+        } else {
+          display = String(v)
+        }
+        return (
+          <div key={k} style={{ fontSize: 12, color: '#1A2B24', marginBottom: 3 }}>
+            <span style={{ color: '#4A6558', marginRight: 4 }}>{label}：</span>{display}
+          </div>
+        )
+      })}
     </div>
   )
 }

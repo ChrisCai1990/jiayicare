@@ -3723,6 +3723,7 @@ export default function PatientDetailPage() {
         <ReferralModal
           patientId={id}
           patientName={user.name}
+          patientUser={user}
           staffList={staffList}
           onClose={() => setShowReferralModal(false)}
           onSaved={() => { setShowReferralModal(false); toast('转介已发送') }}
@@ -4202,20 +4203,52 @@ const ROLE_LABEL_MAP = {
   tcmDoctor:'中医师', specialist:'专科医师', healthPlanner:'健康规划师', superadmin:'超级管理员',
 }
 
-function ReferralModal({ patientId, patientName, staffList, onClose, onSaved }) {
+function ReferralModal({ patientId, patientName, patientUser, staffList, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({ toStaffId: '', reason: '', content: '', urgency: 'normal' })
+  const [selectedHealthSections, setSelectedHealthSections] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
   const REASON_PRESETS = ['需要就医协助', '营养干预评估', '心理咨询介入', '运动康复指导', '中医体质评估', '专科会诊', '健康方案制定', '体检报告解读']
 
+  // 可附带的健康档案区块
+  const HEALTH_SECTIONS = [
+    { key: 'medicalHistory',  label: '既往病史',  getValue: u => u?.healthProfile?.medicalHistory },
+    { key: 'allergies',       label: '过敏史',    getValue: u => u?.healthProfile?.allergies },
+    { key: 'medications',     label: '当前用药',  getValue: u => u?.healthProfile?.medications },
+    { key: 'surgeries',       label: '手术史',    getValue: u => u?.healthProfile?.surgeries },
+    { key: 'familyHistory',   label: '家族史',    getValue: u => u?.healthProfile?.familyHistory },
+    { key: 'recentSymptoms',  label: '近期症状',  getValue: u => u?.healthProfile?.recentSymptoms },
+    { key: 'basicInfo',       label: '基本信息',  getValue: u => u ? `${u.gender || ''}${u.age ? `/${u.age}岁` : ''}${u.height ? `/身高${u.height}cm` : ''}${u.weight ? `/体重${u.weight}kg` : ''}`.replace(/^\//, '') : '' },
+  ].filter(s => {
+    const v = s.getValue(patientUser)
+    return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
+  })
+
+  const toggleSection = (key) => {
+    setSelectedHealthSections(prev =>
+      prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]
+    )
+  }
+
+  const buildAttachedHealthInfo = () => {
+    if (selectedHealthSections.length === 0) return null
+    const result = {}
+    HEALTH_SECTIONS.forEach(s => {
+      if (selectedHealthSections.includes(s.key)) {
+        result[s.key] = s.getValue(patientUser)
+      }
+    })
+    return result
+  }
+
   const handleSubmit = async () => {
     if (!form.toStaffId || !form.reason) { setError('接收人和转介原因不能为空'); return }
     setSaving(true); setError('')
     try {
-      await staffAPI.createReferral({ patientId, ...form })
+      await staffAPI.createReferral({ patientId, ...form, attachedHealthInfo: buildAttachedHealthInfo() })
       onSaved()
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
@@ -4223,7 +4256,7 @@ function ReferralModal({ patientId, patientName, staffList, onClose, onSaved }) 
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 460 }}>
+      <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
           <h3 className="modal-title">🔀 转介 — {patientName}</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
@@ -4256,6 +4289,32 @@ function ReferralModal({ patientId, patientName, staffList, onClose, onSaved }) 
             <label className="form-label">详细说明</label>
             <textarea className="form-input" rows={3} placeholder="病情描述、需要协助的具体内容..." value={form.content} onChange={set('content')} />
           </div>
+          {/* 健康档案附件选择 */}
+          {HEALTH_SECTIONS.length > 0 && (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">附带健康档案（供接收方参考）</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {HEALTH_SECTIONS.map(s => {
+                  const selected = selectedHealthSections.includes(s.key)
+                  return (
+                    <button key={s.key} type="button" className="btn btn-secondary btn-sm"
+                      style={{ fontSize: 12, padding: '3px 12px',
+                        background: selected ? '#E8F5EF' : '',
+                        border: selected ? '1px solid #1E6B50' : '',
+                        color: selected ? '#1E6B50' : '' }}
+                      onClick={() => toggleSection(s.key)}>
+                      {selected ? '✓ ' : ''}{s.label}
+                    </button>
+                  )
+                })}
+              </div>
+              {selectedHealthSections.length > 0 && (
+                <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>
+                  已选 {selectedHealthSections.length} 项档案内容，接收方可在推介信中查看
+                </div>
+              )}
+            </div>
+          )}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">紧急程度</label>
             <div style={{ display: 'flex', gap: 16 }}>

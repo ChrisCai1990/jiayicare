@@ -1656,13 +1656,14 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
 // ── 跨角色转介 ──────────────────────────────────────────────
 // POST /api/staff/referrals — 发起转介
 router.post('/referrals', staffAuth, async (req, res) => {
-  const { patientId, toStaffId, reason, content, urgency } = req.body;
+  const { patientId, toStaffId, reason, content, urgency, attachedHealthInfo } = req.body;
   if (!patientId || !toStaffId || !reason) {
     return res.status(400).json({ success: false, message: '会员、接收人、原因不能为空' });
   }
   const referral = await Referral.create({
     fromStaffId: req.staff._id, toStaffId, patientId,
     reason, content: content || '', urgency: urgency || 'normal',
+    attachedHealthInfo: attachedHealthInfo || null,
   });
   await referral.populate([
     { path: 'fromStaffId', select: 'name role' },

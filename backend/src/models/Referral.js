@@ -11,6 +11,7 @@ const referralSchema = new Schema({
   status:      { type: String, enum: ['pending', 'accepted', 'completed', 'rejected'], default: 'pending' },
   response:    { type: String, default: '' },     // 接收方回复
   respondedAt: { type: Date, default: null },
+  attachedHealthInfo: { type: mongoose.Schema.Types.Mixed, default: null }, // A附带的健康档案摘要
 }, { timestamps: true });
 
 referralSchema.index({ toStaffId: 1, status: 1 });
