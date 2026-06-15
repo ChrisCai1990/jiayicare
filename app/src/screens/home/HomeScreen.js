@@ -382,6 +382,8 @@ export default function HomeScreen({ navigation }) {
   // 任务详情弹窗
   const [taskDetailModal, setTaskDetailModal] = useState(null);
   const [taskCompleting, setTaskCompleting]   = useState(false);
+  const [taskFormAnswers, setTaskFormAnswers] = useState({});
+  const [taskFormSubmitting, setTaskFormSubmitting] = useState(false);
   const fileInputRef = useRef(null);
 
   const loadData = useCallback(async () => {
@@ -573,6 +575,8 @@ export default function HomeScreen({ navigation }) {
       priority: 'medium',
       followupType: plan.type,
       checkInItems: plan.checkInItems,
+      formFields: plan.followUpSchemeId?.formId?.fields || [],
+      formData: plan.formData || {},
     })),
   ];
 
@@ -999,7 +1003,7 @@ export default function HomeScreen({ navigation }) {
                 <>
                   {allPendingTaskItems.map((t, i) => {
                     const isLast = i === allPendingTaskItems.length - 1 && todayReminders.length === 0;
-                    return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={setTaskDetailModal} />;
+                    return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={(task) => { setTaskDetailModal(task); setTaskFormAnswers(task.formData || {}); }} />;
                   })}
                   {todayReminders.map((r, i) => (
                     <ReminderItem
@@ -1123,7 +1127,65 @@ export default function HomeScreen({ navigation }) {
                         <Text style={{ fontSize: 13, color: colors.textPrimary, flex: 1 }}>{t.description}</Text>
                       </View>
                     )}
-                    {!t.followupType && !t.checkInItems?.length && !t.description && (
+                    {t.formFields?.length > 0 && (
+                      <View style={{ marginTop: 12 }}>
+                        <View style={{ height: 1, backgroundColor: colors.border, marginBottom: 12 }} />
+                        {t.formFields.map((field, fi) => (
+                          <View key={fi} style={{ marginBottom: 14 }}>
+                            <Text style={{ fontSize: 13, color: colors.textPrimary, fontWeight: '500', marginBottom: 6 }}>
+                              {field.label}{field.required ? <Text style={{ color: colors.danger }}> *</Text> : ''}
+                            </Text>
+                            {(field.type === 'text' || field.type === 'number') && (
+                              <TextInput
+                                style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 13, color: colors.textPrimary, backgroundColor: '#fff' }}
+                                keyboardType={field.type === 'number' ? 'numeric' : 'default'}
+                                value={String(taskFormAnswers[field.label] ?? '')}
+                                onChangeText={v => setTaskFormAnswers(prev => ({ ...prev, [field.label]: v }))}
+                                placeholder={`请输入${field.label}`}
+                                placeholderTextColor={colors.textMuted}
+                              />
+                            )}
+                            {field.type === 'textarea' && (
+                              <TextInput
+                                style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 8, padding: 10, fontSize: 13, color: colors.textPrimary, backgroundColor: '#fff', minHeight: 72, textAlignVertical: 'top' }}
+                                multiline
+                                value={String(taskFormAnswers[field.label] ?? '')}
+                                onChangeText={v => setTaskFormAnswers(prev => ({ ...prev, [field.label]: v }))}
+                                placeholder={`请输入${field.label}`}
+                                placeholderTextColor={colors.textMuted}
+                              />
+                            )}
+                            {(field.type === 'radio' || field.type === 'checkbox') && field.options?.map((opt, oi) => {
+                              const selected = field.type === 'radio'
+                                ? taskFormAnswers[field.label] === opt
+                                : (taskFormAnswers[field.label] || []).includes(opt);
+                              return (
+                                <TouchableOpacity
+                                  key={oi}
+                                  style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}
+                                  onPress={() => {
+                                    if (field.type === 'radio') {
+                                      setTaskFormAnswers(prev => ({ ...prev, [field.label]: opt }));
+                                    } else {
+                                      setTaskFormAnswers(prev => {
+                                        const cur = prev[field.label] || [];
+                                        return { ...prev, [field.label]: selected ? cur.filter(x => x !== opt) : [...cur, opt] };
+                                      });
+                                    }
+                                  }}
+                                >
+                                  <View style={{ width: 18, height: 18, borderRadius: field.type === 'radio' ? 9 : 4, borderWidth: 1.5, borderColor: selected ? colors.primary : colors.border, backgroundColor: selected ? colors.primary : '#fff', marginRight: 8, alignItems: 'center', justifyContent: 'center' }}>
+                                    {selected && <Ionicons name="checkmark" size={11} color="#fff" />}
+                                  </View>
+                                  <Text style={{ fontSize: 13, color: colors.textPrimary }}>{opt}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        ))}
+                      </View>
+                    )}
+                    {!t.followupType && !t.checkInItems?.length && !t.description && !t.formFields?.length && (
                       <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingVertical: 8 }}>暂无详细内容</Text>
                     )}
                   </View>
@@ -1140,6 +1202,24 @@ export default function HomeScreen({ navigation }) {
                   >
                     <Text style={styles.taskModalCancelText}>关闭</Text>
                   </TouchableOpacity>
+                  {t.type === 'followup' && t.formFields?.length > 0 && (
+                    <TouchableOpacity
+                      style={[styles.taskModalCompleteBtn, taskFormSubmitting && { opacity: 0.6 }]}
+                      disabled={taskFormSubmitting}
+                      activeOpacity={0.85}
+                      onPress={async () => {
+                        setTaskFormSubmitting(true);
+                        try {
+                          await followupTasksAPI.submitForm(t._id, taskFormAnswers);
+                          setTaskDetailModal(null);
+                        } catch {}
+                        finally { setTaskFormSubmitting(false); }
+                      }}
+                    >
+                      <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
+                      <Text style={styles.taskModalCompleteText}>提交表单</Text>
+                    </TouchableOpacity>
+                  )}
                   {t.type !== 'followup' && (
                     <TouchableOpacity
                       style={[styles.taskModalCompleteBtn, taskCompleting && { opacity: 0.6 }]}

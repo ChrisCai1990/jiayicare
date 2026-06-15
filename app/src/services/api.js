@@ -246,6 +246,7 @@ export const giftsAPI = {
 
 export const followupTasksAPI = {
   list: () => request('/user/followup-tasks'),
+  submitForm: (id, formData) => request(`/user/followup-tasks/${id}/form`, { method: 'POST', body: JSON.stringify({ formData }) }),
 };
 
 // ── Exam Requisitions / 检查开单 ──────────────────────────────────

@@ -675,10 +675,24 @@ router.get('/followup-tasks', auth, async (req, res) => {
     })
       .sort({ date: 1 })
       .populate('staffId', 'name role title')
-      .populate('assignedTo', 'name role title');
+      .populate('assignedTo', 'name role title')
+      .populate({ path: 'followUpSchemeId', populate: { path: 'formId' } });
     res.json({ success: true, data: followups });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取随访任务失败', error: err.message });
+  }
+});
+
+// POST /api/user/followup-tasks/:id/form — 用户提交随访表单
+router.post('/followup-tasks/:id/form', auth, async (req, res) => {
+  try {
+    const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
+    if (!followup) return res.status(404).json({ success: false, message: '随访记录不存在' });
+    followup.formData = req.body.formData;
+    await followup.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '提交失败', error: err.message });
   }
 });
 
