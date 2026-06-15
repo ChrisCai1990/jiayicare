@@ -597,7 +597,7 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
 router.get('/plans', auth, async (req, res) => {
   try {
     const plans = await HealthPlan.find({ patientId: req.user._id, status: { $in: ['active', 'draft'] } })
-      .select('title type description content items status startDate endDate followupFrequency confirmedAt pushedAt notes')
+      .select('title type description content items status startDate endDate followupFrequency confirmedAt pushedAt notes year')
       .populate('staffId', 'name role title')
       .sort({ createdAt: -1 });
     res.json({ success: true, data: plans });
