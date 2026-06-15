@@ -540,21 +540,26 @@ router.post('/staff', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可创建医护账号' });
   }
-  const { username, password, name, role, title, department, region, phone } = req.body;
-  if (!username || !password || !name || !role) {
-    return res.status(400).json({ success: false, message: '用户名、密码、姓名、角色不能为空' });
+  const { password, name, role, title, department, region, phone } = req.body;
+  let { username } = req.body;
+  if (!phone || !password || !name || !role) {
+    return res.status(400).json({ success: false, message: '手机号码、密码、姓名、角色不能为空' });
   }
   if (!STAFF_ROLES.includes(role)) {
     return res.status(400).json({ success: false, message: '角色无效' });
   }
+  // 手机号唯一检查
+  const existingPhone = await Admin.findOne({ phone });
+  if (existingPhone) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
+  // 用户名：不填则自动使用手机号
+  if (!username) username = phone;
   const existing = await Admin.findOne({ username });
-  if (existing) return res.status(400).json({ success: false, message: '用户名已存在' });
-  if (phone) {
-    const existingPhone = await Admin.findOne({ phone });
-    if (existingPhone) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
+  if (existing) {
+    // 用户名与手机号相同时已被占用，附加随机后缀
+    username = `${phone}_${Math.random().toString(36).slice(2, 6)}`;
   }
 
-  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '', phone: phone || '' });
+  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '', phone });
   res.json({ success: true, data: { _id: staff._id, username: staff.username, name: staff.name, role: staff.role } });
 });
 

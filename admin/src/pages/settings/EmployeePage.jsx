@@ -16,7 +16,7 @@ const SYSTEM_ROLE_LABEL = {
 
 const EMPTY_FORM = {
   username: '', password: '', name: '', role: 'healthManager',
-  title: '', email: '', certNumber: '', deptId: '', customRoleId: '',
+  phone: '', title: '', email: '', certNumber: '', deptId: '', customRoleId: '',
 }
 
 export default function EmployeePage() {
@@ -62,6 +62,7 @@ export default function EmployeePage() {
     setForm({
       username: emp.username, password: '',
       name: emp.name, role: emp.role,
+      phone: emp.phone || '',
       title: emp.title || '', email: emp.email || '',
       certNumber: emp.certNumber || '',
       deptId: emp.deptId?._id || emp.deptId || '',
@@ -72,8 +73,8 @@ export default function EmployeePage() {
 
   const handleSave = async (e) => {
     e.preventDefault()
-    if (!editId && (!form.username || !form.password || !form.name)) {
-      setError('用户名、密码、姓名不能为空'); return
+    if (!editId && (!form.phone || !form.password || !form.name)) {
+      setError('手机号码、密码、姓名不能为空'); return
     }
     setSaving(true); setError('')
     try {
@@ -168,7 +169,8 @@ export default function EmployeePage() {
                   </td>
                   <td style={{ padding: '12px 14px', color: '#6B7280' }}>{emp.deptId?.name || '-'}</td>
                   <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 12 }}>
-                    {emp.email || '-'}
+                    {emp.phone && <div style={{ fontWeight: 500, color: '#1A2B24' }}>{emp.phone}</div>}
+                    {emp.email && <div style={{ marginTop: 2 }}>{emp.email}</div>}
                     {emp.certNumber && <div style={{ marginTop: 2 }}>证号：{emp.certNumber}</div>}
                   </td>
                   <td style={{ padding: '12px 14px' }}>
@@ -214,10 +216,15 @@ export default function EmployeePage() {
                   <label className="form-label">姓名 *</label>
                   <input className="form-input" value={form.name} onChange={set('name')} required />
                 </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">手机号码 *（用于登录医护端）</label>
+                  <input className="form-input" type="tel" value={form.phone} onChange={set('phone')}
+                    placeholder="11位手机号" maxLength={11} />
+                </div>
                 {!editId && (
                   <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
-                    <label className="form-label">用户名 *</label>
-                    <input className="form-input" value={form.username} onChange={set('username')} required />
+                    <label className="form-label">用户名（可选，系统内部标识）</label>
+                    <input className="form-input" value={form.username} onChange={set('username')} placeholder="不填则自动生成" />
                   </div>
                 )}
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>

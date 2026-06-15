@@ -14,7 +14,7 @@ export default function LoginPage() {
   const handleSubmit = async (e) => {
     e.preventDefault()
     if (!username.trim() || !password.trim()) {
-      setError('请输入用户名和密码')
+      setError('请输入手机号码和密码')
       return
     }
     setLoading(true)
@@ -25,7 +25,7 @@ export default function LoginPage() {
       login(res.data.staff)
       nav('/home', { replace: true })
     } catch (err) {
-      setError(err.message || '登录失败，请检查用户名和密码')
+      setError(err.message || '登录失败，请检查手机号码和密码')
     } finally {
       setLoading(false)
     }
@@ -44,11 +44,11 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label className="form-label">用户名</label>
+            <label className="form-label">手机号码</label>
             <input
               className="form-input"
               type="text"
-              placeholder="请输入用户名"
+              placeholder="请输入手机号码"
               value={username}
               onChange={e => setUsername(e.target.value)}
               autoComplete="username"
