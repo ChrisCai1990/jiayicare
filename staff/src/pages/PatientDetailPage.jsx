@@ -6,6 +6,71 @@ import FollowUpModal from '../components/FollowUpModal'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
+// ── 专项筛查三层目录（来源：专项筛查呈现.xlsx）────────────────────────
+const SCREENING_TREE = [
+  { key: 'tumor', label: '肿瘤筛查', color: '#7C3AED', children: [
+    { label: '肺癌早筛',       items: ['胸部低剂量螺旋CT'] },
+    { label: '胃癌早筛',       items: ['碳13呼气试验','胃蛋白酶原','胃泌素','胃镜检查','胃镜病理'] },
+    { label: '食管癌早筛',     items: ['胃镜检查','胃镜病理'] },
+    { label: '肠癌早筛',       items: ['肠镜检查','肠镜病理'] },
+    { label: '肝癌早筛',       items: ['肝脏超声','肝脏纤维化弹性超声','肝脏磁共振'] },
+    { label: '甲状腺癌早筛',   items: ['甲状腺超声','甲状腺穿刺'] },
+    { label: '乳腺癌早筛（女）', items: ['乳腺超声','乳腺钼靶','乳腺磁共振','BRCA1/2基因检测'] },
+    { label: '宫颈癌早筛（女）', items: ['HPV','TCT'] },
+    { label: '子宫内膜癌早筛（女）', items: ['阴道超声'] },
+    { label: '卵巢癌早筛（女）', items: ['阴道超声'] },
+    { label: '前列腺癌早筛（男）', items: ['前列腺肿瘤标志物','前列腺超声','前列腺磁共振'] },
+    { label: '胰腺癌早筛',     items: ['胰腺超声','胰腺磁共振'] },
+    { label: '鼻咽癌早筛',     items: ['EB病毒IgA','鼻咽镜检查','鼻咽镜病理'] },
+    { label: '淋巴瘤早筛',     items: ['颈部淋巴结超声','淋巴结磁共振'] },
+    { label: '肾癌早筛',       items: ['肾脏超声','肾脏磁共振'] },
+    { label: '肿瘤标志物',     items: ['癌胚抗原（CEA）','甲胎蛋白（AFP）','糖链抗原199(CA199)','糖链抗原125(CA125)','糖链抗原724(CA724)','糖链抗原242(CA242)','t糖链抗原153（CA153）','鳞状细胞相关抗原（SCC）','神经元特异性烯醇化酶（NSE）','肺癌肿瘤标志物（CYFRA21-1)','细胞角蛋白19片段','胃泌素释放肽前体（Pro-GRP）','人绒毛膜促性腺激素（β-HCG）','肿瘤特异性生长因子（TSGF）','异常糖链糖蛋白检测（TAP）'] },
+  ]},
+  { key: 'cardiovascular', label: '心脑血管病筛查', color: '#DC3545', children: [
+    { label: '心血管病早筛', items: ['常规心电图','动态心电图','心脏超声','运动平板','心脏磁共振','冠脉CTA','冠脉造影','心肌酶谱','利钠肽（BNP）','同型半胱氨酸','心肌panel'] },
+    { label: '脑血管病早筛', items: ['颈动脉超声','脂蛋白磷脂酶A2','头颅MRI','头颅MRA'] },
+  ]},
+  { key: 'chronic', label: '慢性病筛查', color: '#D97706', children: [
+    { label: '高血压早筛',     items: ['血压','动态血压'] },
+    { label: '糖尿病早筛',     items: ['空腹血糖','糖化血红蛋白','糖化血清蛋白','葡萄糖耐量试验'] },
+    { label: '高血脂早筛',     items: ['血脂4项目','脂蛋白a'] },
+    { label: '睡眠呼吸暂停早筛', items: ['睡眠呼吸检测'] },
+    { label: '肝功能筛查',     items: ['肝功能5项','肝功能7项','肝功能11项'] },
+    { label: '肾功能筛查',     items: ['肾功能3项','肾功能4项'] },
+    { label: '肺功能筛查',     items: ['肺功能'] },
+    { label: '老年痴呆早筛',   items: ['tau蛋白'] },
+    { label: '骨质疏松早筛',   items: ['超声骨密度','双能X线骨密度检查'] },
+  ]},
+  { key: 'infectious', label: '传染病筛查', color: '#0369A1', children: [
+    { label: '乙肝筛查', items: ['乙肝三系定性','乙肝三系定量','乙肝DNA'] },
+    { label: '丙肝筛查', items: ['丙肝抗体两项'] },
+    { label: '戊肝筛查', items: ['戊肝抗体三项'] },
+    { label: '梅毒筛查', items: ['梅毒螺旋体抗体'] },
+    { label: '艾滋筛查', items: ['HIV抗体'] },
+  ]},
+  { key: 'hormone', label: '激素筛查', color: '#9D174D', children: [
+    { label: '性激素检测',     items: ['性激素4项','性激素6项'] },
+    { label: '甲状腺激素检测', items: ['甲状腺功能3项','甲状腺功能5项','甲状腺功能7项','甲状腺球蛋白'] },
+  ]},
+  { key: 'other_routine', label: '其他常规筛查', color: '#0077B6', children: [
+    { label: '血常规',         items: [] },
+    { label: '尿常规',         items: [] },
+    { label: '粪便常规+隐血',  items: [] },
+    { label: '风湿免疫',       items: [] },
+    { label: 'C反应蛋白',      items: [] },
+    { label: '凝血功能',       items: [] },
+    { label: 'D-二聚体',       items: [] },
+    { label: '血电解质',       items: ['电解质3项','电解质4项','电解质5项'] },
+    { label: '25-羟基维生素D', items: [] },
+  ]},
+  { key: 'functional', label: '功能医学筛查', color: '#0891B2', children: [
+    { label: '慢性食物过敏检测', items: ['慢性食物过敏检测20项','慢性食物过敏检测100项','慢性食物过敏检测120项'] },
+    { label: '肠道功能检测',   items: ['肠道菌群基因测序','肠道功能分析'] },
+    { label: '端粒检测',       items: [] },
+    { label: '精准基因检测',   items: [] },
+  ]},
+]
+
 // ── 生活方式表单子组件（定义在组件外，引用稳定，避免每次渲染重新挂载）─────
 const LS_LABEL_STYLE = { fontSize: 12, color: '#8AA89C', marginBottom: 4, display: 'block' }
 
@@ -323,7 +388,7 @@ export default function PatientDetailPage() {
   const [screeningItems, setScreeningItems] = useState([])
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
-  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: 'tumor', checkDate: '', hospital: '', note: '', reportItems: [] })
+  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [] })
   const [screeningFile, setScreeningFile] = useState(null)
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
@@ -710,16 +775,16 @@ export default function PatientDetailPage() {
 
   // 4.3 录入筛查结果
   const handleSaveScreeningRecord = async () => {
-    if (!screeningForm.title) return toast('请从项目库中选择检查项目')
-    if (!screeningForm.screeningCategory) return toast('请选择筛查分类')
+    if (!screeningForm.screeningL1) return toast('请选择第一层筛查分类')
+    if (!screeningForm.screeningL2) return toast('请选择第二层分类')
+    if (!screeningForm.title) return toast('请选择具体筛查项目')
     try {
       setScreeningSaving(true)
       await staffAPI.createScreeningRecord(id, screeningForm, screeningFile)
       toast('筛查结果已录入')
       setShowScreeningForm(false)
-      setScreeningForm({ title: '', screeningCategory: 'tumor', checkDate: '', hospital: '', note: '', reportItems: [] })
+      setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [] })
       setScreeningFile(null)
-      setScreeningSearchQ(''); setScreeningSearchResults([])
       loadScreening()
     } catch (err) { toast(err.message || '录入失败') }
     finally { setScreeningSaving(false) }
@@ -1783,32 +1848,96 @@ export default function PatientDetailPage() {
         })()}
 
 
-        {/* ── 4.3 专项筛查结果（时间轴，按分类） ── */}
+        {/* ── 4.3 专项筛查结果（三层目录树） ── */}
         {(() => {
-          const CAT_MAP = {
-            tumor:          { label: '肿瘤筛查',    color: '#7C3AED' },
-            cardiovascular: { label: '心脑血管筛查', color: '#DC3545' },
-            brain_vessel:   { label: '心脑血管筛查', color: '#DC3545' },
-            chronic:        { label: '慢性病筛查',   color: '#D97706' },
-            other_routine:  { label: '其他筛查',    color: '#0077B6' },
-            health_promote: { label: '其他筛查',    color: '#0077B6' },
-          }
-          const CATS = [
-            { key: 'tumor',          label: '肿瘤筛查',      color: '#7C3AED' },
-            { key: 'cardiovascular', label: '心脑血管筛查',   color: '#DC3545' },
-            { key: 'chronic',        label: '慢性病筛查',     color: '#D97706' },
-            { key: 'functional',     label: '功能医学检测',   color: '#0891B2' },
-            { key: 'other',          label: '其他筛查',      color: '#0077B6' },
-          ]
-          const grouped = { tumor: [], cardiovascular: [], chronic: [], functional: [], other: [] }
+          const STATUS_TEXT = { normal: '正常', abnormal: '异常', attention: '注意', unknown: '' }
+          const STATUS_COLOR_MAP = { normal: '#22A06B', abnormal: '#DC3545', attention: '#D97706', unknown: '#8AA89C' }
+
+          // 把旧数据的 screeningCategory 映射到 L1 key
+          const OLD_CAT_TO_L1 = { cardiovascular: 'cardiovascular', brain_vessel: 'cardiovascular', health_promote: 'other_routine' }
+
+          // 构建三层树：{ l1key: { l2label: { l3label: records[] } } }
+          const treeData = {}
           screeningReports.forEach(r => {
-            const cat = r.screeningCategory
-            if (cat === 'tumor') grouped.tumor.push(r)
-            else if (cat === 'cardiovascular' || cat === 'brain_vessel') grouped.cardiovascular.push(r)
-            else if (cat === 'chronic') grouped.chronic.push(r)
-            else if (cat === 'functional') grouped.functional.push(r)
-            else grouped.other.push(r)
+            const l1 = r.screeningL1 || OLD_CAT_TO_L1[r.screeningCategory] || r.screeningCategory || 'other_routine'
+            const l2 = r.screeningL2 || r.title || '未分类'
+            const l3 = r.screeningL3 || r.title || '未命名'
+            if (!treeData[l1]) treeData[l1] = {}
+            if (!treeData[l1][l2]) treeData[l1][l2] = {}
+            if (!treeData[l1][l2][l3]) treeData[l1][l2][l3] = []
+            treeData[l1][l2][l3].push(r)
           })
+          // 按日期倒序
+          Object.values(treeData).forEach(l2map =>
+            Object.values(l2map).forEach(l3map =>
+              Object.values(l3map).forEach(arr =>
+                arr.sort((a, b) => (a.checkDate || a.createdAt || 0) < (b.checkDate || b.createdAt || 0) ? 1 : -1)
+              )
+            )
+          )
+
+          const renderRecord = (r, color) => {
+            const isExpanded = expandedRecord === r._id
+            const fullUrl = r.fileUrl ? (r.fileUrl.startsWith('/') ? API_ORIGIN + r.fileUrl : r.fileUrl) : null
+            return (
+              <div key={r._id} style={{ padding: '6px 0 6px 12px', borderLeft: `2px solid ${color}40`, marginBottom: 2 }}>
+                <div onClick={() => setExpandedRecord(isExpanded ? null : r._id)}
+                  style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
+                  <span style={{ fontSize: 11, color: '#aaa', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                    {r.checkDate || (r.createdAt && new Date(r.createdAt).toLocaleDateString('zh-CN'))}
+                  </span>
+                  {r.hospital && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>📍 {r.hospital}</span>}
+                  {r.note && <span style={{ fontSize: 12, color: '#4A6558', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.note}</span>}
+                  {r.reportItems?.length > 0 && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{r.reportItems.length} 项</span>}
+                  <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
+                </div>
+                {isExpanded && (
+                  <div style={{ marginTop: 8 }}>
+                    {r.note && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 6 }}>结论：{r.note}</div>}
+                    {r.reportItems?.length > 0 && (
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 6 }}>
+                        <thead>
+                          <tr style={{ background: '#f5f2ec' }}>
+                            {['项目','结果','参考范围','状态'].map(h => (
+                              <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {r.reportItems.map((item, j) => (
+                            <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
+                              <td style={{ padding: '4px 8px', color: '#1A2B24' }}>{item.name}</td>
+                              <td style={{ padding: '4px 8px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
+                                {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
+                              </td>
+                              <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
+                              <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                    {fullUrl && (
+                      <div style={{ marginTop: 6 }}>
+                        {r.mimeType === 'application/pdf' ? (
+                          <a href={fullUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', textDecoration: 'none' }}>
+                            📄 查看报告 PDF
+                          </a>
+                        ) : (
+                          <button onClick={() => setPreviewImageUrl(fullUrl)}
+                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', cursor: 'pointer' }}>
+                            🖼 查看报告图片
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          }
+
           const hasAny = screeningReports.length > 0
           return (
             <div className="card" style={{ marginBottom: 16 }}>
@@ -1820,111 +1949,74 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无专项筛查记录，点击「录入筛查结果」添加</div>
               ) : (
                 <div>
-                  {CATS.map(({ key, label, color }) => {
-                    const catRecords = grouped[key]
-                    if (!catRecords.length) return null
-                    // 按 title 分组，每个项目内按时间倒序
-                    const byTitle = {}
-                    catRecords.forEach(r => {
-                      const t = r.title || '未命名'
-                      if (!byTitle[t]) byTitle[t] = []
-                      byTitle[t].push(r)
-                    })
-                    Object.values(byTitle).forEach(arr => arr.sort((a, b) => {
-                      const da = a.checkDate || a.createdAt || 0
-                      const db = b.checkDate || b.createdAt || 0
-                      return da < db ? 1 : -1
-                    }))
+                  {SCREENING_TREE.map(l1Node => {
+                    const l2map = treeData[l1Node.key]
+                    if (!l2map) return null
+                    const { color } = l1Node
                     return (
-                      <div key={key} style={{ marginBottom: 8 }}>
-                        <div style={{ padding: '8px 20px', background: '#f5f2ec', fontWeight: 600, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div key={l1Node.key} style={{ marginBottom: 4 }}>
+                        {/* 第一层标题 */}
+                        <div style={{ padding: '8px 20px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
-                          {label}
+                          {l1Node.label}
                         </div>
-                        <div style={{ padding: '0 20px' }}>
-                          {Object.entries(byTitle).map(([title, records]) => (
-                            <div key={title} style={{ paddingTop: 12, paddingBottom: 4, borderBottom: '1px solid #f0ece4' }}>
-                              {/* 项目标题行 */}
-                              <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ width: 3, height: 14, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />
-                                {title}
-                                <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{records.length} 次记录）</span>
-                              </div>
-                              {/* 时间轴：每次检查结果 */}
-                              {records.map((r, i) => {
-                                const isExpanded = expandedRecord === r._id
-                                const fullUrl = r.fileUrl ? (r.fileUrl.startsWith('/') ? API_ORIGIN + r.fileUrl : r.fileUrl) : null
-                                const STATUS_TEXT = { normal: '正常', abnormal: '异常', attention: '注意', unknown: '' }
-                                const STATUS_COLOR_MAP = { normal: '#22A06B', abnormal: '#DC3545', attention: '#D97706', unknown: '#8AA89C' }
-                                return (
-                                  <div key={r._id} style={{ padding: '8px 0 8px 12px', borderLeft: `2px solid ${i === 0 ? color : '#E0D9CE'}`, marginBottom: 4 }}>
-                                    {/* 摘要行，可点击展开 */}
-                                    <div
-                                      onClick={() => setExpandedRecord(isExpanded ? null : r._id)}
-                                      style={{ display: 'flex', gap: 12, alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}
-                                    >
-                                      <span style={{ fontSize: 12, color: '#aaa', whiteSpace: 'nowrap' }}>{r.checkDate || (r.createdAt && new Date(r.createdAt).toLocaleDateString('zh-CN'))}</span>
-                                      {r.hospital && <span style={{ fontSize: 12, color: '#8AA89C' }}>📍 {r.hospital}</span>}
-                                      {r.note && <span style={{ fontSize: 13, color: '#4A6558', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.note}</span>}
-                                      {r.reportItems?.length > 0 && (
-                                        <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{r.reportItems.length} 项</span>
-                                      )}
-                                      <span style={{ fontSize: 12, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
-                                    </div>
-                                    {/* 展开详情 */}
-                                    {isExpanded && (
-                                      <div style={{ marginTop: 10 }}>
-                                        {r.note && <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 8 }}>结论：{r.note}</div>}
-                                        {r.reportItems?.length > 0 && (
-                                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 8 }}>
-                                            <thead>
-                                              <tr style={{ background: '#f5f2ec' }}>
-                                                <th style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>项目</th>
-                                                <th style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>结果</th>
-                                                <th style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>参考范围</th>
-                                                <th style={{ padding: '5px 10px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>状态</th>
-                                              </tr>
-                                            </thead>
-                                            <tbody>
-                                              {r.reportItems.map((item, j) => (
-                                                <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
-                                                  <td style={{ padding: '5px 10px', color: '#1A2B24' }}>{item.name}</td>
-                                                  <td style={{ padding: '5px 10px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
-                                                    {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
-                                                  </td>
-                                                  <td style={{ padding: '5px 10px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
-                                                  <td style={{ padding: '5px 10px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
-                                                </tr>
-                                              ))}
-                                            </tbody>
-                                          </table>
-                                        )}
-                                        {fullUrl && (
-                                          <div style={{ marginTop: 8 }}>
-                                            {r.mimeType === 'application/pdf' ? (
-                                              <a href={fullUrl} target="_blank" rel="noopener noreferrer"
-                                                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', textDecoration: 'none', cursor: 'pointer' }}>
-                                                📄 查看报告 PDF
-                                              </a>
-                                            ) : (
-                                              <button onClick={() => setPreviewImageUrl(fullUrl)}
-                                                style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '4px 12px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', cursor: 'pointer' }}>
-                                                🖼 查看报告图片
-                                              </button>
-                                            )}
-                                          </div>
-                                        )}
-                                      </div>
-                                    )}
-                                  </div>
-                                )
-                              })}
+                        {/* 第二层 */}
+                        {Object.entries(l2map).map(([l2Label, l3map]) => (
+                          <div key={l2Label} style={{ paddingLeft: 20, borderBottom: '1px solid #f0ece4' }}>
+                            <div style={{ padding: '8px 0 4px', fontWeight: 600, fontSize: 13, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ width: 3, height: 12, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />
+                              {l2Label}
                             </div>
-                          ))}
-                        </div>
+                            {/* 第三层 */}
+                            <div style={{ paddingLeft: 12, paddingBottom: 8 }}>
+                              {Object.entries(l3map).map(([l3Label, records]) => (
+                                <div key={l3Label} style={{ marginBottom: 8 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 4, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ color, fontSize: 10 }}>▶</span>
+                                    {l3Label}
+                                    <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>({records.length} 次)</span>
+                                  </div>
+                                  <div style={{ paddingLeft: 14 }}>
+                                    {records.map(r => renderRecord(r, color))}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )
                   })}
+                  {/* 兜底：不在树中的记录（极旧数据） */}
+                  {(() => {
+                    const knownL1s = new Set(SCREENING_TREE.map(n => n.key))
+                    const legacyMap = Object.fromEntries(Object.entries(treeData).filter(([k]) => !knownL1s.has(k)))
+                    if (!Object.keys(legacyMap).length) return null
+                    return Object.entries(legacyMap).map(([l1, l2map]) => (
+                      <div key={l1} style={{ marginBottom: 4 }}>
+                        <div style={{ padding: '8px 20px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color: '#8AA89C', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#8AA89C', display: 'inline-block' }} />
+                          {l1}
+                        </div>
+                        {Object.entries(l2map).map(([l2, l3map]) => (
+                          <div key={l2} style={{ paddingLeft: 20, borderBottom: '1px solid #f0ece4' }}>
+                            <div style={{ padding: '8px 0 4px', fontWeight: 600, fontSize: 13, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 6 }}>
+                              <span style={{ width: 3, height: 12, borderRadius: 2, background: '#8AA89C', display: 'inline-block' }} />
+                              {l2}
+                            </div>
+                            <div style={{ paddingLeft: 12, paddingBottom: 8 }}>
+                              {Object.entries(l3map).map(([l3, records]) => (
+                                <div key={l3} style={{ marginBottom: 6 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 4 }}>▶ {l3} ({records.length} 次)</div>
+                                  <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, '#8AA89C'))}</div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ))
+                  })()}
                 </div>
               )}
             </div>
@@ -1940,69 +2032,68 @@ export default function PatientDetailPage() {
                 <button className="modal-close" onClick={() => setShowScreeningForm(false)}>✕</button>
               </div>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {/* 三级联动选择 */}
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">从检验/检查项目库选择 *</label>
-                  <div style={{ position: 'relative' }}>
-                    {screeningForm.title ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#E8F5EF', borderRadius: 6, border: '1px solid #BBF7D0' }}>
-                        <span style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', flex: 1 }}>{screeningForm.title}</span>
-                        <button type="button" style={{ background: 'none', border: 'none', color: '#8AA89C', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
-                          onClick={() => { setScreeningForm(f => ({ ...f, title: '' })); setScreeningSearchQ('') }}>✕</button>
-                      </div>
-                    ) : (
-                      <>
-                        <input className="form-input" placeholder="输入名称或助记码搜索项目库..." value={screeningSearchQ}
-                          onChange={e => {
-                            const q = e.target.value; setScreeningSearchQ(q)
-                            clearTimeout(screeningSearchTimer.current)
-                            if (!q.trim()) { setScreeningSearchResults([]); return }
-                            screeningSearchTimer.current = setTimeout(async () => {
-                              setScreeningSearching(true)
-                              try { const r = await staffAPI.getRequisitionItems(q); setScreeningSearchResults(r.data || []) }
-                              catch { setScreeningSearchResults([]) }
-                              finally { setScreeningSearching(false) }
-                            }, 300)
-                          }} />
-                        {screeningSearching && <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: '#aaa' }}>搜索中...</span>}
-                        {screeningSearchResults.length > 0 && (
-                          <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', maxHeight: 180, overflowY: 'auto', marginTop: 4 }}>
-                            {screeningSearchResults.map(item => (
-                              <div key={item._id} onMouseDown={async () => {
-                                setScreeningForm(f => ({ ...f, title: item.name }))
-                                setScreeningSearchQ(''); setScreeningSearchResults([])
-                                // 自动带出子项目
-                                if (item.type === 'labTestPackage' || item.type === 'labTestOrder') {
-                                  try {
-                                    const r = await staffAPI.getProjectSubItems(item.type, item._id)
-                                    if (r.data?.length) setScreeningForm(f => ({ ...f, title: item.name, reportItems: r.data }))
-                                  } catch {}
-                                }
-                              }} style={{ padding: '8px 14px', cursor: 'pointer', fontSize: 13, display: 'flex', gap: 8, borderBottom: '1px solid #f5f5f5' }}
-                                onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
-                                onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-                                <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: item.type === 'labTestOrder' ? '#EEF2FF' : '#F0FDF4', color: item.type === 'labTestOrder' ? '#4338CA' : '#166534', fontWeight: 600 }}>{item.typeName}</span>
-                                <span style={{ fontWeight: 500 }}>{item.name}</span>
-                                {item.mnemonic && <span style={{ color: '#8AA89C', fontSize: 12 }}>{item.mnemonic}</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </div>
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 4 }}>从管理后台检验/检查项目库选择，确保数据统一可追踪</div>
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">筛查分类 *</label>
-                  <select className="form-input" value={screeningForm.screeningCategory}
-                    onChange={e => setScreeningForm(f => ({ ...f, screeningCategory: e.target.value }))}>
-                    <option value="tumor">肿瘤筛查</option>
-                    <option value="cardiovascular">心脑血管筛查</option>
-                    <option value="chronic">慢性病筛查</option>
-                    <option value="functional">功能医学检测</option>
-                    <option value="other_routine">其他筛查</option>
+                  <label className="form-label">第一层：筛查大类 *</label>
+                  <select className="form-input" value={screeningForm.screeningL1}
+                    onChange={e => {
+                      const l1 = e.target.value
+                      setScreeningForm(f => ({ ...f, screeningL1: l1, screeningL2: '', screeningL3: '', title: '', screeningCategory: l1 }))
+                    }}>
+                    <option value="">请选择</option>
+                    {SCREENING_TREE.map(n => <option key={n.key} value={n.key}>{n.label}</option>)}
                   </select>
                 </div>
+                {screeningForm.screeningL1 && (() => {
+                  const l1Node = SCREENING_TREE.find(n => n.key === screeningForm.screeningL1)
+                  if (!l1Node) return null
+                  return (
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">第二层：具体分类 *</label>
+                      <select className="form-input" value={screeningForm.screeningL2}
+                        onChange={e => {
+                          const l2 = e.target.value
+                          const l2Node = l1Node.children.find(c => c.label === l2)
+                          // 若 L2 无子项目，则 L2 即为 title
+                          const autoTitle = (l2Node && l2Node.items.length === 0) ? l2 : ''
+                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', title: autoTitle }))
+                        }}>
+                        <option value="">请选择</option>
+                        {l1Node.children.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
+                      </select>
+                    </div>
+                  )
+                })()}
+                {screeningForm.screeningL1 && screeningForm.screeningL2 && (() => {
+                  const l1Node = SCREENING_TREE.find(n => n.key === screeningForm.screeningL1)
+                  const l2Node = l1Node?.children.find(c => c.label === screeningForm.screeningL2)
+                  if (!l2Node || l2Node.items.length === 0) return null
+                  return (
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">第三层：具体项目 *</label>
+                      <select className="form-input" value={screeningForm.screeningL3}
+                        onChange={e => {
+                          const l3 = e.target.value
+                          setScreeningForm(f => ({ ...f, screeningL3: l3, title: l3 }))
+                        }}>
+                        <option value="">请选择</option>
+                        {l2Node.items.map(item => <option key={item} value={item}>{item}</option>)}
+                      </select>
+                    </div>
+                  )
+                })()}
+                {/* 已选路径展示 */}
+                {screeningForm.title && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#E8F5EF', borderRadius: 6, border: '1px solid #BBF7D0', fontSize: 12, color: '#1E6B50' }}>
+                    <span>✓</span>
+                    <span style={{ color: '#8AA89C' }}>
+                      {SCREENING_TREE.find(n => n.key === screeningForm.screeningL1)?.label}
+                      {screeningForm.screeningL2 && ` › ${screeningForm.screeningL2}`}
+                      {screeningForm.screeningL3 && ` › `}
+                    </span>
+                    <span style={{ fontWeight: 600 }}>{screeningForm.title}</span>
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">检查日期</label>

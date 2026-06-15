@@ -20,9 +20,12 @@ const medicalReportSchema = new mongoose.Schema({
   institution:     { type: String, default: '' },     // 检查机构
   screeningCategory: {
     type: String,
-    enum: ['tumor', 'cardiovascular', 'brain_vessel', 'chronic', 'functional', 'other_routine', 'health_promote', ''],
+    enum: ['tumor', 'cardiovascular', 'brain_vessel', 'chronic', 'functional', 'other_routine', 'health_promote', 'infectious', 'hormone', ''],
     default: '',
   },
+  screeningL1: { type: String, default: '' }, // 第一层大类 key（如 'tumor'）
+  screeningL2: { type: String, default: '' }, // 第二层分类名（如 '胃癌早筛'）
+  screeningL3: { type: String, default: '' }, // 第三层项目名（如 '胃镜检查'）
   reportItems:     [reportItemSchema],                // 解析后的各项结果
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
   aiStatus:        { type: String, enum: ['none', 'pending', 'reviewed', 'rejected'], default: 'none' },
