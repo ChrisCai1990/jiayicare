@@ -7,6 +7,47 @@ import { useCategories, StatusBadge } from './_ProjectPage'
 // orders = 检验医嘱 (LabTestOrder), specialExams = 检查医嘱 (SpecialExam)
 const EMPTY = { name: '', mnemonic: '', remark: '', categoryId: '', orders: [], specialExams: [] }
 
+function SearchableSelect({ options, onSelect, placeholder }) {
+  const [search, setSearch] = useState('')
+  const [open, setOpen] = useState(false)
+  const filtered = options.filter(i =>
+    i.name.toLowerCase().includes(search.toLowerCase()) ||
+    (i.mnemonic || '').toLowerCase().includes(search.toLowerCase())
+  )
+  return (
+    <div style={{ position: 'relative', flex: 1 }}>
+      <input
+        className="form-input"
+        value={search}
+        onChange={e => { setSearch(e.target.value); setOpen(true) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 160)}
+        placeholder={placeholder}
+      />
+      {open && (search || filtered.length > 0) && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+          background: '#fff', border: '1px solid #E5E7EB', borderRadius: 8,
+          boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto',
+        }}>
+          {filtered.length === 0 ? (
+            <div style={{ padding: '10px 12px', color: '#aaa', fontSize: 13, textAlign: 'center' }}>无匹配项</div>
+          ) : filtered.map(i => (
+            <div key={i._id}
+              style={{ padding: '8px 12px', cursor: 'pointer', fontSize: 14, borderBottom: '1px solid #f5f5f5' }}
+              onMouseDown={() => { onSelect(i._id); setSearch(''); setOpen(false) }}
+              onMouseEnter={e => e.currentTarget.style.background = '#f0fdf4'}
+              onMouseLeave={e => e.currentTarget.style.background = ''}>
+              {i.name}
+              {i.mnemonic && <span style={{ color: '#aaa', marginLeft: 8, fontSize: 12 }}>({i.mnemonic})</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function genMnemonic(name) {
   if (!name) return ''
   try {
@@ -29,8 +70,6 @@ export default function LabTestPackagePage() {
   const [mnemonicEdited, setMnemonicEdited] = useState(false)
   const [allOrders, setAllOrders] = useState([])
   const [allSpecialExams, setAllSpecialExams] = useState([])
-  const [addOrderId, setAddOrderId] = useState('')
-  const [addExamId, setAddExamId] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -49,7 +88,7 @@ export default function LabTestPackagePage() {
   useEffect(() => { setPage(1); load(1) }, [q])
   useEffect(() => { load() }, [page])
 
-  const openCreate = () => { setEditId(null); setForm(EMPTY); setMnemonicEdited(false); setAddOrderId(''); setAddExamId(''); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setForm(EMPTY); setMnemonicEdited(false); setError(''); setShowModal(true) }
   const openEdit = item => {
     setEditId(item._id)
     setForm({
@@ -58,7 +97,7 @@ export default function LabTestPackagePage() {
       orders: (item.orders || []).map(i => i._id || i),
       specialExams: (item.specialExams || []).map(i => i._id || i),
     })
-    setMnemonicEdited(true); setAddOrderId(''); setAddExamId(''); setError(''); setShowModal(true)
+    setMnemonicEdited(true); setError(''); setShowModal(true)
   }
 
   const handleSave = async () => {
@@ -74,17 +113,15 @@ export default function LabTestPackagePage() {
     finally { setSaving(false) }
   }
 
-  const addOrder = () => {
-    if (!addOrderId || form.orders.includes(addOrderId)) return
-    setForm(f => ({ ...f, orders: [...f.orders, addOrderId] }))
-    setAddOrderId('')
+  const addOrder = id => {
+    if (!id || form.orders.includes(id)) return
+    setForm(f => ({ ...f, orders: [...f.orders, id] }))
   }
   const removeOrder = id => setForm(f => ({ ...f, orders: f.orders.filter(i => i !== id) }))
 
-  const addExam = () => {
-    if (!addExamId || form.specialExams.includes(addExamId)) return
-    setForm(f => ({ ...f, specialExams: [...f.specialExams, addExamId] }))
-    setAddExamId('')
+  const addExam = id => {
+    if (!id || form.specialExams.includes(id)) return
+    setForm(f => ({ ...f, specialExams: [...f.specialExams, id] }))
   }
   const removeExam = id => setForm(f => ({ ...f, specialExams: f.specialExams.filter(i => i !== id) }))
 
@@ -233,15 +270,11 @@ export default function LabTestPackagePage() {
               {/* 关联检验医嘱 */}
               <div style={{ marginTop: 20 }}>
                 <label className="form-label">关联检验医嘱</label>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-                  <select className="form-input" style={{ flex: 1 }} value={addOrderId} onChange={e => setAddOrderId(e.target.value)}>
-                    <option value="">— 选择检验医嘱 —</option>
-                    {unselectedOrders.map(i => (
-                      <option key={i._id} value={i._id}>{i.name}{i.mnemonic ? ` (${i.mnemonic})` : ''}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="btn btn-secondary" onClick={addOrder} disabled={!addOrderId}>添加</button>
-                </div>
+                <SearchableSelect
+                  options={unselectedOrders}
+                  onSelect={addOrder}
+                  placeholder="输入名称或助记码搜索..."
+                />
                 {selectedOrders.length === 0
                   ? <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>暂未关联检验医嘱</div>
                   : <ItemTable rows={selectedOrders} onRemove={removeOrder} />
@@ -251,15 +284,11 @@ export default function LabTestPackagePage() {
               {/* 关联检查医嘱 */}
               <div style={{ marginTop: 20 }}>
                 <label className="form-label">关联检查医嘱</label>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 4 }}>
-                  <select className="form-input" style={{ flex: 1 }} value={addExamId} onChange={e => setAddExamId(e.target.value)}>
-                    <option value="">— 选择检查医嘱 —</option>
-                    {unselectedExams.map(i => (
-                      <option key={i._id} value={i._id}>{i.name}{i.mnemonic ? ` (${i.mnemonic})` : ''}</option>
-                    ))}
-                  </select>
-                  <button type="button" className="btn btn-secondary" onClick={addExam} disabled={!addExamId}>添加</button>
-                </div>
+                <SearchableSelect
+                  options={unselectedExams}
+                  onSelect={addExam}
+                  placeholder="输入名称或助记码搜索..."
+                />
                 {selectedExams.length === 0
                   ? <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>暂未关联检查医嘱</div>
                   : <ItemTable rows={selectedExams} onRemove={removeExam} />
