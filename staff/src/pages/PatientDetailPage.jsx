@@ -388,7 +388,7 @@ export default function PatientDetailPage() {
   const [screeningItems, setScreeningItems] = useState([])
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
-  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [] })
+  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [screeningFile, setScreeningFile] = useState(null)
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
@@ -786,7 +786,7 @@ export default function PatientDetailPage() {
       await staffAPI.createScreeningRecord(id, screeningForm, screeningFile)
       toast('筛查结果已录入')
       setShowScreeningForm(false)
-      setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [] })
+      setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
       setScreeningFile(null)
       setScreeningLinkedItem(null)
       setScreeningAutoMatches([])
@@ -2079,15 +2079,25 @@ export default function PatientDetailPage() {
                       <select className="form-input" value={screeningForm.screeningL3}
                         onChange={async e => {
                           const l3 = e.target.value
-                          setScreeningForm(f => ({ ...f, screeningL3: l3, title: l3, reportItems: [] }))
+                          setScreeningForm(f => ({ ...f, screeningL3: l3, title: l3, reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null }))
                           setScreeningLinkedItem(null)
                           setScreeningAutoMatches([])
                           if (!l3) return
                           setScreeningAutoLoading(true)
                           try {
                             const r = await staffAPI.getRequisitionItems(l3)
-                            setScreeningAutoMatches(r.data || [])
-                          } catch { setScreeningAutoMatches([]) }
+                            const matches = r.data || []
+                            const best = matches.find(m => m.name === l3) || matches[0]
+                            if (best) {
+                              setScreeningLinkedItem(best)
+                              if (best.type === 'specialExam') {
+                                setScreeningForm(f => ({ ...f, linkedItemType: 'exam', examDescription: best.description || '', examConclusion: best.conclusion || '' }))
+                              } else {
+                                const subR = await staffAPI.getProjectSubItems(best.type, best._id)
+                                setScreeningForm(f => ({ ...f, linkedItemType: 'lab', reportItems: subR.data || [] }))
+                              }
+                            }
+                          } catch {}
                           finally { setScreeningAutoLoading(false) }
                         }}>
                         <option value="">请选择</option>
@@ -2108,55 +2118,9 @@ export default function PatientDetailPage() {
                     <span style={{ fontWeight: 600 }}>{screeningForm.title}</span>
                   </div>
                 )}
-                {/* 关联后台项目 */}
-                {screeningForm.title && (
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label" style={{ marginBottom: 6 }}>关联后台项目（检验医嘱 / 检查医嘱 / 套餐）</label>
-                    {screeningLinkedItem ? (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 10px', background: '#EEF2FF', borderRadius: 6, border: '1px solid #C7D2FE' }}>
-                        <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: screeningLinkedItem.type === 'labTestOrder' ? '#EEF2FF' : screeningLinkedItem.type === 'specialExam' ? '#FEF3E2' : '#F0FDF4', color: screeningLinkedItem.type === 'labTestOrder' ? '#4338CA' : screeningLinkedItem.type === 'specialExam' ? '#92400E' : '#166534', fontWeight: 600 }}>
-                          {screeningLinkedItem.typeName}
-                        </span>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', flex: 1 }}>{screeningLinkedItem.name}</span>
-                        {screeningLinkedItem.mnemonic && <span style={{ fontSize: 11, color: '#8AA89C' }}>{screeningLinkedItem.mnemonic}</span>}
-                        <button type="button" style={{ background: 'none', border: 'none', color: '#8AA89C', cursor: 'pointer', fontSize: 15, lineHeight: 1 }}
-                          onClick={() => { setScreeningLinkedItem(null); setScreeningForm(f => ({ ...f, reportItems: [] })) }}>✕</button>
-                      </div>
-                    ) : (
-                      <>
-                        {screeningAutoLoading && <div style={{ fontSize: 12, color: '#8AA89C', padding: '6px 0' }}>正在匹配后台项目...</div>}
-                        {!screeningAutoLoading && screeningAutoMatches.length > 0 && (
-                          <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
-                            {screeningAutoMatches.map(item => (
-                              <div key={item._id}
-                                onClick={async () => {
-                                  setScreeningLinkedItem(item)
-                                  if (item.type === 'labTestPackage' || item.type === 'labTestOrder') {
-                                    try {
-                                      const r = await staffAPI.getProjectSubItems(item.type, item._id)
-                                      if (r.data?.length) setScreeningForm(f => ({ ...f, reportItems: r.data }))
-                                    } catch {}
-                                  }
-                                }}
-                                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0ece4', fontSize: 13 }}
-                                onMouseEnter={e => e.currentTarget.style.background = '#f9f7f3'}
-                                onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
-                                <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: item.type === 'labTestOrder' ? '#EEF2FF' : item.type === 'specialExam' ? '#FEF3E2' : '#F0FDF4', color: item.type === 'labTestOrder' ? '#4338CA' : item.type === 'specialExam' ? '#92400E' : '#166534', fontWeight: 600, flexShrink: 0 }}>
-                                  {item.typeName}
-                                </span>
-                                <span style={{ fontWeight: 500, flex: 1 }}>{item.name}</span>
-                                {item.mnemonic && <span style={{ color: '#8AA89C', fontSize: 12 }}>{item.mnemonic}</span>}
-                                {item.itemCount > 0 && <span style={{ fontSize: 11, color: '#8AA89C' }}>{item.itemCount} 项</span>}
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        {!screeningAutoLoading && screeningAutoMatches.length === 0 && screeningForm.title && (
-                          <div style={{ fontSize: 12, color: '#8AA89C', padding: '4px 0' }}>后台暂无匹配项目，可手动添加检验项目</div>
-                        )}
-                      </>
-                    )}
-                  </div>
+                {/* 匹配状态提示 */}
+                {screeningAutoLoading && (
+                  <div style={{ fontSize: 12, color: '#8AA89C' }}>正在匹配后台项目...</div>
                 )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
@@ -2170,48 +2134,73 @@ export default function PatientDetailPage() {
                       onChange={e => setScreeningForm(f => ({ ...f, hospital: e.target.value }))} />
                   </div>
                 </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">主要结论/备注</label>
-                  <textarea className="form-input" rows={2} placeholder="如：未见明显异常；左叶结节3mm，建议随访" value={screeningForm.note}
-                    onChange={e => setScreeningForm(f => ({ ...f, note: e.target.value }))} />
-                </div>
-                {/* 具体检验项目 */}
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                    <label className="form-label" style={{ marginBottom: 0 }}>具体检验项目（可选）</label>
-                    <button type="button" className="btn btn-secondary btn-sm"
-                      onClick={() => setScreeningForm(f => ({ ...f, reportItems: [...f.reportItems, { name: '', value: '', unit: '', referenceRange: '', status: 'normal' }] }))}>
-                      + 添加项目
-                    </button>
-                  </div>
-                  {screeningForm.reportItems.length > 0 && (
-                    <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 0, background: '#f5f2ec', padding: '4px 8px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
-                        <span>项目名称</span><span>结果</span><span>单位</span><span>参考范围</span><span>状态</span><span />
-                      </div>
-                      {screeningForm.reportItems.map((item, idx) => (
-                        <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 4, padding: '4px 8px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
-                          <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="如 TSH" value={item.name}
-                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, reportItems: a } })} />
-                          <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="如 2.5" value={item.value}
-                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], value: e.target.value }; return { ...f, reportItems: a } })} />
-                          <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="mIU/L" value={item.unit}
-                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], unit: e.target.value }; return { ...f, reportItems: a } })} />
-                          <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="0.27-4.20" value={item.referenceRange}
-                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], referenceRange: e.target.value }; return { ...f, reportItems: a } })} />
-                          <select className="form-input" style={{ padding: '3px 4px', fontSize: 12 }} value={item.status}
-                            onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], status: e.target.value }; return { ...f, reportItems: a } })}>
-                            <option value="normal">正常</option>
-                            <option value="abnormal">异常</option>
-                            <option value="attention">注意</option>
-                          </select>
-                          <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
-                            onClick={() => setScreeningForm(f => ({ ...f, reportItems: f.reportItems.filter((_, i) => i !== idx) }))}>✕</button>
-                        </div>
-                      ))}
+                {/* 检查医嘱：检查描述 + 诊断结论 */}
+                {screeningForm.linkedItemType === 'exam' ? (
+                  <>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">检查描述（给医生看的详细说明）</label>
+                      <textarea className="form-input" rows={3} placeholder="检查目的、适应症、注意事项等..."
+                        value={screeningForm.examDescription}
+                        onChange={e => setScreeningForm(f => ({ ...f, examDescription: e.target.value }))} />
                     </div>
-                  )}
-                </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">诊断结论</label>
+                      <textarea className="form-input" rows={2} placeholder="常见诊断结论模板，如：未见明显异常；建议进一步检查..."
+                        value={screeningForm.examConclusion}
+                        onChange={e => setScreeningForm(f => ({ ...f, examConclusion: e.target.value }))} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">备注</label>
+                      <textarea className="form-input" rows={2} placeholder="其他补充说明" value={screeningForm.note}
+                        onChange={e => setScreeningForm(f => ({ ...f, note: e.target.value }))} />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">主要结论/备注</label>
+                      <textarea className="form-input" rows={2} placeholder="如：未见明显异常；左叶结节3mm，建议随访" value={screeningForm.note}
+                        onChange={e => setScreeningForm(f => ({ ...f, note: e.target.value }))} />
+                    </div>
+                    {/* 具体检验项目 */}
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <label className="form-label" style={{ marginBottom: 0 }}>具体检验项目（可选）</label>
+                        <button type="button" className="btn btn-secondary btn-sm"
+                          onClick={() => setScreeningForm(f => ({ ...f, reportItems: [...f.reportItems, { name: '', value: '', unit: '', referenceRange: '', status: 'normal' }] }))}>
+                          + 添加项目
+                        </button>
+                      </div>
+                      {screeningForm.reportItems.length > 0 && (
+                        <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 0, background: '#f5f2ec', padding: '4px 8px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
+                            <span>项目名称</span><span>结果</span><span>单位</span><span>参考范围</span><span>状态</span><span />
+                          </div>
+                          {screeningForm.reportItems.map((item, idx) => (
+                            <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 4, padding: '4px 8px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
+                              <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="如 TSH" value={item.name}
+                                onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, reportItems: a } })} />
+                              <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="如 2.5" value={item.value}
+                                onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], value: e.target.value }; return { ...f, reportItems: a } })} />
+                              <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="mIU/L" value={item.unit}
+                                onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], unit: e.target.value }; return { ...f, reportItems: a } })} />
+                              <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="0.27-4.20" value={item.referenceRange}
+                                onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], referenceRange: e.target.value }; return { ...f, reportItems: a } })} />
+                              <select className="form-input" style={{ padding: '3px 4px', fontSize: 12 }} value={item.status}
+                                onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], status: e.target.value }; return { ...f, reportItems: a } })}>
+                                <option value="normal">正常</option>
+                                <option value="abnormal">异常</option>
+                                <option value="attention">注意</option>
+                              </select>
+                              <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                                onClick={() => setScreeningForm(f => ({ ...f, reportItems: f.reportItems.filter((_, i) => i !== idx) }))}>✕</button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">上传报告（图片或 PDF，可选）</label>
                   <input

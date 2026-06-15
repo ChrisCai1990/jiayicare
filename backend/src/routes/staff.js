@@ -1535,7 +1535,7 @@ router.get('/requisition-items', staffAuth, async (req, res) => {
     const result = [
       ...packages.map(p => ({ _id: p._id, name: p.name, mnemonic: p.mnemonic, type: 'labTestPackage', typeName: '套餐', itemCount: p.labTestItems?.length || 0 })),
       ...labOrders.map(o => ({ _id: o._id, name: o.name, mnemonic: o.mnemonic, type: 'labTestOrder', typeName: '检验医嘱' })),
-      ...specialExams.map(e => ({ _id: e._id, name: e.name, mnemonic: e.mnemonic, type: 'specialExam', typeName: '检查医嘱' })),
+      ...specialExams.map(e => ({ _id: e._id, name: e.name, mnemonic: e.mnemonic, type: 'specialExam', typeName: '检查医嘱', description: e.description || '', conclusion: e.conclusion || '' })),
     ];
     res.json({ success: true, data: result });
   } catch (err) {
