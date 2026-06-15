@@ -4,11 +4,13 @@ const User = require('../models/User');
 module.exports = async (req, res, next) => {
   try {
     const authHeader = req.headers.authorization;
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    // SSE 等场景支持 query string 传 token
+    const token = (authHeader && authHeader.startsWith('Bearer '))
+      ? authHeader.split(' ')[1]
+      : req.query.token;
+    if (!token) {
       return res.status(401).json({ success: false, message: '未登录，请先登录' });
     }
-
-    const token = authHeader.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
     const user = await User.findById(decoded.id).select('-password');

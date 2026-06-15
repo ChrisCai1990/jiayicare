@@ -3599,7 +3599,6 @@ export default function PatientDetailPage() {
           patientId={id}
           patientName={user.name}
           onClose={() => setShowMessageModal(false)}
-          onSaved={() => { setShowMessageModal(false); toast('消息已发送，会员将在消息中心收到') }}
         />
       )}
 
@@ -3735,53 +3734,118 @@ function formatRecordValue(r) {
   return r.value ?? '-'
 }
 
-// ── 发消息弹窗 ──────────────────────────────────────────────
-function SendMessageModal({ patientId, patientName, onClose, onSaved }) {
-  const toast = useToast()
-  const [content, setContent] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
+// ── 聊天对话弹窗 ──────────────────────────────────────────────
+function SendMessageModal({ patientId, patientName, onClose }) {
+  const { staff } = useStaff()
+  const [msgs, setMsgs] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [input, setInput] = useState('')
+  const [sending, setSending] = useState(false)
+  const scrollRef = useRef(null)
 
-  const handleSubmit = async () => {
-    if (!content.trim()) { setError('请输入消息内容'); return }
+  const loadThread = async () => {
     try {
-      setSaving(true); setError('')
-      await staffAPI.sendMessageToPatient(patientId, { content: content.trim() })
-      onSaved()
-    } catch (err) {
-      setError(err.message || '发送失败')
-    } finally {
-      setSaving(false)
-    }
+      const res = await staffAPI.getChatThread(patientId)
+      setMsgs(res.data || [])
+      setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'auto' }), 80)
+    } catch {}
+    finally { setLoading(false) }
   }
+
+  useEffect(() => { loadThread() }, [patientId])
+
+  // 轮询获取新消息（3秒一次）
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const res = await staffAPI.getChatThread(patientId)
+        setMsgs(res.data || [])
+      } catch {}
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [patientId])
+
+  useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' })
+  }, [msgs])
+
+  const send = async () => {
+    if (!input.trim() || sending) return
+    setSending(true)
+    try {
+      const res = await staffAPI.replyChatMessage(patientId, input.trim())
+      setInput('')
+      if (res.data) setMsgs(prev => [...prev, res.data])
+      setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }), 80)
+    } catch {}
+    finally { setSending(false) }
+  }
+
+  const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
+
+  const fmtTime = (t) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 460 }}>
-        <div className="modal-header">
-          <h3 className="modal-title">发消息给 {patientName}</h3>
+      <div className="modal" style={{ maxWidth: 520, height: '70vh', display: 'flex', flexDirection: 'column', padding: 0 }}>
+        {/* 顶栏 */}
+        <div className="modal-header" style={{ borderBottom: '1px solid #E0D9CE', flexShrink: 0 }}>
+          <h3 className="modal-title">与 {patientName} 对话</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
-          {error && <div className="alert alert-error">{error}</div>}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">消息内容</label>
-            <textarea
-              className="form-input" rows={5}
-              placeholder="输入要发给会员的消息，将显示在会员端消息中心…"
-              value={content}
-              onChange={e => { setContent(e.target.value); setError('') }}
-              style={{ resize: 'vertical' }}
-            />
-            <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 4, textAlign: 'right' }}>
-              {content.length}/500
-            </div>
-          </div>
+
+        {/* 消息列表 */}
+        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3' }}>
+          {loading ? (
+            <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>加载中…</div>
+          ) : msgs.length === 0 ? (
+            <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>暂无消息，发送第一条吧</div>
+          ) : msgs.map((m, i) => {
+            const isStaff = m.type !== 'user'
+            const showTime = i === 0 || (new Date(m.createdAt) - new Date(msgs[i-1].createdAt)) > 300000
+            return (
+              <div key={m._id}>
+                {showTime && <div style={{ textAlign: 'center', fontSize: 11, color: '#8AA89C', margin: '4px 0' }}>{fmtTime(m.createdAt)}</div>}
+                <div style={{ display: 'flex', justifyContent: isStaff ? 'flex-end' : 'flex-start', gap: 8 }}>
+                  {!isStaff && (
+                    <div style={{ width: 32, height: 32, borderRadius: 16, background: '#1E6B50', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
+                      {(patientName || '用')[0]}
+                    </div>
+                  )}
+                  <div style={{ maxWidth: '68%' }}>
+                    {!isStaff && <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3 }}>{m.sender || patientName}</div>}
+                    <div style={{
+                      padding: '9px 13px', borderRadius: isStaff ? '12px 4px 12px 12px' : '4px 12px 12px 12px',
+                      background: isStaff ? '#1E6B50' : '#fff',
+                      color: isStaff ? '#fff' : '#1A2B24',
+                      fontSize: 14, lineHeight: 1.5,
+                      boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                    }}>
+                      {m.content}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !content.trim()}>
-            {saving ? '发送中...' : '发送'}
+
+        {/* 输入栏 */}
+        <div style={{ borderTop: '1px solid #E0D9CE', padding: '10px 14px', display: 'flex', gap: 8, alignItems: 'flex-end', flexShrink: 0, backgroundColor: '#fff' }}>
+          <textarea
+            style={{ flex: 1, border: '1px solid #E0D9CE', borderRadius: 10, padding: '8px 12px', fontSize: 14, resize: 'none', outline: 'none', maxHeight: 100, lineHeight: 1.5, fontFamily: 'inherit' }}
+            rows={1}
+            placeholder="输入消息，Enter 发送，Shift+Enter 换行"
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKey}
+          />
+          <button
+            onClick={send}
+            disabled={sending || !input.trim()}
+            style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || !input.trim()) ? 0.5 : 1 }}
+          >
+            {sending ? '…' : '发送'}
           </button>
         </div>
       </div>

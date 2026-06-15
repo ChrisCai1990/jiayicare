@@ -85,11 +85,48 @@ router.post('/', auth, async (req, res) => {
       conversationId,
     });
 
+    ssePublish(conversationId, { type: 'message', data: msg });
     console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);
     res.json({ success: true, data: msg, message: '消息已发送' });
   } catch (err) {
     res.status(500).json({ success: false, message: '发送失败', error: err.message });
   }
 });
+
+// SSE 客户端注册表：conversationId → Set<res>
+const sseClients = new Map();
+
+function ssePublish(conversationId, data) {
+  const clients = sseClients.get(conversationId);
+  if (!clients) return;
+  const payload = `data: ${JSON.stringify(data)}\n\n`;
+  for (const res of clients) {
+    try { res.write(payload); } catch {}
+  }
+}
+
+// 对外暴露，供 staff 路由调用
+module.exports.ssePublish = ssePublish;
+
+// SSE 长连接：用户订阅某会话的实时消息
+router.get('/stream/:role', auth, (req, res) => {
+  const { role } = req.params;
+  const conversationId = `${req.user._id}_${role}`;
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' });
+  res.flushHeaders();
+  res.write(': connected\n\n');
+
+  if (!sseClients.has(conversationId)) sseClients.set(conversationId, new Set());
+  sseClients.get(conversationId).add(res);
+
+  const heartbeat = setInterval(() => { try { res.write(': ping\n\n'); } catch {} }, 25000);
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    sseClients.get(conversationId)?.delete(res);
+  });
+});
+
+// staff 路由需要时调用 ssePublish，这里也挂一个内部用的辅助
+router.ssePublish = ssePublish;
 
 module.exports = router;

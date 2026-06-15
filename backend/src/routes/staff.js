@@ -1,5 +1,7 @@
 const express = require('express');
 const jwt = require('jsonwebtoken');
+let _ssePublish = null;
+function ssePublish(...args) { if (!_ssePublish) { try { _ssePublish = require('./messages').ssePublish; } catch {} } _ssePublish?.(...args); }
 const mongoose = require('mongoose');
 const crypto = require('crypto');
 const path = require('path');
@@ -1644,6 +1646,7 @@ router.post('/patients/:id/message', staffAuth, async (req, res) => {
       conversationId,
       recipient:      roleKey,
     });
+    ssePublish(conversationId, { type: 'message', data: msg });
     res.json({ success: true, data: msg });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -2435,7 +2438,7 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     const conversationId = `${req.params.userId}_${roleKey}`;
     const senderLabel = staff.title ? `${staff.name}（${staff.title}）` : staff.name;
 
-    await Message.create({
+    const replyMsg = await Message.create({
       user:    req.params.userId,
       type:    msgType,
       sender:  senderLabel,
@@ -2445,7 +2448,8 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
       conversationId,
     });
 
-    res.json({ success: true, message: '回复已发送' });
+    ssePublish(conversationId, { type: 'message', data: replyMsg });
+    res.json({ success: true, message: '回复已发送', data: replyMsg });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

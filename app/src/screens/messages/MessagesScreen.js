@@ -786,6 +786,7 @@ function ConversationThreadModal({ role, onClose }) {
   const [sending, setSending] = useState(false);
   const scrollRef = useRef(null);
   const meta = ROLE_META[role] || ROLE_META.manager;
+  const { token } = useAuth();
 
   const loadThread = async () => {
     try {
@@ -795,6 +796,25 @@ function ConversationThreadModal({ role, onClose }) {
     } catch {}
     finally { setLoading(false); }
   };
+
+  // SSE 实时推送
+  useEffect(() => {
+    if (!token) return;
+    const BASE_URL = (typeof process !== 'undefined' && process.env?.EXPO_PUBLIC_API_URL) || 'https://jiaycare.com/api';
+    const url = `${BASE_URL}/messages/stream/${role}?token=${token}`;
+    const es = new EventSource(url);
+    es.onmessage = (e) => {
+      if (!e.data || e.data.startsWith(':')) return;
+      try {
+        const { type, data } = JSON.parse(e.data);
+        if (type === 'message') {
+          setMsgs(prev => [...prev, data]);
+          setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 100);
+        }
+      } catch {}
+    };
+    return () => es.close();
+  }, [role, token]);
 
   useEffect(() => { loadThread(); }, [role]);
 
