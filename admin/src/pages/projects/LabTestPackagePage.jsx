@@ -282,10 +282,6 @@ export default function LabTestPackagePage() {
                   <input className="form-input" value={form.name} onChange={handleNameChange} placeholder="如：高血压筛查套餐" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">助记码（拼音首字母）</label>
-                  <input className="form-input" value={form.mnemonic} onChange={handleMnemonicChange} placeholder="输入名称后自动生成" />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">筛查大类</label>
                   <select className="form-input" value={parentCatId} onChange={e => {
                     const val = e.target.value
@@ -309,7 +305,11 @@ export default function LabTestPackagePage() {
                     ))}
                   </select>
                 </div>
-                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">助记码（拼音首字母）</label>
+                  <input className="form-input" value={form.mnemonic} onChange={handleMnemonicChange} placeholder="输入名称后自动生成" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">备注</label>
                   <input className="form-input" value={form.remark} onChange={set('remark')} placeholder="选填" />
                 </div>
