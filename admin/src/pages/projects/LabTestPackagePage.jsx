@@ -2,10 +2,25 @@ import React, { useEffect, useState } from 'react'
 import { pinyin } from 'pinyin-pro'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
-import { useCategories, StatusBadge } from './_ProjectPage'
+import { StatusBadge } from './_ProjectPage'
 
 // orders = 检验医嘱 (LabTestOrder), specialExams = 检查医嘱 (SpecialExam), functionalTests = 功能医学检测
 const EMPTY = { name: '', mnemonic: '', remark: '', categoryId: '', orders: [], specialExams: [], functionalTests: [] }
+
+function useCategoryTree() {
+  const [tree, setTree] = useState([])
+  const [flat, setFlat] = useState([])
+  useEffect(() => {
+    adminAPI.categories().then(r => {
+      const flatArr = []
+      const walk = (nodes, depth = 0) => nodes.forEach(n => { flatArr.push({ ...n, depth }); walk(n.children || [], depth + 1) })
+      walk(r.data || [])
+      setTree(r.data || [])
+      setFlat(flatArr)
+    }).catch(() => {})
+  }, [])
+  return { tree, flat }
+}
 
 function SearchableSelect({ options, onSelect, placeholder }) {
   const [search, setSearch] = useState('')
@@ -58,7 +73,7 @@ function genMnemonic(name) {
 
 export default function LabTestPackagePage() {
   const toast = useToast()
-  const cats = useCategories()
+  const { flat: cats } = useCategoryTree()
   const [list, setList] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -73,6 +88,7 @@ export default function LabTestPackagePage() {
   const [allFunctionalTests, setAllFunctionalTests] = useState([])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [parentCatId, setParentCatId] = useState('')
 
   useEffect(() => {
     adminAPI.labTestOrders({ limit: 500, status: 'active' }).then(r => setAllOrders(r.data || [])).catch(() => {})
@@ -90,12 +106,16 @@ export default function LabTestPackagePage() {
   useEffect(() => { setPage(1); load(1) }, [q])
   useEffect(() => { load() }, [page])
 
-  const openCreate = () => { setEditId(null); setForm(EMPTY); setMnemonicEdited(false); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setForm(EMPTY); setMnemonicEdited(false); setParentCatId(''); setError(''); setShowModal(true) }
   const openEdit = item => {
     setEditId(item._id)
+    const catId = item.categoryId?._id || item.categoryId || ''
+    const catItem = cats.find(c => c._id === catId)
+    const pId = catItem?.depth === 1 ? (catItem.parent?._id || catItem.parent || '') : catId
+    setParentCatId(pId)
     setForm({
       name: item.name, mnemonic: item.mnemonic || '', remark: item.remark || '',
-      categoryId: item.categoryId?._id || item.categoryId || '',
+      categoryId: catId,
       orders: (item.orders || []).map(i => i._id || i),
       specialExams: (item.specialExams || []).map(i => i._id || i),
       functionalTests: (item.functionalTests || []).map(i => i._id || i),
@@ -266,10 +286,27 @@ export default function LabTestPackagePage() {
                   <input className="form-input" value={form.mnemonic} onChange={handleMnemonicChange} placeholder="输入名称后自动生成" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">所属分类</label>
-                  <select className="form-input" value={form.categoryId} onChange={set('categoryId')}>
+                  <label className="form-label">筛查大类</label>
+                  <select className="form-input" value={parentCatId} onChange={e => {
+                    const val = e.target.value
+                    setParentCatId(val)
+                    setForm(f => ({ ...f, categoryId: val }))
+                  }}>
                     <option value="">无</option>
-                    {cats.map(c => <option key={c._id} value={c._id}>{'　'.repeat(c.depth)}{c.name}</option>)}
+                    {cats.filter(c => c.depth === 0).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">子分类</label>
+                  <select className="form-input"
+                    value={form.categoryId === parentCatId ? '' : form.categoryId}
+                    onChange={e => setForm(f => ({ ...f, categoryId: e.target.value || parentCatId || '' }))}
+                    disabled={!parentCatId}
+                  >
+                    <option value="">无</option>
+                    {cats.filter(c => c.depth === 1 && (c.parent === parentCatId || c.parent?._id === parentCatId)).map(c => (
+                      <option key={c._id} value={c._id}>{c.name}</option>
+                    ))}
                   </select>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
