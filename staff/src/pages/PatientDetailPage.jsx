@@ -722,8 +722,14 @@ export default function PatientDetailPage() {
     try {
       setScreeningSaving(true)
       // 编译三类项目到后端字段
+      // 把检验医嘱（含子项目）打平为 reportItems
+      const flatLabItems = (screeningForm.reportItems || []).flatMap(order =>
+        order.subItems && order.subItems.length > 0
+          ? order.subItems.map(sub => ({ name: sub.name, value: sub.value || '', unit: sub.unit || '', referenceRange: sub.referenceRange || '', status: sub.status || 'normal' }))
+          : [{ name: order.name, value: order.value || '', unit: order.unit || '', referenceRange: order.referenceRange || '', status: order.status || 'normal' }]
+      )
       const funcAsReportItems = (screeningForm.funcTestItems || []).map(f => ({ name: f.name, value: f.result || '', unit: '', referenceRange: '', status: 'unknown', itemType: 'data' }))
-      const allReportItems = [...(screeningForm.reportItems || []), ...funcAsReportItems]
+      const allReportItems = [...flatLabItems, ...funcAsReportItems]
       const examDesc = (screeningForm.examOrderItems || []).map(e => e.name ? `【${e.name}】\n${e.description || ''}` : '').filter(Boolean).join('\n\n') || screeningForm.examDescription || ''
       const examConc = (screeningForm.examOrderItems || []).map(e => e.name ? `【${e.name}】\n${e.conclusion || ''}` : '').filter(Boolean).join('\n\n') || screeningForm.examConclusion || ''
       const allL3Names = [...(screeningForm.reportItems || []).map(r => r.name), ...(screeningForm.examOrderItems || []).map(e => e.name), ...(screeningForm.funcTestItems || []).map(f => f.name)].filter(Boolean)
@@ -2007,8 +2013,8 @@ export default function PatientDetailPage() {
                           const labOrders = l2Node?.labOrders || []
                           const examItems = l2Node?.examItems || []
                           const funcItems = l2Node?.funcItems || []
-                          const allNames = [...labOrders, ...examItems.map(x => x.name), ...funcItems]
-                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', screeningL3Items: allNames, title: l2, reportItems: labOrders.map(name => ({ name, value: '', unit: '', referenceRange: '', status: 'normal' })), examOrderItems: examItems.map(x => ({ name: x.name, description: x.description || '', conclusion: x.conclusion || '' })), funcTestItems: funcItems.map(name => ({ name, result: '' })), examDescription: '', examConclusion: '', linkedItemType: null }))
+                          const allNames = [...labOrders.map(o => o.name || o), ...examItems.map(x => x.name), ...funcItems]
+                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', screeningL3Items: allNames, title: l2, reportItems: labOrders.map(o => { const order = typeof o === 'string' ? { name: o, subItems: [] } : o; return { name: order.name, subItems: (order.subItems || []).map(s => ({ name: s.name, value: '', unit: s.unit || '', referenceRange: s.referenceRange || '', status: 'normal' })), value: '', unit: '', referenceRange: '', status: 'normal' } }), examOrderItems: examItems.map(x => ({ name: x.name, description: x.description || '', conclusion: x.conclusion || '' })), funcTestItems: funcItems.map(name => ({ name, result: '' })), examDescription: '', examConclusion: '', linkedItemType: null }))
                         }}>
                         <option value="">请选择</option>
                         {l1Node.children.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
@@ -2034,43 +2040,73 @@ export default function PatientDetailPage() {
                 {/* ── 检验医嘱 ── */}
                 {screeningForm.screeningL2 && (
                   <div className="form-group" style={{ marginBottom: 0 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                       <label className="form-label" style={{ marginBottom: 0, color: '#1E6B50', fontWeight: 700 }}>
                         检验医嘱
                         {screeningForm.reportItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{screeningForm.reportItems.length} 项）</span>}
                       </label>
                       <button type="button" className="btn btn-secondary btn-sm"
-                        onClick={() => setScreeningForm(f => ({ ...f, reportItems: [...f.reportItems, { name: '', value: '', unit: '', referenceRange: '', status: 'normal' }] }))}>
+                        onClick={() => setScreeningForm(f => ({ ...f, reportItems: [...f.reportItems, { name: '', subItems: [], value: '', unit: '', referenceRange: '', status: 'normal' }] }))}>
                         + 手动添加
                       </button>
                     </div>
                     {screeningForm.reportItems.length === 0 ? (
                       <div style={{ fontSize: 12, color: '#aaa', padding: '4px 0' }}>该分类无检验医嘱项目</div>
                     ) : (
-                      <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
-                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 0, background: '#f5f2ec', padding: '4px 8px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
-                          <span>项目名称</span><span>结果</span><span>单位</span><span>参考范围</span><span>状态</span><span />
-                        </div>
-                        {screeningForm.reportItems.map((item, idx) => (
-                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 4, padding: '4px 8px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
-                            <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="如 TSH" value={item.name}
-                              onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, reportItems: a } })} />
-                            <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="如 2.5" value={item.value}
-                              onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], value: e.target.value }; return { ...f, reportItems: a } })} />
-                            <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="mIU/L" value={item.unit}
-                              onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], unit: e.target.value }; return { ...f, reportItems: a } })} />
-                            <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="0.27-4.20" value={item.referenceRange}
-                              onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], referenceRange: e.target.value }; return { ...f, reportItems: a } })} />
-                            <select className="form-input" style={{ padding: '3px 4px', fontSize: 12 }} value={item.status}
-                              onChange={e => setScreeningForm(f => { const a = [...f.reportItems]; a[idx] = { ...a[idx], status: e.target.value }; return { ...f, reportItems: a } })}>
-                              <option value="normal">正常</option>
-                              <option value="abnormal">异常</option>
-                              <option value="attention">注意</option>
-                            </select>
-                            <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
-                              onClick={() => setScreeningForm(f => ({ ...f, reportItems: f.reportItems.filter((_, i) => i !== idx) }))}>✕</button>
-                          </div>
-                        ))}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {screeningForm.reportItems.map((order, oi) => {
+                          const hasSubItems = order.subItems && order.subItems.length > 0
+                          const updateOrder = patch => setScreeningForm(f => { const a = [...f.reportItems]; a[oi] = { ...a[oi], ...patch }; return { ...f, reportItems: a } })
+                          const updateSub = (si, patch) => setScreeningForm(f => { const a = [...f.reportItems]; const subs = [...a[oi].subItems]; subs[si] = { ...subs[si], ...patch }; a[oi] = { ...a[oi], subItems: subs }; return { ...f, reportItems: a } })
+                          const STATUS_OPTIONS = [['normal','正常'],['abnormal','异常'],['attention','注意']]
+                          return (
+                            <div key={oi} style={{ border: '1px solid #BBF7D0', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+                              {/* 医嘱标题行 */}
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#E8F5EF', borderBottom: hasSubItems ? '1px solid #BBF7D0' : 'none' }}>
+                                <input className="form-input" style={{ flex: 1, fontWeight: 600, fontSize: 13, background: 'transparent', border: '1px solid transparent', padding: '2px 6px' }}
+                                  placeholder="检验医嘱名称" value={order.name}
+                                  onChange={e => updateOrder({ name: e.target.value })} />
+                                {!hasSubItems && (
+                                  <>
+                                    <input className="form-input" style={{ width: 70, padding: '2px 6px', fontSize: 12 }} placeholder="结果" value={order.value || ''}
+                                      onChange={e => updateOrder({ value: e.target.value })} />
+                                    <input className="form-input" style={{ width: 60, padding: '2px 6px', fontSize: 12 }} placeholder="单位" value={order.unit || ''}
+                                      onChange={e => updateOrder({ unit: e.target.value })} />
+                                    <select className="form-input" style={{ width: 72, padding: '2px 4px', fontSize: 12 }} value={order.status || 'normal'}
+                                      onChange={e => updateOrder({ status: e.target.value })}>
+                                      {STATUS_OPTIONS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+                                    </select>
+                                  </>
+                                )}
+                                <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 2px', flexShrink: 0 }}
+                                  onClick={() => setScreeningForm(f => ({ ...f, reportItems: f.reportItems.filter((_, i) => i !== oi) }))}>✕</button>
+                              </div>
+                              {/* 子项目表格 */}
+                              {hasSubItems && (
+                                <div>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr', gap: 0, background: '#f5f2ec', padding: '3px 10px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
+                                    <span>指标名称</span><span>结果</span><span>单位</span><span>参考范围</span><span>状态</span>
+                                  </div>
+                                  {order.subItems.map((sub, si) => (
+                                    <div key={si} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr', gap: 4, padding: '4px 10px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
+                                      <span style={{ fontSize: 12, color: '#1A2B24' }}>{sub.name}</span>
+                                      <input className="form-input" style={{ padding: '2px 6px', fontSize: 12 }} placeholder="结果" value={sub.value || ''}
+                                        onChange={e => updateSub(si, { value: e.target.value })} />
+                                      <input className="form-input" style={{ padding: '2px 6px', fontSize: 12 }} placeholder="单位" value={sub.unit || ''}
+                                        onChange={e => updateSub(si, { unit: e.target.value })} />
+                                      <input className="form-input" style={{ padding: '2px 6px', fontSize: 12 }} placeholder="参考范围" value={sub.referenceRange || ''}
+                                        onChange={e => updateSub(si, { referenceRange: e.target.value })} />
+                                      <select className="form-input" style={{ padding: '2px 4px', fontSize: 12 }} value={sub.status || 'normal'}
+                                        onChange={e => updateSub(si, { status: e.target.value })}>
+                                        {STATUS_OPTIONS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+                                      </select>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
                       </div>
                     )}
                   </div>

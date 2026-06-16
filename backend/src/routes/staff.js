@@ -2691,8 +2691,8 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
     const [cats, pkgs] = await Promise.all([
       ProjectCategory.find({ status: 'active' }).lean(),
       LabTestPackage.find({ status: 'active' })
-        .populate('orders', 'name')
-        .populate('labTestItems', 'name')
+        .populate({ path: 'orders', select: 'name items', populate: { path: 'items', select: 'name unit referenceRange referenceValue' } })
+        .populate('labTestItems', 'name unit referenceRange referenceValue')
         .populate('specialExams', 'name description conclusion')
         .populate('functionalTests', 'name')
         .lean(),
@@ -2717,24 +2717,37 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
         const l2id = String(l2._id);
         const matchPkgs = pkgByCat[l2id] || [];
         // 三类分项，按类型分别汇总（去重）
-        const labOrderMap = new Map();   // name -> true
+        const labOrderMap = new Map();   // name -> { name, subItems }
         const examMap = new Map();       // name -> { name, description, conclusion }
         const funcSet = new Set();       // name
         matchPkgs.forEach(p => {
-          (p.orders || []).forEach(o => o && o.name && labOrderMap.set(o.name, true));
-          (p.labTestItems || []).forEach(i => i && i.name && labOrderMap.set(i.name, true));
+          (p.orders || []).forEach(o => {
+            if (o && o.name && !labOrderMap.has(o.name)) {
+              const subItems = (o.items || []).filter(i => i && i.name).map(i => ({
+                name: i.name,
+                unit: i.unit || '',
+                referenceRange: i.referenceRange || i.referenceValue || '',
+              }));
+              labOrderMap.set(o.name, { name: o.name, subItems });
+            }
+          });
+          (p.labTestItems || []).forEach(i => {
+            if (i && i.name && !labOrderMap.has(i.name)) {
+              labOrderMap.set(i.name, { name: i.name, subItems: [] });
+            }
+          });
           (p.specialExams || []).forEach(e => {
             if (e && e.name) examMap.set(e.name, { name: e.name, description: e.description || '', conclusion: e.conclusion || '' });
           });
           (p.functionalTests || []).forEach(f => f && f.name && funcSet.add(f.name));
         });
+        const labOrders = [...labOrderMap.values()];
         return {
           _id: l2._id,
           label: l2.name,
-          labOrders: [...labOrderMap.keys()],
+          labOrders,
           examItems: [...examMap.values()],
           funcItems: [...funcSet],
-          // 兼容旧字段：合并所有项目名
           items: [...labOrderMap.keys(), ...examMap.keys(), ...funcSet],
           packageIds: matchPkgs.map(p => p._id),
         };
