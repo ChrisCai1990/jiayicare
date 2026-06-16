@@ -1998,7 +1998,7 @@ export default function PatientDetailPage() {
                           const l2 = e.target.value
                           const l2Node = l1Node.children.find(c => c.label === l2)
                           const items = l2Node?.items || []
-                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', screeningL3Items: [...items], title: l2, reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null }))
+                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', screeningL3Items: [...items], title: l2, reportItems: items.map(name => ({ name, value: '', unit: '', referenceRange: '', status: 'normal' })), examDescription: '', examConclusion: '', linkedItemType: null }))
                         }}>
                         <option value="">请选择</option>
                         {l1Node.children.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
@@ -2013,8 +2013,8 @@ export default function PatientDetailPage() {
                   const currentItems = screeningForm.screeningL3Items || []
                   const allItems = l2Node?.items || []
                   const removable = allItems.filter(i => !currentItems.includes(i))
-                  const removeItem = name => setScreeningForm(f => ({ ...f, screeningL3Items: f.screeningL3Items.filter(i => i !== name) }))
-                  const addItem = name => { if (name && !currentItems.includes(name)) setScreeningForm(f => ({ ...f, screeningL3Items: [...f.screeningL3Items, name] })) }
+                  const removeItem = name => setScreeningForm(f => ({ ...f, screeningL3Items: f.screeningL3Items.filter(i => i !== name), reportItems: f.reportItems.filter(i => i.name !== name) }))
+                  const addItem = name => { if (name && !currentItems.includes(name)) setScreeningForm(f => ({ ...f, screeningL3Items: [...f.screeningL3Items, name], reportItems: [...f.reportItems, { name, value: '', unit: '', referenceRange: '', status: 'normal' }] })) }
                   return (
                     <div className="form-group" style={{ marginBottom: 0 }}>
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
