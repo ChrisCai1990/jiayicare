@@ -1840,13 +1840,15 @@ export default function PatientDetailPage() {
             // 解析 examDescription/examConclusion 回 examOrderItems
             const parseExamItems = (desc, conc) => {
               if (!desc && !conc) return []
-              const parts = (desc || '').split('\n\n').filter(Boolean)
-              const concParts = (conc || '').split('\n\n')
-              return parts.map((part, i) => {
-                const m = part.match(/^【(.+?)】/)
-                const name = m ? m[1] : `检查项${i+1}`
-                const description = m ? part.replace(/^【.+?】\n?/, '').trim() : part.trim()
+              const parts = (desc || '').split('\n\n').map(b => b.trim()).filter(Boolean)
+              const concParts = (conc || '').split('\n\n').map(b => b.trim())
+              const len = Math.max(parts.length, concParts.length)
+              return Array.from({ length: len }, (_, i) => {
+                const part = parts[i] || ''
                 const concPart = concParts[i] || ''
+                const m = part.match(/^【(.+?)】/) || concPart.match(/^【(.+?)】/)
+                const name = m ? m[1] : `检查项${i + 1}`
+                const description = part.replace(/^【.+?】\n?/, '').trim()
                 const conclusion = concPart.replace(/^【.+?】\n?/, '').trim()
                 return { name, description, conclusion }
               })
