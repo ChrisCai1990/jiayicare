@@ -335,6 +335,7 @@ export default function PatientDetailPage() {
   const [screeningAutoLoading, setScreeningAutoLoading] = useState(false)
   const [screeningLinkedItem, setScreeningLinkedItem] = useState(null)  // 已关联的后台项目
   const [expandedRecord, setExpandedRecord] = useState(null) // 展开详情的记录 _id
+  const [expandedExamKey, setExpandedExamKey] = useState(null) // 展开的检查医嘱子项 key
   const [editingScreeningId, setEditingScreeningId] = useState(null) // 编辑中的记录 _id
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
   const screeningSearchTimer = useRef(null)
@@ -1954,12 +1955,12 @@ export default function PatientDetailPage() {
                           <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查医嘱</div>
                           {parsed.map((item, i) => {
                             const examKey = `${r._id}_exam_${i}`
-                            const isOpen = expandedRecord === examKey
+                            const isOpen = expandedExamKey === examKey
                             const hasDetail = item.desc || item.conc
                             return (
                               <div key={i} style={{ border: '1px solid #BFDBFE', borderRadius: 6, marginBottom: 4, overflow: 'hidden' }}>
                                 <div
-                                  onClick={() => hasDetail && setExpandedRecord(isOpen ? r._id : examKey)}
+                                  onClick={() => hasDetail && setExpandedExamKey(isOpen ? null : examKey)}
                                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: '#EFF6FF', cursor: hasDetail ? 'pointer' : 'default' }}>
                                   <span style={{ fontWeight: 600, color: '#1E40AF', fontSize: 12 }}>{item.name}</span>
                                   {hasDetail && <span style={{ fontSize: 11, color: '#93C5FD' }}>{isOpen ? '▲' : '▼'}</span>}

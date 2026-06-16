@@ -2643,9 +2643,8 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single
     }
     const fileUrl  = req.file ? `/api/uploads/screening/${req.file.filename}` : '';
     const mimeType = req.file ? req.file.mimetype : '';
-    // 自动生成 reportItems（若没有传入但有 screeningL3Items）
-    const finalReportItems = reportItems.length > 0 ? reportItems
-      : screeningL3Items.map(name => ({ name, value: '', unit: '', referenceRange: '', status: 'unknown' }));
+    // 前端已明确传 reportItems，直接使用（不再从 screeningL3Items 兜底）
+    const finalReportItems = reportItems;
     // screeningCategory/type 只接受固定 enum，L1 ObjectId 不合法，统一存 'other'
     const VALID_CATEGORIES = ['tumor','cardiovascular','brain_vessel','chronic','functional','other_routine','health_promote','infectious','hormone',''];
     const VALID_TYPES = ['annual','body_comp','blood','bloodTest','ultrasound','radiology','mri','endoscopy','ecg','pathology','functional','genetic','other','followup','imaging','tumor','cardiovascular','chronic','health_promote'];
