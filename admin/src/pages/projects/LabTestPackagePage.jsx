@@ -288,7 +288,6 @@ export default function LabTestPackagePage() {
                     setParentCatId(val)
                     setForm(f => ({ ...f, categoryId: val }))
                   }}>
-                    <option value="">无</option>
                     {cats.filter(c => c.depth === 0).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                   </select>
                 </div>
