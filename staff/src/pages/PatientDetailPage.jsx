@@ -6,71 +6,6 @@ import FollowUpModal from '../components/FollowUpModal'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
-// ── 专项筛查三层目录（来源：专项筛查呈现.xlsx）────────────────────────
-const SCREENING_TREE = [
-  { key: 'tumor', label: '肿瘤筛查', color: '#7C3AED', children: [
-    { label: '肺癌早筛',       items: ['胸部低剂量螺旋CT'] },
-    { label: '胃癌早筛',       items: ['碳13呼气试验','胃蛋白酶原','胃泌素','胃镜检查','胃镜病理'] },
-    { label: '食管癌早筛',     items: ['胃镜检查','胃镜病理'] },
-    { label: '肠癌早筛',       items: ['肠镜检查','肠镜病理'] },
-    { label: '肝癌早筛',       items: ['肝脏超声','肝脏纤维化弹性超声','肝脏磁共振'] },
-    { label: '甲状腺癌早筛',   items: ['甲状腺超声','甲状腺穿刺'] },
-    { label: '乳腺癌早筛（女）', items: ['乳腺超声','乳腺钼靶','乳腺磁共振','BRCA1/2基因检测'] },
-    { label: '宫颈癌早筛（女）', items: ['HPV','TCT'] },
-    { label: '子宫内膜癌早筛（女）', items: ['阴道超声'] },
-    { label: '卵巢癌早筛（女）', items: ['阴道超声'] },
-    { label: '前列腺癌早筛（男）', items: ['前列腺肿瘤标志物','前列腺超声','前列腺磁共振'] },
-    { label: '胰腺癌早筛',     items: ['胰腺超声','胰腺磁共振'] },
-    { label: '鼻咽癌早筛',     items: ['EB病毒IgA','鼻咽镜检查','鼻咽镜病理'] },
-    { label: '淋巴瘤早筛',     items: ['颈部淋巴结超声','淋巴结磁共振'] },
-    { label: '肾癌早筛',       items: ['肾脏超声','肾脏磁共振'] },
-    { label: '肿瘤标志物',     items: ['癌胚抗原（CEA）','甲胎蛋白（AFP）','糖链抗原199(CA199)','糖链抗原125(CA125)','糖链抗原724(CA724)','糖链抗原242(CA242)','t糖链抗原153（CA153）','鳞状细胞相关抗原（SCC）','神经元特异性烯醇化酶（NSE）','肺癌肿瘤标志物（CYFRA21-1)','细胞角蛋白19片段','胃泌素释放肽前体（Pro-GRP）','人绒毛膜促性腺激素（β-HCG）','肿瘤特异性生长因子（TSGF）','异常糖链糖蛋白检测（TAP）'] },
-  ]},
-  { key: 'cardiovascular', label: '心脑血管病筛查', color: '#DC3545', children: [
-    { label: '心血管病早筛', items: ['常规心电图','动态心电图','心脏超声','运动平板','心脏磁共振','冠脉CTA','冠脉造影','心肌酶谱','利钠肽（BNP）','同型半胱氨酸','心肌panel'] },
-    { label: '脑血管病早筛', items: ['颈动脉超声','脂蛋白磷脂酶A2','头颅MRI','头颅MRA'] },
-  ]},
-  { key: 'chronic', label: '慢性病筛查', color: '#D97706', children: [
-    { label: '高血压早筛',     items: ['血压','动态血压'] },
-    { label: '糖尿病早筛',     items: ['空腹血糖','糖化血红蛋白','糖化血清蛋白','葡萄糖耐量试验'] },
-    { label: '高血脂早筛',     items: ['血脂4项目','脂蛋白a'] },
-    { label: '睡眠呼吸暂停早筛', items: ['睡眠呼吸检测'] },
-    { label: '肝功能筛查',     items: ['肝功能5项','肝功能7项','肝功能11项'] },
-    { label: '肾功能筛查',     items: ['肾功能3项','肾功能4项'] },
-    { label: '肺功能筛查',     items: ['肺功能'] },
-    { label: '老年痴呆早筛',   items: ['tau蛋白'] },
-    { label: '骨质疏松早筛',   items: ['超声骨密度','双能X线骨密度检查'] },
-  ]},
-  { key: 'infectious', label: '传染病筛查', color: '#0369A1', children: [
-    { label: '乙肝筛查', items: ['乙肝三系定性','乙肝三系定量','乙肝DNA'] },
-    { label: '丙肝筛查', items: ['丙肝抗体两项'] },
-    { label: '戊肝筛查', items: ['戊肝抗体三项'] },
-    { label: '梅毒筛查', items: ['梅毒螺旋体抗体'] },
-    { label: '艾滋筛查', items: ['HIV抗体'] },
-  ]},
-  { key: 'hormone', label: '激素筛查', color: '#9D174D', children: [
-    { label: '性激素检测',     items: ['性激素4项','性激素6项'] },
-    { label: '甲状腺激素检测', items: ['甲状腺功能3项','甲状腺功能5项','甲状腺功能7项','甲状腺球蛋白'] },
-  ]},
-  { key: 'other_routine', label: '其他常规筛查', color: '#0077B6', children: [
-    { label: '血常规',         items: [] },
-    { label: '尿常规',         items: [] },
-    { label: '粪便常规+隐血',  items: [] },
-    { label: '风湿免疫',       items: [] },
-    { label: 'C反应蛋白',      items: [] },
-    { label: '凝血功能',       items: [] },
-    { label: 'D-二聚体',       items: [] },
-    { label: '血电解质',       items: ['电解质3项','电解质4项','电解质5项'] },
-    { label: '25-羟基维生素D', items: [] },
-  ]},
-  { key: 'functional', label: '功能医学筛查', color: '#0891B2', children: [
-    { label: '慢性食物过敏检测', items: ['慢性食物过敏检测20项','慢性食物过敏检测100项','慢性食物过敏检测120项'] },
-    { label: '肠道功能检测',   items: ['肠道菌群基因测序','肠道功能分析'] },
-    { label: '端粒检测',       items: [] },
-    { label: '精准基因检测',   items: [] },
-  ]},
-]
-
 // ── 生活方式表单子组件（定义在组件外，引用稳定，避免每次渲染重新挂载）─────
 const LS_LABEL_STYLE = { fontSize: 12, color: '#8AA89C', marginBottom: 4, display: 'block' }
 
@@ -384,6 +319,8 @@ export default function PatientDetailPage() {
   const [medForm, setMedForm] = useState({})
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
+  // 专项筛查三层目录（动态加载）
+  const [screeningTree, setScreeningTree] = useState([])
   // 专项筛查 & 打卡记录
   const [screeningItems, setScreeningItems] = useState([])
   const [screeningReports, setScreeningReports] = useState([])
@@ -479,14 +416,16 @@ export default function PatientDetailPage() {
   }
   const loadScreening = async () => {
     try {
-      const [sr, hr, scr] = await Promise.allSettled([
+      const [sr, hr, scr, tree] = await Promise.allSettled([
         staffAPI.getPatientScreening(id),
         staffAPI.getPatientHealthRecords(id, { limit: 30 }),
         staffAPI.getScreeningReports(id),
+        staffAPI.getScreeningTree(),
       ])
       if (sr.status === 'fulfilled') setScreeningItems(sr.value.data || [])
       if (hr.status === 'fulfilled') setHealthRecords(hr.value.data || [])
       if (scr.status === 'fulfilled') setScreeningReports(scr.value.data || [])
+      if (tree.status === 'fulfilled') setScreeningTree(tree.value.data || [])
     } catch {}
   }
 
@@ -1858,13 +1797,10 @@ export default function PatientDetailPage() {
           const STATUS_TEXT = { normal: '正常', abnormal: '异常', attention: '注意', unknown: '' }
           const STATUS_COLOR_MAP = { normal: '#22A06B', abnormal: '#DC3545', attention: '#D97706', unknown: '#8AA89C' }
 
-          // 把旧数据的 screeningCategory 映射到 L1 key
-          const OLD_CAT_TO_L1 = { cardiovascular: 'cardiovascular', brain_vessel: 'cardiovascular', health_promote: 'other_routine' }
-
           // 构建三层树：{ l1key: { l2label: { l3label: records[] } } }
           const treeData = {}
           screeningReports.forEach(r => {
-            const l1 = r.screeningL1 || OLD_CAT_TO_L1[r.screeningCategory] || r.screeningCategory || 'other_routine'
+            const l1 = r.screeningL1 || r.screeningCategory || 'other'
             const l2 = r.screeningL2 || r.title || '未分类'
             const l3 = r.screeningL3 || r.title || '未命名'
             if (!treeData[l1]) treeData[l1] = {}
@@ -1954,12 +1890,15 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无专项筛查记录，点击「录入筛查结果」添加</div>
               ) : (
                 <div>
-                  {SCREENING_TREE.map(l1Node => {
-                    const l2map = treeData[l1Node.key]
+                  {(() => {
+                    const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
+                    return screeningTree.map((l1Node, idx) => {
+                    const l1key = String(l1Node._id)
+                    const l2map = treeData[l1key]
                     if (!l2map) return null
-                    const { color } = l1Node
+                    const color = L1_COLORS[idx % L1_COLORS.length]
                     return (
-                      <div key={l1Node.key} style={{ marginBottom: 4 }}>
+                      <div key={l1key} style={{ marginBottom: 4 }}>
                         {/* 第一层标题 */}
                         <div style={{ padding: '8px 20px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
@@ -1991,10 +1930,10 @@ export default function PatientDetailPage() {
                         ))}
                       </div>
                     )
-                  })}
-                  {/* 兜底：不在树中的记录（极旧数据） */}
+                  })})()}
+                  {/* 兜底：不在树中的记录（旧数据兼容） */}
                   {(() => {
-                    const knownL1s = new Set(SCREENING_TREE.map(n => n.key))
+                    const knownL1s = new Set(screeningTree.map(n => String(n._id)))
                     const legacyMap = Object.fromEntries(Object.entries(treeData).filter(([k]) => !knownL1s.has(k)))
                     if (!Object.keys(legacyMap).length) return null
                     return Object.entries(legacyMap).map(([l1, l2map]) => (
@@ -2037,7 +1976,7 @@ export default function PatientDetailPage() {
                 <button className="modal-close" onClick={() => setShowScreeningForm(false)}>✕</button>
               </div>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {/* 三级联动选择 */}
+                {/* 三级联动选择（从管理端动态加载） */}
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">第一层：筛查大类 *</label>
                   <select className="form-input" value={screeningForm.screeningL1}
@@ -2046,11 +1985,11 @@ export default function PatientDetailPage() {
                       setScreeningForm(f => ({ ...f, screeningL1: l1, screeningL2: '', screeningL3: '', title: '', screeningCategory: l1 }))
                     }}>
                     <option value="">请选择</option>
-                    {SCREENING_TREE.map(n => <option key={n.key} value={n.key}>{n.label}</option>)}
+                    {screeningTree.map(n => <option key={String(n._id)} value={String(n._id)}>{n.label}</option>)}
                   </select>
                 </div>
                 {screeningForm.screeningL1 && (() => {
-                  const l1Node = SCREENING_TREE.find(n => n.key === screeningForm.screeningL1)
+                  const l1Node = screeningTree.find(n => String(n._id) === screeningForm.screeningL1)
                   if (!l1Node) return null
                   return (
                     <div className="form-group" style={{ marginBottom: 0 }}>
@@ -2059,7 +1998,6 @@ export default function PatientDetailPage() {
                         onChange={e => {
                           const l2 = e.target.value
                           const l2Node = l1Node.children.find(c => c.label === l2)
-                          // 若 L2 无子项目，则 L2 即为 title
                           const autoTitle = (l2Node && l2Node.items.length === 0) ? l2 : ''
                           setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', title: autoTitle }))
                         }}>
@@ -2070,7 +2008,7 @@ export default function PatientDetailPage() {
                   )
                 })()}
                 {screeningForm.screeningL1 && screeningForm.screeningL2 && (() => {
-                  const l1Node = SCREENING_TREE.find(n => n.key === screeningForm.screeningL1)
+                  const l1Node = screeningTree.find(n => String(n._id) === screeningForm.screeningL1)
                   const l2Node = l1Node?.children.find(c => c.label === screeningForm.screeningL2)
                   if (!l2Node || l2Node.items.length === 0) return null
                   return (
@@ -2111,7 +2049,7 @@ export default function PatientDetailPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#E8F5EF', borderRadius: 6, border: '1px solid #BBF7D0', fontSize: 12, color: '#1E6B50' }}>
                     <span>✓</span>
                     <span style={{ color: '#8AA89C' }}>
-                      {SCREENING_TREE.find(n => n.key === screeningForm.screeningL1)?.label}
+                      {screeningTree.find(n => String(n._id) === screeningForm.screeningL1)?.label}
                       {screeningForm.screeningL2 && ` › ${screeningForm.screeningL2}`}
                       {screeningForm.screeningL3 && ` › `}
                     </span>

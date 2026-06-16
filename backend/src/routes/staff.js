@@ -35,6 +35,8 @@ const ExamRequisition   = require('../models/ExamRequisition');
 const LabTestOrder      = require('../models/LabTestOrder');
 const LabTestPackage    = require('../models/LabTestPackage');
 const LabTestItem       = require('../models/LabTestItem');
+const ProjectCategory   = require('../models/ProjectCategory');
+const FunctionalMedicineTest = require('../models/FunctionalMedicineTest');
 const SpecialExam       = require('../models/SpecialExam');
 const AbnormalReview    = require('../models/AbnormalReview');
 const Task              = require('../models/Task');
@@ -2664,6 +2666,63 @@ router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
       screeningCategory: { $exists: true, $ne: '' },
     }).sort({ checkDate: -1, createdAt: -1 }).lean();
     res.json({ success: true, data: reports });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// GET /api/staff/screening-tree — 专项筛查三层结构（从管理端套餐动态读取）
+router.get('/screening-tree', staffAuth, async (req, res) => {
+  try {
+    const [cats, pkgs] = await Promise.all([
+      ProjectCategory.find({ status: 'active' }).lean(),
+      LabTestPackage.find({ status: 'active' })
+        .populate('orders', 'name')
+        .populate('specialExams', 'name')
+        .populate('functionalTests', 'name')
+        .lean(),
+    ]);
+    // 建分类 map
+    const catMap = {};
+    cats.forEach(c => { catMap[String(c._id)] = c; });
+    // 一级分类（无 parent）
+    const l1s = cats.filter(c => !c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    // 二级分类（有 parent）
+    const l2sByParent = {};
+    cats.filter(c => c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach(c => {
+      const pid = String(c.parent);
+      if (!l2sByParent[pid]) l2sByParent[pid] = [];
+      l2sByParent[pid].push(c);
+    });
+    // 套餐按 categoryId 索引（一个子分类对应一个或多个套餐）
+    const pkgByCat = {};
+    pkgs.forEach(p => {
+      if (!p.categoryId) return;
+      const cid = String(p.categoryId);
+      if (!pkgByCat[cid]) pkgByCat[cid] = [];
+      pkgByCat[cid].push(p);
+    });
+    // 组装三层树
+    const tree = l1s.map(l1 => {
+      const l1id = String(l1._id);
+      const children = (l2sByParent[l1id] || []).map(l2 => {
+        const l2id = String(l2._id);
+        const matchPkgs = pkgByCat[l2id] || [];
+        // 第三层 = 各套餐关联的所有项目名（去重）
+        const itemSet = new Set();
+        matchPkgs.forEach(p => {
+          (p.orders || []).forEach(o => o && o.name && itemSet.add(o.name));
+          (p.specialExams || []).forEach(e => e && e.name && itemSet.add(e.name));
+          (p.functionalTests || []).forEach(f => f && f.name && itemSet.add(f.name));
+        });
+        return {
+          _id: l2._id,
+          label: l2.name,
+          items: [...itemSet],
+          packageIds: matchPkgs.map(p => p._id),
+        };
+      });
+      return { _id: l1._id, label: l1.name, children };
+    });
+    res.json({ success: true, data: tree });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

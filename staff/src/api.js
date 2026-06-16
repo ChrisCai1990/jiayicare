@@ -204,6 +204,9 @@ export const staffAPI = {
   updatePatientSupplement:  (id, supId, data) => req(`/staff/patients/${id}/supplements/${supId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deletePatientSupplement:  (id, supId) => req(`/staff/patients/${id}/supplements/${supId}`, { method: 'DELETE' }),
 
+  // 专项筛查三层目录（从管理端套餐动态读取）
+  getScreeningTree:         ()         => req('/staff/screening-tree'),
+
   // 患者专项筛查 & 日常打卡（医护端查看）
   getPatientScreening:      (id)       => req(`/staff/patients/${id}/screening`),
   getPatientHealthRecords:  (id, p={}) => req(`/staff/patients/${id}/health-records?` + qs(p)),
