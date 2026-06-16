@@ -731,8 +731,8 @@ export default function PatientDetailPage() {
       )
       const funcAsReportItems = (screeningForm.funcTestItems || []).map(f => ({ name: f.name, value: f.result || '', unit: '', referenceRange: '', status: 'unknown', itemType: 'data' }))
       const allReportItems = [...flatLabItems, ...funcAsReportItems]
-      const examDesc = (screeningForm.examOrderItems || []).map(e => e.name ? `【${e.name}】\n${e.description || ''}` : '').filter(Boolean).join('\n\n') || screeningForm.examDescription || ''
-      const examConc = (screeningForm.examOrderItems || []).map(e => e.name ? `【${e.name}】\n${e.conclusion || ''}` : '').filter(Boolean).join('\n\n') || screeningForm.examConclusion || ''
+      const examDesc = (screeningForm.examOrderItems || []).map(e => { if (!e.name) return ''; return e.description ? `【${e.name}】\n${e.description}` : `【${e.name}】` }).filter(Boolean).join('\n\n') || screeningForm.examDescription || ''
+      const examConc = (screeningForm.examOrderItems || []).map(e => { if (!e.name) return ''; return e.conclusion ? `【${e.name}】\n${e.conclusion}` : `【${e.name}】` }).filter(Boolean).join('\n\n') || screeningForm.examConclusion || ''
       const allL3Names = [...(screeningForm.reportItems || []).map(r => r.name), ...(screeningForm.examOrderItems || []).map(e => e.name), ...(screeningForm.funcTestItems || []).map(f => f.name)].filter(Boolean)
       const payload = { ...screeningForm, reportItems: allReportItems, examDescription: examDesc, examConclusion: examConc, screeningL3Items: allL3Names }
       if (editingScreeningId) {
@@ -1933,26 +1933,47 @@ export default function PatientDetailPage() {
                       </div>
                     )}
                     {/* 检查医嘱 */}
-                    {hasExam && (
-                      <div style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查医嘱</div>
-                        {(r.examDescription || r.examConclusion || '').split('\n\n').filter(Boolean).map((block, i) => {
-                          const concBlocks = (r.examConclusion || '').split('\n\n')
-                          const isDesc = r.examDescription && r.examDescription.split('\n\n')[i]
-                          const nameM = block.match(/^【(.+?)】/)
-                          const name = nameM ? nameM[1] : null
-                          const desc = nameM ? block.replace(/^【.+?】\n?/, '').trim() : block.trim()
-                          const conc = (concBlocks[i] || '').replace(/^【.+?】\n?/, '').trim()
-                          return (
-                            <div key={i} style={{ border: '1px solid #BFDBFE', borderRadius: 6, padding: '6px 10px', marginBottom: 4, background: '#EFF6FF', fontSize: 12 }}>
-                              {name && <div style={{ fontWeight: 600, color: '#1E40AF', marginBottom: 4 }}>{name}</div>}
-                              {desc && <div style={{ color: '#374151', marginBottom: 2 }}>描述：{desc}</div>}
-                              {conc && <div style={{ color: '#374151' }}>结论：{conc}</div>}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
+                    {hasExam && (() => {
+                      const descBlocks = (r.examDescription || '').split('\n\n').map(b => b.trim()).filter(Boolean)
+                      const concBlocks = (r.examConclusion || '').split('\n\n').map(b => b.trim()).filter(Boolean)
+                      // 以描述块为主，兼容只有结论的情况
+                      const blocks = descBlocks.length >= concBlocks.length ? descBlocks : concBlocks
+                      const parsed = blocks.map((block, i) => {
+                        const descBlock = (descBlocks[i] || '').trim()
+                        const concBlock = (concBlocks[i] || '').trim()
+                        const nameM = descBlock.match(/^【(.+?)】/) || concBlock.match(/^【(.+?)】/)
+                        const name = nameM ? nameM[1] : `检查项${i+1}`
+                        const desc = descBlock.replace(/^【.+?】\n?/, '').trim()
+                        const conc = concBlock.replace(/^【.+?】\n?/, '').trim()
+                        return { name, desc, conc }
+                      })
+                      return (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查医嘱</div>
+                          {parsed.map((item, i) => {
+                            const examKey = `${r._id}_exam_${i}`
+                            const isOpen = expandedRecord === examKey
+                            const hasDetail = item.desc || item.conc
+                            return (
+                              <div key={i} style={{ border: '1px solid #BFDBFE', borderRadius: 6, marginBottom: 4, overflow: 'hidden' }}>
+                                <div
+                                  onClick={() => hasDetail && setExpandedRecord(isOpen ? r._id : examKey)}
+                                  style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: '#EFF6FF', cursor: hasDetail ? 'pointer' : 'default' }}>
+                                  <span style={{ fontWeight: 600, color: '#1E40AF', fontSize: 12 }}>{item.name}</span>
+                                  {hasDetail && <span style={{ fontSize: 11, color: '#93C5FD' }}>{isOpen ? '▲' : '▼'}</span>}
+                                </div>
+                                {isOpen && hasDetail && (
+                                  <div style={{ padding: '6px 10px', fontSize: 12, background: '#fff' }}>
+                                    {item.desc && <div style={{ color: '#374151', marginBottom: 4 }}><span style={{ color: '#6B7280' }}>描述：</span>{item.desc}</div>}
+                                    {item.conc && <div style={{ color: '#374151' }}><span style={{ color: '#6B7280' }}>结论：</span>{item.conc}</div>}
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )
+                    })()}
                     {/* 功能医学检测 */}
                     {funcItems.length > 0 && (
                       <div style={{ marginBottom: 8 }}>
