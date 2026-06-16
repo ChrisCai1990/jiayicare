@@ -528,6 +528,24 @@ function makeProjectCRUD(Model, label) {
 
 makeProjectCRUD(LabTestItem,    'lab-test-items');
 makeProjectCRUD(LabTestOrder,   'lab-test-orders');
+
+// 套餐列表：populate 三类项目，过滤已删除的 specialExams，使计数准确
+router.get('/lab-test-packages', adminAuth, async (req, res) => {
+  const { q = '', status, page = 1, limit = 20 } = req.query;
+  const filter = {};
+  if (q) filter.$or = [{ name: { $regex: q, $options: 'i' } }, { mnemonic: { $regex: q, $options: 'i' } }];
+  if (status) filter.status = status;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const [list, total] = await Promise.all([
+    LabTestPackage.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit))
+      .populate('categoryId', 'name')
+      .populate('orders', 'name')
+      .populate({ path: 'specialExams', match: { deleted: { $ne: true } }, select: 'name' })
+      .populate('functionalTests', 'name'),
+    LabTestPackage.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: list, total });
+});
 makeProjectCRUD(LabTestPackage, 'lab-test-packages');
 makeProjectCRUD(ServiceItem,    'service-items');
 makeProjectCRUD(OtherCharge,    'other-charges');

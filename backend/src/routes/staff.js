@@ -2693,7 +2693,7 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
       LabTestPackage.find({ status: 'active' })
         .populate({ path: 'orders', select: 'name items', populate: { path: 'items', select: 'name unit referenceRange referenceValue' } })
         .populate('labTestItems', 'name unit referenceRange referenceValue')
-        .populate('specialExams', 'name description conclusion')
+        .populate({ path: 'specialExams', match: { deleted: { $ne: true } }, select: 'name description conclusion' })
         .populate('functionalTests', 'name')
         .lean(),
     ]);
