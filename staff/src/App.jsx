@@ -1,4 +1,19 @@
-import React, { useState, createContext, useContext } from 'react'
+import React, { useState, createContext, useContext, Component } from 'react'
+
+class ErrorBoundary extends Component {
+  state = { error: null }
+  static getDerivedStateFromError(e) { return { error: e } }
+  render() {
+    if (this.state.error) return (
+      <div style={{ padding: 32, color: '#DC3545', fontFamily: 'monospace', fontSize: 13 }}>
+        <b>页面错误：</b> {this.state.error.message}
+        <pre style={{ marginTop: 8, fontSize: 11, color: '#666', whiteSpace: 'pre-wrap' }}>{this.state.error.stack?.split('\n').slice(0,5).join('\n')}</pre>
+        <button onClick={() => window.location.reload()} style={{ marginTop: 12, padding: '6px 12px', cursor: 'pointer' }}>刷新页面</button>
+      </div>
+    )
+    return this.props.children
+  }
+}
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { getToken, clearToken } from './api'
 import LoginPage from './pages/LoginPage'
@@ -80,7 +95,7 @@ export default function App() {
               <Route path="home" element={<HomePage />} />
               <Route path="patients" element={<PatientsPage />} />
               <Route path="patients/new" element={<NewPatientPage />} />
-              <Route path="patients/:id" element={<PatientDetailPage />} />
+              <Route path="patients/:id" element={<ErrorBoundary><PatientDetailPage /></ErrorBoundary>} />
               <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
               <Route path="followups" element={<FollowUpsPage />} />
               <Route path="plans" element={<PlansPage />} />
