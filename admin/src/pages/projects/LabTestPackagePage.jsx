@@ -288,6 +288,7 @@ export default function LabTestPackagePage() {
                     setParentCatId(val)
                     setForm(f => ({ ...f, categoryId: val }))
                   }}>
+                    <option value="" disabled>请选择</option>
                     {cats.filter(c => c.depth === 0).map(c => <option key={c._id} value={c._id}>{c.name}</option>)}
                   </select>
                 </div>
@@ -298,7 +299,7 @@ export default function LabTestPackagePage() {
                     onChange={e => setForm(f => ({ ...f, categoryId: e.target.value || parentCatId || '' }))}
                     disabled={!parentCatId}
                   >
-                    <option value="">无</option>
+                    <option value="">请选择</option>
                     {cats.filter(c => c.depth === 1 && (c.parent === parentCatId || c.parent?._id === parentCatId)).map(c => (
                       <option key={c._id} value={c._id}>{c.name}</option>
                     ))}
