@@ -2646,11 +2646,16 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single
     // 自动生成 reportItems（若没有传入但有 screeningL3Items）
     const finalReportItems = reportItems.length > 0 ? reportItems
       : screeningL3Items.map(name => ({ name, value: '', unit: '', referenceRange: '', status: 'unknown' }));
+    // screeningCategory/type 只接受固定 enum，L1 ObjectId 不合法，统一存 'other'
+    const VALID_CATEGORIES = ['tumor','cardiovascular','brain_vessel','chronic','functional','other_routine','health_promote','infectious','hormone',''];
+    const VALID_TYPES = ['annual','body_comp','blood','bloodTest','ultrasound','radiology','mri','endoscopy','ecg','pathology','functional','genetic','other','followup','imaging','tumor','cardiovascular','chronic','health_promote'];
+    const safeCategory = VALID_CATEGORIES.includes(screeningCategory) ? screeningCategory : '';
+    const safeType     = VALID_TYPES.includes(screeningCategory)     ? screeningCategory : 'other';
     const report = await MedicalReport.create({
       user:             req.params.id,
       title:            resolvedTitle,
-      type:             screeningCategory || 'other',
-      screeningCategory: screeningCategory || '',
+      type:             safeType,
+      screeningCategory: safeCategory,
       screeningL1:      screeningL1 || '',
       screeningL2:      screeningL2 || '',
       screeningL3:      screeningL3 || '',
