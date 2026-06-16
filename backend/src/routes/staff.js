@@ -2782,14 +2782,16 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
           });
           (p.functionalTests || []).forEach(f => f && f.name && funcSet.add(f.name));
         });
-        const labOrders = [...labOrderMap.values()];
+        // 跨类去重：examItems 里已有的名字，从 labOrders 中排除
+        const examNames = new Set(examMap.keys());
+        const labOrders = [...labOrderMap.values()].filter(o => !examNames.has(o.name));
         return {
           _id: l2._id,
           label: l2.name,
           labOrders,
           examItems: [...examMap.values()],
           funcItems: [...funcSet],
-          items: [...labOrderMap.keys(), ...examMap.keys(), ...funcSet],
+          items: [...labOrders.map(o => o.name), ...examMap.keys(), ...funcSet],
           packageIds: matchPkgs.map(p => p._id),
         };
       });
