@@ -325,7 +325,7 @@ export default function PatientDetailPage() {
   const [screeningItems, setScreeningItems] = useState([])
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
-  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
+  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [screeningFile, setScreeningFile] = useState(null)
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
@@ -717,15 +717,14 @@ export default function PatientDetailPage() {
 
   // 4.3 录入筛查结果
   const handleSaveScreeningRecord = async () => {
-    if (!screeningForm.screeningL1) return toast('请选择第一层筛查分类')
-    if (!screeningForm.screeningL2) return toast('请选择第二层分类')
-    if (!screeningForm.title) return toast('请选择具体筛查项目')
+    if (!screeningForm.screeningL1) return toast('请选择筛查大类')
+    if (!screeningForm.screeningL2) return toast('请选择具体分类')
     try {
       setScreeningSaving(true)
       await staffAPI.createScreeningRecord(id, screeningForm, screeningFile)
       toast('筛查结果已录入')
       setShowScreeningForm(false)
-      setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', checkDate: '', hospital: '', note: '', reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
+      setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
       setScreeningFile(null)
       setScreeningLinkedItem(null)
       setScreeningAutoMatches([])
@@ -1998,8 +1997,8 @@ export default function PatientDetailPage() {
                         onChange={e => {
                           const l2 = e.target.value
                           const l2Node = l1Node.children.find(c => c.label === l2)
-                          const autoTitle = (l2Node && l2Node.items.length === 0) ? l2 : ''
-                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', title: autoTitle }))
+                          const items = l2Node?.items || []
+                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', screeningL3Items: [...items], title: l2, reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null }))
                         }}>
                         <option value="">请选择</option>
                         {l1Node.children.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
@@ -2007,58 +2006,59 @@ export default function PatientDetailPage() {
                     </div>
                   )
                 })()}
-                {screeningForm.screeningL1 && screeningForm.screeningL2 && (() => {
+                {/* 第三层：具体检查项目（自动载入，支持删除/追加） */}
+                {screeningForm.screeningL2 && (() => {
                   const l1Node = screeningTree.find(n => String(n._id) === screeningForm.screeningL1)
                   const l2Node = l1Node?.children.find(c => c.label === screeningForm.screeningL2)
-                  if (!l2Node || l2Node.items.length === 0) return null
+                  const currentItems = screeningForm.screeningL3Items || []
+                  const allItems = l2Node?.items || []
+                  const removable = allItems.filter(i => !currentItems.includes(i))
+                  const removeItem = name => setScreeningForm(f => ({ ...f, screeningL3Items: f.screeningL3Items.filter(i => i !== name) }))
+                  const addItem = name => { if (name && !currentItems.includes(name)) setScreeningForm(f => ({ ...f, screeningL3Items: [...f.screeningL3Items, name] })) }
                   return (
                     <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label">第三层：具体项目 *</label>
-                      <select className="form-input" value={screeningForm.screeningL3}
-                        onChange={async e => {
-                          const l3 = e.target.value
-                          setScreeningForm(f => ({ ...f, screeningL3: l3, title: l3, reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null }))
-                          setScreeningLinkedItem(null)
-                          setScreeningAutoMatches([])
-                          if (!l3) return
-                          setScreeningAutoLoading(true)
-                          try {
-                            const r = await staffAPI.getRequisitionItems(l3)
-                            const matches = r.data || []
-                            const best = matches.find(m => m.name === l3) || matches[0]
-                            if (best) {
-                              setScreeningLinkedItem(best)
-                              if (best.type === 'specialExam') {
-                                setScreeningForm(f => ({ ...f, linkedItemType: 'exam', examDescription: best.description || '', examConclusion: best.conclusion || '' }))
-                              } else {
-                                const subR = await staffAPI.getProjectSubItems(best.type, best._id)
-                                setScreeningForm(f => ({ ...f, linkedItemType: 'lab', reportItems: subR.data || [] }))
-                              }
-                            }
-                          } catch {}
-                          finally { setScreeningAutoLoading(false) }
-                        }}>
-                        <option value="">请选择</option>
-                        {l2Node.items.map(item => <option key={item} value={item}>{item}</option>)}
-                      </select>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                        <label className="form-label" style={{ marginBottom: 0 }}>
+                          第三层：具体检查项目
+                          {currentItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{currentItems.length} 项，可删除未做的）</span>}
+                        </label>
+                        {removable.length > 0 && (
+                          <select className="form-input" style={{ width: 'auto', fontSize: 12, padding: '2px 8px', height: 28 }}
+                            value="" onChange={e => { addItem(e.target.value); e.target.value = '' }}>
+                            <option value="">＋ 追加项目</option>
+                            {removable.map(i => <option key={i} value={i}>{i}</option>)}
+                          </select>
+                        )}
+                      </div>
+                      {currentItems.length === 0 ? (
+                        <div style={{ fontSize: 13, color: '#aaa', padding: '8px 0' }}>暂无检查项目（该分类无预设项目，或已全部删除）</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                          {currentItems.map(item => (
+                            <span key={item} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#E8F5EF', border: '1px solid #BBF7D0', borderRadius: 99, fontSize: 12, color: '#1E6B50' }}>
+                              {item}
+                              <button type="button" onClick={() => removeItem(item)}
+                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8AA89C', padding: 0, lineHeight: 1, fontSize: 13 }}>×</button>
+                            </span>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })()}
-                {/* 已选路径展示 */}
-                {screeningForm.title && (
+                {/* 已选路径 */}
+                {screeningForm.screeningL2 && (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '6px 10px', background: '#E8F5EF', borderRadius: 6, border: '1px solid #BBF7D0', fontSize: 12, color: '#1E6B50' }}>
                     <span>✓</span>
                     <span style={{ color: '#8AA89C' }}>
                       {screeningTree.find(n => String(n._id) === screeningForm.screeningL1)?.label}
-                      {screeningForm.screeningL2 && ` › ${screeningForm.screeningL2}`}
-                      {screeningForm.screeningL3 && ` › `}
+                      {' › '}
                     </span>
-                    <span style={{ fontWeight: 600 }}>{screeningForm.title}</span>
+                    <span style={{ fontWeight: 600 }}>{screeningForm.screeningL2}</span>
+                    {(screeningForm.screeningL3Items || []).length > 0 && (
+                      <span style={{ color: '#8AA89C' }}>（{screeningForm.screeningL3Items.length} 项）</span>
+                    )}
                   </div>
-                )}
-                {/* 匹配状态提示 */}
-                {screeningAutoLoading && (
-                  <div style={{ fontSize: 12, color: '#8AA89C' }}>正在匹配后台项目...</div>
                 )}
                 {/* 自动关联内容（检查描述/诊断结论 或 具体检验项目） */}
                 {screeningForm.linkedItemType === 'exam' ? (

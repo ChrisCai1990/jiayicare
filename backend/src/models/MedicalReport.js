@@ -26,6 +26,7 @@ const medicalReportSchema = new mongoose.Schema({
   screeningL1: { type: String, default: '' },
   screeningL2: { type: String, default: '' },
   screeningL3: { type: String, default: '' },
+  screeningL3Items: [{ type: String }],
   examDescription: { type: String, default: '' }, // 检查医嘱：检查描述（给医生看的说明）
   examConclusion:  { type: String, default: '' }, // 检查医嘱：诊断结论模板
   reportItems:     [reportItemSchema],                // 解析后的各项结果

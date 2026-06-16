@@ -2631,22 +2631,35 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 // POST /api/staff/patients/:id/screening-records
 router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single('file'), async (req, res) => {
   try {
-    const { title, screeningCategory, checkDate, hospital, note } = req.body;
+    const { title, screeningCategory, checkDate, hospital, note,
+            screeningL1, screeningL2, screeningL3, examDescription, examConclusion } = req.body;
     const raw = req.body.reportItems;
     const reportItems = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : []);
-    if (!title || !screeningCategory) {
-      return res.status(400).json({ success: false, message: '标题和筛查分类必填' });
+    const rawL3Items = req.body.screeningL3Items;
+    const screeningL3Items = Array.isArray(rawL3Items) ? rawL3Items : (rawL3Items ? JSON.parse(rawL3Items) : []);
+    const resolvedTitle = title || screeningL2 || screeningL3 || '';
+    if (!resolvedTitle) {
+      return res.status(400).json({ success: false, message: '请选择筛查分类' });
     }
     const fileUrl  = req.file ? `/api/uploads/screening/${req.file.filename}` : '';
     const mimeType = req.file ? req.file.mimetype : '';
+    // 自动生成 reportItems（若没有传入但有 screeningL3Items）
+    const finalReportItems = reportItems.length > 0 ? reportItems
+      : screeningL3Items.map(name => ({ name, value: '', unit: '', referenceRange: '', status: 'unknown' }));
     const report = await MedicalReport.create({
       user:             req.params.id,
-      title,
-      type:             screeningCategory,
-      screeningCategory,
+      title:            resolvedTitle,
+      type:             screeningCategory || 'other',
+      screeningCategory: screeningCategory || '',
+      screeningL1:      screeningL1 || '',
+      screeningL2:      screeningL2 || '',
+      screeningL3:      screeningL3 || '',
+      screeningL3Items,
+      examDescription:  examDescription || '',
+      examConclusion:   examConclusion  || '',
       checkDate:        checkDate || '',
       hospital:         hospital  || '',
-      reportItems,
+      reportItems:      finalReportItems,
       note:             note || '',
       fileUrl,
       mimeType,
@@ -2663,7 +2676,10 @@ router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
   try {
     const reports = await MedicalReport.find({
       user: req.params.id,
-      screeningCategory: { $exists: true, $ne: '' },
+      $or: [
+        { screeningCategory: { $exists: true, $ne: '' } },
+        { screeningL1: { $exists: true, $ne: '' } },
+      ],
     }).sort({ checkDate: -1, createdAt: -1 }).lean();
     res.json({ success: true, data: reports });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
