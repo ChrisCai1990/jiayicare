@@ -1976,12 +1976,12 @@ export default function PatientDetailPage() {
         {/* 录入筛查结果 Modal */}
         {showScreeningForm && (
           <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowScreeningForm(false) }}>
-            <div className="modal" style={{ maxWidth: 560 }}>
-              <div className="modal-header">
+            <div className="modal" style={{ maxWidth: 620, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+              <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h3 className="modal-title">录入筛查结果</h3>
                 <button className="modal-close" onClick={() => setShowScreeningForm(false)}>✕</button>
               </div>
-              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', flex: 1 }}>
                 {/* 三级联动选择（从管理端动态加载） */}
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">第一层：筛查大类 *</label>
