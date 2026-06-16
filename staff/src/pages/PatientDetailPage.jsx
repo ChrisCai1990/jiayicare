@@ -325,7 +325,7 @@ export default function PatientDetailPage() {
   const [screeningItems, setScreeningItems] = useState([])
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
-  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
+  const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [screeningFile, setScreeningFile] = useState(null)
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
@@ -721,10 +721,17 @@ export default function PatientDetailPage() {
     if (!screeningForm.screeningL2) return toast('请选择具体分类')
     try {
       setScreeningSaving(true)
-      await staffAPI.createScreeningRecord(id, screeningForm, screeningFile)
+      // 编译三类项目到后端字段
+      const funcAsReportItems = (screeningForm.funcTestItems || []).map(f => ({ name: f.name, value: f.result || '', unit: '', referenceRange: '', status: 'unknown', itemType: 'data' }))
+      const allReportItems = [...(screeningForm.reportItems || []), ...funcAsReportItems]
+      const examDesc = (screeningForm.examOrderItems || []).map(e => e.name ? `【${e.name}】\n${e.description || ''}` : '').filter(Boolean).join('\n\n') || screeningForm.examDescription || ''
+      const examConc = (screeningForm.examOrderItems || []).map(e => e.name ? `【${e.name}】\n${e.conclusion || ''}` : '').filter(Boolean).join('\n\n') || screeningForm.examConclusion || ''
+      const allL3Names = [...(screeningForm.reportItems || []).map(r => r.name), ...(screeningForm.examOrderItems || []).map(e => e.name), ...(screeningForm.funcTestItems || []).map(f => f.name)].filter(Boolean)
+      const payload = { ...screeningForm, reportItems: allReportItems, examDescription: examDesc, examConclusion: examConc, screeningL3Items: allL3Names }
+      await staffAPI.createScreeningRecord(id, payload, screeningFile)
       toast('筛查结果已录入')
       setShowScreeningForm(false)
-      setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
+      setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
       setScreeningFile(null)
       setScreeningLinkedItem(null)
       setScreeningAutoMatches([])
@@ -1997,52 +2004,15 @@ export default function PatientDetailPage() {
                         onChange={e => {
                           const l2 = e.target.value
                           const l2Node = l1Node.children.find(c => c.label === l2)
-                          const items = l2Node?.items || []
-                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', screeningL3Items: [...items], title: l2, reportItems: items.map(name => ({ name, value: '', unit: '', referenceRange: '', status: 'normal' })), examDescription: '', examConclusion: '', linkedItemType: null }))
+                          const labOrders = l2Node?.labOrders || []
+                          const examItems = l2Node?.examItems || []
+                          const funcItems = l2Node?.funcItems || []
+                          const allNames = [...labOrders, ...examItems.map(x => x.name), ...funcItems]
+                          setScreeningForm(f => ({ ...f, screeningL2: l2, screeningL3: '', screeningL3Items: allNames, title: l2, reportItems: labOrders.map(name => ({ name, value: '', unit: '', referenceRange: '', status: 'normal' })), examOrderItems: examItems.map(x => ({ name: x.name, description: x.description || '', conclusion: x.conclusion || '' })), funcTestItems: funcItems.map(name => ({ name, result: '' })), examDescription: '', examConclusion: '', linkedItemType: null }))
                         }}>
                         <option value="">请选择</option>
                         {l1Node.children.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
                       </select>
-                    </div>
-                  )
-                })()}
-                {/* 第三层：具体检查项目（自动载入，支持删除/追加） */}
-                {screeningForm.screeningL2 && (() => {
-                  const l1Node = screeningTree.find(n => String(n._id) === screeningForm.screeningL1)
-                  const l2Node = l1Node?.children.find(c => c.label === screeningForm.screeningL2)
-                  const currentItems = screeningForm.screeningL3Items || []
-                  const allItems = l2Node?.items || []
-                  const removable = allItems.filter(i => !currentItems.includes(i))
-                  const removeItem = name => setScreeningForm(f => ({ ...f, screeningL3Items: f.screeningL3Items.filter(i => i !== name), reportItems: f.reportItems.filter(i => i.name !== name) }))
-                  const addItem = name => { if (name && !currentItems.includes(name)) setScreeningForm(f => ({ ...f, screeningL3Items: [...f.screeningL3Items, name], reportItems: [...f.reportItems, { name, value: '', unit: '', referenceRange: '', status: 'normal' }] })) }
-                  return (
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                        <label className="form-label" style={{ marginBottom: 0 }}>
-                          第三层：具体检查项目
-                          {currentItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{currentItems.length} 项，可删除未做的）</span>}
-                        </label>
-                        {removable.length > 0 && (
-                          <select className="form-input" style={{ width: 'auto', fontSize: 12, padding: '2px 8px', height: 28 }}
-                            value="" onChange={e => { addItem(e.target.value); e.target.value = '' }}>
-                            <option value="">＋ 追加项目</option>
-                            {removable.map(i => <option key={i} value={i}>{i}</option>)}
-                          </select>
-                        )}
-                      </div>
-                      {currentItems.length === 0 ? (
-                        <div style={{ fontSize: 13, color: '#aaa', padding: '8px 0' }}>暂无检查项目（该分类无预设项目，或已全部删除）</div>
-                      ) : (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                          {currentItems.map(item => (
-                            <span key={item} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 8px', background: '#E8F5EF', border: '1px solid #BBF7D0', borderRadius: 99, fontSize: 12, color: '#1E6B50' }}>
-                              {item}
-                              <button type="button" onClick={() => removeItem(item)}
-                                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#8AA89C', padding: 0, lineHeight: 1, fontSize: 13 }}>×</button>
-                            </span>
-                          ))}
-                        </div>
-                      )}
                     </div>
                   )
                 })()}
@@ -2060,32 +2030,23 @@ export default function PatientDetailPage() {
                     )}
                   </div>
                 )}
-                {/* 自动关联内容（检查描述/诊断结论 或 具体检验项目） */}
-                {screeningForm.linkedItemType === 'exam' ? (
-                  <>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label">检查描述（给医生看的详细说明）</label>
-                      <textarea className="form-input" rows={3} placeholder="检查目的、适应症、注意事项等..."
-                        value={screeningForm.examDescription}
-                        onChange={e => setScreeningForm(f => ({ ...f, examDescription: e.target.value }))} />
-                    </div>
-                    <div className="form-group" style={{ marginBottom: 0 }}>
-                      <label className="form-label">诊断结论</label>
-                      <textarea className="form-input" rows={2} placeholder="常见诊断结论模板，如：未见明显异常；建议进一步检查..."
-                        value={screeningForm.examConclusion}
-                        onChange={e => setScreeningForm(f => ({ ...f, examConclusion: e.target.value }))} />
-                    </div>
-                  </>
-                ) : (
+
+                {/* ── 检验医嘱 ── */}
+                {screeningForm.screeningL2 && (
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                      <label className="form-label" style={{ marginBottom: 0 }}>具体检验项目（可选）</label>
+                      <label className="form-label" style={{ marginBottom: 0, color: '#1E6B50', fontWeight: 700 }}>
+                        检验医嘱
+                        {screeningForm.reportItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{screeningForm.reportItems.length} 项）</span>}
+                      </label>
                       <button type="button" className="btn btn-secondary btn-sm"
                         onClick={() => setScreeningForm(f => ({ ...f, reportItems: [...f.reportItems, { name: '', value: '', unit: '', referenceRange: '', status: 'normal' }] }))}>
-                        + 添加项目
+                        + 手动添加
                       </button>
                     </div>
-                    {screeningForm.reportItems.length > 0 && (
+                    {screeningForm.reportItems.length === 0 ? (
+                      <div style={{ fontSize: 12, color: '#aaa', padding: '4px 0' }}>该分类无检验医嘱项目</div>
+                    ) : (
                       <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
                         <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 0, background: '#f5f2ec', padding: '4px 8px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
                           <span>项目名称</span><span>结果</span><span>单位</span><span>参考范围</span><span>状态</span><span />
@@ -2114,6 +2075,79 @@ export default function PatientDetailPage() {
                     )}
                   </div>
                 )}
+
+                {/* ── 检查医嘱 ── */}
+                {screeningForm.screeningL2 && (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label className="form-label" style={{ marginBottom: 0, color: '#0369A1', fontWeight: 700 }}>
+                        检查医嘱
+                        {screeningForm.examOrderItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{screeningForm.examOrderItems.length} 项）</span>}
+                      </label>
+                      <button type="button" className="btn btn-secondary btn-sm"
+                        onClick={() => setScreeningForm(f => ({ ...f, examOrderItems: [...f.examOrderItems, { name: '', description: '', conclusion: '' }] }))}>
+                        + 手动添加
+                      </button>
+                    </div>
+                    {screeningForm.examOrderItems.length === 0 ? (
+                      <div style={{ fontSize: 12, color: '#aaa', padding: '4px 0' }}>该分类无检查医嘱项目</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {screeningForm.examOrderItems.map((item, idx) => (
+                          <div key={idx} style={{ border: '1px solid #BFDBFE', borderRadius: 8, padding: '10px 12px', background: '#EFF6FF' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                              <input className="form-input" style={{ fontWeight: 600, fontSize: 13 }} placeholder="检查项目名称" value={item.name}
+                                onChange={e => setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, examOrderItems: a } })} />
+                              <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px', marginLeft: 8 }}
+                                onClick={() => setScreeningForm(f => ({ ...f, examOrderItems: f.examOrderItems.filter((_, i) => i !== idx) }))}>✕</button>
+                            </div>
+                            <textarea className="form-input" rows={2} style={{ fontSize: 12, marginBottom: 4 }} placeholder="检查描述（检查目的、注意事项等）"
+                              value={item.description}
+                              onChange={e => setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], description: e.target.value }; return { ...f, examOrderItems: a } })} />
+                            <textarea className="form-input" rows={2} style={{ fontSize: 12 }} placeholder="诊断结论（如：未见明显异常）"
+                              value={item.conclusion}
+                              onChange={e => setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], conclusion: e.target.value }; return { ...f, examOrderItems: a } })} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ── 功能医学检测 ── */}
+                {screeningForm.screeningL2 && (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                      <label className="form-label" style={{ marginBottom: 0, color: '#7C3AED', fontWeight: 700 }}>
+                        功能医学检测
+                        {screeningForm.funcTestItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{screeningForm.funcTestItems.length} 项）</span>}
+                      </label>
+                      <button type="button" className="btn btn-secondary btn-sm"
+                        onClick={() => setScreeningForm(f => ({ ...f, funcTestItems: [...f.funcTestItems, { name: '', result: '' }] }))}>
+                        + 手动添加
+                      </button>
+                    </div>
+                    {screeningForm.funcTestItems.length === 0 ? (
+                      <div style={{ fontSize: 12, color: '#aaa', padding: '4px 0' }}>该分类无功能医学检测项目</div>
+                    ) : (
+                      <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '2fr 3fr auto', gap: 0, background: '#f5f2ec', padding: '4px 8px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
+                          <span>检测项目</span><span>检测结果</span><span />
+                        </div>
+                        {screeningForm.funcTestItems.map((item, idx) => (
+                          <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 3fr auto', gap: 4, padding: '4px 8px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
+                            <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="检测项目名称" value={item.name}
+                              onChange={e => setScreeningForm(f => { const a = [...f.funcTestItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, funcTestItems: a } })} />
+                            <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="检测结果" value={item.result}
+                              onChange={e => setScreeningForm(f => { const a = [...f.funcTestItems]; a[idx] = { ...a[idx], result: e.target.value }; return { ...f, funcTestItems: a } })} />
+                            <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
+                              onClick={() => setScreeningForm(f => ({ ...f, funcTestItems: f.funcTestItems.filter((_, i) => i !== idx) }))}>✕</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">检查日期</label>
@@ -2127,7 +2161,7 @@ export default function PatientDetailPage() {
                   </div>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">{screeningForm.linkedItemType === 'exam' ? '备注' : '主要结论/备注'}</label>
+                  <label className="form-label">主要结论/备注</label>
                   <textarea className="form-input" rows={2} placeholder="如：未见明显异常；左叶结节3mm，建议随访" value={screeningForm.note}
                     onChange={e => setScreeningForm(f => ({ ...f, note: e.target.value }))} />
                 </div>

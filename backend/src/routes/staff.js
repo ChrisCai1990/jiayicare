@@ -2692,23 +2692,18 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
       ProjectCategory.find({ status: 'active' }).lean(),
       LabTestPackage.find({ status: 'active' })
         .populate('orders', 'name')
-        .populate('specialExams', 'name')
+        .populate('labTestItems', 'name')
+        .populate('specialExams', 'name description conclusion')
         .populate('functionalTests', 'name')
         .lean(),
     ]);
-    // 建分类 map
-    const catMap = {};
-    cats.forEach(c => { catMap[String(c._id)] = c; });
-    // 一级分类（无 parent）
     const l1s = cats.filter(c => !c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    // 二级分类（有 parent）
     const l2sByParent = {};
     cats.filter(c => c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach(c => {
       const pid = String(c.parent);
       if (!l2sByParent[pid]) l2sByParent[pid] = [];
       l2sByParent[pid].push(c);
     });
-    // 套餐按 categoryId 索引（一个子分类对应一个或多个套餐）
     const pkgByCat = {};
     pkgs.forEach(p => {
       if (!p.categoryId) return;
@@ -2716,23 +2711,31 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
       if (!pkgByCat[cid]) pkgByCat[cid] = [];
       pkgByCat[cid].push(p);
     });
-    // 组装三层树
     const tree = l1s.map(l1 => {
       const l1id = String(l1._id);
       const children = (l2sByParent[l1id] || []).map(l2 => {
         const l2id = String(l2._id);
         const matchPkgs = pkgByCat[l2id] || [];
-        // 第三层 = 各套餐关联的所有项目名（去重）
-        const itemSet = new Set();
+        // 三类分项，按类型分别汇总（去重）
+        const labOrderMap = new Map();   // name -> true
+        const examMap = new Map();       // name -> { name, description, conclusion }
+        const funcSet = new Set();       // name
         matchPkgs.forEach(p => {
-          (p.orders || []).forEach(o => o && o.name && itemSet.add(o.name));
-          (p.specialExams || []).forEach(e => e && e.name && itemSet.add(e.name));
-          (p.functionalTests || []).forEach(f => f && f.name && itemSet.add(f.name));
+          (p.orders || []).forEach(o => o && o.name && labOrderMap.set(o.name, true));
+          (p.labTestItems || []).forEach(i => i && i.name && labOrderMap.set(i.name, true));
+          (p.specialExams || []).forEach(e => {
+            if (e && e.name) examMap.set(e.name, { name: e.name, description: e.description || '', conclusion: e.conclusion || '' });
+          });
+          (p.functionalTests || []).forEach(f => f && f.name && funcSet.add(f.name));
         });
         return {
           _id: l2._id,
           label: l2.name,
-          items: [...itemSet],
+          labOrders: [...labOrderMap.keys()],
+          examItems: [...examMap.values()],
+          funcItems: [...funcSet],
+          // 兼容旧字段：合并所有项目名
+          items: [...labOrderMap.keys(), ...examMap.keys(), ...funcSet],
           packageIds: matchPkgs.map(p => p._id),
         };
       });
