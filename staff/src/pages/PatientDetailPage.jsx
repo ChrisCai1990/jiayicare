@@ -335,6 +335,7 @@ export default function PatientDetailPage() {
   const [screeningAutoLoading, setScreeningAutoLoading] = useState(false)
   const [screeningLinkedItem, setScreeningLinkedItem] = useState(null)  // 已关联的后台项目
   const [expandedRecord, setExpandedRecord] = useState(null) // 展开详情的记录 _id
+  const [editingScreeningId, setEditingScreeningId] = useState(null) // 编辑中的记录 _id
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
@@ -734,9 +735,15 @@ export default function PatientDetailPage() {
       const examConc = (screeningForm.examOrderItems || []).map(e => e.name ? `【${e.name}】\n${e.conclusion || ''}` : '').filter(Boolean).join('\n\n') || screeningForm.examConclusion || ''
       const allL3Names = [...(screeningForm.reportItems || []).map(r => r.name), ...(screeningForm.examOrderItems || []).map(e => e.name), ...(screeningForm.funcTestItems || []).map(f => f.name)].filter(Boolean)
       const payload = { ...screeningForm, reportItems: allReportItems, examDescription: examDesc, examConclusion: examConc, screeningL3Items: allL3Names }
-      await staffAPI.createScreeningRecord(id, payload, screeningFile)
-      toast('筛查结果已录入')
+      if (editingScreeningId) {
+        await staffAPI.updateScreeningRecord(id, editingScreeningId, payload, screeningFile)
+        toast('筛查结果已更新')
+      } else {
+        await staffAPI.createScreeningRecord(id, payload, screeningFile)
+        toast('筛查结果已录入')
+      }
       setShowScreeningForm(false)
+      setEditingScreeningId(null)
       setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
       setScreeningFile(null)
       setScreeningLinkedItem(null)
@@ -1829,46 +1836,134 @@ export default function PatientDetailPage() {
             )
           )
 
+          const handleEditScreening = r => {
+            // 解析 examDescription/examConclusion 回 examOrderItems
+            const parseExamItems = (desc, conc) => {
+              if (!desc && !conc) return []
+              const parts = (desc || '').split('\n\n').filter(Boolean)
+              const concParts = (conc || '').split('\n\n')
+              return parts.map((part, i) => {
+                const m = part.match(/^【(.+?)】/)
+                const name = m ? m[1] : `检查项${i+1}`
+                const description = m ? part.replace(/^【.+?】\n?/, '').trim() : part.trim()
+                const concPart = concParts[i] || ''
+                const conclusion = concPart.replace(/^【.+?】\n?/, '').trim()
+                return { name, description, conclusion }
+              })
+            }
+            const labItems = (r.reportItems || []).filter(i => i.itemType !== 'data')
+            const funcItems = (r.reportItems || []).filter(i => i.itemType === 'data').map(i => ({ name: i.name, result: i.value || '' }))
+            const examItems = parseExamItems(r.examDescription, r.examConclusion)
+            setScreeningForm({
+              title: r.title || '', screeningCategory: r.screeningCategory || '',
+              screeningL1: r.screeningL1 || '', screeningL2: r.screeningL2 || '',
+              screeningL3: r.screeningL3 || '', screeningL3Items: r.screeningL3Items || [],
+              checkDate: r.checkDate || '', hospital: r.hospital || '', note: r.note || '',
+              reportItems: labItems, examOrderItems: examItems, funcTestItems: funcItems,
+              examDescription: r.examDescription || '', examConclusion: r.examConclusion || '',
+              linkedItemType: null,
+            })
+            setEditingScreeningId(r._id)
+            setScreeningFile(null)
+            setShowScreeningForm(true)
+          }
+
+          const handleDeleteScreening = async (r) => {
+            if (!window.confirm(`确认删除「${r.title || r.screeningL2}」的筛查记录？`)) return
+            try {
+              await staffAPI.deleteScreeningRecord(id, r._id)
+              toast('已删除')
+              loadScreening()
+            } catch (err) { toast(err.message || '删除失败') }
+          }
+
           const renderRecord = (r, color) => {
             const isExpanded = expandedRecord === r._id
             const fullUrl = r.fileUrl ? (r.fileUrl.startsWith('/') ? API_ORIGIN + r.fileUrl : r.fileUrl) : null
+            const labItems = (r.reportItems || []).filter(i => i.itemType !== 'data')
+            const funcItems = (r.reportItems || []).filter(i => i.itemType === 'data')
+            const hasExam = r.examDescription || r.examConclusion
+            const totalCount = labItems.length + funcItems.length + (hasExam ? 1 : 0)
             return (
               <div key={r._id} style={{ padding: '6px 0 6px 12px', borderLeft: `2px solid ${color}40`, marginBottom: 2 }}>
-                <div onClick={() => setExpandedRecord(isExpanded ? null : r._id)}
-                  style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer', userSelect: 'none' }}>
-                  <span style={{ fontSize: 11, color: '#aaa', whiteSpace: 'nowrap', flexShrink: 0 }}>
-                    {r.checkDate || (r.createdAt && new Date(r.createdAt).toLocaleDateString('zh-CN'))}
-                  </span>
-                  {r.hospital && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>📍 {r.hospital}</span>}
-                  {r.note && <span style={{ fontSize: 12, color: '#4A6558', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.note}</span>}
-                  {r.reportItems?.length > 0 && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{r.reportItems.length} 项</span>}
-                  <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
+                <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+                  <div onClick={() => setExpandedRecord(isExpanded ? null : r._id)}
+                    style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer', userSelect: 'none', flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 11, color: '#aaa', whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      {r.checkDate || (r.createdAt && new Date(r.createdAt).toLocaleDateString('zh-CN'))}
+                    </span>
+                    {r.hospital && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>📍 {r.hospital}</span>}
+                    {r.note && <span style={{ fontSize: 12, color: '#4A6558', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.note}</span>}
+                    {totalCount > 0 && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{totalCount} 项</span>}
+                    <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
+                  </div>
+                  <button onClick={() => handleEditScreening(r)}
+                    style={{ background: 'none', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#4A6558', cursor: 'pointer', flexShrink: 0 }}>编辑</button>
+                  <button onClick={() => handleDeleteScreening(r)}
+                    style={{ background: 'none', border: '1px solid #DC3545', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#DC3545', cursor: 'pointer', flexShrink: 0 }}>删除</button>
                 </div>
                 {isExpanded && (
                   <div style={{ marginTop: 8 }}>
                     {r.note && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 6 }}>结论：{r.note}</div>}
-                    {r.reportItems?.length > 0 && (
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12, marginBottom: 6 }}>
-                        <thead>
-                          <tr style={{ background: '#f5f2ec' }}>
-                            {['项目','结果','参考范围','状态'].map(h => (
-                              <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {r.reportItems.map((item, j) => (
-                            <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
-                              <td style={{ padding: '4px 8px', color: '#1A2B24' }}>{item.name}</td>
-                              <td style={{ padding: '4px 8px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
-                                {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
-                              </td>
-                              <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
-                              <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
+                    {/* 检验医嘱 */}
+                    {labItems.length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#1E6B50', marginBottom: 4 }}>检验医嘱</div>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ background: '#f5f2ec' }}>
+                              {['项目','结果','参考范围','状态'].map(h => (
+                                <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>{h}</th>
+                              ))}
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {labItems.map((item, j) => (
+                              <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
+                                <td style={{ padding: '4px 8px', color: '#1A2B24' }}>{item.name}</td>
+                                <td style={{ padding: '4px 8px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
+                                  {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
+                                </td>
+                                <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
+                                <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                    {/* 检查医嘱 */}
+                    {hasExam && (
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查医嘱</div>
+                        {(r.examDescription || r.examConclusion || '').split('\n\n').filter(Boolean).map((block, i) => {
+                          const concBlocks = (r.examConclusion || '').split('\n\n')
+                          const isDesc = r.examDescription && r.examDescription.split('\n\n')[i]
+                          const nameM = block.match(/^【(.+?)】/)
+                          const name = nameM ? nameM[1] : null
+                          const desc = nameM ? block.replace(/^【.+?】\n?/, '').trim() : block.trim()
+                          const conc = (concBlocks[i] || '').replace(/^【.+?】\n?/, '').trim()
+                          return (
+                            <div key={i} style={{ border: '1px solid #BFDBFE', borderRadius: 6, padding: '6px 10px', marginBottom: 4, background: '#EFF6FF', fontSize: 12 }}>
+                              {name && <div style={{ fontWeight: 600, color: '#1E40AF', marginBottom: 4 }}>{name}</div>}
+                              {desc && <div style={{ color: '#374151', marginBottom: 2 }}>描述：{desc}</div>}
+                              {conc && <div style={{ color: '#374151' }}>结论：{conc}</div>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                    {/* 功能医学检测 */}
+                    {funcItems.length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#7C3AED', marginBottom: 4 }}>功能医学检测</div>
+                        {funcItems.map((item, j) => (
+                          <div key={j} style={{ display: 'flex', gap: 12, fontSize: 12, padding: '3px 0', borderBottom: '1px solid #f0ece4' }}>
+                            <span style={{ color: '#1A2B24', flex: 1 }}>{item.name}</span>
+                            <span style={{ color: '#4A6558' }}>{item.value || '-'}</span>
+                          </div>
+                        ))}
+                      </div>
                     )}
                     {fullUrl && (
                       <div style={{ marginTop: 6 }}>
@@ -1984,8 +2079,8 @@ export default function PatientDetailPage() {
           <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowScreeningForm(false) }}>
             <div className="modal" style={{ maxWidth: 620, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               <div className="modal-header" style={{ flexShrink: 0 }}>
-                <h3 className="modal-title">录入筛查结果</h3>
-                <button className="modal-close" onClick={() => setShowScreeningForm(false)}>✕</button>
+                <h3 className="modal-title">{editingScreeningId ? '修改筛查结果' : '录入筛查结果'}</h3>
+                <button className="modal-close" onClick={() => { setShowScreeningForm(false); setEditingScreeningId(null) }}>✕</button>
               </div>
               <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12, overflowY: 'auto', flex: 1 }}>
                 {/* 三级联动选择（从管理端动态加载） */}

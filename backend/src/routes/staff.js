@@ -2675,6 +2675,42 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// DELETE /api/staff/patients/:id/screening-records/:rid
+router.delete('/patients/:id/screening-records/:rid', staffAuth, async (req, res) => {
+  try {
+    const report = await MedicalReport.findOneAndDelete({ _id: req.params.rid, user: req.params.id });
+    if (!report) return res.status(404).json({ success: false, message: '记录不存在' });
+    res.json({ success: true, message: '已删除' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PATCH /api/staff/patients/:id/screening-records/:rid
+router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.single('file'), async (req, res) => {
+  try {
+    const { title, checkDate, hospital, note, screeningL1, screeningL2, screeningL3, examDescription, examConclusion } = req.body;
+    const raw = req.body.reportItems;
+    const reportItems = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : undefined);
+    const rawL3Items = req.body.screeningL3Items;
+    const screeningL3Items = Array.isArray(rawL3Items) ? rawL3Items : (rawL3Items ? JSON.parse(rawL3Items) : undefined);
+    const update = {};
+    if (title)            update.title = title;
+    if (checkDate !== undefined) update.checkDate = checkDate;
+    if (hospital !== undefined)  update.hospital = hospital;
+    if (note !== undefined)      update.note = note;
+    if (screeningL1)      update.screeningL1 = screeningL1;
+    if (screeningL2)      update.screeningL2 = screeningL2;
+    if (screeningL3 !== undefined) update.screeningL3 = screeningL3;
+    if (examDescription !== undefined) update.examDescription = examDescription;
+    if (examConclusion !== undefined)  update.examConclusion = examConclusion;
+    if (reportItems)      update.reportItems = reportItems;
+    if (screeningL3Items) update.screeningL3Items = screeningL3Items;
+    if (req.file)         { update.fileUrl = `/api/uploads/screening/${req.file.filename}`; update.mimeType = req.file.mimetype; }
+    const report = await MedicalReport.findOneAndUpdate({ _id: req.params.rid, user: req.params.id }, { $set: update }, { new: true });
+    if (!report) return res.status(404).json({ success: false, message: '记录不存在' });
+    res.json({ success: true, data: report });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 4.3 专项筛查结果：按筛查分类查询报告 ─────────────────────────
 // GET /api/staff/patients/:id/screening-reports
 router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {

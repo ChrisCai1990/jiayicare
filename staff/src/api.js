@@ -257,4 +257,16 @@ export const staffAPI = {
     }
     return req(`/staff/patients/${id}/screening-records`, { method: 'POST', body: JSON.stringify(data) })
   },
+  updateScreeningRecord: (id, rid, data, file) => {
+    if (file) {
+      const fd = new FormData()
+      Object.entries(data).forEach(([k, v]) => {
+        fd.append(k, Array.isArray(v) ? JSON.stringify(v) : (v ?? ''))
+      })
+      fd.append('file', file)
+      return req(`/staff/patients/${id}/screening-records/${rid}`, { method: 'PATCH', body: fd })
+    }
+    return req(`/staff/patients/${id}/screening-records/${rid}`, { method: 'PATCH', body: JSON.stringify(data) })
+  },
+  deleteScreeningRecord: (id, rid) => req(`/staff/patients/${id}/screening-records/${rid}`, { method: 'DELETE' }),
 }
