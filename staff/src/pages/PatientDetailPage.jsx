@@ -2573,7 +2573,7 @@ export default function PatientDetailPage() {
                     </button>
                   </div>
 
-                  {displayDefs.length === 0 && !showAll && (
+                  {displayDefs.length === 0 && !showAllLab && (
                     <div style={{ fontSize: 13, color: '#22A06B', textAlign: 'center', padding: '12px 0' }}>✓ 所有指标均在正常范围内</div>
                   )}
 
