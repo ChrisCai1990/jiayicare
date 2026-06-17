@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+﻿const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
 const adminSchema = new mongoose.Schema({
@@ -11,7 +11,7 @@ const adminSchema = new mongoose.Schema({
     enum: [
       'superadmin',      // 超级管理员
       'doctor', 'manager', // 旧管理员角色（兼容）
-      'familyDoctor',    // 家庭医生
+      'familyDoctor',    // 家庭医师
       'nutritionist',    // 营养师
       'healthManager',   // 健管专员
       'medicalAssistant',// 就医专员

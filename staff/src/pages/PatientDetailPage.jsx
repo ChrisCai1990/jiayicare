@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react'
+﻿import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
@@ -1205,7 +1205,7 @@ export default function PatientDetailPage() {
                   {[
                     { key: 'healthConcern', label: '关注的健康问题', rows: 2 },
                     { key: 'healthConcernFor', label: '更关注谁的健康', rows: 1 },
-                    { key: 'expectedService', label: '期望家庭医生服务', rows: 2 },
+                    { key: 'expectedService', label: '期望家庭医师服务', rows: 2 },
                     { key: 'hasHomeMonitor', label: '居家检测设备', rows: 2 },
                   ].map(({ key, label, rows }) => (
                     <div key={key}>
@@ -2993,7 +2993,7 @@ export default function PatientDetailPage() {
                       </div>
                     )}
                     <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 10 }}>
-                      家庭医生/营养师审核确认后方案生效，供客户查阅。
+                      家庭医师/营养师审核确认后方案生效，供客户查阅。
                     </div>
                     {editingAISummary && (
                       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -3005,7 +3005,7 @@ export default function PatientDetailPage() {
                   </div>
                 ) : (
                   <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: 20 }}>
-                    请先在「AI汇总分析」中点击「生成AI分析」，系统同步生成管理方案初稿，家庭医生/营养师审核确认后生效。
+                    请先在「AI汇总分析」中点击「生成AI分析」，系统同步生成管理方案初稿，家庭医师/营养师审核确认后生效。
                   </div>
                 )}
               </div>
@@ -3466,8 +3466,8 @@ export default function PatientDetailPage() {
       {/* ── 转介记录 Tab ── */}
       {tab === 'referrals' && (() => {
         const REFERRAL_CAT_MAP = {
-          familyDoctor:      '家庭医生转介',
-          specialist:        '专科医生转介',
+          familyDoctor:      '家庭医师转介',
+          specialist:        '专科医师转介',
           nutritionist:      '营养师转介',
           tcmDoctor:         '中医师转介',
           psychologist:      '心理咨询师转介',
@@ -3476,8 +3476,8 @@ export default function PatientDetailPage() {
           healthManager:     '健管专员转介',
         }
         const REFERRAL_CAT_COLOR = {
-          '家庭医生转介':   '#1E6B50',
-          '专科医生转介':   '#0077B6',
+          '家庭医师转介':   '#1E6B50',
+          '专科医师转介':   '#0077B6',
           '营养师转介':     '#22A06B',
           '中医师转介':     '#8e44ad',
           '心理咨询师转介': '#D97706',
@@ -3487,7 +3487,7 @@ export default function PatientDetailPage() {
         }
         const STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已拒绝' }
         const STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed:'#22A06B', rejected:'#DC3545' }
-        const CATS = ['家庭医生转介','专科医生转介','营养师转介','中医师转介','心理咨询师转介','运动复健师转介','就医专员转介','健管专员转介']
+        const CATS = ['家庭医师转介','专科医师转介','营养师转介','中医师转介','心理咨询师转介','运动复健师转介','就医专员转介','健管专员转介']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         patientReferrals.forEach(r => {
@@ -4435,7 +4435,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
 
 // ── 转介弹窗 ───────────────────────────────────────────────
 const ROLE_LABEL_MAP = {
-  familyDoctor:'家庭医生', nutritionist:'营养师', healthManager:'健管专员',
+  familyDoctor:'家庭医师', nutritionist:'营养师', healthManager:'健管专员',
   medicalAssistant:'就医专员', psychologist:'心理咨询师', rehabSpecialist:'运动复健师',
   tcmDoctor:'中医师', specialist:'专科医师', healthPlanner:'健康规划师', superadmin:'超级管理员',
 }

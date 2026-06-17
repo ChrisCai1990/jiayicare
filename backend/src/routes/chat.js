@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const auth = require('../middleware/auth');
 const router = express.Router();
 
@@ -14,7 +14,7 @@ const BASE_SYSTEM = `
 回答要求：
 1. 使用中文回答，语气温和专业
 2. 回答控制在200字以内，简洁精准
-3. 涉及药物剂量调整、诊断等，必须建议用户咨询专科医生
+3. 涉及药物剂量调整、诊断等，必须建议用户咨询专科医师
 4. 每次回答末尾加一句免责声明：「本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。」
 5. 不捏造数据，对不确定的信息说"建议咨询您的主治医生"
 `.trim();

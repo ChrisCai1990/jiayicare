@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+﻿import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
@@ -565,7 +565,7 @@ export default function NewPatientPage() {
               <Grid>
                 <F label="本人比较关注的健康问题" span={2}><textarea className="form-input" rows={2} placeholder="如：血糖控制、体重管理、睡眠改善" value={form.healthConcern} onChange={set('healthConcern')} /></F>
                 <F label="更关注谁的健康问题" span={2}><input className="form-input" placeholder="如：自己、父母、子女" value={form.healthConcernFor} onChange={set('healthConcernFor')} /></F>
-                <F label="期望得到怎样的家庭医生服务" span={2}><textarea className="form-input" rows={2} placeholder="如：定期随访、慢病管理、就医协助" value={form.expectedService} onChange={set('expectedService')} /></F>
+                <F label="期望得到怎样的家庭医师服务" span={2}><textarea className="form-input" rows={2} placeholder="如：定期随访、慢病管理、就医协助" value={form.expectedService} onChange={set('expectedService')} /></F>
                 <F label="是否配备居家检测设备" span={2}><textarea className="form-input" rows={2} placeholder="是/否，是则填写设备类型（如血压计、血糖仪）" value={form.hasHomeMonitor} onChange={set('hasHomeMonitor')} /></F>
                 <F label="是否配备居家小药箱" span={2}>
                   <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>

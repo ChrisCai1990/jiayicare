@@ -1,4 +1,4 @@
-const mongoose = require('mongoose');
+﻿const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
   phone:    { type: String, required: true, unique: true },
@@ -63,7 +63,7 @@ const userSchema = new mongoose.Schema({
   // 健康需求
   healthConcern:       { type: String, default: '' }, // 本人比较关注的健康问题
   healthConcernFor:    { type: String, default: '' }, // 更关注谁的健康问题
-  expectedService:     { type: String, default: '' }, // 期望得到怎样的家庭医生服务
+  expectedService:     { type: String, default: '' }, // 期望得到怎样的家庭医师服务
   hasHomeMonitor:      { type: String, default: '' }, // 是否配备居家检测设备
   hasMedicineCabinet:  { type: String, default: '' }, // 是否配备居家小药箱
   // 联系信息（#34）
@@ -131,7 +131,7 @@ const userSchema = new mongoose.Schema({
 
   // 医护端管理字段
   assignedHealthManager:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健管专员
-  assignedFamilyDoctor:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医生
+  assignedFamilyDoctor:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医师
   assignedNutritionist:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 营养师
   assignedSpecialist:       { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 专科医师
   assignedTcmDoctor:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 中医师

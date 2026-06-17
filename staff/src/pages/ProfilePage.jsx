@@ -1,10 +1,10 @@
-import React, { useState } from 'react'
+﻿import React, { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff, useToast } from '../App'
 
 const ROLE_LABEL = {
-  familyDoctor:'家庭医生', nutritionist:'营养师', healthManager:'健管专员',
+  familyDoctor:'家庭医师', nutritionist:'营养师', healthManager:'健管专员',
   medicalAssistant:'就医专员', psychologist:'心理咨询师', rehabSpecialist:'运动复健师',
   tcmDoctor:'中医师', specialist:'专科医师', healthPlanner:'健康规划师', superadmin:'超级管理员',
 }

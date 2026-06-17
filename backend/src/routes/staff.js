@@ -1,4 +1,4 @@
-const express = require('express');
+﻿const express = require('express');
 const jwt = require('jsonwebtoken');
 let _ssePublish = null;
 function ssePublish(...args) { if (!_ssePublish) { try { _ssePublish = require('./messages').ssePublish; } catch {} } _ssePublish?.(...args); }
@@ -88,7 +88,7 @@ const uploadScreening = multer({
 
 // 医护端角色标签
 const ROLE_LABEL = {
-  familyDoctor:    '家庭医生',
+  familyDoctor:    '家庭医师',
   nutritionist:    '营养师',
   healthManager:   '健管专员',
   medicalAssistant:'就医专员',
@@ -2439,7 +2439,7 @@ router.get('/user-messages', staffAuth, async (req, res) => {
     const patientMap = {};
     myPatients.forEach(p => { patientMap[String(p._id)] = p; });
 
-    // 按角色过滤：家庭医生看 doctor 留言，营养师看 nutritionist，其他看 manager
+    // 按角色过滤：家庭医师看 doctor 留言，营养师看 nutritionist，其他看 manager
     const recipientFilter =
       staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
       staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
@@ -2608,7 +2608,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       bc.bodyFatRate && `体脂率 ${bc.bodyFatRate}%`,
     ].filter(Boolean).join('、') || '暂无体检数据';
 
-    const prompt = `你是一位经验丰富的家庭医生，请根据以下患者健康档案生成一份专业的健康分析报告。
+    const prompt = `你是一位经验丰富的家庭医师，请根据以下患者健康档案生成一份专业的健康分析报告。
 
 【患者基本信息】
 姓名：${user.name}，性别：${user.gender}，年龄：${user.age || '未知'}岁

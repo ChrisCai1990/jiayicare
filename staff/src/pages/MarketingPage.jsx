@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 import { GiftModal } from './PatientDetailPage'
@@ -99,7 +99,7 @@ function LevelsTab({ toast }) {
               <input className="form-control" value={form.color} onChange={set('color')} style={{ flex: 1 }} />
             </div></div>
           <div><label style={{ fontSize: 12, color: '#8AA89C' }}>权益描述（每行一条）</label>
-            <textarea className="form-control" rows={4} value={form.benefits} onChange={set('benefits')} placeholder="每行填写一条权益&#10;如：专属家庭医生服务&#10;每月健康报告" /></div>
+            <textarea className="form-control" rows={4} value={form.benefits} onChange={set('benefits')} placeholder="每行填写一条权益&#10;如：专属家庭医师服务&#10;每月健康报告" /></div>
           <div><label style={{ fontSize: 12, color: '#8AA89C' }}>排序权重</label>
             <input className="form-control" type="number" value={form.sortOrder} onChange={set('sortOrder')} /></div>
           <div style={{ display: 'flex', gap: 8 }}>

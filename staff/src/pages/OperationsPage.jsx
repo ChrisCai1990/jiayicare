@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react'
+﻿import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 
 const DISEASE_COLOR = { '高血压':'#e74c3c', '糖尿病':'#e67e22', '高血脂':'#f39c12', '冠心病':'#c0392b', '慢阻肺':'#8e44ad', '骨质疏松':'#27ae60', '高尿酸':'#3498db', '脂肪肝':'#16a085' }
 
 // 营收分类
 const REV_CATEGORIES = [
-  { key: 'familyDoctor', label: '家庭医生服务', icon: '🩺', color: '#1E6B50' },
+  { key: 'familyDoctor', label: '家庭医师服务', icon: '🩺', color: '#1E6B50' },
   { key: 'nutrition',    label: '营养服务',     icon: '🥗', color: '#27ae60' },
   { key: 'medical',      label: '就医协助服务', icon: '🏥', color: '#0077B6' },
   { key: 'checkup',      label: '检测收费',     icon: '🔬', color: '#8e44ad' },
