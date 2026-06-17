@@ -280,6 +280,7 @@ export default function PatientDetailPage() {
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
+  const [patientReferrals, setPatientReferrals] = useState([])
   const [patientOrders, setPatientOrders] = useState([])
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
@@ -407,6 +408,9 @@ export default function PatientDetailPage() {
   const loadServiceRecords = async () => {
     try { const res = await staffAPI.getPatientServiceRecords(id); setServiceRecords(res.data) } catch {}
   }
+  const loadPatientReferrals = async () => {
+    try { const res = await staffAPI.getPatientReferrals(id); setPatientReferrals(res.data?.referrals || []) } catch {}
+  }
   const loadRequisitions = async () => {
     try { const res = await staffAPI.getPatientRequisitions(id); setRequisitions(res.data) } catch {}
   }
@@ -447,6 +451,7 @@ export default function PatientDetailPage() {
     else if (tab === 'plans') loadPlans()
     else if (tab === 'reports') loadReports()
     else if (tab === 'serviceRecords') loadServiceRecords()
+    else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'requisitions') loadRequisitions()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
     else if (tab === 'records') loadScreening()
@@ -860,6 +865,7 @@ export default function PatientDetailPage() {
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
           { key: 'serviceRecords', label: '服务记录' },
+          { key: 'referrals',     label: '转介记录' },
           { key: 'consumption',   label: '消费记录' },
           { key: 'family',        label: '家庭信息' },
           { key: 'membership',    label: '会员信息' },
@@ -3455,6 +3461,102 @@ export default function PatientDetailPage() {
         )
       })()}
 
+      {/* ── 转介记录 Tab ── */}
+      {tab === 'referrals' && (() => {
+        const REFERRAL_CAT_MAP = {
+          familyDoctor:      '家庭医生会诊',
+          specialist:        '专科医生转介',
+          nutritionist:      '营养师转介',
+          tcmDoctor:         '中医师转介',
+          psychologist:      '心理咨询师转介',
+          rehabSpecialist:   '运动复健师转介',
+          medicalAssistant:  '就医专员转介',
+          healthManager:     '健管专员转介',
+        }
+        const REFERRAL_CAT_COLOR = {
+          '家庭医生会诊':   '#1E6B50',
+          '专科医生转介':   '#0077B6',
+          '营养师转介':     '#22A06B',
+          '中医师转介':     '#8e44ad',
+          '心理咨询师转介': '#D97706',
+          '运动复健师转介': '#DC3545',
+          '就医专员转介':   '#4A6558',
+          '健管专员转介':   '#8AA89C',
+        }
+        const STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已拒绝' }
+        const STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed:'#22A06B', rejected:'#DC3545' }
+        const CATS = ['家庭医生会诊','专科医生转介','营养师转介','中医师转介','心理咨询师转介','运动复健师转介','就医专员转介','健管专员转介']
+        const grouped = {}
+        CATS.forEach(c => { grouped[c] = [] })
+        patientReferrals.forEach(r => {
+          const role = r.toStaffId?.role
+          const cat = REFERRAL_CAT_MAP[role] || '就医专员转介'
+          grouped[cat].push(r)
+        })
+        const activeCats = CATS.filter(c => grouped[c].length > 0)
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            {patientReferrals.length === 0 && (
+              <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无转介记录</div>
+            )}
+            {activeCats.map(cat => (
+              <div className="card" key={cat}>
+                <div className="card-header">
+                  <div className="card-title" style={{ color: REFERRAL_CAT_COLOR[cat] }}>{cat}</div>
+                  <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                  {grouped[cat].map((r, i) => (
+                    <div key={r._id} style={{ padding: '16px 20px', borderBottom: i < grouped[cat].length - 1 ? '1px solid #f5f2ec' : 'none' }}>
+                      {/* 头部：转介方向 + 状态 + 时间 */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          {r.urgency === 'urgent' && (
+                            <span style={{ fontSize: 11, background: '#DC3545', color: '#fff', padding: '1px 8px', borderRadius: 99, fontWeight: 600 }}>紧急</span>
+                          )}
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>{r.reason}</span>
+                          <span style={{ fontSize: 12, color: STATUS_COLOR[r.status], fontWeight: 600 }}>· {STATUS_LABEL[r.status]}</span>
+                        </div>
+                        <span style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.createdAt).toLocaleDateString('zh-CN')}</span>
+                      </div>
+                      {/* 转介信息 */}
+                      <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
+                        发起：<strong>{r.fromStaffId?.name}</strong> → 接收：<strong>{r.toStaffId?.name}</strong>（{r.toStaffId?.title || REFERRAL_CAT_MAP[r.toStaffId?.role] || r.toStaffId?.role}）
+                      </div>
+                      {r.content && <div style={{ fontSize: 13, color: '#666', marginBottom: 6 }}>{r.content}</div>}
+                      {r.attachedHealthInfo && <AttachedHealthInfoView info={r.attachedHealthInfo} />}
+                      {/* 回复 */}
+                      {(r.responseAnalysis || r.responseOpinion || r.response) && (
+                        <div style={{ marginTop: 10, padding: '10px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: `3px solid ${REFERRAL_CAT_COLOR[cat]}`, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                          <div style={{ fontSize: 11, color: '#8AA89C' }}>
+                            {r.toStaffId?.name} 回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}
+                          </div>
+                          {r.responseAnalysis && (
+                            <div>
+                              <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>当前问题分析</div>
+                              <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseAnalysis}</div>
+                            </div>
+                          )}
+                          {r.responseOpinion && (
+                            <div>
+                              <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>会诊意见</div>
+                              <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseOpinion}</div>
+                            </div>
+                          )}
+                          {r.response && !r.responseAnalysis && !r.responseOpinion && (
+                            <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
+
       {/* ── Requisitions Tab ── */}
       {tab === 'requisitions' && (
         <div className="card">
@@ -4333,26 +4435,84 @@ const ROLE_LABEL_MAP = {
 function ReferralModal({ patientId, patientName, patientUser, staffList, onClose, onSaved }) {
   const toast = useToast()
   const [form, setForm] = useState({ toStaffId: '', reason: '', content: '', urgency: 'normal' })
-  const [selectedHealthSections, setSelectedHealthSections] = useState([])
+  const [selectedHealthSections, setSelectedHealthSections] = useState(['basicInfo'])
+  const [extraData, setExtraData] = useState({ medications: [], supplements: [], healthRecords: [] })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
+  // 打开时拉取用药、营养补剂、近期打卡记录
+  useEffect(() => {
+    Promise.allSettled([
+      staffAPI.getPatientMedications(patientId),
+      staffAPI.getPatientSupplements(patientId),
+      staffAPI.getPatientHealthRecords(patientId, { limit: 20 }),
+    ]).then(([medsR, supsR, recsR]) => {
+      setExtraData({
+        medications:   medsR.status === 'fulfilled' ? (medsR.value.data || []) : [],
+        supplements:   supsR.status === 'fulfilled' ? (supsR.value.data || []) : [],
+        healthRecords: recsR.status === 'fulfilled' ? (recsR.value.data || []) : [],
+      })
+    })
+  }, [patientId])
+
   const REASON_PRESETS = ['需要就医协助', '营养干预评估', '心理咨询介入', '运动康复指导', '中医体质评估', '专科会诊', '健康方案制定', '体检报告解读']
 
-  // 可附带的健康档案区块
-  const HEALTH_SECTIONS = [
-    { key: 'medicalHistory',  label: '既往病史',  getValue: u => u?.healthProfile?.medicalHistory },
-    { key: 'allergies',       label: '过敏史',    getValue: u => u?.healthProfile?.allergies },
-    { key: 'medications',     label: '当前用药',  getValue: u => u?.healthProfile?.medications },
-    { key: 'surgeries',       label: '手术史',    getValue: u => u?.healthProfile?.surgeries },
-    { key: 'familyHistory',   label: '家族史',    getValue: u => u?.healthProfile?.familyHistory },
-    { key: 'recentSymptoms',  label: '近期症状',  getValue: u => u?.healthProfile?.recentSymptoms },
-    { key: 'basicInfo',       label: '基本信息',  getValue: u => u ? `${u.gender || ''}${u.age ? `/${u.age}岁` : ''}${u.height ? `/身高${u.height}cm` : ''}${u.weight ? `/体重${u.weight}kg` : ''}`.replace(/^\//, '') : '' },
-  ].filter(s => {
-    const v = s.getValue(patientUser)
-    return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
-  })
+  // 计算年龄
+  const calcAge = (birthDate) => {
+    if (!birthDate) return null
+    return Math.floor((Date.now() - new Date(birthDate)) / (365.25 * 24 * 3600 * 1000))
+  }
+
+  // 提取最近一次各类打卡数据
+  const buildLatestVitals = (records) => {
+    const VITAL_LABEL = { weight:'体重', bloodPressure:'血压', bloodSugar:'血糖', heartRate:'心率', sleep:'睡眠' }
+    const seen = {}
+    const result = []
+    records.forEach(r => {
+      if (VITAL_LABEL[r.type] && !seen[r.type]) {
+        seen[r.type] = true
+        let valStr = r.value ? `${r.value}${r.unit || ''}` : ''
+        if (r.type === 'bloodPressure' && r.extra) valStr = `${r.extra.sys || ''}/${r.extra.dia || ''} mmHg`
+        result.push(`${VITAL_LABEL[r.type]}：${valStr}（${new Date(r.recordedAt || r.createdAt).toLocaleDateString('zh-CN')}）`)
+      }
+    })
+    return result.length ? result.join('；') : null
+  }
+
+  // 可附带的健康档案区块（固定全量，按有无数据过滤）
+  const buildSections = () => {
+    const u = patientUser
+    const ed = extraData
+    const age = calcAge(u?.birthDate)
+    const basicInfoVal = [
+      u?.name ? `姓名：${u.name}` : '',
+      u?.gender ? `性别：${u.gender}` : '',
+      age ? `年龄：${age}岁` : '',
+      u?.height ? `身高：${u.height}cm` : '',
+    ].filter(Boolean).join('，')
+
+    const dietSummary = u?.lifestyle_data?.summaryOverride
+      || (u?.lifestyle_data?.autoSummaryFlags?.length ? u.lifestyle_data.autoSummaryFlags.join('；') : null)
+      || u?.lifestyle?.diet || null
+
+    const latestVitals = buildLatestVitals(ed.healthRecords)
+
+    return [
+      { key: 'basicInfo',        label: '基本信息',     val: basicInfoVal || null },
+      { key: 'foodAllergy',      label: '食物过敏',     val: u?.healthProfile?.foodAllergy || null },
+      { key: 'drugAllergy',      label: '药物过敏',     val: u?.healthProfile?.drugAllergy || null },
+      { key: 'medicalHistory',   label: '既往病史',     val: (() => { const v = u?.healthProfile?.medicalHistory; return Array.isArray(v) && v.length ? v : (v || null) })() },
+      { key: 'specialDiseases',  label: '特殊疾病史',   val: u?.healthProfile?.pastHistory || (u?.chronicDiseases?.length ? u.chronicDiseases.join('；') : null) },
+      { key: 'familyHistory',    label: '家族史',       val: (() => { const v = u?.healthProfile?.familyHistory; return Array.isArray(v) && v.length ? v : (v || null) })() },
+      { key: 'longTermMeds',     label: '长期用药',     val: ed.medications.length ? ed.medications.map(m => `${m.name}${m.dosage ? ` ${m.dosage}` : ''}`).join('；') : null },
+      { key: 'longTermSups',     label: '长期营养补剂', val: ed.supplements.length ? ed.supplements.map(s => s.name).join('；') : null },
+      { key: 'dietSummary',      label: '膳食调查概述', val: dietSummary },
+      { key: 'latestVitals',     label: '近期打卡数据', val: latestVitals },
+    ].filter(s => s.val !== null && s.val !== '' && !(Array.isArray(s.val) && s.val.length === 0))
+  }
+
+  const HEALTH_SECTIONS = buildSections()
 
   const toggleSection = (key) => {
     setSelectedHealthSections(prev =>
@@ -4364,11 +4524,9 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
     if (selectedHealthSections.length === 0) return null
     const result = {}
     HEALTH_SECTIONS.forEach(s => {
-      if (selectedHealthSections.includes(s.key)) {
-        result[s.key] = s.getValue(patientUser)
-      }
+      if (selectedHealthSections.includes(s.key)) result[s.key] = s.val
     })
-    return result
+    return Object.keys(result).length ? result : null
   }
 
   const handleSubmit = async () => {
@@ -4437,7 +4595,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
               </div>
               {selectedHealthSections.length > 0 && (
                 <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>
-                  已选 {selectedHealthSections.length} 项档案内容，接收方可在推介信中查看
+                  已选 {selectedHealthSections.length} 项，接收方可在转介信中查看
                 </div>
               )}
             </div>
@@ -4751,6 +4909,55 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
           {saving ? '录入中...' : '确认录入'}
         </button>
       </div>
+    </div>
+  )
+}
+
+// ── 附带健康档案展示组件（转介记录tab共用）──────────────────────
+const REFERRAL_HEALTH_LABELS = {
+  basicInfo:       '基本信息',
+  foodAllergy:     '食物过敏',
+  drugAllergy:     '药物过敏',
+  medicalHistory:  '既往病史',
+  specialDiseases: '特殊疾病史',
+  familyHistory:   '家族史',
+  longTermMeds:    '长期用药',
+  longTermSups:    '长期营养补剂',
+  dietSummary:     '膳食调查概述',
+  latestVitals:    '近期打卡数据',
+  allergies:       '过敏史',
+  medications:     '当前用药',
+  surgeries:       '手术史',
+  recentSymptoms:  '近期症状',
+}
+
+function AttachedHealthInfoView({ info }) {
+  if (!info) return null
+  const sections = Object.keys(info).filter(k => {
+    const v = info[k]
+    return v !== null && v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0)
+  })
+  if (sections.length === 0) return null
+  return (
+    <div style={{ marginTop: 8, padding: '10px 12px', background: '#f0f6ff', borderRadius: 6, borderLeft: '3px solid #0077B6' }}>
+      <div style={{ fontSize: 11, color: '#0077B6', fontWeight: 600, marginBottom: 6 }}>附带健康档案</div>
+      {sections.map(k => {
+        const v = info[k]
+        const label = REFERRAL_HEALTH_LABELS[k] || k
+        let display = ''
+        if (Array.isArray(v)) {
+          display = v.map(item => typeof item === 'object' ? Object.values(item).filter(Boolean).join(' · ') : item).join('；')
+        } else if (typeof v === 'object') {
+          display = Object.entries(v).map(([kk, vv]) => `${kk}：${vv}`).join('；')
+        } else {
+          display = String(v)
+        }
+        return (
+          <div key={k} style={{ fontSize: 12, color: '#1A2B24', marginBottom: 3 }}>
+            <span style={{ color: '#4A6558', marginRight: 4 }}>{label}：</span>{display}
+          </div>
+        )
+      })}
     </div>
   )
 }

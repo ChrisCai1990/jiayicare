@@ -9,8 +9,11 @@ const referralSchema = new Schema({
   content:     { type: String, default: '' },     // 详细说明
   urgency:     { type: String, enum: ['normal', 'urgent'], default: 'normal' },
   status:      { type: String, enum: ['pending', 'accepted', 'completed', 'rejected'], default: 'pending' },
-  response:    { type: String, default: '' },     // 接收方回复
-  respondedAt: { type: Date, default: null },
+  response:         { type: String, default: '' },     // 接收方回复（旧字段，保留兼容）
+  responseAnalysis: { type: String, default: '' },     // 当前问题分析
+  responseOpinion:  { type: String, default: '' },     // 会诊意见
+  respondedAt:      { type: Date, default: null },
+  fromStaffUnread:  { type: Boolean, default: false }, // B回复后置true，A查看后清除
   attachedHealthInfo: { type: mongoose.Schema.Types.Mixed, default: null }, // A附带的健康档案摘要
 }, { timestamps: true });
 

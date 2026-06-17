@@ -43,7 +43,7 @@ export default function Layout() {
       try {
         const r = await staffAPI.getNotifications()
         const s = r.data?.summary || {}
-        setNotifBadge((s.pendingReferralCount || 0) + (s.unreadMessageCount || 0))
+        setNotifBadge((s.pendingReferralCount || 0) + (s.unreadMessageCount || 0) + (s.unreadRepliedCount || 0))
       } catch {}
     }
     fetch()

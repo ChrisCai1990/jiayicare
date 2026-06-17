@@ -1675,12 +1675,18 @@ router.post('/referrals', staffAuth, async (req, res) => {
   res.json({ success: true, data: referral });
 });
 
-// GET /api/staff/referrals?direction=sent|received&status=
+// GET /api/staff/referrals?direction=sent|received&status=&patientId=
 router.get('/referrals', staffAuth, async (req, res) => {
-  const { direction = 'received', status = '', page = 1, limit = 20 } = req.query;
-  const filter = direction === 'sent'
-    ? { fromStaffId: req.staff._id }
-    : { toStaffId: req.staff._id };
+  const { direction = 'received', status = '', page = 1, limit = 20, patientId = '' } = req.query;
+  let filter;
+  if (patientId) {
+    // 会员维度：该患者的所有转介记录
+    filter = { patientId };
+  } else {
+    filter = direction === 'sent'
+      ? { fromStaffId: req.staff._id }
+      : { toStaffId: req.staff._id };
+  }
   if (status) filter.status = status;
   const skip = (Number(page) - 1) * Number(limit);
   const [referrals, total] = await Promise.all([
@@ -1693,14 +1699,23 @@ router.get('/referrals', staffAuth, async (req, res) => {
   res.json({ success: true, data: { referrals, total } });
 });
 
+// PATCH /api/staff/referrals/mark-sent-read — A清除"已回复"未读标记
+router.patch('/referrals/mark-sent-read', staffAuth, async (req, res) => {
+  await Referral.updateMany({ fromStaffId: req.staff._id, fromStaffUnread: true }, { $set: { fromStaffUnread: false } });
+  res.json({ success: true });
+});
+
 // PATCH /api/staff/referrals/:id — 更新转介状态（接收/完成/拒绝）
 router.patch('/referrals/:id', staffAuth, async (req, res) => {
-  const { status, response } = req.body;
+  const { status, response, responseAnalysis, responseOpinion } = req.body;
   const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id });
   if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
   if (status) referral.status = status;
   if (response !== undefined && response.trim()) referral.response = response.trim();
+  if (responseAnalysis !== undefined) referral.responseAnalysis = responseAnalysis.trim();
+  if (responseOpinion !== undefined) referral.responseOpinion = responseOpinion.trim();
   referral.respondedAt = new Date();
+  referral.fromStaffUnread = true; // 通知发起方有新回复
   await referral.save();
   res.json({ success: true, data: referral });
 });
@@ -1742,7 +1757,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
       ? { assignedFamilyDoctor: staff._id }
       : { assignedHealthManager: staff._id };
 
-  const [recentPushes, pendingReferrals, expiringPatients, unreadReferralCount] = await Promise.all([
+  const [recentPushes, pendingReferrals, expiringPatients, unreadReferralCount, unreadRepliedCount] = await Promise.all([
     // 最近30条推送记录（含阅读状态）
     PushRecord.find({ staffId: staff._id })
       .sort({ createdAt: -1 }).limit(30)
@@ -1756,8 +1771,10 @@ router.get('/notifications', staffAuth, async (req, res) => {
     User.find({ ...myFilter, serviceExpiry: { $gt: now, $lte: cutoff30 } })
       .select('name phone servicePackage serviceExpiry')
       .sort({ serviceExpiry: 1 }).limit(20),
-    // 未读转介数量
+    // 收到的待处理转介数量
     Referral.countDocuments({ toStaffId: staff._id, status: 'pending' }),
+    // 我发出的转介、对方已回复但我未查看
+    Referral.countDocuments({ fromStaffId: staff._id, fromStaffUnread: true }),
   ]);
 
   res.json({
@@ -1767,9 +1784,11 @@ router.get('/notifications', staffAuth, async (req, res) => {
       pendingReferrals,
       expiringPatients,
       unreadReferralCount,
+      unreadRepliedCount,
       summary: {
         pushCount: recentPushes.length,
         pendingReferralCount: unreadReferralCount,
+        unreadRepliedCount,
         expiringCount: expiringPatients.length,
       },
     },

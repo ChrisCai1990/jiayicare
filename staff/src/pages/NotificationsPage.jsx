@@ -49,12 +49,17 @@ export default function NotificationsPage() {
     } catch {}
   }
 
-  const handleRespond = async (id, status, response) => {
+  const handleRespond = async (id, status, responseAnalysis, responseOpinion) => {
     try {
-      await staffAPI.updateReferral(id, { status, response })
+      await staffAPI.updateReferral(id, { status, responseAnalysis, responseOpinion })
       toast(status === 'accepted' ? '已接受转介' : status === 'rejected' ? '已拒绝转介' : '已完成转介')
       setRespondModal(null); load()
     } catch (err) { toast(err.message) }
+  }
+
+  const handleViewSent = () => {
+    setTab('sent')
+    staffAPI.markSentReferralsRead().catch(() => {})
   }
 
   if (loading) return <div className="page-loading">加载中...</div>
@@ -123,10 +128,10 @@ export default function NotificationsPage() {
             <span style={{ marginLeft: 4, background: '#DC3545', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{summary.expiringCount}</span>
           )}
         </button>
-        <button className={`tab-btn ${tab === 'sent' ? 'active' : ''}`} onClick={() => setTab('sent')}>
+        <button className={`tab-btn ${tab === 'sent' ? 'active' : ''}`} onClick={handleViewSent}>
           📨 我发出的转介
-          {sentReferrals.length > 0 && (
-            <span style={{ marginLeft: 4, background: '#8e44ad', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{sentReferrals.length}</span>
+          {(data?.summary?.unreadRepliedCount || 0) > 0 && (
+            <span style={{ marginLeft: 4, background: '#DC3545', color: '#fff', borderRadius: 99, padding: '0 6px', fontSize: 11 }}>{data.summary.unreadRepliedCount} 新回复</span>
           )}
         </button>
         <button className={`tab-btn ${tab === 'userMsgs' ? 'active' : ''}`} onClick={() => setTab('userMsgs')}>
@@ -162,10 +167,24 @@ export default function NotificationsPage() {
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     来自：{r.fromStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                   </div>
-                  {r.response && (
-                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B' }}>
-                      <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>我的回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
-                      <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
+                  {(r.responseAnalysis || r.responseOpinion || r.response) && (
+                    <div style={{ marginTop: 8, padding: '10px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontSize: 11, color: '#8AA89C' }}>我的回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
+                      {r.responseAnalysis && (
+                        <div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>当前问题分析</div>
+                          <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseAnalysis}</div>
+                        </div>
+                      )}
+                      {r.responseOpinion && (
+                        <div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>会诊意见</div>
+                          <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseOpinion}</div>
+                        </div>
+                      )}
+                      {r.response && !r.responseAnalysis && !r.responseOpinion && (
+                        <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -287,10 +306,24 @@ export default function NotificationsPage() {
                   <div style={{ fontSize: 12, color: '#aaa' }}>
                     接收方：{r.toStaffId?.name} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
                   </div>
-                  {r.response ? (
-                    <div style={{ marginTop: 8, padding: '8px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B' }}>
-                      <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>对方回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
-                      <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
+                  {(r.responseAnalysis || r.responseOpinion || r.response) ? (
+                    <div style={{ marginTop: 8, padding: '10px 12px', background: '#f0faf5', borderRadius: 6, borderLeft: '3px solid #22A06B', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <div style={{ fontSize: 11, color: '#8AA89C' }}>对方回复 · {r.respondedAt ? new Date(r.respondedAt).toLocaleDateString('zh-CN') : ''}</div>
+                      {r.responseAnalysis && (
+                        <div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>当前问题分析</div>
+                          <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseAnalysis}</div>
+                        </div>
+                      )}
+                      {r.responseOpinion && (
+                        <div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 2 }}>会诊意见</div>
+                          <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.responseOpinion}</div>
+                        </div>
+                      )}
+                      {r.response && !r.responseAnalysis && !r.responseOpinion && (
+                        <div style={{ fontSize: 13, color: '#1A2B24' }}>{r.response}</div>
+                      )}
                     </div>
                   ) : r.status === 'completed' ? (
                     <div style={{ marginTop: 6, fontSize: 12, color: '#22A06B' }}>✓ 已完成，对方未填写回复说明</div>
@@ -401,7 +434,9 @@ export default function NotificationsPage() {
 
 // ── 转介回复弹窗 ──
 function RespondModal({ referral, onClose, onRespond }) {
-  const [response, setResponse] = useState('')
+  const [responseAnalysis, setResponseAnalysis] = useState('')
+  const [responseOpinion, setResponseOpinion] = useState('')
+  const [rejectReason, setRejectReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const isAccept = referral.action === 'accept'
   const isComplete = referral.action === 'complete'
@@ -411,38 +446,60 @@ function RespondModal({ referral, onClose, onRespond }) {
 
   const handleSubmit = async () => {
     setSubmitting(true)
-    try { await onRespond(referral._id, nextStatus, response) }
+    try {
+      await onRespond(
+        referral._id,
+        nextStatus,
+        isReject ? rejectReason : responseAnalysis,
+        isReject ? '' : responseOpinion,
+      )
+    }
     finally { setSubmitting(false) }
   }
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 440 }}>
+      <div className="modal" style={{ maxWidth: 480 }}>
         <div className="modal-header">
           <h3 className="modal-title">
             {isAccept ? '✓ 接受转介' : isComplete ? '✅ 完成转介' : '✗ 拒绝转介'}
           </h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
-          <div style={{ padding: '12px', background: '#f9f7f3', borderRadius: 8, marginBottom: 14 }}>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ padding: '12px', background: '#f9f7f3', borderRadius: 8 }}>
             <div style={{ fontWeight: 600, marginBottom: 4 }}>{referral.reason}</div>
             <div style={{ fontSize: 13, color: '#666' }}>会员：{referral.patientId?.name}</div>
             {referral.content && <div style={{ fontSize: 13, color: '#666', marginTop: 4 }}>{referral.content}</div>}
             {referral.attachedHealthInfo && <AttachedHealthInfoView info={referral.attachedHealthInfo} />}
           </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">
-              {isAccept ? '接受说明（可选）' : isComplete ? '完成说明 / 处理结果' : '拒绝原因 *'}
-            </label>
-            <textarea className="form-input" rows={3} value={response} onChange={e => setResponse(e.target.value)}
-              placeholder={isAccept ? '说明接诊安排或计划...' : isComplete ? '填写会诊结论或后续建议...' : '请说明拒绝原因...'} />
-          </div>
+          {isReject ? (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">拒绝原因 *</label>
+              <textarea className="form-input" rows={3} value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                placeholder="请说明拒绝原因..." />
+            </div>
+          ) : (
+            <>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">{isAccept ? '接诊说明（可选）' : '当前问题分析'}</label>
+                <textarea className="form-input" rows={3} value={responseAnalysis} onChange={e => setResponseAnalysis(e.target.value)}
+                  placeholder={isAccept ? '说明接诊安排或计划...' : '对会员当前问题的分析评估...'} />
+              </div>
+              {isComplete && (
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">会诊意见</label>
+                  <textarea className="form-input" rows={3} value={responseOpinion} onChange={e => setResponseOpinion(e.target.value)}
+                    placeholder="会诊结论、后续建议、转归方向..." />
+                </div>
+              )}
+            </>
+          )}
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className={`btn ${isReject ? 'btn-danger' : 'btn-primary'}`}
-            onClick={handleSubmit} disabled={submitting || (isReject && !response)}>
+            onClick={handleSubmit} disabled={submitting || (isReject && !rejectReason)}>
             {submitting ? '提交中...' : isAccept ? '确认接受' : isComplete ? '确认完成' : '确认拒绝'}
           </button>
         </div>
@@ -672,13 +729,20 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
 
 // ── 附带健康档案展示组件 ──
 const HEALTH_SECTION_LABELS = {
+  basicInfo:       '基本信息',
+  foodAllergy:     '食物过敏',
+  drugAllergy:     '药物过敏',
   medicalHistory:  '既往病史',
+  specialDiseases: '特殊疾病史',
+  familyHistory:   '家族史',
+  longTermMeds:    '长期用药',
+  longTermSups:    '长期营养补剂',
+  dietSummary:     '膳食调查概述',
+  latestVitals:    '近期打卡数据',
   allergies:       '过敏史',
   medications:     '当前用药',
   surgeries:       '手术史',
-  familyHistory:   '家族史',
   recentSymptoms:  '近期症状',
-  basicInfo:       '基本信息',
 }
 
 function AttachedHealthInfoView({ info }) {
