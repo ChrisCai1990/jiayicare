@@ -1777,41 +1777,78 @@ export default function PatientDetailPage() {
 
                 {/* ── 综合概述 ── */}
                 {lifestyleTab === 'summary' && (
-                  <div>
-                    <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 10 }}>
-                      系统根据填写内容自动生成，医护可手动覆盖编辑。
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+
+                    {/* 基本生活记录（新增会员时填写的简要描述） */}
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginBottom: 10 }}>基本生活记录</div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 20px' }}>
+                        {[
+                          { key: 'diet',     label: '饮食习惯',       placeholder: '如：清淡为主' },
+                          { key: 'exercise', label: '运动习惯',       placeholder: '如：每周跑步3次' },
+                          { key: 'sleep',    label: '睡眠习惯',       placeholder: '如：23:00入睡，7小时' },
+                          { key: 'water',    label: '饮水情况',       placeholder: '如：每日2000ml' },
+                          { key: 'smoking',  label: '吸烟情况',       placeholder: '如：不吸烟' },
+                          { key: 'alcohol',  label: '饮酒情况',       placeholder: '如：偶尔饮酒' },
+                          { key: 'bowel',    label: '排便情况',       placeholder: '如：每日1次，成形' },
+                          { key: 'mood',     label: '情绪状态',       placeholder: '如：情绪稳定，偶有焦虑' },
+                        ].map(({ key, label, placeholder }) => (
+                          <div key={key} className="form-group" style={{ marginBottom: 0 }}>
+                            <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}</label>
+                            {editingLifestyle ? (
+                              <input className="form-input" placeholder={placeholder}
+                                value={lifestyleForm.lifestyle?.[key] || ''}
+                                onChange={e => setLifestyleForm(f => ({ ...f, lifestyle: { ...f.lifestyle, [key]: e.target.value } }))}
+                                style={{ fontSize: 13 }} />
+                            ) : (
+                              <div style={{ fontSize: 13, color: lifestyleForm.lifestyle?.[key] ? '#1A2B24' : '#bbb', padding: '6px 0', borderBottom: '1px solid #f0ede8' }}>
+                                {lifestyleForm.lifestyle?.[key] || '未填写'}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    {editingLifestyle ? (
-                      <div>
-                        <div style={{ marginBottom: 10 }}>
-                          <LsText label="手动概述（填写后覆盖自动生成，留空则用自动结果）"
-                            value={ld.summaryOverride || ''} editing multiline
-                            placeholder="留空则使用自动生成概述"
-                            onChange={v => setLd({ summaryOverride: v })} />
-                        </div>
-                        <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>预览（自动生成）：</div>
-                        <div style={{ marginTop: 6 }}>
-                          {buildLifestyleSummary(ld).length > 0
-                            ? buildLifestyleSummary(ld).map((f, i) => (
-                                <div key={i} style={{ fontSize: 13, color: '#4A6558', padding: '3px 0' }}>☑ {f}</div>
-                              ))
-                            : <div style={{ fontSize: 13, color: '#aaa' }}>暂无自动生成内容。</div>
-                          }
-                        </div>
+
+                    {/* 自动生成概述 */}
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginBottom: 6 }}>膳食调查概述</div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>
+                        系统根据膳食调查问卷自动生成，医护可手动覆盖。
                       </div>
-                    ) : (
-                      <div>
-                        {ld.summaryOverride ? (
-                          <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{ld.summaryOverride}</div>
-                        ) : (
-                          (ld.autoSummaryFlags || buildLifestyleSummary(ld)).length > 0
-                            ? (ld.autoSummaryFlags || buildLifestyleSummary(ld)).map((f, i) => (
-                                <div key={i} style={{ fontSize: 13, color: '#4A6558', padding: '3px 0' }}>☑ {f}</div>
-                              ))
-                            : <div style={{ fontSize: 13, color: '#aaa' }}>暂无概述，请先填写各板块信息。</div>
-                        )}
-                      </div>
-                    )}
+                      {editingLifestyle ? (
+                        <div>
+                          <div style={{ marginBottom: 10 }}>
+                            <LsText label="手动概述（填写后覆盖自动生成，留空则用自动结果）"
+                              value={ld.summaryOverride || ''} editing multiline
+                              placeholder="留空则使用自动生成概述"
+                              onChange={v => setLd({ summaryOverride: v })} />
+                          </div>
+                          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>预览（自动生成）：</div>
+                          <div style={{ marginTop: 6 }}>
+                            {buildLifestyleSummary(ld).length > 0
+                              ? buildLifestyleSummary(ld).map((f, i) => (
+                                  <div key={i} style={{ fontSize: 13, color: '#4A6558', padding: '3px 0' }}>☑ {f}</div>
+                                ))
+                              : <div style={{ fontSize: 13, color: '#aaa' }}>暂无自动生成内容。</div>
+                            }
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          {ld.summaryOverride ? (
+                            <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{ld.summaryOverride}</div>
+                          ) : (
+                            (ld.autoSummaryFlags || buildLifestyleSummary(ld)).length > 0
+                              ? (ld.autoSummaryFlags || buildLifestyleSummary(ld)).map((f, i) => (
+                                  <div key={i} style={{ fontSize: 13, color: '#4A6558', padding: '3px 0' }}>☑ {f}</div>
+                                ))
+                              : <div style={{ fontSize: 13, color: '#aaa' }}>暂无概述，请先填写膳食调查各板块。</div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
                   </div>
                 )}
               </div>
