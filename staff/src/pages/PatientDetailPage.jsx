@@ -281,6 +281,7 @@ export default function PatientDetailPage() {
   const [reports, setReports] = useState([])
   const [serviceRecords, setServiceRecords] = useState([])
   const [patientReferrals, setPatientReferrals] = useState([])
+  const [expandedReferralCats, setExpandedReferralCats] = useState({})
   const [patientOrders, setPatientOrders] = useState([])
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
@@ -3500,13 +3501,19 @@ export default function PatientDetailPage() {
             {patientReferrals.length === 0 && (
               <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无转介记录</div>
             )}
-            {activeCats.map(cat => (
+            {activeCats.map(cat => {
+              const isOpen = !!expandedReferralCats[cat]
+              return (
               <div className="card" key={cat}>
-                <div className="card-header">
+                <div className="card-header" style={{ cursor: 'pointer', userSelect: 'none' }}
+                  onClick={() => setExpandedReferralCats(prev => ({ ...prev, [cat]: !prev[cat] }))}>
                   <div className="card-title" style={{ color: REFERRAL_CAT_COLOR[cat] }}>{cat}</div>
-                  <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
+                    <span style={{ fontSize: 12, color: '#aaa' }}>{isOpen ? '▲' : '▼'}</span>
+                  </div>
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+                {isOpen && <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
                   {grouped[cat].map((r, i) => (
                     <div key={r._id} style={{ padding: '16px 20px', borderBottom: i < grouped[cat].length - 1 ? '1px solid #f5f2ec' : 'none' }}>
                       {/* 头部：转介方向 + 状态 + 时间 */}
@@ -3551,9 +3558,9 @@ export default function PatientDetailPage() {
                       )}
                     </div>
                   ))}
-                </div>
+                </div>}
               </div>
-            ))}
+            )})}
           </div>
         )
       })()}
