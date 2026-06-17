@@ -437,11 +437,33 @@ export default function PatientDetailPage() {
     } catch {}
   }
 
+  const [reportScreeningData, setReportScreeningData] = useState([])
+
   const openReportDetail = async (r) => {
     setShowReportDetail(r)
+    setReportScreeningData([])
     try {
-      const res = await staffAPI.getReport(r._id)
-      setShowReportDetail(res.data)
+      const [reportRes, screeningRes] = await Promise.allSettled([
+        staffAPI.getReport(r._id),
+        staffAPI.getScreeningReports(id),
+      ])
+      if (reportRes.status === 'fulfilled') setShowReportDetail(reportRes.value.data)
+      if (screeningRes.status === 'fulfilled') {
+        const all = screeningRes.value.data || []
+        // 按 title/screeningL2 匹配，同时容忍检查日期±30天范围
+        const reportTitle = r.title || ''
+        const reportDate = r.checkDate || r.date || ''
+        const matched = all.filter(s => {
+          const l2Match = (s.screeningL2 || s.title || '') === reportTitle ||
+                          (s.screeningL2 || '').includes(reportTitle) ||
+                          reportTitle.includes(s.screeningL2 || '')
+          if (!l2Match) return false
+          if (!reportDate || !s.checkDate) return true
+          const diff = Math.abs(new Date(reportDate) - new Date(s.checkDate)) / 86400000
+          return diff <= 30
+        })
+        setReportScreeningData(matched)
+      }
     } catch { /* keep partial */ }
   }
   useEffect(() => { load() }, [id])
@@ -3940,6 +3962,72 @@ export default function PatientDetailPage() {
               {showReportDetail.note && (
                 <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>{showReportDetail.note}</div>
               )}
+
+              {/* 专项筛查详情 */}
+              {reportScreeningData.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid #e8f5ef' }}>
+                    专项筛查记录（共 {reportScreeningData.length} 条）
+                  </div>
+                  {reportScreeningData.map((s, idx) => (
+                    <div key={s._id || idx} style={{ marginBottom: 14, padding: '12px 14px', background: '#f8fcfa', borderRadius: 8, borderLeft: '3px solid #1E6B50' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{s.screeningL3 || s.title || '检查项目'}</span>
+                        <span style={{ fontSize: 12, color: '#8AA89C' }}>{s.checkDate || '-'}</span>
+                      </div>
+                      {/* 化验/检验结果 */}
+                      {s.reportItems?.length > 0 && (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 4 }}>检验结果</div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: '#f0f0f0' }}>
+                                <th style={{ padding: '3px 8px', textAlign: 'left', color: '#666', fontWeight: 500 }}>项目</th>
+                                <th style={{ padding: '3px 8px', textAlign: 'right', color: '#666', fontWeight: 500 }}>结果</th>
+                                <th style={{ padding: '3px 8px', textAlign: 'right', color: '#666', fontWeight: 500 }}>参考范围</th>
+                                <th style={{ padding: '3px 8px', textAlign: 'center', color: '#666', fontWeight: 500 }}>状态</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {s.reportItems.map((item, i) => (
+                                <tr key={i} style={{ borderBottom: '1px solid #f0ede8' }}>
+                                  <td style={{ padding: '3px 8px', color: '#1A2B24' }}>{item.name}</td>
+                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: item.status === 'abnormal' ? '#DC3545' : item.status === 'attention' ? '#D97706' : '#1A2B24', fontWeight: item.status === 'abnormal' ? 600 : 400 }}>
+                                    {item.value}{item.unit ? ` ${item.unit}` : ''}
+                                  </td>
+                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: '#aaa', fontSize: 11 }}>{item.reference || '-'}</td>
+                                  <td style={{ padding: '3px 8px', textAlign: 'center' }}>
+                                    {item.status === 'abnormal' && <span style={{ fontSize: 11, color: '#DC3545', fontWeight: 600 }}>↑↓异常</span>}
+                                    {item.status === 'attention' && <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>注意</span>}
+                                    {item.status === 'normal' && <span style={{ fontSize: 11, color: '#22A06B' }}>正常</span>}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                      {/* 影像/功能检查 */}
+                      {s.examDescription && (
+                        <div style={{ marginBottom: 6 }}>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 3 }}>描述</div>
+                          <div style={{ fontSize: 12, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{s.examDescription}</div>
+                        </div>
+                      )}
+                      {s.examConclusion && (
+                        <div>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 3 }}>结论</div>
+                          <div style={{ fontSize: 12, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{s.examConclusion}</div>
+                        </div>
+                      )}
+                      {s.note && (
+                        <div style={{ marginTop: 6, fontSize: 12, color: '#8AA89C', fontStyle: 'italic' }}>{s.note}</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
               {(showReportDetail.content || showReportDetail.fileUrl) && (
                 <div style={{ marginTop: 12 }}>
                   <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
