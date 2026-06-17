@@ -3475,7 +3475,7 @@ export default function PatientDetailPage() {
           healthManager:     '健管专员转介',
         }
         const REFERRAL_CAT_COLOR = {
-          '家庭医生会诊':   '#1E6B50',
+          '家庭医生转介':   '#1E6B50',
           '专科医生转介':   '#0077B6',
           '营养师转介':     '#22A06B',
           '中医师转介':     '#8e44ad',
@@ -3486,7 +3486,7 @@ export default function PatientDetailPage() {
         }
         const STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已拒绝' }
         const STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed:'#22A06B', rejected:'#DC3545' }
-        const CATS = ['家庭医生会诊','专科医生转介','营养师转介','中医师转介','心理咨询师转介','运动复健师转介','就医专员转介','健管专员转介']
+        const CATS = ['家庭医生转介','专科医生转介','营养师转介','中医师转介','心理咨询师转介','运动复健师转介','就医专员转介','健管专员转介']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         patientReferrals.forEach(r => {
