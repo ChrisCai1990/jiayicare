@@ -323,7 +323,8 @@ export default function PatientDetailPage() {
   const [medSaving, setMedSaving] = useState(false)
   // 专项筛查三层目录（动态加载）
   const [screeningTree, setScreeningTree] = useState([])
-  // 专项筛查 L2 横向 tab 激活状态：{ l1key: l2Label }
+  // 专项筛查 L1/L2 横向 tab 激活状态
+  const [screeningActiveL1, setScreeningActiveL1] = useState(null)  // l1key 或 '__other__'
   const [screeningActiveL2s, setScreeningActiveL2s] = useState({})
   // 专项筛查 & 打卡记录
   const [screeningItems, setScreeningItems] = useState([])
@@ -2094,112 +2095,125 @@ export default function PatientDetailPage() {
               </div>
               {!hasAny ? (
                 <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无专项筛查记录，点击「录入筛查结果」添加</div>
-              ) : (
-                <div>
-                  {(() => {
-                    const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
-                    return screeningTree.map((l1Node, idx) => {
-                    const l1key = String(l1Node._id)
-                    const l2map = treeData[l1key]
-                    if (!l2map) return null
-                    const color = L1_COLORS[idx % L1_COLORS.length]
-                    {/* 第二层排序 */}
-                    const treeL2Order = (l1Node.children || []).map(c => c.label)
-                    const sortedL2 = [
-                      ...treeL2Order.filter(k => l2map[k]).map(k => [k, l2map[k]]),
-                      ...Object.entries(l2map).filter(([k]) => !treeL2Order.includes(k)),
-                    ]
-                    const activeL2 = screeningActiveL2s[l1key] || sortedL2[0]?.[0]
+              ) : (() => {
+                const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
+                const knownL1s = new Set(screeningTree.map(n => String(n._id)))
+                const legacyMap = Object.fromEntries(Object.entries(treeData).filter(([k]) => !knownL1s.has(k)))
+                const hasLegacy = Object.keys(legacyMap).length > 0
 
+                // 所有可选 L1 tab：tree 里有数据的 + 旧数据汇总为"其他"
+                const availL1s = [
+                  ...screeningTree.filter(n => treeData[String(n._id)]).map((n, idx) => ({
+                    key: String(n._id), label: n.label, node: n,
+                    color: L1_COLORS[idx % L1_COLORS.length], isLegacy: false,
+                  })),
+                  ...(hasLegacy ? [{ key: '__legacy__', label: '其他', node: null, color: '#8AA89C', isLegacy: true }] : []),
+                ]
+                const activeL1Key = (screeningActiveL1 && availL1s.find(x => x.key === screeningActiveL1))
+                  ? screeningActiveL1 : availL1s[0]?.key
+                const activeL1 = availL1s.find(x => x.key === activeL1Key)
+
+                // 选中 L1 的 L2 内容
+                const renderL1Content = () => {
+                  if (!activeL1) return null
+                  const { key, node, color, isLegacy } = activeL1
+                  if (isLegacy) {
+                    // 旧数据：展示所有 legacy L1 的 L2 tabs（合并到一层）
+                    const allLegacyL2 = []
+                    Object.entries(legacyMap).forEach(([, l2map]) => {
+                      Object.entries(l2map).forEach(([l2Label, l3map]) => {
+                        allLegacyL2.push([l2Label, l3map])
+                      })
+                    })
+                    const activeL2 = screeningActiveL2s['__legacy__'] || allLegacyL2[0]?.[0]
                     return (
-                      <div key={l1key} style={{ marginBottom: 12, background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
-                        {/* L1 标题 */}
-                        <div style={{ padding: '10px 16px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
-                          {l1Node.label}
-                        </div>
-                        {/* L2 横向 Tab */}
+                      <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
                         <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '1px solid #f0ece4', padding: '0 8px', background: '#faf9f6', gap: 2 }}>
-                          {sortedL2.map(([l2Label]) => {
-                            const isActive = l2Label === activeL2
-                            return (
-                              <button key={l2Label} type="button"
-                                onClick={() => setScreeningActiveL2s(prev => ({ ...prev, [l1key]: l2Label }))}
-                                style={{
-                                  padding: '8px 14px', fontSize: 13, border: 'none', cursor: 'pointer',
-                                  background: 'none', whiteSpace: 'nowrap', flexShrink: 0,
-                                  color: isActive ? color : '#8AA89C',
-                                  fontWeight: isActive ? 700 : 400,
-                                  borderBottom: isActive ? `2px solid ${color}` : '2px solid transparent',
-                                  transition: 'all 0.15s',
-                                }}>
-                                {l2Label}
-                              </button>
-                            )
-                          })}
-                        </div>
-                        {/* L2 内容区 */}
-                        {sortedL2.filter(([l2Label]) => l2Label === activeL2).map(([l2Label, l3map]) => (
-                          <div key={l2Label} style={{ padding: '12px 16px' }}>
-                            {Object.entries(l3map).map(([l3Label, records]) => (
-                              <div key={l3Label} style={{ marginBottom: 10 }}>
-                                <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <span style={{ color, fontSize: 10 }}>▶</span>
-                                  {l3Label}
-                                  <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>({records.length} 次)</span>
-                                </div>
-                                <div style={{ paddingLeft: 14 }}>
-                                  {records.map(r => renderRecord(r, color))}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  })})()}
-                  {/* 兜底：不在树中的记录（旧数据兼容） */}
-                  {(() => {
-                    const knownL1s = new Set(screeningTree.map(n => String(n._id)))
-                    const legacyMap = Object.fromEntries(Object.entries(treeData).filter(([k]) => !knownL1s.has(k)))
-                    if (!Object.keys(legacyMap).length) return null
-                    return Object.entries(legacyMap).map(([l1, l2map]) => {
-                      const l2Entries = Object.entries(l2map)
-                      const activeL2 = screeningActiveL2s[`legacy_${l1}`] || l2Entries[0]?.[0]
-                      return (
-                      <div key={l1} style={{ marginBottom: 12, background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
-                        <div style={{ padding: '10px 16px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color: '#8AA89C', display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#8AA89C', display: 'inline-block' }} />
-                          {l1}
-                        </div>
-                        <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '1px solid #f0ece4', padding: '0 8px', background: '#faf9f6', gap: 2 }}>
-                          {l2Entries.map(([l2]) => {
+                          {allLegacyL2.map(([l2]) => {
                             const isA = l2 === activeL2
                             return (
                               <button key={l2} type="button"
-                                onClick={() => setScreeningActiveL2s(prev => ({ ...prev, [`legacy_${l1}`]: l2 }))}
-                                style={{ padding: '8px 14px', fontSize: 13, border: 'none', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: isA ? '#8AA89C' : '#aaa', fontWeight: isA ? 700 : 400, borderBottom: isA ? '2px solid #8AA89C' : '2px solid transparent' }}>
+                                onClick={() => setScreeningActiveL2s(prev => ({ ...prev, '__legacy__': l2 }))}
+                                style={{ padding: '8px 14px', fontSize: 13, border: 'none', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: isA ? color : '#8AA89C', fontWeight: isA ? 700 : 400, borderBottom: isA ? `2px solid ${color}` : '2px solid transparent' }}>
                                 {l2}
                               </button>
                             )
                           })}
                         </div>
-                        {l2Entries.filter(([l2]) => l2 === activeL2).map(([l2, l3map]) => (
+                        {allLegacyL2.filter(([l2]) => l2 === activeL2).map(([l2, l3map]) => (
                           <div key={l2} style={{ padding: '12px 16px' }}>
                             {Object.entries(l3map).map(([l3, records]) => (
                               <div key={l3} style={{ marginBottom: 6 }}>
                                 <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 4 }}>▶ {l3} ({records.length} 次)</div>
-                                <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, '#8AA89C'))}</div>
+                                <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, color))}</div>
                               </div>
                             ))}
                           </div>
                         ))}
                       </div>
                     )
-                    })
-                  })()}
-                </div>
-              )}
+                  }
+                  // 正常 tree L1
+                  const l2map = treeData[key]
+                  if (!l2map) return null
+                  const treeL2Order = (node.children || []).map(c => c.label)
+                  const sortedL2 = [
+                    ...treeL2Order.filter(k => l2map[k]).map(k => [k, l2map[k]]),
+                    ...Object.entries(l2map).filter(([k]) => !treeL2Order.includes(k)),
+                  ]
+                  const activeL2 = screeningActiveL2s[key] || sortedL2[0]?.[0]
+                  return (
+                    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
+                      <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '1px solid #f0ece4', padding: '0 8px', background: '#faf9f6', gap: 2 }}>
+                        {sortedL2.map(([l2Label]) => {
+                          const isActive = l2Label === activeL2
+                          return (
+                            <button key={l2Label} type="button"
+                              onClick={() => setScreeningActiveL2s(prev => ({ ...prev, [key]: l2Label }))}
+                              style={{ padding: '8px 14px', fontSize: 13, border: 'none', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: isActive ? color : '#8AA89C', fontWeight: isActive ? 700 : 400, borderBottom: isActive ? `2px solid ${color}` : '2px solid transparent', transition: 'all 0.15s' }}>
+                              {l2Label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {sortedL2.filter(([l2Label]) => l2Label === activeL2).map(([l2Label, l3map]) => (
+                        <div key={l2Label} style={{ padding: '12px 16px' }}>
+                          {Object.entries(l3map).map(([l3Label, records]) => (
+                            <div key={l3Label} style={{ marginBottom: 10 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ color, fontSize: 10 }}>▶</span>
+                                {l3Label}
+                                <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>({records.length} 次)</span>
+                              </div>
+                              <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, color))}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ))}
+                    </div>
+                  )
+                }
+
+                return (
+                  <div>
+                    {/* L1 横向 Tab 行 */}
+                    <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '2px solid #f0ece4', marginBottom: 12, gap: 0 }}>
+                      {availL1s.map(({ key, label, color }) => {
+                        const isA = key === activeL1Key
+                        return (
+                          <button key={key} type="button"
+                            onClick={() => setScreeningActiveL1(key)}
+                            style={{ padding: '10px 18px', fontSize: 13, border: 'none', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: isA ? color : '#8AA89C', fontWeight: isA ? 700 : 400, borderBottom: isA ? `2px solid ${color}` : '2px solid transparent', marginBottom: -2, transition: 'all 0.15s' }}>
+                            {label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {/* 当前 L1 内容 */}
+                    {renderL1Content()}
+                  </div>
+                )
+              })()}
             </div>
           )
         })()}
