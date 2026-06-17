@@ -32,7 +32,8 @@ export default function HomePage() {
       staffAPI.getUserMessages(),
     ]).then(([notifRes, msgRes]) => {
       if (notifRes.status === 'fulfilled') {
-        setPendingReferralCount(notifRes.value.data?.summary?.pendingReferralCount || 0)
+        const s = notifRes.value.data?.summary || {}
+        setPendingReferralCount((s.pendingReferralCount || 0) + (s.unreadRepliedCount || 0))
       }
       if (msgRes.status === 'fulfilled') {
         setUnreadMsgCount(msgRes.value.unreadCount ?? msgRes.value.data?.filter(m => m.staffUnread)?.length ?? 0)
