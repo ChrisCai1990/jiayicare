@@ -2128,7 +2128,7 @@ export default function PatientDetailPage() {
                     const activeL2 = screeningActiveL2s['__legacy__'] || allLegacyL2[0]?.[0]
                     return (
                       <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
-                        <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '1px solid #f0ece4', padding: '0 8px', background: '#faf9f6', gap: 2 }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '1px solid #f0ece4', padding: '4px 8px', background: '#faf9f6', gap: 2 }}>
                           {allLegacyL2.map(([l2]) => {
                             const isA = l2 === activeL2
                             return (
@@ -2164,7 +2164,7 @@ export default function PatientDetailPage() {
                   const activeL2 = screeningActiveL2s[key] || sortedL2[0]?.[0]
                   return (
                     <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '1px solid #f0ece4', padding: '0 8px', background: '#faf9f6', gap: 2 }}>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '1px solid #f0ece4', padding: '4px 8px', background: '#faf9f6', gap: 2 }}>
                         {sortedL2.map(([l2Label]) => {
                           const isActive = l2Label === activeL2
                           return (
@@ -2197,7 +2197,7 @@ export default function PatientDetailPage() {
                 return (
                   <div>
                     {/* L1 横向 Tab 行 */}
-                    <div style={{ display: 'flex', overflowX: 'auto', borderBottom: '2px solid #f0ece4', marginBottom: 12, gap: 0 }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '2px solid #f0ece4', marginBottom: 12, gap: 0 }}>
                       {availL1s.map(({ key, label, color }) => {
                         const isA = key === activeL1Key
                         return (
