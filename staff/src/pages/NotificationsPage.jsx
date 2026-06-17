@@ -482,17 +482,15 @@ function RespondModal({ referral, onClose, onRespond }) {
           ) : (
             <>
               <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">{isAccept ? '接诊说明（可选）' : '当前问题分析'}</label>
+                <label className="form-label">问题分析{isAccept ? '（可选）' : ''}</label>
                 <textarea className="form-input" rows={3} value={responseAnalysis} onChange={e => setResponseAnalysis(e.target.value)}
-                  placeholder={isAccept ? '说明接诊安排或计划...' : '对会员当前问题的分析评估...'} />
+                  placeholder="对会员当前问题的分析评估..." />
               </div>
-              {isComplete && (
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">会诊意见</label>
-                  <textarea className="form-input" rows={3} value={responseOpinion} onChange={e => setResponseOpinion(e.target.value)}
-                    placeholder="会诊结论、后续建议、转归方向..." />
-                </div>
-              )}
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">会诊意见{isAccept ? '（可选）' : ''}</label>
+                <textarea className="form-input" rows={3} value={responseOpinion} onChange={e => setResponseOpinion(e.target.value)}
+                  placeholder="会诊结论、后续建议、转归方向..." />
+              </div>
             </>
           )}
         </div>
