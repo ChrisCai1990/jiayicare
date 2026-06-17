@@ -472,7 +472,13 @@ export default function PatientDetailPage() {
   useEffect(() => {
     if (tab === 'followups') loadFollowUps()
     else if (tab === 'plans') loadPlans()
-    else if (tab === 'reports') loadReports()
+    else if (tab === 'reports') {
+      loadReports()
+      // 体检报告排序也需要 screeningTree，按需加载
+      if (screeningTree.length === 0) {
+        staffAPI.getScreeningTree().then(r => setScreeningTree(r.data || [])).catch(() => {})
+      }
+    }
     else if (tab === 'serviceRecords') loadServiceRecords()
     else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'requisitions') loadRequisitions()
@@ -3399,6 +3405,20 @@ export default function PatientDetailPage() {
         const AI_COLOR = { none:'#ccc', pending:'#D97706', reviewed:'#22A06B', rejected:'#DC3545' }
         const AI_LABEL = { none:'未解析', pending:'待审核', reviewed:'已审核', rejected:'已驳回' }
 
+        // 从 screeningTree 构建全局 L2 顺序映射（label → index）
+        const l2OrderMap = {}
+        screeningTree.forEach(l1Node => {
+          (l1Node.children || []).forEach((c, idx) => {
+            if (!(c.label in l2OrderMap)) l2OrderMap[c.label] = idx
+          })
+        })
+        const sortByTree = (rows) =>
+          [...rows].sort((a, b) => {
+            const ia = l2OrderMap[a.title] ?? 9999
+            const ib = l2OrderMap[b.title] ?? 9999
+            return ia !== ib ? ia - ib : (a.title || '').localeCompare(b.title || '', 'zh')
+          })
+
         // 按年份分组
         const yearMap = {}
         reports.forEach(r => {
@@ -3428,7 +3448,7 @@ export default function PatientDetailPage() {
                     <table className="table" style={{ marginBottom: 0 }}>
                       <thead><tr><th>报告标题</th><th>机构</th><th>检查日期</th><th>审核状态</th><th>AI解析</th><th>操作</th></tr></thead>
                       <tbody>
-                        {yearMap[yr][cat].map(r => (
+                        {sortByTree(yearMap[yr][cat]).map(r => (
                           <tr key={r._id}>
                             <td style={{ fontWeight: 500, color: '#1E6B50', cursor: 'pointer' }} onClick={() => openReportDetail(r)}>{r.title}</td>
                             <td style={{ fontSize: 12, color: '#666' }}>{r.institution || r.hospital || '-'}</td>
