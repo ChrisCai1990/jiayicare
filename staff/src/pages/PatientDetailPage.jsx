@@ -3426,35 +3426,50 @@ export default function PatientDetailPage() {
 
       {/* ── Reports Tab ── */}
       {tab === 'reports' && (() => {
-        const CAT_LABEL = { tumor: '常见肿瘤筛查', cardiovascular: '心血管筛查', brain_vessel: '脑血管病筛查', chronic: '慢性病筛查', other_routine: '其他常规筛查', health_promote: '健康促进筛查' }
-        const CAT_ORDER = ['tumor','cardiovascular','brain_vessel','chronic','other_routine','health_promote']
+        const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
         const AI_COLOR = { none:'#ccc', pending:'#D97706', reviewed:'#22A06B', rejected:'#DC3545' }
         const AI_LABEL = { none:'未解析', pending:'待审核', reviewed:'已审核', rejected:'已驳回' }
 
-        // 从 screeningTree 构建全局 L2 顺序映射（label → index）
-        const l2OrderMap = {}
+        // 标题 → L1 节点映射（用 screeningTree）
+        const titleToL1 = {}
+        const titleL2Order = {} // title → L2 order index（用于组内排序）
         screeningTree.forEach(l1Node => {
           (l1Node.children || []).forEach((c, idx) => {
-            if (!(c.label in l2OrderMap)) l2OrderMap[c.label] = idx
+            if (!(c.label in titleToL1)) {
+              titleToL1[c.label] = l1Node
+              titleL2Order[c.label] = idx
+            }
           })
         })
-        const sortByTree = (rows) =>
-          [...rows].sort((a, b) => {
-            const ia = l2OrderMap[a.title] ?? 9999
-            const ib = l2OrderMap[b.title] ?? 9999
-            return ia !== ib ? ia - ib : (a.title || '').localeCompare(b.title || '', 'zh')
-          })
 
-        // 按年份分组
+        // 按年份 → L1 分组
+        const OTHER_KEY = '__other__'
         const yearMap = {}
         reports.forEach(r => {
           const yr = r.reportYear || (r.date ? new Date(r.date).getFullYear() : new Date(r.createdAt).getFullYear()) || '未知'
           if (!yearMap[yr]) yearMap[yr] = {}
-          const cat = r.screeningCategory || 'other_routine'
-          if (!yearMap[yr][cat]) yearMap[yr][cat] = []
-          yearMap[yr][cat].push(r)
+          const l1Node = titleToL1[r.title]
+          const key = l1Node ? String(l1Node._id) : OTHER_KEY
+          if (!yearMap[yr][key]) yearMap[yr][key] = { node: l1Node, reports: [] }
+          yearMap[yr][key].reports.push(r)
         })
         const years = Object.keys(yearMap).sort((a, b) => b - a)
+
+        // 组内按 L2 顺序排序
+        const sortByTree = (rows) =>
+          [...rows].sort((a, b) => {
+            const ia = titleL2Order[a.title] ?? 9999
+            const ib = titleL2Order[b.title] ?? 9999
+            return ia !== ib ? ia - ib : (a.title || '').localeCompare(b.title || '', 'zh')
+          })
+
+        // L1 显示顺序：按 screeningTree 顺序 + OTHER 末尾
+        const getL1Keys = (yrData) => {
+          const treeKeys = screeningTree.map(n => String(n._id)).filter(k => yrData[k])
+          const otherKey = yrData[OTHER_KEY] ? [OTHER_KEY] : []
+          return [...treeKeys, ...otherKey]
+        }
+
         return (
           <div>
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
@@ -3468,13 +3483,22 @@ export default function PatientDetailPage() {
                 <div style={{ fontWeight: 700, fontSize: 15, color: '#1A2B24', padding: '8px 0', borderBottom: '2px solid #1E6B50', marginBottom: 12 }}>
                   📅 {yr} 年
                 </div>
-                {CAT_ORDER.filter(cat => yearMap[yr][cat]?.length > 0).map(cat => (
-                  <div key={cat} style={{ marginBottom: 16 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: '#1E6B50', marginBottom: 8, paddingLeft: 4 }}>▸ {CAT_LABEL[cat] || cat}</div>
+                {getL1Keys(yearMap[yr]).map(key => {
+                  const { node: l1Node, reports: grpReports } = yearMap[yr][key]
+                  const l1Label = l1Node?.label || '其他'
+                  const l1Idx = l1Node ? screeningTree.findIndex(n => String(n._id) === key) : -1
+                  const color = l1Idx >= 0 ? L1_COLORS[l1Idx % L1_COLORS.length] : '#8AA89C'
+                  return (
+                  <div key={key} style={{ marginBottom: 16, borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
+                    <div style={{ padding: '8px 16px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
+                      {l1Label}
+                      <span style={{ fontWeight: 400, fontSize: 12, color: '#aaa', marginLeft: 4 }}>{grpReports.length} 份</span>
+                    </div>
                     <table className="table" style={{ marginBottom: 0 }}>
                       <thead><tr><th>报告标题</th><th>机构</th><th>检查日期</th><th>审核状态</th><th>AI解析</th><th>操作</th></tr></thead>
                       <tbody>
-                        {sortByTree(yearMap[yr][cat]).map(r => (
+                        {sortByTree(grpReports).map(r => (
                           <tr key={r._id}>
                             <td style={{ fontWeight: 500, color: '#1E6B50', cursor: 'pointer' }} onClick={() => openReportDetail(r)}>{r.title}</td>
                             <td style={{ fontSize: 12, color: '#666' }}>{r.institution || r.hospital || '-'}</td>
@@ -3528,7 +3552,8 @@ export default function PatientDetailPage() {
                       </tbody>
                     </table>
                   </div>
-                ))}
+                  )
+                })}
               </div>
             ))}
           </div>
