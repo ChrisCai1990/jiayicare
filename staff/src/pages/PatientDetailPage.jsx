@@ -2102,8 +2102,14 @@ export default function PatientDetailPage() {
                           <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
                           {l1Node.label}
                         </div>
-                        {/* 第二层 */}
-                        {Object.entries(l2map).map(([l2Label, l3map]) => (
+                        {/* 第二层：按 screeningTree 中 children 的 sortOrder 排序 */}
+                        {(() => {
+                          const treeL2Order = (l1Node.children || []).map(c => c.label)
+                          const sorted = [
+                            ...treeL2Order.filter(k => l2map[k]).map(k => [k, l2map[k]]),
+                            ...Object.entries(l2map).filter(([k]) => !treeL2Order.includes(k)),
+                          ]
+                          return sorted.map(([l2Label, l3map]) => (
                           <div key={l2Label} style={{ paddingLeft: 20, borderBottom: '1px solid #f0ece4' }}>
                             <div style={{ padding: '8px 0 4px', fontWeight: 600, fontSize: 13, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 6 }}>
                               <span style={{ width: 3, height: 12, borderRadius: 2, background: color, display: 'inline-block', flexShrink: 0 }} />
@@ -2125,7 +2131,8 @@ export default function PatientDetailPage() {
                               ))}
                             </div>
                           </div>
-                        ))}
+                          ))
+                        })()}
                       </div>
                     )
                   })})()}
