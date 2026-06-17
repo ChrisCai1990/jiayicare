@@ -3465,7 +3465,7 @@ export default function PatientDetailPage() {
       {/* ── 转介记录 Tab ── */}
       {tab === 'referrals' && (() => {
         const REFERRAL_CAT_MAP = {
-          familyDoctor:      '家庭医生会诊',
+          familyDoctor:      '家庭医生转介',
           specialist:        '专科医生转介',
           nutritionist:      '营养师转介',
           tcmDoctor:         '中医师转介',
