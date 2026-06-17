@@ -130,9 +130,14 @@ const userSchema = new mongoose.Schema({
   },
 
   // 医护端管理字段
-  assignedHealthManager: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健管专员
-  assignedFamilyDoctor:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医生
-  assignedNutritionist:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 营养师
+  assignedHealthManager:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健管专员
+  assignedFamilyDoctor:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医生
+  assignedNutritionist:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 营养师
+  assignedSpecialist:       { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 专科医师
+  assignedTcmDoctor:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 中医师
+  assignedPsychologist:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 心理咨询师
+  assignedRehabSpecialist:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 运动复健师
+  assignedMedicalAssistant: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 就医专员
   chronicDiseases: { type: [String], default: [] }, // 慢病标签，如 ['高血压','糖尿病']
   idNumber:        { type: String, default: '' },   // 身份证号
   source:          { type: String, default: '' },   // 患者来源

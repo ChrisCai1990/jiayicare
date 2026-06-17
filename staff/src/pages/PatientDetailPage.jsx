@@ -467,9 +467,14 @@ export default function PatientDetailPage() {
     contactPhone2: u.contactPhone2 || '',
     contactName: u.contactName || '',
     deliveryAddress: u.deliveryAddress || '',
-    assignedHealthManager: u.assignedHealthManager?._id || '',
-    assignedFamilyDoctor:  u.assignedFamilyDoctor?._id  || '',
-    assignedNutritionist:  u.assignedNutritionist?._id  || '',
+    assignedHealthManager:    u.assignedHealthManager?._id    || '',
+    assignedFamilyDoctor:     u.assignedFamilyDoctor?._id     || '',
+    assignedNutritionist:     u.assignedNutritionist?._id     || '',
+    assignedSpecialist:       u.assignedSpecialist?._id       || '',
+    assignedTcmDoctor:        u.assignedTcmDoctor?._id        || '',
+    assignedPsychologist:     u.assignedPsychologist?._id     || '',
+    assignedRehabSpecialist:  u.assignedRehabSpecialist?._id  || '',
+    assignedMedicalAssistant: u.assignedMedicalAssistant?._id || '',
     servicePackage: u.servicePackage || '',
     serviceExpiry: u.serviceExpiry || '',
     serviceStartDate: u.serviceStartDate || '',
@@ -1011,36 +1016,27 @@ export default function PatientDetailPage() {
                       <option value="卓越">卓越</option>
                     </select>
                   </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">家庭医师</label>
-                    <select className="form-input" value={editForm.assignedFamilyDoctor}
-                      onChange={e => setEditForm(f => ({ ...f, assignedFamilyDoctor: e.target.value }))}>
-                      <option value="">-- 未分配 --</option>
-                      {staffList.filter(s => s.role === 'familyDoctor').map(s => (
-                        <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">营养师</label>
-                    <select className="form-input" value={editForm.assignedNutritionist}
-                      onChange={e => setEditForm(f => ({ ...f, assignedNutritionist: e.target.value }))}>
-                      <option value="">-- 未分配 --</option>
-                      {staffList.filter(s => s.role === 'nutritionist').map(s => (
-                        <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">健管专员</label>
-                    <select className="form-input" value={editForm.assignedHealthManager}
-                      onChange={e => setEditForm(f => ({ ...f, assignedHealthManager: e.target.value }))}>
-                      <option value="">-- 未分配 --</option>
-                      {staffList.filter(s => s.role === 'healthManager').map(s => (
-                        <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
-                      ))}
-                    </select>
-                  </div>
+                  {[
+                    { label: '家庭医师',  field: 'assignedFamilyDoctor',     role: 'familyDoctor' },
+                    { label: '营养师',    field: 'assignedNutritionist',     role: 'nutritionist' },
+                    { label: '健管专员',  field: 'assignedHealthManager',    role: 'healthManager' },
+                    { label: '专科医师',  field: 'assignedSpecialist',       role: 'specialist' },
+                    { label: '中医师',    field: 'assignedTcmDoctor',        role: 'tcmDoctor' },
+                    { label: '心理咨询师',field: 'assignedPsychologist',     role: 'psychologist' },
+                    { label: '运动复健师',field: 'assignedRehabSpecialist',  role: 'rehabSpecialist' },
+                    { label: '就医专员',  field: 'assignedMedicalAssistant', role: 'medicalAssistant' },
+                  ].map(({ label, field, role }) => (
+                    <div key={field} className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">{label}</label>
+                      <select className="form-input" value={editForm[field]}
+                        onChange={e => setEditForm(f => ({ ...f, [field]: e.target.value }))}>
+                        <option value="">-- 未分配 --</option>
+                        {staffList.filter(s => s.role === role).map(s => (
+                          <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务包</label>
                     <input className="form-input" placeholder="如：年度服务包" value={editForm.servicePackage}
@@ -1073,9 +1069,14 @@ export default function PatientDetailPage() {
                   <InfoRow label="紧急联系人" value={user.contactName || '-'} />
                   <InfoRow label="配送地址" value={user.deliveryAddress || '-'} />
                   <InfoRow label="会员类型" value={user.memberType || '-'} />
-                  <InfoRow label="家庭医师" value={user.assignedFamilyDoctor?.name || '-'} />
-                  <InfoRow label="营养师" value={user.assignedNutritionist?.name || '-'} />
-                  <InfoRow label="健管专员" value={user.assignedHealthManager?.name || '-'} />
+                  <InfoRow label="家庭医师"   value={user.assignedFamilyDoctor?.name     || '-'} />
+                  <InfoRow label="营养师"     value={user.assignedNutritionist?.name     || '-'} />
+                  <InfoRow label="健管专员"   value={user.assignedHealthManager?.name    || '-'} />
+                  {user.assignedSpecialist       && <InfoRow label="专科医师"   value={user.assignedSpecialist?.name      || '-'} />}
+                  {user.assignedTcmDoctor        && <InfoRow label="中医师"     value={user.assignedTcmDoctor?.name       || '-'} />}
+                  {user.assignedPsychologist     && <InfoRow label="心理咨询师" value={user.assignedPsychologist?.name    || '-'} />}
+                  {user.assignedRehabSpecialist  && <InfoRow label="运动复健师" value={user.assignedRehabSpecialist?.name || '-'} />}
+                  {user.assignedMedicalAssistant && <InfoRow label="就医专员"   value={user.assignedMedicalAssistant?.name|| '-'} />}
                   <InfoRow label="正式客户" value={
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ color: user.isRegisteredClient ? '#22A06B' : '#aaa', fontWeight: 600 }}>
