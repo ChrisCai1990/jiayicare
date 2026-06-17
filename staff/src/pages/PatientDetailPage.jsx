@@ -304,7 +304,6 @@ export default function PatientDetailPage() {
   const [healthNeedsForm, setHealthNeedsForm] = useState({})
   const [editingTitleReportId, setEditingTitleReportId] = useState(null)
   const [editingTitleValue, setEditingTitleValue] = useState('')
-  const [reportSort, setReportSort] = useState({ key: 'checkDate', dir: 'desc' })
   const [editingHealth, setEditingHealth] = useState(false)
   const [editingLifestyle, setEditingLifestyle] = useState(false)
   const [editingInsurance, setEditingInsurance] = useState(false)
@@ -3393,35 +3392,6 @@ export default function PatientDetailPage() {
         const AI_COLOR = { none:'#ccc', pending:'#D97706', reviewed:'#22A06B', rejected:'#DC3545' }
         const AI_LABEL = { none:'未解析', pending:'待审核', reviewed:'已审核', rejected:'已驳回' }
 
-        // 排序辅助
-        const toggleSort = (key) => setReportSort(prev =>
-          prev.key === key ? { key, dir: prev.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }
-        )
-        const sortIcon = (key) => {
-          if (reportSort.key !== key) return <span style={{ color: '#ddd', marginLeft: 3 }}>⇅</span>
-          return <span style={{ color: '#1E6B50', marginLeft: 3 }}>{reportSort.dir === 'asc' ? '↑' : '↓'}</span>
-        }
-        const sortRows = (rows) => {
-          const { key, dir } = reportSort
-          return [...rows].sort((a, b) => {
-            let av, bv
-            if (key === 'title')       { av = a.title || ''; bv = b.title || '' }
-            else if (key === 'institution') { av = a.institution || a.hospital || ''; bv = b.institution || b.hospital || '' }
-            else if (key === 'checkDate')   { av = a.checkDate || a.date || ''; bv = b.checkDate || b.date || '' }
-            else if (key === 'auditStatus') { av = a.audit_status || ''; bv = b.audit_status || '' }
-            else if (key === 'aiStatus')    { av = a.aiStatus || ''; bv = b.aiStatus || '' }
-            else { av = ''; bv = '' }
-            const cmp = av < bv ? -1 : av > bv ? 1 : 0
-            return dir === 'asc' ? cmp : -cmp
-          })
-        }
-        const SortTh = ({ label, skey }) => (
-          <th style={{ cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}
-            onClick={() => toggleSort(skey)}>
-            {label}{sortIcon(skey)}
-          </th>
-        )
-
         // 按年份分组
         const yearMap = {}
         reports.forEach(r => {
@@ -3449,16 +3419,9 @@ export default function PatientDetailPage() {
                   <div key={cat} style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 13, fontWeight: 600, color: '#1E6B50', marginBottom: 8, paddingLeft: 4 }}>▸ {CAT_LABEL[cat] || cat}</div>
                     <table className="table" style={{ marginBottom: 0 }}>
-                      <thead><tr>
-                        <SortTh label="报告标题" skey="title" />
-                        <SortTh label="机构" skey="institution" />
-                        <SortTh label="检查日期" skey="checkDate" />
-                        <SortTh label="审核状态" skey="auditStatus" />
-                        <SortTh label="AI解析" skey="aiStatus" />
-                        <th>操作</th>
-                      </tr></thead>
+                      <thead><tr><th>报告标题</th><th>机构</th><th>检查日期</th><th>审核状态</th><th>AI解析</th><th>操作</th></tr></thead>
                       <tbody>
-                        {sortRows(yearMap[yr][cat]).map(r => (
+                        {yearMap[yr][cat].map(r => (
                           <tr key={r._id}>
                             <td style={{ fontWeight: 500, color: '#1E6B50', cursor: 'pointer' }} onClick={() => openReportDetail(r)}>{r.title}</td>
                             <td style={{ fontSize: 12, color: '#666' }}>{r.institution || r.hospital || '-'}</td>
