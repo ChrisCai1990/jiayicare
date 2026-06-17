@@ -438,32 +438,32 @@ export default function PatientDetailPage() {
 
   const [reportScreeningData, setReportScreeningData] = useState([])
 
-  const openReportDetail = async (r) => {
+  const openReportDetail = (r) => {
+    // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
     setReportScreeningData([])
-    try {
-      const [reportRes, screeningRes] = await Promise.allSettled([
-        staffAPI.getReport(r._id),
-        staffAPI.getScreeningReports(id),
-      ])
-      if (reportRes.status === 'fulfilled') setShowReportDetail(reportRes.value.data)
-      if (screeningRes.status === 'fulfilled') {
-        const all = screeningRes.value.data || []
-        // 按 title/screeningL2 匹配，同时容忍检查日期±30天范围
-        const reportTitle = r.title || ''
-        const reportDate = r.checkDate || r.date || ''
+
+    // 背景异步：拉完整报告详情
+    staffAPI.getReport(r._id)
+      .then(res => setShowReportDetail(res.data))
+      .catch(() => {})
+
+    // 背景异步：拉专项筛查匹配数据（不阻塞弹窗）
+    const reportTitle = r.title || ''
+    const reportDate  = r.checkDate || r.date || ''
+    staffAPI.getScreeningReports(id)
+      .then(res => {
+        const all = res.data || []
         const matched = all.filter(s => {
-          const l2Match = (s.screeningL2 || s.title || '') === reportTitle ||
-                          (s.screeningL2 || '').includes(reportTitle) ||
-                          reportTitle.includes(s.screeningL2 || '')
+          const l2 = s.screeningL2 || s.title || ''
+          const l2Match = l2 === reportTitle || l2.includes(reportTitle) || reportTitle.includes(l2)
           if (!l2Match) return false
           if (!reportDate || !s.checkDate) return true
-          const diff = Math.abs(new Date(reportDate) - new Date(s.checkDate)) / 86400000
-          return diff <= 30
+          return Math.abs(new Date(reportDate) - new Date(s.checkDate)) / 86400000 <= 30
         })
         setReportScreeningData(matched)
-      }
-    } catch { /* keep partial */ }
+      })
+      .catch(() => {})
   }
   useEffect(() => { load() }, [id])
   useEffect(() => {
