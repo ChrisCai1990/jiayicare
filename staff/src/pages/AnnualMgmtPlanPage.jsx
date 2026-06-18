@@ -14,7 +14,7 @@ const PLAN_TYPES = [
 // ── 板块定义（key → { name, icon, fields }）──────────────────────────
 const MODULE_DEFS = {
   medical_treatment: {
-    name: '医疗问题解决', icon: '🏥',
+    name: '医疗问题解决', icon: '🏥', multi: true, summaryKey: 'hospital', summaryLabel: '就医医院',
     fields: [
       { key: 'visit_time',   label: '就医时间',   type: 'date' },
       { key: 'hospital',     label: '就医医院',   type: 'text', placeholder: '如：省人民医院' },
@@ -26,7 +26,7 @@ const MODULE_DEFS = {
     ],
   },
   specialist_collab: {
-    name: '全专联合会诊', icon: '👨‍⚕️',
+    name: '全专联合会诊', icon: '👨‍⚕️', multi: true, summaryKey: 'hospital', summaryLabel: '会诊医院',
     fields: [
       { key: 'plan_time',    label: '计划会诊时间', type: 'date' },
       { key: 'plan_method',  label: '计划会诊方式', type: 'text', placeholder: '如：线上/线下' },
@@ -84,18 +84,6 @@ const MODULE_DEFS = {
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
     ],
   },
-  medication: {
-    name: '药物服用', icon: '💊',
-    fields: [
-      { key: 'chemical_name', label: '药品名称（化学名）', type: 'text' },
-      { key: 'brand_name',    label: '商品名',     type: 'text' },
-      { key: 'reason',        label: '服用原因',   type: 'textarea' },
-      { key: 'dose',          label: '服用剂量',   type: 'text', placeholder: '如：10mg' },
-      { key: 'frequency',     label: '服用频次',   type: 'text', placeholder: '如：每日一次' },
-      { key: 'duration',      label: '服用时长',   type: 'text', placeholder: '如：3个月' },
-      { key: 'notes',         label: '注意事项',   type: 'textarea', internal: true },
-    ],
-  },
   annual_checkup: {
     name: '年度体检', icon: '🔬',
     fields: [
@@ -126,7 +114,7 @@ const MODULE_DEFS = {
 
 // ── 各方案类型包含的板块（按顺序）──────────────────────────────────
 const PLAN_TYPE_MODULES = {
-  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'medication', 'annual_checkup', 'quarterly_eval'],
+  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
   young_state:       ['abnormal_followup', 'vaccine', 'monitoring', 'functional_medicine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
   chronic_stable:    ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
   health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'annual_checkup'],
