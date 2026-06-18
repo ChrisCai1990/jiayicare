@@ -1945,7 +1945,7 @@ export default function PatientDetailPage() {
               linkedItemType: null,
             })
             setEditingScreeningId(r._id)
-            setScreeningFile(null)
+            setScreeningFiles([])
             setShowScreeningForm(true)
           }
 
