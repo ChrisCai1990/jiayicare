@@ -174,18 +174,24 @@ router.post('/employees', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可创建员工账号' });
   }
-  const { username, password, name, role, title, email, certNumber, deptId, customRoleId } = req.body;
-  if (!username || !password || !name || !role) {
-    return res.status(400).json({ success: false, message: '用户名、密码、姓名、角色不能为空' });
+  const { username, password, name, role, title, email, certNumber, deptId, customRoleId, phone } = req.body;
+  if (!password || !name || !role) {
+    return res.status(400).json({ success: false, message: '密码、姓名、角色不能为空' });
+  }
+  if (!phone) {
+    return res.status(400).json({ success: false, message: '手机号码不能为空' });
   }
   if (!SYSTEM_ROLES.includes(role)) {
     return res.status(400).json({ success: false, message: '角色无效' });
   }
-  const existing = await Admin.findOne({ username });
-  if (existing) return res.status(400).json({ success: false, message: '用户名已存在' });
+  const phoneExists = await Admin.findOne({ phone });
+  if (phoneExists) return res.status(400).json({ success: false, message: '该手机号已被使用' });
+  const finalUsername = username || `jy_${Date.now().toString(36)}`;
+  const usernameExists = await Admin.findOne({ username: finalUsername });
+  if (usernameExists) return res.status(400).json({ success: false, message: '用户名已存在' });
 
   const emp = await Admin.create({
-    username, password, name, role,
+    username: finalUsername, password, name, role, phone,
     title: title || '', email: email || '', certNumber: certNumber || '',
     deptId: deptId || null, customRoleId: customRoleId || null,
     staffStatus: 'active',
@@ -197,10 +203,15 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可修改员工账号' });
   }
-  const { name, role, title, email, certNumber, deptId, customRoleId, password } = req.body;
+  const { name, role, title, email, certNumber, deptId, customRoleId, password, phone } = req.body;
   const emp = await Admin.findById(req.params.id);
   if (!emp || !SYSTEM_ROLES.includes(emp.role)) {
     return res.status(404).json({ success: false, message: '员工不存在' });
+  }
+  if (phone && phone !== emp.phone) {
+    const phoneExists = await Admin.findOne({ phone, _id: { $ne: emp._id } });
+    if (phoneExists) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
+    emp.phone = phone;
   }
   if (name) emp.name = name;
   if (role && SYSTEM_ROLES.includes(role)) emp.role = role;
@@ -209,7 +220,7 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (certNumber !== undefined) emp.certNumber = certNumber;
   if (deptId !== undefined) emp.deptId = deptId || null;
   if (customRoleId !== undefined) emp.customRoleId = customRoleId || null;
-  if (password) emp.password = password; // triggers bcrypt pre-save
+  if (password) emp.password = password;
   await emp.save();
   res.json({ success: true, data: { _id: emp._id, name: emp.name }, message: '员工信息已更新' });
 });
