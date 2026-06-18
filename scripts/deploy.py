@@ -113,30 +113,63 @@ def run_deploy(backend_only=False, clean=False):
     print(f'   📌 当前 commit: {log.strip()}')
 
     if not backend_only:
-        # ── 安装依赖 ──
+        # ── 检测哪些目录有变动 ──
+        _, changed = run(f'cd {REPO_DIR} && git diff HEAD~1 HEAD --name-only 2>/dev/null || git diff HEAD --name-only', timeout=15)
+        changed_files = changed.strip().splitlines()
+        need_app   = any(f.startswith('app/')   for f in changed_files)
+        need_admin = any(f.startswith('admin/')  for f in changed_files)
+        need_staff = any(f.startswith('staff/')  for f in changed_files)
+        need_pkg   = any(f in ('package.json', 'package-lock.json') for f in changed_files)
+
+        # 如果检测不到（首次部署/强制），全量构建
+        if not (need_app or need_admin or need_staff or need_pkg):
+            print('   ⚠️  未检测到前端改动，若需强制全量构建请用 --clean')
+            need_app = need_admin = need_staff = True
+
+        print(f'   📦 构建范围: app={need_app} admin={need_admin} staff={need_staff} pkg={need_pkg}')
+
+        # ── 安装依赖（只在 package.json 变了时才跑）──
         if clean:
             run('rm -rf /var/www/jiayicare/node_modules', timeout=60, label='清理旧 node_modules（--clean）')
-        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装依赖')
+            need_pkg = True
+        if need_pkg or clean:
+            run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装依赖')
+        else:
+            print('   ✅ package.json 未变，跳过 npm install')
 
         VITE = '/var/www/jiayicare/node_modules/.bin/vite'
 
-        # ── 构建前端 ──
-        code, _ = run('cd /var/www/jiayicare/app && npm run export:web 2>&1', timeout=300, label='构建 app 前端（Expo Web）')
-        if code != 0:
-            print('❌ app 构建失败')
-            ssh.close(); sys.exit(1)
+        # ── 构建前端（按需）──
+        if need_app:
+            code, _ = run('cd /var/www/jiayicare/app && npm run export:web 2>&1', timeout=300, label='构建 app 前端（Expo Web）')
+            if code != 0:
+                print('❌ app 构建失败')
+                ssh.close(); sys.exit(1)
+        else:
+            print('   ✅ app 未变，跳过构建')
 
-        code, _ = run(f'cd /var/www/jiayicare/admin && {VITE} build 2>&1', timeout=300, label='构建 admin 前端')
-        if code != 0:
-            print('❌ admin 构建失败')
-            ssh.close(); sys.exit(1)
+        if need_admin:
+            code, _ = run(f'cd /var/www/jiayicare/admin && {VITE} build 2>&1', timeout=300, label='构建 admin 前端')
+            if code != 0:
+                print('❌ admin 构建失败')
+                ssh.close(); sys.exit(1)
+        else:
+            print('   ✅ admin 未变，跳过构建')
 
-        code, _ = run(f'cd /var/www/jiayicare/staff && {VITE} build 2>&1', timeout=300, label='构建 staff 前端')
-        if code != 0:
-            print('❌ staff 构建失败')
-            ssh.close(); sys.exit(1)
+        if need_staff:
+            code, _ = run(f'cd /var/www/jiayicare/staff && {VITE} build 2>&1', timeout=300, label='构建 staff 前端')
+            if code != 0:
+                print('❌ staff 构建失败')
+                ssh.close(); sys.exit(1)
+        else:
+            print('   ✅ staff 未变，跳过构建')
     else:
-        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装后端依赖')
+        # --backend 模式：只在 package.json 变了时装依赖
+        _, changed = run(f'cd {REPO_DIR} && git diff HEAD~1 HEAD --name-only 2>/dev/null || echo ""', timeout=15)
+        if 'package.json' in changed or 'package-lock.json' in changed:
+            run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装后端依赖')
+        else:
+            print('   ✅ package.json 未变，跳过 npm install')
 
     # ── 重启后端 ──
     run('pm2 restart jiayicare-backend', timeout=30, label='重启后端')
