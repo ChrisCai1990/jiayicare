@@ -4317,16 +4317,28 @@ export default function PatientDetailPage() {
                 <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
                 {reportDetailLoading ? (
                   <div style={{ padding: '16px 0', textAlign: 'center', color: '#8AA89C', fontSize: 13 }}>加载中…</div>
-                ) : (showReportDetail.content || showReportDetail.fileUrl) ? (
-                  showReportDetail.mimeType?.startsWith('image/') || showReportDetail.content?.startsWith('data:image') ? (
-                    <img src={showReportDetail.content || showReportDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8, border: '1px solid #f0ece4', display: 'block' }} />
-                  ) : showReportDetail.mimeType === 'application/pdf' || showReportDetail.fileUrl?.endsWith('.pdf') ? (
-                    <iframe src={showReportDetail.content || showReportDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
-                  ) : (
-                    <a href={showReportDetail.content || showReportDetail.fileUrl} target="_blank" rel="noreferrer"
-                      className="btn btn-secondary btn-sm">📎 查看文件</a>
+                ) : (showReportDetail.content || showReportDetail.fileUrl) ? (() => {
+                  const src = showReportDetail.content || showReportDetail.fileUrl
+                  const isPdf = showReportDetail.mimeType === 'application/pdf' || showReportDetail.fileUrl?.endsWith('.pdf')
+                  const isImg = showReportDetail.mimeType?.startsWith('image/') || showReportDetail.content?.startsWith('data:image')
+                  const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
+                  const handleView = () => {
+                    if (isImg) { setPreviewImageUrl(src) }
+                    else { window.open(src, '_blank') }
+                  }
+                  return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3' }}>
+                      <span style={{ fontSize: 28, lineHeight: 1 }}>{isPdf ? '📄' : isImg ? '🖼️' : '📎'}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: 500, fontSize: 13, color: '#1A2B24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {isPdf ? 'PDF 文件' : isImg ? '图片文件' : '附件'}
+                        </div>
+                        {sizeKB && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}</div>}
+                      </div>
+                      <button className="btn btn-primary btn-sm" onClick={handleView}>查看</button>
+                    </div>
                   )
-                ) : (
+                })() : (
                   <div style={{ padding: '12px 0' }}>
                     <div style={{ color: '#B0C4BB', fontSize: 13, marginBottom: 8 }}>暂无文件</div>
                     {showReportDetail.audit_status !== 'audited' && (
