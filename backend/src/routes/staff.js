@@ -1239,6 +1239,19 @@ router.put('/service-records/:id', staffAuth, async (req, res) => {
   res.json({ success: true, data: record });
 });
 
+// POST /api/staff/service-records/:id/supplement — 追加补充记录
+router.post('/service-records/:id/supplement', staffAuth, async (req, res) => {
+  try {
+    const record = await ServiceRecord.findById(req.params.id);
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+    const { content, date } = req.body;
+    if (!content) return res.status(400).json({ success: false, message: '内容不能为空' });
+    record.supplements.push({ content, date: date ? new Date(date) : new Date(), staffName: req.staff.name });
+    await record.save();
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // DELETE /api/staff/service-records/:id
 router.delete('/service-records/:id', staffAuth, async (req, res) => {
   await ServiceRecord.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
@@ -2568,6 +2581,47 @@ router.patch('/patients/:id/body-composition', staffAuth, async (req, res) => {
       { $set: { bodyComposition: bc } }
     );
     res.json({ success: true, data: bc });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 4.2 身体成分历史记录：编辑 ──────────────────────────────────────
+// PATCH /api/staff/patients/:id/body-composition-history/:index
+router.patch('/patients/:id/body-composition-history/:index', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const idx = parseInt(req.params.index);
+    const history = user.bodyCompHistory || [];
+    if (idx < 0 || idx >= history.length) return res.status(400).json({ success: false, message: '索引越界' });
+    const { skelMuscle, visceralFat, bodyFatRate, measuredAt } = req.body;
+    const entry = { ...history[idx] };
+    if (skelMuscle  !== undefined) entry.skelMuscle  = skelMuscle;
+    if (visceralFat !== undefined) entry.visceralFat = visceralFat;
+    if (bodyFatRate !== undefined) entry.bodyFatRate  = bodyFatRate;
+    if (measuredAt  !== undefined) entry.measuredAt   = measuredAt;
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { [`bodyCompHistory.${idx}`]: entry } }
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 4.2 身体成分历史记录：删除 ──────────────────────────────────────
+// DELETE /api/staff/patients/:id/body-composition-history/:index
+router.delete('/patients/:id/body-composition-history/:index', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const idx = parseInt(req.params.index);
+    const history = [...(user.bodyCompHistory || [])];
+    if (idx < 0 || idx >= history.length) return res.status(400).json({ success: false, message: '索引越界' });
+    history.splice(idx, 1);
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { bodyCompHistory: history } }
+    );
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

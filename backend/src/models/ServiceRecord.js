@@ -51,6 +51,12 @@ const serviceRecordSchema = new mongoose.Schema({
     consultType:  { type: String, default: '' }, // 会诊类型
     planId:       { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 关联会诊记录
   },
+  // 补充记录（事后追加的随访/补记）
+  supplements: [{
+    date:      { type: Date, default: Date.now },
+    content:   { type: String, default: '' },
+    staffName: { type: String, default: '' },
+  }],
 }, { timestamps: true });
 
 serviceRecordSchema.index({ patientId: 1, type: 1, date: -1 });

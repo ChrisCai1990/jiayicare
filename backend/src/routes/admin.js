@@ -585,7 +585,7 @@ router.put('/staff/:id', adminAuth, async (req, res) => {
     const dup = await Admin.findOne({ phone, _id: { $ne: staff._id } });
     if (dup) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
   }
-  Object.assign(staff, update);
+  staff.set(update);
   if (password) staff.password = password; // triggers bcrypt pre-save
   await staff.save();
   res.json({ success: true, data: { _id: staff._id, name: staff.name, role: staff.role } });

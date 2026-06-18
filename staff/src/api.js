@@ -105,6 +105,7 @@ export const staffAPI = {
   getServiceRecords:    (p = {}) => req('/staff/service-records?' + qs(p)),
   createServiceRecord:  (data)   => req('/staff/service-records', { method: 'POST', body: JSON.stringify(data) }),
   updateServiceRecord:  (id, d)  => req(`/staff/service-records/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  addServiceSupplement: (id, d)  => req(`/staff/service-records/${id}/supplement`, { method: 'POST', body: JSON.stringify(d) }),
   deleteServiceRecord:  (id)     => req(`/staff/service-records/${id}`, { method: 'DELETE' }),
 
   // Commission
@@ -240,6 +241,8 @@ export const staffAPI = {
 
   // 4.2 身体成分
   saveBodyComposition: (id, data) => req(`/staff/patients/${id}/body-composition`, { method: 'PATCH', body: JSON.stringify(data) }),
+  editBodyCompHistory: (id, index, data) => req(`/staff/patients/${id}/body-composition-history/${index}`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteBodyCompHistory: (id, index) => req(`/staff/patients/${id}/body-composition-history/${index}`, { method: 'DELETE' }),
 
   // 4.4 AI健康汇总
   generateAIHealthSummary: (id) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST' }),

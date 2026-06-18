@@ -39,7 +39,7 @@ const MODULE_DEFS = {
     ],
   },
   abnormal_followup: {
-    name: '异常复查提醒', icon: '🔔',
+    name: '异常复查提醒', icon: '🔔', multi: true, summaryKey: 'items', summaryLabel: '复查项目',
     fields: [
       { key: 'items',           label: '复查项目',       type: 'text' },
       { key: 'reason',          label: '复查原因',       type: 'textarea' },
@@ -55,7 +55,7 @@ const MODULE_DEFS = {
     ],
   },
   vaccine: {
-    name: '疫苗接种', icon: '💉',
+    name: '疫苗接种', icon: '💉', multi: true, summaryKey: 'name', summaryLabel: '疫苗名称',
     fields: [
       { key: 'name',        label: '疫苗名称', type: 'text' },
       { key: 'brand',       label: '品牌',     type: 'text' },
@@ -66,7 +66,7 @@ const MODULE_DEFS = {
     ],
   },
   monitoring: {
-    name: '日常监测', icon: '📊',
+    name: '日常监测', icon: '📊', multi: true, summaryKey: 'items', summaryLabel: '监测项目',
     fields: [
       { key: 'items',     label: '监测项目', type: 'text' },
       { key: 'time',      label: '监测时间', type: 'text', placeholder: '如：每天早晨' },
@@ -78,7 +78,7 @@ const MODULE_DEFS = {
   lifestyle: {
     name: '生活方式评估', icon: '🌿',
     fields: [
-      { key: 'time',  label: '评估时间', type: 'date' },
+      { key: 'time',  label: '评估周期', type: 'text', placeholder: '如：2026年上半年' },
       { key: 'focus', label: '评估重点', type: 'textarea' },
       { key: 'staff', label: '评估人员', type: 'text' },
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
@@ -96,18 +96,6 @@ const MODULE_DEFS = {
       { key: 'notes',         label: '注意事项',   type: 'textarea', internal: true },
     ],
   },
-  nutrition_supplement: {
-    name: '营养素补充', icon: '🥗',
-    fields: [
-      { key: 'name',      label: '营养素名称', type: 'text' },
-      { key: 'brand',     label: '品牌',       type: 'text' },
-      { key: 'reason',    label: '服用原因',   type: 'textarea' },
-      { key: 'dose',      label: '服用剂量',   type: 'text' },
-      { key: 'frequency', label: '服用频次',   type: 'text' },
-      { key: 'duration',  label: '服用时长',   type: 'text' },
-      { key: 'notes',     label: '注意事项',   type: 'textarea', internal: true },
-    ],
-  },
   annual_checkup: {
     name: '年度体检', icon: '🔬',
     fields: [
@@ -118,7 +106,7 @@ const MODULE_DEFS = {
     ],
   },
   functional_medicine: {
-    name: '功能医学检测', icon: '🧪',
+    name: '功能医学检测', icon: '🧪', multi: true, summaryKey: 'items', summaryLabel: '检测项目',
     fields: [
       { key: 'items',       label: '检测项目', type: 'text' },
       { key: 'institution', label: '检测机构', type: 'text' },
@@ -138,10 +126,10 @@ const MODULE_DEFS = {
 
 // ── 各方案类型包含的板块（按顺序）──────────────────────────────────
 const PLAN_TYPE_MODULES = {
-  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'medication', 'nutrition_supplement', 'annual_checkup', 'quarterly_eval'],
-  young_state:       ['abnormal_followup', 'vaccine', 'monitoring', 'functional_medicine', 'lifestyle', 'nutrition_supplement', 'annual_checkup', 'quarterly_eval'],
-  chronic_stable:    ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'nutrition_supplement', 'annual_checkup', 'quarterly_eval'],
-  health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'nutrition_supplement', 'annual_checkup'],
+  health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'medication', 'annual_checkup', 'quarterly_eval'],
+  young_state:       ['abnormal_followup', 'vaccine', 'monitoring', 'functional_medicine', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
+  chronic_stable:    ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
+  health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'annual_checkup'],
 }
 
 // ── 小组件 ────────────────────────────────────────────────────────────
@@ -220,6 +208,35 @@ function FieldInput({ field, value, onChange }) {
   )
 }
 
+// ── 单条记录编辑区（多条模块用）─────────────────────────────────────
+function RecordEditor({ def, record, onChange, onDelete, index, total }) {
+  const [open, setOpen] = useState(index === 0 && total === 1)
+  const summary = record[def.summaryKey] || `${def.summaryLabel} ${index + 1}`
+  return (
+    <div style={{ border: '1px solid #E8E3DC', borderRadius: 8, marginBottom: 8, background: '#FAFAF8' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '9px 12px', cursor: 'pointer' }} onClick={() => setOpen(v => !v)}>
+        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#1A2B24' }}>
+          {summary}
+        </span>
+        <button
+          onClick={e => { e.stopPropagation(); if (window.confirm('确定删除这条记录？')) onDelete() }}
+          style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', marginRight: 8, padding: '0 4px' }}
+        >删除</button>
+        <span style={{ color: '#aaa', fontSize: 12, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>▼</span>
+      </div>
+      {open && (
+        <div style={{ padding: '0 12px 12px', borderTop: '1px solid #F0EDE7' }}>
+          {def.fields.map(field => (
+            <FieldRow key={field.key} label={field.label} internal={field.internal}>
+              <FieldInput field={field} value={record[field.key]} onChange={val => onChange({ ...record, [field.key]: val })} />
+            </FieldRow>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── 板块折叠面板 ───────────────────────────────────────────────────────
 function ModulePanel({ moduleKey, data, onChange }) {
   const [open, setOpen] = useState(false)
@@ -229,7 +246,23 @@ function ModulePanel({ moduleKey, data, onChange }) {
   const set = (fieldKey, val) => onChange(moduleKey, fieldKey, val)
 
   // 判断是否有已填写的字段（用于显示小圆点提示）
-  const hasContent = def.fields.some(f => f.key !== 'notes' && data[f.key] !== undefined && data[f.key] !== '' && data[f.key] !== false)
+  const hasContent = def.multi
+    ? (data.records || []).length > 0
+    : def.fields.some(f => f.key !== 'notes' && data[f.key] !== undefined && data[f.key] !== '' && data[f.key] !== false)
+
+  // 多条模块：records 数组操作
+  const records = data.records || []
+  const setRecords = (newRecords) => onChange(moduleKey, 'records', newRecords)
+  const addRecord = () => {
+    setRecords([...records, {}])
+    if (!open) setOpen(true)
+  }
+  const updateRecord = (i, rec) => {
+    const next = [...records]; next[i] = rec; setRecords(next)
+  }
+  const deleteRecord = (i) => {
+    setRecords(records.filter((_, idx) => idx !== i))
+  }
 
   return (
     <div style={{ border: '1px solid #E0D9CE', borderRadius: 12, marginBottom: 12, background: '#fff', overflow: 'hidden' }}>
@@ -246,17 +279,52 @@ function ModulePanel({ moduleKey, data, onChange }) {
         <span style={{ flex: 1, fontWeight: 600, fontSize: 15, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 8 }}>
           {def.name}
           {hasContent && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#1E6B50', flexShrink: 0 }} title="已有内容" />}
+          {def.multi && records.length > 0 && (
+            <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>{records.length} 条</span>
+          )}
         </span>
-        <div style={{ marginRight: 14 }} onClick={e => { e.stopPropagation(); set('enabled', !enabled) }}>
-          <Toggle value={enabled} onChange={() => set('enabled', !enabled)} />
-        </div>
+        {def.multi && (
+          <button
+            onClick={e => { e.stopPropagation(); addRecord() }}
+            style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', border: '1px solid #B2D8C7', borderRadius: 20, padding: '3px 10px', cursor: 'pointer', marginRight: 10, fontWeight: 600 }}
+          >＋ 新增</button>
+        )}
+        {!def.multi && (
+          <div style={{ marginRight: 14 }} onClick={e => { e.stopPropagation(); set('enabled', !enabled) }}>
+            <Toggle value={enabled} onChange={() => set('enabled', !enabled)} />
+          </div>
+        )}
         <span style={{ color: '#aaa', fontSize: 13, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s', display: 'inline-block' }}>▼</span>
       </div>
 
       {/* 板块内容 */}
       {open && (
         <div style={{ padding: '4px 18px 18px', borderTop: '1px solid #F0EDE7' }}>
-          {!enabled ? (
+          {def.multi ? (
+            records.length === 0 ? (
+              <div style={{ padding: '16px 0', color: '#aaa', fontSize: 13, textAlign: 'center' }}>
+                暂无记录，点击「新增」添加
+              </div>
+            ) : (
+              <div style={{ paddingTop: 8 }}>
+                {records.map((rec, i) => (
+                  <RecordEditor
+                    key={i}
+                    def={def}
+                    record={rec}
+                    index={i}
+                    total={records.length}
+                    onChange={newRec => updateRecord(i, newRec)}
+                    onDelete={() => deleteRecord(i)}
+                  />
+                ))}
+                <button
+                  onClick={addRecord}
+                  style={{ width: '100%', padding: '8px', background: 'none', border: '1px dashed #B2D8C7', borderRadius: 8, color: '#1E6B50', fontSize: 13, cursor: 'pointer', marginTop: 4 }}
+                >＋ 继续新增</button>
+              </div>
+            )
+          ) : !enabled ? (
             <div style={{ padding: '14px 0', color: '#aaa', fontSize: 13, textAlign: 'center' }}>此板块已停用，点击开关启用</div>
           ) : (
             def.fields.map(field => (

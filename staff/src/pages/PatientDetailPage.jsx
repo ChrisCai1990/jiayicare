@@ -362,6 +362,8 @@ export default function PatientDetailPage() {
   const [editingBodyComp, setEditingBodyComp] = useState(false)
   const [bodyCompNewRecord, setBodyCompNewRecord] = useState(false)
   const [bodyCompForm, setBodyCompForm] = useState({})
+  const [editingHistoryIndex, setEditingHistoryIndex] = useState(null)
+  const [historyEditForm, setHistoryEditForm] = useState({})
   // 4.4 AI健康汇总
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
   const [editingAISummary, setEditingAISummary] = useState(false)
@@ -2822,14 +2824,65 @@ export default function PatientDetailPage() {
                 {!editingBodyComp && (user.bodyCompHistory || []).length > 0 && (
                   <div style={{ marginTop: 12, borderTop: '1px solid #f0ece4', paddingTop: 10 }}>
                     <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>历史记录（{(user.bodyCompHistory || []).length} 条）</div>
-                    {[...(user.bodyCompHistory || [])].reverse().map((h, i) => (
-                      <div key={i} style={{ fontSize: 12, color: '#4A6558', padding: '4px 0', borderBottom: '1px solid #f9f7f3', display: 'flex', gap: 16 }}>
-                        <span style={{ color: '#aaa', minWidth: 90 }}>{h.recordedAt ? new Date(h.recordedAt).toLocaleDateString('zh-CN') : '-'}</span>
-                        {h.skelMuscle && <span>骨骼肌: {h.skelMuscle}kg</span>}
-                        {h.visceralFat && <span>内脏脂肪: {h.visceralFat}</span>}
-                        {h.bodyFatRate && <span>体脂率: {h.bodyFatRate}%</span>}
-                      </div>
-                    ))}
+                    {[...(user.bodyCompHistory || [])].reverse().map((h, i) => {
+                      const realIndex = (user.bodyCompHistory || []).length - 1 - i;
+                      const isEditingThis = editingHistoryIndex === realIndex;
+                      return (
+                        <div key={i} style={{ fontSize: 12, color: '#4A6558', padding: '6px 0', borderBottom: '1px solid #f9f7f3' }}>
+                          {isEditingThis ? (
+                            <div>
+                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 6 }}>
+                                {[
+                                  { label: '骨骼肌量(kg)', field: 'skelMuscle' },
+                                  { label: '内脏脂肪', field: 'visceralFat' },
+                                  { label: '体脂率(%)', field: 'bodyFatRate' },
+                                ].map(({ label, field }) => (
+                                  <div key={field}>
+                                    <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>{label}</div>
+                                    <input className="form-control" style={{ fontSize: 12, padding: '3px 6px' }}
+                                      value={historyEditForm[field] || ''}
+                                      onChange={e => setHistoryEditForm(f => ({ ...f, [field]: e.target.value }))} />
+                                  </div>
+                                ))}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                                <div style={{ fontSize: 11, color: '#8AA89C' }}>测量日期</div>
+                                <input className="form-control" type="date" style={{ fontSize: 12, padding: '3px 6px', width: 140 }}
+                                  value={historyEditForm.measuredAt || ''}
+                                  onChange={e => setHistoryEditForm(f => ({ ...f, measuredAt: e.target.value }))} />
+                              </div>
+                              <div style={{ display: 'flex', gap: 6 }}>
+                                <button className="btn btn-primary btn-sm" style={{ fontSize: 11, padding: '2px 10px' }} onClick={async () => {
+                                  await staffAPI.editBodyCompHistory(id, realIndex, historyEditForm);
+                                  setEditingHistoryIndex(null);
+                                  load();
+                                  toast('记录已更新');
+                                }}>保存</button>
+                                <button className="btn btn-secondary btn-sm" style={{ fontSize: 11, padding: '2px 10px' }} onClick={() => setEditingHistoryIndex(null)}>取消</button>
+                              </div>
+                            </div>
+                          ) : (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                              <span style={{ color: '#aaa', minWidth: 90 }}>{h.measuredAt || (h.recordedAt ? new Date(h.recordedAt).toLocaleDateString('zh-CN') : '-')}</span>
+                              {h.skelMuscle && <span>骨骼肌: {h.skelMuscle}kg</span>}
+                              {h.visceralFat && <span>内脏脂肪: {h.visceralFat}</span>}
+                              {h.bodyFatRate && <span>体脂率: {h.bodyFatRate}%</span>}
+                              <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
+                                <button style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
+                                  onClick={() => { setEditingHistoryIndex(realIndex); setHistoryEditForm({ ...h }); }}>编辑</button>
+                                <button style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
+                                  onClick={async () => {
+                                    if (!window.confirm('确定删除这条记录？')) return;
+                                    await staffAPI.deleteBodyCompHistory(id, realIndex);
+                                    load();
+                                    toast('记录已删除');
+                                  }}>删除</button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -4142,36 +4195,114 @@ export default function PatientDetailPage() {
       )}
 
       {/* 服务记录详情弹窗 */}
-      {showSRDetail && (
-        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowSRDetail(null) }}>
-          <div className="modal" style={{ maxWidth: 500 }}>
-            <div className="modal-header">
-              <h3 className="modal-title">{showSRDetail.title || '服务记录详情'}</h3>
-              <button className="modal-close" onClick={() => setShowSRDetail(null)}>✕</button>
-            </div>
-            <div className="modal-body">
-              {[
-                ['服务类型', SR_TYPE_LABEL[showSRDetail.type] || showSRDetail.type],
-                ['负责人', showSRDetail.staffId?.name || '-'],
-                ['服务日期', showSRDetail.date ? new Date(showSRDetail.date).toLocaleDateString('zh-CN') : '-'],
-              ].map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
-                  <span style={{ width: 80, color: '#8AA89C', fontSize: 13 }}>{k}</span>
-                  <span style={{ flex: 1, fontSize: 13 }}>{v}</span>
+      {showSRDetail && (() => {
+        const SRDetailModal = () => {
+          const [mode, setMode] = React.useState('view') // view | edit | supplement
+          const [editForm, setEditForm] = React.useState({ title: showSRDetail.title || '', content: showSRDetail.content || '', result: showSRDetail.result || '', nextDate: showSRDetail.nextDate ? new Date(showSRDetail.nextDate).toISOString().slice(0,10) : '' })
+          const [suppContent, setSuppContent] = React.useState('')
+          const [suppDate, setSuppDate] = React.useState(new Date().toISOString().slice(0,10))
+          const [saving, setSaving] = React.useState(false)
+
+          const handleEdit = async () => {
+            setSaving(true)
+            try {
+              await staffAPI.updateServiceRecord(showSRDetail._id, { title: editForm.title, content: editForm.content, result: editForm.result, nextDate: editForm.nextDate || null })
+              toast('记录已更新'); setShowSRDetail(null); loadServiceRecords()
+            } catch (err) { toast(err.message || '保存失败') }
+            finally { setSaving(false) }
+          }
+
+          const handleSupplement = async () => {
+            if (!suppContent.trim()) { toast('请填写补充内容'); return }
+            setSaving(true)
+            try {
+              await staffAPI.addServiceSupplement(showSRDetail._id, { content: suppContent, date: suppDate })
+              toast('补充记录已添加'); setShowSRDetail(null); loadServiceRecords()
+            } catch (err) { toast(err.message || '添加失败') }
+            finally { setSaving(false) }
+          }
+
+          return (
+            <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowSRDetail(null) }}>
+              <div className="modal" style={{ maxWidth: 520 }}>
+                <div className="modal-header">
+                  <h3 className="modal-title">{showSRDetail.title || '服务记录详情'}</h3>
+                  <button className="modal-close" onClick={() => setShowSRDetail(null)}>✕</button>
                 </div>
-              ))}
-              {showSRDetail.content && (
-                <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
-                  {showSRDetail.content}
+                <div className="modal-body">
+                  {mode === 'view' && (
+                    <>
+                      {[
+                        ['服务类型', SR_TYPE_LABEL[showSRDetail.type] || showSRDetail.type],
+                        ['负责人', showSRDetail.staffId?.name || '-'],
+                        ['服务日期', showSRDetail.date ? new Date(showSRDetail.date).toLocaleDateString('zh-CN') : '-'],
+                      ].map(([k, v]) => (
+                        <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
+                          <span style={{ width: 80, color: '#8AA89C', fontSize: 13 }}>{k}</span>
+                          <span style={{ flex: 1, fontSize: 13 }}>{v}</span>
+                        </div>
+                      ))}
+                      {showSRDetail.content && (
+                        <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                          {showSRDetail.content}
+                        </div>
+                      )}
+                      {showSRDetail.result && (
+                        <div style={{ marginTop: 8, padding: 12, background: '#EFF6FF', borderRadius: 8, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                          <div style={{ fontSize: 11, color: '#0077B6', marginBottom: 4, fontWeight: 600 }}>结果/建议</div>
+                          {showSRDetail.result}
+                        </div>
+                      )}
+                      {(showSRDetail.supplements || []).length > 0 && (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>补充记录</div>
+                          {showSRDetail.supplements.map((s, i) => (
+                            <div key={i} style={{ padding: '8px 12px', background: '#F9F6F0', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                                <span style={{ fontSize: 11, color: '#8AA89C' }}>{s.staffName}</span>
+                                <span style={{ fontSize: 11, color: '#8AA89C' }}>{s.date ? new Date(s.date).toLocaleDateString('zh-CN') : '-'}</span>
+                              </div>
+                              <div style={{ whiteSpace: 'pre-wrap' }}>{s.content}</div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                  {mode === 'edit' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div><label className="form-label">标题</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
+                      <div><label className="form-label">详细内容</label><textarea className="form-input" rows={4} value={editForm.content} onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))} /></div>
+                      <div><label className="form-label">结果/建议</label><textarea className="form-input" rows={3} value={editForm.result} onChange={e => setEditForm(f => ({ ...f, result: e.target.value }))} /></div>
+                      <div><label className="form-label">下次计划日期</label><input className="form-input" type="date" value={editForm.nextDate} onChange={e => setEditForm(f => ({ ...f, nextDate: e.target.value }))} /></div>
+                    </div>
+                  )}
+                  {mode === 'supplement' && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 4 }}>为此记录追加补充，不影响原始内容</div>
+                      <div><label className="form-label">补充日期</label><input className="form-input" type="date" value={suppDate} onChange={e => setSuppDate(e.target.value)} /></div>
+                      <div><label className="form-label">补充内容</label><textarea className="form-input" rows={5} placeholder="如：1周后随访，专病方案调整情况..." value={suppContent} onChange={e => setSuppContent(e.target.value)} /></div>
+                    </div>
+                  )}
                 </div>
-              )}
+                <div className="modal-footer" style={{ justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {mode === 'view' && <button className="btn btn-secondary btn-sm" onClick={() => setMode('edit')}>编辑</button>}
+                    {mode === 'view' && <button className="btn btn-secondary btn-sm" onClick={() => setMode('supplement')}>补充记录</button>}
+                    {mode !== 'view' && <button className="btn btn-secondary btn-sm" onClick={() => setMode('view')}>返回</button>}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <button className="btn btn-secondary" onClick={() => setShowSRDetail(null)}>关闭</button>
+                    {mode === 'edit' && <button className="btn btn-primary" disabled={saving} onClick={handleEdit}>{saving ? '保存中...' : '保存'}</button>}
+                    {mode === 'supplement' && <button className="btn btn-primary" disabled={saving} onClick={handleSupplement}>{saving ? '添加中...' : '添加补充'}</button>}
+                  </div>
+                </div>
+              </div>
             </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setShowSRDetail(null)}>关闭</button>
-            </div>
-          </div>
-        </div>
-      )}
+          )
+        }
+        return <SRDetailModal />
+      })()}
 
       {/* 转介弹窗 */}
       {showReferralModal && (
@@ -4487,7 +4618,7 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
       await staffAPI.uploadReport({
         patientId,
         title: form.title,
-        type: form.type || '其他',
+        type: REPORT_TYPE_MAP[form.type] || 'other',
         hospital: form.hospital,
         date: form.date,
         note: form.note,
