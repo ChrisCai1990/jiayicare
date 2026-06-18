@@ -139,7 +139,9 @@ export const staffAPI = {
   getServiceRecords:    (p = {}) => req('/staff/service-records?' + qs(p)),
   createServiceRecord:  (data)   => req('/staff/service-records', { method: 'POST', body: JSON.stringify(data) }),
   updateServiceRecord:  (id, d)  => req(`/staff/service-records/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
-  addServiceSupplement: (id, d)  => req(`/staff/service-records/${id}/supplement`, { method: 'POST', body: JSON.stringify(d) }),
+  addServiceSupplement:    (id, d)         => req(`/staff/service-records/${id}/supplement`, { method: 'POST', body: JSON.stringify(d) }),
+  editServiceSupplement:   (id, suppId, d) => req(`/staff/service-records/${id}/supplement/${suppId}`, { method: 'PUT', body: JSON.stringify(d) }),
+  deleteServiceSupplement: (id, suppId)    => req(`/staff/service-records/${id}/supplement/${suppId}`, { method: 'DELETE' }),
   deleteServiceRecord:  (id)     => req(`/staff/service-records/${id}`, { method: 'DELETE' }),
 
   // Commission

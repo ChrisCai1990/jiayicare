@@ -4413,6 +4413,29 @@ export default function PatientDetailPage() {
           const [suppContent, setSuppContent] = React.useState('')
           const [suppDate, setSuppDate] = React.useState(new Date().toISOString().slice(0,10))
           const [saving, setSaving] = React.useState(false)
+          const [editingSuppId, setEditingSuppId] = React.useState(null)
+          const [editSuppContent, setEditSuppContent] = React.useState('')
+          const [editSuppDate, setEditSuppDate] = React.useState('')
+
+          const handleDeleteSupp = async (suppId) => {
+            if (!window.confirm('确定删除这条补充记录？')) return
+            setSaving(true)
+            try {
+              const res = await staffAPI.deleteServiceSupplement(showSRDetail._id, suppId)
+              toast('已删除'); setShowSRDetail(res.data); loadServiceRecords()
+            } catch (err) { toast(err.message || '删除失败') }
+            finally { setSaving(false) }
+          }
+
+          const handleSaveSupp = async () => {
+            if (!editSuppContent.trim()) { toast('内容不能为空'); return }
+            setSaving(true)
+            try {
+              const res = await staffAPI.editServiceSupplement(showSRDetail._id, editingSuppId, { content: editSuppContent, date: editSuppDate })
+              toast('已更新'); setShowSRDetail(res.data); setEditingSuppId(null); loadServiceRecords()
+            } catch (err) { toast(err.message || '保存失败') }
+            finally { setSaving(false) }
+          }
 
           const handleEdit = async () => {
             setSaving(true)
@@ -4467,15 +4490,38 @@ export default function PatientDetailPage() {
                       {(showSRDetail.supplements || []).length > 0 && (
                         <div style={{ marginTop: 12 }}>
                           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>补充记录</div>
-                          {showSRDetail.supplements.map((s, i) => (
-                            <div key={i} style={{ padding: '8px 12px', background: '#F9F6F0', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-                                <span style={{ fontSize: 11, color: '#8AA89C' }}>{s.staffName}</span>
-                                <span style={{ fontSize: 11, color: '#8AA89C' }}>{s.date ? new Date(s.date).toLocaleDateString('zh-CN') : '-'}</span>
+                          {showSRDetail.supplements.map((s, i) => {
+                            const isOwn = staff && s.staffId && String(s.staffId) === String(staff._id)
+                            const isEditing = editingSuppId === String(s._id)
+                            return (
+                              <div key={i} style={{ padding: '8px 12px', background: '#F9F6F0', borderRadius: 6, marginBottom: 6, fontSize: 13 }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4, alignItems: 'center' }}>
+                                  <span style={{ fontSize: 11, color: '#8AA89C' }}>{s.staffName}</span>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ fontSize: 11, color: '#8AA89C' }}>{s.date ? new Date(s.date).toLocaleDateString('zh-CN') : '-'}</span>
+                                    {isOwn && !isEditing && (
+                                      <>
+                                        <button onClick={() => { setEditingSuppId(String(s._id)); setEditSuppContent(s.content); setEditSuppDate(s.date ? new Date(s.date).toISOString().slice(0,10) : '') }} style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>编辑</button>
+                                        <button onClick={() => handleDeleteSupp(String(s._id))} style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px' }}>删除</button>
+                                      </>
+                                    )}
+                                  </div>
+                                </div>
+                                {isEditing ? (
+                                  <div>
+                                    <textarea value={editSuppContent} onChange={e => setEditSuppContent(e.target.value)} rows={3} style={{ width: '100%', padding: '6px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 13, boxSizing: 'border-box', resize: 'vertical', marginBottom: 6, fontFamily: 'inherit' }} />
+                                    <input type="date" value={editSuppDate} onChange={e => setEditSuppDate(e.target.value)} style={{ padding: '4px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 12, marginBottom: 8 }} />
+                                    <div style={{ display: 'flex', gap: 6 }}>
+                                      <button onClick={handleSaveSupp} disabled={saving} style={{ fontSize: 12, color: '#fff', background: '#1E6B50', border: 'none', borderRadius: 6, padding: '4px 12px', cursor: 'pointer' }}>{saving ? '保存中...' : '保存'}</button>
+                                      <button onClick={() => setEditingSuppId(null)} style={{ fontSize: 12, color: '#666', background: '#EDEDEB', border: 'none', borderRadius: 6, padding: '4px 10px', cursor: 'pointer' }}>取消</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div style={{ whiteSpace: 'pre-wrap' }}>{s.content}</div>
+                                )}
                               </div>
-                              <div style={{ whiteSpace: 'pre-wrap' }}>{s.content}</div>
-                            </div>
-                          ))}
+                            )
+                          })}
                         </div>
                       )}
                     </>

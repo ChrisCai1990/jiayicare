@@ -1295,7 +1295,37 @@ router.post('/service-records/:id/supplement', staffAuth, async (req, res) => {
     if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
     const { content, date } = req.body;
     if (!content) return res.status(400).json({ success: false, message: '内容不能为空' });
-    record.supplements.push({ content, date: date ? new Date(date) : new Date(), staffName: req.staff.name });
+    record.supplements.push({ content, date: date ? new Date(date) : new Date(), staffName: req.staff.name, staffId: req.staff._id });
+    await record.save();
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PUT /api/staff/service-records/:id/supplement/:suppId — 编辑补充记录（仅本人）
+router.put('/service-records/:id/supplement/:suppId', staffAuth, async (req, res) => {
+  try {
+    const record = await ServiceRecord.findById(req.params.id);
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+    const supp = record.supplements.id(req.params.suppId);
+    if (!supp) return res.status(404).json({ success: false, message: '补充记录不存在' });
+    if (String(supp.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '只能编辑自己的补充记录' });
+    const { content, date } = req.body;
+    if (content !== undefined) supp.content = content;
+    if (date !== undefined) supp.date = new Date(date);
+    await record.save();
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/service-records/:id/supplement/:suppId — 删除补充记录（仅本人）
+router.delete('/service-records/:id/supplement/:suppId', staffAuth, async (req, res) => {
+  try {
+    const record = await ServiceRecord.findById(req.params.id);
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+    const supp = record.supplements.id(req.params.suppId);
+    if (!supp) return res.status(404).json({ success: false, message: '补充记录不存在' });
+    if (String(supp.staffId) !== String(req.staff._id)) return res.status(403).json({ success: false, message: '只能删除自己的补充记录' });
+    supp.deleteOne();
     await record.save();
     res.json({ success: true, data: record });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
