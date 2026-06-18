@@ -771,8 +771,8 @@ export default function PatientDetailPage() {
       // 把检验医嘱（含子项目）打平为 reportItems
       const flatLabItems = (screeningForm.reportItems || []).flatMap(order =>
         order.subItems && order.subItems.length > 0
-          ? order.subItems.map(sub => ({ name: sub.name, value: sub.value || '', unit: sub.unit || '', referenceRange: sub.referenceRange || '', status: sub.status || 'normal' }))
-          : [{ name: order.name, value: order.value || '', unit: order.unit || '', referenceRange: order.referenceRange || '', status: order.status || 'normal' }]
+          ? order.subItems.map(sub => ({ name: sub.name, value: sub.value || '', unit: sub.unit || '', referenceRange: sub.referenceRange || '', status: sub.status || 'normal', orderName: order.name }))
+          : [{ name: order.name, value: order.value || '', unit: order.unit || '', referenceRange: order.referenceRange || '', status: order.status || 'normal', orderName: '' }]
       )
       const funcAsReportItems = (screeningForm.funcTestItems || []).map(f => ({ name: f.name, value: f.result || '', unit: '', referenceRange: '', status: 'unknown', itemType: 'data' }))
       const allReportItems = [...flatLabItems, ...funcAsReportItems]
@@ -1932,9 +1932,26 @@ export default function PatientDetailPage() {
                 return { name, description, conclusion }
               })
             }
-            const labItems = (r.reportItems || []).filter(i => i.itemType !== 'data')
+            const savedLabItems = (r.reportItems || []).filter(i => i.itemType !== 'data')
             const funcItems = (r.reportItems || []).filter(i => i.itemType === 'data').map(i => ({ name: i.name, result: i.value || '' }))
             const examItems = parseExamItems(r.examDescription, r.examConclusion)
+            // 按 orderName 还原分组（orderName 为空说明是旧数据或手动添加的单项）
+            const orderMap = {}
+            const orderKeys = []
+            savedLabItems.forEach(item => {
+              const key = item.orderName || ''
+              if (!orderMap[key]) { orderMap[key] = []; orderKeys.push(key) }
+              orderMap[key].push(item)
+            })
+            const labItems = orderKeys.flatMap(key => {
+              const items = orderMap[key]
+              if (!key) {
+                // 无 orderName：每个子项作为独立 order 卡片
+                return items.map(i => ({ name: i.name, subItems: [], value: i.value || '', unit: i.unit || '', referenceRange: i.referenceRange || '', status: i.status || 'normal' }))
+              }
+              // 有 orderName：还原为一个 order 含 subItems
+              return [{ name: key, subItems: items.map(i => ({ name: i.name, value: i.value || '', unit: i.unit || '', referenceRange: i.referenceRange || '', status: i.status || 'normal' })), value: '', unit: '', referenceRange: '', status: 'normal' }]
+            })
             setScreeningForm({
               title: r.title || '', screeningCategory: r.screeningCategory || '',
               screeningL1: r.screeningL1 || '', screeningL2: r.screeningL2 || '',

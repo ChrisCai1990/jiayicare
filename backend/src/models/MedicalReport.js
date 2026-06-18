@@ -8,6 +8,7 @@ const reportItemSchema = new mongoose.Schema({
   referenceRange: { type: String, default: '' }, // 参考范围
   status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown' },
   itemType:       { type: String, enum: ['lab', 'imaging', 'data'], default: 'lab' }, // 检验/影像文字/数据曲线类
+  orderName:      { type: String, default: '' }, // 所属检验医嘱组名（用于编辑时还原分组）
 }, { _id: false });
 
 const medicalReportSchema = new mongoose.Schema({
