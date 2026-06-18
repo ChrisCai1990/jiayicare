@@ -21,7 +21,7 @@ export default function ProfilePage() {
     }
   }
   const [editing, setEditing] = useState(false)
-  const [form, setForm] = useState({ name: staff?.name || '', title: staff?.title || '', department: staff?.department || '' })
+  const [form, setForm] = useState({ name: staff?.name || '', title: staff?.title || '', department: staff?.department || '', phone: staff?.phone || '' })
   const [saving, setSaving] = useState(false)
   const [pwForm, setPwForm] = useState({ oldPassword: '', newPassword: '', confirm: '' })
   const [pwError, setPwError] = useState('')
@@ -33,7 +33,7 @@ export default function ProfilePage() {
     try {
       const res = await staffAPI.updateMe(form)
       // 更新本地 staff 信息
-      const updated = { ...staff, name: form.name, title: form.title, department: form.department }
+      const updated = { ...staff, name: form.name, title: form.title, department: form.department, phone: form.phone }
       login(updated)
       localStorage.setItem('jy_staff_info', JSON.stringify(updated))
       toast('信息已更新')
@@ -99,6 +99,10 @@ export default function ProfilePage() {
                   <label className="form-label">部门</label>
                   <input className="form-input" placeholder="如：医疗服务部" value={form.department} onChange={set('department')} />
                 </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">手机号码（用于登录）</label>
+                  <input className="form-input" type="tel" maxLength={11} placeholder="11位手机号" value={form.phone} onChange={set('phone')} />
+                </div>
               </div>
             ) : (
               <>
@@ -106,6 +110,7 @@ export default function ProfilePage() {
                 <InfoRow label="角色" value={ROLE_LABEL[staff?.role] || staff?.role} highlight />
                 <InfoRow label="职称" value={staff?.title || '-'} />
                 <InfoRow label="部门" value={staff?.department || '-'} />
+                <InfoRow label="手机号码" value={staff?.phone || '-'} mono />
                 <InfoRow label="账号ID" value={staff?._id?.slice(-8) || '-'} mono />
               </>
             )}
