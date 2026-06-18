@@ -3661,7 +3661,8 @@ export default function PatientDetailPage() {
         })
 
         // 按年份 → L1 分组（优先用 screeningL1 字段，旧数据 fallback 到标题匹配）
-        const OTHER_KEY = '__other__'
+        const ANNUAL_KEY = '__annual__'
+        const OTHER_KEY  = '__other__'
         const yearMap = {}
         reports.forEach(r => {
           const yr = r.reportYear || (r.date ? new Date(r.date).getFullYear() : new Date(r.createdAt).getFullYear()) || '未知'
@@ -3669,8 +3670,8 @@ export default function PatientDetailPage() {
           const l1Node = r.screeningL1
             ? screeningTree.find(n => String(n._id) === r.screeningL1)
             : titleToL1[r.title]
-          const key = l1Node ? String(l1Node._id) : OTHER_KEY
-          if (!yearMap[yr][key]) yearMap[yr][key] = { node: l1Node, reports: [] }
+          const key = l1Node ? String(l1Node._id) : (r.type === 'annual' ? ANNUAL_KEY : OTHER_KEY)
+          if (!yearMap[yr][key]) yearMap[yr][key] = { node: l1Node, label: key === ANNUAL_KEY ? '年度体检报告' : null, reports: [] }
           yearMap[yr][key].reports.push(r)
         })
         const years = Object.keys(yearMap).sort((a, b) => b - a)
@@ -3683,11 +3684,12 @@ export default function PatientDetailPage() {
             return ia !== ib ? ia - ib : (a.title || '').localeCompare(b.title || '', 'zh')
           })
 
-        // L1 显示顺序：按 screeningTree 顺序 + OTHER 末尾
+        // L1 显示顺序：年度体检 → screeningTree 顺序 → 其他
         const getL1Keys = (yrData) => {
-          const treeKeys = screeningTree.map(n => String(n._id)).filter(k => yrData[k])
-          const otherKey = yrData[OTHER_KEY] ? [OTHER_KEY] : []
-          return [...treeKeys, ...otherKey]
+          const annualKey = yrData[ANNUAL_KEY] ? [ANNUAL_KEY] : []
+          const treeKeys  = screeningTree.map(n => String(n._id)).filter(k => yrData[k])
+          const otherKey  = yrData[OTHER_KEY] ? [OTHER_KEY] : []
+          return [...annualKey, ...treeKeys, ...otherKey]
         }
 
         return (
@@ -3704,8 +3706,8 @@ export default function PatientDetailPage() {
                   📅 {yr} 年
                 </div>
                 {getL1Keys(yearMap[yr]).map(key => {
-                  const { node: l1Node, reports: grpReports } = yearMap[yr][key]
-                  const l1Label = l1Node?.label || '其他'
+                  const { node: l1Node, label: grpLabel, reports: grpReports } = yearMap[yr][key]
+                  const l1Label = grpLabel || l1Node?.label || '其他'
                   const l1Idx = l1Node ? screeningTree.findIndex(n => String(n._id) === key) : -1
                   const color = l1Idx >= 0 ? L1_COLORS[l1Idx % L1_COLORS.length] : '#8AA89C'
                   return (
