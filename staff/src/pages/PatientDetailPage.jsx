@@ -2370,7 +2370,7 @@ export default function PatientDetailPage() {
                           const updateSub = (si, patch) => setScreeningForm(f => { const a = [...f.reportItems]; const subs = [...a[oi].subItems]; subs[si] = { ...subs[si], ...patch }; a[oi] = { ...a[oi], subItems: subs }; return { ...f, reportItems: a } })
                           const STATUS_OPTIONS = [['normal','正常'],['abnormal','异常'],['attention','注意']]
                           return (
-                            <div key={oi} style={{ border: '1px solid #BBF7D0', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
+                            <div key={oi} style={{ border: '1px solid #BBF7D0', borderRadius: 8, background: '#fff', position: 'relative', zIndex: screeningSuggestKey === `lab-${oi}` ? 100 : 1 }}>
                               {/* 医嘱标题行 */}
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#E8F5EF', borderBottom: hasSubItems ? '1px solid #BBF7D0' : 'none' }}>
                                 <div style={{ flex: 1, position: 'relative' }}>
