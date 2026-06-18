@@ -251,24 +251,26 @@ export const staffAPI = {
   // 4.3 专项筛查
   getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),
   getProjectSubItems:    (type, id) => req(`/staff/requisition-items/${type}/${id}/sub-items`),
-  createScreeningRecord: (id, data, file) => {
-    if (file) {
+  createScreeningRecord: (id, data, files) => {
+    const fileList = files && files.length > 0 ? files : null
+    if (fileList) {
       const fd = new FormData()
       Object.entries(data).forEach(([k, v]) => {
         fd.append(k, Array.isArray(v) ? JSON.stringify(v) : (v ?? ''))
       })
-      fd.append('file', file)
+      fileList.forEach(f => fd.append('files', f))
       return req(`/staff/patients/${id}/screening-records`, { method: 'POST', body: fd })
     }
     return req(`/staff/patients/${id}/screening-records`, { method: 'POST', body: JSON.stringify(data) })
   },
-  updateScreeningRecord: (id, rid, data, file) => {
-    if (file) {
+  updateScreeningRecord: (id, rid, data, files) => {
+    const fileList = files && files.length > 0 ? files : null
+    if (fileList) {
       const fd = new FormData()
       Object.entries(data).forEach(([k, v]) => {
         fd.append(k, Array.isArray(v) ? JSON.stringify(v) : (v ?? ''))
       })
-      fd.append('file', file)
+      fileList.forEach(f => fd.append('files', f))
       return req(`/staff/patients/${id}/screening-records/${rid}`, { method: 'PATCH', body: fd })
     }
     return req(`/staff/patients/${id}/screening-records/${rid}`, { method: 'PATCH', body: JSON.stringify(data) })

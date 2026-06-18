@@ -2739,7 +2739,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 
 // ── 4.3 专项筛查：录入筛查结果（支持图片/PDF上传） ────────────────
 // POST /api/staff/patients/:id/screening-records
-router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single('file'), async (req, res) => {
+router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array('files', 10), async (req, res) => {
   try {
     const { title, screeningCategory, checkDate, hospital, note,
             screeningL1, screeningL2, screeningL3, examDescription, examConclusion } = req.body;
@@ -2751,8 +2751,10 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single
     if (!resolvedTitle) {
       return res.status(400).json({ success: false, message: '请选择筛查分类' });
     }
-    const fileUrl  = req.file ? `/api/uploads/screening/${req.file.filename}` : '';
-    const mimeType = req.file ? req.file.mimetype : '';
+    const uploadedFiles = req.files || [];
+    const fileUrls = uploadedFiles.map(f => `/api/uploads/screening/${f.filename}`);
+    const fileUrl  = fileUrls[0] || '';
+    const mimeType = uploadedFiles[0] ? uploadedFiles[0].mimetype : '';
     // 前端已明确传 reportItems，直接使用（不再从 screeningL3Items 兜底）
     const finalReportItems = reportItems;
     // screeningCategory/type 只接受固定 enum，L1 ObjectId 不合法，统一存 'other'
@@ -2776,6 +2778,7 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.single
       reportItems:      finalReportItems,
       note:             note || '',
       fileUrl,
+      fileUrls,
       mimeType,
       audit_status:     'unaudited',
       uploadedBy:       req.staff._id,
@@ -2794,7 +2797,7 @@ router.delete('/patients/:id/screening-records/:rid', staffAuth, async (req, res
 });
 
 // PATCH /api/staff/patients/:id/screening-records/:rid
-router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.single('file'), async (req, res) => {
+router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.array('files', 10), async (req, res) => {
   try {
     const { title, checkDate, hospital, note, screeningL1, screeningL2, screeningL3, examDescription, examConclusion } = req.body;
     const raw = req.body.reportItems;
@@ -2813,7 +2816,15 @@ router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.
     if (examConclusion !== undefined)  update.examConclusion = examConclusion;
     if (reportItems)      update.reportItems = reportItems;
     if (screeningL3Items) update.screeningL3Items = screeningL3Items;
-    if (req.file)         { update.fileUrl = `/api/uploads/screening/${req.file.filename}`; update.mimeType = req.file.mimetype; }
+    if (req.files && req.files.length > 0) {
+      const newUrls = req.files.map(f => `/api/uploads/screening/${f.filename}`);
+      // 追加到已有文件列表
+      const existing = await MedicalReport.findById(req.params.rid).select('fileUrls fileUrl');
+      const existingUrls = existing?.fileUrls?.length ? existing.fileUrls : (existing?.fileUrl ? [existing.fileUrl] : []);
+      update.fileUrls = [...existingUrls, ...newUrls];
+      update.fileUrl  = update.fileUrls[0];
+      update.mimeType = req.files[0].mimetype;
+    }
     const report = await MedicalReport.findOneAndUpdate({ _id: req.params.rid, user: req.params.id }, { $set: update }, { new: true });
     if (!report) return res.status(404).json({ success: false, message: '记录不存在' });
     res.json({ success: true, data: report });

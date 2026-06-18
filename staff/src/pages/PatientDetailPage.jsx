@@ -331,7 +331,7 @@ export default function PatientDetailPage() {
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
-  const [screeningFile, setScreeningFile] = useState(null)
+  const [screeningFiles, setScreeningFiles] = useState([])
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
   const [screeningSearchResults, setScreeningSearchResults] = useState([])
@@ -781,16 +781,16 @@ export default function PatientDetailPage() {
       const allL3Names = [...(screeningForm.reportItems || []).map(r => r.name), ...(screeningForm.examOrderItems || []).map(e => e.name), ...(screeningForm.funcTestItems || []).map(f => f.name)].filter(Boolean)
       const payload = { ...screeningForm, reportItems: allReportItems, examDescription: examDesc, examConclusion: examConc, screeningL3Items: allL3Names }
       if (editingScreeningId) {
-        await staffAPI.updateScreeningRecord(id, editingScreeningId, payload, screeningFile)
+        await staffAPI.updateScreeningRecord(id, editingScreeningId, payload, screeningFiles)
         toast('筛查结果已更新')
       } else {
-        await staffAPI.createScreeningRecord(id, payload, screeningFile)
+        await staffAPI.createScreeningRecord(id, payload, screeningFiles)
         toast('筛查结果已录入')
       }
       setShowScreeningForm(false)
       setEditingScreeningId(null)
       setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
-      setScreeningFile(null)
+      setScreeningFiles([])
       setScreeningLinkedItem(null)
       setScreeningAutoMatches([])
       loadScreening()
@@ -1960,7 +1960,12 @@ export default function PatientDetailPage() {
 
           const renderRecord = (r, color) => {
             const isExpanded = expandedRecord === r._id
-            const fullUrl = r.fileUrl ? (r.fileUrl.startsWith('/') ? API_ORIGIN + r.fileUrl : r.fileUrl) : null
+            // 多文件优先，向下兼容旧 fileUrl
+            const allUrls = (r.fileUrls && r.fileUrls.length > 0)
+              ? r.fileUrls
+              : (r.fileUrl ? [r.fileUrl] : [])
+            const resolvedUrls = allUrls.map(u => u.startsWith('/') ? API_ORIGIN + u : u)
+            const fullUrl = resolvedUrls[0] || null
             const labItems = (r.reportItems || []).filter(i => i.itemType !== 'data')
             const funcItems = (r.reportItems || []).filter(i => i.itemType === 'data')
             const hasExam = r.examDescription || r.examConclusion
@@ -2067,19 +2072,22 @@ export default function PatientDetailPage() {
                         ))}
                       </div>
                     )}
-                    {fullUrl && (
-                      <div style={{ marginTop: 6 }}>
-                        {r.mimeType === 'application/pdf' ? (
-                          <a href={fullUrl} target="_blank" rel="noopener noreferrer"
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', textDecoration: 'none' }}>
-                            📄 查看报告 PDF
-                          </a>
-                        ) : (
-                          <button onClick={() => setPreviewImageUrl(fullUrl)}
-                            style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', cursor: 'pointer' }}>
-                            🖼 查看报告图片
-                          </button>
-                        )}
+                    {resolvedUrls.length > 0 && (
+                      <div style={{ marginTop: 6, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                        {resolvedUrls.map((url, idx) => {
+                          const isPdf = url.endsWith('.pdf') || (idx === 0 && r.mimeType === 'application/pdf')
+                          return isPdf ? (
+                            <a key={idx} href={url} target="_blank" rel="noopener noreferrer"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', textDecoration: 'none' }}>
+                              📄 {resolvedUrls.length > 1 ? `PDF ${idx + 1}` : '查看报告 PDF'}
+                            </a>
+                          ) : (
+                            <button key={idx} onClick={() => setPreviewImageUrl(url)}
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 10px', borderRadius: 20, border: '1px solid #BBF7D0', background: '#F0FDF4', fontSize: 12, color: '#1E6B50', cursor: 'pointer' }}>
+                              🖼 {resolvedUrls.length > 1 ? `图片 ${idx + 1}` : '查看报告图片'}
+                            </button>
+                          )
+                        })}
                       </div>
                     )}
                   </div>
@@ -2443,26 +2451,35 @@ export default function PatientDetailPage() {
                     onChange={e => setScreeningForm(f => ({ ...f, note: e.target.value }))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label className="form-label">上传报告（图片或 PDF，可选）</label>
+                  <label className="form-label">上传报告（图片或 PDF，可多选）</label>
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+                    multiple
                     style={{ display: 'none' }}
                     id="screening-file-input"
-                    onChange={e => setScreeningFile(e.target.files[0] || null)}
+                    onChange={e => {
+                      const picked = Array.from(e.target.files || [])
+                      setScreeningFiles(prev => [...prev, ...picked])
+                      e.target.value = ''
+                    }}
                   />
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-                    <label htmlFor="screening-file-input" style={{ cursor: 'pointer', padding: '6px 14px', borderRadius: 8, border: '1px solid #E0D9CE', background: '#fff', fontSize: 13, color: '#4A6558' }}>
-                      选择文件
+                  <div style={{ marginTop: 4 }}>
+                    <label htmlFor="screening-file-input" style={{ cursor: 'pointer', padding: '6px 14px', borderRadius: 8, border: '1px solid #E0D9CE', background: '#fff', fontSize: 13, color: '#4A6558', display: 'inline-block' }}>
+                      + 选择文件
                     </label>
-                    {screeningFile ? (
-                      <span style={{ fontSize: 13, color: '#1E6B50' }}>
-                        {screeningFile.name}
-                        <button onClick={() => setScreeningFile(null)} style={{ marginLeft: 8, background: 'none', border: 'none', cursor: 'pointer', color: '#DC3545', fontSize: 12 }}>✕</button>
-                      </span>
-                    ) : (
-                      <span style={{ fontSize: 12, color: '#8AA89C' }}>未选择文件</span>
+                    {screeningFiles.length > 0 && (
+                      <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                        {screeningFiles.map((f, i) => (
+                          <span key={i} style={{ fontSize: 12, color: '#1E6B50', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {f.type === 'application/pdf' ? '📄' : '🖼'} {f.name}
+                            <button onClick={() => setScreeningFiles(prev => prev.filter((_, j) => j !== i))}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC3545', fontSize: 12, padding: 0 }}>✕</button>
+                          </span>
+                        ))}
+                      </div>
                     )}
+                    {screeningFiles.length === 0 && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 10 }}>未选择文件</span>}
                   </div>
                 </div>
               </div>
