@@ -4943,18 +4943,21 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           {saving && (
             <div style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#4A6558', marginBottom: 4 }}>
-                <span>正在上传...</span>
-                <span>{uploadProgress}%</span>
+                <span>{uploadProgress < 100 ? '正在上传...' : '服务器处理中，请稍候...'}</span>
+                {uploadProgress < 100 && <span>{uploadProgress}%</span>}
               </div>
               <div style={{ width: '100%', height: 6, background: '#E0D9CE', borderRadius: 99, overflow: 'hidden' }}>
-                <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#1E6B50', borderRadius: 99, transition: 'width 0.2s ease' }} />
+                {uploadProgress < 100
+                  ? <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#1E6B50', borderRadius: 99, transition: 'width 0.2s ease' }} />
+                  : <div style={{ height: '100%', width: '100%', background: 'linear-gradient(90deg, #1E6B50 0%, #4CAF8A 50%, #1E6B50 100%)', backgroundSize: '200% 100%', borderRadius: 99, animation: 'progressPulse 1.2s linear infinite' }} />
+                }
               </div>
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button className="btn btn-secondary" onClick={onClose} disabled={saving}>取消</button>
             <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-              {saving ? `上传中 ${uploadProgress}%` : '确认上传'}
+              {saving ? (uploadProgress < 100 ? `上传中 ${uploadProgress}%` : '处理中...') : '确认上传'}
             </button>
           </div>
         </div>
