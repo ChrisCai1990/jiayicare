@@ -2009,32 +2009,52 @@ export default function PatientDetailPage() {
                   <div style={{ marginTop: 8 }}>
                     {r.note && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 6 }}>结论：{r.note}</div>}
                     {/* 检验医嘱 */}
-                    {labItems.length > 0 && (
-                      <div style={{ marginBottom: 8 }}>
-                        <div style={{ fontSize: 11, fontWeight: 600, color: '#1E6B50', marginBottom: 4 }}>检验医嘱</div>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                          <thead>
-                            <tr style={{ background: '#f5f2ec' }}>
-                              {['项目','结果','参考范围','状态'].map(h => (
-                                <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {labItems.map((item, j) => (
-                              <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
-                                <td style={{ padding: '4px 8px', color: '#1A2B24' }}>{item.name}</td>
-                                <td style={{ padding: '4px 8px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
-                                  {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
-                                </td>
-                                <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
-                                <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
+                    {labItems.length > 0 && (() => {
+                      // 按 orderName 分组，无 orderName 的归入 '' 组
+                      const groupMap = {}
+                      const groupKeys = []
+                      labItems.forEach(item => {
+                        const key = item.orderName || ''
+                        if (!groupMap[key]) { groupMap[key] = []; groupKeys.push(key) }
+                        groupMap[key].push(item)
+                      })
+                      const renderItemRows = (items) => items.map((item, j) => (
+                        <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
+                          <td style={{ padding: '4px 8px', color: '#1A2B24' }}>{item.name}</td>
+                          <td style={{ padding: '4px 8px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
+                            {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
+                          </td>
+                          <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
+                          <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
+                        </tr>
+                      ))
+                      return (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: '#1E6B50', marginBottom: 4 }}>检验医嘱</div>
+                          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                              <tr style={{ background: '#f5f2ec' }}>
+                                {['项目','结果','参考范围','状态'].map(h => (
+                                  <th key={h} style={{ padding: '4px 8px', textAlign: 'left', fontWeight: 600, color: '#4A6558', borderBottom: '1px solid #E0D9CE' }}>{h}</th>
+                                ))}
                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
+                            </thead>
+                            <tbody>
+                              {groupKeys.map(key => (
+                                key
+                                  ? [
+                                    <tr key={`g-${key}`} style={{ background: '#E8F5EF' }}>
+                                      <td colSpan={4} style={{ padding: '3px 8px', fontSize: 11, fontWeight: 600, color: '#1E6B50' }}>{key}</td>
+                                    </tr>,
+                                    ...renderItemRows(groupMap[key])
+                                  ]
+                                  : renderItemRows(groupMap[key])
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      )
+                    })()}
                     {/* 检查医嘱 */}
                     {hasExam && (() => {
                       const descBlocks = (r.examDescription || '').split('\n\n').map(b => b.trim()).filter(Boolean)
