@@ -287,6 +287,7 @@ export default function PatientDetailPage() {
   const [showReqModal, setShowReqModal] = useState(false)
   const [showReferralModal, setShowReferralModal] = useState(false)
   const [showReportDetail, setShowReportDetail] = useState(null)
+  const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [showSRDetail, setShowSRDetail] = useState(null)
   const [staffList, setStaffList] = useState([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
@@ -458,11 +459,13 @@ export default function PatientDetailPage() {
     // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
     setReportScreeningData([])
+    setReportDetailLoading(true)
 
     // 背景异步：拉完整报告详情
     staffAPI.getReport(r._id)
       .then(res => setShowReportDetail(res.data))
-      .catch(() => {})
+      .catch(() => { /* 保持列表数据，下方会显示加载失败提示 */ })
+      .finally(() => setReportDetailLoading(false))
 
     // 背景异步：拉专项筛查匹配数据（不阻塞弹窗）
     const reportTitle = r.title || ''
@@ -4303,19 +4306,23 @@ export default function PatientDetailPage() {
                 </div>
               )}
 
-              {(showReportDetail.content || showReportDetail.fileUrl) && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
-                  {showReportDetail.mimeType?.startsWith('image/') || showReportDetail.content?.startsWith('data:image') ? (
+              <div style={{ marginTop: 12 }}>
+                <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
+                {reportDetailLoading ? (
+                  <div style={{ padding: '16px 0', textAlign: 'center', color: '#8AA89C', fontSize: 13 }}>加载中…</div>
+                ) : (showReportDetail.content || showReportDetail.fileUrl) ? (
+                  showReportDetail.mimeType?.startsWith('image/') || showReportDetail.content?.startsWith('data:image') ? (
                     <img src={showReportDetail.content || showReportDetail.fileUrl} alt="报告" style={{ maxWidth: '100%', maxHeight: '55vh', objectFit: 'contain', borderRadius: 8, border: '1px solid #f0ece4', display: 'block' }} />
                   ) : showReportDetail.mimeType === 'application/pdf' || showReportDetail.fileUrl?.endsWith('.pdf') ? (
                     <iframe src={showReportDetail.content || showReportDetail.fileUrl} title="PDF报告" style={{ width: '100%', height: 400, border: '1px solid #f0ece4', borderRadius: 8 }} />
                   ) : (
                     <a href={showReportDetail.content || showReportDetail.fileUrl} target="_blank" rel="noreferrer"
                       className="btn btn-secondary btn-sm">📎 查看文件</a>
-                  )}
-                </div>
-              )}
+                  )
+                ) : (
+                  <div style={{ padding: '12px 0', color: '#B0C4BB', fontSize: 13 }}>暂无文件</div>
+                )}
+              </div>
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
               {/* 审核操作区：仅当报告待审核时展示 */}
@@ -4785,6 +4792,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const handleSubmit = async () => {
     if (!form.l1Id) { setError('请选择报告大类'); return }
     if (!form.title) { setError('请填写报告标题'); return }
+    if (!fileData) { setError('请选择报告文件（图片或PDF）'); return }
     try {
       setSaving(true); setError('')
       await staffAPI.uploadReport({
