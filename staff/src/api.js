@@ -67,6 +67,23 @@ export const staffAPI = {
   getReports:    (p = {}) => req('/staff/medical-reports?' + qs(p)),
   getReport:     (id)     => req(`/staff/medical-reports/${id}`),
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
+  uploadReportFile: (file, onProgress) => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${BASE}/staff/upload/report-file`)
+    const token = getToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)) }
+    xhr.onload = () => {
+      const res = JSON.parse(xhr.responseText)
+      if (xhr.status === 401) { clearToken(); window.location.href = '/login'; reject(new Error('Token 无效')) }
+      else if (xhr.status >= 400) reject(new Error(res.message || '上传失败'))
+      else resolve(res.data)
+    }
+    xhr.onerror = () => reject(new Error('网络错误，上传失败'))
+    const fd = new FormData()
+    fd.append('file', file)
+    xhr.send(fd)
+  }),
   uploadReportWithProgress: (data, onProgress) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}/staff/medical-reports`)

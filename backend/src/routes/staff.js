@@ -1068,6 +1068,35 @@ router.post('/upload/image', staffAuth, upload.single('image'), (req, res) => {
   res.json({ success: true, data: { url } });
 });
 
+// 报告文件上传（图片 + PDF，最大 10MB）
+const uploadReportFile = multer({
+  storage: multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(UPLOADS_DIR, 'reports');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      const ext = path.extname(file.originalname).toLowerCase() || '.bin';
+      cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
+    },
+  }),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error(`不支持的文件格式（${file.mimetype}）`));
+  },
+});
+
+// POST /api/staff/upload/report-file
+router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
+  const host = process.env.API_HOST || 'http://121.40.156.39';
+  const url = `${host}/api/uploads/reports/${req.file.filename}`;
+  res.json({ success: true, data: { url, mimeType: req.file.mimetype, fileSize: req.file.size } });
+});
+
 // ── 随访表单库 ────────────────────────────────────────────
 // GET /api/staff/followup-forms — 获取启用的随访表单列表（供创建随访时选用）
 router.get('/followup-forms', staffAuth, async (req, res) => {

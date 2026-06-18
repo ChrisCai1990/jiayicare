@@ -4349,17 +4349,14 @@ export default function PatientDetailPage() {
                             const file = e.target.files[0]
                             if (!file) return
                             if (file.size > 10 * 1024 * 1024) { toast('文件不能超过10MB'); return }
-                            const reader = new FileReader()
-                            reader.onload = async (ev) => {
-                              try {
-                                const updated = await staffAPI.updateReport(showReportDetail._id, {
-                                  content: ev.target.result, mimeType: file.type, fileSize: String(file.size)
-                                })
-                                setShowReportDetail(updated.data)
-                                toast('文件已上传')
-                              } catch (err) { toast(err.message || '上传失败') }
-                            }
-                            reader.readAsDataURL(file)
+                            try {
+                              const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(file, () => {})
+                              const updated = await staffAPI.updateReport(showReportDetail._id, {
+                                fileUrl: url, mimeType, fileSize: String(fileSize), content: ''
+                              })
+                              setShowReportDetail(updated.data)
+                              toast('文件已上传')
+                            } catch (err) { toast(err.message || '上传失败') }
                           }} />
                       </label>
                     )}
@@ -4825,12 +4822,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     const file = e.target.files[0]
     if (!file) return
     if (file.size > 10 * 1024 * 1024) { setError('文件不能超过 10MB'); return }
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      setFileData({ content: ev.target.result, mimeType: file.type, fileSize: file.size, name: file.name })
-      if (!form.title) setForm(f => ({ ...f, title: file.name.replace(/\.[^.]+$/, '') }))
-    }
-    reader.readAsDataURL(file)
+    setFileData({ file, mimeType: file.type, fileSize: file.size, name: file.name })
+    if (!form.title) setForm(f => ({ ...f, title: file.name.replace(/\.[^.]+$/, '') }))
   }
 
   const handleSubmit = async () => {
@@ -4839,7 +4832,14 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     if (!fileData) { setError('请选择报告文件（图片或PDF）'); return }
     try {
       setSaving(true); setError(''); setUploadProgress(0)
-      await staffAPI.uploadReportWithProgress({
+      // 阶段一：上传文件到服务器磁盘（真实进度 0-90%）
+      const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(
+        fileData.file,
+        (p) => setUploadProgress(Math.round(p * 0.9))
+      )
+      // 阶段二：创建报告记录（90-100%）
+      setUploadProgress(90)
+      await staffAPI.uploadReport({
         patientId,
         title: form.title,
         type: isAnnual ? 'annual' : 'other',
@@ -4848,10 +4848,11 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         hospital: form.hospital,
         date: form.date,
         note: form.note,
-        content: fileData?.content,
-        mimeType: fileData?.mimeType,
-        fileSize: fileData?.fileSize,
-      }, setUploadProgress)
+        fileUrl: url,
+        mimeType,
+        fileSize: String(fileSize),
+      })
+      setUploadProgress(100)
       onSaved()
     } catch (err) {
       setError(err.message || '上传失败')
