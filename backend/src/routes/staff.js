@@ -1442,9 +1442,9 @@ router.put('/me', staffAuth, async (req, res) => {
   const allowed = ['name', 'title', 'department', 'avatar', 'phone', 'region'];
   const update = {};
   allowed.forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
-  await Admin.findByIdAndUpdate(req.staff._id, update);
+  await Admin.findByIdAndUpdate(req.staff._id, { $set: update });
   const s = await Admin.findById(req.staff._id).select('-password');
-  res.json({ success: true, data: s });
+  res.json({ success: true, data: { _id: s._id, name: s.name, role: s.role, title: s.title, department: s.department, avatar: s.avatar, region: s.region, phone: s.phone || '' } });
 });
 
 // PUT /api/staff/me/password — 修改密码

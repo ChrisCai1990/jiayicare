@@ -87,7 +87,7 @@ export default function EmployeePage() {
         await adminAPI.createEmployee(payload)
         toast('员工账号已创建')
       }
-      setShowModal(false); loadAll()
+      setShowModal(false); setForm(EMPTY_FORM); setEditId(null); loadAll()
     } catch (e) {
       setError(e.message || '操作失败')
     } finally { setSaving(false) }
