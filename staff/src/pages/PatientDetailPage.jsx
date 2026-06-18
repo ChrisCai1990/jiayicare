@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef } from 'react'
+﻿import React, { useEffect, useState, useRef, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
@@ -337,6 +337,17 @@ export default function PatientDetailPage() {
   const [screeningSearchResults, setScreeningSearchResults] = useState([])
   const [screeningSearching, setScreeningSearching] = useState(false)
   const [screeningAutoMatches, setScreeningAutoMatches] = useState([])  // L3选完后自动匹配的后台项目
+  const [screeningSuggestKey, setScreeningSuggestKey] = useState(null) // 'lab-0' | 'exam-1' | 'func-2'
+  const screeningL2SuggestData = useMemo(() => {
+    if (!screeningForm.screeningL1 || !screeningForm.screeningL2) return null
+    const l1 = screeningTree.find(n => String(n._id) === screeningForm.screeningL1)
+    const l2 = l1?.children?.find(c => c.label === screeningForm.screeningL2)
+    return {
+      labOrders: (l2?.labOrders || []).map(o => typeof o === 'string' ? { name: o, subItems: [] } : o),
+      examItems: (l2?.examItems || []).map(x => typeof x === 'string' ? { name: x, description: '', conclusion: '' } : x),
+      funcItems: (l2?.funcItems || []).filter(Boolean)
+    }
+  }, [screeningTree, screeningForm.screeningL1, screeningForm.screeningL2])
   const [screeningAutoLoading, setScreeningAutoLoading] = useState(false)
   const [screeningLinkedItem, setScreeningLinkedItem] = useState(null)  // 已关联的后台项目
   const [expandedRecord, setExpandedRecord] = useState(null) // 展开详情的记录 _id
@@ -2339,7 +2350,10 @@ export default function PatientDetailPage() {
                         {screeningForm.reportItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{screeningForm.reportItems.length} 项）</span>}
                       </label>
                       <button type="button" className="btn btn-secondary btn-sm"
-                        onClick={() => setScreeningForm(f => ({ ...f, reportItems: [...f.reportItems, { name: '', subItems: [], value: '', unit: '', referenceRange: '', status: 'normal' }] }))}>
+                        onClick={() => {
+                          setScreeningForm(f => ({ ...f, reportItems: [{ name: '', subItems: [], value: '', unit: '', referenceRange: '', status: 'normal' }, ...f.reportItems] }))
+                          setScreeningSuggestKey('lab-0')
+                        }}>
                         + 手动添加
                       </button>
                     </div>
@@ -2356,9 +2370,33 @@ export default function PatientDetailPage() {
                             <div key={oi} style={{ border: '1px solid #BBF7D0', borderRadius: 8, overflow: 'hidden', background: '#fff' }}>
                               {/* 医嘱标题行 */}
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', background: '#E8F5EF', borderBottom: hasSubItems ? '1px solid #BBF7D0' : 'none' }}>
-                                <input className="form-input" style={{ flex: 1, fontWeight: 600, fontSize: 13, background: 'transparent', border: '1px solid transparent', padding: '2px 6px' }}
-                                  placeholder="检验医嘱名称" value={order.name}
-                                  onChange={e => updateOrder({ name: e.target.value })} />
+                                <div style={{ flex: 1, position: 'relative' }}>
+                                  <input className="form-input" style={{ width: '100%', fontWeight: 600, fontSize: 13, background: 'transparent', border: '1px solid transparent', padding: '2px 6px' }}
+                                    placeholder="检验医嘱名称（可搜索）" value={order.name}
+                                    onChange={e => { updateOrder({ name: e.target.value }); setScreeningSuggestKey(`lab-${oi}`) }}
+                                    onFocus={() => setScreeningSuggestKey(`lab-${oi}`)}
+                                    onBlur={() => setTimeout(() => setScreeningSuggestKey(k => k === `lab-${oi}` ? null : k), 150)} />
+                                  {screeningSuggestKey === `lab-${oi}` && (() => {
+                                    const q = order.name.toLowerCase()
+                                    const hits = (screeningL2SuggestData?.labOrders || []).filter(o2 => o2.name.toLowerCase().includes(q) && o2.name !== order.name)
+                                    if (!hits.length) return null
+                                    return (
+                                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #BBF7D0', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 180, overflowY: 'auto', marginTop: 2 }}>
+                                        {hits.map((hit, hi) => (
+                                          <div key={hi} onMouseDown={() => {
+                                            updateOrder({ name: hit.name, subItems: (hit.subItems || []).map(s => ({ name: s.name, value: '', unit: s.unit || '', referenceRange: s.referenceRange || '', status: 'normal' })) })
+                                            setScreeningSuggestKey(null)
+                                          }} style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12, color: '#1A2B24', borderBottom: '1px solid #f0ece4' }}
+                                            onMouseEnter={e => e.currentTarget.style.background = '#E8F5EF'}
+                                            onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                                            {hit.name}
+                                            {hit.subItems?.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C' }}>{hit.subItems.length}项</span>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )
+                                  })()}
+                                </div>
                                 {!hasSubItems && (
                                   <>
                                     <input className="form-input" style={{ width: 70, padding: '2px 6px', fontSize: 12 }} placeholder="结果" value={order.value || ''}
@@ -2414,7 +2452,10 @@ export default function PatientDetailPage() {
                         {screeningForm.examOrderItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{screeningForm.examOrderItems.length} 项）</span>}
                       </label>
                       <button type="button" className="btn btn-secondary btn-sm"
-                        onClick={() => setScreeningForm(f => ({ ...f, examOrderItems: [...f.examOrderItems, { name: '', description: '', conclusion: '' }] }))}>
+                        onClick={() => {
+                          setScreeningForm(f => ({ ...f, examOrderItems: [{ name: '', description: '', conclusion: '' }, ...f.examOrderItems] }))
+                          setScreeningSuggestKey('exam-0')
+                        }}>
                         + 手动添加
                       </button>
                     </div>
@@ -2424,10 +2465,33 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                         {screeningForm.examOrderItems.map((item, idx) => (
                           <div key={idx} style={{ border: '1px solid #BFDBFE', borderRadius: 8, padding: '10px 12px', background: '#EFF6FF' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
-                              <input className="form-input" style={{ fontWeight: 600, fontSize: 13 }} placeholder="检查项目名称" value={item.name}
-                                onChange={e => setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, examOrderItems: a } })} />
-                              <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px', marginLeft: 8 }}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, gap: 8 }}>
+                              <div style={{ flex: 1, position: 'relative' }}>
+                                <input className="form-input" style={{ width: '100%', fontWeight: 600, fontSize: 13 }} placeholder="检查项目名称（可搜索）" value={item.name}
+                                  onChange={e => { setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, examOrderItems: a } }); setScreeningSuggestKey(`exam-${idx}`) }}
+                                  onFocus={() => setScreeningSuggestKey(`exam-${idx}`)}
+                                  onBlur={() => setTimeout(() => setScreeningSuggestKey(k => k === `exam-${idx}` ? null : k), 150)} />
+                                {screeningSuggestKey === `exam-${idx}` && (() => {
+                                  const q = item.name.toLowerCase()
+                                  const hits = (screeningL2SuggestData?.examItems || []).filter(x => x.name.toLowerCase().includes(q) && x.name !== item.name)
+                                  if (!hits.length) return null
+                                  return (
+                                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #BFDBFE', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 160, overflowY: 'auto', marginTop: 2 }}>
+                                      {hits.map((hit, hi) => (
+                                        <div key={hi} onMouseDown={() => {
+                                          setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], name: hit.name, description: hit.description || '', conclusion: hit.conclusion || '' }; return { ...f, examOrderItems: a } })
+                                          setScreeningSuggestKey(null)
+                                        }} style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12, color: '#1A2B24', borderBottom: '1px solid #f0ece4' }}
+                                          onMouseEnter={e => e.currentTarget.style.background = '#EFF6FF'}
+                                          onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                                          {hit.name}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )
+                                })()}
+                              </div>
+                              <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px', flexShrink: 0 }}
                                 onClick={() => setScreeningForm(f => ({ ...f, examOrderItems: f.examOrderItems.filter((_, i) => i !== idx) }))}>✕</button>
                             </div>
                             <textarea className="form-input" rows={2} style={{ fontSize: 12, marginBottom: 4 }} placeholder="检查描述（检查目的、注意事项等）"
@@ -2452,7 +2516,10 @@ export default function PatientDetailPage() {
                         {screeningForm.funcTestItems.length > 0 && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>（{screeningForm.funcTestItems.length} 项）</span>}
                       </label>
                       <button type="button" className="btn btn-secondary btn-sm"
-                        onClick={() => setScreeningForm(f => ({ ...f, funcTestItems: [...f.funcTestItems, { name: '', result: '' }] }))}>
+                        onClick={() => {
+                          setScreeningForm(f => ({ ...f, funcTestItems: [{ name: '', result: '' }, ...f.funcTestItems] }))
+                          setScreeningSuggestKey('func-0')
+                        }}>
                         + 手动添加
                       </button>
                     </div>
@@ -2465,8 +2532,31 @@ export default function PatientDetailPage() {
                         </div>
                         {screeningForm.funcTestItems.map((item, idx) => (
                           <div key={idx} style={{ display: 'grid', gridTemplateColumns: '2fr 3fr auto', gap: 4, padding: '4px 8px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
-                            <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="检测项目名称" value={item.name}
-                              onChange={e => setScreeningForm(f => { const a = [...f.funcTestItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, funcTestItems: a } })} />
+                            <div style={{ position: 'relative' }}>
+                              <input className="form-input" style={{ padding: '3px 6px', fontSize: 12, width: '100%' }} placeholder="检测项目名称" value={item.name}
+                                onChange={e => { setScreeningForm(f => { const a = [...f.funcTestItems]; a[idx] = { ...a[idx], name: e.target.value }; return { ...f, funcTestItems: a } }); setScreeningSuggestKey(`func-${idx}`) }}
+                                onFocus={() => setScreeningSuggestKey(`func-${idx}`)}
+                                onBlur={() => setTimeout(() => setScreeningSuggestKey(k => k === `func-${idx}` ? null : k), 150)} />
+                              {screeningSuggestKey === `func-${idx}` && (() => {
+                                const q = item.name.toLowerCase()
+                                const hits = (screeningL2SuggestData?.funcItems || []).filter(n => n.toLowerCase().includes(q) && n !== item.name)
+                                if (!hits.length) return null
+                                return (
+                                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 999, background: '#fff', border: '1px solid #E9D5FF', borderRadius: 6, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 160, overflowY: 'auto', marginTop: 2 }}>
+                                    {hits.map((hit, hi) => (
+                                      <div key={hi} onMouseDown={() => {
+                                        setScreeningForm(f => { const a = [...f.funcTestItems]; a[idx] = { ...a[idx], name: hit }; return { ...f, funcTestItems: a } })
+                                        setScreeningSuggestKey(null)
+                                      }} style={{ padding: '6px 10px', cursor: 'pointer', fontSize: 12, color: '#1A2B24', borderBottom: '1px solid #f0ece4' }}
+                                        onMouseEnter={e => e.currentTarget.style.background = '#F5F3FF'}
+                                        onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                                        {hit}
+                                      </div>
+                                    ))}
+                                  </div>
+                                )
+                              })()}
+                            </div>
                             <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }} placeholder="检测结果" value={item.result}
                               onChange={e => setScreeningForm(f => { const a = [...f.funcTestItems]; a[idx] = { ...a[idx], result: e.target.value }; return { ...f, funcTestItems: a } })} />
                             <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 4px' }}
