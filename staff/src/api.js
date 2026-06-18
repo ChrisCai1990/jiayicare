@@ -67,6 +67,22 @@ export const staffAPI = {
   getReports:    (p = {}) => req('/staff/medical-reports?' + qs(p)),
   getReport:     (id)     => req(`/staff/medical-reports/${id}`),
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
+  uploadReportWithProgress: (data, onProgress) => new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', `${BASE}/staff/medical-reports`)
+    xhr.setRequestHeader('Content-Type', 'application/json')
+    const token = getToken()
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)) }
+    xhr.onload = () => {
+      const res = JSON.parse(xhr.responseText)
+      if (xhr.status === 401) { clearToken(); window.location.href = '/login'; reject(new Error('Token 无效或已过期')) }
+      else if (xhr.status >= 400) reject(new Error(res.message || '上传失败'))
+      else resolve(res)
+    }
+    xhr.onerror = () => reject(new Error('网络错误，上传失败'))
+    xhr.send(JSON.stringify(data))
+  }),
   auditReport:   (id, d)  => req(`/staff/medical-reports/${id}/audit`, { method: 'PATCH', body: JSON.stringify(d) }),
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
   deleteReport:  (id)     => req(`/staff/medical-reports/${id}`,       { method: 'DELETE' }),

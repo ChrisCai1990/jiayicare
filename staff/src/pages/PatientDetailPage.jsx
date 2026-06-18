@@ -4789,6 +4789,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const [form, setForm] = useState({ title: '', l1Id: '', l2Label: '', hospital: '', date: '', note: '' })
   const [fileData, setFileData] = useState(null)
   const [saving, setSaving] = useState(false)
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [error, setError] = useState('')
 
   const isAnnual = form.l1Id === ANNUAL_L1_ID
@@ -4825,8 +4826,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     if (!form.title) { setError('请填写报告标题'); return }
     if (!fileData) { setError('请选择报告文件（图片或PDF）'); return }
     try {
-      setSaving(true); setError('')
-      await staffAPI.uploadReport({
+      setSaving(true); setError(''); setUploadProgress(0)
+      await staffAPI.uploadReportWithProgress({
         patientId,
         title: form.title,
         type: isAnnual ? 'annual' : 'other',
@@ -4838,12 +4839,13 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         content: fileData?.content,
         mimeType: fileData?.mimeType,
         fileSize: fileData?.fileSize,
-      })
+      }, setUploadProgress)
       onSaved()
     } catch (err) {
       setError(err.message || '上传失败')
     } finally {
       setSaving(false)
+      setUploadProgress(0)
     }
   }
 
@@ -4925,11 +4927,24 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
             <textarea className="form-input" rows={2} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="补充说明（可选）" />
           </div>
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
-            {saving ? '上传中...' : '确认上传'}
-          </button>
+        <div className="modal-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+          {saving && (
+            <div style={{ width: '100%' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#4A6558', marginBottom: 4 }}>
+                <span>正在上传...</span>
+                <span>{uploadProgress}%</span>
+              </div>
+              <div style={{ width: '100%', height: 6, background: '#E0D9CE', borderRadius: 99, overflow: 'hidden' }}>
+                <div style={{ height: '100%', width: `${uploadProgress}%`, background: '#1E6B50', borderRadius: 99, transition: 'width 0.2s ease' }} />
+              </div>
+            </div>
+          )}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button className="btn btn-secondary" onClick={onClose} disabled={saving}>取消</button>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+              {saving ? `上传中 ${uploadProgress}%` : '确认上传'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
