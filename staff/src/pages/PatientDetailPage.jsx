@@ -4318,10 +4318,14 @@ export default function PatientDetailPage() {
                 {reportDetailLoading ? (
                   <div style={{ padding: '16px 0', textAlign: 'center', color: '#8AA89C', fontSize: 13 }}>加载中…</div>
                 ) : (showReportDetail.content || showReportDetail.fileUrl) ? (() => {
-                  const src = showReportDetail.content || showReportDetail.fileUrl
-                  const isPdf = showReportDetail.mimeType === 'application/pdf' || showReportDetail.fileUrl?.endsWith('.pdf')
-                  const isImg = showReportDetail.mimeType?.startsWith('image/') || showReportDetail.content?.startsWith('data:image')
+                  const rawSrc = showReportDetail.content || showReportDetail.fileUrl
+                  // 相对路径补全 origin，兼容旧 base64 content
+                  const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
+                  const isPdf = showReportDetail.mimeType === 'application/pdf' || rawSrc.includes('.pdf')
+                  const isImg = showReportDetail.mimeType?.startsWith('image/') || rawSrc.startsWith('data:image')
                   const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
+                  const ext = isPdf ? '.pdf' : isImg ? (showReportDetail.mimeType === 'image/png' ? '.png' : '.jpg') : ''
+                  const displayName = showReportDetail.title ? `${showReportDetail.title}${ext}` : (isPdf ? 'PDF 文件' : isImg ? '图片文件' : '附件')
                   const handleView = () => {
                     if (isImg) { setPreviewImageUrl(src) }
                     else { window.open(src, '_blank') }
@@ -4331,7 +4335,7 @@ export default function PatientDetailPage() {
                       <span style={{ fontSize: 28, lineHeight: 1 }}>{isPdf ? '📄' : isImg ? '🖼️' : '📎'}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 500, fontSize: 13, color: '#1A2B24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                          {isPdf ? 'PDF 文件' : isImg ? '图片文件' : '附件'}
+                          {displayName}
                         </div>
                         {sizeKB && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}</div>}
                       </div>

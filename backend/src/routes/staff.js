@@ -1092,8 +1092,7 @@ const uploadReportFile = multer({
 // POST /api/staff/upload/report-file
 router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
-  const host = process.env.API_HOST || 'http://121.40.156.39';
-  const url = `${host}/api/uploads/reports/${req.file.filename}`;
+  const url = `/api/uploads/reports/${req.file.filename}`;
   res.json({ success: true, data: { url, mimeType: req.file.mimetype, fileSize: req.file.size } });
 });
 
