@@ -6,6 +6,7 @@ JiayiCare 一键部署脚本
   python scripts/deploy.py --push               # git add + commit + push + 部署
   python scripts/deploy.py --push -m "描述"    # 指定 commit message
   python scripts/deploy.py --backend            # 只重启后端（不重新构建前端）
+  python scripts/deploy.py --clean              # 全量清理 node_modules 后重装（依赖有大变动时用）
 """
 
 import sys
@@ -62,7 +63,7 @@ def git_commit_and_push(message=None):
         sys.exit(1)
     print('✅ push 成功')
 
-def run_deploy(backend_only=False):
+def run_deploy(backend_only=False, clean=False):
     paramiko = check_paramiko()
 
     print(f'\n🔌 连接服务器 {HOST}...')
@@ -112,9 +113,10 @@ def run_deploy(backend_only=False):
     print(f'   📌 当前 commit: {log.strip()}')
 
     if not backend_only:
-        # ── 安装依赖（全量清理保证 vite 等 devDeps 正确安装）──
-        run('rm -rf /var/www/jiayicare/node_modules', timeout=60, label='清理旧 node_modules')
-        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装所有依赖')
+        # ── 安装依赖 ──
+        if clean:
+            run('rm -rf /var/www/jiayicare/node_modules', timeout=60, label='清理旧 node_modules（--clean）')
+        run('cd /var/www/jiayicare && npm install --legacy-peer-deps', timeout=300, label='安装依赖')
 
         VITE = '/var/www/jiayicare/node_modules/.bin/vite'
 
@@ -169,12 +171,13 @@ def main():
     parser.add_argument('--push',    action='store_true', help='git add + commit + push 后再部署')
     parser.add_argument('-m', '--message', default=None, help='commit message（默认：update 时间戳）')
     parser.add_argument('--backend', action='store_true', help='只重启后端，不构建前端')
+    parser.add_argument('--clean',   action='store_true', help='全量清理 node_modules 后重装（依赖有大变动时用）')
     args = parser.parse_args()
 
     if args.push:
         git_commit_and_push(args.message)
 
-    run_deploy(backend_only=args.backend)
+    run_deploy(backend_only=args.backend, clean=args.clean)
 
 if __name__ == '__main__':
     main()
