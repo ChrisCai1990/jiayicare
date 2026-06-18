@@ -3774,6 +3774,13 @@ export default function PatientDetailPage() {
                                 </>
                               )}
                               <button className="btn btn-secondary btn-sm" onClick={() => openReportDetail(r)}>查看</button>
+                              {r.audit_status !== 'audited' && (
+                                <button className="btn btn-sm" style={{ marginLeft: 4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
+                                  onClick={async () => {
+                                    if (!window.confirm('确认删除这条报告记录？')) return
+                                    try { await staffAPI.deleteReport(r._id); loadReports() } catch (err) { toast(err.message) }
+                                  }}>删除</button>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -4320,7 +4327,31 @@ export default function PatientDetailPage() {
                       className="btn btn-secondary btn-sm">📎 查看文件</a>
                   )
                 ) : (
-                  <div style={{ padding: '12px 0', color: '#B0C4BB', fontSize: 13 }}>暂无文件</div>
+                  <div style={{ padding: '12px 0' }}>
+                    <div style={{ color: '#B0C4BB', fontSize: 13, marginBottom: 8 }}>暂无文件</div>
+                    {showReportDetail.audit_status !== 'audited' && (
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 6, border: '1px dashed #B0C4BB', color: '#4A6558', fontSize: 13, cursor: 'pointer' }}>
+                        📎 补传文件
+                        <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
+                          onChange={async (e) => {
+                            const file = e.target.files[0]
+                            if (!file) return
+                            if (file.size > 10 * 1024 * 1024) { toast('文件不能超过10MB'); return }
+                            const reader = new FileReader()
+                            reader.onload = async (ev) => {
+                              try {
+                                const updated = await staffAPI.updateReport(showReportDetail._id, {
+                                  content: ev.target.result, mimeType: file.type, fileSize: String(file.size)
+                                })
+                                setShowReportDetail(updated.data)
+                                toast('文件已上传')
+                              } catch (err) { toast(err.message || '上传失败') }
+                            }
+                            reader.readAsDataURL(file)
+                          }} />
+                      </label>
+                    )}
+                  </div>
                 )}
               </div>
             </div>

@@ -965,7 +965,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.audit_status === 'audited') return res.status(403).json({ success: false, message: '已审核通过的报告不可修改' });
-    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary } = req.body;
+    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, mimeType, fileSize } = req.body;
     if (title !== undefined) report.title = title;
     if (type !== undefined) report.type = type;
     if (hospital !== undefined) report.hospital = hospital;
@@ -977,8 +977,28 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (reportYear !== undefined) report.reportYear = reportYear;
     if (reportItems !== undefined) report.reportItems = reportItems;
     if (aiSummary !== undefined) report.aiSummary = aiSummary;
+    // 补传/替换文件
+    if (content !== undefined) {
+      if (content && content.length > 10 * 1024 * 1024) return res.status(400).json({ success: false, message: '文件过大，最大约7MB' });
+      report.content = content;
+    }
+    if (mimeType !== undefined) report.mimeType = mimeType;
+    if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
     res.json({ success: true, data: report });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/staff/medical-reports/:id — 删除报告（审核前可删）
+router.delete('/medical-reports/:id', staffAuth, async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.audit_status === 'audited') return res.status(403).json({ success: false, message: '已审核通过的报告不可删除' });
+    await report.deleteOne();
+    res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
