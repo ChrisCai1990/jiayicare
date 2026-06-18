@@ -139,6 +139,7 @@ router.post('/login', async (req, res) => {
         title: admin.title,
         department: admin.department,
         avatar: admin.avatar,
+        phone: admin.phone || '',
       },
     },
   });
@@ -158,6 +159,7 @@ router.get('/me', staffAuth, async (req, res) => {
       department: s.department,
       avatar: s.avatar,
       region: s.region,
+      phone: s.phone || '',
     },
   });
 });
