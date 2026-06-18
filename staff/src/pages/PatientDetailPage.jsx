@@ -4320,7 +4320,7 @@ export default function PatientDetailPage() {
                 ) : (showReportDetail.content || showReportDetail.fileUrl) ? (() => {
                   const rawSrc = showReportDetail.content || showReportDetail.fileUrl
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
-                  const isPdf = showReportDetail.mimeType === 'application/pdf' || rawSrc.includes('.pdf')
+                  const isPdf = showReportDetail.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
                   const isImg = showReportDetail.mimeType?.startsWith('image/') || rawSrc.startsWith('data:image')
                   const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
                   const ext = isPdf ? '.pdf' : isImg ? (showReportDetail.mimeType === 'image/png' ? '.png' : '.jpg') : ''
