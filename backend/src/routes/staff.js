@@ -925,7 +925,7 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
-    const { patientId, title, type, hospital, date, fileUrl, content, mimeType, fileSize, planId, planItemId } = req.body;
+    const { patientId, title, type, hospital, date, fileUrl, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
 
     // base64 内容限制（约 7MB 原始文件 → 9.3MB base64）
@@ -943,6 +943,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       mimeType: mimeType || '', fileSize: fileSize || '',
       uploadedBy: req.staff._id, audit_status: 'unaudited',
       planId: planId || null, planItemId: planItemId || null,
+      screeningL1: screeningL1 || '', screeningL2: screeningL2 || '',
     });
     if (planId && planItemId) {
       const plan = await HealthPlan.findById(planId);

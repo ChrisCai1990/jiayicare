@@ -3660,13 +3660,15 @@ export default function PatientDetailPage() {
           })
         })
 
-        // 按年份 → L1 分组
+        // 按年份 → L1 分组（优先用 screeningL1 字段，旧数据 fallback 到标题匹配）
         const OTHER_KEY = '__other__'
         const yearMap = {}
         reports.forEach(r => {
           const yr = r.reportYear || (r.date ? new Date(r.date).getFullYear() : new Date(r.createdAt).getFullYear()) || '未知'
           if (!yearMap[yr]) yearMap[yr] = {}
-          const l1Node = titleToL1[r.title]
+          const l1Node = r.screeningL1
+            ? screeningTree.find(n => String(n._id) === r.screeningL1)
+            : titleToL1[r.title]
           const key = l1Node ? String(l1Node._id) : OTHER_KEY
           if (!yearMap[yr][key]) yearMap[yr][key] = { node: l1Node, reports: [] }
           yearMap[yr][key].reports.push(r)
@@ -3718,7 +3720,10 @@ export default function PatientDetailPage() {
                       <tbody>
                         {sortByTree(grpReports).map(r => (
                           <tr key={r._id}>
-                            <td style={{ fontWeight: 500, color: '#1E6B50', cursor: 'pointer' }} onClick={() => openReportDetail(r)}>{r.title}</td>
+                            <td style={{ cursor: 'pointer' }} onClick={() => openReportDetail(r)}>
+                              <span style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title}</span>
+                              {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 1 }}>{r.screeningL2}</div>}
+                            </td>
                             <td style={{ fontSize: 12, color: '#666' }}>{r.institution || r.hospital || '-'}</td>
                             <td style={{ fontSize: 12, color: '#8AA89C' }}>{r.checkDate || r.date || '-'}</td>
                             <td>
@@ -4480,6 +4485,7 @@ export default function PatientDetailPage() {
       {showUploadReport && (
         <UploadReportModal
           patientId={id}
+          screeningTree={screeningTree}
           onClose={() => setShowUploadReport(false)}
           onSaved={() => { setShowUploadReport(false); toast('报告已上传'); loadReports() }}
         />
@@ -4728,27 +4734,30 @@ function SendMessageModal({ patientId, patientName, onClose }) {
 }
 
 // ── 上传体检报告弹窗 ───────────────────────────────────────
-const REPORT_TYPE_OPTIONS = [
-  '血常规', '尿常规', '生化全套', '血脂', '血糖', '肝功能', '肾功能',
-  '心电图', '胸片', '腹部B超', '甲状腺B超', 'CT', 'MRI',
-  '功能医学检测', '基因检测', '其他',
-]
-// 中文展示名 → 后端 enum 值
-const REPORT_TYPE_MAP = {
-  '血常规': 'blood', '尿常规': 'other', '生化全套': 'blood',
-  '血脂': 'blood', '血糖': 'blood', '肝功能': 'blood', '肾功能': 'blood',
-  '心电图': 'ecg', '胸片': 'radiology', '腹部B超': 'ultrasound',
-  '甲状腺B超': 'ultrasound', 'CT': 'radiology', 'MRI': 'mri',
-  '功能医学检测': 'functional', '基因检测': 'genetic', '其他': 'other',
-}
+const ANNUAL_L1_ID = '__annual__'
 
-function UploadReportModal({ patientId, onClose, onSaved }) {
-  const toast = useToast()
-  const [form, setForm] = useState({ title: '', type: '', hospital: '', date: '', note: '' })
-  const [fileData, setFileData] = useState(null) // { content, mimeType, fileSize, name }
+function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) {
+  const [form, setForm] = useState({ title: '', l1Id: '', l2Label: '', hospital: '', date: '', note: '' })
+  const [fileData, setFileData] = useState(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
+
+  const isAnnual = form.l1Id === ANNUAL_L1_ID
+  const currentL1 = isAnnual ? null : screeningTree.find(n => String(n._id) === form.l1Id)
+  const l2Options = currentL1?.children || []
+
+  const handleL1Change = (l1Id) => {
+    const isAnn = l1Id === ANNUAL_L1_ID
+    setForm(f => ({
+      ...f, l1Id,
+      l2Label: '',
+      title: isAnn ? (f.title || '年度体检报告') : '',
+    }))
+  }
+
+  const handleL2Change = (l2Label) => {
+    setForm(f => ({ ...f, l2Label, title: l2Label ? `${l2Label} 报告` : f.title }))
+  }
 
   const handleFile = (e) => {
     const file = e.target.files[0]
@@ -4763,13 +4772,16 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
   }
 
   const handleSubmit = async () => {
+    if (!form.l1Id) { setError('请选择报告大类'); return }
     if (!form.title) { setError('请填写报告标题'); return }
     try {
       setSaving(true); setError('')
       await staffAPI.uploadReport({
         patientId,
         title: form.title,
-        type: REPORT_TYPE_MAP[form.type] || 'other',
+        type: isAnnual ? 'annual' : 'other',
+        screeningL1: isAnnual ? '' : form.l1Id,
+        screeningL2: isAnnual ? '' : form.l2Label,
         hospital: form.hospital,
         date: form.date,
         note: form.note,
@@ -4787,43 +4799,80 @@ function UploadReportModal({ patientId, onClose, onSaved }) {
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
-      <div className="modal" style={{ maxWidth: 480 }}>
+      <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
           <h3 className="modal-title">上传体检报告</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
           {error && <div className="alert alert-error">{error}</div>}
+
+          {/* L1 大类 */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">报告大类 *</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {[{ id: ANNUAL_L1_ID, label: '年度体检报告' }, ...screeningTree.map(n => ({ id: String(n._id), label: n.label }))].map(opt => (
+                <button key={opt.id} type="button"
+                  onClick={() => handleL1Change(opt.id)}
+                  style={{
+                    padding: '5px 14px', borderRadius: 20, fontSize: 13, cursor: 'pointer', border: '1.5px solid',
+                    background: form.l1Id === opt.id ? '#1E6B50' : '#fff',
+                    color: form.l1Id === opt.id ? '#fff' : '#4A6558',
+                    borderColor: form.l1Id === opt.id ? '#1E6B50' : '#C8D5CE',
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* L2 具体分类（年度体检不展示） */}
+          {!isAnnual && form.l1Id && (
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">具体分类</label>
+              {l2Options.length > 0 ? (
+                <select className="form-input" value={form.l2Label} onChange={e => handleL2Change(e.target.value)}>
+                  <option value="">-- 选择具体项目（可选）--</option>
+                  {l2Options.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
+                </select>
+              ) : (
+                <div style={{ fontSize: 12, color: '#aaa', padding: '6px 0' }}>该大类暂无子分类</div>
+              )}
+            </div>
+          )}
+
+          {/* 当前分类路径提示 */}
+          {form.l1Id && (
+            <div style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '5px 10px' }}>
+              {isAnnual ? '年度体检报告（整份报告）' : [currentL1?.label, form.l2Label].filter(Boolean).join(' › ')}
+            </div>
+          )}
+
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">报告标题 *</label>
-            <input className="form-input" value={form.title} onChange={set('title')} placeholder="如：2024年年度体检报告" />
+            <input className="form-input" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} placeholder="如：2024年年度体检报告" />
           </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告类型</label>
-            <select className="form-input" value={form.type} onChange={set('type')}>
-              <option value="">-- 请选择 --</option>
-              {REPORT_TYPE_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
-          </div>
+
           <div style={{ display: 'flex', gap: 10 }}>
             <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
               <label className="form-label">医院 / 机构</label>
-              <input className="form-input" value={form.hospital} onChange={set('hospital')} placeholder="如：协和医院" />
+              <input className="form-input" value={form.hospital} onChange={e => setForm(f => ({ ...f, hospital: e.target.value }))} placeholder="如：协和医院" />
             </div>
             <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
               <label className="form-label">报告日期</label>
-              <input className="form-input" type="date" value={form.date} onChange={set('date')} />
+              <input className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
           </div>
+
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">报告文件（图片/PDF，≤10MB）</label>
-            <input type="file" accept="image/*,.pdf" onChange={handleFile}
-              style={{ fontSize: 13, padding: '6px 0' }} />
+            <input type="file" accept="image/*,.pdf" onChange={handleFile} style={{ fontSize: 13, padding: '6px 0' }} />
             {fileData && <div style={{ fontSize: 12, color: '#22A06B', marginTop: 4 }}>✓ {fileData.name}</div>}
           </div>
+
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">备注</label>
-            <textarea className="form-input" rows={2} value={form.note} onChange={set('note')} placeholder="补充说明（可选）" />
+            <textarea className="form-input" rows={2} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="补充说明（可选）" />
           </div>
         </div>
         <div className="modal-footer">
