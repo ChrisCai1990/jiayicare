@@ -4211,20 +4211,29 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setShowReportDetail(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
-              {[
-                ['类型', showReportDetail.type],
-                ['医院', showReportDetail.hospital || '-'],
-                ['报告日期', showReportDetail.date || '-'],
-                ['审核状态', showReportDetail.audit_status === 'audited' ? '已审核' : showReportDetail.audit_status === 'rejected' ? '已驳回' : '待审核'],
-                ['审核人', showReportDetail.audited_by || '-'],
-                ['驳回原因', showReportDetail.reject_reason || '-'],
-                ['上传人', showReportDetail.uploadedBy?.name || '-'],
-              ].map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
-                  <span style={{ width: 80, color: '#8AA89C', fontSize: 13 }}>{k}</span>
-                  <span style={{ flex: 1, fontSize: 13 }}>{v}</span>
-                </div>
-              ))}
+              {(() => {
+                const r = showReportDetail
+                const REPORT_TYPE_LABEL = { annual:'年度体检报告', blood:'血液检查', bloodTest:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜检查', pathology:'病理', functional:'功能医学', genetic:'基因检测', other:'其他', tumor:'肿瘤筛查', cardiovascular:'心脑血管病筛查', chronic:'慢性病筛查', health_promote:'健康促进' }
+                const typeLabel = REPORT_TYPE_LABEL[r.type] || r.type || '-'
+                const l1Node = r.screeningL1 ? screeningTree.find(n => String(n._id) === r.screeningL1) : null
+                const categoryLabel = l1Node ? [l1Node.label, r.screeningL2].filter(Boolean).join(' › ') : (r.type === 'annual' ? '年度体检报告' : null)
+                const rows = [
+                  ['报告类型', typeLabel],
+                  ...(categoryLabel && categoryLabel !== typeLabel ? [['分类', categoryLabel]] : []),
+                  ['医院 / 机构', r.hospital || '-'],
+                  ['报告日期', r.date || '-'],
+                  ['审核状态', r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'],
+                  ['审核人', r.audited_by || '-'],
+                  ...(r.reject_reason ? [['驳回原因', r.reject_reason]] : []),
+                  ['上传人', r.uploadedBy?.name || '-'],
+                ]
+                return rows.map(([k, v]) => (
+                  <div key={k} style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f5f2ec' }}>
+                    <span style={{ width: 90, flexShrink: 0, color: '#8AA89C', fontSize: 13 }}>{k}</span>
+                    <span style={{ flex: 1, fontSize: 13, color: '#1A2B24' }}>{v}</span>
+                  </div>
+                ))
+              })()}
               {showReportDetail.note && (
                 <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>{showReportDetail.note}</div>
               )}
