@@ -3,7 +3,7 @@ import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 import { StatusBadge } from './_ProjectPage'
 
-const EMPTY = { name: '', testResult: '', indicatorAnalysis: '', managementAdvice: '', testTiming: '', institution: '' }
+const EMPTY = { name: '', categoryId: '', testResult: '', indicatorAnalysis: '', managementAdvice: '', testTiming: '', institution: '' }
 
 export default function FunctionalMedicinePage() {
   const toast = useToast()
@@ -17,6 +17,16 @@ export default function FunctionalMedicinePage() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [l2Cats, setL2Cats] = useState([])
+
+  useEffect(() => {
+    adminAPI.categories().then(r => {
+      const flat = []
+      const walk = (nodes, depth = 0) => nodes.forEach(n => { flat.push({ ...n, depth }); walk(n.children || [], depth + 1) })
+      walk(r.data || [])
+      setL2Cats(flat.filter(n => n.depth === 1))
+    }).catch(() => {})
+  }, [])
 
   const load = (p = page) => {
     setLoading(true)
@@ -33,6 +43,7 @@ export default function FunctionalMedicinePage() {
     setEditId(item._id)
     setForm({
       name: item.name,
+      categoryId: item.categoryId ? String(item.categoryId._id || item.categoryId) : '',
       testResult: item.testResult || '',
       indicatorAnalysis: item.indicatorAnalysis || '',
       managementAdvice: item.managementAdvice || '',
@@ -77,7 +88,7 @@ export default function FunctionalMedicinePage() {
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr style={{ background: '#f8fafc' }}>
-                  {['检测名称', '检测机构', '检测时间', '状态', '操作'].map(h => (
+                  {['检测名称', '所属筛查分类', '检测机构', '检测时间', '状态', '操作'].map(h => (
                     <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                   ))}
                 </tr>
@@ -86,6 +97,7 @@ export default function FunctionalMedicinePage() {
                 {list.map(item => (
                   <tr key={item._id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                     <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.name}</td>
+                    <td style={{ padding: '10px 14px', color: '#6B7280' }}>{item.categoryId?.name || '-'}</td>
                     <td style={{ padding: '10px 14px', color: '#6B7280' }}>{item.institution || '-'}</td>
                     <td style={{ padding: '10px 14px', color: '#6B7280' }}>{item.testTiming || '-'}</td>
                     <td style={{ padding: '10px 14px' }}><StatusBadge active={item.status === 'active'} /></td>
@@ -130,6 +142,13 @@ export default function FunctionalMedicinePage() {
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">检测名称 *</label>
                   <input className="form-input" value={form.name} onChange={set('name')} placeholder="如：重金属检测、肠道菌群分析" />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">所属筛查分类（关联后在医护端录入时自动显示）</label>
+                  <select className="form-input" value={form.categoryId} onChange={set('categoryId')}>
+                    <option value="">-- 不绑定分类 --</option>
+                    {l2Cats.map(c => <option key={c._id} value={String(c._id)}>{c.name}</option>)}
+                  </select>
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">检测时间</label>

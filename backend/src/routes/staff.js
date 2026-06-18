@@ -2898,7 +2898,7 @@ router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
 // GET /api/staff/screening-tree — 专项筛查三层结构（从管理端套餐动态读取）
 router.get('/screening-tree', staffAuth, async (req, res) => {
   try {
-    const [cats, pkgs] = await Promise.all([
+    const [cats, pkgs, directFuncTests] = await Promise.all([
       ProjectCategory.find({ status: 'active' }).lean(),
       LabTestPackage.find({ status: 'active' })
         .populate({ path: 'orders', select: 'name items', populate: { path: 'items', select: 'name unit referenceRange referenceValue' } })
@@ -2906,6 +2906,7 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
         .populate({ path: 'specialExams', match: { deleted: { $ne: true } }, select: 'name description conclusion' })
         .populate('functionalTests', 'name')
         .lean(),
+      FunctionalMedicineTest.find({ status: 'active', deleted: { $ne: true }, categoryId: { $ne: null } }).select('name categoryId').lean(),
     ]);
     const l1s = cats.filter(c => !c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
     const l2sByParent = {};
@@ -2951,6 +2952,8 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
           });
           (p.functionalTests || []).forEach(f => f && f.name && funcSet.add(f.name));
         });
+        // 直接绑定了该 L2 分类的功能医学检测项目
+        directFuncTests.filter(f => f.categoryId && String(f.categoryId) === l2id).forEach(f => funcSet.add(f.name));
         // 跨类去重：examItems 里已有的名字，从 labOrders 中排除
         const examNames = new Set(examMap.keys());
         const labOrders = [...labOrderMap.values()].filter(o => !examNames.has(o.name));

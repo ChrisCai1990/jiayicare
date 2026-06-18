@@ -727,7 +727,7 @@ router.get('/functional-medicine-tests', adminAuth, async (req, res) => {
   if (status) filter.status = status;
   const skip = (parseInt(page) - 1) * parseInt(limit);
   const [list, total] = await Promise.all([
-    FunctionalMedicineTest.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)),
+    FunctionalMedicineTest.find(filter).populate('categoryId', 'name').sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit)),
     FunctionalMedicineTest.countDocuments(filter),
   ]);
   res.json({ success: true, data: list, total });
