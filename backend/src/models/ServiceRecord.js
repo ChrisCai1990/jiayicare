@@ -56,7 +56,7 @@ const serviceRecordSchema = new mongoose.Schema({
     date:      { type: Date, default: Date.now },
     content:   { type: String, default: '' },
     staffName: { type: String, default: '' },
-    staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Staff', default: null },
+    staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   }],
 }, { timestamps: true });
 

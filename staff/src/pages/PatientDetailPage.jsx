@@ -5455,6 +5455,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
     { key: 'heartRate',     label: '心率',  unit: '次/分',  kind: 'num', placeholder: '如 72' },
     { key: 'weight',        label: '体重',  unit: 'kg',     kind: 'num', placeholder: '如 65.0' },
     { key: 'sleep',         label: '睡眠',  unit: '小时',   kind: 'sleep' },
+    { key: 'mood',          label: '情绪',  unit: '分(1-10)', kind: 'num', placeholder: '如 7' },
     { key: 'diet',          label: '饮食',  unit: '',       kind: 'text', placeholder: '如：三餐规律，以主食蔬菜为主，少油少盐' },
     { key: 'exercise',      label: '运动',  unit: '',       kind: 'text', placeholder: '如：跑步，每周3次，每次30分钟' },
     { key: 'water',         label: '饮水',  unit: '',       kind: 'text', placeholder: '如：白水为主，每日约2000毫升' },
@@ -5495,7 +5496,7 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
     try {
       await staffAPI.createPatientHealthRecord(patientId, { type, value, extra })
       toastFn('健康数据已录入，已同步到用户端')
-      reset(); setOpen(false); onSaved()
+      reset(); onSaved()
     } catch (e) { toastFn(e.message || '录入失败') }
     finally { setSaving(false) }
   }

@@ -2364,10 +2364,6 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
     if (!type || value === undefined) {
       return res.status(400).json({ success: false, message: 'type 和 value 必填' });
     }
-    const VALID_TYPES = ['bloodPressure', 'bloodSugar', 'heartRate', 'weight', 'sleep', 'mood'];
-    if (!VALID_TYPES.includes(type)) {
-      return res.status(400).json({ success: false, message: '无效的数据类型' });
-    }
     const TYPE_META = {
       bloodPressure: { category: 'vitals',     label: '血压',  unit: 'mmHg' },
       bloodSugar:    { category: 'vitals',     label: '血糖',  unit: 'mmol/L' },
@@ -2375,7 +2371,16 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
       weight:        { category: 'metabolism', label: '体重',  unit: 'kg' },
       sleep:         { category: 'lifestyle',  label: '睡眠',  unit: '小时' },
       mood:          { category: 'lifestyle',  label: '情绪',  unit: '分' },
+      diet:          { category: 'lifestyle',  label: '饮食',  unit: '' },
+      exercise:      { category: 'lifestyle',  label: '运动',  unit: '' },
+      water:         { category: 'lifestyle',  label: '饮水',  unit: '' },
+      bowel:         { category: 'lifestyle',  label: '排便',  unit: '' },
+      smoking:       { category: 'lifestyle',  label: '吸烟',  unit: '' },
+      alcohol:       { category: 'lifestyle',  label: '饮酒',  unit: '' },
     };
+    if (!TYPE_META[type]) {
+      return res.status(400).json({ success: false, message: '无效的数据类型' });
+    }
     const meta = TYPE_META[type];
     const record = await HealthRecord.create({
       user:     req.params.id,
