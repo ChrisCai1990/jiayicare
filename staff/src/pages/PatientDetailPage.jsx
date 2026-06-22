@@ -389,6 +389,10 @@ export default function PatientDetailPage() {
   const [labForm, setLabForm] = useState({})
   const [editingDiseaseSeverity, setEditingDiseaseSeverity] = useState(false)
   const [severityForm, setSeverityForm] = useState({})
+  const [showTagEditor, setShowTagEditor] = useState(false)
+  const [tagEditorDiseases, setTagEditorDiseases] = useState([])
+  const [tagEditorInput, setTagEditorInput] = useState('')
+  const [tagSaving, setTagSaving] = useState(false)
   // 4.2 身体成分
   const [editingBodyComp, setEditingBodyComp] = useState(false)
   const [bodyCompNewRecord, setBodyCompNewRecord] = useState(false)
@@ -581,6 +585,17 @@ export default function PatientDetailPage() {
       setEditingHealthNeeds(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleSaveTags = async () => {
+    try {
+      setTagSaving(true)
+      await staffAPI.updatePatient(id, { chronicDiseases: tagEditorDiseases })
+      toast('标签已保存')
+      setShowTagEditor(false)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setTagSaving(false) }
   }
 
   const buildHealthForm = (u) => ({
@@ -897,13 +912,66 @@ export default function PatientDetailPage() {
       </div>
 
       {/* 慢病标签 */}
-      {user.chronicDiseases?.length > 0 && (
-        <div style={{ marginBottom: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {user.chronicDiseases.map(d => (
-            <span key={d} className="badge badge-danger">{d}</span>
-          ))}
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          {(user.chronicDiseases?.length > 0)
+            ? user.chronicDiseases.map(d => <span key={d} className="badge badge-danger">{d}</span>)
+            : <span style={{ fontSize: 12, color: '#8AA89C' }}>暂无慢性病标签</span>
+          }
+          {!showTagEditor && (
+            <button
+              style={{ fontSize: 12, padding: '2px 10px', borderRadius: 99, border: '1px dashed #DC3545', background: 'none', color: '#DC3545', cursor: 'pointer' }}
+              onClick={() => { setTagEditorDiseases(user.chronicDiseases || []); setTagEditorInput(''); setShowTagEditor(true) }}
+            >编辑标签</button>
+          )}
         </div>
-      )}
+        {showTagEditor && (
+          <div style={{ marginTop: 10, padding: '14px 16px', background: '#fff', border: '1px solid #e0d9ce', borderRadius: 10 }}>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>快捷选择</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+              {['高血压','糖尿病','冠心病','高脂血症','痛风','甲状腺疾病','慢性肾病','脂肪肝','骨质疏松','慢阻肺','桥本甲状腺炎','自身免疫病'].map(d => (
+                <button key={d} type="button"
+                  style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, border: `1px solid ${tagEditorDiseases.includes(d) ? '#DC3545' : '#ddd'}`, background: tagEditorDiseases.includes(d) ? '#fee2e2' : '#f9f9f9', color: tagEditorDiseases.includes(d) ? '#DC3545' : '#666', cursor: 'pointer' }}
+                  onClick={() => setTagEditorDiseases(cur => cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d])}>
+                  {d}
+                </button>
+              ))}
+            </div>
+            {tagEditorDiseases.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                {tagEditorDiseases.map((d, i) => (
+                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 10px', borderRadius: 99, background: '#fee2e2', color: '#DC3545', fontSize: 12 }}>
+                    {d}
+                    <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC3545', padding: 0, lineHeight: 1, fontSize: 14 }}
+                      onClick={() => setTagEditorDiseases(cur => cur.filter((_, j) => j !== i))}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+              <input className="form-input" placeholder="自定义标签，按 Enter 添加" style={{ flex: 1, fontSize: 13 }}
+                value={tagEditorInput}
+                onChange={e => setTagEditorInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter' && tagEditorInput.trim()) {
+                    e.preventDefault()
+                    const v = tagEditorInput.trim()
+                    if (!tagEditorDiseases.includes(v)) setTagEditorDiseases(cur => [...cur, v])
+                    setTagEditorInput('')
+                  }
+                }} />
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
+                const v = tagEditorInput.trim()
+                if (v && !tagEditorDiseases.includes(v)) { setTagEditorDiseases(cur => [...cur, v]); setTagEditorInput('') }
+              }}>添加</button>
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setShowTagEditor(false)}>取消</button>
+              <button className="btn btn-primary btn-sm" onClick={handleSaveTags} disabled={tagSaving}>{tagSaving ? '保存中…' : '保存'}</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* 服务效期提示 */}
       {user.serviceExpiry && (() => {
