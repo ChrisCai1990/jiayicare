@@ -2,6 +2,8 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
+const { uploadBase64, deleteFile, urlToKey } = require('../utils/oss');
+const { parseImage } = require('../utils/ai');
 const router = express.Router();
 
 // 类目中文映射
@@ -50,43 +52,31 @@ router.get('/by-category', auth, async (req, res) => {
   }
 });
 
-// ── AI 解析报告（需求23）───────────────────────────────────────────
+// ── AI 解析报告（通义千问视觉模型）────────────────────────────────
 router.post('/:id/parse-ai', auth, async (req, res) => {
   try {
     const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    if (!report.content) return res.status(400).json({ success: false, message: '报告无图片内容，无法解析' });
-    if (!process.env.ANTHROPIC_API_KEY) {
-      // 无 API KEY 时，返回待录入状态
+
+    const hasOssUrl = !!report.fileUrl;
+    const hasBase64 = !!report.content;
+    const isImage = report.mimeType?.startsWith('image/');
+
+    if (!hasOssUrl && !hasBase64) {
+      return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
+    }
+
+    if (!process.env.QWEN_API_KEY) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '已进入 AI 解析队列，请等待健管专员审核录入' });
     }
 
-    const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic.default({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-    const isImage = report.mimeType?.startsWith('image/');
     if (!isImage) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: 'PDF 解析功能即将开放，当前已加入待审核队列' });
     }
 
-    const mediaType = report.mimeType || 'image/jpeg';
-    const base64Data = report.content.replace(/^data:[^;]+;base64,/, '');
-
-    const message = await client.messages.create({
-      model: 'claude-opus-4-5',
-      max_tokens: 2000,
-      messages: [{
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: { type: 'base64', media_type: mediaType, data: base64Data },
-          },
-          {
-            type: 'text',
-            text: `请分析这份体检报告图片，提取所有检验/检查项目。
+    const prompt = `请分析这份体检报告图片，提取所有检验/检查项目。
 以 JSON 格式返回，结构如下：
 {
   "institution": "机构名称",
@@ -96,27 +86,27 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
   ],
   "summary": "综合分析（1-2句话，重点关注异常项）"
 }
-只输出 JSON，不要额外文字。`,
-          },
-        ],
-      }],
-    });
+只输出 JSON，不要额外文字。`;
+
+    // 优先用 OSS URL（通义千问可直接读取公开 URL）
+    const text = hasOssUrl
+      ? await parseImage(report.fileUrl, prompt, { isUrl: true })
+      : await parseImage(report.content, prompt, { isUrl: false });
 
     let parsed = null;
     try {
-      const text = message.content[0].text.trim();
-      parsed = JSON.parse(text.replace(/^```json\n?|\n?```$/g, ''));
+      parsed = JSON.parse(text.trim().replace(/^```json\n?|\n?```$/g, ''));
     } catch {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: 'AI 解析结果格式异常，已加入待人工审核队列' });
     }
 
     await MedicalReport.findByIdAndUpdate(report._id, {
-      reportItems:  parsed.items || [],
-      aiSummary:    parsed.summary || '',
-      aiStatus:     'pending',  // 待健管专员审核
-      institution:  parsed.institution || report.institution,
-      checkDate:    parsed.checkDate   || report.checkDate,
+      reportItems: parsed.items || [],
+      aiSummary:   parsed.summary || '',
+      aiStatus:    'pending',
+      institution: parsed.institution || report.institution,
+      checkDate:   parsed.checkDate   || report.checkDate,
     });
 
     res.json({ success: true, message: 'AI 解析完成，已提交健管专员审核', items: parsed.items?.length || 0 });
@@ -148,15 +138,30 @@ router.get('/:id', auth, async (req, res) => {
   }
 });
 
-// 创建体检报告记录
+// 创建体检报告记录（若携带 base64 content 则自动上传 OSS）
 router.post('/', auth, async (req, res) => {
   try {
-    const { title, type, hospital, date, pages, fileSize, fileUrl, keyFindings, note, content, mimeType,
+    const { title, type, hospital, date, pages, fileSize, keyFindings, note, content, mimeType,
             screeningCategory, reportYear, checkDate, institution, reportItems } = req.body;
+    let { fileUrl } = req.body;
     if (!title) return res.status(400).json({ success: false, message: '报告标题不能为空' });
 
-    // content 存储小于 10MB 的 base64（对应约 7.5MB 原始文件），超出则忽略
-    const safeContent = content && content.length < 10 * 1024 * 1024 ? content : '';
+    // 有 base64 内容且 OSS 已配置 → 上传到 OSS，不存 MongoDB
+    let ossKey = '';
+    let storedContent = '';
+    if (content && process.env.OSS_ACCESS_KEY_ID) {
+      try {
+        const result = await uploadBase64(content, mimeType || 'image/jpeg');
+        fileUrl = result.url;
+        ossKey = result.key;
+      } catch (ossErr) {
+        // OSS 上传失败降级：存 base64（限10MB）
+        storedContent = content.length < 10 * 1024 * 1024 ? content : '';
+      }
+    } else if (content) {
+      storedContent = content.length < 10 * 1024 * 1024 ? content : '';
+    }
+
     const year = reportYear || (date ? new Date(date).getFullYear() : new Date().getFullYear());
 
     const report = await MedicalReport.create({
@@ -168,9 +173,10 @@ router.post('/', auth, async (req, res) => {
       pages:              pages              || 1,
       fileSize:           fileSize           || '',
       fileUrl:            fileUrl            || '',
+      ossKey:             ossKey,
       keyFindings:        keyFindings        || [],
       note:               note               || '',
-      content:            safeContent,
+      content:            storedContent,
       mimeType:           mimeType           || '',
       screeningCategory:  screeningCategory  || '',
       reportYear:         year,
@@ -179,7 +185,6 @@ router.post('/', auth, async (req, res) => {
       reportItems:        reportItems        || [],
     });
 
-    // 返回时不包含 content（减少响应体积）
     const { content: _, ...reportObj } = report.toObject();
     res.status(201).json({ success: true, data: reportObj });
   } catch (err) {
@@ -195,6 +200,8 @@ router.delete('/:id', auth, async (req, res) => {
     if (report.audit_status === 'audited') {
       return res.status(403).json({ success: false, message: '已审核报告不可删除，如需处理请联系健康管理师' });
     }
+    // 删除 OSS 文件
+    if (report.ossKey) await deleteFile(report.ossKey);
     // 级联删除从该报告提取的关联健康记录（如有）
     await HealthRecord.deleteMany({ user: req.user._id, reportId: report._id });
     await report.deleteOne();

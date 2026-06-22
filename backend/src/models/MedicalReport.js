@@ -65,6 +65,7 @@ const medicalReportSchema = new mongoose.Schema({
   pages:       { type: Number, default: 1 },
   fileSize:    { type: String, default: '' },
   fileUrl:     { type: String, default: '' },
+  ossKey:      { type: String, default: '' },  // OSS 对象路径，删除时用于清理
   keyFindings: [{ type: String }],
   status: {
     type: String,
