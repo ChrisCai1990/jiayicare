@@ -42,7 +42,10 @@ export default function ProductPushPage() {
         setSelectedPrices(sp => { const n = {...sp}; delete n[id]; return n })
         return s.filter(x => x !== id)
       }
-      setSelectedPrices(sp => ({ ...sp, [id]: product?.price || 0 }))
+      // 有收费项目时默认选第一项价格，否则用 originalPrice
+      const svcPrices = Array.isArray(product?.servicePrices) ? product.servicePrices.filter(sp => sp.label && sp.price != null) : []
+      const defaultPrice = svcPrices.length > 0 ? svcPrices[0].price : (product?.price || 0)
+      setSelectedPrices(sp => ({ ...sp, [id]: defaultPrice }))
       return [...s, id]
     })
   }
@@ -157,8 +160,8 @@ export default function ProductPushPage() {
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
                   {selectedItems.map(p => {
-                    const memberPrices = p.memberPrices && typeof p.memberPrices === 'object' ? p.memberPrices : null
-                    const hasMemberPrices = memberPrices && Object.keys(memberPrices).length > 0
+                    const svcPrices = Array.isArray(p.servicePrices) ? p.servicePrices.filter(sp => sp.label && sp.price != null) : []
+                    const hasMultiPrice = svcPrices.length > 0
                     const curPrice = selectedPrices[p.id] ?? p.price
                     return (
                       <div key={p.id} style={{ fontSize: 13, borderBottom: '1px solid #f5f2ec', paddingBottom: 8 }}>
@@ -170,7 +173,7 @@ export default function ProductPushPage() {
                           </div>
                           <span style={{ fontWeight: 600, color: '#1E6B50' }}>¥{curPrice}</span>
                         </div>
-                        {hasMemberPrices && (
+                        {hasMultiPrice && (
                           <div style={{ marginTop: 5, marginLeft: 20 }}>
                             <select
                               style={{ fontSize: 12, padding: '2px 6px', borderRadius: 6, border: '1px solid #ddd', color: '#555', width: '100%' }}
@@ -178,9 +181,8 @@ export default function ProductPushPage() {
                               onClick={e => e.stopPropagation()}
                               onChange={e => setSelectedPrices(sp => ({ ...sp, [p.id]: Number(e.target.value) }))}
                             >
-                              <option value={p.price}>原价 ¥{p.price}</option>
-                              {Object.entries(memberPrices).map(([label, price]) => (
-                                <option key={label} value={price}>{label} ¥{price}</option>
+                              {svcPrices.map((sp, i) => (
+                                <option key={i} value={sp.price}>{sp.label} ¥{sp.price}</option>
                               ))}
                             </select>
                           </div>
