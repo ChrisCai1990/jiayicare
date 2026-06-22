@@ -141,7 +141,7 @@ function ReportCard({ report, onParseAI, parsing }) {
           ) : (
             <View style={styles.noItemsWrap}>
               <Text style={styles.noItemsText}>暂无解析数据</Text>
-              {report.content && (
+              {(report.content || report.fileUrl) && (
                 <TouchableOpacity style={styles.parseBtn} onPress={() => onParseAI(report._id)} disabled={parsing === report._id}>
                   {parsing === report._id
                     ? <ActivityIndicator size="small" color={colors.primary} />
