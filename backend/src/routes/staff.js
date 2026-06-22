@@ -2790,8 +2790,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       .populate('assignedNutritionist', 'name');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
-    const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    const { chat } = require('../utils/ai');
 
     const lv = user.labValues || {};
     const bc = user.bodyComposition || {};
@@ -2839,16 +2838,11 @@ ${user.healthProfile?.pastHistory || '无'}
   "plan": "管理方案初稿（200-300字，包含复查建议、生活方式干预、药物/营养素建议等）"
 }`;
 
-    const message = await client.messages.create({
-      model: 'claude-sonnet-4-6',
-      max_tokens: 1024,
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1024 });
 
     let summary = { trend: '', risks: '', plan: '' };
     try {
-      const text = message.content[0].text.trim();
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
       if (jsonMatch) summary = JSON.parse(jsonMatch[0]);
     } catch {}
 
