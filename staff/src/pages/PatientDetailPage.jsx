@@ -86,20 +86,29 @@ function LsText({ label, value = '', editing, placeholder, multiline, onChange }
 }
 
 // ── 简易 SVG 折线趋势图 ───────────────────────────────────────────
-function MiniTrendChart({ data, color = '#1E6B50', label }) {
+function MiniTrendChart({ data, color = '#1E6B50', label, refValue, refLabel }) {
   if (!data || data.length < 2) return null;
   const W = 260, H = 80, PAD = 8;
   const vals = data.map(d => d.y);
-  const min = Math.min(...vals), max = Math.max(...vals);
+  // Include refValue in range so reference line is always visible
+  const allVals = refValue != null ? [...vals, refValue] : vals;
+  const min = Math.min(...allVals), max = Math.max(...allVals);
   const range = max - min || 1;
   const xs = data.map((_, i) => PAD + (i / (data.length - 1)) * (W - PAD * 2));
   const ys = vals.map(v => H - PAD - ((v - min) / range) * (H - PAD * 2));
   const pts = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
   const last = data[data.length - 1];
+  const refY = refValue != null ? H - PAD - ((refValue - min) / range) * (H - PAD * 2) : null;
   return (
     <div style={{ display: 'inline-block', marginRight: 16, marginBottom: 12 }}>
       <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4, fontWeight: 600 }}>{label}</div>
       <svg width={W} height={H} style={{ border: '1px solid #f0ece4', borderRadius: 8, background: '#faf9f6' }}>
+        {refY != null && (
+          <>
+            <line x1={PAD} y1={refY} x2={W - PAD} y2={refY} stroke="#DC354550" strokeWidth="1.5" strokeDasharray="4,3" />
+            <text x={W - PAD - 2} y={Math.max(refY - 2, 10)} textAnchor="end" fontSize="8" fill="#DC3545AA">{refLabel || '参考'}</text>
+          </>
+        )}
         <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={pts} />
         {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r="3" fill={color} />)}
         <text x={xs[xs.length-1]} y={ys[ys.length-1] - 6} textAnchor="middle" fontSize="10" fill={color}>{last.y}</text>
@@ -2759,6 +2768,7 @@ export default function PatientDetailPage() {
             ) : (() => {
               // ── 从专项筛查 reportItems 派生指标值 ──
               // 按检查日期倒序，每个 key 取最新一条
+              // 每项可为 string[] 或 { names: string[], exclude: string[] }
               const REPORT_KEY_MAP = {
                 fpg:   ['空腹血糖','空腹葡萄糖','GLU','FPG','Glu(空腹)','血糖-0'],
                 hba1c: ['糖化血红蛋白','HbA1c','HbA1C','HBA1C','HBA1c','HbA1c(%)'],
@@ -2768,10 +2778,11 @@ export default function PatientDetailPage() {
                 hdl:   ['高密度脂蛋白','HDL','HDL-C','HDL-胆固醇'],
                 alt:   ['谷丙转氨酶','ALT','丙氨酸转氨酶','丙氨酸氨基转移酶'],
                 ast:   ['谷草转氨酶','AST','天冬氨酸转氨酶','门冬氨酸氨基转移酶'],
-                // 注意：故意不含'谷氨酰转肽酶'，避免匹配到 尿谷氨酰转肽酶G（尿液GGT）
+                // 故意不含'谷氨酰转肽酶'，避免匹配到 尿谷氨酰转肽酶G（尿液GGT）
                 ggt:   ['γ-谷氨酰转肽酶','γ-谷氨酸转肽酶','GGT','γ-GT','γGT','谷氨酸转肽酶'],
-                ua:    ['尿酸','UA','SUA'],
-                // 注意：故意不含短形式'Cr'，避免匹配到 尿Cr（尿液肌酐，排在血肌酐前面）
+                // 排除'结晶/盐结晶'：三大常规里的"尿酸结晶"不是血尿酸
+                ua:    { names: ['尿酸','UA','SUA'], exclude: ['结晶','盐结晶'] },
+                // 故意不含短形式'Cr'，避免匹配到 尿Cr（尿液肌酐）
                 cr:    ['血肌酐','肌酐','CREA','SCr','S-Cr','血Cr'],
                 umalb: ['尿微量白蛋白','尿微量蛋白','mAlb','MAU','微量白蛋白','MALB'],
                 egfr:  ['肾小球滤过率','eGFR','GFR','估算肾小球滤过率'],
@@ -2792,10 +2803,14 @@ export default function PatientDetailPage() {
               )
               // 从 reportItems 派生数值指标
               const derived = {}
-              for (const [key, names] of Object.entries(REPORT_KEY_MAP)) {
+              for (const [key, def] of Object.entries(REPORT_KEY_MAP)) {
+                const names = Array.isArray(def) ? def : def.names
+                const exclude = Array.isArray(def) ? [] : (def.exclude || [])
                 for (const report of sortedReports) {
                   const item = (report.reportItems || []).find(ri =>
-                    names.some(n => ri.name && ri.name.toLowerCase().includes(n.toLowerCase()))
+                    ri.name &&
+                    names.some(n => ri.name.toLowerCase().includes(n.toLowerCase())) &&
+                    !exclude.some(ex => ri.name.includes(ex))
                   )
                   if (item && item.value) {
                     derived[key] = {
@@ -2860,11 +2875,17 @@ export default function PatientDetailPage() {
 
               // 趋势：从所有筛查报告里按时间收集该 key 的历次值（旧→新）
               const trendData = (key) => {
-                const names = REPORT_KEY_MAP[key] || []
+                const def = REPORT_KEY_MAP[key]
+                const names = Array.isArray(def) ? def : (def?.names || [])
+                const exclude = Array.isArray(def) ? [] : (def?.exclude || [])
                 if (!names.length) return []
                 const pts = []
                 ;[...sortedReports].reverse().forEach(report => {
-                  const item = (report.reportItems || []).find(ri => names.some(n => ri.name && ri.name.toLowerCase().includes(n.toLowerCase())))
+                  const item = (report.reportItems || []).find(ri =>
+                    ri.name &&
+                    names.some(n => ri.name.toLowerCase().includes(n.toLowerCase())) &&
+                    !exclude.some(ex => ri.name.includes(ex))
+                  )
                   if (item && item.value && parseFloat(item.value)) {
                     const d = report.checkDate || report.date || ''
                     const dateStr = d ? new Date(d).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '?'
@@ -2940,7 +2961,13 @@ export default function PatientDetailPage() {
                           {sourceLabel && <div style={{ fontSize: 10, color: '#8AA89C', marginTop: 2 }}>{sourceLabel}{date ? `  ${date}` : ''}</div>}
                           {pts.length >= 2 && (
                             <div style={{ marginTop: 4 }}>
-                              <MiniTrendChart data={pts} color={borderColor} label="" />
+                              <MiniTrendChart
+                                data={pts}
+                                color={borderColor}
+                                label=""
+                                refValue={d.ref ? parseFloat(d.ref.replace(/[^0-9.]/g, '')) : undefined}
+                                refLabel={d.ref || undefined}
+                              />
                             </div>
                           )}
                         </div>

@@ -671,7 +671,10 @@ router.get('/followup-tasks', auth, async (req, res) => {
   try {
     const followups = await FollowUp.find({
       patientId: req.user._id,
-      status: { $in: ['planned', 'in_progress'] },
+      $or: [
+        { status: { $in: ['planned', 'in_progress'] } },
+        { completedByUser: true },
+      ],
     })
       .sort({ date: 1 })
       .populate('staffId', 'name role title')
@@ -680,6 +683,21 @@ router.get('/followup-tasks', auth, async (req, res) => {
     res.json({ success: true, data: followups });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取随访任务失败', error: err.message });
+  }
+});
+
+// PATCH /api/user/followup-tasks/:id/done — 用户标记/取消随访任务已完成
+router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
+  try {
+    const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
+    if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
+    const done = req.body.done !== false; // 默认 true，传 false 则取消
+    followup.completedByUser = done;
+    followup.completedByUserAt = done ? new Date() : null;
+    await followup.save();
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '操作失败', error: err.message });
   }
 });
 

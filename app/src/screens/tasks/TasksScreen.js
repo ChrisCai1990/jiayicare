@@ -344,6 +344,20 @@ export default function TasksScreen({ navigation }) {
     }
   };
 
+  const toggleFollowup = async (id) => {
+    const current = followupTasks.find(f => f._id === id);
+    if (!current) return;
+    const nextDone = !current.completedByUser;
+    setFollowupTasks(prev => prev.map(f =>
+      f._id === id ? { ...f, completedByUser: nextDone, completedByUserAt: nextDone ? new Date().toISOString() : null } : f
+    ));
+    try {
+      await followupTasksAPI.done(id, nextDone);
+    } catch {
+      setFollowupTasks(prev => prev.map(f => f._id === id ? { ...f, completedByUser: current.completedByUser, completedByUserAt: current.completedByUserAt } : f));
+    }
+  };
+
   const toggleReminder = async (id) => {
     setReminders(prev => prev.map(r => r._id === id ? { ...r, enabled: !r.enabled } : r));
     try {
@@ -360,12 +374,21 @@ export default function TasksScreen({ navigation }) {
     setCompleting(true);
     const prev = detailTask;
     setDetailTask(t => ({ ...t, status: 'completed', completedAt: new Date().toISOString() }));
-    setTasks(ts => ts.map(t => (t._id || t.id) === id ? { ...t, status: 'completed', completedAt: new Date().toISOString() } : t));
     try {
-      await tasksAPI.complete(id);
+      if (detailTask.isFollowup) {
+        setFollowupTasks(fs => fs.map(f => f._id === id ? { ...f, completedByUser: true, completedByUserAt: new Date().toISOString() } : f));
+        await followupTasksAPI.done(id);
+      } else {
+        setTasks(ts => ts.map(t => (t._id || t.id) === id ? { ...t, status: 'completed', completedAt: new Date().toISOString() } : t));
+        await tasksAPI.complete(id);
+      }
     } catch {
       setDetailTask(prev);
-      setTasks(ts => ts.map(t => (t._id || t.id) === id ? prev : t));
+      if (detailTask.isFollowup) {
+        setFollowupTasks(fs => fs.map(f => f._id === id ? { ...f, completedByUser: false, completedByUserAt: null } : f));
+      } else {
+        setTasks(ts => ts.map(t => (t._id || t.id) === id ? prev : t));
+      }
     } finally {
       setCompleting(false);
     }
@@ -396,13 +419,17 @@ export default function TasksScreen({ navigation }) {
     isFollowup: true,
   });
 
-  const pendingFollowups = followupTasks.filter(f => f.status !== 'completed' && f.status !== 'cancelled');
+  const pendingFollowups = followupTasks.filter(f => f.status !== 'completed' && f.status !== 'cancelled' && !f.completedByUser);
+  const completedFollowups = followupTasks.filter(f => f.completedByUser);
   const allItems     = [
     ...tasks.filter(t => t.status !== 'completed'),
     ...reminders.filter(r => r.enabled).map(reminderToItem),
     ...pendingFollowups.map(followupToItem),
   ];
-  const completedItems = tasks.filter(t => t.status === 'completed');
+  const completedItems = [
+    ...tasks.filter(t => t.status === 'completed'),
+    ...completedFollowups.map(f => ({ ...followupToItem(f), status: 'completed', completedAt: f.completedByUserAt })),
+  ];
 
   const today    = new Date().toISOString().slice(0, 10);
   const weekEnd  = new Date(Date.now() +  7 * 86400000).toISOString().slice(0, 10);
@@ -493,7 +520,7 @@ export default function TasksScreen({ navigation }) {
             {filteredTasks.map(task => (
               task.isReminder
                 ? <ReminderCard key={task._id} reminder={reminders.find(r => r._id === task._id) || task} onToggle={toggleReminder} />
-                : <TaskCard key={task._id || task.id} task={task} onToggle={toggleTask} onPress={setDetailTask} />
+                : <TaskCard key={task._id || task.id} task={task} onToggle={task.isFollowup ? toggleFollowup : toggleTask} onPress={setDetailTask} />
             ))}
             {completedItems.length > 0 && (
               <View style={styles.completedSection}>
@@ -502,7 +529,7 @@ export default function TasksScreen({ navigation }) {
                   <Text style={styles.completedHeaderText}>已完成 ({completedItems.length})</Text>
                 </View>
                 {completedItems.map(task => (
-                  <TaskCard key={task._id || task.id} task={task} onToggle={toggleTask} onPress={setDetailTask} />
+                  <TaskCard key={task._id || task.id} task={task} onToggle={task.isFollowup ? toggleFollowup : toggleTask} onPress={setDetailTask} />
                 ))}
               </View>
             )}

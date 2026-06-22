@@ -41,6 +41,8 @@ const followUpSchema = new mongoose.Schema({
   completedAt:  { type: Date, default: null },  // 实际完成时间
   participants: { type: String, default: '' },  // 面谈参与人员（逗号分隔）
   interviewMinutes: { type: String, default: '' }, // 面谈纪要
+  completedByUser:   { type: Boolean, default: false }, // 用户主动标记已完成
+  completedByUserAt: { type: Date, default: null },
 }, { timestamps: true });
 
 followUpSchema.index({ staffId: 1, date: -1 });

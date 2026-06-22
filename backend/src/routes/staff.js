@@ -946,7 +946,33 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
 
     const checkDate = date || '';
     const reportYear = checkDate ? new Date(checkDate).getFullYear() : new Date().getFullYear();
-    const report = await MedicalReport.create({
+
+    // 如果提供了 screeningL1 + 日期，检查是否已存在同类筛查记录（避免上传报告和手动录入产生两条审核）
+    let report;
+    if (screeningL1 && checkDate) {
+      const existing = await MedicalReport.findOne({ user: patientId, checkDate, screeningL1 });
+      if (existing) {
+        if (title) existing.title = title;
+        if (hospital) existing.hospital = hospital;
+        if (fileUrl) {
+          existing.fileUrl = fileUrl;
+          existing.content = content || '';
+          existing.mimeType = mimeType || '';
+          existing.fileSize = fileSize || '';
+        }
+        report = await existing.save();
+        if (planId && planItemId) {
+          const plan = await HealthPlan.findById(planId);
+          if (plan) {
+            const item = plan.items.id(planItemId);
+            if (item) { item.reportId = report._id; await plan.save(); }
+          }
+        }
+        return res.json({ success: true, data: report });
+      }
+    }
+
+    report = await MedicalReport.create({
       user: patientId, title, type: type || 'other', hospital: hospital || '',
       date: checkDate, checkDate, reportYear,
       fileUrl: fileUrl || '', content: content || '',
