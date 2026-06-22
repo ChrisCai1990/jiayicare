@@ -28,8 +28,6 @@ body {
   color: var(--text-primary);
   font-size: 14px;
   line-height: 1.5;
-  overflow-x: hidden;
-  max-width: 100vw;
 }
 
 button {
@@ -93,7 +91,7 @@ a { text-decoration: none; color: inherit; }
 .sidebar-logout:hover { background: var(--danger); color: #fff; opacity: 1; }
 
 /* ── Main ──────────────────────────────────────────────── */
-.main-content { margin-left: 220px; flex: 1; min-height: 100vh; padding: 28px 28px 40px; }
+.main-content { margin-left: 220px; flex: 1; min-height: 100vh; padding: 28px 28px 40px; overflow-x: hidden; min-width: 0; }
 
 /* ── Page ──────────────────────────────────────────────── */
 .page { }
