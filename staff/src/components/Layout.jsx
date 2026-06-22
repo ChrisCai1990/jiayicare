@@ -10,24 +10,26 @@ const PLAN_CHILDREN = [
   { label: '就医协助方案', type: 'medical_assist' },
 ]
 
+// moduleKey: 对应 StaffRole 里的权限模块 key，无 key 表示所有人可见
+// roles: 无 customRoleId 时按内置角色过滤（空数组=全部可见）
 const ALL_NAV = [
-  { label: '工作台',   icon: '🏠', path: '/home', roles: [] },
-  { label: '我的会员', icon: '👥', path: '/patients', roles: [] },
-  { label: '随访管理', icon: '📋', path: '/followups', roles: [] },
-  { label: '健康方案', icon: '📄', path: '/plans',    roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'], children: PLAN_CHILDREN },
-  { label: '报告管理', icon: '🔬', path: '/reports',  roles: ['healthManager','familyDoctor','superadmin'] },
-  { label: '异常复查', icon: '⚠️', path: '/abnormal-reviews', roles: ['healthManager','familyDoctor','superadmin'] },
-  { label: '服务记录', icon: '🏥', path: '/service-records', roles: [] },
-  { label: '科普推送', icon: '📢', path: '/knowledge', roles: ['healthManager','nutritionist','familyDoctor','superadmin'] },
-  { label: '问卷推送', icon: '📝', path: '/questionnaires', roles: ['healthManager','familyDoctor','superadmin'] },
-  { label: '产品推送', icon: '🛍', path: '/products',  roles: [] },
-  { label: '分佣中心', icon: '💰', path: '/commission', roles: [] },
-  { label: '会员营销', icon: '🎯', path: '/marketing',  roles: ['superadmin','manager','healthManager','familyDoctor'] },
-  { label: '团队管理', icon: '🫂', path: '/team',      roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'] },
-  { label: '运营看板', icon: '📊', path: '/operations', roles: ['superadmin','manager'] },
-  { label: '日常健康打卡', icon: '📊', path: '/daily-checkin', roles: [] },
-  { label: '消息通知', icon: '🔔', path: '/notifications', roles: [] },
-  { label: '个人中心', icon: '👤', path: '/profile',   roles: [] },
+  { label: '工作台',       icon: '🏠', path: '/home',             roles: [] },
+  { label: '我的会员',     icon: '👥', path: '/patients',          roles: [],                                                                                  moduleKey: 'patients' },
+  { label: '随访管理',     icon: '📋', path: '/followups',         roles: [],                                                                                  moduleKey: 'followups' },
+  { label: '健康方案',     icon: '📄', path: '/plans',             roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans', children: PLAN_CHILDREN },
+  { label: '报告管理',     icon: '🔬', path: '/reports',           roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'reports' },
+  { label: '异常复查',     icon: '⚠️', path: '/abnormal-reviews',  roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'abnormal_review' },
+  { label: '服务记录',     icon: '🏥', path: '/service-records',   roles: [],                                                                                  moduleKey: 'service_records' },
+  { label: '科普推送',     icon: '📢', path: '/knowledge',         roles: ['healthManager','nutritionist','familyDoctor','superadmin'],                         moduleKey: 'knowledge' },
+  { label: '问卷推送',     icon: '📝', path: '/questionnaires',    roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'questionnaires' },
+  { label: '产品推送',     icon: '🛍', path: '/products',          roles: [],                                                                                  moduleKey: 'products' },
+  { label: '分佣中心',     icon: '💰', path: '/commission',        roles: [],                                                                                  moduleKey: 'commission' },
+  { label: '会员营销',     icon: '🎯', path: '/marketing',         roles: ['superadmin','manager','healthManager','familyDoctor'],                              moduleKey: 'marketing' },
+  { label: '团队管理',     icon: '🫂', path: '/team',              roles: ['superadmin','familyDoctor','nutritionist','medicalAssistant','healthManager'],      moduleKey: 'team' },
+  { label: '运营看板',     icon: '📊', path: '/operations',        roles: ['superadmin','manager'],                                                            moduleKey: 'operations' },
+  { label: '日常健康打卡', icon: '✅', path: '/daily-checkin',     roles: [],                                                                                  moduleKey: 'daily_checkin' },
+  { label: '消息通知',     icon: '🔔', path: '/notifications',     roles: [] },
+  { label: '个人中心',     icon: '👤', path: '/profile',           roles: [] },
 ]
 
 export default function Layout() {
@@ -93,9 +95,16 @@ export default function Layout() {
 
         <nav className="sidebar-nav">
           <div className="sidebar-section-label">功能菜单</div>
-          {ALL_NAV.filter(item =>
-            item.roles.length === 0 || item.roles.includes(staff?.role)
-          ).map(item => {
+          {ALL_NAV.filter(item => {
+            // 无 moduleKey 的项（工作台/消息/个人中心）始终显示
+            if (!item.moduleKey) return true
+            // 有 customPermissions（管理后台为该账号配置了自定义角色权限）时，按权限决定显隐
+            if (staff?.customPermissions) {
+              return !!staff.customPermissions[item.moduleKey]?.view
+            }
+            // 否则按内置角色过滤（空数组=全部可见）
+            return item.roles.length === 0 || item.roles.includes(staff?.role)
+          }).map(item => {
             const isOnPlansPage = loc.pathname === item.path || loc.pathname.startsWith(item.path + '/')
             const isActive = isOnPlansPage && !item.children
 

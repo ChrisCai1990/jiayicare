@@ -114,7 +114,7 @@ router.post('/login', async (req, res) => {
     'tcmDoctor', 'specialist', 'healthPlanner',
   ];
 
-  const admin = await Admin.findOne({ $or: [{ username }, { phone: username }] });
+  const admin = await Admin.findOne({ $or: [{ username }, { phone: username }] }).populate('customRoleId');
   if (!admin || !(await admin.comparePassword(password))) {
     return res.status(401).json({ success: false, message: '用户名或密码错误' });
   }
@@ -140,6 +140,8 @@ router.post('/login', async (req, res) => {
         department: admin.department,
         avatar: admin.avatar,
         phone: admin.phone || '',
+        customRoleName: admin.customRoleId?.name || null,
+        customPermissions: admin.customRoleId?.permissions || null,
       },
     },
   });
@@ -147,7 +149,8 @@ router.post('/login', async (req, res) => {
 
 // ── GET /api/staff/me ─────────────────────────────────────────────
 router.get('/me', staffAuth, async (req, res) => {
-  const s = req.staff;
+  const s = await Admin.findById(req.staff._id).populate('customRoleId');
+  if (!s) return res.status(404).json({ success: false, message: '账号不存在' });
   res.json({
     success: true,
     data: {
@@ -160,6 +163,8 @@ router.get('/me', staffAuth, async (req, res) => {
       avatar: s.avatar,
       region: s.region,
       phone: s.phone || '',
+      customRoleName: s.customRoleId?.name || null,
+      customPermissions: s.customRoleId?.permissions || null,
     },
   });
 });

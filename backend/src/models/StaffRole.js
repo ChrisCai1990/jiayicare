@@ -3,18 +3,21 @@ const mongoose = require('mongoose');
 const staffRoleSchema = new mongoose.Schema({
   name: { type: String, required: true, unique: true, trim: true },
   permissions: {
-    // 每个模块的权限：{ view, create, edit, delete, audit }
-    patients:       { type: Object, default: {} },
-    orders:         { type: Object, default: {} },
-    messages:       { type: Object, default: {} },
-    services:       { type: Object, default: {} },
-    products:       { type: Object, default: {} },
-    questionnaires: { type: Object, default: {} },
-    staff:          { type: Object, default: {} },
-    settings:       { type: Object, default: {} },
-    projects:       { type: Object, default: {} },
-    reports:        { type: Object, default: {} },
-    followups:      { type: Object, default: {} },
+    // 医护端模块权限：{ view, create, edit, delete, audit, send }
+    patients:        { type: Object, default: {} },
+    followups:       { type: Object, default: {} },
+    plans:           { type: Object, default: {} },
+    reports:         { type: Object, default: {} },
+    abnormal_review: { type: Object, default: {} },
+    service_records: { type: Object, default: {} },
+    knowledge:       { type: Object, default: {} },
+    questionnaires:  { type: Object, default: {} },
+    products:        { type: Object, default: {} },
+    commission:      { type: Object, default: {} },
+    marketing:       { type: Object, default: {} },
+    team:            { type: Object, default: {} },
+    operations:      { type: Object, default: {} },
+    daily_checkin:   { type: Object, default: {} },
   },
 }, { timestamps: true });
 
