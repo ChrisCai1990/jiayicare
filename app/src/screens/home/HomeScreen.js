@@ -560,7 +560,7 @@ export default function HomeScreen({ navigation }) {
   // ── 合并待办：Task 表任务 + 随访计划（作为任务展示）─────────────
   const allPendingTaskItems = [
     ...allTasks,
-    ...followupPlans.map(plan => ({
+    ...followupPlans.filter(plan => !plan.completedByUser).map(plan => ({
       _id: plan._id,
       type: 'followup',
       title: plan.theme || '随访计划',
