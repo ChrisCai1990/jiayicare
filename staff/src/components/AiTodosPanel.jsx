@@ -35,7 +35,7 @@ export default function AiTodosPanel() {
       .finally(() => setLoading(false))
   }, [])
 
-  if (loading || todos.length === 0) return null
+  if (loading) return null
 
   const overdueCount = todos.filter(t => t.overdue).length
 
@@ -44,11 +44,13 @@ export default function AiTodosPanel() {
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div className="card-title">AI 待审核任务</div>
-          <span style={{
-            background: overdueCount > 0 ? '#DC3545' : '#1E6B50',
-            color: '#fff', fontSize: 11, fontWeight: 700,
-            borderRadius: 99, padding: '1px 8px', lineHeight: '18px',
-          }}>{todos.length}</span>
+          {todos.length > 0 && (
+            <span style={{
+              background: overdueCount > 0 ? '#DC3545' : '#1E6B50',
+              color: '#fff', fontSize: 11, fontWeight: 700,
+              borderRadius: 99, padding: '1px 8px', lineHeight: '18px',
+            }}>{todos.length}</span>
+          )}
           {overdueCount > 0 && (
             <span style={{ fontSize: 12, color: '#DC3545', fontWeight: 500 }}>
               {overdueCount} 项超24小时
@@ -57,6 +59,11 @@ export default function AiTodosPanel() {
         </div>
       </div>
       <div className="card-body" style={{ padding: '4px 20px 12px' }}>
+        {todos.length === 0 && (
+          <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>
+            暂无待审核任务
+          </div>
+        )}
         {todos.map((todo, i) => {
           const cfg = TYPE_CONFIG[todo.type] || { icon: '📌', label: todo.type, color: '#8AA89C' }
           return (
