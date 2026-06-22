@@ -864,7 +864,6 @@ export default function QuestionnairePage() {
                       </div>
                     </td>}
                     <td>
-                    <td>
                       <div style={{ fontWeight: 600 }}>{q.title}</div>
                       {q.description && <div style={{ fontSize: 12, color: '#888' }}>{q.description.slice(0, 40)}{q.description.length > 40 ? '...' : ''}</div>}
                     </td>
