@@ -69,7 +69,8 @@ export default function AiTodosPanel() {
                 borderBottom: i < todos.length - 1 ? '1px solid #f0ede8' : 'none',
                 cursor: 'pointer',
                 background: todo.overdue ? '#FFF8F8' : 'transparent',
-                margin: todo.overdue ? '0 -20px', padding: todo.overdue ? '10px 20px' : '10px 0',
+                margin: todo.overdue ? '0 -20px' : undefined,
+                padding: todo.overdue ? '10px 20px' : '10px 0',
               }}
             >
               {/* 类型图标 */}
