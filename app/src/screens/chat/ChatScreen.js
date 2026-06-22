@@ -22,6 +22,8 @@ const QUICK_QUESTIONS = [
   '睡眠不好对血压有影响吗？',
 ];
 
+const TRANSFER_MSG = '您好，我需要联系专员咨询。';
+
 const DISCLAIMER = '本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
 
 function MessageBubble({ msg }) {
@@ -60,6 +62,7 @@ export default function ChatScreen({ navigation }) {
   ]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [transferred, setTransferred] = useState(false);
   const scrollRef = useRef(null);
 
   const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -82,6 +85,19 @@ export default function ChatScreen({ navigation }) {
     conditions: user?.healthProfile?.pastHistory,
     medications:user?.healthProfile?.medicHistory,
   });
+
+  const transferToHuman = async () => {
+    if (transferred) return;
+    const lastMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
+    try { await chatAPI.transfer(lastMsg); } catch {}
+    setTransferred(true);
+    setMessages(prev => [...prev, {
+      id: Date.now(), role: 'assistant',
+      content: '已通知健管专员，稍后将有专员与您联系。如紧急情况请直接拨打急救电话。',
+      roleIcon: activeRole.icon, roleColor: activeRole.color, roleName: activeRole.label,
+      time: now(),
+    }]);
+  };
 
   const send = async (text) => {
     const msg = (text || input).trim();
@@ -147,7 +163,11 @@ export default function ChatScreen({ navigation }) {
             <Text style={styles.onlineText}>在线</Text>
           </View>
         </View>
-        <View style={{ width: 36 }} />
+        <TouchableOpacity onPress={transferToHuman} style={styles.transferBtn} disabled={transferred}>
+          <Text style={[styles.transferBtnText, transferred && { color: colors.textMuted }]}>
+            {transferred ? '已转人工' : '转人工'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {/* Role switch */}
@@ -300,4 +320,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', ...shadow.sm,
   },
   sendBtnDisabled: { backgroundColor: colors.textDisabled },
+  transferBtn: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full, borderWidth: 1, borderColor: colors.border },
+  transferBtnText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
 });

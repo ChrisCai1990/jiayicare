@@ -184,6 +184,11 @@ export const chatAPI = {
       method: 'POST',
       body: JSON.stringify({ messages, role, userInfo }),
     }),
+  transfer: (lastMessage) =>
+    request('/chat/transfer', {
+      method: 'POST',
+      body: JSON.stringify({ lastMessage }),
+    }),
 };
 
 // ── Questionnaire ─────────────────────────────────────────────────
