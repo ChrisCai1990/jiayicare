@@ -65,7 +65,6 @@ export default function AiTodosPanel() {
               onClick={() => nav(todo.link)}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
-                padding: '10px 0',
                 borderBottom: i < todos.length - 1 ? '1px solid #f0ede8' : 'none',
                 cursor: 'pointer',
                 background: todo.overdue ? '#FFF8F8' : 'transparent',
