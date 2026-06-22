@@ -1,34 +1,34 @@
-import React, { useEffect, useState, useCallback } from 'react'
+﻿import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 
-const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
-const STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
-const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
+const TYPE_MAP   = { phone: '鐢佃瘽', wechat: '寰俊', visit: '涓婇棬', video: '瑙嗛', other: '鍏朵粬' }
+const STATUS_MAP = { planned: '寰呴殢璁?, in_progress: '闅忚涓?, missed: '闅忚涓?, completed: '宸查殢璁?, cancelled: '宸插彇娑? }
+const CHECKIN_LABEL = { diet: '楗', exercise: '杩愬姩', sleep: '鐫＄湢', alcohol: '鐑熼厭', weight: '浣撻噸', bloodPressure: '琛€鍘?, bloodSugar: '琛€绯?, heartRate: '蹇冪巼', water: '楗按' }
 const STATUS_COLOR = { planned: '#D97706', in_progress: '#0077B6', missed: '#0077B6', completed: '#22A06B', cancelled: '#8AA89C' }
 
 const STATUS_TABS = [
-  { v: '',            l: '全部' },
-  { v: 'planned',     l: '待随访' },
-  { v: 'in_progress', l: '随访中' },
-  { v: 'completed',   l: '已随访' },
-  { v: 'cancelled',   l: '已取消' },
+  { v: '',            l: '鍏ㄩ儴' },
+  { v: 'planned',     l: '寰呴殢璁? },
+  { v: 'in_progress', l: '闅忚涓? },
+  { v: 'completed',   l: '宸查殢璁? },
+  { v: 'cancelled',   l: '宸插彇娑? },
 ]
 
 const TYPE_OPTIONS = [
-  { v: 'phone',  l: '电话' },
-  { v: 'wechat', l: '微信' },
-  { v: 'visit',  l: '上门' },
-  { v: 'video',  l: '视频' },
-  { v: 'other',  l: '其他' },
+  { v: 'phone',  l: '鐢佃瘽' },
+  { v: 'wechat', l: '寰俊' },
+  { v: 'visit',  l: '涓婇棬' },
+  { v: 'video',  l: '瑙嗛' },
+  { v: 'other',  l: '鍏朵粬' },
 ]
 
 function DetailModal({ item, onClose }) {
   if (!item) return null
-  const FOLLOWUP_TYPE = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他随访' }
-  const ROUTINE_PERIOD = { 双周: '双周随访', 月度: '月度随访', 季度: '季度随访' }
+  const FOLLOWUP_TYPE = { phone: '鐢佃瘽闅忚', wechat: '寰俊闅忚', visit: '涓婇棬闅忚', video: '瑙嗛闅忚', other: '鍏朵粬闅忚' }
+  const ROUTINE_PERIOD = { 鍙屽懆: '鍙屽懆闅忚', 鏈堝害: '鏈堝害闅忚', 瀛ｅ害: '瀛ｅ害闅忚' }
 
   const Row = ({ label, value }) => value ? (
     <div style={{ display: 'flex', gap: 8, padding: '6px 0', borderBottom: '1px solid #f0ece4' }}>
@@ -41,46 +41,46 @@ function DetailModal({ item, onClose }) {
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 600, width: '96%' }}>
         <div className="modal-header">
-          <h3 className="modal-title">随访详情 · {item.patientId?.name}</h3>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <h3 className="modal-title">闅忚璇︽儏 路 {item.patientId?.name}</h3>
+          <button className="modal-close" onClick={onClose}>鉁?/button>
         </div>
         <div className="modal-body" style={{ maxHeight: '70vh', overflowY: 'auto' }}>
-          <Row label="会员" value={`${item.patientId?.name}  ${item.patientId?.phone || ''}`} />
-          <Row label="计划日期" value={new Date(item.date).toLocaleDateString('zh-CN')} />
-          <Row label="随访主题" value={item.theme} />
-          <Row label="随访方式" value={FOLLOWUP_TYPE[item.type] || item.type} />
-          {item.routinePeriod && <Row label="周期类型" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
-          <Row label="负责人员" value={item.assignedTo?.name} />
-          <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
-          {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
-          <Row label="计划内容" value={item.content} />
+          <Row label="浼氬憳" value={`${item.patientId?.name}  ${item.patientId?.phone || ''}`} />
+          <Row label="璁″垝鏃ユ湡" value={new Date(item.date).toLocaleDateString('zh-CN')} />
+          <Row label="闅忚涓婚" value={item.theme} />
+          <Row label="闅忚鏂瑰紡" value={FOLLOWUP_TYPE[item.type] || item.type} />
+          {item.routinePeriod && <Row label="鍛ㄦ湡绫诲瀷" value={ROUTINE_PERIOD[item.routinePeriod] || item.routinePeriod} />}
+          <Row label="璐熻矗浜哄憳" value={item.assignedTo?.name} />
+          <Row label="鐘舵€? value={STATUS_MAP[item.status] || item.status} />
+          {item.checkInItems?.length > 0 && <Row label="鎵撳崱椤圭洰" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('銆?)} />}
+          <Row label="璁″垝鍐呭" value={item.content} />
           {item.status === 'completed' && (
             <>
-              <div style={{ margin: '12px 0 6px', fontSize: 12, color: '#1E6B50', fontWeight: 700, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访结果</div>
-              <Row label="执行方式" value={FOLLOWUP_TYPE[item.executedType] || item.executedType} />
-              <Row label="随访记录" value={item.executedContent} />
-              <Row label="完成时间" value={item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : ''} />
+              <div style={{ margin: '12px 0 6px', fontSize: 12, color: '#1E6B50', fontWeight: 700, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>闅忚缁撴灉</div>
+              <Row label="鎵ц鏂瑰紡" value={FOLLOWUP_TYPE[item.executedType] || item.executedType} />
+              <Row label="闅忚璁板綍" value={item.executedContent} />
+              <Row label="瀹屾垚鏃堕棿" value={item.completedAt ? new Date(item.completedAt).toLocaleString('zh-CN') : ''} />
             </>
           )}
-          {item.status === 'cancelled' && <Row label="取消原因" value={item.cancelReason} />}
-          {/* 随访表单完整数据（formData） */}
+          {item.status === 'cancelled' && <Row label="鍙栨秷鍘熷洜" value={item.cancelReason} />}
+          {/* 闅忚琛ㄥ崟瀹屾暣鏁版嵁锛坒ormData锛?*/}
           {item.formData && Object.keys(item.formData).length > 0 && (
             <div style={{ marginTop: 12 }}>
-              <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 700, marginBottom: 8, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访表单完整内容</div>
+              <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 700, marginBottom: 8, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>闅忚琛ㄥ崟瀹屾暣鍐呭</div>
               {Object.entries(item.formData).map(([k, v]) => {
                 if (v === null || v === undefined || v === '') return null
                 if (Array.isArray(v)) {
-                  return v.length > 0 ? <Row key={k} label={k} value={v.join('、')} /> : null
+                  return v.length > 0 ? <Row key={k} label={k} value={v.join('銆?)} /> : null
                 }
                 if (typeof v === 'object') {
-                  const sub = Object.entries(v).filter(([, sv]) => sv !== null && sv !== undefined && sv !== '').map(([sk, sv]) => `${sk}: ${sv}`).join('；')
+                  const sub = Object.entries(v).filter(([, sv]) => sv !== null && sv !== undefined && sv !== '').map(([sk, sv]) => `${sk}: ${sv}`).join('锛?)
                   return sub ? <Row key={k} label={k} value={sub} /> : null
                 }
                 return <Row key={k} label={k} value={String(v)} />
               })}
             </div>
           )}
-          {/* 扩展字段（随访表单 extras） */}
+          {/* 鎵╁睍瀛楁锛堥殢璁胯〃鍗?extras锛?*/}
           {item.extras && Object.keys(item.extras).length > 0 && (
             <div style={{ marginTop: 8 }}>
               {Object.entries(item.extras).map(([k, v]) => (
@@ -91,9 +91,9 @@ function DetailModal({ item, onClose }) {
           )}
         </div>
         <div className="modal-footer">
-          <button className="btn btn-secondary" onClick={onClose}>关闭</button>
+          <button className="btn btn-secondary" onClick={onClose}>鍏抽棴</button>
           <button className="btn btn-ghost" onClick={() => { onClose(); }}>
-            跳转会员详情
+            璺宠浆浼氬憳璇︽儏
           </button>
         </div>
       </div>
@@ -115,23 +115,23 @@ export default function FollowUpsPage() {
   const [dateFrom,     setDateFrom]     = useState(todayStr)
   const [dateTo,       setDateTo]       = useState('')
   const [loading,      setLoading]      = useState(true)
-  const [showModal,    setShowModal]    = useState(false)  // 保留状态但不再使用新建入口
-  // 注：dateFrom 默认今天开始，dateTo 默认空（不限结束），显示所有待随访记录
+  const [showModal,    setShowModal]    = useState(false)  // 淇濈暀鐘舵€佷絾涓嶅啀浣跨敤鏂板缓鍏ュ彛
+  // 娉細dateFrom 榛樿浠婂ぉ寮€濮嬶紝dateTo 榛樿绌猴紙涓嶉檺缁撴潫锛夛紝鏄剧ず鎵€鏈夊緟闅忚璁板綍
 
-  // 执行随访 modal
+  // 鎵ц闅忚 modal
   const [execItem,     setExecItem]     = useState(null)
   const [execForm,     setExecForm]     = useState({ type: 'phone', content: '', status: 'completed' })
   const [execSaving,   setExecSaving]   = useState(false)
 
-  // 取消随访 modal
+  // 鍙栨秷闅忚 modal
   const [cancelItem,   setCancelItem]   = useState(null)
   const [cancelReason, setCancelReason] = useState('')
   const [cancelSaving, setCancelSaving] = useState(false)
 
-  // 查看详情
+  // 鏌ョ湅璇︽儏
   const [detailItem, setDetailItem] = useState(null)
 
-  // 编辑随访
+  // 缂栬緫闅忚
   const [editItem, setEditItem] = useState(null)
   const [editForm, setEditForm] = useState({})
   const [editSaving, setEditSaving] = useState(false)
@@ -151,10 +151,10 @@ export default function FollowUpsPage() {
     setEditSaving(true)
     try {
       await staffAPI.updateFollowUp(editItem._id, editForm)
-      toast('随访计划已更新')
+      toast('闅忚璁″垝宸叉洿鏂?)
       setEditItem(null)
       load()
-    } catch (err) { toast(err.message || '保存失败') }
+    } catch (err) { toast(err.message || '淇濆瓨澶辫触') }
     finally { setEditSaving(false) }
   }
 
@@ -186,7 +186,7 @@ export default function FollowUpsPage() {
   }
 
   const handleExec = async () => {
-    if (!execForm.content.trim()) { toast('请填写随访结果'); return }
+    if (!execForm.content.trim()) { toast('璇峰～鍐欓殢璁跨粨鏋?); return }
     setExecSaving(true)
     try {
       await staffAPI.updateFollowUp(execItem._id, {
@@ -194,34 +194,34 @@ export default function FollowUpsPage() {
         content: execForm.content,
         status: execForm.status,
       })
-      toast('随访记录已更新')
+      toast('闅忚璁板綍宸叉洿鏂?)
       setExecItem(null)
       load()
-    } catch (err) { toast(err.message || '保存失败') }
+    } catch (err) { toast(err.message || '淇濆瓨澶辫触') }
     finally { setExecSaving(false) }
   }
 
   const openCancel = (f) => { setCancelItem(f); setCancelReason('') }
 
   const handleCancel = async () => {
-    if (!cancelReason.trim()) { toast('请填写取消原因'); return }
+    if (!cancelReason.trim()) { toast('璇峰～鍐欏彇娑堝師鍥?); return }
     setCancelSaving(true)
     try {
       await staffAPI.updateFollowUp(cancelItem._id, { status: 'cancelled', cancelReason })
-      toast('已取消随访')
+      toast('宸插彇娑堥殢璁?)
       setCancelItem(null)
       load()
-    } catch (err) { toast(err.message || '操作失败') }
+    } catch (err) { toast(err.message || '鎿嶄綔澶辫触') }
     finally { setCancelSaving(false) }
   }
 
   const handleDelete = async (id) => {
-    if (!window.confirm('确定要删除这条随访记录吗？')) return
+    if (!window.confirm('纭畾瑕佸垹闄よ繖鏉￠殢璁胯褰曞悧锛?)) return
     try {
       await staffAPI.deleteFollowUp(id)
-      toast('已删除')
+      toast('宸插垹闄?)
       load()
-    } catch (err) { toast(err.message || '删除失败') }
+    } catch (err) { toast(err.message || '鍒犻櫎澶辫触') }
   }
 
   const isPendingExec = (f) => f.status === 'planned' || f.status === 'in_progress' || f.status === 'missed'
@@ -230,13 +230,13 @@ export default function FollowUpsPage() {
     <div className="page">
       <div className="page-header">
         <div>
-          <h1 className="page-title">随访管理</h1>
-          <p className="page-subtitle">共 {total} 条记录</p>
+          <h1 className="page-title">闅忚绠＄悊</h1>
+          <p className="page-subtitle">鍏?{total} 鏉¤褰?/p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增随访</button>
+        <button className="btn btn-primary" onClick={() => setShowModal(true)}>锛?鏂板闅忚</button>
       </div>
 
-      {/* 状态标签 */}
+      {/* 鐘舵€佹爣绛?*/}
       <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
         {STATUS_TABS.map(t => (
           <button
@@ -247,51 +247,51 @@ export default function FollowUpsPage() {
         ))}
       </div>
 
-      {/* 搜索栏 */}
+      {/* 鎼滅储鏍?*/}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-body">
           <form onSubmit={handleSearch} style={{ display: 'flex', gap: 12, alignItems: 'flex-end', flexWrap: 'wrap' }}>
             <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>会员姓名</label>
-              <input className="form-control" placeholder="输入姓名搜索" value={patientName}
+              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>浼氬憳濮撳悕</label>
+              <input className="form-control" placeholder="杈撳叆濮撳悕鎼滅储" value={patientName}
                 onChange={e => setPatientName(e.target.value)} style={{ width: 160 }} />
             </div>
             <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>开始日期</label>
+              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>寮€濮嬫棩鏈?/label>
               <input className="form-control" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
             </div>
             <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>结束日期</label>
+              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>缁撴潫鏃ユ湡</label>
               <input className="form-control" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} />
             </div>
-            <button className="btn btn-primary btn-sm" type="submit">搜索</button>
+            <button className="btn btn-primary btn-sm" type="submit">鎼滅储</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => {
               setPatientName(''); setDateFrom(todayStr); setDateTo(''); setPage(1)
-            }}>重置</button>
+            }}>閲嶇疆</button>
           </form>
         </div>
       </div>
 
-      {/* 列表 */}
+      {/* 鍒楄〃 */}
       <div className="card">
         {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
+          <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>鍔犺浇涓?..</div>
         ) : followUps.length === 0 ? (
           <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
-            暂无随访记录
+            鏆傛棤闅忚璁板綍
           </div>
         ) : (
           <table className="table">
             <thead>
               <tr>
-                <th>会员</th>
-                <th>计划日期</th>
-                <th>随访主题</th>
-                <th>计划人员</th>
-                <th>状态</th>
-                <th>近期打卡</th>
-                <th>内容摘要</th>
-                <th>操作</th>
+                <th>浼氬憳</th>
+                <th>璁″垝鏃ユ湡</th>
+                <th>闅忚涓婚</th>
+                <th>璁″垝浜哄憳</th>
+                <th>鐘舵€?/th>
+                <th>杩戞湡鎵撳崱</th>
+                <th>鍐呭鎽樿</th>
+                <th>鎿嶄綔</th>
               </tr>
             </thead>
             <tbody>
@@ -323,30 +323,30 @@ export default function FollowUpsPage() {
                     {f.patientLastRecord ? (() => {
                       const days = Math.floor((Date.now() - new Date(f.patientLastRecord)) / 86400000)
                       const color = days === 0 ? '#22A06B' : days <= 3 ? '#D97706' : '#aaa'
-                      const label = days === 0 ? '今日已打卡' : `${days}天前`
+                      const label = days === 0 ? '浠婃棩宸叉墦鍗? : `${days}澶╁墠`
                       return <span style={{ fontSize: 12, color, fontWeight: days <= 1 ? 600 : 400 }}>{label}</span>
-                    })() : <span style={{ fontSize: 12, color: '#ccc' }}>暂无记录</span>}
+                    })() : <span style={{ fontSize: 12, color: '#ccc' }}>鏆傛棤璁板綍</span>}
                   </td>
                   <td style={{ maxWidth: 180, fontSize: 13, color: '#4A6558' }}>
-                    {f.content ? (f.content.length > 35 ? f.content.slice(0, 35) + '…' : f.content) : '-'}
+                    {f.content ? (f.content.length > 35 ? f.content.slice(0, 35) + '鈥? : f.content) : '-'}
                   </td>
                   <td style={{ whiteSpace: 'nowrap' }}>
                     {isPendingExec(f) && (
                       <button className="btn btn-primary btn-sm" style={{ marginRight: 6 }}
-                        onClick={() => openExec(f)}>执行随访</button>
+                        onClick={() => openExec(f)}>鎵ц闅忚</button>
                     )}
                     {isPendingExec(f) && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
                       <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
-                        onClick={() => openEdit(f)}>编辑</button>
+                        onClick={() => openEdit(f)}>缂栬緫</button>
                     )}
                     {isPendingExec(f) && (
                       <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
-                        onClick={() => openCancel(f)}>取消</button>
+                        onClick={() => openCancel(f)}>鍙栨秷</button>
                     )}
                     <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
-                      onClick={() => setDetailItem(f)}>查看详情</button>
+                      onClick={() => setDetailItem(f)}>鏌ョ湅璇︽儏</button>
                     <button className="btn btn-secondary btn-sm"
-                      onClick={() => nav(`/patients/${f.patientId?._id}`)}>查看会员</button>
+                      onClick={() => nav(`/patients/${f.patientId?._id}`)}>鏌ョ湅浼氬憳</button>
                   </td>
                 </tr>
               ))}
@@ -355,77 +355,76 @@ export default function FollowUpsPage() {
         )}
       </div>
 
-      {/* 分页 */}
+      {/* 鍒嗛〉 */}
       {total > limit && (
         <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20 }}>
-          <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
+          <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>涓婁竴椤?/button>
           <span style={{ lineHeight: '32px', color: '#666', fontSize: 14 }}>
-            第 {page} / {Math.ceil(total / limit)} 页
-          </span>
-          <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>下一页</button>
+            绗?{page} / {Math.ceil(total / limit)} 椤?          </span>
+          <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>涓嬩竴椤?/button>
         </div>
       )}
 
-      {/* 随访详情弹窗 */}
+      {/* 闅忚璇︽儏寮圭獥 */}
       <DetailModal item={detailItem} onClose={() => setDetailItem(null)} />
 
-      {/* 新增随访弹窗 */}
+      {/* 鏂板闅忚寮圭獥 */}
       {showModal && (
         <FollowUpModal
           onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); toast('随访计划已创建'); load() }}
+          onSaved={() => { setShowModal(false); toast('闅忚璁″垝宸插垱寤?); load() }}
         />
       )}
 
-      {/* 执行随访弹窗 */}
+      {/* 鎵ц闅忚寮圭獥 */}
       {execItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
           <div className="modal" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">执行随访 · {execItem.patientId?.name}</h3>
-              <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
+              <h3 className="modal-title">鎵ц闅忚 路 {execItem.patientId?.name}</h3>
+              <button className="modal-close" onClick={() => setExecItem(null)}>鉁?/button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-              {/* 只读信息 */}
+              {/* 鍙淇℃伅 */}
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划日期：</span>
+                  <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>璁″垝鏃ユ湡锛?/span>
                   <span style={{ fontSize: 13 }}>{new Date(execItem.date).toLocaleDateString('zh-CN')}</span>
                 </div>
                 {execItem.theme && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>随访主题：</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>闅忚涓婚锛?/span>
                     <span style={{ fontSize: 13 }}>{execItem.theme}</span>
                   </div>
                 )}
                 {execItem.content && (
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划内容：</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>璁″垝鍐呭锛?/span>
                     <span style={{ fontSize: 13, whiteSpace: 'pre-line', flex: 1 }}>{execItem.content}</span>
                   </div>
                 )}
               </div>
-              {/* 填写结果 */}
+              {/* 濉啓缁撴灉 */}
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访方式</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>闅忚鏂瑰紡</label>
                 <select className="form-control" value={execForm.type}
                   onChange={e => setExecForm(f => ({ ...f, type: e.target.value }))}>
                   {TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访结果 *</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>闅忚缁撴灉 *</label>
                 <textarea className="form-control" rows={5}
-                  placeholder="记录本次随访的实际情况、会员反馈、建议等..."
+                  placeholder="璁板綍鏈闅忚鐨勫疄闄呮儏鍐点€佷細鍛樺弽棣堛€佸缓璁瓑..."
                   value={execForm.content}
                   onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>随访结果状态</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>闅忚缁撴灉鐘舵€?/label>
                 <div style={{ display: 'flex', gap: 16 }}>
                   {[
-                    { v: 'completed',   l: '✅ 已随访（圆满完成）' },
-                    { v: 'in_progress', l: '🔄 随访中（未完成/未接通）' },
+                    { v: 'completed',   l: '鉁?宸查殢璁匡紙鍦嗘弧瀹屾垚锛? },
+                    { v: 'in_progress', l: '馃攧 闅忚涓紙鏈畬鎴?鏈帴閫氾級' },
                   ].map(o => (
                     <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
                       <input type="radio" name="execStatus" value={o.v}
@@ -438,87 +437,86 @@ export default function FollowUpsPage() {
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
+              <button className="btn btn-secondary" onClick={() => setExecItem(null)}>鍙栨秷</button>
               <button className="btn btn-primary" onClick={handleExec} disabled={execSaving}>
-                {execSaving ? '保存中...' : '保存随访结果'}
+                {execSaving ? '淇濆瓨涓?..' : '淇濆瓨闅忚缁撴灉'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 取消随访弹窗 */}
+      {/* 鍙栨秷闅忚寮圭獥 */}
       {cancelItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setCancelItem(null) }}>
           <div className="modal" style={{ maxWidth: 420 }}>
             <div className="modal-header">
-              <h3 className="modal-title">取消随访</h3>
-              <button className="modal-close" onClick={() => setCancelItem(null)}>✕</button>
+              <h3 className="modal-title">鍙栨秷闅忚</h3>
+              <button className="modal-close" onClick={() => setCancelItem(null)}>鉁?/button>
             </div>
             <div className="modal-body">
               <p style={{ fontSize: 14, color: '#4A6558', marginBottom: 12 }}>
-                确认取消「{cancelItem.patientId?.name}」的随访计划？请填写取消原因。
-              </p>
+                纭鍙栨秷銆寋cancelItem.patientId?.name}銆嶇殑闅忚璁″垝锛熻濉啓鍙栨秷鍘熷洜銆?              </p>
               <textarea className="form-control" rows={4}
-                placeholder="请填写取消原因（必填）..."
+                placeholder="璇峰～鍐欏彇娑堝師鍥狅紙蹇呭～锛?.."
                 value={cancelReason}
                 onChange={e => setCancelReason(e.target.value)} />
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setCancelItem(null)}>返回</button>
+              <button className="btn btn-secondary" onClick={() => setCancelItem(null)}>杩斿洖</button>
               <button className="btn btn-danger" onClick={handleCancel} disabled={cancelSaving}>
-                {cancelSaving ? '处理中...' : '确认取消随访'}
+                {cancelSaving ? '澶勭悊涓?..' : '纭鍙栨秷闅忚'}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* 编辑随访弹窗 */}
+      {/* 缂栬緫闅忚寮圭獥 */}
       {editItem && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditItem(null) }}>
           <div className="modal" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">编辑随访计划 · {editItem.patientId?.name}</h3>
-              <button className="modal-close" onClick={() => setEditItem(null)}>✕</button>
+              <h3 className="modal-title">缂栬緫闅忚璁″垝 路 {editItem.patientId?.name}</h3>
+              <button className="modal-close" onClick={() => setEditItem(null)}>鉁?/button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>计划日期</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>璁″垝鏃ユ湡</label>
                 <input type="date" className="form-control" value={editForm.date}
                   onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访主题</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>闅忚涓婚</label>
                 <input className="form-control" value={editForm.theme}
-                  onChange={e => setEditForm(f => ({ ...f, theme: e.target.value }))} placeholder="随访主题" />
+                  onChange={e => setEditForm(f => ({ ...f, theme: e.target.value }))} placeholder="闅忚涓婚" />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>联系方式</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>鑱旂郴鏂瑰紡</label>
                 <select className="form-control" value={editForm.type}
                   onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
                   {TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>计划内容</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>璁″垝鍐呭</label>
                 <textarea className="form-control" rows={4} value={editForm.content}
                   onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
-                  placeholder="随访计划内容..." />
+                  placeholder="闅忚璁″垝鍐呭..." />
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>负责人员</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>璐熻矗浜哄憳</label>
                 <select className="form-control" value={editForm.assignedTo}
                   onChange={e => setEditForm(f => ({ ...f, assignedTo: e.target.value }))}>
-                  <option value="">-- 不指定 --</option>
+                  <option value="">-- 涓嶆寚瀹?--</option>
                   {staffList.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
                 </select>
               </div>
             </div>
             <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setEditItem(null)}>取消</button>
+              <button className="btn btn-secondary" onClick={() => setEditItem(null)}>鍙栨秷</button>
               <button className="btn btn-primary" onClick={handleEdit} disabled={editSaving}>
-                {editSaving ? '保存中...' : '保存修改'}
+                {editSaving ? '淇濆瓨涓?..' : '淇濆瓨淇敼'}
               </button>
             </div>
           </div>
