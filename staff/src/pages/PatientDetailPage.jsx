@@ -282,6 +282,7 @@ export default function PatientDetailPage() {
   const [serviceRecords, setServiceRecords] = useState([])
   const [patientReferrals, setPatientReferrals] = useState([])
   const [expandedReferralCats, setExpandedReferralCats] = useState({})
+  const [expandedReportYears, setExpandedReportYears] = useState({})
   const [patientOrders, setPatientOrders] = useState([])
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
@@ -2418,11 +2419,11 @@ export default function PatientDetailPage() {
                               {/* 子项目表格 */}
                               {hasSubItems && (
                                 <div>
-                                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr', gap: 0, background: '#f5f2ec', padding: '3px 10px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
-                                    <span>指标名称</span><span>结果</span><span>单位</span><span>参考范围</span><span>状态</span>
+                                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 0, background: '#f5f2ec', padding: '3px 10px', fontSize: 11, color: '#8AA89C', fontWeight: 600 }}>
+                                    <span>指标名称</span><span>结果</span><span>单位</span><span>参考范围</span><span>状态</span><span />
                                   </div>
                                   {order.subItems.map((sub, si) => (
-                                    <div key={si} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr', gap: 4, padding: '4px 10px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
+                                    <div key={si} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 2fr 1fr auto', gap: 4, padding: '4px 10px', borderTop: '1px solid #f0ece4', alignItems: 'center' }}>
                                       <span style={{ fontSize: 12, color: '#1A2B24' }}>{sub.name}</span>
                                       <input className="form-input" style={{ padding: '2px 6px', fontSize: 12 }} placeholder="结果" value={sub.value || ''}
                                         onChange={e => updateSub(si, { value: e.target.value })} />
@@ -2434,6 +2435,8 @@ export default function PatientDetailPage() {
                                         onChange={e => updateSub(si, { status: e.target.value })}>
                                         {STATUS_OPTIONS.map(([v,l]) => <option key={v} value={v}>{l}</option>)}
                                       </select>
+                                      <button type="button" style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14, padding: '0 2px', flexShrink: 0 }}
+                                        onClick={() => setScreeningForm(f => { const a = [...f.reportItems]; a[oi] = { ...a[oi], subItems: a[oi].subItems.filter((_, i) => i !== si) }; return { ...f, reportItems: a } })}>✕</button>
                                     </div>
                                   ))}
                                 </div>
@@ -2673,7 +2676,9 @@ export default function PatientDetailPage() {
                     <LabField label="谷丙转氨酶 ALT" unit="U/L" placeholder="如 25" value={labForm.alt || ''} onChange={e => setLabForm(f => ({ ...f, alt: e.target.value }))} />
                     <LabField label="谷草转氨酶 AST" unit="U/L" placeholder="如 22" value={labForm.ast || ''} onChange={e => setLabForm(f => ({ ...f, ast: e.target.value }))} />
                     <LabField label="γ-谷氨酰转肽酶 GGT" unit="U/L" placeholder="如 30" value={labForm.ggt || ''} onChange={e => setLabForm(f => ({ ...f, ggt: e.target.value }))} />
-                    <LabField label="血肌酐" unit="μmol/L" placeholder="如 75" value={labForm.cr || ''} onChange={e => setLabForm(f => ({ ...f, cr: e.target.value }))} />
+                    <LabField label="血肌酐 Cr" unit="μmol/L" placeholder="如 75" value={labForm.cr || ''} onChange={e => setLabForm(f => ({ ...f, cr: e.target.value }))} />
+                    <LabField label="尿微量蛋白 mAlb" unit="mg/L" placeholder="如 15" value={labForm.umalb || ''} onChange={e => setLabForm(f => ({ ...f, umalb: e.target.value }))} />
+                    <LabField label="肾小球滤过率 eGFR" unit="mL/min/1.73m²" placeholder="如 90" value={labForm.egfr || ''} onChange={e => setLabForm(f => ({ ...f, egfr: e.target.value }))} />
                     <LabField label="尿酸 UA" unit="μmol/L" placeholder="如 350" value={labForm.ua || ''} onChange={e => setLabForm(f => ({ ...f, ua: e.target.value }))} />
                     <LabField label="同型半胱氨酸 Hcy" unit="μmol/L" placeholder="如 10" value={labForm.hcy || ''} onChange={e => setLabForm(f => ({ ...f, hcy: e.target.value }))} />
                     <LabField label="脂蛋白磷脂酶A2 Lp-PLA2" unit="ng/mL" placeholder="如 180" value={labForm.lpla2 || ''} onChange={e => setLabForm(f => ({ ...f, lpla2: e.target.value }))} />
@@ -2717,6 +2722,8 @@ export default function PatientDetailPage() {
                 ggt:   ['γ-谷氨酰转肽酶','GGT','γ-GT','γGT','谷氨酰转肽酶'],
                 ua:    ['尿酸','UA','SUA'],
                 cr:    ['血肌酐','肌酐','CREA','Cr','Scr'],
+                umalb: ['尿微量白蛋白','尿微量蛋白','mAlb','MAU','微量白蛋白','MALB'],
+                egfr:  ['肾小球滤过率','eGFR','GFR','估算肾小球滤过率'],
                 hcy:   ['同型半胱氨酸','Hcy','HCY'],
                 lpla2: ['Lp-PLA2','脂蛋白磷脂酶A2','LPLA2'],
                 sbp:   ['收缩压','SBP','收缩压(mmHg)'],
@@ -2783,6 +2790,8 @@ export default function PatientDetailPage() {
                 { key: 'hdl',     label: 'HDL-C',          unit: 'mmol/L', check: v => parseFloat(v) < (gender === 'F' ? 1.3 : 1.0), ref: gender === 'F' ? '≥1.3' : '≥1.0' },
                 { key: 'ua',      label: '尿酸 UA',         unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 360 : 420), ref: gender === 'F' ? '≤360' : '≤420' },
                 { key: 'cr',      label: '血肌酐',           unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 97 : 106),  ref: gender === 'F' ? '≤97' : '≤106' },
+                { key: 'umalb',   label: '尿微量蛋白',       unit: 'mg/L',   check: v => parseFloat(v) > 30,    ref: '≤30' },
+                { key: 'egfr',    label: 'eGFR',            unit: 'mL/min/1.73m²', check: v => parseFloat(v) < 60, ref: '≥60' },
                 { key: 'alt',     label: 'ALT',             unit: 'U/L',    check: v => parseFloat(v) > 40,    ref: '≤40' },
                 { key: 'ast',     label: 'AST',             unit: 'U/L',    check: v => parseFloat(v) > 40,    ref: '≤40' },
                 { key: 'ggt',     label: 'GGT',             unit: 'U/L',    check: v => parseFloat(v) > 50,    ref: '≤50' },
@@ -2794,7 +2803,7 @@ export default function PatientDetailPage() {
 
               // 只从专项筛查派生值，不读 labValues
               const getVal = (key) => {
-                if (derived[key]) return { val: derived[key].value, sourceLabel: derived[key].source || '筛查', date: derived[key].date || '' }
+                if (derived[key]) return { val: derived[key].value, sourceLabel: derived[key].source || '筛查', date: derived[key].date || '', abnormal: derived[key].abnormal }
                 return null
               }
 
@@ -2818,7 +2827,11 @@ export default function PatientDetailPage() {
               const filledDefs = LAB_DEFS.filter(d => getVal(d.key) !== null)
               const abnormalDefs = filledDefs.filter(d => {
                 const v = getVal(d.key)
-                return v && d.check && d.check(v.val)
+                if (!v) return false
+                // 优先使用报告中明确标注的状态
+                if (v.abnormal === true) return true
+                if (v.abnormal === false && !d.isText) return false
+                return d.check && d.check(v.val)
               })
               const hasData = filledDefs.length > 0
 
@@ -2858,8 +2871,8 @@ export default function PatientDetailPage() {
                     {displayDefs.filter(d => d && !d.isText).map(d => {
                       const cur = getVal(d.key)
                       if (!cur) return null
-                      const { val, sourceLabel, date } = cur
-                      const isAbnormal = d.check && d.check(val)
+                      const { val, sourceLabel, date, abnormal: itemAbnormal } = cur
+                      const isAbnormal = itemAbnormal === true || (itemAbnormal !== false && d.check && d.check(val))
                       const pts = trendData(d.key)
                       const bgColor = isAbnormal ? '#FEF2F2' : d.key === 'weight' ? '#f9f7f3' : '#f0faf5'
                       const borderColor = isAbnormal ? '#DC3545' : d.key === 'weight' ? '#aaa' : '#22A06B'
@@ -2893,8 +2906,8 @@ export default function PatientDetailPage() {
                         {textDefs.map(d => {
                           const cur = getVal(d.key)
                           if (!cur) return null
-                          const { val, sourceLabel, date } = cur
-                          const isAbnormal = d.check && d.check(val)
+                          const { val, sourceLabel, date, abnormal: itemAbnormal } = cur
+                          const isAbnormal = itemAbnormal === true || (itemAbnormal !== false && d.check && d.check(val))
                           return (
                             <div key={d.key} style={{ padding: '8px 12px', background: isAbnormal ? '#FEF2F2' : '#f9f7f3', borderRadius: 8, borderLeft: `3px solid ${isAbnormal ? '#DC3545' : '#aaa'}` }}>
                               <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3, display: 'flex', justifyContent: 'space-between' }}>
@@ -3668,7 +3681,8 @@ export default function PatientDetailPage() {
         const OTHER_KEY  = '__other__'
         const yearMap = {}
         reports.forEach(r => {
-          const yr = r.reportYear || (r.date ? new Date(r.date).getFullYear() : new Date(r.createdAt).getFullYear()) || '未知'
+          const dateStr = r.checkDate || r.date
+          const yr = r.reportYear || (dateStr ? new Date(dateStr).getFullYear() : new Date(r.createdAt).getFullYear()) || '未知'
           if (!yearMap[yr]) yearMap[yr] = {}
           const l1Node = r.screeningL1
             ? screeningTree.find(n => String(n._id) === r.screeningL1)
@@ -3703,12 +3717,18 @@ export default function PatientDetailPage() {
             </div>
             {reports.length === 0 ? (
               <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无体检报告</div>
-            ) : years.map(yr => (
+            ) : years.map((yr, yrIdx) => {
+              const isExpanded = expandedReportYears[yr] !== undefined ? expandedReportYears[yr] : yrIdx === 0
+              return (
               <div key={yr} style={{ marginBottom: 20 }}>
-                <div style={{ fontWeight: 700, fontSize: 15, color: '#1A2B24', padding: '8px 0', borderBottom: '2px solid #1E6B50', marginBottom: 12 }}>
-                  📅 {yr} 年
+                <div
+                  onClick={() => setExpandedReportYears(prev => ({ ...prev, [yr]: !isExpanded }))}
+                  style={{ fontWeight: 700, fontSize: 15, color: '#1A2B24', padding: '8px 12px', borderBottom: '2px solid #1E6B50', marginBottom: isExpanded ? 12 : 0, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f9f7f3', borderRadius: isExpanded ? '8px 8px 0 0' : 8 }}
+                >
+                  <span>📅 {yr} 年 <span style={{ fontSize: 12, color: '#aaa', fontWeight: 400, marginLeft: 6 }}>{Object.values(yearMap[yr]).reduce((s, g) => s + g.reports.length, 0)} 份</span></span>
+                  <span style={{ fontSize: 14, color: '#1E6B50' }}>{isExpanded ? '▲' : '▼'}</span>
                 </div>
-                {getL1Keys(yearMap[yr]).map(key => {
+                {isExpanded && getL1Keys(yearMap[yr]).map(key => {
                   const { node: l1Node, label: grpLabel, reports: grpReports } = yearMap[yr][key]
                   const l1Label = grpLabel || l1Node?.label || '其他'
                   const l1Idx = l1Node ? screeningTree.findIndex(n => String(n._id) === key) : -1
@@ -3790,7 +3810,8 @@ export default function PatientDetailPage() {
                   )
                 })}
               </div>
-            ))}
+            )
+          })}
           </div>
         )
       })()}
@@ -4839,9 +4860,10 @@ const ANNUAL_L1_ID = '__annual__'
 
 function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) {
   const [form, setForm] = useState({ title: '', l1Id: '', l2Label: '', hospital: '', date: '', note: '' })
-  const [fileData, setFileData] = useState(null)
+  const [fileDatas, setFileDatas] = useState([])
   const [saving, setSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
+  const [uploadStep, setUploadStep] = useState('')
   const [error, setError] = useState('')
 
   const isAnnual = form.l1Id === ANNUAL_L1_ID
@@ -4862,39 +4884,44 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   }
 
   const handleFile = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    if (file.size > 10 * 1024 * 1024) { setError('文件不能超过 10MB'); return }
-    setFileData({ file, mimeType: file.type, fileSize: file.size, name: file.name })
-    if (!form.title) setForm(f => ({ ...f, title: file.name.replace(/\.[^.]+$/, '') }))
+    const files = Array.from(e.target.files)
+    if (!files.length) return
+    const oversized = files.find(f => f.size > 10 * 1024 * 1024)
+    if (oversized) { setError(`文件 ${oversized.name} 超过 10MB 限制`); return }
+    setFileDatas(files.map(f => ({ file: f, mimeType: f.type, fileSize: f.size, name: f.name })))
+    if (!form.title && files.length === 1) setForm(f => ({ ...f, title: files[0].name.replace(/\.[^.]+$/, '') }))
+    setError('')
   }
 
   const handleSubmit = async () => {
     if (!form.l1Id) { setError('请选择报告大类'); return }
     if (!form.title) { setError('请填写报告标题'); return }
-    if (!fileData) { setError('请选择报告文件（图片或PDF）'); return }
+    if (!fileDatas.length) { setError('请选择报告文件（图片或PDF）'); return }
     try {
       setSaving(true); setError(''); setUploadProgress(0)
-      // 阶段一：上传文件到服务器磁盘（真实进度 0-90%）
-      const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(
-        fileData.file,
-        (p) => setUploadProgress(Math.round(p * 0.9))
-      )
-      // 阶段二：创建报告记录（90-100%）
-      setUploadProgress(90)
-      await staffAPI.uploadReport({
-        patientId,
-        title: form.title,
-        type: isAnnual ? 'annual' : 'other',
-        screeningL1: isAnnual ? '' : form.l1Id,
-        screeningL2: isAnnual ? '' : form.l2Label,
-        hospital: form.hospital,
-        date: form.date,
-        note: form.note,
-        fileUrl: url,
-        mimeType,
-        fileSize: String(fileSize),
-      })
+      const total = fileDatas.length
+      for (let i = 0; i < total; i++) {
+        const fd = fileDatas[i]
+        const titleSuffix = total > 1 ? ` (${i + 1}/${total})` : ''
+        setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
+        const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(
+          fd.file,
+          (p) => setUploadProgress(Math.round(((i + p) / total) * 90))
+        )
+        await staffAPI.uploadReport({
+          patientId,
+          title: form.title + titleSuffix,
+          type: isAnnual ? 'annual' : 'other',
+          screeningL1: isAnnual ? '' : form.l1Id,
+          screeningL2: isAnnual ? '' : form.l2Label,
+          hospital: form.hospital,
+          date: form.date,
+          note: form.note,
+          fileUrl: url,
+          mimeType,
+          fileSize: String(fileSize),
+        })
+      }
       setUploadProgress(100)
       onSaved()
     } catch (err) {
@@ -4902,6 +4929,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     } finally {
       setSaving(false)
       setUploadProgress(0)
+      setUploadStep('')
     }
   }
 
@@ -4973,9 +5001,20 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告文件（图片/PDF，≤10MB）</label>
-            <input type="file" accept="image/*,.pdf" onChange={handleFile} style={{ fontSize: 13, padding: '6px 0' }} />
-            {fileData && <div style={{ fontSize: 12, color: '#22A06B', marginTop: 4 }}>✓ {fileData.name}</div>}
+            <label className="form-label">报告文件（图片/PDF，每个≤10MB，可多选）</label>
+            <input type="file" accept="image/*,.pdf" multiple onChange={handleFile} style={{ fontSize: 13, padding: '6px 0' }} />
+            {fileDatas.length > 0 && (
+              <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                {fileDatas.map((fd, i) => (
+                  <div key={i} style={{ fontSize: 12, color: '#22A06B' }}>✓ {fd.name}</div>
+                ))}
+                {fileDatas.length > 1 && (
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>
+                    共 {fileDatas.length} 个文件，每个文件将分别创建一条报告记录
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -4987,7 +5026,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           {saving && (
             <div style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#4A6558', marginBottom: 4 }}>
-                <span>{uploadProgress < 100 ? '正在上传...' : '服务器处理中，请稍候...'}</span>
+                <span>{uploadProgress < 100 ? (uploadStep || '正在上传...') : '服务器处理中，请稍候...'}</span>
                 {uploadProgress < 100 && <span>{uploadProgress}%</span>}
               </div>
               <div style={{ width: '100%', height: 6, background: '#E0D9CE', borderRadius: 99, overflow: 'hidden' }}>

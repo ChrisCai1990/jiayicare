@@ -23,6 +23,9 @@ export default function FollowUpFormPage() {
   const [form, setForm] = useState(EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
 
   const load = () => {
     setLoading(true)
@@ -68,6 +71,10 @@ export default function FollowUpFormPage() {
     setForm(f => ({ ...f, fields: arr }))
   }
 
+  const filtered = list.filter(item => !search || item.name?.includes(search))
+  const totalPages = Math.ceil(filtered.length / pageSize)
+  const paged = filtered.slice((page - 1) * pageSize, page * pageSize)
+
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
@@ -78,9 +85,22 @@ export default function FollowUpFormPage() {
         <button className="btn btn-primary" onClick={openCreate}>＋ 新增表单</button>
       </div>
 
+      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+        <input style={{ flex: 1, maxWidth: 280, padding: '6px 12px', borderRadius: 8, border: '1.5px solid #E5E7EB', fontSize: 13 }}
+          placeholder="搜索表单名称..." value={search}
+          onChange={e => { setSearch(e.target.value); setPage(1) }} />
+        <select style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid #E5E7EB', fontSize: 13 }}
+          value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}>
+          <option value={10}>10条/页</option>
+          <option value={20}>20条/页</option>
+          <option value={30}>30条/页</option>
+        </select>
+        <span style={{ fontSize: 12, color: '#6B7280' }}>共 {filtered.length} 条</span>
+      </div>
+
       <div className="card">
         {loading ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
-          : list.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无随访表单</div>
+          : paged.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无随访表单</div>
           : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -91,7 +111,7 @@ export default function FollowUpFormPage() {
               </tr>
             </thead>
             <tbody>
-              {list.map(item => (
+              {paged.map(item => (
                 <tr key={item._id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                   <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.name}</td>
                   <td style={{ padding: '10px 14px', color: '#6B7280' }}>{item.fields?.length || 0} 个字段</td>
@@ -111,6 +131,14 @@ export default function FollowUpFormPage() {
           </table>
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+          <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
+          <span style={{ lineHeight: '32px', fontSize: 13, color: '#6B7280' }}>第 {page} / {totalPages} 页</span>
+          <button className="btn btn-secondary btn-sm" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>下一页</button>
+        </div>
+      )}
 
       {showModal && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>

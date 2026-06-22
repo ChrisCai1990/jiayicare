@@ -18,24 +18,27 @@ export default function OrdersPage() {
   const [orders, setOrders] = useState([])
   const [total, setTotal] = useState(0)
   const [statusFilter, setStatusFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(null) // orderId being updated
 
   const load = useCallback(async (p = page) => {
     setLoading(true)
     try {
-      const params = { page: p, limit: 20 }
+      const params = { page: p, limit: pageSize }
       if (statusFilter) params.status = statusFilter
+      if (search) params.search = search
       const res = await adminAPI.orders(params)
       setOrders(res.data)
       setTotal(res.total)
     } catch {}
     finally { setLoading(false) }
-  }, [statusFilter, page])
+  }, [statusFilter, page, pageSize, search])
 
-  useEffect(() => { load(1); setPage(1) }, [statusFilter])
-  useEffect(() => { load(page) }, [page])
+  useEffect(() => { setPage(1); load(1) }, [statusFilter, pageSize, search])
 
   const updateStatus = async (orderId, status) => {
     setUpdating(orderId)
@@ -48,7 +51,7 @@ export default function OrdersPage() {
     } finally { setUpdating(null) }
   }
 
-  const totalPages = Math.ceil(total / 20)
+  const totalPages = Math.ceil(total / pageSize)
   const fmtTime = (d) => d ? new Date(d).toLocaleString('zh-CN', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '--'
 
   return (
@@ -62,7 +65,7 @@ export default function OrdersPage() {
 
       <div className="card">
         {/* 状态筛选 */}
-        <div className="search-bar">
+        <div className="search-bar" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
           {[['', '全部'], ['pending', '待联系'], ['scheduled', '已安排'], ['completed', '已完成'], ['cancelled', '已取消']].map(([val, label]) => (
             <button
               key={val}
@@ -73,6 +76,26 @@ export default function OrdersPage() {
               {label}
             </button>
           ))}
+          <div style={{ flex: 1, minWidth: 200, display: 'flex', gap: 8 }}>
+            <input
+              style={{ flex: 1, padding: '6px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13 }}
+              placeholder="搜索患者姓名/手机/服务名称..."
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') { setSearch(searchInput); setPage(1) } }}
+            />
+            <button className="btn btn-primary btn-sm" onClick={() => { setSearch(searchInput); setPage(1) }}>搜索</button>
+            {search && <button className="btn btn-ghost btn-sm" onClick={() => { setSearch(''); setSearchInput(''); setPage(1) }}>清除</button>}
+          </div>
+          <select
+            style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13 }}
+            value={pageSize}
+            onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
+          >
+            <option value={10}>10条/页</option>
+            <option value={20}>20条/页</option>
+            <option value={30}>30条/页</option>
+          </select>
         </div>
 
         {loading ? (
@@ -153,7 +176,7 @@ export default function OrdersPage() {
 
         {totalPages > 1 && (
           <div className="pagination">
-            <div className="pagination-info">第 {(page-1)*20+1}–{Math.min(page*20, total)} 条，共 {total} 条</div>
+            <div className="pagination-info">第 {(page-1)*pageSize+1}–{Math.min(page*pageSize, total)} 条，共 {total} 条</div>
             <div className="pagination-btns">
               <button className="page-btn" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>‹</button>
               {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {

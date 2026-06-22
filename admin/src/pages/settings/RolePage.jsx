@@ -2,21 +2,25 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
+// 医护端（staff portal）功能模块权限配置
 const MODULES = [
-  { key: 'patients',       label: '患者管理',   actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'orders',         label: '订单管理',   actions: ['view', 'edit'] },
-  { key: 'messages',       label: '消息中心',   actions: ['view', 'send'] },
-  { key: 'services',       label: '服务管理',   actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'products',       label: '商城产品',   actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'questionnaires', label: '问卷管理',   actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'staff',          label: '员工管理',   actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'settings',       label: '基本设置',   actions: ['view', 'edit'] },
-  { key: 'projects',       label: '项目设置',   actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'reports',        label: '报告管理',   actions: ['view', 'audit'] },
-  { key: 'followups',      label: '随访管理',   actions: ['view', 'create', 'edit', 'delete'] },
+  { key: 'patients',        label: '我的会员',     actions: ['view', 'create', 'edit', 'delete'] },
+  { key: 'followups',       label: '随访管理',     actions: ['view', 'create', 'edit', 'delete'] },
+  { key: 'plans',           label: '健康方案',     actions: ['view', 'create', 'edit', 'delete'] },
+  { key: 'reports',         label: '报告管理',     actions: ['view', 'audit', 'delete'] },
+  { key: 'abnormal_review', label: '异常复查',     actions: ['view', 'create', 'edit'] },
+  { key: 'service_records', label: '服务记录',     actions: ['view', 'create', 'edit', 'delete'] },
+  { key: 'knowledge',       label: '科普推送',     actions: ['view', 'send'] },
+  { key: 'questionnaires',  label: '问卷推送',     actions: ['view', 'send'] },
+  { key: 'products',        label: '产品推送',     actions: ['view', 'send'] },
+  { key: 'commission',      label: '分佣中心',     actions: ['view'] },
+  { key: 'marketing',       label: '会员营销',     actions: ['view', 'create'] },
+  { key: 'team',            label: '团队管理',     actions: ['view', 'create', 'edit'] },
+  { key: 'operations',      label: '运营看板',     actions: ['view'] },
+  { key: 'daily_checkin',   label: '日常健康打卡', actions: ['view'] },
 ]
 
-const ACTION_LABEL = { view: '查看', create: '新增', edit: '编辑', delete: '删除', send: '发送', audit: '审核' }
+const ACTION_LABEL = { view: '查看', create: '新增', edit: '编辑', delete: '删除', send: '推送', audit: '审核' }
 
 function buildEmptyPermissions() {
   const perms = {}

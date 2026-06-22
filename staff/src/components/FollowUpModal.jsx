@@ -104,6 +104,71 @@ function PatientSearchInput({ value, onChange }) {
   )
 }
 
+function PlanSchemeSearchInput({ plans, value, onChange }) {
+  const [keyword, setKeyword] = useState('')
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const selectedPlan = plans.find(p => p._id === value)
+
+  useEffect(() => {
+    const handler = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const filtered = keyword.trim()
+    ? plans.filter(p => p.name?.includes(keyword.trim()))
+    : plans
+
+  return (
+    <div className="form-group" style={{ marginBottom: 0 }} ref={wrapRef}>
+      <label className="form-label">随访方案模板（可选）</label>
+      <div style={{ position: 'relative' }}>
+        <input
+          className="form-input"
+          placeholder="搜索方案名称..."
+          value={selectedPlan ? selectedPlan.name : keyword}
+          onFocus={() => { setOpen(true); if (selectedPlan) setKeyword('') }}
+          onChange={e => { setKeyword(e.target.value); setOpen(true); if (!e.target.value) onChange('') }}
+        />
+        {value && (
+          <span
+            onClick={() => { onChange(''); setKeyword(''); setOpen(false) }}
+            style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#aaa', fontSize: 16 }}
+          >✕</span>
+        )}
+        {open && (
+          <div style={{ position: 'absolute', zIndex: 1000, top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #ddd', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 200, overflowY: 'auto' }}>
+            <div
+              onMouseDown={() => { onChange(''); setKeyword(''); setOpen(false) }}
+              style={{ padding: '9px 14px', fontSize: 13, color: '#8AA89C', cursor: 'pointer', borderBottom: '1px solid #f5f2ec' }}
+            >-- 不使用模板 --</div>
+            {filtered.map(p => (
+              <div
+                key={p._id}
+                onMouseDown={() => { onChange(p._id); setKeyword(''); setOpen(false) }}
+                style={{ padding: '9px 14px', fontSize: 13, color: '#1A2B24', cursor: 'pointer', background: value === p._id ? '#F0FAF5' : '#fff', borderBottom: '1px solid #f5f2ec' }}
+              >
+                {p.name}
+              </div>
+            ))}
+            {filtered.length === 0 && (
+              <div style={{ padding: '9px 14px', fontSize: 13, color: '#aaa' }}>无匹配方案</div>
+            )}
+          </div>
+        )}
+      </div>
+      {value && (
+        <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 4 }}>
+          ✓ 已选择方案，方案名称和表单预设内容已自动填充
+        </div>
+      )}
+    </div>
+  )
+}
+
 const today = () => new Date().toISOString().slice(0, 10)
 
 // 计算 N 天后的日期
@@ -190,6 +255,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
   const [visitTypeRevisit, setVisitTypeRevisit] = useState(false) // 复诊随访
   const [planFormId, setPlanFormId] = useState('')
   const [planRows, setPlanRows] = useState([emptyRow()])
+  const [planType, setPlanType] = useState('phone')
   const [planPatientId, setPlanPatientId] = useState(patientId || '')
   // 打卡任务
   const [checkInItems, setCheckInItems] = useState([])
@@ -273,7 +339,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
         return staffAPI.createFollowUp({
           patientId: pid,
           date: resolvedDate,
-          type: 'phone',
+          type: planType,
           status: 'planned',
           theme: planName,
           content: row.notes,
@@ -443,24 +509,13 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               </div>
             )}
 
-            {/* 选择随访方案模板（可选） */}
+            {/* 选择随访方案模板（可选，可搜索） */}
             {followupPlans.length > 0 && (
-              <div className="form-group" style={{ marginBottom: 0 }}>
-                <label className="form-label">随访方案模板（可选）</label>
-                <select
-                  className="form-input"
-                  value={selectedSchemeId}
-                  onChange={e => handleSchemeChange(e.target.value)}
-                >
-                  <option value="">-- 不使用模板 --</option>
-                  {followupPlans.map(p => <option key={p._id} value={p._id}>{p.name}</option>)}
-                </select>
-                {selectedSchemeId && (
-                  <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 4 }}>
-                    ✓ 已选择方案，方案名称和表单预设内容已自动填充
-                  </div>
-                )}
-              </div>
+              <PlanSchemeSearchInput
+                plans={followupPlans}
+                value={selectedSchemeId}
+                onChange={handleSchemeChange}
+              />
             )}
 
             {/* 方案名称 */}
@@ -472,6 +527,19 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
                 onChange={e => setPlanName(e.target.value)}
                 placeholder="如：高血压月度随访"
               />
+            </div>
+
+            {/* 联系方式 */}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">联系方式</label>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 6 }}>
+                {TYPE_OPTIONS.map(opt => (
+                  <label key={opt.v} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 14, cursor: 'pointer', userSelect: 'none', padding: '4px 12px', borderRadius: 20, border: `1px solid ${planType === opt.v ? '#1E6B50' : '#ddd'}`, background: planType === opt.v ? '#e8f5f0' : '#fff', color: planType === opt.v ? '#1E6B50' : '#555' }}>
+                    <input type="radio" name="planType" value={opt.v} checked={planType === opt.v} onChange={() => setPlanType(opt.v)} style={{ display: 'none' }} />
+                    {opt.l}
+                  </label>
+                ))}
+              </div>
             </div>
 
             {/* 随访类型 */}

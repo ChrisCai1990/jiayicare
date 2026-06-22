@@ -482,12 +482,29 @@ export default function ServicePlansScreen({ navigation }) {
         // monitoring / vaccine 模块字段
         other: '其他项目',
       };
+      const INTERNAL_FIELDS = new Set(['notes']); // internal: true 字段，不对外显示
+      const buildEntryNotes = (entry) => {
+        const lines = [];
+        Object.entries(entry).forEach(([fk, fv]) => {
+          if (fk === 'enabled' || fk === '_id' || INTERNAL_FIELDS.has(fk) || !fv || fv === false) return;
+          const label = FIELD_LABEL[fk] || fk;
+          const val = fv === true ? '是' : (Array.isArray(fv) ? fv.join('、') : String(fv));
+          lines.push(`${label}：${val}`);
+        });
+        return lines.join('\n');
+      };
       const buildNotes = (key, v) => {
+        if (Array.isArray(v)) {
+          return v.map((entry, i) => {
+            const entryNotes = buildEntryNotes(entry);
+            return v.length > 1 ? `【第${i + 1}项】\n${entryNotes}` : entryNotes;
+          }).filter(Boolean).join('\n\n');
+        }
         const lines = [];
         Object.entries(v).forEach(([fk, fv]) => {
           if (fk === 'enabled' || !fv || fv === false) return;
           const label = FIELD_LABEL[fk] || fk;
-          const val = fv === true ? '是' : String(fv);
+          const val = fv === true ? '是' : (Array.isArray(fv) ? fv.join('、') : String(fv));
           lines.push(`${label}：${val}`);
         });
         return lines.join('\n') || '';
@@ -511,7 +528,7 @@ export default function ServicePlansScreen({ navigation }) {
             confirmedAt: ap.confirmedAt || null,
             pushedAt: ap.pushedAt || null,
             items: Object.entries(ap.moduleData || {})
-              .filter(([, v]) => v && v.enabled !== false)
+              .filter(([, v]) => v && (Array.isArray(v) ? v.length > 0 : v.enabled !== false))
               .map(([key, v]) => ({
                 _id: key,
                 name: MODULE_NAME[key] || key,

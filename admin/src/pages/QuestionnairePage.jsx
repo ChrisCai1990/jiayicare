@@ -755,6 +755,9 @@ export default function QuestionnairePage() {
   const [editing, setEditing] = useState(null)
   const [viewingResponses, setViewingResponses] = useState(null)
   const [reordering, setReordering] = useState(false)
+  const [search, setSearch] = useState('')
+  const [pageSize, setPageSize] = useState(10)
+  const [page, setPage] = useState(1)
 
   const load = async () => {
     setLoading(true)
@@ -808,12 +811,30 @@ export default function QuestionnairePage() {
         <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>＋ 新建问卷</button>
       </div>
 
-      {loading ? <div className="loading">加载中...</div> : (
+  {!loading && (
+    <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+      <input style={{ flex: 1, maxWidth: 280, padding: '6px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13 }}
+        placeholder="搜索问卷标题..." value={search}
+        onChange={e => { setSearch(e.target.value); setPage(1) }} />
+      <select style={{ padding: '6px 10px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13 }}
+        value={pageSize} onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}>
+        <option value={10}>10条/页</option>
+        <option value={20}>20条/页</option>
+        <option value={30}>30条/页</option>
+      </select>
+      <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>共 {list.filter(q => !search || q.title?.includes(search)).length} 条</span>
+    </div>
+  )}
+      {loading ? <div className="loading">加载中...</div> : (() => {
+        const filteredQ = list.filter(q => !search || q.title?.includes(search))
+        const totalQPages = Math.ceil(filteredQ.length / pageSize)
+        const pagedQ = filteredQ.slice((page - 1) * pageSize, page * pageSize)
+        return (<>
         <div className="card" style={{ padding: 0 }}>
           <table className="table">
             <thead>
               <tr>
-                <th style={{ width: 56 }}>排序</th>
+                {!search && <th style={{ width: 56 }}>排序</th>}
                 <th>问卷标题</th>
                 <th>题数</th>
                 <th>评分</th>
@@ -826,21 +847,23 @@ export default function QuestionnairePage() {
               </tr>
             </thead>
             <tbody>
-              {list.length === 0 && (
-                <tr><td colSpan={10} style={{ textAlign: 'center', color: '#888', padding: 32 }}>暂无问卷，点击「新建问卷」开始创建</td></tr>
+              {pagedQ.length === 0 && (
+                <tr><td colSpan={!search ? 10 : 9} style={{ textAlign: 'center', color: '#888', padding: 32 }}>暂无问卷，点击「新建问卷」开始创建</td></tr>
               )}
-              {list.map((q, idx) => {
+              {pagedQ.map((q) => {
+                const idx = list.findIndex(item => item._id === q._id)
                 const meta = STATUS_META[q.status] || STATUS_META.draft
                 return (
                   <tr key={q._id}>
-                    <td>
+                    {!search && <td>
                       <div style={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
                         <button onClick={() => moveQuestionnaire(idx, -1)} disabled={idx === 0 || reordering}
                           style={{ border: 'none', background: 'none', cursor: idx === 0 ? 'default' : 'pointer', color: idx === 0 ? '#ddd' : '#888', fontSize: 13, padding: '2px 3px' }}>↑</button>
                         <button onClick={() => moveQuestionnaire(idx, 1)} disabled={idx === list.length - 1 || reordering}
                           style={{ border: 'none', background: 'none', cursor: idx === list.length - 1 ? 'default' : 'pointer', color: idx === list.length - 1 ? '#ddd' : '#888', fontSize: 13, padding: '2px 3px' }}>↓</button>
                       </div>
-                    </td>
+                    </td>}
+                    <td>
                     <td>
                       <div style={{ fontWeight: 600 }}>{q.title}</div>
                       {q.description && <div style={{ fontSize: 12, color: '#888' }}>{q.description.slice(0, 40)}{q.description.length > 40 ? '...' : ''}</div>}
@@ -873,7 +896,15 @@ export default function QuestionnairePage() {
             </tbody>
           </table>
         </div>
-      )}
+        {totalQPages > 1 && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 12 }}>
+            <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
+            <span style={{ lineHeight: '32px', fontSize: 13, color: 'var(--text-muted)' }}>第 {page} / {totalQPages} 页</span>
+            <button className="btn btn-secondary btn-sm" disabled={page >= totalQPages} onClick={() => setPage(p => p + 1)}>下一页</button>
+          </div>
+        )}
+        </>)
+      })()}
 
       {showModal && (
         <QuestionnaireModal

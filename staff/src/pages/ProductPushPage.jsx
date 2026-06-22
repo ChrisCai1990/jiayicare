@@ -12,6 +12,7 @@ export default function ProductPushPage() {
   const [loading, setLoading] = useState(true)
   const [catFilter, setCatFilter] = useState('全部')
   const [selected, setSelected] = useState([])   // 已选产品 id 数组
+  const [selectedPrices, setSelectedPrices] = useState({})  // { productId: price }
   const [pushRecords, setPushRecords] = useState([])
   const [showPatientModal, setShowPatientModal] = useState(false)
 
@@ -34,11 +35,20 @@ export default function ProductPushPage() {
 
   const filtered = catFilter === '全部' ? products : products.filter(p => p.category === catFilter)
 
-  const toggleProduct = (id) =>
-    setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+  const toggleProduct = (id) => {
+    const product = products.find(p => p.id === id)
+    setSelected(s => {
+      if (s.includes(id)) {
+        setSelectedPrices(sp => { const n = {...sp}; delete n[id]; return n })
+        return s.filter(x => x !== id)
+      }
+      setSelectedPrices(sp => ({ ...sp, [id]: product?.price || 0 }))
+      return [...s, id]
+    })
+  }
 
   const selectedItems = products.filter(p => selected.includes(p.id))
-  const totalPrice = selectedItems.reduce((sum, p) => sum + (p.price || 0), 0)
+  const totalPrice = selectedItems.reduce((sum, p) => sum + (selectedPrices[p.id] ?? p.price ?? 0), 0)
 
   if (loading) return <div className="page-loading">加载中...</div>
 
@@ -146,18 +156,38 @@ export default function ProductPushPage() {
             ) : (
               <>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
-                  {selectedItems.map(p => (
-                    <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span
-                          style={{ cursor: 'pointer', color: '#DC3545', fontSize: 15, lineHeight: 1 }}
-                          onClick={() => toggleProduct(p.id)}
-                        >✕</span>
-                        <span style={{ color: '#1A2B24' }}>{p.name}</span>
+                  {selectedItems.map(p => {
+                    const memberPrices = p.memberPrices && typeof p.memberPrices === 'object' ? p.memberPrices : null
+                    const hasMemberPrices = memberPrices && Object.keys(memberPrices).length > 0
+                    const curPrice = selectedPrices[p.id] ?? p.price
+                    return (
+                      <div key={p.id} style={{ fontSize: 13, borderBottom: '1px solid #f5f2ec', paddingBottom: 8 }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ cursor: 'pointer', color: '#DC3545', fontSize: 15, lineHeight: 1 }}
+                              onClick={() => toggleProduct(p.id)}>✕</span>
+                            <span style={{ color: '#1A2B24' }}>{p.name}</span>
+                          </div>
+                          <span style={{ fontWeight: 600, color: '#1E6B50' }}>¥{curPrice}</span>
+                        </div>
+                        {hasMemberPrices && (
+                          <div style={{ marginTop: 5, marginLeft: 20 }}>
+                            <select
+                              style={{ fontSize: 12, padding: '2px 6px', borderRadius: 6, border: '1px solid #ddd', color: '#555', width: '100%' }}
+                              value={curPrice}
+                              onClick={e => e.stopPropagation()}
+                              onChange={e => setSelectedPrices(sp => ({ ...sp, [p.id]: Number(e.target.value) }))}
+                            >
+                              <option value={p.price}>原价 ¥{p.price}</option>
+                              {Object.entries(memberPrices).map(([label, price]) => (
+                                <option key={label} value={price}>{label} ¥{price}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </div>
-                      <span style={{ fontWeight: 600, color: '#1E6B50' }}>¥{p.price}</span>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
                 <div style={{ borderTop: '1px solid #f5f2ec', paddingTop: 10, marginBottom: 14 }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 14 }}>
@@ -205,10 +235,12 @@ export default function ProductPushPage() {
           patients={patients}
           selectedItems={selectedItems}
           totalPrice={totalPrice}
+          selectedPrices={selectedPrices}
           onClose={() => setShowPatientModal(false)}
           onSaved={async (n) => {
             setShowPatientModal(false)
             setSelected([])
+            setSelectedPrices({})
             toast(`产品组合已推送给 ${n} 位会员`)
             await reload()
           }}
@@ -218,7 +250,7 @@ export default function ProductPushPage() {
   )
 }
 
-function PatientSelectModal({ patients, selectedItems, totalPrice, onClose, onSaved }) {
+function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrices, onClose, onSaved }) {
   const [selectedPatients, setSelectedPatients] = useState([])
   const [search, setSearch] = useState('')
   const [pushing, setPushing] = useState(false)
@@ -235,6 +267,7 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, onClose, onSa
       await staffAPI.pushBundle({
         productIds: selectedItems.map(p => p.id),
         patientIds: selectedPatients,
+        pricedProducts: selectedItems.map(p => ({ productId: p.id, price: selectedPrices?.[p.id] ?? p.price })),
       })
       onSaved(selectedPatients.length)
     } catch (e) {

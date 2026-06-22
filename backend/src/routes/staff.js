@@ -939,9 +939,12 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: `不支持的文件格式（${mimeType}）` });
     }
 
+    const checkDate = date || '';
+    const reportYear = checkDate ? new Date(checkDate).getFullYear() : new Date().getFullYear();
     const report = await MedicalReport.create({
       user: patientId, title, type: type || 'other', hospital: hospital || '',
-      date: date || '', fileUrl: fileUrl || '', content: content || '',
+      date: checkDate, checkDate, reportYear,
+      fileUrl: fileUrl || '', content: content || '',
       mimeType: mimeType || '', fileSize: fileSize || '',
       uploadedBy: req.staff._id, audit_status: 'unaudited',
       planId: planId || null, planItemId: planItemId || null,
@@ -1482,14 +1485,18 @@ router.get('/products', staffAuth, async (req, res) => {
 
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
 router.post('/products/push-bundle', staffAuth, async (req, res) => {
-  const { productIds, patientIds } = req.body;
+  const { productIds, patientIds, pricedProducts } = req.body;
   if (!productIds?.length) return res.status(400).json({ success: false, message: '请选择产品' });
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const products = await Product.find({ _id: { $in: productIds } });
   if (!products.length) return res.status(404).json({ success: false, message: '产品不存在' });
+  const priceMap = {};
+  if (pricedProducts?.length) {
+    pricedProducts.forEach(pp => { priceMap[String(pp.productId)] = pp.price });
+  }
   const productItems = products.map(p => ({
     productId: p._id.toString(), name: p.name,
-    price: p.originalPrice, category: p.category, icon: '🛍',
+    price: priceMap[p._id.toString()] ?? p.originalPrice, category: p.category, icon: '🛍',
   }));
   const totalPrice = productItems.reduce((sum, p) => sum + p.price, 0);
   const title = products.length === 1 ? products[0].name : `产品推荐（${products.length}项）`;

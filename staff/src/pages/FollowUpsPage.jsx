@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { useToast } from '../App'
+import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
@@ -104,6 +104,7 @@ function DetailModal({ item, onClose }) {
 export default function FollowUpsPage() {
   const nav   = useNavigate()
   const toast = useToast()
+  const { staff } = useStaff()
 
   const [followUps,    setFollowUps]    = useState([])
   const [total,        setTotal]        = useState(0)
@@ -129,6 +130,36 @@ export default function FollowUpsPage() {
 
   // 查看详情
   const [detailItem, setDetailItem] = useState(null)
+
+  // 编辑随访
+  const [editItem, setEditItem] = useState(null)
+  const [editForm, setEditForm] = useState({})
+  const [editSaving, setEditSaving] = useState(false)
+
+  const openEdit = (f) => {
+    setEditItem(f)
+    setEditForm({
+      date: f.date ? f.date.slice(0, 10) : '',
+      theme: f.theme || '',
+      type: f.type || 'phone',
+      content: f.content || '',
+      assignedTo: f.assignedTo?._id || '',
+    })
+  }
+
+  const handleEdit = async () => {
+    setEditSaving(true)
+    try {
+      await staffAPI.updateFollowUp(editItem._id, editForm)
+      toast('随访计划已更新')
+      setEditItem(null)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setEditSaving(false) }
+  }
+
+  const [staffList, setStaffList] = useState([])
+  useEffect(() => { staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {}) }, [])
 
   const limit = 20
 
@@ -304,6 +335,10 @@ export default function FollowUpsPage() {
                       <button className="btn btn-primary btn-sm" style={{ marginRight: 6 }}
                         onClick={() => openExec(f)}>执行随访</button>
                     )}
+                    {isPendingExec(f) && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
+                      <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
+                        onClick={() => openEdit(f)}>编辑</button>
+                    )}
                     {isPendingExec(f) && (
                       <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
                         onClick={() => openCancel(f)}>取消</button>
@@ -433,6 +468,57 @@ export default function FollowUpsPage() {
               <button className="btn btn-secondary" onClick={() => setCancelItem(null)}>返回</button>
               <button className="btn btn-danger" onClick={handleCancel} disabled={cancelSaving}>
                 {cancelSaving ? '处理中...' : '确认取消随访'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑随访弹窗 */}
+      {editItem && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditItem(null) }}>
+          <div className="modal" style={{ maxWidth: 520 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">编辑随访计划 · {editItem.patientId?.name}</h3>
+              <button className="modal-close" onClick={() => setEditItem(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>计划日期</label>
+                <input type="date" className="form-control" value={editForm.date}
+                  onChange={e => setEditForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访主题</label>
+                <input className="form-control" value={editForm.theme}
+                  onChange={e => setEditForm(f => ({ ...f, theme: e.target.value }))} placeholder="随访主题" />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>联系方式</label>
+                <select className="form-control" value={editForm.type}
+                  onChange={e => setEditForm(f => ({ ...f, type: e.target.value }))}>
+                  {TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>计划内容</label>
+                <textarea className="form-control" rows={4} value={editForm.content}
+                  onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
+                  placeholder="随访计划内容..." />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>负责人员</label>
+                <select className="form-control" value={editForm.assignedTo}
+                  onChange={e => setEditForm(f => ({ ...f, assignedTo: e.target.value }))}>
+                  <option value="">-- 不指定 --</option>
+                  {staffList.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setEditItem(null)}>取消</button>
+              <button className="btn btn-primary" onClick={handleEdit} disabled={editSaving}>
+                {editSaving ? '保存中...' : '保存修改'}
               </button>
             </div>
           </div>

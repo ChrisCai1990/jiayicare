@@ -229,11 +229,22 @@ router.post('/patients/:id/task', adminAuth, async (req, res) => {
 
 // ── GET /api/admin/orders ─────────────────────────────────────────
 router.get('/orders', adminAuth, async (req, res) => {
-  const { status, page = 1, limit = 20 } = req.query;
+  const { status, page = 1, limit = 20, search } = req.query;
   const filter = {};
   if (status) filter.status = status;
+  if (search) filter.serviceName = { $regex: search, $options: 'i' };
 
   const skip = (parseInt(page) - 1) * parseInt(limit);
+
+  let userIds;
+  if (search) {
+    const User = require('../models/User');
+    const users = await User.find({ $or: [{ name: { $regex: search, $options: 'i' } }, { phone: { $regex: search, $options: 'i' } }] }).select('_id');
+    userIds = users.map(u => u._id);
+    filter.$or = [{ serviceName: { $regex: search, $options: 'i' } }, { user: { $in: userIds } }];
+    delete filter.serviceName;
+  }
+
   const [orders, total] = await Promise.all([
     Order.find(filter)
       .populate('user', 'name phone')
