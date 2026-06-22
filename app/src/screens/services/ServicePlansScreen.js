@@ -494,15 +494,25 @@ export default function ServicePlansScreen({ navigation }) {
         return lines.join('\n');
       };
       const buildNotes = (key, v) => {
+        // v 直接是数组（历史格式或外层直接存数组）
         if (Array.isArray(v)) {
           return v.map((entry, i) => {
             const entryNotes = buildEntryNotes(entry);
             return v.length > 1 ? `【第${i + 1}项】\n${entryNotes}` : entryNotes;
           }).filter(Boolean).join('\n\n');
         }
+        // multi:true 模块：数据存在 { records: [{...}, ...] } 里
+        if (v.records && Array.isArray(v.records) && v.records.length > 0) {
+          const recs = v.records;
+          return recs.map((entry, i) => {
+            const entryNotes = buildEntryNotes(entry);
+            return recs.length > 1 ? `【第${i + 1}项】\n${entryNotes}` : entryNotes;
+          }).filter(Boolean).join('\n\n');
+        }
+        // 普通对象：直接渲染顶层字段（跳过 records 字段避免 [object Object]）
         const lines = [];
         Object.entries(v).forEach(([fk, fv]) => {
-          if (fk === 'enabled' || !fv || fv === false) return;
+          if (fk === 'enabled' || fk === 'records' || !fv || fv === false) return;
           const label = FIELD_LABEL[fk] || fk;
           const val = fv === true ? '是' : (Array.isArray(fv) ? fv.join('、') : String(fv));
           lines.push(`${label}：${val}`);
