@@ -1646,8 +1646,7 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
     const key = r.screeningL1 && r.checkDate ? `${r.checkDate}|${String(r.screeningL1)}` : null;
     if (key && keyMap[key]) {
       const primary = keyMap[key];
-      if (!primary.fileUrl && r.fileUrl) primary.fileUrl = r.fileUrl;
-      if (!primary.mimeType && r.mimeType) primary.mimeType = r.mimeType;
+      if (!primary.fileUrl && r.fileUrl) { primary.fileUrl = r.fileUrl; primary.mimeType = r.mimeType; }
       if ((r.reportItems?.length || 0) > (primary.reportItems?.length || 0)) primary.reportItems = r.reportItems;
     } else {
       const obj = r.toObject();
@@ -1656,6 +1655,20 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
     }
   }
   result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+  // 同日参考文件：没有文件的录入记录，附上同一天有文件的报告作为审核参考
+  const dateFileMap = {};
+  for (const r of result) {
+    if (r.fileUrl && r.checkDate && !dateFileMap[r.checkDate]) {
+      dateFileMap[r.checkDate] = { _id: r._id, fileUrl: r.fileUrl, mimeType: r.mimeType, title: r.title };
+    }
+  }
+  for (const r of result) {
+    if (!r.fileUrl && r.checkDate && dateFileMap[r.checkDate]) {
+      r.sharedFile = dateFileMap[r.checkDate];
+    }
+  }
+
   res.json({ success: true, data: result });
 });
 

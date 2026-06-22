@@ -4454,6 +4454,22 @@ export default function PatientDetailPage() {
                 })() : (
                   <div style={{ padding: '12px 0' }}>
                     <div style={{ color: '#B0C4BB', fontSize: 13, marginBottom: 8 }}>暂无文件</div>
+                    {showReportDetail.sharedFile && (() => {
+                      const sf = showReportDetail.sharedFile
+                      const sfSrc = sf.fileUrl?.startsWith('/') ? API_ORIGIN + sf.fileUrl : sf.fileUrl
+                      const sfPdf = sf.mimeType === 'application/pdf' || sf.fileUrl?.includes('.pdf')
+                      return (
+                        <div style={{ marginBottom: 10, padding: '10px 14px', background: '#FFF8EC', borderRadius: 8, border: '1px solid #FDEEC8', display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 22 }}>{sfPdf ? '📄' : '🖼️'}</span>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, color: '#D97706', fontWeight: 600, marginBottom: 2 }}>同日综合报告（审核参考）</div>
+                            <div style={{ fontSize: 12, color: '#666', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{sf.title || '体检报告'}</div>
+                          </div>
+                          <button className="btn btn-sm" style={{ background: '#FEF3E2', color: '#D97706', border: '1px solid #FDEEC8', whiteSpace: 'nowrap' }}
+                            onClick={() => sfPdf ? window.open(sfSrc, '_blank') : setPreviewImageUrl(sfSrc)}>查看</button>
+                        </div>
+                      )
+                    })()}
                     {showReportDetail.audit_status !== 'audited' && (
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 6, border: '1px dashed #B0C4BB', color: '#4A6558', fontSize: 13, cursor: 'pointer' }}>
                         📎 补传文件
