@@ -974,7 +974,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (date !== undefined) report.date = date;
     if (note !== undefined) report.note = note;
     // AI 审核字段
-    if (aiStatus !== undefined) { report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.user._id; }
+    if (aiStatus !== undefined) { report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id; }
     if (screeningCategory !== undefined) report.screeningCategory = screeningCategory;
     if (reportYear !== undefined) report.reportYear = reportYear;
     if (reportItems !== undefined) report.reportItems = reportItems;
