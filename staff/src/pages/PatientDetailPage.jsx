@@ -86,27 +86,36 @@ function LsText({ label, value = '', editing, placeholder, multiline, onChange }
 }
 
 // ── 简易 SVG 折线趋势图 ───────────────────────────────────────────
-function MiniTrendChart({ data, color = '#1E6B50', label, refValue, refLabel }) {
+function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
   if (!data || data.length < 2) return null;
   const W = 260, H = 80, PAD = 8;
   const vals = data.map(d => d.y);
-  // Include refValue in range so reference line is always visible
-  const allVals = refValue != null ? [...vals, refValue] : vals;
-  const min = Math.min(...allVals), max = Math.max(...allVals);
+  const rangeVals = [...vals];
+  if (refLow  != null) rangeVals.push(refLow);
+  if (refHigh != null) rangeVals.push(refHigh);
+  const min = Math.min(...rangeVals), max = Math.max(...rangeVals);
   const range = max - min || 1;
+  const toY = v => H - PAD - ((v - min) / range) * (H - PAD * 2);
   const xs = data.map((_, i) => PAD + (i / (data.length - 1)) * (W - PAD * 2));
-  const ys = vals.map(v => H - PAD - ((v - min) / range) * (H - PAD * 2));
+  const ys = vals.map(v => toY(v));
   const pts = xs.map((x, i) => `${x},${ys[i]}`).join(' ');
   const last = data[data.length - 1];
-  const refY = refValue != null ? H - PAD - ((refValue - min) / range) * (H - PAD * 2) : null;
+  const highY = refHigh != null ? toY(refHigh) : null;
+  const lowY  = refLow  != null ? toY(refLow)  : null;
   return (
     <div style={{ display: 'inline-block', marginRight: 16, marginBottom: 12 }}>
       <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4, fontWeight: 600 }}>{label}</div>
       <svg width={W} height={H} style={{ border: '1px solid #f0ece4', borderRadius: 8, background: '#faf9f6' }}>
-        {refY != null && (
+        {highY != null && (
           <>
-            <line x1={PAD} y1={refY} x2={W - PAD} y2={refY} stroke="#DC354550" strokeWidth="1.5" strokeDasharray="4,3" />
-            <text x={W - PAD - 2} y={Math.max(refY - 2, 10)} textAnchor="end" fontSize="8" fill="#DC3545AA">{refLabel || '参考'}</text>
+            <line x1={PAD} y1={highY} x2={W - PAD} y2={highY} stroke="#DC354550" strokeWidth="1.5" strokeDasharray="4,3" />
+            <text x={PAD + 2} y={Math.max(highY - 2, 10)} textAnchor="start" fontSize="8" fill="#DC3545AA">上限</text>
+          </>
+        )}
+        {lowY != null && (
+          <>
+            <line x1={PAD} y1={lowY} x2={W - PAD} y2={lowY} stroke="#0077B650" strokeWidth="1.5" strokeDasharray="4,3" />
+            <text x={PAD + 2} y={Math.min(lowY + 9, H - 2)} textAnchor="start" fontSize="8" fill="#0077B6AA">下限</text>
           </>
         )}
         <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={pts} />
@@ -2845,26 +2854,26 @@ export default function PatientDetailPage() {
 
               // 17 项指标定义：key / label / unit / 判断函数
               const LAB_DEFS = [
-                { key: 'weight',  label: '体重',           unit: 'kg',     check: () => null },  // 个体化，仅展示
-                { key: 'sbp',     label: '收缩压',          unit: 'mmHg',   check: v => parseFloat(v) >= 130 },
-                { key: 'dbp',     label: '舒张压',          unit: 'mmHg',   check: v => parseFloat(v) >= 80 },
-                { key: 'fpg',     label: '空腹血糖',        unit: 'mmol/L', check: v => parseFloat(v) > 6.1,  ref: '≤6.1' },
-                { key: 'hba1c',   label: 'HbA1c',          unit: '%',      check: v => parseFloat(v) >= 6.5,  ref: '<6.5' },
-                { key: 'tc',      label: '总胆固醇 TC',     unit: 'mmol/L', check: v => parseFloat(v) >= 5.2,  ref: '<5.2' },
-                { key: 'tg',      label: '甘油三酯 TG',     unit: 'mmol/L', check: v => parseFloat(v) >= 1.7,  ref: '<1.7' },
-                { key: 'ldl',     label: 'LDL-C',          unit: 'mmol/L', check: v => parseFloat(v) >= 3.4,  ref: '<3.4' },
-                { key: 'hdl',     label: 'HDL-C',          unit: 'mmol/L', check: v => parseFloat(v) < (gender === 'F' ? 1.3 : 1.0), ref: gender === 'F' ? '≥1.3' : '≥1.0' },
-                { key: 'ua',      label: '尿酸 UA',         unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 360 : 420), ref: gender === 'F' ? '≤360' : '≤420' },
-                { key: 'cr',      label: '血肌酐',           unit: 'μmol/L', check: v => parseFloat(v) > (gender === 'F' ? 97 : 106),  ref: gender === 'F' ? '≤97' : '≤106' },
-                { key: 'umalb',   label: '尿微量蛋白',       unit: 'mg/L',   check: v => parseFloat(v) > 30,    ref: '≤30' },
-                { key: 'egfr',    label: 'eGFR',            unit: 'mL/min/1.73m²', check: v => parseFloat(v) < 60, ref: '≥60' },
-                { key: 'alt',     label: 'ALT',             unit: 'U/L',    check: v => parseFloat(v) > 40,    ref: '≤40' },
-                { key: 'ast',     label: 'AST',             unit: 'U/L',    check: v => parseFloat(v) > 40,    ref: '≤40' },
-                { key: 'ggt',     label: 'GGT',             unit: 'U/L',    check: v => parseFloat(v) > 50,    ref: '≤50' },
-                { key: 'hcy',     label: '同型半胱氨酸 Hcy', unit: 'μmol/L', check: v => parseFloat(v) > 15,    ref: '≤15' },
-                { key: 'lpla2',   label: 'Lp-PLA2',         unit: 'ng/mL',  check: v => parseFloat(v) > 200,   ref: '≤200' },
-                { key: 'liverUs', label: '肝脏超声',         unit: '',       isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
-                { key: 'carotiUs',label: '颈动脉超声',       unit: '',       isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
+                { key: 'weight',  label: '体重',           unit: 'kg',           check: () => null },
+                { key: 'sbp',     label: '收缩压',          unit: 'mmHg',         check: v => parseFloat(v) >= 130, ref: '90-130',  refLow: 90,  refHigh: 130 },
+                { key: 'dbp',     label: '舒张压',          unit: 'mmHg',         check: v => parseFloat(v) >= 80,  ref: '60-80',   refLow: 60,  refHigh: 80 },
+                { key: 'fpg',     label: '空腹血糖',        unit: 'mmol/L',       check: v => parseFloat(v) > 6.1,  ref: '3.9-6.1', refLow: 3.9, refHigh: 6.1 },
+                { key: 'hba1c',   label: 'HbA1c',          unit: '%',            check: v => parseFloat(v) >= 6.5, ref: '4-6.5',   refLow: 4.0, refHigh: 6.5 },
+                { key: 'tc',      label: '总胆固醇 TC',     unit: 'mmol/L',       check: v => parseFloat(v) >= 5.2, ref: '3.1-5.2', refLow: 3.1, refHigh: 5.2 },
+                { key: 'tg',      label: '甘油三酯 TG',     unit: 'mmol/L',       check: v => parseFloat(v) >= 1.7, ref: '0.6-1.7', refLow: 0.6, refHigh: 1.7 },
+                { key: 'ldl',     label: 'LDL-C',          unit: 'mmol/L',       check: v => parseFloat(v) >= 3.4, ref: '1.4-3.4', refLow: 1.4, refHigh: 3.4 },
+                { key: 'hdl',     label: 'HDL-C',          unit: 'mmol/L',       check: v => parseFloat(v) < (gender === 'F' ? 1.3 : 1.0), ref: gender === 'F' ? '≥1.3' : '≥1.0', refLow: gender === 'F' ? 1.3 : 1.0 },
+                { key: 'ua',      label: '尿酸 UA',         unit: 'μmol/L',       check: v => parseFloat(v) > (gender === 'F' ? 360 : 420), ref: gender === 'F' ? '150-360' : '210-420', refLow: gender === 'F' ? 150 : 210, refHigh: gender === 'F' ? 360 : 420 },
+                { key: 'cr',      label: '血肌酐',          unit: 'μmol/L',       check: v => parseFloat(v) > (gender === 'F' ? 97 : 106),  ref: gender === 'F' ? '53-97' : '62-106',   refLow: gender === 'F' ? 53 : 62,   refHigh: gender === 'F' ? 97 : 106 },
+                { key: 'umalb',   label: '尿微量蛋白',      unit: 'mg/L',         check: v => parseFloat(v) > 30,   ref: '≤30',     refHigh: 30 },
+                { key: 'egfr',    label: 'eGFR',           unit: 'mL/min/1.73m²', check: v => parseFloat(v) < 60,  ref: '≥60',     refLow: 60 },
+                { key: 'alt',     label: 'ALT',            unit: 'U/L',           check: v => parseFloat(v) > 40,   ref: '7-40',    refLow: 7,   refHigh: 40 },
+                { key: 'ast',     label: 'AST',            unit: 'U/L',           check: v => parseFloat(v) > 40,   ref: '13-40',   refLow: 13,  refHigh: 40 },
+                { key: 'ggt',     label: 'GGT',            unit: 'U/L',           check: v => parseFloat(v) > (gender === 'F' ? 35 : 50), ref: gender === 'F' ? '7-35' : '11-50', refLow: gender === 'F' ? 7 : 11, refHigh: gender === 'F' ? 35 : 50 },
+                { key: 'hcy',     label: '同型半胱氨酸 Hcy', unit: 'μmol/L',      check: v => parseFloat(v) > 15,   ref: '≤15',     refHigh: 15 },
+                { key: 'lpla2',   label: 'Lp-PLA2',        unit: 'ng/mL',        check: v => parseFloat(v) > 200,  ref: '≤200',    refHigh: 200 },
+                { key: 'liverUs', label: '肝脏超声',        unit: '',             isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
+                { key: 'carotiUs',label: '颈动脉超声',      unit: '',             isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
               ]
 
               // 只从专项筛查派生值，不读 labValues
@@ -2965,8 +2974,8 @@ export default function PatientDetailPage() {
                                 data={pts}
                                 color={borderColor}
                                 label=""
-                                refValue={d.ref ? parseFloat(d.ref.replace(/[^0-9.]/g, '')) : undefined}
-                                refLabel={d.ref || undefined}
+                                refLow={d.refLow}
+                                refHigh={d.refHigh}
                               />
                             </div>
                           )}

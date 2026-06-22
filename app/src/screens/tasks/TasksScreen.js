@@ -443,7 +443,7 @@ export default function TasksScreen({ navigation }) {
   })();
 
   const pendingCount   = tasks.filter(t => t.status === 'pending').length;
-  const completedCount = tasks.filter(t => t.status === 'completed').length;
+  const completedCount = completedItems.length;
   const reminderCount  = reminders.filter(r => r.enabled && r.isActiveToday).length;
 
   const detailPConf = PRIORITY_CONFIG[detailTask?.priority] || PRIORITY_CONFIG.low;

@@ -1636,9 +1636,27 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
 router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   const reports = await MedicalReport.find({ user: req.params.id })
     .select('-content')
-    .sort({ createdAt: -1 })
+    .sort({ createdAt: 1 })
     .populate('uploadedBy', 'name role');
-  res.json({ success: true, data: reports });
+
+  // 显示层去重：同一 (checkDate, screeningL1) 的两条记录合并为一条
+  const keyMap = {};
+  const result = [];
+  for (const r of reports) {
+    const key = r.screeningL1 && r.checkDate ? `${r.checkDate}|${String(r.screeningL1)}` : null;
+    if (key && keyMap[key]) {
+      const primary = keyMap[key];
+      if (!primary.fileUrl && r.fileUrl) primary.fileUrl = r.fileUrl;
+      if (!primary.mimeType && r.mimeType) primary.mimeType = r.mimeType;
+      if ((r.reportItems?.length || 0) > (primary.reportItems?.length || 0)) primary.reportItems = r.reportItems;
+    } else {
+      const obj = r.toObject();
+      if (key) keyMap[key] = obj;
+      result.push(key ? keyMap[key] : obj);
+    }
+  }
+  result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+  res.json({ success: true, data: result });
 });
 
 // ── 检查开单（ExamRequisition） ───────────────────────────
