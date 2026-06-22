@@ -2896,6 +2896,7 @@ export default function PatientDetailPage() {
                       date: report.checkDate || report.date || '',
                       source: report.title || '专项筛查',
                       abnormal: item.status === 'abnormal',
+                      referenceRange: item.referenceRange || '',
                     }
                     break
                   }
@@ -2943,6 +2944,19 @@ export default function PatientDetailPage() {
                 { key: 'liverUs', label: '肝脏超声',        unit: '',             isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
                 { key: 'carotiUs',label: '颈动脉超声',      unit: '',             isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
               ]
+
+              // 解析保存的参考范围文字 → { refLow, refHigh, ref }
+              const parseRefRange = (str) => {
+                if (!str) return {}
+                str = str.trim()
+                const rangeM = str.match(/^([\d.]+)\s*[-~]\s*([\d.]+)/)
+                if (rangeM) return { refLow: parseFloat(rangeM[1]), refHigh: parseFloat(rangeM[2]), ref: str }
+                const highM = str.match(/^[≤<]\s*([\d.]+)/)
+                if (highM) return { refHigh: parseFloat(highM[1]), ref: str }
+                const lowM = str.match(/^[≥>]\s*([\d.]+)/)
+                if (lowM) return { refLow: parseFloat(lowM[1]), ref: str }
+                return { ref: str }
+              }
 
               // 只从专项筛查派生值，不读 labValues
               const getVal = (key) => {
@@ -3026,11 +3040,15 @@ export default function PatientDetailPage() {
                       const bgColor = isAbnormal ? '#FEF2F2' : d.key === 'weight' ? '#f9f7f3' : '#f0faf5'
                       const borderColor = isAbnormal ? '#DC3545' : d.key === 'weight' ? '#aaa' : '#22A06B'
                       const textColor = isAbnormal ? '#DC3545' : '#1A2B24'
+                      const savedRef = parseRefRange(derived[d.key]?.referenceRange)
+                      const displayRef = savedRef.ref || d.ref
+                      const displayRefLow = savedRef.refLow ?? d.refLow
+                      const displayRefHigh = savedRef.refHigh ?? d.refHigh
                       return (
                         <div key={d.key} style={{ padding: '10px 12px', background: bgColor, borderRadius: 8, borderLeft: `3px solid ${borderColor}` }}>
                           <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
                             <span>{d.label}</span>
-                            {d.ref && <span style={{ color: isAbnormal ? '#DC354560' : '#8AA89C' }}>参考 {d.ref}</span>}
+                            {displayRef && <span style={{ color: isAbnormal ? '#DC354560' : '#8AA89C' }}>参考 {displayRef}</span>}
                           </div>
                           <div style={{ fontSize: 15, fontWeight: 700, color: textColor }}>
                             {val} <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C' }}>{d.unit}</span>
@@ -3042,8 +3060,8 @@ export default function PatientDetailPage() {
                                 data={pts}
                                 color={borderColor}
                                 label=""
-                                refLow={d.refLow}
-                                refHigh={d.refHigh}
+                                refLow={displayRefLow}
+                                refHigh={displayRefHigh}
                               />
                             </div>
                           )}

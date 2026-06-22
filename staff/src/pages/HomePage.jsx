@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
+import AiTodosPanel from '../components/AiTodosPanel'
 
 const DISEASE_COLOR = {
   '高血压': '#e74c3c', '糖尿病': '#e67e22', '高血脂': '#f39c12',
@@ -65,6 +66,9 @@ export default function HomePage() {
         <StatCard icon="📅" label="本月随访" value={reports?.monthFollowUps ?? '-'} color="#22A06B" onClick={() => nav('/followups')} />
         <StatCard icon="✅" label="今日打卡" value={checkinRecords.length} color="#D97706" onClick={() => nav('/daily-checkin')} />
       </div>
+
+      {/* AI 待审核任务面板 */}
+      <AiTodosPanel />
 
       {/* 今日健康打卡 */}
       <div className="card" style={{ marginBottom: 20 }}>

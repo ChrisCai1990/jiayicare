@@ -256,6 +256,9 @@ export const staffAPI = {
   addFamilyLink:            (id, data)      => req(`/staff/patients/${id}/family-links`, { method: 'POST', body: JSON.stringify(data) }),
   removeFamilyLink:         (id, linkId)    => req(`/staff/patients/${id}/family-links/${linkId}`, { method: 'DELETE' }),
 
+  // AI 待办任务聚合
+  getAiTodos: () => req('/staff/ai-todos'),
+
   // 日常健康打卡总览
   getCheckinOverview: (p = {}) => req('/staff/checkin-overview?' + qs(p)),
 

@@ -3097,4 +3097,55 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// ── AI 待办任务聚合接口 ────────────────────────────────────────────
+// 汇总所有 AI 生成内容中待人工审核的任务，按紧急程度排序
+router.get('/ai-todos', staffAuth, async (req, res) => {
+  try {
+    const staffId = req.staff._id;
+    const now = new Date();
+    const todos = [];
+
+    // 1. 体检报告待审核（aiStatus=pending）
+    const pendingReports = await MedicalReport.find({ aiStatus: 'pending' })
+      .populate('user', 'name phone')
+      .sort({ updatedAt: -1 })
+      .limit(50)
+      .lean();
+
+    pendingReports.forEach(r => {
+      const createdAt = r.updatedAt || r.createdAt;
+      const overdue = (now - new Date(createdAt)) > 24 * 60 * 60 * 1000;
+      todos.push({
+        id: String(r._id),
+        type: 'report_review',
+        label: '体检报告待审核',
+        priority: 2,
+        patientName: r.user?.name || '未知',
+        patientId: String(r.user?._id || ''),
+        summary: r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
+        createdAt,
+        overdue,
+        link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+      });
+    });
+
+    // 后续场景接入点（建好后在此追加）
+    // 2. AI趋势分析待审核 → HealthPlan aiStatus=pending
+    // 3. 风险预警待处理 → AbnormalReview urgent=true
+    // 4. AI文案待审核 → ServiceRecord / FollowUp draftStatus=pending
+    // ...
+
+    // 按优先级排序：priority越小越紧急，同级按时间倒序
+    todos.sort((a, b) => {
+      if (b.overdue !== a.overdue) return b.overdue ? 1 : -1; // overdue 优先
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      return new Date(b.createdAt) - new Date(a.createdAt);
+    });
+
+    res.json({ success: true, data: todos, total: todos.length });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 module.exports = router;
