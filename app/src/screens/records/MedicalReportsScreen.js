@@ -99,7 +99,7 @@ function ReportItemRow({ item }) {
   );
 }
 
-function ReportCard({ report, onParseAI, parsing }) {
+function ReportCard({ report }) {
   const [expanded, setExpanded] = useState(false);
   const hasItems = report.reportItems?.length > 0;
   const hasAI = !!report.aiSummary;
@@ -140,18 +140,7 @@ function ReportCard({ report, onParseAI, parsing }) {
             </View>
           ) : (
             <View style={styles.noItemsWrap}>
-              <Text style={styles.noItemsText}>暂无解析数据</Text>
-              {(report.content || report.fileUrl) && (
-                <TouchableOpacity style={styles.parseBtn} onPress={() => onParseAI(report._id)} disabled={parsing === report._id}>
-                  {parsing === report._id
-                    ? <ActivityIndicator size="small" color={colors.primary} />
-                    : <>
-                        <Ionicons name="sparkles-outline" size={14} color={colors.primary} />
-                        <Text style={styles.parseBtnText}>AI 智能解析</Text>
-                      </>
-                  }
-                </TouchableOpacity>
-              )}
+              <Text style={styles.noItemsText}>暂无解析数据，请联系健管专员</Text>
             </View>
           )}
         </View>
@@ -163,7 +152,6 @@ function ReportCard({ report, onParseAI, parsing }) {
 export default function MedicalReportsScreen({ navigation }) {
   const [years, setYears]       = useState([]);
   const [loading, setLoading]   = useState(true);
-  const [parsing, setParsing]   = useState(null);
   const [selYear, setSelYear]   = useState(null);
 
   const load = useCallback(async () => {
@@ -177,16 +165,6 @@ export default function MedicalReportsScreen({ navigation }) {
   }, []);
 
   useEffect(() => { load(); }, [load]);
-
-  const handleParseAI = async (id) => {
-    setParsing(id);
-    try {
-      await reportsAPI.parseAI(id);
-      load();
-    } catch (e) {
-      alert('AI 解析失败：' + (e.message || '未知错误'));
-    } finally { setParsing(null); }
-  };
 
   const currentYear = years.find(y => y.year === selYear);
 
@@ -255,7 +233,7 @@ export default function MedicalReportsScreen({ navigation }) {
                   }
 
                   {cat.reports.map(r => (
-                    <ReportCard key={r._id} report={r} onParseAI={handleParseAI} parsing={parsing} />
+                    <ReportCard key={r._id} report={r} />
                   ))}
                 </View>
               );

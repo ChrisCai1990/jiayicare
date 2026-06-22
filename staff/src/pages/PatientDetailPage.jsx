@@ -401,6 +401,7 @@ export default function PatientDetailPage() {
   const [historyEditForm, setHistoryEditForm] = useState({})
   // 4.4 AI健康汇总
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
+  const [parsingReportId, setParsingReportId] = useState(null)
   const [editingAISummary, setEditingAISummary] = useState(false)
   const [aiSummaryForm, setAiSummaryForm] = useState({})
 
@@ -796,8 +797,18 @@ export default function PatientDetailPage() {
       setAiSummaryForm(res.data)
       toast('AI分析已生成')
       load()
-    } catch (err) { toast(err.message || 'AI生成失败，请确认 ANTHROPIC_API_KEY 已配置') }
+    } catch (err) { toast(err.message || 'AI生成失败') }
     finally { setAiSummaryLoading(false) }
+  }
+
+  const handleParseReportAI = async (reportId) => {
+    setParsingReportId(reportId)
+    try {
+      const res = await staffAPI.parseReportAI(reportId)
+      toast(res.message || 'AI解析完成')
+      loadReports()
+    } catch (err) { toast(err.message || 'AI解析失败') }
+    finally { setParsingReportId(null) }
   }
 
   const handleSaveAISummary = async (approve = false) => {
@@ -3946,6 +3957,13 @@ export default function PatientDetailPage() {
                               )}
                             </td>
                             <td style={{ whiteSpace: 'nowrap' }}>
+                              {r.aiStatus === 'none' && (r.fileUrl || r.content) && (
+                                <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
+                                  disabled={parsingReportId === r._id}
+                                  onClick={() => handleParseReportAI(r._id)}>
+                                  {parsingReportId === r._id ? '解析中…' : 'AI解析'}
+                                </button>
+                              )}
                               {r.audit_status !== 'audited' && (
                                 editingTitleReportId === r._id ? (
                                   <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>

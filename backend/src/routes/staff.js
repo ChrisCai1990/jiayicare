@@ -3142,4 +3142,66 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
   }
 });
 
+// POST /api/staff/medical-reports/:id/parse-ai — 医护端触发AI解析
+router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
+  try {
+    const { parseImage } = require('../utils/ai');
+    const MedicalReport = require('../models/MedicalReport');
+    const report = await MedicalReport.findById(req.params.id);
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+
+    const hasOssUrl = !!report.fileUrl;
+    const hasBase64 = !!report.content;
+    const isImage = report.mimeType?.startsWith('image/');
+
+    if (!hasOssUrl && !hasBase64) {
+      return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
+    }
+    if (!process.env.QWEN_API_KEY) {
+      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
+      return res.json({ success: true, message: '已加入待审核队列' });
+    }
+    if (!isImage) {
+      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
+      return res.json({ success: true, message: 'PDF解析即将开放，已加入待审核队列' });
+    }
+
+    const prompt = `请分析这份体检报告图片，提取所有检验/检查项目。
+以 JSON 格式返回，结构如下：
+{
+  "institution": "机构名称",
+  "checkDate": "YYYY-MM-DD",
+  "items": [
+    { "name": "项目名称", "value": "检测值", "unit": "单位", "referenceRange": "参考范围", "status": "normal/abnormal/attention/unknown", "itemType": "lab/imaging/data" }
+  ],
+  "summary": "综合分析（1-2句话，重点关注异常项）"
+}
+只输出 JSON，不要额外文字。`;
+
+    const text = hasOssUrl
+      ? await parseImage(report.fileUrl, prompt, { isUrl: true })
+      : await parseImage(report.content, prompt, { isUrl: false });
+
+    let parsed = null;
+    try {
+      parsed = JSON.parse(text.trim().replace(/^```json\n?|\n?```$/g, ''));
+    } catch {
+      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
+      return res.json({ success: true, message: 'AI解析格式异常，已加入人工审核队列' });
+    }
+
+    await MedicalReport.findByIdAndUpdate(report._id, {
+      reportItems: parsed.items || [],
+      aiSummary:   parsed.summary || '',
+      aiStatus:    'pending',
+      institution: parsed.institution || report.institution,
+      checkDate:   parsed.checkDate   || report.checkDate,
+    });
+
+    res.json({ success: true, message: `AI解析完成，提取 ${parsed.items?.length || 0} 项指标，待审核确认` });
+  } catch (err) {
+    res.status(500).json({ success: false, message: 'AI解析失败：' + err.message });
+  }
+});
+
 module.exports = router;
