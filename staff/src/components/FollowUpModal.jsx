@@ -233,6 +233,13 @@ const TYPE_OPTIONS = [
 export default function FollowUpModal({ patientId, patientName, defaultTheme, onClose, onSaved }) {
   const [staffList, setStaffList] = useState([])
   const [followupForms, setFollowupForms] = useState([])
+  const [formSearch, setFormSearch] = useState('')
+  const [showFormList, setShowFormList] = useState(false)
+  // 复诊随访详情
+  const [revisitReason, setRevisitReason] = useState('')
+  const [revisitDate, setRevisitDate] = useState('')
+  const [revisitHospital, setRevisitHospital] = useState('')
+  const [revisitDept, setRevisitDept] = useState('')
   const [mode, setMode] = useState('plan')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -332,6 +339,16 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
     if (validRows.length === 0) { setError('请至少填写一行随访时间'); return }
     setSaving(true); setError('')
     try {
+      // 如果是复诊随访，把结构化的复查详情格式化为用户可见的 content
+      const revisitContent = visitTypeRevisit && (revisitReason || revisitHospital || revisitDept || revisitDate)
+        ? [
+            revisitReason   ? `复查原因：${revisitReason}` : '',
+            revisitDate     ? `建议复查时间：${revisitDate}` : '',
+            revisitHospital ? `建议复查医院：${revisitHospital}` : '',
+            revisitDept     ? `建议科室/专家：${revisitDept}` : '',
+          ].filter(Boolean).join('\n')
+        : ''
+
       await Promise.all(validRows.map(row => {
         const resolvedDate = row.date
           ? row.date
@@ -342,7 +359,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
           type: planType,
           status: 'planned',
           theme: planName,
-          content: row.notes,
+          content: revisitContent || row.notes,
           assignedTo: row.assignedTo || null,
           formId: visitTypeForm ? (planFormId || null) : null,
           followUpSchemeId: selectedSchemeId || null,
@@ -567,6 +584,31 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
               </div>
             </div>
 
+            {/* 复诊随访详情（仅复诊随访显示） */}
+            {visitTypeRevisit && (
+              <div style={{ background: '#FFF5F5', border: '1px solid #FECACA', borderRadius: 8, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', marginBottom: 2 }}>🔴 复查详情（会员可见）</div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label" style={{ fontSize: 12 }}>复查原因</label>
+                  <input className="form-input" placeholder="如：CA125升高，需复查排除异常" value={revisitReason} onChange={e => setRevisitReason(e.target.value)} />
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                    <label className="form-label" style={{ fontSize: 12 }}>建议复查时间</label>
+                    <input className="form-input" type="date" value={revisitDate} onChange={e => setRevisitDate(e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                    <label className="form-label" style={{ fontSize: 12 }}>建议复查医院</label>
+                    <input className="form-input" placeholder="如：浙大一院" value={revisitHospital} onChange={e => setRevisitHospital(e.target.value)} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                    <label className="form-label" style={{ fontSize: 12 }}>建议科室/专家</label>
+                    <input className="form-input" placeholder="如：肿瘤内科" value={revisitDept} onChange={e => setRevisitDept(e.target.value)} />
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* 打卡任务设置 */}
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">打卡任务（可选）</label>
@@ -620,11 +662,42 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
             {visitTypeForm && (
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">随访表单</label>
-                <select className="form-input" value={planFormId} onChange={e => { setPlanFormId(e.target.value); if (!selectedSchemeId) setSchemeFormData({}) }}>
-                  <option value="">-- 不使用表单 --</option>
-                  {followupForms.map(f => <option key={f._id} value={f._id}>{f.name}</option>)}
-                </select>
-                {planFormId && (
+                <div style={{ position: 'relative' }}>
+                  <input
+                    className="form-input"
+                    placeholder="搜索表单名称..."
+                    value={showFormList ? formSearch : (followupForms.find(f => f._id === planFormId)?.name || '')}
+                    onFocus={() => { setShowFormList(true); setFormSearch('') }}
+                    onChange={e => { setFormSearch(e.target.value); setShowFormList(true) }}
+                    onBlur={() => setTimeout(() => setShowFormList(false), 180)}
+                    autoComplete="off"
+                    style={{ paddingRight: planFormId ? 28 : undefined }}
+                  />
+                  {planFormId && !showFormList && (
+                    <button type="button" style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', color: '#aaa', fontSize: 16, lineHeight: 1 }}
+                      onClick={() => { setPlanFormId(''); if (!selectedSchemeId) setSchemeFormData({}) }}>×</button>
+                  )}
+                  {showFormList && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 8, boxShadow: '0 4px 16px rgba(0,0,0,0.1)', zIndex: 1000, maxHeight: 220, overflowY: 'auto' }}>
+                      <div
+                        style={{ padding: '9px 14px', fontSize: 13, color: '#8AA89C', cursor: 'pointer', borderBottom: '1px solid #f5f2ec' }}
+                        onMouseDown={() => { setPlanFormId(''); if (!selectedSchemeId) setSchemeFormData({}); setShowFormList(false); setFormSearch('') }}>
+                        — 不使用表单 —
+                      </div>
+                      {followupForms.filter(f => !formSearch || f.name.includes(formSearch)).map(f => (
+                        <div key={f._id}
+                          style={{ padding: '9px 14px', fontSize: 13, cursor: 'pointer', background: planFormId === f._id ? '#F0FAF5' : '#fff', color: planFormId === f._id ? '#1E6B50' : '#1A2B24', borderBottom: '1px solid #f5f2ec' }}
+                          onMouseDown={() => { setPlanFormId(f._id); if (!selectedSchemeId) setSchemeFormData({}); setShowFormList(false); setFormSearch('') }}>
+                          {f.name}
+                        </div>
+                      ))}
+                      {followupForms.filter(f => !formSearch || f.name.includes(formSearch)).length === 0 && (
+                        <div style={{ padding: '12px 14px', fontSize: 13, color: '#aaa', textAlign: 'center' }}>未找到匹配表单</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {planFormId && !showFormList && (
                   <div style={{ fontSize: 11, color: '#1E6B50', marginTop: 4 }}>
                     ✓ 已关联「{followupForms.find(f => f._id === planFormId)?.name}」
                   </div>

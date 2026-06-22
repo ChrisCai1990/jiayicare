@@ -544,6 +544,7 @@ export default function PatientDetailPage() {
     weight: u.weight || '',
     address: u.address || '',
     contactPhone: u.contactPhone || '',
+    chronicDiseases: u.chronicDiseases || [],
   })
 
   const handleSaveBasicInfo = async () => {
@@ -999,6 +1000,54 @@ export default function PatientDetailPage() {
                         <label key={v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 13 }}>
                           <input type="radio" checked={basicInfoForm.hasAnnualCheckup === v} onChange={() => setBasicInfoForm(f => ({ ...f, hasAnnualCheckup: v }))} />{v}
                         </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>慢性病标签</label>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
+                      {(basicInfoForm.chronicDiseases || []).map((d, i) => (
+                        <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 10px', borderRadius: 99, background: '#fee2e2', color: '#DC3545', fontSize: 12, fontWeight: 500 }}>
+                          {d}
+                          <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC3545', padding: '0 2px', lineHeight: 1, fontSize: 14 }}
+                            onClick={() => setBasicInfoForm(f => ({ ...f, chronicDiseases: f.chronicDiseases.filter((_, j) => j !== i) }))}>×</button>
+                        </span>
+                      ))}
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6 }}>
+                      <input
+                        className="form-input"
+                        placeholder="输入慢性病名称后按 Enter 或点添加"
+                        style={{ flex: 1, fontSize: 13 }}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter' && e.target.value.trim()) {
+                            e.preventDefault()
+                            const v = e.target.value.trim()
+                            if (!(basicInfoForm.chronicDiseases || []).includes(v))
+                              setBasicInfoForm(f => ({ ...f, chronicDiseases: [...(f.chronicDiseases || []), v] }))
+                            e.target.value = ''
+                          }
+                        }}
+                      />
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={e => {
+                        const inp = e.currentTarget.previousSibling
+                        const v = inp.value.trim()
+                        if (v && !(basicInfoForm.chronicDiseases || []).includes(v)) {
+                          setBasicInfoForm(f => ({ ...f, chronicDiseases: [...(f.chronicDiseases || []), v] }))
+                          inp.value = ''
+                        }
+                      }}>添加</button>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                      {['高血压','糖尿病','冠心病','高脂血症','痛风','甲状腺疾病','慢性肾病','脂肪肝','骨质疏松','慢阻肺'].map(d => (
+                        <button key={d} type="button"
+                          style={{ fontSize: 11, padding: '2px 8px', borderRadius: 99, border: `1px solid ${ (basicInfoForm.chronicDiseases||[]).includes(d) ? '#DC3545' : '#ddd'}`, background: (basicInfoForm.chronicDiseases||[]).includes(d) ? '#fee2e2' : '#f9f9f9', color: (basicInfoForm.chronicDiseases||[]).includes(d) ? '#DC3545' : '#666', cursor: 'pointer' }}
+                          onClick={() => setBasicInfoForm(f => {
+                            const cur = f.chronicDiseases || []
+                            return { ...f, chronicDiseases: cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d] }
+                          })}>
+                          {d}
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -3391,12 +3440,16 @@ export default function PatientDetailPage() {
                               setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
                               setEditingMed(m._id); setShowMedModal(true)
                             }}>编辑</button>
-                            {!m.stopped && (
-                              <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
+                            {m.stopped
+                            ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
+                                onClick={async () => { if (window.confirm('确认恢复用药？')) { await staffAPI.updatePatientMedication(id, m._id, { stopped: false, endDate: '' }); loadMedications() } }}>
+                                恢复用药
+                              </button>
+                            : <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                 onClick={async () => { if (window.confirm('确认停用此药物？')) { await staffAPI.updatePatientMedication(id, m._id, { stopped: true }); loadMedications() } }}>
                                 停用
                               </button>
-                            )}
+                          }
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
                               onClick={async () => { if (window.confirm('确认删除？')) { await staffAPI.deletePatientMedication(id, m._id); loadMedications() } }}>
                               删除
@@ -3438,12 +3491,16 @@ export default function PatientDetailPage() {
                               setSupForm({ name: s.name, brand: s.brand || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
                               setEditingSup(s._id); setShowSupModal(true)
                             }}>编辑</button>
-                            {!s.stopped && (
-                              <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
-                                onClick={async () => { if (window.confirm('确认停用？')) { await staffAPI.updatePatientSupplement(id, s._id, { stopped: true }); loadSupplements() } }}>
-                                停用
-                              </button>
-                            )}
+                            {s.stopped
+                              ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
+                                  onClick={async () => { if (window.confirm('确认恢复补充？')) { await staffAPI.updatePatientSupplement(id, s._id, { stopped: false }); loadSupplements() } }}>
+                                  恢复补充
+                                </button>
+                              : <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
+                                  onClick={async () => { if (window.confirm('确认停用？')) { await staffAPI.updatePatientSupplement(id, s._id, { stopped: true }); loadSupplements() } }}>
+                                  停用
+                                </button>
+                            }
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
                               onClick={async () => { if (window.confirm('确认删除？')) { await staffAPI.deletePatientSupplement(id, s._id); loadSupplements() } }}>
                               删除

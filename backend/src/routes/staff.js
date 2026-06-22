@@ -2860,27 +2860,45 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
     const VALID_TYPES = ['annual','body_comp','blood','bloodTest','ultrasound','radiology','mri','endoscopy','ecg','pathology','functional','genetic','other','followup','imaging','tumor','cardiovascular','chronic','health_promote'];
     const safeCategory = VALID_CATEGORIES.includes(screeningCategory) ? screeningCategory : '';
     const safeType     = VALID_TYPES.includes(screeningCategory)     ? screeningCategory : 'other';
-    const report = await MedicalReport.create({
-      user:             req.params.id,
-      title:            resolvedTitle,
-      type:             safeType,
-      screeningCategory: safeCategory,
-      screeningL1:      screeningL1 || '',
-      screeningL2:      screeningL2 || '',
-      screeningL3:      screeningL3 || '',
-      screeningL3Items,
-      examDescription:  examDescription || '',
-      examConclusion:   examConclusion  || '',
-      checkDate:        checkDate || '',
-      hospital:         hospital  || '',
-      reportItems:      finalReportItems,
-      note:             note || '',
-      fileUrl,
-      fileUrls,
-      mimeType,
-      audit_status:     'unaudited',
-      uploadedBy:       req.staff._id,
-    });
+    // 查重：同一患者、同一检查日期、同一 screeningL1，更新已有记录而非新建
+    let report;
+    const existing = checkDate && screeningL1
+      ? await MedicalReport.findOne({ user: req.params.id, checkDate, screeningL1 })
+      : null;
+    if (existing) {
+      if (finalReportItems.length) existing.reportItems = finalReportItems;
+      if (screeningL2)        existing.screeningL2       = screeningL2;
+      if (screeningL3)        existing.screeningL3       = screeningL3;
+      if (screeningL3Items.length) existing.screeningL3Items = screeningL3Items;
+      if (examDescription)    existing.examDescription   = examDescription;
+      if (examConclusion)     existing.examConclusion    = examConclusion;
+      if (hospital)           existing.hospital          = hospital;
+      if (note)               existing.note              = note;
+      if (fileUrl)            { existing.fileUrl = fileUrl; existing.fileUrls = fileUrls; existing.mimeType = mimeType; }
+      report = await existing.save();
+    } else {
+      report = await MedicalReport.create({
+        user:             req.params.id,
+        title:            resolvedTitle,
+        type:             safeType,
+        screeningCategory: safeCategory,
+        screeningL1:      screeningL1 || '',
+        screeningL2:      screeningL2 || '',
+        screeningL3:      screeningL3 || '',
+        screeningL3Items,
+        examDescription:  examDescription || '',
+        examConclusion:   examConclusion  || '',
+        checkDate:        checkDate || '',
+        hospital:         hospital  || '',
+        reportItems:      finalReportItems,
+        note:             note || '',
+        fileUrl,
+        fileUrls,
+        mimeType,
+        audit_status:     'unaudited',
+        uploadedBy:       req.staff._id,
+      });
+    }
     res.json({ success: true, data: report });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

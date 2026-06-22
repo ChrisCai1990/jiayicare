@@ -126,7 +126,32 @@ export default function ProductPushPage() {
                       <div style={{ fontSize: 12, color: '#8AA89C' }}>{p.subtitle}</div>
                     </div>
                     <div style={{ textAlign: 'right' }}>
-                      <div style={{ fontWeight: 700, fontSize: 17, color: '#1E6B50' }}>¥{p.price}</div>
+                      {(() => {
+                        const svcPrices = Array.isArray(p.servicePrices) ? p.servicePrices.filter(sp => sp.label && sp.price != null) : []
+                        if (svcPrices.length > 0) {
+                          return (
+                            <div>
+                              <div style={{ fontWeight: 700, fontSize: 15, color: '#1E6B50' }}>
+                                ¥{isSelected ? (selectedPrices[p.id] ?? svcPrices[0].price) : svcPrices[0].price}
+                              </div>
+                              <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{svcPrices.length}个价格可选</div>
+                              {isSelected && (
+                                <select
+                                  style={{ marginTop: 4, fontSize: 11, padding: '2px 4px', borderRadius: 6, border: '1px solid #1E6B50', color: '#1E6B50', background: '#F0FAF5', width: 100 }}
+                                  value={selectedPrices[p.id] ?? svcPrices[0].price}
+                                  onClick={e => e.stopPropagation()}
+                                  onChange={e => { e.stopPropagation(); setSelectedPrices(sp => ({ ...sp, [p.id]: Number(e.target.value) })) }}
+                                >
+                                  {svcPrices.map((sp, i) => (
+                                    <option key={i} value={sp.price}>{sp.label} ¥{sp.price}</option>
+                                  ))}
+                                </select>
+                              )}
+                            </div>
+                          )
+                        }
+                        return <div style={{ fontWeight: 700, fontSize: 17, color: '#1E6B50' }}>¥{p.price}</div>
+                      })()}
                     </div>
                   </div>
                 </div>
