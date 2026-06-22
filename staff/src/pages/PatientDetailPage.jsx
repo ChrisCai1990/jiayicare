@@ -2711,17 +2711,19 @@ export default function PatientDetailPage() {
               // ── 从专项筛查 reportItems 派生指标值 ──
               // 按检查日期倒序，每个 key 取最新一条
               const REPORT_KEY_MAP = {
-                fpg:   ['空腹血糖','空腹葡萄糖','GLU','FPG','Glu(空腹)'],
-                hba1c: ['糖化血红蛋白','HbA1c','HBA1C','HbA1c(%)'],
+                fpg:   ['空腹血糖','空腹葡萄糖','GLU','FPG','Glu(空腹)','血糖-0'],
+                hba1c: ['糖化血红蛋白','HbA1c','HbA1C','HBA1C','HBA1c','HbA1c(%)'],
                 tc:    ['总胆固醇','TC','CHOL','胆固醇'],
                 tg:    ['甘油三酯','TG','三酰甘油','TRIG'],
                 ldl:   ['低密度脂蛋白','LDL','LDL-C','LDL-胆固醇'],
                 hdl:   ['高密度脂蛋白','HDL','HDL-C','HDL-胆固醇'],
                 alt:   ['谷丙转氨酶','ALT','丙氨酸转氨酶','丙氨酸氨基转移酶'],
                 ast:   ['谷草转氨酶','AST','天冬氨酸转氨酶','门冬氨酸氨基转移酶'],
-                ggt:   ['γ-谷氨酰转肽酶','GGT','γ-GT','γGT','谷氨酰转肽酶'],
+                // 注意：故意不含'谷氨酰转肽酶'，避免匹配到 尿谷氨酰转肽酶G（尿液GGT）
+                ggt:   ['γ-谷氨酰转肽酶','γ-谷氨酸转肽酶','GGT','γ-GT','γGT','谷氨酸转肽酶'],
                 ua:    ['尿酸','UA','SUA'],
-                cr:    ['血肌酐','肌酐','CREA','Cr','Scr'],
+                // 注意：故意不含短形式'Cr'，避免匹配到 尿Cr（尿液肌酐，排在血肌酐前面）
+                cr:    ['血肌酐','肌酐','CREA','SCr','S-Cr','血Cr'],
                 umalb: ['尿微量白蛋白','尿微量蛋白','mAlb','MAU','微量白蛋白','MALB'],
                 egfr:  ['肾小球滤过率','eGFR','GFR','估算肾小球滤过率'],
                 hcy:   ['同型半胱氨酸','Hcy','HCY'],
@@ -2744,7 +2746,7 @@ export default function PatientDetailPage() {
               for (const [key, names] of Object.entries(REPORT_KEY_MAP)) {
                 for (const report of sortedReports) {
                   const item = (report.reportItems || []).find(ri =>
-                    names.some(n => ri.name && ri.name.includes(n))
+                    names.some(n => ri.name && ri.name.toLowerCase().includes(n.toLowerCase()))
                   )
                   if (item && item.value) {
                     derived[key] = {
@@ -2813,7 +2815,7 @@ export default function PatientDetailPage() {
                 if (!names.length) return []
                 const pts = []
                 ;[...sortedReports].reverse().forEach(report => {
-                  const item = (report.reportItems || []).find(ri => names.some(n => ri.name && ri.name.includes(n)))
+                  const item = (report.reportItems || []).find(ri => names.some(n => ri.name && ri.name.toLowerCase().includes(n.toLowerCase())))
                   if (item && item.value && parseFloat(item.value)) {
                     const d = report.checkDate || report.date || ''
                     const dateStr = d ? new Date(d).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '?'
