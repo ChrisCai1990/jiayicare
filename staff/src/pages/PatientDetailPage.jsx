@@ -814,11 +814,11 @@ export default function PatientDetailPage() {
   const handleSaveAISummary = async (approve = false) => {
     try {
       const payload = {
-        sectionNotes: aiSummaryForm.sectionNotes || {},
+        sections: aiSummaryForm.sections,
         ...(approve ? { action: 'approve' } : {}),
       }
       await staffAPI.updateAIHealthSummary(id, payload)
-      toast(approve ? '分析报告已审核确认' : '备注已保存')
+      toast(approve ? '分析报告已审核确认' : '内容已保存')
       setEditingAISummary(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
@@ -3431,38 +3431,53 @@ export default function PatientDetailPage() {
       {/* ── AI Tab ── */}
       {tab === 'ai' && (() => {
         const ais = user.aiHealthSummary || {}
-        const sec = ais.sections || {}
-        const hasData = !!(sec.medical_priority || sec.tumor_risk || sec.chronic_disease)
-        const notes = aiSummaryForm.sectionNotes || ais.sectionNotes || {}
+        // 编辑模式用 aiSummaryForm.sections，查看模式用 ais.sections
+        const sec = editingAISummary ? (aiSummaryForm.sections || {}) : (ais.sections || {})
+        const hasData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.chronic_disease)
 
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
         const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
+        const inStyle = { width: '100%', padding: '5px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: 'inherit', background: '#FAFAF8' }
 
-        const SectionCard = ({ title, icon, color, children, noteKey }) => (
+        // 更新编辑中的 sections 字段
+        const updSec = (secKey, field, val) => setAiSummaryForm(f => ({
+          ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), [field]: val } }
+        }))
+        // 更新 sections 中某个数组字段（textarea 换行解析）
+        const updSecArr = (secKey, field, text) => updSec(secKey, field, text.split('\n').map(s => s.trim()).filter(Boolean))
+        // 更新 sections 中某条 items 数组里的某个 item 字段
+        const updItem = (secKey, idx, field, val) => setAiSummaryForm(f => {
+          const items = [...(f.sections?.[secKey]?.items || [])]
+          items[idx] = { ...items[idx], [field]: val }
+          return { ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), items } } }
+        })
+        const addItem = (secKey, tpl) => setAiSummaryForm(f => {
+          const items = [...(f.sections?.[secKey]?.items || []), tpl]
+          return { ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), items } } }
+        })
+        const delItem = (secKey, idx) => setAiSummaryForm(f => {
+          const items = (f.sections?.[secKey]?.items || []).filter((_, i) => i !== idx)
+          return { ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), items } } }
+        })
+
+        const SectionCard = ({ title, icon, color, children }) => (
           <div className="card" style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
-              <span style={{ fontSize: 18 }}>{icon}</span>
-              <span style={{ fontWeight: 700, fontSize: 15, color: '#1A2B24', flex: 1 }}>{title}</span>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
+              <span style={{ fontSize: 17 }}>{icon}</span>
+              <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{title}</span>
+              {editingAISummary && <span style={{ fontSize: 11, color: '#D97706', background: '#FEF9EC', borderRadius: 4, padding: '2px 6px' }}>编辑中</span>}
+              {!editingAISummary && <span style={{ width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0 }} />}
             </div>
-            <div style={{ padding: '12px 20px' }}>
-              {children}
-              {editingAISummary && (
-                <div style={{ marginTop: 12 }}>
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>医生备注</div>
-                  <textarea className="form-control" rows={2} placeholder="可在此补充医生观察或修正意见…"
-                    value={aiSummaryForm.sectionNotes?.[noteKey] || ''}
-                    onChange={e => setAiSummaryForm(f => ({ ...f, sectionNotes: { ...(f.sectionNotes || {}), [noteKey]: e.target.value } }))}
-                    style={{ fontSize: 13, resize: 'vertical' }} />
-                </div>
-              )}
-              {!editingAISummary && notes[noteKey] && (
-                <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558', background: '#F9F6F0', borderRadius: 6, padding: '6px 10px', borderLeft: '3px solid #D97706' }}>
-                  <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>医生备注：</span>{notes[noteKey]}
-                </div>
-              )}
-            </div>
+            <div style={{ padding: '12px 20px' }}>{children}</div>
           </div>
+        )
+
+        // 数组字段的编辑 textarea（每行一条）
+        const ArrEdit = ({ secKey, field, placeholder }) => (
+          <textarea className="form-control" rows={3} placeholder={placeholder}
+            value={(sec[secKey]?.[field] || []).join('\n')}
+            onChange={e => updSecArr(secKey, field, e.target.value)}
+            style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
         )
 
         return (
@@ -3479,7 +3494,10 @@ export default function PatientDetailPage() {
                 </div>
               )}
               {!editingAISummary && hasData && (
-                <button className="btn btn-secondary btn-sm" onClick={() => { setAiSummaryForm({ sectionNotes: { ...ais.sectionNotes } }); setEditingAISummary(true) }}>编辑备注</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => {
+                  setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) })
+                  setEditingAISummary(true)
+                }}>编辑修改</button>
               )}
               {editingAISummary && (
                 <>
@@ -3495,130 +3513,159 @@ export default function PatientDetailPage() {
 
             {!hasData ? (
               <div className="card" style={{ textAlign: 'center', padding: 40, color: '#8AA89C', fontSize: 14 }}>
-                点击「生成AI分析」，基于体检指标和专项筛查报告，自动生成5大板块综合健康分析
+                点击「生成AI分析」，基于所有历年体检指标和筛查报告，自动生成5大板块综合健康分析
               </div>
             ) : (
               <>
                 {/* 板块一：需优先解决的医疗问题 */}
-                <SectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626" noteKey="medical_priority">
-                  {(sec.medical_priority?.items || []).length === 0 ? (
-                    <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无需紧急处理的医疗问题</div>
-                  ) : (
+                <SectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626">
+                  {editingAISummary ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {(sec.medical_priority.items).map((item, i) => {
-                        const badge = URGENCY_BADGE[item.urgency] || URGENCY_BADGE.low
-                        return (
-                          <div key={i} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                              <span style={{ fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color, borderRadius: 4, padding: '2px 7px' }}>{badge.label}优先</span>
-                              <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{item.name}</span>
-                              {item.department && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 'auto' }}>→ {item.department}</span>}
-                            </div>
-                            {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
-                            {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>临床意义：{item.meaning}</div>}
-                            {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
+                      {(sec.medical_priority?.items || []).map((item, i) => (
+                        <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#FAFAF8' }}>
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                            <input style={{ ...inStyle, flex: 2 }} value={item.name || ''} placeholder="问题名称" onChange={e => updItem('medical_priority', i, 'name', e.target.value)} />
+                            <select style={{ ...inStyle, flex: 1 }} value={item.urgency || 'low'} onChange={e => updItem('medical_priority', i, 'urgency', e.target.value)}>
+                              <option value="high">高优先</option>
+                              <option value="medium">中优先</option>
+                              <option value="low">低优先</option>
+                            </select>
+                            <button onClick={() => delItem('medical_priority', i)} style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>删除</button>
                           </div>
-                        )
-                      })}
+                          <input style={{ ...inStyle, marginBottom: 4 }} value={item.current || ''} placeholder="当前数值描述" onChange={e => updItem('medical_priority', i, 'current', e.target.value)} />
+                          <textarea style={{ ...inStyle, resize: 'vertical', marginBottom: 4 }} rows={2} value={item.meaning || ''} placeholder="临床意义" onChange={e => updItem('medical_priority', i, 'meaning', e.target.value)} />
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <input style={{ ...inStyle, flex: 2 }} value={item.action || ''} placeholder="建议行动" onChange={e => updItem('medical_priority', i, 'action', e.target.value)} />
+                            <input style={{ ...inStyle, flex: 1 }} value={item.department || ''} placeholder="建议科室" onChange={e => updItem('medical_priority', i, 'department', e.target.value)} />
+                          </div>
+                        </div>
+                      ))}
+                      <button onClick={() => addItem('medical_priority', { name: '', urgency: 'medium', current: '', meaning: '', action: '', department: '' })}
+                        style={{ fontSize: 12, color: '#1E6B50', background: 'none', border: '1px dashed #B2D8C7', borderRadius: 6, padding: '6px', cursor: 'pointer' }}>＋ 新增问题</button>
                     </div>
+                  ) : (
+                    (sec.medical_priority?.items || []).length === 0 ? (
+                      <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无需紧急处理的医疗问题</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {sec.medical_priority.items.map((item, i) => {
+                          const badge = URGENCY_BADGE[item.urgency] || URGENCY_BADGE.low
+                          return (
+                            <div key={i} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color, borderRadius: 4, padding: '2px 7px' }}>{badge.label}优先</span>
+                                <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{item.name}</span>
+                                {item.department && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 'auto' }}>→ {item.department}</span>}
+                              </div>
+                              {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
+                              {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>临床意义：{item.meaning}</div>}
+                              {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
                   )}
                 </SectionCard>
 
                 {/* 板块二：肿瘤风险筛查分析 */}
-                <SectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED" noteKey="tumor_risk">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(sec.tumor_risk?.completed || []).length > 0 && (
-                      <div>
-                        <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>✅ 已完成筛查</span>
-                        <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{sec.tumor_risk.completed.join('、')}</div>
-                      </div>
-                    )}
-                    {(sec.tumor_risk?.abnormal || []).length > 0 && (
-                      <div>
-                        <span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>⚠️ 异常发现</span>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 3 }}>
-                          {sec.tumor_risk.abnormal.map((a, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626' }}>{a}</div>)}
-                        </div>
-                      </div>
-                    )}
-                    {(sec.tumor_risk?.missing || []).length > 0 && (
-                      <div>
-                        <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>📌 未覆盖项目</span>
-                        <div style={{ fontSize: 13, color: '#D97706', marginTop: 3 }}>{sec.tumor_risk.missing.join('、')}</div>
-                      </div>
-                    )}
-                    {sec.tumor_risk?.summary && (
-                      <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.tumor_risk.summary}</div>
-                    )}
-                  </div>
-                </SectionCard>
-
-                {/* 板块三：心脑血管病风险分析 */}
-                <SectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444" noteKey="cardiovascular_risk">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(sec.cardiovascular_risk?.high || []).length > 0 && (
-                      <div>
-                        <span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>🔴 高风险因素</span>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 3 }}>
-                          {sec.cardiovascular_risk.high.map((h, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626' }}>{h}</div>)}
-                        </div>
-                      </div>
-                    )}
-                    {(sec.cardiovascular_risk?.medium || []).length > 0 && (
-                      <div>
-                        <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>🟡 中风险因素</span>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 3 }}>
-                          {sec.cardiovascular_risk.medium.map((m, i) => <div key={i} style={{ fontSize: 13, color: '#D97706' }}>{m}</div>)}
-                        </div>
-                      </div>
-                    )}
-                    {sec.cardiovascular_risk?.summary && (
-                      <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.cardiovascular_risk.summary}</div>
-                    )}
-                  </div>
-                </SectionCard>
-
-                {/* 板块四：慢性病及其他健康指标 */}
-                <SectionCard title="慢性病及其他健康指标" icon="📊" color="#0077B6" noteKey="chronic_disease">
-                  {(sec.chronic_disease?.items || []).length === 0 ? (
-                    <div style={{ color: '#8AA89C', fontSize: 13 }}>各项慢性病指标暂无异常</div>
-                  ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {sec.chronic_disease.items.map((item, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '7px 0', borderBottom: i < sec.chronic_disease.items.length - 1 ? '1px solid #F5F2EC' : 'none' }}>
-                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[item.status] || '#aaa', marginTop: 5, flexShrink: 0 }} />
-                          <div style={{ flex: 1 }}>
-                            <span style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{item.name}</span>
-                            {item.value && <span style={{ fontSize: 13, color: '#4A6558' }}> · {item.value}</span>}
-                            {item.note && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{item.note}</div>}
-                          </div>
-                        </div>
+                <SectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED">
+                  {editingAISummary ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {[['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
+                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><ArrEdit secKey="tumor_risk" field={f} placeholder={lbl} /></div>
                       ))}
+                      <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>总评</div>
+                        <textarea className="form-control" rows={2} value={sec.tumor_risk?.summary || ''} onChange={e => updSec('tumor_risk', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {(sec.tumor_risk?.completed || []).length > 0 && <div><span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>✅ 已完成筛查</span><div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{sec.tumor_risk.completed.join('、')}</div></div>}
+                      {(sec.tumor_risk?.abnormal || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>⚠️ 异常发现</span>{sec.tumor_risk.abnormal.map((a, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{a}</div>)}</div>}
+                      {(sec.tumor_risk?.missing || []).length > 0 && <div><span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>📌 未覆盖项目</span><div style={{ fontSize: 13, color: '#D97706', marginTop: 3 }}>{sec.tumor_risk.missing.join('、')}</div></div>}
+                      {sec.tumor_risk?.summary && <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.tumor_risk.summary}</div>}
                     </div>
                   )}
                 </SectionCard>
 
+                {/* 板块三：心脑血管病风险分析 */}
+                <SectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444">
+                  {editingAISummary ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {[['high','🔴 高风险因素（每行一条）'],['medium','🟡 中风险因素（每行一条）']].map(([f,lbl]) => (
+                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><ArrEdit secKey="cardiovascular_risk" field={f} placeholder={lbl} /></div>
+                      ))}
+                      <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>综合评估</div>
+                        <textarea className="form-control" rows={2} value={sec.cardiovascular_risk?.summary || ''} onChange={e => updSec('cardiovascular_risk', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {(sec.cardiovascular_risk?.high || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>🔴 高风险因素</span>{sec.cardiovascular_risk.high.map((h, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{h}</div>)}</div>}
+                      {(sec.cardiovascular_risk?.medium || []).length > 0 && <div><span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>🟡 中风险因素</span>{sec.cardiovascular_risk.medium.map((m, i) => <div key={i} style={{ fontSize: 13, color: '#D97706', marginTop: 3 }}>{m}</div>)}</div>}
+                      {sec.cardiovascular_risk?.summary && <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.cardiovascular_risk.summary}</div>}
+                    </div>
+                  )}
+                </SectionCard>
+
+                {/* 板块四：慢性病及其他健康指标 */}
+                <SectionCard title="慢性病及其他健康指标" icon="📊" color="#0077B6">
+                  {editingAISummary ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {(sec.chronic_disease?.items || []).map((item, i) => (
+                        <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '8px 12px', background: '#FAFAF8' }}>
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+                            <input style={{ ...inStyle, flex: 2 }} value={item.name || ''} placeholder="指标/系统名称" onChange={e => updItem('chronic_disease', i, 'name', e.target.value)} />
+                            <select style={{ ...inStyle, flex: 1 }} value={item.status || 'normal'} onChange={e => updItem('chronic_disease', i, 'status', e.target.value)}>
+                              <option value="abnormal">异常</option>
+                              <option value="mild_abnormal">轻度异常</option>
+                              <option value="normal">正常</option>
+                            </select>
+                            <button onClick={() => delItem('chronic_disease', i)} style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>删除</button>
+                          </div>
+                          <input style={{ ...inStyle, marginBottom: 4 }} value={item.value || ''} placeholder="当前值描述" onChange={e => updItem('chronic_disease', i, 'value', e.target.value)} />
+                          <input style={inStyle} value={item.note || ''} placeholder="简要说明" onChange={e => updItem('chronic_disease', i, 'note', e.target.value)} />
+                        </div>
+                      ))}
+                      <button onClick={() => addItem('chronic_disease', { name: '', status: 'mild_abnormal', value: '', note: '' })}
+                        style={{ fontSize: 12, color: '#1E6B50', background: 'none', border: '1px dashed #B2D8C7', borderRadius: 6, padding: '6px', cursor: 'pointer' }}>＋ 新增指标</button>
+                    </div>
+                  ) : (
+                    (sec.chronic_disease?.items || []).length === 0 ? (
+                      <div style={{ color: '#8AA89C', fontSize: 13 }}>各项慢性病指标暂无异常</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {sec.chronic_disease.items.map((item, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '7px 0', borderBottom: i < sec.chronic_disease.items.length - 1 ? '1px solid #F5F2EC' : 'none' }}>
+                            <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[item.status] || '#aaa', marginTop: 5, flexShrink: 0 }} />
+                            <div style={{ flex: 1 }}>
+                              <span style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{item.name}</span>
+                              {item.value && <span style={{ fontSize: 13, color: '#4A6558' }}> · {item.value}</span>}
+                              {item.note && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{item.note}</div>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  )}
+                </SectionCard>
+
                 {/* 板块五：体检全面性评估 */}
-                <SectionCard title="体检全面性评估" icon="📋" color="#1E6B50" noteKey="checkup_completeness">
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                    {(sec.checkup_completeness?.covered || []).length > 0 && (
-                      <div>
-                        <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>✅ 已覆盖项目</span>
-                        <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{sec.checkup_completeness.covered.join('、')}</div>
-                      </div>
-                    )}
-                    {(sec.checkup_completeness?.missing || []).length > 0 && (
-                      <div>
-                        <span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>❌ 缺失重要项目</span>
-                        <div style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{sec.checkup_completeness.missing.join('、')}</div>
-                      </div>
-                    )}
-                    {sec.checkup_completeness?.suggestion && (
-                      <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>
-                        📌 {sec.checkup_completeness.suggestion}
-                      </div>
-                    )}
-                  </div>
+                <SectionCard title="体检全面性评估" icon="📋" color="#1E6B50">
+                  {editingAISummary ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {[['covered','✅ 已覆盖项目（每行一条）'],['missing','❌ 缺失重要项目（每行一条）']].map(([f,lbl]) => (
+                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><ArrEdit secKey="checkup_completeness" field={f} placeholder={lbl} /></div>
+                      ))}
+                      <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>补项建议</div>
+                        <textarea className="form-control" rows={2} value={sec.checkup_completeness?.suggestion || ''} onChange={e => updSec('checkup_completeness', 'suggestion', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {(sec.checkup_completeness?.covered || []).length > 0 && <div><span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>✅ 已覆盖项目</span><div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{sec.checkup_completeness.covered.join('、')}</div></div>}
+                      {(sec.checkup_completeness?.missing || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>❌ 缺失重要项目</span><div style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{sec.checkup_completeness.missing.join('、')}</div></div>}
+                      {sec.checkup_completeness?.suggestion && <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>📌 {sec.checkup_completeness.suggestion}</div>}
+                    </div>
+                  )}
                 </SectionCard>
               </>
             )}

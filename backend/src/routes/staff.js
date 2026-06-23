@@ -2818,20 +2818,54 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     ].filter(Boolean);
     const labSummary = labLines.join('、') || '暂无体检数据';
 
-    // 近期专项筛查报告摘要（用于肿瘤筛查/影像分析）
-    const recentReports = await MedicalReport.find({ user: req.params.id })
-      .sort({ createdAt: -1 }).limit(20)
-      .select('title screeningL2 examConclusion checkDate screeningCategory reportItems note');
-    const reportSummary = recentReports.length > 0
-      ? recentReports.map(r => {
-          const date = r.checkDate ? `（${r.checkDate.slice(0, 7)}）` : '';
-          const conclusion = r.examConclusion ? r.examConclusion.slice(0, 120) : (r.note ? r.note.slice(0, 80) : '');
-          const abnormal = (r.reportItems || []).filter(i => i.status === 'abnormal').map(i => i.name).join('、');
-          return `- ${r.screeningL2 || r.title}${date}${conclusion ? '：' + conclusion : ''}${abnormal ? '（异常：' + abnormal + '）' : ''}`;
-        }).join('\n')
-      : '暂无专项筛查记录';
+    // 所有专项筛查报告（不限条数，按检查日期倒序）
+    const allReports = await MedicalReport.find({ user: req.params.id })
+      .sort({ checkDate: -1, date: -1, createdAt: -1 })
+      .select('title screeningL2 examConclusion checkDate date reportYear screeningCategory reportItems note');
 
-    const prompt = `你是一位经验丰富的家庭医师，请根据以下患者健康档案生成一份结构化综合健康分析报告。
+    // 按年份分组，每项取最新一次
+    const reportsByYear = {};
+    allReports.forEach(r => {
+      const dateStr = r.checkDate || r.date || '';
+      const year = r.reportYear || (dateStr ? dateStr.slice(0, 4) : null);
+      if (!year) return;
+      if (!reportsByYear[year]) reportsByYear[year] = [];
+      reportsByYear[year].push(r);
+    });
+    const reportSummaryLines = [];
+    Object.keys(reportsByYear).sort((a, b) => b - a).forEach(year => {
+      reportSummaryLines.push(`▶ ${year}年：`);
+      reportsByYear[year].forEach(r => {
+        const conclusion = r.examConclusion ? r.examConclusion.slice(0, 150) : (r.note ? r.note.slice(0, 100) : '未记录结论');
+        const abnormal = (r.reportItems || []).filter(i => i.status === 'abnormal').map(i => i.name).join('、');
+        const dateStr = (r.checkDate || r.date || '').slice(0, 10);
+        reportSummaryLines.push(`  - ${r.screeningL2 || r.title}（${dateStr}）：${conclusion}${abnormal ? '；异常项：' + abnormal : ''}`);
+      });
+    });
+    const reportSummary = reportSummaryLines.length > 0 ? reportSummaryLines.join('\n') : '暂无专项筛查记录';
+
+    // 体检指标历史趋势（最近3年）
+    const labHistory = (user.labHistory || [])
+      .filter(h => h.recordedAt)
+      .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
+      .slice(0, 5);
+    const labTrendLines = labHistory.length > 1
+      ? labHistory.map(h => {
+          const yr = new Date(h.recordedAt).getFullYear();
+          const vals = [
+            h.sbp   && `血压${h.sbp}/${h.dbp}`,
+            h.fpg   && `空腹血糖${h.fpg}`,
+            h.hba1c && `糖化${h.hba1c}%`,
+            h.tc    && `总胆固醇${h.tc}`,
+            h.ldl   && `LDL${h.ldl}`,
+            h.ua    && `尿酸${h.ua}`,
+            h.alt   && `ALT${h.alt}`,
+          ].filter(Boolean).join('、');
+          return `  ${yr}年（${String(h.recordedAt).slice(0,10)}）：${vals || '无数据'}`;
+        }).join('\n')
+      : '  仅有当次数据，无法比较趋势';
+
+    const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。
 
 【患者基本信息】
 姓名：${user.name}，性别：${user.gender}，年龄：${user.age || '未知'}岁
@@ -2839,10 +2873,13 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 健康诉求：${user.healthConcern || '未填写'}
 既往史：${user.healthProfile?.pastHistory || '无'}
 
-【体检关键指标】
+【最近一次体检关键指标】
 ${labSummary}
 
-【近期专项筛查报告】
+【历年体检指标趋势（近几年记录）】
+${labTrendLines}
+
+【历年专项筛查报告（按年份列出所有记录）】
 ${reportSummary}
 
 请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容：
