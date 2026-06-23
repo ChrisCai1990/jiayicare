@@ -404,6 +404,9 @@ export default function PatientDetailPage() {
   const [parsingReportId, setParsingReportId] = useState(null)
   const [editingAISummary, setEditingAISummary] = useState(false)
   const [aiSummaryForm, setAiSummaryForm] = useState({})
+  const [ocrReviewReport, setOcrReviewReport] = useState(null)
+  const [ocrEditItems, setOcrEditItems] = useState([])
+  const [ocrSaving, setOcrSaving] = useState(false)
 
   const load = async () => {
     try {
@@ -809,6 +812,33 @@ export default function PatientDetailPage() {
       loadReports()
     } catch (err) { toast(err.message || 'AI解析失败') }
     finally { setParsingReportId(null) }
+  }
+
+  const handleOpenOCRReview = (r) => {
+    setOcrReviewReport(r)
+    setOcrEditItems(JSON.parse(JSON.stringify(r.reportItems || [])))
+  }
+
+  const handleApproveOCR = async () => {
+    setOcrSaving(true)
+    try {
+      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'reviewed' })
+      toast('审核通过，数据已写入报告')
+      setOcrReviewReport(null)
+      loadReports()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setOcrSaving(false) }
+  }
+
+  const handleRejectOCR = async () => {
+    setOcrSaving(true)
+    try {
+      await staffAPI.updateReport(ocrReviewReport._id, { aiStatus: 'none', reportItems: [] })
+      toast('已驳回，可重新触发AI识别')
+      setOcrReviewReport(null)
+      loadReports()
+    } catch (err) { toast(err.message || '操作失败') }
+    finally { setOcrSaving(false) }
   }
 
   const handleSaveAISummary = async (approve = false) => {
@@ -4128,12 +4158,10 @@ export default function PatientDetailPage() {
                                 )
                               )}
                               {r.aiStatus === 'pending' && (
-                                <>
-                                  <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
-                                    onClick={async () => { try { await staffAPI.updateReport(r._id, { aiStatus: 'reviewed' }); loadReports() } catch (e) { toast(e.message) } }}>批准AI</button>
-                                  <button className="btn btn-sm" style={{ background:'#fee', color:'#c00', border:'1px solid #fcc', marginRight: 4 }}
-                                    onClick={async () => { try { await staffAPI.updateReport(r._id, { aiStatus: 'rejected' }); loadReports() } catch (e) { toast(e.message) } }}>驳回</button>
-                                </>
+                                <button className="btn btn-sm" style={{ background:'#7C3AED', color:'#fff', border:'none', marginRight: 4 }}
+                                  onClick={() => handleOpenOCRReview(r)}>
+                                  审核AI结果{r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}
+                                </button>
                               )}
                               <button className="btn btn-secondary btn-sm" onClick={() => openReportDetail(r)}>查看</button>
                               {r.audit_status !== 'audited' && (
@@ -4783,6 +4811,108 @@ export default function PatientDetailPage() {
           </div>
         </div>
       )}
+
+      {/* OCR 识别结果审核弹窗 */}
+      {ocrReviewReport && (() => {
+        const STATUS_OPTS = [
+          { v: 'normal',    label: '正常', color: '#22A06B' },
+          { v: 'abnormal',  label: '异常', color: '#DC3545' },
+          { v: 'attention', label: '注意', color: '#D97706' },
+          { v: 'unknown',   label: '未知', color: '#8AA89C' },
+        ]
+        const TYPE_OPTS = [
+          { v: 'lab',     label: '检验' },
+          { v: 'imaging', label: '影像/文字' },
+          { v: 'data',    label: '数据曲线' },
+        ]
+        const updItem = (i, patch) => setOcrEditItems(arr => arr.map((it, idx) => idx === i ? { ...it, ...patch } : it))
+        const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
+        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
+        const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
+        return (
+          <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setOcrReviewReport(null) }}>
+            <div className="modal" style={{ maxWidth: 820, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+              <div className="modal-header" style={{ flexShrink: 0 }}>
+                <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
+                <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
+              </div>
+              <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+                {ocrReviewReport.aiSummary && (
+                  <div style={{ padding: '10px 14px', background: '#F3EFFB', borderRadius: 8, fontSize: 13, color: '#4A3A6B', marginBottom: 14, lineHeight: 1.6 }}>
+                    <strong style={{ color: '#7C3AED' }}>AI概述：</strong>{ocrReviewReport.aiSummary}
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, color: '#4A6558' }}>
+                    共 <strong>{ocrEditItems.length}</strong> 项
+                    {abnormalCount > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>· {abnormalCount} 项异常/注意</span>}
+                    <span style={{ color: '#8AA89C', marginLeft: 8 }}>请核对数值后通过</span>
+                  </div>
+                  <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增一项</button>
+                </div>
+                <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead>
+                      <tr style={{ background: '#f5f2ec', color: '#4A6558' }}>
+                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, minWidth: 150 }}>项目名称</th>
+                        <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 90 }}>数值</th>
+                        <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 70 }}>单位</th>
+                        <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 110 }}>参考范围</th>
+                        <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 90 }}>状态</th>
+                        <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 90 }}>类型</th>
+                        <th style={{ padding: '6px 4px', width: 32 }}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ocrEditItems.length === 0 ? (
+                        <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#aaa' }}>无识别项，可点「新增一项」手动录入</td></tr>
+                      ) : ocrEditItems.map((it, i) => {
+                        const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
+                        const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
+                        return (
+                          <tr key={i} style={{ borderTop: '1px solid #f0ede8' }}>
+                            <td style={{ padding: '4px 8px' }}><input style={inp} value={it.name || ''} onChange={e => updItem(i, { name: e.target.value })} /></td>
+                            <td style={{ padding: '4px 6px' }}><input style={{ ...inp, color: sc, fontWeight: it.status === 'abnormal' ? 600 : 400 }} value={it.value || ''} onChange={e => updItem(i, { value: e.target.value })} /></td>
+                            <td style={{ padding: '4px 6px' }}><input style={inp} value={it.unit || ''} onChange={e => updItem(i, { unit: e.target.value })} /></td>
+                            <td style={{ padding: '4px 6px' }}><input style={inp} value={it.referenceRange || ''} onChange={e => updItem(i, { referenceRange: e.target.value })} /></td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <select style={{ ...inp, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>
+                                {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ padding: '4px 6px' }}>
+                              <select style={inp} value={it.itemType || 'lab'} onChange={e => updItem(i, { itemType: e.target.value })}>
+                                {TYPE_OPTS.map(t => <option key={t.v} value={t.v}>{t.label}</option>)}
+                              </select>
+                            </td>
+                            <td style={{ padding: '4px 4px', textAlign: 'center' }}>
+                              <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
+                  提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。通过后数据写入该报告，用于趋势分析与AI汇总。
+                </div>
+              </div>
+              <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
+                <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
+                  disabled={ocrSaving} onClick={handleApproveOCR}>
+                  {ocrSaving ? '保存中…' : '✓ 审核通过并保存'}
+                </button>
+                <button className="btn btn-sm" style={{ flex: 0.5, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
+                  disabled={ocrSaving} onClick={handleRejectOCR}>
+                  驳回 / 重新识别
+                </button>
+                <button className="btn btn-secondary" onClick={() => setOcrReviewReport(null)}>取消</button>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 服务记录详情弹窗 */}
       {showSRDetail && (() => {
