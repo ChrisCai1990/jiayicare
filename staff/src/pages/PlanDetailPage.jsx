@@ -167,6 +167,7 @@ export default function PlanDetailPage() {
   const [editMode, setEditMode] = useState(false)
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
+  const [planDrafting, setPlanDrafting] = useState(false)  // 场景七：AI润色方案描述
 
   const load = async () => {
     try { const r = await staffAPI.getPlan(id); setPlan(r.data) }
@@ -204,6 +205,25 @@ export default function PlanDetailPage() {
   const startEdit = () => {
     setEditForm({ title: plan.title, description: plan.description || '', notes: plan.notes || '' })
     setEditMode(true)
+  }
+
+  // 场景七：AI 润色方案描述
+  const handleAIDraftDesc = async () => {
+    const pid = plan?.patientId?._id || plan?.patientId
+    if (!pid) { toast('缺少会员信息'); return }
+    const keypoints = [
+      editForm.title && `方案标题：${editForm.title}`,
+      editForm.description && `现有描述：${editForm.description}`,
+      (plan.items || []).length && `方案项目：${(plan.items || []).map(i => i.name).filter(Boolean).join('、')}`,
+      editForm.notes && `备注：${editForm.notes}`,
+    ].filter(Boolean).join('；') || (editForm.title || '健康管理方案')
+    setPlanDrafting(true)
+    try {
+      const r = await staffAPI.generateAIDraft(pid, 'plan_desc', { keypoints })
+      setEditForm(f => ({ ...f, description: r.data.draft }))
+      toast('AI草稿已生成，请审核修改')
+    } catch (err) { toast(err.message || 'AI生成失败') }
+    finally { setPlanDrafting(false) }
   }
 
   const saveEdit = async () => {
@@ -274,7 +294,13 @@ export default function PlanDetailPage() {
                   <input className="form-input" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 12 }}>
-                  <label className="form-label">方案描述</label>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <label className="form-label" style={{ margin: 0 }}>方案描述</label>
+                    <button type="button" className="btn btn-secondary btn-sm" style={{ fontSize: 12, padding: '2px 10px' }}
+                      onClick={handleAIDraftDesc} disabled={planDrafting}>
+                      {planDrafting ? '生成中...' : '✨ AI生成草稿'}
+                    </button>
+                  </div>
                   <textarea className="form-input" rows={3} placeholder="方案整体说明..." value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 16 }}>

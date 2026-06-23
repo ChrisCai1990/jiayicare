@@ -537,9 +537,12 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
+  const [aiDrafting, setAiDrafting] = useState(false)  // 场景七：AI生成服务记录草稿
+
   const setExtra = (k, v) => setExtras(prev => ({ ...prev, [k]: v }))
 
   const buildContent = () => {
+    if (extras.aiContent) return extras.aiContent  // 场景七：AI润色后的正文优先
     if (type === 'disease_mgmt') {
       return [
         extras.hospital && `医院：${extras.hospital}`,
@@ -583,6 +586,22 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
       return lines.join('\n')
     }
     return extras.content || ''
+  }
+
+  // 场景七：用结构化字段生成服务记录正文草稿
+  const handleAIDraft = async () => {
+    if (!patientId) { setError('请先选择会员'); return }
+    const summary = Object.entries(extras)
+      .filter(([k, v]) => k !== 'aiContent' && v && typeof v === 'string')
+      .map(([k, v]) => `${k}：${v}`).join('；') || '（暂无结构化记录，请先填写字段）'
+    setAiDrafting(true); setError('')
+    try {
+      const r = await staffAPI.generateAIDraft(patientId, 'service_record', {
+        serviceType: TYPE_LABEL[type], title, summary,
+      })
+      setExtra('aiContent', r.data.draft)
+    } catch (err) { setError(err.message || 'AI生成失败') }
+    finally { setAiDrafting(false) }
   }
 
   const handleSubmit = async () => {
@@ -715,6 +734,21 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
               {TYPE_LABEL[type]}
             </div>
             {renderFields()}
+          </div>
+
+          {/* 场景七：AI生成记录正文草稿 */}
+          <div style={{ borderTop: '1px solid #E0D9CE', paddingTop: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#1E6B50' }}>AI记录正文（可选）</div>
+              <button type="button" className="btn btn-secondary" style={{ fontSize: 12, padding: '2px 10px' }}
+                onClick={handleAIDraft} disabled={aiDrafting}>
+                {aiDrafting ? '生成中...' : '✨ AI生成草稿'}
+              </button>
+            </div>
+            <textarea className="form-input" rows={4}
+              placeholder="点击右上角「AI生成草稿」，将上方结构化字段润色为规范的服务记录正文；填写后将作为记录内容保存（留空则用结构化字段拼接）。"
+              value={extras.aiContent || ''}
+              onChange={e => setExtra('aiContent', e.target.value)} style={{ resize: 'vertical' }} />
           </div>
         </div>
         <div className="modal-footer">
