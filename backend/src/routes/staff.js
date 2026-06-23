@@ -3288,6 +3288,7 @@ router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) 
 【近30天打卡数据】
 ${recLines}
 
+【今天日期】${new Date().toISOString().slice(0, 10)}（suggestedDate 必须晚于今天）
 判断规则参考：指标稳定→按原计划(keep)；指标异常/恶化→建议提前(advance)；指标改善且稳定→可延长间隔(extend)。
 请严格按以下JSON输出（仅JSON）：
 {
