@@ -3355,10 +3355,10 @@ async function runReportParse(reportId) {
   try {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-      const images = await pdfBufferToImages(pdfBuf, { dpi: 150, maxPages: 30 });
+      const images = await pdfBufferToImages(pdfBuf, { dpi: 120, maxPages: 30 });
 
-      // 并发识别各页（限并发，避免触发通义千问限流），结果按页序回填
-      const CONCURRENCY = 5;
+      // 并发识别各页：实测并发3是限流拐点（5路反而被限流变慢），结果按页序回填
+      const CONCURRENCY = 3;
       const pageResults = new Array(images.length).fill(null);
       let cursor = 0;
       const worker = async () => {
