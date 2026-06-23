@@ -226,4 +226,17 @@ const userSchema = new mongoose.Schema({
   aiHealthSummary: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 
+// ── 索引：医护端会员列表按分配医护过滤 + 按创建时间排序，慢病筛选 ──
+// 常用路径：healthManager 角色 { assignedHealthManager } + sort(createdAt)
+userSchema.index({ assignedHealthManager: 1, createdAt: -1 });
+userSchema.index({ assignedFamilyDoctor: 1, createdAt: -1 });
+userSchema.index({ assignedNutritionist: 1, createdAt: -1 });
+userSchema.index({ assignedSpecialist: 1, createdAt: -1 });
+userSchema.index({ assignedTcmDoctor: 1, createdAt: -1 });
+userSchema.index({ assignedPsychologist: 1, createdAt: -1 });
+userSchema.index({ assignedRehabSpecialist: 1, createdAt: -1 });
+userSchema.index({ assignedMedicalAssistant: 1, createdAt: -1 });
+userSchema.index({ createdAt: -1 });        // 超管看全部时的排序
+userSchema.index({ chronicDiseases: 1 });   // 慢病筛选
+
 module.exports = mongoose.model('User', userSchema);
