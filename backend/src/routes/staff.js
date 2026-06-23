@@ -3395,7 +3395,7 @@ async function runReportParse(reportId) {
       }
       await MedicalReport.findByIdAndUpdate(reportId, {
         reportItems: allItems,
-        aiSummary:   summaries.join(' '),
+        aiSummary:   [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n'),
         aiStatus:    'pending',
         institution, checkDate,
       });

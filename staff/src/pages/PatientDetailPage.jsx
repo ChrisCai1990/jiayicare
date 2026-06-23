@@ -4850,11 +4850,42 @@ export default function PatientDetailPage() {
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
               <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
-                {ocrReviewReport.aiSummary && (
-                  <div style={{ padding: '10px 14px', background: '#F3EFFB', borderRadius: 8, fontSize: 13, color: '#4A3A6B', marginBottom: 14, lineHeight: 1.6 }}>
-                    <strong style={{ color: '#7C3AED' }}>AI概述：</strong>{ocrReviewReport.aiSummary}
-                  </div>
-                )}
+                {(() => {
+                  const abn = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention')
+                  const abnormalItems = abn.filter(it => it.status === 'abnormal')
+                  const attentionItems = abn.filter(it => it.status === 'attention')
+                  return (
+                    <>
+                      {/* 异常项快览：审核重点一眼可见 */}
+                      <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 10, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
+                          共 {ocrEditItems.length} 项
+                          {abnormalItems.length > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnormalItems.length}</span>}
+                          {attentionItems.length > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attentionItems.length}</span>}
+                          {abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 未见异常项</span>}
+                        </div>
+                        {abn.length > 0 && (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {abn.map((it, i) => (
+                              <span key={i} style={{ fontSize: 12, padding: '3px 9px', borderRadius: 12, background: it.status === 'abnormal' ? '#FDE5E2' : '#FEF1E0', color: it.status === 'abnormal' ? '#DC3545' : '#D97706', fontWeight: 500 }}>
+                                {it.name}{it.value ? ` ${it.value}${it.unit ? it.unit : ''}` : ''}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      {/* AI文字分析：折叠收起，需要时展开，限高滚动避免刷屏 */}
+                      {ocrReviewReport.aiSummary && (
+                        <details style={{ marginBottom: 14 }}>
+                          <summary style={{ cursor: 'pointer', fontSize: 12, color: '#7C3AED', userSelect: 'none', padding: '4px 0' }}>📄 展开 AI 文字分析（含影像/超声诊断意见）</summary>
+                          <div style={{ marginTop: 6, padding: '10px 14px', background: '#F3EFFB', borderRadius: 8, fontSize: 12, color: '#4A3A6B', lineHeight: 1.7, maxHeight: 200, overflowY: 'auto', whiteSpace: 'pre-wrap' }}>
+                            {ocrReviewReport.aiSummary}
+                          </div>
+                        </details>
+                      )}
+                    </>
+                  )
+                })()}
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <div style={{ fontSize: 13, color: '#4A6558' }}>
                     共 <strong>{ocrEditItems.length}</strong> 项
