@@ -3330,6 +3330,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
   try {
     const { parseImage } = require('../utils/ai');
+    const { fetchReportBuffer, pdfBufferToImages, isPdfReport } = require('../utils/pdf');
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
@@ -3337,6 +3338,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     const hasOssUrl = !!report.fileUrl;
     const hasBase64 = !!report.content;
     const isImage = report.mimeType?.startsWith('image/');
+    const isPdf = isPdfReport(report);
 
     if (!hasOssUrl && !hasBase64) {
       return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
@@ -3345,9 +3347,9 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '已加入待审核队列' });
     }
-    if (!isImage) {
+    if (!isImage && !isPdf) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
-      return res.json({ success: true, message: 'PDF解析即将开放，已加入待审核队列' });
+      return res.json({ success: true, message: '该格式暂不支持自动解析，已加入待审核队列' });
     }
 
     const prompt = `请分析这份体检报告图片，提取所有检验/检查项目。
@@ -3362,14 +3364,58 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
 }
 只输出 JSON，不要额外文字。`;
 
+    const safeParse = (text) => {
+      try { return JSON.parse(text.trim().replace(/^```json\n?|\n?```$/g, '')); }
+      catch { return null; }
+    };
+
+    if (isPdf) {
+      // PDF：先转图片（逐页），再逐页 VL 识别后合并
+      let images;
+      try {
+        const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
+        images = await pdfBufferToImages(pdfBuf, { dpi: 150, maxPages: 10 });
+      } catch (e) {
+        await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
+        return res.json({ success: true, message: 'PDF转换失败（' + e.message + '），已加入人工审核队列' });
+      }
+
+      let allItems = [];
+      const summaries = [];
+      let institution = report.institution;
+      let checkDate = report.checkDate;
+      for (const img of images) {
+        let text = '';
+        try { text = await parseImage(img, prompt, { isUrl: false }); }
+        catch { continue; }
+        const p = safeParse(text);
+        if (!p) continue;
+        if (Array.isArray(p.items)) allItems = allItems.concat(p.items);
+        if (p.summary) summaries.push(p.summary);
+        if (!institution && p.institution) institution = p.institution;
+        if (!checkDate && p.checkDate) checkDate = p.checkDate;
+      }
+
+      await MedicalReport.findByIdAndUpdate(report._id, {
+        reportItems: allItems,
+        aiSummary:   summaries.join(' '),
+        aiStatus:    'pending',
+        institution, checkDate,
+      });
+
+      return res.json({
+        success: true,
+        message: `PDF解析完成（共${images.length}页），提取 ${allItems.length} 项指标，待审核确认`,
+      });
+    }
+
+    // 图片：单张直接识别
     const text = hasOssUrl
       ? await parseImage(report.fileUrl, prompt, { isUrl: true })
       : await parseImage(report.content, prompt, { isUrl: false });
 
-    let parsed = null;
-    try {
-      parsed = JSON.parse(text.trim().replace(/^```json\n?|\n?```$/g, ''));
-    } catch {
+    const parsed = safeParse(text);
+    if (!parsed) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: 'AI解析格式异常，已加入人工审核队列' });
     }
