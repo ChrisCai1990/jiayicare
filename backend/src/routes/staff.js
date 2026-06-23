@@ -3352,10 +3352,13 @@ async function runReportParse(reportId) {
   if (!report) return;
 
   const isPdf = isPdfReport(report);
+  const t0 = Date.now();
   try {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
+      const tConv = Date.now();
       const images = await pdfBufferToImages(pdfBuf, { dpi: 120, maxPages: 30 });
+      const convMs = Date.now() - tConv;
 
       // 并发识别各页：实测并发3是限流拐点（5路反而被限流变慢），结果按页序回填
       const CONCURRENCY = 3;
@@ -3391,7 +3394,8 @@ async function runReportParse(reportId) {
         aiStatus:    'pending',
         institution, checkDate,
       });
-      console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 成功${okPages}页 提取${allItems.length}项`);
+      const totalMs = Date.now() - t0;
+      console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 成功${okPages}页 提取${allItems.length}项 | 转图${(convMs/1000).toFixed(1)}s 识别${((totalMs-convMs)/1000).toFixed(1)}s 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
     }
 
@@ -3406,7 +3410,7 @@ async function runReportParse(reportId) {
       institution: parsed?.institution || report.institution,
       checkDate:   parsed?.checkDate   || report.checkDate,
     });
-    console.log(`[parse-ai] 图片完成 ${reportId} 提取${parsed?.items?.length || 0}项`);
+    console.log(`[parse-ai] 图片完成 ${reportId} 提取${parsed?.items?.length || 0}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
     await MedicalReport.findByIdAndUpdate(reportId, {
