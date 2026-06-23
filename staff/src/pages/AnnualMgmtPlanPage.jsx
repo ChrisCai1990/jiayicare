@@ -355,7 +355,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         staffAPI.getPatient(id),
         staffAPI.getAnnualPlan(id, year),
       ]).then(([patRes, planRes]) => {
-        setPatient(patRes.data)
+        setPatient(patRes.data?.user || patRes.data)
         const p = planRes.data
         if (p) {
           setPlanType(p.planType || '')
