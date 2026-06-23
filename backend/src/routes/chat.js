@@ -143,8 +143,12 @@ router.post('/transfer', auth, async (req, res) => {
   res.json({ success: true, message: '已通知健管专员，稍后将有专员与您联系。' });
 });
 
-// GET /api/chat/logs — 医护端查看对话记录（staffAuth 在 staff 路由挂）
+// GET /api/chat/logs/:userId — 查看自己的对话记录（只能查自己）
+// 医护端查看患者记录请走 staff 路由（待接入）
 router.get('/logs/:userId', auth, async (req, res) => {
+  if (req.user._id.toString() !== req.params.userId) {
+    return res.status(403).json({ success: false, message: '无权访问' });
+  }
   try {
     const logs = await ChatLog.find({ user: req.params.userId })
       .sort({ createdAt: -1 })

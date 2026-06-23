@@ -11,6 +11,7 @@
     "@alicloud/dysmsapi20170525": "^4.5.1",
     "@alicloud/openapi-client": "^0.4.15",
     "@anthropic-ai/sdk": "^0.96.0",
+    "ali-oss": "^6.21.0",
     "bcryptjs": "^2.4.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
@@ -19,7 +20,8 @@
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.3.4",
     "morgan": "^1.10.0",
-    "multer": "^2.1.1"
+    "multer": "^2.1.1",
+    "uuid": "^9.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.1.0"
