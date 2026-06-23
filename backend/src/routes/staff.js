@@ -3360,20 +3360,35 @@ async function runReportParse(reportId) {
       const images = await pdfBufferToImages(pdfBuf, { dpi: 120, maxPages: 30 });
       const convMs = Date.now() - tConv;
 
-      // 并发识别各页：实测并发3是限流拐点（5路反而被限流变慢），结果按页序回填
-      const CONCURRENCY = 3;
-      const pageResults = new Array(images.length).fill(null);
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < images.length) {
-          const i = cursor++;
-          try {
-            const text = await parseImage(images[i], REPORT_PARSE_PROMPT, { isUrl: false });
-            pageResults[i] = safeParseJSON(text);
-          } catch { pageResults[i] = null; }
-        }
+      const VL_MODEL = 'qwen-vl-plus'; // 实测比 max 快约2.8倍、精度一致
+
+      const runPool = async (indices, limit, fn) => {
+        let cur = 0;
+        const w = async () => { while (cur < indices.length) { const k = cur++; await fn(indices[k]); } };
+        await Promise.all(Array.from({ length: Math.min(limit, indices.length) }, w));
       };
-      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, images.length) }, worker));
+
+      // 阶段1：并发快筛每页是否含检验/检查数据（输出极少、约0.5s/页，可高并发），跳过封面/须知等空页
+      const tJudge = Date.now();
+      const JUDGE_PROMPT = '这张体检报告图片是否包含检验/检查项目的数据（具体数值、参考范围或检查描述/诊断结论）？只回答 YES 或 NO。';
+      const hasData = new Array(images.length).fill(true);
+      await runPool(images.map((_, i) => i), 8, async (i) => {
+        try {
+          const t = await parseImage(images[i], JUDGE_PROMPT, { isUrl: false, model: VL_MODEL, maxTokens: 10 });
+          hasData[i] = /yes/i.test(t); // 判断失败时保守保留（默认 true）
+        } catch { hasData[i] = true; }
+      });
+      const targets = images.map((_, i) => i).filter(i => hasData[i]);
+      const judgeMs = Date.now() - tJudge;
+
+      // 阶段2：仅对有数据页做完整提取（并发3，限流拐点）
+      const pageResults = new Array(images.length).fill(null);
+      await runPool(targets, 3, async (i) => {
+        try {
+          const text = await parseImage(images[i], REPORT_PARSE_PROMPT, { isUrl: false, model: VL_MODEL });
+          pageResults[i] = safeParseJSON(text);
+        } catch { pageResults[i] = null; }
+      });
 
       let allItems = [];
       const summaries = [];
@@ -3395,13 +3410,13 @@ async function runReportParse(reportId) {
         institution, checkDate,
       });
       const totalMs = Date.now() - t0;
-      console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 成功${okPages}页 提取${allItems.length}项 | 转图${(convMs/1000).toFixed(1)}s 识别${((totalMs-convMs)/1000).toFixed(1)}s 总耗时${(totalMs/1000).toFixed(1)}s`);
+      console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 有数据${targets.length}页 成功${okPages}页 提取${allItems.length}项 | 转图${(convMs/1000).toFixed(1)}s 快筛${(judgeMs/1000).toFixed(1)}s 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
     }
 
     // 图片：统一取文件 buffer 转 base64（兼容 content / OSS / 本地路径）
     const buf = await fetchReportBuffer(report, UPLOADS_DIR);
-    const text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false });
+    const text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus' });
     const parsed = safeParseJSON(text);
     await MedicalReport.findByIdAndUpdate(reportId, {
       reportItems: parsed?.items || [],

@@ -62,7 +62,8 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider } = {})
 }
 
 // OCR + 视觉理解（仅通义千问支持，图片 base64 或 URL）
-async function parseImage(imageSource, prompt, { isUrl = false } = {}) {
+// model 默认 qwen-vl-max；体检报告逐页识别用 qwen-vl-plus（实测快约2.8倍且精度一致）
+async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl-max', maxTokens = 3000 } = {}) {
   const key = process.env.QWEN_API_KEY;
   if (!key) throw new Error('图像解析需要 QWEN_API_KEY');
 
@@ -74,9 +75,9 @@ async function parseImage(imageSource, prompt, { isUrl = false } = {}) {
     `${QWEN_BASE}/chat/completions`,
     { Authorization: `Bearer ${key}` },
     {
-      model: 'qwen-vl-max',
+      model,
       messages: [{ role: 'user', content: [imageContent, { type: 'text', text: prompt }] }],
-      max_tokens: 3000,
+      max_tokens: maxTokens,
     }
   );
 
