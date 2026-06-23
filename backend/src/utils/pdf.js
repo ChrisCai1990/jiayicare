@@ -32,12 +32,16 @@ async function fetchReportBuffer(report, uploadsDir) {
     if (report.fileUrl.startsWith('http')) {
       return await downloadBuffer(report.fileUrl);
     }
-    // 本地路径，如 /api/uploads/xxx.pdf
-    const fname = report.fileUrl.split('/').pop();
-    const fpath = path.join(uploadsDir, fname);
+    // 本地路径，如 /api/uploads/reports/xxx.pdf → 取 /uploads/ 之后的相对路径（含子目录）
+    let rel = report.fileUrl;
+    const marker = '/uploads/';
+    const i = rel.indexOf(marker);
+    rel = i >= 0 ? rel.slice(i + marker.length) : rel.split('/').pop();
+    const fpath = path.join(uploadsDir, rel);
     if (fs.existsSync(fpath)) return fs.readFileSync(fpath);
+    throw new Error('文件不存在：' + fpath);
   }
-  throw new Error('无法获取报告文件内容');
+  throw new Error('无法获取报告文件内容（content 与 fileUrl 均为空）');
 }
 
 // 把 PDF Buffer 逐页转成 PNG 的 base64 数组（依赖系统 pdftoppm / poppler-utils）
