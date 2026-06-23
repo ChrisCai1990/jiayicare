@@ -813,9 +813,12 @@ export default function PatientDetailPage() {
 
   const handleSaveAISummary = async (approve = false) => {
     try {
-      const payload = { ...aiSummaryForm, ...(approve ? { action: 'approve' } : {}) }
+      const payload = {
+        sectionNotes: aiSummaryForm.sectionNotes || {},
+        ...(approve ? { action: 'approve' } : {}),
+      }
       await staffAPI.updateAIHealthSummary(id, payload)
-      toast(approve ? '分析报告已审核确认' : '分析报告已保存')
+      toast(approve ? '分析报告已审核确认' : '备注已保存')
       setEditingAISummary(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
@@ -3428,104 +3431,197 @@ export default function PatientDetailPage() {
       {/* ── AI Tab ── */}
       {tab === 'ai' && (() => {
         const ais = user.aiHealthSummary || {}
-        const hasData = ais.trend || ais.risks || ais.plan
+        const sec = ais.sections || {}
+        const hasData = !!(sec.medical_priority || sec.tumor_risk || sec.chronic_disease)
+        const notes = aiSummaryForm.sectionNotes || ais.sectionNotes || {}
+
+        const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
+        const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
+
+        const SectionCard = ({ title, icon, color, children, noteKey }) => (
+          <div className="card" style={{ marginBottom: 14 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '14px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
+              <span style={{ fontSize: 18 }}>{icon}</span>
+              <span style={{ fontWeight: 700, fontSize: 15, color: '#1A2B24', flex: 1 }}>{title}</span>
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+            </div>
+            <div style={{ padding: '12px 20px' }}>
+              {children}
+              {editingAISummary && (
+                <div style={{ marginTop: 12 }}>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>医生备注</div>
+                  <textarea className="form-control" rows={2} placeholder="可在此补充医生观察或修正意见…"
+                    value={aiSummaryForm.sectionNotes?.[noteKey] || ''}
+                    onChange={e => setAiSummaryForm(f => ({ ...f, sectionNotes: { ...(f.sectionNotes || {}), [noteKey]: e.target.value } }))}
+                    style={{ fontSize: 13, resize: 'vertical' }} />
+                </div>
+              )}
+              {!editingAISummary && notes[noteKey] && (
+                <div style={{ marginTop: 10, fontSize: 13, color: '#4A6558', background: '#F9F6F0', borderRadius: 6, padding: '6px 10px', borderLeft: '3px solid #D97706' }}>
+                  <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>医生备注：</span>{notes[noteKey]}
+                </div>
+              )}
+            </div>
+          </div>
+        )
+
         return (
           <div>
-            {/* AI汇总分析 */}
-            <div className="card" style={{ marginBottom: 16 }}>
-              <div className="card-header">
-                <div className="card-title">AI汇总分析</div>
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {!editingAISummary && hasData && (
-                    <button className="btn btn-secondary btn-sm" onClick={() => { setAiSummaryForm({ ...ais }); setEditingAISummary(true) }}>编辑</button>
-                  )}
-                  {editingAISummary && (
-                    <>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setEditingAISummary(false)}>取消</button>
-                      <button className="btn btn-secondary btn-sm" onClick={() => handleSaveAISummary(false)}>保存草稿</button>
-                      <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(true)}>审核确认</button>
-                    </>
-                  )}
-                  <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={handleGenerateAISummary}>
-                    {aiSummaryLoading ? '生成中...' : (hasData ? '重新生成' : '生成AI分析')}
-                  </button>
+            {/* 操作栏 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              {ais.approvedAt ? (
+                <div style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', borderRadius: 6, padding: '4px 10px', flex: 1 }}>
+                  ✓ 已审核确认 {ais.approvedBy && `· ${ais.approvedBy}`} · {new Date(ais.approvedAt).toLocaleDateString('zh-CN')}
                 </div>
-              </div>
-              <div style={{ padding: '12px 20px' }}>
-                {hasData ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                    {ais.approvedAt && (
-                      <div style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', borderRadius: 6, padding: '4px 10px' }}>
-                        ✓ 已审核确认 {ais.approvedBy && `by ${ais.approvedBy}`} · {new Date(ais.approvedAt).toLocaleDateString('zh-CN')}
-                      </div>
-                    )}
-                    {[
-                      { key: 'trend', label: 'AI汇总分析：健康趋势', color: '#0077B6' },
-                      { key: 'risks', label: 'AI汇总分析：风险提示', color: '#DC3545' },
-                    ].map(({ key, label, color }) => (
-                      <div key={key}>
-                        <div style={{ fontSize: 12, color, fontWeight: 600, marginBottom: 4 }}>{label}</div>
-                        {editingAISummary ? (
-                          <textarea className="form-control" rows={4} value={aiSummaryForm[key] || ''}
-                            onChange={e => setAiSummaryForm(f => ({ ...f, [key]: e.target.value }))}
-                            style={{ fontSize: 13 }} />
-                        ) : (
-                          <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.7, background: '#f9f7f3', borderRadius: 8, padding: '8px 12px', whiteSpace: 'pre-wrap', borderLeft: `3px solid ${color}` }}>
-                            {ais[key]}
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                    {ais.generatedAt && (
-                      <div style={{ fontSize: 12, color: '#aaa' }}>生成时间：{new Date(ais.generatedAt).toLocaleString('zh-CN')}</div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: 20 }}>
-                    点击「生成AI分析」，自动读取体检指标和健康档案，生成健康趋势分析和风险提示
-                  </div>
-                )}
-              </div>
+              ) : (
+                <div style={{ fontSize: 12, color: '#8AA89C', flex: 1 }}>
+                  {hasData ? `生成时间：${new Date(ais.generatedAt).toLocaleString('zh-CN')}` : '尚未生成'}
+                </div>
+              )}
+              {!editingAISummary && hasData && (
+                <button className="btn btn-secondary btn-sm" onClick={() => { setAiSummaryForm({ sectionNotes: { ...ais.sectionNotes } }); setEditingAISummary(true) }}>编辑备注</button>
+              )}
+              {editingAISummary && (
+                <>
+                  <button className="btn btn-secondary btn-sm" onClick={() => setEditingAISummary(false)}>取消</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleSaveAISummary(false)}>保存</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(true)}>审核确认</button>
+                </>
+              )}
+              <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={handleGenerateAISummary}>
+                {aiSummaryLoading ? '生成中…' : hasData ? '重新生成' : '生成AI分析'}
+              </button>
             </div>
 
-            {/* AI管理方案 */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title">AI管理方案</div>
-                {!editingAISummary && hasData && ais.plan && (
-                  <button className="btn btn-secondary btn-sm" onClick={() => { setAiSummaryForm({ ...ais }); setEditingAISummary(true) }}>编辑方案</button>
-                )}
+            {!hasData ? (
+              <div className="card" style={{ textAlign: 'center', padding: 40, color: '#8AA89C', fontSize: 14 }}>
+                点击「生成AI分析」，基于体检指标和专项筛查报告，自动生成5大板块综合健康分析
               </div>
-              <div style={{ padding: '12px 20px' }}>
-                {ais.plan ? (
-                  <div>
-                    {editingAISummary ? (
-                      <textarea className="form-control" rows={8} value={aiSummaryForm.plan || ''}
-                        onChange={e => setAiSummaryForm(f => ({ ...f, plan: e.target.value }))}
-                        style={{ fontSize: 13 }} />
-                    ) : (
-                      <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.8, background: '#f9f7f3', borderRadius: 8, padding: '12px 16px', whiteSpace: 'pre-wrap', borderLeft: '3px solid #1E6B50' }}>
-                        {ais.plan}
-                      </div>
-                    )}
-                    <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 10 }}>
-                      家庭医师/营养师审核确认后方案生效，供客户查阅。
+            ) : (
+              <>
+                {/* 板块一：需优先解决的医疗问题 */}
+                <SectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626" noteKey="medical_priority">
+                  {(sec.medical_priority?.items || []).length === 0 ? (
+                    <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无需紧急处理的医疗问题</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {(sec.medical_priority.items).map((item, i) => {
+                        const badge = URGENCY_BADGE[item.urgency] || URGENCY_BADGE.low
+                        return (
+                          <div key={i} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color, borderRadius: 4, padding: '2px 7px' }}>{badge.label}优先</span>
+                              <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{item.name}</span>
+                              {item.department && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 'auto' }}>→ {item.department}</span>}
+                            </div>
+                            {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
+                            {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>临床意义：{item.meaning}</div>}
+                            {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
+                          </div>
+                        )
+                      })}
                     </div>
-                    {editingAISummary && (
-                      <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-                        <button className="btn btn-secondary btn-sm" onClick={() => setEditingAISummary(false)}>取消</button>
-                        <button className="btn btn-secondary btn-sm" onClick={() => handleSaveAISummary(false)}>保存草稿</button>
-                        <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(true)}>审核确认</button>
+                  )}
+                </SectionCard>
+
+                {/* 板块二：肿瘤风险筛查分析 */}
+                <SectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED" noteKey="tumor_risk">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(sec.tumor_risk?.completed || []).length > 0 && (
+                      <div>
+                        <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>✅ 已完成筛查</span>
+                        <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{sec.tumor_risk.completed.join('、')}</div>
+                      </div>
+                    )}
+                    {(sec.tumor_risk?.abnormal || []).length > 0 && (
+                      <div>
+                        <span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>⚠️ 异常发现</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 3 }}>
+                          {sec.tumor_risk.abnormal.map((a, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626' }}>{a}</div>)}
+                        </div>
+                      </div>
+                    )}
+                    {(sec.tumor_risk?.missing || []).length > 0 && (
+                      <div>
+                        <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>📌 未覆盖项目</span>
+                        <div style={{ fontSize: 13, color: '#D97706', marginTop: 3 }}>{sec.tumor_risk.missing.join('、')}</div>
+                      </div>
+                    )}
+                    {sec.tumor_risk?.summary && (
+                      <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.tumor_risk.summary}</div>
+                    )}
+                  </div>
+                </SectionCard>
+
+                {/* 板块三：心脑血管病风险分析 */}
+                <SectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444" noteKey="cardiovascular_risk">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(sec.cardiovascular_risk?.high || []).length > 0 && (
+                      <div>
+                        <span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>🔴 高风险因素</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 3 }}>
+                          {sec.cardiovascular_risk.high.map((h, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626' }}>{h}</div>)}
+                        </div>
+                      </div>
+                    )}
+                    {(sec.cardiovascular_risk?.medium || []).length > 0 && (
+                      <div>
+                        <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>🟡 中风险因素</span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 3 }}>
+                          {sec.cardiovascular_risk.medium.map((m, i) => <div key={i} style={{ fontSize: 13, color: '#D97706' }}>{m}</div>)}
+                        </div>
+                      </div>
+                    )}
+                    {sec.cardiovascular_risk?.summary && (
+                      <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.cardiovascular_risk.summary}</div>
+                    )}
+                  </div>
+                </SectionCard>
+
+                {/* 板块四：慢性病及其他健康指标 */}
+                <SectionCard title="慢性病及其他健康指标" icon="📊" color="#0077B6" noteKey="chronic_disease">
+                  {(sec.chronic_disease?.items || []).length === 0 ? (
+                    <div style={{ color: '#8AA89C', fontSize: 13 }}>各项慢性病指标暂无异常</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {sec.chronic_disease.items.map((item, i) => (
+                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '7px 0', borderBottom: i < sec.chronic_disease.items.length - 1 ? '1px solid #F5F2EC' : 'none' }}>
+                          <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[item.status] || '#aaa', marginTop: 5, flexShrink: 0 }} />
+                          <div style={{ flex: 1 }}>
+                            <span style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{item.name}</span>
+                            {item.value && <span style={{ fontSize: 13, color: '#4A6558' }}> · {item.value}</span>}
+                            {item.note && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{item.note}</div>}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </SectionCard>
+
+                {/* 板块五：体检全面性评估 */}
+                <SectionCard title="体检全面性评估" icon="📋" color="#1E6B50" noteKey="checkup_completeness">
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {(sec.checkup_completeness?.covered || []).length > 0 && (
+                      <div>
+                        <span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>✅ 已覆盖项目</span>
+                        <div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{sec.checkup_completeness.covered.join('、')}</div>
+                      </div>
+                    )}
+                    {(sec.checkup_completeness?.missing || []).length > 0 && (
+                      <div>
+                        <span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>❌ 缺失重要项目</span>
+                        <div style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{sec.checkup_completeness.missing.join('、')}</div>
+                      </div>
+                    )}
+                    {sec.checkup_completeness?.suggestion && (
+                      <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>
+                        📌 {sec.checkup_completeness.suggestion}
                       </div>
                     )}
                   </div>
-                ) : (
-                  <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: 20 }}>
-                    请先在「AI汇总分析」中点击「生成AI分析」，系统同步生成管理方案初稿，家庭医师/营养师审核确认后生效。
-                  </div>
-                )}
-              </div>
-            </div>
+                </SectionCard>
+              </>
+            )}
           </div>
         )
       })()}

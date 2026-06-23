@@ -284,9 +284,10 @@ export const staffAPI = {
   editBodyCompHistory: (id, index, data) => req(`/staff/patients/${id}/body-composition-history/${index}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteBodyCompHistory: (id, index) => req(`/staff/patients/${id}/body-composition-history/${index}`, { method: 'DELETE' }),
 
-  // 4.4 AI健康汇总
+  // 4.4 AI健康汇总 / 4.5 AI管理方案生成
   generateAIHealthSummary: (id) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST' }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
+  generateAIAnnualPlan:    (id) => req(`/staff/patients/${id}/ai-annual-plan`,    { method: 'POST' }),
 
   // 4.3 专项筛查
   getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),

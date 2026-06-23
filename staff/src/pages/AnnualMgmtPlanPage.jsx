@@ -346,6 +346,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [dirty, setDirty]           = useState(false)
   const [pushedAt, setPushedAt]     = useState(null)
   const [confirmedAt, setConfirmedAt] = useState(null)
+  const [aiPlanLoading, setAiPlanLoading] = useState(false)
 
   useEffect(() => {
     setLoading(true)
@@ -413,6 +414,37 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       toast(err.message || '保存失败')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const handleGenerateAIAnnualPlan = async () => {
+    if (!window.confirm('AI将基于已审核的汇总分析自动填充方案板块，现有内容将被覆盖，确认继续？')) return
+    setAiPlanLoading(true)
+    try {
+      const res = await staffAPI.generateAIAnnualPlan(id)
+      const aiData = res.data || {}
+      // 合并 AI 填充的 moduleData，保留已有字段
+      setModuleData(prev => {
+        const merged = { ...prev }
+        Object.entries(aiData).forEach(([key, val]) => {
+          if (val && (val.records?.length > 0 || val.enabled)) {
+            merged[key] = val
+          }
+        })
+        return merged
+      })
+      setDirty(true)
+      // 如果 AI 判断应用健康重塑方案类型（有医疗问题）则自动选择
+      if (!planType && aiData.medical_treatment?.records?.length > 0) {
+        setPlanType('health_reshape')
+      } else if (!planType) {
+        setPlanType('chronic_stable')
+      }
+      toast('AI已填充方案内容，请检查并保存')
+    } catch (err) {
+      toast(err.message || 'AI生成方案失败')
+    } finally {
+      setAiPlanLoading(false)
     }
   }
 
@@ -484,13 +516,23 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           ) : null}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
           {patientMode && (
-            <button
-              onClick={handlePush}
-              disabled={pushing || dirty || !planType}
-              style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType) ? 0.5 : 1 }}
-            >
-              {pushing ? '推送中...' : pushedAt && !dirty ? '重新推送' : '推送给客户'}
-            </button>
+            <>
+              <button
+                onClick={handleGenerateAIAnnualPlan}
+                disabled={aiPlanLoading || !patient?.aiHealthSummary?.sections}
+                title={!patient?.aiHealthSummary?.sections ? '请先在AI分析及方案标签页生成AI汇总分析' : 'AI自动填充方案板块'}
+                style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || !patient?.aiHealthSummary?.sections) ? 0.5 : 1 }}
+              >
+                {aiPlanLoading ? 'AI生成中…' : '✨ AI生成方案'}
+              </button>
+              <button
+                onClick={handlePush}
+                disabled={pushing || dirty || !planType}
+                style={{ background: pushedAt && !dirty ? '#0077B6' : '#1E6B50', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (pushing || dirty || !planType) ? 0.5 : 1 }}
+              >
+                {pushing ? '推送中...' : pushedAt && !dirty ? '重新推送' : '推送给客户'}
+              </button>
+            </>
           )}
           <button
             onClick={handleSave}

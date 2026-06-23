@@ -2791,64 +2791,124 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const { chat } = require('../utils/ai');
+    const MedicalReport = require('../models/MedicalReport');
 
     const lv = user.labValues || {};
     const bc = user.bodyComposition || {};
-    const labSummary = [
-      lv.fpg && `空腹血糖 ${lv.fpg} mmol/L`,
+    const labLines = [
+      lv.fpg   && `空腹血糖 ${lv.fpg} mmol/L`,
       lv.hba1c && `糖化血红蛋白 ${lv.hba1c}%`,
-      lv.sbp && `血压 ${lv.sbp}/${lv.dbp} mmHg`,
-      lv.tc && `总胆固醇 ${lv.tc} mmol/L`,
-      lv.ldl && `LDL-C ${lv.ldl} mmol/L`,
-      lv.hdl && `HDL-C ${lv.hdl} mmol/L`,
-      lv.tg && `甘油三酯 ${lv.tg} mmol/L`,
-      lv.ua && `尿酸 ${lv.ua} μmol/L`,
-      lv.alt && `ALT ${lv.alt} U/L`,
-      lv.ast && `AST ${lv.ast} U/L`,
-      lv.ggt && `GGT ${lv.ggt} U/L`,
-      lv.hcy && `同型半胱氨酸 ${lv.hcy} μmol/L`,
+      lv.sbp   && `血压 ${lv.sbp}/${lv.dbp} mmHg`,
+      lv.tc    && `总胆固醇 ${lv.tc} mmol/L`,
+      lv.ldl   && `LDL-C ${lv.ldl} mmol/L`,
+      lv.hdl   && `HDL-C ${lv.hdl} mmol/L`,
+      lv.tg    && `甘油三酯 ${lv.tg} mmol/L`,
+      lv.ua    && `尿酸 ${lv.ua} μmol/L`,
+      lv.alt   && `ALT ${lv.alt} U/L`,
+      lv.ast   && `AST ${lv.ast} U/L`,
+      lv.ggt   && `GGT ${lv.ggt} U/L`,
+      lv.hcy   && `同型半胱氨酸 ${lv.hcy} μmol/L`,
       lv.lpla2 && `Lp-PLA2 ${lv.lpla2} U/L`,
       lv.waist && `腰围 ${lv.waist} cm`,
-      lv.liverUs && `肝脏超声：${lv.liverUs}`,
+      lv.liverUs  && `肝脏超声：${lv.liverUs}`,
       lv.carotiUs && `颈动脉超声：${lv.carotiUs}`,
-      bc.skelMuscle && `骨骼肌量 ${bc.skelMuscle} kg`,
+      bc.skelMuscle  && `骨骼肌量 ${bc.skelMuscle} kg`,
       bc.visceralFat && `内脏脂肪 ${bc.visceralFat}`,
       bc.bodyFatRate && `体脂率 ${bc.bodyFatRate}%`,
-    ].filter(Boolean).join('、') || '暂无体检数据';
+    ].filter(Boolean);
+    const labSummary = labLines.join('、') || '暂无体检数据';
 
-    const prompt = `你是一位经验丰富的家庭医师，请根据以下患者健康档案生成一份专业的健康分析报告。
+    // 近期专项筛查报告摘要（用于肿瘤筛查/影像分析）
+    const recentReports = await MedicalReport.find({ user: req.params.id })
+      .sort({ createdAt: -1 }).limit(20)
+      .select('title screeningL2 examConclusion checkDate screeningCategory reportItems note');
+    const reportSummary = recentReports.length > 0
+      ? recentReports.map(r => {
+          const date = r.checkDate ? `（${r.checkDate.slice(0, 7)}）` : '';
+          const conclusion = r.examConclusion ? r.examConclusion.slice(0, 120) : (r.note ? r.note.slice(0, 80) : '');
+          const abnormal = (r.reportItems || []).filter(i => i.status === 'abnormal').map(i => i.name).join('、');
+          return `- ${r.screeningL2 || r.title}${date}${conclusion ? '：' + conclusion : ''}${abnormal ? '（异常：' + abnormal + '）' : ''}`;
+        }).join('\n')
+      : '暂无专项筛查记录';
+
+    const prompt = `你是一位经验丰富的家庭医师，请根据以下患者健康档案生成一份结构化综合健康分析报告。
 
 【患者基本信息】
 姓名：${user.name}，性别：${user.gender}，年龄：${user.age || '未知'}岁
-慢性病：${user.chronicDiseases?.join('、') || '无'}
+慢性病标签：${user.chronicDiseases?.join('、') || '无'}
+健康诉求：${user.healthConcern || '未填写'}
+既往史：${user.healthProfile?.pastHistory || '无'}
 
-【最近体检指标】
+【体检关键指标】
 ${labSummary}
 
-【健康需求】
-${user.healthConcern || '未填写'}
+【近期专项筛查报告】
+${reportSummary}
 
-【既往史】
-${user.healthProfile?.pastHistory || '无'}
-
-请按以下JSON格式输出（仅输出JSON，不要加任何其他文字）：
+请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容：
 {
-  "trend": "健康趋势分析（100-200字，分析主要指标变化情况和整体健康走势）",
-  "risks": "风险提示（100-200字，列出主要异常项及可能后果）",
-  "plan": "管理方案初稿（200-300字，包含复查建议、生活方式干预、药物/营养素建议等）"
+  "sections": {
+    "medical_priority": {
+      "items": [
+        {
+          "name": "问题名称（如：血压控制不佳）",
+          "current": "当前数值描述（如：152/98mmHg）",
+          "meaning": "临床意义（30-60字）",
+          "action": "建议行动（具体可执行）",
+          "department": "建议就诊科室",
+          "urgency": "high或medium或low"
+        }
+      ]
+    },
+    "tumor_risk": {
+      "completed": ["已完成的筛查项目（含年份）"],
+      "abnormal": ["异常发现（有则填，无则空数组）"],
+      "missing": ["未覆盖的重要筛查项目"],
+      "summary": "肿瘤筛查总评（50-100字）"
+    },
+    "cardiovascular_risk": {
+      "high": ["高风险因素（有则填，无则空数组）"],
+      "medium": ["中风险因素（有则填，无则空数组）"],
+      "summary": "心脑血管综合评估（50-100字）"
+    },
+    "chronic_disease": {
+      "items": [
+        {
+          "name": "系统或指标名称",
+          "value": "当前值描述",
+          "status": "abnormal或mild_abnormal或normal",
+          "note": "简要说明（30字内）"
+        }
+      ]
+    },
+    "checkup_completeness": {
+      "covered": ["已覆盖的主要筛查项目"],
+      "missing": ["缺失的重要筛查项目"],
+      "suggestion": "下年度体检补项建议（50字内）"
+    }
+  }
 }`;
 
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1024 });
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 2500 });
 
-    let summary = { trend: '', risks: '', plan: '' };
+    let sections = null;
     try {
       const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
-      if (jsonMatch) summary = JSON.parse(jsonMatch[0]);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        sections = parsed.sections || parsed;
+      }
     } catch {}
 
-    summary.generatedAt = new Date();
-    summary.approvedAt = null;
-    summary.approvedBy = null;
+    if (!sections) sections = {
+      medical_priority: { items: [] },
+      tumor_risk: { completed: [], abnormal: [], missing: [], summary: '' },
+      cardiovascular_risk: { high: [], medium: [], summary: '' },
+      chronic_disease: { items: [] },
+      checkup_completeness: { covered: [], missing: [], suggestion: '' },
+    };
+
+    const summary = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null };
 
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
@@ -2864,16 +2924,13 @@ ${user.healthProfile?.pastHistory || '无'}
 // PATCH /api/staff/patients/:id/ai-health-summary
 router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
-    const { trend, risks, plan, action } = req.body;
+    const { sections, sectionNotes, action } = req.body;
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
     const current = user.aiHealthSummary || {};
-    const updated = {
-      ...current,
-      ...(trend !== undefined ? { trend } : {}),
-      ...(risks !== undefined ? { risks } : {}),
-      ...(plan  !== undefined ? { plan  } : {}),
-    };
+    const updated = { ...current };
+    if (sections !== undefined) updated.sections = sections;
+    if (sectionNotes !== undefined) updated.sectionNotes = sectionNotes;
     if (action === 'approve') {
       updated.approvedAt = new Date();
       updated.approvedBy = req.staff.name;
@@ -2884,6 +2941,96 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     );
     res.json({ success: true, data: updated });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 4.5 AI管理方案生成 ──────────────────────────────────────────
+// POST /api/staff/patients/:id/ai-annual-plan
+router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const ais = user.aiHealthSummary;
+    if (!ais || !ais.sections) {
+      return res.status(400).json({ success: false, message: '请先生成AI汇总分析报告' });
+    }
+
+    const { chat } = require('../utils/ai');
+    const s = ais.sections;
+    const year = new Date().getFullYear();
+
+    const medPriorityText = (s.medical_priority?.items || [])
+      .map(i => `【${i.urgency === 'high' ? '高' : i.urgency === 'medium' ? '中' : '低'}】${i.name}：${i.current}，建议${i.action}，科室：${i.department}`)
+      .join('\n') || '无';
+
+    const abnormalText = [
+      ...(s.tumor_risk?.abnormal || []),
+      ...(s.cardiovascular_risk?.high || []),
+      ...(s.chronic_disease?.items || []).filter(i => i.status === 'abnormal').map(i => `${i.name}：${i.value || ''}（${i.note || ''}）`),
+    ].join('\n') || '无';
+
+    const chronicText = (s.chronic_disease?.items || [])
+      .map(i => `${i.name}：${i.value || ''}（${i.note || ''}）`).join('；') || '无';
+
+    const missingCheckups = (s.checkup_completeness?.missing || []).join('、') || '无';
+
+    const prompt = `你是一位家庭医师，请根据以下AI汇总分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。
+
+【需优先解决的医疗问题】
+${medPriorityText}
+
+【异常指标】
+${abnormalText}
+
+【慢病及其他指标】
+${chronicText}
+
+【缺失体检项目】
+${missingCheckups}
+
+【患者慢病标签】${user.chronicDiseases?.join('、') || '无'}
+
+请严格按以下JSON格式输出，仅输出JSON：
+{
+  "medical_treatment": [
+    { "reason": "就医原因", "department": "就诊科室", "visit_time": "${year}-07-15", "notes": "注意事项（如带齐历次体检报告）" }
+  ],
+  "specialist_collab": [],
+  "abnormal_followup": [
+    { "items": "复查项目名称", "reason": "复查原因", "time": "${year}-09-15", "notes": "注意事项（如需空腹）" }
+  ],
+  "vaccine": [
+    { "name": "疫苗名称", "time": "${year}-10-15", "reason": "接种原因" }
+  ],
+  "monitoring": [
+    { "items": "监测项目", "frequency": "每日1次", "time": "每天早晨", "notes": "注意事项" }
+  ],
+  "lifestyle": { "focus": "干预重点（饮食、运动、睡眠等）", "time": "${year}年全年" },
+  "annual_checkup": { "focus": "重点关注项目", "date": "${year + 1}-06-01", "escort": false }
+}
+
+注意：medical_treatment仅填高优先级就医需求；specialist_collab有会诊需求才填；monitoring根据慢病标签确定项目；无相关内容用空数组。`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 2000 });
+
+    let raw = {};
+    try {
+      const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
+      if (jsonMatch) raw = JSON.parse(jsonMatch[0]);
+    } catch {}
+
+    // 转为 moduleData 结构（多条板块用 { records: [...] }）
+    const result = {};
+    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring'].forEach(key => {
+      result[key] = { records: Array.isArray(raw[key]) ? raw[key] : [] };
+    });
+    if (raw.lifestyle) result.lifestyle = { enabled: true, ...raw.lifestyle };
+    if (raw.annual_checkup) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // ── 4.3 专项筛查：录入筛查结果（支持图片/PDF上传） ────────────────
