@@ -3356,16 +3356,28 @@ async function runReportParse(reportId) {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
       const images = await pdfBufferToImages(pdfBuf, { dpi: 150, maxPages: 30 });
+
+      // 并发识别各页（限并发，避免触发通义千问限流），结果按页序回填
+      const CONCURRENCY = 5;
+      const pageResults = new Array(images.length).fill(null);
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < images.length) {
+          const i = cursor++;
+          try {
+            const text = await parseImage(images[i], REPORT_PARSE_PROMPT, { isUrl: false });
+            pageResults[i] = safeParseJSON(text);
+          } catch { pageResults[i] = null; }
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, images.length) }, worker));
+
       let allItems = [];
       const summaries = [];
       let institution = report.institution;
       let checkDate = report.checkDate;
       let okPages = 0;
-      for (const img of images) {
-        let text = '';
-        try { text = await parseImage(img, REPORT_PARSE_PROMPT, { isUrl: false }); }
-        catch { continue; }
-        const p = safeParseJSON(text);
+      for (const p of pageResults) {
         if (!p) continue;
         okPages++;
         if (Array.isArray(p.items)) allItems = allItems.concat(p.items);
