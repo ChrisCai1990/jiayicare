@@ -3070,6 +3070,372 @@ ${missingCheckups}
   }
 });
 
+// ── 场景七：AI 辅助生成文案草稿（随访记录 / 服务记录 / 方案描述） ──────
+// POST /api/staff/patients/:id/ai-draft   body: { kind, context }
+// kind: followup | service_record | plan_desc
+// 仅生成草稿返回前端，由医护人员审核修改后保存，不自动写入
+router.post('/patients/:id/ai-draft', staffAuth, async (req, res) => {
+  try {
+    const { kind, context = {} } = req.body;
+    const VALID = ['followup', 'service_record', 'plan_desc'];
+    if (!VALID.includes(kind)) return res.status(400).json({ success: false, message: '未知的草稿类型' });
+
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases healthConcern healthProfile');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    const baseInfo = `姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}`;
+
+    let prompt;
+    if (kind === 'followup') {
+      const since = new Date(Date.now() - 14 * 86400000);
+      const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
+        .sort({ recordedAt: -1 }).limit(40).lean();
+      const recLines = records.length
+        ? records.map(r => `${String(r.recordedAt).slice(0, 10)} ${r.label}：${r.value}${r.unit || ''}${r.status && r.status !== 'normal' ? `（${r.status === 'danger' ? '异常' : '偏高/偏低'}）` : ''}`).join('\n')
+        : '近14天无打卡数据';
+      prompt = `你是健康管理随访人员，请根据以下信息撰写一段专业、简洁、有温度的随访记录草稿（150-250字，自然语言连贯成段，不要分点编号，不要使用Markdown）。
+
+【患者】${baseInfo}
+【随访主题】${context.theme || '常规随访'}
+【随访方式】${context.type || '电话'}
+【随访重点】${context.focus || '了解近期健康状况、用药与生活方式依从性'}
+
+【近14天打卡数据】
+${recLines}
+
+请直接输出随访记录正文，体现：本次随访沟通的核心内容、患者反馈、发现的问题、给出的建议。`;
+    } else if (kind === 'service_record') {
+      prompt = `你是健康管理服务人员，请根据以下服务要点，撰写一段完整、规范的服务记录正文（150-250字，自然语言连贯成段，不要分点编号，不要使用Markdown）。
+
+【患者】${baseInfo}
+【服务类型】${context.serviceType || context.title || '健康服务'}
+【服务要点/摘要】${context.summary || '（未填写）'}
+
+请直接输出服务记录正文。`;
+    } else {
+      prompt = `你是家庭医师，请把以下方案要点优化润色为一段清晰、专业、易于患者理解的健康管理方案描述（100-200字，自然语言连贯成段）。
+
+【患者】${baseInfo}
+【方案要点】${context.keypoints || context.summary || '（未填写）'}
+
+请直接输出优化后的方案描述正文。`;
+    }
+
+    const draft = await chat([{ role: 'user', content: prompt }], { maxTokens: 800 });
+    res.json({ success: true, data: { draft: (draft || '').trim() } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 场景八：AI 健康风险评估与预警（规则引擎 + AI）────────────────────
+// 规则引擎：根据体检指标给出每个维度的预警信号，供 AI 综合判级
+const RISK_LEVELS = ['low', 'medium', 'high', 'critical']; // 低 / 中 / 高 / 危急值
+function ruleEngineSignals(lv = {}) {
+  const num = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
+  const sig = { cardiovascular: [], diabetes: [], tumor: [], kidney: [] };
+  const sbp = num(lv.sbp), dbp = num(lv.dbp), fpg = num(lv.fpg), hba1c = num(lv.hba1c);
+  const ldl = num(lv.ldl), tc = num(lv.tc), tg = num(lv.tg), hdl = num(lv.hdl);
+  const hcy = num(lv.hcy), ua = num(lv.ua), cr = num(lv.cr || lv.scr), egfr = num(lv.egfr), bun = num(lv.bun);
+  // 心血管
+  if (sbp >= 180 || dbp >= 110) sig.cardiovascular.push(`血压危急 ${sbp}/${dbp} mmHg`);
+  else if (sbp >= 140 || dbp >= 90) sig.cardiovascular.push(`血压偏高 ${sbp}/${dbp} mmHg`);
+  if (ldl >= 4.1) sig.cardiovascular.push(`LDL-C 偏高 ${ldl} mmol/L`);
+  if (tc >= 6.2) sig.cardiovascular.push(`总胆固醇偏高 ${tc} mmol/L`);
+  if (tg >= 2.3) sig.cardiovascular.push(`甘油三酯偏高 ${tg} mmol/L`);
+  if (hdl !== null && hdl < 1.0) sig.cardiovascular.push(`HDL-C 偏低 ${hdl} mmol/L`);
+  if (hcy >= 15) sig.cardiovascular.push(`同型半胱氨酸偏高 ${hcy} μmol/L`);
+  // 糖尿病
+  if (fpg >= 11.1 || hba1c >= 9) sig.diabetes.push(`血糖危急（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
+  else if (fpg >= 7.0 || hba1c >= 6.5) sig.diabetes.push(`已达糖尿病诊断阈值（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
+  else if (fpg >= 6.1 || hba1c >= 5.7) sig.diabetes.push(`糖代谢受损（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
+  // 肾脏
+  if (egfr !== null && egfr < 60) sig.kidney.push(`eGFR 偏低 ${egfr}`);
+  if (cr !== null && cr > 104) sig.kidney.push(`肌酐偏高 ${cr} μmol/L`);
+  if (bun !== null && bun > 7.1) sig.kidney.push(`尿素氮偏高 ${bun}`);
+  if (ua >= 480) sig.kidney.push(`尿酸偏高 ${ua} μmol/L`);
+  return sig;
+}
+
+// POST /api/staff/patients/:id/ai-risk-assessment — 生成风险评估
+router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases healthProfile labValues');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    const lv = user.labValues || {};
+    const signals = ruleEngineSignals(lv);
+    const sigText = Object.entries(signals)
+      .map(([k, arr]) => `${k}：${arr.length ? arr.join('；') : '规则引擎未发现明显异常'}`)
+      .join('\n');
+
+    const labLines = [
+      lv.sbp && `血压 ${lv.sbp}/${lv.dbp} mmHg`, lv.fpg && `空腹血糖 ${lv.fpg}`,
+      lv.hba1c && `糖化 ${lv.hba1c}%`, lv.tc && `总胆固醇 ${lv.tc}`, lv.ldl && `LDL ${lv.ldl}`,
+      lv.hdl && `HDL ${lv.hdl}`, lv.tg && `甘油三酯 ${lv.tg}`, lv.ua && `尿酸 ${lv.ua}`,
+      lv.cr && `肌酐 ${lv.cr}`, lv.egfr && `eGFR ${lv.egfr}`, lv.hcy && `同型半胱氨酸 ${lv.hcy}`,
+    ].filter(Boolean).join('、') || '暂无体检数据';
+
+    const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。
+
+【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}
+【体检关键指标】${labLines}
+【规则引擎预警信号】
+${sigText}
+
+请严格按以下JSON输出（level 取值：low/medium/high/critical，分别代表低/中/高/危急值；score 0-100）：
+{
+  "dimensions": [
+    { "key": "cardiovascular", "label": "心血管疾病风险", "level": "low", "score": 20, "factors": ["关键风险因素"], "advice": "针对性建议（30-60字）" },
+    { "key": "diabetes", "label": "糖尿病风险", "level": "low", "score": 15, "factors": [], "advice": "" },
+    { "key": "tumor", "label": "肿瘤风险", "level": "low", "score": 10, "factors": [], "advice": "" },
+    { "key": "kidney", "label": "慢性肾病风险", "level": "low", "score": 10, "factors": [], "advice": "" }
+  ],
+  "overallSummary": "整体风险综述（50-100字）"
+}`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500 });
+    let raw = {};
+    try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
+
+    let dimensions = Array.isArray(raw.dimensions) ? raw.dimensions : [];
+    dimensions = dimensions.map(d => ({
+      key: d.key, label: d.label || d.key,
+      level: RISK_LEVELS.includes(d.level) ? d.level : 'low',
+      score: Number(d.score) || 0,
+      factors: Array.isArray(d.factors) ? d.factors : [],
+      advice: d.advice || '',
+    }));
+    const overallLevel = dimensions.reduce((max, d) =>
+      RISK_LEVELS.indexOf(d.level) > RISK_LEVELS.indexOf(max) ? d.level : max, 'low');
+
+    const assessment = {
+      dimensions,
+      overallLevel,
+      overallSummary: raw.overallSummary || '',
+      generatedAt: new Date(),
+      approvedAt: null,
+      approvedBy: null,
+      // 高/危急自动标记预警（待家庭医生审核确认）
+      alerted: ['high', 'critical'].includes(overallLevel),
+    };
+
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { aiRiskAssessment: assessment } }
+    );
+    res.json({ success: true, data: assessment });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/staff/patients/:id/ai-risk-assessment — 家庭医生审核/修改
+router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
+  try {
+    const { dimensions, overallSummary, action } = req.body;
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const updated = { ...(user.aiRiskAssessment || {}) };
+    if (dimensions !== undefined) {
+      updated.dimensions = dimensions;
+      updated.overallLevel = dimensions.reduce((max, d) =>
+        RISK_LEVELS.indexOf(d.level) > RISK_LEVELS.indexOf(max) ? d.level : max, 'low');
+    }
+    if (overallSummary !== undefined) updated.overallSummary = overallSummary;
+    if (action === 'approve') {
+      updated.approvedAt = new Date();
+      updated.approvedBy = req.staff.name;
+    }
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { aiRiskAssessment: updated } }
+    );
+    res.json({ success: true, data: updated });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 场景六：AI 智能随访建议（随访时机判断 + 随访提纲）────────────────
+// POST /api/staff/patients/:id/ai-followup-suggestion
+router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    // 近30天打卡数据
+    const since = new Date(Date.now() - 30 * 86400000);
+    const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
+      .sort({ recordedAt: -1 }).limit(60).lean();
+    const recLines = records.length
+      ? records.slice(0, 40).map(r => `${String(r.recordedAt).slice(0, 10)} ${r.label}：${r.value}${r.unit || ''}${r.status && r.status !== 'normal' ? '（异常）' : ''}`).join('\n')
+      : '近30天无打卡数据';
+    // 最近一次随访
+    const lastFu = await FollowUp.findOne({ patientId: user._id }).sort({ date: -1 }).lean();
+    const lastFuText = lastFu ? `${String(lastFu.date).slice(0, 10)}（${lastFu.theme || '常规'}）` : '无记录';
+    const nextPlanned = await FollowUp.findOne({ patientId: user._id, status: 'planned', date: { $gte: new Date() } }).sort({ date: 1 }).lean();
+    const nextPlannedText = nextPlanned ? String(nextPlanned.date).slice(0, 10) : '未排期';
+
+    const prompt = `你是慢病管理随访专员，请根据患者近期数据判断随访时机并生成随访提纲。
+
+【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【上次随访】${lastFuText}
+【已排期下次随访】${nextPlannedText}
+【近30天打卡数据】
+${recLines}
+
+判断规则参考：指标稳定→按原计划(keep)；指标异常/恶化→建议提前(advance)；指标改善且稳定→可延长间隔(extend)。
+请严格按以下JSON输出（仅JSON）：
+{
+  "timing": "keep",
+  "timingReason": "判断理由（30-60字）",
+  "suggestedDate": "YYYY-MM-DD",
+  "theme": "建议随访主题",
+  "outline": ["随访提纲要点1", "要点2", "要点3"]
+}`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1000 });
+    let raw = {};
+    try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
+    const VALID_TIMING = ['advance', 'keep', 'extend'];
+    const suggestion = {
+      timing: VALID_TIMING.includes(raw.timing) ? raw.timing : 'keep',
+      timingReason: raw.timingReason || '',
+      suggestedDate: raw.suggestedDate || '',
+      theme: raw.theme || '常规随访',
+      outline: Array.isArray(raw.outline) ? raw.outline : [],
+      generatedAt: new Date(),
+    };
+    res.json({ success: true, data: suggestion });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 场景九：AI 健康教练消息（依从性评估 + 鼓励/提醒消息）──────────────
+// POST /api/staff/patients/:id/ai-coach-message
+router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    // 近14天打卡，按自然日去重计算连续打卡天数
+    const since = new Date(Date.now() - 14 * 86400000);
+    const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
+      .sort({ recordedAt: -1 }).select('recordedAt label').lean();
+    const dayset = new Set(records.map(r => String(r.recordedAt).slice(0, 10)));
+    // 计算从今天往前的连续打卡天数
+    let streak = 0;
+    for (let i = 0; i < 14; i++) {
+      const d = new Date(Date.now() - i * 86400000).toISOString().slice(0, 10);
+      if (dayset.has(d)) streak++;
+      else if (i > 0) break; // 今天未打卡不中断（允许当天还没打），昨天起断则停
+      else continue;
+    }
+    const daysSinceLast = records.length
+      ? Math.floor((Date.now() - new Date(records[0].recordedAt)) / 86400000)
+      : 999;
+    // 依从性等级
+    let adherence, tone;
+    if (daysSinceLast >= 3) { adherence = 'low'; tone = '提醒'; }
+    else if (streak >= 7) { adherence = 'high'; tone = '鼓励'; }
+    else if (streak >= 3) { adherence = 'medium'; tone = '鼓励'; }
+    else { adherence = 'low'; tone = '提醒'; }
+
+    const prompt = `你是一位温暖、专业的健康教练，请给会员发一条${tone}消息（40-80字，口语化、有温度、不说教，可用1个emoji，不要分点）。
+
+【会员】${user.name}，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【打卡情况】连续打卡 ${streak} 天，距上次打卡 ${daysSinceLast >= 999 ? '很久' : daysSinceLast + ' 天'}
+【消息类型】${tone}（依从性${adherence === 'high' ? '良好' : adherence === 'medium' ? '一般' : '偏低'}）
+
+请直接输出消息正文。`;
+
+    const message = await chat([{ role: 'user', content: prompt }], { maxTokens: 300 });
+    res.json({ success: true, data: { message: (message || '').trim(), adherence, streak, daysSinceLast: daysSinceLast >= 999 ? null : daysSinceLast, tone } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// POST /api/staff/patients/:id/coach-message/send — 发送健康教练消息（审核后）
+router.post('/patients/:id/coach-message/send', staffAuth, async (req, res) => {
+  try {
+    const { message } = req.body;
+    if (!message || !message.trim()) return res.status(400).json({ success: false, message: '消息内容不能为空' });
+    const user = await User.findById(req.params.id).select('_id');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    await PushRecord.create({
+      staffId: req.staff._id, patientId: user._id,
+      type: 'notice', title: '健康教练', content: message.trim(),
+    });
+    res.json({ success: true, message: '已发送给会员' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 场景五：AI 个性化内容推荐（画像匹配知识库 + 推荐理由）──────────────
+// POST /api/staff/patients/:id/ai-content-recommend
+router.post('/patients/:id/ai-content-recommend', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases aiRiskAssessment');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    // 候选知识库（公开 + 较新），最多40条供AI筛选
+    const candidates = await KnowledgeItem.find({ isPublic: true })
+      .sort({ createdAt: -1 }).limit(40).select('title category tags content').lean();
+    if (!candidates.length) {
+      return res.json({ success: true, data: { items: [], note: '知识库暂无内容，请先在知识库录入科普内容' } });
+    }
+
+    // 已推送过的知识（避免重复）
+    const pushed = await PushRecord.find({ patientId: user._id, type: 'knowledge' }).select('knowledgeId').lean();
+    const pushedSet = new Set(pushed.map(p => String(p.knowledgeId)));
+
+    const riskFactors = (user.aiRiskAssessment?.dimensions || [])
+      .filter(d => ['high', 'medium', 'critical'].includes(d.level))
+      .map(d => `${d.label}(${d.level})`).join('、') || '无';
+
+    const candText = candidates.map((c, i) =>
+      `${i + 1}. [${c.category}] ${c.title}｜标签：${(c.tags || []).join('/') || '无'}${pushedSet.has(String(c._id)) ? '（已推送过）' : ''}`
+    ).join('\n');
+
+    const prompt = `你是健康内容运营，请根据会员画像，从候选知识库中挑选最适合推送的3-5条内容，做到"千人千面"，避免推送已推送过的内容。
+
+【会员画像】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；风险维度：${riskFactors}
+
+【候选内容】
+${candText}
+
+请严格按以下JSON输出（index 为候选内容编号；仅JSON）：
+{ "items": [ { "index": 1, "reason": "推荐理由（20-40字，结合会员画像）" } ] }`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 800 });
+    let raw = {};
+    try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
+    const picks = Array.isArray(raw.items) ? raw.items : [];
+    const items = picks.map(p => {
+      const c = candidates[Number(p.index) - 1];
+      if (!c) return null;
+      return {
+        knowledgeId: String(c._id),
+        title: c.title,
+        category: c.category,
+        reason: p.reason || '',
+        alreadyPushed: pushedSet.has(String(c._id)),
+      };
+    }).filter(Boolean);
+
+    res.json({ success: true, data: { items } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── 4.3 专项筛查：录入筛查结果（支持图片/PDF上传） ────────────────
 // POST /api/staff/patients/:id/screening-records
 router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array('files', 10), async (req, res) => {
@@ -3307,9 +3673,33 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     });
 
+    // 3. 风险预警待处理（场景八）→ User.aiRiskAssessment 高/危急 且未审核
+    const riskUsers = await User.find({
+      'aiRiskAssessment.alerted': true,
+      'aiRiskAssessment.approvedAt': null,
+    }).select('name aiRiskAssessment').limit(50).lean();
+
+    riskUsers.forEach(u => {
+      const ra = u.aiRiskAssessment || {};
+      const createdAt = ra.generatedAt || now;
+      const overdue = (now - new Date(createdAt)) > 24 * 60 * 60 * 1000;
+      const critical = ra.overallLevel === 'critical';
+      todos.push({
+        id: String(u._id),
+        type: 'risk_review',
+        label: critical ? '风险预警·危急值' : '风险预警·高风险',
+        priority: 1, // 最高优先级
+        patientName: u.name || '未知',
+        patientId: String(u._id),
+        summary: (ra.overallSummary || '').slice(0, 60) || 'AI检测到高风险，请家庭医生审核',
+        createdAt,
+        overdue,
+        link: `/patients/${u._id}?tab=ai-risk`,
+      });
+    });
+
     // 后续场景接入点（建好后在此追加）
     // 2. AI趋势分析待审核 → HealthPlan aiStatus=pending
-    // 3. 风险预警待处理 → AbnormalReview urgent=true
     // 4. AI文案待审核 → ServiceRecord / FollowUp draftStatus=pending
     // ...
 

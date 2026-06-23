@@ -404,6 +404,12 @@ export default function PatientDetailPage() {
   const [parsingReportId, setParsingReportId] = useState(null)
   const [editingAISummary, setEditingAISummary] = useState(false)
   const [aiSummaryForm, setAiSummaryForm] = useState({})
+  // 场景八：AI风险评估
+  const [riskGenerating, setRiskGenerating] = useState(false)
+  const [riskApproving, setRiskApproving] = useState(false)
+  // 场景五/六/九：AI 助手（随访建议 / 教练消息 / 内容推荐）
+  const [aiHelper, setAiHelper] = useState(null)   // { type, loading, data, error }
+  const [aiHelperBusy, setAiHelperBusy] = useState(false)
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrSaving, setOcrSaving] = useState(false)
@@ -861,6 +867,73 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
   }
 
+  // 场景八：AI风险评估
+  const handleGenerateRisk = async () => {
+    setRiskGenerating(true)
+    try {
+      await staffAPI.generateAIRisk(id)
+      toast('AI风险评估已生成')
+      load()
+    } catch (err) { toast(err.message || 'AI生成失败') }
+    finally { setRiskGenerating(false) }
+  }
+  const handleApproveRisk = async () => {
+    setRiskApproving(true)
+    try {
+      await staffAPI.updateAIRisk(id, { action: 'approve' })
+      toast('风险评估已审核确认')
+      load()
+    } catch (err) { toast(err.message || '操作失败') }
+    finally { setRiskApproving(false) }
+  }
+
+  // 场景五/六/九：AI 助手统一调用
+  const runAIHelper = async (type) => {
+    setAiHelper({ type, loading: true, data: null, error: null })
+    try {
+      let r
+      if (type === 'followup') r = await staffAPI.generateAIFollowupSuggestion(id)
+      else if (type === 'coach') r = await staffAPI.generateAICoachMessage(id)
+      else r = await staffAPI.generateAIContentRecommend(id)
+      setAiHelper({ type, loading: false, data: r.data, error: null })
+    } catch (err) { setAiHelper({ type, loading: false, data: null, error: err.message || 'AI生成失败' }) }
+  }
+  // 场景六：采纳随访建议 → 创建随访计划
+  const adoptFollowupSuggestion = async () => {
+    const d = aiHelper?.data; if (!d) return
+    setAiHelperBusy(true)
+    try {
+      await staffAPI.createFollowUp({
+        patientId: id, theme: d.theme, status: 'planned',
+        date: d.suggestedDate || undefined,
+        content: (d.outline || []).map(o => '· ' + o).join('\n'),
+      })
+      toast('已创建随访计划')
+      setAiHelper(null); loadFollowUps()
+    } catch (err) { toast(err.message || '创建失败') }
+    finally { setAiHelperBusy(false) }
+  }
+  // 场景九：发送教练消息
+  const sendCoachMessage = async () => {
+    const msg = aiHelper?.data?.message; if (!msg) return
+    setAiHelperBusy(true)
+    try {
+      await staffAPI.sendCoachMessage(id, msg)
+      toast('已发送给会员'); setAiHelper(null)
+    } catch (err) { toast(err.message || '发送失败') }
+    finally { setAiHelperBusy(false) }
+  }
+  // 场景五：推送推荐内容
+  const pushRecommendedContent = async (knowledgeId) => {
+    setAiHelperBusy(true)
+    try {
+      await staffAPI.pushKnowledge(knowledgeId, [id])
+      toast('已推送给会员')
+      setAiHelper(h => ({ ...h, data: { ...h.data, items: h.data.items.map(it => it.knowledgeId === knowledgeId ? { ...it, alreadyPushed: true } : it) } }))
+    } catch (err) { toast(err.message || '推送失败') }
+    finally { setAiHelperBusy(false) }
+  }
+
   // 4.3 录入筛查结果
   const handleSaveScreeningRecord = async () => {
     if (!screeningForm.screeningL1) return toast('请选择筛查大类')
@@ -1052,6 +1125,7 @@ export default function PatientDetailPage() {
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
           { key: 'ai',            label: 'AI分析及方案' },
+          { key: 'ai-risk',       label: 'AI风险评估' },
           { key: 'medications',   label: '药物及营养素' },
           { key: 'requisitions',  label: '检查开单' },
           { key: 'plans',         label: '管理方案' },
@@ -3710,6 +3784,88 @@ export default function PatientDetailPage() {
         )
       })()}
 
+      {/* ── AI风险评估 Tab（场景八）── */}
+      {tab === 'ai-risk' && (() => {
+        const ra = user.aiRiskAssessment || {}
+        const dims = Array.isArray(ra.dimensions) ? ra.dimensions : []
+        const hasData = dims.length > 0
+        const LV = {
+          low:      { label: '低风险',  bg: '#F0FDF4', color: '#16A34A', dot: '#22C55E' },
+          medium:   { label: '中风险',  bg: '#FEF9EC', color: '#D97706', dot: '#F59E0B' },
+          high:     { label: '高风险',  bg: '#FEF2F2', color: '#DC2626', dot: '#EF4444' },
+          critical: { label: '危急值',  bg: '#FEE2E2', color: '#B91C1C', dot: '#B91C1C' },
+        }
+        const lvOf = (k) => LV[k] || LV.low
+        const overall = lvOf(ra.overallLevel)
+        return (
+          <div>
+            {/* 操作栏 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              {ra.approvedAt ? (
+                <div style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', borderRadius: 6, padding: '4px 10px', flex: 1 }}>
+                  ✓ 已审核确认 {ra.approvedBy && `· ${ra.approvedBy}`} · {new Date(ra.approvedAt).toLocaleDateString('zh-CN')}
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: '#8AA89C', flex: 1 }}>
+                  {hasData ? `生成时间：${new Date(ra.generatedAt).toLocaleString('zh-CN')}${ra.alerted ? ' · ⚠ 高风险待审核预警' : ''}` : '尚未生成'}
+                </div>
+              )}
+              {hasData && !ra.approvedAt && (
+                <button className="btn btn-primary btn-sm" onClick={handleApproveRisk} disabled={riskApproving}>
+                  {riskApproving ? '处理中...' : '审核确认'}
+                </button>
+              )}
+              <button className="btn btn-secondary btn-sm" onClick={handleGenerateRisk} disabled={riskGenerating}>
+                {riskGenerating ? 'AI评估中...' : hasData ? '重新评估' : '✨ AI生成风险评估'}
+              </button>
+            </div>
+
+            {!hasData && (
+              <div className="card" style={{ padding: 32, textAlign: 'center', color: '#8AA89C', fontSize: 14 }}>
+                暂无风险评估。点击右上角「AI生成风险评估」，系统将结合规则引擎与AI对心血管、糖尿病、肿瘤、慢性肾病四个维度进行风险分级。
+              </div>
+            )}
+
+            {hasData && (
+              <>
+                {/* 整体风险 */}
+                <div className="card" style={{ marginBottom: 14, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24' }}>整体风险等级</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: overall.color, background: overall.bg, borderRadius: 6, padding: '3px 12px' }}>{overall.label}</span>
+                  {ra.overallSummary && <span style={{ fontSize: 13, color: '#4A6558', flex: 1 }}>{ra.overallSummary}</span>}
+                </div>
+                {/* 各维度 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {dims.map((d, i) => {
+                    const lv = lvOf(d.level)
+                    return (
+                      <div key={d.key || i} className="card" style={{ padding: 0, overflow: 'hidden', borderLeft: `4px solid ${lv.dot}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 16px 10px', borderBottom: '1px solid #F0EDE7' }}>
+                          <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{d.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: lv.color, background: lv.bg, borderRadius: 6, padding: '2px 10px' }}>{lv.label}</span>
+                          {typeof d.score === 'number' && <span style={{ fontSize: 12, color: '#8AA89C' }}>{d.score}分</span>}
+                        </div>
+                        <div style={{ padding: '10px 16px 14px' }}>
+                          {Array.isArray(d.factors) && d.factors.length > 0 && (
+                            <div style={{ marginBottom: 8 }}>
+                              {d.factors.map((f, j) => (
+                                <div key={j} style={{ fontSize: 12, color: '#4A6558', marginBottom: 3 }}>· {f}</div>
+                              ))}
+                            </div>
+                          )}
+                          {d.advice && <div style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '6px 10px' }}>建议：{d.advice}</div>}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: '#B0B8B3', marginTop: 12 }}>本评估由 AI 结合规则引擎生成，仅供医护参考，需家庭医生审核后生效。</div>
+              </>
+            )}
+          </div>
+        )
+      })()}
+
       {/* ── Medications Tab ── */}
       {tab === 'medications' && (
         <div>
@@ -3980,8 +4136,13 @@ export default function PatientDetailPage() {
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
         <div className="card">
-          <div className="card-header">
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title">随访记录</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('followup')}>✨ AI随访建议</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('coach')}>✨ AI教练消息</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('content')}>✨ AI内容推荐</button>
+            </div>
           </div>
           {followUps.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无随访记录</div>
@@ -4523,6 +4684,93 @@ export default function PatientDetailPage() {
       )}
 
       {/* 随访详情弹窗 */}
+      {/* ── AI 助手弹窗（场景五/六/九）── */}
+      {aiHelper && (
+        <div className="modal-overlay" onClick={() => !aiHelperBusy && setAiHelper(null)}>
+          <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">
+                {aiHelper.type === 'followup' ? 'AI 智能随访建议' : aiHelper.type === 'coach' ? 'AI 健康教练消息' : 'AI 个性化内容推荐'}
+              </h3>
+              <button className="modal-close" onClick={() => setAiHelper(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {aiHelper.loading && <div style={{ padding: 30, textAlign: 'center', color: '#8AA89C' }}>AI 生成中，请稍候…</div>}
+              {aiHelper.error && <div style={{ padding: 16, color: '#DC2626', background: '#FEF2F2', borderRadius: 8 }}>{aiHelper.error}</div>}
+
+              {/* 场景六：随访建议 */}
+              {!aiHelper.loading && !aiHelper.error && aiHelper.type === 'followup' && aiHelper.data && (() => {
+                const d = aiHelper.data
+                const T = { advance: { l: '建议提前随访', c: '#DC2626' }, keep: { l: '按原计划随访', c: '#16A34A' }, extend: { l: '可延长随访间隔', c: '#0077B6' } }[d.timing] || { l: d.timing, c: '#4A6558' }
+                return (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <span style={{ fontWeight: 700, fontSize: 14, color: T.c }}>{T.l}</span>
+                      {d.suggestedDate && <span style={{ fontSize: 13, color: '#4A6558' }}>建议日期：{d.suggestedDate}</span>}
+                    </div>
+                    {d.timingReason && <div style={{ fontSize: 13, color: '#4A6558', background: '#f9f7f3', borderRadius: 8, padding: '8px 12px' }}>{d.timingReason}</div>}
+                    <div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访主题</div>
+                      <div style={{ fontSize: 14, fontWeight: 600 }}>{d.theme}</div>
+                    </div>
+                    {Array.isArray(d.outline) && d.outline.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访提纲</div>
+                        {d.outline.map((o, i) => <div key={i} style={{ fontSize: 13, color: '#1A2B24', marginBottom: 3 }}>· {o}</div>)}
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
+                      <button className="btn btn-secondary" onClick={() => setAiHelper(null)}>关闭</button>
+                      <button className="btn btn-primary" onClick={adoptFollowupSuggestion} disabled={aiHelperBusy}>{aiHelperBusy ? '创建中...' : '采纳并创建随访计划'}</button>
+                    </div>
+                  </>
+                )
+              })()}
+
+              {/* 场景九：教练消息 */}
+              {!aiHelper.loading && !aiHelper.error && aiHelper.type === 'coach' && aiHelper.data && (
+                <>
+                  <div style={{ fontSize: 12, color: '#8AA89C' }}>
+                    依从性：{{ high: '良好', medium: '一般', low: '偏低' }[aiHelper.data.adherence] || '-'} · 连续打卡 {aiHelper.data.streak} 天{aiHelper.data.daysSinceLast != null ? ` · 距上次打卡 ${aiHelper.data.daysSinceLast} 天` : ''}
+                  </div>
+                  <textarea className="form-control" rows={4} value={aiHelper.data.message}
+                    onChange={e => setAiHelper(h => ({ ...h, data: { ...h.data, message: e.target.value } }))} />
+                  <div style={{ fontSize: 11, color: '#B0B8B3' }}>可编辑后再发送。发送将作为「健康教练」通知推送给会员。</div>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                    <button className="btn btn-secondary" onClick={() => setAiHelper(null)}>关闭</button>
+                    <button className="btn btn-primary" onClick={sendCoachMessage} disabled={aiHelperBusy}>{aiHelperBusy ? '发送中...' : '发送给会员'}</button>
+                  </div>
+                </>
+              )}
+
+              {/* 场景五：内容推荐 */}
+              {!aiHelper.loading && !aiHelper.error && aiHelper.type === 'content' && aiHelper.data && (
+                <>
+                  {aiHelper.data.note && <div style={{ fontSize: 13, color: '#D97706', background: '#FEF9EC', borderRadius: 8, padding: '8px 12px' }}>{aiHelper.data.note}</div>}
+                  {(aiHelper.data.items || []).length === 0 && !aiHelper.data.note && (
+                    <div style={{ padding: 16, textAlign: 'center', color: '#8AA89C' }}>暂无匹配的推荐内容</div>
+                  )}
+                  {(aiHelper.data.items || []).map(it => (
+                    <div key={it.knowledgeId} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 12px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span style={{ fontWeight: 600, fontSize: 14, flex: 1 }}>{it.title}</span>
+                        <button className="btn btn-primary btn-sm" disabled={aiHelperBusy || it.alreadyPushed} onClick={() => pushRecommendedContent(it.knowledgeId)}>
+                          {it.alreadyPushed ? '已推送' : '推送'}
+                        </button>
+                      </div>
+                      {it.reason && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>推荐理由：{it.reason}</div>}
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    <button className="btn btn-secondary" onClick={() => setAiHelper(null)}>关闭</button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {followUpDetail && (
         <div className="modal-overlay" onClick={() => setFollowUpDetail(null)}>
           <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>

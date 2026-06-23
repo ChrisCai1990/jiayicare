@@ -289,6 +289,21 @@ export const staffAPI = {
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
   generateAIAnnualPlan:    (id) => req(`/staff/patients/${id}/ai-annual-plan`,    { method: 'POST' }),
 
+  // 场景七：AI 辅助生成文案草稿（kind: followup | service_record | plan_desc）
+  generateAIDraft:         (id, kind, context = {}) => req(`/staff/patients/${id}/ai-draft`, { method: 'POST', body: JSON.stringify({ kind, context }) }),
+
+  // 场景八：AI 风险评估与预警
+  generateAIRisk:          (id) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'POST' }),
+  updateAIRisk:            (id, data) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'PATCH', body: JSON.stringify(data) }),
+
+  // 场景六：AI 智能随访建议
+  generateAIFollowupSuggestion: (id) => req(`/staff/patients/${id}/ai-followup-suggestion`, { method: 'POST' }),
+  // 场景九：AI 健康教练消息
+  generateAICoachMessage:       (id) => req(`/staff/patients/${id}/ai-coach-message`, { method: 'POST' }),
+  sendCoachMessage:             (id, message) => req(`/staff/patients/${id}/coach-message/send`, { method: 'POST', body: JSON.stringify({ message }) }),
+  // 场景五：AI 个性化内容推荐
+  generateAIContentRecommend:   (id) => req(`/staff/patients/${id}/ai-content-recommend`, { method: 'POST' }),
+
   // 4.3 专项筛查
   getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),
   getProjectSubItems:    (type, id) => req(`/staff/requisition-items/${type}/${id}/sub-items`),

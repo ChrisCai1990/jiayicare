@@ -122,6 +122,7 @@ export default function FollowUpsPage() {
   const [execItem,     setExecItem]     = useState(null)
   const [execForm,     setExecForm]     = useState({ type: 'phone', content: '', status: 'completed' })
   const [execSaving,   setExecSaving]   = useState(false)
+  const [draftLoading, setDraftLoading] = useState(false)  // 场景七：AI生成草稿
 
   // 取消随访 modal
   const [cancelItem,   setCancelItem]   = useState(null)
@@ -199,6 +200,23 @@ export default function FollowUpsPage() {
       load()
     } catch (err) { toast(err.message || '保存失败') }
     finally { setExecSaving(false) }
+  }
+
+  // 场景七：AI 生成随访记录草稿
+  const handleAIDraft = async () => {
+    const pid = execItem?.patientId?._id || execItem?.patientId
+    if (!pid) { toast('缺少患者信息'); return }
+    setDraftLoading(true)
+    try {
+      const r = await staffAPI.generateAIDraft(pid, 'followup', {
+        theme: execItem.theme || '',
+        type: TYPE_OPTIONS.find(o => o.v === execForm.type)?.l || execForm.type,
+        focus: execItem.theme || '',
+      })
+      setExecForm(f => ({ ...f, content: r.data.draft }))
+      toast('AI草稿已生成，请审核修改后保存')
+    } catch (err) { toast(err.message || 'AI生成失败') }
+    finally { setDraftLoading(false) }
   }
 
   const openCancel = (f) => { setCancelItem(f); setCancelReason('') }
@@ -414,7 +432,14 @@ export default function FollowUpsPage() {
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访结果 *</label>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label style={{ fontSize: 12, color: '#8AA89C' }}>随访结果 *</label>
+                  <button type="button" className="btn btn-secondary"
+                    style={{ fontSize: 12, padding: '2px 10px' }}
+                    onClick={handleAIDraft} disabled={draftLoading}>
+                    {draftLoading ? '生成中...' : '✨ AI生成草稿'}
+                  </button>
+                </div>
                 <textarea className="form-control" rows={5}
                   placeholder="记录本次随访的实际情况、会员反馈、建议等..."
                   value={execForm.content}

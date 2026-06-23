@@ -224,6 +224,10 @@ const userSchema = new mongoose.Schema({
 
   // ── AI健康汇总分析（4.4）───────────────────────────────────────────
   aiHealthSummary: { type: mongoose.Schema.Types.Mixed, default: {} },
+
+  // ── AI风险评估与预警（场景八）─────────────────────────────────────
+  // { dimensions:[{key,label,level,score,factors:[],advice}], overallLevel, generatedAt, approvedAt, approvedBy, alerted }
+  aiRiskAssessment: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: true });
 
 // ── 索引：医护端会员列表按分配医护过滤 + 按创建时间排序，慢病筛选 ──
