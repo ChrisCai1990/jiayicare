@@ -4851,30 +4851,37 @@ export default function PatientDetailPage() {
               </div>
               <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
                 {(() => {
-                  const abn = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention')
-                  const abnormalItems = abn.filter(it => it.status === 'abnormal')
-                  const attentionItems = abn.filter(it => it.status === 'attention')
+                  const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
+                  // 按类型分区：检验数值（lab/data/未标）走表格；影像/检查描述（imaging）走文本卡片
+                  const indexed = ocrEditItems.map((it, i) => ({ it, i }))
+                  // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
+                  const isImaging = (it) => it.itemType === 'imaging' || (it.value || '').length > 40
+                  const labRows = indexed.filter(({ it }) => !isImaging(it))
+                  const imgRows = indexed.filter(({ it }) => isImaging(it))
+                  const abn = labRows.map(x => x.it).filter(it => it.status === 'abnormal' || it.status === 'attention')
+                  const abnN = abn.filter(it => it.status === 'abnormal').length
+                  const attN = abn.filter(it => it.status === 'attention').length
                   return (
                     <>
-                      {/* 异常项快览：审核重点一眼可见 */}
-                      <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 10, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
+                      {/* 异常快览：只看检验数值类异常，短标签一眼可见 */}
+                      <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
-                          共 {ocrEditItems.length} 项
-                          {abnormalItems.length > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnormalItems.length}</span>}
-                          {attentionItems.length > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attentionItems.length}</span>}
-                          {abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 未见异常项</span>}
+                          检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 影像/检查 ${imgRows.length} 项` : ''}
+                          {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
+                          {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
+                          {abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
                         </div>
                         {abn.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                            {abn.map((it, i) => (
-                              <span key={i} style={{ fontSize: 12, padding: '3px 9px', borderRadius: 12, background: it.status === 'abnormal' ? '#FDE5E2' : '#FEF1E0', color: it.status === 'abnormal' ? '#DC3545' : '#D97706', fontWeight: 500 }}>
-                                {it.name}{it.value ? ` ${it.value}${it.unit ? it.unit : ''}` : ''}
+                            {abn.map((it, k) => (
+                              <span key={k} style={{ fontSize: 12, padding: '3px 9px', borderRadius: 12, background: it.status === 'abnormal' ? '#FDE5E2' : '#FEF1E0', color: it.status === 'abnormal' ? '#DC3545' : '#D97706', fontWeight: 500 }}>
+                                {it.name}{it.value ? ` ${it.value}${it.unit || ''}` : ''}
                               </span>
                             ))}
                           </div>
                         )}
                       </div>
-                      {/* AI文字分析：折叠收起，需要时展开，限高滚动避免刷屏 */}
+                      {/* AI文字分析：折叠收起 */}
                       {ocrReviewReport.aiSummary && (
                         <details style={{ marginBottom: 14 }}>
                           <summary style={{ cursor: 'pointer', fontSize: 12, color: '#7C3AED', userSelect: 'none', padding: '4px 0' }}>📄 展开 AI 文字分析（含影像/超声诊断意见）</summary>
@@ -4883,64 +4890,79 @@ export default function PatientDetailPage() {
                           </div>
                         </details>
                       )}
+
+                      {/* 区一：检验 / 数值指标 → 表格 */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 6px' }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>检验 / 数值指标（{labRows.length}）</span>
+                        <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增检验项</button>
+                      </div>
+                      <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden', marginBottom: 16 }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                          <thead>
+                            <tr style={{ background: '#f5f2ec', color: '#4A6558' }}>
+                              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, minWidth: 150 }}>项目名称</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 90 }}>数值</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 70 }}>单位</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 110 }}>参考范围</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 80 }}>状态</th>
+                              <th style={{ padding: '6px 4px', width: 32 }}></th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {labRows.length === 0 ? (
+                              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>无检验数值项，可点「新增检验项」手动录入</td></tr>
+                            ) : labRows.map(({ it, i }) => {
+                              const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
+                              return (
+                                <tr key={i} style={{ borderTop: '1px solid #f0ede8' }}>
+                                  <td style={{ padding: '4px 8px' }}><input style={inp} value={it.name || ''} onChange={e => updItem(i, { name: e.target.value })} /></td>
+                                  <td style={{ padding: '4px 6px' }}><input style={{ ...inp, color: sc, fontWeight: it.status === 'abnormal' ? 600 : 400 }} value={it.value || ''} onChange={e => updItem(i, { value: e.target.value })} /></td>
+                                  <td style={{ padding: '4px 6px' }}><input style={inp} value={it.unit || ''} onChange={e => updItem(i, { unit: e.target.value })} /></td>
+                                  <td style={{ padding: '4px 6px' }}><input style={inp} value={it.referenceRange || ''} onChange={e => updItem(i, { referenceRange: e.target.value })} /></td>
+                                  <td style={{ padding: '4px 6px' }}>
+                                    <select style={{ ...inp, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>
+                                      {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                                    </select>
+                                  </td>
+                                  <td style={{ padding: '4px 4px', textAlign: 'center' }}>
+                                    <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* 区二：影像 / 检查描述 → 文本卡片（不挤进窄表格） */}
+                      {imgRows.length > 0 && (
+                        <>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '0 0 6px' }}>影像 / 检查描述（{imgRows.length}）</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
+                            {imgRows.map(({ it, i }) => {
+                              const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
+                              return (
+                                <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#fafaf8' }}>
+                                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                                    <input style={{ ...inp, fontWeight: 600, flex: 1 }} value={it.name || ''} placeholder="检查名称（如 胸部CT、肠镜）" onChange={e => updItem(i, { name: e.target.value })} />
+                                    <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>
+                                      {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
+                                    </select>
+                                    <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                                  </div>
+                                  <textarea style={{ ...inp, minHeight: 64, lineHeight: 1.6, resize: 'vertical' }} value={it.value || ''} placeholder="检查所见 / 诊断意见" onChange={e => updItem(i, { value: e.target.value })} />
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </>
+                      )}
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
+                        提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。通过后数据写入该报告，用于趋势分析与AI汇总。
+                      </div>
                     </>
                   )
                 })()}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <div style={{ fontSize: 13, color: '#4A6558' }}>
-                    共 <strong>{ocrEditItems.length}</strong> 项
-                    {abnormalCount > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>· {abnormalCount} 项异常/注意</span>}
-                    <span style={{ color: '#8AA89C', marginLeft: 8 }}>请核对数值后通过</span>
-                  </div>
-                  <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增一项</button>
-                </div>
-                <div style={{ border: '1px solid #E0D9CE', borderRadius: 8, overflow: 'hidden' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
-                    <thead>
-                      <tr style={{ background: '#f5f2ec', color: '#4A6558' }}>
-                        <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, minWidth: 150 }}>项目名称</th>
-                        <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 90 }}>数值</th>
-                        <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 70 }}>单位</th>
-                        <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 110 }}>参考范围</th>
-                        <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 90 }}>状态</th>
-                        <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 90 }}>类型</th>
-                        <th style={{ padding: '6px 4px', width: 32 }}></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ocrEditItems.length === 0 ? (
-                        <tr><td colSpan={7} style={{ padding: 24, textAlign: 'center', color: '#aaa' }}>无识别项，可点「新增一项」手动录入</td></tr>
-                      ) : ocrEditItems.map((it, i) => {
-                        const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
-                        const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
-                        return (
-                          <tr key={i} style={{ borderTop: '1px solid #f0ede8' }}>
-                            <td style={{ padding: '4px 8px' }}><input style={inp} value={it.name || ''} onChange={e => updItem(i, { name: e.target.value })} /></td>
-                            <td style={{ padding: '4px 6px' }}><input style={{ ...inp, color: sc, fontWeight: it.status === 'abnormal' ? 600 : 400 }} value={it.value || ''} onChange={e => updItem(i, { value: e.target.value })} /></td>
-                            <td style={{ padding: '4px 6px' }}><input style={inp} value={it.unit || ''} onChange={e => updItem(i, { unit: e.target.value })} /></td>
-                            <td style={{ padding: '4px 6px' }}><input style={inp} value={it.referenceRange || ''} onChange={e => updItem(i, { referenceRange: e.target.value })} /></td>
-                            <td style={{ padding: '4px 6px' }}>
-                              <select style={{ ...inp, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>
-                                {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
-                              </select>
-                            </td>
-                            <td style={{ padding: '4px 6px' }}>
-                              <select style={inp} value={it.itemType || 'lab'} onChange={e => updItem(i, { itemType: e.target.value })}>
-                                {TYPE_OPTS.map(t => <option key={t.v} value={t.v}>{t.label}</option>)}
-                              </select>
-                            </td>
-                            <td style={{ padding: '4px 4px', textAlign: 'center' }}>
-                              <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
-                  提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。通过后数据写入该报告，用于趋势分析与AI汇总。
-                </div>
               </div>
               <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
