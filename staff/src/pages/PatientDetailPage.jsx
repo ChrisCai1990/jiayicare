@@ -450,6 +450,13 @@ export default function PatientDetailPage() {
   const loadReports = async () => {
     try { const res = await staffAPI.getPatientReports(id); setReports(res.data) } catch {}
   }
+  // 有报告处于「识别中」时，每 5 秒自动刷新，识别完成后停止
+  useEffect(() => {
+    if (tab !== 'reports') return
+    if (!reports.some(r => r.aiStatus === 'processing')) return
+    const timer = setInterval(loadReports, 5000)
+    return () => clearInterval(timer)
+  }, [tab, reports])
   const loadServiceRecords = async () => {
     try { const res = await staffAPI.getPatientServiceRecords(id); setServiceRecords(res.data) } catch {}
   }
@@ -4026,8 +4033,8 @@ export default function PatientDetailPage() {
       {/* ── Reports Tab ── */}
       {tab === 'reports' && (() => {
         const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
-        const AI_COLOR = { none:'#ccc', pending:'#D97706', reviewed:'#22A06B', rejected:'#DC3545' }
-        const AI_LABEL = { none:'未解析', pending:'待审核', reviewed:'已审核', rejected:'已驳回' }
+        const AI_COLOR = { none:'#ccc', processing:'#7C3AED', pending:'#D97706', reviewed:'#22A06B', rejected:'#DC3545' }
+        const AI_LABEL = { none:'未解析', processing:'识别中…', pending:'待审核', reviewed:'已审核', rejected:'已驳回' }
 
         // 标题 → L1 节点映射（用 screeningTree）
         const titleToL1 = {}
@@ -4134,7 +4141,13 @@ export default function PatientDetailPage() {
                                 <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
                                   disabled={parsingReportId === r._id}
                                   onClick={() => handleParseReportAI(r._id)}>
-                                  {parsingReportId === r._id ? '解析中…' : 'AI解析'}
+                                  {parsingReportId === r._id ? '提交中…' : 'AI解析'}
+                                </button>
+                              )}
+                              {r.aiStatus === 'processing' && (
+                                <button className="btn btn-sm" style={{ marginRight: 4, background:'#EDE7F9', color:'#7C3AED', border:'1px solid #d9cef2', cursor:'default' }} disabled>
+                                  <span style={{ display:'inline-block', width:10, height:10, border:'2px solid #7C3AED', borderTopColor:'transparent', borderRadius:'50%', marginRight:6, verticalAlign:'middle', animation:'spin 0.8s linear infinite' }} />
+                                  识别中…
                                 </button>
                               )}
                               {r.audit_status !== 'audited' && (

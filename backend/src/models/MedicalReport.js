@@ -32,7 +32,7 @@ const medicalReportSchema = new mongoose.Schema({
   examConclusion:  { type: String, default: '' }, // 检查医嘱：诊断结论模板
   reportItems:     [reportItemSchema],                // 解析后的各项结果
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
-  aiStatus:        { type: String, enum: ['none', 'pending', 'reviewed', 'rejected'], default: 'none' },
+  aiStatus:        { type: String, enum: ['none', 'processing', 'pending', 'reviewed', 'rejected'], default: 'none' },
   reviewedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   reviewedAt:      { type: Date, default: null },
   reviewNote:      { type: String, default: '' },
