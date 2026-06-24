@@ -868,7 +868,19 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'reviewed' })
-      toast('审核通过，数据已写入报告')
+      toast('审核通过，数据已写入专项筛查')
+      setOcrReviewReport(null)
+      loadReports()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setOcrSaving(false) }
+  }
+
+  // 存草稿：保存归类/编辑结果但保持「待审核」，可稍后继续
+  const handleSaveOCRDraft = async () => {
+    setOcrSaving(true)
+    try {
+      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
+      toast('草稿已保存（仍为待审核）')
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '保存失败') }
@@ -5261,12 +5273,34 @@ export default function PatientDetailPage() {
         )
         return (
           <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setOcrReviewReport(null) }}>
-            <div className="modal" style={{ maxWidth: 820, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
-              <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+              <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+                {/* 左：原始报告预览 */}
+                {(() => {
+                  const rawSrc = ocrReviewReport.content || ocrReviewReport.fileUrl || (ocrReviewReport.fileUrls && ocrReviewReport.fileUrls[0]) || ''
+                  const paneStyle = { width: '40%', borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }
+                  if (!rawSrc) return <div style={{ ...paneStyle, color: '#B0C4BB', fontSize: 13, padding: 16 }}>无原始文件可预览</div>
+                  const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
+                  const isPdf = ocrReviewReport.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
+                  const isImg = ocrReviewReport.mimeType?.startsWith('image/') || rawSrc.startsWith('data:image') || /\.(png|jpe?g|webp|gif)$/i.test(rawSrc)
+                  return (
+                    <div style={paneStyle}>
+                      <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>原始报告（对照核对）</div>
+                      {isImg ? (
+                        <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
+                      ) : isPdf ? (
+                        <iframe src={src} title="报告PDF" style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                      ) : (
+                        <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
+                      )}
+                    </div>
+                  )
+                })()}
+              <div className="modal-body" style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
                 {(() => {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
                   // 按类型分区：检验数值（lab/data/未标）走表格；影像/检查描述（imaging）走文本卡片
@@ -5308,6 +5342,23 @@ export default function PatientDetailPage() {
                             {ocrReviewReport.aiSummary}
                           </div>
                         </details>
+                      )}
+
+                      {/* 待归类区：未匹配到专项筛查分类的项目，优先处理 */}
+                      {unclassifiedN > 0 && (
+                        <div style={{ background: '#FFFBEB', border: '1px solid #FDE9B8', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#D97706', marginBottom: 8 }}>⚠ 待归类项目（{unclassifiedN}）— 请先归类或忽略</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                            {indexed.filter(({ it }) => !(it.matchStatus === 'matched' && it.screeningKey)).map(({ it, i }) => (
+                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ flex: 1, fontSize: 12, color: '#1A2B24', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {it.name || '(未命名)'}{it.value ? ` · ${it.value}${it.unit || ''}` : ''}
+                                </span>
+                                <div style={{ width: 210, flexShrink: 0 }}>{classifyCell(it, i)}</div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
 
                       {/* 区一：检验 / 数值指标 → 表格 */}
@@ -5393,14 +5444,19 @@ export default function PatientDetailPage() {
                   )
                 })()}
               </div>
+              </div>
               <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 0.7 }}
+                  disabled={ocrSaving} onClick={handleSaveOCRDraft}>
+                  {ocrSaving ? '保存中…' : '💾 保存草稿'}
+                </button>
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
                   disabled={ocrSaving} onClick={handleApproveOCR}>
-                  {ocrSaving ? '保存中…' : '✓ 审核通过并保存'}
+                  {ocrSaving ? '保存中…' : '✓ 提交审核（写入专项筛查）'}
                 </button>
                 <button className="btn btn-sm" style={{ flex: 0.5, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
                   disabled={ocrSaving} onClick={handleRejectOCR}>
-                  驳回 / 重新识别
+                  驳回
                 </button>
                 <button className="btn btn-secondary" onClick={() => setOcrReviewReport(null)}>取消</button>
               </div>

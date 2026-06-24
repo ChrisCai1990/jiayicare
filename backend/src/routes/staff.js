@@ -1028,6 +1028,25 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (mimeType !== undefined) report.mimeType = mimeType;
     if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
+
+    // 提交审核（reviewed）时，把已归类的检查项同步写入专项筛查（UserScreeningItem），客户端筛查树即时点亮
+    if (aiStatus === 'reviewed') {
+      try {
+        const UserScreeningItem = require('../models/UserScreeningItem');
+        const matched = (report.reportItems || []).filter(it => it.matchStatus === 'matched' && it.screeningKey);
+        for (const it of matched) {
+          const parts = String(it.screeningKey).split('|'); // 短码|二级|检查项
+          await UserScreeningItem.updateOne(
+            { user: report.user, itemId: it.screeningKey },
+            { $set: { category: parts[0] || it.screeningCategory || '', parentLabel: parts[1] || it.screeningParent || '', itemLabel: parts[2] || it.name || '', status: 'completed', reportId: report._id } },
+            { upsert: true }
+          );
+        }
+      } catch (syncErr) {
+        console.error('[screening-sync] 同步专项筛查失败', String(report._id), syncErr.message);
+      }
+    }
+
     res.json({ success: true, data: report });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -2863,6 +2882,12 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         const abnormal = (r.reportItems || []).filter(i => i.status === 'abnormal').map(i => i.name).join('、');
         const dateStr = (r.checkDate || r.date || '').slice(0, 10);
         reportSummaryLines.push(`  - ${r.screeningL2 || r.title}（${dateStr}）：${conclusion}${abnormal ? '；异常项：' + abnormal : ''}`);
+        // 检查项目（影像/内镜）完整检查所见+诊断意见，供 AI 做结节/斑块/分级历年变化对比
+        (r.reportItems || []).filter(i => i.itemType === 'imaging' && (i.findings || i.diagnosis)).forEach(img => {
+          const f = (img.findings || '').slice(0, 200);
+          const d = (img.diagnosis || '').slice(0, 100);
+          reportSummaryLines.push(`     · ${img.name}${img.bodyPart ? `(${img.bodyPart})` : ''}：检查所见「${f}」${d ? `；诊断「${d}」` : ''}`);
+        });
       });
     });
     const reportSummary = reportSummaryLines.length > 0 ? reportSummaryLines.join('\n') : '暂无专项筛查记录';
@@ -2917,7 +2942,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 
     const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。
 
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】综合评估。
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】综合评估。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。
 
 【患者基本信息】
 姓名：${user.name}，性别：${user.gender}，年龄：${user.age || '未知'}岁
