@@ -1032,7 +1032,6 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // 提交审核（reviewed）时，把已归类的检查项同步写入专项筛查（UserScreeningItem），客户端筛查树即时点亮
     if (aiStatus === 'reviewed') {
       try {
-        const UserScreeningItem = require('../models/UserScreeningItem');
         const matched = (report.reportItems || []).filter(it => it.matchStatus === 'matched' && it.screeningKey);
         for (const it of matched) {
           const parts = String(it.screeningKey).split('|'); // 短码|二级|检查项
