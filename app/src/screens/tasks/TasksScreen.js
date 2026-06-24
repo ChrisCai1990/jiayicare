@@ -420,7 +420,8 @@ export default function TasksScreen({ navigation }) {
   });
 
   const pendingFollowups = followupTasks.filter(f => f.status !== 'completed' && f.status !== 'cancelled' && !f.completedByUser);
-  const completedFollowups = followupTasks.filter(f => f.completedByUser);
+  // 已完成 = 用户自己标记完成 或 医护端执行完成(status=completed)
+  const completedFollowups = followupTasks.filter(f => f.completedByUser || f.status === 'completed');
   const allItems     = [
     ...tasks.filter(t => t.status !== 'completed'),
     ...reminders.filter(r => r.enabled).map(reminderToItem),
@@ -428,7 +429,7 @@ export default function TasksScreen({ navigation }) {
   ];
   const completedItems = [
     ...tasks.filter(t => t.status === 'completed'),
-    ...completedFollowups.map(f => ({ ...followupToItem(f), status: 'completed', completedAt: f.completedByUserAt })),
+    ...completedFollowups.map(f => ({ ...followupToItem(f), status: 'completed', completedAt: f.completedByUserAt || f.completedAt || f.date })),
   ];
 
   const today    = new Date().toISOString().slice(0, 10);

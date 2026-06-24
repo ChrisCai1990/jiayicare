@@ -672,7 +672,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
     const followups = await FollowUp.find({
       patientId: req.user._id,
       $or: [
-        { status: { $in: ['planned', 'in_progress'] } },
+        { status: { $in: ['planned', 'in_progress', 'completed'] } }, // 医护端完成的随访(status=completed)也要显示在「已完成」
         { completedByUser: true },
       ],
     })

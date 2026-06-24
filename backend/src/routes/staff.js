@@ -692,6 +692,7 @@ router.post('/followups', staffAuth, async (req, res) => {
     date: date ? new Date(date) : new Date(),
     type: type || 'phone',
     status: status || 'completed',
+    completedAt: (status || 'completed') === 'completed' ? new Date() : null, // 完成态记录完成时间
     content: content || '',
     theme: theme || '',
     cancelReason: cancelReason || '',
@@ -727,6 +728,12 @@ router.put('/followups/:id', staffAuth, async (req, res) => {
   allowed.forEach(k => {
     if (req.body[k] !== undefined) followUp[k] = req.body[k];
   });
+  // 完成时记录完成时间（供用户端「已完成」展示）；非完成态则清空
+  if (followUp.status === 'completed') {
+    if (!followUp.completedAt) followUp.completedAt = new Date();
+  } else {
+    followUp.completedAt = null;
+  }
   await followUp.save();
   res.json({ success: true, data: followUp });
 });
