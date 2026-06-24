@@ -425,6 +425,8 @@ export default function PatientDetailPage() {
   const [parsingReportId, setParsingReportId] = useState(null)
   const [editingAISummary, setEditingAISummary] = useState(false)
   const [aiSummaryForm, setAiSummaryForm] = useState({})
+  const [aiYear, setAiYear] = useState(null)        // 当前查看的AI汇总分析年度
+  const [genYear, setGenYear] = useState(String(new Date().getFullYear())) // 生成时选择的年度
   // 场景八：AI风险评估
   const [riskGenerating, setRiskGenerating] = useState(false)
   const [riskApproving, setRiskApproving] = useState(false)
@@ -827,12 +829,14 @@ export default function PatientDetailPage() {
   }
 
   // 4.4 AI汇总
-  const handleGenerateAISummary = async () => {
+  const handleGenerateAISummary = async (year) => {
+    const y = String(year || new Date().getFullYear())
     try {
       setAiSummaryLoading(true)
-      const res = await staffAPI.generateAIHealthSummary(id)
+      const res = await staffAPI.generateAIHealthSummary(id, y)
       setAiSummaryForm(res.data)
-      toast('AI分析已生成')
+      setAiYear(y)
+      toast(`${y}年度AI分析已生成`)
       load()
     } catch (err) { toast(err.message || 'AI生成失败') }
     finally { setAiSummaryLoading(false) }
@@ -898,6 +902,7 @@ export default function PatientDetailPage() {
     try {
       const payload = {
         sections: cleanSections(aiSummaryForm.sections),
+        ...(aiYear ? { year: aiYear } : {}),
         ...(approve ? { action: 'approve' } : {}),
       }
       await staffAPI.updateAIHealthSummary(id, payload)
@@ -3581,8 +3586,19 @@ export default function PatientDetailPage() {
 
       {/* ── AI Tab ── */}
       {tab === 'ai' && (() => {
-        const ais = user.aiHealthSummary || {}
-        // 编辑模式用 aiSummaryForm.sections，查看模式用 ais.sections
+        const aisRoot = user.aiHealthSummary || {}
+        // 按年度组织（兼容旧数据：无 byYear 但有 sections → 归到其年份或2026）
+        let byYear = aisRoot.byYear || {}
+        if (Object.keys(byYear).length === 0 && aisRoot.sections) {
+          const oy = String(aisRoot.generatedAt ? new Date(aisRoot.generatedAt).getFullYear() : 2026)
+          byYear = { [oy]: { sections: aisRoot.sections, generatedAt: aisRoot.generatedAt, approvedAt: aisRoot.approvedAt, approvedBy: aisRoot.approvedBy } }
+        }
+        const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
+        const curYear = (aiYear && byYear[aiYear]) ? aiYear : (years[0] || String(new Date().getFullYear()))
+        const ais = byYear[curYear] || {}
+        const nowY = new Date().getFullYear()
+        const yearOpts = [...new Set([...years, String(nowY - 1), String(nowY), String(nowY + 1)])].sort((a, b) => Number(b) - Number(a))
+        // 编辑模式用 aiSummaryForm.sections，查看模式用当前年度 ais.sections
         const sec = editingAISummary ? (aiSummaryForm.sections || {}) : (ais.sections || {})
         const hasData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.chronic_disease)
 
@@ -3616,20 +3632,38 @@ export default function PatientDetailPage() {
 
         return (
           <div>
+            {/* 年度选择条 */}
+            {years.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 12, color: '#8AA89C', marginRight: 2 }}>📅 年度</span>
+                {years.map(y => {
+                  const active = y === curYear
+                  return (
+                    <button key={y} onClick={() => { setAiYear(y); setEditingAISummary(false) }}
+                      style={{ padding: '5px 14px', borderRadius: 8, fontSize: 13, fontWeight: active ? 700 : 500,
+                        border: `1px solid ${active ? '#1E6B50' : '#E0D9CE'}`, background: active ? '#E8F5EF' : '#fff',
+                        color: active ? '#1E6B50' : '#4A6558', cursor: 'pointer' }}>
+                      {y}年度{byYear[y]?.approvedAt ? ' ✓' : ''}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
             {/* 操作栏 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
               {ais.approvedAt ? (
-                <div style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', borderRadius: 6, padding: '4px 10px', flex: 1 }}>
-                  ✓ 已审核确认 {ais.approvedBy && `· ${ais.approvedBy}`} · {new Date(ais.approvedAt).toLocaleDateString('zh-CN')}
+                <div style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', borderRadius: 6, padding: '4px 10px', flex: 1, minWidth: 180 }}>
+                  ✓ {curYear}年度 已审核确认 {ais.approvedBy && `· ${ais.approvedBy}`} · {new Date(ais.approvedAt).toLocaleDateString('zh-CN')}
                 </div>
               ) : (
-                <div style={{ fontSize: 12, color: '#8AA89C', flex: 1 }}>
-                  {hasData ? `生成时间：${new Date(ais.generatedAt).toLocaleString('zh-CN')}` : '尚未生成'}
+                <div style={{ fontSize: 12, color: '#8AA89C', flex: 1, minWidth: 180 }}>
+                  {hasData ? `${curYear}年度 · 生成时间：${new Date(ais.generatedAt).toLocaleString('zh-CN')}` : '该年度尚未生成'}
                 </div>
               )}
               {!editingAISummary && hasData && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
                   setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) })
+                  setAiYear(curYear)
                   setEditingAISummary(true)
                 }}>编辑修改</button>
               )}
@@ -3640,14 +3674,22 @@ export default function PatientDetailPage() {
                   <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(true)}>审核确认</button>
                 </>
               )}
-              <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={handleGenerateAISummary}>
-                {aiSummaryLoading ? '生成中…' : hasData ? '重新生成' : '生成AI分析'}
-              </button>
+              {!editingAISummary && (
+                <>
+                  <select value={genYear} onChange={e => setGenYear(e.target.value)}
+                    style={{ padding: '5px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 13, color: '#1A2B24' }}>
+                    {yearOpts.map(y => <option key={y} value={y}>{y}年度</option>)}
+                  </select>
+                  <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(genYear)}>
+                    {aiSummaryLoading ? '生成中…' : (byYear[genYear] ? `重新生成${genYear}` : `生成${genYear}年度`)}
+                  </button>
+                </>
+              )}
             </div>
 
             {!hasData ? (
               <div className="card" style={{ textAlign: 'center', padding: 40, color: '#8AA89C', fontSize: 14 }}>
-                点击「生成AI分析」，基于所有历年体检指标和筛查报告，自动生成5大板块综合健康分析
+                选择年度后点击「生成」，基于所有历年体检指标和筛查报告，自动生成该年度的5大板块综合健康分析
               </div>
             ) : (
               <>

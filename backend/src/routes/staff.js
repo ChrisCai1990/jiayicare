@@ -2945,7 +2945,17 @@ ${reportSummary}
       checkup_completeness: { covered: [], missing: [], suggestion: '' },
     };
 
-    const summary = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null };
+    // 按年度归档：body.year 指定生成的年度，默认当前年
+    const year = String(req.body.year || new Date().getFullYear());
+    const existing = user.aiHealthSummary || {};
+    const byYear = { ...(existing.byYear || {}) };
+    // 旧数据迁移：有顶层 sections 但无 byYear，先归档到其原年份（默认2026）
+    if (existing.sections && Object.keys(byYear).length === 0) {
+      const oy = String(existing.generatedAt ? new Date(existing.generatedAt).getFullYear() : 2026);
+      byYear[oy] = { sections: existing.sections, generatedAt: existing.generatedAt || null, approvedAt: existing.approvedAt || null, approvedBy: existing.approvedBy || null };
+    }
+    byYear[year] = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null };
+    const summary = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null, byYear, latestYear: year };
 
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
@@ -2961,17 +2971,25 @@ ${reportSummary}
 // PATCH /api/staff/patients/:id/ai-health-summary
 router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
-    const { sections, sectionNotes, action } = req.body;
+    const { sections, sectionNotes, action, year } = req.body;
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
     const current = user.aiHealthSummary || {};
     const updated = { ...current };
+    const byYear = { ...(updated.byYear || {}) };
+    // 编辑/审核针对具体年度（默认顶层年度或当前年）
+    const y = String(year || updated.latestYear || (updated.generatedAt ? new Date(updated.generatedAt).getFullYear() : new Date().getFullYear()));
+    const entry = { ...(byYear[y] || {}) };
+    if (sections !== undefined) entry.sections = sections;
+    if (sectionNotes !== undefined) entry.sectionNotes = sectionNotes;
+    if (action === 'approve') { entry.approvedAt = new Date(); entry.approvedBy = req.staff.name; }
+    byYear[y] = entry;
+    updated.byYear = byYear;
+    // 同步顶层指向被编辑年度（兼容 ai-annual-plan 读取 ais.sections）
     if (sections !== undefined) updated.sections = sections;
     if (sectionNotes !== undefined) updated.sectionNotes = sectionNotes;
-    if (action === 'approve') {
-      updated.approvedAt = new Date();
-      updated.approvedBy = req.staff.name;
-    }
+    if (action === 'approve') { updated.approvedAt = entry.approvedAt; updated.approvedBy = entry.approvedBy; }
+    updated.latestYear = y;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
       { $set: { aiHealthSummary: updated } }
