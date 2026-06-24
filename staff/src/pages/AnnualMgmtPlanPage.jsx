@@ -339,6 +339,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [plan, setPlan]             = useState(null)
   const [planType, setPlanType]     = useState('')
   const [moduleData, setModuleData] = useState({})
+  const [plansByType, setPlansByType] = useState({}) // patientMode: { planType: plan }，4个类型各存一份
   const [year, setYear]             = useState(new Date().getFullYear())
   const [loading, setLoading]       = useState(true)
   const [saving, setSaving]         = useState(false)
@@ -356,12 +357,18 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         staffAPI.getAnnualPlan(id, year),
       ]).then(([patRes, planRes]) => {
         setPatient(patRes.data?.user || patRes.data)
-        const p = planRes.data
-        if (p) {
-          setPlanType(p.planType || '')
-          setModuleData(p.moduleData || {})
-          setPushedAt(p.pushedAt || null)
-          setConfirmedAt(p.confirmedAt || null)
+        // 后端返回该年度全部类型的方案数组，按 updatedAt 降序
+        const list = Array.isArray(planRes.data) ? planRes.data : (planRes.data ? [planRes.data] : [])
+        const map = {}
+        list.forEach(p => { if (p.planType) map[p.planType] = p })
+        setPlansByType(map)
+        // 默认选中最近编辑过的那一份，没有则不选
+        const first = list.find(p => p.planType)
+        if (first) {
+          setPlanType(first.planType)
+          setModuleData(first.moduleData || {})
+          setPushedAt(first.pushedAt || null)
+          setConfirmedAt(first.confirmedAt || null)
         } else {
           setPlanType('')
           setModuleData({})
@@ -395,8 +402,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }, [])
 
   const handlePlanTypeChange = (key) => {
+    // 旧流程（HealthPlan）只有一份数据，保持原行为
+    if (!patientMode) { setPlanType(key); setDirty(true); return }
+    if (key === planType) return
+    if (dirty && !window.confirm('当前方案有未保存的更改，切换类型会丢失这些更改，确认切换？')) return
+    // 加载该类型自己的数据（每个类型独立一份）
+    const p = plansByType[key]
     setPlanType(key)
-    setDirty(true)
+    setModuleData(p?.moduleData || {})
+    setPushedAt(p?.pushedAt || null)
+    setConfirmedAt(p?.confirmedAt || null)
+    setDirty(false)
   }
 
   const handleSave = async () => {
@@ -404,7 +420,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setSaving(true)
     try {
       if (patientMode) {
-        await staffAPI.saveAnnualPlan(id, { planType, moduleData, year })
+        const res = await staffAPI.saveAnnualPlan(id, { planType, moduleData, year })
+        const saved = res.data
+        if (saved) {
+          setPlansByType(prev => ({ ...prev, [planType]: saved }))
+          setPushedAt(saved.pushedAt || null)
+          setConfirmedAt(saved.confirmedAt || null)
+        }
       } else {
         await staffAPI.updatePlan(id, { content: { planType, moduleData } })
       }
@@ -452,8 +474,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!window.confirm('确定将此年度管理方案推送给客户？客户端将立即可见。')) return
     setPushing(true)
     try {
-      const res = await staffAPI.pushAnnualPlan(id, year)
-      setPushedAt(res.data?.pushedAt || new Date().toISOString())
+      const res = await staffAPI.pushAnnualPlan(id, year, planType)
+      const pushedAtVal = res.data?.pushedAt || new Date().toISOString()
+      setPushedAt(pushedAtVal)
+      setPlansByType(prev => prev[planType]
+        ? { ...prev, [planType]: { ...prev[planType], pushedAt: pushedAtVal } }
+        : prev)
       toast('方案已推送给客户')
     } catch (err) {
       toast(err.message || '推送失败，请先保存方案')
@@ -560,7 +586,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             >
               <span style={{ fontSize: 22 }}>{pt.icon}</span>
               <div style={{ fontWeight: 600, fontSize: 14, color: planType === pt.key ? pt.color : '#1A2B24' }}>{pt.name}</div>
-              {planType === pt.key && <span style={{ marginLeft: 'auto', color: pt.color, fontSize: 18 }}>✓</span>}
+              {patientMode && plansByType[pt.key] && (
+                <span style={{
+                  marginLeft: planType === pt.key ? 8 : 'auto', fontSize: 11, fontWeight: 600,
+                  color: plansByType[pt.key].pushedAt ? '#22A06B' : '#8AA89C',
+                  background: plansByType[pt.key].pushedAt ? '#E8F5EF' : '#F2EDE3',
+                  padding: '1px 7px', borderRadius: 10,
+                }}>{plansByType[pt.key].pushedAt ? '已推送' : '已配置'}</span>
+              )}
+              {planType === pt.key && <span style={{ marginLeft: plansByType[pt.key] ? 6 : 'auto', color: pt.color, fontSize: 18 }}>✓</span>}
             </div>
           ))}
         </div>

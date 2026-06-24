@@ -2237,11 +2237,17 @@ router.get('/annual-health-plans', staffAuth, async (req, res) => {
 // ── 年度管理方案 ─────────────────────────────────────────────────────
 router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   try {
-    const { year } = req.query;
+    const { year, planType } = req.query;
     const query = { patientId: req.params.id };
     if (year) query.year = parseInt(year);
-    const plan = await AnnualPlan.findOne(query).sort({ year: -1 });
-    res.json({ success: true, data: plan || null });
+    // 指定 planType → 返回该类型单份；否则返回该年度全部类型的方案数组
+    if (planType !== undefined && planType !== '') {
+      query.planType = planType;
+      const plan = await AnnualPlan.findOne(query);
+      return res.json({ success: true, data: plan || null });
+    }
+    const plans = await AnnualPlan.find(query).sort({ year: -1, updatedAt: -1 });
+    res.json({ success: true, data: plans });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -2250,9 +2256,11 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
 router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   try {
     const { planType, moduleData, notes, year } = req.body;
+    if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
     const targetYear = year || new Date().getFullYear();
+    // 按「患者+年度+方案类型」定位，4个类型各存一份，互不覆盖
     const plan = await AnnualPlan.findOneAndUpdate(
-      { patientId: req.params.id, year: targetYear },
+      { patientId: req.params.id, year: targetYear, planType },
       { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.staff._id },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
@@ -2265,23 +2273,31 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
 // ── PATCH /api/staff/patients/:id/annual-plan/push ────────────────
 router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
   try {
-    const { year } = req.query;
+    const { year, planType } = req.query;
     const targetYear = year ? parseInt(year) : new Date().getFullYear();
+    const query = { patientId: req.params.id, year: targetYear };
+    if (planType) query.planType = planType;
     const plan = await AnnualPlan.findOneAndUpdate(
-      { patientId: req.params.id, year: targetYear },
+      query,
       { pushedAt: new Date(), pushedBy: req.staff._id },
       { new: true }
     );
     if (!plan) return res.status(404).json({ success: false, message: '方案不存在，请先保存' });
-    // 同步写 PushRecord，让用户在消息中心收到通知
+    const PLAN_TYPE_NAMES = {
+      health_reshape: '健康重塑方案', young_state: '健康年轻态方案',
+      chronic_stable: '慢病维稳方案', health_prevention: '健康预防方案',
+    };
+    const typeName = PLAN_TYPE_NAMES[plan.planType] || '健康管理方案';
+    const pushTitle = `${targetYear}年度${typeName}`;
+    // 同步写 PushRecord，让用户在消息中心收到通知（每个类型独立一条）
     const existing = await PushRecord.findOne({ patientId: req.params.id, type: 'plan', questionnaireId: null,
-      title: `${targetYear}年度管理方案` });
+      title: pushTitle });
     if (!existing) {
       await PushRecord.create({
         staffId: req.staff._id, patientId: req.params.id,
         type: 'plan',
-        title: `${targetYear}年度管理方案`,
-        content: '您的年度健康管理方案已发布，请前往"健康方案"查看。',
+        title: pushTitle,
+        content: `您的${typeName}已发布，请前往"健康方案"查看。`,
       });
     }
     res.json({ success: true, data: plan });

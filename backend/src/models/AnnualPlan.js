@@ -13,7 +13,7 @@ const annualPlanSchema = new mongoose.Schema({
   confirmedAt: { type: Date, default: null },
 }, { timestamps: true });
 
-// 同一会员同一年度只有一份（upsert）
-annualPlanSchema.index({ patientId: 1, year: 1 }, { unique: true });
+// 同一会员同一年度、每个方案类型各一份（4个类型独立存储，upsert）
+annualPlanSchema.index({ patientId: 1, year: 1, planType: 1 }, { unique: true });
 
 module.exports = mongoose.model('AnnualPlan', annualPlanSchema);

@@ -201,7 +201,7 @@ export const staffAPI = {
   getAnnualHealthPlans: (year)         => req(`/staff/annual-health-plans` + (year ? `?year=${year}` : '')),
   getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
-  pushAnnualPlan:       (patientId, year) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}`, { method: 'PATCH' }),
+  pushAnnualPlan:       (patientId, year, planType) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH' }),
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),
   startOrder:           (orderId, data)   => req(`/staff/orders/${orderId}/start`, { method: 'PATCH', body: JSON.stringify(data) }),
