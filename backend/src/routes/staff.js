@@ -3846,6 +3846,7 @@ function safeParseJSON(text) {
 async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, pdfBufferToImages, isPdfReport } = require('../utils/pdf');
+  const { classifyItems } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
@@ -3892,14 +3893,16 @@ async function runReportParse(reportId) {
         if (!institution && p.institution) institution = p.institution;
         if (!checkDate && p.checkDate) checkDate = p.checkDate;
       }
+      const classified = classifyItems(allItems);
+      const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       await MedicalReport.findByIdAndUpdate(reportId, {
-        reportItems: allItems,
+        reportItems: classified,
         aiSummary:   [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n'),
         aiStatus:    'pending',
         institution, checkDate,
       });
       const totalMs = Date.now() - t0;
-      console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 成功${okPages}页 提取${allItems.length}项 | 转图${(convMs/1000).toFixed(1)}s 识别${((totalMs-convMs)/1000).toFixed(1)}s 总耗时${(totalMs/1000).toFixed(1)}s`);
+      console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 成功${okPages}页 提取${allItems.length}项 自动归类${matchedCount}项 | 转图${(convMs/1000).toFixed(1)}s 识别${((totalMs-convMs)/1000).toFixed(1)}s 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
     }
 
@@ -3907,14 +3910,15 @@ async function runReportParse(reportId) {
     const buf = await fetchReportBuffer(report, UPLOADS_DIR);
     const text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus' });
     const parsed = safeParseJSON(text);
+    const classifiedImg = classifyItems(parsed?.items || []);
     await MedicalReport.findByIdAndUpdate(reportId, {
-      reportItems: parsed?.items || [],
+      reportItems: classifiedImg,
       aiSummary:   parsed?.summary || '',
       aiStatus:    'pending',
       institution: parsed?.institution || report.institution,
       checkDate:   parsed?.checkDate   || report.checkDate,
     });
-    console.log(`[parse-ai] 图片完成 ${reportId} 提取${parsed?.items?.length || 0}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
+    console.log(`[parse-ai] 图片完成 ${reportId} 提取${parsed?.items?.length || 0}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
     await MedicalReport.findByIdAndUpdate(reportId, {
@@ -3967,6 +3971,17 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'AI解析失败：' + err.message });
+  }
+});
+
+// GET /api/staff/screening-catalog — 专项筛查静态分类目录（OCR自动/手动归类下拉用，后端单一数据源）
+// 注意：与上方 /screening-tree（管理端套餐动态读取的 L1 树）是不同用途，勿混用
+router.get('/screening-catalog', staffAuth, (req, res) => {
+  try {
+    const { buildTree } = require('../config/screeningTree');
+    res.json({ success: true, data: buildTree() });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

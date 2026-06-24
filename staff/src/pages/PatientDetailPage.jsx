@@ -435,6 +435,8 @@ export default function PatientDetailPage() {
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrSaving, setOcrSaving] = useState(false)
+  const [screeningCatalog, setScreeningCatalog] = useState([])
+  useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
 
   const load = async () => {
     try {
@@ -5234,6 +5236,29 @@ export default function PatientDetailPage() {
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
         const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
+        // 专项筛查归类：选项分组 + 手动归类
+        const classifyGroups = screeningCatalog.map(cat => ({
+          label: cat.label,
+          opts: cat.parents.flatMap(p => p.items.map(it => ({ value: it.id, label: `${p.parent} / ${it.label}` }))),
+        }))
+        const setClassify = (i, key) => {
+          if (!key) return updItem(i, { screeningKey: '', screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 })
+          const parts = key.split('|')
+          updItem(i, { screeningKey: key, screeningCategory: parts[0], screeningParent: parts[1], matchStatus: 'matched', matchConfidence: 1 })
+        }
+        const matchedN = ocrEditItems.filter(it => it.matchStatus === 'matched' && it.screeningKey).length
+        const unclassifiedN = ocrEditItems.length - matchedN
+        const classifyCell = (it, i) => (
+          <select style={{ width: '100%', padding: '3px 4px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, boxSizing: 'border-box', color: it.screeningKey ? '#1E6B50' : '#D97706', background: it.screeningKey ? '#fff' : '#FFFBEB' }}
+            value={it.screeningKey || ''} onChange={e => setClassify(i, e.target.value)}>
+            <option value="">⚠ 待归类</option>
+            {classifyGroups.map(g => (
+              <optgroup key={g.label} label={g.label}>
+                {g.opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </optgroup>
+            ))}
+          </select>
+        )
         return (
           <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setOcrReviewReport(null) }}>
             <div className="modal" style={{ maxWidth: 820, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
@@ -5262,6 +5287,8 @@ export default function PatientDetailPage() {
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
                           {abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已归类 {matchedN}</span>
+                          {unclassifiedN > 0 && <span style={{ marginLeft: 6, fontWeight: 400, color: '#D97706' }}>待归类 {unclassifiedN}（请在下方逐项选择）</span>}
                         </div>
                         {abn.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -5297,12 +5324,13 @@ export default function PatientDetailPage() {
                               <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 70 }}>单位</th>
                               <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 110 }}>参考范围</th>
                               <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 80 }}>状态</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 150 }}>专项筛查归类</th>
                               <th style={{ padding: '6px 4px', width: 32 }}></th>
                             </tr>
                           </thead>
                           <tbody>
                             {labRows.length === 0 ? (
-                              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>无检验数值项，可点「新增检验项」手动录入</td></tr>
+                              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>无检验数值项，可点「新增检验项」手动录入</td></tr>
                             ) : labRows.map(({ it, i }) => {
                               const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
                               return (
@@ -5316,6 +5344,7 @@ export default function PatientDetailPage() {
                                       {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
                                     </select>
                                   </td>
+                                  <td style={{ padding: '4px 6px' }}>{classifyCell(it, i)}</td>
                                   <td style={{ padding: '4px 4px', textAlign: 'center' }}>
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </td>
@@ -5347,6 +5376,10 @@ export default function PatientDetailPage() {
                                   <textarea style={{ ...inp, minHeight: 64, lineHeight: 1.6, resize: 'vertical' }} value={it.findings || ''} placeholder="检查所见，如：右肺上叶见磨玻璃结节，直径约5mm…" onChange={e => updItem(i, { findings: e.target.value })} />
                                   <div style={{ fontSize: 11, color: '#8AA89C', margin: '6px 0 2px' }}>诊断意见</div>
                                   <textarea style={{ ...inp, minHeight: 44, lineHeight: 1.6, resize: 'vertical' }} value={it.diagnosis || ''} placeholder="诊断意见，如：右肺上叶磨玻璃结节，建议3个月后复查" onChange={e => updItem(i, { diagnosis: e.target.value })} />
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                                    <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>专项筛查归类</span>
+                                    <div style={{ flex: 1 }}>{classifyCell(it, i)}</div>
+                                  </div>
                                 </div>
                               )
                             })}

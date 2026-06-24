@@ -80,7 +80,7 @@ const NODES = [
   { id: 'tumor|鼻咽癌|鼻咽镜', category: 'tumor', categoryKey: 'tumor', parent: '鼻咽癌', label: '鼻咽镜', itemType: 'imaging', gender: null,
     aliases: ['电子鼻咽镜', '鼻内镜'] },
   { id: 'tumor|肾癌|肾脏超声', category: 'tumor', categoryKey: 'tumor', parent: '肾癌', label: '肾脏超声', itemType: 'imaging', gender: null,
-    aliases: ['肾脏彩超', '双肾超声', '泌尿系彩超', '双肾输尿管膀胱超声'] },
+    aliases: ['肾脏彩超', '双肾超声', '双肾彩超', '肾彩超', '泌尿系彩超', '双肾输尿管膀胱超声'] },
   { id: 'tumor|肿瘤标志物|甲胎蛋白', category: 'tumor', categoryKey: 'tumor', parent: '肿瘤标志物', label: '甲胎蛋白', itemType: 'lab', gender: null,
     aliases: ['AFP'] },
   { id: 'tumor|肿瘤标志物|癌胚抗原', category: 'tumor', categoryKey: 'tumor', parent: '肿瘤标志物', label: '癌胚抗原', itemType: 'lab', gender: null,
