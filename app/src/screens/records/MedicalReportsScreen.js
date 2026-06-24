@@ -85,6 +85,21 @@ function MiniLineChart({ points = [], color = colors.primary, label }) {
 
 function ReportItemRow({ item }) {
   const statusColor = ITEM_STATUS_COLOR[item.status] || colors.textMuted;
+  // 检查项目（影像/内镜/CT/MRI 等）：完整展示 检查部位/检查所见/诊断意见
+  const isImaging = item.itemType === 'imaging' || (!item.value && (item.findings || item.diagnosis));
+  if (isImaging) {
+    const findings = item.findings || item.value || '';
+    return (
+      <View style={[styles.itemRow, { flexDirection: 'column', alignItems: 'stretch' }]}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={styles.itemName}>{item.name}</Text>
+          {item.bodyPart ? <Text style={styles.itemRef}>· {item.bodyPart}</Text> : null}
+        </View>
+        {findings ? <Text style={[styles.itemRef, { marginTop: 2 }]}>检查所见：{findings}</Text> : null}
+        {item.diagnosis ? <Text style={[styles.itemRef, { marginTop: 2, color: statusColor }]}>诊断意见：{item.diagnosis}</Text> : null}
+      </View>
+    );
+  }
   return (
     <View style={styles.itemRow}>
       <View style={{ flex: 1 }}>

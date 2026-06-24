@@ -9,6 +9,20 @@ const reportItemSchema = new mongoose.Schema({
   status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown' },
   itemType:       { type: String, enum: ['lab', 'imaging', 'data'], default: 'lab' }, // 检验/影像文字/数据曲线类
   orderName:      { type: String, default: '' }, // 所属检验医嘱组名（用于编辑时还原分组）
+
+  // ── 检查项目（imaging：超声/内镜/CT/MRI/心电图等）完整内容（需求：AI体检报告·检查项完整展示）──
+  bodyPart:    { type: String, default: '' }, // 检查部位
+  findings:    { type: String, default: '' }, // 检查所见（完整原文，禁止截断）
+  diagnosis:   { type: String, default: '' }, // 诊断意见（完整原文）
+  examDate:    { type: String, default: '' }, // 检查时间（item 级，空则回退报告级 checkDate）
+  institution: { type: String, default: '' }, // 检查机构（item 级，空则回退报告级 institution）
+
+  // ── 专项筛查自动归类标记（批次2 匹配引擎写入；批次1 先建字段）──
+  screeningKey:      { type: String, default: '' }, // 命中筛查树节点 id：`category|parent|label`
+  screeningCategory: { type: String, default: '' }, // 一级分类 key（tumor/cardiovascular/...）
+  screeningParent:   { type: String, default: '' }, // 二级（如「肺癌」）
+  matchStatus:       { type: String, enum: ['matched', 'unclassified'], default: 'unclassified' },
+  matchConfidence:   { type: Number, default: 0 },   // 匹配置信度 0-1
 }, { _id: false });
 
 const medicalReportSchema = new mongoose.Schema({

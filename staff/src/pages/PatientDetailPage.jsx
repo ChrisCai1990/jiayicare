@@ -853,7 +853,13 @@ export default function PatientDetailPage() {
 
   const handleOpenOCRReview = (r) => {
     setOcrReviewReport(r)
-    setOcrEditItems(JSON.parse(JSON.stringify(r.reportItems || [])))
+    // 旧数据迁移：影像/检查类若把所见写在 value 里且 findings 为空，迁移到 findings
+    const items = JSON.parse(JSON.stringify(r.reportItems || [])).map(it => {
+      const isImg = it.itemType === 'imaging' || (it.value || '').length > 40
+      if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
+      return it
+    })
+    setOcrEditItems(items)
   }
 
   const handleApproveOCR = async () => {
@@ -994,7 +1000,9 @@ export default function PatientDetailPage() {
           : [{ name: order.name, value: order.value || '', unit: order.unit || '', referenceRange: order.referenceRange || '', status: order.status || 'normal', orderName: '' }]
       )
       const funcAsReportItems = (screeningForm.funcTestItems || []).map(f => ({ name: f.name, value: f.result || '', unit: '', referenceRange: '', status: 'unknown', itemType: 'data' }))
-      const allReportItems = [...flatLabItems, ...funcAsReportItems]
+      // 保留 OCR 识别的检查项目（影像/内镜等，含检查所见/诊断意见），手动编辑不丢失
+      const imagingItems = (screeningForm._imagingItems || []).map(i => ({ ...i, itemType: 'imaging' }))
+      const allReportItems = [...flatLabItems, ...funcAsReportItems, ...imagingItems]
       const examDesc = (screeningForm.examOrderItems || []).map(e => { if (!e.name) return ''; return e.description ? `【${e.name}】\n${e.description}` : `【${e.name}】` }).filter(Boolean).join('\n\n') || screeningForm.examDescription || ''
       const examConc = (screeningForm.examOrderItems || []).map(e => { if (!e.name) return ''; return e.conclusion ? `【${e.name}】\n${e.conclusion}` : `【${e.name}】` }).filter(Boolean).join('\n\n') || screeningForm.examConclusion || ''
       const allL3Names = [...(screeningForm.reportItems || []).map(r => r.name), ...(screeningForm.examOrderItems || []).map(e => e.name), ...(screeningForm.funcTestItems || []).map(f => f.name)].filter(Boolean)
@@ -2253,7 +2261,8 @@ export default function PatientDetailPage() {
                 return { name, description, conclusion }
               })
             }
-            const savedLabItems = (r.reportItems || []).filter(i => i.itemType !== 'data')
+            const savedLabItems = (r.reportItems || []).filter(i => i.itemType !== 'data' && i.itemType !== 'imaging')
+            const savedImagingItems = (r.reportItems || []).filter(i => i.itemType === 'imaging') // 原样保留，避免手动编辑时丢失检查所见/诊断意见
             const funcItems = (r.reportItems || []).filter(i => i.itemType === 'data').map(i => ({ name: i.name, result: i.value || '' }))
             const examItems = parseExamItems(r.examDescription, r.examConclusion)
             // 按 orderName 还原分组（orderName 为空说明是旧数据或手动添加的单项）
@@ -2280,7 +2289,7 @@ export default function PatientDetailPage() {
               checkDate: r.checkDate || '', hospital: r.hospital || '', note: r.note || '',
               reportItems: labItems, examOrderItems: examItems, funcTestItems: funcItems,
               examDescription: r.examDescription || '', examConclusion: r.examConclusion || '',
-              linkedItemType: null,
+              linkedItemType: null, _imagingItems: savedImagingItems,
             })
             setEditingScreeningId(r._id)
             setScreeningFiles([])
@@ -2304,10 +2313,11 @@ export default function PatientDetailPage() {
               : (r.fileUrl ? [r.fileUrl] : [])
             const resolvedUrls = allUrls.map(u => u.startsWith('/') ? API_ORIGIN + u : u)
             const fullUrl = resolvedUrls[0] || null
-            const labItems = (r.reportItems || []).filter(i => i.itemType !== 'data')
+            const labItems = (r.reportItems || []).filter(i => i.itemType !== 'data' && i.itemType !== 'imaging')
+            const imgItems = (r.reportItems || []).filter(i => i.itemType === 'imaging')
             const funcItems = (r.reportItems || []).filter(i => i.itemType === 'data')
             const hasExam = r.examDescription || r.examConclusion
-            const totalCount = labItems.length + funcItems.length + (hasExam ? 1 : 0)
+            const totalCount = labItems.length + imgItems.length + funcItems.length + (hasExam ? 1 : 0)
             return (
               <div key={r._id} style={{ padding: '6px 0 6px 12px', borderLeft: `2px solid ${color}40`, marginBottom: 2 }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -2376,6 +2386,29 @@ export default function PatientDetailPage() {
                         </div>
                       )
                     })()}
+                    {/* 检查项目（OCR 影像/内镜/CT/MRI 等，完整检查所见+诊断意见） */}
+                    {imgItems.length > 0 && (
+                      <div style={{ marginBottom: 8 }}>
+                        <div style={{ fontSize: 11, fontWeight: 600, color: '#0369A1', marginBottom: 4 }}>检查项目</div>
+                        {imgItems.map((item, j) => {
+                          const findings = item.findings || item.value || ''
+                          return (
+                            <div key={j} style={{ border: '1px solid #BFDBFE', borderRadius: 6, marginBottom: 6, overflow: 'hidden' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#EFF6FF' }}>
+                                <span style={{ fontWeight: 600, color: '#1E40AF', fontSize: 12 }}>{item.name}</span>
+                                {item.bodyPart && <span style={{ fontSize: 11, color: '#3B82F6' }}>· {item.bodyPart}</span>}
+                                {(item.examDate || r.checkDate) && <span style={{ fontSize: 11, color: '#93C5FD', marginLeft: 'auto' }}>{item.examDate || r.checkDate}</span>}
+                              </div>
+                              <div style={{ padding: '6px 10px', fontSize: 12, background: '#fff', lineHeight: 1.7 }}>
+                                {findings && <div style={{ color: '#374151', marginBottom: 4, whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>检查所见：</span>{findings}</div>}
+                                {item.diagnosis && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>诊断意见：</span>{item.diagnosis}</div>}
+                                {!findings && !item.diagnosis && <span style={{ color: '#9CA3AF' }}>暂无检查所见/诊断意见</span>}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
                     {/* 检查医嘱 */}
                     {hasExam && (() => {
                       const descBlocks = (r.examDescription || '').split('\n\n').map(b => b.trim()).filter(Boolean)
@@ -5304,12 +5337,16 @@ export default function PatientDetailPage() {
                                 <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#fafaf8' }}>
                                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
                                     <input style={{ ...inp, fontWeight: 600, flex: 1 }} value={it.name || ''} placeholder="检查名称（如 胸部CT、肠镜）" onChange={e => updItem(i, { name: e.target.value })} />
+                                    <input style={{ ...inp, width: 110 }} value={it.bodyPart || ''} placeholder="检查部位" onChange={e => updItem(i, { bodyPart: e.target.value })} />
                                     <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>
                                       {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
                                     </select>
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </div>
-                                  <textarea style={{ ...inp, minHeight: 64, lineHeight: 1.6, resize: 'vertical' }} value={it.value || ''} placeholder="检查所见 / 诊断意见" onChange={e => updItem(i, { value: e.target.value })} />
+                                  <div style={{ fontSize: 11, color: '#8AA89C', margin: '2px 0' }}>检查所见（完整原文）</div>
+                                  <textarea style={{ ...inp, minHeight: 64, lineHeight: 1.6, resize: 'vertical' }} value={it.findings || ''} placeholder="检查所见，如：右肺上叶见磨玻璃结节，直径约5mm…" onChange={e => updItem(i, { findings: e.target.value })} />
+                                  <div style={{ fontSize: 11, color: '#8AA89C', margin: '6px 0 2px' }}>诊断意见</div>
+                                  <textarea style={{ ...inp, minHeight: 44, lineHeight: 1.6, resize: 'vertical' }} value={it.diagnosis || ''} placeholder="诊断意见，如：右肺上叶磨玻璃结节，建议3个月后复查" onChange={e => updItem(i, { diagnosis: e.target.value })} />
                                 </div>
                               )
                             })}

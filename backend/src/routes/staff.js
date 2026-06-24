@@ -3796,13 +3796,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
   }
 });
 
-const REPORT_PARSE_PROMPT = `请分析这份体检报告图片，提取所有检验/检查项目。
+const REPORT_PARSE_PROMPT = `请分析这份体检报告图片，提取所有检验项目和检查项目。区分两类：
+
+【检验项目】血常规、生化、肿瘤标志物等数值型结果 → itemType="lab"，填写 name/value/unit/referenceRange/status，检查类字段留空。
+【检查项目】超声、内镜、CT、MRI、心电图、病理等描述型结果 → itemType="imaging"，填写 name、bodyPart(检查部位)、findings(检查所见)、diagnosis(诊断意见)，value/unit/referenceRange 留空。
+※ 检查项目的 findings(检查所见) 与 diagnosis(诊断意见) 必须完整提取报告原文，禁止省略、概括或截断。
+
 以 JSON 格式返回，结构如下：
 {
   "institution": "机构名称",
   "checkDate": "YYYY-MM-DD",
   "items": [
-    { "name": "项目名称", "value": "检测值", "unit": "单位", "referenceRange": "参考范围", "status": "normal/abnormal/attention/unknown", "itemType": "lab/imaging/data" }
+    { "name": "项目名称", "itemType": "lab", "value": "检测值", "unit": "单位", "referenceRange": "参考范围", "status": "normal/abnormal/attention/unknown" },
+    { "name": "项目名称", "itemType": "imaging", "bodyPart": "检查部位", "findings": "完整检查所见原文", "diagnosis": "完整诊断意见原文", "status": "normal/abnormal/attention/unknown" }
   ],
   "summary": "综合分析（1-2句话，重点关注异常项）"
 }
