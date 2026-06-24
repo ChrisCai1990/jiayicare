@@ -1164,7 +1164,7 @@ export default function PatientDetailPage() {
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
-          { key: 'ai',            label: 'AI分析及方案' },
+          { key: 'ai',            label: 'AI汇总分析' },
           { key: 'ai-risk',       label: 'AI风险评估' },
           { key: 'medications',   label: '药物及营养素' },
           { key: 'requisitions',  label: '检查开单' },
@@ -3651,58 +3651,7 @@ export default function PatientDetailPage() {
               </div>
             ) : (
               <>
-                {/* 板块一：需优先解决的医疗问题 */}
-                <AISectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626">
-                  {editingAISummary ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {(sec.medical_priority?.items || []).map((item, i) => (
-                        <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#FAFAF8' }}>
-                          <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                            <input style={{ ...inStyle, flex: 2 }} value={item.name || ''} placeholder="问题名称" onChange={e => updItem('medical_priority', i, 'name', e.target.value)} />
-                            <select style={{ ...inStyle, flex: 1 }} value={item.urgency || 'low'} onChange={e => updItem('medical_priority', i, 'urgency', e.target.value)}>
-                              <option value="high">高优先</option>
-                              <option value="medium">中优先</option>
-                              <option value="low">低优先</option>
-                            </select>
-                            <button onClick={() => delItem('medical_priority', i)} style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>删除</button>
-                          </div>
-                          <input style={{ ...inStyle, marginBottom: 4 }} value={item.current || ''} placeholder="当前数值描述" onChange={e => updItem('medical_priority', i, 'current', e.target.value)} />
-                          <textarea style={{ ...inStyle, resize: 'vertical', marginBottom: 4 }} rows={2} value={item.meaning || ''} placeholder="临床意义" onChange={e => updItem('medical_priority', i, 'meaning', e.target.value)} />
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <input style={{ ...inStyle, flex: 2 }} value={item.action || ''} placeholder="建议行动" onChange={e => updItem('medical_priority', i, 'action', e.target.value)} />
-                            <input style={{ ...inStyle, flex: 1 }} value={item.department || ''} placeholder="建议科室" onChange={e => updItem('medical_priority', i, 'department', e.target.value)} />
-                          </div>
-                        </div>
-                      ))}
-                      <button onClick={() => addItem('medical_priority', { name: '', urgency: 'medium', current: '', meaning: '', action: '', department: '' })}
-                        style={{ fontSize: 12, color: '#1E6B50', background: 'none', border: '1px dashed #B2D8C7', borderRadius: 6, padding: '6px', cursor: 'pointer' }}>＋ 新增问题</button>
-                    </div>
-                  ) : (
-                    (sec.medical_priority?.items || []).length === 0 ? (
-                      <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无需紧急处理的医疗问题</div>
-                    ) : (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                        {sec.medical_priority.items.map((item, i) => {
-                          const badge = URGENCY_BADGE[item.urgency] || URGENCY_BADGE.low
-                          return (
-                            <div key={i} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                                <span style={{ fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color, borderRadius: 4, padding: '2px 7px' }}>{badge.label}优先</span>
-                                <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{item.name}</span>
-                                {item.department && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 'auto' }}>→ {item.department}</span>}
-                              </div>
-                              {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
-                              {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>临床意义：{item.meaning}</div>}
-                              {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  )}
-                </AISectionCard>
-
-                {/* 板块二：肿瘤风险筛查分析 */}
+                {/* 板块一：肿瘤风险筛查分析 */}
                 <AISectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED">
                   {editingAISummary ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -3799,6 +3748,57 @@ export default function PatientDetailPage() {
                       {(sec.checkup_completeness?.missing || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>❌ 缺失重要项目</span><div style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{sec.checkup_completeness.missing.join('、')}</div></div>}
                       {sec.checkup_completeness?.suggestion && <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>📌 {sec.checkup_completeness.suggestion}</div>}
                     </div>
+                  )}
+                </AISectionCard>
+
+                {/* 板块五：需优先解决的医疗问题 */}
+                <AISectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626">
+                  {editingAISummary ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {(sec.medical_priority?.items || []).map((item, i) => (
+                        <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#FAFAF8' }}>
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                            <input style={{ ...inStyle, flex: 2 }} value={item.name || ''} placeholder="问题名称" onChange={e => updItem('medical_priority', i, 'name', e.target.value)} />
+                            <select style={{ ...inStyle, flex: 1 }} value={item.urgency || 'low'} onChange={e => updItem('medical_priority', i, 'urgency', e.target.value)}>
+                              <option value="high">高优先</option>
+                              <option value="medium">中优先</option>
+                              <option value="low">低优先</option>
+                            </select>
+                            <button onClick={() => delItem('medical_priority', i)} style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>删除</button>
+                          </div>
+                          <input style={{ ...inStyle, marginBottom: 4 }} value={item.current || ''} placeholder="当前数值描述" onChange={e => updItem('medical_priority', i, 'current', e.target.value)} />
+                          <textarea style={{ ...inStyle, resize: 'vertical', marginBottom: 4 }} rows={2} value={item.meaning || ''} placeholder="临床意义" onChange={e => updItem('medical_priority', i, 'meaning', e.target.value)} />
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <input style={{ ...inStyle, flex: 2 }} value={item.action || ''} placeholder="建议行动" onChange={e => updItem('medical_priority', i, 'action', e.target.value)} />
+                            <input style={{ ...inStyle, flex: 1 }} value={item.department || ''} placeholder="建议科室" onChange={e => updItem('medical_priority', i, 'department', e.target.value)} />
+                          </div>
+                        </div>
+                      ))}
+                      <button onClick={() => addItem('medical_priority', { name: '', urgency: 'medium', current: '', meaning: '', action: '', department: '' })}
+                        style={{ fontSize: 12, color: '#1E6B50', background: 'none', border: '1px dashed #B2D8C7', borderRadius: 6, padding: '6px', cursor: 'pointer' }}>＋ 新增问题</button>
+                    </div>
+                  ) : (
+                    (sec.medical_priority?.items || []).length === 0 ? (
+                      <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无需紧急处理的医疗问题</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {sec.medical_priority.items.map((item, i) => {
+                          const badge = URGENCY_BADGE[item.urgency] || URGENCY_BADGE.low
+                          return (
+                            <div key={i} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, background: badge.bg, color: badge.color, borderRadius: 4, padding: '2px 7px' }}>{badge.label}优先</span>
+                                <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{item.name}</span>
+                                {item.department && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 'auto' }}>→ {item.department}</span>}
+                              </div>
+                              {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
+                              {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>临床意义：{item.meaning}</div>}
+                              {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
                   )}
                 </AISectionCard>
               </>

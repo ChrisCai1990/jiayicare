@@ -418,15 +418,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   }
 
   const handleGenerateAIAnnualPlan = async () => {
-    if (!window.confirm('AI将基于已审核的汇总分析自动填充方案板块，现有内容将被覆盖，确认继续？')) return
+    if (!planType) { toast('请先在下方选择一个方案类型，再点AI生成'); return }
+    const ptName = PLAN_TYPES.find(pt => pt.key === planType)?.name || '该类型'
+    if (!window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
     setAiPlanLoading(true)
     try {
       const res = await staffAPI.generateAIAnnualPlan(id)
       const aiData = res.data || {}
-      // 合并 AI 填充的 moduleData，保留已有字段
+      // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
+      const allowedKeys = PLAN_TYPE_MODULES[planType] || []
       setModuleData(prev => {
         const merged = { ...prev }
         Object.entries(aiData).forEach(([key, val]) => {
+          if (!allowedKeys.includes(key)) return
           if (val && (val.records?.length > 0 || val.enabled)) {
             merged[key] = val
           }
@@ -434,13 +438,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         return merged
       })
       setDirty(true)
-      // 如果 AI 判断应用健康重塑方案类型（有医疗问题）则自动选择
-      if (!planType && aiData.medical_treatment?.records?.length > 0) {
-        setPlanType('health_reshape')
-      } else if (!planType) {
-        setPlanType('chronic_stable')
-      }
-      toast('AI已填充方案内容，请检查并保存')
+      toast(`AI已按「${ptName}」填充方案内容，请检查并保存`)
     } catch (err) {
       toast(err.message || 'AI生成方案失败')
     } finally {
