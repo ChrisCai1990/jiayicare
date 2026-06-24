@@ -286,6 +286,27 @@ function RequisitionModal({ patientId, onClose, onSaved }) {
   )
 }
 
+// AI汇总分析的卡片与数组编辑框：必须定义在组件外（模块级），否则每次输入重渲染会重建组件导致输入框失焦
+function AISectionCard({ title, icon, color, children }) {
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
+        <span style={{ fontSize: 17 }}>{icon}</span>
+        <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{title}</span>
+        <span style={{ width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0 }} />
+      </div>
+      <div style={{ padding: '12px 20px' }}>{children}</div>
+    </div>
+  )
+}
+function AIArrEdit({ value, placeholder, onChange }) {
+  return (
+    <textarea className="form-control" rows={3} placeholder={placeholder}
+      value={value} onChange={onChange}
+      style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
+  )
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -854,10 +875,29 @@ export default function PatientDetailPage() {
     finally { setOcrSaving(false) }
   }
 
+  // 保存前清理数组字段里的空行/首尾空格（编辑时为了流畅保留了空行）
+  const cleanSections = (secs) => {
+    const out = JSON.parse(JSON.stringify(secs || {}))
+    const walk = (o) => {
+      if (!o || typeof o !== 'object') return
+      for (const k in o) {
+        const v = o[k]
+        if (Array.isArray(v)) {
+          o[k] = v
+            .map(x => (typeof x === 'string' ? x.trim() : x))
+            .filter(x => !(typeof x === 'string') || x !== '')
+          o[k].forEach(x => walk(x))
+        } else if (v && typeof v === 'object') walk(v)
+      }
+    }
+    walk(out)
+    return out
+  }
+
   const handleSaveAISummary = async (approve = false) => {
     try {
       const payload = {
-        sections: aiSummaryForm.sections,
+        sections: cleanSections(aiSummaryForm.sections),
         ...(approve ? { action: 'approve' } : {}),
       }
       await staffAPI.updateAIHealthSummary(id, payload)
@@ -3555,7 +3595,8 @@ export default function PatientDetailPage() {
           ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), [field]: val } }
         }))
         // 更新 sections 中某个数组字段（textarea 换行解析）
-        const updSecArr = (secKey, field, text) => updSec(secKey, field, text.split('\n').map(s => s.trim()).filter(Boolean))
+        // 编辑时保留原始行（含空行），避免实时 trim/filter 导致光标跳动；空行在保存时清理
+        const updSecArr = (secKey, field, text) => updSec(secKey, field, text.split('\n'))
         // 更新 sections 中某条 items 数组里的某个 item 字段
         const updItem = (secKey, idx, field, val) => setAiSummaryForm(f => {
           const items = [...(f.sections?.[secKey]?.items || [])]
@@ -3571,25 +3612,7 @@ export default function PatientDetailPage() {
           return { ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), items } } }
         })
 
-        const SectionCard = ({ title, icon, color, children }) => (
-          <div className="card" style={{ marginBottom: 14 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
-              <span style={{ fontSize: 17 }}>{icon}</span>
-              <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{title}</span>
-              {editingAISummary && <span style={{ fontSize: 11, color: '#D97706', background: '#FEF9EC', borderRadius: 4, padding: '2px 6px' }}>编辑中</span>}
-              {!editingAISummary && <span style={{ width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0 }} />}
-            </div>
-            <div style={{ padding: '12px 20px' }}>{children}</div>
-          </div>
-        )
-
-        // 数组字段的编辑 textarea（每行一条）
-        const ArrEdit = ({ secKey, field, placeholder }) => (
-          <textarea className="form-control" rows={3} placeholder={placeholder}
-            value={(sec[secKey]?.[field] || []).join('\n')}
-            onChange={e => updSecArr(secKey, field, e.target.value)}
-            style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
-        )
+        // SectionCard / ArrEdit 已提到模块级（AISectionCard / AIArrEdit），避免重渲染失焦
 
         return (
           <div>
@@ -3629,7 +3652,7 @@ export default function PatientDetailPage() {
             ) : (
               <>
                 {/* 板块一：需优先解决的医疗问题 */}
-                <SectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626">
+                <AISectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626">
                   {editingAISummary ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.medical_priority?.items || []).map((item, i) => (
@@ -3677,14 +3700,14 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   )}
-                </SectionCard>
+                </AISectionCard>
 
                 {/* 板块二：肿瘤风险筛查分析 */}
-                <SectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED">
+                <AISectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED">
                   {editingAISummary ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
-                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><ArrEdit secKey="tumor_risk" field={f} placeholder={lbl} /></div>
+                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.tumor_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('tumor_risk', f, e.target.value)} /></div>
                       ))}
                       <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>总评</div>
                         <textarea className="form-control" rows={2} value={sec.tumor_risk?.summary || ''} onChange={e => updSec('tumor_risk', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
@@ -3697,14 +3720,14 @@ export default function PatientDetailPage() {
                       {sec.tumor_risk?.summary && <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.tumor_risk.summary}</div>}
                     </div>
                   )}
-                </SectionCard>
+                </AISectionCard>
 
                 {/* 板块三：心脑血管病风险分析 */}
-                <SectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444">
+                <AISectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444">
                   {editingAISummary ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['high','🔴 高风险因素（每行一条）'],['medium','🟡 中风险因素（每行一条）']].map(([f,lbl]) => (
-                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><ArrEdit secKey="cardiovascular_risk" field={f} placeholder={lbl} /></div>
+                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.cardiovascular_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('cardiovascular_risk', f, e.target.value)} /></div>
                       ))}
                       <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>综合评估</div>
                         <textarea className="form-control" rows={2} value={sec.cardiovascular_risk?.summary || ''} onChange={e => updSec('cardiovascular_risk', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
@@ -3716,10 +3739,10 @@ export default function PatientDetailPage() {
                       {sec.cardiovascular_risk?.summary && <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.cardiovascular_risk.summary}</div>}
                     </div>
                   )}
-                </SectionCard>
+                </AISectionCard>
 
                 {/* 板块四：慢性病及其他健康指标 */}
-                <SectionCard title="慢性病及其他健康指标" icon="📊" color="#0077B6">
+                <AISectionCard title="慢性病及其他健康指标" icon="📊" color="#0077B6">
                   {editingAISummary ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.chronic_disease?.items || []).map((item, i) => (
@@ -3758,14 +3781,14 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   )}
-                </SectionCard>
+                </AISectionCard>
 
                 {/* 板块五：体检全面性评估 */}
-                <SectionCard title="体检全面性评估" icon="📋" color="#1E6B50">
+                <AISectionCard title="体检全面性评估" icon="📋" color="#1E6B50">
                   {editingAISummary ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['covered','✅ 已覆盖项目（每行一条）'],['missing','❌ 缺失重要项目（每行一条）']].map(([f,lbl]) => (
-                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><ArrEdit secKey="checkup_completeness" field={f} placeholder={lbl} /></div>
+                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.checkup_completeness?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('checkup_completeness', f, e.target.value)} /></div>
                       ))}
                       <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>补项建议</div>
                         <textarea className="form-control" rows={2} value={sec.checkup_completeness?.suggestion || ''} onChange={e => updSec('checkup_completeness', 'suggestion', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
@@ -3777,7 +3800,7 @@ export default function PatientDetailPage() {
                       {sec.checkup_completeness?.suggestion && <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>📌 {sec.checkup_completeness.suggestion}</div>}
                     </div>
                   )}
-                </SectionCard>
+                </AISectionCard>
               </>
             )}
           </div>
