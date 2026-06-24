@@ -287,7 +287,7 @@ export const staffAPI = {
   // 4.4 AI健康汇总 / 4.5 AI管理方案生成
   generateAIHealthSummary: (id, year) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year }) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
-  generateAIAnnualPlan:    (id) => req(`/staff/patients/${id}/ai-annual-plan`,    { method: 'POST' }),
+  generateAIAnnualPlan:    (id, planType) => req(`/staff/patients/${id}/ai-annual-plan`,    { method: 'POST', body: JSON.stringify({ planType }) }),
 
   // 场景七：AI 辅助生成文案草稿（kind: followup | service_record | plan_desc）
   generateAIDraft:         (id, kind, context = {}) => req(`/staff/patients/${id}/ai-draft`, { method: 'POST', body: JSON.stringify({ kind, context }) }),

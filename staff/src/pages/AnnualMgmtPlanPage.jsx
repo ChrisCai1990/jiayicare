@@ -423,7 +423,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
     setAiPlanLoading(true)
     try {
-      const res = await staffAPI.generateAIAnnualPlan(id)
+      const res = await staffAPI.generateAIAnnualPlan(id, planType)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
       const allowedKeys = PLAN_TYPE_MODULES[planType] || []

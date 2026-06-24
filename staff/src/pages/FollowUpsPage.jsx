@@ -353,7 +353,7 @@ export default function FollowUpsPage() {
                       <button className="btn btn-primary btn-sm" style={{ marginRight: 6 }}
                         onClick={() => openExec(f)}>执行随访</button>
                     )}
-                    {isPendingExec(f) && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
+                    {f.status !== 'cancelled' && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
                       <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
                         onClick={() => openEdit(f)}>编辑</button>
                     )}
@@ -504,7 +504,7 @@ export default function FollowUpsPage() {
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditItem(null) }}>
           <div className="modal" style={{ maxWidth: 520 }}>
             <div className="modal-header">
-              <h3 className="modal-title">编辑随访计划 · {editItem.patientId?.name}</h3>
+              <h3 className="modal-title">{editItem.status === 'completed' ? '编辑随访记录' : '编辑随访计划'} · {editItem.patientId?.name}</h3>
               <button className="modal-close" onClick={() => setEditItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -526,10 +526,10 @@ export default function FollowUpsPage() {
                 </select>
               </div>
               <div>
-                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>计划内容</label>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{editItem.status === 'completed' ? '随访记录内容' : '计划内容'}</label>
                 <textarea className="form-control" rows={4} value={editForm.content}
                   onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))}
-                  placeholder="随访计划内容..." />
+                  placeholder="随访内容..." />
               </div>
               <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>负责人员</label>

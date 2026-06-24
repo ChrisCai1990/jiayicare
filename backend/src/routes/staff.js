@@ -2865,15 +2865,49 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         }).join('\n')
       : '  仅有当次数据，无法比较趋势';
 
+    // 生活方式（膳食调查-综合概述 + 各维度）——用于「生活方式评估」板块
+    const ls  = user.lifestyle || {};
+    const lsd = user.lifestyle_data || {};
+    const dietOverview = lsd.summaryOverride
+      || (Array.isArray(lsd.autoSummaryFlags) && lsd.autoSummaryFlags.length ? lsd.autoSummaryFlags.join('；') : '')
+      || ls.diet || '';
+    const lifestyleSummary = [
+      dietOverview && `膳食调查综合概述：${dietOverview}`,
+      ls.diet     && `饮食：${ls.diet}`,
+      ls.exercise && `运动：${ls.exercise}`,
+      ls.sleep    && `睡眠：${ls.sleep}`,
+      ls.water    && `饮水：${ls.water}`,
+      ls.alcohol  && `饮酒：${ls.alcohol}`,
+      ls.smoking  && `吸烟：${ls.smoking}`,
+      ls.bowel    && `排便：${ls.bowel}`,
+      ls.mood     && `情绪：${ls.mood}`,
+    ].filter(Boolean).join('\n') || '暂无生活方式/膳食调查数据';
+
+    // 健康档案（既往史/家族史/近期症状等）
+    const hp = user.healthProfile || {};
+    const archiveSummary = [
+      hp.pastHistory && `既往史：${hp.pastHistory}`,
+      hp.familyHistoryNote && `家族史：${hp.familyHistoryNote}`,
+      Array.isArray(hp.recentSymptoms) && hp.recentSymptoms.length && `近3个月躯体症状：${hp.recentSymptoms.join('、')}`,
+      hp.drugAllergy && `药物过敏：${hp.drugAllergy}`,
+    ].filter(Boolean).join('\n') || '无特殊记录';
+
     const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。
+
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】综合评估。
 
 【患者基本信息】
 姓名：${user.name}，性别：${user.gender}，年龄：${user.age || '未知'}岁
 慢性病标签：${user.chronicDiseases?.join('、') || '无'}
 健康诉求：${user.healthConcern || '未填写'}
-既往史：${user.healthProfile?.pastHistory || '无'}
 
-【最近一次体检关键指标】
+【健康档案】
+${archiveSummary}
+
+【生活方式与膳食调查】
+${lifestyleSummary}
+
+【最近一次体检关键指标】（分析立足点）
 ${labSummary}
 
 【历年体检指标趋势（近几年记录）】
@@ -2885,6 +2919,17 @@ ${reportSummary}
 请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容：
 {
   "sections": {
+    "lifestyle_assessment": {
+      "items": [
+        {
+          "dimension": "维度名称（如：饮食结构、运动、睡眠、烟酒、情绪）",
+          "finding": "结合最近一次体检结果与膳食调查综合概述，描述该维度的现状与存在的问题",
+          "risk": "该问题可能关联的健康风险（结合体检异常项）",
+          "suggestion": "具体可执行的改善建议"
+        }
+      ],
+      "summary": "生活方式综合评估（50-100字，需结合最近一次体检结果）"
+    },
     "medical_priority": {
       "items": [
         {
@@ -2938,6 +2983,7 @@ ${reportSummary}
     } catch {}
 
     if (!sections) sections = {
+      lifestyle_assessment: { items: [], summary: '' },
       medical_priority: { items: [] },
       tumor_risk: { completed: [], abnormal: [], missing: [], summary: '' },
       cardiovascular_risk: { high: [], medium: [], summary: '' },
@@ -3010,6 +3056,19 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '请先生成AI汇总分析报告' });
     }
 
+    // 各方案类型包含的板块（与前端 AnnualMgmtPlanPage 的 PLAN_TYPE_MODULES 保持一致）
+    // 只生成所选方案类型对应的板块，不生成其它类型的板块
+    const PLAN_TYPE_MODULES = {
+      health_reshape:    ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'],
+      young_state:       ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'],
+      chronic_stable:    ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'],
+      health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'annual_checkup'],
+    };
+    // 后端实际能生成的板块全集
+    const GENERATABLE = ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'];
+    const planType = req.body.planType || '';
+    const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k));
+
     const { chat } = require('../utils/ai');
     const s = ais.sections;
     const year = new Date().getFullYear();
@@ -3075,12 +3134,14 @@ ${missingCheckups}
     } catch {}
 
     // 转为 moduleData 结构（多条板块用 { records: [...] }）
+    // 只输出当前所选方案类型包含的板块，其余板块不生成
     const result = {};
     ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring'].forEach(key => {
+      if (!allowedKeys.includes(key)) return;
       result[key] = { records: Array.isArray(raw[key]) ? raw[key] : [] };
     });
-    if (raw.lifestyle) result.lifestyle = { enabled: true, ...raw.lifestyle };
-    if (raw.annual_checkup) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
+    if (allowedKeys.includes('lifestyle') && raw.lifestyle) result.lifestyle = { enabled: true, ...raw.lifestyle };
+    if (allowedKeys.includes('annual_checkup') && raw.annual_checkup) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
 
     res.json({ success: true, data: result });
   } catch (err) {

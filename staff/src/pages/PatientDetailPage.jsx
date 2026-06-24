@@ -426,7 +426,6 @@ export default function PatientDetailPage() {
   const [editingAISummary, setEditingAISummary] = useState(false)
   const [aiSummaryForm, setAiSummaryForm] = useState({})
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI汇总分析年度
-  const [genYear, setGenYear] = useState(String(new Date().getFullYear())) // 生成时选择的年度
   // 场景八：AI风险评估
   const [riskGenerating, setRiskGenerating] = useState(false)
   const [riskApproving, setRiskApproving] = useState(false)
@@ -951,7 +950,7 @@ export default function PatientDetailPage() {
       await staffAPI.createFollowUp({
         patientId: id, theme: d.theme, status: 'planned',
         date: d.suggestedDate || undefined,
-        content: (d.outline || []).map(o => '· ' + o).join('\n'),
+        content: (d.outline || []).map(o => (o || '').trim()).filter(Boolean).map(o => '· ' + o).join('\n'),
       })
       toast('已创建随访计划')
       setAiHelper(null); loadFollowUps()
@@ -964,7 +963,9 @@ export default function PatientDetailPage() {
     setAiHelperBusy(true)
     try {
       await staffAPI.sendCoachMessage(id, msg)
-      toast('已发送给会员'); setAiHelper(null)
+      toast('已发送给会员')
+      // 发送后保持弹窗，允许继续修改后再次发送
+      setAiHelper(h => ({ ...h, data: { ...h.data, sent: true, sentAt: new Date().toISOString() } }))
     } catch (err) { toast(err.message || '发送失败') }
     finally { setAiHelperBusy(false) }
   }
@@ -3594,10 +3595,11 @@ export default function PatientDetailPage() {
           byYear = { [oy]: { sections: aisRoot.sections, generatedAt: aisRoot.generatedAt, approvedAt: aisRoot.approvedAt, approvedBy: aisRoot.approvedBy } }
         }
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
-        const curYear = (aiYear && byYear[aiYear]) ? aiYear : (years[0] || String(new Date().getFullYear()))
-        const ais = byYear[curYear] || {}
         const nowY = new Date().getFullYear()
         const yearOpts = [...new Set([...years, String(nowY - 1), String(nowY), String(nowY + 1)])].sort((a, b) => Number(b) - Number(a))
+        // 当前查看的年度：允许查看尚未生成的年度（此时显示空状态+生成按钮）
+        const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : (years[0] || String(nowY))
+        const ais = byYear[curYear] || {}
         // 编辑模式用 aiSummaryForm.sections，查看模式用当前年度 ais.sections
         const sec = editingAISummary ? (aiSummaryForm.sections || {}) : (ais.sections || {})
         const hasData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.chronic_disease)
@@ -3632,23 +3634,23 @@ export default function PatientDetailPage() {
 
         return (
           <div>
-            {/* 年度选择条 */}
-            {years.length > 0 && (
-              <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 12, color: '#8AA89C', marginRight: 2 }}>📅 年度</span>
-                {years.map(y => {
-                  const active = y === curYear
-                  return (
-                    <button key={y} onClick={() => { setAiYear(y); setEditingAISummary(false) }}
-                      style={{ padding: '5px 14px', borderRadius: 8, fontSize: 13, fontWeight: active ? 700 : 500,
-                        border: `1px solid ${active ? '#1E6B50' : '#E0D9CE'}`, background: active ? '#E8F5EF' : '#fff',
-                        color: active ? '#1E6B50' : '#4A6558', cursor: 'pointer' }}>
-                      {y}年度{byYear[y]?.approvedAt ? ' ✓' : ''}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
+            {/* 年度选择条：所有候选年度都可点击查看（含未生成年度）；✓=已审核 ●=已生成待审核 */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 12, color: '#8AA89C', marginRight: 2 }}>📅 年度</span>
+              {yearOpts.map(y => {
+                const active = y === curYear
+                const generated = !!byYear[y]
+                const approved = !!byYear[y]?.approvedAt
+                return (
+                  <button key={y} onClick={() => { setAiYear(y); setEditingAISummary(false) }}
+                    style={{ padding: '5px 14px', borderRadius: 8, fontSize: 13, fontWeight: active ? 700 : 500,
+                      border: `1px solid ${active ? '#1E6B50' : '#E0D9CE'}`, background: active ? '#E8F5EF' : '#fff',
+                      color: active ? '#1E6B50' : (generated ? '#4A6558' : '#B0B8B3'), cursor: 'pointer' }}>
+                    {y}年度{approved ? ' ✓' : (generated ? ' ●' : '')}
+                  </button>
+                )
+              })}
+            </div>
             {/* 操作栏 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
               {ais.approvedAt ? (
@@ -3657,7 +3659,7 @@ export default function PatientDetailPage() {
                 </div>
               ) : (
                 <div style={{ fontSize: 12, color: '#8AA89C', flex: 1, minWidth: 180 }}>
-                  {hasData ? `${curYear}年度 · 生成时间：${new Date(ais.generatedAt).toLocaleString('zh-CN')}` : '该年度尚未生成'}
+                  {hasData ? `${curYear}年度 · 生成时间：${new Date(ais.generatedAt).toLocaleString('zh-CN')}` : `${curYear}年度尚未生成`}
                 </div>
               )}
               {!editingAISummary && hasData && (
@@ -3675,21 +3677,15 @@ export default function PatientDetailPage() {
                 </>
               )}
               {!editingAISummary && (
-                <>
-                  <select value={genYear} onChange={e => setGenYear(e.target.value)}
-                    style={{ padding: '5px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 13, color: '#1A2B24' }}>
-                    {yearOpts.map(y => <option key={y} value={y}>{y}年度</option>)}
-                  </select>
-                  <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(genYear)}>
-                    {aiSummaryLoading ? '生成中…' : (byYear[genYear] ? `重新生成${genYear}` : `生成${genYear}年度`)}
-                  </button>
-                </>
+                <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(curYear)}>
+                  {aiSummaryLoading ? '生成中…' : (hasData ? `重新生成${curYear}年度` : `生成${curYear}年度`)}
+                </button>
               )}
             </div>
 
             {!hasData ? (
               <div className="card" style={{ textAlign: 'center', padding: 40, color: '#8AA89C', fontSize: 14 }}>
-                选择年度后点击「生成」，基于所有历年体检指标和筛查报告，自动生成该年度的5大板块综合健康分析
+                {curYear}年度尚未生成。点击右上角「生成{curYear}年度」，将立足最近一次体检数据，结合历年体检指标、专项筛查报告、健康档案与生活方式，自动生成该年度综合健康分析。
               </div>
             ) : (
               <>
@@ -3839,6 +3835,45 @@ export default function PatientDetailPage() {
                             </div>
                           )
                         })}
+                      </div>
+                    )
+                  )}
+                </AISectionCard>
+
+                {/* 板块六：生活方式评估（结合最近一次体检 + 膳食调查综合概述） */}
+                <AISectionCard title="生活方式评估" icon="🌿" color="#16A34A">
+                  {editingAISummary ? (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {(sec.lifestyle_assessment?.items || []).map((item, i) => (
+                        <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#FAFAF8' }}>
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
+                            <input style={{ ...inStyle, flex: 1 }} value={item.dimension || ''} placeholder="维度（如：饮食、运动、睡眠）" onChange={e => updItem('lifestyle_assessment', i, 'dimension', e.target.value)} />
+                            <button onClick={() => delItem('lifestyle_assessment', i)} style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>删除</button>
+                          </div>
+                          <textarea style={{ ...inStyle, resize: 'vertical', marginBottom: 4 }} rows={2} value={item.finding || ''} placeholder="现状与问题（结合最近一次体检结果）" onChange={e => updItem('lifestyle_assessment', i, 'finding', e.target.value)} />
+                          <input style={{ ...inStyle, marginBottom: 4 }} value={item.risk || ''} placeholder="关联健康风险" onChange={e => updItem('lifestyle_assessment', i, 'risk', e.target.value)} />
+                          <input style={inStyle} value={item.suggestion || ''} placeholder="改善建议" onChange={e => updItem('lifestyle_assessment', i, 'suggestion', e.target.value)} />
+                        </div>
+                      ))}
+                      <button onClick={() => addItem('lifestyle_assessment', { dimension: '', finding: '', risk: '', suggestion: '' })}
+                        style={{ fontSize: 12, color: '#1E6B50', background: 'none', border: '1px dashed #B2D8C7', borderRadius: 6, padding: '6px', cursor: 'pointer' }}>＋ 新增维度</button>
+                      <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>综合评估</div>
+                        <textarea className="form-control" rows={2} value={sec.lifestyle_assessment?.summary || ''} onChange={e => updSec('lifestyle_assessment', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
+                    </div>
+                  ) : (
+                    (sec.lifestyle_assessment?.items || []).length === 0 && !sec.lifestyle_assessment?.summary ? (
+                      <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无生活方式评估（生成时将结合最近一次体检与膳食调查综合概述）</div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {(sec.lifestyle_assessment?.items || []).map((item, i) => (
+                          <div key={i} style={{ border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
+                            <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', marginBottom: 4 }}>{item.dimension}</div>
+                            {item.finding && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 3 }}>现状：{item.finding}</div>}
+                            {item.risk && <div style={{ fontSize: 12, color: '#D97706', marginBottom: 3 }}>风险：{item.risk}</div>}
+                            {item.suggestion && <div style={{ fontSize: 12, color: '#16A34A', fontWeight: 500 }}>建议：{item.suggestion}</div>}
+                          </div>
+                        ))}
+                        {sec.lifestyle_assessment?.summary && <div style={{ fontSize: 13, color: '#4A6558', background: '#F0FDF4', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.lifestyle_assessment.summary}</div>}
                       </div>
                     )
                   )}
@@ -4767,23 +4802,30 @@ export default function PatientDetailPage() {
               {!aiHelper.loading && !aiHelper.error && aiHelper.type === 'followup' && aiHelper.data && (() => {
                 const d = aiHelper.data
                 const T = { advance: { l: '建议提前随访', c: '#DC2626' }, keep: { l: '按原计划随访', c: '#16A34A' }, extend: { l: '可延长随访间隔', c: '#0077B6' } }[d.timing] || { l: d.timing, c: '#4A6558' }
+                const setD = (patch) => setAiHelper(h => ({ ...h, data: { ...h.data, ...patch } }))
                 return (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                       <span style={{ fontWeight: 700, fontSize: 14, color: T.c }}>{T.l}</span>
-                      {d.suggestedDate && <span style={{ fontSize: 13, color: '#4A6558' }}>建议日期：{d.suggestedDate}</span>}
+                      <label style={{ fontSize: 13, color: '#4A6558', display: 'flex', alignItems: 'center', gap: 4 }}>
+                        建议日期：
+                        <input type="date" className="form-control" style={{ fontSize: 13, padding: '3px 8px', width: 'auto' }}
+                          value={d.suggestedDate || ''} onChange={e => setD({ suggestedDate: e.target.value })} />
+                      </label>
                     </div>
                     {d.timingReason && <div style={{ fontSize: 13, color: '#4A6558', background: '#f9f7f3', borderRadius: 8, padding: '8px 12px' }}>{d.timingReason}</div>}
                     <div>
                       <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访主题</div>
-                      <div style={{ fontSize: 14, fontWeight: 600 }}>{d.theme}</div>
+                      <input className="form-control" style={{ fontSize: 14, fontWeight: 600 }}
+                        value={d.theme || ''} onChange={e => setD({ theme: e.target.value })} />
                     </div>
-                    {Array.isArray(d.outline) && d.outline.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访提纲</div>
-                        {d.outline.map((o, i) => <div key={i} style={{ fontSize: 13, color: '#1A2B24', marginBottom: 3 }}>· {o}</div>)}
-                      </div>
-                    )}
+                    <div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访提纲（每行一条）</div>
+                      <textarea className="form-control" rows={4} style={{ fontSize: 13, resize: 'vertical' }}
+                        value={(Array.isArray(d.outline) ? d.outline : []).join('\n')}
+                        onChange={e => setD({ outline: e.target.value.split('\n') })} />
+                    </div>
+                    <div style={{ fontSize: 11, color: '#B0B8B3' }}>可编辑主题、日期、提纲后再采纳；采纳后在随访列表仍可继续编辑。</div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                       <button className="btn btn-secondary" onClick={() => setAiHelper(null)}>关闭</button>
                       <button className="btn btn-primary" onClick={adoptFollowupSuggestion} disabled={aiHelperBusy}>{aiHelperBusy ? '创建中...' : '采纳并创建随访计划'}</button>
@@ -4800,10 +4842,14 @@ export default function PatientDetailPage() {
                   </div>
                   <textarea className="form-control" rows={4} value={aiHelper.data.message}
                     onChange={e => setAiHelper(h => ({ ...h, data: { ...h.data, message: e.target.value } }))} />
-                  <div style={{ fontSize: 11, color: '#B0B8B3' }}>可编辑后再发送。发送将作为「健康教练」通知推送给会员。</div>
+                  {aiHelper.data.sent ? (
+                    <div style={{ fontSize: 11, color: '#22A06B' }}>✓ 已于 {new Date(aiHelper.data.sentAt).toLocaleString('zh-CN')} 发送。仍可修改内容后再次发送。</div>
+                  ) : (
+                    <div style={{ fontSize: 11, color: '#B0B8B3' }}>可编辑后再发送。发送将作为「健康教练」通知推送给会员。</div>
+                  )}
                   <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                     <button className="btn btn-secondary" onClick={() => setAiHelper(null)}>关闭</button>
-                    <button className="btn btn-primary" onClick={sendCoachMessage} disabled={aiHelperBusy}>{aiHelperBusy ? '发送中...' : '发送给会员'}</button>
+                    <button className="btn btn-primary" onClick={sendCoachMessage} disabled={aiHelperBusy}>{aiHelperBusy ? '发送中...' : (aiHelper.data.sent ? '再次发送' : '发送给会员')}</button>
                   </div>
                 </>
               )}
