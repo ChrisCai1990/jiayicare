@@ -77,14 +77,60 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
     }
 
     const prompt = `请分析这份体检报告图片，提取所有检验/检查项目。
-以 JSON 格式返回，结构如下：
+
+【提取规则——不同报告类型规则不同，请严格遵守】
+
+1. 参考范围（referenceRange）：必须从报告上提取实际印刷的参考范围，不得使用教科书默认值；若报告未印参考范围则留空。
+
+2. 按报告内容类型分类提取：
+
+【检验数值项目】血常规、生化（肝肾功、血脂、血糖等）、激素、肿瘤标志物、免疫、尿常规、碳13/14尿素呼气试验 等数值型检验：
+→ itemType="lab"，提取 name / value / unit / referenceRange / status
+
+【体检科室查体】内科/外科/眼科/妇科/牙科/口腔科/耳鼻喉科/皮肤科，及 视力检查/裂隙灯检查/电耳镜检查：
+→ itemType="imaging"，只提取 name（科室名称）和 diagnosis（小结文字），其余字段留空
+
+【眼底照相 / 前鼻镜检查】双眼眼底照相、前鼻镜检查等：
+→ itemType="imaging"，提取 name（项目名称）、findings（结果/检查描述，完整原文）、diagnosis（小结/诊断意见，完整原文）
+
+【心电图】常规心电图/静息心电图/ECG/动态心电图等：
+→ itemType="imaging"，name=心电图名称，findings=心电图结果描述，diagnosis=诊断结论（完整原文）
+
+【无创性动脉硬化检测 / 动脉弹性检测 / PWV / ABI】：
+→ itemType="imaging"，name=检测名称，diagnosis=诊断结论（若含"与健康的XX岁XX性相比XX范围内"等比较语句，务必完整提取到 diagnosis）
+
+【超声检查】腹部/肝胆胰脾/甲状腺/乳腺/颈动脉/心脏/泌尿系/妇科等各类超声：
+→ itemType="imaging"，每个脏器/部位单独一条；name=具体检查名称（如"肝脏超声"），findings=超声所见（完整原文，禁止截断），diagnosis=超声提示/超声诊断（完整原文）
+
+【CT / MRI / 放射检查】胸部CT、头颅MRI、骨密度等：
+→ itemType="imaging"，每个部位单独一条；name=检查部位（如"胸部CT"），bodyPart=检查部位，findings=检查所见（完整原文，禁止截断），diagnosis=诊断意见/印象（完整原文）
+
+【内镜检查】胃镜/肠镜/支气管镜等：
+→ itemType="imaging"，name=内镜名称，findings=镜下所见（完整原文），diagnosis=诊断/小结（完整原文）
+
+【人体成分检测 / 身体成分测量 / InBody / 体脂分析】：
+→ 暂不提取，直接跳过
+
+3. findings / diagnosis 字段务必保留完整原文，禁止摘要或截断。
+
+以 JSON 格式返回：
 {
-  "institution": "机构名称",
+  "institution": "体检机构名称",
   "checkDate": "YYYY-MM-DD",
   "items": [
-    { "name": "项目名称", "value": "检测值", "unit": "单位", "referenceRange": "参考范围", "status": "normal/abnormal/attention/unknown", "itemType": "lab/imaging/data" }
+    {
+      "name": "项目名称",
+      "value": "检测值（仅lab类填写）",
+      "unit": "单位（仅lab类填写）",
+      "referenceRange": "从报告提取的参考范围（非默认值）",
+      "status": "normal/abnormal/attention/unknown",
+      "itemType": "lab/imaging/data",
+      "bodyPart": "检查部位（imaging类可选）",
+      "findings": "检查所见/超声所见/镜下所见（imaging类完整原文）",
+      "diagnosis": "诊断意见/超声提示/小结（imaging类完整原文）"
+    }
   ],
-  "summary": "综合分析（1-2句话，重点关注异常项）"
+  "summary": "综合分析（2-3句话，重点关注异常项及需随访的发现）"
 }
 只输出 JSON，不要额外文字。`;
 
