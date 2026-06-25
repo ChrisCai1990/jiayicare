@@ -210,26 +210,26 @@ export default function EmployeePage() {
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
             </div>
             {error && <div className="login-err" style={{ margin: '0 20px 12px' }}>⚠️ {error}</div>}
-            <form onSubmit={handleSave} className="modal-body">
+            <form onSubmit={handleSave} className="modal-body" autoComplete="off">
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">姓名 *</label>
-                  <input className="form-input" value={form.name} onChange={set('name')} required />
+                  <input className="form-input" value={form.name} onChange={set('name')} required autoComplete="off" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">手机号码 *（用于登录医护端）</label>
                   <input className="form-input" type="tel" value={form.phone} onChange={set('phone')}
-                    placeholder="11位手机号" maxLength={11} />
+                    placeholder="11位手机号" maxLength={11} autoComplete="off" />
                 </div>
                 {!editId && (
                   <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                     <label className="form-label">用户名（可选，系统内部标识）</label>
-                    <input className="form-input" value={form.username} onChange={set('username')} placeholder="不填则自动生成" />
+                    <input className="form-input" value={form.username} onChange={set('username')} placeholder="不填则自动生成" autoComplete="off" />
                   </div>
                 )}
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">{editId ? '密码（留空则不修改）' : '密码 *'}</label>
-                  <input className="form-input" type="password" value={form.password} onChange={set('password')} placeholder="至少6位" />
+                  <input className="form-input" type="password" value={form.password} onChange={set('password')} placeholder="至少6位" autoComplete="new-password" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">系统角色 *</label>
