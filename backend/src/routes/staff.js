@@ -3451,11 +3451,53 @@ ${recLines}
       theme: raw.theme || '常规随访',
       outline: Array.isArray(raw.outline) ? raw.outline : [],
       generatedAt: new Date(),
+      generatedBy: req.staff.name || '',
+      status: 'pending',
     };
+    await User.collection.updateOne({ _id: user._id }, { $set: { aiFollowupDraft: suggestion } });
     res.json({ success: true, data: suggestion });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// PATCH /api/staff/patients/:id/ai-followup-draft — 审核AI随访建议草稿（健管专员）
+router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
+  try {
+    const { action, notes } = req.body; // action: approve | reject
+    const user = await User.findById(req.params.id).select('_id name aiFollowupDraft');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const draft = user.aiFollowupDraft;
+    if (!draft || draft.status !== 'pending') return res.status(400).json({ success: false, message: '暂无待审核的随访建议草稿' });
+
+    if (action === 'reject') {
+      await User.collection.updateOne({ _id: user._id }, { $set: { aiFollowupDraft: null } });
+      return res.json({ success: true, message: '已拒绝该随访建议' });
+    }
+
+    if (action === 'approve') {
+      // 创建随访计划
+      const fu = await FollowUp.create({
+        patientId: user._id,
+        staffId: req.staff._id,
+        date: draft.suggestedDate ? new Date(draft.suggestedDate) : new Date(),
+        theme: draft.theme || '常规随访',
+        status: 'planned',
+        aiGenerated: true,
+        notes: [
+          draft.timingReason ? `时机判断：${draft.timingReason}` : '',
+          Array.isArray(draft.outline) && draft.outline.length ? `随访要点：${draft.outline.join('；')}` : '',
+          notes ? `审核备注：${notes}` : '',
+        ].filter(Boolean).join('\n'),
+      });
+      await User.collection.updateOne({ _id: user._id }, { $set: {
+        aiFollowupDraft: { ...draft, status: 'approved', approvedAt: new Date(), approvedBy: req.staff.name },
+      }});
+      return res.json({ success: true, message: '已采纳，随访计划已创建', followUpId: fu._id });
+    }
+
+    res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // ── 场景九：AI 健康教练消息（依从性评估 + 鼓励/提醒消息）──────────────
@@ -3498,10 +3540,51 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
 请直接输出消息正文。`;
 
     const message = await chat([{ role: 'user', content: prompt }], { maxTokens: 300 });
-    res.json({ success: true, data: { message: (message || '').trim(), adherence, streak, daysSinceLast: daysSinceLast >= 999 ? null : daysSinceLast, tone } });
+    const coachDraft = {
+      message: (message || '').trim(),
+      adherence, streak,
+      daysSinceLast: daysSinceLast >= 999 ? null : daysSinceLast,
+      tone,
+      generatedAt: new Date(),
+      generatedBy: req.staff.name || '',
+      status: 'pending',
+    };
+    await User.collection.updateOne({ _id: user._id }, { $set: { aiCoachDraft: coachDraft } });
+    res.json({ success: true, data: coachDraft });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+// PATCH /api/staff/patients/:id/ai-coach-draft — 审核AI教练消息草稿（营养师）
+router.patch('/patients/:id/ai-coach-draft', staffAuth, async (req, res) => {
+  try {
+    const { action, message: editedMessage } = req.body; // action: approve | reject
+    const user = await User.findById(req.params.id).select('_id name aiCoachDraft');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const draft = user.aiCoachDraft;
+    if (!draft || draft.status !== 'pending') return res.status(400).json({ success: false, message: '暂无待审核的教练消息草稿' });
+
+    if (action === 'reject') {
+      await User.collection.updateOne({ _id: user._id }, { $set: { aiCoachDraft: null } });
+      return res.json({ success: true, message: '已拒绝该教练消息' });
+    }
+
+    if (action === 'approve') {
+      const finalMsg = (editedMessage || draft.message || '').trim();
+      if (!finalMsg) return res.status(400).json({ success: false, message: '消息内容不能为空' });
+      await PushRecord.create({
+        staffId: req.staff._id, patientId: user._id,
+        type: 'notice', title: '健康教练', content: finalMsg,
+      });
+      await User.collection.updateOne({ _id: user._id }, { $set: {
+        aiCoachDraft: { ...draft, status: 'approved', approvedAt: new Date(), approvedBy: req.staff.name },
+      }});
+      return res.json({ success: true, message: '消息已发送给会员' });
+    }
+
+    res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // POST /api/staff/patients/:id/coach-message/send — 发送健康教练消息（审核后）
@@ -3888,6 +3971,40 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
             createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
           });
         }
+      });
+    }
+
+    // ── 健管专员：AI随访建议草稿待审核 ──
+    if (can('followup_review')) {
+      const fuDraftUsers = await User.find({ 'aiFollowupDraft.status': 'pending' })
+        .select('name aiFollowupDraft').limit(50).lean();
+      fuDraftUsers.forEach(u => {
+        const d = u.aiFollowupDraft || {};
+        const createdAt = d.generatedAt || new Date();
+        todos.push({
+          id: 'followup_' + u._id, type: 'followup_review', label: 'AI随访建议待审核', priority: 3,
+          patientName: u.name || '未知', patientId: String(u._id),
+          summary: d.theme ? `建议主题：${d.theme}${d.suggestedDate ? ' · ' + d.suggestedDate : ''}` : 'AI生成随访提纲，待健管专员审核采纳',
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${u._id}?tab=followups`,
+        });
+      });
+    }
+
+    // ── 营养师：AI教练消息草稿待审核 ──
+    if (can('coach_review')) {
+      const coachDraftUsers = await User.find({ 'aiCoachDraft.status': 'pending' })
+        .select('name aiCoachDraft').limit(50).lean();
+      coachDraftUsers.forEach(u => {
+        const d = u.aiCoachDraft || {};
+        const createdAt = d.generatedAt || new Date();
+        todos.push({
+          id: 'coach_' + u._id, type: 'coach_review', label: 'AI教练消息待审核', priority: 3,
+          patientName: u.name || '未知', patientId: String(u._id),
+          summary: d.message ? d.message.slice(0, 50) : 'AI生成教练消息，待营养师审核发送',
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${u._id}?tab=followups`,
+        });
       });
     }
 

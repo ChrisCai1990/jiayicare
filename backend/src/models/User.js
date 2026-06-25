@@ -230,6 +230,14 @@ const userSchema = new mongoose.Schema({
   // ── AI风险评估与预警（场景八）─────────────────────────────────────
   // { dimensions:[{key,label,level,score,factors:[],advice}], overallLevel, generatedAt, approvedAt, approvedBy, alerted }
   aiRiskAssessment: { type: mongoose.Schema.Types.Mixed, default: {} },
+
+  // ── AI随访建议草稿（场景12：健管专员审核后采纳）──────────────────────
+  // { timing, timingReason, suggestedDate, theme, outline[], generatedAt, generatedBy, status, approvedAt, approvedBy }
+  aiFollowupDraft: { type: mongoose.Schema.Types.Mixed, default: null },
+
+  // ── AI教练消息草稿（场景13：营养师审核后发送）────────────────────────
+  // { message, adherence, streak, daysSinceLast, tone, generatedAt, generatedBy, status, approvedAt, approvedBy }
+  aiCoachDraft: { type: mongoose.Schema.Types.Mixed, default: null },
 }, { timestamps: true });
 
 // ── 索引：医护端会员列表按分配医护过滤 + 按创建时间排序，慢病筛选 ──

@@ -1,5 +1,5 @@
 ﻿import React, { useEffect, useState, useRef, useMemo } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
@@ -310,11 +310,13 @@ function AIArrEdit({ value, placeholder, onChange }) {
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
+  const location = useLocation()
   const toast = useToast()
   const { staff } = useStaff()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [tab, setTab] = useState('info')  // info | records | reports | medications | requisitions | plans | followups | serviceRecords | consumption | family | membership
+  const initialTab = new URLSearchParams(location.search).get('tab') || 'info'
+  const [tab, setTab] = useState(initialTab)  // info | records | reports | medications | requisitions | plans | followups | serviceRecords | consumption | family | membership
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
@@ -432,6 +434,8 @@ export default function PatientDetailPage() {
   // 场景五/六/九：AI 助手（随访建议 / 教练消息 / 内容推荐）
   const [aiHelper, setAiHelper] = useState(null)   // { type, loading, data, error }
   const [aiHelperBusy, setAiHelperBusy] = useState(false)
+  // 场景12/13：待审核草稿卡片内的可编辑消息（教练消息）
+  const [coachDraftMsg, setCoachDraftMsg] = useState('')
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrSaving, setOcrSaving] = useState(false)
@@ -502,6 +506,9 @@ export default function PatientDetailPage() {
         setSeverityForm(res.value.data.user.chronicDiseaseSeverity || {})
         setBodyCompForm(res.value.data.user.bodyComposition || {})
         setAiSummaryForm(res.value.data.user.aiHealthSummary || {})
+        if (res.value.data.user?.aiCoachDraft?.status === 'pending') {
+          setCoachDraftMsg(res.value.data.user.aiCoachDraft.message || '')
+        }
       } else {
         throw res.reason
       }
@@ -1017,32 +1024,44 @@ export default function PatientDetailPage() {
       setAiHelper({ type, loading: false, data: r.data, error: null })
     } catch (err) { setAiHelper({ type, loading: false, data: null, error: err.message || 'AI生成失败' }) }
   }
-  // 场景六：采纳随访建议 → 创建随访计划
+  // 场景六：采纳随访建议 → 调用审核接口（自动创建随访计划 + 清草稿）
   const adoptFollowupSuggestion = async () => {
     const d = aiHelper?.data; if (!d) return
     setAiHelperBusy(true)
     try {
-      await staffAPI.createFollowUp({
-        patientId: id, theme: d.theme, status: 'planned',
-        date: d.suggestedDate || undefined,
-        content: (d.outline || []).map(o => (o || '').trim()).filter(Boolean).map(o => '· ' + o).join('\n'),
-      })
-      toast('已创建随访计划')
-      setAiHelper(null); loadFollowUps()
+      await staffAPI.reviewFollowupDraft(id, 'approve')
+      toast('已采纳，随访计划已创建')
+      setAiHelper(null); loadFollowUps(); load()
     } catch (err) { toast(err.message || '创建失败') }
     finally { setAiHelperBusy(false) }
   }
-  // 场景九：发送教练消息
+  // 从待审面板点进来，直接审核草稿（不需要重新生成）
+  const reviewFollowupDraft = async (action) => {
+    try {
+      await staffAPI.reviewFollowupDraft(id, action)
+      toast(action === 'approve' ? '已采纳，随访计划已创建' : '已拒绝')
+      load(); loadFollowUps()
+    } catch (err) { toast(err.message || '操作失败') }
+  }
+  // 场景九：发送教练消息 → 调用审核接口（自动发送 + 清草稿）
   const sendCoachMessage = async () => {
     const msg = aiHelper?.data?.message; if (!msg) return
     setAiHelperBusy(true)
     try {
-      await staffAPI.sendCoachMessage(id, msg)
+      await staffAPI.reviewCoachDraft(id, 'approve', msg)
       toast('已发送给会员')
-      // 发送后保持弹窗，允许继续修改后再次发送
       setAiHelper(h => ({ ...h, data: { ...h.data, sent: true, sentAt: new Date().toISOString() } }))
+      load()
     } catch (err) { toast(err.message || '发送失败') }
     finally { setAiHelperBusy(false) }
+  }
+  // 从待审面板点进来，直接审核教练消息草稿
+  const reviewCoachDraft = async (action, message) => {
+    try {
+      await staffAPI.reviewCoachDraft(id, action, message)
+      toast(action === 'approve' ? '消息已发送给会员' : '已拒绝')
+      load()
+    } catch (err) { toast(err.message || '操作失败') }
   }
   // 场景五：推送推荐内容
   const pushRecommendedContent = async (knowledgeId) => {
@@ -4404,6 +4423,99 @@ export default function PatientDetailPage() {
 
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
+        <>
+        {/* AI随访建议草稿（healthManager审核） */}
+        {data?.user?.aiFollowupDraft?.status === 'pending' && (() => {
+          const fd = data.user.aiFollowupDraft
+          const T = { advance: { l: '建议提前随访', c: '#DC2626' }, keep: { l: '按原计划随访', c: '#16A34A' }, extend: { l: '可延长随访间隔', c: '#0077B6' } }[fd.timing] || { l: fd.timing, c: '#4A6558' }
+          const canApprove = staff?.role === 'healthManager' || staff?.role === 'superadmin'
+          return (
+            <div className="card" style={{ marginBottom: 16, border: '1.5px solid #D97706' }}>
+              <div className="card-header" style={{ background: '#FFFBEB' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>📅</span>
+                    <span className="card-title" style={{ color: '#D97706' }}>AI随访建议·待审核</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>由 {fd.generatedBy} 生成 · {new Date(fd.generatedAt).toLocaleDateString('zh-CN')}</span>
+                  </div>
+                  {canApprove && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => reviewFollowupDraft('approve')}>采纳并创建随访计划</button>
+                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => reviewFollowupDraft('reject')}>拒绝</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>随访时机</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: T.c }}>{T.l}</span>
+                  </div>
+                  {fd.suggestedDate && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span style={{ fontSize: 12, color: '#8AA89C' }}>建议日期</span>
+                      <span style={{ fontSize: 13, fontWeight: 600 }}>{fd.suggestedDate}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>主题</span>
+                    <span style={{ fontSize: 13 }}>{fd.theme}</span>
+                  </div>
+                </div>
+                {fd.timingReason && <div style={{ fontSize: 13, color: '#4A6558', background: '#F6F3EE', borderRadius: 8, padding: '8px 12px' }}>{fd.timingReason}</div>}
+                {Array.isArray(fd.outline) && fd.outline.length > 0 && (
+                  <div>
+                    <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访要点</div>
+                    {fd.outline.map((o, i) => <div key={i} style={{ fontSize: 13, color: '#1A2B24', padding: '2px 0' }}>· {o}</div>)}
+                  </div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* AI教练消息草稿（nutritionist审核） */}
+        {data?.user?.aiCoachDraft?.status === 'pending' && (() => {
+          const cd = data.user.aiCoachDraft
+          const canApprove = staff?.role === 'nutritionist' || staff?.role === 'superadmin'
+          return (
+            <div className="card" style={{ marginBottom: 16, border: '1.5px solid #16A34A' }}>
+              <div className="card-header" style={{ background: '#F0FDF4' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>💬</span>
+                    <span className="card-title" style={{ color: '#16A34A' }}>AI教练消息·待审核</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>由 {cd.generatedBy} 生成 · {new Date(cd.generatedAt).toLocaleDateString('zh-CN')}</span>
+                  </div>
+                  {canApprove && (
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewCoachDraft('approve', coachDraftMsg)}>发送给会员</button>
+                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => reviewCoachDraft('reject')}>拒绝</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#8AA89C' }}>
+                  <span>依从性：{{ high: '良好', medium: '一般', low: '偏低' }[cd.adherence] || '-'}</span>
+                  <span>连续打卡 {cd.streak} 天</span>
+                  {cd.daysSinceLast != null && <span>距上次打卡 {cd.daysSinceLast} 天</span>}
+                </div>
+                {canApprove ? (
+                  <textarea
+                    value={coachDraftMsg}
+                    onChange={e => setCoachDraftMsg(e.target.value)}
+                    style={{ width: '100%', minHeight: 80, padding: '8px 12px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
+                  />
+                ) : (
+                  <div style={{ fontSize: 14, color: '#1A2B24', background: '#F6F3EE', borderRadius: 8, padding: '10px 14px', lineHeight: 1.6 }}>{cd.message}</div>
+                )}
+              </div>
+            </div>
+          )
+        })()}
+
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title">随访记录</div>
@@ -4446,6 +4558,7 @@ export default function PatientDetailPage() {
             </table>
           )}
         </div>
+        </>
       )}
 
       {/* 报告图片灯箱 */}
