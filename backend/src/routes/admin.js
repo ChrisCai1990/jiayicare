@@ -419,6 +419,12 @@ router.get('/questionnaires', adminAuth, async (req, res) => {
   res.json({ success: true, data: withCounts });
 });
 
+// GET /api/admin/archive-fields — 健康档案字段清单（问卷构建器「对应档案字段」下拉用）
+router.get('/archive-fields', adminAuth, (req, res) => {
+  const { groupedArchiveFields } = require('../config/archiveFields');
+  res.json({ success: true, data: groupedArchiveFields() });
+});
+
 // POST /api/admin/questionnaires
 router.post('/questionnaires', adminAuth, async (req, res) => {
   const { title, description, questions, targetType, targetUsers, deadline, scoringEnabled, sortOrder } = req.body;

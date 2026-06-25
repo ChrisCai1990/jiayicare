@@ -287,6 +287,12 @@ export const staffAPI = {
   // 专项筛查静态分类目录（OCR 自动/手动归类下拉用）
   getScreeningCatalog: () => req('/staff/screening-catalog'),
 
+  // 问卷 → 健康档案 自动导入
+  getQuestionnaireResponses: (id) => req(`/staff/patients/${id}/questionnaire-responses`),
+  generateArchiveDraft:      (id, responseId) => req(`/staff/patients/${id}/archive-draft`, { method: 'POST', body: JSON.stringify({ responseId }) }),
+  applyArchiveDraft:         (id, items) => req(`/staff/patients/${id}/archive-draft/apply`, { method: 'POST', body: JSON.stringify({ items }) }),
+  dismissArchiveDraft:       (id) => req(`/staff/patients/${id}/archive-draft/dismiss`, { method: 'POST' }),
+
   // 4.4 AI健康汇总 / 4.5 AI管理方案生成
   generateAIHealthSummary: (id, year) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year }) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),

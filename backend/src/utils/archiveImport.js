@@ -1,0 +1,72 @@
+// ── 问卷答卷 → 健康档案 自动导入引擎 ──────────────────────────────────
+// 依据每题绑定的 archiveField，把答案归一化为档案字段值，生成待审核草稿。
+// 归一化是确定性规则（多选拼数组/文本、量表与矩阵转文本、"无"过滤），无需调用大模型，稳定可控。
+
+const { FIELD_MAP } = require('../config/archiveFields');
+
+// 读取 user 上指定 path 的现有值（支持一层嵌套 a.b）
+function getByPath(obj, path) {
+  if (!obj || !path) return undefined;
+  const parts = path.split('.');
+  let cur = obj;
+  for (const p of parts) { if (cur == null) return undefined; cur = cur[p]; }
+  return cur;
+}
+
+// 把任意答案转成可读文本
+function answerToText(ans) {
+  if (ans == null) return '';
+  if (Array.isArray(ans)) return ans.filter(x => x && x !== '无').join('、');
+  if (typeof ans === 'object') {
+    if (ans.value !== undefined) return [ans.value, ans.input].filter(Boolean).join(' ').trim(); // {value,input}
+    // matrix：{行: 列}
+    return Object.entries(ans).map(([k, v]) => `${k}：${Array.isArray(v) ? v.join('/') : v}`).join('；');
+  }
+  return String(ans).trim();
+}
+
+// 依据字段类型归一化答案 → 写入值
+function normalizeValue(fieldDef, ans) {
+  if (fieldDef.type === 'array') {
+    if (Array.isArray(ans)) return ans.filter(x => x && x !== '无');
+    const t = answerToText(ans);
+    return t ? t.split(/[、,，;；]/).map(s => s.trim()).filter(Boolean) : [];
+  }
+  // text / enum / date / number → 文本
+  return answerToText(ans);
+}
+
+// 生成档案草稿（不写库，仅返回结构）
+function buildArchiveDraft(user, questionnaire, response) {
+  const answers = (response && response.answers) || {};
+  const items = [];
+  for (const q of (questionnaire.questions || [])) {
+    if (!q.archiveField) continue;
+    const def = FIELD_MAP[q.archiveField];
+    if (!def) continue;
+    const ans = answers[q.id];
+    if (ans === undefined || ans === '' || (Array.isArray(ans) && ans.length === 0)) continue; // 未答跳过
+    const value = normalizeValue(def, ans);
+    if ((Array.isArray(value) && value.length === 0) || value === '') continue;
+
+    const existing = getByPath(user, def.path);
+    const existingStr = Array.isArray(existing) ? existing.join('、') : (existing == null ? '' : String(existing));
+    const valueStr = Array.isArray(value) ? value.join('、') : String(value);
+    items.push({
+      path: def.path, label: def.label, group: def.group, fieldType: def.type,
+      questionId: q.id, questionText: q.text, answer: ans,
+      value, valueStr, existing: existingStr,
+      conflict: !!(existingStr && existingStr !== valueStr),
+    });
+  }
+  return {
+    generatedAt: new Date(),
+    questionnaireId: questionnaire._id,
+    questionnaireTitle: questionnaire.title || '',
+    responseId: response ? response._id : null,
+    status: 'pending',
+    items,
+  };
+}
+
+module.exports = { buildArchiveDraft, normalizeValue, answerToText, getByPath };

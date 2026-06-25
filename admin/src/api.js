@@ -111,6 +111,7 @@ export const adminAPI = {
 
   // 动态问卷管理
   questionnaires:            ()         => req('/questionnaires'),
+  getArchiveFields:          ()         => req('/archive-fields'),
   createQuestionnaire:       (data)     => req('/questionnaires', { method: 'POST', body: JSON.stringify(data) }),
   updateQuestionnaire:       (id, data) => req(`/questionnaires/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   setQuestionnaireStatus:    (id, status) => req(`/questionnaires/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),

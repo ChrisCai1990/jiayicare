@@ -163,6 +163,8 @@ const userSchema = new mongoose.Schema({
   },
   // 生活方式详细结构化数据（膳食调查表融合后新字段）
   lifestyle_data: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // 问卷自动导入健康档案的待审核草稿（{generatedAt,questionnaireId,responseId,status,items[]}）
+  archiveDraft: { type: mongoose.Schema.Types.Mixed, default: null },
   serviceStartDate: { type: String, default: '' }, // 服务开始时间
 
   // ── 健康评分相关 ─────────────────────────────────────────────────

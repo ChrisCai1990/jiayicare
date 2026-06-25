@@ -4009,4 +4009,74 @@ router.get('/screening-catalog', staffAuth, (req, res) => {
   }
 });
 
+// ── 问卷 → 健康档案 自动导入（DynamicQuestionnaire/QuestionnaireResponse 已在文件顶部 require）──
+const { buildArchiveDraft } = require('../utils/archiveImport');
+
+// GET /api/staff/patients/:id/questionnaire-responses — 该会员有档案映射的已答问卷列表（手动导入用）
+router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) => {
+  try {
+    const responses = await QuestionnaireResponse.find({ user: req.params.id })
+      .populate('questionnaire', 'title questions').sort({ submittedAt: -1 }).lean();
+    const data = responses
+      .filter(r => r.questionnaire && (r.questionnaire.questions || []).some(q => q.archiveField))
+      .map(r => ({ responseId: r._id, questionnaireId: r.questionnaire._id, title: r.questionnaire.title, submittedAt: r.submittedAt }));
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/staff/patients/:id/archive-draft — 手动从某份答卷生成档案草稿
+router.post('/patients/:id/archive-draft', staffAuth, async (req, res) => {
+  try {
+    const { responseId } = req.body;
+    const user = await User.findById(req.params.id).lean();
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    let response;
+    if (responseId) {
+      response = await QuestionnaireResponse.findOne({ _id: responseId, user: req.params.id }).lean();
+    } else {
+      // 取最近一份有档案映射的答卷
+      const responses = await QuestionnaireResponse.find({ user: req.params.id })
+        .populate('questionnaire', 'title questions').sort({ submittedAt: -1 }).lean();
+      response = responses.find(r => r.questionnaire && (r.questionnaire.questions || []).some(q => q.archiveField));
+    }
+    if (!response) return res.status(404).json({ success: false, message: '未找到可导入的问卷答卷' });
+    const questionnaire = response.questionnaire?.questions
+      ? response.questionnaire
+      : await DynamicQuestionnaire.findById(response.questionnaire).lean();
+    if (!questionnaire) return res.status(404).json({ success: false, message: '问卷不存在' });
+    const draft = buildArchiveDraft(user, questionnaire, response);
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { archiveDraft: draft } }
+    );
+    res.json({ success: true, data: draft });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/staff/patients/:id/archive-draft/apply — 审核写入：把选定字段写入档案，清空草稿
+router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => {
+  try {
+    const { items } = req.body; // [{ path, value }]
+    if (!Array.isArray(items) || items.length === 0) return res.status(400).json({ success: false, message: '没有要写入的字段' });
+    const { FIELD_MAP } = require('../config/archiveFields');
+    const $set = {};
+    for (const it of items) {
+      if (!FIELD_MAP[it.path]) continue; // 只允许白名单字段
+      $set[it.path] = it.value;
+    }
+    if (Object.keys($set).length === 0) return res.status(400).json({ success: false, message: '没有有效字段' });
+    $set.archiveDraft = null; // 写入后清空草稿
+    await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set });
+    res.json({ success: true, message: `已写入 ${Object.keys($set).length - 1} 个档案字段` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/staff/patients/:id/archive-draft/dismiss — 忽略草稿
+router.post('/patients/:id/archive-draft/dismiss', staffAuth, async (req, res) => {
+  try {
+    await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set: { archiveDraft: null } });
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 module.exports = router;

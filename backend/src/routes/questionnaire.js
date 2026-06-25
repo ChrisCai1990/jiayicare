@@ -221,6 +221,25 @@ router.post('/:id/submit', auth, async (req, res) => {
       $addToSet: { respondedUsers: req.user._id },
     });
 
+    // 自动生成健康档案导入草稿（问卷题目若绑定了档案字段）→ 待健管专员审核写入
+    try {
+      const hasMapping = (questionnaire.questions || []).some(q => q.archiveField);
+      if (hasMapping) {
+        const User = require('../models/User');
+        const { buildArchiveDraft } = require('../utils/archiveImport');
+        const fullUser = await User.findById(req.user._id).lean();
+        const draft = buildArchiveDraft(fullUser, questionnaire, response);
+        if (draft.items.length > 0) {
+          await User.collection.updateOne(
+            { _id: new (require('mongoose').Types.ObjectId)(String(req.user._id)) },
+            { $set: { archiveDraft: draft } }
+          );
+        }
+      }
+    } catch (e) {
+      console.error('[archive-import] 自动生成档案草稿失败', e.message);
+    }
+
     let scoreRange = null;
     if (questionnaire.scoringEnabled && questionnaire.scoreRanges?.length > 0) {
       scoreRange = questionnaire.scoreRanges.find(r => totalScore >= r.minScore && totalScore <= r.maxScore) || null;

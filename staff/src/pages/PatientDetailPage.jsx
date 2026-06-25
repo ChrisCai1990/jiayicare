@@ -438,6 +438,52 @@ export default function PatientDetailPage() {
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
 
+  // 问卷 → 健康档案 自动导入审核
+  const [archiveDraftOpen, setArchiveDraftOpen] = useState(false)
+  const [archiveDraftItems, setArchiveDraftItems] = useState([])
+  const [archiveBusy, setArchiveBusy] = useState(false)
+  const [qResponses, setQResponses] = useState([])
+  useEffect(() => { staffAPI.getQuestionnaireResponses(id).then(r => setQResponses(r.data || [])).catch(() => {}) }, [id])
+
+  const openArchiveDraft = (draft) => {
+    setArchiveDraftItems((draft?.items || []).map(it => ({
+      ...it,
+      apply: !it.conflict, // 冲突项默认不勾，交专员定夺
+      valueStr: it.valueStr != null ? it.valueStr : (Array.isArray(it.value) ? it.value.join('、') : String(it.value || '')),
+    })))
+    setArchiveDraftOpen(true)
+  }
+  const handleGenerateArchiveDraft = async (responseId) => {
+    setArchiveBusy(true)
+    try {
+      const r = await staffAPI.generateArchiveDraft(id, responseId)
+      if (!r.data?.items?.length) { toast('该问卷未匹配到可导入的档案字段'); return }
+      openArchiveDraft(r.data)
+      load()
+    } catch (err) { toast(err.message || '生成失败') } finally { setArchiveBusy(false) }
+  }
+  const handleApplyArchiveDraft = async () => {
+    const items = archiveDraftItems.filter(it => it.apply).map(it => ({
+      path: it.path,
+      value: it.fieldType === 'array'
+        ? (String(it.valueStr || '').split(/[、,，;；]/).map(s => s.trim()).filter(Boolean))
+        : it.valueStr,
+    }))
+    if (!items.length) { toast('请至少勾选一个字段'); return }
+    setArchiveBusy(true)
+    try {
+      await staffAPI.applyArchiveDraft(id, items)
+      toast('已写入健康档案')
+      setArchiveDraftOpen(false)
+      load()
+    } catch (err) { toast(err.message || '写入失败') } finally { setArchiveBusy(false) }
+  }
+  const handleDismissArchiveDraft = async () => {
+    setArchiveBusy(true)
+    try { await staffAPI.dismissArchiveDraft(id); setArchiveDraftOpen(false); load() }
+    catch (err) { toast(err.message || '操作失败') } finally { setArchiveBusy(false) }
+  }
+
   const load = async () => {
     try {
       const [res, scrRes] = await Promise.allSettled([
@@ -1184,6 +1230,40 @@ export default function PatientDetailPage() {
             </div>
           </div>
         )
+      })()}
+
+      {/* 问卷自动填档：待审核草稿提醒 / 手动导入入口 */}
+      {(() => {
+        const draft = user.archiveDraft
+        const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0
+        if (pending) {
+          return (
+            <div style={{ marginBottom: 12, padding: '10px 16px', background: '#EFF6FF', borderRadius: 8, border: '1px solid #BFDBFE', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 18 }}>📝</span>
+              <div style={{ flex: 1, minWidth: 180 }}>
+                <span style={{ color: '#1E40AF', fontWeight: 600, fontSize: 14 }}>问卷已自动填好 {draft.items.length} 项健康档案</span>
+                <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>来自「{draft.questionnaireTitle || '健康问卷'}」，待审核写入</span>
+              </div>
+              <button className="btn btn-primary btn-sm" onClick={() => openArchiveDraft(draft)}>审核并写入</button>
+              <button className="btn btn-secondary btn-sm" onClick={handleDismissArchiveDraft} disabled={archiveBusy}>忽略</button>
+            </div>
+          )
+        }
+        if (qResponses.length > 0) {
+          return (
+            <div style={{ marginBottom: 12, padding: '8px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 13, color: '#4A6558' }}>📝 从已答问卷自动填充健康档案：</span>
+              <select id="qresp-select" className="form-control" style={{ width: 'auto', maxWidth: 320, fontSize: 13, padding: '4px 8px' }} defaultValue={qResponses[0].responseId}>
+                {qResponses.map(r => <option key={r.responseId} value={r.responseId}>{r.title}（{new Date(r.submittedAt).toLocaleDateString('zh-CN')}）</option>)}
+              </select>
+              <button className="btn btn-secondary btn-sm" disabled={archiveBusy}
+                onClick={() => handleGenerateArchiveDraft(document.getElementById('qresp-select')?.value)}>
+                {archiveBusy ? '生成中…' : 'AI生成档案草稿'}
+              </button>
+            </div>
+          )
+        }
+        return null
       })()}
 
       {/* Tabs */}
@@ -5464,6 +5544,48 @@ export default function PatientDetailPage() {
           </div>
         )
       })()}
+
+      {/* 问卷自动填档 · 审核写入弹窗 */}
+      {archiveDraftOpen && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setArchiveDraftOpen(false) }}>
+          <div className="modal" style={{ maxWidth: 860, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+            <div className="modal-header" style={{ flexShrink: 0 }}>
+              <h3 className="modal-title">问卷自动填档 · 审核写入</h3>
+              <button className="modal-close" onClick={() => setArchiveDraftOpen(false)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>勾选要写入档案的字段；与已有档案冲突的已标黄并默认不勾，请人工确认。写入值可直接编辑（数组字段多个值用「、」分隔）。</div>
+              {archiveDraftItems.length === 0 ? (
+                <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>无可导入字段</div>
+              ) : archiveDraftItems.map((it, i) => (
+                <div key={i} style={{ border: `1px solid ${it.conflict ? '#FDE9B8' : '#E0D9CE'}`, background: it.conflict ? '#FFFBEB' : '#fff', borderRadius: 8, padding: '10px 12px', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <input type="checkbox" checked={it.apply} onChange={e => setArchiveDraftItems(arr => arr.map((x, idx) => idx === i ? { ...x, apply: e.target.checked } : x))} />
+                    <span style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{it.label}</span>
+                    <span style={{ fontSize: 11, color: '#8AA89C' }}>{it.group}</span>
+                    {it.conflict && <span style={{ fontSize: 11, color: '#D97706', background: '#FEF3E2', borderRadius: 4, padding: '1px 6px', marginLeft: 'auto' }}>与现有档案不同</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>
+                    问卷题：{it.questionText} → 答：{Array.isArray(it.answer) ? it.answer.join('、') : (typeof it.answer === 'object' ? JSON.stringify(it.answer) : String(it.answer))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>写入值</span>
+                    <input className="form-control" style={{ fontSize: 13 }} value={it.valueStr}
+                      onChange={e => setArchiveDraftItems(arr => arr.map((x, idx) => idx === i ? { ...x, valueStr: e.target.value } : x))} />
+                  </div>
+                  {it.conflict && <div style={{ fontSize: 11, color: '#B45309', marginTop: 4 }}>现有档案：{it.existing}</div>}
+                </div>
+              ))}
+            </div>
+            <div className="modal-footer" style={{ flexShrink: 0 }}>
+              <button className="btn btn-secondary" onClick={() => setArchiveDraftOpen(false)}>取消</button>
+              <button className="btn btn-primary" disabled={archiveBusy} onClick={handleApplyArchiveDraft}>
+                {archiveBusy ? '写入中…' : `写入档案（${archiveDraftItems.filter(x => x.apply).length}）`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 服务记录详情弹窗 */}
       {showSRDetail && (() => {

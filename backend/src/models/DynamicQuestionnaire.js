@@ -29,6 +29,7 @@ const questionSchema = new mongoose.Schema({
   required:    { type: Boolean, default: true },
   jumpLogic:   [jumpRuleSchema],   // 跳题逻辑
   scoreEnabled:{ type: Boolean, default: false }, // 本题是否参与评分
+  archiveField:{ type: String, default: '' },     // 对应的健康档案字段 path（答卷自动导入档案用）
 }, { _id: false });
 
 const questionnaireSchema = new mongoose.Schema({

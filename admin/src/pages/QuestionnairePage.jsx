@@ -242,7 +242,7 @@ function JumpLogicEditor({ jumpLogic = [], options = [], allQuestions = [], curr
 }
 
 // ── 单题编辑卡 ────────────────────────────────────────────────────
-function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, scoringEnabled }) {
+function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, scoringEnabled, archiveFields = [] }) {
   const [collapsed, setCollapsed] = useState(false)
 
   const handleTypeChange = (type) => {
@@ -399,6 +399,21 @@ function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, s
             <input className="form-input" placeholder={q.type === 'date' ? '日期选择框提示（可选）' : '长文本输入框提示（可选）'}
               value={q.placeholder || ''} onChange={e => onUpdate({ placeholder: e.target.value })} />
           )}
+
+          {/* 对应健康档案字段（答卷自动导入档案用，一次配置长期生效） */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderTop: '1px dashed #E0D9CE', paddingTop: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: '#2b6cb0', whiteSpace: 'nowrap' }}>🔗 对应健康档案字段</span>
+            <select className="form-input" style={{ flex: 1, minWidth: 180, maxWidth: 300 }}
+              value={q.archiveField || ''} onChange={e => onUpdate({ archiveField: e.target.value })}>
+              <option value="">— 不导入档案 —</option>
+              {archiveFields.map(g => (
+                <optgroup key={g.group} label={g.group}>
+                  {g.fields.map(f => <option key={f.path} value={f.path}>{f.label}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            {q.archiveField && <span style={{ fontSize: 11, color: '#22A06B' }}>✓ 答卷将自动写入此字段</span>}
+          </div>
         </div>
       )}
     </div>
@@ -501,6 +516,8 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
     scoreRanges:    questionnaire?.scoreRanges    || [],
   })
   const [loading, setLoading] = useState(false)
+  const [archiveFields, setArchiveFields] = useState([])
+  useEffect(() => { adminAPI.getArchiveFields().then(r => setArchiveFields(r.data || [])).catch(() => {}) }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -650,6 +667,7 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
                       onRemove={() => removeQ(i)}
                       onMove={dir => moveQ(i, dir)}
                       scoringEnabled={form.scoringEnabled}
+                      archiveFields={archiveFields}
                     />
                     <InsertBar onInsert={newQ => insertQ(i + 1, newQ)} />
                   </React.Fragment>
