@@ -3400,6 +3400,227 @@ router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// ── 场景九：AI 用药建议（家庭医师）────────────────────────────────────
+// POST /api/staff/patients/:id/ai-medication-suggest
+router.post('/patients/:id/ai-medication-suggest', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases healthProfile labValues aiHealthSummary');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    // 已有用药（排除AI待审）
+    const currentMeds = await Medication.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
+      .select('name dosage frequency purpose').lean();
+    const currentMedStr = currentMeds.length
+      ? currentMeds.map(m => `${m.name} ${m.dosage} ${m.frequency}${m.purpose ? `（${m.purpose}）` : ''}`).join('；')
+      : '暂无';
+
+    const diseasesStr = (user.chronicDiseases || []).join('、') || '无';
+    const labStr = user.labValues ? JSON.stringify(user.labValues).slice(0, 400) : '无';
+    const allergies = user.healthProfile?.drugAllergy || '无';
+
+    const prompt = `你是一位专业的家庭医师，请根据患者信息为其生成合理的药物调整或新增建议。
+
+【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
+【慢病诊断】${diseasesStr}
+【药物过敏】${allergies}
+【当前用药】${currentMedStr}
+【关键指标】${labStr}
+
+请生成1-3条具体的药物建议（新增或调整），每条包含：化学名、剂量、用法频次、用药目的。
+严格按以下JSON数组输出（仅JSON）：
+[
+  {
+    "name": "化学名/通用名",
+    "brandName": "商品名（如无可留空）",
+    "dosage": "具体剂量（如10mg）",
+    "method": "用法（口服/注射等）",
+    "frequency": "频次（如每日1次）",
+    "timing": "服药时机（如早饭后，可留空）",
+    "purpose": "用药目的（30字内）"
+  }
+]`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200 });
+    let suggestions = [];
+    try {
+      const m = text.trim().match(/\[[\s\S]*\]/);
+      if (m) suggestions = JSON.parse(m[0]);
+    } catch {}
+
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+      return res.status(400).json({ success: false, message: 'AI未能生成有效建议，请稍后重试' });
+    }
+
+    // 批量创建为待审核记录
+    const created = await Medication.insertMany(suggestions.map(s => ({
+      user: user._id,
+      name: s.name || '未命名',
+      brandName: s.brandName || '',
+      dosage: s.dosage || '',
+      method: s.method || '口服',
+      frequency: s.frequency || '每日1次',
+      timing: s.timing || '',
+      purpose: s.purpose || '',
+      startDate: new Date().toISOString().slice(0, 10),
+      createdByStaff: true,
+      staffId: req.staff._id,
+      aiStatus: 'pending',
+      aiGeneratedBy: req.staff.name || '',
+      active: false, // 审核通过后激活
+    })));
+
+    res.json({ success: true, data: created, count: created.length });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PATCH /api/staff/patients/:id/medications/:mid/ai-review — 审核AI用药建议
+router.patch('/patients/:id/medications/:mid/ai-review', staffAuth, async (req, res) => {
+  try {
+    const { action } = req.body; // approve | reject
+    const med = await Medication.findOne({ _id: req.params.mid, user: req.params.id, aiStatus: 'pending' });
+    if (!med) return res.status(404).json({ success: false, message: '未找到待审核的用药记录' });
+
+    if (action === 'approve') {
+      med.aiStatus = 'approved';
+      med.active = true;
+      await med.save();
+      return res.json({ success: true, message: '已采纳，用药记录已激活' });
+    }
+    if (action === 'reject') {
+      await Medication.deleteOne({ _id: med._id });
+      return res.json({ success: true, message: '已拒绝并删除该建议' });
+    }
+    res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 场景十：AI 营养素建议（营养师）──────────────────────────────────────
+// POST /api/staff/patients/:id/ai-supplement-suggest
+router.post('/patients/:id/ai-supplement-suggest', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases lifestyle lifestyle_data labValues');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    const currentSups = await Supplement.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
+      .select('name dosage frequency purpose').lean();
+    const currentSupStr = currentSups.length
+      ? currentSups.map(s => `${s.name} ${s.dosage} ${s.frequency}`).join('；')
+      : '暂无';
+
+    const lifestyleStr = user.lifestyle_data?.summaryOverride
+      || (user.lifestyle ? `饮食：${user.lifestyle.diet || '无'}，运动：${user.lifestyle.exercise || '无'}，睡眠：${user.lifestyle.sleep || '无'}` : '无记录');
+
+    const prompt = `你是一位专业营养师，请根据患者情况生成1-3条营养素补充建议。
+
+【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
+【慢病标签】${(user.chronicDiseases || []).join('、') || '无'}
+【生活方式概述】${lifestyleStr}
+【当前营养素】${currentSupStr}
+
+请生成具体的营养素补充建议，严格按以下JSON数组输出（仅JSON）：
+[
+  {
+    "name": "营养素名称（如维生素D3、Omega-3、镁）",
+    "brand": "品牌（可留空）",
+    "dosage": "具体剂量（如1000IU、1g）",
+    "method": "用法（随餐/空腹/睡前等）",
+    "frequency": "频次（如每日1次）",
+    "purpose": "补充目的（30字内）"
+  }
+]`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1000 });
+    let suggestions = [];
+    try {
+      const m = text.trim().match(/\[[\s\S]*\]/);
+      if (m) suggestions = JSON.parse(m[0]);
+    } catch {}
+
+    if (!Array.isArray(suggestions) || suggestions.length === 0) {
+      return res.status(400).json({ success: false, message: 'AI未能生成有效建议' });
+    }
+
+    const created = await Supplement.insertMany(suggestions.map(s => ({
+      user: user._id,
+      name: s.name || '未命名',
+      brand: s.brand || '',
+      dosage: s.dosage || '',
+      method: s.method || '随餐',
+      frequency: s.frequency || '每日1次',
+      purpose: s.purpose || '',
+      startDate: new Date().toISOString().slice(0, 10),
+      createdByStaff: true,
+      staffId: req.staff._id,
+      aiStatus: 'pending',
+      aiGeneratedBy: req.staff.name || '',
+    })));
+
+    res.json({ success: true, data: created, count: created.length });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PATCH /api/staff/patients/:id/supplements/:sid/ai-review — 审核AI营养素建议
+router.patch('/patients/:id/supplements/:sid/ai-review', staffAuth, async (req, res) => {
+  try {
+    const { action } = req.body;
+    const sup = await Supplement.findOne({ _id: req.params.sid, user: req.params.id, aiStatus: 'pending' });
+    if (!sup) return res.status(404).json({ success: false, message: '未找到待审核的营养素记录' });
+
+    if (action === 'approve') {
+      sup.aiStatus = 'approved';
+      await sup.save();
+      return res.json({ success: true, message: '已采纳营养素建议' });
+    }
+    if (action === 'reject') {
+      await Supplement.deleteOne({ _id: sup._id });
+      return res.json({ success: true, message: '已拒绝并删除该建议' });
+    }
+    res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 场景十五：AI 转介草稿（家庭医师/任意角色）────────────────────────────
+// POST /api/staff/patients/:id/ai-referral-draft
+router.post('/patients/:id/ai-referral-draft', staffAuth, async (req, res) => {
+  try {
+    const { toRole, toName } = req.body; // 接收方角色/姓名（可选，用于定向措辞）
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases healthProfile labValues aiHealthSummary lifestyle_data');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    const meds = await Medication.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
+      .select('name dosage').limit(5).lean();
+
+    const prompt = `你是一位家庭医师，请为以下患者撰写一份简洁的科室转介说明（不超过120字），包含：主要病情、转介原因、需要对方协助的具体内容。语气专业，条理清晰。
+
+【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
+【主要诊断/慢病】${(user.chronicDiseases || []).join('、') || '无'}
+【当前主要用药】${meds.length ? meds.map(m => `${m.name} ${m.dosage}`).join('；') : '无'}
+【药物过敏】${user.healthProfile?.drugAllergy || '无'}
+${toRole ? `【转介目标】${toRole}${toName ? `（${toName}）` : ''}` : ''}
+
+请分两行输出：
+转介原因：（一句话，20字内）
+详细说明：（具体内容，80字内）`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 400 });
+    const reasonMatch = text.match(/转介原因[：:]\s*(.+)/);
+    const contentMatch = text.match(/详细说明[：:]\s*([\s\S]+)/);
+    res.json({
+      success: true,
+      data: {
+        reason: reasonMatch ? reasonMatch[1].trim() : '',
+        content: contentMatch ? contentMatch[1].trim().slice(0, 300) : text.trim().slice(0, 300),
+      },
+    });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 场景六：AI 智能随访建议（随访时机判断 + 随访提纲）────────────────
 // POST /api/staff/patients/:id/ai-followup-suggestion
 router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) => {
@@ -3874,13 +4095,15 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
 // 健管专员：健康档案问卷 / 体检报告OCR / 检查开单 / 随访建议
 // 就医专员：就医协助记录
 const TODO_REVIEW_ROLE = {
-  report_review:   'healthManager',
-  archive_review:  'healthManager',
-  followup_review: 'healthManager',
-  summary_review:  'familyDoctor',
-  risk_review:     'familyDoctor',
-  lifestyle_review:'nutritionist',
-  coach_review:    'nutritionist',
+  report_review:      'healthManager',
+  archive_review:     'healthManager',
+  followup_review:    'healthManager',
+  summary_review:     'familyDoctor',
+  risk_review:        'familyDoctor',
+  medication_review:  'familyDoctor',
+  lifestyle_review:   'nutritionist',
+  coach_review:       'nutritionist',
+  supplement_review:  'nutritionist',
 };
 
 router.get('/ai-todos', staffAuth, async (req, res) => {
@@ -3971,6 +4194,38 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
             createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
           });
         }
+      });
+    }
+
+    // ── 家庭医师：AI用药建议待审核 ──
+    if (can('medication_review')) {
+      const pendingMeds = await Medication.find({ aiStatus: 'pending' })
+        .populate('user', 'name').sort({ createdAt: -1 }).limit(50).lean();
+      pendingMeds.forEach(m => {
+        const createdAt = m.createdAt || new Date();
+        todos.push({
+          id: 'medication_' + m._id, type: 'medication_review', label: 'AI用药建议待审核', priority: 2,
+          patientName: m.user?.name || '未知', patientId: String(m.user?._id || ''),
+          summary: `${m.name} ${m.dosage} ${m.frequency}${m.purpose ? ' · ' + m.purpose : ''}`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${m.user?._id}?tab=medications`,
+        });
+      });
+    }
+
+    // ── 营养师：AI营养素建议待审核 ──
+    if (can('supplement_review')) {
+      const pendingSups = await Supplement.find({ aiStatus: 'pending' })
+        .populate('user', 'name').sort({ createdAt: -1 }).limit(50).lean();
+      pendingSups.forEach(s => {
+        const createdAt = s.createdAt || new Date();
+        todos.push({
+          id: 'supplement_' + s._id, type: 'supplement_review', label: 'AI营养素建议待审核', priority: 3,
+          patientName: s.user?.name || '未知', patientId: String(s.user?._id || ''),
+          summary: `${s.name} ${s.dosage} ${s.frequency}${s.purpose ? ' · ' + s.purpose : ''}`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${s.user?._id}?tab=medications`,
+        });
       });
     }
 

@@ -305,6 +305,15 @@ export const staffAPI = {
   generateAIRisk:          (id) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'POST' }),
   updateAIRisk:            (id, data) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'PATCH', body: JSON.stringify(data) }),
 
+  // 场景九：AI 用药建议
+  generateAIMedicationSuggest: (id) => req(`/staff/patients/${id}/ai-medication-suggest`, { method: 'POST' }),
+  reviewAIMedication: (patientId, medId, action) => req(`/staff/patients/${patientId}/medications/${medId}/ai-review`, { method: 'PATCH', body: JSON.stringify({ action }) }),
+  // 场景十：AI 营养素建议
+  generateAISupplementSuggest: (id) => req(`/staff/patients/${id}/ai-supplement-suggest`, { method: 'POST' }),
+  reviewAISupplement: (patientId, supId, action) => req(`/staff/patients/${patientId}/supplements/${supId}/ai-review`, { method: 'PATCH', body: JSON.stringify({ action }) }),
+  // 场景十五：AI 转介草稿
+  generateAIReferralDraft: (id, toRole, toName) => req(`/staff/patients/${id}/ai-referral-draft`, { method: 'POST', body: JSON.stringify({ toRole, toName }) }),
+
   // 场景六：AI 智能随访建议
   generateAIFollowupSuggestion: (id) => req(`/staff/patients/${id}/ai-followup-suggestion`, { method: 'POST' }),
   reviewFollowupDraft:          (id, action, notes) => req(`/staff/patients/${id}/ai-followup-draft`, { method: 'PATCH', body: JSON.stringify({ action, notes }) }),

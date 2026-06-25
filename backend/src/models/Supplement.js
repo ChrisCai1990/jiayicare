@@ -20,6 +20,9 @@ const supplementSchema = new mongoose.Schema({
   // 医护端录入标识
   createdByStaff: { type: Boolean, default: false },
   staffId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // AI生成草稿审核（场景10：营养师审核后激活）
+  aiStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: null },
+  aiGeneratedBy: { type: String, default: '' },
 }, { timestamps: true });
 
 supplementSchema.index({ user: 1, stopped: 1 });

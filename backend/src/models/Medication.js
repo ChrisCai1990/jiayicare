@@ -21,6 +21,9 @@ const medicationSchema = new mongoose.Schema({
   // 医护端录入标识
   createdByStaff: { type: Boolean, default: false },
   staffId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // AI生成草稿审核（场景9：家庭医师审核后激活）
+  aiStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: null },
+  aiGeneratedBy: { type: String, default: '' },
   // 今日打卡记录
   checkIns: [{
     date:   { type: String }, // YYYY-MM-DD

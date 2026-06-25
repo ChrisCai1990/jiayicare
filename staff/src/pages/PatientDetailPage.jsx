@@ -357,6 +357,8 @@ export default function PatientDetailPage() {
   const [medications, setMedications] = useState([])
   const [supplements, setSupplements] = useState([])
   const [medSubTab, setMedSubTab] = useState('med') // 'med' | 'sup'
+  const [aiMedGenerating, setAiMedGenerating] = useState(false)
+  const [aiSupGenerating, setAiSupGenerating] = useState(false)
   const [showMedModal, setShowMedModal] = useState(false)
   const [showSupModal, setShowSupModal] = useState(false)
   const [editingMed, setEditingMed] = useState(null)
@@ -1063,6 +1065,41 @@ export default function PatientDetailPage() {
       load()
     } catch (err) { toast(err.message || '操作失败') }
   }
+  // 场景九：AI 用药建议生成 + 单条审核
+  const generateAIMedication = async () => {
+    setAiMedGenerating(true)
+    try {
+      const r = await staffAPI.generateAIMedicationSuggest(id)
+      toast(`AI生成 ${r.count} 条用药建议，请家庭医师审核`)
+      loadMedications()
+    } catch (err) { toast(err.message || 'AI生成失败') }
+    finally { setAiMedGenerating(false) }
+  }
+  const reviewAIMedication = async (medId, action) => {
+    try {
+      await staffAPI.reviewAIMedication(id, medId, action)
+      toast(action === 'approve' ? '已采纳，用药记录已激活' : '已拒绝')
+      loadMedications()
+    } catch (err) { toast(err.message || '操作失败') }
+  }
+  // 场景十：AI 营养素建议生成 + 单条审核
+  const generateAISupplement = async () => {
+    setAiSupGenerating(true)
+    try {
+      const r = await staffAPI.generateAISupplementSuggest(id)
+      toast(`AI生成 ${r.count} 条营养素建议，请营养师审核`)
+      loadSupplements()
+    } catch (err) { toast(err.message || 'AI生成失败') }
+    finally { setAiSupGenerating(false) }
+  }
+  const reviewAISupplement = async (supId, action) => {
+    try {
+      await staffAPI.reviewAISupplement(id, supId, action)
+      toast(action === 'approve' ? '已采纳营养素建议' : '已拒绝')
+      loadSupplements()
+    } catch (err) { toast(err.message || '操作失败') }
+  }
+
   // 场景五：推送推荐内容
   const pushRecommendedContent = async (knowledgeId) => {
     setAiHelperBusy(true)
@@ -4158,27 +4195,79 @@ export default function PatientDetailPage() {
       {tab === 'medications' && (
         <div>
           {/* 子 tab 切换 */}
-          <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
             {[{ key: 'med', label: '💊 药物管理' }, { key: 'sup', label: '🥗 营养素管理' }].map(t => (
               <button key={t.key}
                 className={`btn btn-sm ${medSubTab === t.key ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setMedSubTab(t.key)}>{t.label}</button>
             ))}
-            <button className="btn btn-primary btn-sm" style={{ marginLeft: 'auto' }}
-              onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setShowSupModal(true) } }}>
-              ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
+              {medSubTab === 'med' && (
+                <button className="btn btn-secondary btn-sm" disabled={aiMedGenerating}
+                  onClick={generateAIMedication}>
+                  {aiMedGenerating ? 'AI生成中…' : '✨ AI用药建议'}
+                </button>
+              )}
+              {medSubTab === 'sup' && (
+                <button className="btn btn-secondary btn-sm" disabled={aiSupGenerating}
+                  onClick={generateAISupplement}>
+                  {aiSupGenerating ? 'AI生成中…' : '✨ AI营养素建议'}
+                </button>
+              )}
+              <button className="btn btn-primary btn-sm"
+                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setShowSupModal(true) } }}>
+                ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
+              </button>
+            </div>
           </div>
 
-          {medSubTab === 'med' && (
+          {medSubTab === 'med' && (() => {
+            const pendingMeds = medications.filter(m => m.aiStatus === 'pending')
+            const activeMeds = medications.filter(m => m.aiStatus !== 'pending')
+            const canApprove = staff?.role === 'familyDoctor' || staff?.role === 'superadmin'
+            return (
+            <>
+            {pendingMeds.length > 0 && (
+              <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
+                <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>💊</span>
+                    <span className="card-title" style={{ color: '#0077B6' }}>AI用药建议·待家庭医师审核</span>
+                    <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
+                  </div>
+                </div>
+                <table className="table" style={{ marginBottom: 0 }}>
+                  <thead><tr><th>药品名称</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>生成人</th><th>操作</th></tr></thead>
+                  <tbody>
+                    {pendingMeds.map(m => (
+                      <tr key={m._id} style={{ background: '#F5FAFF' }}>
+                        <td style={{ fontWeight: 600 }}>{m.name}{m.brandName ? <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 4 }}>({m.brandName})</span> : ''}</td>
+                        <td>{m.dosage}</td>
+                        <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
+                        <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || '-'}</td>
+                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.aiGeneratedBy || 'AI'}</td>
+                        <td>
+                          {canApprove ? (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => reviewAIMedication(m._id, 'approve')}>采纳</button>
+                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => reviewAIMedication(m._id, 'reject')}>拒绝</button>
+                            </div>
+                          ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待家庭医师审核</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <div className="card" style={{ padding: 0 }}>
-              {medications.length === 0 ? (
+              {activeMeds.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用药记录</div>
               ) : (
                 <table className="table">
                   <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>开始日期</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
-                    {medications.map(m => (
+                    {activeMeds.map(m => (
                       <tr key={m._id}>
                         <td style={{ fontWeight: 600 }}>{m.name}</td>
                         <td style={{ color: '#666' }}>{m.brandName || '-'}</td>
@@ -4219,17 +4308,55 @@ export default function PatientDetailPage() {
                 </table>
               )}
             </div>
-          )}
+            </>
+            )
+          })()}
 
-          {medSubTab === 'sup' && (
+          {medSubTab === 'sup' && (() => {
+            const pendingSups = supplements.filter(s => s.aiStatus === 'pending')
+            const activeSups = supplements.filter(s => s.aiStatus !== 'pending')
+            const canApprove = staff?.role === 'nutritionist' || staff?.role === 'superadmin'
+            return (
+            <>
+            {pendingSups.length > 0 && (
+              <div className="card" style={{ marginBottom: 12, border: '1.5px solid #16A34A' }}>
+                <div className="card-header" style={{ background: '#F0FDF4', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>🧪</span>
+                  <span className="card-title" style={{ color: '#16A34A' }}>AI营养素建议·待营养师审核</span>
+                  <span style={{ background: '#16A34A15', color: '#16A34A', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingSups.length}</span>
+                </div>
+                <table className="table" style={{ marginBottom: 0 }}>
+                  <thead><tr><th>营养素名称</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>生成人</th><th>操作</th></tr></thead>
+                  <tbody>
+                    {pendingSups.map(s => (
+                      <tr key={s._id} style={{ background: '#F0FFF4' }}>
+                        <td style={{ fontWeight: 600 }}>{s.name}{s.brand ? <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 4 }}>({s.brand})</span> : ''}</td>
+                        <td>{s.dosage}</td>
+                        <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
+                        <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || '-'}</td>
+                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.aiGeneratedBy || 'AI'}</td>
+                        <td>
+                          {canApprove ? (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewAISupplement(s._id, 'approve')}>采纳</button>
+                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => reviewAISupplement(s._id, 'reject')}>拒绝</button>
+                            </div>
+                          ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待营养师审核</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <div className="card" style={{ padding: 0 }}>
-              {supplements.length === 0 ? (
+              {activeSups.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无营养素记录</div>
               ) : (
                 <table className="table">
                   <thead><tr><th>营养素名称</th><th>品牌</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>开始日期</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
-                    {supplements.map(s => (
+                    {activeSups.map(s => (
                       <tr key={s._id}>
                         <td style={{ fontWeight: 600 }}>{s.name}</td>
                         <td style={{ color: '#666' }}>{s.brand || '-'}</td>
@@ -4270,7 +4397,9 @@ export default function PatientDetailPage() {
                 </table>
               )}
             </div>
-          )}
+            </>
+            )
+          })()}
 
           {/* 新增/编辑药物弹窗 */}
           {showMedModal && (
@@ -6474,6 +6603,7 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
   const [selectedHealthSections, setSelectedHealthSections] = useState(['basicInfo'])
   const [extraData, setExtraData] = useState({ medications: [], supplements: [], healthRecords: [] })
   const [saving, setSaving] = useState(false)
+  const [aiDraftLoading, setAiDraftLoading] = useState(false)
   const [error, setError] = useState('')
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
 
@@ -6607,7 +6737,24 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
             <input className="form-input" placeholder="或手动输入原因..." value={form.reason} onChange={set('reason')} />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">详细说明</label>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+              <label className="form-label" style={{ marginBottom: 0 }}>详细说明</label>
+              <button type="button" className="btn btn-secondary btn-sm" style={{ fontSize: 12 }}
+                disabled={aiDraftLoading}
+                onClick={async () => {
+                  setAiDraftLoading(true)
+                  try {
+                    const toStaff = staffList.find(s => s._id === form.toStaffId)
+                    const r = await staffAPI.generateAIReferralDraft(patientId, toStaff?.roleLabel, toStaff?.name)
+                    if (r.data.reason && !form.reason) setForm(f => ({ ...f, reason: r.data.reason }))
+                    if (r.data.content) setForm(f => ({ ...f, content: r.data.content }))
+                    toast('AI已生成草稿，可直接修改')
+                  } catch (err) { toast(err.message || 'AI生成失败') }
+                  finally { setAiDraftLoading(false) }
+                }}>
+                {aiDraftLoading ? '生成中…' : '✨ AI生成'}
+              </button>
+            </div>
             <textarea className="form-input" rows={3} placeholder="病情描述、需要协助的具体内容..." value={form.content} onChange={set('content')} />
           </div>
           {/* 健康档案附件选择 */}
