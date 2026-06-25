@@ -13,10 +13,19 @@ export function clearToken() {
 }
 export function getToken() { return _token }
 
+// 登录态失效（401）：清掉 token 并跳回登录页，避免每个页面卡在"Token 无效或已过期"红框
+function handleUnauthorized() {
+  clearToken()
+  if (!window.location.pathname.startsWith('/login')) {
+    window.location.href = '/login'
+  }
+}
+
 async function req(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json' }
   if (_token) headers['Authorization'] = `Bearer ${_token}`
   const res = await fetch(`${BASE}${path}`, { ...opts, headers })
+  if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
   const data = await res.json()
   if (!res.ok) throw new Error(data.message || `请求失败 (${res.status})`)
   return data
@@ -73,6 +82,7 @@ export const adminAPI = {
     const token = _token
     if (token) headers['Authorization'] = `Bearer ${token}`
     const res = await fetch(`${BASE}/upload/image`, { method: 'POST', headers, body: fd })
+    if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
     const data = await res.json()
     if (!res.ok) throw new Error(data.message || '上传失败')
     return data
