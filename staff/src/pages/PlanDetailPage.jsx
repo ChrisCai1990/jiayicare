@@ -182,6 +182,20 @@ export default function PlanDetailPage() {
     catch (err) { toast(err.message) }
   }
 
+  const handleAdoptAI = async () => {
+    try {
+      await staffAPI.updatePlan(id, { content: { ...plan.content, aiStatus: 'adopted' } })
+      toast('已采纳，方案保留为草稿，确认无误后可推送给会员')
+      load()
+    } catch (err) { toast(err.message) }
+  }
+
+  const handleRejectAI = async () => {
+    if (!window.confirm('确认拒绝并删除此AI方案？')) return
+    try { await staffAPI.deletePlan(id); toast('已删除'); nav(-1) }
+    catch (err) { toast(err.message) }
+  }
+
   const handleItemStatus = async (itemId, status) => {
     try { await staffAPI.updatePlanItem(id, itemId, { status }); load() }
     catch (err) { toast(err.message) }
@@ -266,6 +280,13 @@ export default function PlanDetailPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {plan.content?.aiStatus === 'pending' && (
+            <>
+              <span style={{ fontSize: 12, color: '#D97706', alignSelf: 'center', background: '#FFF8F0', border: '1px solid #D97706', padding: '3px 10px', borderRadius: 6 }}>✨ AI生成草稿，待审核</span>
+              <button className="btn btn-primary btn-sm" onClick={handleAdoptAI}>✅ 采纳方案</button>
+              <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545', borderColor: '#DC3545' }} onClick={handleRejectAI}>❌ 拒绝删除</button>
+            </>
+          )}
           {plan.status === 'draft' && !editMode && (
             <button className="btn btn-secondary" onClick={startEdit}>✏️ 编辑信息</button>
           )}

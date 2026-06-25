@@ -323,6 +323,12 @@ export const staffAPI = {
   sendCoachMessage:             (id, message) => req(`/staff/patients/${id}/coach-message/send`, { method: 'POST', body: JSON.stringify({ message }) }),
   // 场景五：AI 个性化内容推荐
   generateAIContentRecommend:   (id) => req(`/staff/patients/${id}/ai-content-recommend`, { method: 'POST' }),
+  // 场景11：AI开单建议（从管理方案异常复查生成，返回建议，不创建记录）
+  generateAIExamSuggest: (id) => req(`/staff/patients/${id}/ai-exam-requisition-suggest`, { method: 'POST' }),
+  // 场景8：AI营养干预方案（营养师审核）
+  generateAINutritionPlan: (id) => req(`/staff/patients/${id}/ai-nutrition-plan`, { method: 'POST' }),
+  // 场景6：AI年度体检方案（健管专员审核）
+  generateAIAnnualCheckupPlan: (id) => req(`/staff/patients/${id}/ai-annual-checkup-plan`, { method: 'POST' }),
 
   // 4.3 专项筛查
   getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),

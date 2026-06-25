@@ -4095,15 +4095,17 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
 // 健管专员：健康档案问卷 / 体检报告OCR / 检查开单 / 随访建议
 // 就医专员：就医协助记录
 const TODO_REVIEW_ROLE = {
-  report_review:      'healthManager',
-  archive_review:     'healthManager',
-  followup_review:    'healthManager',
-  summary_review:     'familyDoctor',
-  risk_review:        'familyDoctor',
-  medication_review:  'familyDoctor',
-  lifestyle_review:   'nutritionist',
-  coach_review:       'nutritionist',
-  supplement_review:  'nutritionist',
+  report_review:        'healthManager',
+  archive_review:       'healthManager',
+  followup_review:      'healthManager',
+  checkup_plan_review:  'healthManager',
+  summary_review:       'familyDoctor',
+  risk_review:          'familyDoctor',
+  medication_review:    'familyDoctor',
+  lifestyle_review:     'nutritionist',
+  coach_review:         'nutritionist',
+  supplement_review:    'nutritionist',
+  nutrition_plan_review:'nutritionist',
 };
 
 router.get('/ai-todos', staffAuth, async (req, res) => {
@@ -4259,6 +4261,38 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: d.message ? d.message.slice(0, 50) : 'AI生成教练消息，待营养师审核发送',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${u._id}?tab=followups`,
+        });
+      });
+    }
+
+    // ── 营养师：AI营养干预方案待审核 ──
+    if (can('nutrition_plan_review')) {
+      const nutritionPlans = await HealthPlan.find({ type: 'nutrition', 'content.aiStatus': 'pending' })
+        .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
+      nutritionPlans.forEach(p => {
+        const createdAt = p.createdAt || new Date();
+        todos.push({
+          id: 'nutrition_plan_' + p._id, type: 'nutrition_plan_review', label: 'AI营养方案待审核', priority: 3,
+          patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
+          summary: 'AI生成营养干预方案，待营养师审核',
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/plans/${p._id}`,
+        });
+      });
+    }
+
+    // ── 健管专员：AI年度体检方案待审核 ──
+    if (can('checkup_plan_review')) {
+      const checkupPlans = await HealthPlan.find({ type: 'annual_checkup', 'content.aiStatus': 'pending' })
+        .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
+      checkupPlans.forEach(p => {
+        const createdAt = p.createdAt || new Date();
+        todos.push({
+          id: 'checkup_plan_' + p._id, type: 'checkup_plan_review', label: 'AI体检方案待审核', priority: 3,
+          patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
+          summary: 'AI生成年度体检方案，待健管专员审核',
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/plans/${p._id}`,
         });
       });
     }
@@ -4531,6 +4565,207 @@ router.post('/patients/:id/archive-draft/dismiss', staffAuth, async (req, res) =
     await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set: { archiveDraft: null } });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 场景11：AI开单建议（从年度管理方案的异常复查提醒生成） ─────────────────────────
+// POST /api/staff/patients/:id/ai-exam-requisition-suggest
+// 返回 { title, notes, suggestions: string[] }，不创建记录，由医护手动开单
+router.post('/patients/:id/ai-exam-requisition-suggest', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases healthProfile aiRiskAssessment');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    // 读取最新年度管理方案中的异常复查板块
+    const latestPlan = await AnnualPlan.findOne({ patientId: user._id })
+      .sort({ year: -1, updatedAt: -1 }).lean();
+
+    const abnormalItems = (latestPlan?.moduleData?.abnormal_followup?.records || []);
+    const monitoringItems = (latestPlan?.moduleData?.monitoring?.records || []);
+
+    const { chat } = require('../utils/ai');
+
+    const abnormalText = abnormalItems.length
+      ? abnormalItems.map(i => `· ${i.items || ''}：${i.reason || ''}（计划时间：${i.time || '未定'}）`).join('\n')
+      : '无';
+    const monitoringText = monitoringItems.length
+      ? monitoringItems.map(i => `· ${i.items || ''}，频次：${i.frequency || ''}`).join('\n')
+      : '无';
+
+    const prompt = `你是一位家庭医师助理，请根据患者信息和异常复查提醒，生成本次检查开单建议。
+
+【患者基本信息】
+姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+
+【年度管理方案·异常复查提醒】
+${abnormalText}
+
+【日常监测项目】
+${monitoringText}
+
+请以JSON格式输出以下字段，仅输出JSON：
+{
+  "title": "开单标题（简洁，如：2026年异常复查开单）",
+  "notes": "整体备注（包含复查背景、注意事项，50字以内）",
+  "suggestions": ["具体检查项目名称1", "项目名称2", "项目名称3"]
+}
+
+建议项目应具体（如"TSH促甲状腺激素"而非泛称"甲状腺检查"），3-8个项目为宜。`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 800 });
+    let result = { title: '检查开单', notes: '', suggestions: [] };
+    try {
+      const m = text.trim().match(/\{[\s\S]*\}/);
+      if (m) result = { ...result, ...JSON.parse(m[0]) };
+    } catch {}
+
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 场景8：AI营养干预方案（营养师审核） ──────────────────────────────────────────
+// POST /api/staff/patients/:id/ai-nutrition-plan
+// 创建 HealthPlan type='nutrition' status='draft' content.aiStatus='pending'
+router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases healthProfile lifestyle_data aiRiskAssessment');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const supplements = await Supplement.find({ user: user._id, stopped: false }).select('name dosage purpose').lean();
+    const { chat } = require('../utils/ai');
+
+    const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
+    const supText = supplements.length ? supplements.map(s => `${s.name}（${s.dosage}）：${s.purpose || ''}`).join('、') : '无';
+    const lifestyle = user.lifestyle_data || {};
+
+    const prompt = `你是一位注册营养师，请根据患者信息生成个性化营养干预方案。
+
+【患者信息】
+姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+食物过敏/忌口：${allergyInfo}
+当前营养素补充：${supText}
+饮食习惯：${lifestyle.diet || '未记录'}，运动习惯：${lifestyle.exercise || '未记录'}
+
+请以JSON格式输出方案，仅输出JSON：
+{
+  "title": "方案名称（如：2026年${user.name}营养干预方案）",
+  "description": "方案简介（100字以内）",
+  "items": [
+    { "name": "早餐方案", "category": "营养干预", "notes": "具体早餐建议，含食物种类和分量" },
+    { "name": "午餐方案", "category": "营养干预", "notes": "具体午餐建议" },
+    { "name": "晚餐方案", "category": "营养干预", "notes": "具体晚餐建议" },
+    { "name": "加餐方案", "category": "营养干预", "notes": "两餐间加餐建议（若需要）" },
+    { "name": "运动建议", "category": "运动康复", "notes": "每周运动频次、类型、强度" },
+    { "name": "营养素补充建议", "category": "营养干预", "notes": "具体补充剂建议，含剂量和时机" }
+  ]
+}
+
+注意：需结合慢病标签和忌口调整方案，items至少4条，每条notes要具体可执行。`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500 });
+    let raw = {};
+    try {
+      const m = text.trim().match(/\{[\s\S]*\}/);
+      if (m) raw = JSON.parse(m[0]);
+    } catch {}
+
+    const plan = await HealthPlan.create({
+      patientId: user._id,
+      staffId: req.staff._id,
+      type: 'nutrition',
+      title: raw.title || `${new Date().getFullYear()}年${user.name}营养干预方案`,
+      description: raw.description || '',
+      year: new Date().getFullYear(),
+      items: (raw.items || []).map(i => ({
+        name: i.name || '',
+        category: i.category || '营养干预',
+        notes: i.notes || '',
+        status: 'pending',
+      })),
+      content: { aiStatus: 'pending', aiGeneratedBy: req.staff.name || '' },
+      status: 'draft',
+    });
+
+    res.json({ success: true, data: plan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 场景6：AI年度体检方案（健管专员审核） ──────────────────────────────────────
+// POST /api/staff/patients/:id/ai-annual-checkup-plan
+// 创建 HealthPlan type='annual_checkup' status='draft' content.aiStatus='pending'
+router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases healthProfile aiRiskAssessment');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const year = new Date().getFullYear();
+    const { chat } = require('../utils/ai');
+
+    // 读取历史体检方案供参考
+    const lastCheckupPlan = await HealthPlan.findOne({ patientId: user._id, type: 'annual_checkup' })
+      .sort({ createdAt: -1 }).lean();
+    const lastCheckupItemNames = (lastCheckupPlan?.items || []).map(i => i.name).join('、') || '无';
+
+    const riskSummary = user.aiRiskAssessment?.overallSummary || '未进行AI风险评估';
+
+    const prompt = `你是一位健康管理专员，请根据患者信息为其生成${year}年度体检方案。
+
+【患者信息】
+姓名：${user.name}，年龄：${user.age || '未知'}岁，性别：${user.gender || '未知'}
+慢病标签：${user.chronicDiseases?.join('、') || '无'}
+AI风险摘要：${riskSummary}
+去年体检项目（参考，避免重复）：${lastCheckupItemNames}
+
+请以JSON格式输出方案，仅输出JSON：
+{
+  "title": "方案名称（如：2026年${user.name}年度体检方案）",
+  "description": "方案说明（50字以内）",
+  "items": [
+    { "name": "项目名称", "category": "检验检查|影像检查|体格检查|专项检查", "scheduledDate": "${year}-09-01", "notes": "注意事项（如空腹/带历史报告等）" }
+  ]
+}
+
+说明：
+- 常规体检必选：血常规、生化全套、血糖、血脂、甲状腺功能（含TSH）、尿常规
+- 根据慢病标签增加专项：桥本/甲减→甲状腺抗体TPO/TgAb+甲状腺超声；高血压→心电图+颈动脉超声；糖尿病→HbA1c+眼底检查
+- 年龄>40建议：肿瘤标志物（AFP/CEA/CA125等）、胸部低剂量CT
+- 共8-15个项目，scheduledDate集中在${year}年9-11月，重点项目安排早一些`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500 });
+    let raw = {};
+    try {
+      const m = text.trim().match(/\{[\s\S]*\}/);
+      if (m) raw = JSON.parse(m[0]);
+    } catch {}
+
+    const plan = await HealthPlan.create({
+      patientId: user._id,
+      staffId: req.staff._id,
+      type: 'annual_checkup',
+      title: raw.title || `${year}年${user.name}年度体检方案`,
+      description: raw.description || '',
+      year,
+      items: (raw.items || []).map(i => ({
+        name: i.name || '',
+        category: i.category || '检验检查',
+        scheduledDate: i.scheduledDate ? new Date(i.scheduledDate) : null,
+        notes: i.notes || '',
+        status: 'pending',
+      })),
+      content: { aiStatus: 'pending', aiGeneratedBy: req.staff.name || '' },
+      status: 'draft',
+    });
+
+    res.json({ success: true, data: plan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 module.exports = router;

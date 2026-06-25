@@ -158,11 +158,11 @@ const SR_CATEGORY = {
 const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7' }
 
 // ── 开单弹窗 ─────────────────────────────────────────────
-function RequisitionModal({ patientId, onClose, onSaved }) {
+function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '' }) {
   const toast = useToast()
   const [items, setItems] = useState([])
-  const [title, setTitle] = useState('')
-  const [notes, setNotes] = useState('')
+  const [title, setTitle] = useState(prefillTitle)
+  const [notes, setNotes] = useState(prefillNotes)
   const [dueDate, setDueDate] = useState('')
   const [searchQ, setSearchQ] = useState('')
   const [searchResults, setSearchResults] = useState([])
@@ -359,6 +359,10 @@ export default function PatientDetailPage() {
   const [medSubTab, setMedSubTab] = useState('med') // 'med' | 'sup'
   const [aiMedGenerating, setAiMedGenerating] = useState(false)
   const [aiSupGenerating, setAiSupGenerating] = useState(false)
+  const [aiExamSuggesting, setAiExamSuggesting] = useState(false)
+  const [aiNutritionGenerating, setAiNutritionGenerating] = useState(false)
+  const [aiCheckupGenerating, setAiCheckupGenerating] = useState(false)
+  const [reqPrefill, setReqPrefill] = useState(null)
   const [showMedModal, setShowMedModal] = useState(false)
   const [showSupModal, setShowSupModal] = useState(false)
   const [editingMed, setEditingMed] = useState(null)
@@ -4495,8 +4499,28 @@ export default function PatientDetailPage() {
       {/* ── Plans Tab ── */}
       {tab === 'plans' && (
         <div className="card">
-          <div className="card-header">
+          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="card-title">管理方案</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-secondary btn-sm" disabled={aiNutritionGenerating} onClick={async () => {
+                setAiNutritionGenerating(true)
+                try {
+                  await staffAPI.generateAINutritionPlan(id)
+                  toast('AI营养方案已生成，待营养师审核')
+                  loadPlans()
+                } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
+                finally { setAiNutritionGenerating(false) }
+              }}>{aiNutritionGenerating ? '生成中…' : '✨ AI营养方案'}</button>
+              <button className="btn btn-secondary btn-sm" disabled={aiCheckupGenerating} onClick={async () => {
+                setAiCheckupGenerating(true)
+                try {
+                  await staffAPI.generateAIAnnualCheckupPlan(id)
+                  toast('AI体检方案已生成，待健管专员审核')
+                  loadPlans()
+                } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
+                finally { setAiCheckupGenerating(false) }
+              }}>{aiCheckupGenerating ? '生成中…' : '✨ AI体检方案'}</button>
+            </div>
           </div>
           {plans.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无管理方案</div>
@@ -5019,7 +5043,20 @@ export default function PatientDetailPage() {
         <div className="card">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="card-title">检查开单</div>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowReqModal(true)}>＋ 新建开单</button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button className="btn btn-secondary btn-sm" disabled={aiExamSuggesting} onClick={async () => {
+                setAiExamSuggesting(true)
+                try {
+                  const r = await staffAPI.generateAIExamSuggest(id)
+                  const d = r.data || {}
+                  const notesWithSuggestions = [d.notes, d.suggestions?.length ? `AI建议检查项目：${d.suggestions.join('、')}` : ''].filter(Boolean).join('\n')
+                  setReqPrefill({ title: d.title || '', notes: notesWithSuggestions })
+                  setShowReqModal(true)
+                } catch (err) { toast('AI建议失败：' + (err.message || '未知错误')) }
+                finally { setAiExamSuggesting(false) }
+              }}>{aiExamSuggesting ? 'AI生成中…' : '✨ AI开单建议'}</button>
+              <button className="btn btn-primary btn-sm" onClick={() => { setReqPrefill(null); setShowReqModal(true) }}>＋ 新建开单</button>
+            </div>
           </div>
           {requisitions.length === 0 ? (
             <div style={{ padding: '40px 16px', textAlign: 'center', color: '#aaa' }}>暂无开单记录</div>
@@ -6062,9 +6099,12 @@ export default function PatientDetailPage() {
       {showReqModal && (
         <RequisitionModal
           patientId={id}
-          onClose={() => setShowReqModal(false)}
+          prefillTitle={reqPrefill?.title || ''}
+          prefillNotes={reqPrefill?.notes || ''}
+          onClose={() => { setShowReqModal(false); setReqPrefill(null) }}
           onSaved={() => {
             setShowReqModal(false)
+            setReqPrefill(null)
             toast('开单已创建，请上传对应报告')
             loadRequisitions()
             setTab('requisitions')

@@ -16,9 +16,11 @@ const TYPE_CONFIG = {
   supplement_review:  { icon: '🧪', label: 'AI营养素建议待审核', color: '#16A34A', priority: 3 },
   risk_review:        { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   risk_alert:      { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
-  coach_review:    { icon: '💬', label: 'AI教练消息待审核', color: '#D97706', priority: 4 },
-  transfer_human:  { icon: '🔔', label: 'AI对话转人工', color: '#DC3545', priority: 1 },
-  draft_review:    { icon: '✏️', label: 'AI文案待审核', color: '#4A6558', priority: 4 },
+  coach_review:         { icon: '💬', label: 'AI教练消息待审核', color: '#D97706', priority: 4 },
+  transfer_human:       { icon: '🔔', label: 'AI对话转人工', color: '#DC3545', priority: 1 },
+  draft_review:         { icon: '✏️', label: 'AI文案待审核', color: '#4A6558', priority: 4 },
+  nutrition_plan_review:{ icon: '🥗', label: 'AI营养方案待审核', color: '#16A34A', priority: 3 },
+  checkup_plan_review:  { icon: '🏥', label: 'AI体检方案待审核', color: '#0077B6', priority: 3 },
 }
 
 function formatTime(date) {
