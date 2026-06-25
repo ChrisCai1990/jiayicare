@@ -1258,7 +1258,7 @@ export default function PatientDetailPage() {
               </select>
               <button className="btn btn-secondary btn-sm" disabled={archiveBusy}
                 onClick={() => handleGenerateArchiveDraft(document.getElementById('qresp-select')?.value)}>
-                {archiveBusy ? '生成中…' : 'AI生成档案草稿'}
+                {archiveBusy ? '生成中…' : '生成档案草稿'}
               </button>
             </div>
           )
