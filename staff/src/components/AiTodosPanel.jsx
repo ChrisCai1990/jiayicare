@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
+import { useStaff } from '../App'
 
 const TYPE_CONFIG = {
   report_review:   { icon: '📋', label: '体检报告待审核', color: '#0077B6', priority: 2 },
+  archive_review:  { icon: '🗂️', label: '健康档案问卷待审核', color: '#0077B6', priority: 3 },
+  summary_review:  { icon: '🩺', label: 'AI汇总分析待审核', color: '#22A06B', priority: 2 },
+  lifestyle_review:{ icon: '🌿', label: '生活方式评估待审核', color: '#16A34A', priority: 3 },
   trend_review:    { icon: '📈', label: 'AI趋势分析待审核', color: '#22A06B', priority: 3 },
   plan_review:     { icon: '📝', label: 'AI管理方案待审核', color: '#22A06B', priority: 3 },
   push_review:     { icon: '📣', label: '内容推送待审核', color: '#8e44ad', priority: 4 },
   followup_review: { icon: '📅', label: '随访建议待审核', color: '#D97706', priority: 4 },
+  risk_review:     { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   risk_alert:      { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   coach_review:    { icon: '💬', label: 'AI教练消息待审核', color: '#D97706', priority: 4 },
   transfer_human:  { icon: '🔔', label: 'AI对话转人工', color: '#DC3545', priority: 1 },
@@ -25,6 +30,7 @@ function formatTime(date) {
 
 export default function AiTodosPanel() {
   const nav = useNavigate()
+  const { staff } = useStaff()
   const [todos, setTodos] = useState([])
   const [loading, setLoading] = useState(true)
 
@@ -44,6 +50,9 @@ export default function AiTodosPanel() {
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div className="card-title">AI 待审核任务</div>
+          {staff?.roleLabel && staff?.role !== 'superadmin' && (
+            <span style={{ fontSize: 12, color: '#8AA89C' }}>· {staff.roleLabel}（仅显示本人可审核项）</span>
+          )}
           {todos.length > 0 && (
             <span style={{
               background: overdueCount > 0 ? '#DC3545' : '#1E6B50',

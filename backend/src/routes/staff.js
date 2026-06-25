@@ -3064,7 +3064,7 @@ ${reportSummary}
 // PATCH /api/staff/patients/:id/ai-health-summary
 router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
-    const { sections, sectionNotes, action, year } = req.body;
+    const { sections, sectionNotes, action, scope, year } = req.body;
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
     const current = user.aiHealthSummary || {};
@@ -3075,13 +3075,28 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const entry = { ...(byYear[y] || {}) };
     if (sections !== undefined) entry.sections = sections;
     if (sectionNotes !== undefined) entry.sectionNotes = sectionNotes;
-    if (action === 'approve') { entry.approvedAt = new Date(); entry.approvedBy = req.staff.name; }
+    // 审核：按角色维度拆分（家庭医师审5维 / 营养师审生活方式评估）
+    // scope: 'doctor' | 'nutrition' | 'all'（缺省=all，兼容旧前端）
+    if (action === 'approve') {
+      const now = new Date();
+      const sc = scope || 'all';
+      if (sc === 'doctor' || sc === 'all') { entry.doctorApprovedAt = now; entry.doctorApprovedBy = req.staff.name; }
+      if (sc === 'nutrition' || sc === 'all') { entry.nutritionApprovedAt = now; entry.nutritionApprovedBy = req.staff.name; }
+      // 两个维度都已审核 → 置整体已审核（供 ai-annual-plan 等下游判断）
+      if (entry.doctorApprovedAt && entry.nutritionApprovedAt) {
+        entry.approvedAt = now; entry.approvedBy = req.staff.name;
+      }
+    }
     byYear[y] = entry;
     updated.byYear = byYear;
     // 同步顶层指向被编辑年度（兼容 ai-annual-plan 读取 ais.sections）
     if (sections !== undefined) updated.sections = sections;
     if (sectionNotes !== undefined) updated.sectionNotes = sectionNotes;
-    if (action === 'approve') { updated.approvedAt = entry.approvedAt; updated.approvedBy = entry.approvedBy; }
+    if (action === 'approve') {
+      updated.doctorApprovedAt = entry.doctorApprovedAt; updated.doctorApprovedBy = entry.doctorApprovedBy;
+      updated.nutritionApprovedAt = entry.nutritionApprovedAt; updated.nutritionApprovedBy = entry.nutritionApprovedBy;
+      if (entry.approvedAt) { updated.approvedAt = entry.approvedAt; updated.approvedBy = entry.approvedBy; }
+    }
     updated.latestYear = y;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
@@ -3770,74 +3785,141 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
 
 // ── AI 待办任务聚合接口 ────────────────────────────────────────────
 // 汇总所有 AI 生成内容中待人工审核的任务，按紧急程度排序
+// 各 AI 审核场景 → 负责审核的角色（对齐《AI场景完整需求文档·含权限修正》）
+// 家庭医师：AI汇总5维 / 年度方案 / 药物 / 转介 / 风险评估
+// 营养师：  生活方式评估 / 营养干预 / 营养素 / 教练消息
+// 健管专员：健康档案问卷 / 体检报告OCR / 检查开单 / 随访建议
+// 就医专员：就医协助记录
+const TODO_REVIEW_ROLE = {
+  report_review:   'healthManager',
+  archive_review:  'healthManager',
+  followup_review: 'healthManager',
+  summary_review:  'familyDoctor',
+  risk_review:     'familyDoctor',
+  lifestyle_review:'nutritionist',
+  coach_review:    'nutritionist',
+};
+
 router.get('/ai-todos', staffAuth, async (req, res) => {
   try {
-    const staffId = req.staff._id;
+    const role = req.staff.role;
+    const isSuper = role === 'superadmin';
+    // 当前角色能审核哪些场景类型；超管看全部
+    const allowedTypes = isSuper
+      ? Object.keys(TODO_REVIEW_ROLE)
+      : Object.keys(TODO_REVIEW_ROLE).filter(t => TODO_REVIEW_ROLE[t] === role);
+    const can = (type) => allowedTypes.includes(type);
+
     const now = new Date();
+    const DAY = 24 * 60 * 60 * 1000;
     const todos = [];
 
-    // 1. 体检报告待审核（aiStatus=pending）
-    const pendingReports = await MedicalReport.find({ aiStatus: 'pending' })
-      .populate('user', 'name phone')
-      .sort({ updatedAt: -1 })
-      .limit(50)
-      .lean();
-
-    pendingReports.forEach(r => {
-      const createdAt = r.updatedAt || r.createdAt;
-      const overdue = (now - new Date(createdAt)) > 24 * 60 * 60 * 1000;
-      todos.push({
-        id: String(r._id),
-        type: 'report_review',
-        label: '体检报告待审核',
-        priority: 2,
-        patientName: r.user?.name || '未知',
-        patientId: String(r.user?._id || ''),
-        summary: r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
-        createdAt,
-        overdue,
-        link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+    // ── 健管专员：体检报告 OCR 待审核（aiStatus=pending）──
+    if (can('report_review')) {
+      const pendingReports = await MedicalReport.find({ aiStatus: 'pending' })
+        .populate('user', 'name phone').sort({ updatedAt: -1 }).limit(50).lean();
+      pendingReports.forEach(r => {
+        const createdAt = r.updatedAt || r.createdAt;
+        todos.push({
+          id: 'report_' + r._id, type: 'report_review', label: '体检报告待审核', priority: 2,
+          patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
+          summary: r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+        });
       });
-    });
+    }
 
-    // 3. 风险预警待处理（场景八）→ User.aiRiskAssessment 高/危急 且未审核
-    const riskUsers = await User.find({
-      'aiRiskAssessment.alerted': true,
-      'aiRiskAssessment.approvedAt': null,
-    }).select('name aiRiskAssessment').limit(50).lean();
-
-    riskUsers.forEach(u => {
-      const ra = u.aiRiskAssessment || {};
-      const createdAt = ra.generatedAt || now;
-      const overdue = (now - new Date(createdAt)) > 24 * 60 * 60 * 1000;
-      const critical = ra.overallLevel === 'critical';
-      todos.push({
-        id: String(u._id),
-        type: 'risk_review',
-        label: critical ? '风险预警·危急值' : '风险预警·高风险',
-        priority: 1, // 最高优先级
-        patientName: u.name || '未知',
-        patientId: String(u._id),
-        summary: (ra.overallSummary || '').slice(0, 60) || 'AI检测到高风险，请家庭医生审核',
-        createdAt,
-        overdue,
-        link: `/patients/${u._id}?tab=ai-risk`,
+    // ── 健管专员：健康档案问卷 AI 识别草稿待审核（archiveDraft 非空）──
+    if (can('archive_review')) {
+      const draftUsers = await User.find({ archiveDraft: { $ne: null } })
+        .select('name archiveDraft updatedAt').limit(50).lean();
+      draftUsers.forEach(u => {
+        const d = u.archiveDraft || {};
+        const cnt = Array.isArray(d.items) ? d.items.length : (d.fields ? Object.keys(d.fields).length : 0);
+        const createdAt = d.generatedAt || u.updatedAt || now;
+        todos.push({
+          id: 'archive_' + u._id, type: 'archive_review', label: '健康档案问卷待审核', priority: 3,
+          patientName: u.name || '未知', patientId: String(u._id),
+          summary: cnt ? `AI识别 ${cnt} 项档案字段待审核` : 'AI已识别问卷，待审核写入档案',
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${u._id}?tab=archive`,
+        });
       });
-    });
+    }
 
-    // 后续场景接入点（建好后在此追加）
-    // 2. AI趋势分析待审核 → HealthPlan aiStatus=pending
-    // 4. AI文案待审核 → ServiceRecord / FollowUp draftStatus=pending
-    // ...
+    // ── 家庭医师 / 营养师：AI 汇总分析按维度拆分审核 ──
+    if (can('summary_review') || can('lifestyle_review')) {
+      const sumUsers = await User.find({ aiHealthSummary: { $ne: null } })
+        .select('name aiHealthSummary').limit(100).lean();
+      sumUsers.forEach(u => {
+        const root = u.aiHealthSummary || {};
+        // 兼容旧数据（无 byYear）
+        let byYear = root.byYear || {};
+        if (Object.keys(byYear).length === 0 && root.sections) {
+          const oy = String(root.generatedAt ? new Date(root.generatedAt).getFullYear() : 2026);
+          byYear = { [oy]: { sections: root.sections, generatedAt: root.generatedAt, approvedAt: root.approvedAt } };
+        }
+        // 取最近一个已生成年度
+        const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+        const y = years[0];
+        if (!y) return;
+        const e = byYear[y] || {};
+        if (!e.sections) return;
+        const createdAt = e.generatedAt || now;
+        const overdue = (now - new Date(createdAt)) > DAY;
+        // 家庭医师审 5 维（整体未通过 && 医师维度未通过）
+        if (can('summary_review') && !e.approvedAt && !e.doctorApprovedAt) {
+          todos.push({
+            id: 'summary_' + u._id, type: 'summary_review', label: 'AI汇总分析待审核（5维度）', priority: 2,
+            patientName: u.name || '未知', patientId: String(u._id),
+            summary: `${y}年度 · 肿瘤/心脑血管/慢病/体检全面性/优先医疗问题`,
+            createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
+          });
+        }
+        // 营养师审「生活方式评估」单维度
+        const hasLifestyle = !!e.sections.lifestyle_assessment &&
+          ((e.sections.lifestyle_assessment.items || []).length > 0 || e.sections.lifestyle_assessment.summary);
+        if (can('lifestyle_review') && hasLifestyle && !e.approvedAt && !e.nutritionApprovedAt) {
+          todos.push({
+            id: 'lifestyle_' + u._id, type: 'lifestyle_review', label: '生活方式评估待审核', priority: 3,
+            patientName: u.name || '未知', patientId: String(u._id),
+            summary: `${y}年度 · AI汇总分析「生活方式评估」维度`,
+            createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
+          });
+        }
+      });
+    }
 
-    // 按优先级排序：priority越小越紧急，同级按时间倒序
+    // ── 家庭医师：风险预警待处理 → User.aiRiskAssessment 高/危急 且未审核 ──
+    if (can('risk_review')) {
+      const riskUsers = await User.find({
+        'aiRiskAssessment.alerted': true,
+        'aiRiskAssessment.approvedAt': null,
+      }).select('name aiRiskAssessment').limit(50).lean();
+      riskUsers.forEach(u => {
+        const ra = u.aiRiskAssessment || {};
+        const createdAt = ra.generatedAt || now;
+        const critical = ra.overallLevel === 'critical';
+        todos.push({
+          id: 'risk_' + u._id, type: 'risk_review',
+          label: critical ? '风险预警·危急值' : '风险预警·高风险', priority: 1,
+          patientName: u.name || '未知', patientId: String(u._id),
+          summary: (ra.overallSummary || '').slice(0, 60) || 'AI检测到高风险，请家庭医师审核',
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${u._id}?tab=ai-risk`,
+        });
+      });
+    }
+
+    // 按优先级排序：priority越小越紧急，同级按时间倒序；超时优先
     todos.sort((a, b) => {
-      if (b.overdue !== a.overdue) return b.overdue ? 1 : -1; // overdue 优先
+      if (b.overdue !== a.overdue) return b.overdue ? 1 : -1;
       if (a.priority !== b.priority) return a.priority - b.priority;
       return new Date(b.createdAt) - new Date(a.createdAt);
     });
 
-    res.json({ success: true, data: todos, total: todos.length });
+    res.json({ success: true, data: todos, total: todos.length, role });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

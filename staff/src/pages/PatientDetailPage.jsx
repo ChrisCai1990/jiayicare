@@ -977,6 +977,15 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
   }
 
+  // 按角色维度审核 AI 汇总分析（scope: 'doctor'=5维 / 'nutrition'=生活方式评估）
+  const handleApproveSummaryScope = async (scope, year) => {
+    try {
+      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope, ...(year ? { year } : {}) })
+      toast(scope === 'nutrition' ? '生活方式评估已审核通过' : '5维度分析已审核通过')
+      load()
+    } catch (err) { toast(err.message || '操作失败') }
+  }
+
   // 场景八：AI风险评估
   const handleGenerateRisk = async () => {
     setRiskGenerating(true)
@@ -3779,15 +3788,47 @@ export default function PatientDetailPage() {
               })}
             </div>
             {/* 操作栏 */}
+            {(() => {
+              // 按角色拆分审核（家庭医师审5维 / 营养师审生活方式评估；超管两者皆可）
+              const roleScope = staff?.role === 'familyDoctor' ? 'doctor'
+                : staff?.role === 'nutritionist' ? 'nutrition'
+                : staff?.role === 'superadmin' ? 'all' : null
+              const docApproved = !!(ais.doctorApprovedAt || ais.approvedAt)
+              const nutApproved = !!(ais.nutritionApprovedAt || ais.approvedAt)
+              const hasLifestyle = (ais.sections?.lifestyle_assessment?.items || []).length > 0 || !!ais.sections?.lifestyle_assessment?.summary
+              const canDoc = hasData && !docApproved && (roleScope === 'doctor' || roleScope === 'all')
+              const canNut = hasData && hasLifestyle && !nutApproved && (roleScope === 'nutrition' || roleScope === 'all')
+              return (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-              {ais.approvedAt ? (
-                <div style={{ fontSize: 12, color: '#22A06B', background: '#E8F5EF', borderRadius: 6, padding: '4px 10px', flex: 1, minWidth: 180 }}>
-                  ✓ {curYear}年度 已审核确认 {ais.approvedBy && `· ${ais.approvedBy}`} · {new Date(ais.approvedAt).toLocaleDateString('zh-CN')}
+              {/* 双维度审核状态 */}
+              {hasData && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 200 }}>
+                  <span style={{ fontSize: 12, color: docApproved ? '#22A06B' : '#8AA89C' }}>
+                    {docApproved
+                      ? `✓ 5维度分析 已审核${ais.doctorApprovedBy ? '·' + ais.doctorApprovedBy : ''}（家庭医师）`
+                      : '○ 5维度分析 待家庭医师审核'}
+                  </span>
+                  <span style={{ fontSize: 12, color: nutApproved ? '#16A34A' : '#8AA89C' }}>
+                    {!hasLifestyle ? '— 生活方式评估（暂无内容）'
+                      : nutApproved
+                        ? `✓ 生活方式评估 已审核${ais.nutritionApprovedBy ? '·' + ais.nutritionApprovedBy : ''}（营养师）`
+                        : '○ 生活方式评估 待营养师审核'}
+                  </span>
                 </div>
-              ) : (
-                <div style={{ fontSize: 12, color: '#8AA89C', flex: 1, minWidth: 180 }}>
-                  {hasData ? `${curYear}年度 · 生成时间：${new Date(ais.generatedAt).toLocaleString('zh-CN')}` : `${curYear}年度尚未生成`}
-                </div>
+              )}
+              {!hasData && (
+                <div style={{ fontSize: 12, color: '#8AA89C', flex: 1, minWidth: 180 }}>{curYear}年度尚未生成</div>
+              )}
+              {/* 角色化审核按钮（仅查看模式） */}
+              {!editingAISummary && canDoc && (
+                <button className="btn btn-primary btn-sm" onClick={() => handleApproveSummaryScope('doctor', curYear)}>
+                  审核5维度通过
+                </button>
+              )}
+              {!editingAISummary && canNut && (
+                <button className="btn btn-primary btn-sm" style={{ background: '#16A34A', borderColor: '#16A34A' }} onClick={() => handleApproveSummaryScope('nutrition', curYear)}>
+                  审核生活方式评估通过
+                </button>
               )}
               {!editingAISummary && hasData && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
@@ -3799,8 +3840,7 @@ export default function PatientDetailPage() {
               {editingAISummary && (
                 <>
                   <button className="btn btn-secondary btn-sm" onClick={() => setEditingAISummary(false)}>取消</button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleSaveAISummary(false)}>保存</button>
-                  <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(true)}>审核确认</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(false)}>保存</button>
                 </>
               )}
               {!editingAISummary && (
@@ -3809,6 +3849,8 @@ export default function PatientDetailPage() {
                 </button>
               )}
             </div>
+              )
+            })()}
 
             {!hasData ? (
               <div className="card" style={{ textAlign: 'center', padding: 40, color: '#8AA89C', fontSize: 14 }}>
