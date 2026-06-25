@@ -15,8 +15,8 @@ const ARCHIVE_FIELDS = [
   { path: 'occupation',        label: '职业',         group: '基本信息', type: 'text' },
   { path: 'education',         label: '学历',         group: '基本信息', type: 'text' },
   { path: 'hasAnnualCheckup',  label: '是否每年体检', group: '基本信息', type: 'text' },
-  { path: 'height',            label: '身高',         group: '基本信息', type: 'text' },
-  { path: 'weight',            label: '体重',         group: '基本信息', type: 'text' },
+  { path: 'height',            label: '身高',         group: '基本信息', type: 'number' },
+  { path: 'weight',            label: '体重',         group: '基本信息', type: 'number' },
   { path: 'address',           label: '联系地址',     group: '基本信息', type: 'text' },
   { path: 'contactPhone',      label: '联系电话',     group: '基本信息', type: 'text' },
   { path: 'chronicDiseases',   label: '慢性病标签',   group: '基本信息', type: 'array' },
@@ -51,6 +51,11 @@ const ARCHIVE_FIELDS = [
   { path: 'hasHomeMonitor',      label: '居家检测设备',     group: '健康需求', type: 'text' },
   { path: 'hasMedicineCabinet',  label: '居家小药箱',       group: '健康需求', type: 'text' },
 
+  // 医疗保障
+  { path: 'basic_insurance',   label: '基础医疗保障', group: '医疗保障', type: 'enum', options: ['城镇医疗保险', '居民医疗保险', '自费'] },
+  { path: 'commercial_medical',label: '商业医疗险',   group: '医疗保障', type: 'text' },
+  { path: 'critical_illness',  label: '重疾险',       group: '医疗保障', type: 'enum', options: ['有', '无'] },
+
   // 生活方式
   { path: 'lifestyle.diet',     label: '饮食',  group: '生活方式', type: 'text' },
   { path: 'lifestyle.exercise', label: '运动',  group: '生活方式', type: 'text' },
@@ -66,7 +71,7 @@ const FIELD_MAP = Object.fromEntries(ARCHIVE_FIELDS.map(f => [f.path, f]));
 
 // 按分组聚合，供前端下拉 optgroup 使用
 function groupedArchiveFields() {
-  const order = ['基本信息', '既往健康史', '健康需求', '生活方式'];
+  const order = ['基本信息', '既往健康史', '健康需求', '医疗保障', '生活方式'];
   const byGroup = {};
   ARCHIVE_FIELDS.forEach(f => { (byGroup[f.group] = byGroup[f.group] || []).push(f); });
   return order.filter(g => byGroup[g]).map(g => ({ group: g, fields: byGroup[g] }));

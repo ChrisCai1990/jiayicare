@@ -32,7 +32,11 @@ function normalizeValue(fieldDef, ans) {
     const t = answerToText(ans);
     return t ? t.split(/[、,，;；]/).map(s => s.trim()).filter(Boolean) : [];
   }
-  // text / enum / date / number → 文本
+  if (fieldDef.type === 'number') {
+    const n = parseFloat(String(answerToText(ans)).replace(/[^0-9.]/g, ''));
+    return isNaN(n) ? '' : n;
+  }
+  // text / enum / date → 文本
   return answerToText(ans);
 }
 
