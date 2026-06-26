@@ -2664,7 +2664,17 @@ export default function PatientDetailPage() {
             )
           }
 
-          const hasAny = screeningReports.length > 0
+          const hasAny = screeningReports.length > 0 || screeningItems.length > 0
+          // AI 归类汇总：按 category → parentLabel 分组
+          const AI_CAT_LABEL = { tumor: '肿瘤风险筛查', cardio: '心脑血管', chronic: '慢性病筛查', hp: '健康促进', other: '其他筛查' }
+          const aiGroups = {}
+          screeningItems.forEach(it => {
+            const cat = it.category || 'other'
+            const parent = it.parentLabel || '其他'
+            if (!aiGroups[cat]) aiGroups[cat] = {}
+            if (!aiGroups[cat][parent]) aiGroups[cat][parent] = []
+            aiGroups[cat][parent].push(it)
+          })
           return (
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-header">
@@ -2799,6 +2809,33 @@ export default function PatientDetailPage() {
                   </div>
                 )
               })()}
+              {/* AI 自动归类汇总（来自体检报告解析） */}
+              {screeningItems.length > 0 && (
+                <div style={{ marginTop: 16, padding: '12px 16px', background: '#f5f3ef', borderRadius: 8, borderTop: '1px solid #e8e4dc' }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 10 }}>
+                    AI自动识别 · {screeningItems.length} 项已归类
+                  </div>
+                  {Object.entries(aiGroups).map(([cat, parentMap]) => (
+                    <div key={cat} style={{ marginBottom: 10 }}>
+                      <div style={{ fontSize: 12, fontWeight: 600, color: '#1E6B50', marginBottom: 4 }}>
+                        {AI_CAT_LABEL[cat] || cat}
+                      </div>
+                      {Object.entries(parentMap).map(([parent, items]) => (
+                        <div key={parent} style={{ paddingLeft: 12, marginBottom: 6 }}>
+                          <div style={{ fontSize: 12, color: '#4A6558', fontWeight: 500, marginBottom: 3 }}>▶ {parent}</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: 12 }}>
+                            {items.map(it => (
+                              <span key={it._id || it.itemId} style={{ fontSize: 11, padding: '2px 8px', background: '#e8f4ee', color: '#1E6B50', borderRadius: 10, border: '1px solid #c3e6d4' }}>
+                                {it.itemLabel || (it.itemId || '').split('|')[2] || '—'}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )
         })()}
