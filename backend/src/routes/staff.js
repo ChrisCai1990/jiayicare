@@ -2969,13 +2969,37 @@ ${reportSummary}
     "lifestyle_assessment": {
       "items": [
         {
-          "dimension": "维度名称（如：饮食结构、运动、睡眠、烟酒、情绪）",
-          "finding": "结合最近一次体检结果与膳食调查综合概述，描述该维度的现状与存在的问题",
-          "risk": "该问题可能关联的健康风险（结合体检异常项）",
+          "dimension": "饮食",
+          "finding": "结合膳食调查数据与体检指标描述饮食现状；若无数据，说明暂无膳食调查信息并给出通用评估",
+          "risk": "该维度相关的健康风险",
+          "suggestion": "具体可执行的改善建议"
+        },
+        {
+          "dimension": "运动",
+          "finding": "描述运动习惯现状；若无记录，说明暂无运动数据并结合体检指标（如BMI/血糖/血压）推断运动需求",
+          "risk": "该维度相关的健康风险",
+          "suggestion": "具体可执行的改善建议"
+        },
+        {
+          "dimension": "睡眠",
+          "finding": "描述睡眠质量现状；若无记录，说明暂无睡眠数据并结合档案信息评估",
+          "risk": "该维度相关的健康风险",
+          "suggestion": "具体可执行的改善建议"
+        },
+        {
+          "dimension": "烟酒",
+          "finding": "描述吸烟饮酒情况；若无记录，注明暂无相关信息",
+          "risk": "该维度相关的健康风险",
+          "suggestion": "具体可执行的改善建议"
+        },
+        {
+          "dimension": "情绪",
+          "finding": "描述情绪/心理状态；若无记录，结合慢病状态与档案信息进行综合判断",
+          "risk": "该维度相关的健康风险",
           "suggestion": "具体可执行的改善建议"
         }
       ],
-      "summary": "生活方式综合评估（50-100字，需结合最近一次体检结果）"
+      "summary": "生活方式综合评估（50-100字，需结合最近一次体检结果，必须覆盖饮食/运动/睡眠/烟酒/情绪5个维度）"
     },
     "medical_priority": {
       "items": [
@@ -3047,8 +3071,8 @@ ${reportSummary}
       const oy = String(existing.generatedAt ? new Date(existing.generatedAt).getFullYear() : 2026);
       byYear[oy] = { sections: existing.sections, generatedAt: existing.generatedAt || null, approvedAt: existing.approvedAt || null, approvedBy: existing.approvedBy || null };
     }
-    byYear[year] = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null };
-    const summary = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null, byYear, latestYear: year };
+    byYear[year] = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null, doctorApprovedAt: null, doctorApprovedBy: null, nutritionApprovedAt: null, nutritionApprovedBy: null };
+    const summary = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null, doctorApprovedAt: null, doctorApprovedBy: null, nutritionApprovedAt: null, nutritionApprovedBy: null, byYear, latestYear: year };
 
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
