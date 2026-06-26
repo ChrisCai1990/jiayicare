@@ -499,6 +499,13 @@ export default function QuestionnaireScreen({ navigation }) {
 
   const hasPrev = history.length > 0 || currentQ > 0;
 
+  // 防白屏：问卷无题目时自动进入汇总页（必须在所有条件 return 之前，否则违反 Hooks 规则）
+  React.useEffect(() => {
+    if (!q && !showSummary && !submitResult && mode !== 'select') {
+      setShowSummary(true);
+    }
+  }, [q, showSummary, submitResult, mode]);
+
   const resetQuiz = () => {
     setCurrentQ(0);
     setHistory([]);
@@ -684,14 +691,6 @@ export default function QuestionnaireScreen({ navigation }) {
       </SafeAreaView>
     );
   }
-
-  // ── 防白屏：问卷无题目或当前题目不存在 ────────────────────────────
-  // 用 useEffect 来触发状态变化，避免在 render 中直接 setState
-  React.useEffect(() => {
-    if (!q && !showSummary && !submitResult && mode !== 'select') {
-      setShowSummary(true);
-    }
-  }, [q, showSummary, submitResult, mode]);
 
   if (!q) {
     // 还没进入 summary，先渲染 loading 占位，下一帧 useEffect 会触发 setShowSummary
