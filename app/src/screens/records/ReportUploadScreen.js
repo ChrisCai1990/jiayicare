@@ -852,16 +852,14 @@ export default function ReportUploadScreen({ navigation, route }) {
         : `${sizeKB.toFixed(0)}KB`;
       const mimeType = file.type || '';
       let content = '';
-      if (file.size < 3 * 1024 * 1024) {
-        try {
-          content = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-        } catch {}
-      }
+      try {
+        content = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      } catch {}
       pendingFileData.current = { content, mimeType, sizeStr };
       setPendingFile(file);
     };
@@ -1080,6 +1078,42 @@ export default function ReportUploadScreen({ navigation, route }) {
             </View>
           ))}
         </View>
+
+        {/* 类型筛选 */}
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.xs, marginTop: spacing.md, paddingBottom: spacing.xs }}>
+          <TouchableOpacity
+            style={[styles.filterChip, typeFilter === 'all' && styles.filterChipActive]}
+            onPress={() => setTypeFilter('all')} activeOpacity={0.8}>
+            <Text style={[styles.filterChipText, typeFilter === 'all' && styles.filterChipTextActive]}>全部</Text>
+          </TouchableOpacity>
+          {TYPE_LIST.map(t => (
+            <TouchableOpacity key={t.key}
+              style={[styles.filterChip, typeFilter === t.key && styles.filterChipActive]}
+              onPress={() => setTypeFilter(t.key)} activeOpacity={0.8}>
+              <Text style={[styles.filterChipText, typeFilter === t.key && styles.filterChipTextActive]}>{t.label}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+
+        {/* 报告列表 */}
+        {loading ? (
+          <View style={styles.loadingWrap}><ActivityIndicator color={colors.primary} /></View>
+        ) : (() => {
+          const filtered = (typeFilter === 'all' ? reports : reports.filter(r => r.type === typeFilter)).filter(r => !!r._id);
+          return filtered.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Ionicons name="document-outline" size={36} color={colors.textMuted} />
+              <Text style={styles.emptyText}>暂无{typeFilter !== 'all' ? (TYPE_META[typeFilter]?.label || '') : ''}报告</Text>
+            </View>
+          ) : (
+            <View style={[styles.reportsList, { marginHorizontal: spacing.lg, marginTop: spacing.sm }]}>
+              {filtered.map(r => (
+                <ReportCard key={r._id} report={r} onDelete={handleDelete} onPreview={setPreviewReport} />
+              ))}
+            </View>
+          );
+        })()}
 
         <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>
