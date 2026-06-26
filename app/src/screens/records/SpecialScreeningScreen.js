@@ -443,7 +443,7 @@ export default function SpecialScreeningScreen({ navigation }) {
                                 </TouchableOpacity>
                               )}
                               {status === 'completed' && (
-                                <TouchableOpacity style={styles.viewBtn}>
+                                <TouchableOpacity style={styles.viewBtn} onPress={() => navigation.navigate('MedicalReports')}>
                                   <Ionicons name="eye-outline" size={13} color={colors.info} />
                                   <Text style={styles.viewBtnText}>查看</Text>
                                 </TouchableOpacity>

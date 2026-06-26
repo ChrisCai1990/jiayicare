@@ -105,6 +105,7 @@ export const staffAPI = {
   deleteReport:  (id)     => req(`/staff/medical-reports/${id}`,       { method: 'DELETE' }),
   parseReportAI: (id)     => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST' }),
   reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST' }),
+  getScreeningCatalog: () => req('/staff/screening-catalog'),
 
   // Upload
   uploadImage: (file) => {

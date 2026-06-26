@@ -539,6 +539,10 @@ export default function PatientDetailPage() {
   const loadReports = async () => {
     try { const res = await staffAPI.getPatientReports(id); setReports(res.data) } catch {}
   }
+  // 专项筛查目录（供审核 modal 下拉选择）
+  useEffect(() => {
+    staffAPI.getScreeningCatalog().then(res => setScreeningCatalog(res.data || [])).catch(() => {})
+  }, [])
   // 有报告处于「识别中」时，每 5 秒自动刷新，识别完成后停止
   useEffect(() => {
     if (tab !== 'reports') return

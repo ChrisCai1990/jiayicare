@@ -1007,8 +1007,11 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    if (report.audit_status === 'audited') return res.status(403).json({ success: false, message: '已审核通过的报告不可修改' });
     const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, mimeType, fileSize } = req.body;
+    // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
+    if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
+      return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
+    }
     if (title !== undefined) report.title = title;
     if (type !== undefined) report.type = type;
     if (hospital !== undefined) report.hospital = hospital;
@@ -1029,21 +1032,9 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
 
-    // 提交审核（reviewed）时，把已归类的检查项同步写入专项筛查（UserScreeningItem），客户端筛查树即时点亮
-    if (aiStatus === 'reviewed') {
-      try {
-        const matched = (report.reportItems || []).filter(it => it.matchStatus === 'matched' && it.screeningKey);
-        for (const it of matched) {
-          const parts = String(it.screeningKey).split('|'); // 短码|二级|检查项
-          await UserScreeningItem.updateOne(
-            { user: report.user, itemId: it.screeningKey },
-            { $set: { category: parts[0] || it.screeningCategory || '', parentLabel: parts[1] || it.screeningParent || '', itemLabel: parts[2] || it.name || '', status: 'completed', reportId: report._id } },
-            { upsert: true }
-          );
-        }
-      } catch (syncErr) {
-        console.error('[screening-sync] 同步专项筛查失败', String(report._id), syncErr.message);
-      }
+    // 提交审核（reviewed）或手动更新归类时，重新同步专项筛查
+    if (aiStatus === 'reviewed' || (reportItems !== undefined && report.user)) {
+      await syncScreeningItems(report.user, report._id, report.reportItems);
     }
 
     res.json({ success: true, data: report });
@@ -4378,6 +4369,24 @@ function safeParseJSON(text) {
   catch { return null; }
 }
 
+// 将报告已归类项同步写入 UserScreeningItem（upsert，不覆盖已有 note）
+async function syncScreeningItems(userId, reportId, items) {
+  try {
+    const matched = (items || []).filter(it => it.matchStatus === 'matched' && it.screeningKey);
+    for (const it of matched) {
+      const parts = String(it.screeningKey).split('|');
+      await UserScreeningItem.updateOne(
+        { user: userId, itemId: it.screeningKey },
+        { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || it.name || '', status: 'completed', reportId } },
+        { upsert: true }
+      );
+    }
+    if (matched.length) console.log(`[screening-sync] userId=${userId} reportId=${reportId} 同步${matched.length}项`);
+  } catch (err) {
+    console.error('[screening-sync] 失败', String(reportId), err.message);
+  }
+}
+
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
 async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
@@ -4437,6 +4446,8 @@ async function runReportParse(reportId) {
         aiStatus:    'pending',
         institution, checkDate,
       });
+      // 自动写入专项筛查：AI解析完成后立即同步已归类项，无需等专员审核
+      await syncScreeningItems(report.user, reportId, classified);
       const totalMs = Date.now() - t0;
       console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 成功${okPages}页 提取${allItems.length}项 自动归类${matchedCount}项 | 转图${(convMs/1000).toFixed(1)}s 识别${((totalMs-convMs)/1000).toFixed(1)}s 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
@@ -4454,6 +4465,8 @@ async function runReportParse(reportId) {
       institution: parsed?.institution || report.institution,
       checkDate:   parsed?.checkDate   || report.checkDate,
     });
+    // 自动写入专项筛查
+    await syncScreeningItems(report.user, reportId, classifiedImg);
     console.log(`[parse-ai] 图片完成 ${reportId} 提取${parsed?.items?.length || 0}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
