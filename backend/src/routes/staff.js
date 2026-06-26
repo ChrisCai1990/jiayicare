@@ -1129,7 +1129,7 @@ router.post('/upload/image', staffAuth, upload.single('image'), (req, res) => {
   res.json({ success: true, data: { url } });
 });
 
-// 报告文件上传（图片 + PDF，最大 10MB）
+// 报告文件上传（图片 + PDF，无大小限制）
 const uploadReportFile = multer({
   storage: multer.diskStorage({
     destination: (req, file, cb) => {
@@ -1142,7 +1142,6 @@ const uploadReportFile = multer({
       cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
     },
   }),
-  limits: { fileSize: 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
     if (allowed.includes(file.mimetype)) cb(null, true);

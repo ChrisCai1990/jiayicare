@@ -5581,7 +5581,6 @@ export default function PatientDetailPage() {
                           onChange={async (e) => {
                             const file = e.target.files[0]
                             if (!file) return
-                            if (file.size > 10 * 1024 * 1024) { toast('文件不能超过10MB'); return }
                             try {
                               const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(file, () => {})
                               const updated = await staffAPI.updateReport(showReportDetail._id, {
@@ -6381,8 +6380,6 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const handleFile = (e) => {
     const files = Array.from(e.target.files)
     if (!files.length) return
-    const oversized = files.find(f => f.size > 10 * 1024 * 1024)
-    if (oversized) { setError(`文件 ${oversized.name} 超过 10MB 限制`); return }
     setFileDatas(files.map(f => ({ file: f, mimeType: f.type, fileSize: f.size, name: f.name })))
     if (!form.title && files.length === 1) setForm(f => ({ ...f, title: files[0].name.replace(/\.[^.]+$/, '') }))
     setError('')
@@ -6495,7 +6492,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告文件（图片/PDF，每个≤10MB，可多选）</label>
+            <label className="form-label">报告文件（图片/PDF，可多选）</label>
             <input type="file" accept="image/*,.pdf" multiple onChange={handleFile} style={{ fontSize: 13, padding: '6px 0' }} />
             {fileDatas.length > 0 && (
               <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
