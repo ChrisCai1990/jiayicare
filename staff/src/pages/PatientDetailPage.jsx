@@ -2510,10 +2510,15 @@ export default function PatientDetailPage() {
                     {totalCount > 0 && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{totalCount} 项</span>}
                     <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                   </div>
-                  <button onClick={() => handleEditScreening(r)}
-                    style={{ background: 'none', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#4A6558', cursor: 'pointer', flexShrink: 0 }}>编辑</button>
-                  <button onClick={() => handleDeleteScreening(r)}
-                    style={{ background: 'none', border: '1px solid #DC3545', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#DC3545', cursor: 'pointer', flexShrink: 0 }}>删除</button>
+                  {r.isAI
+                    ? <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0, padding: '1px 6px' }}>体检报告</span>
+                    : (<>
+                        <button onClick={() => handleEditScreening(r)}
+                          style={{ background: 'none', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#4A6558', cursor: 'pointer', flexShrink: 0 }}>编辑</button>
+                        <button onClick={() => handleDeleteScreening(r)}
+                          style={{ background: 'none', border: '1px solid #DC3545', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#DC3545', cursor: 'pointer', flexShrink: 0 }}>删除</button>
+                      </>)
+                  }
                 </div>
                 {isExpanded && (
                   <div style={{ marginTop: 8 }}>
@@ -2667,16 +2672,7 @@ export default function PatientDetailPage() {
           }
 
           const hasAny = screeningReports.length > 0 || screeningItems.length > 0
-          // AI 归类汇总：按 category → parentLabel 分组
           const AI_CAT_LABEL = { tumor: '肿瘤风险筛查', cardio: '心脑血管', chronic: '慢性病筛查', hp: '健康促进', other: '其他筛查' }
-          const aiGroups = {}
-          screeningItems.forEach(it => {
-            const cat = it.category || 'other'
-            const parent = it.parentLabel || '其他'
-            if (!aiGroups[cat]) aiGroups[cat] = {}
-            if (!aiGroups[cat][parent]) aiGroups[cat][parent] = []
-            aiGroups[cat][parent].push(it)
-          })
           return (
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-header">
@@ -2694,47 +2690,69 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无专项筛查记录，点击「录入筛查结果」添加</div>
               ) : (() => {
                 const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
-                const knownL1s = new Set(screeningTree.map(n => String(n._id)))
-                const legacyMap = Object.fromEntries(Object.entries(treeData).filter(([k]) => !knownL1s.has(k)))
-                const hasLegacy = Object.keys(legacyMap).length > 0
 
-                // 建立 AI category 短码 → screeningTree L1 节点 的映射（通过 label 关键词匹配）
+                // 建立 AI category → screeningTree L1 _id 映射
                 const CAT_KEYWORDS = {
                   tumor: ['肿瘤', 'tumor'],
                   cardio: ['心脑', '血管', '心血管', 'cardio'],
                   chronic: ['慢性', 'chronic'],
                   hp: ['健康促进', '功能医学', 'hp'],
                 }
-                const treeIdToCat = {}  // tree L1 _id → AI category
+                const catToTreeId = {}
                 screeningTree.forEach(n => {
                   const nid = String(n._id)
-                  for (const [cat, keywords] of Object.entries(CAT_KEYWORDS)) {
-                    if (keywords.some(kw => n.label.includes(kw))) {
-                      treeIdToCat[nid] = cat; break
-                    }
+                  for (const [cat, kws] of Object.entries(CAT_KEYWORDS)) {
+                    if (kws.some(kw => n.label.includes(kw))) { catToTreeId[cat] = nid; break }
                   }
                 })
-                // AI-only tabs：有 AI 数据但没有对应 screeningTree L1 的 category
-                const usedAiCats = new Set(Object.values(treeIdToCat))
-                const aiOnlyEntries = Object.entries(AI_CAT_LABEL)
-                  .filter(([cat]) => aiGroups[cat] && !usedAiCats.has(cat))
-                const aiOnlyTabs = aiOnlyEntries.map(([cat, label], i) => ({
-                  key: `ai_${cat}`, catKey: cat, label, node: null,
-                  color: L1_COLORS[(screeningTree.length + i) % L1_COLORS.length],
-                  isLegacy: false, isAiOnly: true,
-                }))
 
-                // 所有可选 L1 tab：tree 里有手动数据的 + tree 里有AI数据的 + AI-only + 旧数据
+                // 把 AI 识别的 UserScreeningItem 转成虚拟记录合并进 treeData
+                const reportTitleMap = {}
+                reports.forEach(r => { reportTitleMap[String(r._id)] = r.title || new Date(r.createdAt).toLocaleDateString('zh-CN') })
+                const aiVirtualMap = {}
+                screeningItems.forEach(it => {
+                  const l1Key = catToTreeId[it.category] || `ai_${it.category}`
+                  const l2 = it.parentLabel || '其他'
+                  const l3 = it.itemLabel || '未知'
+                  const rid = String(it.reportId || 'unknown')
+                  const vKey = `${l1Key}||${l2}||${l3}||${rid}`
+                  if (!aiVirtualMap[vKey]) {
+                    aiVirtualMap[vKey] = {
+                      _id: vKey, isAI: true,
+                      checkDate: reportTitleMap[rid] || '体检报告',
+                      hospital: '', note: '', reportItems: [],
+                      _l1Key: l1Key, _l2: l2, _l3: l3,
+                    }
+                  }
+                  aiVirtualMap[vKey].reportItems.push({ name: it.itemLabel, value: '✓', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' })
+                })
+                Object.values(aiVirtualMap).forEach(({ _l1Key, _l2, _l3, ...rec }) => {
+                  if (!treeData[_l1Key]) treeData[_l1Key] = {}
+                  if (!treeData[_l1Key][_l2]) treeData[_l1Key][_l2] = {}
+                  if (!treeData[_l1Key][_l2][_l3]) treeData[_l1Key][_l2][_l3] = []
+                  treeData[_l1Key][_l2][_l3].push(rec)
+                })
+
+                // legacyMap：screeningTree 里没有的、非 ai_xxx 的 key
+                const knownL1s = new Set(screeningTree.map(n => String(n._id)))
+                const legacyKeys = Object.keys(treeData).filter(k => !knownL1s.has(k) && !k.startsWith('ai_'))
+                const aiOnlyKeys = Object.keys(treeData).filter(k => k.startsWith('ai_'))
+                const legacyMap = Object.fromEntries(legacyKeys.map(k => [k, treeData[k]]))
+                const hasLegacy = legacyKeys.length > 0
+
+                // 所有可选 L1 tab
                 const availL1s = [
                   ...screeningTree
-                    .filter(n => treeData[String(n._id)] || (treeIdToCat[String(n._id)] && aiGroups[treeIdToCat[String(n._id)]]))
+                    .filter(n => treeData[String(n._id)])
                     .map((n, idx) => ({
                       key: String(n._id), label: n.label, node: n,
-                      catKey: treeIdToCat[String(n._id)] || null,
-                      color: L1_COLORS[idx % L1_COLORS.length], isLegacy: false, isAiOnly: false,
+                      color: L1_COLORS[idx % L1_COLORS.length], isLegacy: false,
                     })),
-                  ...(hasLegacy ? [{ key: '__legacy__', label: '其他', node: null, catKey: null, color: '#8AA89C', isLegacy: true, isAiOnly: false }] : []),
-                  ...aiOnlyTabs,
+                  ...(hasLegacy ? [{ key: '__legacy__', label: '其他', node: null, color: '#8AA89C', isLegacy: true }] : []),
+                  ...aiOnlyKeys.map((k, i) => ({
+                    key: k, label: AI_CAT_LABEL[k.replace('ai_', '')] || k, node: null,
+                    color: L1_COLORS[(screeningTree.length + i) % L1_COLORS.length], isLegacy: false,
+                  })),
                 ]
                 const activeL1Key = (screeningActiveL1 && availL1s.find(x => x.key === screeningActiveL1))
                   ? screeningActiveL1 : availL1s[0]?.key
@@ -2780,33 +2798,10 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   }
-                  // AI-only tab（有 AI 数据但没有对应 screeningTree L1）
-                  if (activeL1.isAiOnly) {
-                    const aiParentMap = aiGroups[activeL1.catKey] || {}
-                    return (
-                      <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', padding: '14px 16px' }}>
-                        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>体检报告 AI 自动识别</div>
-                        {Object.entries(aiParentMap).map(([parent, items]) => (
-                          <div key={parent} style={{ marginBottom: 8 }}>
-                            <div style={{ fontSize: 12, fontWeight: 500, color: '#4A6558', marginBottom: 4 }}>▶ {parent}</div>
-                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: 12 }}>
-                              {items.map(it => (
-                                <span key={it.itemId || it._id} style={{ fontSize: 11, padding: '2px 8px', background: '#e8f4ee', color: '#1E6B50', borderRadius: 10, border: '1px solid #c3e6d4' }}>
-                                  {it.itemLabel || (it.itemId || '').split('|')[2] || '—'}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )
-                  }
-                  // 正常 tree L1
+                  // 正常 tree L1（包括 ai_xxx 独立 tab，node 可能为 null）
                   const l2map = treeData[key]
-                  const aiCat = activeL1.catKey
-                  const aiParentMap = (aiCat && aiGroups[aiCat]) ? aiGroups[aiCat] : null
-                  if (!l2map && !aiParentMap) return null
-                  const treeL2Order = (node.children || []).map(c => c.label)
+                  if (!l2map) return null
+                  const treeL2Order = (node?.children || []).map(c => c.label)
                   const sortedL2 = [
                     ...treeL2Order.filter(k => l2map[k]).map(k => [k, l2map[k]]),
                     ...Object.entries(l2map).filter(([k]) => !treeL2Order.includes(k)),
@@ -2814,53 +2809,32 @@ export default function PatientDetailPage() {
                   const activeL2 = screeningActiveL2s[key] || sortedL2[0]?.[0]
                   return (
                     <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
-                      {l2map && (
-                        <>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '1px solid #f0ece4', padding: '4px 8px', background: '#faf9f6', gap: 2, width: '100%', minWidth: 0 }}>
-                            {sortedL2.map(([l2Label]) => {
-                              const isActive = l2Label === activeL2
-                              return (
-                                <button key={l2Label} type="button"
-                                  onClick={() => setScreeningActiveL2s(prev => ({ ...prev, [key]: l2Label }))}
-                                  style={{ padding: '8px 14px', fontSize: 13, border: 'none', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: isActive ? color : '#8AA89C', fontWeight: isActive ? 700 : 400, borderBottom: isActive ? `2px solid ${color}` : '2px solid transparent', transition: 'all 0.15s' }}>
-                                  {l2Label}
-                                </button>
-                              )
-                            })}
-                          </div>
-                          {sortedL2.filter(([l2Label]) => l2Label === activeL2).map(([l2Label, l3map]) => (
-                            <div key={l2Label} style={{ padding: '12px 16px' }}>
-                              {Object.entries(l3map).map(([l3Label, records]) => (
-                                <div key={l3Label} style={{ marginBottom: 10 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                    <span style={{ color, fontSize: 10 }}>▶</span>
-                                    {l3Label}
-                                    <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>({records.length} 次)</span>
-                                  </div>
-                                  <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, color))}</div>
-                                </div>
-                              ))}
-                            </div>
-                          ))}
-                        </>
-                      )}
-                      {aiParentMap && (
-                        <div style={{ padding: '12px 16px', borderTop: l2map ? '1px solid #f0ece4' : 'none', background: '#fafaf8' }}>
-                          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>体检报告 AI 自动识别</div>
-                          {Object.entries(aiParentMap).map(([parent, items]) => (
-                            <div key={parent} style={{ marginBottom: 8 }}>
-                              <div style={{ fontSize: 12, fontWeight: 500, color: '#4A6558', marginBottom: 4 }}>▶ {parent}</div>
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: 12 }}>
-                                {items.map(it => (
-                                  <span key={it.itemId || it._id} style={{ fontSize: 11, padding: '2px 8px', background: '#e8f4ee', color: '#1E6B50', borderRadius: 10, border: '1px solid #c3e6d4' }}>
-                                    {it.itemLabel || (it.itemId || '').split('|')[2] || '—'}
-                                  </span>
-                                ))}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '1px solid #f0ece4', padding: '4px 8px', background: '#faf9f6', gap: 2, width: '100%', minWidth: 0 }}>
+                        {sortedL2.map(([l2Label]) => {
+                          const isActive = l2Label === activeL2
+                          return (
+                            <button key={l2Label} type="button"
+                              onClick={() => setScreeningActiveL2s(prev => ({ ...prev, [key]: l2Label }))}
+                              style={{ padding: '8px 14px', fontSize: 13, border: 'none', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: isActive ? color : '#8AA89C', fontWeight: isActive ? 700 : 400, borderBottom: isActive ? `2px solid ${color}` : '2px solid transparent', transition: 'all 0.15s' }}>
+                              {l2Label}
+                            </button>
+                          )
+                        })}
+                      </div>
+                      {sortedL2.filter(([l2Label]) => l2Label === activeL2).map(([l2Label, l3map]) => (
+                        <div key={l2Label} style={{ padding: '12px 16px' }}>
+                          {Object.entries(l3map).map(([l3Label, records]) => (
+                            <div key={l3Label} style={{ marginBottom: 10 }}>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ color, fontSize: 10 }}>▶</span>
+                                {l3Label}
+                                <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>({records.length} 次)</span>
                               </div>
+                              <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, color))}</div>
                             </div>
                           ))}
                         </div>
-                      )}
+                      ))}
                     </div>
                   )
                 }
