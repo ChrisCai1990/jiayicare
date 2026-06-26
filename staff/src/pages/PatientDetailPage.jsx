@@ -5658,18 +5658,16 @@ export default function PatientDetailPage() {
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
         const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
-        // 专项筛查归类：选项分组 + 手动归类（使用 screening-tree DB 动态分类，与专项筛查 tab 一致）
-        const classifyGroups = screeningTree.map(l1 => ({
-          label: l1.label,
-          opts: (l1.children || []).map(l2 => ({ value: `${l1.label}|${l2.label}`, label: l2.label })),
+        // 专项筛查归类：选项分组 + 手动归类
+        // screeningCatalog 来自后端 /screening-catalog，读 screeningTree.js，与 app 端 SpecialScreeningScreen.js CATALOG 保持一致
+        const classifyGroups = screeningCatalog.map(cat => ({
+          label: cat.label,
+          opts: cat.parents.flatMap(p => p.items.map(it => ({ value: it.id, label: `${p.parent} / ${it.label}` }))),
         }))
         const setClassify = (i, key) => {
-          if (!key) return updItem(i, { screeningKey: '', screeningCategory: '', screeningParent: '', screeningL1: '', screeningL2: '', matchStatus: 'unclassified', matchConfidence: 0 })
-          const sepIdx = key.indexOf('|')
-          const l1label = key.slice(0, sepIdx)
-          const l2label = key.slice(sepIdx + 1)
-          const l1node = screeningTree.find(n => n.label === l1label)
-          updItem(i, { screeningKey: key, screeningCategory: l1label, screeningParent: l2label, screeningL1: l1node ? String(l1node._id) : '', screeningL2: l2label, matchStatus: 'matched', matchConfidence: 1 })
+          if (!key) return updItem(i, { screeningKey: '', screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 })
+          const parts = key.split('|')
+          updItem(i, { screeningKey: key, screeningCategory: parts[0], screeningParent: parts[1], matchStatus: 'matched', matchConfidence: 1 })
         }
         const matchedN = ocrEditItems.filter(it => it.matchStatus === 'matched' && it.screeningKey).length
         const unclassifiedN = ocrEditItems.length - matchedN
