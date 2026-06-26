@@ -6435,7 +6435,6 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {error && <div className="alert alert-error">{error}</div>}
 
           {/* L1 大类 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -6517,6 +6516,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           </div>
         </div>
         <div className="modal-footer" style={{ flexDirection: 'column', alignItems: 'stretch', gap: 10 }}>
+          {error && <div className="alert alert-error" style={{ margin: 0 }}>{error}</div>}
           {saving && (
             <div style={{ width: '100%' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: '#4A6558', marginBottom: 4 }}>
