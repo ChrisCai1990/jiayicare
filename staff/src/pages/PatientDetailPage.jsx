@@ -919,11 +919,13 @@ export default function PatientDetailPage() {
   const handleOpenOCRReview = (r) => {
     setOcrReviewReport(r)
     // 旧数据迁移：影像/检查类若把所见写在 value 里且 findings 为空，迁移到 findings
-    const items = JSON.parse(JSON.stringify(r.reportItems || [])).map(it => {
-      const isImg = it.itemType === 'imaging' || (it.value || '').length > 40
-      if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
-      return it
-    })
+    const items = JSON.parse(JSON.stringify(r.reportItems || []))
+      .filter(it => it.name && String(it.name).trim())
+      .map(it => {
+        const isImg = it.itemType === 'imaging' || (it.value || '').length > 40
+        if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
+        return it
+      })
     setOcrEditItems(items)
   }
 

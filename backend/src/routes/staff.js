@@ -4433,7 +4433,7 @@ async function runReportParse(reportId) {
       for (const p of pageResults) {
         if (!p) continue;
         okPages++;
-        if (Array.isArray(p.items)) allItems = allItems.concat(p.items);
+        if (Array.isArray(p.items)) allItems = allItems.concat(p.items.filter(it => it.name && String(it.name).trim()));
         if (p.summary) summaries.push(p.summary);
         if (!institution && p.institution) institution = p.institution;
         if (!checkDate && p.checkDate) checkDate = p.checkDate;
