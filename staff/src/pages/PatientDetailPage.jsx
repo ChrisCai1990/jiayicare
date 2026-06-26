@@ -5784,8 +5784,7 @@ export default function PatientDetailPage() {
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
                           {abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
-                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已归类 {matchedN}</span>
-                          {unclassifiedN > 0 && <span style={{ marginLeft: 6, fontWeight: 400, color: '#D97706' }}>待归类 {unclassifiedN}（请在下方逐项选择）</span>}
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已自动归类 {matchedN} 项（将写入专项筛查）</span>
                         </div>
                         {abn.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -5807,22 +5806,6 @@ export default function PatientDetailPage() {
                         </details>
                       )}
 
-                      {/* 待归类区：未匹配到专项筛查分类的项目，优先处理 */}
-                      {unclassifiedN > 0 && (
-                        <div style={{ background: '#FFFBEB', border: '1px solid #FDE9B8', borderRadius: 8, padding: '10px 12px', marginBottom: 14 }}>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#D97706', marginBottom: 8 }}>⚠ 待归类项目（{unclassifiedN}）— 请先归类或忽略</div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                            {indexed.filter(({ it }) => !(it.matchStatus === 'matched' && it.screeningKey)).map(({ it, i }) => (
-                              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                <span style={{ flex: 1, fontSize: 12, color: '#1A2B24', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                  {it.name || '(未命名)'}{it.value ? ` · ${it.value}${it.unit || ''}` : ''}
-                                </span>
-                                <div style={{ width: 210, flexShrink: 0 }}>{classifyCell(it, i)}</div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
 
                       {/* 区一：检验 / 数值指标 → 表格 */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 6px' }}>
@@ -5838,7 +5821,6 @@ export default function PatientDetailPage() {
                               <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 70 }}>单位</th>
                               <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 110 }}>参考范围</th>
                               <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 80 }}>状态</th>
-                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 150 }}>专项筛查归类</th>
                               <th style={{ padding: '6px 4px', width: 32 }}></th>
                             </tr>
                           </thead>
@@ -5858,7 +5840,6 @@ export default function PatientDetailPage() {
                                       {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
                                     </select>
                                   </td>
-                                  <td style={{ padding: '4px 6px' }}>{classifyCell(it, i)}</td>
                                   <td style={{ padding: '4px 4px', textAlign: 'center' }}>
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </td>
@@ -5890,10 +5871,6 @@ export default function PatientDetailPage() {
                                   <textarea style={{ ...inp, minHeight: 64, lineHeight: 1.6, resize: 'vertical' }} value={it.findings || ''} placeholder="检查所见，如：右肺上叶见磨玻璃结节，直径约5mm…" onChange={e => updItem(i, { findings: e.target.value })} />
                                   <div style={{ fontSize: 11, color: '#8AA89C', margin: '6px 0 2px' }}>诊断意见</div>
                                   <textarea style={{ ...inp, minHeight: 44, lineHeight: 1.6, resize: 'vertical' }} value={it.diagnosis || ''} placeholder="诊断意见，如：右肺上叶磨玻璃结节，建议3个月后复查" onChange={e => updItem(i, { diagnosis: e.target.value })} />
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
-                                    <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>专项筛查归类</span>
-                                    <div style={{ flex: 1 }}>{classifyCell(it, i)}</div>
-                                  </div>
                                 </div>
                               )
                             })}
@@ -5901,7 +5878,7 @@ export default function PatientDetailPage() {
                         </>
                       )}
                       <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
-                        提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。通过后数据写入该报告，用于趋势分析与AI汇总。
+                        提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。已自动归类项提交后将写入专项筛查，其余体检指标保留在报告中供查阅。
                       </div>
                     </>
                   )
