@@ -946,7 +946,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     if (content && content.length > 10 * 1024 * 1024) {
       return res.status(400).json({ success: false, message: '文件过大，请压缩后重试（最大约7MB）' });
     }
-    const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp'];
+    const ALLOWED_MIME = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp', 'image/heic', 'image/heif', 'image/bmp'];
     if (mimeType && !ALLOWED_MIME.includes(mimeType)) {
       return res.status(400).json({ success: false, message: `不支持的文件格式（${mimeType}）` });
     }

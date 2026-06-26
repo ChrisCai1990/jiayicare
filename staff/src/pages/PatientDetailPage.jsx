@@ -3798,6 +3798,8 @@ export default function PatientDetailPage() {
         const ais = byYear[curYear] || {}
         // 编辑模式用 aiSummaryForm.sections，查看模式用当前年度 ais.sections
         const sec = editingAISummary ? (aiSummaryForm.sections || {}) : (ais.sections || {})
+        const docEditing = editingAISummary === 'doctor'
+        const nutEditing = editingAISummary === 'nutrition'
         const hasData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.chronic_disease)
 
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
@@ -3890,12 +3892,19 @@ export default function PatientDetailPage() {
                   审核生活方式评估通过
                 </button>
               )}
-              {!editingAISummary && hasData && (
+              {!editingAISummary && hasData && (roleScope === 'doctor' || roleScope === 'all') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
                   setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) })
                   setAiYear(curYear)
-                  setEditingAISummary(true)
-                }}>编辑修改</button>
+                  setEditingAISummary('doctor')
+                }}>编辑5维分析</button>
+              )}
+              {!editingAISummary && hasData && (roleScope === 'nutrition' || roleScope === 'all') && (
+                <button className="btn btn-secondary btn-sm" onClick={() => {
+                  setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) })
+                  setAiYear(curYear)
+                  setEditingAISummary('nutrition')
+                }}>编辑生活方式评估</button>
               )}
               {editingAISummary && (
                 <>
@@ -3920,7 +3929,7 @@ export default function PatientDetailPage() {
               <>
                 {/* 板块一：肿瘤风险筛查分析 */}
                 <AISectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED">
-                  {editingAISummary ? (
+                  {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
                         <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.tumor_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('tumor_risk', f, e.target.value)} /></div>
@@ -3940,7 +3949,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块三：心脑血管病风险分析 */}
                 <AISectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444">
-                  {editingAISummary ? (
+                  {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['high','🔴 高风险因素（每行一条）'],['medium','🟡 中风险因素（每行一条）']].map(([f,lbl]) => (
                         <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.cardiovascular_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('cardiovascular_risk', f, e.target.value)} /></div>
@@ -3959,7 +3968,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块四：慢性病及其他健康指标 */}
                 <AISectionCard title="慢性病及其他健康指标" icon="📊" color="#0077B6">
-                  {editingAISummary ? (
+                  {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.chronic_disease?.items || []).map((item, i) => (
                         <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '8px 12px', background: '#FAFAF8' }}>
@@ -4001,7 +4010,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块五：体检全面性评估 */}
                 <AISectionCard title="体检全面性评估" icon="📋" color="#1E6B50">
-                  {editingAISummary ? (
+                  {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['covered','✅ 已覆盖项目（每行一条）'],['missing','❌ 缺失重要项目（每行一条）']].map(([f,lbl]) => (
                         <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.checkup_completeness?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('checkup_completeness', f, e.target.value)} /></div>
@@ -4020,7 +4029,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块五：需优先解决的医疗问题 */}
                 <AISectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626">
-                  {editingAISummary ? (
+                  {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.medical_priority?.items || []).map((item, i) => (
                         <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#FAFAF8' }}>
@@ -4071,7 +4080,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块六：生活方式评估（结合最近一次体检 + 膳食调查综合概述） */}
                 <AISectionCard title="生活方式评估" icon="🌿" color="#16A34A">
-                  {editingAISummary ? (
+                  {nutEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.lifestyle_assessment?.items || []).map((item, i) => (
                         <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#FAFAF8' }}>
@@ -4866,10 +4875,10 @@ export default function PatientDetailPage() {
                                     onClick={() => { setEditingTitleReportId(r._id); setEditingTitleValue(r.title) }}>改标题</button>
                                 )
                               )}
-                              {r.aiStatus === 'pending' && (
-                                <button className="btn btn-sm" style={{ background:'#7C3AED', color:'#fff', border:'none', marginRight: 4 }}
+                              {(r.aiStatus === 'pending' || r.aiStatus === 'reviewed') && (
+                                <button className="btn btn-sm" style={{ background: r.aiStatus === 'reviewed' ? '#22A06B' : '#7C3AED', color:'#fff', border:'none', marginRight: 4 }}
                                   onClick={() => handleOpenOCRReview(r)}>
-                                  审核AI结果{r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}
+                                  {r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
                                 </button>
                               )}
                               <button className="btn btn-secondary btn-sm" onClick={() => openReportDetail(r)}>查看</button>
