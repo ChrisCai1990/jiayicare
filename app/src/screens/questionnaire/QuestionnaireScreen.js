@@ -630,8 +630,9 @@ export default function QuestionnaireScreen({ navigation }) {
   if (showSummary) {
     const fmtAns = (a) => {
       if (!a && a !== 0) return '未填写';
+      if (Array.isArray(a)) return a.join('、');
       if (typeof a === 'object' && a !== null) {
-        if (a.values) {
+        if (Array.isArray(a.values)) {
           const inputsStr = Object.entries(a.inputs || {}).map(([k, v]) => `${k}: ${v}`).join('，');
           return a.values.join('、') + (inputsStr ? `（${inputsStr}）` : '');
         }
@@ -641,7 +642,6 @@ export default function QuestionnaireScreen({ navigation }) {
         }
         return Object.entries(a).map(([k, v]) => `${k}: ${v}`).join('；');
       }
-      if (Array.isArray(a)) return a.join('、');
       return String(a);
     };
 
