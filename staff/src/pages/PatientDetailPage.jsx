@@ -6492,7 +6492,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告文件（图片/PDF，可多选）</label>
+            <label className="form-label">报告文件（图片/PDF，每个≤100MB，可多选）</label>
             <input type="file" accept="image/*,.pdf" multiple onChange={handleFile} style={{ fontSize: 13, padding: '6px 0' }} />
             {fileDatas.length > 0 && (
               <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
