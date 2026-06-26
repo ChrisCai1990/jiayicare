@@ -2698,13 +2698,43 @@ export default function PatientDetailPage() {
                 const legacyMap = Object.fromEntries(Object.entries(treeData).filter(([k]) => !knownL1s.has(k)))
                 const hasLegacy = Object.keys(legacyMap).length > 0
 
-                // 所有可选 L1 tab：tree 里有数据的 + 旧数据汇总为"其他"
+                // 建立 AI category 短码 → screeningTree L1 节点 的映射（通过 label 关键词匹配）
+                const CAT_KEYWORDS = {
+                  tumor: ['肿瘤', 'tumor'],
+                  cardio: ['心脑', '血管', '心血管', 'cardio'],
+                  chronic: ['慢性', 'chronic'],
+                  hp: ['健康促进', '功能医学', 'hp'],
+                }
+                const treeIdToCat = {}  // tree L1 _id → AI category
+                screeningTree.forEach(n => {
+                  const nid = String(n._id)
+                  for (const [cat, keywords] of Object.entries(CAT_KEYWORDS)) {
+                    if (keywords.some(kw => n.label.includes(kw))) {
+                      treeIdToCat[nid] = cat; break
+                    }
+                  }
+                })
+                // AI-only tabs：有 AI 数据但没有对应 screeningTree L1 的 category
+                const usedAiCats = new Set(Object.values(treeIdToCat))
+                const aiOnlyEntries = Object.entries(AI_CAT_LABEL)
+                  .filter(([cat]) => aiGroups[cat] && !usedAiCats.has(cat))
+                const aiOnlyTabs = aiOnlyEntries.map(([cat, label], i) => ({
+                  key: `ai_${cat}`, catKey: cat, label, node: null,
+                  color: L1_COLORS[(screeningTree.length + i) % L1_COLORS.length],
+                  isLegacy: false, isAiOnly: true,
+                }))
+
+                // 所有可选 L1 tab：tree 里有手动数据的 + tree 里有AI数据的 + AI-only + 旧数据
                 const availL1s = [
-                  ...screeningTree.filter(n => treeData[String(n._id)]).map((n, idx) => ({
-                    key: String(n._id), label: n.label, node: n,
-                    color: L1_COLORS[idx % L1_COLORS.length], isLegacy: false,
-                  })),
-                  ...(hasLegacy ? [{ key: '__legacy__', label: '其他', node: null, color: '#8AA89C', isLegacy: true }] : []),
+                  ...screeningTree
+                    .filter(n => treeData[String(n._id)] || (treeIdToCat[String(n._id)] && aiGroups[treeIdToCat[String(n._id)]]))
+                    .map((n, idx) => ({
+                      key: String(n._id), label: n.label, node: n,
+                      catKey: treeIdToCat[String(n._id)] || null,
+                      color: L1_COLORS[idx % L1_COLORS.length], isLegacy: false, isAiOnly: false,
+                    })),
+                  ...(hasLegacy ? [{ key: '__legacy__', label: '其他', node: null, catKey: null, color: '#8AA89C', isLegacy: true, isAiOnly: false }] : []),
+                  ...aiOnlyTabs,
                 ]
                 const activeL1Key = (screeningActiveL1 && availL1s.find(x => x.key === screeningActiveL1))
                   ? screeningActiveL1 : availL1s[0]?.key
@@ -2750,9 +2780,32 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   }
+                  // AI-only tab（有 AI 数据但没有对应 screeningTree L1）
+                  if (activeL1.isAiOnly) {
+                    const aiParentMap = aiGroups[activeL1.catKey] || {}
+                    return (
+                      <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', padding: '14px 16px' }}>
+                        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>体检报告 AI 自动识别</div>
+                        {Object.entries(aiParentMap).map(([parent, items]) => (
+                          <div key={parent} style={{ marginBottom: 8 }}>
+                            <div style={{ fontSize: 12, fontWeight: 500, color: '#4A6558', marginBottom: 4 }}>▶ {parent}</div>
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: 12 }}>
+                              {items.map(it => (
+                                <span key={it.itemId || it._id} style={{ fontSize: 11, padding: '2px 8px', background: '#e8f4ee', color: '#1E6B50', borderRadius: 10, border: '1px solid #c3e6d4' }}>
+                                  {it.itemLabel || (it.itemId || '').split('|')[2] || '—'}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )
+                  }
                   // 正常 tree L1
                   const l2map = treeData[key]
-                  if (!l2map) return null
+                  const aiCat = activeL1.catKey
+                  const aiParentMap = (aiCat && aiGroups[aiCat]) ? aiGroups[aiCat] : null
+                  if (!l2map && !aiParentMap) return null
                   const treeL2Order = (node.children || []).map(c => c.label)
                   const sortedL2 = [
                     ...treeL2Order.filter(k => l2map[k]).map(k => [k, l2map[k]]),
@@ -2761,32 +2814,53 @@ export default function PatientDetailPage() {
                   const activeL2 = screeningActiveL2s[key] || sortedL2[0]?.[0]
                   return (
                     <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '1px solid #f0ece4', padding: '4px 8px', background: '#faf9f6', gap: 2, width: '100%', minWidth: 0 }}>
-                        {sortedL2.map(([l2Label]) => {
-                          const isActive = l2Label === activeL2
-                          return (
-                            <button key={l2Label} type="button"
-                              onClick={() => setScreeningActiveL2s(prev => ({ ...prev, [key]: l2Label }))}
-                              style={{ padding: '8px 14px', fontSize: 13, border: 'none', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: isActive ? color : '#8AA89C', fontWeight: isActive ? 700 : 400, borderBottom: isActive ? `2px solid ${color}` : '2px solid transparent', transition: 'all 0.15s' }}>
-                              {l2Label}
-                            </button>
-                          )
-                        })}
-                      </div>
-                      {sortedL2.filter(([l2Label]) => l2Label === activeL2).map(([l2Label, l3map]) => (
-                        <div key={l2Label} style={{ padding: '12px 16px' }}>
-                          {Object.entries(l3map).map(([l3Label, records]) => (
-                            <div key={l3Label} style={{ marginBottom: 10 }}>
-                              <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <span style={{ color, fontSize: 10 }}>▶</span>
-                                {l3Label}
-                                <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>({records.length} 次)</span>
+                      {l2map && (
+                        <>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: '1px solid #f0ece4', padding: '4px 8px', background: '#faf9f6', gap: 2, width: '100%', minWidth: 0 }}>
+                            {sortedL2.map(([l2Label]) => {
+                              const isActive = l2Label === activeL2
+                              return (
+                                <button key={l2Label} type="button"
+                                  onClick={() => setScreeningActiveL2s(prev => ({ ...prev, [key]: l2Label }))}
+                                  style={{ padding: '8px 14px', fontSize: 13, border: 'none', cursor: 'pointer', background: 'none', whiteSpace: 'nowrap', flexShrink: 0, color: isActive ? color : '#8AA89C', fontWeight: isActive ? 700 : 400, borderBottom: isActive ? `2px solid ${color}` : '2px solid transparent', transition: 'all 0.15s' }}>
+                                  {l2Label}
+                                </button>
+                              )
+                            })}
+                          </div>
+                          {sortedL2.filter(([l2Label]) => l2Label === activeL2).map(([l2Label, l3map]) => (
+                            <div key={l2Label} style={{ padding: '12px 16px' }}>
+                              {Object.entries(l3map).map(([l3Label, records]) => (
+                                <div key={l3Label} style={{ marginBottom: 10 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <span style={{ color, fontSize: 10 }}>▶</span>
+                                    {l3Label}
+                                    <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>({records.length} 次)</span>
+                                  </div>
+                                  <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, color))}</div>
+                                </div>
+                              ))}
+                            </div>
+                          ))}
+                        </>
+                      )}
+                      {aiParentMap && (
+                        <div style={{ padding: '12px 16px', borderTop: l2map ? '1px solid #f0ece4' : 'none', background: '#fafaf8' }}>
+                          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>体检报告 AI 自动识别</div>
+                          {Object.entries(aiParentMap).map(([parent, items]) => (
+                            <div key={parent} style={{ marginBottom: 8 }}>
+                              <div style={{ fontSize: 12, fontWeight: 500, color: '#4A6558', marginBottom: 4 }}>▶ {parent}</div>
+                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: 12 }}>
+                                {items.map(it => (
+                                  <span key={it.itemId || it._id} style={{ fontSize: 11, padding: '2px 8px', background: '#e8f4ee', color: '#1E6B50', borderRadius: 10, border: '1px solid #c3e6d4' }}>
+                                    {it.itemLabel || (it.itemId || '').split('|')[2] || '—'}
+                                  </span>
+                                ))}
                               </div>
-                              <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, color))}</div>
                             </div>
                           ))}
                         </div>
-                      ))}
+                      )}
                     </div>
                   )
                 }
@@ -2811,33 +2885,6 @@ export default function PatientDetailPage() {
                   </div>
                 )
               })()}
-              {/* AI 自动归类汇总（来自体检报告解析） */}
-              {screeningItems.length > 0 && (
-                <div style={{ marginTop: 16, padding: '12px 16px', background: '#f5f3ef', borderRadius: 8, borderTop: '1px solid #e8e4dc' }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 10 }}>
-                    AI自动识别 · {screeningItems.length} 项已归类
-                  </div>
-                  {Object.entries(aiGroups).map(([cat, parentMap]) => (
-                    <div key={cat} style={{ marginBottom: 10 }}>
-                      <div style={{ fontSize: 12, fontWeight: 600, color: '#1E6B50', marginBottom: 4 }}>
-                        {AI_CAT_LABEL[cat] || cat}
-                      </div>
-                      {Object.entries(parentMap).map(([parent, items]) => (
-                        <div key={parent} style={{ paddingLeft: 12, marginBottom: 6 }}>
-                          <div style={{ fontSize: 12, color: '#4A6558', fontWeight: 500, marginBottom: 3 }}>▶ {parent}</div>
-                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, paddingLeft: 12 }}>
-                            {items.map(it => (
-                              <span key={it._id || it.itemId} style={{ fontSize: 11, padding: '2px 8px', background: '#e8f4ee', color: '#1E6B50', borderRadius: 10, border: '1px solid #c3e6d4' }}>
-                                {it.itemLabel || (it.itemId || '').split('|')[2] || '—'}
-                              </span>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
           )
         })()}
