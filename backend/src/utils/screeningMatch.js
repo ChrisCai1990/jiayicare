@@ -10,10 +10,12 @@ function norm(s) {
   let t = String(s || '').trim().toLowerCase();
   // 全角转半角
   t = t.replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)).replace(/　/g, '');
-  // 去括号及其中内容（如「葡萄糖(空腹)」→「葡萄糖」前会先尝试完整匹配，这里作为兜底归一化）
+  // 去括号及其中内容（如「葡萄糖(空腹)」→「葡萄糖」）
   t = t.replace(/[（(【\[].*?[）)】\]]/g, '');
-  // 去标点空格
-  t = t.replace(/[\s,，。.、:：;；\/\\\-_]+/g, '');
+  // 去「·数值单位」模式（OCR有时把数值拼入名称，如「癌胚抗原·1.6ng/ml」→「癌胚抗原」）
+  t = t.replace(/[·•]\s*[\d.]+\s*[a-z%μ\/℃°]+[\w\/]*\s*$/i, '');
+  // 去标点空格（含中点·）
+  t = t.replace(/[\s,，。.、:：;；\/\\\-_·•]+/g, '');
   // 去常见无意义后缀（仅当去掉后仍≥2字时）
   const strip = t.replace(/(测定|检测|定量|半定量|分析|测量|检查|报告|结果|项目)$/g, '');
   if (strip.length >= 2) t = strip;

@@ -4521,6 +4521,21 @@ router.get('/screening-catalog', staffAuth, (req, res) => {
   }
 });
 
+// POST /staff/patients/:id/reports/:rid/reclassify — 对报告里 unclassified 项重跑自动归类
+router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res) => {
+  try {
+    const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id });
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const { classifyItems } = require('../utils/screeningMatch');
+    const reclassified = classifyItems(report.reportItems || []);
+    await MedicalReport.findByIdAndUpdate(report._id, { reportItems: reclassified });
+    const matchedCount = reclassified.filter(i => i.matchStatus === 'matched').length;
+    res.json({ success: true, data: reclassified, matchedCount });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── 问卷 → 健康档案 自动导入（DynamicQuestionnaire/QuestionnaireResponse 已在文件顶部 require）──
 const { buildArchiveDraft } = require('../utils/archiveImport');
 

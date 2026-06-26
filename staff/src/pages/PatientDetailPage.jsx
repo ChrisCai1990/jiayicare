@@ -946,6 +946,16 @@ export default function PatientDetailPage() {
     finally { setOcrSaving(false) }
   }
 
+  const handleReclassifyOCR = async () => {
+    setOcrSaving(true)
+    try {
+      const res = await staffAPI.reclassifyReport(id, ocrReviewReport._id)
+      setOcrEditItems(res.data || [])
+      toast(`重新归类完成，已自动匹配 ${res.matchedCount || 0} 项`)
+    } catch (err) { toast(err.message || '归类失败') }
+    finally { setOcrSaving(false) }
+  }
+
   const handleRejectOCR = async () => {
     setOcrSaving(true)
     try {
@@ -5856,7 +5866,12 @@ export default function PatientDetailPage() {
               </div>
               </div>
               <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
-                <button className="btn btn-secondary" style={{ flex: 0.7 }}
+                <button className="btn btn-secondary" style={{ flex: 0.6 }}
+                  disabled={ocrSaving} onClick={handleReclassifyOCR}
+                  title="用最新专项筛查目录重新自动归类所有项目">
+                  {ocrSaving ? '处理中…' : '🔄 重新归类'}
+                </button>
+                <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleSaveOCRDraft}>
                   {ocrSaving ? '保存中…' : '💾 保存草稿'}
                 </button>
@@ -5864,7 +5879,7 @@ export default function PatientDetailPage() {
                   disabled={ocrSaving} onClick={handleApproveOCR}>
                   {ocrSaving ? '保存中…' : '✓ 提交审核（写入专项筛查）'}
                 </button>
-                <button className="btn btn-sm" style={{ flex: 0.5, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
+                <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
                   disabled={ocrSaving} onClick={handleRejectOCR}>
                   驳回
                 </button>

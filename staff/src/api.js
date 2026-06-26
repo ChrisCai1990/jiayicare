@@ -104,6 +104,7 @@ export const staffAPI = {
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
   deleteReport:  (id)     => req(`/staff/medical-reports/${id}`,       { method: 'DELETE' }),
   parseReportAI: (id)     => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST' }),
+  reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST' }),
 
   // Upload
   uploadImage: (file) => {
