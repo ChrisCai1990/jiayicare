@@ -20,7 +20,7 @@ const NODES = [
   { id: 'tumor|胃-食管癌早筛|碳14呼气试验', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '碳14呼气试验', itemType: 'lab', gender: null,
     aliases: ['C14呼气试验', '14C尿素呼气试验', 'C14', '尿素呼气试验'] },
   { id: 'tumor|胃-食管癌早筛|胃蛋白酶原', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃蛋白酶原', itemType: 'lab', gender: null,
-    aliases: ['胃蛋白酶原I', '胃蛋白酶原II', 'PGI', 'PGII', 'PG', '胃蛋白酶原比值', 'PGR', 'PG1', 'PG2'] },
+    aliases: ['胃蛋白酶原I', '胃蛋白酶原II', 'PGI', 'PGII', 'PG', '胃蛋白酶原比值', 'PGR', 'PG1', 'PG2', '胃功能', '胃功能检测'] },
   { id: 'tumor|胃-食管癌早筛|胃泌素17', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃泌素17', itemType: 'lab', gender: null,
     aliases: ['胃泌素', 'G-17', 'G17', '血清胃泌素17'] },
   { id: 'tumor|胃-食管癌早筛|食管镜', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '食管镜', itemType: 'imaging', gender: null,
@@ -251,7 +251,7 @@ const NODES = [
   { id: 'other|三大常规|尿常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '尿常规', itemType: 'lab', gender: null,
     aliases: ['尿液分析', '尿液常规', '尿检'] },
   { id: 'other|三大常规|粪便常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '粪便常规', itemType: 'lab', gender: null,
-    aliases: ['大便常规', '粪便常规+隐血', '便常规', '大便检查'] },
+    aliases: ['大便常规', '粪便常规+隐血', '便常规', '大便检查', '粪便隐血', '便潜血', '大便隐血'] },
 
   // 激素类
   { id: 'other|激素类|甲状腺功能', category: 'other', categoryKey: 'other', parent: '激素类', label: '甲状腺功能', itemType: 'lab', gender: null,
