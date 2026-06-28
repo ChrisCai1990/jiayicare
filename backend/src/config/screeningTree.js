@@ -216,12 +216,6 @@ const NODES = [
   { id: 'chronic|睡眠呼吸暂停早筛|睡眠呼吸监测', category: 'chronic', categoryKey: 'chronic', parent: '睡眠呼吸暂停早筛', label: '睡眠呼吸监测', itemType: 'imaging', gender: null,
     aliases: ['多导睡眠监测', 'PSG', '睡眠监测', '呼吸睡眠监测'] },
 
-  // 甲状腺功能评估
-  { id: 'chronic|甲状腺功能评估|甲状腺功能', category: 'chronic', categoryKey: 'chronic', parent: '甲状腺功能评估', label: '甲状腺功能', itemType: 'lab', gender: null,
-    aliases: ['甲功七项', '甲状腺功能7项', '甲功', '甲功五项', '甲功三项', 'TSH', 'FT3', 'FT4', '甲状腺功能五项', '促甲状腺激素', '游离三碘甲状腺原氨酸', '游离甲状腺素', '三碘甲状腺原氨酸', '甲状腺素', '抗甲状腺过氧化物酶抗体', 'TPOAb', 'TgAb', 'TRAb', '促甲状腺素受体抗体'] },
-  { id: 'chronic|甲状腺功能评估|甲状腺球蛋白', category: 'chronic', categoryKey: 'chronic', parent: '甲状腺功能评估', label: '甲状腺球蛋白', itemType: 'lab', gender: null,
-    aliases: ['Tg', '甲状腺球蛋白抗体'] },
-
   // 老年痴呆筛查
   { id: 'chronic|老年痴呆筛查|认知功能筛查', category: 'chronic', categoryKey: 'chronic', parent: '老年痴呆筛查', label: '认知功能筛查', itemType: 'lab', gender: null,
     aliases: ['MMSE', '阿尔茨海默筛查', '认知评估', 'MoCA'] },
@@ -255,7 +249,9 @@ const NODES = [
 
   // 激素类
   { id: 'other|激素类|甲状腺功能', category: 'other', categoryKey: 'other', parent: '激素类', label: '甲状腺功能', itemType: 'lab', gender: null,
-    aliases: ['甲功', 'TSH', 'FT3', 'FT4', 'T3', 'T4'] },
+    aliases: ['甲功', '甲功三项', '甲功五项', '甲功七项', '甲状腺功能3项', '甲状腺功能5项', '甲状腺功能7项', '甲状腺功能五项', 'TSH', 'FT3', 'FT4', 'T3', 'T4', '促甲状腺激素', '游离三碘甲状腺原氨酸', '游离甲状腺素', '三碘甲状腺原氨酸', '甲状腺素', 'TPOAb', 'TgAb', 'TRAb', '抗甲状腺过氧化物酶抗体', '促甲状腺素受体抗体'] },
+  { id: 'other|激素类|甲状腺球蛋白', category: 'other', categoryKey: 'other', parent: '激素类', label: '甲状腺球蛋白', itemType: 'lab', gender: null,
+    aliases: ['Tg', '甲状腺球蛋白抗体'] },
   { id: 'other|激素类|性激素', category: 'other', categoryKey: 'other', parent: '激素类', label: '性激素', itemType: 'lab', gender: null,
     aliases: ['性激素六项', 'FSH', 'LH', '雌二醇', 'E2', '孕酮', '睾酮'] },
 
