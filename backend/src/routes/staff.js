@@ -4370,18 +4370,26 @@ function safeParseJSON(text) {
 }
 
 // 将报告已归类项同步写入 UserScreeningItem（upsert，不覆盖已有 note）
+// 每条 reportItem 可携带多个 screeningKeys，每个 key 写一条 UserScreeningItem 记录
 async function syncScreeningItems(userId, reportId, items) {
   try {
-    const matched = (items || []).filter(it => it.matchStatus === 'matched' && it.screeningKey);
+    const matched = (items || []).filter(it => it.matchStatus === 'matched');
+    let syncCount = 0;
     for (const it of matched) {
-      const parts = String(it.screeningKey).split('|');
-      await UserScreeningItem.updateOne(
-        { user: userId, itemId: it.screeningKey },
-        { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || it.name || '', status: 'completed', reportId } },
-        { upsert: true }
-      );
+      const keys = (it.screeningKeys && it.screeningKeys.length)
+        ? it.screeningKeys
+        : (it.screeningKey ? [it.screeningKey] : []);
+      for (const key of keys) {
+        const parts = String(key).split('|');
+        await UserScreeningItem.updateOne(
+          { user: userId, itemId: key },
+          { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || it.name || '', status: 'completed', reportId } },
+          { upsert: true }
+        );
+        syncCount++;
+      }
     }
-    if (matched.length) console.log(`[screening-sync] userId=${userId} reportId=${reportId} 同步${matched.length}项`);
+    if (syncCount) console.log(`[screening-sync] userId=${userId} reportId=${reportId} 同步${syncCount}项`);
   } catch (err) {
     console.error('[screening-sync] 失败', String(reportId), err.message);
   }

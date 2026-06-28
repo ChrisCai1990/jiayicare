@@ -18,11 +18,12 @@ const reportItemSchema = new mongoose.Schema({
   institution: { type: String, default: '' }, // 检查机构（item 级，空则回退报告级 institution）
 
   // ── 专项筛查自动归类标记（批次2 匹配引擎写入；批次1 先建字段）──
-  screeningKey:      { type: String, default: '' }, // 命中筛查树节点 id：`category|parent|label`
+  screeningKeys:     [{ type: String }],             // 命中的所有筛查树节点 id 数组（支持多类目）
+  screeningKey:      { type: String, default: '' }, // 最佳命中节点 id（向后兼容单值）
   screeningCategory: { type: String, default: '' }, // 一级分类 key（tumor/cardiovascular/...）
   screeningParent:   { type: String, default: '' }, // 二级（如「肺癌」）
   matchStatus:       { type: String, enum: ['matched', 'unclassified'], default: 'unclassified' },
-  matchConfidence:   { type: Number, default: 0 },   // 匹配置信度 0-1
+  matchConfidence:   { type: Number, default: 0 },   // 匹配置信度 0-1（最佳命中）
 }, { _id: false });
 
 const medicalReportSchema = new mongoose.Schema({

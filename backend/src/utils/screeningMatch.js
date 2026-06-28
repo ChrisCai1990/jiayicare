@@ -1,7 +1,7 @@
 // ── OCR 提取项 → 专项筛查树 自动匹配引擎 ──────────────────────────────
-// 输入项目名（可含 itemType），输出命中的筛查树节点 + 置信度；命中不到返回 null（→ 待归类）。
-// 匹配策略：归一化精确/别名(1.0) > 归一化包含/被包含(0.7-0.85) > 不命中(null)。
-// 拼音首字母匹配留待后续（需真实样本与 pinyin 词典）。
+// 输入项目名（可含 itemType），输出命中的所有筛查树节点；命中不到返回空数组。
+// 匹配策略：归一化精确/别名(1.0) > 归一化包含/被包含(0.7-0.85)，阈值 0.6。
+// 一条检查项可同时归属多个类目（如「腹部超声」→ 肝癌早筛 + 胰腺-胆囊癌早筛）。
 
 const { NODES } = require('../config/screeningTree');
 
@@ -28,50 +28,66 @@ const INDEX = NODES.map(n => ({
   cands: [n.label, ...(n.aliases || [])].map(c => ({ raw: c, n: norm(c) })).filter(c => c.n),
 }));
 
-// 单项匹配，返回 { node, confidence } 或 null
-function matchOne(rawName, itemType) {
-  const q = norm(rawName);
-  if (!q || q.length < 2) return null;
-
-  let best = null; // { node, conf, candLen }
-  for (const { node, cands } of INDEX) {
-    for (const c of cands) {
-      let conf = 0;
-      if (c.n === q) {
-        conf = 1.0;
-      } else if (q.includes(c.n) && c.n.length >= 2) {
-        // 候选名是查询的子串（如查询「肝胆胰脾彩超B超」含「肝胆胰脾超声」别名核心）→ 越长越可信
-        conf = 0.78 + Math.min(0.12, c.n.length * 0.01);
-      } else if (c.n.includes(q) && q.length >= 3) {
-        // 查询是候选名的子串（如查询「糖化」匹配「糖化血红蛋白」）→ 需查询足够长，避免误配
-        conf = 0.7 + Math.min(0.1, q.length * 0.01);
-      }
-      if (conf > 0) {
-        // itemType 一致加分（imaging↔imaging / lab↔lab）
-        if (itemType && node.itemType === itemType) conf += 0.03;
-        if (!best || conf > best.conf || (conf === best.conf && c.n.length > best.candLen)) {
-          best = { node, conf: Math.min(conf, 1), candLen: c.n.length };
-        }
-      }
+// 单节点匹配，返回该节点的最高置信度（0=不命中）
+function scoreNode(q, itemType, cands, node) {
+  let best = 0;
+  for (const c of cands) {
+    let conf = 0;
+    if (c.n === q) {
+      conf = 1.0;
+    } else if (q.includes(c.n) && c.n.length >= 2) {
+      conf = 0.78 + Math.min(0.12, c.n.length * 0.01);
+    } else if (c.n.includes(q) && q.length >= 3) {
+      conf = 0.7 + Math.min(0.1, q.length * 0.01);
+    }
+    if (conf > 0) {
+      if (itemType && node.itemType === itemType) conf += 0.03;
+      conf = Math.min(conf, 1);
+      if (conf > best) best = conf;
     }
   }
-  if (!best || best.conf < 0.6) return null;
-  return { node: best.node, confidence: Math.round(best.conf * 100) / 100 };
+  return best;
 }
 
-// 给一条 reportItem 填充归类字段（原地返回新对象）
-function classifyItem(item) {
-  const m = matchOne(item.name, item.itemType);
-  if (!m) {
-    return { ...item, screeningKey: '', screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 };
+// 多节点匹配：返回所有置信度 >= 阈值的节点，按置信度降序排列
+function matchAll(rawName, itemType, threshold = 0.6) {
+  const q = norm(rawName);
+  if (!q || q.length < 2) return [];
+
+  const results = [];
+  for (const { node, cands } of INDEX) {
+    const conf = scoreNode(q, itemType, cands, node);
+    if (conf >= threshold) {
+      results.push({ node, confidence: Math.round(conf * 100) / 100 });
+    }
   }
+  results.sort((a, b) => b.confidence - a.confidence);
+  return results;
+}
+
+// 给一条 reportItem 填充归类字段（支持多类目，screeningKeys 为数组）
+function classifyItem(item) {
+  const matches = matchAll(item.name, item.itemType);
+  if (!matches.length) {
+    return {
+      ...item,
+      screeningKeys: [],
+      screeningKey: '',        // 向后兼容：保留最佳单值
+      screeningCategory: '',
+      screeningParent: '',
+      matchStatus: 'unclassified',
+      matchConfidence: 0,
+    };
+  }
+  const best = matches[0];
   return {
     ...item,
-    screeningKey: m.node.id,
-    screeningCategory: m.node.category,
-    screeningParent: m.node.parent,
+    screeningKeys: matches.map(m => m.node.id),  // 所有命中节点 id 数组
+    screeningKey: best.node.id,                   // 向后兼容：最佳命中
+    screeningCategory: best.node.category,
+    screeningParent: best.node.parent,
     matchStatus: 'matched',
-    matchConfidence: m.confidence,
+    matchConfidence: best.confidence,
   };
 }
 
@@ -80,4 +96,4 @@ function classifyItems(items) {
   return (items || []).map(classifyItem);
 }
 
-module.exports = { matchOne, classifyItem, classifyItems, norm };
+module.exports = { matchAll, matchOne: (n, t) => { const r = matchAll(n, t); return r[0] || null; }, classifyItem, classifyItems, norm };
