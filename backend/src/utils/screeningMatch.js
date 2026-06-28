@@ -38,7 +38,10 @@ function scoreNode(q, itemType, cands, node) {
     } else if (q.includes(c.n) && c.n.length >= 2) {
       conf = 0.78 + Math.min(0.12, c.n.length * 0.01);
     } else if (c.n.includes(q) && q.length >= 3) {
-      conf = 0.7 + Math.min(0.1, q.length * 0.01);
+      // 候选词比查询词长很多（含独立修饰词）时降低置信度，防止"葡萄糖"误命中"葡萄糖耐量试验"
+      const surplus = c.n.replace(q, '');
+      const hasQualifier = /耐量|试验|负荷|载量|综合|全套|联合|系列|组合/.test(surplus);
+      conf = hasQualifier ? 0.45 : 0.7 + Math.min(0.1, q.length * 0.01);
     }
     if (conf > 0) {
       if (itemType && node.itemType === itemType) conf += 0.03;

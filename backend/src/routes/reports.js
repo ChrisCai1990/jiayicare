@@ -111,7 +111,18 @@ findings 和 diagnosis 字段只放报告原文，绝对禁止写入任何解读
 → itemType="lab"
 → 每一个检验子项单独一条（如血脂组合：总胆固醇/甘油三酯/LDL-C/HDL-C 各一条）
 → 提取：name / value / unit / referenceRange（必须从报告上提取实际印刷值，禁止使用默认值；无参考范围则留空）/ status（normal/abnormal/attention/unknown）
-→ orderName：填写该项所属的检查医嘱组名称（如"肝功能"/"肾功能"/"血脂"/"血常规"等），用于分组展示
+
+→ 【orderName 必填，极其重要】：
+  - 填写该项所属的检验医嘱组名称，即报告单上的大标题/检验项目类别名
+  - 同一张化验单上的所有子项，orderName 必须完全一致
+  - 常见例子：丙氨酸氨基转移酶/白蛋白/总蛋白/总胆红素 → orderName="肝功能"；
+    肌酐/尿素/尿酸/肾小球滤过率 → orderName="肾功能"；
+    甘油三酯/总胆固醇/LDL-C/HDL-C → orderName="血脂"；
+    葡萄糖/糖化血红蛋白 → orderName="血糖"；
+    TSH/FT3/FT4 → orderName="甲状腺功能"；
+    钾/钠/氯/CO2 → orderName="电解质"；
+    白细胞/红细胞/血红蛋白/血小板 → orderName="血常规"
+  - 若整份报告就是一张单独检验单（如"甲状腺功能3项"），orderName 填该检验单标题
 
 【2. 体检科室查体】
 适用范围：内科、外科、眼科（含视力检查）、妇科、牙科/口腔科、皮肤科。
