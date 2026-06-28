@@ -2719,12 +2719,22 @@ export default function PatientDetailPage() {
                   if (!aiVirtualMap[vKey]) {
                     aiVirtualMap[vKey] = {
                       _id: vKey, isAI: true,
-                      checkDate: reportTitleMap[rid] || '体检报告',
-                      hospital: '', note: '', reportItems: [],
+                      checkDate: it.checkDate || reportTitleMap[rid] || '体检报告',
+                      hospital: it.institution || '',
+                      note: '', reportItems: [],
                       _l1Key: l1Key, _l2: l2, _l3: l3,
                     }
                   }
-                  aiVirtualMap[vKey].reportItems.push({ name: it.itemLabel, value: '✓', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' })
+                  aiVirtualMap[vKey].reportItems.push({
+                    name: it.name || it.itemLabel,
+                    value: it.value || '',
+                    unit: it.unit || '',
+                    referenceRange: it.referenceRange || '',
+                    status: it.status || 'unknown',
+                    itemType: it.itemType || 'lab',
+                    findings: it.findings || '',
+                    diagnosis: it.diagnosis || '',
+                  })
                 })
                 Object.values(aiVirtualMap).forEach(({ _l1Key, _l2, _l3, ...rec }) => {
                   if (!treeData[_l1Key]) treeData[_l1Key] = {}

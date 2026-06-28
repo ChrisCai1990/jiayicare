@@ -2436,8 +2436,39 @@ router.delete('/patients/:id/supplements/:supId', staffAuth, async (req, res) =>
 // ── 患者专项筛查结果（医护端查看）────────────────────────────────
 router.get('/patients/:id/screening', staffAuth, async (req, res) => {
   try {
-    const items = await UserScreeningItem.find({ user: req.params.id }).sort({ recordedAt: -1 });
-    res.json({ success: true, data: items });
+    const items = await UserScreeningItem.find({ user: req.params.id })
+      .sort({ updatedAt: -1 })
+      .populate('reportId', 'checkDate institution title reportItems');
+
+    // 把 reportItem 的实际检查内容附加到每条 screeningItem
+    const enriched = items.map(item => {
+      const obj = item.toObject();
+      const report = obj.reportId;
+      if (report) {
+        obj.checkDate = report.checkDate || '';
+        obj.institution = report.institution || '';
+        obj.reportTitle = report.title || '';
+        // 在该报告的 reportItems 里找 screeningKey 匹配的条目
+        const matched = (report.reportItems || []).find(ri =>
+          (ri.screeningKeys && ri.screeningKeys.includes(obj.itemId)) ||
+          ri.screeningKey === obj.itemId
+        );
+        if (matched) {
+          obj.value = matched.value || '';
+          obj.unit = matched.unit || '';
+          obj.referenceRange = matched.referenceRange || '';
+          obj.status = matched.status || 'unknown';
+          obj.findings = matched.findings || '';
+          obj.diagnosis = matched.diagnosis || '';
+          obj.itemType = matched.itemType || 'lab';
+          obj.name = matched.name || obj.itemLabel;
+        }
+        obj.reportId = String(report._id); // 保持为 string ID
+      }
+      return obj;
+    });
+
+    res.json({ success: true, data: enriched });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
