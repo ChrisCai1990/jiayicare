@@ -4413,8 +4413,8 @@ async function syncScreeningItems(userId, reportId, items) {
       for (const key of keys) {
         const parts = String(key).split('|');
         await UserScreeningItem.updateOne(
-          { user: userId, itemId: key },
-          { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || it.name || '', status: 'completed', reportId } },
+          { user: userId, itemId: key, reportId },
+          { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || it.name || '', status: 'completed' } },
           { upsert: true }
         );
         syncCount++;

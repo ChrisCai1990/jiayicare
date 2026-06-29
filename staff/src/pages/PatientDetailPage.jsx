@@ -445,6 +445,8 @@ export default function PatientDetailPage() {
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrSaving, setOcrSaving] = useState(false)
+  const [ocrClassifySearch, setOcrClassifySearch] = useState({}) // {[rowIndex]: searchText}
+  const [ocrClassifyOpen, setOcrClassifyOpen] = useState({})    // {[rowIndex]: bool}
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
 
@@ -5777,17 +5779,47 @@ export default function PatientDetailPage() {
         }
         const matchedN = ocrEditItems.filter(it => it.matchStatus === 'matched' && it.screeningKey).length
         const unclassifiedN = ocrEditItems.length - matchedN
-        const classifyCell = (it, i) => (
-          <select style={{ width: '100%', padding: '3px 4px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, boxSizing: 'border-box', color: it.screeningKey ? '#1E6B50' : '#D97706', background: it.screeningKey ? '#fff' : '#FFFBEB' }}
-            value={it.screeningKey || ''} onChange={e => setClassify(i, e.target.value)}>
-            <option value="">⚠ 待归类</option>
-            {classifyGroups.map(g => (
-              <optgroup key={g.label} label={g.label}>
-                {g.opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </optgroup>
-            ))}
-          </select>
-        )
+        // 所有可选归类项打平，供搜索用
+        const allClassifyOpts = classifyGroups.flatMap(g => g.opts.map(o => ({ ...o, groupLabel: g.label })))
+        const classifyCell = (it, i) => {
+          const isOpen = !!ocrClassifyOpen[i]
+          const q = (ocrClassifySearch[i] ?? (it.screeningKey ? allClassifyOpts.find(o => o.value === it.screeningKey)?.label || '' : '')).toLowerCase()
+          const filtered = q.length >= 1
+            ? allClassifyOpts.filter(o => o.label.toLowerCase().includes(q) || o.groupLabel.toLowerCase().includes(q))
+            : allClassifyOpts
+          const displayText = it.screeningKey ? (allClassifyOpts.find(o => o.value === it.screeningKey)?.label || it.screeningKey) : ''
+          return (
+            <div style={{ position: 'relative', width: '100%' }}>
+              <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${it.screeningKey ? '#A7F3D0' : '#FCD34D'}`, borderRadius: 4, background: it.screeningKey ? '#F0FDF4' : '#FFFBEB', overflow: 'hidden' }}>
+                <input
+                  style={{ flex: 1, padding: '3px 4px', fontSize: 11, border: 'none', background: 'transparent', outline: 'none', color: it.screeningKey ? '#1E6B50' : '#D97706', minWidth: 0 }}
+                  placeholder="⚠ 待归类（可搜索）"
+                  value={ocrClassifySearch[i] !== undefined ? ocrClassifySearch[i] : displayText}
+                  onFocus={() => { setOcrClassifyOpen(p => ({ ...p, [i]: true })); setOcrClassifySearch(p => ({ ...p, [i]: '' })) }}
+                  onBlur={() => setTimeout(() => { setOcrClassifyOpen(p => ({ ...p, [i]: false })); setOcrClassifySearch(p => { const n = { ...p }; delete n[i]; return n }) }, 180)}
+                  onChange={e => setOcrClassifySearch(p => ({ ...p, [i]: e.target.value }))}
+                />
+                {it.screeningKey && (
+                  <button onClick={() => setClassify(i, '')} style={{ background: 'none', border: 'none', color: '#aaa', cursor: 'pointer', padding: '0 4px', fontSize: 12, lineHeight: 1, flexShrink: 0 }}>✕</button>
+                )}
+              </div>
+              {isOpen && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto', marginTop: 2 }}>
+                  <div onMouseDown={() => setClassify(i, '')} style={{ padding: '5px 8px', fontSize: 11, color: '#D97706', cursor: 'pointer', borderBottom: '1px solid #f5f2ec' }}>⚠ 清除归类</div>
+                  {filtered.length === 0 && <div style={{ padding: '8px', fontSize: 11, color: '#aaa', textAlign: 'center' }}>无匹配结果</div>}
+                  {filtered.map(o => (
+                    <div key={o.value} onMouseDown={() => { setClassify(i, o.value); setOcrClassifyOpen(p => ({ ...p, [i]: false })) }}
+                      style={{ padding: '5px 8px', fontSize: 11, cursor: 'pointer', color: o.value === it.screeningKey ? '#1E6B50' : '#1A2B24', background: o.value === it.screeningKey ? '#F0FDF4' : 'transparent', borderBottom: '1px solid #f9f7f4' }}
+                      onMouseEnter={e => e.currentTarget.style.background = '#F0FDF4'}
+                      onMouseLeave={e => e.currentTarget.style.background = o.value === it.screeningKey ? '#F0FDF4' : 'transparent'}>
+                      <span style={{ fontSize: 10, color: '#8AA89C', marginRight: 4 }}>{o.groupLabel}</span>{o.label}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        }
         return (
           <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setOcrReviewReport(null) }}>
             <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>

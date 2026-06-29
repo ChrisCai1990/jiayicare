@@ -20,6 +20,16 @@ const connectDB = async () => {
       }
       await AnnualPlan.syncIndexes();
     } catch (e) { console.error('AnnualPlan 索引迁移失败:', e.message); }
+    // 索引迁移：UserScreeningItem 从 {user,itemId} 唯一 改为 {user,itemId,reportId} 唯一，允许多年数据并存
+    try {
+      const UserScreeningItem = require('../models/UserScreeningItem');
+      const idxs = await UserScreeningItem.collection.indexes();
+      if (idxs.some(i => i.name === 'user_1_itemId_1')) {
+        await UserScreeningItem.collection.dropIndex('user_1_itemId_1');
+        console.log('🔧 已删除 UserScreeningItem 旧唯一索引 user_1_itemId_1');
+      }
+      await UserScreeningItem.syncIndexes();
+    } catch (e) { console.error('UserScreeningItem 索引迁移失败:', e.message); }
   } catch (error) {
     console.error('❌ MongoDB 连接失败:', error.message);
     process.exit(1);

@@ -11,6 +11,8 @@ const UserScreeningItemSchema = new mongoose.Schema({
   note:        { type: String },
 }, { timestamps: true });
 
-UserScreeningItemSchema.index({ user: 1, itemId: 1 }, { unique: true });
+// 允许同一筛查项多年数据并存：以 (user, itemId, reportId) 三元唯一
+// 旧索引 { user, itemId } unique 需在 MongoDB 手动 drop 后此索引才生效
+UserScreeningItemSchema.index({ user: 1, itemId: 1, reportId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('UserScreeningItem', UserScreeningItemSchema);
