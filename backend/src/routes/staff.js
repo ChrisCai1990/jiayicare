@@ -725,8 +725,16 @@ router.put('/followups/:id', staffAuth, async (req, res) => {
   }
 
   const allowed = ['date', 'type', 'status', 'content', 'theme', 'cancelReason', 'assignedTo', 'nextFollowUpDate', 'tags', 'vitals', 'checkInItems', 'participants', 'interviewMinutes'];
+  const OBJECTID_FIELDS = ['assignedTo'];
   allowed.forEach(k => {
-    if (req.body[k] !== undefined) followUp[k] = req.body[k];
+    if (req.body[k] !== undefined) {
+      // ObjectId 字段传空字符串时设为 null，避免 Mongoose BSONError
+      if (OBJECTID_FIELDS.includes(k) && req.body[k] === '') {
+        followUp[k] = null;
+      } else {
+        followUp[k] = req.body[k];
+      }
+    }
   });
   // 完成时记录完成时间（供用户端「已完成」展示）；非完成态则清空
   if (followUp.status === 'completed') {
