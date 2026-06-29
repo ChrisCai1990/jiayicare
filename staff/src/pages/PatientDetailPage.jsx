@@ -1150,8 +1150,9 @@ export default function PatientDetailPage() {
       const allReportItems = [...flatLabItems, ...funcAsReportItems, ...imagingItems]
       const examDesc = (screeningForm.examOrderItems || []).map(e => { if (!e.name) return ''; return e.description ? `【${e.name}】\n${e.description}` : `【${e.name}】` }).filter(Boolean).join('\n\n') || screeningForm.examDescription || ''
       const examConc = (screeningForm.examOrderItems || []).map(e => { if (!e.name) return ''; return e.conclusion ? `【${e.name}】\n${e.conclusion}` : `【${e.name}】` }).filter(Boolean).join('\n\n') || screeningForm.examConclusion || ''
+      const examMainConclusions = Object.fromEntries((screeningForm.examOrderItems || []).filter(e => e.name && e.mainConclusion).map(e => [e.name, e.mainConclusion]))
       const allL3Names = [...(screeningForm.reportItems || []).map(r => r.name), ...(screeningForm.examOrderItems || []).map(e => e.name), ...(screeningForm.funcTestItems || []).map(f => f.name)].filter(Boolean)
-      const payload = { ...screeningForm, reportItems: allReportItems, examDescription: examDesc, examConclusion: examConc, screeningL3Items: allL3Names }
+      const payload = { ...screeningForm, reportItems: allReportItems, examDescription: examDesc, examConclusion: examConc, examMainConclusions, screeningL3Items: allL3Names }
       if (editingScreeningId) {
         await staffAPI.updateScreeningRecord(id, editingScreeningId, payload, screeningFiles)
         toast('筛查结果已更新')
@@ -2443,7 +2444,7 @@ export default function PatientDetailPage() {
             const savedLabItems = (r.reportItems || []).filter(i => i.itemType !== 'data' && i.itemType !== 'imaging')
             const savedImagingItems = (r.reportItems || []).filter(i => i.itemType === 'imaging') // 原样保留，避免手动编辑时丢失检查所见/诊断意见
             const funcItems = (r.reportItems || []).filter(i => i.itemType === 'data').map(i => ({ name: i.name, result: i.value || '' }))
-            const examItems = parseExamItems(r.examDescription, r.examConclusion)
+            const examItems = parseExamItems(r.examDescription, r.examConclusion).map(e => ({ ...e, mainConclusion: (r.examMainConclusions || {})[e.name] || '' }))
             // 按 orderName 还原分组（orderName 为空说明是旧数据或手动添加的单项）
             const orderMap = {}
             const orderKeys = []
@@ -2584,9 +2585,10 @@ export default function PatientDetailPage() {
                                 {(item.examDate || r.checkDate) && <span style={{ fontSize: 11, color: '#93C5FD', marginLeft: 'auto' }}>{item.examDate || r.checkDate}</span>}
                               </div>
                               <div style={{ padding: '6px 10px', fontSize: 12, background: '#fff', lineHeight: 1.7 }}>
+                                {item.conclusion && <div style={{ color: '#5B21B6', fontWeight: 600, marginBottom: 4 }}><span style={{ color: '#7C3AED' }}>主要结论：</span>{item.conclusion}</div>}
                                 {findings && <div style={{ color: '#374151', marginBottom: 4, whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>检查所见：</span>{findings}</div>}
                                 {item.diagnosis && <div style={{ color: '#374151', whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>诊断意见：</span>{item.diagnosis}</div>}
-                                {!findings && !item.diagnosis && <span style={{ color: '#9CA3AF' }}>暂无检查所见/诊断意见</span>}
+                                {!item.conclusion && !findings && !item.diagnosis && <span style={{ color: '#9CA3AF' }}>暂无检查所见/诊断意见</span>}
                               </div>
                             </div>
                           )
@@ -2620,8 +2622,13 @@ export default function PatientDetailPage() {
                                 <div
                                   onClick={() => hasDetail && setExpandedExamKey(isOpen ? null : examKey)}
                                   style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 10px', background: '#EFF6FF', cursor: hasDetail ? 'pointer' : 'default' }}>
-                                  <span style={{ fontWeight: 600, color: '#1E40AF', fontSize: 12 }}>{item.name}</span>
-                                  {hasDetail && <span style={{ fontSize: 11, color: '#93C5FD' }}>{isOpen ? '▲' : '▼'}</span>}
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <span style={{ fontWeight: 600, color: '#1E40AF', fontSize: 12 }}>{item.name}</span>
+                                    {(r.examMainConclusions || {})[item.name] && (
+                                      <span style={{ fontSize: 12, color: '#5B21B6', fontWeight: 600, marginLeft: 8 }}>· {(r.examMainConclusions || {})[item.name]}</span>
+                                    )}
+                                  </div>
+                                  {hasDetail && <span style={{ fontSize: 11, color: '#93C5FD', flexShrink: 0 }}>{isOpen ? '▲' : '▼'}</span>}
                                 </div>
                                 {isOpen && hasDetail && (
                                   <div style={{ padding: '6px 10px', fontSize: 12, background: '#fff' }}>
@@ -3089,9 +3096,13 @@ export default function PatientDetailPage() {
                             <textarea className="form-input" rows={2} style={{ fontSize: 12, marginBottom: 4 }} placeholder="检查描述（检查目的、注意事项等）"
                               value={item.description}
                               onChange={e => setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], description: e.target.value }; return { ...f, examOrderItems: a } })} />
-                            <textarea className="form-input" rows={2} style={{ fontSize: 12 }} placeholder="诊断结论（如：未见明显异常）"
+                            <textarea className="form-input" rows={2} style={{ fontSize: 12, marginBottom: 4 }} placeholder="诊断结论（如：未见明显异常）"
                               value={item.conclusion}
                               onChange={e => setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], conclusion: e.target.value }; return { ...f, examOrderItems: a } })} />
+                            <div style={{ fontSize: 11, color: '#7C3AED', marginBottom: 2, fontWeight: 600 }}>主要结论（展示在专项筛查）</div>
+                            <input className="form-input" style={{ fontSize: 12, background: '#F3EFFB', borderColor: '#C4B5FD' }} placeholder="如：未见明显异常 / 建议3个月后复查"
+                              value={item.mainConclusion || ''}
+                              onChange={e => setScreeningForm(f => { const a = [...f.examOrderItems]; a[idx] = { ...a[idx], mainConclusion: e.target.value }; return { ...f, examOrderItems: a } })} />
                           </div>
                         ))}
                       </div>
@@ -5600,7 +5611,19 @@ export default function PatientDetailPage() {
                       {s.examDescription && (
                         <div style={{ marginBottom: 6 }}>
                           <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 3 }}>描述</div>
-                          <div style={{ fontSize: 12, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{s.examDescription}</div>
+                          {(s.examDescription || '').split('\n\n').filter(Boolean).map((block, bi) => {
+                            const nameM = block.match(/^【(.+?)】/)
+                            const name = nameM ? nameM[1] : null
+                            const mainConc = name && (s.examMainConclusions || {})[name]
+                            const text = block.replace(/^【.+?】\n?/, '').trim()
+                            return (
+                              <div key={bi} style={{ marginBottom: 4 }}>
+                                {name && <span style={{ fontSize: 11, fontWeight: 600, color: '#1E40AF' }}>【{name}】</span>}
+                                {mainConc && <span style={{ fontSize: 12, color: '#5B21B6', fontWeight: 600, marginLeft: 6 }}>{mainConc}</span>}
+                                {text && <div style={{ fontSize: 12, color: '#1A2B24', lineHeight: 1.7, whiteSpace: 'pre-wrap', marginTop: 2 }}>{text}</div>}
+                              </div>
+                            )
+                          })}
                         </div>
                       )}
                       {s.examConclusion && (
@@ -5847,11 +5870,12 @@ export default function PatientDetailPage() {
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                           <thead>
                             <tr style={{ background: '#f5f2ec', color: '#4A6558' }}>
-                              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, minWidth: 150 }}>项目名称</th>
-                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 90 }}>数值</th>
-                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 70 }}>单位</th>
-                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 110 }}>参考范围</th>
-                              <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 80 }}>状态</th>
+                              <th style={{ padding: '6px 8px', textAlign: 'left', fontWeight: 600, minWidth: 120 }}>项目名称</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 80 }}>数值</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 60 }}>单位</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 100 }}>参考范围</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 70 }}>状态</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, minWidth: 140, color: '#7C3AED' }}>专项筛查归类</th>
                               <th style={{ padding: '6px 4px', width: 32 }}></th>
                             </tr>
                           </thead>
@@ -5871,6 +5895,7 @@ export default function PatientDetailPage() {
                                       {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
                                     </select>
                                   </td>
+                                  <td style={{ padding: '4px 6px' }}>{classifyCell(it, i)}</td>
                                   <td style={{ padding: '4px 4px', textAlign: 'center' }}>
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </td>
@@ -5902,6 +5927,8 @@ export default function PatientDetailPage() {
                                   <textarea style={{ ...inp, minHeight: 64, lineHeight: 1.6, resize: 'vertical' }} value={it.findings || ''} placeholder="检查所见，如：右肺上叶见磨玻璃结节，直径约5mm…" onChange={e => updItem(i, { findings: e.target.value })} />
                                   <div style={{ fontSize: 11, color: '#8AA89C', margin: '6px 0 2px' }}>诊断意见</div>
                                   <textarea style={{ ...inp, minHeight: 44, lineHeight: 1.6, resize: 'vertical' }} value={it.diagnosis || ''} placeholder="诊断意见，如：右肺上叶磨玻璃结节，建议3个月后复查" onChange={e => updItem(i, { diagnosis: e.target.value })} />
+                                  <div style={{ fontSize: 11, color: '#7C3AED', margin: '6px 0 2px', fontWeight: 600 }}>主要结论（展示在专项筛查）</div>
+                                  <input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD' }} value={it.conclusion || ''} placeholder="如：右肺小结节，建议随访复查" onChange={e => updItem(i, { conclusion: e.target.value })} />
                                 </div>
                               )
                             })}

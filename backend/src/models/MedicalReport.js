@@ -17,6 +17,8 @@ const reportItemSchema = new mongoose.Schema({
   examDate:    { type: String, default: '' }, // 检查时间（item 级，空则回退报告级 checkDate）
   institution: { type: String, default: '' }, // 检查机构（item 级，空则回退报告级 institution）
 
+  conclusion: { type: String, default: '' }, // 该项主要结论（人工填写，展示在专项筛查）
+
   // ── 专项筛查自动归类标记（批次2 匹配引擎写入；批次1 先建字段）──
   screeningKeys:     [{ type: String }],             // 命中的所有筛查树节点 id 数组（支持多类目）
   screeningKey:      { type: String, default: '' }, // 最佳命中节点 id（向后兼容单值）
@@ -43,8 +45,9 @@ const medicalReportSchema = new mongoose.Schema({
   screeningL2: { type: String, default: '' },
   screeningL3: { type: String, default: '' },
   screeningL3Items: [{ type: String }],
-  examDescription: { type: String, default: '' }, // 检查医嘱：检查描述（给医生看的说明）
-  examConclusion:  { type: String, default: '' }, // 检查医嘱：诊断结论模板
+  examDescription:      { type: String, default: '' }, // 检查医嘱：检查描述（给医生看的说明）
+  examConclusion:       { type: String, default: '' }, // 检查医嘱：诊断结论模板
+  examMainConclusions:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 检查项主要结论 { [项目名]: '结论文字' }
   reportItems:     [reportItemSchema],                // 解析后的各项结果
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
   aiStatus:        { type: String, enum: ['none', 'processing', 'pending', 'reviewed', 'rejected'], default: 'none' },
