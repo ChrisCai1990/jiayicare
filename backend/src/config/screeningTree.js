@@ -192,19 +192,17 @@ const NODES = [
   { id: 'chronic|糖尿病早筛|3小时胰岛素C肽', category: 'chronic', categoryKey: 'chronic', parent: '糖尿病早筛', label: '3小时胰岛素/C肽', itemType: 'lab', gender: null,
     aliases: ['3h胰岛素', '3小时胰岛素'] },
 
-  // 高血脂早筛 — 每个子项独立节点，避免多条检验只写一条记录
-  { id: 'chronic|高血脂早筛|总胆固醇', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '总胆固醇', itemType: 'lab', gender: null,
-    aliases: ['胆固醇', 'TC', 'CHOL', '血清总胆固醇', '总胆固醇TC'] },
-  { id: 'chronic|高血脂早筛|甘油三酯', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '甘油三酯', itemType: 'lab', gender: null,
-    aliases: ['TG', 'TRIG', '血清甘油三酯', '甘油三酯TG'] },
-  { id: 'chronic|高血脂早筛|LDL-C', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: 'LDL-C', itemType: 'lab', gender: null,
-    aliases: ['低密度脂蛋白胆固醇', '低密度脂蛋白', 'LDL', '低密度脂蛋白胆固醇LDL-C'] },
-  { id: 'chronic|高血脂早筛|HDL-C', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: 'HDL-C', itemType: 'lab', gender: null,
-    aliases: ['高密度脂蛋白胆固醇', '高密度脂蛋白', 'HDL', '高密度脂蛋白胆固醇HDL-C'] },
-  { id: 'chronic|高血脂早筛|脂蛋白a', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '脂蛋白a', itemType: 'lab', gender: null,
-    aliases: ['Lp(a)', 'LP(A)', '脂蛋白(a)', '脂蛋白A'] },
-  { id: 'chronic|高血脂早筛|非高密度脂蛋白胆固醇', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '非高密度脂蛋白胆固醇', itemType: 'lab', gender: null,
-    aliases: ['非HDL-C', '非高密度脂蛋白', 'non-HDL', 'Non-HDL-C'] },
+  // 高血脂早筛 — 整组血脂合并为一个节点，总胆固醇/甘油三酯/LDL/HDL等子项均归入此处，一起展示
+  { id: 'chronic|高血脂早筛|高血脂早筛', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '高血脂早筛', itemType: 'lab', gender: null,
+    aliases: [
+      '血脂', '血脂四项', '血脂检测', '血脂分析', '血脂组合',
+      '总胆固醇', '胆固醇', 'TC', 'CHOL', '血清总胆固醇', '总胆固醇TC',
+      '甘油三酯', 'TG', 'TRIG', '血清甘油三酯', '甘油三酯TG',
+      'LDL-C', '低密度脂蛋白胆固醇', '低密度脂蛋白', 'LDL', '低密度脂蛋白胆固醇LDL-C',
+      'HDL-C', '高密度脂蛋白胆固醇', '高密度脂蛋白', 'HDL', '高密度脂蛋白胆固醇HDL-C',
+      '脂蛋白a', 'Lp(a)', 'LP(A)', '脂蛋白(a)', '脂蛋白A',
+      '非高密度脂蛋白胆固醇', '非HDL-C', '非高密度脂蛋白', 'non-HDL', 'Non-HDL-C',
+    ] },
 
   // 脏器功能筛查
   { id: 'chronic|脏器功能筛查|肝功能', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: '肝功能', itemType: 'lab', gender: null,
