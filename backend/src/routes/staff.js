@@ -4562,12 +4562,41 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
   }
 });
 
-// GET /api/staff/screening-catalog — 专项筛查静态分类目录（OCR自动/手动归类下拉用，后端单一数据源）
-// 注意：与上方 /screening-tree（管理端套餐动态读取的 L1 树）是不同用途，勿混用
-router.get('/screening-catalog', staffAuth, (req, res) => {
+// GET /api/staff/screening-catalog — 专项筛查分类目录（归类下拉用）
+// 数据源：静态 screeningTree.js（含 aliases，供 OCR 自动归类）+ 数据库 ProjectCategory（管理后台实时配置）
+// 两者合并：数据库的 L1/L2 类目优先列出，静态树补充静态树中有但数据库没有的条目
+router.get('/screening-catalog', staffAuth, async (req, res) => {
   try {
     const { buildTree } = require('../config/screeningTree');
-    res.json({ success: true, data: buildTree() });
+    const staticTree = buildTree(); // 静态树，格式：[{ category, label, parents:[{parent, items:[{id,label}]}] }]
+
+    // 从数据库读 ProjectCategory 两级树（L1=无parent，L2=有parent）
+    const allCats = await ProjectCategory.find({ status: 'active' }).lean();
+    const l1s = allCats.filter(c => !c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    const l2sByParent = {};
+    allCats.filter(c => c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach(c => {
+      const pid = String(c.parent);
+      if (!l2sByParent[pid]) l2sByParent[pid] = [];
+      l2sByParent[pid].push(c);
+    });
+
+    // 把数据库分类构建成和静态树相同的格式
+    // id 格式：db|<L1name>|<L2name>（与静态树 id 格式区分）
+    const dbTree = l1s.map(l1 => {
+      const l2s = l2sByParent[String(l1._id)] || [];
+      return {
+        category: 'db_' + String(l1._id),
+        label: l1.name,
+        parents: l2s.map(l2 => ({
+          parent: l2.name,
+          items: [{ id: `db|${l1.name}|${l2.name}`, label: l2.name, itemType: 'lab' }],
+        })),
+      };
+    });
+
+    // 合并：数据库的在前，静态树的在后（静态树保留 aliases 供 OCR 匹配，下拉里也能手动选）
+    const merged = [...dbTree, ...staticTree];
+    res.json({ success: true, data: merged });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
