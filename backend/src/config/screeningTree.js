@@ -16,9 +16,9 @@ const NODES = [
   { id: 'tumor|胃-食管癌早筛|胃镜病理', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃镜病理', itemType: 'imaging', gender: null,
     aliases: ['胃镜活检', '胃黏膜病理', '胃镜活检病理'] },
   { id: 'tumor|胃-食管癌早筛|碳13呼气试验', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '碳13呼气试验', itemType: 'lab', gender: null,
-    aliases: ['C13呼气试验', '幽门螺杆菌呼气试验', 'C13', '13C尿素呼气试验', '幽门螺旋杆菌呼气试验', 'HP呼气试验'] },
+    aliases: ['C13呼气试验', '13C尿素呼气试验', '幽门螺杆菌呼气试验', '幽门螺旋杆菌呼气试验', 'HP呼气试验', 'C-13呼气试验'] },
   { id: 'tumor|胃-食管癌早筛|碳14呼气试验', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '碳14呼气试验', itemType: 'lab', gender: null,
-    aliases: ['C14呼气试验', '14C尿素呼气试验', 'C14', '尿素呼气试验'] },
+    aliases: ['C14呼气试验', '14C尿素呼气试验', 'C-14呼气试验'] },
   { id: 'tumor|胃-食管癌早筛|胃蛋白酶原', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃蛋白酶原', itemType: 'lab', gender: null,
     aliases: ['胃蛋白酶原I', '胃蛋白酶原II', 'PGI', 'PGII', 'PG', '胃蛋白酶原比值', 'PGR', 'PG1', 'PG2', '胃功能', '胃功能检测'] },
   { id: 'tumor|胃-食管癌早筛|胃泌素17', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃泌素17', itemType: 'lab', gender: null,
@@ -62,9 +62,8 @@ const NODES = [
 
   // 甲状腺癌早筛
   { id: 'tumor|甲状腺癌早筛|甲状腺超声', category: 'tumor', categoryKey: 'tumor', parent: '甲状腺癌早筛', label: '甲状腺超声', itemType: 'imaging', gender: null,
-    aliases: ['甲状腺彩超', '甲状腺及颈部淋巴结超声', '甲状腺B超'] },
-  { id: 'tumor|甲状腺癌早筛|甲状腺穿刺', category: 'tumor', categoryKey: 'tumor', parent: '甲状腺癌早筛', label: '甲状腺穿刺', itemType: 'imaging', gender: null,
-    aliases: ['甲状腺细针穿刺', 'FNA', '甲状腺活检', '甲状腺穿刺活检'] },
+    aliases: ['甲状腺彩超', '甲状腺及颈部淋巴结超声', '甲状腺及周围淋巴结超声', '甲状腺周围淋巴结超声', '甲状腺B超'] },
+  // 注：甲状腺穿刺为有创操作，仅在确有穿刺活检报告时才归类，不由普通体检报告自动归入
 
   // 乳腺癌早筛
   { id: 'tumor|乳腺癌早筛|乳腺超声', category: 'tumor', categoryKey: 'tumor', parent: '乳腺癌早筛', label: '乳腺超声', itemType: 'imaging', gender: '女',
@@ -85,8 +84,12 @@ const NODES = [
     aliases: ['经阴道超声', '阴超', '妇科超声', '子宫附件超声', '盆腔超声', '阴道彩超'] },
 
   // 前列腺癌早筛
-  { id: 'tumor|前列腺癌早筛|前列腺特异性抗原PSA', category: 'tumor', categoryKey: 'tumor', parent: '前列腺癌早筛', label: '前列腺特异性抗原PSA', itemType: 'lab', gender: '男',
-    aliases: ['PSA', 'T-PSA', 'tPSA', '总PSA', '前列腺特异抗原', 'F-PSA', 'fPSA', '游离PSA', 'fPSA/tPSA', 'PSA比值'] },
+  { id: 'tumor|前列腺癌早筛|总PSA', category: 'tumor', categoryKey: 'tumor', parent: '前列腺癌早筛', label: '总PSA', itemType: 'lab', gender: '男',
+    aliases: ['PSA', 'T-PSA', 'tPSA', '总PSA', '前列腺特异抗原', '前列腺特异性抗原', '前列腺特异性抗原PSA'] },
+  { id: 'tumor|前列腺癌早筛|游离PSA', category: 'tumor', categoryKey: 'tumor', parent: '前列腺癌早筛', label: '游离PSA', itemType: 'lab', gender: '男',
+    aliases: ['F-PSA', 'fPSA', '游离前列腺特异性抗原'] },
+  { id: 'tumor|前列腺癌早筛|PSA比值', category: 'tumor', categoryKey: 'tumor', parent: '前列腺癌早筛', label: 'PSA比值', itemType: 'lab', gender: '男',
+    aliases: ['fPSA/tPSA', 'F/T PSA', '游离/总PSA比'] },
   { id: 'tumor|前列腺癌早筛|前列腺超声', category: 'tumor', categoryKey: 'tumor', parent: '前列腺癌早筛', label: '前列腺超声', itemType: 'imaging', gender: '男',
     aliases: ['前列腺彩超', '经直肠前列腺超声', '前列腺B超'] },
   { id: 'tumor|前列腺癌早筛|前列腺磁共振', category: 'tumor', categoryKey: 'tumor', parent: '前列腺癌早筛', label: '前列腺磁共振', itemType: 'imaging', gender: '男',
@@ -104,9 +107,9 @@ const NODES = [
   { id: 'tumor|鼻咽癌早筛|鼻咽镜', category: 'tumor', categoryKey: 'tumor', parent: '鼻咽癌早筛', label: '鼻咽镜', itemType: 'imaging', gender: null,
     aliases: ['电子鼻咽镜', '鼻内镜', '鼻咽镜检查'] },
 
-  // 淋巴瘤早筛
+  // 淋巴瘤早筛（注：含甲状腺描述的淋巴结超声应归甲状腺癌早筛，此处仅保留纯淋巴结超声别名）
   { id: 'tumor|淋巴瘤早筛|淋巴结超声', category: 'tumor', categoryKey: 'tumor', parent: '淋巴瘤早筛', label: '淋巴结超声', itemType: 'imaging', gender: null,
-    aliases: ['淋巴结彩超', '浅表淋巴结超声', '双侧腋窝淋巴结超声', '颈部淋巴结超声'] },
+    aliases: ['淋巴结彩超', '浅表淋巴结超声', '双侧腋窝淋巴结超声'] },
   { id: 'tumor|淋巴瘤早筛|淋巴结磁共振', category: 'tumor', categoryKey: 'tumor', parent: '淋巴瘤早筛', label: '淋巴结磁共振', itemType: 'imaging', gender: null,
     aliases: ['淋巴结MRI'] },
 
@@ -155,9 +158,9 @@ const NODES = [
   { id: 'cardio|心血管病早筛|动脉硬化测定', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: '动脉硬化测定', itemType: 'imaging', gender: null,
     aliases: ['动脉硬化检测', 'PWV', 'ABI', '脉搏波传导速度', '踝臂指数'] },
 
-  // 脑血管病早筛
+  // 脑血管病早筛（注：Lp(a)/脂蛋白a 属于高血脂早筛，不在此处；脂蛋白磷脂酶A2是完全不同的指标）
   { id: 'cardio|脑血管病早筛|脂蛋白磷脂酶A2', category: 'cardio', categoryKey: 'cardiovascular', parent: '脑血管病早筛', label: '脂蛋白磷脂酶A2', itemType: 'lab', gender: null,
-    aliases: ['Lp-PLA2', 'LpPLA2', '脂蛋白相关磷脂酶A2'] },
+    aliases: ['Lp-PLA2', 'LpPLA2', '脂蛋白相关磷脂酶A2', '脂蛋白磷脂酶'] },
   { id: 'cardio|脑血管病早筛|颈动脉超声', category: 'cardio', categoryKey: 'cardiovascular', parent: '脑血管病早筛', label: '颈动脉超声', itemType: 'imaging', gender: null,
     aliases: ['颈动脉彩超', '双侧颈动脉超声', '颈部血管超声', '颈动脉血管彩超'] },
   { id: 'cardio|脑血管病早筛|头颅MRI', category: 'cardio', categoryKey: 'cardiovascular', parent: '脑血管病早筛', label: '头颅MRI', itemType: 'imaging', gender: null,
@@ -166,9 +169,9 @@ const NODES = [
     aliases: ['颅脑MRA', '脑血管MRA', '颅内动脉MRA', '头颅血管MRA'] },
 
   // ── 慢性病筛查（chronic）─────────────────────────────────────────
-  // 高血压早筛
+  // 高血压早筛（注：血压脉搏在一般检查里，这里仅记录专项血压评估）
   { id: 'chronic|高血压早筛|血压', category: 'chronic', categoryKey: 'chronic', parent: '高血压早筛', label: '血压', itemType: 'data', gender: null,
-    aliases: ['血压测量', '诊室血压', '收缩压', '舒张压'] },
+    aliases: ['血压测量', '诊室血压'] },
   { id: 'chronic|高血压早筛|动态血压', category: 'chronic', categoryKey: 'chronic', parent: '高血压早筛', label: '动态血压', itemType: 'imaging', gender: null,
     aliases: ['24小时动态血压', '动态血压监测', 'ABPM'] },
 
@@ -179,18 +182,19 @@ const NODES = [
     aliases: ['HbA1c', '糖化血红蛋白A1c', 'A1C', '糖化'] },
   { id: 'chronic|糖尿病早筛|葡萄糖耐量试验', category: 'chronic', categoryKey: 'chronic', parent: '糖尿病早筛', label: '葡萄糖耐量试验', itemType: 'lab', gender: null,
     aliases: ['OGTT', '糖耐量试验', '口服糖耐量', '糖耐量', '餐后血糖', '餐后2小时血糖', '糖耐量葡萄糖', '口服葡萄糖耐量'] },
+  // 注：空腹胰岛素/C肽及各时间点胰岛素C肽仅在做OGTT+胰岛素释放试验时存在，普通体检报告无此项目
   { id: 'chronic|糖尿病早筛|空腹胰岛素', category: 'chronic', categoryKey: 'chronic', parent: '糖尿病早筛', label: '空腹胰岛素', itemType: 'lab', gender: null,
-    aliases: ['胰岛素', 'FINS', '空腹INS', '胰岛素空腹', '空腹血清胰岛素', '胰岛素测定'] },
+    aliases: ['FINS', '空腹INS', '空腹血清胰岛素'] },
   { id: 'chronic|糖尿病早筛|空腹C肽', category: 'chronic', categoryKey: 'chronic', parent: '糖尿病早筛', label: '空腹C肽', itemType: 'lab', gender: null,
-    aliases: ['C肽', 'C-肽', '空腹C-P', 'C-peptide'] },
+    aliases: ['C肽空腹', '空腹C-P', 'C-peptide空腹'] },
   { id: 'chronic|糖尿病早筛|30分钟胰岛素C肽', category: 'chronic', categoryKey: 'chronic', parent: '糖尿病早筛', label: '30分钟胰岛素/C肽', itemType: 'lab', gender: null,
-    aliases: ['0.5小时胰岛素', '30min胰岛素', '0.5h胰岛素C肽'] },
+    aliases: ['0.5小时胰岛素C肽', '30min胰岛素C肽', '胰岛素30min'] },
   { id: 'chronic|糖尿病早筛|1小时胰岛素C肽', category: 'chronic', categoryKey: 'chronic', parent: '糖尿病早筛', label: '1小时胰岛素/C肽', itemType: 'lab', gender: null,
-    aliases: ['1h胰岛素', '1小时胰岛素'] },
+    aliases: ['1h胰岛素C肽', '胰岛素1h'] },
   { id: 'chronic|糖尿病早筛|2小时胰岛素C肽', category: 'chronic', categoryKey: 'chronic', parent: '糖尿病早筛', label: '2小时胰岛素/C肽', itemType: 'lab', gender: null,
-    aliases: ['2h胰岛素', '餐后2小时胰岛素'] },
+    aliases: ['2h胰岛素C肽', '餐后2小时胰岛素C肽'] },
   { id: 'chronic|糖尿病早筛|3小时胰岛素C肽', category: 'chronic', categoryKey: 'chronic', parent: '糖尿病早筛', label: '3小时胰岛素/C肽', itemType: 'lab', gender: null,
-    aliases: ['3h胰岛素', '3小时胰岛素'] },
+    aliases: ['3h胰岛素C肽', '胰岛素3h'] },
 
   // 高血脂早筛 — 每个子项独立节点，避免多条检验只写一条记录
   { id: 'chronic|高血脂早筛|总胆固醇', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '总胆固醇', itemType: 'lab', gender: null,
@@ -215,7 +219,7 @@ const NODES = [
       '乳酸脱氢酶', 'LDH', '总胆汁酸', 'TBA'] },
   { id: 'chronic|脏器功能筛查|肾功能', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: '肾功能', itemType: 'lab', gender: null,
     aliases: ['肾功', '肾功能检查', '肌酐', '尿素氮', '血肌酐', 'Cr', 'CREA', 'BUN', '尿酸', 'UA',
-      '尿素', 'UREA', '肾小球滤过率', 'GFR', 'eGFR', '肌酐清除率'] },
+      '尿素', 'UREA', '肾小球滤过率', 'GFR', 'eGFR', '肌酐清除率', '血尿酸'] },
   { id: 'chronic|脏器功能筛查|胱抑素C', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: '胱抑素C', itemType: 'lab', gender: null,
     aliases: ['Cys-C', 'CysC', '血清胱抑素C'] },
   { id: 'chronic|脏器功能筛查|尿微量白蛋白-尿肌酐', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: '尿微量白蛋白/尿肌酐', itemType: 'lab', gender: null,
@@ -242,51 +246,55 @@ const NODES = [
   // ── 其他常规筛查（other）─────────────────────────────────────────
   // 一般检查
   { id: 'other|一般检查|身高体重', category: 'other', categoryKey: 'other', parent: '一般检查', label: '身高体重', itemType: 'data', gender: null,
-    aliases: ['身高', '体重', '身高体重测量', 'BMI', '体质指数', '腰围', '体重指数'] },
+    aliases: ['身高体重测量', '身高体重BMI', 'BMI体质指数', '体重身高'] },
   { id: 'other|一般检查|血压脉搏', category: 'other', categoryKey: 'other', parent: '一般检查', label: '血压脉搏', itemType: 'data', gender: null,
-    aliases: ['脉搏', '心率', '诊室血压测量'] },
+    aliases: ['血压脉搏测量', '测血压脉搏'] },
   { id: 'other|一般检查|视力', category: 'other', categoryKey: 'other', parent: '一般检查', label: '视力', itemType: 'data', gender: null,
-    aliases: ['视力检查', '眼科检查', '视力测查', '眼压', '视力及眼压'] },
+    aliases: ['视力检查', '视力测查', '裸眼视力'] },
+  { id: 'other|一般检查|眼压', category: 'other', categoryKey: 'other', parent: '一般检查', label: '眼压', itemType: 'data', gender: null,
+    aliases: ['眼压检查', '眼内压', 'IOP'] },
+  { id: 'other|一般检查|裂隙灯', category: 'other', categoryKey: 'other', parent: '一般检查', label: '裂隙灯', itemType: 'data', gender: null,
+    aliases: ['裂隙灯检查', '眼前节检查', '裂隙灯显微镜'] },
+  { id: 'other|一般检查|眼底照相', category: 'other', categoryKey: 'other', parent: '一般检查', label: '眼底照相', itemType: 'imaging', gender: null,
+    aliases: ['眼底检查', '眼底摄影', '免散瞳眼底照相', '眼底镜检查', '数字化眼底照相'] },
   { id: 'other|一般检查|耳鼻喉', category: 'other', categoryKey: 'other', parent: '一般检查', label: '耳鼻喉', itemType: 'data', gender: null,
-    aliases: ['耳鼻喉检查', '电耳镜', '前鼻镜', '鼻腔检查'] },
+    aliases: ['耳鼻喉检查', '电耳镜', '前鼻镜', '鼻腔检查', 'ENT检查'] },
   { id: 'other|一般检查|内科查体', category: 'other', categoryKey: 'other', parent: '一般检查', label: '内科查体', itemType: 'data', gender: null,
-    aliases: ['内科', '内科体检', '内科检查'] },
+    aliases: ['内科检查', '内科体格检查', '内科医生查体'] },
   { id: 'other|一般检查|外科查体', category: 'other', categoryKey: 'other', parent: '一般检查', label: '外科查体', itemType: 'data', gender: null,
-    aliases: ['外科', '外科体检', '外科检查'] },
+    aliases: ['外科检查', '外科体格检查', '外科医生查体'] },
 
-  // 三大常规
+  // 三大常规（注：粪便隐血/便潜血独立归入肠癌早筛，此处粪便常规仅用于描述完整粪便检查套餐）
   { id: 'other|三大常规|血常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '血常规', itemType: 'lab', gender: null,
     aliases: ['血细胞分析', '全血细胞计数', 'CBC', '血常规检查', '血液分析'] },
   { id: 'other|三大常规|尿常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '尿常规', itemType: 'lab', gender: null,
-    aliases: ['尿液分析', '尿液常规', '尿检'] },
+    aliases: ['尿液分析', '尿液常规', '尿检', '尿液检查'] },
   { id: 'other|三大常规|粪便常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '粪便常规', itemType: 'lab', gender: null,
-    aliases: ['大便常规', '粪便常规+隐血', '便常规', '大便检查', '粪便隐血', '便潜血', '大便隐血'] },
+    aliases: ['大便常规', '粪便常规+隐血', '便常规', '大便检查'] },
 
   // 激素类
   { id: 'other|激素类|甲状腺功能', category: 'other', categoryKey: 'other', parent: '激素类', label: '甲状腺功能', itemType: 'lab', gender: null,
-    aliases: ['甲功', '甲功三项', '甲功五项', '甲功七项', '甲状腺功能3项', '甲状腺功能5项', '甲状腺功能7项', '甲状腺功能五项', 'TSH', 'FT3', 'FT4', 'T3', 'T4', '促甲状腺激素', '游离三碘甲状腺原氨酸', '游离甲状腺素', '三碘甲状腺原氨酸', '甲状腺素', 'TPOAb', 'TgAb', 'TRAb', '抗甲状腺过氧化物酶抗体', '促甲状腺素受体抗体'] },
-  { id: 'other|激素类|甲状腺球蛋白', category: 'other', categoryKey: 'other', parent: '激素类', label: '甲状腺球蛋白', itemType: 'lab', gender: null,
-    aliases: ['Tg', '甲状腺球蛋白抗体'] },
+    aliases: ['甲功', '甲功三项', '甲功五项', '甲功七项', '甲状腺功能3项', '甲状腺功能5项', '甲状腺功能7项', '甲状腺功能五项', 'TSH', 'FT3', 'FT4', 'T3', 'T4', '促甲状腺激素', '游离三碘甲状腺原氨酸', '游离甲状腺素', '三碘甲状腺原氨酸', '甲状腺素', 'TPOAb', 'TgAb', 'TRAb', '抗甲状腺过氧化物酶抗体', '促甲状腺素受体抗体', '抗甲状腺球蛋白抗体', '甲状腺过氧化物酶抗体'] },
+  // 注：甲状腺球蛋白(Tg)是甲状腺癌术后随访指标，普通体检报告极少出现；甲状腺球蛋白抗体(TgAb)属于甲状腺功能检测
   { id: 'other|激素类|性激素', category: 'other', categoryKey: 'other', parent: '激素类', label: '性激素', itemType: 'lab', gender: null,
     aliases: ['性激素六项', 'FSH', 'LH', '雌二醇', 'E2', '孕酮', '睾酮'] },
 
   // 维生素及电解质类
   { id: 'other|维生素及电解质|25-羟基维生素D', category: 'other', categoryKey: 'other', parent: '维生素及电解质', label: '25-羟基维生素D', itemType: 'lab', gender: null,
-    aliases: ['维生素D', '25(OH)D', '25羟维生素D', 'VitD', '25-羟维生素D3', '维生素D3'] },
+    aliases: ['维生素D', '25(OH)D', '25羟维生素D', 'VitD', '25-羟维生素D3', '维生素D3', '25-OH-VD'] },
   { id: 'other|维生素及电解质|电解质', category: 'other', categoryKey: 'other', parent: '维生素及电解质', label: '电解质', itemType: 'lab', gender: null,
-    aliases: ['电解质检查', '血钾', '血钠', '血氯', '钾钠氯', '血清电解质',
-      '钾', 'K', '钠', 'Na', '氯', 'Cl', '钙', 'Ca', '磷', 'P', '镁', 'Mg',
-      '二氧化碳', 'CO2', '碳酸氢根', 'HCO3', '阴离子间隙'] },
+    aliases: ['电解质检查', '血钾', '血钠', '血氯', '钾钠氯', '血清电解质', '电解质组合'] },
+  // 注：维生素B族仅在有对应检测报告时归类，普通体检报告无此项
   { id: 'other|维生素及电解质|维生素B族', category: 'other', categoryKey: 'other', parent: '维生素及电解质', label: '维生素B族', itemType: 'lab', gender: null,
-    aliases: ['维生素B12', '叶酸', 'VitB12', 'B12', '维生素B'] },
+    aliases: ['维生素B12', '叶酸检测', 'VitB12检测', 'B12检测'] },
 
   // 传染病筛查
   { id: 'other|传染病筛查|传染病4项', category: 'other', categoryKey: 'other', parent: '传染病筛查', label: '传染病4项', itemType: 'lab', gender: null,
     aliases: ['传染病四项', '术前八项', '感染四项', '乙肝丙肝梅毒艾滋', '乙肝', '丙肝', '梅毒', '艾滋', 'HIV', '梅毒螺旋体', 'RPR'] },
 
-  // 风湿免疫+补体类
+  // 风湿免疫
   { id: 'other|风湿免疫|免疫全套', category: 'other', categoryKey: 'other', parent: '风湿免疫', label: '免疫全套', itemType: 'lab', gender: null,
-    aliases: ['免疫五项', '免疫球蛋白', 'IgG', 'IgM', 'IgA', '补体', 'C3', 'C4', '风湿免疫', '自身抗体'] },
+    aliases: ['免疫五项', '免疫球蛋白', 'IgG', 'IgM', 'IgA', '风湿免疫', '自身抗体', '类风湿因子', 'RF', 'CRP', 'C反应蛋白', '抗核抗体', 'ANA'] },
 
   // 凝血功能+D-二聚体
   { id: 'other|凝血功能|凝血功能', category: 'other', categoryKey: 'other', parent: '凝血功能', label: '凝血功能', itemType: 'lab', gender: null,
@@ -294,9 +302,9 @@ const NODES = [
   { id: 'other|凝血功能|D-二聚体', category: 'other', categoryKey: 'other', parent: '凝血功能', label: 'D-二聚体', itemType: 'lab', gender: null,
     aliases: ['D二聚体', 'D-Dimer', 'DDimer'] },
 
-  // 风湿免疫+补体（含湿免疫+补体类）
+  // 风湿免疫+补体
   { id: 'other|风湿+补体|风湿免疫+补体', category: 'other', categoryKey: 'other', parent: '风湿+补体', label: '风湿免疫+补体', itemType: 'lab', gender: null,
-    aliases: ['类风湿因子', 'RF', 'CRP', 'C反应蛋白', '抗核抗体', 'ANA', '抗双链DNA', '抗CCP抗体'] },
+    aliases: ['补体C3', 'C3', '补体C4', 'C4', '抗双链DNA', '抗CCP抗体', '免疫补体', '补体检测'] },
 
   // ── 功能医学检测（hp）────────────────────────────────────────────
   { id: 'hp|功能医学检测|慢性食物过敏检测', category: 'hp', categoryKey: 'health_promote', parent: '功能医学检测', label: '慢性食物过敏检测', itemType: 'lab', gender: null,

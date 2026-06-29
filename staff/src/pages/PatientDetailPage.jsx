@@ -2686,14 +2686,25 @@ export default function PatientDetailPage() {
             <div className="card" style={{ marginBottom: 16 }}>
               <div className="card-header">
                 <div className="card-title">专项筛查结果</div>
-                <button className="btn btn-primary btn-sm" onClick={() => {
-                  setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
-                  setScreeningFiles([])
-                  setEditingScreeningId(null)
-                  setScreeningLinkedItem(null)
-                  setScreeningAutoMatches([])
-                  setShowScreeningForm(true)
-                }}>+ 录入筛查结果</button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <button className="btn btn-secondary btn-sm" title="清理重复的AI识别筛查记录（同一项目保留最新一条）"
+                    onClick={async () => {
+                      if (!window.confirm('将清理重复的AI识别筛查记录，每个项目只保留最新一条。确认继续？')) return
+                      try {
+                        const res = await staffAPI.dedupPatientScreening(id)
+                        toast(res.message || '去重完成')
+                        loadScreening()
+                      } catch (e) { toast('去重失败：' + (e.message || '')) }
+                    }}>🧹 清理重复</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => {
+                    setScreeningForm({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
+                    setScreeningFiles([])
+                    setEditingScreeningId(null)
+                    setScreeningLinkedItem(null)
+                    setScreeningAutoMatches([])
+                    setShowScreeningForm(true)
+                  }}>+ 录入筛查结果</button>
+                </div>
               </div>
               {!hasAny ? (
                 <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无专项筛查记录，点击「录入筛查结果」添加</div>

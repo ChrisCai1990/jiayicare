@@ -2472,6 +2472,27 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// POST /api/staff/patients/:id/screening/dedup — 去重：同一 itemId 保留最新一条（updatedAt最大）
+router.post('/patients/:id/screening/dedup', staffAuth, async (req, res) => {
+  try {
+    const userId = req.params.id;
+    const all = await UserScreeningItem.find({ user: userId }).sort({ updatedAt: -1 }).lean();
+    const seen = new Set();
+    const toDelete = [];
+    for (const it of all) {
+      if (seen.has(it.itemId)) {
+        toDelete.push(it._id);
+      } else {
+        seen.add(it.itemId);
+      }
+    }
+    if (toDelete.length) {
+      await UserScreeningItem.deleteMany({ _id: { $in: toDelete } });
+    }
+    res.json({ success: true, deleted: toDelete.length, message: `已清理 ${toDelete.length} 条重复记录` });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 患者日常打卡记录（医护端查看）────────────────────────────────
 router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   try {
@@ -4377,11 +4398,20 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
   }
 });
 
-const REPORT_PARSE_PROMPT = `请分析这份体检报告图片，提取所有检验项目和检查项目。区分两类：
+const REPORT_PARSE_PROMPT = `请分析这份体检报告图片，提取所有检验项目和检查项目。
 
+**核心原则：只提取报告中实际存在的项目，绝对不要推断、联想或补全报告中没有的项目。**
+
+区分两类：
 【检验项目】血常规、生化、肿瘤标志物等数值型结果 → itemType="lab"，填写 name/value/unit/referenceRange/status，检查类字段留空。
 【检查项目】超声、内镜、CT、MRI、心电图、病理等描述型结果 → itemType="imaging"，填写 name、bodyPart(检查部位)、findings(检查所见)、diagnosis(诊断意见)，value/unit/referenceRange 留空。
-※ 检查项目的 findings(检查所见) 与 diagnosis(诊断意见) 必须完整提取报告原文，禁止省略、概括或截断。
+
+**严格规则：**
+1. findings(检查所见) 与 diagnosis(诊断意见) 必须完整提取报告原文，禁止省略、概括或截断
+2. 每个检查项目只提取一条记录，禁止把同一检查重复提取（如「心电图」不能同时提取为「常规心电图」和「动态心电图」）
+3. 检验项目中，同一检验单的各子项（如肿瘤标志物全套的各指标）需逐条列出，每条单独一个对象
+4. 禁止生成报告图片中未出现的项目（如报告无胃泌素17则不提取胃泌素17）
+5. 「碳13」和「碳14」呼气试验是两种不同检测，根据报告原文严格区分，不可混淆
 
 以 JSON 格式返回，结构如下：
 {
@@ -4400,7 +4430,7 @@ function safeParseJSON(text) {
   catch { return null; }
 }
 
-// 将报告已归类项同步写入 UserScreeningItem（upsert，不覆盖已有 note）
+// 将报告已归类项同步写入 UserScreeningItem（upsert，每个 key 全局唯一一条，reportId 记录最新来源）
 // 每条 reportItem 可携带多个 screeningKeys，每个 key 写一条 UserScreeningItem 记录
 async function syncScreeningItems(userId, reportId, items) {
   try {
@@ -4412,9 +4442,10 @@ async function syncScreeningItems(userId, reportId, items) {
         : (it.screeningKey ? [it.screeningKey] : []);
       for (const key of keys) {
         const parts = String(key).split('|');
+        // filter 只用 { user, itemId }，同一个筛查项全局唯一一条，reportId 作为最新数据来源更新
         await UserScreeningItem.updateOne(
-          { user: userId, itemId: key, reportId },
-          { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || it.name || '', status: 'completed' } },
+          { user: userId, itemId: key },
+          { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || it.name || '', status: 'completed', reportId } },
           { upsert: true }
         );
         syncCount++;

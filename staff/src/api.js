@@ -251,6 +251,7 @@ export const staffAPI = {
 
   // 患者专项筛查 & 日常打卡（医护端查看）
   getPatientScreening:      (id)       => req(`/staff/patients/${id}/screening`),
+  dedupPatientScreening:    (id)       => req(`/staff/patients/${id}/screening/dedup`, { method: 'POST', body: JSON.stringify({}) }),
   getPatientHealthRecords:  (id, p={}) => req(`/staff/patients/${id}/health-records?` + qs(p)),
   createPatientHealthRecord: (id, data) => req(`/staff/patients/${id}/health-records`, { method: 'POST', body: JSON.stringify(data) }),
 

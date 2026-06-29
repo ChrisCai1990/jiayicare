@@ -53,12 +53,14 @@ function scoreNode(q, itemType, cands, node) {
 }
 
 // 多节点匹配：返回所有置信度 >= 阈值的节点，按置信度降序排列
-function matchAll(rawName, itemType, threshold = 0.6) {
+// excludeCategories: 排除某些分类（如 hp 功能医学检测不从普通体检报告自动归类）
+function matchAll(rawName, itemType, threshold = 0.6, excludeCategories = ['hp']) {
   const q = norm(rawName);
   if (!q || q.length < 2) return [];
 
   const results = [];
   for (const { node, cands } of INDEX) {
+    if (excludeCategories.includes(node.category)) continue;
     const conf = scoreNode(q, itemType, cands, node);
     if (conf >= threshold) {
       results.push({ node, confidence: Math.round(conf * 100) / 100 });
