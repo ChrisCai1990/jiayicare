@@ -4537,8 +4537,6 @@ async function runReportParse(reportId) {
         aiStatus:    'pending',
         institution, checkDate,
       });
-      // 自动写入专项筛查：AI解析完成后立即同步已归类项，无需等专员审核
-      await syncScreeningItems(report.user, reportId, classified);
       const totalMs = Date.now() - t0;
       console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 成功${okPages}页 提取${allItems.length}项 自动归类${matchedCount}项 | 转图${(convMs/1000).toFixed(1)}s 识别${((totalMs-convMs)/1000).toFixed(1)}s 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
@@ -4556,8 +4554,6 @@ async function runReportParse(reportId) {
       institution: parsed?.institution || report.institution,
       checkDate:   parsed?.checkDate   || report.checkDate,
     });
-    // 自动写入专项筛查
-    await syncScreeningItems(report.user, reportId, classifiedImg);
     console.log(`[parse-ai] 图片完成 ${reportId} 提取${parsed?.items?.length || 0}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
