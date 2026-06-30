@@ -86,4 +86,10 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 服务启动成功，端口：${PORT}`);
+  // 重置上次进程崩溃遗留的 processing 状态（OOM/kill 导致 catch 未运行）
+  const MedicalReport = require('./models/MedicalReport');
+  MedicalReport.updateMany(
+    { aiStatus: 'processing' },
+    { aiStatus: 'pending', aiSummary: '上次识别被中断（服务重启），请重新触发AI识别' }
+  ).then(r => { if (r.modifiedCount > 0) console.log(`[startup] 重置 ${r.modifiedCount} 条卡住的 processing 报告`); }).catch(() => {});
 });

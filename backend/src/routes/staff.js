@@ -4493,7 +4493,8 @@ async function runReportParse(reportId) {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
       const tConv = Date.now();
-      const images = await pdfBufferToImages(pdfBuf, { dpi: 120, maxPages: 30 });
+      console.log(`[parse-ai] PDF转图 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB`);
+      const images = await pdfBufferToImages(pdfBuf, { dpi: 96, maxPages: 20 });
       const convMs = Date.now() - tConv;
 
       const VL_MODEL = 'qwen-vl-plus'; // 实测比 max 快约2.8倍、精度一致
