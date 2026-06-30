@@ -5958,9 +5958,12 @@ export default function PatientDetailPage() {
                       </div>
 
                       {/* 区二：影像 / 检查描述 → 文本卡片（不挤进窄表格） */}
-                      {imgRows.length > 0 && (
+                      {(imgRows.length > 0 || true) && (
                         <>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '0 0 6px' }}>影像 / 检查描述（{imgRows.length}）</div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', margin: '0 0 6px' }}>
+                            <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>影像 / 检查描述（{imgRows.length}）</div>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>
+                          </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 8 }}>
                             {imgRows.map(({ it, i }) => {
                               const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
