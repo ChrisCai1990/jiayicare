@@ -4610,41 +4610,62 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
   }
 });
 
-// GET /api/staff/screening-catalog — 专项筛查分类目录（归类下拉用）
-// 数据源：静态 screeningTree.js（含 aliases，供 OCR 自动归类）+ 数据库 ProjectCategory（管理后台实时配置）
-// 两者合并：数据库的 L1/L2 类目优先列出，静态树补充静态树中有但数据库没有的条目
+// GET /api/staff/screening-catalog — 专项筛查归类下拉（只从 admin 配置的 LabTestPackage 读取）
+// 格式：[{ label: 'L1分类', opts: [{ value: 'L1|L2|itemName', label: 'itemName' }] }]
 router.get('/screening-catalog', staffAuth, async (req, res) => {
   try {
-    const { buildTree } = require('../config/screeningTree');
-    const staticTree = buildTree(); // 静态树，格式：[{ category, label, parents:[{parent, items:[{id,label}]}] }]
+    const [cats, pkgs] = await Promise.all([
+      ProjectCategory.find({ status: 'active' }).lean(),
+      LabTestPackage.find({ status: 'active' })
+        .populate('labTestItems', 'name')
+        .populate({ path: 'specialExams', match: { deleted: { $ne: true } }, select: 'name' })
+        .lean(),
+    ]);
 
-    // 从数据库读 ProjectCategory 两级树（L1=无parent，L2=有parent）
-    const allCats = await ProjectCategory.find({ status: 'active' }).lean();
-    const l1s = allCats.filter(c => !c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
+    const l1s = cats.filter(c => !c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
     const l2sByParent = {};
-    allCats.filter(c => c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach(c => {
+    cats.filter(c => c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach(c => {
       const pid = String(c.parent);
       if (!l2sByParent[pid]) l2sByParent[pid] = [];
       l2sByParent[pid].push(c);
     });
-
-    // 把数据库分类构建成和静态树相同的格式
-    // id 格式：db|<L1name>|<L2name>（与静态树 id 格式区分）
-    const dbTree = l1s.map(l1 => {
-      const l2s = l2sByParent[String(l1._id)] || [];
-      return {
-        category: 'db_' + String(l1._id),
-        label: l1.name,
-        parents: l2s.map(l2 => ({
-          parent: l2.name,
-          items: [{ id: `db|${l1.name}|${l2.name}`, label: l2.name, itemType: 'lab' }],
-        })),
-      };
+    const pkgByCat = {};
+    pkgs.forEach(p => {
+      if (!p.categoryId) return;
+      const cid = String(p.categoryId);
+      if (!pkgByCat[cid]) pkgByCat[cid] = [];
+      pkgByCat[cid].push(p);
     });
 
-    // 合并：数据库的在前，静态树的在后（静态树保留 aliases 供 OCR 匹配，下拉里也能手动选）
-    const merged = [...dbTree, ...staticTree];
-    res.json({ success: true, data: merged });
+    // 构建归类选项：L1分类 → 组标题，L2(package) + item → 选项
+    // value 格式：<L1name>|<packageName>|<itemName>（与 screeningTree itemId 格式一致）
+    const groups = [];
+    for (const l1 of l1s) {
+      const opts = [];
+      const l2cats = l2sByParent[String(l1._id)] || [];
+      for (const l2 of l2cats) {
+        const matchPkgs = pkgByCat[String(l2._id)] || [];
+        for (const pkg of matchPkgs) {
+          // 套餐本身作为一个归类选项
+          opts.push({ value: `${l1.name}|${pkg.name}|${pkg.name}`, label: pkg.name, groupLabel: l1.name });
+          // 套餐下的检验项目
+          (pkg.labTestItems || []).forEach(item => {
+            if (item && item.name) {
+              opts.push({ value: `${l1.name}|${pkg.name}|${item.name}`, label: `${pkg.name} / ${item.name}`, groupLabel: l1.name });
+            }
+          });
+          // 套餐下的检查医嘱
+          (pkg.specialExams || []).forEach(exam => {
+            if (exam && exam.name) {
+              opts.push({ value: `${l1.name}|${pkg.name}|${exam.name}`, label: `${pkg.name} / ${exam.name}`, groupLabel: l1.name });
+            }
+          });
+        }
+      }
+      if (opts.length > 0) groups.push({ label: l1.name, opts });
+    }
+
+    res.json({ success: true, data: groups });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

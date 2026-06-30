@@ -5806,10 +5806,11 @@ export default function PatientDetailPage() {
         const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         // 专项筛查归类：选项分组 + 手动归类
-        // screeningCatalog 来自后端 /screening-catalog，读 screeningTree.js，与 app 端 SpecialScreeningScreen.js CATALOG 保持一致
+        // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
+        // 格式：[{ label: 'L1分类名', opts: [{value: 'L1|packageName|itemName', label: '...', groupLabel: 'L1分类名'}] }]
         const classifyGroups = screeningCatalog.map(cat => ({
           label: cat.label,
-          opts: cat.parents.flatMap(p => p.items.map(it => ({ value: it.id, label: `${p.parent} / ${it.label}` }))),
+          opts: (cat.opts || []),
         }))
         const setClassify = (i, key) => {
           if (!key) return updItem(i, { screeningKey: '', screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 })
