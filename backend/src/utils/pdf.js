@@ -44,39 +44,99 @@ async function fetchReportBuffer(report, uploadsDir) {
   throw new Error('无法获取报告文件内容（content 与 fileUrl 均为空）');
 }
 
-// 把 PDF Buffer 逐页转成 PNG 的 base64 数组（依赖系统 pdftoppm / poppler-utils）
-function pdfBufferToImages(pdfBuffer, { dpi = 150, maxPages = 10 } = {}) {
+// 用 pdftoppm 获取 PDF 总页数
+function getPdfPageCount(pdfPath) {
+  return new Promise((resolve) => {
+    execFile('pdfinfo', [pdfPath], { timeout: 10000 }, (err, stdout) => {
+      if (err) { resolve(null); return; }
+      const m = stdout.match(/Pages:\s*(\d+)/);
+      resolve(m ? parseInt(m[1], 10) : null);
+    });
+  });
+}
+
+// 转换 PDF 指定页范围为 PNG base64 数组（单批，转完即清理临时文件）
+function convertPdfRange(pdfPath, firstPage, lastPage, dpi) {
   return new Promise((resolve, reject) => {
     let tmpDir;
     try {
-      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfimg-'));
+      tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pdfbatch-'));
     } catch (e) { return reject(e); }
-    const pdfPath = path.join(tmpDir, 'in.pdf');
     const outPrefix = path.join(tmpDir, 'page');
     const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
-    try {
-      fs.writeFileSync(pdfPath, pdfBuffer);
-    } catch (e) { cleanup(); return reject(e); }
 
-    // pdftoppm -png -r <dpi> -l <maxPages> in.pdf page  →  page-1.png, page-2.png ...
-    execFile('pdftoppm', ['-png', '-r', String(dpi), '-l', String(maxPages), pdfPath, outPrefix],
-      { timeout: 120000 }, (err) => {
-        if (err) { cleanup(); return reject(new Error('PDF转图片失败：' + err.message)); }
-        try {
-          const files = fs.readdirSync(tmpDir)
-            .filter(f => f.startsWith('page') && f.endsWith('.png'))
-            .sort((a, b) => {
-              const na = parseInt((a.match(/(\d+)\.png$/) || [])[1] || '0', 10);
-              const nb = parseInt((b.match(/(\d+)\.png$/) || [])[1] || '0', 10);
-              return na - nb;
-            });
-          const images = files.map(f => fs.readFileSync(path.join(tmpDir, f)).toString('base64'));
-          cleanup();
-          if (images.length === 0) return reject(new Error('PDF未生成任何页面图片'));
-          resolve(images);
-        } catch (e) { cleanup(); reject(e); }
-      });
+    execFile('pdftoppm', [
+      '-png', '-r', String(dpi),
+      '-f', String(firstPage), '-l', String(lastPage),
+      pdfPath, outPrefix,
+    ], { timeout: 60000 }, (err) => {
+      if (err) { cleanup(); return reject(new Error('PDF转图片失败：' + err.message)); }
+      try {
+        const files = fs.readdirSync(tmpDir)
+          .filter(f => f.startsWith('page') && f.endsWith('.png'))
+          .sort((a, b) => {
+            const na = parseInt((a.match(/(\d+)\.png$/) || [])[1] || '0', 10);
+            const nb = parseInt((b.match(/(\d+)\.png$/) || [])[1] || '0', 10);
+            return na - nb;
+          });
+        const images = files.map(f => fs.readFileSync(path.join(tmpDir, f)).toString('base64'));
+        cleanup();
+        resolve(images);
+      } catch (e) { cleanup(); reject(e); }
+    });
   });
+}
+
+/**
+ * 把 PDF Buffer 按批次转成 PNG base64 数组，每批处理完后立即释放内存。
+ * callback(batchImages, batchIndex) 在每批转换完成后被调用；
+ * 若不传 callback，则收集所有图片一次返回（仅适合小文件）。
+ *
+ * @param {Buffer} pdfBuffer
+ * @param {object} opts
+ * @param {number} opts.dpi        默认 96
+ * @param {number} opts.batchSize  每批页数，默认 8（内存可控）
+ * @param {Function} [opts.onBatch]  async (images: string[], batchIndex: number) => void
+ * @returns {Promise<string[]>}  若有 onBatch 则返回空数组；否则返回全部图片
+ */
+async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, onBatch } = {}) {
+  // 先把 PDF 写到临时文件（保留整个解析过程，批次共用）
+  const tmpPdf = path.join(os.tmpdir(), `pdf-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  fs.writeFileSync(tmpPdf, pdfBuffer);
+  const cleanupPdf = () => { try { fs.unlinkSync(tmpPdf); } catch {} };
+
+  try {
+    // 获取总页数
+    const totalPages = await getPdfPageCount(tmpPdf);
+    // pdfinfo 不一定有，fallback：用 pdftoppm 转一大批，看实际产出了几页
+    const knownTotal = totalPages || 999;
+
+    const allImages = [];
+    let batchIndex = 0;
+
+    for (let first = 1; first <= knownTotal; first += batchSize) {
+      const last = Math.min(first + batchSize - 1, knownTotal);
+      const images = await convertPdfRange(tmpPdf, first, last, dpi);
+      if (images.length === 0) break; // pdftoppm 返回空说明已超出实际页数
+
+      if (onBatch) {
+        await onBatch(images, batchIndex);
+      } else {
+        allImages.push(...images);
+      }
+      batchIndex++;
+
+      // 如果实际转出的页数少于请求的，说明已到最后一批
+      if (images.length < last - first + 1) break;
+    }
+
+    if (!onBatch && allImages.length === 0) {
+      throw new Error('PDF未生成任何页面图片');
+    }
+    return allImages;
+  } finally {
+    cleanupPdf();
+  }
 }
 
 // 判断报告是否为 PDF

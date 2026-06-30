@@ -4492,44 +4492,53 @@ async function runReportParse(reportId) {
   try {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-      const tConv = Date.now();
-      console.log(`[parse-ai] PDF转图 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB`);
-      const images = await pdfBufferToImages(pdfBuf, { dpi: 96, maxPages: 20 });
-      const convMs = Date.now() - tConv;
+      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/96dpi)`);
 
-      const VL_MODEL = 'qwen-vl-plus'; // 实测比 max 快约2.8倍、精度一致
-
-      // 全页完整提取（不做智能跳过——实测会漏识别医疗数据）。并发3为限流拐点，失败页重试1次保证不丢页
+      const VL_MODEL = 'qwen-vl-plus';
       const CONCURRENCY = 3;
-      const pageResults = new Array(images.length).fill(null);
-      let cursor = 0;
-      const worker = async () => {
-        while (cursor < images.length) {
-          const i = cursor++;
-          for (let attempt = 0; attempt < 2; attempt++) {
-            try {
-              const text = await parseImage(images[i], REPORT_PARSE_PROMPT, { isUrl: false, model: VL_MODEL });
-              const p = safeParseJSON(text);
-              if (p) { pageResults[i] = p; break; }
-            } catch { /* 重试 */ }
-          }
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(CONCURRENCY, images.length) }, worker));
 
       let allItems = [];
       const summaries = [];
       let institution = report.institution;
       let checkDate = report.checkDate;
+      let totalPageCount = 0;
       let okPages = 0;
-      for (const p of pageResults) {
-        if (!p) continue;
-        okPages++;
-        if (Array.isArray(p.items)) allItems = allItems.concat(p.items.filter(it => it.name && String(it.name).trim()));
-        if (p.summary) summaries.push(p.summary);
-        if (!institution && p.institution) institution = p.institution;
-        if (!checkDate && p.checkDate) checkDate = p.checkDate;
-      }
+
+      // onBatch：每批图片转出后立即识别，识别完就释放这批图片内存
+      await pdfBufferToImages(pdfBuf, {
+        dpi: 96,
+        batchSize: 8,
+        onBatch: async (batchImages, batchIndex) => {
+          totalPageCount += batchImages.length;
+          console.log(`[parse-ai] PDF批次${batchIndex + 1} ${reportId} ${batchImages.length}页`);
+
+          const batchResults = new Array(batchImages.length).fill(null);
+          let cursor = 0;
+          const worker = async () => {
+            while (cursor < batchImages.length) {
+              const i = cursor++;
+              for (let attempt = 0; attempt < 2; attempt++) {
+                try {
+                  const text = await parseImage(batchImages[i], REPORT_PARSE_PROMPT, { isUrl: false, model: VL_MODEL });
+                  const p = safeParseJSON(text);
+                  if (p) { batchResults[i] = p; break; }
+                } catch { /* 重试 */ }
+              }
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(CONCURRENCY, batchImages.length) }, worker));
+
+          for (const p of batchResults) {
+            if (!p) continue;
+            okPages++;
+            if (Array.isArray(p.items)) allItems = allItems.concat(p.items.filter(it => it.name && String(it.name).trim()));
+            if (p.summary) summaries.push(p.summary);
+            if (!institution && p.institution) institution = p.institution;
+            if (!checkDate && p.checkDate) checkDate = p.checkDate;
+          }
+        },
+      });
+
       const classified = classifyItems(allItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       await MedicalReport.findByIdAndUpdate(reportId, {
@@ -4539,7 +4548,7 @@ async function runReportParse(reportId) {
         institution, checkDate,
       });
       const totalMs = Date.now() - t0;
-      console.log(`[parse-ai] PDF完成 ${reportId} 共${images.length}页 成功${okPages}页 提取${allItems.length}项 自动归类${matchedCount}项 | 转图${(convMs/1000).toFixed(1)}s 识别${((totalMs-convMs)/1000).toFixed(1)}s 总耗时${(totalMs/1000).toFixed(1)}s`);
+      console.log(`[parse-ai] PDF完成 ${reportId} 共${totalPageCount}页 成功${okPages}页 提取${allItems.length}项 归类${matchedCount}项 | 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
     }
 
