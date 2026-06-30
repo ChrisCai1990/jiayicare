@@ -2468,6 +2468,7 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
           obj.status = matched.status || 'unknown';
           obj.findings = matched.findings || '';
           obj.diagnosis = matched.diagnosis || '';
+          obj.conclusion = matched.conclusion || '';
           obj.itemType = matched.itemType || 'lab';
           obj.name = matched.name || obj.itemLabel;
         }
@@ -2477,6 +2478,18 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
     });
 
     res.json({ success: true, data: enriched });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/patients/:id/screening/ai-item — 删除 AI 识别的 UserScreeningItem（按 reportId + itemLabel 批量删）
+router.delete('/patients/:id/screening/ai-item', staffAuth, async (req, res) => {
+  try {
+    const { reportId, itemLabel } = req.body;
+    const q = { user: req.params.id };
+    if (reportId) q.reportId = reportId;
+    if (itemLabel) q.itemLabel = itemLabel;
+    const result = await UserScreeningItem.deleteMany(q);
+    res.json({ success: true, deleted: result.deletedCount });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

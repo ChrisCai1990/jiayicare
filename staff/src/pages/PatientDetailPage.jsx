@@ -2514,7 +2514,24 @@ export default function PatientDetailPage() {
                     <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                   </div>
                   {r.isAI
-                    ? <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0, padding: '1px 6px' }}>体检报告</span>
+                    ? (<>
+                        <button onClick={() => {
+                          const rid = (r._sourceItems || [])[0]?.reportId
+                          if (!rid) return
+                          const rpt = reports.find(x => String(x._id) === rid)
+                          if (rpt) handleOpenOCRReview(rpt)
+                        }} style={{ background: 'none', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#4A6558', cursor: 'pointer', flexShrink: 0 }}>编辑</button>
+                        <button onClick={async () => {
+                          if (!window.confirm('删除该AI识别筛查项？')) return
+                          try {
+                            const rid = (r._sourceItems || [])[0]?.reportId
+                            const lbl = (r._sourceItems || [])[0]?.itemLabel
+                            await staffAPI.deleteAIScreeningItem(id, { reportId: rid, itemLabel: lbl })
+                            toast('已删除')
+                            loadScreening()
+                          } catch (e) { toast('删除失败：' + (e.message || '')) }
+                        }} style={{ background: 'none', border: '1px solid #DC3545', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#DC3545', cursor: 'pointer', flexShrink: 0 }}>删除</button>
+                      </>)
                     : (<>
                         <button onClick={() => handleEditScreening(r)}
                           style={{ background: 'none', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#4A6558', cursor: 'pointer', flexShrink: 0 }}>编辑</button>
@@ -2759,9 +2776,14 @@ export default function PatientDetailPage() {
                     itemType: it.itemType || 'lab',
                     findings: it.findings || '',
                     diagnosis: it.diagnosis || '',
+                    conclusion: it.conclusion || '',
                   })
+                  // 记录原始 reportId 和 itemLabel 供删除用
+                  if (!aiVirtualMap[vKey]._sourceItems) aiVirtualMap[vKey]._sourceItems = []
+                  aiVirtualMap[vKey]._sourceItems.push({ reportId: rid, itemLabel: it.itemLabel || '' })
                 })
-                Object.values(aiVirtualMap).forEach(({ _l1Key, _l2, _l3, ...rec }) => {
+                Object.values(aiVirtualMap).forEach(({ _l1Key, _l2, _l3, _sourceItems, ...rec }) => {
+                  rec._sourceItems = _sourceItems || []
                   if (!treeData[_l1Key]) treeData[_l1Key] = {}
                   if (!treeData[_l1Key][_l2]) treeData[_l1Key][_l2] = {}
                   if (!treeData[_l1Key][_l2][_l3]) treeData[_l1Key][_l2][_l3] = []
