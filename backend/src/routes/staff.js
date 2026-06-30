@@ -4610,6 +4610,20 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
   }
 });
 
+// GET /api/staff/diag/pdf — 诊断 pdftoppm 是否可用
+router.get('/diag/pdf', staffAuth, async (req, res) => {
+  const { execFile } = require('child_process');
+  execFile('pdftoppm', ['-v'], (err, stdout, stderr) => {
+    res.json({
+      available: !err || stderr.includes('pdftoppm'),
+      version: stderr || stdout || '',
+      error: err ? err.message : null,
+      uploadsDir: UPLOADS_DIR,
+      uploadsDirExists: require('fs').existsSync(UPLOADS_DIR),
+    });
+  });
+});
+
 // GET /api/staff/screening-catalog — 专项筛查归类下拉（只从 admin 配置的 LabTestPackage 读取）
 // 格式：[{ label: 'L1分类', opts: [{ value: 'L1|L2|itemName', label: 'itemName' }] }]
 router.get('/screening-catalog', staffAuth, async (req, res) => {
