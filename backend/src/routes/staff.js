@@ -4522,7 +4522,8 @@ async function runReportParse(reportId) {
                   const text = await parseImage(batchImages[i], REPORT_PARSE_PROMPT, { isUrl: false, model: VL_MODEL });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
-                } catch { /* 重试 */ }
+                  if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
+                } catch (e) { if (attempt === 1) console.log(`[parse-ai] 页${i + 1}异常: ${e.message}`); }
               }
             }
           };
