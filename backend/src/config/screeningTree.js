@@ -115,7 +115,7 @@ const NODES = [
 
   // 肿瘤标志物
   { id: 'tumor|肿瘤标志物|甲胎蛋白', category: 'tumor', categoryKey: 'tumor', parent: '肿瘤标志物', label: '甲胎蛋白', itemType: 'lab', gender: null,
-    aliases: ['AFP', '甲胎球蛋白'] },
+    aliases: ['AFP', 'α-甲胎蛋白'] },
   { id: 'tumor|肿瘤标志物|癌胚抗原', category: 'tumor', categoryKey: 'tumor', parent: '肿瘤标志物', label: '癌胚抗原', itemType: 'lab', gender: null,
     aliases: ['CEA'] },
   { id: 'tumor|肿瘤标志物|CA19-9', category: 'tumor', categoryKey: 'tumor', parent: '肿瘤标志物', label: 'CA19-9', itemType: 'lab', gender: null,
@@ -209,6 +209,10 @@ const NODES = [
     aliases: ['Lp(a)', 'LP(A)', '脂蛋白(a)', '脂蛋白A'] },
   { id: 'chronic|高血脂早筛|非高密度脂蛋白胆固醇', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '非高密度脂蛋白胆固醇', itemType: 'lab', gender: null,
     aliases: ['非HDL-C', '非高密度脂蛋白', 'non-HDL', 'Non-HDL-C'] },
+  { id: 'chronic|高血脂早筛|载脂蛋白A1', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '载脂蛋白A1', itemType: 'lab', gender: null,
+    aliases: ['ApoA1', 'ApoA-1', 'APO-A1', 'APOA1', '脂蛋白A1', '载脂蛋白A-1'] },
+  { id: 'chronic|高血脂早筛|载脂蛋白B', category: 'chronic', categoryKey: 'chronic', parent: '高血脂早筛', label: '载脂蛋白B', itemType: 'lab', gender: null,
+    aliases: ['ApoB', 'ApoB-100', 'APO-B', 'APOB', '脂蛋白B', '载脂蛋白B-100'] },
 
   // 脏器功能筛查
   { id: 'chronic|脏器功能筛查|肝功能', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: '肝功能', itemType: 'lab', gender: null,

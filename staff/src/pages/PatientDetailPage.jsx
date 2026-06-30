@@ -2536,16 +2536,21 @@ export default function PatientDetailPage() {
                         if (!groupMap[key]) { groupMap[key] = []; groupKeys.push(key) }
                         groupMap[key].push(item)
                       })
-                      const renderItemRows = (items) => items.map((item, j) => (
-                        <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
-                          <td style={{ padding: '4px 8px', color: '#1A2B24' }}>{item.name}</td>
-                          <td style={{ padding: '4px 8px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
-                            {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
-                          </td>
-                          <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
-                          <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
-                        </tr>
-                      ))
+                      const renderItemRows = (items) => [
+                        ...items.map((item, j) => (
+                          <tr key={j} style={{ background: item.status === 'abnormal' ? '#FFF5F5' : 'transparent', borderBottom: '1px solid #f0ece4' }}>
+                            <td style={{ padding: '4px 8px', color: '#1A2B24' }}>{item.name}</td>
+                            <td style={{ padding: '4px 8px', fontWeight: 600, color: STATUS_COLOR_MAP[item.status] || '#1A2B24' }}>
+                              {item.value}{item.unit && <span style={{ fontWeight: 400, color: '#8AA89C', marginLeft: 2 }}>{item.unit}</span>}
+                            </td>
+                            <td style={{ padding: '4px 8px', color: '#8AA89C' }}>{item.referenceRange || '-'}</td>
+                            <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
+                          </tr>
+                        )),
+                        ...items.filter(it => it.conclusion).map((it, j) => (
+                          <tr key={`conc-${j}`}><td colSpan={4} style={{ padding: '2px 8px 4px', fontSize: 11, color: '#5B21B6' }}><span style={{ color: '#7C3AED', fontWeight: 600 }}>主要结论：</span>{it.conclusion}</td></tr>
+                        )),
+                      ]
                       return (
                         <div style={{ marginBottom: 8 }}>
                           <div style={{ fontSize: 11, fontWeight: 600, color: '#1E6B50', marginBottom: 4 }}>检验医嘱</div>
@@ -2779,7 +2784,8 @@ export default function PatientDetailPage() {
                       color: L1_COLORS[idx % L1_COLORS.length], isLegacy: false,
                     })),
                   ...(hasLegacy ? [{ key: '__legacy__', label: '其他', node: null, color: '#8AA89C', isLegacy: true }] : []),
-                  ...aiOnlyKeys.map((k, i) => ({
+                  // ai_hp（功能医学）和 ai_other（其他筛查）不在专项筛查视图展示，由人工维护
+                  ...aiOnlyKeys.filter(k => k !== 'ai_hp' && k !== 'ai_other').map((k, i) => ({
                     key: k, label: AI_CAT_LABEL[k.replace('ai_', '')] || k, node: null,
                     color: L1_COLORS[(screeningTree.length + i) % L1_COLORS.length], isLegacy: false,
                   })),
@@ -5918,7 +5924,8 @@ export default function PatientDetailPage() {
                               <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 60 }}>单位</th>
                               <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 100 }}>参考范围</th>
                               <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 70 }}>状态</th>
-                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, minWidth: 140, color: '#7C3AED' }}>专项筛查归类</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, minWidth: 110, color: '#7C3AED' }}>专项筛查归类</th>
+                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, minWidth: 120, color: '#7C3AED' }}>主要结论</th>
                               <th style={{ padding: '6px 4px', width: 32 }}></th>
                             </tr>
                           </thead>
@@ -5939,6 +5946,7 @@ export default function PatientDetailPage() {
                                     </select>
                                   </td>
                                   <td style={{ padding: '4px 6px' }}>{classifyCell(it, i)}</td>
+                                  <td style={{ padding: '4px 6px' }}><input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD', fontSize: 11 }} value={it.conclusion || ''} placeholder="如：正常范围" onChange={e => updItem(i, { conclusion: e.target.value })} /></td>
                                   <td style={{ padding: '4px 4px', textAlign: 'center' }}>
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </td>
