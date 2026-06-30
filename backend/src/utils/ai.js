@@ -69,7 +69,7 @@ async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl
 
   const imageContent = isUrl
     ? { type: 'image_url', image_url: { url: imageSource } }
-    : { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${imageSource.replace(/^data:[^;]+;base64,/, '')}` } };
+    : { type: 'image_url', image_url: { url: `data:image/png;base64,${imageSource.replace(/^data:[^;]+;base64,/, '')}` } };
 
   const result = await httpPost(
     `${QWEN_BASE}/chat/completions`,

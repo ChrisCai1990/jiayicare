@@ -4494,7 +4494,7 @@ async function runReportParse(reportId) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
       console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/96dpi)`);
 
-      const VL_MODEL = 'qwen-vl-max';
+      const VL_MODEL = 'qwen-vl-ocr-latest';
       const CONCURRENCY = 3;
 
       let allItems = [];
@@ -4555,7 +4555,7 @@ async function runReportParse(reportId) {
 
     // 图片：统一取文件 buffer 转 base64（兼容 content / OSS / 本地路径）
     const buf = await fetchReportBuffer(report, UPLOADS_DIR);
-    const text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-max' });
+    const text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-ocr-latest' });
     const parsed = safeParseJSON(text);
     const classifiedImg = classifyItems(parsed?.items || []);
     await MedicalReport.findByIdAndUpdate(reportId, {
