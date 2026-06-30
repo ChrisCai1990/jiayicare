@@ -5983,6 +5983,8 @@ export default function PatientDetailPage() {
                                   <textarea style={{ ...inp, minHeight: 44, lineHeight: 1.6, resize: 'vertical' }} value={it.diagnosis || ''} placeholder="诊断意见，如：右肺上叶磨玻璃结节，建议3个月后复查" onChange={e => updItem(i, { diagnosis: e.target.value })} />
                                   <div style={{ fontSize: 11, color: '#7C3AED', margin: '6px 0 2px', fontWeight: 600 }}>主要结论（展示在专项筛查）</div>
                                   <input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD' }} value={it.conclusion || ''} placeholder="如：右肺小结节，建议随访复查" onChange={e => updItem(i, { conclusion: e.target.value })} />
+                                  <div style={{ fontSize: 11, color: '#7C3AED', margin: '6px 0 2px', fontWeight: 600 }}>专项筛查归类</div>
+                                  {classifyCell(it, i)}
                                 </div>
                               )
                             })}
