@@ -4451,6 +4451,27 @@ function safeParseJSON(text) {
   catch { return null; }
 }
 
+const PATIENT_INFO_NAMES = new Set([
+  '姓名', '性别', '年龄', '出生日期', '身份证号', '手机号', '电话', '联系电话',
+  '单位', '工作单位', '体检日期', '体检编号', '报告编号', '科别', '部门',
+  '一般情况', '主要阳性体征', '阳性体征', '体检结果汇总', '异常结果汇总',
+]);
+
+function filterPatientInfoItems(items) {
+  return (items || [])
+    .filter(item => {
+      const name = (item.name || '').trim();
+      if (!name) return false;
+      if (PATIENT_INFO_NAMES.has(name)) return false;
+      if (/^[\d、。，,.\s]+$/.test(name)) return false;
+      return true;
+    })
+    .map(item => ({
+      ...item,
+      name: (item.name || '').replace(/^[【\[《〔\s\d、.]+|[】\]》〕\s]+$/g, '').trim(),
+    }));
+}
+
 // 将报告已归类项同步写入 UserScreeningItem（upsert，每个 key 全局唯一一条，reportId 记录最新来源）
 // 每条 reportItem 可携带多个 screeningKeys，每个 key 写一条 UserScreeningItem 记录
 async function syncScreeningItems(userId, reportId, items) {
@@ -4540,7 +4561,8 @@ async function runReportParse(reportId) {
         },
       });
 
-      const classified = classifyItems(allItems);
+      const filteredItems = filterPatientInfoItems(allItems);
+      const classified = classifyItems(filteredItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       await MedicalReport.findByIdAndUpdate(reportId, {
         reportItems: classified,
@@ -4557,7 +4579,7 @@ async function runReportParse(reportId) {
     const buf = await fetchReportBuffer(report, UPLOADS_DIR);
     const text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-ocr-latest' });
     const parsed = safeParseJSON(text);
-    const classifiedImg = classifyItems(parsed?.items || []);
+    const classifiedImg = classifyItems(filterPatientInfoItems(parsed?.items || []));
     await MedicalReport.findByIdAndUpdate(reportId, {
       reportItems: classifiedImg,
       aiSummary:   parsed?.summary || '',
