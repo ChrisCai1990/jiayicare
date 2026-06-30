@@ -4419,32 +4419,104 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
   }
 });
 
-const REPORT_PARSE_PROMPT = `请分析这份体检报告图片，提取所有检验项目和检查项目。
+const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析这张体检报告图片，按以下规则提取数据。
 
-**核心原则：只提取报告中实际存在的项目，绝对不要推断、联想或补全报告中没有的项目。**
+【基本规则】
+规则零：只提取本图中实际存在的内容，绝对不推断、联想或补全。
+规则A：跳过患者基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
+规则B：跳过汇总页——页面包含"异常结果汇总""体检结果汇总""异常结果及建议"或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。
+规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
+规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
+规则E：相似项目名称不可混淆，如"碳13"≠"碳14"，"空腹血糖"≠"餐后血糖"。
+规则F：检验数值必须与其对应项目严格匹配，不可串行填写。
+规则G：findings/diagnosis/conclusion 字段只填报告原文，不加解释或分析。
 
-区分两类：
-【检验项目】血常规、生化、肿瘤标志物等数值型结果 → itemType="lab"，填写 name/value/unit/referenceRange/status，检查类字段留空。
-【检查项目】超声、内镜、CT、MRI、心电图、病理等描述型结果 → itemType="imaging"，填写 name、bodyPart(检查部位)、findings(检查所见)、diagnosis(诊断意见)，value/unit/referenceRange 留空。
+【提取规则（按检查类型）】
 
-**严格规则：**
-1. findings(检查所见) 与 diagnosis(诊断意见) 必须完整提取报告原文，禁止省略、概括或截断
-2. 每个检查项目只提取一条记录，禁止把同一检查重复提取（如「心电图」不能同时提取为「常规心电图」和「动态心电图」）
-3. 检验项目中，同一检验单的各子项（如肿瘤标志物全套的各指标）需逐条列出，每条单独一个对象
-4. 禁止生成报告图片中未出现的项目（如报告无胃泌素17则不提取胃泌素17）
-5. 「碳13」和「碳14」呼气试验是两种不同检测，根据报告原文严格区分，不可混淆
+1. 一般检查（身高/体重/BMI/脉搏）
+   → itemType="data"，每项单独一条
+   → name=项目名，value=数值，unit=单位，referenceRange=参考范围
+   → conclusion=该项小结原文（如有）
 
-以 JSON 格式返回，结构如下：
+2. 血压
+   → itemType="data"，name="血压"
+   → value=血压值（如"120/80"），unit="mmHg"
+   → conclusion=小结原文（如有）
+
+3. 内外科 / 耳鼻喉 / 视力检查 / 眼压检查 / 眼科检查
+   → itemType="imaging"，每个科目单独一条
+   → findings=检查所见/结果原文（完整，不罗列细项）
+   → diagnosis=诊断意见/小结原文
+   → conclusion=同 diagnosis
+
+4. 裂隙灯检查 / 双眼眼底照相
+   → itemType="imaging"，每项单独一条
+   → findings=检查所见，diagnosis=诊断意见，conclusion=同 diagnosis
+
+5. 所有血液检查（肝肾功能/血糖/血脂/肿瘤标志物/尿微量白蛋白/尿肌酐等）
+   → itemType="lab"，每个子项单独一条
+   → name/value/unit/referenceRange/status 逐项填写
+   → orderName=所属检验单名称（如"肝功能""血脂全套"）
+
+6. 尿常规 / 粪便常规
+   → itemType="imaging"，整体一条，不罗列单项
+   → findings=完整检查结果原文，diagnosis=结论/小结
+
+7. 碳13 / 碳14 呼气试验
+   → itemType="imaging"
+   → findings=检查结果，diagnosis=结论，conclusion=同 diagnosis
+
+8. 超声（肝脏/胆胰脾/双肾输尿管膀胱/前列腺/甲状腺/颈动脉/心脏超声/乳腺/子宫附件等）
+   → 每个器官单独一条，itemType="imaging"
+   → findings=超声所见/检查所见原文（完整）
+   → diagnosis=超声提示/诊断原文
+   → conclusion=同 diagnosis
+
+9. 肺部CT
+   → itemType="imaging"，name="肺部CT"或报告原名
+   → findings=检查所见，diagnosis=诊断意见，conclusion=同 diagnosis
+
+10. 胃镜 / 肠镜
+    → itemType="imaging"，每项单独一条
+    → findings=检查所见/镜下所见，diagnosis=镜下诊断，conclusion=同 diagnosis
+
+11. 胃镜病理 / 肠镜病理
+    → itemType="imaging"
+    → findings=大体所见，diagnosis=病理诊断，conclusion=同 diagnosis
+
+12. 常规心电图
+    → itemType="imaging"，name="心电图"
+    → findings=检查所见/描述，conclusion=结论原文，diagnosis=同 conclusion
+
+13. 睡眠呼吸监测
+    → 有数值的子项用 itemType="lab"（name/value/unit/referenceRange）
+    → 有描述结论的用 itemType="imaging"（findings/diagnosis/conclusion）
+
+14. 人体成分分析
+    → 有数值的子项用 itemType="lab"（name/value/unit/referenceRange）
+    → 有描述结论的用 itemType="imaging"
+
+【输出格式】
+仅输出 JSON，不要任何额外文字：
 {
-  "institution": "机构名称",
+  "institution": "体检机构名称",
   "checkDate": "YYYY-MM-DD",
   "items": [
-    { "name": "项目名称", "itemType": "lab", "value": "检测值", "unit": "单位", "referenceRange": "参考范围", "status": "normal/abnormal/attention/unknown" },
-    { "name": "项目名称", "itemType": "imaging", "bodyPart": "检查部位", "findings": "完整检查所见原文", "diagnosis": "完整诊断意见原文", "status": "normal/abnormal/attention/unknown" }
-  ],
-  "summary": "综合分析（1-2句话，重点关注异常项）"
-}
-只输出 JSON，不要额外文字。`;
+    {
+      "name": "项目名称",
+      "itemType": "lab | imaging | data",
+      "value": "数值（lab/data类填写）",
+      "unit": "单位",
+      "referenceRange": "参考范围",
+      "status": "normal | abnormal | attention | unknown",
+      "orderName": "所属检验单（lab类填写，如肝功能、血脂全套）",
+      "bodyPart": "检查部位（imaging类可填）",
+      "findings": "检查描述/所见原文（imaging/data类填写）",
+      "diagnosis": "诊断意见原文（imaging类填写）",
+      "conclusion": "主要结论（imaging/data类填写，与diagnosis相同；lab类留空）"
+    }
+  ]
+}`;
 
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }
