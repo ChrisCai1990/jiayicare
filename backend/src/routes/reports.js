@@ -120,7 +120,7 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
 → 若某项目在报告上有名称但数值模糊看不清，value 填空字符串，不要猜测。
 
 【规则E：禁止任何解析或解读】
-findings 和 diagnosis 字段只放报告原文，绝对禁止写入任何解读、评估、风险提示或建议。
+findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入任何解读、评估、风险提示或建议。
 ✓ 正确 findings："右肺上叶见一磨玻璃结节，直径约5mm，边缘清晰。"
 ✗ 错误 findings："结节可能为良性" / "该结节可能为早期肺癌，需重视"
 
@@ -128,76 +128,122 @@ findings 和 diagnosis 字段只放报告原文，绝对禁止写入任何解读
 【分类提取规则】
 ══════════════════════════════════════════
 
-【1. 检验数值项目】
-适用范围：血常规、生化（肝功能/肾功能/血脂/血糖等各项）、激素、肿瘤标志物、免疫、尿常规（干化学+尿沉渣各项）、碳13/14尿素呼气试验 等数值型检验。
-→ itemType="lab"
-→ 每一个检验子项单独一条（如血脂组合：总胆固醇/甘油三酯/LDL-C/HDL-C/载脂蛋白A1/载脂蛋白B 各一条）
-→ 提取：name / value / unit / referenceRange（必须从报告上提取实际印刷值，禁止使用默认值；无参考范围则留空）/ status（normal/abnormal/attention/unknown）
+【1. 一般检查（身高/体重/BMI/脉搏）】
+→ itemType="data"
+→ 每个测量项目单独一条：身高、体重、BMI（体质指数）、脉搏 各一条
+→ 提取：name（报告原文名称）/ value（测量值）/ unit（单位）/ referenceRange（参考范围，无则留空）/ status
+→ conclusion = 该项目所在一般检查的小结/医生意见原文（每项都填同一段小结，作为主要结论展示）
 
-→ 【orderName 必填，极其重要】：
-  - 填写该项所属的检验医嘱组名称，即报告单上的大标题/检验项目类别名
-  - 同一张化验单上的所有子项，orderName 必须完全一致
-  - 常见例子：丙氨酸氨基转移酶/白蛋白/总蛋白/总胆红素 → orderName="肝功能"；
-    肌酐/尿素/尿酸/肾小球滤过率 → orderName="肾功能"；
-    甘油三酯/总胆固醇/LDL-C/HDL-C/载脂蛋白A1/载脂蛋白B → orderName="血脂"；
-    葡萄糖/糖化血红蛋白 → orderName="血糖"；
-    TSH/FT3/FT4 → orderName="甲状腺功能"；
-    钾/钠/氯/CO2 → orderName="电解质"；
-    白细胞/红细胞/血红蛋白/血小板 → orderName="血常规"
-  - 若整份报告就是一张单独检验单（如"甲状腺功能3项"），orderName 填该检验单标题
+【2. 血压】
+→ itemType="data"，name="血压"
+→ value = 收缩压/舒张压（如"120/80"）/ unit="mmHg"/ referenceRange 从报告提取
+→ findings = 血压测量的描述（如有）
+→ diagnosis = 血压检查的小结原文
+→ conclusion = 同 diagnosis 原文
 
-【2. 体检科室查体】
-适用范围：内科、外科、眼科（含视力检查）、妇科、牙科/口腔科、皮肤科。
-→ itemType="imaging"
-→ 每个科室作为一条，name=科室名称（如"内科"/"外科"/"眼科视力"）
-→ 只填 diagnosis（该科室的总体小结原文），findings 留空
-→ 注意：视力检查归入眼科，不单独拆分每只眼的数值
-
-【3. 眼底照相 / 裂隙灯 / 前鼻镜 / 电耳镜】
+【3. 内科/外科/耳鼻喉/视力检查/眼压检查/眼科检查】
 → itemType="imaging"，每项单独一条
-→ 提取 name（完整项目名）、findings（检查所见完整原文）、diagnosis（诊断意见完整原文）
+→ name = 科室或检查名称（如"内科"/"外科"/"耳鼻喉"/"视力检查"/"眼压检查"/"眼科检查"）
+→ findings = 该项所有检查结果整体原文（所有子项数值描述合并，不逐一罗列格式，完整原文）
+→ diagnosis = 该项医生小结/诊断意见原文（完整原文）
+→ conclusion = 同 diagnosis 原文
 
-【4. 心电图】
-→ itemType="imaging"，name=心电图完整名称（报告写什么就用什么名字，常规心电图≠动态心电图）
-→ findings=心电图测量结果描述（完整原文）
-→ diagnosis=诊断结论（完整原文，如"窦性心律、早复极现象"直接原文，不做分析）
+【4. 裂隙灯检查 / 双眼眼底照相】
+→ itemType="imaging"，每项单独一条
+→ name = 检查完整名称（报告写什么就用什么）
+→ findings = 检查所见完整原文
+→ diagnosis = 诊断意见完整原文
+→ conclusion = 同 diagnosis 原文（用于专项筛查页展示）
 
-【5. 无创性动脉硬化检测 / PWV / ABI / 动脉弹性检测】
-→ itemType="imaging"，name=检测完整名称（报告上写什么就用什么）
-→ diagnosis=诊断结论完整原文（含"与健康的XX岁XX性相比在XX范围内"等比较语句务必完整保留）
-→ findings=测量数值描述（如有，完整原文）
+【5. 血液检验（肝功能/肾功能/血糖/血脂/肿瘤标志物及其他生化项目）】
+适用范围：肝功能、肾功能、血常规、血糖（葡萄糖/糖化血红蛋白等）、血脂（总胆固醇/甘油三酯/LDL-C/HDL-C等）、肿瘤标志物、甲状腺功能、电解质、凝血功能、尿微量白蛋白/尿肌酐及比值 等一切数值型检验项目。
+→ itemType="lab"
+→ 每一个检验子项单独一条（如血脂：总胆固醇/甘油三酯/LDL-C/HDL-C/载脂蛋白A1/载脂蛋白B 各一条）
+→ 提取：name / value / unit / referenceRange（必须从报告上提取实际印刷值，禁止使用默认值；无则留空）/ status（normal/abnormal/attention/unknown）
+→ 【orderName 必填】：
+  - 填写该项所属的检验医嘱组大标题
+  - 同一张化验单所有子项 orderName 完全一致
+  - 常见映射：丙氨酸氨基转移酶/白蛋白/总蛋白/总胆红素 → "肝功能"；
+    肌酐/尿素/尿酸/肾小球滤过率 → "肾功能"；
+    尿微量白蛋白/尿肌酐/白蛋白肌酐比值 → "尿微量白蛋白"；
+    甘油三酯/总胆固醇/LDL-C/HDL-C/载脂蛋白A1/载脂蛋白B → "血脂"；
+    葡萄糖 → "血糖"；糖化血红蛋白 → "血糖"（若与葡萄糖同单）；
+    TSH/FT3/FT4/TPOAb/TgAb → "甲状腺功能"；
+    白细胞/红细胞/血红蛋白/血小板 → "血常规"；
+    AFP/CEA/CA19-9/CA125 → "肿瘤标志物"
 
-【6. 超声检查】（最复杂，严格遵守以下规则）
-适用范围：肝脏、胆囊、胰腺、脾脏、甲状腺、乳腺、颈动脉、心脏（彩超）、双肾输尿管膀胱前列腺、妇科子宫附件等。
+【6. 尿常规 / 粪便常规】
+→ itemType="imaging"，每项单独一条（尿常规一条、粪便常规一条）
+→ name = 检查名称（"尿常规"/"粪便常规"）
+→ findings = 所有检验结果整体呈现（所有子项的名称+数值+参考范围合并为连续文字，不要一一罗列格式，完整原文）
+→ diagnosis = 该项的小结/医生意见原文（完整原文）
+→ conclusion = 同 diagnosis 原文
 
+【7. 碳13/碳14呼气试验】
+→ itemType="imaging"，name=报告原文名称（严格区分碳13/碳14，不得改名）
+→ findings = 检测结果（DOB值/测量数值等完整原文）
+→ diagnosis = 结论/小结原文（如"幽门螺杆菌阳性"/"阴性"及完整原文）
+→ conclusion = 同 diagnosis 原文
+
+【8. 超声检查】
+适用范围：肝脏、胆囊、胰腺、脾脏、甲状腺及周围淋巴结、乳腺、颈动脉、心脏（彩超）、双肾输尿管膀胱、前列腺、子宫附件/阴道 等。
 → itemType="imaging"
-→ 按【部位】拆分，每个独立脏器/部位单独一条（如腹部超声 → 肝脏/胆囊/胰腺/脾脏各一条）
-→ name：使用报告单上的完整名称（如"肝脏彩超"/"胆囊彩超"/"颈动脉超声"/"心脏彩超"/"双肾输尿管膀胱前列腺彩超"）
-→ findings：该部位的"超声所见"/"检查所见"原文（只提取本部位相关描述，完整原文，禁止截断）
-→ diagnosis：从报告的"超声提示"段落中，提取与本部位对应的描述原文
-→ 禁止将"超声提示"整段作为单独一条提取，它应当被拆分对应到各部位的 diagnosis 字段中
+→ 按部位拆分，每个独立脏器/部位单独一条
+→ name = 报告单上的完整检查名称（如"肝脏彩超"/"甲状腺及周围淋巴结超声"/"心脏彩超"/"双肾输尿管膀胱超声"/"子宫附件超声"）
+→ findings = 该部位"超声所见"/"检查所见"原文（完整原文，禁止截断）
+→ diagnosis = 该部位"超声提示"原文（只提取本部位相关内容，完整原文）
+→ conclusion = 同 diagnosis 原文
+→ 禁止将"超声提示"整段作为单独一条，必须按部位拆分对应
 
 心脏彩超特别说明：
-→ findings 从 EF值/M型超声/二维超声/多普勒检查 开始，提取完整心脏检查所见原文
-→ diagnosis 从超声提示中提取心脏相关描述
+→ findings 从 EF值/M型超声/二维超声/多普勒检查 开始，提取完整检查所见原文
 
-【7. CT / MRI / 放射检查 / 骨密度】
+【9. 肺CT】
+→ itemType="imaging"，name=完整检查名称（如"胸部低剂量螺旋CT"/"胸部CT平扫"）
+→ bodyPart="肺部"
+→ findings = 检查所见完整原文（禁止截断）
+→ diagnosis = 诊断意见/印象完整原文
+→ conclusion = 同 diagnosis 原文
+
+【10. 胃镜 / 胃镜病理 / 肠镜 / 肠镜病理】
+→ itemType="imaging"，name=完整名称（报告上写什么就用什么）
+→ 胃镜/肠镜：findings=检查所见/镜下所见原文；diagnosis=镜下诊断/诊断原文
+→ 病理检查：findings=大体所见原文；diagnosis=病理诊断原文
+→ conclusion = 同 diagnosis 原文
+
+【11. 常规心电图】
+→ itemType="imaging"，name=报告原文名称（常规心电图≠动态心电图，不得混淆）
+→ findings = 心电图测量结果/检查描述完整原文
+→ diagnosis = 诊断结论完整原文
+→ conclusion = 同 diagnosis 原文
+
+【12. 睡眠呼吸监测】
+→ itemType="imaging"，name=完整名称
+→ findings = 所有检测数据完整原文（AHI指数/血氧/呼吸暂停次数等）
+→ diagnosis = 结论/诊断原文
+→ conclusion = 同 diagnosis 原文
+
+【13. 人体成分分析】
+→ itemType="imaging"，name=完整名称（如"人体成分分析"/"InBody检测"）
+→ findings = 所有检测数据完整原文（体脂率/肌肉量/内脏脂肪等）
+→ diagnosis = 结论/评估原文（完整原文，禁止加解读）
+→ conclusion = 同 diagnosis 原文
+
+【14. 无创性动脉硬化检测 / PWV / ABI / 动脉弹性检测】
+→ itemType="imaging"，name=检测完整名称
+→ findings = 测量数值描述完整原文（如有）
+→ diagnosis = 诊断结论完整原文（含比较语句务必完整保留）
+→ conclusion = 同 diagnosis 原文
+
+【15. 其他 CT/MRI/放射检查/骨密度】
 → itemType="imaging"，每个部位单独一条
-→ name=完整检查名称（如"胸部低剂量螺旋CT"/"颅脑MRI"/"双能X线骨密度"）
-→ bodyPart=检查部位
-→ findings=检查所见完整原文（禁止截断）
-→ diagnosis=诊断意见/印象完整原文
+→ name=完整检查名称；bodyPart=检查部位
+→ findings=检查所见完整原文（禁止截断）；diagnosis=诊断意见/印象完整原文
+→ conclusion = 同 diagnosis 原文
 
-【8. 内镜检查】（胃镜/肠镜/支气管镜等）
-→ itemType="imaging"，name=内镜完整名称
-→ findings=镜下所见完整原文
-→ diagnosis=诊断/小结完整原文
-
-【9. 跳过不提取的项目】
-以下内容直接跳过，不生成任何条目：
-- 人体成分检测 / 身体成分测量 / InBody / 体脂分析
-- 报告开头的检查项目汇总清单/目录页
-- 简短总结页（有详细报告单时）
+【跳过不提取】
+→ 报告开头的检查项目汇总清单/目录页
+→ 简短总结页（有详细报告单时完全跳过）
 
 ══════════════════════════════════════════
 【输出格式】
@@ -210,15 +256,16 @@ findings 和 diagnosis 字段只放报告原文，绝对禁止写入任何解读
   "items": [
     {
       "name": "项目名称（完整准确，与报告原文一致）",
-      "value": "检测值（仅lab类填写，严禁串值）",
-      "unit": "单位（仅lab类填写）",
+      "value": "检测值（data/lab类填写，严禁串值）",
+      "unit": "单位（data/lab类填写）",
       "referenceRange": "从报告提取的参考范围（非默认值，无则留空）",
       "status": "normal/abnormal/attention/unknown",
-      "itemType": "lab或imaging",
-      "orderName": "所属检查医嘱组（lab类填写，如肝功能/血常规/血脂）",
+      "itemType": "lab 或 imaging 或 data",
+      "orderName": "所属检验医嘱组（lab类填写）",
       "bodyPart": "检查部位（imaging类可选）",
-      "findings": "检查所见/超声所见原文（imaging类，完整原文禁止截断，禁止加入任何解读）",
-      "diagnosis": "诊断意见/超声提示对应原文（imaging类，完整原文禁止截断，禁止加入任何解读）"
+      "findings": "检查所见/超声所见/测量数据原文（完整原文禁止截断，禁止加入任何解读）",
+      "diagnosis": "诊断意见/超声提示/诊断结论原文（完整原文禁止截断，禁止加入任何解读）",
+      "conclusion": "主要结论（imaging/data类填写，内容与 diagnosis 相同；lab类留空）"
     }
   ]
 }`;
