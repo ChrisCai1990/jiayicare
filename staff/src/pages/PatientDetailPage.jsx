@@ -3968,22 +3968,22 @@ export default function PatientDetailPage() {
 
         return (
           <div>
-            {/* 年度选择条：所有候选年度都可点击查看（含未生成年度）；✓=已审核 ●=已生成待审核 */}
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 12, color: '#8AA89C', marginRight: 2 }}>📅 年度</span>
-              {yearOpts.map(y => {
-                const active = y === curYear
-                const generated = !!byYear[y]
-                const approved = !!byYear[y]?.approvedAt
-                return (
-                  <button key={y} onClick={() => { setAiYear(y); setEditingAISummary(false) }}
-                    style={{ padding: '5px 14px', borderRadius: 8, fontSize: 13, fontWeight: active ? 700 : 500,
-                      border: `1px solid ${active ? '#1E6B50' : '#E0D9CE'}`, background: active ? '#E8F5EF' : '#fff',
-                      color: active ? '#1E6B50' : (generated ? '#4A6558' : '#B0B8B3'), cursor: 'pointer' }}>
-                    {y}年度{approved ? ' ✓' : (generated ? ' ●' : '')}
-                  </button>
-                )
-              })}
+            {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+              <span style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>📅 年度</span>
+              <select value={curYear} onChange={e => { setAiYear(e.target.value); setEditingAISummary(false) }}
+                style={{ padding: '5px 10px', borderRadius: 8, fontSize: 13, border: '1px solid #1E6B50',
+                  background: '#E8F5EF', color: '#1E6B50', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
+                {yearOpts.map(y => {
+                  const generated = !!byYear[y]
+                  const approved = !!byYear[y]?.approvedAt
+                  return (
+                    <option key={y} value={y}>
+                      {y}年度{approved ? ' ✓' : (generated ? ' ●' : '')}
+                    </option>
+                  )
+                })}
+              </select>
             </div>
             {/* 操作栏 */}
             {(() => {
