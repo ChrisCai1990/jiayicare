@@ -4444,9 +4444,8 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → conclusion=小结原文（如有）
 
 3. 内外科 / 耳鼻喉 / 视力检查 / 眼压检查 / 眼科检查
-   → 【重要】这些是体格检查项目，不是检验项目，即使有数值（如眼压读数 mmHg）也必须按此规则处理，禁止当成 lab 类型
-   → itemType="imaging"，每个科目单独一条，不得拆成检验子项
-   → findings=检查所见/结果原文（完整，不罗列细项；眼压检查把左右眼读数写进 findings，如"右眼15mmHg，左眼16mmHg"）
+   → 体格检查项目，非检验项目，itemType="imaging"，每个科目单独一条
+   → findings=检查所见/结果原文（完整，不罗列细项）
    → diagnosis=诊断意见/小结原文
    → conclusion=同 diagnosis
 
@@ -4455,11 +4454,9 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → findings=检查所见，diagnosis=诊断意见，conclusion=同 diagnosis
 
 5. 所有血液检查（肝肾功能/血糖/血脂/肿瘤标志物/尿微量白蛋白/尿肌酐等）
-   → itemType="lab"，【核心规则】检验单上印刷了几个子项就必须提取几条，逐项列出，禁止只提取化验单标题合并为一条，禁止漏项
-   → name/value/unit/referenceRange/status 逐项填写，每项数值必须与本行严格对应，不可串行
-   → orderName=所属检验单名称（如"肝功能""血脂全套"）
-   → 举例：肝功能检查单（常见8项：ALT谷丙转氨酶、AST谷草转氨酶、GGT谷氨酰转肽酶、ALP碱性磷酸酶、TP总蛋白、ALB白蛋白、GLB球蛋白、TBIL总胆红素等）→ 逐项各自一条，orderName 统一填"肝功能"
-   → 举例：肾功能+尿酸检查单（常见4项+尿酸：肌酐Cr、尿素氮BUN、尿酸UA、胱抑素C/eGFR等，报告标题无论写"肾功能""肾功能四项""肾功能+尿酸"，一律 orderName="肾功能"）→ 逐项各自一条
+   → itemType="lab"，每个子项单独一条，禁止合并为一条、禁止漏项
+   → name/value/unit/referenceRange/status 逐项填写
+   → orderName=所属检验单名称（如"肝功能""肾功能""血脂全套"；同一化验单标题无论写"肾功能""肾功能四项""肾功能+尿酸"，一律 orderName="肾功能"）
 
 6. 尿常规 / 粪便常规
    → itemType="imaging"，整体一条，不罗列单项
@@ -4619,7 +4616,7 @@ async function runReportParse(reportId) {
               const i = cursor++;
               for (let attempt = 0; attempt < 2; attempt++) {
                 try {
-                  const text = await parseImage(batchImages[i], REPORT_PARSE_PROMPT, { isUrl: false, model: VL_MODEL });
+                  const text = await parseImage(batchImages[i], REPORT_PARSE_PROMPT, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -4666,7 +4663,7 @@ async function runReportParse(reportId) {
     const buf = await fetchReportBuffer(report, UPLOADS_DIR);
     let text, parsed;
     try {
-      text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus' });
+      text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096 });
       parsed = safeParseJSON(text);
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
