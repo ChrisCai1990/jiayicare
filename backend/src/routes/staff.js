@@ -4610,7 +4610,37 @@ function cleanupExtractedItems(items) {
     const idx = dedupMap.get(key);
     if (scoreCompleteness(it) > scoreCompleteness(result[idx])) result[idx] = it; // 规则3
   });
-  return result;
+
+  // 规则4：同名但数值不同的重复行（如"尿液干化学分析"一次只提到尿隐血异常、另一次把11项明细都写全）——
+  // 同一次体检里同名项目出现两次基本都是同一处内容被分两页/两批次各提取了一遍，保留信息量更大的一条
+  const richness = o => (o.findings || '').length + (o.diagnosis || '').length + (o.conclusion || '').length
+    + ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart'].filter(f => (o[f] || '').toString().trim()).length * 5;
+  const byName = new Map();
+  result.forEach((it, idx) => {
+    const n = (it.name || '').trim();
+    if (!n) return;
+    const on = (it.orderName || '').trim();
+    const groupKey = `${n}::${on || n}`; // orderName 为空时退化用 name 本身，让"没填orderName"和"orderName就是自己"两种写法能配到一组
+    if (!byName.has(groupKey)) byName.set(groupKey, []);
+    byName.get(groupKey).push(idx);
+  });
+  const drop4 = new Set();
+  for (const idxs of byName.values()) {
+    if (idxs.length < 2) continue;
+    let bestIdx = idxs[0];
+    for (const idx of idxs) if (richness(result[idx]) > richness(result[bestIdx])) bestIdx = idx;
+    idxs.forEach(idx => { if (idx !== bestIdx) drop4.add(idx); });
+  }
+  let final = result.filter((_, idx) => !drop4.has(idx));
+
+  // 规则5：血压这项数值必须是"数字/数字"格式（如120/73），不是这个格式说明是别的检查内容串行填错了，丢弃
+  final = final.filter(it => {
+    if ((it.name || '').trim() !== '血压') return true;
+    const v = (it.value || '').trim();
+    return !v || /^\d{2,3}\s*\/\s*\d{2,3}/.test(v);
+  });
+
+  return final;
 }
 
 // 按 key（格式 <L1的_id>|<L2名字>|<叶子名字>）upsert 一条 UserScreeningItem，AI自动归类和医护手动录入共用此函数，
