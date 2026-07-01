@@ -4588,16 +4588,26 @@ function cleanupExtractedItems(items) {
     return true;
   });
 
-  const valueSeenInGroup = new Set();
+  // 规则2 只丢弃"名字本身看起来就是套餐标题"的那一条（如"血脂七项""肿瘤六项男(不含...)"），
+  // 不能只看数值相同就丢——像抗核抗体谱15项这种子项结果全是"阴性"的正常面板，数值本来就会大量重复，
+  // 之前没加这个名字判断，导致15条阴性被误判成"重复行"只保留了1条
+  const looksLikePanelTitle = (name) => {
+    const n = (name || '').trim();
+    if (!n) return false;
+    if (/[（(][^）)]*(不含|全套)[^）)]*[）)]$/.test(n)) return true;
+    if (/^.{1,10}(全套|十[一二三四五六七八九]?项|[二三四五六七八九]项|两项)/.test(n)) return true;
+    return false;
+  };
+  const valueSeenInGroup = new Map();
   const afterRule2 = afterRule1.filter(it => {
     const on = (it.orderName || '').trim();
     if (!on) return true;
     const valueKey = `${(it.value || '').trim()}|${(it.unit || '').trim()}|${(it.referenceRange || '').trim()}`;
     if (!valueKey.replace(/\|/g, '').trim()) return true; // 值都是空的不去重
     const groupKey = `${on}::${valueKey}`;
-    if (valueSeenInGroup.has(groupKey)) return false; // 规则2
-    valueSeenInGroup.add(groupKey);
-    return true;
+    if (!valueSeenInGroup.has(groupKey)) { valueSeenInGroup.set(groupKey, it); return true; }
+    // 已经见过同样数值的一条：只有当前这条"看起来像套餐标题"时才丢弃，避免误伤真实的同值子项
+    return !looksLikePanelTitle(it.name);
   });
 
   const dedupMap = new Map();
