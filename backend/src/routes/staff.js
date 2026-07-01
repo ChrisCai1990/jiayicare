@@ -4569,6 +4569,50 @@ function filterPatientInfoItems(items) {
     });
 }
 
+// 清理AI提取时常见的两类"影子行"（2026-07-01金娟反馈：肿瘤六项男/血细胞分析/血脂七项 被当成具体项目名重复提取）：
+// 规则1：某条目的 name 跟批次里其他≥2条目共享的 orderName 完全同名（说明这条其实是把套餐标题误当成了单独项目吐出来），丢弃
+// 规则2：同一 orderName 组内，value/unit/referenceRange 完全相同的重复行只保留第一条
+// 规则3：全字段维度完全同名同值的整行重复（如同一份报告两页都提取到"脉搏"），只保留信息更完整的一条
+function cleanupExtractedItems(items) {
+  const list = items || [];
+  const orderNameCount = new Map();
+  list.forEach(it => {
+    const on = (it.orderName || '').trim();
+    if (on) orderNameCount.set(on, (orderNameCount.get(on) || 0) + 1);
+  });
+
+  const byOrderGroup = new Map();
+  const afterRule1 = list.filter(it => {
+    const name = (it.name || '').trim();
+    if (name && orderNameCount.get(name) >= 2) return false; // 规则1
+    return true;
+  });
+
+  const valueSeenInGroup = new Set();
+  const afterRule2 = afterRule1.filter(it => {
+    const on = (it.orderName || '').trim();
+    if (!on) return true;
+    const valueKey = `${(it.value || '').trim()}|${(it.unit || '').trim()}|${(it.referenceRange || '').trim()}`;
+    if (!valueKey.replace(/\|/g, '').trim()) return true; // 值都是空的不去重
+    const groupKey = `${on}::${valueKey}`;
+    if (valueSeenInGroup.has(groupKey)) return false; // 规则2
+    valueSeenInGroup.add(groupKey);
+    return true;
+  });
+
+  const dedupMap = new Map();
+  const scoreCompleteness = o => ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart']
+    .filter(f => (o[f] || '').toString().trim()).length;
+  const result = [];
+  afterRule2.forEach(it => {
+    const key = `${it.itemType}|${(it.name || '').trim()}|${(it.value || '').trim()}|${(it.unit || '').trim()}`;
+    if (!dedupMap.has(key)) { dedupMap.set(key, result.length); result.push(it); return; }
+    const idx = dedupMap.get(key);
+    if (scoreCompleteness(it) > scoreCompleteness(result[idx])) result[idx] = it; // 规则3
+  });
+  return result;
+}
+
 // 按 key（格式 <L1的_id>|<L2名字>|<叶子名字>）upsert 一条 UserScreeningItem，AI自动归类和医护手动录入共用此函数，
 // 保证两条入口写入同一份"当前状态"索引，同一 itemId 全局唯一一条，reportId 记录最新数据来源
 async function upsertScreeningKey(userId, reportId, key, fallbackName) {
@@ -4663,7 +4707,7 @@ async function runReportParse(reportId) {
         },
       });
 
-      const filteredItems = filterPatientInfoItems(allItems);
+      const filteredItems = cleanupExtractedItems(filterPatientInfoItems(allItems));
       const classified = await classifyItemsAsync(filteredItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -4694,7 +4738,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = await classifyItemsAsync(filterPatientInfoItems(parsed?.items || []));
+    const classifiedImg = await classifyItemsAsync(cleanupExtractedItems(filterPatientInfoItems(parsed?.items || [])));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
