@@ -4571,27 +4571,29 @@ function filterPatientInfoItems(items) {
     });
 }
 
-// 耳鼻喉/听力检查有时会被拆成"听力(左)""外耳道(左)""鼓膜(左)"等散项，需要合并回一条"耳鼻喉"主记录里，不单独展示子部位
+// 耳鼻喉/听力检查有时会被拆成"听力(左)""外耳道(左)""鼓膜(左)"等散项、有时主条目又被写成"耳鼻喉科"等变体、
+// 偶尔还会出现内容重复的怪异行（如"外耳道(左)；耳道异物(毛发)"）——统一收拢成一条"耳鼻喉"主记录
 const ENT_SUBPART_PREFIXES = ['听力', '外耳道', '鼓膜', '鼻部', '咽喉部'];
 function mergeEntSubparts(items) {
   const list = items || [];
-  const subparts = list.filter(it => ENT_SUBPART_PREFIXES.some(p => (it.name || '').trim().startsWith(p)));
-  if (!subparts.length) return list;
-  const mainIdx = list.findIndex(it => (it.name || '').trim() === '耳鼻喉' || (it.name || '').trim().startsWith('耳鼻喉'));
-  const mergedFindings = subparts.map(it => `${(it.name || '').trim()}：${(it.findings || it.value || '').toString().trim() || '未描述'}`).join('；');
-  const subSet = new Set(subparts);
-  let result = list.filter(it => !subSet.has(it));
-  if (mainIdx >= 0) {
-    const main = list[mainIdx];
-    result = result.map(it => it === main
-      ? { ...it, findings: [main.findings, mergedFindings].filter(Boolean).join('；'), diagnosis: main.diagnosis || '未见明显异常', conclusion: main.conclusion || main.diagnosis || '未见明显异常' }
-      : it);
-  } else {
-    result.push({
-      name: '耳鼻喉', itemType: 'imaging', value: '', unit: '', referenceRange: '', status: 'unknown',
-      orderName: '', bodyPart: '', findings: mergedFindings, diagnosis: '未见明显异常', conclusion: '未见明显异常',
-    });
-  }
+  const isMain = (name) => /^耳鼻喉(科|检查|科检查)?$/.test((name || '').trim());
+  const isSubpart = (name) => !isMain(name) && ENT_SUBPART_PREFIXES.some(p => (name || '').trim().startsWith(p));
+  const mains = list.filter(it => isMain(it.name));
+  const subparts = list.filter(it => isSubpart(it.name));
+  if (!subparts.length && mains.length <= 1) return list; // 只有一条正常主记录、没有散项，不用处理
+
+  const pieces = [];
+  mains.forEach(it => { const f = (it.findings || it.value || '').toString().trim(); if (f) pieces.push(f); });
+  subparts.forEach(it => pieces.push(`${(it.name || '').trim()}：${(it.findings || it.value || '').toString().trim() || '未描述'}`));
+  const mergedFindings = [...new Set(pieces.filter(Boolean))].join('；') || '未见明显异常';
+  const removeSet = new Set([...mains, ...subparts]);
+  const result = list.filter(it => !removeSet.has(it));
+  result.push({
+    name: '耳鼻喉', itemType: 'imaging', value: '', unit: '', referenceRange: '', status: 'unknown',
+    orderName: '', bodyPart: '', findings: mergedFindings,
+    diagnosis: mains.find(it => (it.diagnosis || '').trim())?.diagnosis || '未见明显异常',
+    conclusion: mains.find(it => (it.conclusion || '').trim())?.conclusion || mains.find(it => (it.diagnosis || '').trim())?.diagnosis || '未见明显异常',
+  });
   return result;
 }
 
