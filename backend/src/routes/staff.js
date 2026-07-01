@@ -4580,7 +4580,7 @@ async function syncScreeningItems(userId, reportId, items) {
 async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, pdfBufferToImages, isPdfReport } = require('../utils/pdf');
-  const { classifyItems } = require('../utils/screeningMatch');
+  const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
@@ -4639,7 +4639,7 @@ async function runReportParse(reportId) {
       });
 
       const filteredItems = filterPatientInfoItems(allItems);
-      const classified = classifyItems(filteredItems);
+      const classified = await classifyItemsAsync(filteredItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -4669,7 +4669,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = classifyItems(filterPatientInfoItems(parsed?.items || []));
+    const classifiedImg = await classifyItemsAsync(filterPatientInfoItems(parsed?.items || []));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
@@ -4816,8 +4816,8 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
   try {
     const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id }).lean();
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const { classifyItems } = require('../utils/screeningMatch');
-    const reclassified = classifyItems(report.reportItems || []);
+    const { classifyItemsAsync } = require('../utils/screeningMatch');
+    const reclassified = await classifyItemsAsync(report.reportItems || []);
     await MedicalReport.findByIdAndUpdate(report._id, { reportItems: reclassified });
     const matchedCount = reclassified.filter(i => i.matchStatus === 'matched').length;
     res.json({ success: true, data: reclassified, matchedCount });

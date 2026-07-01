@@ -1,9 +1,15 @@
-// ── OCR 提取项 → 专项筛查树 自动匹配引擎 ──────────────────────────────
-// 输入项目名（可含 itemType），输出命中的所有筛查树节点；命中不到返回空数组。
+// ── OCR 提取项 → 专项筛查分类 自动匹配引擎 ──────────────────────────────
+// 输入项目名（可含 itemType），输出命中的所有分类节点；命中不到返回空数组。
 // 匹配策略：归一化精确/别名(1.0) > 归一化包含/被包含(0.7-0.85)，阈值 0.6。
 // 一条检查项可同时归属多个类目（如「腹部超声」→ 肝癌早筛 + 胰腺-胆囊癌早筛）。
+//
+// 2026-07-01起：分类源改为 admin 后台「分类管理」（ProjectCategory 自引用树），
+// 不再用写死的 backend/src/config/screeningTree.js（该文件仅作 admin 数据异常时的兜底）。
+// key 格式统一为 `<L1的_id>|<L2名字>|<叶子节点名字>`，与医护端"录入筛查结果"手工录入时
+// screeningL1 用的 _id 格式一致，两条入口（AI自动 / 人工录入）产出的 key 可以互认、去重。
 
 const { NODES } = require('../config/screeningTree');
+const ProjectCategory = require('../models/ProjectCategory');
 
 // 归一化：转小写、全角转半角、去标点空格、去常见检查后缀词
 function norm(s) {
@@ -21,12 +27,6 @@ function norm(s) {
   if (strip.length >= 2) t = strip;
   return t;
 }
-
-// 预构建候选索引：每个节点的所有候选名（label + aliases）归一化
-const INDEX = NODES.map(n => ({
-  node: n,
-  cands: [n.label, ...(n.aliases || [])].map(c => ({ raw: c, n: norm(c) })).filter(c => c.n),
-}));
 
 // 单节点匹配，返回该节点的最高置信度（0=不命中）
 function scoreNode(q, itemType, cands, node) {
@@ -55,32 +55,115 @@ function scoreNode(q, itemType, cands, node) {
   return best;
 }
 
-// 多节点匹配：返回所有置信度 >= 阈值的节点，按置信度降序排列
-// excludeCategories: 排除某些分类（如 hp 功能医学检测不从普通体检报告自动归类）
-function matchAll(rawName, itemType, threshold = 0.6, excludeCategories = ['hp']) {
+// 把 {node, aliases} 列表编译成可匹配的 INDEX（node 需含 label/aliases/category/parent/id/itemType）
+function buildIndex(nodes) {
+  return nodes.map(n => ({
+    node: n,
+    cands: [n.label, ...(n.aliases || [])].map(c => ({ raw: c, n: norm(c) })).filter(c => c.n),
+  }));
+}
+
+// 通用匹配：给定任意 index，返回所有置信度 >= 阈值的节点，按置信度降序排列
+function matchAllWithIndex(rawName, itemType, index, threshold = 0.6, excludeCategories = []) {
   const q = norm(rawName);
   if (!q || q.length < 2) return [];
-
   const results = [];
-  for (const { node, cands } of INDEX) {
+  for (const { node, cands } of index) {
     if (excludeCategories.includes(node.category)) continue;
     const conf = scoreNode(q, itemType, cands, node);
-    if (conf >= threshold) {
-      results.push({ node, confidence: Math.round(conf * 100) / 100 });
-    }
+    if (conf >= threshold) results.push({ node, confidence: Math.round(conf * 100) / 100 });
   }
   results.sort((a, b) => b.confidence - a.confidence);
   return results;
 }
 
+// ── 旧版：静态 screeningTree.js 索引（仅在 admin 分类管理数据异常/为空时兜底用）──
+const STATIC_INDEX = buildIndex(NODES);
+function matchAll(rawName, itemType, threshold = 0.6, excludeCategories = ['hp']) {
+  return matchAllWithIndex(rawName, itemType, STATIC_INDEX, threshold, excludeCategories);
+}
+
+// ── 新版：admin「分类管理」(ProjectCategory) 索引 ──────────────────────
+// 叶子节点（没有子分类的节点）才是可匹配的"项目"，非叶子节点是纯分类分组，不参与匹配。
+// 名称含"功能检测"/"功能医学"的 L1 分类，跟旧版 hp 类一样不自动归类，只能人工在OCR审核弹窗手动选。
+let adminIndexCache = null;
+let adminIndexCacheAt = 0;
+const ADMIN_INDEX_TTL_MS = 30 * 1000; // 30秒缓存，避免每条item都查一次库，同时保证admin改分类后很快生效
+
+async function buildAdminIndex() {
+  const now = Date.now();
+  if (adminIndexCache && (now - adminIndexCacheAt) < ADMIN_INDEX_TTL_MS) return adminIndexCache;
+
+  const cats = await ProjectCategory.find({ status: 'active' }).lean();
+  const byId = new Map(cats.map(c => [String(c._id), c]));
+  const childCount = new Map();
+  cats.forEach(c => {
+    if (c.parent) childCount.set(String(c.parent), (childCount.get(String(c.parent)) || 0) + 1);
+  });
+
+  // 找每个节点的 L1 祖先 + 直接父级名字（供 key 格式 <L1id>|<L2name>|<叶子name> 使用）
+  function resolveAncestry(cat) {
+    let l1 = cat, parentLabel = '';
+    const chain = [];
+    let cur = cat;
+    while (cur.parent && byId.has(String(cur.parent))) {
+      const p = byId.get(String(cur.parent));
+      chain.unshift(p);
+      cur = p;
+    }
+    l1 = chain.length ? chain[0] : cat;
+    parentLabel = chain.length ? (chain[chain.length - 1].name) : (cat.parent ? '' : '');
+    // 如果该节点自己就是 L1（没有父级），parentLabel 用自己名字兜底
+    if (cat._id === l1._id) parentLabel = cat.name;
+    else if (!parentLabel) parentLabel = cat.name;
+    return { l1, parentLabel };
+  }
+
+  const excludeL1Names = new Set();
+  cats.filter(c => !c.parent).forEach(l1 => {
+    if (/功能检测|功能医学/.test(l1.name)) excludeL1Names.add(String(l1._id));
+  });
+
+  const nodes = cats
+    .filter(c => !(childCount.get(String(c._id)) > 0)) // 叶子节点
+    .map(c => {
+      const { l1, parentLabel } = resolveAncestry(c);
+      return {
+        id: `${String(l1._id)}|${parentLabel}|${c.name}`,
+        label: c.name,
+        aliases: c.aliases || [],
+        category: String(l1._id),
+        categoryKey: String(l1._id),
+        parent: parentLabel,
+        itemType: null,
+        gender: null,
+        excluded: excludeL1Names.has(String(l1._id)),
+      };
+    });
+
+  adminIndexCache = buildIndex(nodes.filter(n => !n.excluded));
+  adminIndexCacheAt = now;
+  return adminIndexCache;
+}
+
+// admin分类管理增删改后调用，立即让下一次归类生效，不用等30秒缓存过期
+function invalidateAdminIndexCache() {
+  adminIndexCache = null;
+}
+
+async function matchAllAdmin(rawName, itemType, threshold = 0.6) {
+  const index = await buildAdminIndex();
+  if (!index.length) return matchAll(rawName, itemType); // admin分类为空时兜底用旧静态库
+  return matchAllWithIndex(rawName, itemType, index, threshold, []);
+}
+
 // 给一条 reportItem 填充归类字段（支持多类目，screeningKeys 为数组）
-function classifyItem(item) {
-  const matches = matchAll(item.name, item.itemType);
+function classifyItemWithMatches(item, matches) {
   if (!matches.length) {
     return {
       ...item,
       screeningKeys: [],
-      screeningKey: '',        // 向后兼容：保留最佳单值
+      screeningKey: '',
       screeningCategory: '',
       screeningParent: '',
       matchStatus: 'unclassified',
@@ -90,8 +173,8 @@ function classifyItem(item) {
   const best = matches[0];
   return {
     ...item,
-    screeningKeys: matches.map(m => m.node.id),  // 所有命中节点 id 数组
-    screeningKey: best.node.id,                   // 向后兼容：最佳命中
+    screeningKeys: matches.map(m => m.node.id),
+    screeningKey: best.node.id,
     screeningCategory: best.node.category,
     screeningParent: best.node.parent,
     matchStatus: 'matched',
@@ -99,9 +182,31 @@ function classifyItem(item) {
   };
 }
 
-// 批量归类
+async function classifyItemAsync(item) {
+  const matches = await matchAllAdmin(item.name, item.itemType);
+  return classifyItemWithMatches(item, matches);
+}
+
+async function classifyItemsAsync(items) {
+  const index = await buildAdminIndex();
+  const useIndex = index.length ? index : STATIC_INDEX;
+  const excludeCategories = index.length ? [] : ['hp'];
+  return (items || []).map(item => {
+    const matches = matchAllWithIndex(item.name, item.itemType, useIndex, 0.6, excludeCategories);
+    return classifyItemWithMatches(item, matches);
+  });
+}
+
+// 旧版同步接口，保留给尚未迁移的调用方；内部仍用静态库
+function classifyItem(item) {
+  return classifyItemWithMatches(item, matchAll(item.name, item.itemType));
+}
 function classifyItems(items) {
   return (items || []).map(classifyItem);
 }
 
-module.exports = { matchAll, matchOne: (n, t) => { const r = matchAll(n, t); return r[0] || null; }, classifyItem, classifyItems, norm };
+module.exports = {
+  matchAll, matchOne: (n, t) => { const r = matchAll(n, t); return r[0] || null; },
+  classifyItem, classifyItems, norm,
+  classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
+};
