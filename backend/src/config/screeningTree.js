@@ -240,7 +240,18 @@ const NODES = [
   { id: 'chronic|脏器功能筛查|尿微量白蛋白-尿肌酐', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: '尿微量白蛋白/尿肌酐', itemType: 'lab', gender: null,
     aliases: ['尿微量白蛋白', 'mALB', '尿白蛋白定量', 'UCr', 'ACR', '尿白蛋白肌酐比值', '尿微量白蛋白肌酐比', '尿白蛋白/肌酐'] },
   { id: 'chronic|脏器功能筛查|肺功能', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: '肺功能', itemType: 'imaging', gender: null,
-    aliases: ['肺功能检查', '肺通气功能', '肺弥散功能', 'FVC', 'FEV1'] },
+    aliases: ['肺功能检查', '肺通气功能', '肺弥散功能', '肺功能测定', '肺功能报告'] },
+  // 肺功能测量参数（lab型，每项单独一条）
+  { id: 'chronic|脏器功能筛查|FVC', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: 'FVC', itemType: 'lab', gender: null,
+    aliases: ['用力肺活量', 'FVC(L)', '肺活量FVC'] },
+  { id: 'chronic|脏器功能筛查|FEV1', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: 'FEV1', itemType: 'lab', gender: null,
+    aliases: ['第一秒用力呼气量', 'FEV1(L)', '一秒量'] },
+  { id: 'chronic|脏器功能筛查|FEV1/FVC', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: 'FEV1/FVC', itemType: 'lab', gender: null,
+    aliases: ['FEV1%', 'FEV1/FVC%', '一秒率', 'FEV1FVC'] },
+  { id: 'chronic|脏器功能筛查|MVV', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: 'MVV', itemType: 'lab', gender: null,
+    aliases: ['最大通气量', 'MVV(L/min)', '最大自主通气量'] },
+  { id: 'chronic|脏器功能筛查|DLCO', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: 'DLCO', itemType: 'lab', gender: null,
+    aliases: ['弥散量', '一氧化碳弥散量', 'DLco', 'TLCO', '肺弥散量'] },
 
   // 骨质疏松早筛
   { id: 'chronic|骨质疏松早筛|骨密度', category: 'chronic', categoryKey: 'chronic', parent: '骨质疏松早筛', label: '骨密度', itemType: 'imaging', gender: null,
