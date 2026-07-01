@@ -4530,7 +4530,8 @@ const PATIENT_INFO_NAMES = new Set([
 ]);
 
 // 体格检查类项目名单——模型偶尔会把这些误标成 lab/data，提取后强制纠正为 imaging（金娟07-01反馈：眼压检查被提取成检验类型）
-const PHYSICAL_EXAM_NAMES = new Set(['内科', '外科', '耳鼻喉', '耳鼻喉检查', '视力检查', '眼压检查', '眼科', '眼科检查', '裂隙灯检查']);
+// 用前缀匹配而非精确相等：AI 常在名称后附加方法说明，如"眼压检查(非接触眼压计法或压平眼压计法)"
+const PHYSICAL_EXAM_NAMES = ['内科', '外科', '耳鼻喉', '视力检查', '眼压检查', '眼科', '裂隙灯检查'];
 
 function filterPatientInfoItems(items) {
   return (items || [])
@@ -4543,7 +4544,7 @@ function filterPatientInfoItems(items) {
     })
     .map(item => {
       const name = (item.name || '').replace(/^[【\[《〔\s\d、.]+|[】\]》〕\s]+$/g, '').trim();
-      const itemType = PHYSICAL_EXAM_NAMES.has(name) ? 'imaging' : item.itemType;
+      const itemType = PHYSICAL_EXAM_NAMES.some(n => name.startsWith(n)) ? 'imaging' : item.itemType;
       return { ...item, name, itemType };
     });
 }

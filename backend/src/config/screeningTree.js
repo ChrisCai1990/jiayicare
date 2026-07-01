@@ -16,7 +16,7 @@ const NODES = [
   { id: 'tumor|胃-食管癌早筛|胃镜病理', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃镜病理', itemType: 'imaging', gender: null,
     aliases: ['胃镜活检', '胃黏膜病理', '胃镜活检病理', '胃黏膜活检病理', '病理组织诊断'] },
   { id: 'tumor|胃-食管癌早筛|碳13呼气试验', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '碳13呼气试验', itemType: 'lab', gender: null,
-    aliases: ['C13呼气试验', '13C尿素呼气试验', '碳13尿素呼气试验', '幽门螺杆菌呼气试验', '幽门螺旋杆菌呼气试验', 'HP呼气试验', 'C-13呼气试验'] },
+    aliases: ['C13呼气试验', '13C尿素呼气试验', '碳13尿素呼气试验', '碳尿素呼气试验', '幽门螺杆菌呼气试验', '幽门螺旋杆菌呼气试验', 'HP呼气试验', 'C-13呼气试验'] },
   { id: 'tumor|胃-食管癌早筛|碳14呼气试验', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '碳14呼气试验', itemType: 'lab', gender: null,
     aliases: ['C14呼气试验', '14C尿素呼气试验', '碳14尿素呼气试验', 'C-14呼气试验'] },
   { id: 'tumor|胃-食管癌早筛|胃蛋白酶原', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃蛋白酶原', itemType: 'lab', gender: null,

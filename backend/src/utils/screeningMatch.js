@@ -30,6 +30,9 @@ const INDEX = NODES.map(n => ({
 
 // 单节点匹配，返回该节点的最高置信度（0=不命中）
 function scoreNode(q, itemType, cands, node) {
+  // 呼气试验类项目常因OCR把"碳13/碳14"识别丢字符（如"碳尿素呼气试验"），
+  // 但仍必须只匹配"呼气"类节点，禁止被"尿素"等通用别名误配到肾功能等无关节点
+  if (q.includes('呼气') && !cands.some(c => c.n.includes('呼气'))) return 0;
   let best = 0;
   for (const c of cands) {
     let conf = 0;
