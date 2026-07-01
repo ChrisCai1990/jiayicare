@@ -143,6 +143,17 @@ const NODES = [
   // 心血管病早筛
   { id: 'cardio|心血管病早筛|常规心电图', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: '常规心电图', itemType: 'imaging', gender: null,
     aliases: ['心电图', 'ECG', 'EKG', '十二导联心电图', '12导联心电图', '静息心电图'] },
+  // 心电图测量参数（lab型，每项单独一条）
+  { id: 'cardio|心血管病早筛|心率', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: '心率', itemType: 'lab', gender: null,
+    aliases: ['心率(次/分)', '心率次/分', 'HR', '窦性心率'] },
+  { id: 'cardio|心血管病早筛|P-R间期', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: 'P-R间期', itemType: 'lab', gender: null,
+    aliases: ['PR间期', 'PR interval', 'P-R', 'PR', '房室传导时间'] },
+  { id: 'cardio|心血管病早筛|QRS间期', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: 'QRS间期', itemType: 'lab', gender: null,
+    aliases: ['QRS', 'QRS时限', 'QRS波群', 'QRS duration'] },
+  { id: 'cardio|心血管病早筛|QT间期', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: 'QT间期', itemType: 'lab', gender: null,
+    aliases: ['QT', 'QT/QTc', 'QT interval'] },
+  { id: 'cardio|心血管病早筛|QTc间期', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: 'QTc间期', itemType: 'lab', gender: null,
+    aliases: ['QTc', 'QTc interval', '校正QT间期', 'QT/QTc'] },
   { id: 'cardio|心血管病早筛|动态心电图', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: '动态心电图', itemType: 'imaging', gender: null,
     aliases: ['Holter', '24小时动态心电图', '霍尔特'] },
   { id: 'cardio|心血管病早筛|心脏超声', category: 'cardio', categoryKey: 'cardiovascular', parent: '心血管病早筛', label: '心脏超声', itemType: 'imaging', gender: null,
