@@ -12,6 +12,7 @@ export default function CategoryPage() {
   const [form, setForm] = useState({ name: '', parent: '', sortOrder: 0 })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [search, setSearch] = useState('')
 
   const load = () => {
     setLoading(true)
@@ -49,6 +50,18 @@ export default function CategoryPage() {
     try { await adminAPI.deleteCategory(item._id); toast('已删除'); load() } catch (e) { toast(e.message) }
   }
 
+  const filterTree = (nodes, q) => {
+    const query = q.trim().toLowerCase()
+    if (!query) return nodes
+    return nodes.reduce((acc, n) => {
+      const children = filterTree(n.children || [], q)
+      const selfMatch = n.name.toLowerCase().includes(query)
+      if (selfMatch || children.length > 0) acc.push({ ...n, children })
+      return acc
+    }, [])
+  }
+  const displayData = search.trim() ? filterTree(treeData, search) : treeData
+
   const renderTree = (nodes, depth = 0) => nodes.map(n => (
     <React.Fragment key={n._id}>
       <tr style={{ borderBottom: '1px solid #F3F4F6' }}>
@@ -77,9 +90,20 @@ export default function CategoryPage() {
         <button className="btn btn-primary" onClick={() => openCreate()}>＋ 新增顶级分类</button>
       </div>
 
+      <div style={{ marginBottom: 16 }}>
+        <input
+          className="form-input"
+          style={{ maxWidth: 320 }}
+          placeholder="搜索分类名称"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+        />
+      </div>
+
       <div className="card">
         {loading ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
           : treeData.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无分类</div>
+          : displayData.length === 0 ? <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>没有匹配「{search}」的分类</div>
           : (
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
@@ -89,7 +113,7 @@ export default function CategoryPage() {
                 ))}
               </tr>
             </thead>
-            <tbody>{renderTree(treeData)}</tbody>
+            <tbody>{renderTree(displayData)}</tbody>
           </table>
         )}
       </div>
