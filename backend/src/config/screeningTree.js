@@ -14,7 +14,7 @@ const NODES = [
   { id: 'tumor|胃-食管癌早筛|胃镜检查', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃镜检查', itemType: 'imaging', gender: null,
     aliases: ['胃镜', '电子胃镜', '上消化道内镜', '胃十二指肠镜', '无痛胃镜'] },
   { id: 'tumor|胃-食管癌早筛|胃镜病理', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃镜病理', itemType: 'imaging', gender: null,
-    aliases: ['胃镜活检', '胃黏膜病理', '胃镜活检病理'] },
+    aliases: ['胃镜活检', '胃黏膜病理', '胃镜活检病理', '胃黏膜活检病理', '病理组织诊断'] },
   { id: 'tumor|胃-食管癌早筛|碳13呼气试验', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '碳13呼气试验', itemType: 'lab', gender: null,
     aliases: ['C13呼气试验', '13C尿素呼气试验', '幽门螺杆菌呼气试验', '幽门螺旋杆菌呼气试验', 'HP呼气试验', 'C-13呼气试验'] },
   { id: 'tumor|胃-食管癌早筛|碳14呼气试验', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '碳14呼气试验', itemType: 'lab', gender: null,
