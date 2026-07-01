@@ -139,6 +139,18 @@ async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, onBatch }
   }
 }
 
+// 只把 PDF 里某一页重新转成一张 PNG base64（用于"某检验单提取条数不全，只重试这一页"场景，不用整份报告重新跑）
+async function renderSinglePage(pdfBuffer, pageNum, dpi = 96) {
+  const tmpPdf = path.join(os.tmpdir(), `pdf-single-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  fs.writeFileSync(tmpPdf, pdfBuffer);
+  try {
+    const images = await convertPdfRange(tmpPdf, pageNum, pageNum, dpi);
+    return images[0] || null;
+  } finally {
+    try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+}
+
 // 判断报告是否为 PDF
 function isPdfReport(report) {
   return report.mimeType === 'application/pdf'
@@ -146,4 +158,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, pdfBufferToImages, isPdfReport };
+module.exports = { fetchReportBuffer, pdfBufferToImages, isPdfReport, renderSinglePage };
