@@ -40,7 +40,7 @@ const NODES = [
 
   // 肝癌早筛
   { id: 'tumor|肝癌早筛|肝脏超声', category: 'tumor', categoryKey: 'tumor', parent: '肝癌早筛', label: '肝脏超声', itemType: 'imaging', gender: null,
-    aliases: ['肝脏彩超', '肝胆彩超', '腹部彩超', '肝胆胰脾超声', '肝胆脾超声', '上腹部超声', '肝胆胰脾彩超', '肝脏B超'] },
+    aliases: ['肝脏彩超', '肝脏B超', '肝超声'] },
   { id: 'tumor|肝癌早筛|肝脏磁共振', category: 'tumor', categoryKey: 'tumor', parent: '肝癌早筛', label: '肝脏磁共振', itemType: 'imaging', gender: null,
     aliases: ['肝脏MRI', '上腹部MRI', '肝脏核磁', '肝MRI'] },
   { id: 'tumor|肝癌早筛|肝纤维弹性超声', category: 'tumor', categoryKey: 'tumor', parent: '肝癌早筛', label: '肝纤维弹性超声', itemType: 'imaging', gender: null,
@@ -52,13 +52,15 @@ const NODES = [
   { id: 'tumor|肝癌早筛|丙肝抗体', category: 'tumor', categoryKey: 'tumor', parent: '肝癌早筛', label: '丙肝抗体', itemType: 'lab', gender: null,
     aliases: ['丙肝两项', '丙型肝炎抗体', 'HCV', '抗HCV', '丙肝'] },
 
-  // 胰腺/胆囊癌早筛
-  { id: 'tumor|胰腺-胆囊癌早筛|胰腺超声', category: 'tumor', categoryKey: 'tumor', parent: '胰腺-胆囊癌早筛', label: '胰腺超声', itemType: 'imaging', gender: null,
+  // 胰腺/胆囊/脾脏癌早筛
+  { id: 'tumor|胰腺-胆囊-脾脏癌早筛|胆囊超声', category: 'tumor', categoryKey: 'tumor', parent: '胰腺-胆囊-脾脏癌早筛', label: '胆囊超声', itemType: 'imaging', gender: null,
+    aliases: ['胆囊彩超', '胆囊B超', '胆囊检查'] },
+  { id: 'tumor|胰腺-胆囊-脾脏癌早筛|胰腺超声', category: 'tumor', categoryKey: 'tumor', parent: '胰腺-胆囊-脾脏癌早筛', label: '胰腺超声', itemType: 'imaging', gender: null,
     aliases: ['胰腺彩超', '胰腺B超'] },
-  { id: 'tumor|胰腺-胆囊癌早筛|胰腺MRI', category: 'tumor', categoryKey: 'tumor', parent: '胰腺-胆囊癌早筛', label: '胰腺MRI', itemType: 'imaging', gender: null,
+  { id: 'tumor|胰腺-胆囊-脾脏癌早筛|脾脏超声', category: 'tumor', categoryKey: 'tumor', parent: '胰腺-胆囊-脾脏癌早筛', label: '脾脏超声', itemType: 'imaging', gender: null,
+    aliases: ['脾脏彩超', '脾脏B超', '脾超声'] },
+  { id: 'tumor|胰腺-胆囊-脾脏癌早筛|胰腺MRI', category: 'tumor', categoryKey: 'tumor', parent: '胰腺-胆囊-脾脏癌早筛', label: '胰腺MRI', itemType: 'imaging', gender: null,
     aliases: ['胰腺磁共振', '胰腺核磁', 'MRCP', '胰胆管水成像'] },
-  { id: 'tumor|胰腺-胆囊癌早筛|肝胆胰脾超声', category: 'tumor', categoryKey: 'tumor', parent: '胰腺-胆囊癌早筛', label: '肝胆胰脾超声', itemType: 'imaging', gender: null,
-    aliases: ['腹部超声', '上腹部超声', '肝胆胰脾肾超声'] },
 
   // 甲状腺癌早筛
   { id: 'tumor|甲状腺癌早筛|甲状腺超声', category: 'tumor', categoryKey: 'tumor', parent: '甲状腺癌早筛', label: '甲状腺超声', itemType: 'imaging', gender: null,
@@ -95,11 +97,9 @@ const NODES = [
   { id: 'tumor|前列腺癌早筛|前列腺磁共振', category: 'tumor', categoryKey: 'tumor', parent: '前列腺癌早筛', label: '前列腺磁共振', itemType: 'imaging', gender: '男',
     aliases: ['前列腺MRI', '前列腺核磁'] },
 
-  // 肾/输尿管/膀胱癌早筛
-  { id: 'tumor|肾-膀胱癌早筛|肾脏超声', category: 'tumor', categoryKey: 'tumor', parent: '肾-膀胱癌早筛', label: '肾脏超声', itemType: 'imaging', gender: null,
-    aliases: ['肾脏彩超', '双肾超声', '双肾彩超', '肾彩超', '泌尿系彩超', '双肾输尿管膀胱超声', '肾B超', '泌尿系超声'] },
-  { id: 'tumor|肾-膀胱癌早筛|膀胱超声', category: 'tumor', categoryKey: 'tumor', parent: '肾-膀胱癌早筛', label: '膀胱超声', itemType: 'imaging', gender: null,
-    aliases: ['膀胱彩超', '膀胱B超'] },
+  // 泌尿系统肿瘤早筛
+  { id: 'tumor|泌尿系统肿瘤早筛|双肾输尿管膀胱超声', category: 'tumor', categoryKey: 'tumor', parent: '泌尿系统肿瘤早筛', label: '双肾输尿管膀胱超声', itemType: 'imaging', gender: null,
+    aliases: ['双肾超声', '肾脏超声', '肾脏彩超', '双肾彩超', '肾彩超', '泌尿系彩超', '泌尿系超声', '双肾输尿管膀胱彩超', '肾B超', '泌尿系B超', '膀胱超声', '膀胱彩超'] },
 
   // 鼻咽癌早筛
   { id: 'tumor|鼻咽癌早筛|EB病毒检查', category: 'tumor', categoryKey: 'tumor', parent: '鼻咽癌早筛', label: 'EB病毒检查', itemType: 'lab', gender: null,
