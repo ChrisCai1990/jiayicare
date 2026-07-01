@@ -4563,10 +4563,36 @@ function filterPatientInfoItems(items) {
       return true;
     })
     .map(item => {
-      const name = (item.name || '').replace(/^[【\[《〔\s\d、.]+|[】\]》〕\s]+$/g, '').trim();
+      let name = (item.name || '').replace(/^[【\[《〔\s\d、.]+|[】\]》〕\s]+$/g, '').trim();
+      // 原文里的对勾符号(✓)常被识别成多余的单个英文字母前缀（如"T双眼眼底照相"），导致同一检查因为多字对不上而没法去重
+      name = name.replace(/^[A-Za-z](?=[一-龥])/, '');
       const itemType = PHYSICAL_EXAM_NAMES.some(n => name.startsWith(n)) ? 'imaging' : item.itemType;
       return { ...item, name, itemType };
     });
+}
+
+// 耳鼻喉/听力检查有时会被拆成"听力(左)""外耳道(左)""鼓膜(左)"等散项，需要合并回一条"耳鼻喉"主记录里，不单独展示子部位
+const ENT_SUBPART_PREFIXES = ['听力', '外耳道', '鼓膜', '鼻部', '咽喉部'];
+function mergeEntSubparts(items) {
+  const list = items || [];
+  const subparts = list.filter(it => ENT_SUBPART_PREFIXES.some(p => (it.name || '').trim().startsWith(p)));
+  if (!subparts.length) return list;
+  const mainIdx = list.findIndex(it => (it.name || '').trim() === '耳鼻喉' || (it.name || '').trim().startsWith('耳鼻喉'));
+  const mergedFindings = subparts.map(it => `${(it.name || '').trim()}：${(it.findings || it.value || '').toString().trim() || '未描述'}`).join('；');
+  const subSet = new Set(subparts);
+  let result = list.filter(it => !subSet.has(it));
+  if (mainIdx >= 0) {
+    const main = list[mainIdx];
+    result = result.map(it => it === main
+      ? { ...it, findings: [main.findings, mergedFindings].filter(Boolean).join('；'), diagnosis: main.diagnosis || '未见明显异常', conclusion: main.conclusion || main.diagnosis || '未见明显异常' }
+      : it);
+  } else {
+    result.push({
+      name: '耳鼻喉', itemType: 'imaging', value: '', unit: '', referenceRange: '', status: 'unknown',
+      orderName: '', bodyPart: '', findings: mergedFindings, diagnosis: '未见明显异常', conclusion: '未见明显异常',
+    });
+  }
+  return result;
 }
 
 // 清理AI提取时常见的两类"影子行"（2026-07-01金娟反馈：肿瘤六项男/血细胞分析/血脂七项 被当成具体项目名重复提取）：
@@ -4830,7 +4856,7 @@ async function runReportParse(reportId) {
       }
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
-      const filteredItems = cleanupExtractedItems(filterPatientInfoItems(allItems));
+      const filteredItems = mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(allItems)));
       const classified = await classifyItemsAsync(filteredItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -4861,7 +4887,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = await classifyItemsAsync(cleanupExtractedItems(filterPatientInfoItems(parsed?.items || [])));
+    const classifiedImg = await classifyItemsAsync(mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(parsed?.items || []))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
