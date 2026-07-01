@@ -4453,10 +4453,10 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → itemType="imaging"，每项单独一条
    → findings=检查所见，diagnosis=诊断意见，conclusion=同 diagnosis
 
-5. 所有血液检查（肝肾功能/血糖/血脂/肿瘤标志物/尿微量白蛋白/尿肌酐等）
-   → itemType="lab"，每个子项单独一条，禁止合并为一条、禁止漏项
+5. 所有血液检查（肝肾功能/血糖/血脂/肿瘤标志物/尿微量白蛋白/尿肌酐/抗核抗体谱等免疫指标）
+   → itemType="lab"，每个子项单独一条，禁止合并为一条、禁止漏项；即使多个子项结果完全相同（如都是"阴性"），也必须逐项列出，不能合并成一条摘要
    → name/value/unit/referenceRange/status 逐项填写
-   → orderName=所属检验单名称（如"肝功能""肾功能""血脂全套"；同一化验单标题无论写"肾功能""肾功能四项""肾功能+尿酸"，一律 orderName="肾功能"）
+   → orderName=所属检验单名称（如"肝功能""肾功能""血脂全套""抗核抗体谱"；同一化验单标题无论写"肾功能""肾功能四项""肾功能+尿酸"，一律 orderName="肾功能"）
 
 6. 尿常规 / 粪便常规
    → itemType="imaging"，整体一条，不罗列单项
@@ -4814,7 +4814,7 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
 // POST /staff/patients/:id/reports/:rid/reclassify — 对报告里 unclassified 项重跑自动归类
 router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res) => {
   try {
-    const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id });
+    const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id }).lean();
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const { classifyItems } = require('../utils/screeningMatch');
     const reclassified = classifyItems(report.reportItems || []);
