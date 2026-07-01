@@ -7,12 +7,12 @@
 const NODES = [
   // ── 肿瘤风险筛查（tumor）──────────────────────────────────────────
   // 肺癌早筛
-  { id: 'tumor|肺癌早筛|肺CT', category: 'tumor', categoryKey: 'tumor', parent: '肺癌早筛', label: '肺CT', itemType: 'imaging', gender: null,
-    aliases: ['胸部CT', '肺部CT', '低剂量螺旋CT', '低剂量胸部CT', '胸部低剂量CT', '胸部低剂量螺旋CT', '肺部螺旋CT', '胸部平扫CT', '胸部CT平扫', '肺CT平扫', '低剂量肺CT'] },
+  { id: 'tumor|肺癌早筛|胸部CT', category: 'tumor', categoryKey: 'tumor', parent: '肺癌早筛', label: '胸部CT', itemType: 'imaging', gender: null,
+    aliases: ['肺CT', '肺部CT', '低剂量螺旋CT', '低剂量胸部CT', '胸部低剂量CT', '胸部低剂量螺旋CT', '肺部螺旋CT', '胸部平扫CT', '胸部CT平扫', '肺CT平扫', '低剂量肺CT'] },
 
   // 胃癌/食管癌早筛
-  { id: 'tumor|胃-食管癌早筛|胃镜', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃镜', itemType: 'imaging', gender: null,
-    aliases: ['电子胃镜', '上消化道内镜', '胃十二指肠镜', '无痛胃镜'] },
+  { id: 'tumor|胃-食管癌早筛|胃镜检查', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃镜检查', itemType: 'imaging', gender: null,
+    aliases: ['胃镜', '电子胃镜', '上消化道内镜', '胃十二指肠镜', '无痛胃镜'] },
   { id: 'tumor|胃-食管癌早筛|胃镜病理', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '胃镜病理', itemType: 'imaging', gender: null,
     aliases: ['胃镜活检', '胃黏膜病理', '胃镜活检病理'] },
   { id: 'tumor|胃-食管癌早筛|碳13呼气试验', category: 'tumor', categoryKey: 'tumor', parent: '胃-食管癌早筛', label: '碳13呼气试验', itemType: 'lab', gender: null,
@@ -29,8 +29,8 @@ const NODES = [
     aliases: ['食管活检', '食道病理', '食管镜活检病理'] },
 
   // 肠癌早筛
-  { id: 'tumor|肠癌早筛|肠镜', category: 'tumor', categoryKey: 'tumor', parent: '肠癌早筛', label: '肠镜', itemType: 'imaging', gender: null,
-    aliases: ['结肠镜', '电子肠镜', '纤维结肠镜', '电子结肠镜', '全结肠镜', '无痛肠镜', '结直肠镜'] },
+  { id: 'tumor|肠癌早筛|肠镜检查', category: 'tumor', categoryKey: 'tumor', parent: '肠癌早筛', label: '肠镜检查', itemType: 'imaging', gender: null,
+    aliases: ['肠镜', '结肠镜', '电子肠镜', '纤维结肠镜', '电子结肠镜', '全结肠镜', '无痛肠镜', '结直肠镜'] },
   { id: 'tumor|肠癌早筛|肠镜病理', category: 'tumor', categoryKey: 'tumor', parent: '肠癌早筛', label: '肠镜病理', itemType: 'imaging', gender: null,
     aliases: ['肠镜活检', '结肠镜病理', '肠道病理', '肠镜活检病理'] },
   { id: 'tumor|肠癌早筛|粪便基因检测', category: 'tumor', categoryKey: 'tumor', parent: '肠癌早筛', label: '粪便基因检测', itemType: 'lab', gender: null,
