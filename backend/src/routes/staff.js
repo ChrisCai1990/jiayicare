@@ -4034,6 +4034,16 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
         uploadedBy:       req.staff._id,
       });
     }
+
+    // 医护手动录入也同步写入 UserScreeningItem，跟AI自动归类共用同一份"当前状态"索引，
+    // 避免手动录入和AI识别各存一份、专项筛查视图里出现重复/对不上账
+    if (screeningL1 && screeningL2 && screeningL3Items.length) {
+      for (const name of screeningL3Items) {
+        const key = `${screeningL1}|${screeningL2}|${name}`;
+        await upsertScreeningKey(req.params.id, report._id, key, name);
+      }
+    }
+
     res.json({ success: true, data: report });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -4078,6 +4088,16 @@ router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.
     }
     const report = await MedicalReport.findOneAndUpdate({ _id: req.params.rid, user: req.params.id }, { $set: update }, { new: true });
     if (!report) return res.status(404).json({ success: false, message: '记录不存在' });
+
+    // 同 POST：编辑手动录入的筛查记录也要重新同步 UserScreeningItem
+    const syncL1 = report.screeningL1, syncL2 = report.screeningL2, syncL3Items = report.screeningL3Items || [];
+    if (syncL1 && syncL2 && syncL3Items.length) {
+      for (const name of syncL3Items) {
+        const key = `${syncL1}|${syncL2}|${name}`;
+        await upsertScreeningKey(req.params.id, report._id, key, name);
+      }
+    }
+
     res.json({ success: true, data: report });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -4549,6 +4569,17 @@ function filterPatientInfoItems(items) {
     });
 }
 
+// 按 key（格式 <L1的_id>|<L2名字>|<叶子名字>）upsert 一条 UserScreeningItem，AI自动归类和医护手动录入共用此函数，
+// 保证两条入口写入同一份"当前状态"索引，同一 itemId 全局唯一一条，reportId 记录最新数据来源
+async function upsertScreeningKey(userId, reportId, key, fallbackName) {
+  const parts = String(key).split('|');
+  await UserScreeningItem.updateOne(
+    { user: userId, itemId: key },
+    { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || fallbackName || '', status: 'completed', reportId } },
+    { upsert: true }
+  );
+}
+
 // 将报告已归类项同步写入 UserScreeningItem（upsert，每个 key 全局唯一一条，reportId 记录最新来源）
 // 每条 reportItem 可携带多个 screeningKeys，每个 key 写一条 UserScreeningItem 记录
 async function syncScreeningItems(userId, reportId, items) {
@@ -4560,13 +4591,7 @@ async function syncScreeningItems(userId, reportId, items) {
         ? it.screeningKeys
         : (it.screeningKey ? [it.screeningKey] : []);
       for (const key of keys) {
-        const parts = String(key).split('|');
-        // filter 只用 { user, itemId }，同一个筛查项全局唯一一条，reportId 作为最新数据来源更新
-        await UserScreeningItem.updateOne(
-          { user: userId, itemId: key },
-          { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || it.name || '', status: 'completed', reportId } },
-          { upsert: true }
-        );
+        await upsertScreeningKey(userId, reportId, key, it.name);
         syncCount++;
       }
     }

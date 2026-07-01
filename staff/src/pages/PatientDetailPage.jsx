@@ -2736,6 +2736,9 @@ export default function PatientDetailPage() {
                 const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
 
                 // 建立 AI category → screeningTree L1 _id 映射
+                // 2026-07-01起 AI归类的 category 字段已经直接是 admin「分类管理」的 L1 _id（见 screeningMatch.js），
+                // 优先直接命中；下面的关键词表只用于兜底旧版 screeningTree.js 遗留的 tumor/cardio/chronic/hp 格式数据
+                const knownTreeIds = new Set(screeningTree.map(n => String(n._id)))
                 const CAT_KEYWORDS = {
                   tumor: ['肿瘤', 'tumor'],
                   cardio: ['心脑', '血管', '心血管', 'cardio'],
@@ -2755,7 +2758,7 @@ export default function PatientDetailPage() {
                 reports.forEach(r => { reportTitleMap[String(r._id)] = r.title || new Date(r.createdAt).toLocaleDateString('zh-CN') })
                 const aiVirtualMap = {}
                 screeningItems.forEach(it => {
-                  const l1Key = catToTreeId[it.category] || `ai_${it.category}`
+                  const l1Key = knownTreeIds.has(String(it.category)) ? String(it.category) : (catToTreeId[it.category] || `ai_${it.category}`)
                   const l2 = it.parentLabel || '其他'
                   const l3 = it.itemLabel || '未知'
                   const rid = String(it.reportId || 'unknown')
