@@ -261,6 +261,23 @@ const NODES = [
   { id: 'chronic|睡眠呼吸暂停早筛|睡眠呼吸监测', category: 'chronic', categoryKey: 'chronic', parent: '睡眠呼吸暂停早筛', label: '睡眠呼吸监测', itemType: 'imaging', gender: null,
     aliases: ['多导睡眠监测', 'PSG', '睡眠监测', '呼吸睡眠监测'] },
 
+  // 人体成分测量分析
+  { id: 'chronic|人体成分测量分析|人体成分分析', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '人体成分分析', itemType: 'imaging', gender: null,
+    aliases: ['人体成分测量', 'InBody检测', 'InBody', '体成分分析', '人体成分检测', '生物电阻抗分析', 'BIA'] },
+  // 人体成分测量参数（lab型，每项单独一条）
+  { id: 'chronic|人体成分测量分析|体脂率', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '体脂率', itemType: 'lab', gender: null,
+    aliases: ['体脂肪率', 'PBF', '脂肪百分比', '体脂百分比', 'Body Fat%'] },
+  { id: 'chronic|人体成分测量分析|体脂肪量', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '体脂肪量', itemType: 'lab', gender: null,
+    aliases: ['脂肪量', '体脂肪', 'Body Fat Mass', '脂肪重量'] },
+  { id: 'chronic|人体成分测量分析|骨骼肌量', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '骨骼肌量', itemType: 'lab', gender: null,
+    aliases: ['肌肉量', '骨骼肌', 'SMM', 'Skeletal Muscle Mass', '肌肉重量'] },
+  { id: 'chronic|人体成分测量分析|内脏脂肪面积', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '内脏脂肪面积', itemType: 'lab', gender: null,
+    aliases: ['内脏脂肪', 'VFA', '腹部脂肪面积', '内脏脂肪等级', '内脏脂肪指数'] },
+  { id: 'chronic|人体成分测量分析|基础代谢率', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '基础代谢率', itemType: 'lab', gender: null,
+    aliases: ['BMR', '基础代谢', '静息代谢率'] },
+  { id: 'chronic|人体成分测量分析|去脂体重', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '去脂体重', itemType: 'lab', gender: null,
+    aliases: ['瘦体重', 'LBM', 'FFM', '无脂体重', 'Lean Body Mass'] },
+
   // 老年痴呆筛查
   { id: 'chronic|老年痴呆筛查|认知功能筛查', category: 'chronic', categoryKey: 'chronic', parent: '老年痴呆筛查', label: '认知功能筛查', itemType: 'lab', gender: null,
     aliases: ['MMSE', '阿尔茨海默筛查', '认知评估', 'MoCA'] },
