@@ -4532,6 +4532,9 @@ const PATIENT_INFO_NAMES = new Set([
   '一般情况', '主要阳性体征', '阳性体征', '体检结果汇总', '异常结果汇总',
 ]);
 
+// 体格检查类项目名单——模型偶尔会把这些误标成 lab/data，提取后强制纠正为 imaging（金娟07-01反馈：眼压检查被提取成检验类型）
+const PHYSICAL_EXAM_NAMES = new Set(['内科', '外科', '耳鼻喉', '耳鼻喉检查', '视力检查', '眼压检查', '眼科', '眼科检查', '裂隙灯检查']);
+
 function filterPatientInfoItems(items) {
   return (items || [])
     .filter(item => {
@@ -4541,10 +4544,11 @@ function filterPatientInfoItems(items) {
       if (/^[\d、。，,.\s]+$/.test(name)) return false;
       return true;
     })
-    .map(item => ({
-      ...item,
-      name: (item.name || '').replace(/^[【\[《〔\s\d、.]+|[】\]》〕\s]+$/g, '').trim(),
-    }));
+    .map(item => {
+      const name = (item.name || '').replace(/^[【\[《〔\s\d、.]+|[】\]》〕\s]+$/g, '').trim();
+      const itemType = PHYSICAL_EXAM_NAMES.has(name) ? 'imaging' : item.itemType;
+      return { ...item, name, itemType };
+    });
 }
 
 // 将报告已归类项同步写入 UserScreeningItem（upsert，每个 key 全局唯一一条，reportId 记录最新来源）
