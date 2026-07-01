@@ -171,7 +171,7 @@ const NODES = [
   // ── 慢性病筛查（chronic）─────────────────────────────────────────
   // 高血压早筛（注：血压脉搏在一般检查里，这里仅记录专项血压评估）
   { id: 'chronic|高血压早筛|血压', category: 'chronic', categoryKey: 'chronic', parent: '高血压早筛', label: '血压', itemType: 'data', gender: null,
-    aliases: ['血压测量', '诊室血压'] },
+    aliases: ['血压测量', '诊室血压', '收缩压', '舒张压', '血压(mmHg)', '血压mmHg', '左上肢血压', '右上肢血压'] },
   { id: 'chronic|高血压早筛|动态血压', category: 'chronic', categoryKey: 'chronic', parent: '高血压早筛', label: '动态血压', itemType: 'imaging', gender: null,
     aliases: ['24小时动态血压', '动态血压监测', 'ABPM'] },
 
@@ -249,10 +249,14 @@ const NODES = [
 
   // ── 其他常规筛查（other）─────────────────────────────────────────
   // 一般检查
-  { id: 'other|一般检查|身高体重', category: 'other', categoryKey: 'other', parent: '一般检查', label: '身高体重', itemType: 'data', gender: null,
-    aliases: ['身高体重测量', '身高体重BMI', 'BMI体质指数', '体重身高'] },
-  { id: 'other|一般检查|血压脉搏', category: 'other', categoryKey: 'other', parent: '一般检查', label: '血压脉搏', itemType: 'data', gender: null,
-    aliases: ['血压脉搏测量', '测血压脉搏'] },
+  { id: 'other|一般检查|身高', category: 'other', categoryKey: 'other', parent: '一般检查', label: '身高', itemType: 'data', gender: null,
+    aliases: ['身高测量', '身高(cm)', '身高cm'] },
+  { id: 'other|一般检查|体重', category: 'other', categoryKey: 'other', parent: '一般检查', label: '体重', itemType: 'data', gender: null,
+    aliases: ['体重测量', '体重(kg)', '体重kg'] },
+  { id: 'other|一般检查|BMI', category: 'other', categoryKey: 'other', parent: '一般检查', label: 'BMI', itemType: 'data', gender: null,
+    aliases: ['体质指数', 'BMI体质指数', '体质量指数', '体重指数'] },
+  { id: 'other|一般检查|脉搏', category: 'other', categoryKey: 'other', parent: '一般检查', label: '脉搏', itemType: 'data', gender: null,
+    aliases: ['脉搏测量', '脉率', '心率脉搏', '脉搏(次/分)', '脉搏次/分'] },
   { id: 'other|一般检查|视力', category: 'other', categoryKey: 'other', parent: '一般检查', label: '视力', itemType: 'data', gender: null,
     aliases: ['视力检查', '视力测查', '裸眼视力'] },
   { id: 'other|一般检查|眼压', category: 'other', categoryKey: 'other', parent: '一般检查', label: '眼压', itemType: 'data', gender: null,
