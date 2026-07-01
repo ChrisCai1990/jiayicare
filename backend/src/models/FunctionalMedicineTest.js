@@ -7,7 +7,7 @@ const functionalMedicineTestSchema = new mongoose.Schema({
   managementAdvice:   { type: String, default: '' },  // 管理建议
   testTiming:         { type: String, default: '' },  // 检测时间
   institution:        { type: String, default: '' },  // 检测机构
-  categoryId:         { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null },
+  categoryId:         { type: mongoose.Schema.Types.ObjectId, ref: 'ProjectCategory', default: null, set: v => (v ? v : null) }, // 前端未选分类时传空字符串，空串守卫避免 Cast to ObjectId 报错
   status:             { type: String, enum: ['active', 'inactive'], default: 'active' },
   deleted:            { type: Boolean, default: false },
 }, { timestamps: true });
