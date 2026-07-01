@@ -62,8 +62,8 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider } = {})
 }
 
 // OCR + 视觉理解（仅通义千问支持，图片 base64 或 URL）
-// model 默认 qwen-vl-max；体检报告逐页识别用 qwen-vl-plus（实测快约2.8倍且精度一致）
-async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl-max', maxTokens = 3000 } = {}) {
+// model 默认 qwen-vl-plus（实测比max快约2.8倍且精度一致，staff.js体检报告解析已用此模型）
+async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl-plus', maxTokens = 3000 } = {}) {
   const key = process.env.QWEN_API_KEY;
   if (!key) throw new Error('图像解析需要 QWEN_API_KEY');
 

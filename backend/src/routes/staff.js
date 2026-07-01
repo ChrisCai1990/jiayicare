@@ -4636,9 +4636,17 @@ async function runReportParse(reportId) {
       const filteredItems = filterPatientInfoItems(allItems);
       const classified = classifyItems(filteredItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
+      const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
+      const failedPages = totalPageCount - okPages;
+      const allFailed = totalPageCount > 0 && okPages === 0;
+      const aiSummaryOut = allFailed
+        ? `⚠️ 自动识别失败：全部${totalPageCount}页均未能识别成功（可能是AI服务额度不足或网络异常），未提取到任何数据，请重新识别或人工录入`
+        : failedPages > 0
+          ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败，请核对是否有遗漏项目`
+          : summaryText;
       await MedicalReport.findByIdAndUpdate(reportId, {
         reportItems: classified,
-        aiSummary:   [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n'),
+        aiSummary:   aiSummaryOut,
         aiStatus:    'pending',
         institution, checkDate,
       });
@@ -4649,12 +4657,20 @@ async function runReportParse(reportId) {
 
     // 图片：统一取文件 buffer 转 base64（兼容 content / OSS / 本地路径）
     const buf = await fetchReportBuffer(report, UPLOADS_DIR);
-    const text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus' });
-    const parsed = safeParseJSON(text);
+    let text, parsed;
+    try {
+      text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus' });
+      parsed = safeParseJSON(text);
+    } catch (e) {
+      console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
+    }
     const classifiedImg = classifyItems(filterPatientInfoItems(parsed?.items || []));
+    const imgSummary = parsed
+      ? (parsed.summary || '')
+      : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
     await MedicalReport.findByIdAndUpdate(reportId, {
       reportItems: classifiedImg,
-      aiSummary:   parsed?.summary || '',
+      aiSummary:   imgSummary,
       aiStatus:    'pending',
       institution: parsed?.institution || report.institution,
       checkDate:   parsed?.checkDate   || report.checkDate,

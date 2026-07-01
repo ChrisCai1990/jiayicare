@@ -6,7 +6,7 @@ const reportItemSchema = new mongoose.Schema({
   value:          { type: String, default: '' }, // 检测值（字符串保留原始格式）
   unit:           { type: String, default: '' }, // 单位
   referenceRange: { type: String, default: '' }, // 参考范围
-  status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown' },
+  status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown', set: v => (v ? v : 'unknown') }, // AI对影像类项目常返回空字符串，空值兜底避免保存时枚举校验报错
   itemType:       { type: String, enum: ['lab', 'imaging', 'data'], default: 'lab' }, // 检验/影像文字/数据曲线类
   orderName:      { type: String, default: '' }, // 所属检验医嘱组名（用于编辑时还原分组）
 
