@@ -920,6 +920,8 @@ export default function PatientDetailPage() {
 
   const handleOpenOCRReview = (r) => {
     setOcrReviewReport(r)
+    // 每次打开审核弹窗都重新拉取归类目录，确保管理后端新增/修改的分类实时生效
+    staffAPI.getScreeningCatalog().then(res => setScreeningCatalog(res.data || [])).catch(() => {})
     // 旧数据迁移：影像/检查类若把所见写在 value 里且 findings 为空，迁移到 findings
     const items = JSON.parse(JSON.stringify(r.reportItems || []))
       .filter(it => it.name && String(it.name).trim())
