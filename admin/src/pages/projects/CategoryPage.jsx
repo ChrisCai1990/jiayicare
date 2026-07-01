@@ -15,7 +15,7 @@ export default function CategoryPage() {
   const [search, setSearch] = useState('')
 
   const load = () => {
-    setLoading(true)
+    if (treeData.length === 0) setLoading(true) // 仅首次加载显示占位，避免每次新增/编辑后表格瞬间收起导致页面滚动跳回顶部
     adminAPI.categories().then(r => {
       setTreeData(r.data)
       const flat = []
