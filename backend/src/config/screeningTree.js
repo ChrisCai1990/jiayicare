@@ -268,12 +268,14 @@ const NODES = [
     aliases: ['裂隙灯', '眼前节检查', '裂隙灯显微镜', '裂隙灯检查（双眼）'] },
   { id: 'other|眼科检查|眼底照相', category: 'other', categoryKey: 'other', parent: '眼科检查', label: '眼底照相', itemType: 'imaging', gender: null,
     aliases: ['双眼眼底照相', '眼底检查', '眼底摄影', '免散瞳眼底照相', '眼底镜检查', '数字化眼底照相', '眼底相片', '眼底照片'] },
-  { id: 'other|一般检查|耳鼻喉', category: 'other', categoryKey: 'other', parent: '一般检查', label: '耳鼻喉', itemType: 'data', gender: null,
-    aliases: ['耳鼻喉检查', '电耳镜', '前鼻镜', '鼻腔检查', 'ENT检查'] },
-  { id: 'other|一般检查|内科查体', category: 'other', categoryKey: 'other', parent: '一般检查', label: '内科查体', itemType: 'data', gender: null,
-    aliases: ['内科检查', '内科体格检查', '内科医生查体'] },
-  { id: 'other|一般检查|外科查体', category: 'other', categoryKey: 'other', parent: '一般检查', label: '外科查体', itemType: 'data', gender: null,
-    aliases: ['外科检查', '外科体格检查', '外科医生查体'] },
+  { id: 'other|一般检查|内科', category: 'other', categoryKey: 'other', parent: '一般检查', label: '内科', itemType: 'imaging', gender: null,
+    aliases: ['内科查体', '内科检查', '内科体格检查', '内科医生查体'] },
+  { id: 'other|一般检查|外科', category: 'other', categoryKey: 'other', parent: '一般检查', label: '外科', itemType: 'imaging', gender: null,
+    aliases: ['外科查体', '外科检查', '外科体格检查', '外科医生查体'] },
+
+  // 耳鼻喉检查（独立二级分类）
+  { id: 'other|耳鼻喉检查|耳鼻喉', category: 'other', categoryKey: 'other', parent: '耳鼻喉检查', label: '耳鼻喉', itemType: 'imaging', gender: null,
+    aliases: ['耳鼻喉检查', '电耳镜', '前鼻镜', '鼻腔检查', 'ENT检查', '耳科检查', '鼻科检查', '喉科检查'] },
 
   // 三大常规（注：粪便隐血/便潜血独立归入肠癌早筛，此处粪便常规仅用于描述完整粪便检查套餐）
   { id: 'other|三大常规|血常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '血常规', itemType: 'lab', gender: null,
