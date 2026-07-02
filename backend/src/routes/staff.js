@@ -4510,7 +4510,9 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 11. 胃镜病理 / 肠镜病理
     → 【重要】这是活检取样后的组织学化验结果（内容含"慢性炎症""活动性""萎缩""肠化""HP""异型增生"等病理化验用词），是跟第10条完全独立的一条记录，即使报告里紧挨着胃镜/肠镜检查也不能合并或改名
     → itemType="imaging"，name="胃镜病理"/"肠镜病理"
-    → findings=大体所见，diagnosis=病理诊断，conclusion=同 diagnosis
+    → findings=报告原文里"大体所见"这一栏的原文（描述送检标本肉眼形态，如"送检粘膜组织一块，大小0.3×0.2cm"；报告没有这一栏就留空，不要拿别的内容填充）
+    → diagnosis="慢性炎症""活动性""萎缩""肠化""HP""异型增生"等病理分级评分 + 最终病理诊断结论，全部写在这里（不是findings）
+    → conclusion=同 diagnosis
 
 12. 常规心电图
     → itemType="imaging"，name="心电图"
@@ -4639,6 +4641,29 @@ function isNumberedSummaryEcho(it) {
 }
 function dropNumberedSummaryEcho(items) {
   return (items || []).filter(it => !isNumberedSummaryEcho(it));
+}
+
+// 有些诊断/发现片段（如"左肾结石""窦性心动过缓；左心室高电压；T波改变""杯盘比"）会被单独提取成一条，
+// 而不是作为某个真实检查项目（双肾输尿管膀胱彩超/心电图/双眼眼底照相等）的诊断内容——这类假条目没有编号前缀，
+// 单靠内容判断风险高（容易误伤真实检查项目，比如"裂隙灯检查"的findings也经常直接以name开头）。
+// 用"分类失败(不是真实检查项目名) + findings基本等于name本身"两个条件一起卡，双重门槛降低误删风险：
+// 真实检查项目一定能在归类库里找到对应节点，只有这种"诊断片段被误当项目名"的假条目才会同时满足两个条件。
+// 必须放在 classifyItemsAsync 之后调用，依赖 matchStatus 字段。
+function isUnclassifiedNameEcho(it) {
+  if (it.matchStatus !== 'unclassified') return false;
+  const name = str(it.name);
+  if (!name || name.length < 3) return false;
+  const stripNum = (s) => s.replace(/^\d+\s*[、.．:：]\s*/, '').trim();
+  const findings = stripNum(str(it.findings));
+  const diagnosis = stripNum(str(it.diagnosis));
+  const checkField = (field) => {
+    if (!field.startsWith(name)) return false;
+    return field.slice(name.length).trim().length <= 20; // 前缀匹配后只剩很短的补充内容（如分级标签）才算
+  };
+  return checkField(findings) || checkField(diagnosis);
+}
+function dropUnclassifiedNameEcho(items) {
+  return (items || []).filter(it => !isUnclassifiedNameEcho(it));
 }
 
 // 耳鼻喉/听力检查有时会被拆成"听力(左)""外耳道(左)""鼓膜(左)"等散项、有时主条目又被写成"耳鼻喉科"等变体、
@@ -5021,7 +5046,7 @@ async function runReportParse(reportId) {
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
       const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))));
-      const classified = await classifyItemsAsync(filteredItems);
+      const classified = dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -5051,7 +5076,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))));
+    const classifiedImg = dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
