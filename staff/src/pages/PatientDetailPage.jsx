@@ -635,6 +635,10 @@ export default function PatientDetailPage() {
       loadScreening()
       // 专项筛查页面的"待完成方案项目"提示条需要 plans 数据，但 plans 平时只在"方案"Tab才加载，这里按需补一次
       if (plans.length === 0) loadPlans()
+      // 2026-07-02：专项筛查里AI识别记录的"编辑"按钮要靠 reports 列表反查报告对象再打开审核弹窗，
+      // 但 reports 平时只在"体检报告"Tab才加载——如果用户没先点过那个Tab，reports是空数组，
+      // reports.find()找不到、按钮点了没反应（表现为"有些编辑键不可用"），这里同样按需补一次
+      if (reports.length === 0) loadReports()
     }
     else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
   }, [tab])
