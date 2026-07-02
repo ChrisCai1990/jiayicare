@@ -16,8 +16,11 @@ function norm(s) {
   let t = String(s || '').trim().toLowerCase();
   // 全角转半角
   t = t.replace(/[！-～]/g, ch => String.fromCharCode(ch.charCodeAt(0) - 0xfee0)).replace(/　/g, '');
-  // 去括号及其中内容（如「葡萄糖(空腹)」→「葡萄糖」）
-  t = t.replace(/[（(【\[].*?[）)】\]]/g, '');
+  // 去括号，但括号内是1-3位字母/数字代码（如「脂蛋白(a)」「维生素D(25-羟)」的"a"/"25"）时，
+  // 只去括号本身、保留内容——这类代码往往是区分不同检验项目的关键标识，整体删掉会导致
+  // 「脂蛋白(a)」退化成「脂蛋白」这种过短的通用词，进而被其他所有含"脂蛋白"的血脂项目误配。
+  // 括号内是较长说明文字（如「葡萄糖(空腹)」的"空腹"）时仍整体删除，不影响原有效果。
+  t = t.replace(/[（(【\[]([^）)】\]]*?)[）)】\]]/g, (m, inner) => /^[a-z0-9]{1,3}$/i.test(inner) ? inner : '');
   // 去「·数值单位」模式（OCR有时把数值拼入名称，如「癌胚抗原·1.6ng/ml」→「癌胚抗原」）
   t = t.replace(/[·•]\s*[\d.]+\s*[a-z%μ\/℃°]+[\w\/]*\s*$/i, '');
   // 去标点空格（含中点·）
@@ -39,11 +42,16 @@ function scoreNode(q, itemType, cands, node) {
     if (c.n === q) {
       conf = 1.0;
     } else if (q.includes(c.n) && c.n.length >= 2) {
-      conf = 0.78 + Math.min(0.12, c.n.length * 0.01);
+      // 候选词"脂蛋白a"是"载脂蛋白A1"的子串，但"载脂蛋白"是完全不同的检验项目——只针对"载"这个
+      // 已验证会引发误配的前缀降权，不做更宽泛的数字后缀判断，避免误伤其他合法的branch2匹配
+      const qSurplus = q.replace(c.n, '');
+      conf = qSurplus.startsWith('载') ? 0.45 : 0.78 + Math.min(0.12, c.n.length * 0.01);
     } else if (c.n.includes(q) && q.length >= 3) {
-      // 候选词比查询词长很多（含独立修饰词）时降低置信度，防止"葡萄糖"误命中"葡萄糖耐量试验"
+      // 候选词比查询词长很多（含独立修饰词）时降低置信度，防止"葡萄糖"误命中"葡萄糖耐量试验"，
+      // 也防止"球蛋白"误命中"甲状腺球蛋白"、"血红蛋白"误命中"糖化血红蛋白(组套)"、
+      // "白蛋白"误命中"尿微量白蛋白/肌酐"这类短词是长词子串、但实际是完全不同检验项目的情况
       const surplus = c.n.replace(q, '');
-      const hasQualifier = /耐量|试验|负荷|载量|综合|全套|联合|系列|组合/.test(surplus);
+      const hasQualifier = /耐量|试验|负荷|载量|综合|全套|联合|系列|组合|组套|甲状腺|糖化|尿微量|微量|肌酐/.test(surplus);
       conf = hasQualifier ? 0.45 : 0.7 + Math.min(0.1, q.length * 0.01);
     }
     if (conf > 0) {
@@ -219,4 +227,5 @@ module.exports = {
   matchAll, matchOne: (n, t) => { const r = matchAll(n, t); return r[0] || null; },
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
+  matchAllWithIndex,
 };
