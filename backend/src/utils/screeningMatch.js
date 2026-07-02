@@ -102,11 +102,18 @@ async function buildAdminIndex() {
   });
 
   // 找每个节点的 L1 祖先 + 直接父级名字（供 key 格式 <L1id>|<L2name>|<叶子name> 使用）
+  // 2026-07-02：加入断链检测——若 cat.parent 存在但指向的节点不在 byId 里(通常是父级被误停用/删除)，
+  // while 循环会直接跳过、把这个节点自己误判成 L1，导致它被当成顶层分类、脱离原本的分组结构。
+  // 曾经发生过真实事故：拆分"身高/体重/BMI/脉搏"节点时误把新节点挂到了被停用的旧节点下，
+  // 这几个节点因此从"一般检查"分组里"消失"，AI归类和人工搜索都找不到。
+  // 现在遇到断链一律标记 brokenChain=true，调用方应将其视为 excluded（不参与归类，需人工修复父级）。
   function resolveAncestry(cat) {
     let l1 = cat, parentLabel = '';
     const chain = [];
     let cur = cat;
-    while (cur.parent && byId.has(String(cur.parent))) {
+    let brokenChain = false;
+    while (cur.parent) {
+      if (!byId.has(String(cur.parent))) { brokenChain = true; break; }
       const p = byId.get(String(cur.parent));
       chain.unshift(p);
       cur = p;
@@ -116,7 +123,7 @@ async function buildAdminIndex() {
     // 如果该节点自己就是 L1（没有父级），parentLabel 用自己名字兜底
     if (cat._id === l1._id) parentLabel = cat.name;
     else if (!parentLabel) parentLabel = cat.name;
-    return { l1, parentLabel };
+    return { l1, parentLabel, brokenChain };
   }
 
   const excludeL1Names = new Set();
@@ -127,7 +134,10 @@ async function buildAdminIndex() {
   const nodes = cats
     .filter(c => !(childCount.get(String(c._id)) > 0)) // 叶子节点
     .map(c => {
-      const { l1, parentLabel } = resolveAncestry(c);
+      const { l1, parentLabel, brokenChain } = resolveAncestry(c);
+      if (brokenChain) {
+        console.error(`[screeningMatch] 分类"${c.name}"(${c._id})的父级链路断裂(父级被停用或删除)，已排除出归类索引，需要在admin后台把它重新挂到正确的分类下`);
+      }
       return {
         id: `${String(l1._id)}|${parentLabel}|${c.name}`,
         label: c.name,
@@ -137,7 +147,7 @@ async function buildAdminIndex() {
         parent: parentLabel,
         itemType: null,
         gender: null,
-        excluded: excludeL1Names.has(String(l1._id)),
+        excluded: brokenChain || excludeL1Names.has(String(l1._id)),
       };
     });
 

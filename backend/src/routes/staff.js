@@ -5393,10 +5393,22 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
     const groupsByL1 = new Map();
     cats.filter(isLeaf).forEach(leaf => {
       // 找L1祖先 + 直接父级名字，跟 screeningMatch.js buildAdminIndex 里 resolveAncestry 逻辑一致
+      // 2026-07-02：加断链检测——若父级被停用/删除(不在active的cats里)，不能把这个节点自己误判成L1，
+      // 那样会导致它脱离原本分组、变成一个只有自己一条的"伪分类"，人工搜索时结构错乱难以定位。
+      // 曾经真实发生过：拆分"身高/体重/BMI/脉搏"时误挂到了停用节点下，这几项因此从"一般检查"分组里消失。
       let l1 = leaf, parentLabel = leaf.name;
       let cur = leaf;
       const chain = [];
-      while (cur.parent && byId.has(String(cur.parent))) { const p = byId.get(String(cur.parent)); chain.unshift(p); cur = p; }
+      let brokenChain = false;
+      while (cur.parent) {
+        if (!byId.has(String(cur.parent))) { brokenChain = true; break; }
+        const p = byId.get(String(cur.parent));
+        chain.unshift(p); cur = p;
+      }
+      if (brokenChain) {
+        console.error(`[screening-catalog] 分类"${leaf.name}"(${leaf._id})父级链路断裂，已排除，需在admin后台重新挂到正确分类下`);
+        return;
+      }
       if (chain.length) { l1 = chain[0]; parentLabel = chain[chain.length - 1].name; }
       const l1Id = String(l1._id);
       if (excludeL1Ids.has(l1Id)) return;
