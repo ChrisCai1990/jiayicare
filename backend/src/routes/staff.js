@@ -4557,6 +4557,29 @@ const PATIENT_INFO_NAMES = new Set([
 // 用前缀匹配而非精确相等：AI 常在名称后附加方法说明，如"眼压检查(非接触眼压计法或压平眼压计法)"
 const PHYSICAL_EXAM_NAMES = ['内科', '外科', '耳鼻喉', '视力检查', '眼压检查', '眼科', '裂隙灯检查'];
 
+// 每次体检最多只应出现一次的检查类型，AI经常写出好几种变体名字（"胃镜"/"电子胃镜"/"无痛胃镜"），
+// 导致同一检查因为名字对不上没法被后面的同名去重规则识别成重复——统一改写成标准名，再走已有去重逻辑。
+// 病理类判断要放在胃镜/肠镜前面，否则"胃镜病理"会先被"胃镜"关键词命中、归一化错方向。
+function canonicalizeExamName(name) {
+  const n = name || '';
+  if (/胃.{0,4}病理|胃黏膜.*活检/.test(n)) return '胃镜病理';
+  if (/肠.{0,4}病理|结肠镜.*病理/.test(n)) return '肠镜病理';
+  if (/动态心电图|Holter|24小时.*心电图/i.test(n)) return n; // 动态心电图≠常规心电图，不归一化，保留原名避免混淆
+  if (/心电图|^ECG$|^EKG$/i.test(n)) return '常规心电图';
+  if (/胃镜|电子胃镜|无痛胃镜/.test(n)) return '胃镜检查';
+  if (/肠镜|电子肠镜|无痛肠镜|结肠镜/.test(n)) return '肠镜检查';
+  if (/肺CT|胸部CT|肺部CT|低剂量.*CT|CT.*低剂量/i.test(n)) return '肺部CT';
+  if (/双眼眼底照相|眼底照相|眼底检查/.test(n)) return '双眼眼底照相';
+  if (/^裂隙灯/.test(n)) return '裂隙灯检查';
+  if (/^视力/.test(n)) return '视力检查';
+  if (/尿常规|尿液干化学分析|尿液分析/.test(n)) return '尿常规';
+  if (/粪便常规|大便常规/.test(n)) return '粪便常规';
+  if (/^内科/.test(n)) return '内科';
+  if (/^外科/.test(n)) return '外科';
+  if (/^眼科(?!病史)/.test(n)) return '眼科';
+  return n;
+}
+
 function filterPatientInfoItems(items) {
   return (items || [])
     .filter(item => {
@@ -4570,6 +4593,7 @@ function filterPatientInfoItems(items) {
       let name = (item.name || '').replace(/^[【\[《〔\s\d、.]+|[】\]》〕\s]+$/g, '').trim();
       // 原文里的对勾符号(✓)常被识别成多余的单个英文字母前缀（如"T双眼眼底照相"），导致同一检查因为多字对不上而没法去重
       name = name.replace(/^[A-Za-z](?=[一-龥])/, '');
+      name = canonicalizeExamName(name);
       const itemType = PHYSICAL_EXAM_NAMES.some(n => name.startsWith(n)) ? 'imaging' : item.itemType;
       return { ...item, name, itemType };
     });
