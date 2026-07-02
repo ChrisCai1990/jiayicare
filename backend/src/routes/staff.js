@@ -4725,12 +4725,20 @@ function splitEndoscopyPathology(items) {
     const pf = str(it.pathologyFindings);
     const pd = str(it.pathologyDiagnosis);
     const { pathologyFindings, pathologyDiagnosis, ...rest } = it;
-    result.push(rest);
-    if (!pf && !pd) return;
+    if (!pf && !pd) { result.push(rest); return; }
     // 判断胃镜/肠镜必须看病理内容本身（"胃窦""胃黏膜""贲门""幽门"等胃部关键词），不能看外层记录的name——
     // 外层name可能是"消化内镜检查""病理科检查"这类科室汇总标题，不含"胃"字，会导致误判成肠镜病理
     const pathologyText = `${pf}${pd}`;
     const isGastro = /胃窦|胃黏膜|胃体|胃角|贲门|幽门|胃底/.test(pathologyText) || /胃/.test(str(it.name));
+    // AI有时把整条记录本身就识别成了独立的病理报告（name本身是"病理组织诊断报告"这类病理标题，
+    // findings/diagnosis已经等同于pathologyFindings/pathologyDiagnosis），这种情况不需要再拆出第二条，
+    // 只需原地改名规范化，否则会产生内容一字不差的两条重复记录
+    const isSelfPathology = str(it.findings) === pf && str(it.diagnosis) === pd;
+    if (isSelfPathology) {
+      result.push({ ...rest, name: isGastro ? '胃镜病理' : '肠镜病理' });
+      return;
+    }
+    result.push(rest);
     result.push({
       ...rest,
       name: isGastro ? '胃镜病理' : '肠镜病理',
