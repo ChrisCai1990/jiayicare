@@ -5275,61 +5275,63 @@ router.get('/diag/pdf', staffAuth, async (req, res) => {
   });
 });
 
-// GET /api/staff/screening-catalog — 专项筛查归类下拉（只从 admin 配置的 LabTestPackage 读取）
-// 格式：[{ label: 'L1分类', opts: [{ value: 'L1|L2|itemName', label: 'itemName' }] }]
+// GET /api/staff/screening-catalog — 专项筛查归类下拉
+// 2026-07-02重写：此前直接从 LabTestPackage 套餐读取，value 格式用 L1名字拼接（<L1name>|<pkgName>|<itemName>），
+// 既漏读了挂在 orders(检验医嘱) 下的子项目（只读了 labTestItems），跟 AI 自动归类(screeningMatch.js 里
+// classifyItemsAsync 产出的 screeningKey，格式 <L1的_id>|<L2名字>|<叶子节点名字>) 也完全不一致——两边各自维护
+//一份"归类选项"，导致 admin 分类管理里配置好的分类，AI 归类能用但医护端搜不到。
+// 现改为：只读 ProjectCategory 本身（叶子节点=末级分类），按 classifyItemsAsync 完全相同的公式拼 value，
+// 保证两边 key 一致才能互认/去重。不复用 screeningMatch.js 内部的 buildAdminIndex 函数，避免为了这个展示需求
+// 改动 AI 归类核心逻辑依赖的共享代码——本路由改动完全独立、出问题只影响这一个下拉框，不影响 AI 自动归类主流程。
+// 展示文字额外带上该叶子节点直接挂载(categoryId)的检验医嘱/检查医嘱/功能医学检测名称，方便医护辨认。
 router.get('/screening-catalog', staffAuth, async (req, res) => {
   try {
-    const [cats, pkgs] = await Promise.all([
-      ProjectCategory.find({ status: 'active' }).lean(),
-      LabTestPackage.find({ status: 'active' })
-        .populate('labTestItems', 'name')
-        .populate({ path: 'specialExams', match: { deleted: { $ne: true } }, select: 'name' })
-        .lean(),
+    const [cats, orders, exams, funcTests] = await Promise.all([
+      ProjectCategory.find({ status: 'active' }).select('name parent').lean(),
+      LabTestOrder.find({ status: 'active', categoryId: { $ne: null } }).select('name categoryId').lean(),
+      SpecialExam.find({ status: 'active', deleted: { $ne: true }, categoryId: { $ne: null } }).select('name categoryId').lean(),
+      FunctionalMedicineTest.find({ status: 'active', deleted: { $ne: true }, categoryId: { $ne: null } }).select('name categoryId').lean(),
     ]);
 
-    const l1s = cats.filter(c => !c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0));
-    const l2sByParent = {};
-    cats.filter(c => c.parent).sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0)).forEach(c => {
-      const pid = String(c.parent);
-      if (!l2sByParent[pid]) l2sByParent[pid] = [];
-      l2sByParent[pid].push(c);
-    });
-    const pkgByCat = {};
-    pkgs.forEach(p => {
-      if (!p.categoryId) return;
-      const cid = String(p.categoryId);
-      if (!pkgByCat[cid]) pkgByCat[cid] = [];
-      pkgByCat[cid].push(p);
+    // 按分类节点_id聚合直接挂载的检验医嘱/检查医嘱/功能医学检测名称，供选项展示辅助文字用
+    const namesByCat = new Map();
+    [...orders, ...exams, ...funcTests].forEach(item => {
+      const key = String(item.categoryId);
+      if (!namesByCat.has(key)) namesByCat.set(key, []);
+      namesByCat.get(key).push(item.name);
     });
 
-    // 构建归类选项：L1分类 → 组标题，L2(package) + item → 选项
-    // value 格式：<L1name>|<packageName>|<itemName>（与 screeningTree itemId 格式一致）
-    const groups = [];
-    for (const l1 of l1s) {
-      const opts = [];
-      const l2cats = l2sByParent[String(l1._id)] || [];
-      for (const l2 of l2cats) {
-        const matchPkgs = pkgByCat[String(l2._id)] || [];
-        for (const pkg of matchPkgs) {
-          // 套餐本身作为一个归类选项
-          opts.push({ value: `${l1.name}|${pkg.name}|${pkg.name}`, label: pkg.name, groupLabel: l1.name });
-          // 套餐下的检验项目
-          (pkg.labTestItems || []).forEach(item => {
-            if (item && item.name) {
-              opts.push({ value: `${l1.name}|${pkg.name}|${item.name}`, label: `${pkg.name} / ${item.name}`, groupLabel: l1.name });
-            }
-          });
-          // 套餐下的检查医嘱
-          (pkg.specialExams || []).forEach(exam => {
-            if (exam && exam.name) {
-              opts.push({ value: `${l1.name}|${pkg.name}|${exam.name}`, label: `${pkg.name} / ${exam.name}`, groupLabel: l1.name });
-            }
-          });
-        }
-      }
-      if (opts.length > 0) groups.push({ label: l1.name, opts });
-    }
+    const byId = new Map(cats.map(c => [String(c._id), c]));
+    const childCount = new Map();
+    cats.forEach(c => { if (c.parent) childCount.set(String(c.parent), (childCount.get(String(c.parent)) || 0) + 1); });
+    const isLeaf = c => !(childCount.get(String(c._id)) > 0);
 
+    // 排除"功能检测/功能医学"类L1，跟AI归类(buildAdminIndex)规则保持一致，这类只能人工在OCR审核弹窗手动选
+    const excludeL1Ids = new Set(cats.filter(c => !c.parent && /功能检测|功能医学/.test(c.name)).map(c => String(c._id)));
+
+    const groupsByL1 = new Map();
+    cats.filter(isLeaf).forEach(leaf => {
+      // 找L1祖先 + 直接父级名字，跟 screeningMatch.js buildAdminIndex 里 resolveAncestry 逻辑一致
+      let l1 = leaf, parentLabel = leaf.name;
+      let cur = leaf;
+      const chain = [];
+      while (cur.parent && byId.has(String(cur.parent))) { const p = byId.get(String(cur.parent)); chain.unshift(p); cur = p; }
+      if (chain.length) { l1 = chain[0]; parentLabel = chain[chain.length - 1].name; }
+      const l1Id = String(l1._id);
+      if (excludeL1Ids.has(l1Id)) return;
+
+      const extraNames = [...new Set(namesByCat.get(String(leaf._id)) || [])];
+      const displaySuffix = extraNames.length ? ` (${extraNames.join('、')})` : '';
+      const value = `${l1Id}|${parentLabel}|${leaf.name}`;
+      if (!groupsByL1.has(l1.name)) groupsByL1.set(l1.name, []);
+      groupsByL1.get(l1.name).push({
+        value,
+        label: `${parentLabel !== leaf.name ? parentLabel + ' / ' : ''}${leaf.name}${displaySuffix}`,
+        groupLabel: l1.name,
+      });
+    });
+
+    const groups = [...groupsByL1.entries()].map(([label, opts]) => ({ label, opts }));
     res.json({ success: true, data: groups });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
