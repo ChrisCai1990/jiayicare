@@ -4580,26 +4580,30 @@ function filterPatientInfoItems(items) {
 const ENT_SUBPART_PREFIXES = ['听力', '外耳道', '鼓膜', '鼻部', '咽喉部'];
 function mergeEntSubparts(items) {
   const list = items || [];
-  const isMain = (name) => /^耳鼻喉(科|检查|科检查)?$/.test((name || '').trim());
-  const isSubpart = (name) => !isMain(name) && ENT_SUBPART_PREFIXES.some(p => (name || '').trim().startsWith(p));
+  const isMain = (name) => /^耳鼻喉(科|检查|科检查)?$/.test(str(name));
+  const isSubpart = (name) => !isMain(name) && ENT_SUBPART_PREFIXES.some(p => str(name).startsWith(p));
   const mains = list.filter(it => isMain(it.name));
   const subparts = list.filter(it => isSubpart(it.name));
   if (!subparts.length && mains.length <= 1) return list; // 只有一条正常主记录、没有散项，不用处理
 
   const pieces = [];
-  mains.forEach(it => { const f = (it.findings || it.value || '').toString().trim(); if (f) pieces.push(f); });
-  subparts.forEach(it => pieces.push(`${(it.name || '').trim()}：${(it.findings || it.value || '').toString().trim() || '未描述'}`));
+  mains.forEach(it => { const f = str(it.findings) || str(it.value); if (f) pieces.push(f); });
+  subparts.forEach(it => pieces.push(`${str(it.name)}：${str(it.findings) || str(it.value) || '未描述'}`));
   const mergedFindings = [...new Set(pieces.filter(Boolean))].join('；') || '未见明显异常';
   const removeSet = new Set([...mains, ...subparts]);
   const result = list.filter(it => !removeSet.has(it));
   result.push({
     name: '耳鼻喉', itemType: 'imaging', value: '', unit: '', referenceRange: '', status: 'unknown',
     orderName: '', bodyPart: '', findings: mergedFindings,
-    diagnosis: mains.find(it => (it.diagnosis || '').trim())?.diagnosis || '未见明显异常',
-    conclusion: mains.find(it => (it.conclusion || '').trim())?.conclusion || mains.find(it => (it.diagnosis || '').trim())?.diagnosis || '未见明显异常',
+    diagnosis: mains.find(it => str(it.diagnosis))?.diagnosis || '未见明显异常',
+    conclusion: mains.find(it => str(it.conclusion))?.conclusion || mains.find(it => str(it.diagnosis))?.diagnosis || '未见明显异常',
   });
   return result;
 }
+
+// AI 有时会把 value 等字段直接输出成数字而不是字符串（如 18.8 而非 "18.8"），
+// 后面一大堆清洗规则都要对这些字段调用 .trim()，统一用这个helper兜底转成字符串，避免 "xxx.trim is not a function" 崩溃
+const str = (v) => String(v == null ? '' : v).trim();
 
 // 清理AI提取时常见的两类"影子行"（2026-07-01金娟反馈：肿瘤六项男/血细胞分析/血脂七项 被当成具体项目名重复提取）：
 // 规则1：某条目的 name 跟批次里其他≥2条目共享的 orderName 完全同名（说明这条其实是把套餐标题误当成了单独项目吐出来），丢弃
@@ -4609,13 +4613,13 @@ function cleanupExtractedItems(items) {
   const list = items || [];
   const orderNameCount = new Map();
   list.forEach(it => {
-    const on = (it.orderName || '').trim();
+    const on = str(it.orderName);
     if (on) orderNameCount.set(on, (orderNameCount.get(on) || 0) + 1);
   });
 
   const byOrderGroup = new Map();
   const afterRule1 = list.filter(it => {
-    const name = (it.name || '').trim();
+    const name = str(it.name);
     if (name && orderNameCount.get(name) >= 2) return false; // 规则1
     return true;
   });
@@ -4624,7 +4628,7 @@ function cleanupExtractedItems(items) {
   // 不能只看数值相同就丢——像抗核抗体谱15项这种子项结果全是"阴性"的正常面板，数值本来就会大量重复，
   // 之前没加这个名字判断，导致15条阴性被误判成"重复行"只保留了1条
   const looksLikePanelTitle = (name) => {
-    const n = (name || '').trim();
+    const n = str(name);
     if (!n) return false;
     if (/[（(][^）)]*(不含|全套)[^）)]*[）)]$/.test(n)) return true;
     if (/^.{1,10}(全套|十[一二三四五六七八九]?项|[二三四五六七八九]项|两项)/.test(n)) return true;
@@ -4632,9 +4636,9 @@ function cleanupExtractedItems(items) {
   };
   const valueSeenInGroup = new Map();
   const afterRule2 = afterRule1.filter(it => {
-    const on = (it.orderName || '').trim();
+    const on = str(it.orderName);
     if (!on) return true;
-    const valueKey = `${(it.value || '').trim()}|${(it.unit || '').trim()}|${(it.referenceRange || '').trim()}`;
+    const valueKey = `${str(it.value)}|${str(it.unit)}|${str(it.referenceRange)}`;
     if (!valueKey.replace(/\|/g, '').trim()) return true; // 值都是空的不去重
     const groupKey = `${on}::${valueKey}`;
     if (!valueSeenInGroup.has(groupKey)) { valueSeenInGroup.set(groupKey, it); return true; }
@@ -4644,10 +4648,10 @@ function cleanupExtractedItems(items) {
 
   const dedupMap = new Map();
   const scoreCompleteness = o => ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart']
-    .filter(f => (o[f] || '').toString().trim()).length;
+    .filter(f => str(o[f])).length;
   const result = [];
   afterRule2.forEach(it => {
-    const key = `${it.itemType}|${(it.name || '').trim()}|${(it.value || '').trim()}|${(it.unit || '').trim()}`;
+    const key = `${it.itemType}|${str(it.name)}|${str(it.value)}|${str(it.unit)}`;
     if (!dedupMap.has(key)) { dedupMap.set(key, result.length); result.push(it); return; }
     const idx = dedupMap.get(key);
     if (scoreCompleteness(it) > scoreCompleteness(result[idx])) result[idx] = it; // 规则3
@@ -4655,13 +4659,13 @@ function cleanupExtractedItems(items) {
 
   // 规则4：同名但数值不同的重复行（如"尿液干化学分析"一次只提到尿隐血异常、另一次把11项明细都写全）——
   // 同一次体检里同名项目出现两次基本都是同一处内容被分两页/两批次各提取了一遍，保留信息量更大的一条
-  const richness = o => (o.findings || '').length + (o.diagnosis || '').length + (o.conclusion || '').length
-    + ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart'].filter(f => (o[f] || '').toString().trim()).length * 5;
+  const richness = o => str(o.findings).length + str(o.diagnosis).length + str(o.conclusion).length
+    + ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart'].filter(f => str(o[f])).length * 5;
   const byName = new Map();
   result.forEach((it, idx) => {
-    const n = (it.name || '').trim();
+    const n = str(it.name);
     if (!n) return;
-    const on = (it.orderName || '').trim();
+    const on = str(it.orderName);
     const groupKey = `${n}::${on || n}`; // orderName 为空时退化用 name 本身，让"没填orderName"和"orderName就是自己"两种写法能配到一组
     if (!byName.has(groupKey)) byName.set(groupKey, []);
     byName.get(groupKey).push(idx);
@@ -4677,8 +4681,8 @@ function cleanupExtractedItems(items) {
 
   // 规则5：血压这项数值必须是"数字/数字"格式（如120/73），不是这个格式说明是别的检查内容串行填错了，丢弃
   final = final.filter(it => {
-    if ((it.name || '').trim() !== '血压') return true;
-    const v = (it.value || '').trim();
+    if (str(it.name) !== '血压') return true;
+    const v = str(it.value);
     return !v || /^\d{2,3}\s*\/\s*\d{2,3}/.test(v);
   });
 
@@ -4736,7 +4740,7 @@ function parseExpectedCount(orderName) {
 function findUnderExtractedPages(items) {
   const byOrder = new Map();
   (items || []).forEach(it => {
-    const on = (it.orderName || '').trim();
+    const on = str(it.orderName);
     if (!on) return;
     if (!byOrder.has(on)) byOrder.set(on, []);
     byOrder.get(on).push(it);
@@ -4838,18 +4842,18 @@ async function runReportParse(reportId) {
             // 按检验单标题替换：只替换这一页里、这次重试确实提取到更多条数的那些检验单，其余保留原结果，避免"重试反而更差"
             const retryByOrder = new Map();
             retryItems.forEach(it => {
-              const on = (it.orderName || '').trim();
+              const on = str(it.orderName);
               if (!on) return;
               if (!retryByOrder.has(on)) retryByOrder.set(on, []);
               retryByOrder.get(on).push(it);
             });
             let improvedOrders = [];
             for (const [on, newGroup] of retryByOrder) {
-              const oldCount = allItems.filter(it => it._page === pageNum && (it.orderName || '').trim() === on).length;
+              const oldCount = allItems.filter(it => it._page === pageNum && str(it.orderName) === on).length;
               if (newGroup.length > oldCount) improvedOrders.push(on);
             }
             if (improvedOrders.length) {
-              allItems = allItems.filter(it => !(it._page === pageNum && improvedOrders.includes((it.orderName || '').trim())));
+              allItems = allItems.filter(it => !(it._page === pageNum && improvedOrders.includes(str(it.orderName))));
               improvedOrders.forEach(on => { allItems = allItems.concat(retryByOrder.get(on)); });
               console.log(`[parse-ai] 页${pageNum}重试生效：${improvedOrders.join('、')} 条数已补全`);
             } else {
