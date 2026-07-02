@@ -245,6 +245,69 @@ router.get('/patients', staffAuth, async (req, res) => {
   res.json({ success: true, data: { patients, total, page: Number(page), limit: Number(limit) } });
 });
 
+// GET /api/staff/checkup-progress — 体检方案回传进度总览（避免健管专员逐个客户查询漏检）
+// 2026-07-02：健管专员反馈"手上10个客户涉及体检，没有统一界面看谁的报告还没回传，得一个个查"。
+// 复用 /patients 同一套角色分配过滤逻辑，找出当前专员名下所有客户，关联查 HealthPlan(年度体检方案)
+// 里状态为 pending 的检验/检查/功能医学检测项目，按客户汇总数量，一次性看到全貌。
+router.get('/checkup-progress', staffAuth, async (req, res) => {
+  try {
+    const staff = req.staff;
+    let staffIds = [staff._id];
+    if (staff.role !== 'superadmin') {
+      const subIds = await getSubordinateIds(staff._id);
+      staffIds = [staff._id, ...subIds];
+    }
+    const assignFilter = {};
+    if (staff.role !== 'superadmin') {
+      if (staff.role === 'familyDoctor') assignFilter.assignedFamilyDoctor = { $in: staffIds };
+      else if (staff.role === 'nutritionist') assignFilter.assignedNutritionist = { $in: staffIds };
+      else if (staff.role === 'specialist') assignFilter.assignedSpecialist = { $in: staffIds };
+      else if (staff.role === 'tcmDoctor') assignFilter.assignedTcmDoctor = { $in: staffIds };
+      else if (staff.role === 'psychologist') assignFilter.assignedPsychologist = { $in: staffIds };
+      else if (staff.role === 'rehabSpecialist') assignFilter.assignedRehabSpecialist = { $in: staffIds };
+      else if (staff.role === 'medicalAssistant') assignFilter.assignedMedicalAssistant = { $in: staffIds };
+      else assignFilter.assignedHealthManager = { $in: staffIds };
+    }
+
+    const patients = await User.find(assignFilter).select('name phone').lean();
+    if (!patients.length) return res.json({ success: true, data: [] });
+    const patientIds = patients.map(p => p._id);
+    const patientMap = new Map(patients.map(p => [String(p._id), p]));
+
+    const plans = await HealthPlan.find({
+      patientId: { $in: patientIds },
+      type: 'annual_checkup',
+      status: { $ne: 'cancelled' },
+    }).select('patientId title items status createdAt').lean();
+
+    const result = [];
+    plans.forEach(plan => {
+      const pendingItems = (plan.items || []).filter(it =>
+        it.status === 'pending' && it.itemType && ['labTest', 'specialExam', 'functionalTest'].includes(it.itemType)
+      );
+      if (!pendingItems.length) return;
+      const patient = patientMap.get(String(plan.patientId));
+      if (!patient) return;
+      result.push({
+        patientId: plan.patientId,
+        patientName: patient.name,
+        patientPhone: patient.phone,
+        planId: plan._id,
+        planTitle: plan.title,
+        totalItems: (plan.items || []).length,
+        pendingCount: pendingItems.length,
+        pendingNames: pendingItems.map(it => it.name),
+        createdAt: plan.createdAt,
+      });
+    });
+    // 缺项越多越靠前，方便优先跟进
+    result.sort((a, b) => b.pendingCount - a.pendingCount);
+    res.json({ success: true, data: result });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── GET /api/staff/patients/search-registered — 搜索已注册但未分配给我的用户
 router.get('/patients/search-registered', staffAuth, async (req, res) => {
   const q = (req.query.q || '').trim();

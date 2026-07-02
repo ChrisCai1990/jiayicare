@@ -17,6 +17,7 @@ export default function HomePage() {
   const [pendingReferralCount, setPendingReferralCount] = useState(0)
   const [unreadMsgCount, setUnreadMsgCount] = useState(0)
   const [checkinRecords, setCheckinRecords] = useState([])
+  const [checkupProgress, setCheckupProgress] = useState([])
 
   useEffect(() => {
     staffAPI.getReports()
@@ -26,6 +27,10 @@ export default function HomePage() {
 
     staffAPI.getCheckinOverview({})
       .then(r => setCheckinRecords(r.data || []))
+      .catch(() => {})
+
+    staffAPI.getCheckupProgress()
+      .then(r => setCheckupProgress(r.data || []))
       .catch(() => {})
 
     Promise.allSettled([
@@ -119,6 +124,43 @@ export default function HomePage() {
           )}
         </div>
       </div>
+
+      {/* 体检方案回传进度：避免逐个客户查询漏检 */}
+      {checkupProgress.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="card-title">体检方案待完成（{checkupProgress.length}位客户）</div>
+          </div>
+          <div className="card-body" style={{ padding: '8px 20px' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 0 }}>
+              {checkupProgress.slice(0, 5).map((r, i) => (
+                <div key={String(r.planId)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 0',
+                    borderBottom: i < Math.min(checkupProgress.length, 5) - 1 ? '1px solid #f0ede8' : 'none',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => nav(`/plans/${r.planId}`)}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60 }}>{r.patientName}</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>{r.patientPhone}</span>
+                    <span style={{ fontSize: 12, color: '#aaa' }}>{r.planTitle}</span>
+                  </div>
+                  <span style={{ fontSize: 12, color: '#D97706', background: '#D9780618', padding: '2px 8px', borderRadius: 99 }}>
+                    待完成 {r.pendingCount}/{r.totalItems} 项
+                  </span>
+                </div>
+              ))}
+              {checkupProgress.length > 5 && (
+                <div style={{ textAlign: 'center', padding: '10px 0 2px', fontSize: 13, color: '#8AA89C' }}>
+                  还有 {checkupProgress.length - 5} 位客户待跟进
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
         {/* 慢病分布 */}
