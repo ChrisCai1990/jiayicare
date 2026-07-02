@@ -4741,6 +4741,20 @@ function dropDiagnosisPhraseEcho(items) {
   return (items || []).filter(it => !isDiagnosisPhraseEcho(it));
 }
 
+// 2026-07-02补充：诸如"单纯游离PSA%偏低"这类条目，是AI把某个真实指标(游离前列腺特异性抗原%)异常结果的
+// 一句评语误当成了独立检验项目单独提取，value字段还常常跟name自相矛盾(name说"偏低"，value却填"未见异常")。
+// 这类词因为name里带着真实指标名的子串(如"PSA")，会被归类算法命中匹配、绕开上面要求matchStatus=unclassified
+// 的规则。用更窄的独立判定：name以"偏低/偏高/偏低偏高"结尾，这个后缀模式在真实检验项目名里基本不会出现，
+// 风险比放宽上面那条规则的门槛更低，不依赖matchStatus。
+function isResultCommentEcho(it) {
+  const name = str(it.name);
+  if (!name || name.length > 20) return false;
+  return /(偏低|偏高)$/.test(name);
+}
+function dropResultCommentEcho(items) {
+  return (items || []).filter(it => !isResultCommentEcho(it));
+}
+
 // "异常结果汇总"页有时是编号列表（"1.甲状腺结节 2.大肠多发息肉 3.慢性浅表性胃炎..."），
 // 没被跳过规则拦住时，每一行会被单独提取成一条：name=诊断名称，findings/diagnosis="数字、诊断名称原样重复"，没有任何具体检查所见。
 // 只在"去掉编号前缀后，内容跟name完全一样"这种严格条件下才判定为汇总echo丢弃，避免误伤带具体所见的正常记录。
@@ -5259,7 +5273,7 @@ async function runReportParse(reportId) {
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
       const filteredItems = cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))))));
-      const classified = dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)));
+      const classified = dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -5289,7 +5303,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))))));
+    const classifiedImg = dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
