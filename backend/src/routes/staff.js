@@ -4619,6 +4619,7 @@ const ADVISORY_TEXT_PATTERNS = [
   /多与.{0,12}有关/, /无症状.{0,10}(可)?不(处理|用处理)/, /建议.{0,15}(随诊|复查|干预|治疗|外科)/,
   /如有不适[，,]?\s*请/, /多为良性/, /极少数可能发展为/, /通常无需处理/, /定期复查/, /避免自行/,
   /人群(的)?健康教育/, /健康宣教/, /科普(知识|说明)/,
+  /多见于.{0,10}(老年人|近视|人群)/, /可疑有病变(或先天性)?/, /应随访观察/, /多考虑为/,
 ];
 function isAdvisoryEcho(it) {
   const name = str(it.name);
@@ -4661,18 +4662,15 @@ function dropDiagnosisPhraseEcho(items) {
 // name 本身是科室/检查类别的泛称（不是具体检查项目名），"异常结果汇总"页常按科室分组罗列诊断名词
 // （如 name="放射科"，findings="1、右肺下叶磨玻璃结节 2、左肾上腺稍增粗"）——这类跟真实的详细报告单
 // （如"肺部CT"/"胃镜检查"）内容完全重复，必须丢弃，否则同一异常会同时出现在汇总条目和详细条目里。
+// name 本身用了这种科室/检查类别泛称，就已经是异常信号——真实检查项目的name永远是具体名称
+// （"肺部CT"/"胃镜检查"/"甲状腺超声"等），不会是这几个泛称词，不需要再额外要求diagnosis也是编号格式
+// （AI有时把diagnosis总结成整句而非列表，只看findings是否为编号列表这一个稳定特征就够）。
 const DEPARTMENT_LABEL_NAMES = new Set(['彩超', '放射科', '消化内镜', '病理科', '内科汇总', '外科汇总', '检验科', '功能科']);
 function isDepartmentSummaryEcho(it) {
   const name = str(it.name);
   if (!DEPARTMENT_LABEL_NAMES.has(name)) return false;
-  const text = `${str(it.findings)}${str(it.diagnosis)}`;
-  if (!text) return false;
-  // 每一行都是编号+短诊断名词（无具体测量数据），整条判定为汇总列表
-  const lines = text.split(/\n|(?=\d+\s*[、.．:：])/).map(s => s.trim()).filter(Boolean);
-  if (!lines.length) return false;
-  const hasMeasurement = /\d+\s*[×xX]\s*\d+|CDFI|mm|cm/.test(text);
-  const allNumberedShort = lines.every(l => /^\d+\s*[、.．:：]/.test(l) && l.length <= 40);
-  return allNumberedShort && !hasMeasurement;
+  const findings = str(it.findings);
+  return /^\d+\s*[、.．:：]/.test(findings);
 }
 function dropDepartmentSummaryEcho(items) {
   return (items || []).filter(it => !isDepartmentSummaryEcho(it));
