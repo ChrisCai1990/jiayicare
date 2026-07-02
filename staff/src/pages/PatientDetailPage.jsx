@@ -2824,6 +2824,14 @@ export default function PatientDetailPage() {
                 })
                 Object.values(aiVirtualMap).forEach(({ _l1Key, _l2, _l3, _sourceItems, ...rec }) => {
                   rec._sourceItems = _sourceItems || []
+                  // 2026-07-02修复：AI虚拟记录的note此前硬编码为空字符串，导致折叠状态下的摘要行
+                  // （人工录入靠 r.note 显示"所见结肠黏膜未见异常"这类摘要）AI记录永远显示不出来，
+                  // 不是没有数据——conclusion其实一直都在reportItems里，只是没有被取来填这个摘要字段。
+                  // 取第一条有内容的 conclusion（找不到则退而求其次用 diagnosis）作为折叠态摘要。
+                  if (!rec.note) {
+                    const withText = rec.reportItems.find(x => x.conclusion) || rec.reportItems.find(x => x.diagnosis)
+                    if (withText) rec.note = withText.conclusion || withText.diagnosis
+                  }
                   if (!treeData[_l1Key]) treeData[_l1Key] = {}
                   if (!treeData[_l1Key][_l2]) treeData[_l1Key][_l2] = {}
                   if (!treeData[_l1Key][_l2][_l3]) treeData[_l1Key][_l2][_l3] = []
