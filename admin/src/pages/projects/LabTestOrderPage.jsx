@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { pinyin } from 'pinyin-pro'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
-import { useCategories, StatusBadge } from './_ProjectPage'
+import { useCategories, StatusBadge, CategorySearchSelect } from './_ProjectPage'
 
 const EMPTY = { name: '', mnemonic: '', costPrice: 0, retailPrice: 0, categoryId: '', items: [], participatesInDiscount: true, remark: '' }
 
@@ -207,10 +207,7 @@ export default function LabTestOrderPage() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">所属分类</label>
-                  <select className="form-input" value={form.categoryId} onChange={set('categoryId')}>
-                    <option value="">无</option>
-                    {cats.map(c => <option key={c._id} value={c._id}>{'　'.repeat(c.depth)}{c.name}</option>)}
-                  </select>
+                  <CategorySearchSelect cats={cats} value={form.categoryId} onChange={v => setForm(p => ({ ...p, categoryId: v }))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">备注</label>

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
-import { useCategories, StatusBadge } from './_ProjectPage'
+import { useCategories, StatusBadge, CategorySearchSelect } from './_ProjectPage'
 
 const EXAM_TYPES = [
   { value: 'ultrasound', label: '超声检查' },
@@ -168,10 +168,7 @@ export default function SpecialExamPage() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">所属分类</label>
-                  <select className="form-input" value={form.categoryId} onChange={set('categoryId')}>
-                    <option value="">无</option>
-                    {cats.map(c => <option key={c._id} value={c._id}>{'　'.repeat(c.depth)}{c.name}</option>)}
-                  </select>
+                  <CategorySearchSelect cats={cats} value={form.categoryId} onChange={v => setForm(f => ({ ...f, categoryId: v }))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', paddingTop: 28 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>

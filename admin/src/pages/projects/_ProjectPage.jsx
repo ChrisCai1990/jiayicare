@@ -25,6 +25,42 @@ export function useCategories() {
   return cats
 }
 
+// 可搜索的"所属分类"下拉：分类库节点多（100+），普通<select>逐个滚动查找太麻烦，改成输入过滤+下拉列表选择
+export function CategorySearchSelect({ cats, value, onChange }) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState(undefined)
+  const selected = cats.find(c => c._id === value)
+  const displayText = selected ? '　'.repeat(selected.depth) + selected.name : ''
+  const q = (search !== undefined ? search : displayText).trim().toLowerCase()
+  const filtered = q ? cats.filter(c => c.name.toLowerCase().includes(q)) : cats
+  return (
+    <div style={{ position: 'relative', width: '100%' }}>
+      <input
+        className="form-input"
+        placeholder="无（可搜索分类名称）"
+        value={search !== undefined ? search : displayText}
+        onFocus={() => { setOpen(true); setSearch('') }}
+        onBlur={() => setTimeout(() => { setOpen(false); setSearch(undefined) }, 180)}
+        onChange={e => setSearch(e.target.value)}
+      />
+      {open && (
+        <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 260, overflowY: 'auto', marginTop: 2 }}>
+          <div onMouseDown={() => { onChange(''); setOpen(false) }} style={{ padding: '6px 10px', fontSize: 13, color: '#8AA89C', cursor: 'pointer', borderBottom: '1px solid #f5f2ec' }}>无</div>
+          {filtered.length === 0 && <div style={{ padding: 10, fontSize: 13, color: '#aaa', textAlign: 'center' }}>无匹配结果</div>}
+          {filtered.map(c => (
+            <div key={c._id} onMouseDown={() => { onChange(c._id); setOpen(false) }}
+              style={{ padding: '6px 10px', fontSize: 13, cursor: 'pointer', color: c._id === value ? '#1E6B50' : '#1A2B24', background: c._id === value ? '#F0FDF4' : 'transparent' }}
+              onMouseEnter={e => e.currentTarget.style.background = '#F0FDF4'}
+              onMouseLeave={e => e.currentTarget.style.background = c._id === value ? '#F0FDF4' : 'transparent'}>
+              {'　'.repeat(c.depth)}{c.name}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function StatusBadge({ active }) {
   return (
     <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: active ? '#E8F5EF' : '#FEF2F2', color: active ? '#1E6B50' : '#DC2626' }}>

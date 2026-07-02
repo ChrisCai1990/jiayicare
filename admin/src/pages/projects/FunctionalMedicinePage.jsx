@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
-import { StatusBadge } from './_ProjectPage'
+import { StatusBadge, CategorySearchSelect } from './_ProjectPage'
 
 const EMPTY = { name: '', categoryId: '', testResult: '', indicatorAnalysis: '', managementAdvice: '', testTiming: '', institution: '' }
 
@@ -145,10 +145,7 @@ export default function FunctionalMedicinePage() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">所属筛查分类（关联后在医护端录入时自动显示）</label>
-                  <select className="form-input" value={form.categoryId} onChange={set('categoryId')}>
-                    <option value="">-- 不绑定分类 --</option>
-                    {l2Cats.map(c => <option key={c._id} value={String(c._id)}>{c.name}</option>)}
-                  </select>
+                  <CategorySearchSelect cats={l2Cats} value={form.categoryId} onChange={v => setForm(f => ({ ...f, categoryId: v }))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">检测时间</label>
