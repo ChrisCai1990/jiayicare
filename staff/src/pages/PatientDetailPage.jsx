@@ -2796,16 +2796,22 @@ export default function PatientDetailPage() {
                       _l1Key: l1Key, _l2: l2, _l3: l3,
                     }
                   }
-                  aiVirtualMap[vKey].reportItems.push({
-                    name: it.name || it.itemLabel,
-                    value: it.value || '',
-                    unit: it.unit || '',
-                    referenceRange: it.referenceRange || '',
-                    status: it.status || 'unknown',
-                    itemType: it.itemType || 'lab',
-                    findings: it.findings || '',
-                    diagnosis: it.diagnosis || '',
-                    conclusion: it.conclusion || '',
+                  // 2026-07-02：一个 itemId(如"肝功能")在报告里通常对应多个检验子项(总蛋白/球蛋白/转氨酶...)，
+                  // 后端已改为在 matchedItems 里返回全部匹配子项，这里逐条 push 而不是只用第一条，
+                  // 避免血脂全套/血常规/抗核抗体谱等只显示一项、其余漏项的问题。
+                  const subItems = Array.isArray(it.matchedItems) && it.matchedItems.length ? it.matchedItems : [it]
+                  subItems.forEach(sub => {
+                    aiVirtualMap[vKey].reportItems.push({
+                      name: sub.name || it.itemLabel,
+                      value: sub.value || '',
+                      unit: sub.unit || '',
+                      referenceRange: sub.referenceRange || '',
+                      status: sub.status || 'unknown',
+                      itemType: sub.itemType || 'lab',
+                      findings: sub.findings || '',
+                      diagnosis: sub.diagnosis || '',
+                      conclusion: sub.conclusion || '',
+                    })
                   })
                   // 记录原始 reportId 和 itemLabel 供删除用
                   if (!aiVirtualMap[vKey]._sourceItems) aiVirtualMap[vKey]._sourceItems = []

@@ -2530,6 +2530,13 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
       .populate('reportId', 'checkDate institution title reportItems');
 
     // 把 reportItem 的实际检查内容附加到每条 screeningItem
+    // 2026-07-02修复：此前用 .find() 只取第一条匹配的 reportItem，但一个 itemId(如"肝功能")
+    // 在报告里对应的是一整个检验单的多个子项(总蛋白/球蛋白/转氨酶...)，全局只在 UserScreeningItem
+    // 存一条归类记录（{user,itemId}唯一），并不代表报告里只有一条数据——.find() 会把同key下除第一条外
+    // 的所有子项全部丢弃，导致血脂全套只剩总胆固醇、肝功能只剩总蛋白、血常规/抗核抗体谱等大量漏项。
+    // 改为 .filter() 取出全部匹配子项，放进 matchedItems 数组，前端按数组逐条渲染（原有虚拟记录
+    // 结构本身就是数组 push，天然支持多条，不需要改前端展示逻辑）。仍保留 obj.value 等单值字段
+    // （取第一条作兼容），避免其他还在读单值字段的地方直接报错。
     const enriched = items.map(item => {
       const obj = item.toObject();
       const report = obj.reportId;
@@ -2537,11 +2544,13 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
         obj.checkDate = report.checkDate || '';
         obj.institution = report.institution || '';
         obj.reportTitle = report.title || '';
-        // 在该报告的 reportItems 里找 screeningKey 匹配的条目
-        const matched = (report.reportItems || []).find(ri =>
+        // 在该报告的 reportItems 里找所有 screeningKey 匹配的条目（一个itemId可能对应多个子项）
+        const matchedItems = (report.reportItems || []).filter(ri =>
           (ri.screeningKeys && ri.screeningKeys.includes(obj.itemId)) ||
           ri.screeningKey === obj.itemId
         );
+        obj.matchedItems = matchedItems;
+        const matched = matchedItems[0];
         if (matched) {
           obj.value = matched.value || '';
           obj.unit = matched.unit || '';
