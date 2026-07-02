@@ -4489,13 +4489,11 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → findings=检查结果，diagnosis=结论，conclusion=同 diagnosis
 
 8. 超声（肝脏/胆胰脾/双肾输尿管膀胱/前列腺/甲状腺/颈动脉/心脏超声/乳腺/子宫附件或阴道等）
-   → 【核心规则】常见器官固定为：肝脏、胆胰脾（胆囊/胰腺/脾脏，常与肝脏同页/同单，但仍需按器官拆开）、甲状腺、乳腺、子宫附件或阴道、双肾输尿管膀胱、前列腺、颈动脉、心脏超声。
-   → 报告上不管几个器官写在同一页/同一段落里，都必须按器官拆成多条，itemType="imaging"，每条只对应一个器官
-   → name = 该器官的检查名称原文（如"肝脏彩超""颈动脉超声""双肾输尿管膀胱彩超"），禁止把多个器官名称拼在同一个 name 里（如"甲状腺彩超、心脏彩超"这种禁止出现）
-   → findings = 报告原文里"超声所见"/"检查所见"部分中，只属于该器官的那一段文字，不得掺入其他器官的描述
-   → diagnosis = 报告原文里"超声提示"部分中，只属于该器官的那一句/那一条，不得掺入其他器官
+   → 【核心规则】不需要你自己按器官拆分，只需要把同一次检查（同一个标题下面的"超声所见"+"超声提示"）完整、原样抄写成一条，按器官拆分交给后续处理。
+   → itemType="imaging"，name=报告原文的检查标题（如"腹部彩超""肝胆脾胰彩超""甲状腺及颈部血管彩超"，忠实抄写原文标题文字，不要自己编写或简化）
+   → findings = 报告原文"超声所见"/"检查所见"部分的完整原文，一字不漏按原文顺序抄写，即使涉及多个器官也整段抄在一起，不用自己切分
+   → diagnosis = 报告原文"超声提示"部分的完整原文，一字不漏按原文顺序抄写（保留原有的序号如"1.2.3."），即使涉及多个器官也整段抄在一起，不用自己切分
    → conclusion = 同 diagnosis
-   → 示例：报告里"超声提示：1.甲状腺结节；2.颈动脉未见异常；3.肝胆胰脾未见异常"这样分条列出的，必须按序号拆回各自对应的器官条目里，不能整段照抄进同一条
    → 跳过"温馨提示""健康建议"类科普说明文字（如"结石多与饮水少有关，建议..."），这类不是检查所见，不得提取为 findings
 
 9. 肺部CT
@@ -4708,6 +4706,68 @@ function detectOrgans(text) {
 function isUltrasoundItem(it) {
   return it.itemType === 'imaging' && /彩超|超声/.test(str(it.name));
 }
+
+// 2026-07-02起：不再要求AI一次识别时就把多器官超声按器官拆分（这对VL模型太难，经常拆不干净/串内容），
+// 改成让AI把"超声所见"整段原样抄写成一条（AI最擅长的"完整复制"任务），再用代码按器官关键词做确定性切分。
+// anchors 数组按"从具体到笼统"排列，切分时每个器官只取第一个匹配到的关键词的位置，避免"肾"这种单字
+// 被文本里不相关的"肾上腺"提前命中、导致误切。肾/输尿管/膀胱/前列腺按现有约定合并成一个检查单元不再细拆。
+const ORGAN_SPLIT_DEFS = [
+  { anchors: ['肝脏', '肝'], canonicalName: '肝脏彩超' },
+  { anchors: ['胆囊', '胆'], canonicalName: '胆囊彩超' },
+  { anchors: ['胰腺', '胰'], canonicalName: '胰腺彩超' },
+  { anchors: ['脾脏', '脾'], canonicalName: '脾脏彩超' },
+  { anchors: ['双肾', '肾脏', '肾', '输尿管', '膀胱', '前列腺'], canonicalName: '双肾输尿管膀胱彩超' },
+  { anchors: ['甲状腺'], canonicalName: '甲状腺彩超' },
+  { anchors: ['颈动脉', '颈总动脉'], canonicalName: '颈动脉彩超' },
+  { anchors: ['心脏', '心腔'], canonicalName: '心脏彩超' },
+  { anchors: ['乳腺'], canonicalName: '乳腺彩超' },
+  { anchors: ['子宫', '附件', '阴道'], canonicalName: '子宫附件彩超' },
+];
+function firstAnchorHits(text, defs) {
+  const hits = [];
+  defs.forEach(def => {
+    for (const a of def.anchors) {
+      const idx = text.indexOf(a);
+      if (idx >= 0) { hits.push({ def, idx }); break; } // 命中第一个（最具体的）关键词就停止，不再看后面更笼统的
+    }
+  });
+  hits.sort((a, b) => a.idx - b.idx);
+  return hits;
+}
+function splitUltrasoundByOrgan(items) {
+  const result = [];
+  (items || []).forEach(it => {
+    if (!isUltrasoundItem(it)) { result.push(it); return; }
+    const findings = str(it.findings);
+    const findingHits = firstAnchorHits(findings, ORGAN_SPLIT_DEFS);
+    if (findingHits.length <= 1) { result.push(it); return; } // 只命中0-1个器官，本来就是单器官记录，不用拆
+
+    const findingsSegs = findingHits.map((h, i) => ({
+      def: h.def,
+      text: findings.slice(h.idx, i + 1 < findingHits.length ? findingHits[i + 1].idx : findings.length).trim(),
+    }));
+    const diagnosis = str(it.diagnosis);
+    const diagHits = firstAnchorHits(diagnosis, ORGAN_SPLIT_DEFS);
+    const diagSegs = new Map();
+    if (diagHits.length >= 2) {
+      diagHits.forEach((h, i) => {
+        diagSegs.set(h.def, diagnosis.slice(h.idx, i + 1 < diagHits.length ? diagHits[i + 1].idx : diagnosis.length).trim());
+      });
+    }
+    findingsSegs.forEach(seg => {
+      result.push({
+        ...it,
+        name: seg.def.canonicalName,
+        findings: seg.text,
+        // 诊断意见没能按器官单独拆出来时，整段原文照样带上（好过丢失），医护审核时能看到完整结论
+        diagnosis: diagSegs.get(seg.def) || diagnosis,
+        conclusion: diagSegs.get(seg.def) || diagnosis,
+      });
+    });
+  });
+  return result;
+}
+
 function cleanupUltrasoundOverlap(items) {
   const list = items || [];
   const richnessOf = (o) => str(o.findings).length + str(o.diagnosis).length + str(o.conclusion).length;
@@ -5045,7 +5105,7 @@ async function runReportParse(reportId) {
 
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
-      const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))));
+      const filteredItems = cleanupUltrasoundOverlap(splitUltrasoundByOrgan(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems)))))));
       const classified = dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -5076,7 +5136,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))));
+    const classifiedImg = dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(splitUltrasoundByOrgan(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
