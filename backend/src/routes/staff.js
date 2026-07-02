@@ -1103,8 +1103,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
 
-    // 提交审核（reviewed）或手动更新归类时，重新同步专项筛查
-    if (aiStatus === 'reviewed' || (reportItems !== undefined && report.user)) {
+    // 2026-07-02修复：此前条件是 || 关系，"保存草稿"(aiStatus:'pending')只要带了reportItems字段
+    // 也会触发同步，导致专项筛查在审核通过前就被写入。改成严格要求 aiStatus 变为 reviewed 才同步，
+    // 跟前端"提交审核（写入专项筛查）"按钮的文案设计意图一致——只有审核通过后才应该出现在专项筛查。
+    if (aiStatus === 'reviewed' && report.user) {
       await syncScreeningItems(report.user, report._id, report.reportItems);
     }
 
