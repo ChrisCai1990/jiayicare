@@ -4601,6 +4601,56 @@ function mergeEntSubparts(items) {
   return result;
 }
 
+// 超声报告"异常结果汇总"页有时没被跳过规则拦住，被当成一条新的检查项目重复提取，内容是把好几个器官的结论压缩成一句话，
+// 跟已经按器官拆开的独立记录（如"肝脏彩超""胰腺彩超"）重复——用"一条记录里同时命中几个不同器官关键词"来识别这类汇总echo
+const ORGAN_GROUPS = [
+  ['肝脏', '肝'], ['胆囊', '胆'], ['胰腺', '胰'], ['脾脏', '脾'],
+  ['肾脏', '肾', '输尿管'], ['膀胱'], ['前列腺'], ['甲状腺'],
+  ['颈动脉', '颈总动脉'], ['心脏', '心腔', '心室', '心肌'], ['乳腺'], ['子宫', '附件', '阴道'],
+];
+function detectOrgans(text) {
+  const t = str(text);
+  const hit = [];
+  ORGAN_GROUPS.forEach((words, idx) => { if (words.some(w => t.includes(w))) hit.push(idx); });
+  return hit;
+}
+function isUltrasoundItem(it) {
+  return it.itemType === 'imaging' && /彩超|超声/.test(str(it.name));
+}
+function cleanupUltrasoundOverlap(items) {
+  const list = items || [];
+  const withOrgans = list.map((it, idx) => ({
+    idx, organs: isUltrasoundItem(it) ? detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`) : [],
+  })).filter(w => w.organs.length > 0);
+  if (withOrgans.length < 2) return list;
+
+  // 规则A：一条记录同时命中≥3个不同器官，且这些器官里已经有别的记录只对应单一器官（说明有更细的独立记录存在）→ 判定为汇总echo，丢弃
+  const singleOrganCoverage = new Set();
+  withOrgans.forEach(w => { if (w.organs.length === 1) singleOrganCoverage.add(w.organs[0]); });
+  const dropSet = new Set();
+  withOrgans.forEach(w => {
+    if (w.organs.length >= 3 && w.organs.some(o => singleOrganCoverage.has(o))) dropSet.add(w.idx);
+  });
+
+  // 规则B：只命中1个器官的记录，同一器官若有多条，保留信息量最大的一条（如"心脏彩超"和"心脏彩超及心功能检查"重复）
+  const richness = o => str(o.findings).length + str(o.diagnosis).length + str(o.conclusion).length;
+  const byOrgan = new Map();
+  withOrgans.forEach(w => {
+    if (dropSet.has(w.idx) || w.organs.length !== 1) return;
+    const key = w.organs[0];
+    if (!byOrgan.has(key)) byOrgan.set(key, []);
+    byOrgan.get(key).push(w.idx);
+  });
+  for (const idxs of byOrgan.values()) {
+    if (idxs.length < 2) continue;
+    let bestIdx = idxs[0];
+    for (const idx of idxs) if (richness(list[idx]) > richness(list[bestIdx])) bestIdx = idx;
+    idxs.forEach(idx => { if (idx !== bestIdx) dropSet.add(idx); });
+  }
+
+  return list.filter((_, idx) => !dropSet.has(idx));
+}
+
 // AI 有时会把 value 等字段直接输出成数字而不是字符串（如 18.8 而非 "18.8"），
 // 后面一大堆清洗规则都要对这些字段调用 .trim()，统一用这个helper兜底转成字符串，避免 "xxx.trim is not a function" 崩溃
 const str = (v) => String(v == null ? '' : v).trim();
@@ -4866,7 +4916,7 @@ async function runReportParse(reportId) {
       }
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
-      const filteredItems = mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(allItems)));
+      const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(allItems))));
       const classified = await classifyItemsAsync(filteredItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -4897,7 +4947,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = await classifyItemsAsync(mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(parsed?.items || []))));
+    const classifiedImg = await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(parsed?.items || [])))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
