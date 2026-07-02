@@ -631,7 +631,11 @@ export default function PatientDetailPage() {
     else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'requisitions') loadRequisitions()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
-    else if (tab === 'records') loadScreening()
+    else if (tab === 'records') {
+      loadScreening()
+      // 专项筛查页面的"待完成方案项目"提示条需要 plans 数据，但 plans 平时只在"方案"Tab才加载，这里按需补一次
+      if (plans.length === 0) loadPlans()
+    }
     else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
   }, [tab])
 
