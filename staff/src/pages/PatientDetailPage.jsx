@@ -5873,7 +5873,11 @@ export default function PatientDetailPage() {
                 )}
               </div>
               {isOpen && (
-                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 1000, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto', marginTop: 2 }}>
+                // 2026-07-02修复：审核弹窗表格外层容器(modal-body)是 overflow:auto 的滚动区域，
+                // 新增/手动添加的项目通常排在表格最下面一行，这个下拉列表若继续往下(top:100%)弹出，
+                // 会被外层滚动容器的边界裁切掉——不是数据搜不到，是下拉框被截断看不全/点不到。
+                // 用 CSS 的 bottom:100% 改成向上弹出，这样即使在表格最底部也能完整展开。
+                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, zIndex: 1000, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 4, boxShadow: '0 -4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto', marginBottom: 2 }}>
                   <div onMouseDown={() => setClassify(i, '')} style={{ padding: '5px 8px', fontSize: 11, color: '#D97706', cursor: 'pointer', borderBottom: '1px solid #f5f2ec' }}>⚠ 清除归类</div>
                   {filtered.length === 0 && <div style={{ padding: '8px', fontSize: 11, color: '#aaa', textAlign: 'center' }}>无匹配结果</div>}
                   {filtered.map(o => (
