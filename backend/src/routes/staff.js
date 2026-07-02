@@ -4451,6 +4451,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则E：相似项目名称不可混淆，如"碳13"≠"碳14"，"空腹血糖"≠"餐后血糖"。
 规则F：检验数值必须与其对应项目严格匹配，不可串行填写。
 规则G：findings/diagnosis/conclusion 字段只填报告原文，不加解释或分析。
+规则H：诊断结论性短语本身不是检查项目，禁止单独作为一条 name 提取。如"左肾上腺稍增粗""慢性浅表性胃炎""窦性心动过缓""血脂异常""饮酒史""内痔"这类词，只是某个检查项目（如腹部超声/胃镜/心电图/血脂化验/既往史问诊）的诊断结论或病史条目，必须整句放进对应检查项目的 diagnosis/findings 字段里，不能单独拆出来生成新的 name/条目。判断标准：如果这段文字没有具体的测量数值/检查所见描述，只是一个诊断名词或病史陈述，就不能作为独立项目。
 
 【提取规则（按检查类型）】
 
@@ -4488,11 +4489,19 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → itemType="imaging"
    → findings=检查结果，diagnosis=结论，conclusion=同 diagnosis
 
-8. 超声（肝脏/胆胰脾/双肾输尿管膀胱/前列腺/甲状腺/颈动脉/心脏超声/乳腺/子宫附件或阴道等）
-   → 【核心规则】不需要你自己按器官拆分，只需要把同一次检查（同一个标题下面的"超声所见"+"超声提示"）完整、原样抄写成一条，按器官拆分交给后续处理。
-   → itemType="imaging"，name=报告原文的检查标题（如"腹部彩超""肝胆脾胰彩超""甲状腺及颈部血管彩超"，忠实抄写原文标题文字，不要自己编写或简化）
-   → findings = 报告原文"超声所见"/"检查所见"部分的完整原文，一字不漏按原文顺序抄写，即使涉及多个器官也整段抄在一起，不用自己切分
-   → diagnosis = 报告原文"超声提示"部分的完整原文，一字不漏按原文顺序抄写（保留原有的序号如"1.2.3."），即使涉及多个器官也整段抄在一起，不用自己切分
+8. 超声检查
+   → 【核心规则】不按单个脏器拆分，按以下7个固定的"检查单元"整体提取，每个检查单元最多一条记录。同一检查单元下即使报告分了多个脏器小标题（如"肝胆胰脾"下分肝/胆/胰/脾4段），也必须合并成一条，findings/diagnosis把各脏器内容依次完整抄写在一起，不再拆成多条。
+   → 7个检查单元（name 固定使用以下名称，不use报告原文的变体标题）：
+     ①"肝胆胰脾超声"（报告如果只做了其中1-3个脏器，仍用此名，只抄写实际做了的脏器内容）
+     ②"双肾输尿管膀胱前列腺超声"（女性无前列腺则只含双肾输尿管膀胱部分）
+     ③"颈动脉超声"
+     ④"甲状腺超声"
+     ⑤"乳腺超声"
+     ⑥"子宫附件超声"（或"阴道超声"，按报告实际检查方式用其中一个名称）
+     ⑦"心脏超声"
+   → itemType="imaging"
+   → findings = 报告原文"超声所见"/"检查所见"部分的完整原文，按原文顺序整段抄写，不得省略、截断或改写
+   → diagnosis = 报告原文"超声提示"部分的完整原文，按原文顺序整段抄写（保留原有序号如"1.2.3."）
    → conclusion = 同 diagnosis
    → 跳过"温馨提示""健康建议"类科普说明文字（如"结石多与饮水少有关，建议..."），这类不是检查所见，不得提取为 findings
 
@@ -4500,17 +4509,15 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → itemType="imaging"，name="肺部CT"或报告原名
    → findings=检查所见，diagnosis=诊断意见，conclusion=同 diagnosis
 
-10. 胃镜 / 肠镜
-    → 【重要】这是内镜医生用镜子直接看到的形态描述（如"粘膜光滑""充血水肿""见息肉"），不是病理化验结果，跟第11条胃镜病理/肠镜病理必须分成两条独立记录，不能互相占用name或findings
-    → itemType="imaging"，name="胃镜检查"/"肠镜检查"，每项单独一条
-    → findings=检查所见/镜下所见原文（描述粘膜/形态，不含病理化验用词如"慢性炎症""肠化""HP"），diagnosis=镜下诊断，conclusion=同 diagnosis
-
-11. 胃镜病理 / 肠镜病理
-    → 【重要】这是活检取样后的组织学化验结果（内容含"慢性炎症""活动性""萎缩""肠化""HP""异型增生"等病理化验用词），是跟第10条完全独立的一条记录，即使报告里紧挨着胃镜/肠镜检查也不能合并或改名
-    → itemType="imaging"，name="胃镜病理"/"肠镜病理"
-    → findings=报告原文里"大体所见"这一栏的原文（描述送检标本肉眼形态，如"送检粘膜组织一块，大小0.3×0.2cm"；报告没有这一栏就留空，不要拿别的内容填充）
-    → diagnosis="慢性炎症""活动性""萎缩""肠化""HP""异型增生"等病理分级评分 + 最终病理诊断结论，全部写在这里（不是findings）
-    → conclusion=同 diagnosis
+10. 胃镜 / 肠镜（含胃镜/肠镜病理，统一在一条记录里输出，不要自己判断拆成几条）
+    → 一份胃肠镜报告最多只输出一条胃镜记录 + 一条肠镜记录（同时做了才两条都出，只做一种只出一条）
+    → itemType="imaging"，name="胃镜检查"/"肠镜检查"
+    → findings = 报告原文里内镜医生镜下所见的完整原文（描述粘膜/形态，如"粘膜光滑""充血水肿""见息肉"），按报告顺序整段抄写，不要删减
+    → diagnosis = 报告原文里镜下诊断的完整原文
+    → pathologyFindings = 如果报告里另有"大体所见"栏（描述送检标本肉眼形态，如"送检粘膜组织一块，大小0.3×0.2cm"），原样抄写在这里；没有这一栏就留空字符串
+    → pathologyDiagnosis = 如果报告里另有病理化验结果（含"慢性炎症""活动性""萎缩""肠化""HP""异型增生"等病理化验用词的病理诊断结论），原样抄写在这里；没有就留空字符串
+    → conclusion = 同 diagnosis
+    → 【重要】pathologyFindings/pathologyDiagnosis 是否为空完全取决于报告里有没有这部分内容，不要因为"看起来应该有"就编造，也不要把病理内容错填进 findings/diagnosis
 
 12. 常规心电图
     → itemType="imaging"，name="心电图"
@@ -4541,7 +4548,9 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
       "bodyPart": "检查部位（imaging类可填）",
       "findings": "检查描述/所见原文（imaging/data类填写）",
       "diagnosis": "诊断意见原文（imaging类填写）",
-      "conclusion": "主要结论（imaging/data类填写，与diagnosis相同；lab类留空）"
+      "conclusion": "主要结论（imaging/data类填写，与diagnosis相同；lab类留空）",
+      "pathologyFindings": "仅胃镜/肠镜类填写：大体所见原文，没有则留空字符串",
+      "pathologyDiagnosis": "仅胃镜/肠镜类填写：病理诊断原文，没有则留空字符串"
     }
   ]
 }`;
@@ -4624,6 +4633,28 @@ function dropAdvisoryEcho(items) {
   return (items || []).filter(it => !isAdvisoryEcho(it));
 }
 
+// 诊断结论性短语（"左肾上腺稍增粗""慢性浅表性胃炎""窦性心动过缓；左心室高电压；T波改变""血脂异常""饮酒史""内痔"等）
+// 本该是某个真实检查项目(腹部超声/胃镜/心电图/血脂化验/既往史问诊)的diagnosis/findings内容，却被AI当成了独立项目name提取出来。
+// 三重门槛判定，降低误伤真实检查项目的风险：①name命中诊断短语特征词 ②没有具体测量数值 ③归类失败(不在归类库里，真实检查项目一定能归类)。
+// 必须放在 classifyItemsAsync 之后调用，依赖 matchStatus 字段（跟 isUnclassifiedNameEcho 同一层级、互补场景：
+// 后者抓"findings/diagnosis内容等于name本身"，这个抓"name本身就是诊断词，findings/diagnosis为空或同样是诊断词"）。
+const DIAGNOSIS_PHRASE_PATTERNS = [
+  /史$/, /^窦性/, /高电压/, /T波改变/, /异常$/, /增粗$/, /增大$/, /^慢性.{0,6}炎$/,
+  /结石$/, /结节$/, /息肉$/, /囊肿$/, /^内痔$/, /^外痔$/, /脂肪肝$/,
+];
+function isDiagnosisPhraseEcho(it) {
+  if (it.matchStatus !== 'unclassified') return false;
+  const name = str(it.name);
+  if (!name || name.length > 15) return false;
+  if (!DIAGNOSIS_PHRASE_PATTERNS.some(p => p.test(name))) return false;
+  const text = `${str(it.value)}${str(it.findings)}${str(it.diagnosis)}`;
+  const hasMeasurement = /\d+\s*[×xX]\s*\d+|CDFI|mm|cm|C-TIRADS|\d+\.\d/.test(text);
+  return !hasMeasurement;
+}
+function dropDiagnosisPhraseEcho(items) {
+  return (items || []).filter(it => !isDiagnosisPhraseEcho(it));
+}
+
 // "异常结果汇总"页有时是编号列表（"1.甲状腺结节 2.大肠多发息肉 3.慢性浅表性胃炎..."），
 // 没被跳过规则拦住时，每一行会被单独提取成一条：name=诊断名称，findings/diagnosis="数字、诊断名称原样重复"，没有任何具体检查所见。
 // 只在"去掉编号前缀后，内容跟name完全一样"这种严格条件下才判定为汇总echo丢弃，避免误伤带具体所见的正常记录。
@@ -4664,6 +4695,30 @@ function dropUnclassifiedNameEcho(items) {
   return (items || []).filter(it => !isUnclassifiedNameEcho(it));
 }
 
+// 2026-07-02：胃镜/肠镜病理不再要求AI自己判断"是否要拆成第二条独立记录"（这对模型太难，经常内容窜位或漏掉），
+// 改成AI只需原样抄写pathologyFindings/pathologyDiagnosis两个候选字段（没有就留空），
+// 由代码确定性地拆出"胃镜病理"/"肠镜病理"独立记录——是否拆分不再依赖模型的语义判断，只看这两个字段是否非空。
+function splitEndoscopyPathology(items) {
+  const result = [];
+  (items || []).forEach(it => {
+    const pf = str(it.pathologyFindings);
+    const pd = str(it.pathologyDiagnosis);
+    const { pathologyFindings, pathologyDiagnosis, ...rest } = it;
+    result.push(rest);
+    if (!pf && !pd) return;
+    const isGastro = /胃/.test(str(it.name));
+    result.push({
+      ...rest,
+      name: isGastro ? '胃镜病理' : '肠镜病理',
+      value: '', unit: '', referenceRange: '', status: 'unknown', orderName: '', bodyPart: '',
+      findings: pf,
+      diagnosis: pd,
+      conclusion: pd,
+    });
+  });
+  return result;
+}
+
 // 耳鼻喉/听力检查有时会被拆成"听力(左)""外耳道(左)""鼓膜(左)"等散项、有时主条目又被写成"耳鼻喉科"等变体、
 // 偶尔还会出现内容重复的怪异行（如"外耳道(左)；耳道异物(毛发)"）——统一收拢成一条"耳鼻喉"主记录
 const ENT_SUBPART_PREFIXES = ['听力', '外耳道', '鼓膜', '鼻部', '咽喉部'];
@@ -4690,125 +4745,46 @@ function mergeEntSubparts(items) {
   return result;
 }
 
-// 超声报告"异常结果汇总"页有时没被跳过规则拦住，被当成一条新的检查项目重复提取，内容是把好几个器官的结论压缩成一句话，
-// 跟已经按器官拆开的独立记录（如"肝脏彩超""胰腺彩超"）重复——用"一条记录里同时命中几个不同器官关键词"来识别这类汇总echo
-const ORGAN_GROUPS = [
-  ['肝脏', '肝'], ['胆囊', '胆'], ['胰腺', '胰'], ['脾脏', '脾'],
-  ['肾脏', '肾', '输尿管'], ['膀胱'], ['前列腺'], ['甲状腺'],
-  ['颈动脉', '颈总动脉'], ['心脏', '心腔', '心室', '心肌'], ['乳腺'], ['子宫', '附件', '阴道'],
+// 2026-07-02：超声改为7个固定检查单元整体提取（肝胆胰脾/双肾输尿管膀胱前列腺/颈动脉/甲状腺/乳腺/子宫附件或阴道/心脏），
+// 不再由代码按器官关键词做字符串位置切分——此前的切分方案(splitUltrasoundByOrgan)按"关键词第一次出现位置"切段，
+// findings和diagnosis分别独立切分、常对不上，导致内容窜位/重复，比不拆分还乱，07-02已废弃。
+// 现在只需处理AI偶尔仍把同一检查单元拆成多条的情况：按 name 归一化后合并去重，保留信息量最大的一条。
+const ULTRASOUND_UNIT_NAMES = [
+  '肝胆胰脾超声', '双肾输尿管膀胱前列腺超声', '颈动脉超声', '甲状腺超声',
+  '乳腺超声', '子宫附件超声', '阴道超声', '心脏超声',
 ];
-function detectOrgans(text) {
-  const t = str(text);
-  const hit = [];
-  ORGAN_GROUPS.forEach((words, idx) => { if (words.some(w => t.includes(w))) hit.push(idx); });
-  return hit;
-}
 function isUltrasoundItem(it) {
   return it.itemType === 'imaging' && /彩超|超声/.test(str(it.name));
 }
-
-// 2026-07-02起：不再要求AI一次识别时就把多器官超声按器官拆分（这对VL模型太难，经常拆不干净/串内容），
-// 改成让AI把"超声所见"整段原样抄写成一条（AI最擅长的"完整复制"任务），再用代码按器官关键词做确定性切分。
-// anchors 数组按"从具体到笼统"排列，切分时每个器官只取第一个匹配到的关键词的位置，避免"肾"这种单字
-// 被文本里不相关的"肾上腺"提前命中、导致误切。肾/输尿管/膀胱/前列腺按现有约定合并成一个检查单元不再细拆。
-const ORGAN_SPLIT_DEFS = [
-  { anchors: ['肝脏', '肝'], canonicalName: '肝脏彩超' },
-  { anchors: ['胆囊', '胆'], canonicalName: '胆囊彩超' },
-  { anchors: ['胰腺', '胰'], canonicalName: '胰腺彩超' },
-  { anchors: ['脾脏', '脾'], canonicalName: '脾脏彩超' },
-  { anchors: ['双肾', '肾脏', '肾', '输尿管', '膀胱', '前列腺'], canonicalName: '双肾输尿管膀胱彩超' },
-  { anchors: ['甲状腺'], canonicalName: '甲状腺彩超' },
-  { anchors: ['颈动脉', '颈总动脉'], canonicalName: '颈动脉彩超' },
-  { anchors: ['心脏', '心腔'], canonicalName: '心脏彩超' },
-  { anchors: ['乳腺'], canonicalName: '乳腺彩超' },
-  { anchors: ['子宫', '附件', '阴道'], canonicalName: '子宫附件彩超' },
-];
-function firstAnchorHits(text, defs) {
-  const hits = [];
-  defs.forEach(def => {
-    for (const a of def.anchors) {
-      const idx = text.indexOf(a);
-      if (idx >= 0) { hits.push({ def, idx }); break; } // 命中第一个（最具体的）关键词就停止，不再看后面更笼统的
-    }
-  });
-  hits.sort((a, b) => a.idx - b.idx);
-  return hits;
+// 报告原文标题的常见变体归一化到7个固定单元名，供去重分组用（不改变AI已经写对的name，只用于分组判断）
+function ultrasoundUnitOf(name) {
+  const n = str(name);
+  if (/肝|胆|胰|脾/.test(n)) return '肝胆胰脾超声';
+  if (/肾|输尿管|膀胱|前列腺/.test(n)) return '双肾输尿管膀胱前列腺超声';
+  if (/颈动脉|颈总动脉/.test(n)) return '颈动脉超声';
+  if (/甲状腺/.test(n)) return '甲状腺超声';
+  if (/乳腺/.test(n)) return '乳腺超声';
+  if (/子宫|附件|阴道/.test(n)) return '子宫附件超声';
+  if (/心脏|心腔|超声心动/.test(n)) return '心脏超声';
+  return n;
 }
-function splitUltrasoundByOrgan(items) {
-  const result = [];
-  (items || []).forEach(it => {
-    if (!isUltrasoundItem(it)) { result.push(it); return; }
-    const findings = str(it.findings);
-    const findingHits = firstAnchorHits(findings, ORGAN_SPLIT_DEFS);
-    if (findingHits.length <= 1) { result.push(it); return; } // 只命中0-1个器官，本来就是单器官记录，不用拆
-
-    const findingsSegs = findingHits.map((h, i) => ({
-      def: h.def,
-      text: findings.slice(h.idx, i + 1 < findingHits.length ? findingHits[i + 1].idx : findings.length).trim(),
-    }));
-    const diagnosis = str(it.diagnosis);
-    const diagHits = firstAnchorHits(diagnosis, ORGAN_SPLIT_DEFS);
-    const diagSegs = new Map();
-    if (diagHits.length >= 2) {
-      diagHits.forEach((h, i) => {
-        diagSegs.set(h.def, diagnosis.slice(h.idx, i + 1 < diagHits.length ? diagHits[i + 1].idx : diagnosis.length).trim());
-      });
-    }
-    findingsSegs.forEach(seg => {
-      result.push({
-        ...it,
-        name: seg.def.canonicalName,
-        findings: seg.text,
-        // 诊断意见没能按器官单独拆出来时，整段原文照样带上（好过丢失），医护审核时能看到完整结论
-        diagnosis: diagSegs.get(seg.def) || diagnosis,
-        conclusion: diagSegs.get(seg.def) || diagnosis,
-      });
-    });
-  });
-  return result;
-}
-
 function cleanupUltrasoundOverlap(items) {
   const list = items || [];
   const richnessOf = (o) => str(o.findings).length + str(o.diagnosis).length + str(o.conclusion).length;
-  const withOrgans = list.map((it, idx) => ({
-    idx,
-    organs: new Set(isUltrasoundItem(it) ? detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`) : []),
-    richness: richnessOf(it),
-  })).filter(w => w.organs.size > 0);
-  if (withOrgans.length < 2) return list;
-
-  const dropSet = new Set();
-
-  // 第一步：只命中1个器官的记录，同一器官若有多条（如"心脏彩超"和"心脏彩超及心功能检查"重复），只保留信息量最大的一条
-  const byOrgan = new Map();
-  withOrgans.forEach(w => {
-    if (w.organs.size !== 1) return;
-    const key = [...w.organs][0];
-    if (!byOrgan.has(key)) byOrgan.set(key, []);
-    byOrgan.get(key).push(w);
+  const byUnit = new Map();
+  list.forEach((it, idx) => {
+    if (!isUltrasoundItem(it)) return;
+    const unit = ultrasoundUnitOf(it.name);
+    if (!byUnit.has(unit)) byUnit.set(unit, []);
+    byUnit.get(unit).push({ idx, richness: richnessOf(it) });
   });
-  for (const group of byOrgan.values()) {
-    if (group.length < 2) continue;
+  const dropSet = new Set();
+  for (const group of byUnit.values()) {
+    if (group.length < 2) continue; // 同一检查单元只出现一条，不用去重
     let best = group[0];
     for (const w of group) if (w.richness > best.richness) best = w;
     group.forEach(w => { if (w !== best) dropSet.add(w.idx); });
   }
-
-  // 第二步：按信息量从多到少排序，贪心地把"内容已经被排在前面、更丰富的记录完全覆盖"的多器官记录标记为冗余丢弃。
-  // 这样不管AI这次有没有按器官拆细，只要一条记录讲的器官全部都已经在别的更详细的记录里出现过，就判定它是重复的汇总echo。
-  // 单器官记录永远保留（最细粒度，不应被当成冗余），只处理 organs.size>=2 的记录。
-  const sorted = [...withOrgans].filter(w => !dropSet.has(w.idx)).sort((a, b) => b.richness - a.richness);
-  const coveredOrgans = new Set();
-  for (const w of sorted) {
-    const fullyCovered = w.organs.size >= 2 && [...w.organs].every(g => coveredOrgans.has(g));
-    if (fullyCovered) {
-      dropSet.add(w.idx);
-    } else {
-      w.organs.forEach(g => coveredOrgans.add(g));
-    }
-  }
-
   return list.filter((_, idx) => !dropSet.has(idx));
 }
 
@@ -5075,38 +5051,10 @@ async function runReportParse(reportId) {
           }
         }
       }
-      // 超声多器官未拆分检测+单页重试：肝胆胰脾等常同页出现的器官，若一条记录里同时命中≥2个器官说明没拆开，重试这一页要求按器官拆分
-      const multiOrganPages = [...new Set(
-        allItems.filter(it => isUltrasoundItem(it) && detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length >= 2).map(it => it._page)
-      )].filter(Boolean);
-      for (const pageNum of multiOrganPages) {
-        try {
-          const beforeMaxOrgans = Math.max(...allItems.filter(it => it._page === pageNum && isUltrasoundItem(it))
-            .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
-          const img = await renderSinglePage(pdfBuf, pageNum, DPI);
-          if (!img) continue;
-          const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。`;
-          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
-          const p = safeParseJSON(text);
-          if (!p || !Array.isArray(p.items)) continue;
-          const retryItems = p.items.filter(it => it.name && String(it.name).trim()).map(it => ({ ...it, _page: pageNum }));
-          const afterMaxOrgans = Math.max(...retryItems.filter(it => isUltrasoundItem(it))
-            .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
-          if (afterMaxOrgans > 0 && afterMaxOrgans < beforeMaxOrgans) {
-            allItems = allItems.filter(it => it._page !== pageNum).concat(retryItems);
-            console.log(`[parse-ai] 页${pageNum}超声拆分重试生效：单条最多命中器官数 ${beforeMaxOrgans}→${afterMaxOrgans}`);
-          } else {
-            console.log(`[parse-ai] 页${pageNum}超声拆分重试未改善，保留原结果`);
-          }
-        } catch (e) {
-          console.log(`[parse-ai] 页${pageNum}超声拆分重试异常: ${e.message}`);
-        }
-      }
-
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
-      const filteredItems = cleanupUltrasoundOverlap(splitUltrasoundByOrgan(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems)))))));
-      const classified = dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems));
+      const filteredItems = cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems)))))));
+      const classified = dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -5136,7 +5084,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(splitUltrasoundByOrgan(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))));
+    const classifiedImg = dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
