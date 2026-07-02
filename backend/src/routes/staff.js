@@ -5242,6 +5242,11 @@ async function runReportParse(reportId) {
         }
       }
 
+      // 2026-07-02修复：各类单页重试(数量核对/超声拆分/空内容补全)命中后都是把条目从原位置摘掉、
+      // 用 .concat() 拼到 allItems 末尾，导致这些条目脱离了报告原文的页码顺序、被甩到审核列表最后面，
+      // 跟同页其他体格检查项目（如内科/外科/眼科）在报告原文里连续排列的顺序对不上，审核时容易漏看。
+      // 这里按页码做一次稳定排序（sort 保证同页内原有相对顺序不变），让最终顺序重新贴近报告原文顺序。
+      allItems.sort((a, b) => (a._page || 0) - (b._page || 0));
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
       const filteredItems = cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))))));

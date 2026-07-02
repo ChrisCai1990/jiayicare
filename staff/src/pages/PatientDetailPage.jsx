@@ -6031,6 +6031,14 @@ export default function PatientDetailPage() {
                                     <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>
                                       {STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}
                                     </select>
+                                    <button
+                                      title="在此项之后插入一条新检查项（如从超声报告里截取单独部位，紧跟在原条目后方便复制粘贴）"
+                                      onClick={() => setOcrEditItems(arr => [
+                                        ...arr.slice(0, i + 1),
+                                        { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' },
+                                        ...arr.slice(i + 1),
+                                      ])}
+                                      style={{ background: 'none', border: 'none', color: '#1E6B50', cursor: 'pointer', fontSize: 14 }}>⏎+</button>
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </div>
                                   <div style={{ fontSize: 11, color: '#8AA89C', margin: '2px 0' }}>检查所见（完整原文）</div>
