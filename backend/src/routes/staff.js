@@ -2583,7 +2583,9 @@ router.delete('/patients/:id/screening/ai-item', staffAuth, async (req, res) => 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST /api/staff/patients/:id/screening/dedup — 去重：同一 itemId 保留最新一条（updatedAt最大）
+// POST /api/staff/patients/:id/screening/dedup — 去重：同一 itemId+reportId 保留最新一条（updatedAt最大）
+// 2026-07-02修复：去重维度改为 itemId+reportId（而非单独 itemId），避免把不同年份报告产生的
+// 同一 itemId 记录当成"重复"删掉——那是需要保留的多年数据，只清理同一份报告内意外重复写入的真重复。
 router.post('/patients/:id/screening/dedup', staffAuth, async (req, res) => {
   try {
     const userId = req.params.id;
@@ -2591,10 +2593,11 @@ router.post('/patients/:id/screening/dedup', staffAuth, async (req, res) => {
     const seen = new Set();
     const toDelete = [];
     for (const it of all) {
-      if (seen.has(it.itemId)) {
+      const dedupKey = `${it.itemId}||${it.reportId || ''}`;
+      if (seen.has(dedupKey)) {
         toDelete.push(it._id);
       } else {
-        seen.add(it.itemId);
+        seen.add(dedupKey);
       }
     }
     if (toDelete.length) {
@@ -5042,18 +5045,20 @@ function cleanupExtractedItems(items) {
   return final;
 }
 
-// 按 key（格式 <L1的_id>|<L2名字>|<叶子名字>）upsert 一条 UserScreeningItem，AI自动归类和医护手动录入共用此函数，
-// 保证两条入口写入同一份"当前状态"索引，同一 itemId 全局唯一一条，reportId 记录最新数据来源
+// 按 key（格式 <L1的_id>|<L2名字>|<叶子名字>）upsert 一条 UserScreeningItem，AI自动归类和医护手动录入共用此函数。
+// 2026-07-02修复：查询条件补上 reportId，让同一 itemId 在不同报告（不同年份）下各自保留一条独立记录，
+// 而不是互相覆盖——模型索引早已是 {user,itemId,reportId} 三元唯一，此前查询条件只用了前两个字段，
+// 导致新报告审核会把旧报告（如2024年）已经写入的同 itemId 记录覆盖掉，历史年份数据丢失。
 async function upsertScreeningKey(userId, reportId, key, fallbackName) {
   const parts = String(key).split('|');
   await UserScreeningItem.updateOne(
-    { user: userId, itemId: key },
-    { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || fallbackName || '', status: 'completed', reportId } },
+    { user: userId, itemId: key, reportId },
+    { $set: { category: parts[0] || '', parentLabel: parts[1] || '', itemLabel: parts[2] || fallbackName || '', status: 'completed' } },
     { upsert: true }
   );
 }
 
-// 将报告已归类项同步写入 UserScreeningItem（upsert，每个 key 全局唯一一条，reportId 记录最新来源）
+// 将报告已归类项同步写入 UserScreeningItem（upsert，同一 itemId 按 reportId 各自保留一条，支持多年数据并存）
 // 每条 reportItem 可携带多个 screeningKeys，每个 key 写一条 UserScreeningItem 记录
 async function syncScreeningItems(userId, reportId, items) {
   try {
