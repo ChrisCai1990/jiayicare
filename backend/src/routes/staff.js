@@ -1775,14 +1775,22 @@ router.get('/requisition-items/:type/:id/sub-items', staffAuth, async (req, res)
     const { type, id } = req.params;
     let items = [];
     if (type === 'labTestPackage') {
-      const pkg = await LabTestPackage.findById(id).populate('labTestItems', 'name unit referenceValue referenceRange');
-      items = (pkg?.labTestItems || []).map(i => ({
-        name: i.name,
-        value: '',
-        unit: i.unit || '',
-        referenceRange: i.referenceRange || i.referenceValue || '',
-        status: 'normal',
-      }));
+      // 2026-07-02修复：此前只 populate 了 labTestItems，套餐里挂在 orders(检验医嘱) 下的子项目
+      // （如"肾功能5项"医嘱下的胱抑素C等）、specialExams(检查医嘱) 会被漏掉，预填时这些项目直接丢失。
+      // 补全另外两类关联，跟 /screening-tree 读取套餐内容的方式保持一致。
+      const pkg = await LabTestPackage.findById(id)
+        .populate({ path: 'orders', select: 'name items', populate: { path: 'items', select: 'name unit referenceValue referenceRange' } })
+        .populate('labTestItems', 'name unit referenceValue referenceRange')
+        .populate({ path: 'specialExams', match: { deleted: { $ne: true } }, select: 'name referenceRange' });
+      const seen = new Set();
+      const pushItem = (name, unit, referenceRange) => {
+        if (!name || seen.has(name)) return;
+        seen.add(name);
+        items.push({ name, value: '', unit: unit || '', referenceRange: referenceRange || '', status: 'normal' });
+      };
+      (pkg?.orders || []).forEach(o => (o.items || []).forEach(i => pushItem(i.name, i.unit, i.referenceRange || i.referenceValue)));
+      (pkg?.labTestItems || []).forEach(i => pushItem(i.name, i.unit, i.referenceRange || i.referenceValue));
+      (pkg?.specialExams || []).forEach(e => pushItem(e.name, '', e.referenceRange));
     } else if (type === 'labTestOrder') {
       const order = await LabTestOrder.findById(id).populate('items', 'name unit referenceValue referenceRange');
       items = (order?.items || []).map(i => ({
