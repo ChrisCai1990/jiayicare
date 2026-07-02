@@ -1,12 +1,13 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
-import { StatusBadge, CategorySearchSelect } from './_ProjectPage'
+import { StatusBadge, CategorySearchSelect, useCategories } from './_ProjectPage'
 
 const EMPTY = { name: '', categoryId: '', testResult: '', indicatorAnalysis: '', managementAdvice: '', testTiming: '', institution: '' }
 
 export default function FunctionalMedicinePage() {
   const toast = useToast()
+  const cats = useCategories()
   const [list, setList] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -17,16 +18,6 @@ export default function FunctionalMedicinePage() {
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
-  const [l2Cats, setL2Cats] = useState([])
-
-  useEffect(() => {
-    adminAPI.categories().then(r => {
-      const flat = []
-      const walk = (nodes, depth = 0) => nodes.forEach(n => { flat.push({ ...n, depth }); walk(n.children || [], depth + 1) })
-      walk(r.data || [])
-      setL2Cats(flat.filter(n => n.depth === 1))
-    }).catch(() => {})
-  }, [])
 
   const load = (p = page) => {
     setLoading(true)
@@ -145,7 +136,7 @@ export default function FunctionalMedicinePage() {
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">所属筛查分类（关联后在医护端录入时自动显示）</label>
-                  <CategorySearchSelect cats={l2Cats} value={form.categoryId} onChange={v => setForm(f => ({ ...f, categoryId: v }))} />
+                  <CategorySearchSelect cats={cats} value={form.categoryId} onChange={v => setForm(f => ({ ...f, categoryId: v }))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">检测时间</label>
