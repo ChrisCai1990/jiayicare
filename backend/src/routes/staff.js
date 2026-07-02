@@ -4924,6 +4924,34 @@ async function runReportParse(reportId) {
           }
         }
       }
+      // 超声多器官未拆分检测+单页重试：肝胆胰脾等常同页出现的器官，若一条记录里同时命中≥2个器官说明没拆开，重试这一页要求按器官拆分
+      const multiOrganPages = [...new Set(
+        allItems.filter(it => isUltrasoundItem(it) && detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length >= 2).map(it => it._page)
+      )].filter(Boolean);
+      for (const pageNum of multiOrganPages) {
+        try {
+          const beforeMaxOrgans = Math.max(...allItems.filter(it => it._page === pageNum && isUltrasoundItem(it))
+            .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
+          const img = await renderSinglePage(pdfBuf, pageNum, DPI);
+          if (!img) continue;
+          const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。`;
+          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
+          const p = safeParseJSON(text);
+          if (!p || !Array.isArray(p.items)) continue;
+          const retryItems = p.items.filter(it => it.name && String(it.name).trim()).map(it => ({ ...it, _page: pageNum }));
+          const afterMaxOrgans = Math.max(...retryItems.filter(it => isUltrasoundItem(it))
+            .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
+          if (afterMaxOrgans > 0 && afterMaxOrgans < beforeMaxOrgans) {
+            allItems = allItems.filter(it => it._page !== pageNum).concat(retryItems);
+            console.log(`[parse-ai] 页${pageNum}超声拆分重试生效：单条最多命中器官数 ${beforeMaxOrgans}→${afterMaxOrgans}`);
+          } else {
+            console.log(`[parse-ai] 页${pageNum}超声拆分重试未改善，保留原结果`);
+          }
+        } catch (e) {
+          console.log(`[parse-ai] 页${pageNum}超声拆分重试异常: ${e.message}`);
+        }
+      }
+
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
       const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(allItems))));
