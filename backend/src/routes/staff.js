@@ -4618,6 +4618,23 @@ function dropAdvisoryEcho(items) {
   return (items || []).filter(it => !isAdvisoryEcho(it));
 }
 
+// "异常结果汇总"页有时是编号列表（"1.甲状腺结节 2.大肠多发息肉 3.慢性浅表性胃炎..."），
+// 没被跳过规则拦住时，每一行会被单独提取成一条：name=诊断名称，findings/diagnosis="数字、诊断名称原样重复"，没有任何具体检查所见。
+// 只在"去掉编号前缀后，内容跟name完全一样"这种严格条件下才判定为汇总echo丢弃，避免误伤带具体所见的正常记录。
+function isNumberedSummaryEcho(it) {
+  const name = str(it.name);
+  if (!name) return false;
+  const findings = str(it.findings);
+  const diagnosis = str(it.diagnosis);
+  const isNumbered = /^\d+\s*[、.．:：]/.test(findings) || /^\d+\s*[、.．:：]/.test(diagnosis);
+  if (!isNumbered) return false;
+  const stripNum = (s) => s.replace(/^\d+\s*[、.．:：]\s*/, '').trim();
+  return stripNum(findings) === name || stripNum(diagnosis) === name;
+}
+function dropNumberedSummaryEcho(items) {
+  return (items || []).filter(it => !isNumberedSummaryEcho(it));
+}
+
 // 耳鼻喉/听力检查有时会被拆成"听力(左)""外耳道(左)""鼓膜(左)"等散项、有时主条目又被写成"耳鼻喉科"等变体、
 // 偶尔还会出现内容重复的怪异行（如"外耳道(左)；耳道异物(毛发)"）——统一收拢成一条"耳鼻喉"主记录
 const ENT_SUBPART_PREFIXES = ['听力', '外耳道', '鼓膜', '鼻部', '咽喉部'];
@@ -4997,7 +5014,7 @@ async function runReportParse(reportId) {
 
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
-      const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropAdvisoryEcho(filterPatientInfoItems(allItems)))));
+      const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))));
       const classified = await classifyItemsAsync(filteredItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -5028,7 +5045,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))));
+    const classifiedImg = await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
