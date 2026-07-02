@@ -4480,8 +4480,9 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → orderName=所属检验单名称（如"肝功能""肾功能""血脂全套""抗核抗体谱"；同一化验单标题无论写"肾功能""肾功能四项""肾功能+尿酸"，一律 orderName="肾功能"）
 
 6. 尿常规 / 粪便常规
-   → itemType="imaging"，整体一条，不罗列单项
-   → findings=完整检查结果原文，diagnosis=结论/小结
+   → itemType="imaging"，name="尿常规"或"粪便常规"，整体一条，不罗列单项
+   → findings 只写异常/阳性的指标（如"尿隐血：弱阳性(±)"），正常/阴性的指标不用逐条罗列，findings 留空或写"未见明显异常"即可
+   → diagnosis=结论/小结原文
 
 7. 碳13 / 碳14 呼气试验
    → itemType="imaging"
@@ -4502,11 +4503,13 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → findings=检查所见，diagnosis=诊断意见，conclusion=同 diagnosis
 
 10. 胃镜 / 肠镜
-    → itemType="imaging"，每项单独一条
-    → findings=检查所见/镜下所见，diagnosis=镜下诊断，conclusion=同 diagnosis
+    → 【重要】这是内镜医生用镜子直接看到的形态描述（如"粘膜光滑""充血水肿""见息肉"），不是病理化验结果，跟第11条胃镜病理/肠镜病理必须分成两条独立记录，不能互相占用name或findings
+    → itemType="imaging"，name="胃镜检查"/"肠镜检查"，每项单独一条
+    → findings=检查所见/镜下所见原文（描述粘膜/形态，不含病理化验用词如"慢性炎症""肠化""HP"），diagnosis=镜下诊断，conclusion=同 diagnosis
 
 11. 胃镜病理 / 肠镜病理
-    → itemType="imaging"
+    → 【重要】这是活检取样后的组织学化验结果（内容含"慢性炎症""活动性""萎缩""肠化""HP""异型增生"等病理化验用词），是跟第10条完全独立的一条记录，即使报告里紧挨着胃镜/肠镜检查也不能合并或改名
+    → itemType="imaging"，name="胃镜病理"/"肠镜病理"
     → findings=大体所见，diagnosis=病理诊断，conclusion=同 diagnosis
 
 12. 常规心电图
@@ -4606,8 +4609,11 @@ function filterPatientInfoItems(items) {
 const ADVISORY_TEXT_PATTERNS = [
   /多与.{0,12}有关/, /无症状.{0,10}(可)?不(处理|用处理)/, /建议.{0,15}(随诊|复查|干预|治疗|外科)/,
   /如有不适[，,]?\s*请/, /多为良性/, /极少数可能发展为/, /通常无需处理/, /定期复查/, /避免自行/,
+  /人群(的)?健康教育/, /健康宣教/, /科普(知识|说明)/,
 ];
 function isAdvisoryEcho(it) {
+  const name = str(it.name);
+  if (/人群(的)?(健康)?教育|健康宣教/.test(name)) return true; // name本身就是科普栏目标题，直接判定，无需再看内容
   const text = `${str(it.findings)}${str(it.diagnosis)}`;
   if (!text) return false;
   if (!ADVISORY_TEXT_PATTERNS.some(p => p.test(text))) return false;
