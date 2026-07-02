@@ -4444,7 +4444,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 【基本规则】
 规则零：只提取本图中实际存在的内容，绝对不推断、联想或补全。
 规则A：跳过患者基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
-规则B：跳过汇总页——页面包含"异常结果汇总""体检结果汇总""异常结果及建议"或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。
+规则B：跳过汇总页——页面包含"异常结果汇总""体检结果汇总""异常结果及建议"或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
 规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
 规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
 规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
@@ -4658,6 +4658,26 @@ function dropDiagnosisPhraseEcho(items) {
 // "异常结果汇总"页有时是编号列表（"1.甲状腺结节 2.大肠多发息肉 3.慢性浅表性胃炎..."），
 // 没被跳过规则拦住时，每一行会被单独提取成一条：name=诊断名称，findings/diagnosis="数字、诊断名称原样重复"，没有任何具体检查所见。
 // 只在"去掉编号前缀后，内容跟name完全一样"这种严格条件下才判定为汇总echo丢弃，避免误伤带具体所见的正常记录。
+// name 本身是科室/检查类别的泛称（不是具体检查项目名），"异常结果汇总"页常按科室分组罗列诊断名词
+// （如 name="放射科"，findings="1、右肺下叶磨玻璃结节 2、左肾上腺稍增粗"）——这类跟真实的详细报告单
+// （如"肺部CT"/"胃镜检查"）内容完全重复，必须丢弃，否则同一异常会同时出现在汇总条目和详细条目里。
+const DEPARTMENT_LABEL_NAMES = new Set(['彩超', '放射科', '消化内镜', '病理科', '内科汇总', '外科汇总', '检验科', '功能科']);
+function isDepartmentSummaryEcho(it) {
+  const name = str(it.name);
+  if (!DEPARTMENT_LABEL_NAMES.has(name)) return false;
+  const text = `${str(it.findings)}${str(it.diagnosis)}`;
+  if (!text) return false;
+  // 每一行都是编号+短诊断名词（无具体测量数据），整条判定为汇总列表
+  const lines = text.split(/\n|(?=\d+\s*[、.．:：])/).map(s => s.trim()).filter(Boolean);
+  if (!lines.length) return false;
+  const hasMeasurement = /\d+\s*[×xX]\s*\d+|CDFI|mm|cm/.test(text);
+  const allNumberedShort = lines.every(l => /^\d+\s*[、.．:：]/.test(l) && l.length <= 40);
+  return allNumberedShort && !hasMeasurement;
+}
+function dropDepartmentSummaryEcho(items) {
+  return (items || []).filter(it => !isDepartmentSummaryEcho(it));
+}
+
 function isNumberedSummaryEcho(it) {
   const name = str(it.name);
   if (!name) return false;
@@ -5053,7 +5073,7 @@ async function runReportParse(reportId) {
       }
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
-      const filteredItems = cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems)))))));
+      const filteredItems = cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))))));
       const classified = dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -5084,7 +5104,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))))));
+    const classifiedImg = dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
