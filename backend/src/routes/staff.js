@@ -4619,33 +4619,43 @@ function isUltrasoundItem(it) {
 }
 function cleanupUltrasoundOverlap(items) {
   const list = items || [];
+  const richnessOf = (o) => str(o.findings).length + str(o.diagnosis).length + str(o.conclusion).length;
   const withOrgans = list.map((it, idx) => ({
-    idx, organs: isUltrasoundItem(it) ? detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`) : [],
-  })).filter(w => w.organs.length > 0);
+    idx,
+    organs: new Set(isUltrasoundItem(it) ? detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`) : []),
+    richness: richnessOf(it),
+  })).filter(w => w.organs.size > 0);
   if (withOrgans.length < 2) return list;
 
-  // 规则A：一条记录同时命中≥3个不同器官，且这些器官里已经有别的记录只对应单一器官（说明有更细的独立记录存在）→ 判定为汇总echo，丢弃
-  const singleOrganCoverage = new Set();
-  withOrgans.forEach(w => { if (w.organs.length === 1) singleOrganCoverage.add(w.organs[0]); });
   const dropSet = new Set();
-  withOrgans.forEach(w => {
-    if (w.organs.length >= 3 && w.organs.some(o => singleOrganCoverage.has(o))) dropSet.add(w.idx);
-  });
 
-  // 规则B：只命中1个器官的记录，同一器官若有多条，保留信息量最大的一条（如"心脏彩超"和"心脏彩超及心功能检查"重复）
-  const richness = o => str(o.findings).length + str(o.diagnosis).length + str(o.conclusion).length;
+  // 第一步：只命中1个器官的记录，同一器官若有多条（如"心脏彩超"和"心脏彩超及心功能检查"重复），只保留信息量最大的一条
   const byOrgan = new Map();
   withOrgans.forEach(w => {
-    if (dropSet.has(w.idx) || w.organs.length !== 1) return;
-    const key = w.organs[0];
+    if (w.organs.size !== 1) return;
+    const key = [...w.organs][0];
     if (!byOrgan.has(key)) byOrgan.set(key, []);
-    byOrgan.get(key).push(w.idx);
+    byOrgan.get(key).push(w);
   });
-  for (const idxs of byOrgan.values()) {
-    if (idxs.length < 2) continue;
-    let bestIdx = idxs[0];
-    for (const idx of idxs) if (richness(list[idx]) > richness(list[bestIdx])) bestIdx = idx;
-    idxs.forEach(idx => { if (idx !== bestIdx) dropSet.add(idx); });
+  for (const group of byOrgan.values()) {
+    if (group.length < 2) continue;
+    let best = group[0];
+    for (const w of group) if (w.richness > best.richness) best = w;
+    group.forEach(w => { if (w !== best) dropSet.add(w.idx); });
+  }
+
+  // 第二步：按信息量从多到少排序，贪心地把"内容已经被排在前面、更丰富的记录完全覆盖"的多器官记录标记为冗余丢弃。
+  // 这样不管AI这次有没有按器官拆细，只要一条记录讲的器官全部都已经在别的更详细的记录里出现过，就判定它是重复的汇总echo。
+  // 单器官记录永远保留（最细粒度，不应被当成冗余），只处理 organs.size>=2 的记录。
+  const sorted = [...withOrgans].filter(w => !dropSet.has(w.idx)).sort((a, b) => b.richness - a.richness);
+  const coveredOrgans = new Set();
+  for (const w of sorted) {
+    const fullyCovered = w.organs.size >= 2 && [...w.organs].every(g => coveredOrgans.has(g));
+    if (fullyCovered) {
+      dropSet.add(w.idx);
+    } else {
+      w.organs.forEach(g => coveredOrgans.add(g));
+    }
   }
 
   return list.filter((_, idx) => !dropSet.has(idx));
