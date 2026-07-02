@@ -1151,10 +1151,11 @@ export default function PatientDetailPage() {
       setScreeningSaving(true)
       // 编译三类项目到后端字段
       // 把检验医嘱（含子项目）打平为 reportItems
+      // 结论按检验单(orderName)维度共用一条，赋给该单下所有子项的conclusion字段，跟AI提取路径的展示逻辑兼容
       const flatLabItems = (screeningForm.reportItems || []).flatMap(order =>
         order.subItems && order.subItems.length > 0
-          ? order.subItems.map(sub => ({ name: sub.name, value: sub.value || '', unit: sub.unit || '', referenceRange: sub.referenceRange || '', status: sub.status || 'normal', orderName: order.name }))
-          : [{ name: order.name, value: order.value || '', unit: order.unit || '', referenceRange: order.referenceRange || '', status: order.status || 'normal', orderName: '' }]
+          ? order.subItems.map(sub => ({ name: sub.name, value: sub.value || '', unit: sub.unit || '', referenceRange: sub.referenceRange || '', status: sub.status || 'normal', orderName: order.name, conclusion: order.conclusion || '' }))
+          : [{ name: order.name, value: order.value || '', unit: order.unit || '', referenceRange: order.referenceRange || '', status: order.status || 'normal', orderName: '', conclusion: order.conclusion || '' }]
       )
       const funcAsReportItems = (screeningForm.funcTestItems || []).map(f => ({ name: f.name, value: f.result || '', unit: '', referenceRange: '', status: 'unknown', itemType: 'data' }))
       // 保留 OCR 识别的检查项目（影像/内镜等，含检查所见/诊断意见），手动编辑不丢失
@@ -2469,10 +2470,10 @@ export default function PatientDetailPage() {
               const items = orderMap[key]
               if (!key) {
                 // 无 orderName：每个子项作为独立 order 卡片
-                return items.map(i => ({ name: i.name, subItems: [], value: i.value || '', unit: i.unit || '', referenceRange: i.referenceRange || '', status: i.status || 'normal' }))
+                return items.map(i => ({ name: i.name, subItems: [], value: i.value || '', unit: i.unit || '', referenceRange: i.referenceRange || '', status: i.status || 'normal', conclusion: i.conclusion || '' }))
               }
-              // 有 orderName：还原为一个 order 含 subItems
-              return [{ name: key, subItems: items.map(i => ({ name: i.name, value: i.value || '', unit: i.unit || '', referenceRange: i.referenceRange || '', status: i.status || 'normal' })), value: '', unit: '', referenceRange: '', status: 'normal' }]
+              // 有 orderName：还原为一个 order 含 subItems；结论是整单共用一条，取组内第一条子项的值回显
+              return [{ name: key, subItems: items.map(i => ({ name: i.name, value: i.value || '', unit: i.unit || '', referenceRange: i.referenceRange || '', status: i.status || 'normal' })), value: '', unit: '', referenceRange: '', status: 'normal', conclusion: items[0]?.conclusion || '' }]
             })
             setScreeningForm({
               title: r.title || '', screeningCategory: r.screeningCategory || '',
@@ -3114,6 +3115,14 @@ export default function PatientDetailPage() {
                                   ))}
                                 </div>
                               )}
+                              {/* 2026-07-02：检验单结论——按用户确认，结论是整张检验单(orderName)维度共用一条，
+                                  不需要每个子项单独填；提交时会把这条结论赋值给该单下所有子项的conclusion字段，
+                                  跟AI提取路径（每个lab子项本身就带conclusion）保持展示层完全兼容，不用改展示逻辑 */}
+                              <div style={{ padding: '4px 10px 8px', borderTop: '1px solid #f0ece4' }}>
+                                <input className="form-input" style={{ width: '100%', padding: '3px 6px', fontSize: 12, background: '#FFFBEB', borderColor: '#FCD34D' }}
+                                  placeholder="本检验单结论（选填，如：肝功能各项均正常）" value={order.conclusion || ''}
+                                  onChange={e => updateOrder({ conclusion: e.target.value })} />
+                              </div>
                             </div>
                           )
                         })}
