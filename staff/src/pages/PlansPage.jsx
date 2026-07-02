@@ -389,6 +389,24 @@ const TEMPLATE_TYPE_MAP = {
   psychology:     'psychology',
 }
 
+// 检验/检查/功能医学检测三类项目 → 分类名 + itemType 映射（跟 admin 模板 OrderSelector 的 _type: lab/exam/func 对应）
+const ORDER_TYPE_META = {
+  lab:  { category: '检验检查', itemType: 'labTest' },
+  exam: { category: '影像检查', itemType: 'specialExam' },
+  func: { category: '功能医学检测', itemType: 'functionalTest' },
+}
+function orderTypeMeta(t) { return ORDER_TYPE_META[t] || ORDER_TYPE_META.exam }
+
+// getRequisitionItems 接口返回的 item.type 取值(labTestOrder/specialExam/functionalTest/labTestPackage)
+// 跟上面 admin 模板用的 lab/exam/func 键名不是同一套，单独映射
+const REQUISITION_TYPE_META = {
+  labTestOrder:    { category: '检验检查', itemType: 'labTest', label: '检验', color: '#0077B6', bg: '#E8F4FD' },
+  specialExam:     { category: '影像检查', itemType: 'specialExam', label: '检查', color: '#1E6B50', bg: '#E8F5EF' },
+  functionalTest:  { category: '功能医学检测', itemType: 'functionalTest', label: '功能医学', color: '#8B5CF6', bg: '#F3EEFF' },
+  labTestPackage:  { category: '检验检查', itemType: 'labTest', label: '套餐', color: '#0077B6', bg: '#E8F4FD' },
+}
+function requisitionTypeMeta(t) { return REQUISITION_TYPE_META[t] || REQUISITION_TYPE_META.specialExam }
+
 // 从选中的模板推导方案名称
 function getTemplateTitle(tpl) {
   if (!tpl) return ''
@@ -405,9 +423,9 @@ function templateToItems(tpl) {
   if (tpl.type === 'annual_checkup') {
     return (c.checkItems || []).map(ci => ({
       name:     ci.name,
-      category: ci.type === 'lab' ? '检验检查' : '影像检查',
+      category: orderTypeMeta(ci.type).category,
       itemId:   ci.id || null,
-      itemType: ci.type === 'lab' ? 'labTest' : 'specialExam',
+      itemType: orderTypeMeta(ci.type).itemType,
     }))
   }
 
@@ -1279,9 +1297,9 @@ function AnnualCheckupPlanModal({ onClose, onSaved }) {
     try {
       const items = checkItems.map(ci => ({
         name: ci.name,
-        category: ci.type === 'lab' ? '检验检查' : '影像检查',
+        category: orderTypeMeta(ci.type).category,
         itemId: ci.id || null,
-        itemType: ci.type === 'lab' ? 'labTest' : 'specialExam',
+        itemType: orderTypeMeta(ci.type).itemType,
       }))
       await staffAPI.createPlan({
         patientId, type: 'annual_checkup', title: packageName,
@@ -1695,9 +1713,9 @@ function NewPlanModal({ onClose, onSaved, type }) {
   const addFromLibrary = (item) => {
     setItems(prev => [...prev, {
       name:     item.name,
-      category: item.type === 'lab' ? '检验检查' : '影像检查',
+      category: requisitionTypeMeta(item.type).category,
       itemId:   item._id || null,
-      itemType: item.type === 'lab' ? 'labTest' : 'specialExam',
+      itemType: requisitionTypeMeta(item.type).itemType,
     }])
     setSearchQ('')
     setSearchResults([])
@@ -1907,8 +1925,8 @@ function NewPlanModal({ onClose, onSaved, type }) {
                               onMouseEnter={e => e.currentTarget.style.background = '#F0F9F4'}
                               onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
                             >
-                              <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 3, fontWeight: 600, color: r.type === 'lab' ? '#0077B6' : '#1E6B50', background: r.type === 'lab' ? '#E8F4FD' : '#E8F5EF' }}>
-                                {r.type === 'lab' ? '检验' : '检查'}
+                              <span style={{ fontSize: 11, padding: '1px 5px', borderRadius: 3, fontWeight: 600, color: requisitionTypeMeta(r.type).color, background: requisitionTypeMeta(r.type).bg }}>
+                                {requisitionTypeMeta(r.type).label}
                               </span>
                               <span style={{ flex: 1 }}>{r.name}</span>
                               <span style={{ fontSize: 11, color: '#1E6B50' }}>＋ 添加</span>

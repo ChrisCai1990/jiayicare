@@ -2730,6 +2730,26 @@ export default function PatientDetailPage() {
                   }}>+ 录入筛查结果</button>
                 </div>
               </div>
+              {(() => {
+                // 2026-07-02：体检方案里已开具但客户还未做/未上传报告的检验检查项目，在这里做一条轻量提示——
+                // 不把方案项目直接并入下面的三层筛查树渲染（那块逻辑已经很复杂，硬塞进去容易出连锁问题），
+                // 只统计数量+列名字，点击可跳转到对应方案详情页查看。
+                const pendingPlanItems = (plans || [])
+                  .flatMap(p => (p.items || []).map(it => ({ ...it, planId: p._id, planTitle: p.title })))
+                  .filter(it => it.status === 'pending' && it.itemType && ['labTest', 'specialExam', 'functionalTest'].includes(it.itemType))
+                if (!pendingPlanItems.length) return null
+                return (
+                  <div style={{ margin: '0 16px 12px', padding: '10px 14px', background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8, fontSize: 13 }}>
+                    <span style={{ color: '#D97706', fontWeight: 600 }}>⏳ 有 {pendingPlanItems.length} 项已开具体检方案项目待完成：</span>
+                    <span style={{ color: '#6B7280', marginLeft: 6 }}>
+                      {[...new Set(pendingPlanItems.map(it => it.name))].slice(0, 6).join('、')}
+                      {pendingPlanItems.length > 6 ? ' 等' : ''}
+                    </span>
+                    <span style={{ marginLeft: 10, color: '#1E6B50', cursor: 'pointer', textDecoration: 'underline' }}
+                      onClick={() => nav(`/plans/${pendingPlanItems[0].planId}`)}>查看方案详情 →</span>
+                  </div>
+                )
+              })()}
               {!hasAny ? (
                 <div style={{ padding: 30, textAlign: 'center', color: '#aaa', fontSize: 14 }}>暂无专项筛查记录，点击「录入筛查结果」添加</div>
               ) : (() => {

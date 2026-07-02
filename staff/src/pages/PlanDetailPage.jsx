@@ -8,7 +8,16 @@ const STATUS_LABEL = { draft:'草稿', active:'已推送', completed:'已完成'
 const ITEM_STATUS = { pending:'待完成', completed:'已完成', skipped:'已跳过' }
 const ITEM_STATUS_COLOR = { pending:'#D97706', completed:'#22A06B', skipped:'#aaa' }
 
-const ITEM_CATEGORIES = ['检验检查', '影像检查', '体格检查', '问诊咨询', '营养干预', '运动康复', '心理评估', '中医调理', '生活方式', '其他']
+const ITEM_CATEGORIES = ['检验检查', '影像检查', '功能医学检测', '体格检查', '问诊咨询', '营养干预', '运动康复', '心理评估', '中医调理', '生活方式', '其他']
+
+// getRequisitionItems 返回的 item.type 取值(labTestOrder/specialExam/functionalTest/labTestPackage) → 分类名+itemType映射
+const REQUISITION_TYPE_META = {
+  labTestOrder:    { label: '检验', category: '检验检查', itemType: 'labTest' },
+  specialExam:     { label: '检查', category: '影像检查', itemType: 'specialExam' },
+  functionalTest:  { label: '功能医学', category: '功能医学检测', itemType: 'functionalTest' },
+  labTestPackage:  { label: '套餐', category: '检验检查', itemType: 'labTest' },
+}
+function requisitionTypeMeta(t) { return REQUISITION_TYPE_META[t] || REQUISITION_TYPE_META.specialExam }
 
 function AddItemPanel({ plan, onAdded, onCancel }) {
   const toast = useToast()
@@ -53,7 +62,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
     setForm(f => ({
       ...f,
       name:     item.name,
-      category: item.type === 'lab' ? '检验检查' : '影像检查',
+      category: requisitionTypeMeta(item.type).category,
     }))
     setShowDropdown(false)
   }
@@ -70,7 +79,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
         scheduledDate: form.scheduledDate || null,
         notes:         form.notes,
         itemId:        selected?.id || null,
-        itemType:      selected ? (selected.type === 'lab' ? 'labTest' : 'specialExam') : '',
+        itemType:      selected ? requisitionTypeMeta(selected.type).itemType : '',
       }
       await staffAPI.updatePlan(plan._id, { items: [...(plan.items || []), newItem] })
       toast('已添加')
@@ -109,7 +118,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
                 >
                   <span style={{ fontWeight: 500 }}>{item.name}</span>
                   <span style={{ marginLeft: 8, fontSize: 11, color: '#8AA89C', background: '#f0ece4', padding: '1px 5px', borderRadius: 3 }}>
-                    {item.type === 'lab' ? '检验' : '检查'}
+                    {requisitionTypeMeta(item.type).label}
                   </span>
                   {item.category && <span style={{ marginLeft: 4, fontSize: 11, color: '#aaa' }}>{item.category}</span>}
                 </div>
@@ -146,7 +155,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
 
       {selected && (
         <div style={{ marginTop: 6, fontSize: 11, color: '#1E6B50' }}>
-          ✓ 已关联检验库：{selected.name}（{selected.type === 'lab' ? '检验' : '检查'}）
+          ✓ 已关联检验库：{selected.name}（{requisitionTypeMeta(selected.type).label}）
         </div>
       )}
 

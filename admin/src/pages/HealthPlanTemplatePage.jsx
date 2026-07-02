@@ -114,8 +114,13 @@ function FollowUpPlanSelector({ value, onChange, allPlans, loading }) {
   )
 }
 
-// 医嘱选择器（检验医嘱 + 检查医嘱，可附带"推荐原因"）
-function OrderSelector({ label, value, onChange, labOrders, examOrders, showReason }) {
+// 医嘱选择器（检验医嘱 + 检查医嘱 + 功能医学检测，可附带"推荐原因"）
+const TYPE_META = {
+  lab:      { label: '检验', color: '#0077B6', bg: '#E8F4FD' },
+  exam:     { label: '检查', color: '#1E6B50', bg: '#E8F5EF' },
+  func:     { label: '功能医学', color: '#8B5CF6', bg: '#F3EEFF' },
+}
+function OrderSelector({ label, value, onChange, labOrders, examOrders, functionalTests, showReason }) {
   const [open, setOpen] = useState(false)
   const [search, setSearch] = useState('')
   const selected = Array.isArray(value) ? value : []
@@ -123,6 +128,7 @@ function OrderSelector({ label, value, onChange, labOrders, examOrders, showReas
   const allOptions = [
     ...labOrders.map(o => ({ ...o, _type: 'lab', _label: '[检验]' })),
     ...examOrders.map(o => ({ ...o, _type: 'exam', _label: '[检查]' })),
+    ...(functionalTests || []).map(o => ({ ...o, _type: 'func', _label: '[功能医学]' })),
   ].filter(o => o.status === 'active' && o.name.toLowerCase().includes(search.toLowerCase()))
 
   const isSelected = id => selected.some(s => s.id === id)
@@ -151,8 +157,8 @@ function OrderSelector({ label, value, onChange, labOrders, examOrders, showReas
         {selected.map((s, idx) => (
           <div key={idx} style={{ marginBottom: showReason ? 10 : 6 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: 11, color: s.type === 'lab' ? '#0077B6' : '#1E6B50', background: s.type === 'lab' ? '#E8F4FD' : '#E8F5EF', padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
-                {s.type === 'lab' ? '检验' : '检查'}
+              <span style={{ fontSize: 11, color: (TYPE_META[s.type] || TYPE_META.exam).color, background: (TYPE_META[s.type] || TYPE_META.exam).bg, padding: '1px 6px', borderRadius: 4, fontWeight: 600 }}>
+                {(TYPE_META[s.type] || TYPE_META.exam).label}
               </span>
               <span style={{ fontSize: 13, fontWeight: 500 }}>{s.name}</span>
               <button type="button" onClick={() => remove(idx)} style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: '#999', fontSize: 14, lineHeight: 1 }}>×</button>
@@ -172,7 +178,7 @@ function OrderSelector({ label, value, onChange, labOrders, examOrders, showReas
           <div style={{ marginTop: 10, border: '1px solid #e0d9ce', borderRadius: 6, background: '#fff', maxHeight: 260, display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '8px 10px', borderBottom: '1px solid #f0ece4' }}>
               <input className="form-input" value={search} onChange={e => setSearch(e.target.value)}
-                placeholder="搜索检验/检查医嘱名称..." style={{ fontSize: 12 }} autoFocus />
+                placeholder="搜索检验/检查医嘱/功能医学检测名称..." style={{ fontSize: 12 }} autoFocus />
             </div>
             <div style={{ overflowY: 'auto', flex: 1 }}>
               {allOptions.length === 0 && <div style={{ padding: 16, color: '#aaa', fontSize: 12, textAlign: 'center' }}>无匹配结果</div>}
@@ -183,7 +189,7 @@ function OrderSelector({ label, value, onChange, labOrders, examOrders, showReas
                   borderBottom: '1px solid #f8f6f2',
                 }}>
                   <input type="checkbox" readOnly checked={isSelected(o._id)} style={{ accentColor: '#1E6B50', cursor: 'pointer' }} />
-                  <span style={{ fontSize: 11, color: o._type === 'lab' ? '#0077B6' : '#1E6B50', background: o._type === 'lab' ? '#E8F4FD' : '#E8F5EF', padding: '1px 5px', borderRadius: 4, fontWeight: 600 }}>{o._label}</span>
+                  <span style={{ fontSize: 11, color: (TYPE_META[o._type] || TYPE_META.exam).color, background: (TYPE_META[o._type] || TYPE_META.exam).bg, padding: '1px 5px', borderRadius: 4, fontWeight: 600 }}>{o._label}</span>
                   <span style={{ fontSize: 13 }}>{o.name}</span>
                 </div>
               ))}
@@ -216,6 +222,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   const [content, setContent] = useState(initialContent || defaultContent[type] || {})
   const [labOrders, setLabOrders] = useState([])
   const [examOrders, setExamOrders] = useState([])
+  const [functionalTests, setFunctionalTests] = useState([])
   const [followUpPlans, setFollowUpPlans] = useState([])
   const [followUpLoading, setFollowUpLoading] = useState(false)
   const set = useCallback((k, v) => setContent(prev => {
@@ -226,12 +233,15 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   useEffect(() => {
     if (type === 'annual_checkup') {
+      // 2026-07-02：补充功能医学检测这一路，此前体检方案模板只能选检验医嘱/检查医嘱
       Promise.all([
         adminAPI.labTestOrders({ status: 'active', limit: 500 }),
         adminAPI.specialExams({ status: 'active', limit: 500 }),
-      ]).then(([labRes, examRes]) => {
+        adminAPI.functionalMedicineTests({ status: 'active', limit: 500 }),
+      ]).then(([labRes, examRes, funcRes]) => {
         setLabOrders(labRes.data || [])
         setExamOrders(examRes.data || [])
+        setFunctionalTests(funcRes.data || [])
       }).catch(() => {})
     }
     if (type === 'health_management') {
@@ -250,8 +260,8 @@ function PlanContentForm({ type, initialContent, contentRef }) {
         <input className="form-input" value={content.packageName || ''} onChange={e => set('packageName', e.target.value)} placeholder="如：心脑血管深度筛查套餐" />
       </div>
       <FieldRow label="状态说明" fieldKey="packageDesc" placeholder="套餐描述" half content={content} set={set} />
-      <OrderSelector label="包含检查项目" value={content.checkItems} onChange={v => set('checkItems', v)} labOrders={labOrders} examOrders={examOrders} showReason={false} />
-      <OrderSelector label="可选加项库" value={content.addons} onChange={v => set('addons', v)} labOrders={labOrders} examOrders={examOrders} showReason={true} />
+      <OrderSelector label="包含检查项目" value={content.checkItems} onChange={v => set('checkItems', v)} labOrders={labOrders} examOrders={examOrders} functionalTests={functionalTests} showReason={false} />
+      <OrderSelector label="可选加项库" value={content.addons} onChange={v => set('addons', v)} labOrders={labOrders} examOrders={examOrders} functionalTests={functionalTests} showReason={true} />
     </div>
   )
 

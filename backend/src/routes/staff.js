@@ -1748,20 +1748,24 @@ router.patch('/requisitions/:id/cancel', staffAuth, async (req, res) => {
   }
 });
 
-// GET /api/staff/requisition-items — 获取可开单的项目列表（检验医嘱 + 检查医嘱 + 套餐）
+// GET /api/staff/requisition-items — 获取可开单的项目列表（检验医嘱 + 检查医嘱 + 功能医学检测 + 套餐）
+// 2026-07-02：补充功能医学检测这一类，此前体检方案设计/开单只能选检验医嘱和检查医嘱，
+// 跟 admin 后台"功能医学检测"页面配置好的项目完全不通，这里补齐第三类，跟前两类同构处理。
 router.get('/requisition-items', staffAuth, async (req, res) => {
   try {
     const { q = '' } = req.query;
     const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
-    const [labOrders, specialExams, packages] = await Promise.all([
+    const [labOrders, specialExams, functionalTests, packages] = await Promise.all([
       LabTestOrder.find({ ...filter, status: 'active' }).select('name mnemonic items').limit(50),
-      SpecialExam.find({ ...filter, status: 'active' }).select('name mnemonic examType').limit(50),
+      SpecialExam.find({ ...filter, status: 'active', deleted: { $ne: true } }).select('name mnemonic examType').limit(50),
+      FunctionalMedicineTest.find({ ...filter, status: 'active', deleted: { $ne: true } }).select('name testResult indicatorAnalysis').limit(50),
       LabTestPackage.find({ ...filter, status: 'active' }).select('name mnemonic labTestItems').limit(50),
     ]);
     const result = [
       ...packages.map(p => ({ _id: p._id, name: p.name, mnemonic: p.mnemonic, type: 'labTestPackage', typeName: '套餐', itemCount: p.labTestItems?.length || 0 })),
       ...labOrders.map(o => ({ _id: o._id, name: o.name, mnemonic: o.mnemonic, type: 'labTestOrder', typeName: '检验医嘱' })),
       ...specialExams.map(e => ({ _id: e._id, name: e.name, mnemonic: e.mnemonic, type: 'specialExam', typeName: '检查医嘱', description: e.description || '', conclusion: e.conclusion || '' })),
+      ...functionalTests.map(f => ({ _id: f._id, name: f.name, mnemonic: '', type: 'functionalTest', typeName: '功能医学检测', description: f.testResult || '', conclusion: f.indicatorAnalysis || '' })),
     ];
     res.json({ success: true, data: result });
   } catch (err) {
@@ -1800,6 +1804,10 @@ router.get('/requisition-items/:type/:id/sub-items', staffAuth, async (req, res)
         referenceRange: i.referenceRange || i.referenceValue || '',
         status: 'normal',
       }));
+    } else if (type === 'functionalTest') {
+      // 功能医学检测本身没有子指标结构（不像检验医嘱下面还挂着多个子项目），预填这一条项目本身即可
+      const test = await FunctionalMedicineTest.findById(id).select('name');
+      if (test) items = [{ name: test.name, value: '', unit: '', referenceRange: '', status: 'normal' }];
     }
     res.json({ success: true, data: items });
   } catch (err) {
