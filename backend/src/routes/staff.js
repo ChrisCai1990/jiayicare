@@ -4445,6 +4445,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则零：只提取本图中实际存在的内容，绝对不推断、联想或补全。
 规则A：跳过患者基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
 规则B：跳过汇总页——页面包含"异常结果汇总""体检结果汇总""异常结果及建议"或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。
+规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
 规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
 规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
 规则E：相似项目名称不可混淆，如"碳13"≠"碳14"，"空腹血糖"≠"餐后血糖"。
@@ -4597,6 +4598,24 @@ function filterPatientInfoItems(items) {
       const itemType = PHYSICAL_EXAM_NAMES.some(n => name.startsWith(n)) ? 'imaging' : item.itemType;
       return { ...item, name, itemType };
     });
+}
+
+// 报告里"名词解释/检查异常结果解读"类科普说明页，有时没被prompt的跳过规则拦住，被当成独立条目提取出来
+// （如name="慢性浅表性胃炎"，findings="肾结石多与饮水少...有关，建议..."这种通用医学科普话术，不是本次检查的具体所见）。
+// 用"内容像科普建议语气+没有具体测量数据"两个条件一起卡，避免误伤真正带具体数据的检查所见。
+const ADVISORY_TEXT_PATTERNS = [
+  /多与.{0,12}有关/, /无症状.{0,10}(可)?不(处理|用处理)/, /建议.{0,15}(随诊|复查|干预|治疗|外科)/,
+  /如有不适[，,]?\s*请/, /多为良性/, /极少数可能发展为/, /通常无需处理/, /定期复查/, /避免自行/,
+];
+function isAdvisoryEcho(it) {
+  const text = `${str(it.findings)}${str(it.diagnosis)}`;
+  if (!text) return false;
+  if (!ADVISORY_TEXT_PATTERNS.some(p => p.test(text))) return false;
+  const hasMeasurement = /\d+\s*[×xX]\s*\d+|CDFI|mm|cm|C-TIRADS/.test(text);
+  return !hasMeasurement; // 带具体测量数据的不算科普话术，谨慎起见不误删
+}
+function dropAdvisoryEcho(items) {
+  return (items || []).filter(it => !isAdvisoryEcho(it));
 }
 
 // 耳鼻喉/听力检查有时会被拆成"听力(左)""外耳道(左)""鼓膜(左)"等散项、有时主条目又被写成"耳鼻喉科"等变体、
@@ -4978,7 +4997,7 @@ async function runReportParse(reportId) {
 
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
-      const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(allItems))));
+      const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropAdvisoryEcho(filterPatientInfoItems(allItems)))));
       const classified = await classifyItemsAsync(filteredItems);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -5009,7 +5028,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(filterPatientInfoItems(parsed?.items || [])))));
+    const classifiedImg = await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
