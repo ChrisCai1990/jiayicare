@@ -4688,9 +4688,20 @@ function filterPatientInfoItems(items) {
       return true;
     })
     .map(item => {
-      let name = (item.name || '').replace(/^[【\[《〔\s\d、.]+|[】\]》〕\s]+$/g, '').trim();
+      // 2026-07-02修复：此前正则把开头的"数字"本身当序号前缀无差别清掉（如"25-羟基维生素D"→"-羟基维生素D"，
+      // "25"被误删），但很多项目名本身就以数字开头(25-羟基维生素D/13碳呼气试验等)，数字是名字组成部分不是编号。
+      // 改成只清除"数字+编号分隔符(、.．:：)"这种明确的编号前缀模式(如"1、XXX"→"XXX")，不再无差别吃掉纯数字。
+      let name = (item.name || '')
+        .replace(/^[【\[《〔\s]+/, '')
+        .replace(/^\d+\s*[、.．:：]\s*/, '')
+        .replace(/[】\]》〕\s]+$/, '')
+        .trim();
       // 原文里的对勾符号(✓)常被识别成多余的单个英文字母前缀（如"T双眼眼底照相"），导致同一检查因为多字对不上而没法去重
       name = name.replace(/^[A-Za-z](?=[一-龥])/, '');
+      // 2026-07-02修复：AI偶尔把项目名重复拼接成"XX, XX"的形式（如"无创性动脉硬化检测, 无创性动脉硬化检测"），
+      // 只在"逗号/顿号分隔的两段文字完全相同"这种严格条件下才判定去重，避免误伤真实的并列名称
+      const dupMatch = name.match(/^(.+?)[,，、]\s*\1$/);
+      if (dupMatch) name = dupMatch[1];
       name = canonicalizeExamName(name);
       const itemType = PHYSICAL_EXAM_NAMES.some(n => name.startsWith(n)) ? 'imaging' : item.itemType;
       return { ...item, name, itemType };
@@ -4727,6 +4738,7 @@ function dropAdvisoryEcho(items) {
 const DIAGNOSIS_PHRASE_PATTERNS = [
   /史$/, /^窦性/, /高电压/, /T波改变/, /异常$/, /增粗$/, /增大$/, /^慢性.{0,6}炎$/,
   /结石$/, /结节$/, /息肉$/, /囊肿$/, /^内痔$/, /^外痔$/, /脂肪肝$/,
+  /^早复极/, /^(超重|肥胖|消瘦|偏瘦)型$/, // 心电图诊断("早复极现象")、体型分类描述("肥胖型"等)
 ];
 function isDiagnosisPhraseEcho(it) {
   if (it.matchStatus !== 'unclassified') return false;
