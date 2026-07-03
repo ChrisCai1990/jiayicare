@@ -4765,6 +4765,21 @@ export default function PatientDetailPage() {
                 } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
                 finally { setAiCheckupGenerating(false) }
               }}>{aiCheckupGenerating ? '生成中…' : '✨ AI体检方案'}</button>
+              <select className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }} value=""
+                onChange={e => {
+                  const planType = e.target.value
+                  if (!planType) return
+                  // 年度管理方案需要先选定4种类型之一（健康重塑/年轻态/慢病维稳/健康预防），
+                  // 不像营养方案/体检方案可以直接一键生成，所以这里跳转到独立页面并带上
+                  // planType+autoGen=1，让页面加载完成后自动触发一次AI生成，省得用户再点一次
+                  nav(`/patients/${id}/annual-health?planType=${planType}&autoGen=1`)
+                }}>
+                <option value="">✨ AI年度管理方案</option>
+                <option value="health_reshape">健康重塑方案</option>
+                <option value="young_state">健康年轻态方案</option>
+                <option value="chronic_stable">慢病维稳方案</option>
+                <option value="health_prevention">健康预防方案</option>
+              </select>
             </div>
           </div>
           {plans.length === 0 ? (

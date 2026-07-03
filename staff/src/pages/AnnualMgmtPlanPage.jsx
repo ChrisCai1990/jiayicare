@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
@@ -334,6 +334,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const { id } = useParams()
   const nav = useNavigate()
   const toast = useToast()
+  const [searchParams, setSearchParams] = useSearchParams()
 
   const [patient, setPatient]       = useState(null)
   const [plan, setPlan]             = useState(null)
@@ -362,13 +363,23 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         const map = {}
         list.forEach(p => { if (p.planType) map[p.planType] = p })
         setPlansByType(map)
-        // 默认选中最近编辑过的那一份，没有则不选
-        const first = list.find(p => p.planType)
-        if (first) {
-          setPlanType(first.planType)
-          setModuleData(first.moduleData || {})
-          setPushedAt(first.pushedAt || null)
-          setConfirmedAt(first.confirmedAt || null)
+        // 从"管理方案"tab点"✨ AI年度管理方案"按钮跳转过来时会带 ?planType=xxx，
+        // 优先用它选中对应类型（而不是默认选"最近编辑过的那一份"），让用户选的类型立刻生效
+        const queryPlanType = searchParams.get('planType')
+        const target = queryPlanType && map[queryPlanType]
+          ? map[queryPlanType]
+          : (queryPlanType ? null : list.find(p => p.planType))
+        if (target) {
+          setPlanType(target.planType)
+          setModuleData(target.moduleData || {})
+          setPushedAt(target.pushedAt || null)
+          setConfirmedAt(target.confirmedAt || null)
+        } else if (queryPlanType) {
+          // 该类型还没有任何已保存数据，选中类型但板块留空，等用户点AI生成
+          setPlanType(queryPlanType)
+          setModuleData({})
+          setPushedAt(null)
+          setConfirmedAt(null)
         } else {
           setPlanType('')
           setModuleData({})
@@ -376,6 +387,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setConfirmedAt(null)
         }
         setDirty(false)
+        // ?autoGen=1 表示从"管理方案"tab选类型跳转过来，加载完成后自动触发一次AI生成，
+        // 不用用户再点一次"✨ AI生成方案"；触发后立刻清掉这两个query参数，避免刷新页面重复生成
+        if (queryPlanType && searchParams.get('autoGen') === '1') {
+          setSearchParams({}, { replace: true })
+          setTimeout(() => runAIGenerate(queryPlanType, true), 0)
+        }
       }).catch(err => toast(err.message || '加载失败'))
         .finally(() => setLoading(false))
     } else {
@@ -439,16 +456,19 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
 
-  const handleGenerateAIAnnualPlan = async () => {
-    if (!planType) { toast('请先在下方选择一个方案类型，再点AI生成'); return }
-    const ptName = PLAN_TYPES.find(pt => pt.key === planType)?.name || '该类型'
-    if (!window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
+  // 提取成可复用函数：runAIGenerate(type, skipConfirm) —— 按钮手动点击时 skipConfirm=false
+  // （需要用户确认覆盖），从"管理方案"tab跳转过来自动触发时 skipConfirm=true（新建的类型
+  // 还没有任何内容，不存在"覆盖"风险，不用弹确认框打断体验）
+  const runAIGenerate = async (type, skipConfirm = false) => {
+    if (!type) { toast('请先在下方选择一个方案类型，再点AI生成'); return }
+    const ptName = PLAN_TYPES.find(pt => pt.key === type)?.name || '该类型'
+    if (!skipConfirm && !window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
     setAiPlanLoading(true)
     try {
-      const res = await staffAPI.generateAIAnnualPlan(id, planType)
+      const res = await staffAPI.generateAIAnnualPlan(id, type)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
-      const allowedKeys = PLAN_TYPE_MODULES[planType] || []
+      const allowedKeys = PLAN_TYPE_MODULES[type] || []
       setModuleData(prev => {
         const merged = { ...prev }
         Object.entries(aiData).forEach(([key, val]) => {
@@ -467,6 +487,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       setAiPlanLoading(false)
     }
   }
+  const handleGenerateAIAnnualPlan = () => runAIGenerate(planType, false)
 
   const handlePush = async () => {
     if (dirty) { toast('有未保存的更改，请先保存再推送'); return }
