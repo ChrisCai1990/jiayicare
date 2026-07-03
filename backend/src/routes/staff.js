@@ -3507,6 +3507,40 @@ function ruleEngineSignals(lv = {}) {
   return sig;
 }
 
+// 肿瘤风险信号：不像心血管/糖尿病/肾病有统一数值阈值，肿瘤标志物种类多、参考范围因项目而异，
+// 没法写成规则引擎的简单if判断。改为从该患者历年专项筛查报告里提取肿瘤相关线索交给AI综合判断：
+// ①标志物类检验异常项(name含"肿瘤标志物"/PSA/AFP/CEA/CA199/CA125/CA153等) ②内镜/影像里的
+// 癌前病变或结节描述(itemType=imaging且diagnosis/findings含"息肉"/"结节"/"肠化"/"不典型增生"等关键词)
+// 2026-07-03新增：此前 tumor 维度规则引擎完全没有判断逻辑，永远显示"规则引擎未发现明显异常"，
+// 跟患者实际筛查情况无关，是个有维度名无数据支撑的空壳。
+const TUMOR_MARKER_KEYWORDS = ['肿瘤标志物', 'PSA', 'AFP', 'CEA', 'CA199', 'CA125', 'CA153', 'NSE', 'CA724', 'CA242'];
+const TUMOR_FINDING_KEYWORDS = ['息肉', '结节', '肠化', '不典型增生', '异型增生', '囊实性', 'TI-RADS', 'BI-RADS', '占位', '肿物'];
+async function tumorSignalsFromReports(userId) {
+  const MedicalReport = require('../models/MedicalReport');
+  const reports = await MedicalReport.find({ user: userId })
+    .sort({ checkDate: -1, createdAt: -1 })
+    .select('title checkDate reportItems')
+    .limit(50);
+  const lines = [];
+  reports.forEach(r => {
+    const dateStr = (r.checkDate || '').slice(0, 10) || '';
+    (r.reportItems || []).forEach(it => {
+      const name = it.name || '';
+      const isMarker = TUMOR_MARKER_KEYWORDS.some(kw => name.toLowerCase().includes(kw.toLowerCase()));
+      if (isMarker && it.status === 'abnormal' && it.value) {
+        lines.push(`${dateStr} ${name}：${it.value}${it.unit || ''}（异常）`);
+        return;
+      }
+      const text = `${it.diagnosis || ''} ${it.findings || ''}`;
+      const isFinding = it.itemType === 'imaging' && TUMOR_FINDING_KEYWORDS.some(kw => text.includes(kw));
+      if (isFinding) {
+        lines.push(`${dateStr} ${name}：${(it.diagnosis || it.findings || '').slice(0, 100)}`);
+      }
+    });
+  });
+  return lines;
+}
+
 // POST /api/staff/patients/:id/ai-risk-assessment — 生成风险评估
 router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   try {
@@ -3517,6 +3551,8 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
     const { chat } = require('../utils/ai');
     const lv = user.labValues || {};
     const signals = ruleEngineSignals(lv);
+    const tumorLines = await tumorSignalsFromReports(req.params.id);
+    if (tumorLines.length) signals.tumor = tumorLines;
     const sigText = Object.entries(signals)
       .map(([k, arr]) => `${k}：${arr.length ? arr.join('；') : '规则引擎未发现明显异常'}`)
       .join('\n');
@@ -3530,10 +3566,12 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
 
     const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。
 
-【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}
+【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
 【体检关键指标】${labLines}
 【规则引擎预警信号】
 ${sigText}
+
+肿瘤风险维度请结合上方"tumor"信号（历年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、既往史、家族史综合判断；信号为空不代表零风险，需结合年龄、性别、家族史等基础风险因素给出合理评估，不要机械地判为low。
 
 请严格按以下JSON输出（level 取值：low/medium/high/critical，分别代表低/中/高/危急值；score 0-100）：
 {
