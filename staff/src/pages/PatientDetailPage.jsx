@@ -120,7 +120,10 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
         )}
         <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={pts} />
         {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r="3" fill={color} />)}
-        <text x={xs[xs.length-1]} y={ys[ys.length-1] - 6} textAnchor="middle" fontSize="10" fill={color}>{last.y}</text>
+        {/* 每个数据点都标注数值，不只是最后一个点，方便一眼看出历次具体读数 */}
+        {xs.map((x, i) => (
+          <text key={`v-${i}`} x={x} y={Math.max(ys[i] - 6, 9)} textAnchor="middle" fontSize="9" fill={color}>{vals[i]}</text>
+        ))}
         <text x={PAD} y={H - 2} fontSize="9" fill="#aaa">{data[0].x}</text>
         <text x={W - PAD} y={H - 2} textAnchor="end" fontSize="9" fill="#aaa">{last.x}</text>
       </svg>
@@ -3444,8 +3447,11 @@ export default function PatientDetailPage() {
                 egfr:  ['肾小球滤过率','eGFR','GFR','估算肾小球滤过率'],
                 hcy:   ['同型半胱氨酸','Hcy','HCY'],
                 lpla2: ['Lp-PLA2','脂蛋白磷脂酶A2','LPLA2'],
-                sbp:   ['收缩压','SBP','收缩压(mmHg)'],
-                dbp:   ['舒张压','DBP','舒张压(mmHg)'],
+                // 动态血压监测报告里有"夜间收缩压下降率""24小时收缩压最大值"等衍生指标，
+                // name本身包含"收缩压"三个字但value是百分比/衍生值不是真实血压，必须排除，
+                // 否则会被误判命中显示成血压数值（2026-07-03 潘孝银"动态血压"报告复现过）
+                sbp:   { names: ['收缩压','SBP','收缩压(mmHg)'], exclude: ['下降率','最大值','最小值','负荷','标准差','变异'] },
+                dbp:   { names: ['舒张压','DBP','舒张压(mmHg)'], exclude: ['下降率','最大值','最小值','负荷','标准差','变异'] },
                 weight:['体重','Weight','BW'],
               }
               // 超声：按标题匹配整条报告的 note
@@ -3481,6 +3487,24 @@ export default function PatientDetailPage() {
                   }
                 }
               }
+              // 动态血压监测等报告常把血压记成一条 name="血压" value="124/75" 的复合格式，
+              // 上面按"收缩压"/"舒张压"关键词找独立子项会找不到（2026-07-03 潘孝银"动态血压"
+              // 报告即是此情况），这里退而解析复合格式补上 sbp/dbp
+              ;['sbp', 'dbp'].forEach((key, idx) => {
+                if (derived[key]) return
+                for (const report of sortedReports) {
+                  const item = (report.reportItems || []).find(ri => ri.name === '血压' && /^\d+\s*\/\s*\d+/.test(ri.value || ''))
+                  if (item) {
+                    const parts = item.value.split('/').map(s => s.trim())
+                    derived[key] = {
+                      value: parts[idx], unit: item.unit || 'mmHg',
+                      date: report.checkDate || report.date || '',
+                      source: report.title || '专项筛查', abnormal: false, referenceRange: '',
+                    }
+                    break
+                  }
+                }
+              })
               // 从报告标题派生超声文字
               for (const [key, titles] of Object.entries(US_TITLE_MAP)) {
                 for (const report of sortedReports) {
