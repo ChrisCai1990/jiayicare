@@ -4625,6 +4625,14 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
       两者不再单独提取为独立条目，直接归入这条"人体成分分析"记录的 findings 里一并抄写
       （按各自标签文字原样记录，如"健康评分：85 体重：62.3kg"），跟其他测量数值一起完整保留。
 
+15. 尿常规
+    → 【重要】不要按检验子项逐条拆分提取（尿胆红素/尿酮体/尿隐血/比重/酸碱度/尿亚硝酸盐/
+      尿蛋白质/尿胆原/尿糖/尿白细胞等子项，不同机构的名称、缩写、顺序差异很大，逐条归类始终对不上号）。
+      统一按检查项目整体提取一条：itemType="imaging"，name="尿常规"
+    → findings = 报告里该检验单下所有子项名称和结果，逐行原文抄写在一起（如"尿胆红素(BIL)：阴性
+      尿酮体(KET)：阴性 尿隐血：阴性 比重(SG)：1.028 酸碱度(PH)：5.5..."），完整保留，不遗漏任何一项
+    → diagnosis/conclusion = 报告的综合评估/结论原文（如有）
+
 【输出格式】
 仅输出 JSON，不要任何额外文字：
 {
@@ -5148,6 +5156,22 @@ function cleanupExtractedItems(items) {
   return final;
 }
 
+// 2026-07-03补充：眼压/视力/电耳镜等检查偶发 diagnosis/conclusion 被AI写成只剩编号、没有实际结论文字
+// 的残缺格式（如"1、"），而同一条记录的 findings 字段其实是完整的（如"右:12mmHg；左:14mmHg"）。
+// 判定为"编号+其后要么为空、要么只有极短的标点/空白"才回填，避免误伤"1、各心腔大小...未见明显异常"
+// 这种编号后面跟着完整内容的正常写法。
+function fillEmptyDiagnosisFromFindings(items) {
+  const isNumberOnly = (s) => /^\d+\s*[、.．:：]\s*$/.test(str(s));
+  return (items || []).map(it => {
+    const findings = str(it.findings);
+    if (!findings) return it;
+    const patch = {};
+    if (isNumberOnly(it.diagnosis)) patch.diagnosis = findings;
+    if (isNumberOnly(it.conclusion)) patch.conclusion = findings;
+    return Object.keys(patch).length ? { ...it, ...patch } : it;
+  });
+}
+
 // 按 key（格式 <L1的_id>|<L2名字>|<叶子名字>）upsert 一条 UserScreeningItem，AI自动归类和医护手动录入共用此函数。
 // 2026-07-02修复：查询条件补上 reportId，让同一 itemId 在不同报告（不同年份）下各自保留一条独立记录，
 // 而不是互相覆盖——模型索引早已是 {user,itemId,reportId} 三元唯一，此前查询条件只用了前两个字段，
@@ -5397,7 +5421,7 @@ async function runReportParse(reportId) {
       // 若先去重(同名只保留信息量最大的一条)，病理内容会被当"重复"整条丢弃，splitEndoscopyPathology
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
-      const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))))));
+      const filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems)))))))));
       const classified = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -5428,7 +5452,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))))))))));
+    const classifiedImg = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
