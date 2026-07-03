@@ -4614,9 +4614,14 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
     → 有数值的子项用 itemType="lab"（name/value/unit/referenceRange）
     → 有描述结论的用 itemType="imaging"（findings/diagnosis/conclusion）
 
-14. 人体成分分析
+14. 人体成分分析（InBody/BCA-2A等体成分测量仪报告）
     → 有数值的子项用 itemType="lab"（name/value/unit/referenceRange）
     → 有描述结论的用 itemType="imaging"
+    → 这类报告页面顶部常同时印有"健康评分"（一个0-100的综合评分数字）和"体重"（kg数值），
+      两者版面位置接近、都是不带单位说明的纯数字，极易看错行/张冠李戴。必须严格按各自的
+      标签文字取值：name="健康评分"只能取"健康评分"这个标签紧跟着的数字；name="体重"必须
+      取报告下方"基本评估"表格里"体重"那一行、带kg单位的公斤数值，不能用"健康评分"的数字
+      代替体重，这是两个完全独立、含义不同的数值，务必分别核对准确提取。
 
 【输出格式】
 仅输出 JSON，不要任何额外文字：
