@@ -161,7 +161,7 @@ const SR_CATEGORY = {
 const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7' }
 
 // ── 开单弹窗 ─────────────────────────────────────────────
-function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '' }) {
+function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '', prefillSuggestions = [] }) {
   const toast = useToast()
   const [items, setItems] = useState([])
   const [title, setTitle] = useState(prefillTitle)
@@ -172,6 +172,8 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
   const [searching, setSearching] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [matchingSuggestions, setMatchingSuggestions] = useState(false)
+  const [unmatchedSuggestions, setUnmatchedSuggestions] = useState([])
   const timerRef = React.useRef()
 
   const doSearch = async (q) => {
@@ -195,6 +197,33 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
     setItems(prev => [...prev, { itemType: item.type, itemId: item._id, itemName: item.name, notes: '' }])
     setSearchQ(''); setSearchResults([])
   }
+
+  // AI开单建议给出的是纯项目名称（如"TSH促甲状腺激素"），弹窗打开时按名称逐个搜索项目库，
+  // 命中的自动加入已选列表，避免医护还要照着AI建议文字手动一个个再搜一遍——
+  // 之前AI建议的项目名称只是拼成文字塞进备注框，跟真正的开单条目完全脱节
+  useEffect(() => {
+    if (!prefillSuggestions.length) return
+    let cancelled = false
+    setMatchingSuggestions(true)
+    ;(async () => {
+      const unmatched = []
+      for (const name of prefillSuggestions) {
+        if (cancelled) return
+        try {
+          const res = await staffAPI.getRequisitionItems(name)
+          const hit = (res.data || [])[0]
+          if (hit) {
+            setItems(prev => prev.find(i => i.itemId === hit._id) ? prev : [...prev, { itemType: hit.type, itemId: hit._id, itemName: hit.name, notes: '' }])
+          } else {
+            unmatched.push(name)
+          }
+        } catch { unmatched.push(name) }
+      }
+      if (!cancelled) { setUnmatchedSuggestions(unmatched); setMatchingSuggestions(false) }
+    })()
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const removeItem = (idx) => setItems(prev => prev.filter((_, i) => i !== idx))
   const updateItemNotes = (idx, v) => setItems(prev => prev.map((it, i) => i === idx ? { ...it, notes: v } : it))
@@ -227,11 +256,22 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
               <label className="form-label">要求完成日期（可选）</label>
               <input className="form-input" type="date" value={dueDate} onChange={e => setDueDate(e.target.value)} />
             </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
+            <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
               <label className="form-label">整体备注（可选）</label>
-              <input className="form-input" placeholder="整体注意事项..." value={notes} onChange={e => setNotes(e.target.value)} />
+              <textarea className="form-input" rows={4} placeholder="整体注意事项...（如AI开单建议的复查背景、原因说明）"
+                style={{ resize: 'vertical', lineHeight: 1.6 }}
+                value={notes} onChange={e => setNotes(e.target.value)} />
             </div>
           </div>
+
+          {matchingSuggestions && (
+            <div style={{ fontSize: 12, color: '#8AA89C' }}>正在匹配AI建议的检查项目…</div>
+          )}
+          {!matchingSuggestions && unmatchedSuggestions.length > 0 && (
+            <div style={{ fontSize: 12, color: '#D97706', background: '#FEF3E2', padding: '8px 12px', borderRadius: 8 }}>
+              ⚠️ AI建议的以下项目在系统项目库中未找到匹配，请手动搜索添加或忽略：{unmatchedSuggestions.join('、')}
+            </div>
+          )}
 
           {/* 搜索添加项目 */}
           <div>
@@ -5309,8 +5349,9 @@ export default function PatientDetailPage() {
                 try {
                   const r = await staffAPI.generateAIExamSuggest(id)
                   const d = r.data || {}
-                  const notesWithSuggestions = [d.notes, d.suggestions?.length ? `AI建议检查项目：${d.suggestions.join('、')}` : ''].filter(Boolean).join('\n')
-                  setReqPrefill({ title: d.title || '', notes: notesWithSuggestions })
+                  // suggestions（AI建议的具体检查项目名称）不再只是拼成文字塞进备注，
+                  // 改为传给弹窗自动按名称搜索项目库、命中的直接加入已选列表
+                  setReqPrefill({ title: d.title || '', notes: d.notes || '', suggestions: d.suggestions || [] })
                   setShowReqModal(true)
                 } catch (err) { toast('AI建议失败：' + (err.message || '未知错误')) }
                 finally { setAiExamSuggesting(false) }
@@ -6488,6 +6529,7 @@ export default function PatientDetailPage() {
           patientId={id}
           prefillTitle={reqPrefill?.title || ''}
           prefillNotes={reqPrefill?.notes || ''}
+          prefillSuggestions={reqPrefill?.suggestions || []}
           onClose={() => { setShowReqModal(false); setReqPrefill(null) }}
           onSaved={() => {
             setShowReqModal(false)
