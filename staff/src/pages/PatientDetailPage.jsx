@@ -6023,13 +6023,12 @@ export default function PatientDetailPage() {
                               <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, width: 100 }}>参考范围</th>
                               <th style={{ padding: '6px 6px', textAlign: 'center', fontWeight: 600, width: 70 }}>状态</th>
                               <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, minWidth: 110, color: '#7C3AED' }}>专项筛查归类</th>
-                              <th style={{ padding: '6px 6px', textAlign: 'left', fontWeight: 600, minWidth: 120, color: '#7C3AED' }}>主要结论</th>
                               <th style={{ padding: '6px 4px', width: 32 }}></th>
                             </tr>
                           </thead>
                           <tbody>
                             {labRows.length === 0 ? (
-                              <tr><td colSpan={7} style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>无检验数值项，可点「新增检验项」手动录入</td></tr>
+                              <tr><td colSpan={6} style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>无检验数值项，可点「新增检验项」手动录入</td></tr>
                             ) : labRows.map(({ it, i }) => {
                               const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
                               return (
@@ -6044,7 +6043,6 @@ export default function PatientDetailPage() {
                                     </select>
                                   </td>
                                   <td style={{ padding: '4px 6px' }}>{classifyCell(it, i)}</td>
-                                  <td style={{ padding: '4px 6px' }}><input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD', fontSize: 11 }} value={it.conclusion || ''} placeholder="如：正常范围" onChange={e => updItem(i, { conclusion: e.target.value })} /></td>
                                   <td style={{ padding: '4px 4px', textAlign: 'center' }}>
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </td>

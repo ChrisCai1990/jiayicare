@@ -5050,7 +5050,11 @@ function cleanupExtractedItems(items) {
   const byOrderGroup = new Map();
   const afterRule1 = list.filter(it => {
     const name = str(it.name);
-    if (!name || orderNameCount.get(name) < 2) return true;
+    // 2026-07-03修复：orderNameCount.get(name)在这个name从未被别的记录当orderName共享过时返回
+    // undefined，"undefined < 2"在JS里恒为false（不会被当成0处理），导致条件误判"满足重复"，
+    // 继续往下走到"value是否为空"分支——几乎所有imaging类型记录(超声/心电图等，靠findings/diagnosis
+    // 描述而非value数值)都会被误判成"看起来像空洞的套餐标题"整条删除。加"|| 0"兜底修正。
+    if (!name || (orderNameCount.get(name) || 0) < 2) return true;
     // 2026-07-03修复：规则1原本只要"name跟共享orderName同名且出现≥2次"就丢弃，用来清理AI把套餐标题
     // 当独立项目重复吐出来的情况（如"肿瘤六项男"被当成具体项目名出现3次，这类每条都没有具体数值）。
     // 但潘孝银2023-05-27报告"血细胞分析"检验单8个子项被AI错误地把name都写成了套餐标题"血细胞分析"，
@@ -5537,23 +5541,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    let __dbg = filterPatientInfoItems(parsed?.items || []);
-    console.log(`[parse-ai-dbg] filterPatientInfoItems -> ${__dbg.length}`);
-    __dbg = dropAdvisoryEcho(__dbg); console.log(`[parse-ai-dbg] dropAdvisoryEcho -> ${__dbg.length}`);
-    __dbg = dropDepartmentSummaryEcho(__dbg); console.log(`[parse-ai-dbg] dropDepartmentSummaryEcho -> ${__dbg.length}`);
-    __dbg = dropNumberedSummaryEcho(__dbg); console.log(`[parse-ai-dbg] dropNumberedSummaryEcho -> ${__dbg.length}`);
-    __dbg = splitEndoscopyPathology(__dbg); console.log(`[parse-ai-dbg] splitEndoscopyPathology -> ${__dbg.length}`);
-    __dbg = cleanupExtractedItems(__dbg); console.log(`[parse-ai-dbg] cleanupExtractedItems -> ${__dbg.length}`);
-    __dbg = mergeEntSubparts(__dbg); console.log(`[parse-ai-dbg] mergeEntSubparts -> ${__dbg.length}`);
-    __dbg = cleanupUltrasoundOverlap(__dbg); console.log(`[parse-ai-dbg] cleanupUltrasoundOverlap -> ${__dbg.length}`);
-    __dbg = fillEmptyDiagnosisFromFindings(__dbg); console.log(`[parse-ai-dbg] fillEmptyDiagnosisFromFindings -> ${__dbg.length}`);
-    __dbg = await classifyItemsAsync(__dbg); console.log(`[parse-ai-dbg] classifyItemsAsync -> ${__dbg.length} matchStatus=${JSON.stringify(__dbg.map(i=>i.matchStatus))}`);
-    __dbg = dropUnclassifiedNameEcho(__dbg); console.log(`[parse-ai-dbg] dropUnclassifiedNameEcho -> ${__dbg.length}`);
-    __dbg = dropExerciseGuideEcho(__dbg); console.log(`[parse-ai-dbg] dropExerciseGuideEcho -> ${__dbg.length}`);
-    __dbg = dropDiagnosisPhraseEcho(__dbg); console.log(`[parse-ai-dbg] dropDiagnosisPhraseEcho -> ${__dbg.length}`);
-    __dbg = dropResultCommentEcho(__dbg); console.log(`[parse-ai-dbg] dropResultCommentEcho -> ${__dbg.length}`);
-    __dbg = dropGenericLabelEcho(__dbg); console.log(`[parse-ai-dbg] dropGenericLabelEcho -> ${__dbg.length}`);
-    const classifiedImg = __dbg;
+    const classifiedImg = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
