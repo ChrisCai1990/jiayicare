@@ -5960,10 +5960,14 @@ export default function PatientDetailPage() {
                   // （如血压来自血管硬度检测报告单、体重来自InBody体成分分析报告单），提取时按原文页码
                   // 顺序排列会被拆得很散，审核时不容易一眼核对。这里只做展示层排序：把命中的项目挪到
                   // 检验/数值表格最前面，其余项目保持原有相对顺序不变（sort是稳定排序），不改变实际存储数据。
+                  // 2026-07-03修复：改成精确匹配（不再用 startsWith 前缀匹配）——"体重控制""标准体重"是
+                  // InBody体成分分析给出的参考/目标值，不是实测读数，只有做过体成分分析的人才会有，之前
+                  // 用前缀匹配"体重"误把这两项也拽进了基础生命体征区，跟真实的身高/体重/BMI/脉搏/血压
+                  // 混在一起，反而增加了审核时的混淆，不是每个人都会做人体成分分析，不该混进核心生命体征组。
                   const VITALS_PRIORITY = ['身高', '体重', 'BMI', '体重指数(BMI)', '脉搏', '血压', '腰围']
                   const vitalsRank = (name) => {
                     const n = String(name || '')
-                    const idx = VITALS_PRIORITY.findIndex(v => n === v || n.startsWith(v))
+                    const idx = VITALS_PRIORITY.indexOf(n)
                     return idx === -1 ? Infinity : idx
                   }
                   const labRows = indexed.filter(({ it }) => !isImaging(it))
