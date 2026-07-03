@@ -5042,6 +5042,16 @@ function cleanupExtractedItems(items) {
   const richness = o => stripAdvisorySuffix(o.findings).length + stripAdvisorySuffix(o.diagnosis).length + stripAdvisorySuffix(o.conclusion).length
     + ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart'].filter(f => str(o[f])).length * 5;
 
+  // 统计每个orderName在去重前全部记录里出现的次数——一份检验单通常包含多个子项，会被多条记录共享
+  // 同一个orderName；而摘要页("体检异常结果及说明"类汇总页)提取出的记录，orderName常是AI临时编造的
+  // 模糊词(如"免疫指标")，在整份报告里往往只出现这一次。用复用频率能可靠区分"真实检验单名"和
+  // "摘要页编造名"，比靠字符串长度或关键词黑名单猜测更站得住脚。
+  const orderNameFreq = new Map();
+  afterRule2.forEach(it => {
+    const on = str(it.orderName);
+    if (on) orderNameFreq.set(on, (orderNameFreq.get(on) || 0) + 1);
+  });
+
   const dedupMap = new Map();
   const scoreCompleteness = o => ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart']
     .filter(f => str(o[f])).length;
@@ -5053,7 +5063,16 @@ function cleanupExtractedItems(items) {
     const c1 = scoreCompleteness(it), c0 = scoreCompleteness(result[idx]);
     // 字段数量打平时（如两条记录都填了findings/diagnosis/conclusion三个字段），用信息量(richness)做决胜局——
     // 此前打平就默认保留先出现的那条，导致摘要页记录（页码靠前）压过详细报告单记录（页码靠后）
-    if (c1 > c0 || (c1 === c0 && richness(it) > richness(result[idx]))) result[idx] = it; // 规则3
+    const winner = (c1 > c0 || (c1 === c0 && richness(it) > richness(result[idx]))) ? it : result[idx]; // 规则3
+    // 2026-07-03修复：orderName单独按复用频率取更可信的一个，不因为内容更丰富的一方"赢了"就连带
+    // 覆盖掉另一方更准确的orderName——如摘要页那条补体4带着findings/diagnosis文本、内容分更高而"赢"，
+    // 但它的orderName="免疫指标"是编造的、报告里只出现1次，详细检验单那条orderName="免疫五项"被
+    // 补体3/补体4/免疫球蛋白ABC共5条记录共享、复用次数更高，应该保留后者，否则这条记录会脱离它
+    // 真正所属的检验单分组，看起来像是"从免疫五项里消失了"。
+    const onA = str(it.orderName), onB = str(result[idx].orderName);
+    const freqA = orderNameFreq.get(onA) || 0, freqB = orderNameFreq.get(onB) || 0;
+    const betterOrderName = freqA >= freqB ? onA : onB;
+    result[idx] = winner.orderName === betterOrderName ? winner : { ...winner, orderName: betterOrderName };
   });
 
   // 规则4：同名但数值不同的重复行（如"尿液干化学分析"一次只提到尿隐血异常、另一次把11项明细都写全）——
