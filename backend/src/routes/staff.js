@@ -5537,7 +5537,23 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))))))))));
+    let __dbg = filterPatientInfoItems(parsed?.items || []);
+    console.log(`[parse-ai-dbg] filterPatientInfoItems -> ${__dbg.length}`);
+    __dbg = dropAdvisoryEcho(__dbg); console.log(`[parse-ai-dbg] dropAdvisoryEcho -> ${__dbg.length}`);
+    __dbg = dropDepartmentSummaryEcho(__dbg); console.log(`[parse-ai-dbg] dropDepartmentSummaryEcho -> ${__dbg.length}`);
+    __dbg = dropNumberedSummaryEcho(__dbg); console.log(`[parse-ai-dbg] dropNumberedSummaryEcho -> ${__dbg.length}`);
+    __dbg = splitEndoscopyPathology(__dbg); console.log(`[parse-ai-dbg] splitEndoscopyPathology -> ${__dbg.length}`);
+    __dbg = cleanupExtractedItems(__dbg); console.log(`[parse-ai-dbg] cleanupExtractedItems -> ${__dbg.length}`);
+    __dbg = mergeEntSubparts(__dbg); console.log(`[parse-ai-dbg] mergeEntSubparts -> ${__dbg.length}`);
+    __dbg = cleanupUltrasoundOverlap(__dbg); console.log(`[parse-ai-dbg] cleanupUltrasoundOverlap -> ${__dbg.length}`);
+    __dbg = fillEmptyDiagnosisFromFindings(__dbg); console.log(`[parse-ai-dbg] fillEmptyDiagnosisFromFindings -> ${__dbg.length}`);
+    __dbg = await classifyItemsAsync(__dbg); console.log(`[parse-ai-dbg] classifyItemsAsync -> ${__dbg.length} matchStatus=${JSON.stringify(__dbg.map(i=>i.matchStatus))}`);
+    __dbg = dropUnclassifiedNameEcho(__dbg); console.log(`[parse-ai-dbg] dropUnclassifiedNameEcho -> ${__dbg.length}`);
+    __dbg = dropExerciseGuideEcho(__dbg); console.log(`[parse-ai-dbg] dropExerciseGuideEcho -> ${__dbg.length}`);
+    __dbg = dropDiagnosisPhraseEcho(__dbg); console.log(`[parse-ai-dbg] dropDiagnosisPhraseEcho -> ${__dbg.length}`);
+    __dbg = dropResultCommentEcho(__dbg); console.log(`[parse-ai-dbg] dropResultCommentEcho -> ${__dbg.length}`);
+    __dbg = dropGenericLabelEcho(__dbg); console.log(`[parse-ai-dbg] dropGenericLabelEcho -> ${__dbg.length}`);
+    const classifiedImg = __dbg;
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
