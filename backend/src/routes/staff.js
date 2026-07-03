@@ -3519,11 +3519,23 @@ async function tumorSignalsFromReports(userId) {
   const MedicalReport = require('../models/MedicalReport');
   const reports = await MedicalReport.find({ user: userId })
     .sort({ checkDate: -1, createdAt: -1 })
-    .select('title checkDate reportItems')
+    .select('title type checkDate screeningCategory reportItems')
     .limit(50);
   const lines = [];
+  const geneticLines = [];
   reports.forEach(r => {
     const dateStr = (r.checkDate || '').slice(0, 10) || '';
+    // 基因检测报告：type=genetic 或标题含"基因"，整份报告的检验条目原样列出交给AI判断
+    // （基因位点/风险分级措辞因检测机构而异，没法像标志物一样统一按关键词摘取，交给AI理解更可靠）
+    const isGeneticReport = r.type === 'genetic' || (r.title || '').includes('基因');
+    if (isGeneticReport) {
+      (r.reportItems || []).forEach(it => {
+        if (it.name && (it.value || it.diagnosis || it.findings)) {
+          geneticLines.push(`${dateStr} ${it.name}：${it.value || it.diagnosis || it.findings}`);
+        }
+      });
+      return;
+    }
     (r.reportItems || []).forEach(it => {
       const name = it.name || '';
       const isMarker = TUMOR_MARKER_KEYWORDS.some(kw => name.toLowerCase().includes(kw.toLowerCase()));
@@ -3538,21 +3550,21 @@ async function tumorSignalsFromReports(userId) {
       }
     });
   });
-  return lines;
+  return { markerAndFindingLines: lines, geneticLines };
 }
 
 // POST /api/staff/patients/:id/ai-risk-assessment — 生成风险评估
 router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
-      .select('name gender age chronicDiseases healthProfile labValues');
+      .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const { chat } = require('../utils/ai');
     const lv = user.labValues || {};
     const signals = ruleEngineSignals(lv);
-    const tumorLines = await tumorSignalsFromReports(req.params.id);
-    if (tumorLines.length) signals.tumor = tumorLines;
+    const { markerAndFindingLines, geneticLines } = await tumorSignalsFromReports(req.params.id);
+    if (markerAndFindingLines.length) signals.tumor = markerAndFindingLines;
     const sigText = Object.entries(signals)
       .map(([k, arr]) => `${k}：${arr.length ? arr.join('；') : '规则引擎未发现明显异常'}`)
       .join('\n');
@@ -3564,14 +3576,28 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
       lv.cr && `肌酐 ${lv.cr}`, lv.egfr && `eGFR ${lv.egfr}`, lv.hcy && `同型半胱氨酸 ${lv.hcy}`,
     ].filter(Boolean).join('、') || '暂无体检数据';
 
+    // 个人生活习惯——吸烟/饮酒/饮食是肿瘤（尤其肺癌、肝癌、胃肠癌）公认的强相关风险因素，
+    // 之前风险评估完全没接入生活方式数据，跟"AI汇总分析"里已有的生活方式板块脱节
+    const ls = user.lifestyle || {};
+    const lifestyleLines = [
+      ls.smoking && `吸烟：${ls.smoking}`,
+      ls.alcohol && `饮酒：${ls.alcohol}`,
+      ls.diet && `饮食：${ls.diet}`,
+    ].filter(Boolean).join('；') || '暂无生活方式记录';
+
+    const geneticText = geneticLines.length ? geneticLines.join('\n') : '暂无基因检测报告';
+
     const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。
 
 【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
+【个人生活习惯】${lifestyleLines}
 【体检关键指标】${labLines}
 【规则引擎预警信号】
 ${sigText}
+【基因检测报告】
+${geneticText}
 
-肿瘤风险维度请结合上方"tumor"信号（历年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、既往史、家族史综合判断；信号为空不代表零风险，需结合年龄、性别、家族史等基础风险因素给出合理评估，不要机械地判为low。
+肿瘤风险维度请结合上方"tumor"信号（历年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、个人生活习惯（吸烟/饮酒/饮食是肺癌/肝癌/胃肠癌的强相关因素）、既往史、家族史、基因检测报告（如有明确高风险位点/基因，应显著提高风险等级）综合判断；信号为空不代表零风险，需结合年龄、性别、生活习惯、家族史等基础风险因素给出合理评估，不要机械地判为low。
 
 请严格按以下JSON输出（level 取值：low/medium/high/critical，分别代表低/中/高/危急值；score 0-100）：
 {
