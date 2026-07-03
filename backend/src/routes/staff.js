@@ -5004,6 +5004,13 @@ function cleanupExtractedItems(items) {
     return !looksLikePanelTitle(it.name);
   });
 
+  // 2026-07-03修复：richness/stripAdvisorySuffix 定义提前到规则3也能用——计算信息量前先剔除
+  // "意义：""建议："开头的科普/建议性文字，这类通用医学教育模板文本常见于"体检异常结果及说明"这类
+  // 多检查项汇总摘要页，会让摘要页的字数"注水"。字段是否有值(用于*5加分)仍看原始内容，不受剔除影响。
+  const stripAdvisorySuffix = s => str(s).replace(/(意义|建议)[：:][\s\S]*$/, '').trim();
+  const richness = o => stripAdvisorySuffix(o.findings).length + stripAdvisorySuffix(o.diagnosis).length + stripAdvisorySuffix(o.conclusion).length
+    + ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart'].filter(f => str(o[f])).length * 5;
+
   const dedupMap = new Map();
   const scoreCompleteness = o => ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart']
     .filter(f => str(o[f])).length;
@@ -5012,18 +5019,14 @@ function cleanupExtractedItems(items) {
     const key = `${it.itemType}|${str(it.name)}|${str(it.value)}|${str(it.unit)}`;
     if (!dedupMap.has(key)) { dedupMap.set(key, result.length); result.push(it); return; }
     const idx = dedupMap.get(key);
-    if (scoreCompleteness(it) > scoreCompleteness(result[idx])) result[idx] = it; // 规则3
+    const c1 = scoreCompleteness(it), c0 = scoreCompleteness(result[idx]);
+    // 字段数量打平时（如两条记录都填了findings/diagnosis/conclusion三个字段），用信息量(richness)做决胜局——
+    // 此前打平就默认保留先出现的那条，导致摘要页记录（页码靠前）压过详细报告单记录（页码靠后）
+    if (c1 > c0 || (c1 === c0 && richness(it) > richness(result[idx]))) result[idx] = it; // 规则3
   });
 
   // 规则4：同名但数值不同的重复行（如"尿液干化学分析"一次只提到尿隐血异常、另一次把11项明细都写全）——
   // 同一次体检里同名项目出现两次基本都是同一处内容被分两页/两批次各提取了一遍，保留信息量更大的一条
-  // 2026-07-03修复：计算信息量前先剔除"意义：""建议："开头的科普/建议性文字——这类通用医学教育模板文本
-  // 常见于"体检异常结果及说明"这类多检查项汇总摘要页，会让摘要页的字数"注水"，反而在信息量竞争中压过
-  // 详细报告单页（如无痛肠镜检查报告单）里更有临床价值但字数较少的真实检查所见，导致最终保留了摘要页
-  // 的简写内容而不是详细报告单的完整所见。字段是否有值(用于*5加分)仍看原始内容，不受剔除影响。
-  const stripAdvisorySuffix = s => str(s).replace(/(意义|建议)[：:][\s\S]*$/, '').trim();
-  const richness = o => stripAdvisorySuffix(o.findings).length + stripAdvisorySuffix(o.diagnosis).length + stripAdvisorySuffix(o.conclusion).length
-    + ['referenceRange', 'orderName', 'findings', 'diagnosis', 'conclusion', 'bodyPart'].filter(f => str(o[f])).length * 5;
   const byName = new Map();
   result.forEach((it, idx) => {
     const n = str(it.name);
