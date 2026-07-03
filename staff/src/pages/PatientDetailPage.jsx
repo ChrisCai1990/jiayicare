@@ -5956,7 +5956,18 @@ export default function PatientDetailPage() {
                   const indexed = ocrEditItems.map((it, i) => ({ it, i }))
                   // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
                   const isImaging = (it) => it.itemType === 'imaging' || (it.value || '').length > 40
+                  // 身高/体重/BMI/脉搏/血压/腰围这几个基础生命体征，原始报告常常拆在不同页面/检查单里
+                  // （如血压来自血管硬度检测报告单、体重来自InBody体成分分析报告单），提取时按原文页码
+                  // 顺序排列会被拆得很散，审核时不容易一眼核对。这里只做展示层排序：把命中的项目挪到
+                  // 检验/数值表格最前面，其余项目保持原有相对顺序不变（sort是稳定排序），不改变实际存储数据。
+                  const VITALS_PRIORITY = ['身高', '体重', 'BMI', '体重指数(BMI)', '脉搏', '血压', '腰围']
+                  const vitalsRank = (name) => {
+                    const n = String(name || '')
+                    const idx = VITALS_PRIORITY.findIndex(v => n === v || n.startsWith(v))
+                    return idx === -1 ? Infinity : idx
+                  }
                   const labRows = indexed.filter(({ it }) => !isImaging(it))
+                    .sort((a, b) => vitalsRank(a.it.name) - vitalsRank(b.it.name))
                   const imgRows = indexed.filter(({ it }) => isImaging(it))
                   const abn = labRows.map(x => x.it).filter(it => it.status === 'abnormal' || it.status === 'attention')
                   const abnN = abn.filter(it => it.status === 'abnormal').length
