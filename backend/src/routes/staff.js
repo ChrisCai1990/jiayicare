@@ -1025,10 +1025,18 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     const checkDate = date || '';
     const reportYear = checkDate ? new Date(checkDate).getFullYear() : new Date().getFullYear();
 
-    // 如果提供了 screeningL1 + 日期，检查是否已存在同类筛查记录（避免上传报告和手动录入产生两条审核）
+    // 如果提供了 screeningL1 + 日期，检查是否已存在"同类筛查但还没有文件"的占位记录（避免上传报告和
+    // 手动录入产生两条审核）——2026-07-03修复两处：
+    // 1) 原查询只按 screeningL1+checkDate 匹配，没看 screeningL2。一份报告涉及多个类目时，健管专员
+    //    同一天、同一大类、但不同子类目分别上传，会被误判成"已存在同一条"，后一份覆盖前一份丢失文件。
+    //    补上 screeningL2 一起匹配（子类目不同就不是同一条筛查记录）。
+    // 2) 原逻辑只要匹配上就直接覆盖 fileUrl，但即使 L1+L2 都相同，也可能是两份独立的真实报告（如同一
+    //    大类同一子类目下，分两次分别拍了报告前后两页）。收紧为：只有已存在记录还没有 fileUrl（即通过
+    //    体检方案生成的空壳占位记录，等着补文件）才合并覆盖；已经有文件的必须新建，不能覆盖一份已经
+    //    真实存在的报告。
     let report;
     if (screeningL1 && checkDate) {
-      const existing = await MedicalReport.findOne({ user: patientId, checkDate, screeningL1 });
+      const existing = await MedicalReport.findOne({ user: patientId, checkDate, screeningL1, screeningL2: screeningL2 || '', fileUrl: '' });
       if (existing) {
         if (title) existing.title = title;
         if (hospital) existing.hospital = hospital;
