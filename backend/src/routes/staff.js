@@ -5083,6 +5083,32 @@ function cleanupExtractedItems(items) {
     return !v || /^\d{2,3}\s*\/\s*\d{2,3}/.test(v);
   });
 
+  // 规则6（2026-07-03新增）：跨检验单/套餐的重复——同一份检验项目有时会同时出现在"体检异常结果及说明"
+  // 摘要页(名字较短)和后面详细检验单页面(名字可能多带"测定"等后缀、所属orderName也不同，如"血脂全套"
+  // 和"血脂四项"两个不同订单里都有"血清高密度脂蛋白胆固醇")。规则1-4都要求name（或name::orderName）
+  // 完全相同才归为一组，认不出这类只差几个字后缀、或跨订单出现的重复，导致漏网。
+  // 这里只在itemType=lab、且"去掉常见检验后缀词后的name + 数值 + 单位"三者都完全相同时才判定为真
+  // 重复并自动去重（双重确认：名字近似 + 数值也一致），避免误伤"名字相似但确实是两次不同检验"的情况；
+  // 名字相同但数值不同的重复（如同一项目两次结果不一样）不在这里处理，两条都保留，交给医护人工核对。
+  const stripLabSuffix = (name) => str(name).replace(/(测定|检测|定量|半定量|分析|测量)$/g, '').trim();
+  const dedupMap6 = new Map();
+  const drop6 = new Set();
+  final.forEach((it, idx) => {
+    if (it.itemType !== 'lab') return;
+    const v = str(it.value);
+    if (!v) return; // 空值不参与这层去重，避免误伤真实的空值占位记录
+    const key = `${stripLabSuffix(it.name)}|${v}|${str(it.unit)}`;
+    if (!dedupMap6.has(key)) { dedupMap6.set(key, idx); return; }
+    const existIdx = dedupMap6.get(key);
+    if (richness(final[idx]) > richness(final[existIdx])) {
+      drop6.add(existIdx);
+      dedupMap6.set(key, idx);
+    } else {
+      drop6.add(idx);
+    }
+  });
+  final = final.filter((_, idx) => !drop6.has(idx));
+
   return final;
 }
 
