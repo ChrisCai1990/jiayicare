@@ -5225,6 +5225,40 @@ function parseExpectedCount(orderName) {
   return null;
 }
 
+// 血常规是全国最标准化的检验套餐之一，项目基本固定，但检验单标题常写成"血细胞分析"这类不带"N项"
+// 数字后缀的名字，findUnderExtractedPages 靠标题解析条数的机制覆盖不到，只能用一份预期项目清单兜底。
+// 每组用"其中一个变体名出现即算命中"，兼容不同机构的缩写/全称差异。
+const CBC_EXPECTED_GROUPS = [
+  ['白细胞计数', 'WBC'],
+  ['中性粒细胞绝对值', 'GR#', 'NEUT#'],
+  ['中性粒细胞百分比', 'GR%', 'NEUT%'],
+  ['淋巴细胞绝对值', 'LY#'],
+  ['淋巴细胞百分比', 'LY%'],
+  ['单核细胞绝对值', 'MO#', 'MON#'],
+  ['单核细胞百分比', 'MO%', 'MON%'],
+  ['嗜酸性粒细胞绝对值', 'EO#'],
+  ['嗜酸性粒细胞百分比', 'EO%'],
+  ['红细胞计数', 'RBC'],
+  ['血红蛋白', 'HGB'],
+  ['血小板计数', 'PLT'],
+];
+// 判断一批条目里，是否已经出现了血常规特征项（用来确认这份报告确实有血常规检验单，而不是对没做过血常规的报告瞎报缺项）
+function hasCbcAnchor(items) {
+  return (items || []).some(it => /白细胞计数|血红蛋白\(HGB\)|WBC|血细胞分析/.test(str(it.name)));
+}
+function findUnderExtractedCBC(items) {
+  if (!hasCbcAnchor(items)) return { pagesToRetry: [], missingGroups: [] };
+  const names = (items || []).map(it => str(it.name));
+  const missingGroups = CBC_EXPECTED_GROUPS.filter(variants => !variants.some(v => names.some(n => n.includes(v))));
+  if (!missingGroups.length) return { pagesToRetry: [], missingGroups: [] };
+  // 缺项通常发生在血常规检验单的跨页续写处，取所有命中"血细胞分析/血常规"特征名的条目所在页，一并重试
+  const pages = new Set(
+    (items || []).filter(it => /白细胞计数|血红蛋白\(HGB\)|WBC|血细胞分析|中性粒细胞|淋巴细胞|单核细胞|嗜酸性粒细胞|嗜碱性粒细胞|红细胞计数|血小板计数/.test(str(it.name)))
+      .map(it => it._page).filter(Boolean)
+  );
+  return { pagesToRetry: [...pages], missingGroups: missingGroups.map(g => g[0]) };
+}
+
 // 检查按检验单分组后，是否有组的实际条数少于标题声明的条数（如"抗核抗体谱15项"只提取到1条）；
 // 有则返回需要重新识别的页码集合（同一页可能命中多个不足的检验单，去重）
 function findUnderExtractedPages(items) {
@@ -5351,6 +5385,34 @@ async function runReportParse(reportId) {
             }
           } catch (e) {
             console.log(`[parse-ai] 页${pageNum}重试异常: ${e.message}`);
+          }
+        }
+      }
+      // 血常规标准项目清单核对+单页重试：检验单标题（如"血细胞分析"）不带"N项"数字后缀，
+      // 上面按标题解析条数的机制覆盖不到，改用固定项目清单比对是否缺项（详见 findUnderExtractedCBC 注释）
+      const CBC_NAME_PATTERN = /白细胞计数|血红蛋白\(HGB\)|WBC|血细胞分析|中性粒细胞|淋巴细胞|单核细胞|嗜酸性粒细胞|嗜碱性粒细胞|红细胞计数|血小板计数|红细胞比积|平均红细胞|血小板比积|血小板体积|大血小板比率|红细胞分布宽度|红细胞体积分布宽度/;
+      const { pagesToRetry: cbcRetryPages, missingGroups } = findUnderExtractedCBC(allItems);
+      if (cbcRetryPages.length) {
+        console.log(`[parse-ai] 血常规缺项核对不通过 ${reportId}：缺少${missingGroups.join('、')}，重试页${cbcRetryPages.join(',')}`);
+        for (const pageNum of cbcRetryPages) {
+          try {
+            const img = await renderSinglePage(pdfBuf, pageNum, DPI);
+            if (!img) continue;
+            const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页的血常规/血细胞分析检验单曾漏提了部分子项（缺少：${missingGroups.join('、')}）。请重新逐行核对该检验单在图片中的每一行，血常规通常有白细胞、中性粒细胞、淋巴细胞、单核细胞、嗜酸性粒细胞、嗜碱性粒细胞、红细胞、血红蛋白、血小板等约20项子指标（含绝对值和百分比两种），必须逐条全部输出，不得省略或遗漏任何一行。`;
+            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
+            const p = safeParseJSON(text);
+            if (!p || !Array.isArray(p.items)) continue;
+            const retryItems = p.items.filter(it => it.name && String(it.name).trim()).map(it => ({ ...it, _page: pageNum }));
+            const retryCbcItems = retryItems.filter(it => CBC_NAME_PATTERN.test(str(it.name)));
+            const oldCbcCountOnPage = allItems.filter(it => it._page === pageNum && CBC_NAME_PATTERN.test(str(it.name))).length;
+            if (retryCbcItems.length > oldCbcCountOnPage) {
+              allItems = allItems.filter(it => !(it._page === pageNum && CBC_NAME_PATTERN.test(str(it.name)))).concat(retryCbcItems);
+              console.log(`[parse-ai] 页${pageNum}血常规重试生效：血常规条目 ${oldCbcCountOnPage}→${retryCbcItems.length}`);
+            } else {
+              console.log(`[parse-ai] 页${pageNum}血常规重试未改善，保留原结果`);
+            }
+          } catch (e) {
+            console.log(`[parse-ai] 页${pageNum}血常规重试异常: ${e.message}`);
           }
         }
       }
