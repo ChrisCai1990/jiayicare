@@ -4203,7 +4203,7 @@ export default function PatientDetailPage() {
                 </AISectionCard>
 
                 {/* 板块四：慢性病及其他健康指标 */}
-                <AISectionCard title="慢性病及其他健康指标" icon="📊" color="#0077B6">
+                <AISectionCard title="慢性病及其他健康指标分析" icon="📊" color="#0077B6">
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.chronic_disease?.items || []).map((item, i) => (
