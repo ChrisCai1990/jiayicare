@@ -5038,8 +5038,14 @@ function cleanupExtractedItems(items) {
   const byOrderGroup = new Map();
   const afterRule1 = list.filter(it => {
     const name = str(it.name);
-    if (name && orderNameCount.get(name) >= 2) return false; // 规则1
-    return true;
+    if (!name || orderNameCount.get(name) < 2) return true;
+    // 2026-07-03修复：规则1原本只要"name跟共享orderName同名且出现≥2次"就丢弃，用来清理AI把套餐标题
+    // 当独立项目重复吐出来的情况（如"肿瘤六项男"被当成具体项目名出现3次，这类每条都没有具体数值）。
+    // 但潘孝银2023-05-27报告"血细胞分析"检验单8个子项被AI错误地把name都写成了套餐标题"血细胞分析"，
+    // 而value字段其实各自都有具体检验数值（"3.71*10^9/L"等）——这种情况丢弃就会把真实数据一起清空。
+    // 用value是否有实质内容做区分：有具体数值说明这是真实子项（name打错了但数据是真的），不丢弃；
+    // value为空才是真正空洞的套餐标题重复行，按原逻辑丢弃。
+    return !!str(it.value); // 规则1
   });
 
   // 规则2 只丢弃"名字本身看起来就是套餐标题"的那一条（如"血脂七项""肿瘤六项男(不含...)"），
