@@ -5742,6 +5742,33 @@ export default function PatientDetailPage() {
                 {reportDetailLoading ? (
                   <div style={{ padding: '16px 0', textAlign: 'center', color: '#8AA89C', fontSize: 13 }}>加载中…</div>
                 ) : (showReportDetail.content || showReportDetail.fileUrl) ? (() => {
+                  // 一份报告可能关联多张照片(如"结论页"+"数据页"，见 fileUrls)。content 场景只有单个
+                  // data URI，没有多图概念，仍走单文件展示；fileUrls 存在且 >1 张时逐张列出，
+                  // 否则退化为单文件展示，兼容旧数据(只有fileUrl没有fileUrls的历史报告)。
+                  const multiUrls = (!showReportDetail.content && showReportDetail.fileUrls && showReportDetail.fileUrls.length > 1)
+                    ? showReportDetail.fileUrls : null
+                  if (multiUrls) {
+                    const isPdf = showReportDetail.mimeType === 'application/pdf'
+                    const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        <div style={{ fontSize: 12, color: '#8AA89C' }}>
+                          共 {multiUrls.length} 张照片合并为一份报告
+                          {sizeKB ? `，合计 ${sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}` : ''}
+                        </div>
+                        {multiUrls.map((u, idx) => {
+                          const src = u.startsWith('/') ? API_ORIGIN + u : u
+                          return (
+                            <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3' }}>
+                              <span style={{ fontSize: 24, lineHeight: 1 }}>{isPdf ? '📄' : '🖼️'}</span>
+                              <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#1A2B24' }}>第 {idx + 1} 张</div>
+                              <button className="btn btn-primary btn-sm" onClick={() => isPdf ? window.open(src, '_blank') : setPreviewImageUrl(src)}>查看</button>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  }
                   const rawSrc = showReportDetail.content || showReportDetail.fileUrl
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
                   const isPdf = showReportDetail.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
@@ -5930,8 +5957,34 @@ export default function PatientDetailPage() {
               <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
                 {/* 左：原始报告预览 */}
                 {(() => {
-                  const rawSrc = ocrReviewReport.content || ocrReviewReport.fileUrl || (ocrReviewReport.fileUrls && ocrReviewReport.fileUrls[0]) || ''
                   const paneStyle = { width: '40%', borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }
+                  // 一份报告可能关联多张照片(fileUrls，如"结论页"+"数据页")。content 场景没有多图概念，
+                  // 仍走单文件预览；fileUrls 有多张时全部展示，不再只取第一张，避免审核时看不到其余照片。
+                  const multiUrls = (!ocrReviewReport.content && ocrReviewReport.fileUrls && ocrReviewReport.fileUrls.length > 1)
+                    ? ocrReviewReport.fileUrls : null
+                  if (multiUrls) {
+                    const isPdf = ocrReviewReport.mimeType === 'application/pdf'
+                    return (
+                      <div style={paneStyle}>
+                        <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>原始报告（共{multiUrls.length}张，对照核对）</div>
+                        {multiUrls.map((u, idx) => {
+                          const s = u.startsWith('/') ? API_ORIGIN + u : u
+                          return isPdf ? (
+                            <div key={idx} style={{ marginBottom: 8 }}>
+                              <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
+                              <iframe src={s} title={`报告${idx + 1}`} style={{ width: '100%', height: '40vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                            </div>
+                          ) : (
+                            <div key={idx} style={{ marginBottom: 8 }}>
+                              <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
+                              <img src={s} alt={`报告${idx + 1}`} style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(s)} />
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )
+                  }
+                  const rawSrc = ocrReviewReport.content || ocrReviewReport.fileUrl || (ocrReviewReport.fileUrls && ocrReviewReport.fileUrls[0]) || ''
                   if (!rawSrc) return <div style={{ ...paneStyle, color: '#B0C4BB', fontSize: 13, padding: 16 }}>无原始文件可预览</div>
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
                   const isPdf = ocrReviewReport.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
