@@ -4627,11 +4627,14 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
     → findings=检查所见/描述，conclusion=结论原文，diagnosis=同 conclusion
 
 13. 睡眠呼吸监测 / 动态血压监测（24小时动态血压）
-    → 【判断标准】报告里每一项如果印刷了具体测量数值+单位/参考范围（如AHI指数、最低血氧饱和度、
-      平均血压、血压负荷值等），该项用 itemType="lab"（name/value/unit/referenceRange）单独一条
-    → 报告里如果只有一段文字描述性结论（没有配套的独立数值+参考范围，如"提示存在阻塞性睡眠呼吸暂停"
-      "血压昼夜节律正常"这类整体判断性文字），用 itemType="imaging"（findings/diagnosis/conclusion）
-    → 同一份报告可以既有lab子项又有一条imaging总结，两者不冲突，按报告实际内容如实拆分
+    → 【重要】这类报告必须同步按"检验"+"检查"两种方式提取，不是二选一：
+      ① 报告里印刷了具体测量数值+单位/参考范围的项（如AHI指数、最低血氧饱和度、平均血压、
+         血压负荷值等），逐项用 itemType="lab"（name/value/unit/referenceRange）单独一条
+      ② 同时必须再输出一条 itemType="imaging" 的检查总结记录，把报告里的诊断意见/结论文字
+         （如"提示存在阻塞性睡眠呼吸暂停""血压昼夜节律正常""建议..."）填入 diagnosis/conclusion，
+         findings 填检查过程/方法描述（如有）；即使数值子项已经单独提取，这条diagnosis/conclusion
+         的整体印象/结论记录也不能省略
+    → 只要报告里同时存在数值子项和诊断结论文字，两类记录都必须出现，不能只出一种
     → name统一为"睡眠呼吸监测"或"动态血压监测"（或报告实际印刷标题），不要与其他检查混淆
 
 14. 人体成分分析（InBody/BCA-2A等体成分测量仪报告）
