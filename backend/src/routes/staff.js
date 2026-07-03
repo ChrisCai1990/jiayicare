@@ -4870,6 +4870,21 @@ function dropUnclassifiedNameEcho(items) {
   return (items || []).filter(it => !isUnclassifiedNameEcho(it));
 }
 
+// 2026-07-03：运动处方/热身放松环节说明（如"放松（包括拉伸）" value="5-10分钟" unit="分钟"）
+// 会被AI当成一条独立检验数据提取，实际是运动指导科普话术里的步骤条目。
+// 用"分类失败 + 单位是时长单位(分钟/秒/组/次)"双重门槛判定：真实检验/检查项目一定能归类，
+// 且几乎不会用"分钟/组/次"做计量单位，两者同时满足才判定为运动指导话术，避免误伤真实项目。
+function isExerciseGuideEcho(it) {
+  if (it.matchStatus !== 'unclassified') return false;
+  const unit = str(it.unit);
+  if (!/^(分钟|秒|分|组|次)$/.test(unit)) return false;
+  const value = str(it.value);
+  return /^\d+\s*[-~]?\s*\d*\s*(分钟|秒|分|组|次)?$/.test(value);
+}
+function dropExerciseGuideEcho(items) {
+  return (items || []).filter(it => !isExerciseGuideEcho(it));
+}
+
 // 2026-07-02：胃镜/肠镜病理不再要求AI自己判断"是否要拆成第二条独立记录"（这对模型太难，经常内容窜位或漏掉），
 // 改成AI只需原样抄写pathologyFindings/pathologyDiagnosis两个候选字段（没有就留空），
 // 由代码确定性地拆出"胃镜病理"/"肠镜病理"独立记录——是否拆分不再依赖模型的语义判断，只看这两个字段是否非空。
@@ -5383,7 +5398,7 @@ async function runReportParse(reportId) {
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
       const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))))));
-      const classified = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))));
+      const classified = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -5413,7 +5428,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))))))));
+    const classifiedImg = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
