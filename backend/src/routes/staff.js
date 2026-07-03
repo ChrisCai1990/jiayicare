@@ -5156,12 +5156,13 @@ function cleanupExtractedItems(items) {
   return final;
 }
 
-// 2026-07-03补充：眼压/视力/电耳镜等检查偶发 diagnosis/conclusion 被AI写成只剩编号、没有实际结论文字
-// 的残缺格式（如"1、"），而同一条记录的 findings 字段其实是完整的（如"右:12mmHg；左:14mmHg"）。
-// 判定为"编号+其后要么为空、要么只有极短的标点/空白"才回填，避免误伤"1、各心腔大小...未见明显异常"
-// 这种编号后面跟着完整内容的正常写法。
+// 2026-07-03补充：眼压/视力/电耳镜等检查偶发 diagnosis/conclusion 被AI写成只剩编号（前面有时还带
+// "小结："这个前缀）、没有实际结论文字的残缺格式（如"1、""小结：1、"），而同一条记录的 findings 字段
+// 其实是完整的（如"右:12mmHg；左:14mmHg"）。判定为"(可选'小结：'前缀)+编号+其后要么为空、要么只有
+// 极短的标点/空白"才回填，避免误伤"小结：1、未见异常""1、各心腔大小...未见明显异常"这种编号后面
+// 跟着完整内容的正常写法。
 function fillEmptyDiagnosisFromFindings(items) {
-  const isNumberOnly = (s) => /^\d+\s*[、.．:：]\s*$/.test(str(s));
+  const isNumberOnly = (s) => /^(小结[：:]\s*)?\d+\s*[、.．:：]\s*$/.test(str(s));
   return (items || []).map(it => {
     const findings = str(it.findings);
     if (!findings) return it;
