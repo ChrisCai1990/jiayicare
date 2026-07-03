@@ -4537,7 +4537,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 【基本规则】
 规则零：只提取本图中实际存在的内容，绝对不推断、联想或补全。
 规则A：跳过患者基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
-规则B：跳过汇总页——页面包含"异常结果汇总""体检结果汇总""异常结果及建议"或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
+规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
 规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
 规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
 规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
@@ -4667,7 +4667,9 @@ function canonicalizeExamName(name) {
   if (/肠.{0,4}病理|结肠镜.*病理/.test(n)) return '肠镜病理';
   if (/动态心电图|Holter|24小时.*心电图/i.test(n)) return n; // 动态心电图≠常规心电图，不归一化，保留原名避免混淆
   if (/心电图|^ECG$|^EKG$/i.test(n)) return '常规心电图';
-  if (/胃镜|电子胃镜|无痛胃镜/.test(n)) return '胃镜检查';
+  // "电子胃十二指肠镜检查"这类胃十二指肠联合镜检的正规名称，字面上含有"十二指肠镜"，
+  // 会被下面的肠镜正则误命中"肠镜"两个字（十二指-肠镜），实际这是胃部检查，必须先判断走胃镜分支
+  if (/胃镜|电子胃镜|无痛胃镜|胃十二指肠镜|胃.{0,3}十二指肠镜/.test(n)) return '胃镜检查';
   if (/肠镜|电子肠镜|无痛肠镜|结肠镜/.test(n)) return '肠镜检查';
   if (/肺CT|胸部CT|肺部CT|低剂量.*CT|CT.*低剂量/i.test(n)) return '肺部CT';
   if (/双眼眼底照相|眼底照相|眼底检查/.test(n)) return '双眼眼底照相';
@@ -5289,7 +5291,12 @@ async function runReportParse(reportId) {
       allItems.sort((a, b) => (a._page || 0) - (b._page || 0));
       allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
 
-      const filteredItems = cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))))));
+      // 2026-07-03修复：splitEndoscopyPathology 挪到 cleanupExtractedItems 去重之前执行——
+      // 多页报告里，胃镜/肠镜的"检查所见"页和"病理报告"页常常canonicalize成同一个名字(如都叫"胃镜检查")，
+      // 若先去重(同名只保留信息量最大的一条)，病理内容会被当"重复"整条丢弃，splitEndoscopyPathology
+      // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
+      // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
+      const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))))));
       const classified = dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -5320,7 +5327,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(splitEndoscopyPathology(mergeEntSubparts(cleanupExtractedItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))))))));
+    const classifiedImg = dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
