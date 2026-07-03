@@ -4626,9 +4626,13 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
     → itemType="imaging"，name="心电图"
     → findings=检查所见/描述，conclusion=结论原文，diagnosis=同 conclusion
 
-13. 睡眠呼吸监测
-    → 有数值的子项用 itemType="lab"（name/value/unit/referenceRange）
-    → 有描述结论的用 itemType="imaging"（findings/diagnosis/conclusion）
+13. 睡眠呼吸监测 / 动态血压监测（24小时动态血压）
+    → 【判断标准】报告里每一项如果印刷了具体测量数值+单位/参考范围（如AHI指数、最低血氧饱和度、
+      平均血压、血压负荷值等），该项用 itemType="lab"（name/value/unit/referenceRange）单独一条
+    → 报告里如果只有一段文字描述性结论（没有配套的独立数值+参考范围，如"提示存在阻塞性睡眠呼吸暂停"
+      "血压昼夜节律正常"这类整体判断性文字），用 itemType="imaging"（findings/diagnosis/conclusion）
+    → 同一份报告可以既有lab子项又有一条imaging总结，两者不冲突，按报告实际内容如实拆分
+    → name统一为"睡眠呼吸监测"或"动态血压监测"（或报告实际印刷标题），不要与其他检查混淆
 
 14. 人体成分分析（InBody/BCA-2A等体成分测量仪报告）
     → 【重要】不要按检验子项逐条拆分提取（体脂率/肌肉量/水分/骨质/蛋白质/细胞内外液/水肿系数/

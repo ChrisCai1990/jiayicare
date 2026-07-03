@@ -335,7 +335,9 @@ const NODES = [
   { id: 'other|维生素及电解质|25-羟基维生素D', category: 'other', categoryKey: 'other', parent: '维生素及电解质', label: '25-羟基维生素D', itemType: 'lab', gender: null,
     aliases: ['维生素D', '25(OH)D', '25羟维生素D', 'VitD', '25-羟维生素D3', '维生素D3', '25-OH-VD'] },
   { id: 'other|维生素及电解质|电解质', category: 'other', categoryKey: 'other', parent: '维生素及电解质', label: '电解质', itemType: 'lab', gender: null,
-    aliases: ['电解质检查', '血钾', '血钠', '血氯', '钾钠氯', '血清电解质', '电解质组合'] },
+    aliases: ['电解质检查', '血钾', '血钠', '血氯', '钾钠氯', '血清电解质', '电解质组合',
+      '钾', 'K+', '钠', 'Na+', '氯', 'Cl-', '二氧化碳结合力', 'CO2CP', '二氧化碳', '钙', 'Ca',
+      '无机磷', '磷', '镁', 'Mg'] },
   // 注：维生素B族仅在有对应检测报告时归类，普通体检报告无此项
   { id: 'other|维生素及电解质|维生素B族', category: 'other', categoryKey: 'other', parent: '维生素及电解质', label: '维生素B族', itemType: 'lab', gender: null,
     aliases: ['维生素B12', '叶酸检测', 'VitB12检测', 'B12检测'] },
@@ -350,7 +352,8 @@ const NODES = [
 
   // 凝血功能+D-二聚体
   { id: 'other|凝血功能|凝血功能', category: 'other', categoryKey: 'other', parent: '凝血功能', label: '凝血功能', itemType: 'lab', gender: null,
-    aliases: ['凝血四项', '凝血五项', 'PT', 'APTT', '凝血常规', 'INR'] },
+    aliases: ['凝血四项', '凝血五项', 'PT', 'APTT', '凝血常规', 'INR',
+      '凝血酶时间', 'TT', '纤维蛋白原', 'FIB', 'Fg', 'FIB-C', '纤维蛋白降解产物', 'FDP'] },
   { id: 'other|凝血功能|D-二聚体', category: 'other', categoryKey: 'other', parent: '凝血功能', label: 'D-二聚体', itemType: 'lab', gender: null,
     aliases: ['D二聚体', 'D-Dimer', 'DDimer'] },
 
