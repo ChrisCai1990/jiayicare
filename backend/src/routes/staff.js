@@ -4217,14 +4217,15 @@ router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.
 
 // ── 4.3 专项筛查结果：按筛查分类查询报告 ─────────────────────────
 // GET /api/staff/patients/:id/screening-reports
+// 2026-07-03修复：此前要求 screeningCategory/screeningL1 非空，这两个字段只有"人工手动录入专项筛查"
+// 路径才会写，AI OCR自动识别的报告（runReportParse写入UserScreeningItem）完全不带这两个字段，
+// 导致走AI识别流程的患者（如潘孝银这批单次上传报告）"体检关键指标"板块永远查不到数据、全部空白。
+// 前端消费这份数据是按reportItems里的关键词自行匹配提取(REPORT_KEY_MAP)，不依赖这两个字段，
+// 去掉这个限制、直接返回该患者全部报告即可覆盖AI识别路径，不影响原有人工录入数据的展示。
 router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
   try {
     const reports = await MedicalReport.find({
       user: req.params.id,
-      $or: [
-        { screeningCategory: { $exists: true, $ne: '' } },
-        { screeningL1: { $exists: true, $ne: '' } },
-      ],
     }).sort({ checkDate: -1, createdAt: -1 }).lean();
     res.json({ success: true, data: reports });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
