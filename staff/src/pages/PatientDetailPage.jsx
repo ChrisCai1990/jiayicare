@@ -399,7 +399,7 @@ export default function PatientDetailPage() {
   }, [screeningTree, screeningForm.screeningL1, screeningForm.screeningL2])
   const [screeningAutoLoading, setScreeningAutoLoading] = useState(false)
   const [screeningLinkedItem, setScreeningLinkedItem] = useState(null)  // 已关联的后台项目
-  const [expandedRecord, setExpandedRecord] = useState(null) // 展开详情的记录 _id
+  const [expandedRecords, setExpandedRecords] = useState(() => new Set()) // 展开详情的记录 _id 集合，支持多条同时展开对比
   const [expandedExamKey, setExpandedExamKey] = useState(null) // 展开的检查医嘱子项 key
   const [editingScreeningId, setEditingScreeningId] = useState(null) // 编辑中的记录 _id
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
@@ -2498,8 +2498,24 @@ export default function PatientDetailPage() {
             } catch (err) { toast(err.message || '删除失败') }
           }
 
+          // 同一筛查项下的多次检测记录按检查日期升序排列（旧→新），checkDate 取不到合法日期的
+          // （如AI记录兜底成报告标题"体检报告"这类非日期字符串）排到最后，不参与破坏正常排序
+          const sortByCheckDate = (records) => {
+            const parseDate = (r) => {
+              const d = new Date(r.checkDate || r.createdAt || '')
+              return isNaN(d.getTime()) ? null : d.getTime()
+            }
+            return [...records].sort((a, b) => {
+              const ta = parseDate(a), tb = parseDate(b)
+              if (ta === null && tb === null) return 0
+              if (ta === null) return 1
+              if (tb === null) return -1
+              return ta - tb
+            })
+          }
+
           const renderRecord = (r, color) => {
-            const isExpanded = expandedRecord === r._id
+            const isExpanded = expandedRecords.has(r._id)
             // 多文件优先，向下兼容旧 fileUrl
             const allUrls = (r.fileUrls && r.fileUrls.length > 0)
               ? r.fileUrls
@@ -2514,7 +2530,11 @@ export default function PatientDetailPage() {
             return (
               <div key={r._id} style={{ padding: '6px 0 6px 12px', borderLeft: `2px solid ${color}40`, marginBottom: 2 }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-                  <div onClick={() => setExpandedRecord(isExpanded ? null : r._id)}
+                  <div onClick={() => setExpandedRecords(prev => {
+                      const next = new Set(prev)
+                      if (isExpanded) next.delete(r._id); else next.add(r._id)
+                      return next
+                    })}
                     style={{ display: 'flex', gap: 10, alignItems: 'center', cursor: 'pointer', userSelect: 'none', flex: 1, minWidth: 0 }}>
                     <span style={{ fontSize: 11, color: '#aaa', whiteSpace: 'nowrap', flexShrink: 0 }}>
                       {r.checkDate || (r.createdAt && new Date(r.createdAt).toLocaleDateString('zh-CN'))}
@@ -2896,7 +2916,7 @@ export default function PatientDetailPage() {
                             {Object.entries(l3map).map(([l3, records]) => (
                               <div key={l3} style={{ marginBottom: 6 }}>
                                 <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 4 }}>▶ {l3} ({records.length} 次)</div>
-                                <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, color))}</div>
+                                <div style={{ paddingLeft: 14 }}>{sortByCheckDate(records).map(r => renderRecord(r, color))}</div>
                               </div>
                             ))}
                           </div>
@@ -2936,7 +2956,7 @@ export default function PatientDetailPage() {
                                 {l3Label}
                                 <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>({records.length} 次)</span>
                               </div>
-                              <div style={{ paddingLeft: 14 }}>{records.map(r => renderRecord(r, color))}</div>
+                              <div style={{ paddingLeft: 14 }}>{sortByCheckDate(records).map(r => renderRecord(r, color))}</div>
                             </div>
                           ))}
                         </div>
