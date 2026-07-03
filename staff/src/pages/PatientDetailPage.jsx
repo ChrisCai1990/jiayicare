@@ -6085,7 +6085,8 @@ export default function PatientDetailPage() {
                             ) : labRows.map(({ it, i }) => {
                               const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
                               return (
-                                <tr key={i} style={{ borderTop: '1px solid #f0ede8' }}>
+                                <React.Fragment key={i}>
+                                <tr style={{ borderTop: '1px solid #f0ede8' }}>
                                   <td style={{ padding: '4px 8px' }}><input style={inp} value={it.name || ''} onChange={e => updItem(i, { name: e.target.value })} /></td>
                                   <td style={{ padding: '4px 6px' }}><input style={{ ...inp, color: sc, fontWeight: it.status === 'abnormal' ? 600 : 400 }} value={it.value || ''} onChange={e => updItem(i, { value: e.target.value })} /></td>
                                   <td style={{ padding: '4px 6px' }}><input style={inp} value={it.unit || ''} onChange={e => updItem(i, { unit: e.target.value })} /></td>
@@ -6100,6 +6101,18 @@ export default function PatientDetailPage() {
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </td>
                                 </tr>
+                                {/* 部分检验类报告(睡眠呼吸监测/动态血压监测等)AI会把诊断总结文字写进同一条lab记录
+                                    的diagnosis/conclusion字段而不是拆成独立imaging记录，之前这里完全不渲染这两个
+                                    字段导致审核时看不到诊断描述，这里补上展示（仍允许编辑修正） */}
+                                {(it.diagnosis || it.conclusion) && (
+                                  <tr>
+                                    <td colSpan={7} style={{ padding: '2px 8px 6px', background: '#FAF8FF' }}>
+                                      {it.conclusion && <div style={{ fontSize: 11, color: '#5B21B6', marginBottom: 2 }}><span style={{ color: '#7C3AED', fontWeight: 600 }}>主要结论：</span>{it.conclusion}</div>}
+                                      {it.diagnosis && <div style={{ fontSize: 11, color: '#374151', whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>诊断意见：</span>{it.diagnosis}</div>}
+                                    </td>
+                                  </tr>
+                                )}
+                                </React.Fragment>
                               )
                             })}
                           </tbody>
