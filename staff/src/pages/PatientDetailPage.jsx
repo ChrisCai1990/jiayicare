@@ -6641,7 +6641,6 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   }
 
   const handleSubmit = async () => {
-    if (!form.l1Id) { setError('请选择报告大类'); return }
     if (!form.title) { setError('请填写报告标题'); return }
     if (!fileDatas.length) { setError('请选择报告文件（图片或PDF）'); return }
     try {
@@ -6691,7 +6690,10 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
 
           {/* L1 大类 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告大类 *</label>
+            <label className="form-label">报告大类（可不选）</label>
+            <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>
+              若报告涉及多个类目，可不选或只选最主要的一个——具体归类以AI解析结果为准
+            </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {[{ id: ANNUAL_L1_ID, label: '年度体检报告' }, ...screeningTree.map(n => ({ id: String(n._id), label: n.label }))].map(opt => (
                 <button key={opt.id} type="button"
