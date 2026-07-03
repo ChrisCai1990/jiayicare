@@ -3010,6 +3010,22 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 
     const { chat } = require('../utils/ai');
     const MedicalReport = require('../models/MedicalReport');
+    const Medication = require('../models/Medication');
+    const Supplement = require('../models/Supplement');
+
+    // 当前在用药物+营养素——之前AI汇总分析完全没接入这两类数据，导致AI看不到用药情况，
+    // 遇到"检查异常其实是药物副作用"的情况(如长期服用蒽醌类泻药导致结肠黑变病、肝功能异常
+    // 可能是某些药物/营养素引起而非疾病本身)无法关联判断，只能就检查论检查。
+    const [activeMeds, activeSupplements] = await Promise.all([
+      Medication.find({ user: req.params.id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
+      Supplement.find({ user: req.params.id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
+    ]);
+    const medicationSummary = activeMeds.length
+      ? activeMeds.map(m => `${m.name} ${m.dosage}，${m.frequency}${m.purpose ? `（${m.purpose}）` : ''}${m.startDate ? `，自${m.startDate}起` : ''}`).join('；')
+      : '暂无长期用药记录';
+    const supplementSummary = activeSupplements.length
+      ? activeSupplements.map(s => `${s.name} ${s.dosage}，${s.frequency}${s.purpose ? `（${s.purpose}）` : ''}${s.startDate ? `，自${s.startDate}起` : ''}`).join('；')
+      : '暂无长期营养素补充记录';
 
     const lv = user.labValues || {};
     const bc = user.bodyComposition || {};
@@ -3118,7 +3134,12 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 
     const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。
 
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】综合评估。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。
+
+【重要】发现检查异常时，请先排查是否与当前用药或营养素补充相关，不要只从疾病角度解读：
+- 长期服用蒽醌类泻药（番泻叶、大黄、芦荟等成分）是结肠黑变病的明确诱因，肠镜发现黑变时应结合用药记录判断，若确实在用此类泻药应在medical_priority中建议评估更换通便方式而非仅当作独立疾病处理
+- 部分保肝药/降脂药/抗生素本身可引起转氨酶(ALT/AST)一过性升高，某些营养素超量补充（如高剂量维生素A/铁剂）也可能影响肝肾指标
+- 判断时说明"异常是否可能与现有用药/营养素相关"，若相关应在建议里提及复核该药物/营养素的必要性，而不是孤立建议"就医检查肝功能"
 
 【患者基本信息】
 姓名：${user.name}，性别：${user.gender}，年龄：${user.age || '未知'}岁
@@ -3130,6 +3151,12 @@ ${archiveSummary}
 
 【生活方式与膳食调查】
 ${lifestyleSummary}
+
+【当前用药】
+${medicationSummary}
+
+【当前营养素补充】
+${supplementSummary}
 
 【最近一次体检关键指标】（分析立足点）
 ${labSummary}
