@@ -1135,6 +1135,10 @@ router.delete('/medical-reports/:id', staffAuth, async (req, res) => {
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.audit_status === 'audited') return res.status(403).json({ success: false, message: '已审核通过的报告不可删除' });
     await report.deleteOne();
+    // 级联清理：UserScreeningItem 里 reportId 指向这份报告的记录也要一并删除，
+    // 否则报告本体没了但专项筛查索引还留着，页面上会出现一条内容空白、无法展开的孤儿记录
+    // （2026-07-03 潘孝银"心脏超声"重复上传后删除旧报告，残留孤儿记录复现过一次）
+    await UserScreeningItem.deleteMany({ reportId: req.params.id });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -2588,7 +2592,11 @@ router.delete('/patients/:id/screening/ai-item', staffAuth, async (req, res) => 
   try {
     const { reportId, itemLabel } = req.body;
     const q = { user: req.params.id };
-    if (reportId) q.reportId = reportId;
+    // 前端对没有reportId的记录用字面量"unknown"占位分组（见PatientDetailPage.jsx中
+    // `String(it.reportId || 'unknown')`），"unknown"不是合法ObjectId，直接透传给Mongoose
+    // 会抛CastError导致500、记录删不掉——这里识别出这个占位值，按reportId真正为null/不存在处理
+    if (reportId && reportId !== 'unknown') q.reportId = reportId;
+    else if (reportId === 'unknown') q.reportId = { $in: [null, undefined] };
     if (itemLabel) q.itemLabel = itemLabel;
     const result = await UserScreeningItem.deleteMany(q);
     res.json({ success: true, deleted: result.deletedCount });
