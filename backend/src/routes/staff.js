@@ -3219,7 +3219,10 @@ ${reportSummary}
   }
 }`;
 
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 2500 });
+    // maxTokens从2500提到4000：患者报告历年记录多时(如一次性上传数十份单次检验单)，
+    // reportSummary本身prompt就很长，AI要输出6大板块完整JSON，2500token容易在输出中途被截断
+    // 导致JSON不完整解析失败、静默降级成全空结构——2026-07-03 潘孝银"已生成但内容全空"即此原因。
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 4000 });
 
     let sections = null;
     try {
@@ -3228,7 +3231,10 @@ ${reportSummary}
         const parsed = JSON.parse(jsonMatch[0]);
         sections = parsed.sections || parsed;
       }
-    } catch {}
+    } catch (parseErr) {
+      // 解析失败时把AI原始返回内容打进日志，否则永远不知道是被截断还是格式错误，只能靠猜
+      console.error(`[ai-health-summary] JSON解析失败，patientId=${req.params.id}，错误：${parseErr.message}，AI原始返回（前2000字）：`, text.slice(0, 2000));
+    }
 
     if (!sections) sections = {
       lifestyle_assessment: { items: [], summary: '' },
