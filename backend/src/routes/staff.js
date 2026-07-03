@@ -1010,8 +1010,11 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
-    const { patientId, title, type, hospital, date, fileUrl, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
+    const { patientId, title, type, hospital, date, fileUrl, fileUrls, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
+    // fileUrls（一份报告多张照片场景）优先，fileUrl 仍取第一个做兼容，不破坏现有单文件读取逻辑
+    const resolvedFileUrls = Array.isArray(fileUrls) && fileUrls.length ? fileUrls : (fileUrl ? [fileUrl] : []);
+    const resolvedFileUrl = resolvedFileUrls[0] || '';
 
     // base64 内容限制（约 7MB 原始文件 → 9.3MB base64）
     if (content && content.length > 10 * 1024 * 1024) {
@@ -1040,8 +1043,9 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       if (existing) {
         if (title) existing.title = title;
         if (hospital) existing.hospital = hospital;
-        if (fileUrl) {
-          existing.fileUrl = fileUrl;
+        if (resolvedFileUrl) {
+          existing.fileUrl = resolvedFileUrl;
+          existing.fileUrls = resolvedFileUrls;
           existing.content = content || '';
           existing.mimeType = mimeType || '';
           existing.fileSize = fileSize || '';
@@ -1061,7 +1065,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     report = await MedicalReport.create({
       user: patientId, title, type: type || 'other', hospital: hospital || '',
       date: checkDate, checkDate, reportYear,
-      fileUrl: fileUrl || '', content: content || '',
+      fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, content: content || '',
       mimeType: mimeType || '', fileSize: fileSize || '',
       uploadedBy: req.staff._id, audit_status: 'unaudited',
       planId: planId || null, planItemId: planItemId || null,
@@ -5305,7 +5309,7 @@ function findUnderExtractedPages(items) {
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
 async function runReportParse(reportId) {
   const { parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, pdfBufferToImages, isPdfReport, renderSinglePage } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
@@ -5532,11 +5536,13 @@ async function runReportParse(reportId) {
       return;
     }
 
-    // 图片：统一取文件 buffer 转 base64（兼容 content / OSS / 本地路径）
-    const buf = await fetchReportBuffer(report, UPLOADS_DIR);
+    // 图片：统一取文件 buffer 转 base64（兼容 content / OSS / 本地路径）。fileUrls 存在多张图片时
+    // （一份报告被拍成多张照片，如"结论页"+"数据页"），一次性把全部图片传给AI合并识别成一份结果。
+    const bufs = report.fileUrls && report.fileUrls.length ? await fetchReportBuffers(report, UPLOADS_DIR) : [await fetchReportBuffer(report, UPLOADS_DIR)];
     let text, parsed;
     try {
-      text = await parseImage(buf.toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096 });
+      const imgSources = bufs.map(b => b.toString('base64'));
+      text = await parseImage(imgSources.length > 1 ? imgSources : imgSources[0], REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096 });
       parsed = safeParseJSON(text);
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);

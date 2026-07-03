@@ -83,6 +83,10 @@ const medicalReportSchema = new mongoose.Schema({
   pages:       { type: Number, default: 1 },
   fileSize:    { type: String, default: '' },
   fileUrl:     { type: String, default: '' },
+  // 2026-07-03新增：一份报告有时被拍成多张照片(如"结论页"+"数据页")，此前上传流程会把每张图各自
+  // 拆成一条独立记录、AI各自识别出"半份"内容。fileUrls支持一份报告关联多个文件，AI解析时会把
+  // 全部图片一次性传给模型合并识别。fileUrl仍保留、取fileUrls[0]做兼容，不破坏现有单图读取逻辑。
+  fileUrls:    [{ type: String }],
   ossKey:      { type: String, default: '' },  // OSS 对象路径，删除时用于清理
   keyFindings: [{ type: String }],
   status: {

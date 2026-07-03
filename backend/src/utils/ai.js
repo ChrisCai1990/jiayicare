@@ -63,20 +63,24 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider } = {})
 
 // OCR + 视觉理解（仅通义千问支持，图片 base64 或 URL）
 // model 默认 qwen-vl-plus（实测比max快约2.8倍且精度一致，staff.js体检报告解析已用此模型）
+// 2026-07-03：imageSource 支持传数组——一份报告被拍成多张照片(如"结论页"+"数据页")时，
+// 把全部图片一次性传给模型，让AI自己理解这是同一份报告的不同部分、输出一份合并结果，
+// 比"分别识别再代码拼接"更可靠。单张图片(原有调用方式，字符串)行为完全不变。
 async function parseImage(imageSource, prompt, { isUrl = false, model = 'qwen-vl-plus', maxTokens = 3000 } = {}) {
   const key = process.env.QWEN_API_KEY;
   if (!key) throw new Error('图像解析需要 QWEN_API_KEY');
 
-  const imageContent = isUrl
-    ? { type: 'image_url', image_url: { url: imageSource } }
-    : { type: 'image_url', image_url: { url: `data:image/png;base64,${imageSource.replace(/^data:[^;]+;base64,/, '')}` } };
+  const sources = Array.isArray(imageSource) ? imageSource : [imageSource];
+  const imageContents = sources.map(src => isUrl
+    ? { type: 'image_url', image_url: { url: src } }
+    : { type: 'image_url', image_url: { url: `data:image/png;base64,${src.replace(/^data:[^;]+;base64,/, '')}` } });
 
   const result = await httpPost(
     `${QWEN_BASE}/chat/completions`,
     { Authorization: `Bearer ${key}` },
     {
       model,
-      messages: [{ role: 'user', content: [imageContent, { type: 'text', text: prompt }] }],
+      messages: [{ role: 'user', content: [...imageContents, { type: 'text', text: prompt }] }],
       max_tokens: maxTokens,
     }
   );

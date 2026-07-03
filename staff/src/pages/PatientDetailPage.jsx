@@ -6608,6 +6608,9 @@ const ANNUAL_L1_ID = '__annual__'
 function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) {
   const [form, setForm] = useState({ title: '', l1Id: '', l2Label: '', hospital: '', date: '', note: '' })
   const [fileDatas, setFileDatas] = useState([])
+  // 一份报告有时被拍成多张照片(如"结论页"+"数据页")，默认合并为一条记录、AI一次性识别全部图片；
+  // 取消勾选则保持原有行为——每个文件各自拆成一条独立报告(如确实是几份不同的检查报告一起选的场景)
+  const [mergeFiles, setMergeFiles] = useState(true)
   const [saving, setSaving] = useState(false)
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadStep, setUploadStep] = useState('')
@@ -6644,27 +6647,56 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     try {
       setSaving(true); setError(''); setUploadProgress(0)
       const total = fileDatas.length
-      for (let i = 0; i < total; i++) {
-        const fd = fileDatas[i]
-        const titleSuffix = total > 1 ? ` (${i + 1}/${total})` : ''
-        setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
-        const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(
-          fd.file,
-          (p) => setUploadProgress(Math.round(((i + p) / total) * 90))
-        )
+      if (mergeFiles && total > 1) {
+        // 合并模式：全部文件先各自上传拿到url，最后只建一条报告记录、fileUrls存全部url，
+        // AI解析时会把这些图片一次性传给模型合并识别（详见后端 runReportParse）
+        const urls = []
+        let mimeType = '', totalSize = 0
+        for (let i = 0; i < total; i++) {
+          const fd = fileDatas[i]
+          setUploadStep(`上传第 ${i + 1}/${total} 个文件...`)
+          const res = await staffAPI.uploadReportFile(fd.file, (p) => setUploadProgress(Math.round(((i + p) / total) * 90)))
+          urls.push(res.url)
+          mimeType = mimeType || res.mimeType
+          totalSize += Number(res.fileSize) || 0
+        }
         await staffAPI.uploadReport({
           patientId,
-          title: form.title + titleSuffix,
+          title: form.title,
           type: isAnnual ? 'annual' : 'other',
           screeningL1: isAnnual ? '' : form.l1Id,
           screeningL2: isAnnual ? '' : form.l2Label,
           hospital: form.hospital,
           date: form.date,
           note: form.note,
-          fileUrl: url,
+          fileUrl: urls[0],
+          fileUrls: urls,
           mimeType,
-          fileSize: String(fileSize),
+          fileSize: String(totalSize),
         })
+      } else {
+        for (let i = 0; i < total; i++) {
+          const fd = fileDatas[i]
+          const titleSuffix = total > 1 ? ` (${i + 1}/${total})` : ''
+          setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
+          const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(
+            fd.file,
+            (p) => setUploadProgress(Math.round(((i + p) / total) * 90))
+          )
+          await staffAPI.uploadReport({
+            patientId,
+            title: form.title + titleSuffix,
+            type: isAnnual ? 'annual' : 'other',
+            screeningL1: isAnnual ? '' : form.l1Id,
+            screeningL2: isAnnual ? '' : form.l2Label,
+            hospital: form.hospital,
+            date: form.date,
+            note: form.note,
+            fileUrl: url,
+            mimeType,
+            fileSize: String(fileSize),
+          })
+        }
       }
       setUploadProgress(100)
       onSaved()
@@ -6755,9 +6787,17 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
                   <div key={i} style={{ fontSize: 12, color: '#22A06B' }}>✓ {fd.name}</div>
                 ))}
                 {fileDatas.length > 1 && (
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>
-                    共 {fileDatas.length} 个文件，每个文件将分别创建一条报告记录
-                  </div>
+                  <>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#4A6558', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={mergeFiles} onChange={e => setMergeFiles(e.target.checked)} />
+                      这些文件是同一份报告的多张照片（如结论页+数据页），合并为一条记录
+                    </label>
+                    <div style={{ fontSize: 11, color: '#8AA89C' }}>
+                      {mergeFiles
+                        ? `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
+                        : `共 ${fileDatas.length} 个文件，每个文件将分别创建一条报告记录`}
+                    </div>
+                  </>
                 )}
               </div>
             )}

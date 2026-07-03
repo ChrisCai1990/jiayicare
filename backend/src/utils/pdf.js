@@ -44,6 +44,29 @@ async function fetchReportBuffer(report, uploadsDir) {
   throw new Error('无法获取报告文件内容（content 与 fileUrl 均为空）');
 }
 
+// 取一份报告关联的全部文件二进制（支持 fileUrls 数组——一份报告被拍成多张照片场景，如"结论页"+
+// "数据页"，需要把每张图都读出来传给AI合并识别）。content/单fileUrl场景直接复用 fetchReportBuffer，
+// 不改动其行为，保证PDF等原有调用路径完全不受影响。
+async function fetchReportBuffers(report, uploadsDir) {
+  const urls = (report.fileUrls && report.fileUrls.length) ? report.fileUrls : [];
+  if (!urls.length) return [await fetchReportBuffer(report, uploadsDir)];
+  const buffers = [];
+  for (const url of urls) {
+    if (url.startsWith('http')) {
+      buffers.push(await downloadBuffer(url));
+      continue;
+    }
+    let rel = url;
+    const marker = '/uploads/';
+    const i = rel.indexOf(marker);
+    rel = i >= 0 ? rel.slice(i + marker.length) : rel.split('/').pop();
+    const fpath = path.join(uploadsDir, rel);
+    if (fs.existsSync(fpath)) buffers.push(fs.readFileSync(fpath));
+    else throw new Error('文件不存在：' + fpath);
+  }
+  return buffers;
+}
+
 // 用 pdftoppm 获取 PDF 总页数
 function getPdfPageCount(pdfPath) {
   return new Promise((resolve) => {
@@ -158,4 +181,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, pdfBufferToImages, isPdfReport, renderSinglePage };
+module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage };
