@@ -4709,7 +4709,15 @@ function filterPatientInfoItems(items) {
       if (dupMatch) name = dupMatch[1];
       name = canonicalizeExamName(name);
       const itemType = PHYSICAL_EXAM_NAMES.some(n => name.startsWith(n)) ? 'imaging' : item.itemType;
-      return { ...item, name, itemType };
+      // 2026-07-03修复："小结：1、超重"这类前缀常被误抄进不相关检查项目diagnosis字段——是"一般检查"
+      // 大类末尾共享小结栏被AI错误摘录进了每一个单独检查项目自己的diagnosis字段(违反规则F：检验数值
+      // 必须与其对应项目严格匹配，不可串行填写)，导致身高/脉搏/血压/视力/内科/外科等互不相关的条目
+      // diagnosis都写着雷同的"小结：..."文字。只剥离"小结：数字、"这个纯格式性前缀、保留后面的实际
+      // 诊断内容，不整条清空——避免误伤"小结：1、翼状胬肉"这种恰好是该项目自身合理诊断、只是格式带了
+      // 多余前缀的情况；即使是真串行来的内容，保留下来也不算错误信息，只是去掉不专业的格式痕迹，
+      // 比整条删除风险更低。
+      const diagnosis = str(item.diagnosis).replace(/^小结[:：]\s*\d+[、.．]\s*/, '');
+      return { ...item, name, itemType, diagnosis };
     });
 }
 
@@ -4798,6 +4806,24 @@ function isDepartmentSummaryEcho(it) {
 }
 function dropDepartmentSummaryEcho(items) {
   return (items || []).filter(it => !isDepartmentSummaryEcho(it));
+}
+
+// 2026-07-03补充：name本身是"彩超""小结"这类通用类别/栏目泛称（不是"腹部彩超"/"甲状腺彩超"这种具体检查名），
+// 内容要么是纯科普说明文字（"小的结石不出现症状时可不处理..."，跟报告详细报告单里的具体检查所见完全重复，
+// 该患者的真实所见已经体现在归类正确的详细报告单条目里，如"双肾输尿管膀胱彩超"），要么内容极简空洞
+// （只有"未见异常"四个字，没有对应任何具体检查项目）。matchStatus必为unclassified作安全网，
+// 真实检查项目一定有具体名称且能归类，泛称+无实质内容的组合才会漏网到这里。
+const GENERIC_LABEL_NAMES = new Set(['彩超', '小结', '汇总', '总结', '检查结果', '异常结果', 'B超']);
+function isGenericLabelEcho(it) {
+  if (it.matchStatus !== 'unclassified') return false;
+  const name = str(it.name);
+  if (!GENERIC_LABEL_NAMES.has(name)) return false;
+  const text = `${str(it.findings)}${str(it.diagnosis)}`;
+  const hasMeasurement = /\d+\s*[×xX]\s*\d+|CDFI|mm|cm|C-TIRADS/.test(text);
+  return !hasMeasurement;
+}
+function dropGenericLabelEcho(items) {
+  return (items || []).filter(it => !isGenericLabelEcho(it));
 }
 
 function isNumberedSummaryEcho(it) {
@@ -5305,7 +5331,7 @@ async function runReportParse(reportId) {
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
       const filteredItems = cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems))))))));
-      const classified = dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))));
+      const classified = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -5335,7 +5361,7 @@ async function runReportParse(reportId) {
     } catch (e) {
       console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
     }
-    const classifiedImg = dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || []))))))))))));
+    const classifiedImg = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))))))));
     const imgSummary = parsed
       ? (parsed.summary || '')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;

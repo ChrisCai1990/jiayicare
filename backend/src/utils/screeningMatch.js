@@ -45,14 +45,26 @@ function scoreNode(q, itemType, cands, node) {
     if (c.n === q) {
       conf = 1.0;
     } else if (q.includes(c.n) && c.n.length >= 2) {
+      // 短别名(≤3位纯字母数字，如"Cr""IgA")必须在字母/数字边界处独立出现，不能是别的英文缩写词
+      // 中间/结尾的一部分——如"Cr"(肌酐缩写)本身合法，但"P-LCR"(大血小板比率)归一化后是"plcr"，
+      // "cr"只是它结尾两个字母，并非独立缩写词，之前被误配到"肾功能"节点
+      const isShortAlnumAlias = c.n.length <= 3 && /^[a-z0-9]+$/i.test(c.n);
+      if (isShortAlnumAlias) {
+        const idx = q.indexOf(c.n);
+        const before = idx > 0 ? q[idx - 1] : '';
+        const after = idx + c.n.length < q.length ? q[idx + c.n.length] : '';
+        if (/[a-z0-9]/i.test(before) || /[a-z0-9]/i.test(after)) continue; // 不是独立边界，跳过这个候选词
+      }
       // 候选词"脂蛋白a"是"载脂蛋白A1"的子串，但"载脂蛋白"是完全不同的检验项目——"载"这个前缀降权；
       // 2026-07-02补充："糖化血红蛋白测定"包含候选词"血红蛋白"，剩余"糖化测定"里的"糖化"同样是
       // 独立限定词，说明整个词是完全不同的检验项目(糖化血红蛋白≠血红蛋白)，复用跟branch2一致的
       // 限定词判断标准，而不是只针对"载"这一个前缀，避免同类误配的其他变体继续漏网。
       const qSurplus = q.replace(c.n, '');
       // 2026-07-03补充"免疫"：候选词"球蛋白"(肝功能)是"免疫球蛋白A/M/G"(免疫5项)的子串，
-      // 但"免疫球蛋白"是完全不同的检验项目，多出来的"免疫"前缀同样需要降权排除
-      const qHasQualifier = /^载|糖化|免疫|耐量|尿微量|微量|肌酐/.test(qSurplus);
+      // 但"免疫球蛋白"是完全不同的检验项目，多出来的"免疫"前缀同样需要降权排除；
+      // 补充"^eb病毒"：EB病毒抗体检测本身就用IgA/IgG分型命名(如"EB病毒IgA抗体""EB病毒Rta-IgG")，
+      // 跟"免疫5项"的免疫球蛋白定量(IgA/IgG)完全是两回事，字面撞了短别名导致误配
+      const qHasQualifier = /^载|糖化|免疫|耐量|尿微量|微量|肌酐|^eb病毒/.test(qSurplus);
       conf = qHasQualifier ? 0.45 : 0.78 + Math.min(0.12, c.n.length * 0.01);
     } else if (c.n.includes(q) && q.length >= 3) {
       // 候选词比查询词长很多（含独立修饰词）时降低置信度，防止"葡萄糖"误命中"葡萄糖耐量试验"，
