@@ -4879,7 +4879,7 @@ export default function PatientDetailPage() {
                     💡 {fd.timingReason}
                   </div>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">建议随访日期</label>
                     {canEdit ? (
@@ -5599,7 +5599,7 @@ export default function PatientDetailPage() {
                       </div>
                     )}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 12 }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">建议随访日期</label>
                         <input type="date" className="form-input"
