@@ -3947,6 +3947,7 @@ ${recLines}
       outline: Array.isArray(raw.outline) ? raw.outline : [],
       generatedAt: new Date(),
       generatedBy: req.staff.name || '',
+      generatedById: req.staff._id,
       status: 'pending',
     };
     await User.collection.updateOne({ _id: user._id }, { $set: { aiFollowupDraft: suggestion } });
@@ -3956,21 +3957,27 @@ ${recLines}
   }
 });
 
-// PATCH /api/staff/patients/:id/ai-followup-draft — 审核AI随访建议草稿（健管专员）
+// PATCH /api/staff/patients/:id/ai-followup-draft — 审核AI随访建议草稿
+// approve 仅限健管专员/超管（审核权限）；reject/withdraw 生成人本人或健管专员/超管均可（含误点撤回场景）
 router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
   try {
-    const { action, notes, edits } = req.body; // action: approve | reject；edits: 审核前的编辑覆盖 {theme, suggestedDate, timingReason, outline}
+    const { action, notes, edits } = req.body; // action: approve | reject | withdraw；edits: 审核前的编辑覆盖 {theme, suggestedDate, timingReason, outline}
     const user = await User.findById(req.params.id).select('_id name aiFollowupDraft');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    const draft = { ...user.aiFollowupDraft, ...(edits && typeof edits === 'object' ? edits : {}) };
     if (!user.aiFollowupDraft || user.aiFollowupDraft.status !== 'pending') return res.status(400).json({ success: false, message: '暂无待审核的随访建议草稿' });
+    const draft = { ...user.aiFollowupDraft, ...(edits && typeof edits === 'object' ? edits : {}) };
 
-    if (action === 'reject') {
+    const isHealthManager = req.staff.role === 'healthManager' || req.staff.role === 'superadmin';
+    const isGenerator = user.aiFollowupDraft.generatedById && String(user.aiFollowupDraft.generatedById) === String(req.staff._id);
+
+    if (action === 'reject' || action === 'withdraw') {
+      if (!isHealthManager && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人或健管专员可撤回/拒绝该建议' });
       await User.collection.updateOne({ _id: user._id }, { $set: { aiFollowupDraft: null } });
-      return res.json({ success: true, message: '已拒绝该随访建议' });
+      return res.json({ success: true, message: action === 'withdraw' ? '已撤回该建议' : '已拒绝该随访建议' });
     }
 
     if (action === 'approve') {
+      if (!isHealthManager) return res.status(403).json({ success: false, message: '仅健管专员可审核采纳该建议' });
       // 创建随访计划
       const fu = await FollowUp.create({
         patientId: user._id,
@@ -3991,7 +3998,7 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
       return res.json({ success: true, message: '已采纳，随访计划已创建', followUpId: fu._id });
     }
 
-    res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
+    res.status(400).json({ success: false, message: 'action 必须为 approve / reject / withdraw' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

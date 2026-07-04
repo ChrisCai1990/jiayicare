@@ -1118,7 +1118,7 @@ export default function PatientDetailPage() {
   const reviewFollowupDraft = async (action, edits) => {
     try {
       await staffAPI.reviewFollowupDraft(id, action, undefined, edits)
-      toast(action === 'approve' ? '已采纳，随访计划已创建' : '已拒绝')
+      toast(action === 'approve' ? '已采纳，随访计划已创建' : action === 'withdraw' ? '已撤回' : '已拒绝')
       load(); loadFollowUps()
     } catch (err) { toast(err.message || '操作失败') }
   }
@@ -4840,6 +4840,8 @@ export default function PatientDetailPage() {
           const fd = data.user.aiFollowupDraft
           const T = { advance: { l: '建议提前随访', c: '#DC2626' }, keep: { l: '按原计划随访', c: '#16A34A' }, extend: { l: '可延长随访间隔', c: '#0077B6' } }[fd.timing] || { l: fd.timing, c: '#4A6558' }
           const canApprove = staff?.role === 'healthManager' || staff?.role === 'superadmin'
+          const isGenerator = staff?._id && fd.generatedById && String(fd.generatedById) === String(staff._id)
+          const canEdit = canApprove || isGenerator
           const ed = followupDraftEdits || { theme: fd.theme || '', suggestedDate: fd.suggestedDate || '', outline: Array.isArray(fd.outline) ? fd.outline : [] }
           const setEd = (patch) => setFollowupDraftEdits({ ...ed, ...patch })
           return (
@@ -4851,56 +4853,76 @@ export default function PatientDetailPage() {
                     <span className="card-title" style={{ color: '#D97706' }}>AI随访建议·待审核</span>
                     <span style={{ fontSize: 12, color: '#8AA89C' }}>由 {fd.generatedBy} 生成 · {new Date(fd.generatedAt).toLocaleDateString('zh-CN')}</span>
                   </div>
-                  {canApprove && (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => { reviewFollowupDraft('approve', ed); setFollowupDraftEdits(null) }}>保存并采纳随访计划</button>
-                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => { reviewFollowupDraft('reject'); setFollowupDraftEdits(null) }}>拒绝</button>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {canApprove && (
+                      <>
+                        <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => { reviewFollowupDraft('approve', ed); setFollowupDraftEdits(null) }}>保存并采纳随访计划</button>
+                        <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => { reviewFollowupDraft('reject'); setFollowupDraftEdits(null) }}>拒绝</button>
+                      </>
+                    )}
+                    {!canApprove && isGenerator && (
+                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }}
+                        onClick={() => { if (window.confirm('确认撤回这条由你生成的AI随访建议？')) { reviewFollowupDraft('withdraw'); setFollowupDraftEdits(null) } }}>撤回</button>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C' }}>随访时机</span>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: T.c }}>{T.l}</span>
+              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                  <span style={{
+                    fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 99,
+                    background: T.c + '15', color: T.c,
+                  }}>{T.l}</span>
+                </div>
+                {fd.timingReason && (
+                  <div style={{ background: '#F9F6F0', border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4A6558', lineHeight: 1.6 }}>
+                    💡 {fd.timingReason}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C' }}>建议日期</span>
-                    {canApprove ? (
-                      <input type="date" className="form-control" style={{ fontSize: 13, padding: '3px 8px', width: 'auto' }}
+                )}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">建议随访日期</label>
+                    {canEdit ? (
+                      <input type="date" className="form-input"
                         value={ed.suggestedDate || ''} onChange={e => setEd({ suggestedDate: e.target.value })} />
-                    ) : <span style={{ fontSize: 13, fontWeight: 600 }}>{fd.suggestedDate || '-'}</span>}
+                    ) : <div style={{ fontSize: 14, fontWeight: 600, padding: '9px 0' }}>{fd.suggestedDate || '-'}</div>}
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 200 }}>
-                    <span style={{ fontSize: 12, color: '#8AA89C' }}>主题</span>
-                    {canApprove ? (
-                      <input className="form-control" style={{ fontSize: 13, flex: 1 }}
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">随访主题</label>
+                    {canEdit ? (
+                      <input className="form-input" style={{ fontWeight: 600 }}
                         value={ed.theme || ''} onChange={e => setEd({ theme: e.target.value })} />
-                    ) : <span style={{ fontSize: 13 }}>{fd.theme}</span>}
+                    ) : <div style={{ fontSize: 14, fontWeight: 600, padding: '9px 0' }}>{fd.theme}</div>}
                   </div>
                 </div>
-                {fd.timingReason && <div style={{ fontSize: 13, color: '#4A6558', background: '#F6F3EE', borderRadius: 8, padding: '8px 12px' }}>{fd.timingReason}</div>}
-                {canApprove ? (
-                  <div>
-                    <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>随访要点</div>
+                {canEdit ? (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">随访要点</label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {ed.outline.map((line, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                          <span style={{ fontSize: 13, color: '#8AA89C', marginTop: 10, flexShrink: 0 }}>{i + 1}.</span>
-                          <textarea className="form-control" rows={Math.max(1, Math.ceil(line.length / 32))}
-                            style={{ fontSize: 14, lineHeight: 1.6, resize: 'vertical', flex: 1 }}
+                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{
+                            width: 20, height: 20, borderRadius: '50%', background: '#1E6B50', color: '#fff',
+                            fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            flexShrink: 0,
+                          }}>{i + 1}</span>
+                          <input className="form-input" style={{ flex: 1 }}
                             value={line}
                             onChange={e => {
                               const next = [...ed.outline]; next[i] = e.target.value; setEd({ outline: next })
                             }} />
-                          <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 4, flexShrink: 0 }}
-                            onClick={() => setEd({ outline: ed.outline.filter((_, idx) => idx !== i) })}>删除</button>
+                          <button type="button" onClick={() => setEd({ outline: ed.outline.filter((_, idx) => idx !== i) })}
+                            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #DC3545', background: '#fff', color: '#DC3545', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
+                          >−</button>
                         </div>
                       ))}
-                      <button type="button" className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }}
-                        onClick={() => setEd({ outline: [...ed.outline, ''] })}>＋ 添加一条</button>
+                      <button type="button" onClick={() => setEd({ outline: [...ed.outline, ''] })}
+                        style={{ alignSelf: 'flex-start', width: 28, height: 28, borderRadius: 6, border: '1px solid #1E6B50', background: '#fff', color: '#1E6B50', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
+                      >+</button>
                     </div>
+                    {!canApprove && isGenerator && (
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>💡 你是生成人，可编辑或撤回；采纳需健管专员审核</div>
+                    )}
                   </div>
                 ) : Array.isArray(fd.outline) && fd.outline.length > 0 && (
                   <div>
@@ -5561,43 +5583,62 @@ export default function PatientDetailPage() {
                 const d = aiHelper.data
                 const T = { advance: { l: '建议提前随访', c: '#DC2626' }, keep: { l: '按原计划随访', c: '#16A34A' }, extend: { l: '可延长随访间隔', c: '#0077B6' } }[d.timing] || { l: d.timing, c: '#4A6558' }
                 const setD = (patch) => setAiHelper(h => ({ ...h, data: { ...h.data, ...patch } }))
+                const outline = Array.isArray(d.outline) ? d.outline : []
                 return (
                   <>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: '10px 12px', background: '#f9f7f3', borderRadius: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 14, color: T.c }}>{T.l}</span>
-                      <label style={{ fontSize: 13, color: '#4A6558', display: 'flex', alignItems: 'center', gap: 6 }}>
-                        建议日期
-                        <input type="date" className="form-control" style={{ fontSize: 13, padding: '5px 10px', width: 'auto' }}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 99,
+                        background: T.c + '15', color: T.c,
+                      }}>{T.l}</span>
+                    </div>
+
+                    {d.timingReason && (
+                      <div style={{ background: '#F9F6F0', border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4A6558', lineHeight: 1.6 }}>
+                        💡 {d.timingReason}
+                      </div>
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">建议随访日期</label>
+                        <input type="date" className="form-input"
                           value={d.suggestedDate || ''} onChange={e => setD({ suggestedDate: e.target.value })} />
-                      </label>
-                    </div>
-                    {d.timingReason && <div style={{ fontSize: 13, color: '#4A6558', lineHeight: 1.6 }}>{d.timingReason}</div>}
-                    <div>
-                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>随访主题</div>
-                      <input className="form-control" style={{ fontSize: 15, fontWeight: 600, padding: '10px 12px' }}
-                        value={d.theme || ''} onChange={e => setD({ theme: e.target.value })} />
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>随访提纲</div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                        {(Array.isArray(d.outline) ? d.outline : []).map((line, i) => (
-                          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
-                            <span style={{ fontSize: 13, color: '#8AA89C', marginTop: 10, flexShrink: 0 }}>{i + 1}.</span>
-                            <textarea className="form-control" rows={Math.max(1, Math.ceil(line.length / 32))}
-                              style={{ fontSize: 14, lineHeight: 1.6, resize: 'vertical', flex: 1 }}
-                              value={line}
-                              onChange={e => {
-                                const next = [...d.outline]; next[i] = e.target.value; setD({ outline: next })
-                              }} />
-                            <button type="button" className="btn btn-secondary btn-sm" style={{ marginTop: 4, flexShrink: 0 }}
-                              onClick={() => setD({ outline: d.outline.filter((_, idx) => idx !== i) })}>删除</button>
-                          </div>
-                        ))}
-                        <button type="button" className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }}
-                          onClick={() => setD({ outline: [...(Array.isArray(d.outline) ? d.outline : []), ''] })}>＋ 添加一条</button>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">随访主题</label>
+                        <input className="form-input" style={{ fontWeight: 600 }}
+                          value={d.theme || ''} onChange={e => setD({ theme: e.target.value })} />
                       </div>
                     </div>
-                    <div style={{ fontSize: 11, color: '#B0B8B3' }}>可编辑主题、日期、提纲后再采纳；采纳后在随访列表仍可继续编辑。</div>
+
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">随访提纲</label>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {outline.map((line, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{
+                              width: 20, height: 20, borderRadius: '50%', background: '#1E6B50', color: '#fff',
+                              fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              flexShrink: 0,
+                            }}>{i + 1}</span>
+                            <input className="form-input" style={{ flex: 1 }}
+                              value={line}
+                              onChange={e => {
+                                const next = [...outline]; next[i] = e.target.value; setD({ outline: next })
+                              }} />
+                            <button type="button" onClick={() => setD({ outline: outline.filter((_, idx) => idx !== i) })}
+                              style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #DC3545', background: '#fff', color: '#DC3545', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
+                            >−</button>
+                          </div>
+                        ))}
+                        <button type="button" onClick={() => setD({ outline: [...outline, ''] })}
+                          style={{ alignSelf: 'flex-start', width: 28, height: 28, borderRadius: 6, border: '1px solid #1E6B50', background: '#fff', color: '#1E6B50', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
+                        >+</button>
+                      </div>
+                    </div>
+
+                    <div style={{ fontSize: 12, color: '#8AA89C' }}>💡 可编辑主题、日期、提纲后再采纳；采纳后在随访列表仍可继续编辑</div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                       <button className="btn btn-secondary" onClick={() => setAiHelper(null)}>关闭</button>
                       <button className="btn btn-primary" onClick={adoptFollowupSuggestion} disabled={aiHelperBusy}>{aiHelperBusy ? '创建中...' : '采纳并创建随访计划'}</button>
