@@ -138,8 +138,8 @@ const SERVICE_PACKAGE_LABELS = {
   pkg_1y: '年度服务包', pkg_6m: '半年服务包', pkg_3m: '季度服务包',
 }
 const getServicePackageLabel = (pkg) => SERVICE_PACKAGE_LABELS[pkg] || pkg || '-'
-const STATUS_MAP = { completed: '已完成', missed: '未接通', planned: '计划中' }
-const STATUS_COLOR = { completed: '#22A06B', missed: '#DC3545', planned: '#D97706' }
+const STATUS_MAP = { completed: '已完成', missed: '未接通', planned: '计划中', in_progress: '进行中', cancelled: '已取消' }
+const STATUS_COLOR = { completed: '#22A06B', missed: '#DC3545', planned: '#D97706', in_progress: '#0077B6', cancelled: '#8AA89C' }
 const PLAN_TYPE_LABEL = {
   annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案',
   nutrition:'营养干预方案', medical_assist:'就医协助方案',
@@ -410,6 +410,10 @@ export default function PatientDetailPage() {
   const [showSupModal, setShowSupModal] = useState(false)
   const [editingMed, setEditingMed] = useState(null)
   const [editingSup, setEditingSup] = useState(null)
+  const [editingMedAiApprove, setEditingMedAiApprove] = useState(false)
+  const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
+  const [followupDraftEdits, setFollowupDraftEdits] = useState(null) // 待审面板内联编辑：{theme, suggestedDate, outline}
+  const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
   const [medForm, setMedForm] = useState({})
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
@@ -1101,21 +1105,21 @@ export default function PatientDetailPage() {
       setAiHelper({ type, loading: false, data: r.data, error: null })
     } catch (err) { setAiHelper({ type, loading: false, data: null, error: err.message || 'AI生成失败' }) }
   }
-  // 场景六：采纳随访建议 → 调用审核接口（自动创建随访计划 + 清草稿）
+  // 场景六：采纳随访建议 → 调用审核接口（自动创建随访计划 + 清草稿），带上弹窗内编辑后的内容
   const adoptFollowupSuggestion = async () => {
     const d = aiHelper?.data; if (!d) return
     setAiHelperBusy(true)
     try {
-      await staffAPI.reviewFollowupDraft(id, 'approve')
+      await staffAPI.reviewFollowupDraft(id, 'approve', undefined, { theme: d.theme, suggestedDate: d.suggestedDate, timingReason: d.timingReason, outline: d.outline })
       toast('已采纳，随访计划已创建')
       setAiHelper(null); loadFollowUps(); load()
     } catch (err) { toast(err.message || '创建失败') }
     finally { setAiHelperBusy(false) }
   }
-  // 从待审面板点进来，直接审核草稿（不需要重新生成）
-  const reviewFollowupDraft = async (action) => {
+  // 从待审面板点进来，直接审核草稿（不需要重新生成），edits 为待审面板内联编辑后的内容
+  const reviewFollowupDraft = async (action, edits) => {
     try {
-      await staffAPI.reviewFollowupDraft(id, action)
+      await staffAPI.reviewFollowupDraft(id, action, undefined, edits)
       toast(action === 'approve' ? '已采纳，随访计划已创建' : '已拒绝')
       load(); loadFollowUps()
     } catch (err) { toast(err.message || '操作失败') }
@@ -4504,7 +4508,7 @@ export default function PatientDetailPage() {
                 </button>
               )}
               <button className="btn btn-primary btn-sm"
-                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setShowSupModal(true) } }}>
+                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setEditingMedAiApprove(false); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
                 ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
               </button>
             </div>
@@ -4539,6 +4543,10 @@ export default function PatientDetailPage() {
                           {canApprove ? (
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => reviewAIMedication(m._id, 'approve')}>采纳</button>
+                              <button className="btn btn-secondary btn-sm" onClick={() => {
+                                setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
+                                setEditingMed(m._id); setEditingMedAiApprove(true); setShowMedModal(true)
+                              }}>编辑后采纳</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => reviewAIMedication(m._id, 'reject')}>拒绝</button>
                             </div>
                           ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待家庭医师审核</span>}
@@ -4573,7 +4581,7 @@ export default function PatientDetailPage() {
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="btn btn-secondary btn-sm" onClick={() => {
                               setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
-                              setEditingMed(m._id); setShowMedModal(true)
+                              setEditingMed(m._id); setEditingMedAiApprove(false); setShowMedModal(true)
                             }}>编辑</button>
                             {m.stopped
                             ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
@@ -4628,6 +4636,10 @@ export default function PatientDetailPage() {
                           {canApprove ? (
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewAISupplement(s._id, 'approve')}>采纳</button>
+                              <button className="btn btn-secondary btn-sm" onClick={() => {
+                                setSupForm({ name: s.name, brand: s.brand || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
+                                setEditingSup(s._id); setEditingSupAiApprove(true); setShowSupModal(true)
+                              }}>编辑后采纳</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => reviewAISupplement(s._id, 'reject')}>拒绝</button>
                             </div>
                           ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待营养师审核</span>}
@@ -4662,7 +4674,7 @@ export default function PatientDetailPage() {
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="btn btn-secondary btn-sm" onClick={() => {
                               setSupForm({ name: s.name, brand: s.brand || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
-                              setEditingSup(s._id); setShowSupModal(true)
+                              setEditingSup(s._id); setEditingSupAiApprove(false); setShowSupModal(true)
                             }}>编辑</button>
                             {s.stopped
                               ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
@@ -4692,11 +4704,11 @@ export default function PatientDetailPage() {
 
           {/* 新增/编辑药物弹窗 */}
           {showMedModal && (
-            <div className="modal-overlay" onClick={() => setShowMedModal(false)}>
+            <div className="modal-overlay" onClick={() => { setShowMedModal(false); setEditingMedAiApprove(false) }}>
               <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
-                  <h3 className="modal-title">{editingMed ? '编辑药物' : '新增药物'}</h3>
-                  <button className="modal-close" onClick={() => setShowMedModal(false)}>✕</button>
+                  <h3 className="modal-title">{editingMedAiApprove ? '编辑AI用药建议后采纳' : editingMed ? '编辑药物' : '新增药物'}</h3>
+                  <button className="modal-close" onClick={() => { setShowMedModal(false); setEditingMedAiApprove(false) }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   {[
@@ -4719,17 +4731,18 @@ export default function PatientDetailPage() {
                   ))}
                 </div>
                 <div className="modal-footer">
-                  <button className="btn btn-ghost" onClick={() => setShowMedModal(false)}>取消</button>
+                  <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setEditingMedAiApprove(false) }}>取消</button>
                   <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
                     if (!medForm.name || !medForm.dosage || !medForm.frequency) { toast('请填写必填项'); return }
                     setMedSaving(true)
                     try {
-                      if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
+                      if (editingMedAiApprove) await staffAPI.updatePatientMedication(id, editingMed, { ...medForm, aiStatus: 'approved', active: true })
+                      else if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
                       else await staffAPI.createPatientMedication(id, medForm)
-                      setShowMedModal(false); loadMedications()
+                      setShowMedModal(false); setEditingMedAiApprove(false); loadMedications()
                     } catch (err) { toast(err.message) }
                     finally { setMedSaving(false) }
-                  }}>{medSaving ? '保存中...' : '保存'}</button>
+                  }}>{medSaving ? '保存中...' : editingMedAiApprove ? '保存并采纳' : '保存'}</button>
                 </div>
               </div>
             </div>
@@ -4737,11 +4750,11 @@ export default function PatientDetailPage() {
 
           {/* 新增/编辑营养素弹窗 */}
           {showSupModal && (
-            <div className="modal-overlay" onClick={() => setShowSupModal(false)}>
+            <div className="modal-overlay" onClick={() => { setShowSupModal(false); setEditingSupAiApprove(false) }}>
               <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
-                  <h3 className="modal-title">{editingSup ? '编辑营养素' : '新增营养素'}</h3>
-                  <button className="modal-close" onClick={() => setShowSupModal(false)}>✕</button>
+                  <h3 className="modal-title">{editingSupAiApprove ? '编辑AI营养素建议后采纳' : editingSup ? '编辑营养素' : '新增营养素'}</h3>
+                  <button className="modal-close" onClick={() => { setShowSupModal(false); setEditingSupAiApprove(false) }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   {[
@@ -4763,17 +4776,18 @@ export default function PatientDetailPage() {
                   ))}
                 </div>
                 <div className="modal-footer">
-                  <button className="btn btn-ghost" onClick={() => setShowSupModal(false)}>取消</button>
+                  <button className="btn btn-ghost" onClick={() => { setShowSupModal(false); setEditingSupAiApprove(false) }}>取消</button>
                   <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
                     if (!supForm.name || !supForm.dosage || !supForm.frequency) { toast('请填写必填项'); return }
                     setMedSaving(true)
                     try {
-                      if (editingSup) await staffAPI.updatePatientSupplement(id, editingSup, supForm)
+                      if (editingSupAiApprove) await staffAPI.updatePatientSupplement(id, editingSup, { ...supForm, aiStatus: 'approved' })
+                      else if (editingSup) await staffAPI.updatePatientSupplement(id, editingSup, supForm)
                       else await staffAPI.createPatientSupplement(id, supForm)
-                      setShowSupModal(false); loadSupplements()
+                      setShowSupModal(false); setEditingSupAiApprove(false); loadSupplements()
                     } catch (err) { toast(err.message) }
                     finally { setMedSaving(false) }
-                  }}>{medSaving ? '保存中...' : '保存'}</button>
+                  }}>{medSaving ? '保存中...' : editingSupAiApprove ? '保存并采纳' : '保存'}</button>
                 </div>
               </div>
             </div>
@@ -4882,6 +4896,8 @@ export default function PatientDetailPage() {
           const fd = data.user.aiFollowupDraft
           const T = { advance: { l: '建议提前随访', c: '#DC2626' }, keep: { l: '按原计划随访', c: '#16A34A' }, extend: { l: '可延长随访间隔', c: '#0077B6' } }[fd.timing] || { l: fd.timing, c: '#4A6558' }
           const canApprove = staff?.role === 'healthManager' || staff?.role === 'superadmin'
+          const ed = followupDraftEdits || { theme: fd.theme || '', suggestedDate: fd.suggestedDate || '', outline: Array.isArray(fd.outline) ? fd.outline : [] }
+          const setEd = (patch) => setFollowupDraftEdits({ ...ed, ...patch })
           return (
             <div className="card" style={{ marginBottom: 16, border: '1.5px solid #D97706' }}>
               <div className="card-header" style={{ background: '#FFFBEB' }}>
@@ -4893,31 +4909,41 @@ export default function PatientDetailPage() {
                   </div>
                   {canApprove && (
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => reviewFollowupDraft('approve')}>采纳并创建随访计划</button>
-                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => reviewFollowupDraft('reject')}>拒绝</button>
+                      <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => { reviewFollowupDraft('approve', ed); setFollowupDraftEdits(null) }}>保存并采纳随访计划</button>
+                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => { reviewFollowupDraft('reject'); setFollowupDraftEdits(null) }}>拒绝</button>
                     </div>
                   )}
                 </div>
               </div>
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'center' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <span style={{ fontSize: 12, color: '#8AA89C' }}>随访时机</span>
                     <span style={{ fontSize: 13, fontWeight: 600, color: T.c }}>{T.l}</span>
                   </div>
-                  {fd.suggestedDate && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ fontSize: 12, color: '#8AA89C' }}>建议日期</span>
-                      <span style={{ fontSize: 13, fontWeight: 600 }}>{fd.suggestedDate}</span>
-                    </div>
-                  )}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>建议日期</span>
+                    {canApprove ? (
+                      <input type="date" className="form-control" style={{ fontSize: 13, padding: '3px 8px', width: 'auto' }}
+                        value={ed.suggestedDate || ''} onChange={e => setEd({ suggestedDate: e.target.value })} />
+                    ) : <span style={{ fontSize: 13, fontWeight: 600 }}>{fd.suggestedDate || '-'}</span>}
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 200 }}>
                     <span style={{ fontSize: 12, color: '#8AA89C' }}>主题</span>
-                    <span style={{ fontSize: 13 }}>{fd.theme}</span>
+                    {canApprove ? (
+                      <input className="form-control" style={{ fontSize: 13, flex: 1 }}
+                        value={ed.theme || ''} onChange={e => setEd({ theme: e.target.value })} />
+                    ) : <span style={{ fontSize: 13 }}>{fd.theme}</span>}
                   </div>
                 </div>
                 {fd.timingReason && <div style={{ fontSize: 13, color: '#4A6558', background: '#F6F3EE', borderRadius: 8, padding: '8px 12px' }}>{fd.timingReason}</div>}
-                {Array.isArray(fd.outline) && fd.outline.length > 0 && (
+                {canApprove ? (
+                  <div>
+                    <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访要点（每行一条）</div>
+                    <textarea className="form-control" rows={4} style={{ fontSize: 13, resize: 'vertical' }}
+                      value={ed.outline.join('\n')} onChange={e => setEd({ outline: e.target.value.split('\n') })} />
+                  </div>
+                ) : Array.isArray(fd.outline) && fd.outline.length > 0 && (
                   <div>
                     <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访要点</div>
                     {fd.outline.map((o, i) => <div key={i} style={{ fontSize: 13, color: '#1A2B24', padding: '2px 0' }}>· {o}</div>)}
@@ -4978,15 +5004,36 @@ export default function PatientDetailPage() {
               <button className="btn btn-secondary btn-sm" onClick={() => runAIHelper('content')}>✨ AI内容推荐</button>
             </div>
           </div>
-          {followUps.length === 0 ? (
-            <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无随访记录</div>
-          ) : (
+          {(() => {
+            const PENDING_STATUSES = ['planned', 'in_progress']
+            const DONE_STATUSES = ['completed', 'missed', 'cancelled']
+            const filtered = followUpFilter === 'pending' ? followUps.filter(f => PENDING_STATUSES.includes(f.status))
+              : followUpFilter === 'done' ? followUps.filter(f => DONE_STATUSES.includes(f.status))
+              : followUps
+            const pendingCount = followUps.filter(f => PENDING_STATUSES.includes(f.status)).length
+            const doneCount = followUps.filter(f => DONE_STATUSES.includes(f.status)).length
+            return (
+            <>
+            <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
+              {[
+                { k: 'all', label: `全部 ${followUps.length}` },
+                { k: 'pending', label: `未随访 ${pendingCount}` },
+                { k: 'done', label: `已随访 ${doneCount}` },
+              ].map(t => (
+                <button key={t.k} className={followUpFilter === t.k ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
+                  style={followUpFilter === t.k ? { background: '#1E6B50', color: '#fff' } : {}}
+                  onClick={() => setFollowUpFilter(t.k)}>{t.label}</button>
+              ))}
+            </div>
+            {filtered.length === 0 ? (
+              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无随访记录' : followUpFilter === 'pending' ? '暂无未随访计划' : '暂无已随访记录'}</div>
+            ) : (
             <table className="table">
               <thead>
                 <tr><th>日期</th><th>方式</th><th>状态</th><th>随访人</th><th>随访内容</th><th>下次随访</th><th>操作</th></tr>
               </thead>
               <tbody>
-                {followUps.map(f => (
+                {filtered.map(f => (
                   <tr key={f._id} style={{ cursor: 'pointer' }} onClick={() => setFollowUpDetail(f)}>
                     <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                     <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
@@ -5009,7 +5056,10 @@ export default function PatientDetailPage() {
                 ))}
               </tbody>
             </table>
-          )}
+            )}
+            </>
+            )
+          })()}
         </div>
         </>
       )}

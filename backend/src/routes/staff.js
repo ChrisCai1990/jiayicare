@@ -3983,11 +3983,11 @@ ${recLines}
 // PATCH /api/staff/patients/:id/ai-followup-draft — 审核AI随访建议草稿（健管专员）
 router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
   try {
-    const { action, notes } = req.body; // action: approve | reject
+    const { action, notes, edits } = req.body; // action: approve | reject；edits: 审核前的编辑覆盖 {theme, suggestedDate, timingReason, outline}
     const user = await User.findById(req.params.id).select('_id name aiFollowupDraft');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    const draft = user.aiFollowupDraft;
-    if (!draft || draft.status !== 'pending') return res.status(400).json({ success: false, message: '暂无待审核的随访建议草稿' });
+    const draft = { ...user.aiFollowupDraft, ...(edits && typeof edits === 'object' ? edits : {}) };
+    if (!user.aiFollowupDraft || user.aiFollowupDraft.status !== 'pending') return res.status(400).json({ success: false, message: '暂无待审核的随访建议草稿' });
 
     if (action === 'reject') {
       await User.collection.updateOne({ _id: user._id }, { $set: { aiFollowupDraft: null } });

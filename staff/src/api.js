@@ -323,7 +323,7 @@ export const staffAPI = {
 
   // 场景六：AI 智能随访建议
   generateAIFollowupSuggestion: (id) => req(`/staff/patients/${id}/ai-followup-suggestion`, { method: 'POST' }),
-  reviewFollowupDraft:          (id, action, notes) => req(`/staff/patients/${id}/ai-followup-draft`, { method: 'PATCH', body: JSON.stringify({ action, notes }) }),
+  reviewFollowupDraft:          (id, action, notes, edits) => req(`/staff/patients/${id}/ai-followup-draft`, { method: 'PATCH', body: JSON.stringify({ action, notes, edits }) }),
   // 场景九：AI 健康教练消息
   generateAICoachMessage:       (id) => req(`/staff/patients/${id}/ai-coach-message`, { method: 'POST' }),
   reviewCoachDraft:             (id, action, message) => req(`/staff/patients/${id}/ai-coach-draft`, { method: 'PATCH', body: JSON.stringify({ action, ...(message ? { message } : {}) }) }),
