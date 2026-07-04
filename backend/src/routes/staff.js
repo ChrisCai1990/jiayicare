@@ -3701,100 +3701,14 @@ router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 场景九：AI 用药建议（家庭医师）────────────────────────────────────
-// POST /api/staff/patients/:id/ai-medication-suggest
+// ── 场景九：AI 用药建议（已下线）──────────────────────────────────────
+// 业务决策：健康管理定位不涉足诊疗判断，用药建议交由临床医生负责，AI不再生成/审核用药建议
 router.post('/patients/:id/ai-medication-suggest', staffAuth, async (req, res) => {
-  try {
-    const user = await User.findById(req.params.id)
-      .select('name gender age chronicDiseases healthProfile labValues aiHealthSummary');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-
-    const { chat } = require('../utils/ai');
-    // 已有用药（排除AI待审）
-    const currentMeds = await Medication.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
-      .select('name dosage frequency purpose').lean();
-    const currentMedStr = currentMeds.length
-      ? currentMeds.map(m => `${m.name} ${m.dosage} ${m.frequency}${m.purpose ? `（${m.purpose}）` : ''}`).join('；')
-      : '暂无';
-
-    const diseasesStr = (user.chronicDiseases || []).join('、') || '无';
-    const labStr = user.labValues ? JSON.stringify(user.labValues).slice(0, 400) : '无';
-    const allergies = user.healthProfile?.drugAllergy || '无';
-
-    const prompt = `你是一位专业的家庭医师，请根据患者信息为其生成合理的药物调整或新增建议。
-
-【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
-【慢病诊断】${diseasesStr}
-【药物过敏】${allergies}
-【当前用药】${currentMedStr}
-【关键指标】${labStr}
-
-请生成1-3条具体的药物建议（新增或调整），每条包含：化学名、剂量、用法频次、用药目的。
-严格按以下JSON数组输出（仅JSON）：
-[
-  {
-    "name": "化学名/通用名",
-    "brandName": "商品名（如无可留空）",
-    "dosage": "具体剂量（如10mg）",
-    "method": "用法（口服/注射等）",
-    "frequency": "频次（如每日1次）",
-    "timing": "服药时机（如早饭后，可留空）",
-    "purpose": "用药目的（30字内）"
-  }
-]`;
-
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200 });
-    let suggestions = [];
-    try {
-      const m = text.trim().match(/\[[\s\S]*\]/);
-      if (m) suggestions = JSON.parse(m[0]);
-    } catch {}
-
-    if (!Array.isArray(suggestions) || suggestions.length === 0) {
-      return res.status(400).json({ success: false, message: 'AI未能生成有效建议，请稍后重试' });
-    }
-
-    // 批量创建为待审核记录
-    const created = await Medication.insertMany(suggestions.map(s => ({
-      user: user._id,
-      name: s.name || '未命名',
-      brandName: s.brandName || '',
-      dosage: s.dosage || '',
-      method: s.method || '口服',
-      frequency: s.frequency || '每日1次',
-      timing: s.timing || '',
-      purpose: s.purpose || '',
-      startDate: new Date().toISOString().slice(0, 10),
-      createdByStaff: true,
-      staffId: req.staff._id,
-      aiStatus: 'pending',
-      aiGeneratedBy: req.staff.name || '',
-      active: false, // 审核通过后激活
-    })));
-
-    res.json({ success: true, data: created, count: created.length });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  res.status(410).json({ success: false, message: 'AI用药建议功能已下线，请由临床医生负责用药调整' });
 });
 
-// PATCH /api/staff/patients/:id/medications/:mid/ai-review — 审核AI用药建议
 router.patch('/patients/:id/medications/:mid/ai-review', staffAuth, async (req, res) => {
-  try {
-    const { action } = req.body; // approve | reject
-    const med = await Medication.findOne({ _id: req.params.mid, user: req.params.id, aiStatus: 'pending' });
-    if (!med) return res.status(404).json({ success: false, message: '未找到待审核的用药记录' });
-
-    if (action === 'approve') {
-      med.aiStatus = 'approved';
-      med.active = true;
-      await med.save();
-      return res.json({ success: true, message: '已采纳，用药记录已激活' });
-    }
-    if (action === 'reject') {
-      await Medication.deleteOne({ _id: med._id });
-      return res.json({ success: true, message: '已拒绝并删除该建议' });
-    }
-    res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+  res.status(410).json({ success: false, message: 'AI用药建议功能已下线' });
 });
 
 // ── 场景十：AI 营养素建议（营养师）──────────────────────────────────────

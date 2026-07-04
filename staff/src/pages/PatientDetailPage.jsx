@@ -400,7 +400,6 @@ export default function PatientDetailPage() {
   const [medications, setMedications] = useState([])
   const [supplements, setSupplements] = useState([])
   const [medSubTab, setMedSubTab] = useState('med') // 'med' | 'sup'
-  const [aiMedGenerating, setAiMedGenerating] = useState(false)
   const [aiSupGenerating, setAiSupGenerating] = useState(false)
   const [aiExamSuggesting, setAiExamSuggesting] = useState(false)
   const [aiNutritionGenerating, setAiNutritionGenerating] = useState(false)
@@ -410,7 +409,6 @@ export default function PatientDetailPage() {
   const [showSupModal, setShowSupModal] = useState(false)
   const [editingMed, setEditingMed] = useState(null)
   const [editingSup, setEditingSup] = useState(null)
-  const [editingMedAiApprove, setEditingMedAiApprove] = useState(false)
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
   const [followupDraftEdits, setFollowupDraftEdits] = useState(null) // 待审面板内联编辑：{theme, suggestedDate, outline}
   const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
@@ -1142,23 +1140,6 @@ export default function PatientDetailPage() {
       await staffAPI.reviewCoachDraft(id, action, message)
       toast(action === 'approve' ? '消息已发送给会员' : '已拒绝')
       load()
-    } catch (err) { toast(err.message || '操作失败') }
-  }
-  // 场景九：AI 用药建议生成 + 单条审核
-  const generateAIMedication = async () => {
-    setAiMedGenerating(true)
-    try {
-      const r = await staffAPI.generateAIMedicationSuggest(id)
-      toast(`AI生成 ${r.count} 条用药建议，请家庭医师审核`)
-      loadMedications()
-    } catch (err) { toast(err.message || 'AI生成失败') }
-    finally { setAiMedGenerating(false) }
-  }
-  const reviewAIMedication = async (medId, action) => {
-    try {
-      await staffAPI.reviewAIMedication(id, medId, action)
-      toast(action === 'approve' ? '已采纳，用药记录已激活' : '已拒绝')
-      loadMedications()
     } catch (err) { toast(err.message || '操作失败') }
   }
   // 场景十：AI 营养素建议生成 + 单条审核
@@ -4495,12 +4476,6 @@ export default function PatientDetailPage() {
                 onClick={() => setMedSubTab(t.key)}>{t.label}</button>
             ))}
             <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-              {medSubTab === 'med' && (
-                <button className="btn btn-secondary btn-sm" disabled={aiMedGenerating}
-                  onClick={generateAIMedication}>
-                  {aiMedGenerating ? 'AI生成中…' : '✨ AI用药建议'}
-                </button>
-              )}
               {medSubTab === 'sup' && (
                 <button className="btn btn-secondary btn-sm" disabled={aiSupGenerating}
                   onClick={generateAISupplement}>
@@ -4508,55 +4483,16 @@ export default function PatientDetailPage() {
                 </button>
               )}
               <button className="btn btn-primary btn-sm"
-                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setEditingMedAiApprove(false); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
+                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
                 ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
               </button>
             </div>
           </div>
 
           {medSubTab === 'med' && (() => {
-            const pendingMeds = medications.filter(m => m.aiStatus === 'pending')
             const activeMeds = medications.filter(m => m.aiStatus !== 'pending')
-            const canApprove = staff?.role === 'familyDoctor' || staff?.role === 'superadmin'
             return (
             <>
-            {pendingMeds.length > 0 && (
-              <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
-                <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>💊</span>
-                    <span className="card-title" style={{ color: '#0077B6' }}>AI用药建议·待家庭医师审核</span>
-                    <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
-                  </div>
-                </div>
-                <table className="table" style={{ marginBottom: 0 }}>
-                  <thead><tr><th>药品名称</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>生成人</th><th>操作</th></tr></thead>
-                  <tbody>
-                    {pendingMeds.map(m => (
-                      <tr key={m._id} style={{ background: '#F5FAFF' }}>
-                        <td style={{ fontWeight: 600 }}>{m.name}{m.brandName ? <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 4 }}>({m.brandName})</span> : ''}</td>
-                        <td>{m.dosage}</td>
-                        <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
-                        <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || '-'}</td>
-                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.aiGeneratedBy || 'AI'}</td>
-                        <td>
-                          {canApprove ? (
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => reviewAIMedication(m._id, 'approve')}>采纳</button>
-                              <button className="btn btn-secondary btn-sm" onClick={() => {
-                                setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
-                                setEditingMed(m._id); setEditingMedAiApprove(true); setShowMedModal(true)
-                              }}>编辑后采纳</button>
-                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => reviewAIMedication(m._id, 'reject')}>拒绝</button>
-                            </div>
-                          ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待家庭医师审核</span>}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
             <div className="card" style={{ padding: 0 }}>
               {activeMeds.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用药记录</div>
@@ -4581,7 +4517,7 @@ export default function PatientDetailPage() {
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="btn btn-secondary btn-sm" onClick={() => {
                               setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
-                              setEditingMed(m._id); setEditingMedAiApprove(false); setShowMedModal(true)
+                              setEditingMed(m._id); setShowMedModal(true)
                             }}>编辑</button>
                             {m.stopped
                             ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
@@ -4704,11 +4640,11 @@ export default function PatientDetailPage() {
 
           {/* 新增/编辑药物弹窗 */}
           {showMedModal && (
-            <div className="modal-overlay" onClick={() => { setShowMedModal(false); setEditingMedAiApprove(false) }}>
+            <div className="modal-overlay" onClick={() => setShowMedModal(false)}>
               <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
-                  <h3 className="modal-title">{editingMedAiApprove ? '编辑AI用药建议后采纳' : editingMed ? '编辑药物' : '新增药物'}</h3>
-                  <button className="modal-close" onClick={() => { setShowMedModal(false); setEditingMedAiApprove(false) }}>✕</button>
+                  <h3 className="modal-title">{editingMed ? '编辑药物' : '新增药物'}</h3>
+                  <button className="modal-close" onClick={() => setShowMedModal(false)}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                   {[
@@ -4731,18 +4667,17 @@ export default function PatientDetailPage() {
                   ))}
                 </div>
                 <div className="modal-footer">
-                  <button className="btn btn-ghost" onClick={() => { setShowMedModal(false); setEditingMedAiApprove(false) }}>取消</button>
+                  <button className="btn btn-ghost" onClick={() => setShowMedModal(false)}>取消</button>
                   <button className="btn btn-primary" disabled={medSaving} onClick={async () => {
                     if (!medForm.name || !medForm.dosage || !medForm.frequency) { toast('请填写必填项'); return }
                     setMedSaving(true)
                     try {
-                      if (editingMedAiApprove) await staffAPI.updatePatientMedication(id, editingMed, { ...medForm, aiStatus: 'approved', active: true })
-                      else if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
+                      if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
                       else await staffAPI.createPatientMedication(id, medForm)
-                      setShowMedModal(false); setEditingMedAiApprove(false); loadMedications()
+                      setShowMedModal(false); loadMedications()
                     } catch (err) { toast(err.message) }
                     finally { setMedSaving(false) }
-                  }}>{medSaving ? '保存中...' : editingMedAiApprove ? '保存并采纳' : '保存'}</button>
+                  }}>{medSaving ? '保存中...' : '保存'}</button>
                 </div>
               </div>
             </div>
