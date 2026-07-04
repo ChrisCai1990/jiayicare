@@ -1155,7 +1155,7 @@ export default function PatientDetailPage() {
   const reviewAISupplement = async (supId, action) => {
     try {
       await staffAPI.reviewAISupplement(id, supId, action)
-      toast(action === 'approve' ? '已采纳营养素建议' : '已拒绝')
+      toast(action === 'approve' ? '已采纳营养素建议' : action === 'withdraw' ? '已撤回' : '已拒绝')
       loadSupplements()
     } catch (err) { toast(err.message || '操作失败') }
   }
@@ -4561,7 +4561,9 @@ export default function PatientDetailPage() {
                 <table className="table" style={{ marginBottom: 0 }}>
                   <thead><tr><th>营养素名称</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>生成人</th><th>操作</th></tr></thead>
                   <tbody>
-                    {pendingSups.map(s => (
+                    {pendingSups.map(s => {
+                      const isGenerator = staff?._id && String(s.staffId) === String(staff._id)
+                      return (
                       <tr key={s._id} style={{ background: '#F0FFF4' }}>
                         <td style={{ fontWeight: 600 }}>{s.name}{s.brand ? <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 4 }}>({s.brand})</span> : ''}</td>
                         <td>{s.dosage}</td>
@@ -4578,10 +4580,17 @@ export default function PatientDetailPage() {
                               }}>编辑后采纳</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => reviewAISupplement(s._id, 'reject')}>拒绝</button>
                             </div>
+                          ) : isGenerator ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: '#8AA89C' }}>等待营养师审核</span>
+                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
+                                onClick={() => { if (window.confirm('确认撤回这条由你生成的AI营养素建议？')) reviewAISupplement(s._id, 'withdraw') }}>撤回</button>
+                            </div>
                           ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待营养师审核</span>}
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>

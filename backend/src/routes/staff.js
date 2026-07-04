@@ -3779,22 +3779,34 @@ router.post('/patients/:id/ai-supplement-suggest', staffAuth, async (req, res) =
 });
 
 // PATCH /api/staff/patients/:id/supplements/:sid/ai-review — 审核AI营养素建议
+// action: approve/reject 仅限营养师或超管（审核权限）；withdraw 仅限生成人本人（撤回自己误点生成的待审核建议）
 router.patch('/patients/:id/supplements/:sid/ai-review', staffAuth, async (req, res) => {
   try {
     const { action } = req.body;
     const sup = await Supplement.findOne({ _id: req.params.sid, user: req.params.id, aiStatus: 'pending' });
     if (!sup) return res.status(404).json({ success: false, message: '未找到待审核的营养素记录' });
 
-    if (action === 'approve') {
-      sup.aiStatus = 'approved';
-      await sup.save();
-      return res.json({ success: true, message: '已采纳营养素建议' });
-    }
-    if (action === 'reject') {
+    const isNutritionist = req.staff.role === 'nutritionist' || req.staff.role === 'superadmin';
+    const isGenerator = String(sup.staffId) === String(req.staff._id);
+
+    if (action === 'approve' || action === 'reject') {
+      if (!isNutritionist) return res.status(403).json({ success: false, message: '仅营养师可审核该建议' });
+      if (action === 'approve') {
+        sup.aiStatus = 'approved';
+        await sup.save();
+        return res.json({ success: true, message: '已采纳营养素建议' });
+      }
       await Supplement.deleteOne({ _id: sup._id });
       return res.json({ success: true, message: '已拒绝并删除该建议' });
     }
-    res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
+
+    if (action === 'withdraw') {
+      if (!isGenerator && !isNutritionist) return res.status(403).json({ success: false, message: '仅生成人本人或营养师可撤回该建议' });
+      await Supplement.deleteOne({ _id: sup._id });
+      return res.json({ success: true, message: '已撤回该建议' });
+    }
+
+    res.status(400).json({ success: false, message: 'action 必须为 approve / reject / withdraw' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
