@@ -320,7 +320,7 @@ export const staffAPI = {
   generateAISupplementSuggest: (id) => req(`/staff/patients/${id}/ai-supplement-suggest`, { method: 'POST' }),
   reviewAISupplement: (patientId, supId, action) => req(`/staff/patients/${patientId}/supplements/${supId}/ai-review`, { method: 'PATCH', body: JSON.stringify({ action }) }),
   // 场景十五：AI 转介草稿
-  generateAIReferralDraft: (id, toRole, toName, reason) => req(`/staff/patients/${id}/ai-referral-draft`, { method: 'POST', body: JSON.stringify({ toRole, toName, reason }) }),
+  generateAIReferralDraft: (id, toRole, toName, reason, attachedHealthInfo) => req(`/staff/patients/${id}/ai-referral-draft`, { method: 'POST', body: JSON.stringify({ toRole, toName, reason, attachedHealthInfo }) }),
 
   // 场景六：AI 智能随访建议
   generateAIFollowupSuggestion: (id) => req(`/staff/patients/${id}/ai-followup-suggestion`, { method: 'POST' }),

@@ -3852,36 +3852,45 @@ router.patch('/patients/:id/supplements/:sid/ai-review', staffAuth, async (req, 
 
 // ── 场景十五：AI 转介草稿（家庭医师/任意角色）────────────────────────────
 // POST /api/staff/patients/:id/ai-referral-draft
-// 要求医生先选定接收人、填好转介原因，AI只负责基于"接收人是谁+医生给的原因+患者档案"扩写详细说明，不替医生编造转介原因
+// 要求医生先选定接收人、填好转介原因，AI只负责基于"接收人是谁+医生给的原因+医生本次勾选附带的信息"扩写详细说明，不替医生编造转介原因
 router.post('/patients/:id/ai-referral-draft', staffAuth, async (req, res) => {
   try {
-    const { toRole, toName, reason } = req.body; // toRole/toName: 接收方角色/姓名；reason: 医生已填写的转介原因（必填，AI不代为生成）
+    const { toRole, toName, reason, attachedHealthInfo } = req.body;
+    // toRole/toName: 接收方角色/姓名；reason: 医生已填写的转介原因（必填，AI不代为生成）
+    // attachedHealthInfo: 医生本次转介勾选附带的信息，[{label, val}]，如"基本信息""长期用药""膳食调查概述"等，与转介弹窗里的附件勾选一一对应
     if (!reason || !reason.trim()) {
       return res.status(400).json({ success: false, message: '请先选择接收人并填写转介原因，AI将据此生成详细说明' });
     }
-    const user = await User.findById(req.params.id)
-      .select('name gender age chronicDiseases healthProfile labValues aiHealthSummary lifestyle_data');
+    const user = await User.findById(req.params.id).select('name gender age');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const { chat } = require('../utils/ai');
-    const meds = await Medication.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
-      .select('name dosage').limit(5).lean();
 
-    const prompt = `你是一位家庭医师，正准备将患者转介给同事，请仅基于下方信息扩写一份转介详细说明（不超过120字），包含：主要病情、需要对方协助的具体内容。不要编造转介原因，必须紧扣医生已给出的转介原因。语气专业，条理清晰。
+    let attachedStr = '无（医生本次未附带任何健康档案信息）';
+    if (Array.isArray(attachedHealthInfo) && attachedHealthInfo.length > 0) {
+      attachedStr = attachedHealthInfo.map(s => {
+        const v = s.val;
+        const vStr = Array.isArray(v)
+          ? v.map(item => typeof item === 'object' ? Object.values(item).filter(Boolean).join(' · ') : item).join('；')
+          : (typeof v === 'object' && v !== null ? Object.entries(v).map(([k, vv]) => `${k}：${vv}`).join('；') : String(v));
+        return `${s.label}：${vStr}`;
+      }).join('\n');
+    }
+
+    const prompt = `你是一位家庭医师，正准备将患者转介给同事，请仅基于下方信息扩写一份转介详细说明（不超过150字），包含：主要病情、需要对方协助的具体内容。必须紧扣医生已给出的转介原因和本次实际附带的信息，不要编造转介原因，也不要引用未提供的信息。语气专业，条理清晰。
 
 【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
-【主要诊断/慢病】${(user.chronicDiseases || []).join('、') || '无'}
-【当前主要用药】${meds.length ? meds.map(m => `${m.name} ${m.dosage}`).join('；') : '无'}
-【药物过敏】${user.healthProfile?.drugAllergy || '无'}
 【转介目标】${toRole || '医护人员'}${toName ? `（${toName}）` : ''}
 【医生给出的转介原因】${reason.trim()}
+【本次附带的健康信息】
+${attachedStr}
 
-请直接输出详细说明正文（不要加"详细说明："前缀，不要输出转介原因，80字内）：`;
+请直接输出详细说明正文（不要加"详细说明："前缀，不要输出转介原因，120字内）：`;
 
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 300 });
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 350 });
     res.json({
       success: true,
-      data: { content: text.trim().slice(0, 300) },
+      data: { content: text.trim().slice(0, 350) },
     });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

@@ -7198,6 +7198,12 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
     return Object.keys(result).length ? result : null
   }
 
+  // 供AI生成使用：附带信息的 {label, val} 列表，比 buildAttachedHealthInfo 多带上中文标签
+  const buildAttachedHealthInfoForAI = () => {
+    return HEALTH_SECTIONS.filter(s => selectedHealthSections.includes(s.key))
+      .map(s => ({ label: s.label, val: s.val }))
+  }
+
   const handleSubmit = async () => {
     if (!form.toStaffId || !form.reason) { setError('接收人和转介原因不能为空'); return }
     setSaving(true); setError('')
@@ -7249,9 +7255,9 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
                   setAiDraftLoading(true)
                   try {
                     const toStaff = staffList.find(s => s._id === form.toStaffId)
-                    const r = await staffAPI.generateAIReferralDraft(patientId, toStaff?.roleLabel, toStaff?.name, form.reason)
+                    const r = await staffAPI.generateAIReferralDraft(patientId, toStaff?.roleLabel, toStaff?.name, form.reason, buildAttachedHealthInfoForAI())
                     if (r.data.content) setForm(f => ({ ...f, content: r.data.content }))
-                    toast('AI已根据接收人和转介原因生成说明，可直接修改')
+                    toast('AI已根据接收人、转介原因和附带信息生成说明，可直接修改')
                   } catch (err) { toast(err.message || 'AI生成失败') }
                   finally { setAiDraftLoading(false) }
                 }}>
