@@ -7243,15 +7243,15 @@ function ReferralModal({ patientId, patientName, patientUser, staffList, onClose
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
               <label className="form-label" style={{ marginBottom: 0 }}>详细说明</label>
               <button type="button" className="btn btn-secondary btn-sm" style={{ fontSize: 12 }}
-                disabled={aiDraftLoading}
+                disabled={aiDraftLoading || !form.toStaffId || !form.reason}
+                title={(!form.toStaffId || !form.reason) ? '请先选择接收人并填写转介原因' : ''}
                 onClick={async () => {
                   setAiDraftLoading(true)
                   try {
                     const toStaff = staffList.find(s => s._id === form.toStaffId)
-                    const r = await staffAPI.generateAIReferralDraft(patientId, toStaff?.roleLabel, toStaff?.name)
-                    if (r.data.reason && !form.reason) setForm(f => ({ ...f, reason: r.data.reason }))
+                    const r = await staffAPI.generateAIReferralDraft(patientId, toStaff?.roleLabel, toStaff?.name, form.reason)
                     if (r.data.content) setForm(f => ({ ...f, content: r.data.content }))
-                    toast('AI已生成草稿，可直接修改')
+                    toast('AI已根据接收人和转介原因生成说明，可直接修改')
                   } catch (err) { toast(err.message || 'AI生成失败') }
                   finally { setAiDraftLoading(false) }
                 }}>

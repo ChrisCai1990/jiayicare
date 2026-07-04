@@ -3852,9 +3852,13 @@ router.patch('/patients/:id/supplements/:sid/ai-review', staffAuth, async (req, 
 
 // ── 场景十五：AI 转介草稿（家庭医师/任意角色）────────────────────────────
 // POST /api/staff/patients/:id/ai-referral-draft
+// 要求医生先选定接收人、填好转介原因，AI只负责基于"接收人是谁+医生给的原因+患者档案"扩写详细说明，不替医生编造转介原因
 router.post('/patients/:id/ai-referral-draft', staffAuth, async (req, res) => {
   try {
-    const { toRole, toName } = req.body; // 接收方角色/姓名（可选，用于定向措辞）
+    const { toRole, toName, reason } = req.body; // toRole/toName: 接收方角色/姓名；reason: 医生已填写的转介原因（必填，AI不代为生成）
+    if (!reason || !reason.trim()) {
+      return res.status(400).json({ success: false, message: '请先选择接收人并填写转介原因，AI将据此生成详细说明' });
+    }
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile labValues aiHealthSummary lifestyle_data');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
@@ -3863,27 +3867,21 @@ router.post('/patients/:id/ai-referral-draft', staffAuth, async (req, res) => {
     const meds = await Medication.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
       .select('name dosage').limit(5).lean();
 
-    const prompt = `你是一位家庭医师，请为以下患者撰写一份简洁的科室转介说明（不超过120字），包含：主要病情、转介原因、需要对方协助的具体内容。语气专业，条理清晰。
+    const prompt = `你是一位家庭医师，正准备将患者转介给同事，请仅基于下方信息扩写一份转介详细说明（不超过120字），包含：主要病情、需要对方协助的具体内容。不要编造转介原因，必须紧扣医生已给出的转介原因。语气专业，条理清晰。
 
 【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
 【主要诊断/慢病】${(user.chronicDiseases || []).join('、') || '无'}
 【当前主要用药】${meds.length ? meds.map(m => `${m.name} ${m.dosage}`).join('；') : '无'}
 【药物过敏】${user.healthProfile?.drugAllergy || '无'}
-${toRole ? `【转介目标】${toRole}${toName ? `（${toName}）` : ''}` : ''}
+【转介目标】${toRole || '医护人员'}${toName ? `（${toName}）` : ''}
+【医生给出的转介原因】${reason.trim()}
 
-请分两行输出：
-转介原因：（一句话，20字内）
-详细说明：（具体内容，80字内）`;
+请直接输出详细说明正文（不要加"详细说明："前缀，不要输出转介原因，80字内）：`;
 
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 400 });
-    const reasonMatch = text.match(/转介原因[：:]\s*(.+)/);
-    const contentMatch = text.match(/详细说明[：:]\s*([\s\S]+)/);
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 300 });
     res.json({
       success: true,
-      data: {
-        reason: reasonMatch ? reasonMatch[1].trim() : '',
-        content: contentMatch ? contentMatch[1].trim().slice(0, 300) : text.trim().slice(0, 300),
-      },
+      data: { content: text.trim().slice(0, 300) },
     });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
