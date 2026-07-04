@@ -190,6 +190,7 @@ export const staffAPI = {
   getReferrals:          (p = {})    => req('/staff/referrals?' + qs(p)),
   updateReferral:        (id, data)  => req(`/staff/referrals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getPatientReferrals:   (patientId) => req(`/staff/referrals?patientId=${patientId}&limit=100`),
+  generateAIReferralResponseDraft: (id) => req(`/staff/referrals/${id}/ai-response-draft`, { method: 'POST' }),
   markSentReferralsRead: ()          => req('/staff/referrals/mark-sent-read', { method: 'PATCH' }),
 
   // P4 — Notifications

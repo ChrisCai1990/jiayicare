@@ -2026,6 +2026,46 @@ router.patch('/referrals/mark-sent-read', staffAuth, async (req, res) => {
   res.json({ success: true });
 });
 
+// POST /api/staff/referrals/:id/ai-response-draft — AI辅助生成会诊回复草稿（问题分析+会诊意见），接收方人工审核后再提交
+router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
+  try {
+    const referral = await Referral.findOne({ _id: req.params.id, toStaffId: req.staff._id })
+      .populate('patientId', 'name gender age chronicDiseases healthProfile labValues')
+      .populate('fromStaffId', 'name role title');
+    if (!referral) return res.status(404).json({ success: false, message: '转介记录不存在或无权操作' });
+
+    const user = referral.patientId;
+    const { chat } = require('../utils/ai');
+    const meds = await Medication.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
+      .select('name dosage').limit(5).lean();
+
+    const prompt = `你是一位专业医师，收到同事的会诊转介请求，请根据以下信息草拟你的会诊回复。
+
+【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
+【主要诊断/慢病】${(user.chronicDiseases || []).join('、') || '无'}
+【当前主要用药】${meds.length ? meds.map(m => `${m.name} ${m.dosage}`).join('；') : '无'}
+【药物过敏】${user.healthProfile?.drugAllergy || '无'}
+【发起方】${referral.fromStaffId?.name || ''}（${referral.fromStaffId?.role || ''}）
+【转介原因】${referral.reason}
+【转介详细说明】${referral.content || '无'}
+
+请分两行输出：
+问题分析：（对患者当前问题的分析评估，60字内）
+会诊意见：（会诊结论、后续建议、转归方向，80字内）`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 400 });
+    const analysisMatch = text.match(/问题分析[：:]\s*(.+)/);
+    const opinionMatch = text.match(/会诊意见[：:]\s*([\s\S]+)/);
+    res.json({
+      success: true,
+      data: {
+        responseAnalysis: analysisMatch ? analysisMatch[1].trim() : '',
+        responseOpinion: opinionMatch ? opinionMatch[1].trim().slice(0, 300) : '',
+      },
+    });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // PATCH /api/staff/referrals/:id — 更新转介状态（接收/完成/拒绝）
 router.patch('/referrals/:id', staffAuth, async (req, res) => {
   const { status, response, responseAnalysis, responseOpinion } = req.body;

@@ -434,15 +434,27 @@ export default function NotificationsPage() {
 
 // ── 转介回复弹窗 ──
 function RespondModal({ referral, onClose, onRespond }) {
+  const toast = useToast()
   const [responseAnalysis, setResponseAnalysis] = useState('')
   const [responseOpinion, setResponseOpinion] = useState('')
   const [rejectReason, setRejectReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [aiDrafting, setAiDrafting] = useState(false)
   const isAccept = referral.action === 'accept'
   const isComplete = referral.action === 'complete'
   const isReject = referral.action === 'reject'
 
   const nextStatus = isAccept ? 'accepted' : isComplete ? 'completed' : 'rejected'
+
+  const handleAiDraft = async () => {
+    setAiDrafting(true)
+    try {
+      const r = await staffAPI.generateAIReferralResponseDraft(referral._id)
+      setResponseAnalysis(r.data.responseAnalysis || '')
+      setResponseOpinion(r.data.responseOpinion || '')
+    } catch (err) { toast(err.message || 'AI生成失败') }
+    finally { setAiDrafting(false) }
+  }
 
   const handleSubmit = async () => {
     setSubmitting(true)
@@ -481,6 +493,11 @@ function RespondModal({ referral, onClose, onRespond }) {
             </div>
           ) : (
             <>
+              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={aiDrafting} onClick={handleAiDraft}>
+                  {aiDrafting ? 'AI生成中…' : '✨ AI生成草稿'}
+                </button>
+              </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">问题分析{isAccept ? '（可选）' : ''}</label>
                 <textarea className="form-input" rows={3} value={responseAnalysis} onChange={e => setResponseAnalysis(e.target.value)}
