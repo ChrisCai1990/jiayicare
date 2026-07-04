@@ -2463,7 +2463,10 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
 // ── 患者药物管理（医护端 CRUD）────────────────────────────────────
 router.get('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
-    const meds = await Medication.find({ user: req.params.id, active: true }).sort({ createdAt: -1 });
+    const meds = await Medication.find({
+      user: req.params.id,
+      $or: [{ active: true }, { aiStatus: 'pending' }],
+    }).sort({ createdAt: -1 });
     res.json({ success: true, data: meds });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
