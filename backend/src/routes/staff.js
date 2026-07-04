@@ -4049,6 +4049,7 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
       tone,
       generatedAt: new Date(),
       generatedBy: req.staff.name || '',
+      generatedById: req.staff._id,
       status: 'pending',
     };
     await User.collection.updateOne({ _id: user._id }, { $set: { aiCoachDraft: coachDraft } });
@@ -4058,21 +4059,27 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
   }
 });
 
-// PATCH /api/staff/patients/:id/ai-coach-draft — 审核AI教练消息草稿（营养师）
+// PATCH /api/staff/patients/:id/ai-coach-draft — 审核AI教练消息草稿
+// approve 仅限营养师/超管（审核权限）；reject/withdraw 生成人本人或营养师/超管均可（含误点撤回场景）
 router.patch('/patients/:id/ai-coach-draft', staffAuth, async (req, res) => {
   try {
-    const { action, message: editedMessage } = req.body; // action: approve | reject
+    const { action, message: editedMessage } = req.body; // action: approve | reject | withdraw
     const user = await User.findById(req.params.id).select('_id name aiCoachDraft');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
     const draft = user.aiCoachDraft;
     if (!draft || draft.status !== 'pending') return res.status(400).json({ success: false, message: '暂无待审核的教练消息草稿' });
 
-    if (action === 'reject') {
+    const isNutritionist = req.staff.role === 'nutritionist' || req.staff.role === 'superadmin';
+    const isGenerator = draft.generatedById && String(draft.generatedById) === String(req.staff._id);
+
+    if (action === 'reject' || action === 'withdraw') {
+      if (!isNutritionist && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人或营养师可撤回/拒绝该消息' });
       await User.collection.updateOne({ _id: user._id }, { $set: { aiCoachDraft: null } });
-      return res.json({ success: true, message: '已拒绝该教练消息' });
+      return res.json({ success: true, message: action === 'withdraw' ? '已撤回该消息' : '已拒绝该教练消息' });
     }
 
     if (action === 'approve') {
+      if (!isNutritionist) return res.status(403).json({ success: false, message: '仅营养师可审核发送该消息' });
       const finalMsg = (editedMessage || draft.message || '').trim();
       if (!finalMsg) return res.status(400).json({ success: false, message: '消息内容不能为空' });
       await PushRecord.create({
@@ -4085,7 +4092,7 @@ router.patch('/patients/:id/ai-coach-draft', staffAuth, async (req, res) => {
       return res.json({ success: true, message: '消息已发送给会员' });
     }
 
-    res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
+    res.status(400).json({ success: false, message: 'action 必须为 approve / reject / withdraw' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

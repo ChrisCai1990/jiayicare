@@ -1092,8 +1092,14 @@ export default function PatientDetailPage() {
     finally { setRiskApproving(false) }
   }
 
-  // 场景五/六/九：AI 助手统一调用
+  // 场景五/六/九：AI 助手统一调用。会实际调用AI并写入待审核草稿，故先二次确认，避免误点即生成
+  const AI_HELPER_CONFIRM_TEXT = {
+    followup: '确认要让AI根据该会员的打卡数据生成一条随访建议吗？生成后需健管专员审核才会创建随访计划。',
+    coach: '确认要让AI根据该会员打卡情况生成一条教练消息吗？生成后需营养师审核才会发送。',
+    content: '确认要让AI为该会员生成个性化内容推荐吗？',
+  }
   const runAIHelper = async (type) => {
+    if (!window.confirm(AI_HELPER_CONFIRM_TEXT[type] || '确认要让AI生成建议吗？')) return
     setAiHelper({ type, loading: true, data: null, error: null })
     try {
       let r
@@ -4939,6 +4945,8 @@ export default function PatientDetailPage() {
         {data?.user?.aiCoachDraft?.status === 'pending' && (() => {
           const cd = data.user.aiCoachDraft
           const canApprove = staff?.role === 'nutritionist' || staff?.role === 'superadmin'
+          const isGenerator = staff?._id && cd.generatedById && String(cd.generatedById) === String(staff._id)
+          const canEdit = canApprove || isGenerator
           return (
             <div className="card" style={{ marginBottom: 16, border: '1.5px solid #16A34A' }}>
               <div className="card-header" style={{ background: '#F0FDF4' }}>
@@ -4948,12 +4956,18 @@ export default function PatientDetailPage() {
                     <span className="card-title" style={{ color: '#16A34A' }}>AI教练消息·待审核</span>
                     <span style={{ fontSize: 12, color: '#8AA89C' }}>由 {cd.generatedBy} 生成 · {new Date(cd.generatedAt).toLocaleDateString('zh-CN')}</span>
                   </div>
-                  {canApprove && (
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewCoachDraft('approve', coachDraftMsg)}>发送给会员</button>
-                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => reviewCoachDraft('reject')}>拒绝</button>
-                    </div>
-                  )}
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    {canApprove && (
+                      <>
+                        <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewCoachDraft('approve', coachDraftMsg)}>发送给会员</button>
+                        <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => reviewCoachDraft('reject')}>拒绝</button>
+                      </>
+                    )}
+                    {!canApprove && isGenerator && (
+                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }}
+                        onClick={() => { if (window.confirm('确认撤回这条由你生成的AI教练消息？')) reviewCoachDraft('withdraw') }}>撤回</button>
+                    )}
+                  </div>
                 </div>
               </div>
               <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -4962,12 +4976,17 @@ export default function PatientDetailPage() {
                   <span>连续打卡 {cd.streak} 天</span>
                   {cd.daysSinceLast != null && <span>距上次打卡 {cd.daysSinceLast} 天</span>}
                 </div>
-                {canApprove ? (
-                  <textarea
-                    value={coachDraftMsg}
-                    onChange={e => setCoachDraftMsg(e.target.value)}
-                    style={{ width: '100%', minHeight: 80, padding: '8px 12px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
-                  />
+                {canEdit ? (
+                  <>
+                    <textarea
+                      value={coachDraftMsg}
+                      onChange={e => setCoachDraftMsg(e.target.value)}
+                      style={{ width: '100%', minHeight: 80, padding: '8px 12px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
+                    />
+                    {!canApprove && isGenerator && (
+                      <div style={{ fontSize: 12, color: '#8AA89C' }}>💡 你是生成人，可编辑或撤回；发送需营养师审核</div>
+                    )}
+                  </>
                 ) : (
                   <div style={{ fontSize: 14, color: '#1A2B24', background: '#F6F3EE', borderRadius: 8, padding: '10px 14px', lineHeight: 1.6 }}>{cd.message}</div>
                 )}
