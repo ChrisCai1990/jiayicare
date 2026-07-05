@@ -364,10 +364,15 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
     try {
       await staffAPI.addAIHealthSummaryDiscussion(patientId, text.trim(), year)
       setText('')
-      toast('已发布留言')
       onRefresh()
-    } catch (err) { toast(err.message || '发布失败') }
-    finally { setPosting(false) }
+    } catch (err) { toast(err.message || '发布失败'); setPosting(false); return }
+    // 发布成功后自动让AI接话，形成对话式讨论，无需再手动点按钮
+    setAiReplying(true)
+    try {
+      await staffAPI.generateAIHealthSummaryReply(patientId, year)
+      onRefresh()
+    } catch (err) { toast(err.message || 'AI回应失败') }
+    finally { setPosting(false); setAiReplying(false) }
   }
 
   const handleDelete = async (idx) => {
@@ -426,16 +431,19 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
             })}
           </div>
         )}
+        {aiReplying && (
+          <div style={{ fontSize: 12, color: '#0077B6', display: 'flex', alignItems: 'center', gap: 6 }}>✨ AI思考中...</div>
+        )}
         {list.length > 0 && (
-          <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} disabled={aiReplying} onClick={handleAiReply}>
-            {aiReplying ? 'AI分析中...' : '✨ 让AI重新分析'}
+          <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} disabled={aiReplying || posting} onClick={handleAiReply}>
+            {aiReplying ? '分析中...' : '✨ 让AI再想一次'}
           </button>
         )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <textarea className="form-input" rows={2} style={{ flex: 1, resize: 'vertical' }}
-            placeholder="提出疑问、补充信息或讨论意见..." value={text} onChange={e => setText(e.target.value)} />
+            placeholder="提出疑问、补充信息，AI会自动回复..." value={text} onChange={e => setText(e.target.value)} />
           <button className="btn btn-primary btn-sm" disabled={posting || !text.trim()} onClick={handlePost}>
-            {posting ? '发布中...' : '发布'}
+            {posting ? (aiReplying ? 'AI回复中...' : '发布中...') : '发布'}
           </button>
         </div>
       </div>
