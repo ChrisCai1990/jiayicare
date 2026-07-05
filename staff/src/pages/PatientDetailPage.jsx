@@ -5177,12 +5177,12 @@ export default function PatientDetailPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {CATS.map(cat => {
               const isDiseaseMgmt = cat === '专病管理'
-              // 专病管理内部按 diseaseName 二级分组（同一专病归到一起，组内保持原有按日期倒序）
+              // 专病管理内部按标题二级分组（同一专病的记录只要标题写法一致就会归到一起，组内保持原有按日期倒序）
               let diseaseGroups = null
               if (isDiseaseMgmt) {
                 diseaseGroups = {}
                 grouped[cat].forEach(r => {
-                  const dn = r.diseaseName?.trim() || '未标注专病'
+                  const dn = r.diseaseName?.trim() || r.title?.trim() || '未标注专病'
                   if (!diseaseGroups[dn]) diseaseGroups[dn] = []
                   diseaseGroups[dn].push(r)
                 })
