@@ -92,10 +92,19 @@ router.post('/', auth, async (req, res) => {
     return res.status(503).json({ success: false, message: 'AI服务暂未开通，请联系管理员配置。' });
   }
 
-  // 一对一AI咨询：有家庭医生团队的客户可自由咨询；无家庭医生的客户仅限于讨论自己的AI健康分析/风险评估结果，
-  // 不承接问诊/服务咨询等开放性话题（该类客户无人工审核兜底，需收窄AI建议范围）
+  // 一对一AI咨询：有家庭医生团队的客户可自由咨询、不限次数；无家庭医生的客户仅限于讨论自己的AI健康分析/风险评估结果，
+  // 不承接问诊/服务咨询等开放性话题（该类客户无人工审核兜底，需收窄AI建议范围），且每日限5次防止滥用
   const me = await User.findById(userId).select('assignedFamilyDoctor aiHealthSummary aiRiskAssessment');
   const hasDoctor = !!me?.assignedFamilyDoctor;
+
+  const DAILY_LIMIT_NO_DOCTOR = 5;
+  if (!hasDoctor) {
+    const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+    const todayCount = await ChatLog.countDocuments({ user: userId, createdAt: { $gte: todayStart } });
+    if (todayCount >= DAILY_LIMIT_NO_DOCTOR) {
+      return res.status(429).json({ success: false, message: `今日AI咨询次数已达上限（${DAILY_LIMIT_NO_DOCTOR}次），请明天再来，或联系客服升级家庭医生团队服务` });
+    }
+  }
 
   // 意图识别
   const intent = detectIntent(lastUserMsg);
