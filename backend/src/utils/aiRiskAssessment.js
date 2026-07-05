@@ -1,0 +1,144 @@
+const { chat } = require('./ai');
+
+const RISK_LEVELS = ['low', 'medium', 'high', 'critical']; // 低 / 中 / 高 / 危急值
+
+function ruleEngineSignals(lv = {}) {
+  const num = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
+  const sig = { cardiovascular: [], diabetes: [], tumor: [], kidney: [] };
+  const sbp = num(lv.sbp), dbp = num(lv.dbp), fpg = num(lv.fpg), hba1c = num(lv.hba1c);
+  const ldl = num(lv.ldl), tc = num(lv.tc), tg = num(lv.tg), hdl = num(lv.hdl);
+  const hcy = num(lv.hcy), ua = num(lv.ua), cr = num(lv.cr || lv.scr), egfr = num(lv.egfr), bun = num(lv.bun);
+  // 心血管
+  if (sbp >= 180 || dbp >= 110) sig.cardiovascular.push(`血压危急 ${sbp}/${dbp} mmHg`);
+  else if (sbp >= 140 || dbp >= 90) sig.cardiovascular.push(`血压偏高 ${sbp}/${dbp} mmHg`);
+  if (ldl >= 4.1) sig.cardiovascular.push(`LDL-C 偏高 ${ldl} mmol/L`);
+  if (tc >= 6.2) sig.cardiovascular.push(`总胆固醇偏高 ${tc} mmol/L`);
+  if (tg >= 2.3) sig.cardiovascular.push(`甘油三酯偏高 ${tg} mmol/L`);
+  if (hdl !== null && hdl < 1.0) sig.cardiovascular.push(`HDL-C 偏低 ${hdl} mmol/L`);
+  if (hcy >= 15) sig.cardiovascular.push(`同型半胱氨酸偏高 ${hcy} μmol/L`);
+  // 糖尿病
+  if (fpg >= 11.1 || hba1c >= 9) sig.diabetes.push(`血糖危急（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
+  else if (fpg >= 7.0 || hba1c >= 6.5) sig.diabetes.push(`已达糖尿病诊断阈值（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
+  else if (fpg >= 6.1 || hba1c >= 5.7) sig.diabetes.push(`糖代谢受损（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
+  // 肾脏
+  if (egfr !== null && egfr < 60) sig.kidney.push(`eGFR 偏低 ${egfr}`);
+  if (cr !== null && cr > 104) sig.kidney.push(`肌酐偏高 ${cr} μmol/L`);
+  if (bun !== null && bun > 7.1) sig.kidney.push(`尿素氮偏高 ${bun}`);
+  if (ua >= 480) sig.kidney.push(`尿酸偏高 ${ua} μmol/L`);
+  return sig;
+}
+
+const TUMOR_MARKER_KEYWORDS = ['肿瘤标志物', 'PSA', 'AFP', 'CEA', 'CA199', 'CA125', 'CA153', 'NSE', 'CA724', 'CA242'];
+const TUMOR_FINDING_KEYWORDS = ['息肉', '结节', '肠化', '不典型增生', '异型增生', '囊实性', 'TI-RADS', 'BI-RADS', '占位', '肿物'];
+async function tumorSignalsFromReports(userId) {
+  const MedicalReport = require('../models/MedicalReport');
+  const reports = await MedicalReport.find({ user: userId })
+    .sort({ checkDate: -1, createdAt: -1 })
+    .select('title type checkDate screeningCategory reportItems')
+    .limit(50);
+  const lines = [];
+  const geneticLines = [];
+  reports.forEach(r => {
+    const dateStr = (r.checkDate || '').slice(0, 10) || '';
+    const isGeneticReport = r.type === 'genetic' || (r.title || '').includes('基因');
+    if (isGeneticReport) {
+      (r.reportItems || []).forEach(it => {
+        if (it.name && (it.value || it.diagnosis || it.findings)) {
+          geneticLines.push(`${dateStr} ${it.name}：${it.value || it.diagnosis || it.findings}`);
+        }
+      });
+      return;
+    }
+    (r.reportItems || []).forEach(it => {
+      const name = it.name || '';
+      const isMarker = TUMOR_MARKER_KEYWORDS.some(kw => name.toLowerCase().includes(kw.toLowerCase()));
+      if (isMarker && it.status === 'abnormal' && it.value) {
+        lines.push(`${dateStr} ${name}：${it.value}${it.unit || ''}（异常）`);
+        return;
+      }
+      const text = `${it.diagnosis || ''} ${it.findings || ''}`;
+      const isFinding = it.itemType === 'imaging' && TUMOR_FINDING_KEYWORDS.some(kw => text.includes(kw));
+      if (isFinding) {
+        lines.push(`${dateStr} ${name}：${(it.diagnosis || it.findings || '').slice(0, 100)}`);
+      }
+    });
+  });
+  return { markerAndFindingLines: lines, geneticLines };
+}
+
+// 生成AI风险评估：供医护端接口和用户端自助接口共用
+async function generateRiskAssessment(user) {
+  const lv = user.labValues || {};
+  const signals = ruleEngineSignals(lv);
+  const { markerAndFindingLines, geneticLines } = await tumorSignalsFromReports(user._id);
+  if (markerAndFindingLines.length) signals.tumor = markerAndFindingLines;
+  const sigText = Object.entries(signals)
+    .map(([k, arr]) => `${k}：${arr.length ? arr.join('；') : '规则引擎未发现明显异常'}`)
+    .join('\n');
+
+  const labLines = [
+    lv.sbp && `血压 ${lv.sbp}/${lv.dbp} mmHg`, lv.fpg && `空腹血糖 ${lv.fpg}`,
+    lv.hba1c && `糖化 ${lv.hba1c}%`, lv.tc && `总胆固醇 ${lv.tc}`, lv.ldl && `LDL ${lv.ldl}`,
+    lv.hdl && `HDL ${lv.hdl}`, lv.tg && `甘油三酯 ${lv.tg}`, lv.ua && `尿酸 ${lv.ua}`,
+    lv.cr && `肌酐 ${lv.cr}`, lv.egfr && `eGFR ${lv.egfr}`, lv.hcy && `同型半胱氨酸 ${lv.hcy}`,
+  ].filter(Boolean).join('、') || '暂无体检数据';
+
+  const ls = user.lifestyle || {};
+  const lifestyleLines = [
+    ls.smoking && `吸烟：${ls.smoking}`,
+    ls.alcohol && `饮酒：${ls.alcohol}`,
+    ls.diet && `饮食：${ls.diet}`,
+  ].filter(Boolean).join('；') || '暂无生活方式记录';
+
+  const geneticText = geneticLines.length ? geneticLines.join('\n') : '暂无基因检测报告';
+
+  const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。
+
+【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
+【个人生活习惯】${lifestyleLines}
+【体检关键指标】${labLines}
+【规则引擎预警信号】
+${sigText}
+【基因检测报告】
+${geneticText}
+
+肿瘤风险维度请结合上方"tumor"信号（历年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、个人生活习惯（吸烟/饮酒/饮食是肺癌/肝癌/胃肠癌的强相关因素）、既往史、家族史、基因检测报告（如有明确高风险位点/基因，应显著提高风险等级）综合判断；信号为空不代表零风险，需结合年龄、性别、生活习惯、家族史等基础风险因素给出合理评估，不要机械地判为low。
+
+请严格按以下JSON输出（level 取值：low/medium/high/critical，分别代表低/中/高/危急值；score 0-100）：
+{
+  "dimensions": [
+    { "key": "cardiovascular", "label": "心血管疾病风险", "level": "low", "score": 20, "factors": ["关键风险因素"], "advice": "针对性建议（30-60字）" },
+    { "key": "diabetes", "label": "糖尿病风险", "level": "low", "score": 15, "factors": [], "advice": "" },
+    { "key": "tumor", "label": "肿瘤风险", "level": "low", "score": 10, "factors": [], "advice": "" },
+    { "key": "kidney", "label": "慢性肾病风险", "level": "low", "score": 10, "factors": [], "advice": "" }
+  ],
+  "overallSummary": "整体风险综述（50-100字）"
+}`;
+
+  const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500 });
+  let raw = {};
+  try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
+
+  let dimensions = Array.isArray(raw.dimensions) ? raw.dimensions : [];
+  dimensions = dimensions.map(d => ({
+    key: d.key, label: d.label || d.key,
+    level: RISK_LEVELS.includes(d.level) ? d.level : 'low',
+    score: Number(d.score) || 0,
+    factors: Array.isArray(d.factors) ? d.factors : [],
+    advice: d.advice || '',
+  }));
+  const overallLevel = dimensions.reduce((max, d) =>
+    RISK_LEVELS.indexOf(d.level) > RISK_LEVELS.indexOf(max) ? d.level : max, 'low');
+
+  return {
+    dimensions,
+    overallLevel,
+    overallSummary: raw.overallSummary || '',
+    generatedAt: new Date(),
+    approvedAt: null,
+    approvedBy: null,
+    alerted: ['high', 'critical'].includes(overallLevel),
+  };
+}
+
+module.exports = { RISK_LEVELS, ruleEngineSignals, tumorSignalsFromReports, generateRiskAssessment };

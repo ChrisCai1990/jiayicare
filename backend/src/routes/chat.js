@@ -3,15 +3,10 @@ const auth = require('../middleware/auth');
 const { chat } = require('../utils/ai');
 const ChatLog = require('../models/ChatLog');
 const HealthRecord = require('../models/HealthRecord');
+const User = require('../models/User');
 const router = express.Router();
 
-const ROLE_PROMPTS = {
-  manager: '你是「嘉医汇」健康管理平台的健管专员AI助手。职责：日常健康科普、指标解读、用药提醒建议。',
-  planner: '你是「嘉医汇」健康管理平台的健康规划师AI助手。职责：介绍服务包、健康方案设计、套餐咨询。',
-  medical: '你是「嘉医汇」健康管理平台的就医专员AI助手。职责：就医流程指导、陪诊建议、分诊建议。',
-};
-
-const BASE_SYSTEM = `你是「嘉医汇」健康管理平台的AI健康助手，主要服务于慢性病（高血压、糖尿病、心血管疾病等）患者。
+const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康助手，主要服务于慢性病（高血压、糖尿病、心血管疾病等）患者。职责涵盖：日常健康科普、指标解读、用药提醒建议、服务套餐咨询、就医流程指导。
 
 回答要求：
 1. 使用中文，语气温和专业
@@ -19,6 +14,30 @@ const BASE_SYSTEM = `你是「嘉医汇」健康管理平台的AI健康助手，
 3. 涉及药物剂量调整、诊断等，必须建议用户咨询专科医师
 4. 每次回答末尾加：「本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。」
 5. 不捏造数据，对不确定的信息说"建议咨询您的主治医生"`;
+
+// 从AI汇总分析/风险评估结果中摘取要点，供对话时结合上下文回答（只取已审核可见的版本，与患者当前实际看到的一致）
+function buildHealthInsightContext(user) {
+  const lines = [];
+  const summary = user.aiHealthSummary || {};
+  const byYear = summary.byYear || {};
+  const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+  const latestYear = years[0];
+  const latestEntry = latestYear ? byYear[latestYear] : null;
+  if (latestEntry?.sections) {
+    const s = latestEntry.sections;
+    if (s.medical_priority?.items?.length) {
+      lines.push(`【AI汇总分析·${latestYear}年度·重点医疗问题】` + s.medical_priority.items.map(i => `${i.name}（${i.urgency}）：${i.action || ''}`).join('；'));
+    }
+    if (s.lifestyle_assessment?.summary) {
+      lines.push(`【生活方式评估】${s.lifestyle_assessment.summary}`);
+    }
+  }
+  const risk = user.aiRiskAssessment || {};
+  if (risk.overallSummary) {
+    lines.push(`【AI风险评估】整体风险等级：${risk.overallLevel || '未知'}；${risk.overallSummary}`);
+  }
+  return lines.length ? `\n患者健康分析要点（供回答时参考，不要直接照搬粘贴，需结合用户实际提问自然表达）：\n${lines.join('\n')}` : '';
+}
 
 // 意图识别（关键词规则，快速无额外API调用）
 function detectIntent(text) {
@@ -64,7 +83,7 @@ async function getUserDataContext(userId) {
 
 // POST /api/chat — 主对话接口
 router.post('/', auth, async (req, res) => {
-  const { messages = [], role = 'manager', userInfo = {} } = req.body;
+  const { messages = [], userInfo = {} } = req.body;
   const userId = req.user._id;
   const lastUserMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
   const t0 = Date.now();
@@ -73,13 +92,19 @@ router.post('/', auth, async (req, res) => {
     return res.status(503).json({ success: false, message: 'AI服务暂未开通，请联系管理员配置。' });
   }
 
+  // 一对一AI咨询仅面向已配备家庭医生团队的客户开放；无家庭医生的客户走AI自助分析（汇总/风险评估），不支持一对一咨询
+  const me = await User.findById(userId).select('assignedFamilyDoctor aiHealthSummary aiRiskAssessment');
+  if (!me?.assignedFamilyDoctor) {
+    return res.status(403).json({ success: false, message: '暂未配备家庭医生团队，该服务暂不支持。您可以在"健康报告"中查看AI自助分析结果。' });
+  }
+
   // 意图识别
   const intent = detectIntent(lastUserMsg);
 
   // 超出范围直接返回
   if (intent === 'out_of_scope') {
     const reply = '您的问题涉及专业诊疗范畴，AI助手无法提供此类建议。请联系您的主治医生或拨打急救电话。本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
-    await ChatLog.create({ user: userId, role, intent, userMessage: lastUserMsg, aiReply: reply });
+    await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: reply });
     return res.json({ success: true, data: { content: reply, intent } });
   }
 
@@ -100,8 +125,8 @@ router.post('/', auth, async (req, res) => {
 
   const systemPrompt = [
     BASE_SYSTEM,
-    `\n当前角色：${ROLE_PROMPTS[role] || ROLE_PROMPTS.manager}`,
     userContext ? `\n用户基本信息：${userContext}` : '',
+    buildHealthInsightContext(me),
     dataContext,
   ].join('');
 
@@ -120,7 +145,7 @@ router.post('/', auth, async (req, res) => {
     const durationMs = Date.now() - t0;
 
     // 异步记录日志，不阻塞响应
-    ChatLog.create({ user: userId, role, intent, userMessage: lastUserMsg, aiReply: replyText, durationMs }).catch(() => {});
+    ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, durationMs }).catch(() => {});
 
     res.json({ success: true, data: { content: replyText, intent } });
   } catch (err) {

@@ -179,10 +179,10 @@ export const member365API = {
 
 // ── AI Chat ───────────────────────────────────────────────────────
 export const chatAPI = {
-  send: (messages, role, userInfo) =>
+  send: (messages, userInfo) =>
     request('/chat', {
       method: 'POST',
-      body: JSON.stringify({ messages, role, userInfo }),
+      body: JSON.stringify({ messages, userInfo }),
     }),
   transfer: (lastMessage) =>
     request('/chat/transfer', {

@@ -3077,6 +3077,7 @@ router.delete('/patients/:id/body-composition-history/:index', staffAuth, async 
 
 // ── 4.4 AI健康汇总分析：生成 ──────────────────────────────────────
 // POST /api/staff/patients/:id/ai-health-summary
+const { generateHealthSummarySections } = require('../utils/aiHealthSummary');
 router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
@@ -3085,286 +3086,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       .populate('assignedNutritionist', 'name');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
-    const { chat } = require('../utils/ai');
-    const MedicalReport = require('../models/MedicalReport');
-    const Medication = require('../models/Medication');
-    const Supplement = require('../models/Supplement');
-
-    // 当前在用药物+营养素——之前AI汇总分析完全没接入这两类数据，导致AI看不到用药情况，
-    // 遇到"检查异常其实是药物副作用"的情况(如长期服用蒽醌类泻药导致结肠黑变病、肝功能异常
-    // 可能是某些药物/营养素引起而非疾病本身)无法关联判断，只能就检查论检查。
-    const [activeMeds, activeSupplements] = await Promise.all([
-      Medication.find({ user: req.params.id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
-      Supplement.find({ user: req.params.id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
-    ]);
-    const medicationSummary = activeMeds.length
-      ? activeMeds.map(m => `${m.name} ${m.dosage}，${m.frequency}${m.purpose ? `（${m.purpose}）` : ''}${m.startDate ? `，自${m.startDate}起` : ''}`).join('；')
-      : '暂无长期用药记录';
-    const supplementSummary = activeSupplements.length
-      ? activeSupplements.map(s => `${s.name} ${s.dosage}，${s.frequency}${s.purpose ? `（${s.purpose}）` : ''}${s.startDate ? `，自${s.startDate}起` : ''}`).join('；')
-      : '暂无长期营养素补充记录';
-
-    const lv = user.labValues || {};
-    const bc = user.bodyComposition || {};
-    const labLines = [
-      lv.fpg   && `空腹血糖 ${lv.fpg} mmol/L`,
-      lv.hba1c && `糖化血红蛋白 ${lv.hba1c}%`,
-      lv.sbp   && `血压 ${lv.sbp}/${lv.dbp} mmHg`,
-      lv.tc    && `总胆固醇 ${lv.tc} mmol/L`,
-      lv.ldl   && `LDL-C ${lv.ldl} mmol/L`,
-      lv.hdl   && `HDL-C ${lv.hdl} mmol/L`,
-      lv.tg    && `甘油三酯 ${lv.tg} mmol/L`,
-      lv.ua    && `尿酸 ${lv.ua} μmol/L`,
-      lv.alt   && `ALT ${lv.alt} U/L`,
-      lv.ast   && `AST ${lv.ast} U/L`,
-      lv.ggt   && `GGT ${lv.ggt} U/L`,
-      lv.hcy   && `同型半胱氨酸 ${lv.hcy} μmol/L`,
-      lv.lpla2 && `Lp-PLA2 ${lv.lpla2} U/L`,
-      lv.waist && `腰围 ${lv.waist} cm`,
-      lv.liverUs  && `肝脏超声：${lv.liverUs}`,
-      lv.carotiUs && `颈动脉超声：${lv.carotiUs}`,
-      bc.skelMuscle  && `骨骼肌量 ${bc.skelMuscle} kg`,
-      bc.visceralFat && `内脏脂肪 ${bc.visceralFat}`,
-      bc.bodyFatRate && `体脂率 ${bc.bodyFatRate}%`,
-    ].filter(Boolean);
-    const labSummary = labLines.join('、') || '暂无体检数据';
-
-    // 所有专项筛查报告（不限条数，按检查日期倒序）
-    const allReports = await MedicalReport.find({ user: req.params.id })
-      .sort({ checkDate: -1, date: -1, createdAt: -1 })
-      .select('title screeningL2 examConclusion checkDate date reportYear screeningCategory reportItems note');
-
-    // 按年份分组，每项取最新一次
-    const reportsByYear = {};
-    allReports.forEach(r => {
-      const dateStr = r.checkDate || r.date || '';
-      const year = r.reportYear || (dateStr ? dateStr.slice(0, 4) : null);
-      if (!year) return;
-      if (!reportsByYear[year]) reportsByYear[year] = [];
-      reportsByYear[year].push(r);
-    });
-    const reportSummaryLines = [];
-    Object.keys(reportsByYear).sort((a, b) => b - a).forEach(year => {
-      reportSummaryLines.push(`▶ ${year}年：`);
-      reportsByYear[year].forEach(r => {
-        const conclusion = r.examConclusion ? r.examConclusion.slice(0, 150) : (r.note ? r.note.slice(0, 100) : '未记录结论');
-        const abnormal = (r.reportItems || []).filter(i => i.status === 'abnormal').map(i => i.name).join('、');
-        const dateStr = (r.checkDate || r.date || '').slice(0, 10);
-        reportSummaryLines.push(`  - ${r.screeningL2 || r.title}（${dateStr}）：${conclusion}${abnormal ? '；异常项：' + abnormal : ''}`);
-        // 检查项目（影像/内镜）完整检查所见+诊断意见，供 AI 做结节/斑块/分级历年变化对比
-        (r.reportItems || []).filter(i => i.itemType === 'imaging' && (i.findings || i.diagnosis)).forEach(img => {
-          const f = (img.findings || '').slice(0, 200);
-          const d = (img.diagnosis || '').slice(0, 100);
-          reportSummaryLines.push(`     · ${img.name}${img.bodyPart ? `(${img.bodyPart})` : ''}：检查所见「${f}」${d ? `；诊断「${d}」` : ''}`);
-        });
-      });
-    });
-    const reportSummary = reportSummaryLines.length > 0 ? reportSummaryLines.join('\n') : '暂无专项筛查记录';
-
-    // 体检指标历史趋势（最近3年）
-    const labHistory = (user.labHistory || [])
-      .filter(h => h.recordedAt)
-      .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
-      .slice(0, 5);
-    const labTrendLines = labHistory.length > 1
-      ? labHistory.map(h => {
-          const yr = new Date(h.recordedAt).getFullYear();
-          const vals = [
-            h.sbp   && `血压${h.sbp}/${h.dbp}`,
-            h.fpg   && `空腹血糖${h.fpg}`,
-            h.hba1c && `糖化${h.hba1c}%`,
-            h.tc    && `总胆固醇${h.tc}`,
-            h.ldl   && `LDL${h.ldl}`,
-            h.ua    && `尿酸${h.ua}`,
-            h.alt   && `ALT${h.alt}`,
-          ].filter(Boolean).join('、');
-          return `  ${yr}年（${String(h.recordedAt).slice(0,10)}）：${vals || '无数据'}`;
-        }).join('\n')
-      : '  仅有当次数据，无法比较趋势';
-
-    // 生活方式（膳食调查-综合概述 + 各维度）——用于「生活方式评估」板块
-    const ls  = user.lifestyle || {};
-    const lsd = user.lifestyle_data || {};
-    const dietOverview = lsd.summaryOverride
-      || (Array.isArray(lsd.autoSummaryFlags) && lsd.autoSummaryFlags.length ? lsd.autoSummaryFlags.join('；') : '')
-      || ls.diet || '';
-    const lifestyleSummary = [
-      dietOverview && `膳食调查综合概述：${dietOverview}`,
-      ls.diet     && `饮食：${ls.diet}`,
-      ls.exercise && `运动：${ls.exercise}`,
-      ls.sleep    && `睡眠：${ls.sleep}`,
-      ls.water    && `饮水：${ls.water}`,
-      ls.alcohol  && `饮酒：${ls.alcohol}`,
-      ls.smoking  && `吸烟：${ls.smoking}`,
-      ls.bowel    && `排便：${ls.bowel}`,
-      ls.mood     && `情绪：${ls.mood}`,
-    ].filter(Boolean).join('\n') || '暂无生活方式/膳食调查数据';
-
-    // 健康档案（既往史/家族史/近期症状等）
-    const hp = user.healthProfile || {};
-    const archiveSummary = [
-      hp.pastHistory && `既往史：${hp.pastHistory}`,
-      hp.familyHistoryNote && `家族史：${hp.familyHistoryNote}`,
-      Array.isArray(hp.recentSymptoms) && hp.recentSymptoms.length && `近3个月躯体症状：${hp.recentSymptoms.join('、')}`,
-      hp.drugAllergy && `药物过敏：${hp.drugAllergy}`,
-    ].filter(Boolean).join('\n') || '无特殊记录';
-
-    // 心理健康量表评估（Epworth嗜睡/SCL90症状自评/SDS抑郁/SAS焦虑）——问卷推送患者自填自动计分，供情绪维度做客观数据支撑，问题分析需身心结合
-    const pa = user.psychAssessments || {};
-    const PSYCH_SCALE_LABEL = { epworth: 'Epworth嗜睡量表', scl90: 'SCL90症状自评量表', sds: 'SDS抑郁自评量表', sas: 'SAS焦虑自评量表' };
-    const psychSummary = Object.entries(PSYCH_SCALE_LABEL)
-      .map(([key, label]) => {
-        const r = pa[key];
-        if (!r) return null;
-        const factorStr = key === 'scl90' && r.factorScores
-          ? `（因子分：${Object.entries(r.factorScores).map(([f, s]) => `${f}${s}`).join('、')}）`
-          : '';
-        return `${label}（${String(r.filledAt).slice(0,10)}）：总分${r.totalScore}分，${r.severity}${factorStr}`;
-      })
-      .filter(Boolean).join('\n') || '暂无心理健康量表评估记录';
-
-    const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。
-
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。
-
-【重要】发现检查异常时，请先排查是否与当前用药或营养素补充相关，不要只从疾病角度解读：
-- 长期服用蒽醌类泻药（番泻叶、大黄、芦荟等成分）是结肠黑变病的明确诱因，肠镜发现黑变时应结合用药记录判断，若确实在用此类泻药应在medical_priority中建议评估更换通便方式而非仅当作独立疾病处理
-- 部分保肝药/降脂药/抗生素本身可引起转氨酶(ALT/AST)一过性升高，某些营养素超量补充（如高剂量维生素A/铁剂）也可能影响肝肾指标
-- 判断时说明"异常是否可能与现有用药/营养素相关"，若相关应在建议里提及复核该药物/营养素的必要性，而不是孤立建议"就医检查肝功能"
-
-【患者基本信息】
-姓名：${user.name}，性别：${user.gender}，年龄：${user.age || '未知'}岁
-慢性病标签：${user.chronicDiseases?.join('、') || '无'}
-健康诉求：${user.healthConcern || '未填写'}
-
-【健康档案】
-${archiveSummary}
-
-【心理健康量表评估】
-${psychSummary}
-
-【生活方式与膳食调查】
-${lifestyleSummary}
-
-【当前用药】
-${medicationSummary}
-
-【当前营养素补充】
-${supplementSummary}
-
-【最近一次体检关键指标】（分析立足点）
-${labSummary}
-
-【历年体检指标趋势（近几年记录）】
-${labTrendLines}
-
-【历年专项筛查报告（按年份列出所有记录）】
-${reportSummary}
-
-请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容：
-{
-  "sections": {
-    "lifestyle_assessment": {
-      "items": [
-        {
-          "dimension": "饮食",
-          "finding": "结合膳食调查数据与体检指标描述饮食现状；若无数据，说明暂无膳食调查信息并给出通用评估",
-          "risk": "该维度相关的健康风险",
-          "suggestion": "具体可执行的改善建议"
-        },
-        {
-          "dimension": "运动",
-          "finding": "描述运动习惯现状；若无记录，说明暂无运动数据并结合体检指标（如BMI/血糖/血压）推断运动需求",
-          "risk": "该维度相关的健康风险",
-          "suggestion": "具体可执行的改善建议"
-        },
-        {
-          "dimension": "睡眠",
-          "finding": "描述睡眠质量现状；若无记录，说明暂无睡眠数据并结合档案信息评估",
-          "risk": "该维度相关的健康风险",
-          "suggestion": "具体可执行的改善建议"
-        },
-        {
-          "dimension": "烟酒",
-          "finding": "描述吸烟饮酒情况；若无记录，注明暂无相关信息",
-          "risk": "该维度相关的健康风险",
-          "suggestion": "具体可执行的改善建议"
-        },
-        {
-          "dimension": "情绪",
-          "finding": "结合PHQ-9/GAD-7量表评分描述情绪/心理状态（若有评估记录必须引用具体分数和分级）；若无量表记录，说明暂无心理健康评估并结合慢病状态与档案信息进行综合判断",
-          "risk": "该维度相关的健康风险，若量表分数达中度以上需在此明确标注",
-          "suggestion": "具体可执行的改善建议，若量表提示中重度以上应建议转介心理咨询师"
-        }
-      ],
-      "summary": "生活方式综合评估（50-100字，需结合最近一次体检结果，必须覆盖饮食/运动/睡眠/烟酒/情绪5个维度）"
-    },
-    "medical_priority": {
-      "items": [
-        {
-          "name": "问题名称（如：血压控制不佳）",
-          "current": "当前数值描述（如：152/98mmHg）",
-          "meaning": "临床意义（30-60字）",
-          "action": "建议行动（具体可执行）",
-          "department": "建议就诊科室",
-          "urgency": "high或medium或low"
-        }
-      ]
-    },
-    "tumor_risk": {
-      "completed": ["已完成的筛查项目（含年份）"],
-      "abnormal": ["异常发现（有则填，无则空数组）"],
-      "missing": ["未覆盖的重要筛查项目"],
-      "summary": "肿瘤筛查总评（50-100字）"
-    },
-    "cardiovascular_risk": {
-      "high": ["高风险因素（有则填，无则空数组）"],
-      "medium": ["中风险因素（有则填，无则空数组）"],
-      "summary": "心脑血管综合评估（50-100字）"
-    },
-    "chronic_disease": {
-      "items": [
-        {
-          "name": "系统或指标名称",
-          "value": "当前值描述",
-          "status": "abnormal或mild_abnormal或normal",
-          "note": "简要说明（30字内）"
-        }
-      ]
-    },
-    "checkup_completeness": {
-      "covered": ["已覆盖的主要筛查项目"],
-      "missing": ["缺失的重要筛查项目"],
-      "suggestion": "下年度体检补项建议（50字内）"
-    }
-  }
-}`;
-
-    // maxTokens从2500提到4000：患者报告历年记录多时(如一次性上传数十份单次检验单)，
-    // reportSummary本身prompt就很长，AI要输出6大板块完整JSON，2500token容易在输出中途被截断
-    // 导致JSON不完整解析失败、静默降级成全空结构——2026-07-03 潘孝银"已生成但内容全空"即此原因。
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 4000 });
-
-    let sections = null;
-    try {
-      const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const parsed = JSON.parse(jsonMatch[0]);
-        sections = parsed.sections || parsed;
-      }
-    } catch (parseErr) {
-      // 解析失败时把AI原始返回内容打进日志，否则永远不知道是被截断还是格式错误，只能靠猜
-      console.error(`[ai-health-summary] JSON解析失败，patientId=${req.params.id}，错误：${parseErr.message}，AI原始返回（前2000字）：`, text.slice(0, 2000));
-    }
-
-    if (!sections) sections = {
-      lifestyle_assessment: { items: [], summary: '' },
-      medical_priority: { items: [] },
-      tumor_risk: { completed: [], abnormal: [], missing: [], summary: '' },
-      cardiovascular_risk: { high: [], medium: [], summary: '' },
-      chronic_disease: { items: [] },
-      checkup_completeness: { covered: [], missing: [], suggestion: '' },
-    };
+    const sections = await generateHealthSummarySections(user);
 
     // 按年度归档：body.year 指定生成的年度，默认当前年
     const year = String(req.body.year || new Date().getFullYear());
@@ -3408,8 +3130,15 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (action === 'approve') {
       const now = new Date();
       const sc = scope || 'all';
-      if (sc === 'doctor' || sc === 'all') { entry.doctorApprovedAt = now; entry.doctorApprovedBy = req.staff.name; }
-      if (sc === 'nutrition' || sc === 'all') { entry.nutritionApprovedAt = now; entry.nutritionApprovedBy = req.staff.name; }
+      const isSuper = req.staff.role === 'superadmin';
+      if ((sc === 'doctor' || sc === 'all')) {
+        if (!isSuper && req.staff.role !== 'familyDoctor') return res.status(403).json({ success: false, message: '仅家庭医生可审核该维度' });
+        entry.doctorApprovedAt = now; entry.doctorApprovedBy = req.staff.name;
+      }
+      if ((sc === 'nutrition' || sc === 'all')) {
+        if (!isSuper && req.staff.role !== 'nutritionist') return res.status(403).json({ success: false, message: '仅营养师可审核该维度' });
+        entry.nutritionApprovedAt = now; entry.nutritionApprovedBy = req.staff.name;
+      }
       // 两个维度都已审核 → 置整体已审核（供 ai-annual-plan 等下游判断）
       if (entry.doctorApprovedAt && entry.nutritionApprovedAt) {
         entry.approvedAt = now; entry.approvedBy = req.staff.name;
@@ -3700,78 +3429,7 @@ ${recLines}
 
 // ── 场景八：AI 健康风险评估与预警（规则引擎 + AI）────────────────────
 // 规则引擎：根据体检指标给出每个维度的预警信号，供 AI 综合判级
-const RISK_LEVELS = ['low', 'medium', 'high', 'critical']; // 低 / 中 / 高 / 危急值
-function ruleEngineSignals(lv = {}) {
-  const num = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
-  const sig = { cardiovascular: [], diabetes: [], tumor: [], kidney: [] };
-  const sbp = num(lv.sbp), dbp = num(lv.dbp), fpg = num(lv.fpg), hba1c = num(lv.hba1c);
-  const ldl = num(lv.ldl), tc = num(lv.tc), tg = num(lv.tg), hdl = num(lv.hdl);
-  const hcy = num(lv.hcy), ua = num(lv.ua), cr = num(lv.cr || lv.scr), egfr = num(lv.egfr), bun = num(lv.bun);
-  // 心血管
-  if (sbp >= 180 || dbp >= 110) sig.cardiovascular.push(`血压危急 ${sbp}/${dbp} mmHg`);
-  else if (sbp >= 140 || dbp >= 90) sig.cardiovascular.push(`血压偏高 ${sbp}/${dbp} mmHg`);
-  if (ldl >= 4.1) sig.cardiovascular.push(`LDL-C 偏高 ${ldl} mmol/L`);
-  if (tc >= 6.2) sig.cardiovascular.push(`总胆固醇偏高 ${tc} mmol/L`);
-  if (tg >= 2.3) sig.cardiovascular.push(`甘油三酯偏高 ${tg} mmol/L`);
-  if (hdl !== null && hdl < 1.0) sig.cardiovascular.push(`HDL-C 偏低 ${hdl} mmol/L`);
-  if (hcy >= 15) sig.cardiovascular.push(`同型半胱氨酸偏高 ${hcy} μmol/L`);
-  // 糖尿病
-  if (fpg >= 11.1 || hba1c >= 9) sig.diabetes.push(`血糖危急（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
-  else if (fpg >= 7.0 || hba1c >= 6.5) sig.diabetes.push(`已达糖尿病诊断阈值（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
-  else if (fpg >= 6.1 || hba1c >= 5.7) sig.diabetes.push(`糖代谢受损（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
-  // 肾脏
-  if (egfr !== null && egfr < 60) sig.kidney.push(`eGFR 偏低 ${egfr}`);
-  if (cr !== null && cr > 104) sig.kidney.push(`肌酐偏高 ${cr} μmol/L`);
-  if (bun !== null && bun > 7.1) sig.kidney.push(`尿素氮偏高 ${bun}`);
-  if (ua >= 480) sig.kidney.push(`尿酸偏高 ${ua} μmol/L`);
-  return sig;
-}
-
-// 肿瘤风险信号：不像心血管/糖尿病/肾病有统一数值阈值，肿瘤标志物种类多、参考范围因项目而异，
-// 没法写成规则引擎的简单if判断。改为从该患者历年专项筛查报告里提取肿瘤相关线索交给AI综合判断：
-// ①标志物类检验异常项(name含"肿瘤标志物"/PSA/AFP/CEA/CA199/CA125/CA153等) ②内镜/影像里的
-// 癌前病变或结节描述(itemType=imaging且diagnosis/findings含"息肉"/"结节"/"肠化"/"不典型增生"等关键词)
-// 2026-07-03新增：此前 tumor 维度规则引擎完全没有判断逻辑，永远显示"规则引擎未发现明显异常"，
-// 跟患者实际筛查情况无关，是个有维度名无数据支撑的空壳。
-const TUMOR_MARKER_KEYWORDS = ['肿瘤标志物', 'PSA', 'AFP', 'CEA', 'CA199', 'CA125', 'CA153', 'NSE', 'CA724', 'CA242'];
-const TUMOR_FINDING_KEYWORDS = ['息肉', '结节', '肠化', '不典型增生', '异型增生', '囊实性', 'TI-RADS', 'BI-RADS', '占位', '肿物'];
-async function tumorSignalsFromReports(userId) {
-  const MedicalReport = require('../models/MedicalReport');
-  const reports = await MedicalReport.find({ user: userId })
-    .sort({ checkDate: -1, createdAt: -1 })
-    .select('title type checkDate screeningCategory reportItems')
-    .limit(50);
-  const lines = [];
-  const geneticLines = [];
-  reports.forEach(r => {
-    const dateStr = (r.checkDate || '').slice(0, 10) || '';
-    // 基因检测报告：type=genetic 或标题含"基因"，整份报告的检验条目原样列出交给AI判断
-    // （基因位点/风险分级措辞因检测机构而异，没法像标志物一样统一按关键词摘取，交给AI理解更可靠）
-    const isGeneticReport = r.type === 'genetic' || (r.title || '').includes('基因');
-    if (isGeneticReport) {
-      (r.reportItems || []).forEach(it => {
-        if (it.name && (it.value || it.diagnosis || it.findings)) {
-          geneticLines.push(`${dateStr} ${it.name}：${it.value || it.diagnosis || it.findings}`);
-        }
-      });
-      return;
-    }
-    (r.reportItems || []).forEach(it => {
-      const name = it.name || '';
-      const isMarker = TUMOR_MARKER_KEYWORDS.some(kw => name.toLowerCase().includes(kw.toLowerCase()));
-      if (isMarker && it.status === 'abnormal' && it.value) {
-        lines.push(`${dateStr} ${name}：${it.value}${it.unit || ''}（异常）`);
-        return;
-      }
-      const text = `${it.diagnosis || ''} ${it.findings || ''}`;
-      const isFinding = it.itemType === 'imaging' && TUMOR_FINDING_KEYWORDS.some(kw => text.includes(kw));
-      if (isFinding) {
-        lines.push(`${dateStr} ${name}：${(it.diagnosis || it.findings || '').slice(0, 100)}`);
-      }
-    });
-  });
-  return { markerAndFindingLines: lines, geneticLines };
-}
+const { RISK_LEVELS, generateRiskAssessment } = require('../utils/aiRiskAssessment');
 
 // POST /api/staff/patients/:id/ai-risk-assessment — 生成风险评估
 router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
@@ -3780,82 +3438,7 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
       .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
-    const { chat } = require('../utils/ai');
-    const lv = user.labValues || {};
-    const signals = ruleEngineSignals(lv);
-    const { markerAndFindingLines, geneticLines } = await tumorSignalsFromReports(req.params.id);
-    if (markerAndFindingLines.length) signals.tumor = markerAndFindingLines;
-    const sigText = Object.entries(signals)
-      .map(([k, arr]) => `${k}：${arr.length ? arr.join('；') : '规则引擎未发现明显异常'}`)
-      .join('\n');
-
-    const labLines = [
-      lv.sbp && `血压 ${lv.sbp}/${lv.dbp} mmHg`, lv.fpg && `空腹血糖 ${lv.fpg}`,
-      lv.hba1c && `糖化 ${lv.hba1c}%`, lv.tc && `总胆固醇 ${lv.tc}`, lv.ldl && `LDL ${lv.ldl}`,
-      lv.hdl && `HDL ${lv.hdl}`, lv.tg && `甘油三酯 ${lv.tg}`, lv.ua && `尿酸 ${lv.ua}`,
-      lv.cr && `肌酐 ${lv.cr}`, lv.egfr && `eGFR ${lv.egfr}`, lv.hcy && `同型半胱氨酸 ${lv.hcy}`,
-    ].filter(Boolean).join('、') || '暂无体检数据';
-
-    // 个人生活习惯——吸烟/饮酒/饮食是肿瘤（尤其肺癌、肝癌、胃肠癌）公认的强相关风险因素，
-    // 之前风险评估完全没接入生活方式数据，跟"AI汇总分析"里已有的生活方式板块脱节
-    const ls = user.lifestyle || {};
-    const lifestyleLines = [
-      ls.smoking && `吸烟：${ls.smoking}`,
-      ls.alcohol && `饮酒：${ls.alcohol}`,
-      ls.diet && `饮食：${ls.diet}`,
-    ].filter(Boolean).join('；') || '暂无生活方式记录';
-
-    const geneticText = geneticLines.length ? geneticLines.join('\n') : '暂无基因检测报告';
-
-    const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。
-
-【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
-【个人生活习惯】${lifestyleLines}
-【体检关键指标】${labLines}
-【规则引擎预警信号】
-${sigText}
-【基因检测报告】
-${geneticText}
-
-肿瘤风险维度请结合上方"tumor"信号（历年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、个人生活习惯（吸烟/饮酒/饮食是肺癌/肝癌/胃肠癌的强相关因素）、既往史、家族史、基因检测报告（如有明确高风险位点/基因，应显著提高风险等级）综合判断；信号为空不代表零风险，需结合年龄、性别、生活习惯、家族史等基础风险因素给出合理评估，不要机械地判为low。
-
-请严格按以下JSON输出（level 取值：low/medium/high/critical，分别代表低/中/高/危急值；score 0-100）：
-{
-  "dimensions": [
-    { "key": "cardiovascular", "label": "心血管疾病风险", "level": "low", "score": 20, "factors": ["关键风险因素"], "advice": "针对性建议（30-60字）" },
-    { "key": "diabetes", "label": "糖尿病风险", "level": "low", "score": 15, "factors": [], "advice": "" },
-    { "key": "tumor", "label": "肿瘤风险", "level": "low", "score": 10, "factors": [], "advice": "" },
-    { "key": "kidney", "label": "慢性肾病风险", "level": "low", "score": 10, "factors": [], "advice": "" }
-  ],
-  "overallSummary": "整体风险综述（50-100字）"
-}`;
-
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500 });
-    let raw = {};
-    try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
-
-    let dimensions = Array.isArray(raw.dimensions) ? raw.dimensions : [];
-    dimensions = dimensions.map(d => ({
-      key: d.key, label: d.label || d.key,
-      level: RISK_LEVELS.includes(d.level) ? d.level : 'low',
-      score: Number(d.score) || 0,
-      factors: Array.isArray(d.factors) ? d.factors : [],
-      advice: d.advice || '',
-    }));
-    const overallLevel = dimensions.reduce((max, d) =>
-      RISK_LEVELS.indexOf(d.level) > RISK_LEVELS.indexOf(max) ? d.level : max, 'low');
-
-    const assessment = {
-      dimensions,
-      overallLevel,
-      overallSummary: raw.overallSummary || '',
-      generatedAt: new Date(),
-      approvedAt: null,
-      approvedBy: null,
-      // 高/危急自动标记预警（待家庭医生审核确认）
-      alerted: ['high', 'critical'].includes(overallLevel),
-    };
-
+    const assessment = await generateRiskAssessment(user);
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
       { $set: { aiRiskAssessment: assessment } }
@@ -3880,6 +3463,9 @@ router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => 
     }
     if (overallSummary !== undefined) updated.overallSummary = overallSummary;
     if (action === 'approve') {
+      if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
+        return res.status(403).json({ success: false, message: '仅家庭医生可审核风险评估' });
+      }
       updated.approvedAt = new Date();
       updated.approvedBy = req.staff.name;
     }
@@ -4623,8 +4209,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         if (!e.sections) return;
         const createdAt = e.generatedAt || now;
         const overdue = (now - new Date(createdAt)) > DAY;
-        // 家庭医师审 5 维（整体未通过 && 医师维度未通过）
-        if (can('summary_review') && !e.approvedAt && !e.doctorApprovedAt) {
+        // 家庭医师审 5 维（整体未通过 && 医师维度未通过；自助生成的免审核，不进队列）
+        if (can('summary_review') && e.source !== 'self_service' && !e.approvedAt && !e.doctorApprovedAt) {
           todos.push({
             id: 'summary_' + u._id, type: 'summary_review', label: 'AI汇总分析待审核（5维度）', priority: 2,
             patientName: u.name || '未知', patientId: String(u._id),
@@ -4635,7 +4221,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         // 营养师审「生活方式评估」单维度
         const hasLifestyle = !!e.sections.lifestyle_assessment &&
           ((e.sections.lifestyle_assessment.items || []).length > 0 || e.sections.lifestyle_assessment.summary);
-        if (can('lifestyle_review') && hasLifestyle && !e.approvedAt && !e.nutritionApprovedAt) {
+        if (can('lifestyle_review') && e.source !== 'self_service' && hasLifestyle && !e.approvedAt && !e.nutritionApprovedAt) {
           todos.push({
             id: 'lifestyle_' + u._id, type: 'lifestyle_review', label: '生活方式评估待审核', priority: 3,
             patientName: u.name || '未知', patientId: String(u._id),

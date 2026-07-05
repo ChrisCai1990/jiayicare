@@ -9,11 +9,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { chatAPI } from '../../services/api';
 
-const ROLES = [
-  { id: 'manager', label: '健管专员', desc: '健康科普、指标解读、用药提醒', icon: 'person',    color: colors.primary },
-  { id: 'planner', label: '健康规划师', desc: '服务介绍、套餐咨询、方案设计', icon: 'sparkles', color: colors.accent  },
-  { id: 'medical', label: '就医专员', desc: '就医流程、陪诊服务、分诊建议', icon: 'medical',   color: colors.warning },
-];
+const ASSISTANT = { label: '小嘉', icon: 'sparkles', color: colors.primary };
 
 const QUICK_QUESTIONS = [
   '我的血压最近偏高，怎么办？',
@@ -51,12 +47,11 @@ function MessageBubble({ msg }) {
 
 export default function ChatScreen({ navigation }) {
   const { user } = useAuth();
-  const [activeRole, setActiveRole] = useState(ROLES[0]);
   const [messages, setMessages] = useState([
     {
       id: 1, role: 'ai',
-      content: '您好！我是您的健管专员AI助手。我可以回答健康科普问题、解读指标数据、提供用药提醒建议。请问有什么可以帮您？',
-      roleIcon: 'person', roleColor: colors.primary, roleName: '健管专员',
+      content: '您好，我是小嘉，您的AI健康助手。可以帮您解答健康科普问题、解读指标数据、用药提醒，也能咨询服务套餐和就医流程。请问有什么可以帮您？',
+      roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
       time: '刚刚',
     },
   ]);
@@ -66,16 +61,6 @@ export default function ChatScreen({ navigation }) {
   const scrollRef = useRef(null);
 
   const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-
-  const switchRole = (role) => {
-    setActiveRole(role);
-    setMessages([{
-      id: Date.now(), role: 'ai',
-      content: `已切换到${role.label}模式。${role.desc}，有什么可以帮您？`,
-      roleIcon: role.icon, roleColor: role.color, roleName: role.label,
-      time: now(),
-    }]);
-  };
 
   // Build user context for AI
   const buildUserInfo = () => ({
@@ -94,7 +79,7 @@ export default function ChatScreen({ navigation }) {
     setMessages(prev => [...prev, {
       id: Date.now(), role: 'assistant',
       content: '已通知健管专员，稍后将有专员与您联系。如紧急情况请直接拨打急救电话。',
-      roleIcon: activeRole.icon, roleColor: activeRole.color, roleName: activeRole.label,
+      roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
       time: now(),
     }]);
   };
@@ -123,7 +108,7 @@ export default function ChatScreen({ navigation }) {
     }
 
     try {
-      const res = await chatAPI.send(history, activeRole.id, buildUserInfo());
+      const res = await chatAPI.send(history, buildUserInfo());
       const replyContent = res.success
         ? res.data.content
         : (res.message || 'AI暂时无法回复，请稍后再试。');
@@ -131,14 +116,14 @@ export default function ChatScreen({ navigation }) {
       setMessages(prev => [...prev, {
         id: Date.now() + 1, role: 'assistant',
         content: replyContent,
-        roleIcon: activeRole.icon, roleColor: activeRole.color, roleName: activeRole.label,
+        roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
         time: now(),
       }]);
     } catch (err) {
       setMessages(prev => [...prev, {
         id: Date.now() + 1, role: 'assistant',
         content: err.message || '网络异常，请检查连接后重试。',
-        roleIcon: activeRole.icon, roleColor: activeRole.color, roleName: activeRole.label,
+        roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
         time: now(),
       }]);
     } finally {
@@ -170,26 +155,6 @@ export default function ChatScreen({ navigation }) {
         </TouchableOpacity>
       </View>
 
-      {/* Role switch */}
-      <ScrollView
-        horizontal showsHorizontalScrollIndicator={false}
-        style={styles.roleScroll}
-        contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}
-      >
-        {ROLES.map(role => (
-          <TouchableOpacity
-            key={role.id}
-            style={[styles.roleChip, activeRole.id === role.id && { borderColor: role.color, backgroundColor: role.color + '12' }]}
-            onPress={() => switchRole(role)}
-          >
-            <Ionicons name={role.icon} size={14} color={activeRole.id === role.id ? role.color : colors.textMuted} />
-            <Text style={[styles.roleChipText, activeRole.id === role.id && { color: role.color, fontWeight: '700' }]}>
-              {role.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
         <ScrollView
           ref={scrollRef}
@@ -201,11 +166,11 @@ export default function ChatScreen({ navigation }) {
 
           {isLoading && (
             <View style={styles.msgRow}>
-              <View style={[styles.msgAvatar, { backgroundColor: activeRole.color + '20' }]}>
-                <Ionicons name={activeRole.icon} size={16} color={activeRole.color} />
+              <View style={[styles.msgAvatar, { backgroundColor: ASSISTANT.color + '20' }]}>
+                <Ionicons name={ASSISTANT.icon} size={16} color={ASSISTANT.color} />
               </View>
               <View style={styles.typingBubble}>
-                <ActivityIndicator size="small" color={activeRole.color} />
+                <ActivityIndicator size="small" color={ASSISTANT.color} />
                 <Text style={styles.typingText}>正在思考…</Text>
               </View>
             </View>
@@ -268,14 +233,6 @@ const styles = StyleSheet.create({
   onlineTag: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
   onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
   onlineText: { fontSize: 11, color: colors.success, fontWeight: '500' },
-  roleScroll: { maxHeight: 50, paddingVertical: spacing.xs, backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.border },
-  roleChip: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    paddingHorizontal: spacing.sm + 2, paddingVertical: 6,
-    borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
-    backgroundColor: colors.white,
-  },
-  roleChipText: { fontSize: 12, color: colors.textMuted, fontWeight: '500' },
   msgList: { flex: 1 },
   msgRow: { flexDirection: 'row', marginBottom: spacing.md, alignItems: 'flex-end' },
   msgRowUser: { flexDirection: 'row-reverse' },
