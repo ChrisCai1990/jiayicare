@@ -25,6 +25,7 @@ const serviceRecordSchema = new mongoose.Schema({
   content: { type: String, default: '' },   // 详细内容记录
   result:  { type: String, default: '' },   // 结果/评估/建议
   nextDate:{ type: Date, default: null },   // 下次计划时间
+  diseaseName: { type: String, default: '' }, // 专病名称（type=disease_mgmt时用于分组，如"巧克力囊肿""肺结节"）
 
   // 就医协助专属
   medicalEscort: {

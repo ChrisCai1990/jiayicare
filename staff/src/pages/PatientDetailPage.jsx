@@ -5267,9 +5267,37 @@ export default function PatientDetailPage() {
           const cat = SR_CATEGORY[r.type] || '日常随访'
           grouped[cat].push(r)
         })
+        const renderTable = (records) => (
+          <table className="table">
+            <thead><tr><th>类型</th><th>标题</th><th>内容摘要</th><th>负责人</th><th>日期</th></tr></thead>
+            <tbody>
+              {records.map(r => (
+                <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => setShowSRDetail(r)}>
+                  <td><span className="badge badge-success" style={{ background: SR_CATEGORY_COLOR['专病管理'] + '20', color: SR_CATEGORY_COLOR['专病管理'] }}>{SR_TYPE_LABEL[r.type] || r.type}</span></td>
+                  <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
+                  <td style={{ fontSize: 13, color: '#666', maxWidth: 200 }}>{r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : '-'}</td>
+                  <td style={{ fontSize: 13, color: '#666' }}>{r.staffId?.name || '-'}</td>
+                  <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {CATS.map(cat => (
+            {CATS.map(cat => {
+              const isDiseaseMgmt = cat === '专病管理'
+              // 专病管理内部按 diseaseName 二级分组（同一专病归到一起，组内保持原有按日期倒序）
+              let diseaseGroups = null
+              if (isDiseaseMgmt) {
+                diseaseGroups = {}
+                grouped[cat].forEach(r => {
+                  const dn = r.diseaseName?.trim() || '未标注专病'
+                  if (!diseaseGroups[dn]) diseaseGroups[dn] = []
+                  diseaseGroups[dn].push(r)
+                })
+              }
+              return (
               <div className="card" key={cat}>
                 <div className="card-header">
                   <div className="card-title" style={{ color: SR_CATEGORY_COLOR[cat] }}>{cat}</div>
@@ -5277,24 +5305,21 @@ export default function PatientDetailPage() {
                 </div>
                 {grouped[cat].length === 0 ? (
                   <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{cat}记录</div>
+                ) : isDiseaseMgmt ? (
+                  Object.keys(diseaseGroups).map(dn => (
+                    <div key={dn} style={{ borderTop: '1px solid #f5f2ec' }}>
+                      <div style={{ padding: '8px 20px', fontSize: 13, fontWeight: 600, color: '#4A6558', background: '#F9F6F0' }}>
+                        {dn} <span style={{ fontWeight: 400, color: '#8AA89C' }}>· {diseaseGroups[dn].length} 条</span>
+                      </div>
+                      {renderTable(diseaseGroups[dn])}
+                    </div>
+                  ))
                 ) : (
-                  <table className="table">
-                    <thead><tr><th>类型</th><th>标题</th><th>内容摘要</th><th>负责人</th><th>日期</th></tr></thead>
-                    <tbody>
-                      {grouped[cat].map(r => (
-                        <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => setShowSRDetail(r)}>
-                          <td><span className="badge badge-success" style={{ background: SR_CATEGORY_COLOR[cat] + '20', color: SR_CATEGORY_COLOR[cat] }}>{SR_TYPE_LABEL[r.type] || r.type}</span></td>
-                          <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
-                          <td style={{ fontSize: 13, color: '#666', maxWidth: 200 }}>{r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : '-'}</td>
-                          <td style={{ fontSize: 13, color: '#666' }}>{r.staffId?.name || '-'}</td>
-                          <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  renderTable(grouped[cat])
                 )}
               </div>
-            ))}
+              )
+            })}
           </div>
         )
       })()}
@@ -6456,7 +6481,7 @@ export default function PatientDetailPage() {
       {showSRDetail && (() => {
         const SRDetailModal = () => {
           const [mode, setMode] = React.useState('view') // view | edit | supplement
-          const [editForm, setEditForm] = React.useState({ title: showSRDetail.title || '', content: showSRDetail.content || '', result: showSRDetail.result || '', nextDate: showSRDetail.nextDate ? new Date(showSRDetail.nextDate).toISOString().slice(0,10) : '' })
+          const [editForm, setEditForm] = React.useState({ title: showSRDetail.title || '', content: showSRDetail.content || '', result: showSRDetail.result || '', nextDate: showSRDetail.nextDate ? new Date(showSRDetail.nextDate).toISOString().slice(0,10) : '', diseaseName: showSRDetail.diseaseName || '' })
           const [suppContent, setSuppContent] = React.useState('')
           const [suppDate, setSuppDate] = React.useState(new Date().toISOString().slice(0,10))
           const [saving, setSaving] = React.useState(false)
@@ -6487,7 +6512,7 @@ export default function PatientDetailPage() {
           const handleEdit = async () => {
             setSaving(true)
             try {
-              await staffAPI.updateServiceRecord(showSRDetail._id, { title: editForm.title, content: editForm.content, result: editForm.result, nextDate: editForm.nextDate || null })
+              await staffAPI.updateServiceRecord(showSRDetail._id, { title: editForm.title, content: editForm.content, result: editForm.result, nextDate: editForm.nextDate || null, diseaseName: editForm.diseaseName })
               toast('记录已更新'); setShowSRDetail(null); loadServiceRecords()
             } catch (err) { toast(err.message || '保存失败') }
             finally { setSaving(false) }
@@ -6515,6 +6540,7 @@ export default function PatientDetailPage() {
                     <>
                       {[
                         ['服务类型', SR_TYPE_LABEL[showSRDetail.type] || showSRDetail.type],
+                        ...(showSRDetail.type === 'disease_mgmt' && showSRDetail.diseaseName ? [['专病名称', showSRDetail.diseaseName]] : []),
                         ['负责人', showSRDetail.staffId?.name || '-'],
                         ['服务日期', showSRDetail.date ? new Date(showSRDetail.date).toLocaleDateString('zh-CN') : '-'],
                       ].map(([k, v]) => (
@@ -6575,6 +6601,9 @@ export default function PatientDetailPage() {
                   )}
                   {mode === 'edit' && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {showSRDetail.type === 'disease_mgmt' && (
+                        <div><label className="form-label">专病名称</label><input className="form-input" placeholder="如：巧克力囊肿" value={editForm.diseaseName} onChange={e => setEditForm(f => ({ ...f, diseaseName: e.target.value }))} /></div>
+                      )}
                       <div><label className="form-label">标题</label><input className="form-input" value={editForm.title} onChange={e => setEditForm(f => ({ ...f, title: e.target.value }))} /></div>
                       <div><label className="form-label">详细内容</label><textarea className="form-input" rows={4} value={editForm.content} onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))} /></div>
                       <div><label className="form-label">结果/建议</label><textarea className="form-input" rows={3} value={editForm.result} onChange={e => setEditForm(f => ({ ...f, result: e.target.value }))} /></div>

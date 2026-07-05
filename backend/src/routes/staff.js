@@ -1406,13 +1406,14 @@ router.get('/service-records', staffAuth, async (req, res) => {
 
 // POST /api/staff/service-records
 router.post('/service-records', staffAuth, async (req, res) => {
-  const { patientId, type, date, title, content, result, nextDate, medicalEscort, tcmRecord, specialistRecord } = req.body;
+  const { patientId, type, date, title, content, result, nextDate, diseaseName, medicalEscort, tcmRecord, specialistRecord } = req.body;
   if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
   const record = await ServiceRecord.create({
     staffId: req.staff._id, patientId, type,
     date: date ? new Date(date) : new Date(),
     title: title || '', content: content || '', result: result || '',
     nextDate: nextDate ? new Date(nextDate) : null,
+    diseaseName: diseaseName || '',
     medicalEscort: medicalEscort || {}, tcmRecord: tcmRecord || {}, specialistRecord: specialistRecord || {},
   });
   await record.populate('patientId', 'name phone');
@@ -1423,7 +1424,7 @@ router.post('/service-records', staffAuth, async (req, res) => {
 router.put('/service-records/:id', staffAuth, async (req, res) => {
   const record = await ServiceRecord.findOne({ _id: req.params.id, staffId: req.staff._id });
   if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
-  const allowed = ['date', 'title', 'content', 'result', 'nextDate', 'medicalEscort', 'tcmRecord', 'specialistRecord'];
+  const allowed = ['date', 'title', 'content', 'result', 'nextDate', 'diseaseName', 'medicalEscort', 'tcmRecord', 'specialistRecord'];
   allowed.forEach(k => { if (req.body[k] !== undefined) record[k] = req.body[k]; });
   await record.save();
   res.json({ success: true, data: record });

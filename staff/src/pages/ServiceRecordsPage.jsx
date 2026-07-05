@@ -531,6 +531,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
   const [patientId, setPatientId] = useState('')
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
   const [title, setTitle] = useState('')
+  const [diseaseName, setDiseaseName] = useState('')  // 专病名称，仅 disease_mgmt 用于分组
   const [extras, setExtras] = useState({})  // type-specific fields
   const [routinePeriod, setRoutinePeriod] = useState('月度')
   const [routineMethod, setRoutineMethod] = useState('电话')
@@ -615,6 +616,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
         title: title || (TYPE_LABEL[type] + ' · ' + new Date(date).toLocaleDateString('zh-CN')),
         content: buildContent(),
         result: extras.result || '',
+        diseaseName: type === 'disease_mgmt' ? diseaseName : '',
         medicalEscort: { hospital: extras.hospital || '', department: extras.department || '', doctor: extras.doctor || '' },
       })
       onSaved()
@@ -623,14 +625,22 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
   }
 
   const renderFields = () => {
-    if (type === 'disease_mgmt') return DISEASE_MGMT_FIELDS.map(f => (
-      <div key={f.key} className="form-group" style={{ marginBottom: 10 }}>
-        <label className="form-label" style={{ fontSize: 12 }}>{f.label}</label>
-        {f.type === 'textarea'
-          ? <textarea className="form-input" rows={2} value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} style={{ resize: 'vertical' }} />
-          : <input className="form-input" value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} />}
-      </div>
-    ))
+    if (type === 'disease_mgmt') return (
+      <>
+        <div className="form-group" style={{ marginBottom: 10 }}>
+          <label className="form-label" style={{ fontSize: 12 }}>专病名称 <span style={{ color: '#8AA89C', fontWeight: 400 }}>（用于按专病分组展示，如"巧克力囊肿""肺结节"）</span></label>
+          <input className="form-input" placeholder="如：巧克力囊肿" value={diseaseName} onChange={e => setDiseaseName(e.target.value)} />
+        </div>
+        {DISEASE_MGMT_FIELDS.map(f => (
+          <div key={f.key} className="form-group" style={{ marginBottom: 10 }}>
+            <label className="form-label" style={{ fontSize: 12 }}>{f.label}</label>
+            {f.type === 'textarea'
+              ? <textarea className="form-input" rows={2} value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} style={{ resize: 'vertical' }} />
+              : <input className="form-input" value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} />}
+          </div>
+        ))}
+      </>
+    )
     if (type === 'nutrition') return NUTRITION_FIELDS.map(f => (
       <div key={f.key} className="form-group" style={{ marginBottom: 10 }}>
         <label className="form-label" style={{ fontSize: 12 }}>{f.label}</label>
