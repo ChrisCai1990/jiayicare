@@ -329,7 +329,7 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
   )
 }
 
-// AI汇总分析的卡片与数组编辑框：必须定义在组件外（模块级），否则每次输入重渲染会重建组件导致输入框失焦
+// AI健康分析的卡片与数组编辑框：必须定义在组件外（模块级），否则每次输入重渲染会重建组件导致输入框失焦
 function AISectionCard({ title, icon, color, children }) {
   return (
     <div className="card" style={{ marginBottom: 14 }}>
@@ -350,7 +350,7 @@ function AIArrEdit({ value, placeholder, onChange }) {
   )
 }
 
-// AI汇总分析讨论区：团队针对该年度分析提出疑问/补充信息，纯团队内部留言，AI不参与回复
+// AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯团队内部留言，AI不参与回复
 function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefresh }) {
   const toast = useToast()
   const [text, setText] = useState('')
@@ -678,7 +678,7 @@ export default function PatientDetailPage() {
   const [parsingReportId, setParsingReportId] = useState(null)
   const [editingAISummary, setEditingAISummary] = useState(false)
   const [aiSummaryForm, setAiSummaryForm] = useState({})
-  const [aiYear, setAiYear] = useState(null)        // 当前查看的AI汇总分析年度
+  const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   // 场景八：AI风险评估
   const [riskGenerating, setRiskGenerating] = useState(false)
   const [riskApproving, setRiskApproving] = useState(false)
@@ -1589,7 +1589,7 @@ export default function PatientDetailPage() {
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
           { key: 'medications',   label: '药物及营养素' },
-          { key: 'ai',            label: 'AI汇总分析' },
+          { key: 'ai',            label: 'AI健康分析' },
           { key: 'ai-risk',       label: 'AI风险评估' },
           { key: 'plans',         label: '管理方案' },
           { key: 'requisitions',  label: '检查开单' },
@@ -4570,7 +4570,7 @@ export default function PatientDetailPage() {
                   )}
                 </AISectionCard>
 
-                {/* AI汇总分析讨论区：团队针对该年度分析提出疑问/补充信息，纯留言，AI不参与回复 */}
+                {/* AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯留言，AI不参与回复 */}
                 <AISummaryDiscussionPanel patientId={id} year={curYear} discussions={ais.discussions || []} staff={staff} onRefresh={load} />
               </>
             )}

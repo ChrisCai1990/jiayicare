@@ -696,6 +696,20 @@ export default function RecordsScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} tintColor={colors.primary} />
         }
       >
+        {/* ── AI健康分析 入口 ──────────────────────────────────── */}
+        <View style={styles.section}>
+          <TouchableOpacity style={styles.aiEntryCard} onPress={() => navigation.navigate('AiHealth')}>
+            <View style={styles.aiEntryIcon}>
+              <Ionicons name="sparkles" size={20} color={colors.white} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.aiEntryTitle}>AI健康分析</Text>
+              <Text style={styles.aiEntryDesc}>AI健康分析 · 风险评估</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
+          </TouchableOpacity>
+        </View>
+
         {/* ── 基本信息 ──────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -1262,6 +1276,19 @@ const styles = StyleSheet.create({
   // Edit button
   editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 8, borderRadius: radius.full, backgroundColor: colors.primary10 },
   editBtnText: { fontSize: 12, color: colors.primary, fontWeight: '600' },
+
+  // AI健康分析入口卡片
+  aiEntryCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+    backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  aiEntryIcon: {
+    width: 40, height: 40, borderRadius: 20, backgroundColor: colors.primary,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  aiEntryTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  aiEntryDesc: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
 
   // Profile
   profileCard: {

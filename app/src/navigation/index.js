@@ -15,6 +15,7 @@ import HomeScreen from '../screens/home/HomeScreen';
 import RecordsScreen from '../screens/records/RecordsScreen';
 import AddRecordScreen from '../screens/records/AddRecordScreen';
 import HealthReportScreen from '../screens/records/HealthReportScreen';
+import AiHealthScreen from '../screens/records/AiHealthScreen';
 import ReportUploadScreen from '../screens/records/ReportUploadScreen';
 import TasksScreen from '../screens/tasks/TasksScreen';
 import MessagesScreen from '../screens/messages/MessagesScreen';
@@ -155,6 +156,7 @@ export default function Navigation() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="AddRecord" component={AddRecordScreen} />
             <Stack.Screen name="HealthReport" component={HealthReportScreen} />
+            <Stack.Screen name="AiHealth" component={AiHealthScreen} />
             <Stack.Screen name="Tasks" component={TasksScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="Medication" component={MedicationScreen} />

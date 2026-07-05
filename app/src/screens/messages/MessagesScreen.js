@@ -11,6 +11,7 @@ import { mockMessages } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/Avatar';
 import EmptyState from '../../components/EmptyState';
+import tts from '../../utils/tts';
 
 const TYPE_CONFIG = {
   doctor:        { icon: 'medical',           color: colors.primary },
@@ -274,6 +275,8 @@ function ProductPushDetail({ msg, onClose }) {
 }
 
 function MessageDetailModal({ msg, onClose, navigation, onReply }) {
+  const [speaking, setSpeaking] = useState(false);
+
   if (!msg) return null;
 
   // 产品推送：专用多选支付界面
@@ -282,6 +285,17 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
   }
 
   const conf = TYPE_CONFIG[msg.type] || TYPE_CONFIG.system;
+
+  const handleSpeak = async () => {
+    setSpeaking(true);
+    try {
+      await tts.speak(msg.content || msg.title || '暂无内容', 'message');
+    } catch {
+      // 播放失败静默忽略，不打断消息查看
+    } finally {
+      setSpeaking(false);
+    }
+  };
 
   // 方案/问卷类型的行动按钮
   const renderActionBtn = () => {
@@ -327,6 +341,13 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
                 <Text style={styles.detailTime}>{msg.time || '今天'}</Text>
               </View>
             </View>
+            <TouchableOpacity onPress={handleSpeak} disabled={speaking} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={{ marginRight: 14 }}>
+              {speaking ? (
+                <ActivityIndicator size="small" color={colors.primary} />
+              ) : (
+                <Ionicons name="volume-high-outline" size={20} color={colors.primary} />
+              )}
+            </TouchableOpacity>
             <TouchableOpacity onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
               <Ionicons name="close" size={22} color={colors.textSecondary} />
             </TouchableOpacity>

@@ -21,6 +21,7 @@ async function uploadBase64(base64Data, mimeType, folder = 'reports') {
   const ext = mimeType === 'application/pdf' ? 'pdf'
     : mimeType === 'image/png' ? 'png'
     : mimeType === 'image/jpeg' || mimeType === 'image/jpg' ? 'jpg'
+    : mimeType === 'audio/mpeg' ? 'mp3'
     : 'bin';
 
   const key = `${folder}/${uuidv4()}.${ext}`;

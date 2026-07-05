@@ -565,7 +565,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               <button
                 onClick={handleGenerateAIAnnualPlan}
                 disabled={aiPlanLoading || !patient?.aiHealthSummary?.sections}
-                title={!patient?.aiHealthSummary?.sections ? '请先在AI分析及方案标签页生成AI汇总分析' : 'AI自动填充方案板块'}
+                title={!patient?.aiHealthSummary?.sections ? '请先在AI分析及方案标签页生成AI健康分析' : 'AI自动填充方案板块'}
                 style={{ background: '#7C3AED', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: (aiPlanLoading || !patient?.aiHealthSummary?.sections) ? 0.5 : 1 }}
               >
                 {aiPlanLoading ? 'AI生成中…' : '✨ AI生成方案'}

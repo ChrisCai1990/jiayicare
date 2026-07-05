@@ -3163,7 +3163,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST /api/staff/patients/:id/ai-health-summary/discussions — 团队针对AI汇总分析的讨论留言（按年度，纯团队内部留言，AI不参与回复）
+// POST /api/staff/patients/:id/ai-health-summary/discussions — 团队针对AI健康分析的讨论留言（按年度，纯团队内部留言，AI不参与回复）
 router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req, res) => {
   try {
     const { content, year } = req.body;
@@ -3234,7 +3234,7 @@ router.post('/patients/:id/ai-health-summary/discussions/ai-reply', staffAuth, a
     const sectionsSummary = JSON.stringify(entry.sections || {}).slice(0, 3000);
     const discussionText = discussions.map(d => `${d.isAI ? 'AI' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
 
-    const prompt = `你是协助医护团队复核健康分析报告的AI助手。以下是患者${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI汇总分析报告结论摘要，以及医护团队围绕该报告展开的讨论记录。请针对团队最新提出的疑问或补充信息，结合报告已有结论进行解释、推理或修正说明。
+    const prompt = `你是协助医护团队复核健康分析报告的AI助手。以下是患者${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI健康分析报告结论摘要，以及医护团队围绕该报告展开的讨论记录。请针对团队最新提出的疑问或补充信息，结合报告已有结论进行解释、推理或修正说明。
 
 【报告结论摘要】
 ${sectionsSummary}
@@ -3271,7 +3271,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const ais = user.aiHealthSummary;
     if (!ais || !ais.sections) {
-      return res.status(400).json({ success: false, message: '请先生成AI汇总分析报告' });
+      return res.status(400).json({ success: false, message: '请先生成AI健康分析报告' });
     }
 
     // 各方案类型包含的板块（与前端 AnnualMgmtPlanPage 的 PLAN_TYPE_MODULES 保持一致）
@@ -3306,7 +3306,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const missingCheckups = (s.checkup_completeness?.missing || []).join('、') || '无';
 
-    const prompt = `你是一位家庭医师，请根据以下AI汇总分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。
+    const prompt = `你是一位家庭医师，请根据以下AI健康分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。
 
 【需优先解决的医疗问题】
 ${medPriorityText}
@@ -4212,7 +4212,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         // 家庭医师审 5 维（整体未通过 && 医师维度未通过；自助生成的免审核，不进队列）
         if (can('summary_review') && e.source !== 'self_service' && !e.approvedAt && !e.doctorApprovedAt) {
           todos.push({
-            id: 'summary_' + u._id, type: 'summary_review', label: 'AI汇总分析待审核（5维度）', priority: 2,
+            id: 'summary_' + u._id, type: 'summary_review', label: 'AI健康分析待审核（5维度）', priority: 2,
             patientName: u.name || '未知', patientId: String(u._id),
             summary: `${y}年度 · 肿瘤/心脑血管/慢病/体检全面性/优先医疗问题`,
             createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
@@ -4225,7 +4225,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           todos.push({
             id: 'lifestyle_' + u._id, type: 'lifestyle_review', label: '生活方式评估待审核', priority: 3,
             patientName: u.name || '未知', patientId: String(u._id),
-            summary: `${y}年度 · AI汇总分析「生活方式评估」维度`,
+            summary: `${y}年度 · AI健康分析「生活方式评估」维度`,
             createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
           });
         }

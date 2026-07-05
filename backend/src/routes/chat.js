@@ -15,7 +15,7 @@ const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康
 4. 每次回答末尾加：「本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。」
 5. 不捏造数据，对不确定的信息说"建议咨询您的主治医生"`;
 
-// 从AI汇总分析/风险评估结果中摘取要点，供对话时结合上下文回答（只取已审核可见的版本，与患者当前实际看到的一致）
+// 从AI健康分析/风险评估结果中摘取要点，供对话时结合上下文回答（只取已审核可见的版本，与患者当前实际看到的一致）
 function buildHealthInsightContext(user) {
   const lines = [];
   const summary = user.aiHealthSummary || {};
@@ -26,7 +26,7 @@ function buildHealthInsightContext(user) {
   if (latestEntry?.sections) {
     const s = latestEntry.sections;
     if (s.medical_priority?.items?.length) {
-      lines.push(`【AI汇总分析·${latestYear}年度·重点医疗问题】` + s.medical_priority.items.map(i => `${i.name}（${i.urgency}）：${i.action || ''}`).join('；'));
+      lines.push(`【AI健康分析·${latestYear}年度·重点医疗问题】` + s.medical_priority.items.map(i => `${i.name}（${i.urgency}）：${i.action || ''}`).join('；'));
     }
     if (s.lifestyle_assessment?.summary) {
       lines.push(`【生活方式评估】${s.lifestyle_assessment.summary}`);

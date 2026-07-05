@@ -94,6 +94,10 @@ export const userAPI = {
   getReport:       (period)       => request(`/user/report?period=${period || 'week'}`),
   sendChangeCode:  (newPhone)     => request('/user/change-phone/send-code', { method: 'POST', body: JSON.stringify({ newPhone }) }),
   changePhone:     (newPhone, code) => request('/user/change-phone', { method: 'POST', body: JSON.stringify({ newPhone, code }) }),
+  getAiHealthSummary:  ()         => request('/user/ai-health-summary'),
+  postAiHealthSummary: ()         => request('/user/ai-health-summary', { method: 'POST' }),
+  getAiRiskAssessment: ()         => request('/user/ai-risk-assessment'),
+  postAiRiskAssessment:()         => request('/user/ai-risk-assessment', { method: 'POST' }),
 };
 
 // ── Health Records ────────────────────────────────────────────────
@@ -302,4 +306,10 @@ export const userPhoneAPI = {
     request('/user/change-phone/send-code', { method: 'POST', body: JSON.stringify({ newPhone }) }),
   changePhone: (newPhone, code) =>
     request('/user/change-phone', { method: 'POST', body: JSON.stringify({ newPhone, code }) }),
+};
+
+// ── TTS 语音播报 ─────────────────────────────────────────────────
+export const ttsAPI = {
+  synthesize: (text, sceneType) =>
+    request('/tts/synthesize', { method: 'POST', body: JSON.stringify({ text, sceneType }), timeout: 30000 }),
 };
