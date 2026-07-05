@@ -1095,21 +1095,22 @@ router.delete('/family-links/:linkId', auth, async (req, res) => {
 });
 
 // ── 用户端 AI 汇总分析 / 风险评估：按是否配备家庭医生分流 ──────────────
-// 有家庭医生（assignedFamilyDoctor 非空）：只能查看已审核内容，需走医护端审核流程
+// 有家庭医生（assignedFamilyDoctor 非空）：客户可自助点击生成草稿，标记为待审核；
+//   生成后立即可见（草稿态），走医护端 getAiTodos 审核队列，家医审核通过后状态变为已审核
 // 无家庭医生：客户可自助点击生成，免审核直接查看AI原始结果（source标记为self_service，
-// 不计入 staff.js getAiTodos 的家庭医生待审核队列，避免误入人工审核工作流）
+//   不计入 staff.js getAiTodos 的家庭医生待审核队列，避免误入人工审核工作流）
 const { generateHealthSummarySections } = require('../utils/aiHealthSummary');
 const { generateRiskAssessment } = require('../utils/aiRiskAssessment');
 
-// GET /api/user/ai-health-summary — 查看AI健康汇总分析
+// GET /api/user/ai-health-summary — 查看AI健康汇总分析（有家医时草稿也可见，附带审核状态）
 router.get('/ai-health-summary', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('assignedFamilyDoctor aiHealthSummary');
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
     const hasDoctor = !!user.assignedFamilyDoctor;
     const data = user.aiHealthSummary || {};
-    if (hasDoctor && !data.approvedAt) {
-      return res.json({ success: true, data: null, message: '尚未通过家庭医生审核' });
+    if (hasDoctor && data.sections && !data.approvedAt) {
+      return res.json({ success: true, data, hasDoctor, pendingReview: true, message: '草稿已生成，待家庭医生团队审核' });
     }
     res.json({ success: true, data, hasDoctor });
   } catch (err) {
@@ -1117,43 +1118,51 @@ router.get('/ai-health-summary', auth, async (req, res) => {
   }
 });
 
-// POST /api/user/ai-health-summary — 无家庭医生客户自助生成（有家庭医生的客户须由医护端生成）
+// POST /api/user/ai-health-summary — 客户自助生成
+// 有家庭医生：生成待审核草稿（复用医护端同款生成逻辑，进入 getAiTodos 审核队列）
+// 无家庭医生：免审核直接生效
 router.post('/ai-health-summary', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
-    if (user.assignedFamilyDoctor) {
-      return res.status(403).json({ success: false, message: '您已配备家庭医生团队，AI分析将由团队生成并审核后呈现，无需自助生成' });
-    }
 
     const sections = await generateHealthSummarySections(user);
     const year = String(new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
     const byYear = { ...(existing.byYear || {}) };
     const now = new Date();
-    // 自助模式免审核：approvedAt 直接置位，source 标记 self_service 供下游（getAiTodos等）识别排除
-    byYear[year] = { sections, generatedAt: now, approvedAt: now, approvedBy: null, source: 'self_service' };
-    const summary = { sections, generatedAt: now, approvedAt: now, approvedBy: null, source: 'self_service', byYear, latestYear: year };
+    const hasDoctor = !!user.assignedFamilyDoctor;
+
+    let summary;
+    if (hasDoctor) {
+      // 待审核草稿：不置 approvedAt，走家医审核流程（与医护端生成的结构一致，便于 getAiTodos 捕获）
+      byYear[year] = { sections, generatedAt: now, approvedAt: null, approvedBy: null, doctorApprovedAt: null, doctorApprovedBy: null, nutritionApprovedAt: null, nutritionApprovedBy: null };
+      summary = { sections, generatedAt: now, approvedAt: null, approvedBy: null, doctorApprovedAt: null, doctorApprovedBy: null, nutritionApprovedAt: null, nutritionApprovedBy: null, byYear, latestYear: year };
+    } else {
+      // 自助模式免审核：approvedAt 直接置位，source 标记 self_service 供下游（getAiTodos等）识别排除
+      byYear[year] = { sections, generatedAt: now, approvedAt: now, approvedBy: null, source: 'self_service' };
+      summary = { sections, generatedAt: now, approvedAt: now, approvedBy: null, source: 'self_service', byYear, latestYear: year };
+    }
 
     await User.collection.updateOne(
       { _id: user._id },
       { $set: { aiHealthSummary: summary } }
     );
-    res.json({ success: true, data: summary });
+    res.json({ success: true, data: summary, pendingReview: hasDoctor });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// GET /api/user/ai-risk-assessment — 查看AI风险评估
+// GET /api/user/ai-risk-assessment — 查看AI风险评估（有家医时草稿也可见，附带审核状态）
 router.get('/ai-risk-assessment', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('assignedFamilyDoctor aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
     const hasDoctor = !!user.assignedFamilyDoctor;
     const data = user.aiRiskAssessment || {};
-    if (hasDoctor && !data.approvedAt) {
-      return res.json({ success: true, data: null, message: '尚未通过家庭医生审核' });
+    if (hasDoctor && Array.isArray(data.dimensions) && data.dimensions.length && !data.approvedAt) {
+      return res.json({ success: true, data, hasDoctor, pendingReview: true, message: '草稿已生成，待家庭医生团队审核' });
     }
     res.json({ success: true, data, hasDoctor });
   } catch (err) {
@@ -1161,26 +1170,28 @@ router.get('/ai-risk-assessment', auth, async (req, res) => {
   }
 });
 
-// POST /api/user/ai-risk-assessment — 无家庭医生客户自助生成
+// POST /api/user/ai-risk-assessment — 客户自助生成
+// 有家庭医生：生成待审核草稿；无家庭医生：免审核直接生效
 router.post('/ai-risk-assessment', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
       .select('name gender age chronicDiseases healthProfile labValues lifestyle assignedFamilyDoctor');
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
-    if (user.assignedFamilyDoctor) {
-      return res.status(403).json({ success: false, message: '您已配备家庭医生团队，AI分析将由团队生成并审核后呈现，无需自助生成' });
-    }
 
     const assessment = await generateRiskAssessment(user);
-    const now = new Date();
-    assessment.approvedAt = now; // 自助模式免审核
-    assessment.source = 'self_service';
+    const hasDoctor = !!user.assignedFamilyDoctor;
+    if (hasDoctor) {
+      assessment.approvedAt = null; // 待家医审核
+    } else {
+      assessment.approvedAt = new Date(); // 自助模式免审核
+      assessment.source = 'self_service';
+    }
 
     await User.collection.updateOne(
       { _id: user._id },
       { $set: { aiRiskAssessment: assessment } }
     );
-    res.json({ success: true, data: assessment });
+    res.json({ success: true, data: assessment, pendingReview: hasDoctor });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

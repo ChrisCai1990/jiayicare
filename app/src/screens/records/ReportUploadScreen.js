@@ -474,20 +474,20 @@ function ReportCard({ report, onDelete, onPreview }) {
   );
 }
 
-function AIAnalysisCard() {
+function AIAnalysisCard({ onPress }) {
   return (
-    <View style={styles.aiCard}>
+    <TouchableOpacity style={styles.aiCard} onPress={onPress} activeOpacity={0.8}>
       <View style={styles.aiLeft}>
         <View style={styles.aiIcon}>
           <Ionicons name="sparkles" size={20} color={colors.white} />
         </View>
         <View>
-          <Text style={styles.aiTitle}>AI 智能解读</Text>
-          <Text style={styles.aiDesc}>上传报告后，AI自动识别关键指标并提供解读</Text>
+          <Text style={styles.aiTitle}>AI 健康分析</Text>
+          <Text style={styles.aiDesc}>结合您的体检报告与健康档案，生成综合分析</Text>
         </View>
       </View>
       <Ionicons name="chevron-forward" size={16} color={colors.primary} />
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -1061,7 +1061,7 @@ export default function ReportUploadScreen({ navigation, route }) {
 
         {/* AI Analysis */}
         <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.sm }}>
-          <AIAnalysisCard />
+          <AIAnalysisCard onPress={() => navigation.navigate('AiHealth')} />
         </View>
 
         {/* Stats Row */}

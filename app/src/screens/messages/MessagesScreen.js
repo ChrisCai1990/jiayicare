@@ -495,7 +495,15 @@ function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo
 }
 
 export default function MessagesScreen({ navigation }) {
-  const { isDemo } = useAuth();
+  const { isDemo, user } = useAuth();
+  const careTeamRoles = new Set((user?.careTeam || []).map(m => m.role));
+  const hasRole = (key) => {
+    if (isDemo) return true;
+    if (key === 'doctor') return careTeamRoles.has('家庭医师');
+    if (key === 'nutritionist') return careTeamRoles.has('营养师');
+    if (key === 'manager') return careTeamRoles.has('健管专员');
+    return false;
+  };
   const [activeTab, setActiveTab] = useState('全部');
   const [messages, setMessages] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
@@ -594,7 +602,7 @@ export default function MessagesScreen({ navigation }) {
     );
     const last = msgs[0];
     const unread = msgs.filter(m => m.unread).length;
-    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role' };
+    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key) };
   });
 
   // 系统通知行
@@ -639,8 +647,13 @@ export default function MessagesScreen({ navigation }) {
       >
         <View style={[styles.sectionCard, { marginTop: 8 }]}>
           {convList.map((conv, i) => {
-            const preview = conv.last?.content || conv.last?.title || (conv.kind === 'ai' ? '随时问我健康问题，24小时在线' : conv.kind === 'notif' ? '暂无通知' : '暂无消息');
-            const onPress = conv.kind === 'ai'
+            const unassigned = conv.kind === 'role' && conv.assigned === false;
+            const preview = unassigned
+              ? `暂未配备${conv.label}，敬请期待`
+              : conv.last?.content || conv.last?.title || (conv.kind === 'ai' ? '随时问我健康问题，24小时在线' : conv.kind === 'notif' ? '暂无通知' : '暂无消息');
+            const onPress = unassigned
+              ? () => {}
+              : conv.kind === 'ai'
               ? () => navigation.navigate('Chat')
               : conv.kind === 'notif'
               ? () => setShowNotifModal(true)
@@ -648,10 +661,10 @@ export default function MessagesScreen({ navigation }) {
 
             return (
               <View key={conv.key}>
-                <TouchableOpacity style={styles.chatRow} onPress={onPress} activeOpacity={0.7}>
-                  <View style={[styles.chatAvatar, { backgroundColor: conv.color }]}>
-                    <Ionicons name={conv.icon} size={20} color="#fff" />
-                    {conv.unread > 0 && (
+                <TouchableOpacity style={styles.chatRow} onPress={onPress} activeOpacity={unassigned ? 1 : 0.7} disabled={unassigned}>
+                  <View style={[styles.chatAvatar, { backgroundColor: unassigned ? colors.border : conv.color }]}>
+                    <Ionicons name={conv.icon} size={20} color={unassigned ? colors.textMuted : '#fff'} />
+                    {conv.unread > 0 && !unassigned && (
                       <View style={styles.avatarBadge}>
                         <Text style={styles.avatarBadgeText}>{conv.unread > 99 ? '99+' : conv.unread}</Text>
                       </View>
@@ -659,14 +672,14 @@ export default function MessagesScreen({ navigation }) {
                   </View>
                   <View style={styles.chatBody}>
                     <View style={styles.chatTopRow}>
-                      <Text style={styles.chatName}>{conv.label}</Text>
-                      {conv.last && <Text style={styles.chatTime}>{fmtMsgTime(conv.last.createdAt)}</Text>}
+                      <Text style={[styles.chatName, unassigned && { color: colors.textMuted }]}>{conv.label}</Text>
+                      {conv.last && !unassigned && <Text style={styles.chatTime}>{fmtMsgTime(conv.last.createdAt)}</Text>}
                     </View>
-                    <Text style={[styles.chatPreview, conv.unread > 0 && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
+                    <Text style={[styles.chatPreview, conv.unread > 0 && !unassigned && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>
                       {preview}
                     </Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
+                  {!unassigned && <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />}
                 </TouchableOpacity>
                 {i < convList.length - 1 && <View style={styles.rowDivider} />}
               </View>

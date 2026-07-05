@@ -203,6 +203,8 @@ export default function AiHealthScreen({ navigation }) {
   const [hasDoctor, setHasDoctor] = useState(false);
   const [summaryData, setSummaryData] = useState(null);
   const [riskData, setRiskData] = useState(null);
+  const [summaryPending, setSummaryPending] = useState(false);
+  const [riskPending, setRiskPending] = useState(false);
   const [message, setMessage] = useState('');
   const [speaking, setSpeaking] = useState(false);
 
@@ -216,10 +218,12 @@ export default function AiHealthScreen({ navigation }) {
       if (sRes.status === 'fulfilled' && sRes.value?.success) {
         setHasDoctor(!!sRes.value.hasDoctor);
         setSummaryData(sRes.value.data || null);
+        setSummaryPending(!!sRes.value.pendingReview);
         if (sRes.value.message) setMessage(sRes.value.message);
       }
       if (rRes.status === 'fulfilled' && rRes.value?.success) {
         setRiskData(rRes.value.data || null);
+        setRiskPending(!!rRes.value.pendingReview);
       }
     } finally {
       setLoading(false);
@@ -230,13 +234,14 @@ export default function AiHealthScreen({ navigation }) {
 
   const handleGenerate = async () => {
     setGenerating(true);
+    setMessage('');
     try {
       if (tab === TABS[0]) {
         const res = await userAPI.postAiHealthSummary();
-        if (res.success) setSummaryData(res.data);
+        if (res.success) { setSummaryData(res.data); setSummaryPending(!!res.pendingReview); }
       } else {
         const res = await userAPI.postAiRiskAssessment();
-        if (res.success) setRiskData(res.data);
+        if (res.success) { setRiskData(res.data); setRiskPending(!!res.pendingReview); }
       }
     } catch (err) {
       setMessage(err.message || '生成失败，请稍后重试');
@@ -248,6 +253,7 @@ export default function AiHealthScreen({ navigation }) {
   const summaryHasData = !!(summaryData?.sections?.medical_priority || summaryData?.sections?.tumor_risk || summaryData?.sections?.chronic_disease);
   const riskHasData = Array.isArray(riskData?.dimensions) && riskData.dimensions.length > 0;
   const curHasData = tab === TABS[0] ? summaryHasData : riskHasData;
+  const curPending = tab === TABS[0] ? summaryPending : riskPending;
 
   const handleSpeak = async () => {
     setSpeaking(true);
@@ -292,31 +298,38 @@ export default function AiHealthScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
-          {hasDoctor ? (
-            <View style={styles.doctorNotice}>
-              <Ionicons name="medkit-outline" size={18} color={colors.info} />
-              <Text style={styles.doctorNoticeText}>
-                {curHasData ? '由您的家庭医生团队生成并审核' : (message || '尚未通过家庭医生审核，请耐心等待')}
-              </Text>
+          {!!message && (
+            <View style={[styles.doctorNotice, { backgroundColor: '#FEF2F2' }]}>
+              <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+              <Text style={[styles.doctorNoticeText, { color: colors.danger }]}>{message}</Text>
             </View>
-          ) : (
-            <TouchableOpacity style={styles.genBtn} onPress={handleGenerate} disabled={generating}>
-              {generating ? (
-                <ActivityIndicator size="small" color={colors.white} />
-              ) : (
-                <Ionicons name="sparkles-outline" size={16} color={colors.white} />
-              )}
-              <Text style={styles.genBtnText}>
-                {generating ? 'AI生成中…' : (curHasData ? '重新生成' : `✨ 生成${tab}`)}
-              </Text>
-            </TouchableOpacity>
           )}
 
-          {!curHasData && !hasDoctor && (
+          {hasDoctor && curHasData && (
+            <View style={styles.doctorNotice}>
+              <Ionicons name={curPending ? 'time-outline' : 'medkit-outline'} size={18} color={colors.info} />
+              <Text style={styles.doctorNoticeText}>
+                {curPending ? '草稿已生成，待您的家庭医生团队审核，审核结果可能有调整' : '已由您的家庭医生团队审核确认'}
+              </Text>
+            </View>
+          )}
+
+          <TouchableOpacity style={styles.genBtn} onPress={handleGenerate} disabled={generating}>
+            {generating ? (
+              <ActivityIndicator size="small" color={colors.white} />
+            ) : (
+              <Ionicons name="sparkles-outline" size={16} color={colors.white} />
+            )}
+            <Text style={styles.genBtnText}>
+              {generating ? 'AI生成中…' : (curHasData ? '重新生成' : `✨ 生成${tab}`)}
+            </Text>
+          </TouchableOpacity>
+
+          {!curHasData && (
             <View style={styles.emptyWrap}>
               <Ionicons name="analytics-outline" size={44} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>暂无{tab}</Text>
-              <Text style={styles.emptyDesc}>点击上方按钮，AI将结合您的体检数据与健康档案自动生成</Text>
+              <Text style={styles.emptyDesc}>点击上方按钮，AI将结合您的体检数据与健康档案自动生成{hasDoctor ? '，生成后由家庭医生团队审核' : ''}</Text>
             </View>
           )}
 

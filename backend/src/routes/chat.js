@@ -92,11 +92,10 @@ router.post('/', auth, async (req, res) => {
     return res.status(503).json({ success: false, message: 'AI服务暂未开通，请联系管理员配置。' });
   }
 
-  // 一对一AI咨询仅面向已配备家庭医生团队的客户开放；无家庭医生的客户走AI自助分析（汇总/风险评估），不支持一对一咨询
+  // 一对一AI咨询：有家庭医生团队的客户可自由咨询；无家庭医生的客户仅限于讨论自己的AI健康分析/风险评估结果，
+  // 不承接问诊/服务咨询等开放性话题（该类客户无人工审核兜底，需收窄AI建议范围）
   const me = await User.findById(userId).select('assignedFamilyDoctor aiHealthSummary aiRiskAssessment');
-  if (!me?.assignedFamilyDoctor) {
-    return res.status(403).json({ success: false, message: '暂未配备家庭医生团队，该服务暂不支持。您可以在"健康报告"中查看AI自助分析结果。' });
-  }
+  const hasDoctor = !!me?.assignedFamilyDoctor;
 
   // 意图识别
   const intent = detectIntent(lastUserMsg);
@@ -123,8 +122,11 @@ router.post('/', auth, async (req, res) => {
     userInfo.medications && `用药：${userInfo.medications}`,
   ].filter(Boolean).join('，');
 
+  const scopeNotice = hasDoctor ? '' : `\n【重要限制】该用户暂未配备家庭医生团队，无人工审核兜底。请仅围绕用户自己的AI健康分析/风险评估结果（见下方"患者健康分析要点"）答疑解惑，不要提供超出该结果范围的诊疗建议或开放性问诊服务；若用户提问与自己的分析结果无关，引导其联系客服或等待配备家庭医生团队。`;
+
   const systemPrompt = [
     BASE_SYSTEM,
+    scopeNotice,
     userContext ? `\n用户基本信息：${userContext}` : '',
     buildHealthInsightContext(me),
     dataContext,
