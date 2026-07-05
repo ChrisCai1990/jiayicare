@@ -3384,6 +3384,59 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// POST /api/staff/patients/:id/ai-health-summary/discussions — 团队针对AI汇总分析的讨论留言（按年度，纯团队内部留言，AI不参与回复）
+router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req, res) => {
+  try {
+    const { content, year } = req.body;
+    if (!content || !content.trim()) return res.status(400).json({ success: false, message: '留言内容不能为空' });
+    const user = await User.findById(req.params.id).select('aiHealthSummary');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const current = user.aiHealthSummary || {};
+    const byYear = { ...(current.byYear || {}) };
+    const y = String(year || current.latestYear || new Date().getFullYear());
+    const entry = { ...(byYear[y] || {}) };
+    const discussions = Array.isArray(entry.discussions) ? [...entry.discussions] : [];
+    discussions.push({
+      staffId: req.staff._id,
+      staffName: req.staff.name || '',
+      staffRole: req.staff.roleLabel || req.staff.role || '',
+      content: content.trim(),
+      createdAt: new Date(),
+    });
+    entry.discussions = discussions;
+    byYear[y] = entry;
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { [`aiHealthSummary.byYear.${y}.discussions`]: discussions } }
+    );
+    res.json({ success: true, data: discussions });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/patients/:id/ai-health-summary/discussions/:index — 撤回自己发的一条留言（仅本人或超管）
+router.delete('/patients/:id/ai-health-summary/discussions/:index', staffAuth, async (req, res) => {
+  try {
+    const { year } = req.query;
+    const idx = Number(req.params.index);
+    const user = await User.findById(req.params.id).select('aiHealthSummary');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const current = user.aiHealthSummary || {};
+    const byYear = current.byYear || {};
+    const y = String(year || current.latestYear || new Date().getFullYear());
+    const discussions = Array.isArray(byYear[y]?.discussions) ? [...byYear[y].discussions] : [];
+    const target = discussions[idx];
+    if (!target) return res.status(404).json({ success: false, message: '留言不存在' });
+    const isOwner = String(target.staffId) === String(req.staff._id);
+    if (!isOwner && req.staff.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅本人或超管可删除该留言' });
+    discussions.splice(idx, 1);
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { [`aiHealthSummary.byYear.${y}.discussions`]: discussions } }
+    );
+    res.json({ success: true, data: discussions });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 4.5 AI管理方案生成 ──────────────────────────────────────────
 // POST /api/staff/patients/:id/ai-annual-plan
 router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {

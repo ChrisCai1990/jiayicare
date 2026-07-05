@@ -350,6 +350,79 @@ function AIArrEdit({ value, placeholder, onChange }) {
   )
 }
 
+// AI汇总分析讨论区：团队针对该年度分析提出疑问/补充信息，纯团队内部留言，AI不参与回复
+function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefresh }) {
+  const toast = useToast()
+  const [text, setText] = useState('')
+  const [posting, setPosting] = useState(false)
+  const list = Array.isArray(discussions) ? discussions : []
+
+  const handlePost = async () => {
+    if (!text.trim()) return
+    setPosting(true)
+    try {
+      await staffAPI.addAIHealthSummaryDiscussion(patientId, text.trim(), year)
+      setText('')
+      toast('已发布留言')
+      onRefresh()
+    } catch (err) { toast(err.message || '发布失败') }
+    finally { setPosting(false) }
+  }
+
+  const handleDelete = async (idx) => {
+    if (!window.confirm('确认删除这条留言？')) return
+    try {
+      await staffAPI.deleteAIHealthSummaryDiscussion(patientId, idx, year)
+      toast('已删除')
+      onRefresh()
+    } catch (err) { toast(err.message || '删除失败') }
+  }
+
+  return (
+    <div className="card" style={{ marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
+        <span style={{ fontSize: 17 }}>💬</span>
+        <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>团队讨论</span>
+        <span style={{ fontSize: 12, color: '#8AA89C' }}>{list.length} 条留言</span>
+      </div>
+      <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {list.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#8AA89C' }}>暂无留言，对本年度分析有疑问或补充信息可在此讨论</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {list.map((d, i) => {
+              const isOwner = staff?._id && String(d.staffId) === String(staff._id)
+              return (
+                <div key={i} style={{ background: '#F9F6F0', borderRadius: 8, padding: '10px 14px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#4A6558' }}>
+                      {d.staffName}{d.staffRole ? ` · ${d.staffRole}` : ''}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: '#8AA89C' }}>{d.createdAt ? new Date(d.createdAt).toLocaleString('zh-CN') : ''}</span>
+                      {(isOwner || staff?.role === 'superadmin') && (
+                        <span onClick={() => handleDelete(i)} style={{ fontSize: 11, color: '#DC3545', cursor: 'pointer' }}>删除</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{d.content}</div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <textarea className="form-input" rows={2} style={{ flex: 1, resize: 'vertical' }}
+            placeholder="提出疑问、补充信息或讨论意见..." value={text} onChange={e => setText(e.target.value)} />
+          <button className="btn btn-primary btn-sm" disabled={posting || !text.trim()} onClick={handlePost}>
+            {posting ? '发布中...' : '发布'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -4383,6 +4456,9 @@ export default function PatientDetailPage() {
                     )
                   )}
                 </AISectionCard>
+
+                {/* AI汇总分析讨论区：团队针对该年度分析提出疑问/补充信息，纯留言，AI不参与回复 */}
+                <AISummaryDiscussionPanel patientId={id} year={curYear} discussions={ais.discussions || []} staff={staff} onRefresh={load} />
               </>
             )}
           </div>
