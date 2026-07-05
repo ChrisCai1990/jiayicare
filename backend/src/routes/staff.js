@@ -4025,7 +4025,7 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
     if (!isSuperadmin && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人可采纳该建议' });
     if (!draft.assignedTo) return res.status(400).json({ success: false, message: '请先选择随访人员再采纳' });
 
-    // 创建随访计划
+    // 创建随访计划：AI的时机判断+随访提纲写入 content（随访内容记录），便于后续查看/编辑时直接看到并在此基础上修改，而不是内容为空重新编写
     const VALID_TYPES = ['phone', 'wechat', 'visit', 'video', 'other'];
     const fu = await FollowUp.create({
       patientId: user._id,
@@ -4036,11 +4036,11 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
       assignedTo: draft.assignedTo,
       status: 'planned',
       aiGenerated: true,
-      notes: [
+      content: [
         draft.timingReason ? `时机判断：${draft.timingReason}` : '',
-        Array.isArray(draft.outline) && draft.outline.length ? `随访要点：${draft.outline.join('；')}` : '',
-        notes ? `审核备注：${notes}` : '',
-      ].filter(Boolean).join('\n'),
+        Array.isArray(draft.outline) && draft.outline.length ? '随访要点：\n' + draft.outline.map((o, i) => `${i + 1}. ${o}`).join('\n') : '',
+      ].filter(Boolean).join('\n\n'),
+      notes: notes ? `审核备注：${notes}` : '',
     });
     res.json({ success: true, message: '已采纳，随访计划已创建', followUpId: fu._id });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
