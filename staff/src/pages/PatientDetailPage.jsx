@@ -450,6 +450,8 @@ export default function PatientDetailPage() {
   const [staffList, setStaffList] = useState([])
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [followUpDetail, setFollowUpDetail] = useState(null)
+  const [editingFollowUp, setEditingFollowUp] = useState(null)
+  const [followUpSaving, setFollowUpSaving] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
   const [showMessageModal, setShowMessageModal] = useState(false)
   const [auditLoading, setAuditLoading] = useState(false)
@@ -5569,9 +5571,9 @@ export default function PatientDetailPage() {
                         </select>
                       </div>
                       <div className="form-group" style={{ marginBottom: 0 }}>
-                        <label className="form-label">随访人员</label>
+                        <label className="form-label">随访人员 <span style={{ color: '#DC3545' }}>*</span></label>
                         <select className="form-input" value={d.assignedTo || ''} onChange={e => setD({ assignedTo: e.target.value })}>
-                          <option value="">-- 当前登录人 --</option>
+                          <option value="">-- 请选择随访人员 --</option>
                           {staffList.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>)}
                         </select>
                       </div>
@@ -5606,7 +5608,8 @@ export default function PatientDetailPage() {
                     <div style={{ fontSize: 12, color: '#8AA89C' }}>💡 可编辑主题、日期、提纲后再采纳；采纳后在随访列表仍可继续编辑</div>
                     <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 4 }}>
                       <button className="btn btn-secondary" onClick={() => setAiHelper(null)}>关闭</button>
-                      <button className="btn btn-primary" onClick={adoptFollowupSuggestion} disabled={aiHelperBusy}>{aiHelperBusy ? '创建中...' : '采纳并创建随访计划'}</button>
+                      <button className="btn btn-primary" onClick={adoptFollowupSuggestion} disabled={aiHelperBusy || !d.assignedTo}
+                        title={!d.assignedTo ? '请先选择随访人员' : ''}>{aiHelperBusy ? '创建中...' : '采纳并创建随访计划'}</button>
                     </div>
                   </>
                 )
@@ -5737,7 +5740,95 @@ export default function PatientDetailPage() {
               )}
             </div>
             <div className="modal-footer">
+              <button className="btn btn-secondary" style={{ color: '#DC3545' }}
+                onClick={async () => {
+                  if (!window.confirm('确认删除这条随访记录？删除后不可恢复。')) return
+                  try {
+                    await staffAPI.deleteFollowUp(followUpDetail._id)
+                    toast('已删除')
+                    setFollowUpDetail(null); loadFollowUps()
+                  } catch (err) { toast(err.message || '删除失败') }
+                }}>删除</button>
+              <button className="btn btn-secondary" onClick={() => setEditingFollowUp({
+                date: followUpDetail.date ? new Date(followUpDetail.date).toISOString().slice(0, 10) : '',
+                type: followUpDetail.type || 'phone',
+                theme: followUpDetail.theme || '',
+                content: followUpDetail.content || '',
+                assignedTo: followUpDetail.assignedTo?._id || followUpDetail.assignedTo || '',
+                nextFollowUpDate: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toISOString().slice(0, 10) : '',
+              })}>编辑</button>
               <button className="btn btn-secondary" onClick={() => setFollowUpDetail(null)}>关闭</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 随访记录编辑弹窗 */}
+      {editingFollowUp && followUpDetail && (
+        <div className="modal-overlay" onClick={() => setEditingFollowUp(null)}>
+          <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">编辑随访记录</h3>
+              <button className="modal-close" onClick={() => setEditingFollowUp(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">随访日期</label>
+                  <input type="date" className="form-input" value={editingFollowUp.date}
+                    onChange={e => setEditingFollowUp(f => ({ ...f, date: e.target.value }))} />
+                </div>
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">随访方式</label>
+                  <select className="form-input" value={editingFollowUp.type}
+                    onChange={e => setEditingFollowUp(f => ({ ...f, type: e.target.value }))}>
+                    <option value="phone">电话</option>
+                    <option value="wechat">微信</option>
+                    <option value="visit">上门</option>
+                    <option value="video">视频</option>
+                    <option value="other">其他</option>
+                  </select>
+                </div>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">随访人员</label>
+                <select className="form-input" value={editingFollowUp.assignedTo}
+                  onChange={e => setEditingFollowUp(f => ({ ...f, assignedTo: e.target.value }))}>
+                  <option value="">-- 当前登录人 --</option>
+                  {staffList.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>)}
+                </select>
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">随访主题</label>
+                <input className="form-input" value={editingFollowUp.theme}
+                  onChange={e => setEditingFollowUp(f => ({ ...f, theme: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">随访内容</label>
+                <textarea className="form-input" rows={4} style={{ resize: 'vertical' }} value={editingFollowUp.content}
+                  onChange={e => setEditingFollowUp(f => ({ ...f, content: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">下次随访日期</label>
+                <input type="date" className="form-input" value={editingFollowUp.nextFollowUpDate}
+                  onChange={e => setEditingFollowUp(f => ({ ...f, nextFollowUpDate: e.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setEditingFollowUp(null)}>取消</button>
+              <button className="btn btn-primary" disabled={followUpSaving} onClick={async () => {
+                setFollowUpSaving(true)
+                try {
+                  const res = await staffAPI.updateFollowUp(followUpDetail._id, {
+                    date: editingFollowUp.date, type: editingFollowUp.type, theme: editingFollowUp.theme,
+                    content: editingFollowUp.content, assignedTo: editingFollowUp.assignedTo || '',
+                    nextFollowUpDate: editingFollowUp.nextFollowUpDate || null,
+                  })
+                  toast('已保存')
+                  setEditingFollowUp(null); setFollowUpDetail(res.data); loadFollowUps()
+                } catch (err) { toast(err.message || '保存失败') }
+                finally { setFollowUpSaving(false) }
+              }}>{followUpSaving ? '保存中...' : '保存'}</button>
             </div>
           </div>
         </div>

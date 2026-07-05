@@ -4023,6 +4023,7 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
     const isSuperadmin = req.staff.role === 'superadmin';
     const isGenerator = draft.generatedById && String(draft.generatedById) === String(req.staff._id);
     if (!isSuperadmin && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人可采纳该建议' });
+    if (!draft.assignedTo) return res.status(400).json({ success: false, message: '请先选择随访人员再采纳' });
 
     // 创建随访计划
     const VALID_TYPES = ['phone', 'wechat', 'visit', 'video', 'other'];
@@ -4032,7 +4033,7 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
       date: draft.suggestedDate ? new Date(draft.suggestedDate) : new Date(),
       theme: draft.theme || '常规随访',
       type: VALID_TYPES.includes(draft.type) ? draft.type : 'phone',
-      assignedTo: draft.assignedTo || null,
+      assignedTo: draft.assignedTo,
       status: 'planned',
       aiGenerated: true,
       notes: [
