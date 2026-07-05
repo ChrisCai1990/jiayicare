@@ -3437,6 +3437,52 @@ router.delete('/patients/:id/ai-health-summary/discussions/:index', staffAuth, a
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// POST /api/staff/patients/:id/ai-health-summary/discussions/ai-reply — 针对讨论区的疑问，让AI结合主报告结论重新分析并回应
+// 回应仅作为讨论区里的一条AI留言展示，不自动改写主报告sections，团队看完认为需要更新仍需手动编辑
+router.post('/patients/:id/ai-health-summary/discussions/ai-reply', staffAuth, async (req, res) => {
+  try {
+    const { year } = req.body;
+    const user = await User.findById(req.params.id).select('name gender age aiHealthSummary');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const current = user.aiHealthSummary || {};
+    const byYear = current.byYear || {};
+    const y = String(year || current.latestYear || new Date().getFullYear());
+    const entry = byYear[y] || {};
+    const discussions = Array.isArray(entry.discussions) ? entry.discussions : [];
+    if (discussions.length === 0) return res.status(400).json({ success: false, message: '暂无讨论留言，无法生成AI回应' });
+
+    const { chat } = require('../utils/ai');
+    const sectionsSummary = JSON.stringify(entry.sections || {}).slice(0, 3000);
+    const discussionText = discussions.map(d => `${d.isAI ? 'AI' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
+
+    const prompt = `你是协助医护团队复核健康分析报告的AI助手。以下是患者${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI汇总分析报告结论摘要，以及医护团队围绕该报告展开的讨论记录。请针对团队最新提出的疑问或补充信息，结合报告已有结论进行解释、推理或修正说明。
+
+【报告结论摘要】
+${sectionsSummary}
+
+【讨论记录】
+${discussionText}
+
+请直接输出你对团队最新一条留言的回应（150字内，专业、有理有据，如需修正之前的判断请明确指出）：`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 500 });
+    const reply = {
+      staffId: null,
+      staffName: 'AI助手',
+      staffRole: '',
+      content: (text || '').trim(),
+      createdAt: new Date(),
+      isAI: true,
+    };
+    const updatedDiscussions = [...discussions, reply];
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { [`aiHealthSummary.byYear.${y}.discussions`]: updatedDiscussions } }
+    );
+    res.json({ success: true, data: updatedDiscussions });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 4.5 AI管理方案生成 ──────────────────────────────────────────
 // POST /api/staff/patients/:id/ai-annual-plan
 router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {

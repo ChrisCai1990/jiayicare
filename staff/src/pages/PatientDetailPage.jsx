@@ -355,6 +355,7 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
   const toast = useToast()
   const [text, setText] = useState('')
   const [posting, setPosting] = useState(false)
+  const [aiReplying, setAiReplying] = useState(false)
   const list = Array.isArray(discussions) ? discussions : []
 
   const handlePost = async () => {
@@ -378,6 +379,16 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
     } catch (err) { toast(err.message || '删除失败') }
   }
 
+  const handleAiReply = async () => {
+    setAiReplying(true)
+    try {
+      await staffAPI.generateAIHealthSummaryReply(patientId, year)
+      toast('AI已回应')
+      onRefresh()
+    } catch (err) { toast(err.message || 'AI回应失败') }
+    finally { setAiReplying(false) }
+  }
+
   return (
     <div className="card" style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
@@ -387,16 +398,20 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
       </div>
       <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {list.length === 0 ? (
-          <div style={{ fontSize: 13, color: '#8AA89C' }}>暂无留言，对本年度分析有疑问或补充信息可在此讨论</div>
+          <div style={{ fontSize: 13, color: '#8AA89C' }}>暂无留言，对本年度分析有疑问或补充信息可在此讨论，也可让AI重新分析给出解释</div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {list.map((d, i) => {
-              const isOwner = staff?._id && String(d.staffId) === String(staff._id)
+              const isOwner = staff?._id && d.staffId && String(d.staffId) === String(staff._id)
               return (
-                <div key={i} style={{ background: '#F9F6F0', borderRadius: 8, padding: '10px 14px' }}>
+                <div key={i} style={{
+                  background: d.isAI ? '#EFF8FF' : '#F9F6F0',
+                  borderLeft: d.isAI ? '3px solid #0077B6' : 'none',
+                  borderRadius: 8, padding: '10px 14px',
+                }}>
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: '#4A6558' }}>
-                      {d.staffName}{d.staffRole ? ` · ${d.staffRole}` : ''}
+                    <span style={{ fontSize: 12, fontWeight: 600, color: d.isAI ? '#0077B6' : '#4A6558' }}>
+                      {d.isAI ? '✨ ' : ''}{d.staffName}{d.staffRole ? ` · ${d.staffRole}` : ''}
                     </span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, color: '#8AA89C' }}>{d.createdAt ? new Date(d.createdAt).toLocaleString('zh-CN') : ''}</span>
@@ -410,6 +425,11 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
               )
             })}
           </div>
+        )}
+        {list.length > 0 && (
+          <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} disabled={aiReplying} onClick={handleAiReply}>
+            {aiReplying ? 'AI分析中...' : '✨ 让AI重新分析'}
+          </button>
         )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <textarea className="form-input" rows={2} style={{ flex: 1, resize: 'vertical' }}

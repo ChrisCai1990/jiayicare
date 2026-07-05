@@ -306,6 +306,7 @@ export const staffAPI = {
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
   addAIHealthSummaryDiscussion:    (id, content, year) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year }) }),
   deleteAIHealthSummaryDiscussion: (id, index, year) => req(`/staff/patients/${id}/ai-health-summary/discussions/${index}?year=${year || ''}`, { method: 'DELETE' }),
+  generateAIHealthSummaryReply:    (id, year) => req(`/staff/patients/${id}/ai-health-summary/discussions/ai-reply`, { method: 'POST', body: JSON.stringify({ year }) }),
   generateAIAnnualPlan:    (id, planType) => req(`/staff/patients/${id}/ai-annual-plan`,    { method: 'POST', body: JSON.stringify({ planType }) }),
 
   // 场景七：AI 辅助生成文案草稿（kind: followup | service_record | plan_desc）
