@@ -247,11 +247,19 @@ router.post('/:id/submit', auth, async (req, res) => {
           const fullUser = await User.findById(req.user._id).lean();
           const draft = buildArchiveDraft(fullUser, questionnaire, response);
 
-          // 无冲突字段：直接写入档案，无需人工审核
+          // 无冲突字段：直接写入档案，无需人工审核；同时留痕供家庭医生查看
           if (draft.autoItems.length > 0) {
             const $set = {};
             for (const it of draft.autoItems) $set[it.path] = it.value;
-            await User.collection.updateOne({ _id: req.user._id }, { $set });
+            const logEntry = {
+              questionnaireTitle: questionnaire.title || '',
+              appliedAt: new Date(),
+              items: draft.autoItems.map(it => ({ path: it.path, label: it.label, valueStr: it.valueStr })),
+            };
+            await User.collection.updateOne(
+              { _id: req.user._id },
+              { $set, $push: { archiveAutoLog: { $each: [logEntry], $slice: -20 } } }
+            );
           }
           // 有冲突字段：生成待审核草稿（仅保留冲突条目，避免专员重复处理已自动写入的部分）
           if (draft.conflictItems.length > 0) {

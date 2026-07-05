@@ -458,6 +458,40 @@ const PSYCH_SEVERITY_COLOR = {
   '轻度抑郁': '#D97706', '中度抑郁': '#EA580C', '重度抑郁': '#DC3545',
 }
 
+// 问卷无冲突自动写入档案的历史记录（折叠展示，避免占用过多篇幅）
+function ArchiveAutoLogPanel({ log }) {
+  const [open, setOpen] = useState(false)
+  const entries = (log || []).slice().reverse() // 最新的在前
+  if (entries.length === 0) return null
+  return (
+    <div style={{ marginBottom: 12, border: '1px solid #D8EDE3', borderRadius: 8, background: '#F6F9F7' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', cursor: 'pointer' }}
+        onClick={() => setOpen(v => !v)}>
+        <span style={{ fontSize: 13, color: '#4A6558' }}>✅ 问卷自动写入档案记录（{entries.length}次，无冲突项系统已直接写入）</span>
+        <span style={{ fontSize: 12, color: '#aaa' }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && (
+        <div style={{ padding: '0 14px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {entries.map((e, i) => (
+            <div key={i} style={{ borderTop: '1px solid #E3EFE9', paddingTop: 8 }}>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>
+                「{e.questionnaireTitle}」· {new Date(e.appliedAt).toLocaleString('zh-CN')}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {(e.items || []).map((it, j) => (
+                  <span key={j} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 99, background: '#fff', border: '1px solid #E0D9CE', color: '#4A6558' }}>
+                    {it.label}：{it.valueStr}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 心理健康量表结果（Epworth/SCL90/SDS/SAS，问卷推送患者自填→自动计分写入，只读展示）
 const PSYCH_SCALE_META = {
   epworth: { name: 'Epworth 嗜睡量表' },
@@ -1511,17 +1545,17 @@ export default function PatientDetailPage() {
         )
       })()}
 
-      {/* 问卷自动填档：待审核草稿提醒 / 手动导入入口 */}
+      {/* 问卷自动填档：冲突待审核提醒 / 自动写入记录 / 手动导入入口 */}
       {(() => {
         const draft = user.archiveDraft
         const pending = draft && draft.status === 'pending' && (draft.items || []).length > 0
         if (pending) {
           return (
-            <div style={{ marginBottom: 12, padding: '10px 16px', background: '#EFF6FF', borderRadius: 8, border: '1px solid #BFDBFE', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 18 }}>📝</span>
+            <div style={{ marginBottom: 12, padding: '10px 16px', background: '#FEF3C7', borderRadius: 8, border: '1px solid #FDE68A', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 18 }}>⚠️</span>
               <div style={{ flex: 1, minWidth: 180 }}>
-                <span style={{ color: '#1E40AF', fontWeight: 600, fontSize: 14 }}>问卷已自动填好 {draft.items.length} 项健康档案</span>
-                <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>来自「{draft.questionnaireTitle || '健康问卷'}」，待审核写入</span>
+                <span style={{ color: '#92400E', fontWeight: 600, fontSize: 14 }}>问卷答案与档案现有记录冲突（{draft.items.length} 项）</span>
+                <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>来自「{draft.questionnaireTitle || '健康问卷'}」，无冲突的字段已自动写入，以下需人工确认</span>
               </div>
               <button className="btn btn-primary btn-sm" onClick={() => openArchiveDraft(draft)}>审核并写入</button>
               <button className="btn btn-secondary btn-sm" onClick={handleDismissArchiveDraft} disabled={archiveBusy}>忽略</button>
@@ -1544,6 +1578,9 @@ export default function PatientDetailPage() {
         }
         return null
       })()}
+
+      {/* 问卷自动写入档案的历史记录（无冲突项，系统已直接写入，供家庭医生核查） */}
+      <ArchiveAutoLogPanel log={user.archiveAutoLog} />
 
       {/* Tabs */}
       <div className="tabs" style={{ marginBottom: 20 }}>
