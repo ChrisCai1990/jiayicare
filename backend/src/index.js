@@ -95,4 +95,7 @@ app.listen(PORT, () => {
 
   // 首次登录用户第二批问卷（生活方式+心理健康）延迟自动推送，每天扫描一次
   require('./utils/onboardingPush').startBatch2Scheduler();
+
+  // 已确认管理方案患者的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
+  require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();
 });

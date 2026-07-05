@@ -4149,51 +4149,9 @@ router.post('/patients/:id/ai-followup-monthly-review', staffAuth, async (req, r
     const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
-    const { chat } = require('../utils/ai');
-    const since = new Date(Date.now() - 30 * 86400000);
-    const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
-      .sort({ recordedAt: -1 }).limit(60).lean();
-    const recLines = records.length
-      ? records.slice(0, 40).map(r => `${String(r.recordedAt).slice(0, 10)} ${r.label}：${r.value}${r.unit || ''}${r.status && r.status !== 'normal' ? '（异常）' : ''}`).join('\n')
-      : '近30天无打卡数据';
-    const lastFu = await FollowUp.findOne({ patientId: user._id }).sort({ date: -1 }).lean();
-    const lastFuText = lastFu ? `${String(lastFu.date).slice(0, 10)}（${lastFu.theme || '常规'}）` : '无记录';
-
-    const prompt = `你是慢病管理随访专员，请根据患者近期数据做月度回顾，判断是否需要新增随访并生成随访提纲。
-
-【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
-【上次随访】${lastFuText}
-【近30天打卡数据】
-${recLines}
-
-【今天日期】${new Date().toISOString().slice(0, 10)}（suggestedDate 必须晚于今天）
-请严格按以下JSON输出（仅JSON）：
-{
-  "needed": true,
-  "timingReason": "判断理由（30-60字）",
-  "suggestedDate": "YYYY-MM-DD",
-  "theme": "建议随访主题",
-  "outline": ["随访提纲要点1", "要点2", "要点3"]
-}`;
-
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1000 });
-    let raw = {};
-    try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
-    if (!raw.needed) return res.json({ success: true, message: '本月无需新增随访', created: false });
-
-    const fu = await FollowUp.create({
-      patientId: user._id,
-      staffId: req.staff._id,
-      date: raw.suggestedDate ? new Date(raw.suggestedDate) : new Date(Date.now() + 7 * 86400000),
-      theme: raw.theme || '月度回顾随访',
-      status: 'planned',
-      sourceType: 'ai_review',
-      aiStatus: 'pending',
-      content: [
-        raw.timingReason ? `时机判断：${raw.timingReason}` : '',
-        Array.isArray(raw.outline) && raw.outline.length ? '随访要点：\n' + raw.outline.map((o, i) => `${i + 1}. ${o}`).join('\n') : '',
-      ].filter(Boolean).join('\n\n'),
-    });
+    const { runMonthlyFollowUpReview } = require('../utils/followupReview');
+    const fu = await runMonthlyFollowUpReview(user, req.staff._id);
+    if (!fu) return res.json({ success: true, message: '本月无需新增随访', created: false });
     res.json({ success: true, message: '已生成待审核随访建议', created: true, followUpId: fu._id });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

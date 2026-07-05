@@ -11,6 +11,7 @@ const annualPlanSchema = new mongoose.Schema({
   pushedAt:    { type: Date, default: null },
   pushedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   confirmedAt: { type: Date, default: null },
+  lastMonthlyReviewAt: { type: Date, default: null }, // 上次月度AI随访回顾时间，防止定时任务同月重复触发
 }, { timestamps: true });
 
 // 同一会员同一年度、每个方案类型各一份（4个类型独立存储，upsert）
