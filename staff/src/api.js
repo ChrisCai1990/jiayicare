@@ -175,6 +175,10 @@ export const staffAPI = {
   getPatientPlans:          (id) => req(`/staff/patients/${id}/plans`),
   getPatientReports:        (id) => req(`/staff/patients/${id}/reports`),
   getPatientServiceRecords: (id) => req(`/staff/patients/${id}/service-records`),
+  getPsychScales:           ()   => req('/staff/scales/psych'),
+  getPsychAssessments:      (id) => req(`/staff/patients/${id}/psych-assessments`),
+  createPsychAssessment:    (id, scaleType, scores) => req(`/staff/patients/${id}/psych-assessments`, { method: 'POST', body: JSON.stringify({ scaleType, scores }) }),
+  deletePsychAssessment:    (recId) => req(`/staff/psych-assessments/${recId}`, { method: 'DELETE' }),
 
   // P4 — Gift Service
   giftToPatient:    (id, data) => req(`/staff/patients/${id}/gift`, { method: 'POST', body: JSON.stringify(data) }),

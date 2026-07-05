@@ -21,6 +21,8 @@ const ServiceRecord = require('../models/ServiceRecord');
 const Order = require('../models/Order');
 const GiftRecord = require('../models/GiftRecord');
 const Referral = require('../models/Referral');
+const PsychAssessment = require('../models/PsychAssessment');
+const { SCALES: PSYCH_SCALES, calcSeverity: calcPsychSeverity } = require('../config/psychScales');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
@@ -1906,6 +1908,52 @@ router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
   res.json({ success: true, data: records });
 });
 
+// ── 心理健康标准量表评估（PHQ-9/GAD-7）─────────────────────────────
+// GET /api/staff/scales/psych — 获取量表定义（题目/选项，供前端渲染填写表单）
+router.get('/scales/psych', staffAuth, async (req, res) => {
+  res.json({ success: true, data: PSYCH_SCALES });
+});
+
+// GET /api/staff/patients/:id/psych-assessments — 患者的历次心理健康评估记录（逐题作答）
+router.get('/patients/:id/psych-assessments', staffAuth, async (req, res) => {
+  const records = await PsychAssessment.find({ patientId: req.params.id })
+    .sort({ filledAt: -1 })
+    .populate('staffId', 'name role');
+  res.json({ success: true, data: records });
+});
+
+// POST /api/staff/patients/:id/psych-assessments — 录入一次心理健康量表评估（医护端代填）
+router.post('/patients/:id/psych-assessments', staffAuth, async (req, res) => {
+  try {
+    const { scaleType, scores } = req.body; // scores: 与量表题目顺序一致的分数数组[0-3,...]
+    const scale = PSYCH_SCALES[scaleType];
+    if (!scale) return res.status(400).json({ success: false, message: '未知的量表类型' });
+    if (!Array.isArray(scores) || scores.length !== scale.questions.length) {
+      return res.status(400).json({ success: false, message: `${scale.name} 需要填写全部 ${scale.questions.length} 题` });
+    }
+    if (scores.some(s => !Number.isInteger(s) || s < 0 || s > 3)) {
+      return res.status(400).json({ success: false, message: '每题得分必须为0-3的整数' });
+    }
+    const totalScore = scores.reduce((a, b) => a + b, 0);
+    const severity = calcPsychSeverity(scaleType, totalScore);
+    const record = await PsychAssessment.create({
+      patientId: req.params.id,
+      scaleType,
+      answers: scale.questions.map((q, i) => ({ question: q, score: scores[i] })),
+      totalScore, severity,
+      staffId: req.staff._id,
+    });
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/psych-assessments/:id — 删除一条误录入的评估记录
+router.delete('/psych-assessments/:id', staffAuth, async (req, res) => {
+  const record = await PsychAssessment.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
+  if (!record) return res.status(404).json({ success: false, message: '记录不存在或无权删除' });
+  res.json({ success: true });
+});
+
 // ════════════════════════════════════════════════════════
 // P4 路由
 // ════════════════════════════════════════════════════════
@@ -3176,7 +3224,17 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       hp.drugAllergy && `药物过敏：${hp.drugAllergy}`,
     ].filter(Boolean).join('\n') || '无特殊记录';
 
-    const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。
+    // 心理健康标准量表评估（PHQ-9抑郁/GAD-7焦虑）——各取最新一次，供情绪维度做客观数据支撑，问题分析需身心结合
+    const [latestPhq9, latestGad7] = await Promise.all([
+      PsychAssessment.findOne({ patientId: req.params.id, scaleType: 'phq9' }).sort({ filledAt: -1 }).lean(),
+      PsychAssessment.findOne({ patientId: req.params.id, scaleType: 'gad7' }).sort({ filledAt: -1 }).lean(),
+    ]);
+    const psychSummary = [
+      latestPhq9 && `PHQ-9抑郁症筛查（${String(latestPhq9.filledAt).slice(0,10)}）：总分${latestPhq9.totalScore}分，${latestPhq9.severity}${latestPhq9.answers.some(a => a.score > 0 && a.question.includes('伤害自己')) ? '（需重点关注：自伤念头条目得分>0）' : ''}`,
+      latestGad7 && `GAD-7广泛性焦虑量表（${String(latestGad7.filledAt).slice(0,10)}）：总分${latestGad7.totalScore}分，${latestGad7.severity}`,
+    ].filter(Boolean).join('\n') || '暂无心理健康量表评估记录';
+
+    const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。
 
 分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。
 
@@ -3192,6 +3250,9 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 
 【健康档案】
 ${archiveSummary}
+
+【心理健康量表评估】
+${psychSummary}
 
 【生活方式与膳食调查】
 ${lifestyleSummary}
@@ -3242,9 +3303,9 @@ ${reportSummary}
         },
         {
           "dimension": "情绪",
-          "finding": "描述情绪/心理状态；若无记录，结合慢病状态与档案信息进行综合判断",
-          "risk": "该维度相关的健康风险",
-          "suggestion": "具体可执行的改善建议"
+          "finding": "结合PHQ-9/GAD-7量表评分描述情绪/心理状态（若有评估记录必须引用具体分数和分级）；若无量表记录，说明暂无心理健康评估并结合慢病状态与档案信息进行综合判断",
+          "risk": "该维度相关的健康风险，若量表分数达中度以上需在此明确标注",
+          "suggestion": "具体可执行的改善建议，若量表提示中重度以上应建议转介心理咨询师"
         }
       ],
       "summary": "生活方式综合评估（50-100字，需结合最近一次体检结果，必须覆盖饮食/运动/睡眠/烟酒/情绪5个维度）"
