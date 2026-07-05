@@ -3993,6 +3993,7 @@ ${recLines}
     let raw = {};
     try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
     const VALID_TIMING = ['advance', 'keep', 'extend'];
+    // 仅生成并返回预览，不写库：用户在弹窗里看完可直接关闭丢弃，只有点"保存并采纳"才会真正创建随访计划
     const suggestion = {
       timing: VALID_TIMING.includes(raw.timing) ? raw.timing : 'keep',
       timingReason: raw.timingReason || '',
@@ -4002,59 +4003,45 @@ ${recLines}
       generatedAt: new Date(),
       generatedBy: req.staff.name || '',
       generatedById: req.staff._id,
-      status: 'pending',
     };
-    await User.collection.updateOne({ _id: user._id }, { $set: { aiFollowupDraft: suggestion } });
     res.json({ success: true, data: suggestion });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// PATCH /api/staff/patients/:id/ai-followup-draft — 审核AI随访建议草稿
-// approve/reject/withdraw 均仅限生成人本人或超管：谁生成的AI建议谁负责审核采纳，健管专员是执行者（被指派到assignedTo），不参与审核关卡
+// PATCH /api/staff/patients/:id/ai-followup-draft — 采纳AI随访建议预览，直接创建随访计划（预览不落库，仅采纳时一次性写入）
+// 仅生成人本人或超管可采纳：谁生成的AI建议谁负责决定是否采纳，健管专员是执行者（被指派到assignedTo），不参与决策关卡
 router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
   try {
-    const { action, notes, edits } = req.body; // action: approve | reject | withdraw；edits: 审核前的编辑覆盖 {theme, suggestedDate, timingReason, outline, type, assignedTo}
-    const user = await User.findById(req.params.id).select('_id name aiFollowupDraft');
+    const { action, notes, edits } = req.body; // action: approve；edits: 预览弹窗里的完整内容（未落库，前端原样传回）{theme, suggestedDate, timingReason, outline, type, assignedTo, generatedById}
+    if (action !== 'approve') return res.status(400).json({ success: false, message: 'action 必须为 approve' });
+    const draft = edits && typeof edits === 'object' ? edits : {};
+    const user = await User.findById(req.params.id).select('_id');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    if (!user.aiFollowupDraft || user.aiFollowupDraft.status !== 'pending') return res.status(400).json({ success: false, message: '暂无待审核的随访建议草稿' });
-    const draft = { ...user.aiFollowupDraft, ...(edits && typeof edits === 'object' ? edits : {}) };
 
     const isSuperadmin = req.staff.role === 'superadmin';
-    const isGenerator = user.aiFollowupDraft.generatedById && String(user.aiFollowupDraft.generatedById) === String(req.staff._id);
-    if (!isSuperadmin && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人可操作该建议' });
+    const isGenerator = draft.generatedById && String(draft.generatedById) === String(req.staff._id);
+    if (!isSuperadmin && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人可采纳该建议' });
 
-    if (action === 'reject' || action === 'withdraw') {
-      await User.collection.updateOne({ _id: user._id }, { $set: { aiFollowupDraft: null } });
-      return res.json({ success: true, message: action === 'withdraw' ? '已撤回该建议' : '已拒绝该随访建议' });
-    }
-
-    if (action === 'approve') {
-      // 创建随访计划
-      const VALID_TYPES = ['phone', 'wechat', 'visit', 'video', 'other'];
-      const fu = await FollowUp.create({
-        patientId: user._id,
-        staffId: req.staff._id,
-        date: draft.suggestedDate ? new Date(draft.suggestedDate) : new Date(),
-        theme: draft.theme || '常规随访',
-        type: VALID_TYPES.includes(draft.type) ? draft.type : 'phone',
-        assignedTo: draft.assignedTo || null,
-        status: 'planned',
-        aiGenerated: true,
-        notes: [
-          draft.timingReason ? `时机判断：${draft.timingReason}` : '',
-          Array.isArray(draft.outline) && draft.outline.length ? `随访要点：${draft.outline.join('；')}` : '',
-          notes ? `审核备注：${notes}` : '',
-        ].filter(Boolean).join('\n'),
-      });
-      await User.collection.updateOne({ _id: user._id }, { $set: {
-        aiFollowupDraft: { ...draft, status: 'approved', approvedAt: new Date(), approvedBy: req.staff.name },
-      }});
-      return res.json({ success: true, message: '已采纳，随访计划已创建', followUpId: fu._id });
-    }
-
-    res.status(400).json({ success: false, message: 'action 必须为 approve / reject / withdraw' });
+    // 创建随访计划
+    const VALID_TYPES = ['phone', 'wechat', 'visit', 'video', 'other'];
+    const fu = await FollowUp.create({
+      patientId: user._id,
+      staffId: req.staff._id,
+      date: draft.suggestedDate ? new Date(draft.suggestedDate) : new Date(),
+      theme: draft.theme || '常规随访',
+      type: VALID_TYPES.includes(draft.type) ? draft.type : 'phone',
+      assignedTo: draft.assignedTo || null,
+      status: 'planned',
+      aiGenerated: true,
+      notes: [
+        draft.timingReason ? `时机判断：${draft.timingReason}` : '',
+        Array.isArray(draft.outline) && draft.outline.length ? `随访要点：${draft.outline.join('；')}` : '',
+        notes ? `审核备注：${notes}` : '',
+      ].filter(Boolean).join('\n'),
+    });
+    res.json({ success: true, message: '已采纳，随访计划已创建', followUpId: fu._id });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -4098,6 +4085,7 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
 请直接输出消息正文。`;
 
     const message = await chat([{ role: 'user', content: prompt }], { maxTokens: 300 });
+    // 仅生成并返回预览，不写库：用户在弹窗里看完可直接关闭丢弃，只有点"发送给会员"才会真正发送
     const coachDraft = {
       message: (message || '').trim(),
       adherence, streak,
@@ -4106,48 +4094,33 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
       generatedAt: new Date(),
       generatedBy: req.staff.name || '',
       generatedById: req.staff._id,
-      status: 'pending',
     };
-    await User.collection.updateOne({ _id: user._id }, { $set: { aiCoachDraft: coachDraft } });
     res.json({ success: true, data: coachDraft });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// PATCH /api/staff/patients/:id/ai-coach-draft — 审核AI教练消息草稿
-// approve/reject/withdraw 均仅限生成人本人或超管：谁生成的AI消息谁负责审核发送
+// PATCH /api/staff/patients/:id/ai-coach-draft — 发送AI教练消息预览（预览不落库，发送时一次性写入PushRecord）
+// 仅生成人本人或超管可发送：谁生成的AI消息谁负责决定是否发送
 router.patch('/patients/:id/ai-coach-draft', staffAuth, async (req, res) => {
   try {
-    const { action, message: editedMessage } = req.body; // action: approve | reject | withdraw
-    const user = await User.findById(req.params.id).select('_id name aiCoachDraft');
+    const { action, message: editedMessage, generatedById } = req.body; // action: approve
+    if (action !== 'approve') return res.status(400).json({ success: false, message: 'action 必须为 approve' });
+    const user = await User.findById(req.params.id).select('_id');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    const draft = user.aiCoachDraft;
-    if (!draft || draft.status !== 'pending') return res.status(400).json({ success: false, message: '暂无待审核的教练消息草稿' });
 
     const isSuperadmin = req.staff.role === 'superadmin';
-    const isGenerator = draft.generatedById && String(draft.generatedById) === String(req.staff._id);
-    if (!isSuperadmin && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人可操作该消息' });
+    const isGenerator = generatedById && String(generatedById) === String(req.staff._id);
+    if (!isSuperadmin && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人可发送该消息' });
 
-    if (action === 'reject' || action === 'withdraw') {
-      await User.collection.updateOne({ _id: user._id }, { $set: { aiCoachDraft: null } });
-      return res.json({ success: true, message: action === 'withdraw' ? '已撤回该消息' : '已拒绝该教练消息' });
-    }
-
-    if (action === 'approve') {
-      const finalMsg = (editedMessage || draft.message || '').trim();
-      if (!finalMsg) return res.status(400).json({ success: false, message: '消息内容不能为空' });
-      await PushRecord.create({
-        staffId: req.staff._id, patientId: user._id,
-        type: 'notice', title: '健康教练', content: finalMsg,
-      });
-      await User.collection.updateOne({ _id: user._id }, { $set: {
-        aiCoachDraft: { ...draft, status: 'approved', approvedAt: new Date(), approvedBy: req.staff.name },
-      }});
-      return res.json({ success: true, message: '消息已发送给会员' });
-    }
-
-    res.status(400).json({ success: false, message: 'action 必须为 approve / reject / withdraw' });
+    const finalMsg = (editedMessage || '').trim();
+    if (!finalMsg) return res.status(400).json({ success: false, message: '消息内容不能为空' });
+    await PushRecord.create({
+      staffId: req.staff._id, patientId: user._id,
+      type: 'notice', title: '健康教练', content: finalMsg,
+    });
+    res.json({ success: true, message: '消息已发送给会员' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -4461,13 +4434,11 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
 const TODO_REVIEW_ROLE = {
   report_review:        'healthManager',
   archive_review:       'healthManager',
-  followup_review:      'healthManager',
   checkup_plan_review:  'healthManager',
   summary_review:       'familyDoctor',
   risk_review:          'familyDoctor',
   medication_review:    'familyDoctor',
   lifestyle_review:     'nutritionist',
-  coach_review:         'nutritionist',
   supplement_review:    'nutritionist',
   nutrition_plan_review:'nutritionist',
 };
@@ -4591,40 +4562,6 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: `${s.name} ${s.dosage} ${s.frequency}${s.purpose ? ' · ' + s.purpose : ''}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${s.user?._id}?tab=medications`,
-        });
-      });
-    }
-
-    // ── 健管专员：AI随访建议草稿待审核 ──
-    if (can('followup_review')) {
-      const fuDraftUsers = await User.find({ 'aiFollowupDraft.status': 'pending' })
-        .select('name aiFollowupDraft').limit(50).lean();
-      fuDraftUsers.forEach(u => {
-        const d = u.aiFollowupDraft || {};
-        const createdAt = d.generatedAt || new Date();
-        todos.push({
-          id: 'followup_' + u._id, type: 'followup_review', label: 'AI随访建议待审核', priority: 3,
-          patientName: u.name || '未知', patientId: String(u._id),
-          summary: d.theme ? `建议主题：${d.theme}${d.suggestedDate ? ' · ' + d.suggestedDate : ''}` : 'AI生成随访提纲，待健管专员审核采纳',
-          createdAt, overdue: (now - new Date(createdAt)) > DAY,
-          link: `/patients/${u._id}?tab=followups`,
-        });
-      });
-    }
-
-    // ── 营养师：AI教练消息草稿待审核 ──
-    if (can('coach_review')) {
-      const coachDraftUsers = await User.find({ 'aiCoachDraft.status': 'pending' })
-        .select('name aiCoachDraft').limit(50).lean();
-      coachDraftUsers.forEach(u => {
-        const d = u.aiCoachDraft || {};
-        const createdAt = d.generatedAt || new Date();
-        todos.push({
-          id: 'coach_' + u._id, type: 'coach_review', label: 'AI教练消息待审核', priority: 3,
-          patientName: u.name || '未知', patientId: String(u._id),
-          summary: d.message ? d.message.slice(0, 50) : 'AI生成教练消息，待营养师审核发送',
-          createdAt, overdue: (now - new Date(createdAt)) > DAY,
-          link: `/patients/${u._id}?tab=followups`,
         });
       });
     }

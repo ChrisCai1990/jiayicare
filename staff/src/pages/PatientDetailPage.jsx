@@ -483,7 +483,6 @@ export default function PatientDetailPage() {
   const [editingMed, setEditingMed] = useState(null)
   const [editingSup, setEditingSup] = useState(null)
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
-  const [followupDraftEdits, setFollowupDraftEdits] = useState(null) // 待审面板内联编辑：{theme, suggestedDate, outline}
   const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
   const [medForm, setMedForm] = useState({})
   const [supForm, setSupForm] = useState({})
@@ -558,8 +557,6 @@ export default function PatientDetailPage() {
   // 场景五/六/九：AI 助手（随访建议 / 教练消息 / 内容推荐）
   const [aiHelper, setAiHelper] = useState(null)   // { type, loading, data, error }
   const [aiHelperBusy, setAiHelperBusy] = useState(false)
-  // 场景12/13：待审核草稿卡片内的可编辑消息（教练消息）
-  const [coachDraftMsg, setCoachDraftMsg] = useState('')
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrSaving, setOcrSaving] = useState(false)
@@ -632,9 +629,6 @@ export default function PatientDetailPage() {
         setSeverityForm(res.value.data.user.chronicDiseaseSeverity || {})
         setBodyCompForm(res.value.data.user.bodyComposition || {})
         setAiSummaryForm(res.value.data.user.aiHealthSummary || {})
-        if (res.value.data.user?.aiCoachDraft?.status === 'pending') {
-          setCoachDraftMsg(res.value.data.user.aiCoachDraft.message || '')
-        }
       } else {
         throw res.reason
       }
@@ -1165,14 +1159,8 @@ export default function PatientDetailPage() {
     finally { setRiskApproving(false) }
   }
 
-  // 场景五/六/九：AI 助手统一调用。会实际调用AI并写入待审核草稿，故先二次确认，避免误点即生成
-  const AI_HELPER_CONFIRM_TEXT = {
-    followup: '确认要让AI根据该会员的打卡数据生成一条随访建议吗？生成后需健管专员审核才会创建随访计划。',
-    coach: '确认要让AI根据该会员打卡情况生成一条教练消息吗？生成后需营养师审核才会发送。',
-    content: '确认要让AI为该会员生成个性化内容推荐吗？',
-  }
+  // 场景五/六/九：AI 助手统一调用。生成结果仅在弹窗内临时预览，不写库；关闭弹窗即视为丢弃，不留痕迹
   const runAIHelper = async (type) => {
-    if (!window.confirm(AI_HELPER_CONFIRM_TEXT[type] || '确认要让AI生成建议吗？')) return
     setAiHelper({ type, loading: true, data: null, error: null })
     try {
       let r
@@ -1182,12 +1170,12 @@ export default function PatientDetailPage() {
       setAiHelper({ type, loading: false, data: r.data, error: null })
     } catch (err) { setAiHelper({ type, loading: false, data: null, error: err.message || 'AI生成失败' }) }
   }
-  // 场景六：采纳随访建议 → 调用审核接口（自动创建随访计划 + 清草稿），带上弹窗内编辑后的内容
+  // 场景六：采纳随访建议预览 → 直接创建随访计划（预览内容随请求一次性提交，不经过草稿落库）
   const adoptFollowupSuggestion = async () => {
     const d = aiHelper?.data; if (!d) return
     setAiHelperBusy(true)
     try {
-      await staffAPI.reviewFollowupDraft(id, 'approve', undefined, { theme: d.theme, suggestedDate: d.suggestedDate, timingReason: d.timingReason, outline: d.outline, type: d.type, assignedTo: d.assignedTo })
+      await staffAPI.reviewFollowupDraft(id, 'approve', undefined, { theme: d.theme, suggestedDate: d.suggestedDate, timingReason: d.timingReason, outline: d.outline, type: d.type, assignedTo: d.assignedTo, generatedById: d.generatedById })
       toast('已采纳，随访计划已创建')
       setAiHelper(null); loadFollowUps(); load()
     } catch (err) { toast(err.message || '创建失败') }
@@ -1201,25 +1189,16 @@ export default function PatientDetailPage() {
       load(); loadFollowUps()
     } catch (err) { toast(err.message || '操作失败') }
   }
-  // 场景九：发送教练消息 → 调用审核接口（自动发送 + 清草稿）
+  // 场景九：发送教练消息预览 → 直接调用发送接口（预览内容随请求一次性提交，不经过草稿落库）
   const sendCoachMessage = async () => {
-    const msg = aiHelper?.data?.message; if (!msg) return
+    const d = aiHelper?.data; const msg = d?.message; if (!msg) return
     setAiHelperBusy(true)
     try {
-      await staffAPI.reviewCoachDraft(id, 'approve', msg)
+      await staffAPI.reviewCoachDraft(id, 'approve', msg, d.generatedById)
       toast('已发送给会员')
       setAiHelper(h => ({ ...h, data: { ...h.data, sent: true, sentAt: new Date().toISOString() } }))
-      load()
     } catch (err) { toast(err.message || '发送失败') }
     finally { setAiHelperBusy(false) }
-  }
-  // 从待审面板点进来，直接审核教练消息草稿
-  const reviewCoachDraft = async (action, message) => {
-    try {
-      await staffAPI.reviewCoachDraft(id, action, message)
-      toast(action === 'approve' ? '消息已发送给会员' : '已拒绝')
-      load()
-    } catch (err) { toast(err.message || '操作失败') }
   }
   // 场景十：AI 营养素建议生成 + 单条审核
   const generateAISupplement = async () => {
@@ -4917,173 +4896,6 @@ export default function PatientDetailPage() {
       {/* ── Follow-ups Tab ── */}
       {tab === 'followups' && (
         <>
-        {/* AI随访建议草稿（healthManager审核） */}
-        {data?.user?.aiFollowupDraft?.status === 'pending' && (() => {
-          const fd = data.user.aiFollowupDraft
-          const T = { advance: { l: '建议提前随访', c: '#DC2626' }, keep: { l: '按原计划随访', c: '#16A34A' }, extend: { l: '可延长随访间隔', c: '#0077B6' } }[fd.timing] || { l: fd.timing, c: '#4A6558' }
-          const isGenerator = staff?._id && fd.generatedById && String(fd.generatedById) === String(staff._id)
-          const canApprove = isGenerator || staff?.role === 'superadmin'
-          const canEdit = canApprove
-          const AI_FOLLOWUP_TYPE_OPTIONS = [
-            { v: 'phone',  l: '电话' },
-            { v: 'wechat', l: '微信' },
-            { v: 'visit',  l: '上门' },
-            { v: 'video',  l: '视频' },
-            { v: 'other',  l: '其他' },
-          ]
-          const ed = followupDraftEdits || { theme: fd.theme || '', suggestedDate: fd.suggestedDate || '', outline: Array.isArray(fd.outline) ? fd.outline : [], type: fd.type || 'phone', assignedTo: fd.assignedTo || '' }
-          const setEd = (patch) => setFollowupDraftEdits({ ...ed, ...patch })
-          return (
-            <div className="card" style={{ marginBottom: 16, border: '1.5px solid #D97706' }}>
-              <div className="card-header" style={{ background: '#FFFBEB' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>📅</span>
-                    <span className="card-title" style={{ color: '#D97706' }}>AI随访建议·待审核</span>
-                    <span style={{ fontSize: 12, color: '#8AA89C' }}>由 {fd.generatedBy} 生成 · {new Date(fd.generatedAt).toLocaleDateString('zh-CN')}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {canApprove ? (
-                      <>
-                        <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => { reviewFollowupDraft('approve', ed); setFollowupDraftEdits(null) }}>保存并采纳随访计划</button>
-                        <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => { if (window.confirm('确认拒绝这条AI随访建议？')) { reviewFollowupDraft('reject'); setFollowupDraftEdits(null) } }}>拒绝</button>
-                      </>
-                    ) : (
-                      <span style={{ fontSize: 12, color: '#8AA89C' }}>等待 {fd.generatedBy} 本人审核</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                  <span style={{
-                    fontSize: 13, fontWeight: 600, padding: '4px 12px', borderRadius: 99,
-                    background: T.c + '15', color: T.c,
-                  }}>{T.l}</span>
-                </div>
-                {fd.timingReason && (
-                  <div style={{ background: '#F9F6F0', border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#4A6558', lineHeight: 1.6 }}>
-                    💡 {fd.timingReason}
-                  </div>
-                )}
-                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 12 }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">建议随访日期</label>
-                    {canEdit ? (
-                      <input type="date" className="form-input"
-                        value={ed.suggestedDate || ''} onChange={e => setEd({ suggestedDate: e.target.value })} />
-                    ) : <div style={{ fontSize: 14, fontWeight: 600, padding: '9px 0' }}>{fd.suggestedDate || '-'}</div>}
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">随访主题</label>
-                    {canEdit ? (
-                      <input className="form-input" style={{ fontWeight: 600 }}
-                        value={ed.theme || ''} onChange={e => setEd({ theme: e.target.value })} />
-                    ) : <div style={{ fontSize: 14, fontWeight: 600, padding: '9px 0' }}>{fd.theme}</div>}
-                  </div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">随访方式</label>
-                    {canEdit ? (
-                      <select className="form-input" value={ed.type || 'phone'} onChange={e => setEd({ type: e.target.value })}>
-                        {AI_FOLLOWUP_TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
-                      </select>
-                    ) : <div style={{ fontSize: 14, padding: '9px 0' }}>{AI_FOLLOWUP_TYPE_OPTIONS.find(o => o.v === fd.type)?.l || '电话'}</div>}
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">随访人员</label>
-                    {canEdit ? (
-                      <select className="form-input" value={ed.assignedTo || ''} onChange={e => setEd({ assignedTo: e.target.value })}>
-                        <option value="">-- 当前登录人 --</option>
-                        {staffList.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>)}
-                      </select>
-                    ) : <div style={{ fontSize: 14, padding: '9px 0' }}>{staffList.find(s => s._id === fd.assignedTo)?.name || '当前登录人'}</div>}
-                  </div>
-                </div>
-                {canEdit ? (
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">随访要点</label>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {ed.outline.map((line, i) => (
-                        <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <span style={{
-                            width: 20, height: 20, borderRadius: '50%', background: '#1E6B50', color: '#fff',
-                            fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            flexShrink: 0,
-                          }}>{i + 1}</span>
-                          <input className="form-input" style={{ flex: 1 }}
-                            value={line}
-                            onChange={e => {
-                              const next = [...ed.outline]; next[i] = e.target.value; setEd({ outline: next })
-                            }} />
-                          <button type="button" onClick={() => setEd({ outline: ed.outline.filter((_, idx) => idx !== i) })}
-                            style={{ width: 28, height: 28, borderRadius: 6, border: '1px solid #DC3545', background: '#fff', color: '#DC3545', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
-                          >−</button>
-                        </div>
-                      ))}
-                      <button type="button" onClick={() => setEd({ outline: [...ed.outline, ''] })}
-                        style={{ alignSelf: 'flex-start', width: 28, height: 28, borderRadius: 6, border: '1px solid #1E6B50', background: '#fff', color: '#1E6B50', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
-                      >+</button>
-                    </div>
-                  </div>
-                ) : Array.isArray(fd.outline) && fd.outline.length > 0 && (
-                  <div>
-                    <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>随访要点</div>
-                    {fd.outline.map((o, i) => <div key={i} style={{ fontSize: 13, color: '#1A2B24', padding: '2px 0' }}>· {o}</div>)}
-                  </div>
-                )}
-              </div>
-            </div>
-          )
-        })()}
-
-        {/* AI教练消息草稿（nutritionist审核） */}
-        {data?.user?.aiCoachDraft?.status === 'pending' && (() => {
-          const cd = data.user.aiCoachDraft
-          const isGenerator = staff?._id && cd.generatedById && String(cd.generatedById) === String(staff._id)
-          const canApprove = isGenerator || staff?.role === 'superadmin'
-          return (
-            <div className="card" style={{ marginBottom: 16, border: '1.5px solid #16A34A' }}>
-              <div className="card-header" style={{ background: '#F0FDF4' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>💬</span>
-                    <span className="card-title" style={{ color: '#16A34A' }}>AI教练消息·待审核</span>
-                    <span style={{ fontSize: 12, color: '#8AA89C' }}>由 {cd.generatedBy} 生成 · {new Date(cd.generatedAt).toLocaleDateString('zh-CN')}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {canApprove ? (
-                      <>
-                        <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewCoachDraft('approve', coachDraftMsg)}>发送给会员</button>
-                        <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => { if (window.confirm('确认拒绝这条AI教练消息？')) reviewCoachDraft('reject') }}>拒绝</button>
-                      </>
-                    ) : (
-                      <span style={{ fontSize: 12, color: '#8AA89C' }}>等待 {cd.generatedBy} 本人审核</span>
-                    )}
-                  </div>
-                </div>
-              </div>
-              <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 16, fontSize: 13, color: '#8AA89C' }}>
-                  <span>依从性：{{ high: '良好', medium: '一般', low: '偏低' }[cd.adherence] || '-'}</span>
-                  <span>连续打卡 {cd.streak} 天</span>
-                  {cd.daysSinceLast != null && <span>距上次打卡 {cd.daysSinceLast} 天</span>}
-                </div>
-                {canApprove ? (
-                  <textarea
-                    value={coachDraftMsg}
-                    onChange={e => setCoachDraftMsg(e.target.value)}
-                    style={{ width: '100%', minHeight: 80, padding: '8px 12px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
-                  />
-                ) : (
-                  <div style={{ fontSize: 14, color: '#1A2B24', background: '#F6F3EE', borderRadius: 8, padding: '10px 14px', lineHeight: 1.6 }}>{cd.message}</div>
-                )}
-              </div>
-            </div>
-          )
-        })()}
-
         <div className="card">
           <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div className="card-title">随访记录</div>
