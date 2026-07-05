@@ -30,6 +30,7 @@ const questionSchema = new mongoose.Schema({
   jumpLogic:   [jumpRuleSchema],   // 跳题逻辑
   scoreEnabled:{ type: Boolean, default: false }, // 本题是否参与评分
   archiveField:{ type: String, default: '' },     // 对应的健康档案字段 path（答卷自动导入档案用）
+  factor:      { type: String, default: '' },     // 心理量表因子归属（如SCL90十因子），普通问卷不用
 }, { _id: false });
 
 const questionnaireSchema = new mongoose.Schema({
