@@ -53,6 +53,7 @@ export const staffAPI = {
   createFollowUp:      (data)   => req('/staff/followups', { method: 'POST', body: JSON.stringify(data) }),
   updateFollowUp:      (id, d)  => req(`/staff/followups/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   deleteFollowUp:      (id)     => req(`/staff/followups/${id}`, { method: 'DELETE' }),
+  reviewFollowUp:      (id, d)  => req(`/staff/followups/${id}/review`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   // Health Plans
   getPlans:       (p = {}) => req('/staff/plans?' + qs(p)),

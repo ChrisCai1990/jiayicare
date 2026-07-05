@@ -43,6 +43,10 @@ const followUpSchema = new mongoose.Schema({
   interviewMinutes: { type: String, default: '' }, // 面谈纪要
   completedByUser:   { type: Boolean, default: false }, // 用户主动标记已完成
   completedByUserAt: { type: Date, default: null },
+  // 方案确认后自动生成的随访计划：sourceType区分固定周期占位 / 月度AI回顾建议，aiStatus走家庭医生审核
+  sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
+  sourceType: { type: String, enum: ['scheduled', 'ai_review', null], default: null },
+  aiStatus:   { type: String, enum: ['pending', 'approved', null], default: null },
 }, { timestamps: true });
 
 followUpSchema.index({ staffId: 1, date: -1 });

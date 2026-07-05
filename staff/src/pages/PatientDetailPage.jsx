@@ -5069,13 +5069,18 @@ export default function PatientDetailPage() {
               </thead>
               <tbody>
                 {filtered.map(f => (
-                  <tr key={f._id} style={{ cursor: 'pointer' }} onClick={() => setFollowUpDetail(f)}>
+                  <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => setFollowUpDetail(f)}>
                     <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                     <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
                     <td>
                       <span style={{ fontSize: 13, fontWeight: 500, color: STATUS_COLOR[f.status] || '#666' }}>
                         {STATUS_MAP[f.status] || f.status}
                       </span>
+                      {f.aiStatus === 'pending' && (
+                        <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#D9770615', padding: '1px 6px', borderRadius: 4 }}>
+                          待审核{f.sourceType === 'ai_review' ? '·AI月度回顾' : f.sourceType === 'scheduled' ? '·方案排期' : ''}
+                        </span>
+                      )}
                     </td>
                     <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
                     <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 200 }}>
@@ -5085,7 +5090,16 @@ export default function PatientDetailPage() {
                       {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
                     </td>
                     <td onClick={e => e.stopPropagation()}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
+                      {f.aiStatus === 'pending' ? (
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff' }}
+                            onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'approve' }); loadFollowUps() }}>通过</button>
+                          <button className="btn btn-secondary btn-sm"
+                            onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'reject' }); loadFollowUps() }}>驳回</button>
+                        </div>
+                      ) : (
+                        <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
+                      )}
                     </td>
                   </tr>
                 ))}

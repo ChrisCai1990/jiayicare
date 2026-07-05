@@ -583,6 +583,45 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
   }
 });
 
+// 频率文案 → 周期天数，用于按方案配置的频率批量排期随访占位
+const FREQUENCY_DAYS = {
+  '每月一次': 30, '每季度一次': 90, '每半年一次': 182, '每年一次': 365,
+};
+
+// 方案确认后，按 moduleData 里已启用且配置了频率的模块，在未来一年内按周期生成待审核的随访占位
+// 只覆盖有明确周期频率的模块（就医频率、日常监测频率），会诊/疫苗等一次性或非周期性事项不生成
+async function generateScheduledFollowUps(plan) {
+  const moduleData = plan.moduleData || {};
+  const sources = [
+    { key: 'medical_treatment', freq: moduleData.medical_treatment?.time, theme: '医疗问题解决·就医随访' },
+    { key: 'daily_monitoring',  freq: moduleData.daily_monitoring?.frequency, theme: '日常监测随访' },
+  ];
+  const created = [];
+  for (const src of sources) {
+    const data = moduleData[src.key];
+    if (!data || data.enabled === false) continue;
+    const days = FREQUENCY_DAYS[src.freq];
+    if (!days) continue; // 频率未配置或为"按需安排/待定"，不机械排期
+    const yearEnd = new Date(Date.now() + 365 * 86400000);
+    let cursor = new Date(Date.now() + days * 86400000);
+    while (cursor <= yearEnd) {
+      created.push({
+        patientId: plan.patientId,
+        staffId: plan.createdBy,
+        date: cursor,
+        theme: src.theme,
+        status: 'planned',
+        sourceAnnualPlanId: plan._id,
+        sourceType: 'scheduled',
+        aiStatus: 'pending',
+      });
+      cursor = new Date(cursor.getTime() + days * 86400000);
+    }
+  }
+  if (created.length) await FollowUp.insertMany(created);
+  return created.length;
+}
+
 // PATCH /api/user/annual-mgmt-plans/:id/confirm — 用户确认年度管理方案
 router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
   try {
@@ -591,6 +630,8 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
     if (!plan.confirmedAt) {
       plan.confirmedAt = new Date();
       await plan.save();
+      // 首次确认时按方案配置的频率自动生成待家庭医生审核的随访计划占位
+      await generateScheduledFollowUps(plan).catch(() => {});
     }
     res.json({ success: true, data: plan });
   } catch (err) {

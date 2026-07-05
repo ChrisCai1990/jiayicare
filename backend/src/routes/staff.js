@@ -809,6 +809,36 @@ router.put('/followups/:id', staffAuth, async (req, res) => {
   res.json({ success: true, data: followUp });
 });
 
+// ── PATCH /api/staff/followups/:id/review ────────────────────────
+// 家庭医生审核方案确认后自动生成的随访计划（aiStatus:pending）。approve→正式生效；reject→取消
+router.patch('/followups/:id/review', staffAuth, async (req, res) => {
+  try {
+    const { action, edits } = req.body; // action: approve | reject；edits: 审核时可修改的字段（可选）
+    if (!['approve', 'reject'].includes(action)) return res.status(400).json({ success: false, message: 'action 必须为 approve 或 reject' });
+    const followUp = await FollowUp.findOne({ _id: req.params.id, aiStatus: 'pending' });
+    if (!followUp) return res.status(404).json({ success: false, message: '待审核随访计划不存在' });
+
+    if (action === 'reject') {
+      followUp.status = 'cancelled';
+      followUp.cancelReason = '家庭医生审核未通过';
+      followUp.aiStatus = null;
+      await followUp.save();
+      return res.json({ success: true, message: '已驳回' });
+    }
+
+    const EDITABLE = ['date', 'theme', 'type', 'assignedTo', 'content'];
+    if (edits && typeof edits === 'object') {
+      EDITABLE.forEach(k => { if (edits[k] !== undefined) followUp[k] = edits[k]; });
+    }
+    followUp.aiStatus = 'approved';
+    followUp.staffId = req.staff._id;
+    await followUp.save();
+    res.json({ success: true, message: '已通过审核', data: followUp });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── DELETE /api/staff/followups/:id ──────────────────────────────
 // 软删除：状态改为 cancelled，不物理删除
 router.delete('/followups/:id', staffAuth, async (req, res) => {
@@ -4112,6 +4142,62 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// POST /api/staff/patients/:id/ai-followup-monthly-review — 月度AI回顾：结合近30天打卡数据判断随访时机，
+// 直接落库为 aiStatus:pending 的随访建议，走 followup_review 待办队列由家庭医生审核（区别于ai-followup-suggestion的单患者预览+本人采纳模式，这里是批量自动化场景）
+router.post('/patients/:id/ai-followup-monthly-review', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { chat } = require('../utils/ai');
+    const since = new Date(Date.now() - 30 * 86400000);
+    const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
+      .sort({ recordedAt: -1 }).limit(60).lean();
+    const recLines = records.length
+      ? records.slice(0, 40).map(r => `${String(r.recordedAt).slice(0, 10)} ${r.label}：${r.value}${r.unit || ''}${r.status && r.status !== 'normal' ? '（异常）' : ''}`).join('\n')
+      : '近30天无打卡数据';
+    const lastFu = await FollowUp.findOne({ patientId: user._id }).sort({ date: -1 }).lean();
+    const lastFuText = lastFu ? `${String(lastFu.date).slice(0, 10)}（${lastFu.theme || '常规'}）` : '无记录';
+
+    const prompt = `你是慢病管理随访专员，请根据患者近期数据做月度回顾，判断是否需要新增随访并生成随访提纲。
+
+【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【上次随访】${lastFuText}
+【近30天打卡数据】
+${recLines}
+
+【今天日期】${new Date().toISOString().slice(0, 10)}（suggestedDate 必须晚于今天）
+请严格按以下JSON输出（仅JSON）：
+{
+  "needed": true,
+  "timingReason": "判断理由（30-60字）",
+  "suggestedDate": "YYYY-MM-DD",
+  "theme": "建议随访主题",
+  "outline": ["随访提纲要点1", "要点2", "要点3"]
+}`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1000 });
+    let raw = {};
+    try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
+    if (!raw.needed) return res.json({ success: true, message: '本月无需新增随访', created: false });
+
+    const fu = await FollowUp.create({
+      patientId: user._id,
+      staffId: req.staff._id,
+      date: raw.suggestedDate ? new Date(raw.suggestedDate) : new Date(Date.now() + 7 * 86400000),
+      theme: raw.theme || '月度回顾随访',
+      status: 'planned',
+      sourceType: 'ai_review',
+      aiStatus: 'pending',
+      content: [
+        raw.timingReason ? `时机判断：${raw.timingReason}` : '',
+        Array.isArray(raw.outline) && raw.outline.length ? '随访要点：\n' + raw.outline.map((o, i) => `${i + 1}. ${o}`).join('\n') : '',
+      ].filter(Boolean).join('\n\n'),
+    });
+    res.json({ success: true, message: '已生成待审核随访建议', created: true, followUpId: fu._id });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 场景九：AI 健康教练消息（依从性评估 + 鼓励/提醒消息）──────────────
 // POST /api/staff/patients/:id/ai-coach-message
 router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
@@ -4508,6 +4594,7 @@ const TODO_REVIEW_ROLE = {
   lifestyle_review:     'nutritionist',
   supplement_review:    'nutritionist',
   nutrition_plan_review:'nutritionist',
+  followup_review:      'familyDoctor',
 };
 
 router.get('/ai-todos', staffAuth, async (req, res) => {
@@ -4661,6 +4748,22 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: 'AI生成年度体检方案，待健管专员审核',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/plans/${p._id}`,
+        });
+      });
+    }
+
+    // ── 家庭医师：方案确认后自动生成的随访计划待审核 ──
+    if (can('followup_review')) {
+      const pendingFollowUps = await FollowUp.find({ aiStatus: 'pending' })
+        .populate('patientId', 'name').sort({ date: 1 }).limit(50).lean();
+      pendingFollowUps.forEach(f => {
+        const createdAt = f.createdAt || new Date();
+        todos.push({
+          id: 'followup_' + f._id, type: 'followup_review', label: '随访计划待审核', priority: 3,
+          patientName: f.patientId?.name || '未知', patientId: String(f.patientId?._id || ''),
+          summary: `${f.theme || '随访'} · ${String(f.date).slice(0, 10)}${f.sourceType === 'ai_review' ? '（AI月度回顾）' : '（方案排期）'}`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${f.patientId?._id}?tab=followups`,
         });
       });
     }
