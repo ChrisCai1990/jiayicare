@@ -60,6 +60,7 @@ const questionnaireResponseSchema = new mongoose.Schema({
   user:          { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   answers:       { type: mongoose.Schema.Types.Mixed, default: {} },
   totalScore:    { type: Number, default: 0 }, // 自动计算总分
+  factorScores:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 按题目factor分组的均分（如SCL90十因子）
   submittedAt:   { type: Date, default: Date.now },
 }, { timestamps: true });
 

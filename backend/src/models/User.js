@@ -165,6 +165,9 @@ const userSchema = new mongoose.Schema({
   lifestyle_data: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 问卷自动导入健康档案的待审核草稿（{generatedAt,questionnaireId,responseId,status,items[]}）
   archiveDraft: { type: mongoose.Schema.Types.Mixed, default: null },
+  // 心理健康量表最新结果（问卷推送→患者填写→自动写入，无需审核）
+  // { epworth: {totalScore,severity,filledAt,questionnaireId}, scl90: {totalScore,factorScores:{躯体化:2.1,...},filledAt,questionnaireId}, sds:{...}, sas:{...} }
+  psychAssessments: { type: mongoose.Schema.Types.Mixed, default: {} },
   serviceStartDate: { type: String, default: '' }, // 服务开始时间
 
   // ── 健康评分相关 ─────────────────────────────────────────────────

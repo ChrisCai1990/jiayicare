@@ -3,6 +3,7 @@ const auth = require('../middleware/auth');
 const User = require('../models/User');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const PushRecord = require('../models/PushRecord');
+const { getPsychScaleKey, calcFactorScores, buildPsychResult } = require('../utils/psychScaleImport');
 const router = express.Router();
 
 // ── 根据问卷答案生成个性化建议 ─────────────────────────────────────
@@ -209,11 +210,16 @@ router.post('/:id/submit', auth, async (req, res) => {
       }
     }
 
+    // 心理健康量表（Epworth/SCL90/SDS/SAS）额外计算因子分
+    const psychScaleKey = getPsychScaleKey(questionnaire.title);
+    const factorScores = psychScaleKey === 'scl90' ? calcFactorScores(questionnaire, answers) : {};
+
     const response = await QuestionnaireResponse.create({
       questionnaire: req.params.id,
       user: req.user._id,
       answers,
       totalScore,
+      factorScores,
     });
 
     // 标记已答题用户
@@ -221,23 +227,35 @@ router.post('/:id/submit', auth, async (req, res) => {
       $addToSet: { respondedUsers: req.user._id },
     });
 
-    // 自动生成健康档案导入草稿（问卷题目若绑定了档案字段）→ 待健管专员审核写入
-    try {
-      const hasMapping = (questionnaire.questions || []).some(q => q.archiveField);
-      if (hasMapping) {
-        const User = require('../models/User');
-        const { buildArchiveDraft } = require('../utils/archiveImport');
-        const fullUser = await User.findById(req.user._id).lean();
-        const draft = buildArchiveDraft(fullUser, questionnaire, response);
-        if (draft.items.length > 0) {
-          await User.collection.updateOne(
-            { _id: new (require('mongoose').Types.ObjectId)(String(req.user._id)) },
-            { $set: { archiveDraft: draft } }
-          );
-        }
+    if (psychScaleKey) {
+      // 心理健康量表：标准公式计分，无需人工审核，直接写入档案供家庭医生查看
+      try {
+        const psychResult = buildPsychResult(questionnaire, response, psychScaleKey);
+        await User.collection.updateOne(
+          { _id: req.user._id },
+          { $set: { [`psychAssessments.${psychScaleKey}`]: psychResult } }
+        );
+      } catch (e) {
+        console.error('[psych-scale-import] 心理量表自动写入档案失败', e.message);
       }
-    } catch (e) {
-      console.error('[archive-import] 自动生成档案草稿失败', e.message);
+    } else {
+      // 普通问卷：自动生成健康档案导入草稿（问卷题目若绑定了档案字段）→ 待健管专员审核写入
+      try {
+        const hasMapping = (questionnaire.questions || []).some(q => q.archiveField);
+        if (hasMapping) {
+          const { buildArchiveDraft } = require('../utils/archiveImport');
+          const fullUser = await User.findById(req.user._id).lean();
+          const draft = buildArchiveDraft(fullUser, questionnaire, response);
+          if (draft.items.length > 0) {
+            await User.collection.updateOne(
+              { _id: req.user._id },
+              { $set: { archiveDraft: draft } }
+            );
+          }
+        }
+      } catch (e) {
+        console.error('[archive-import] 自动生成档案草稿失败', e.message);
+      }
     }
 
     let scoreRange = null;

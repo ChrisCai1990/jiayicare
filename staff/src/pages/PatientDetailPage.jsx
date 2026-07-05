@@ -452,94 +452,58 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
 }
 
 const PSYCH_SEVERITY_COLOR = {
-  '无/极轻微': '#22A06B', '轻度': '#D97706', '中度': '#EA580C', '中重度': '#DC3545', '重度': '#DC3545',
+  '正常': '#22A06B',
+  '轻度嗜睡': '#D97706', '重度嗜睡': '#DC3545',
+  '轻度焦虑': '#D97706', '中度焦虑': '#EA580C', '重度焦虑': '#DC3545',
+  '轻度抑郁': '#D97706', '中度抑郁': '#EA580C', '重度抑郁': '#DC3545',
 }
 
-// 心理健康标准量表评估（PHQ-9抑郁/GAD-7焦虑），题目/选项固定不可编辑，逐题作答留痕供家庭医师查看
-function PsychAssessmentPanel({ patientId }) {
-  const toast = useToast()
-  const [scales, setScales] = useState(null)
-  const [records, setRecords] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [expanded, setExpanded] = useState({})
-  const [filling, setFilling] = useState(null) // scaleType 当前正在填写的量表
-  const [answers, setAnswers] = useState({}) // { [questionIndex]: score }
-  const [saving, setSaving] = useState(false)
+// 心理健康量表结果（Epworth/SCL90/SDS/SAS，问卷推送患者自填→自动计分写入，只读展示）
+const PSYCH_SCALE_META = {
+  epworth: { name: 'Epworth 嗜睡量表' },
+  scl90:   { name: 'SCL90 症状自评量表' },
+  sds:     { name: 'SDS 抑郁自评量表' },
+  sas:     { name: 'SAS 焦虑自评量表' },
+}
 
-  const load = () => {
-    Promise.all([staffAPI.getPsychScales(), staffAPI.getPsychAssessments(patientId)])
-      .then(([s, r]) => { setScales(s.data); setRecords(r.data || []) })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }
-  useEffect(() => { load() }, [patientId])
+function PsychAssessmentPanel({ user }) {
+  const [expandedFactor, setExpandedFactor] = useState(false)
+  const assessments = user.psychAssessments || {}
+  const entries = Object.entries(PSYCH_SCALE_META)
+    .map(([key, meta]) => ({ key, meta, result: assessments[key] }))
 
-  const startFilling = (scaleType) => { setFilling(scaleType); setAnswers({}) }
-
-  const handleSubmit = async () => {
-    const scale = scales[filling]
-    const scores = scale.questions.map((_, i) => answers[i])
-    if (scores.some(s => s === undefined)) { toast('请完成全部题目'); return }
-    setSaving(true)
-    try {
-      await staffAPI.createPsychAssessment(patientId, filling, scores)
-      toast('已保存评估记录')
-      setFilling(null); load()
-    } catch (err) { toast(err.message || '保存失败') }
-    finally { setSaving(false) }
-  }
-
-  const handleDelete = async (recId) => {
-    if (!window.confirm('确认删除这条评估记录？')) return
-    try {
-      await staffAPI.deletePsychAssessment(recId)
-      toast('已删除')
-      load()
-    } catch (err) { toast(err.message || '删除失败') }
-  }
-
-  if (loading || !scales) return null
+  const hasAny = entries.some(e => e.result)
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
-      <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div className="card-header">
         <div className="card-title">🧠 心理健康评估</div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          {Object.values(scales).map(s => (
-            <button key={s.type} className="btn btn-secondary btn-sm" onClick={() => startFilling(s.type)}>＋ {s.type.toUpperCase()}</button>
-          ))}
-        </div>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {records.length === 0 ? (
-          <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无心理健康评估记录</div>
-        ) : records.map(r => {
-          const isOpen = !!expanded[r._id]
-          const color = PSYCH_SEVERITY_COLOR[r.severity] || '#8AA89C'
+        {!hasAny && (
+          <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无心理健康评估记录，可在问卷库推送相应量表给该会员</div>
+        )}
+        {entries.filter(e => e.result).map(({ key, meta, result }) => {
+          const color = PSYCH_SEVERITY_COLOR[result.severity] || '#8AA89C'
           return (
-            <div key={r._id} style={{ border: '1px solid #F0EDE7', borderRadius: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: 'pointer' }}
-                onClick={() => setExpanded(p => ({ ...p, [r._id]: !p[r._id] }))}>
+            <div key={key} style={{ border: '1px solid #F0EDE7', borderRadius: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: key === 'scl90' ? 'pointer' : 'default' }}
+                onClick={() => key === 'scl90' && setExpandedFactor(v => !v)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span style={{ fontWeight: 600, fontSize: 13 }}>{scales[r.scaleType]?.name || r.scaleType}</span>
+                  <span style={{ fontWeight: 600, fontSize: 13 }}>{meta.name}</span>
                   <span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 99, background: color + '15', color, fontWeight: 600 }}>
-                    {r.totalScore}分 · {r.severity}
+                    {result.totalScore}分{result.severity ? ` · ${result.severity}` : ''}
                   </span>
-                  <span style={{ fontSize: 12, color: '#8AA89C' }}>{new Date(r.filledAt).toLocaleDateString('zh-CN')}</span>
-                  {r.staffId?.name && <span style={{ fontSize: 12, color: '#8AA89C' }}>· {r.staffId.name} 代填</span>}
+                  <span style={{ fontSize: 12, color: '#8AA89C' }}>{new Date(result.filledAt).toLocaleDateString('zh-CN')}</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                  <span onClick={e => { e.stopPropagation(); handleDelete(r._id) }} style={{ fontSize: 12, color: '#DC3545', cursor: 'pointer' }}>删除</span>
-                  <span style={{ fontSize: 12, color: '#aaa' }}>{isOpen ? '▲' : '▼'}</span>
-                </div>
+                {key === 'scl90' && <span style={{ fontSize: 12, color: '#aaa' }}>{expandedFactor ? '▲' : '▼'}</span>}
               </div>
-              {isOpen && (
-                <div style={{ padding: '0 14px 12px', display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {r.answers.map((a, i) => (
-                    <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '4px 0', borderTop: i > 0 ? '1px solid #f5f2ec' : 'none' }}>
-                      <span style={{ color: '#4A6558', flex: 1 }}>{i + 1}. {a.question}</span>
-                      <span style={{ color: '#1A2B24', fontWeight: 600, flexShrink: 0, marginLeft: 12 }}>{a.score}分</span>
-                    </div>
+              {key === 'scl90' && expandedFactor && result.factorScores && (
+                <div style={{ padding: '0 14px 12px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {Object.entries(result.factorScores).map(([factor, score]) => (
+                    <span key={factor} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, background: '#F5F2EC', color: '#4A6558' }}>
+                      {factor} {score}
+                    </span>
                   ))}
                 </div>
               )}
@@ -547,44 +511,6 @@ function PsychAssessmentPanel({ patientId }) {
           )
         })}
       </div>
-
-      {filling && (
-        <div className="modal-overlay" onClick={() => setFilling(null)}>
-          <div className="modal" style={{ maxWidth: 600, maxHeight: '85vh', overflowY: 'auto' }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3 className="modal-title">{scales[filling].name}</h3>
-              <button className="modal-close" onClick={() => setFilling(null)}>✕</button>
-            </div>
-            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ fontSize: 13, color: '#8AA89C' }}>{scales[filling].intro}</div>
-              {scales[filling].questions.map((q, i) => (
-                <div key={i}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: 8 }}>{i + 1}. {q}</div>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                    {scales[filling].options.map(opt => (
-                      <label key={opt.score} style={{
-                        display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 99, cursor: 'pointer', fontSize: 13,
-                        border: `1.5px solid ${answers[i] === opt.score ? '#1E6B50' : '#E0D9CE'}`,
-                        background: answers[i] === opt.score ? '#E8F5EF' : '#fff',
-                        color: answers[i] === opt.score ? '#1E6B50' : '#4A6558',
-                        fontWeight: answers[i] === opt.score ? 600 : 400,
-                      }}>
-                        <input type="radio" name={`q${i}`} checked={answers[i] === opt.score}
-                          onChange={() => setAnswers(a => ({ ...a, [i]: opt.score }))} style={{ display: 'none' }} />
-                        {opt.label}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-secondary" onClick={() => setFilling(null)}>取消</button>
-              <button className="btn btn-primary" disabled={saving} onClick={handleSubmit}>{saving ? '保存中...' : '保存评估'}</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   )
 }
@@ -2390,8 +2316,8 @@ export default function PatientDetailPage() {
           </div>
         </div>
 
-        {/* ── 心理健康评估（PHQ-9/GAD-7标准量表）── */}
-        <PsychAssessmentPanel patientId={id} />
+        {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，患者自填自动写入）── */}
+        <PsychAssessmentPanel user={user} />
 
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，打卡数据在下方 */}
         {(() => {

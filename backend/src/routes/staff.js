@@ -21,8 +21,6 @@ const ServiceRecord = require('../models/ServiceRecord');
 const Order = require('../models/Order');
 const GiftRecord = require('../models/GiftRecord');
 const Referral = require('../models/Referral');
-const PsychAssessment = require('../models/PsychAssessment');
-const { SCALES: PSYCH_SCALES, calcSeverity: calcPsychSeverity } = require('../config/psychScales');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const Message        = require('../models/Message');
 const MemberLevel    = require('../models/MemberLevel');
@@ -1908,51 +1906,8 @@ router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
   res.json({ success: true, data: records });
 });
 
-// ── 心理健康标准量表评估（PHQ-9/GAD-7）─────────────────────────────
-// GET /api/staff/scales/psych — 获取量表定义（题目/选项，供前端渲染填写表单）
-router.get('/scales/psych', staffAuth, async (req, res) => {
-  res.json({ success: true, data: PSYCH_SCALES });
-});
-
-// GET /api/staff/patients/:id/psych-assessments — 患者的历次心理健康评估记录（逐题作答）
-router.get('/patients/:id/psych-assessments', staffAuth, async (req, res) => {
-  const records = await PsychAssessment.find({ patientId: req.params.id })
-    .sort({ filledAt: -1 })
-    .populate('staffId', 'name role');
-  res.json({ success: true, data: records });
-});
-
-// POST /api/staff/patients/:id/psych-assessments — 录入一次心理健康量表评估（医护端代填）
-router.post('/patients/:id/psych-assessments', staffAuth, async (req, res) => {
-  try {
-    const { scaleType, scores } = req.body; // scores: 与量表题目顺序一致的分数数组[0-3,...]
-    const scale = PSYCH_SCALES[scaleType];
-    if (!scale) return res.status(400).json({ success: false, message: '未知的量表类型' });
-    if (!Array.isArray(scores) || scores.length !== scale.questions.length) {
-      return res.status(400).json({ success: false, message: `${scale.name} 需要填写全部 ${scale.questions.length} 题` });
-    }
-    if (scores.some(s => !Number.isInteger(s) || s < 0 || s > 3)) {
-      return res.status(400).json({ success: false, message: '每题得分必须为0-3的整数' });
-    }
-    const totalScore = scores.reduce((a, b) => a + b, 0);
-    const severity = calcPsychSeverity(scaleType, totalScore);
-    const record = await PsychAssessment.create({
-      patientId: req.params.id,
-      scaleType,
-      answers: scale.questions.map((q, i) => ({ question: q, score: scores[i] })),
-      totalScore, severity,
-      staffId: req.staff._id,
-    });
-    res.json({ success: true, data: record });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
-
-// DELETE /api/staff/psych-assessments/:id — 删除一条误录入的评估记录
-router.delete('/psych-assessments/:id', staffAuth, async (req, res) => {
-  const record = await PsychAssessment.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
-  if (!record) return res.status(404).json({ success: false, message: '记录不存在或无权删除' });
-  res.json({ success: true });
-});
+// 心理健康评估已改为走问卷库（Epworth/SCL90/SDS/SAS，questionnaire.js /:id/submit 自动写入 User.psychAssessments）
+// 原医护端代填 PHQ-9/GAD-7 的路由已废弃，历史数据保留在 PsychAssessment 集合中不删除，仅不再提供新增/查询/删除入口
 
 // ════════════════════════════════════════════════════════
 // P4 路由
@@ -3224,15 +3179,19 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       hp.drugAllergy && `药物过敏：${hp.drugAllergy}`,
     ].filter(Boolean).join('\n') || '无特殊记录';
 
-    // 心理健康标准量表评估（PHQ-9抑郁/GAD-7焦虑）——各取最新一次，供情绪维度做客观数据支撑，问题分析需身心结合
-    const [latestPhq9, latestGad7] = await Promise.all([
-      PsychAssessment.findOne({ patientId: req.params.id, scaleType: 'phq9' }).sort({ filledAt: -1 }).lean(),
-      PsychAssessment.findOne({ patientId: req.params.id, scaleType: 'gad7' }).sort({ filledAt: -1 }).lean(),
-    ]);
-    const psychSummary = [
-      latestPhq9 && `PHQ-9抑郁症筛查（${String(latestPhq9.filledAt).slice(0,10)}）：总分${latestPhq9.totalScore}分，${latestPhq9.severity}${latestPhq9.answers.some(a => a.score > 0 && a.question.includes('伤害自己')) ? '（需重点关注：自伤念头条目得分>0）' : ''}`,
-      latestGad7 && `GAD-7广泛性焦虑量表（${String(latestGad7.filledAt).slice(0,10)}）：总分${latestGad7.totalScore}分，${latestGad7.severity}`,
-    ].filter(Boolean).join('\n') || '暂无心理健康量表评估记录';
+    // 心理健康量表评估（Epworth嗜睡/SCL90症状自评/SDS抑郁/SAS焦虑）——问卷推送患者自填自动计分，供情绪维度做客观数据支撑，问题分析需身心结合
+    const pa = user.psychAssessments || {};
+    const PSYCH_SCALE_LABEL = { epworth: 'Epworth嗜睡量表', scl90: 'SCL90症状自评量表', sds: 'SDS抑郁自评量表', sas: 'SAS焦虑自评量表' };
+    const psychSummary = Object.entries(PSYCH_SCALE_LABEL)
+      .map(([key, label]) => {
+        const r = pa[key];
+        if (!r) return null;
+        const factorStr = key === 'scl90' && r.factorScores
+          ? `（因子分：${Object.entries(r.factorScores).map(([f, s]) => `${f}${s}`).join('、')}）`
+          : '';
+        return `${label}（${String(r.filledAt).slice(0,10)}）：总分${r.totalScore}分，${r.severity}${factorStr}`;
+      })
+      .filter(Boolean).join('\n') || '暂无心理健康量表评估记录';
 
     const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。
 

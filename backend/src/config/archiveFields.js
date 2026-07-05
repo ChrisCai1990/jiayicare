@@ -68,13 +68,19 @@ const ARCHIVE_FIELDS = [
   { path: 'lifestyle.smoking',  label: '吸烟',  group: '生活方式', type: 'text' },
   { path: 'lifestyle.bowel',    label: '排便',  group: '生活方式', type: 'text' },
   { path: 'lifestyle.mood',     label: '情绪',  group: '生活方式', type: 'text' },
+
+  // 心理健康量表（问卷提交后自动计分写入，非逐题绑定，仅用于标签展示）
+  { path: 'psychAssessments.epworth', label: 'Epworth嗜睡量表', group: '心理健康', type: 'text' },
+  { path: 'psychAssessments.scl90',   label: 'SCL90症状自评',   group: '心理健康', type: 'text' },
+  { path: 'psychAssessments.sds',     label: 'SDS抑郁自评',     group: '心理健康', type: 'text' },
+  { path: 'psychAssessments.sas',     label: 'SAS焦虑自评',     group: '心理健康', type: 'text' },
 ];
 
 const FIELD_MAP = Object.fromEntries(ARCHIVE_FIELDS.map(f => [f.path, f]));
 
 // 按分组聚合，供前端下拉 optgroup 使用
 function groupedArchiveFields() {
-  const order = ['基本信息', '既往健康史', '健康需求', '医疗保障', '生活方式'];
+  const order = ['基本信息', '既往健康史', '健康需求', '医疗保障', '生活方式', '心理健康'];
   const byGroup = {};
   ARCHIVE_FIELDS.forEach(f => { (byGroup[f.group] = byGroup[f.group] || []).push(f); });
   return order.filter(g => byGroup[g]).map(g => ({ group: g, fields: byGroup[g] }));
