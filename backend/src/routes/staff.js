@@ -3631,6 +3631,19 @@ ${attachedStr}
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// AI草稿凭证：生成预览时签发，采纳/发送时校验——防止"预览不落库"后权限校验被客户端回传的generatedById伪造
+// （草稿本身不落库，服务端无权威记录可比对，故用短期签名token代替，token由服务端签发不可伪造）
+function signDraftToken(staffId, patientId, kind) {
+  return jwt.sign({ staffId: String(staffId), patientId: String(patientId), kind }, process.env.JWT_SECRET, { expiresIn: '2h' });
+}
+function verifyDraftToken(token, patientId, kind, staffId) {
+  if (!token) return false;
+  try {
+    const d = jwt.verify(token, process.env.JWT_SECRET);
+    return d.kind === kind && String(d.patientId) === String(patientId) && String(d.staffId) === String(staffId);
+  } catch { return false; }
+}
+
 // ── 场景六：AI 智能随访建议（随访时机判断 + 随访提纲）────────────────
 // POST /api/staff/patients/:id/ai-followup-suggestion
 router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) => {
@@ -3685,6 +3698,7 @@ ${recLines}
       generatedAt: new Date(),
       generatedBy: req.staff.name || '',
       generatedById: req.staff._id,
+      draftToken: signDraftToken(req.staff._id, user._id, 'followup'),
     };
     res.json({ success: true, data: suggestion });
   } catch (err) {
@@ -3696,14 +3710,14 @@ ${recLines}
 // 仅生成人本人或超管可采纳：谁生成的AI建议谁负责决定是否采纳，健管专员是执行者（被指派到assignedTo），不参与决策关卡
 router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
   try {
-    const { action, notes, edits } = req.body; // action: approve；edits: 预览弹窗里的完整内容（未落库，前端原样传回）{theme, suggestedDate, timingReason, outline, type, assignedTo, generatedById}
+    const { action, notes, edits, draftToken } = req.body; // action: approve；edits: 预览弹窗里的完整内容（未落库，前端原样传回）{theme, suggestedDate, timingReason, outline, type, assignedTo}
     if (action !== 'approve') return res.status(400).json({ success: false, message: 'action 必须为 approve' });
     const draft = edits && typeof edits === 'object' ? edits : {};
     const user = await User.findById(req.params.id).select('_id');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const isSuperadmin = req.staff.role === 'superadmin';
-    const isGenerator = draft.generatedById && String(draft.generatedById) === String(req.staff._id);
+    const isGenerator = verifyDraftToken(draftToken, user._id, 'followup', req.staff._id);
     if (!isSuperadmin && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人可采纳该建议' });
     if (!draft.assignedTo) return res.status(400).json({ success: false, message: '请先选择随访人员再采纳' });
 
@@ -3791,6 +3805,7 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
       generatedAt: new Date(),
       generatedBy: req.staff.name || '',
       generatedById: req.staff._id,
+      draftToken: signDraftToken(req.staff._id, user._id, 'coach'),
     };
     res.json({ success: true, data: coachDraft });
   } catch (err) {
@@ -3802,13 +3817,13 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
 // 仅生成人本人或超管可发送：谁生成的AI消息谁负责决定是否发送
 router.patch('/patients/:id/ai-coach-draft', staffAuth, async (req, res) => {
   try {
-    const { action, message: editedMessage, generatedById } = req.body; // action: approve
+    const { action, message: editedMessage, draftToken } = req.body; // action: approve
     if (action !== 'approve') return res.status(400).json({ success: false, message: 'action 必须为 approve' });
     const user = await User.findById(req.params.id).select('_id');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const isSuperadmin = req.staff.role === 'superadmin';
-    const isGenerator = generatedById && String(generatedById) === String(req.staff._id);
+    const isGenerator = verifyDraftToken(draftToken, user._id, 'coach', req.staff._id);
     if (!isSuperadmin && !isGenerator) return res.status(403).json({ success: false, message: '仅生成人本人可发送该消息' });
 
     const finalMsg = (editedMessage || '').trim();

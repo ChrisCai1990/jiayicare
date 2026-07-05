@@ -1303,7 +1303,7 @@ export default function PatientDetailPage() {
     const d = aiHelper?.data; if (!d) return
     setAiHelperBusy(true)
     try {
-      await staffAPI.reviewFollowupDraft(id, 'approve', undefined, { theme: d.theme, suggestedDate: d.suggestedDate, timingReason: d.timingReason, outline: d.outline, type: d.type, assignedTo: d.assignedTo, generatedById: d.generatedById })
+      await staffAPI.reviewFollowupDraft(id, 'approve', undefined, { theme: d.theme, suggestedDate: d.suggestedDate, timingReason: d.timingReason, outline: d.outline, type: d.type, assignedTo: d.assignedTo }, d.draftToken)
       toast('已采纳，随访计划已创建')
       setAiHelper(null); loadFollowUps(); load()
     } catch (err) { toast(err.message || '创建失败') }
@@ -1322,7 +1322,7 @@ export default function PatientDetailPage() {
     const d = aiHelper?.data; const msg = d?.message; if (!msg) return
     setAiHelperBusy(true)
     try {
-      await staffAPI.reviewCoachDraft(id, 'approve', msg, d.generatedById)
+      await staffAPI.reviewCoachDraft(id, 'approve', msg, d.draftToken)
       toast('已发送给会员')
       setAiHelper(h => ({ ...h, data: { ...h.data, sent: true, sentAt: new Date().toISOString() } }))
     } catch (err) { toast(err.message || '发送失败') }
