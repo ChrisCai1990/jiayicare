@@ -165,7 +165,13 @@ router.get('/pending', auth, async (req, res) => {
       respondedUsers: { $ne: req.user._id },
     }).select('title description questions deadline scoringEnabled createdBy').sort({ sortOrder: 1, createdAt: -1 }).lean();
 
-    res.json({ success: true, data: questionnaires });
+    // 按用户性别过滤 genderOnly 题目（如月经史/生育史仅女性可见，男性用户完全看不到这些题）
+    const filtered = questionnaires.map(q => ({
+      ...q,
+      questions: (q.questions || []).filter(item => !item.genderOnly || item.genderOnly === req.user.gender),
+    }));
+
+    res.json({ success: true, data: filtered });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取问卷失败', error: err.message });
   }
@@ -187,6 +193,23 @@ router.post('/:id/submit', auth, async (req, res) => {
       questionnaire: req.params.id, user: req.user._id,
     });
     if (existing) return res.status(400).json({ success: false, message: '您已提交过此问卷' });
+
+    // genderOnly 题目校验：与用户性别不符的题目不应作答（男性提交了女性专属题的答案会被忽略）；
+    // 与用户性别相符的 genderOnly 题目视为必填，不能跳过
+    for (const q of questionnaire.questions) {
+      if (q.genderOnly && q.genderOnly !== req.user.gender) {
+        delete answers[q.id]; // 与本人性别不符，忽略客户端可能误传的答案
+        continue;
+      }
+      const isRequired = q.required !== false; // 未设置 required 视为必填（沿用原逻辑）
+      if (q.genderOnly && q.genderOnly === req.user.gender && isRequired) {
+        const ans = answers[q.id];
+        const isEmpty = ans === undefined || ans === '' || (Array.isArray(ans) && ans.length === 0);
+        if (isEmpty) {
+          return res.status(400).json({ success: false, message: `「${q.text}」为必填项，请完整填写` });
+        }
+      }
+    }
 
     // 计算总分（如果问卷启用了评分）
     let totalScore = 0;

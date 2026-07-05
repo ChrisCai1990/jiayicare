@@ -31,6 +31,7 @@ const questionSchema = new mongoose.Schema({
   scoreEnabled:{ type: Boolean, default: false }, // 本题是否参与评分
   archiveField:{ type: String, default: '' },     // 对应的健康档案字段 path（答卷自动导入档案用）
   factor:      { type: String, default: '' },     // 心理量表因子归属（如SCL90十因子），普通问卷不用
+  genderOnly:  { type: String, enum: ['', '男', '女'], default: '' }, // 仅指定性别可见且必填（如月经史/生育史/性生活史），空表示所有人可见
 }, { _id: false });
 
 const questionnaireSchema = new mongoose.Schema({
