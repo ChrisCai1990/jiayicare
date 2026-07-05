@@ -1114,7 +1114,7 @@ export default function PatientDetailPage() {
     const d = aiHelper?.data; if (!d) return
     setAiHelperBusy(true)
     try {
-      await staffAPI.reviewFollowupDraft(id, 'approve', undefined, { theme: d.theme, suggestedDate: d.suggestedDate, timingReason: d.timingReason, outline: d.outline })
+      await staffAPI.reviewFollowupDraft(id, 'approve', undefined, { theme: d.theme, suggestedDate: d.suggestedDate, timingReason: d.timingReason, outline: d.outline, type: d.type, assignedTo: d.assignedTo })
       toast('已采纳，随访计划已创建')
       setAiHelper(null); loadFollowUps(); load()
     } catch (err) { toast(err.message || '创建失败') }
@@ -4845,10 +4845,17 @@ export default function PatientDetailPage() {
         {data?.user?.aiFollowupDraft?.status === 'pending' && (() => {
           const fd = data.user.aiFollowupDraft
           const T = { advance: { l: '建议提前随访', c: '#DC2626' }, keep: { l: '按原计划随访', c: '#16A34A' }, extend: { l: '可延长随访间隔', c: '#0077B6' } }[fd.timing] || { l: fd.timing, c: '#4A6558' }
-          const canApprove = staff?.role === 'healthManager' || staff?.role === 'superadmin'
           const isGenerator = staff?._id && fd.generatedById && String(fd.generatedById) === String(staff._id)
-          const canEdit = canApprove || isGenerator
-          const ed = followupDraftEdits || { theme: fd.theme || '', suggestedDate: fd.suggestedDate || '', outline: Array.isArray(fd.outline) ? fd.outline : [] }
+          const canApprove = isGenerator || staff?.role === 'superadmin'
+          const canEdit = canApprove
+          const AI_FOLLOWUP_TYPE_OPTIONS = [
+            { v: 'phone',  l: '电话' },
+            { v: 'wechat', l: '微信' },
+            { v: 'visit',  l: '上门' },
+            { v: 'video',  l: '视频' },
+            { v: 'other',  l: '其他' },
+          ]
+          const ed = followupDraftEdits || { theme: fd.theme || '', suggestedDate: fd.suggestedDate || '', outline: Array.isArray(fd.outline) ? fd.outline : [], type: fd.type || 'phone', assignedTo: fd.assignedTo || '' }
           const setEd = (patch) => setFollowupDraftEdits({ ...ed, ...patch })
           return (
             <div className="card" style={{ marginBottom: 16, border: '1.5px solid #D97706' }}>
@@ -4860,15 +4867,13 @@ export default function PatientDetailPage() {
                     <span style={{ fontSize: 12, color: '#8AA89C' }}>由 {fd.generatedBy} 生成 · {new Date(fd.generatedAt).toLocaleDateString('zh-CN')}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    {canApprove && (
+                    {canApprove ? (
                       <>
                         <button className="btn btn-sm" style={{ background: '#1E6B50', color: '#fff' }} onClick={() => { reviewFollowupDraft('approve', ed); setFollowupDraftEdits(null) }}>保存并采纳随访计划</button>
-                        <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => { reviewFollowupDraft('reject'); setFollowupDraftEdits(null) }}>拒绝</button>
+                        <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => { if (window.confirm('确认拒绝这条AI随访建议？')) { reviewFollowupDraft('reject'); setFollowupDraftEdits(null) } }}>拒绝</button>
                       </>
-                    )}
-                    {!canApprove && isGenerator && (
-                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }}
-                        onClick={() => { if (window.confirm('确认撤回这条由你生成的AI随访建议？')) { reviewFollowupDraft('withdraw'); setFollowupDraftEdits(null) } }}>撤回</button>
+                    ) : (
+                      <span style={{ fontSize: 12, color: '#8AA89C' }}>等待 {fd.generatedBy} 本人审核</span>
                     )}
                   </div>
                 </div>
@@ -4885,7 +4890,7 @@ export default function PatientDetailPage() {
                     💡 {fd.timingReason}
                   </div>
                 )}
-                <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 12 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 12 }}>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">建议随访日期</label>
                     {canEdit ? (
@@ -4899,6 +4904,25 @@ export default function PatientDetailPage() {
                       <input className="form-input" style={{ fontWeight: 600 }}
                         value={ed.theme || ''} onChange={e => setEd({ theme: e.target.value })} />
                     ) : <div style={{ fontSize: 14, fontWeight: 600, padding: '9px 0' }}>{fd.theme}</div>}
+                  </div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">随访方式</label>
+                    {canEdit ? (
+                      <select className="form-input" value={ed.type || 'phone'} onChange={e => setEd({ type: e.target.value })}>
+                        {AI_FOLLOWUP_TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                      </select>
+                    ) : <div style={{ fontSize: 14, padding: '9px 0' }}>{AI_FOLLOWUP_TYPE_OPTIONS.find(o => o.v === fd.type)?.l || '电话'}</div>}
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">随访人员</label>
+                    {canEdit ? (
+                      <select className="form-input" value={ed.assignedTo || ''} onChange={e => setEd({ assignedTo: e.target.value })}>
+                        <option value="">-- 当前登录人 --</option>
+                        {staffList.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>)}
+                      </select>
+                    ) : <div style={{ fontSize: 14, padding: '9px 0' }}>{staffList.find(s => s._id === fd.assignedTo)?.name || '当前登录人'}</div>}
                   </div>
                 </div>
                 {canEdit ? (
@@ -4926,9 +4950,6 @@ export default function PatientDetailPage() {
                         style={{ alignSelf: 'flex-start', width: 28, height: 28, borderRadius: 6, border: '1px solid #1E6B50', background: '#fff', color: '#1E6B50', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, padding: 0 }}
                       >+</button>
                     </div>
-                    {!canApprove && isGenerator && (
-                      <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>💡 你是生成人，可编辑或撤回；采纳需健管专员审核</div>
-                    )}
                   </div>
                 ) : Array.isArray(fd.outline) && fd.outline.length > 0 && (
                   <div>
@@ -4944,9 +4965,8 @@ export default function PatientDetailPage() {
         {/* AI教练消息草稿（nutritionist审核） */}
         {data?.user?.aiCoachDraft?.status === 'pending' && (() => {
           const cd = data.user.aiCoachDraft
-          const canApprove = staff?.role === 'nutritionist' || staff?.role === 'superadmin'
           const isGenerator = staff?._id && cd.generatedById && String(cd.generatedById) === String(staff._id)
-          const canEdit = canApprove || isGenerator
+          const canApprove = isGenerator || staff?.role === 'superadmin'
           return (
             <div className="card" style={{ marginBottom: 16, border: '1.5px solid #16A34A' }}>
               <div className="card-header" style={{ background: '#F0FDF4' }}>
@@ -4957,15 +4977,13 @@ export default function PatientDetailPage() {
                     <span style={{ fontSize: 12, color: '#8AA89C' }}>由 {cd.generatedBy} 生成 · {new Date(cd.generatedAt).toLocaleDateString('zh-CN')}</span>
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    {canApprove && (
+                    {canApprove ? (
                       <>
                         <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewCoachDraft('approve', coachDraftMsg)}>发送给会员</button>
-                        <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => reviewCoachDraft('reject')}>拒绝</button>
+                        <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => { if (window.confirm('确认拒绝这条AI教练消息？')) reviewCoachDraft('reject') }}>拒绝</button>
                       </>
-                    )}
-                    {!canApprove && isGenerator && (
-                      <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }}
-                        onClick={() => { if (window.confirm('确认撤回这条由你生成的AI教练消息？')) reviewCoachDraft('withdraw') }}>撤回</button>
+                    ) : (
+                      <span style={{ fontSize: 12, color: '#8AA89C' }}>等待 {cd.generatedBy} 本人审核</span>
                     )}
                   </div>
                 </div>
@@ -4976,17 +4994,12 @@ export default function PatientDetailPage() {
                   <span>连续打卡 {cd.streak} 天</span>
                   {cd.daysSinceLast != null && <span>距上次打卡 {cd.daysSinceLast} 天</span>}
                 </div>
-                {canEdit ? (
-                  <>
-                    <textarea
-                      value={coachDraftMsg}
-                      onChange={e => setCoachDraftMsg(e.target.value)}
-                      style={{ width: '100%', minHeight: 80, padding: '8px 12px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
-                    />
-                    {!canApprove && isGenerator && (
-                      <div style={{ fontSize: 12, color: '#8AA89C' }}>💡 你是生成人，可编辑或撤回；发送需营养师审核</div>
-                    )}
-                  </>
+                {canApprove ? (
+                  <textarea
+                    value={coachDraftMsg}
+                    onChange={e => setCoachDraftMsg(e.target.value)}
+                    style={{ width: '100%', minHeight: 80, padding: '8px 12px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 14, resize: 'vertical', boxSizing: 'border-box' }}
+                  />
                 ) : (
                   <div style={{ fontSize: 14, color: '#1A2B24', background: '#F6F3EE', borderRadius: 8, padding: '10px 14px', lineHeight: 1.6 }}>{cd.message}</div>
                 )}
@@ -5618,7 +5631,7 @@ export default function PatientDetailPage() {
                       </div>
                     )}
 
-                    <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: 12 }}>
                       <div className="form-group" style={{ marginBottom: 0 }}>
                         <label className="form-label">建议随访日期</label>
                         <input type="date" className="form-input"
@@ -5628,6 +5641,26 @@ export default function PatientDetailPage() {
                         <label className="form-label">随访主题</label>
                         <input className="form-input" style={{ fontWeight: 600 }}
                           value={d.theme || ''} onChange={e => setD({ theme: e.target.value })} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">随访方式</label>
+                        <select className="form-input" value={d.type || 'phone'} onChange={e => setD({ type: e.target.value })}>
+                          <option value="phone">电话</option>
+                          <option value="wechat">微信</option>
+                          <option value="visit">上门</option>
+                          <option value="video">视频</option>
+                          <option value="other">其他</option>
+                        </select>
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 0 }}>
+                        <label className="form-label">随访人员</label>
+                        <select className="form-input" value={d.assignedTo || ''} onChange={e => setD({ assignedTo: e.target.value })}>
+                          <option value="">-- 当前登录人 --</option>
+                          {staffList.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>)}
+                        </select>
                       </div>
                     </div>
 
