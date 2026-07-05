@@ -24,6 +24,8 @@ const userSchema = new mongoose.Schema({
   drinking: { type: String, default: '' },
   exercise: { type: String, default: '' },
   onboardingCompleted: { type: Boolean, default: false },
+  onboardingCompletedAt: { type: Date, default: null }, // 完成首次登录建档的时间，用于分批推送问卷计时
+  onboardingBatch2PushedAt: { type: Date, default: null }, // 第二批问卷(生活方式+心理健康)已推送时间，避免重复推送
   // 健康评分历史（每日打点，保留最近 30 条）
   scoreHistory: [{
     score: { type: Number },

@@ -198,35 +198,41 @@ router.put('/me', auth, async (req, res) => {
 });
 
 // 完成 Onboarding
+// 首次登录最小化建档：姓名+身份证号+联系电话，性别/出生日期由身份证号自动解析
+// 其余健康信息（既往史/生活方式/心理健康等）交给问卷库分批推送采集，不在此处重复询问
 router.post('/onboarding', auth, async (req, res) => {
   try {
-    const { name, age, gender, height, weight, conditions, smoking, drinking, exercise, familyHistory, medications } = req.body;
+    const { name, idNumber, contactPhone } = req.body;
+    if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
+    if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
 
-    // 健康评分：基于 Onboarding 填写的真实数据计算，不再随机
-    let score = 85;
-    if (smoking === true || smoking === 'true' || smoking === 'yes') score -= 8;
-    if (drinking === true || drinking === 'true' || drinking === 'yes') score -= 5;
-    if (Array.isArray(conditions) && conditions.length > 0) score -= Math.min(conditions.length * 5, 20);
-    else if (typeof conditions === 'string' && conditions.trim()) score -= 5;
-    if (Array.isArray(familyHistory) && familyHistory.length > 0) score -= Math.min(familyHistory.length * 3, 10);
-    else if (typeof familyHistory === 'string' && familyHistory.trim()) score -= 3;
-    if (exercise === 'none' || exercise === false || exercise === 'false') score -= 3;
-    score = Math.max(45, Math.min(90, score)); // 范围限定在 45~90
+    const { parseIdCard } = require('../utils/idCard');
+    const parsed = idNumber ? parseIdCard(idNumber) : null;
+    if (idNumber && !parsed) return res.status(400).json({ success: false, message: '身份证号格式不正确' });
+
     const updateData = {
-      healthScore: score,
+      name: name.trim(),
+      contactPhone: contactPhone.trim(),
       onboardingCompleted: true,
+      onboardingCompletedAt: new Date(),
     };
-    if (name !== undefined)     updateData.name = name;
-    if (age !== undefined)      updateData.age = age;
-    if (gender !== undefined)   updateData.gender = gender;
-    if (height !== undefined)   updateData.height = height;
-    if (weight !== undefined)   updateData.weight = weight;
-    if (smoking !== undefined)  updateData.smoking = smoking;
-    if (drinking !== undefined) updateData.drinking = drinking;
-    if (exercise !== undefined) updateData.exercise = exercise;
-    if (familyHistory !== undefined) updateData['healthProfile.familyHistory'] = familyHistory;
+    if (idNumber) updateData.idNumber = idNumber;
+    if (parsed) {
+      updateData.gender = parsed.gender;
+      updateData.birthDate = parsed.birthDate;
+      updateData.age = parsed.age;
+    }
     const user = await User.findByIdAndUpdate(req.user._id, updateData, { new: true });
-    res.json({ success: true, data: { user, healthScore: score } });
+
+    // 立即推送第一批问卷（健康问卷表），失败不影响 onboarding 本身完成
+    try {
+      const { pushBatch1 } = require('../utils/onboardingPush');
+      await pushBatch1(req.user._id);
+    } catch (e) {
+      console.error('[onboarding] 第一批问卷推送失败', e.message);
+    }
+
+    res.json({ success: true, data: { user } });
   } catch (err) {
     res.status(500).json({ success: false, message: 'Onboarding 失败', error: err.message });
   }
