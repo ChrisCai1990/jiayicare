@@ -74,13 +74,73 @@ const ARCHIVE_FIELDS = [
   { path: 'psychAssessments.scl90',   label: 'SCL90症状自评',   group: '心理健康', type: 'text' },
   { path: 'psychAssessments.sds',     label: 'SDS抑郁自评',     group: '心理健康', type: 'text' },
   { path: 'psychAssessments.sas',     label: 'SAS焦虑自评',     group: '心理健康', type: 'text' },
+
+  // 膳食调查（与 staff PatientDetailPage buildLifestyleForm 的 lifestyle_data 对齐）
+  // 三餐与加餐
+  { path: 'lifestyle_data.breakfastTime',        label: '早餐时间',       group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.breakfastDetail',      label: '早餐就餐方式',   group: '膳食调查', type: 'enum', options: ['居家', '外卖', '少吃', '不吃'] },
+  { path: 'lifestyle_data.breakfastDesc',        label: '早餐品类描述',   group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.morningSnack',         label: '上午加餐',       group: '膳食调查', type: 'enum', options: ['是', '否'] },
+  { path: 'lifestyle_data.morningSnackDesc',     label: '上午加餐品类',   group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.lunchTime',            label: '午餐时间',       group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.lunchDetail',          label: '午餐就餐方式',   group: '膳食调查', type: 'enum', options: ['居家', '饭店或外卖', '少吃', '不吃'] },
+  { path: 'lifestyle_data.lunchDesc',            label: '午餐品类描述',   group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.afternoonSnack',       label: '下午加餐',       group: '膳食调查', type: 'enum', options: ['是', '否'] },
+  { path: 'lifestyle_data.afternoonSnackDesc',   label: '下午加餐品类',   group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.dinnerTime',           label: '晚餐时间',       group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.dinnerDetail',         label: '晚餐就餐方式',   group: '膳食调查', type: 'enum', options: ['居家', '饭店或外卖', '少吃', '不吃'] },
+  { path: 'lifestyle_data.dinnerDesc',           label: '晚餐品类描述',   group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.eveningSnack',         label: '晚间加餐',       group: '膳食调查', type: 'enum', options: ['是', '否'] },
+  { path: 'lifestyle_data.eveningSnackDesc',     label: '晚间加餐品类',   group: '膳食调查', type: 'text' },
+  // 食物摄入量
+  { path: 'lifestyle_data.dailyStaple',      label: '每日主食摄入量', group: '膳食调查', type: 'enum', options: ['250克以内', '250-400克', '400克以上', '几乎不吃'] },
+  { path: 'lifestyle_data.dailyVegetables',  label: '每日蔬菜摄入量', group: '膳食调查', type: 'enum', options: ['500克及以上', '300-500克', '300克以内', '几乎不吃'] },
+  { path: 'lifestyle_data.dailyMeat',        label: '每日荤菜摄入量', group: '膳食调查', type: 'enum', options: ['80克以内', '80-150克', '150克及以上', '几乎不吃'] },
+  { path: 'lifestyle_data.fruitFrequency',   label: '吃水果频次',     group: '膳食调查', type: 'enum', options: ['3天/周及以上', '每天吃', '几乎不吃'] },
+  { path: 'lifestyle_data.fruitAmount',      label: '水果摄入量',     group: '膳食调查', type: 'enum', options: ['200克以内', '200-350克', '350克以上'] },
+  { path: 'lifestyle_data.eggFrequency',     label: '鸡蛋摄入频次',   group: '膳食调查', type: 'enum', options: ['1-3天/周', '3-5天/周', '每天都吃'] },
+  { path: 'lifestyle_data.eggAmount',        label: '鸡蛋摄入量',     group: '膳食调查', type: 'enum', options: ['1个', '2-3个', '4个以上'] },
+  { path: 'lifestyle_data.dairyAmount',      label: '奶制品摄入量',   group: '膳食调查', type: 'enum', options: ['＜300毫升/天', '300-500毫升/天', '＞500毫升', '几乎不喝'] },
+  { path: 'lifestyle_data.nutFrequency',     label: '坚果摄入频次',   group: '膳食调查', type: 'enum', options: ['一周2-3天', '每天吃', '几乎不吃'] },
+  { path: 'lifestyle_data.nutAmount',        label: '坚果摄入量',     group: '膳食调查', type: 'enum', options: ['10克', '20-30克', '50克以上'] },
+  { path: 'lifestyle_data.grainFrequency',   label: '粗杂粮摄入频次', group: '膳食调查', type: 'enum', options: ['每天吃', '1-2天/周', '3天/周及以上', '几乎不吃'] },
+  { path: 'lifestyle_data.grainAmount',      label: '粗杂粮摄入量',   group: '膳食调查', type: 'enum', options: ['50-100克', '100-200克', '200-250克', '300克以上'] },
+  // 饮食习惯
+  { path: 'lifestyle_data.dietaryRestrictions',    label: '忌口',           group: '膳食调查', type: 'enum', options: ['无', '有'] },
+  { path: 'lifestyle_data.dietaryRestrictionsDesc',label: '忌口具体说明',   group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.badDietHabits',          label: '不良饮食习惯',   group: '膳食调查', type: 'array' },
+  { path: 'lifestyle_data.entertainment',          label: '应酬频率',       group: '膳食调查', type: 'enum', options: ['1-2次/周', '3-5次/周', '6-7次/周', '无或偶尔'] },
+  // 运动与作息
+  { path: 'lifestyle_data.exerciseType',       label: '运动类型',       group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.exerciseFrequency',  label: '运动频率',       group: '膳食调查', type: 'enum', options: ['1-2天/周', '3-5天/周', '6-7天/周', '无'] },
+  { path: 'lifestyle_data.exerciseDuration',   label: '每次运动时长（分钟）', group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.wakeTime',           label: '起床时间',       group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.sleepTime',          label: '入睡时间',       group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.scheduleRegularity', label: '作息规律性',     group: '膳食调查', type: 'enum', options: ['规律', '不规律'] },
+  { path: 'lifestyle_data.exerciseRemark',     label: '运动备注',       group: '膳食调查', type: 'text' },
+  // 烟酒与应酬
+  { path: 'lifestyle_data.smokingStatus',     label: '吸烟情况',   group: '膳食调查', type: 'enum', options: ['＜10支/日', '10-20支/日', '20-30支/日', '30支以上/日', '不吸烟', '戒烟'] },
+  { path: 'lifestyle_data.drinkingFrequency', label: '饮酒频率',   group: '膳食调查', type: 'enum', options: ['＜1天/周', '1-3天/周', '3天/周及以上', '每天喝', '不喝酒'] },
+  { path: 'lifestyle_data.drinkingType',      label: '饮酒类型',   group: '膳食调查', type: 'array' },
+  { path: 'lifestyle_data.drinkingAmount',    label: '饮酒量',     group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.entertainmentFreq',label: '应酬频率（烟酒板块）', group: '膳食调查', type: 'enum', options: ['1-2次/周', '3-5次/周', '6-7次/周', '无或偶尔'] },
+  // 营养素与过敏
+  { path: 'lifestyle_data.nutritionHistory',     label: '营养干预史',       group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.dailyDietAssessment',  label: '每日膳食摄入量评估', group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.nutrientOverview',     label: '营养素摄入概况',   group: '膳食调查', type: 'text' },
+  { path: 'lifestyle_data.foodAllergens',        label: '食物过敏源',       group: '膳食调查', type: 'array' },
+  { path: 'lifestyle_data.glutenAllergy',        label: '麸质过敏',         group: '膳食调查', type: 'enum', options: ['是', '否', '不详'] },
+  { path: 'lifestyle_data.dailyWater',           label: '每日饮水量',       group: '膳食调查', type: 'enum', options: ['1500毫升内', '1500-1700毫升', '1800-2000毫升', '2500毫升', '3000毫升以上'] },
+  { path: 'lifestyle_data.psychStress',          label: '心理压力',         group: '膳食调查', type: 'enum', options: ['正常', '中等压力/焦虑', '严重抑郁/焦虑'] },
+  { path: 'lifestyle_data.bowelRegularity',      label: '排便规律性',       group: '膳食调查', type: 'enum', options: ['规律（1-2次/日）', '偶尔不规律', '便秘/腹泻'] },
+  { path: 'lifestyle_data.bowelShape',           label: '大便形状',         group: '膳食调查', type: 'text' },
 ];
 
 const FIELD_MAP = Object.fromEntries(ARCHIVE_FIELDS.map(f => [f.path, f]));
 
 // 按分组聚合，供前端下拉 optgroup 使用
 function groupedArchiveFields() {
-  const order = ['基本信息', '既往健康史', '健康需求', '医疗保障', '生活方式', '心理健康'];
+  const order = ['基本信息', '既往健康史', '健康需求', '医疗保障', '生活方式', '心理健康', '膳食调查'];
   const byGroup = {};
   ARCHIVE_FIELDS.forEach(f => { (byGroup[f.group] = byGroup[f.group] || []).push(f); });
   return order.filter(g => byGroup[g]).map(g => ({ group: g, fields: byGroup[g] }));

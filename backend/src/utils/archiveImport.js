@@ -1,6 +1,7 @@
 // ── 问卷答卷 → 健康档案 自动导入引擎 ──────────────────────────────────
-// 依据每题绑定的 archiveField，把答案归一化为档案字段值，生成待审核草稿。
+// 依据每题绑定的 archiveField，把答案归一化为档案字段值。
 // 归一化是确定性规则（多选拼数组/文本、量表与矩阵转文本、"无"过滤），无需调用大模型，稳定可控。
+// 无冲突字段（档案里原本为空，或与新答案一致）自动写入档案；仅当新答案与档案已有值冲突时才生成待审核草稿。
 
 const { FIELD_MAP } = require('../config/archiveFields');
 
@@ -40,7 +41,7 @@ function normalizeValue(fieldDef, ans) {
   return answerToText(ans);
 }
 
-// 生成档案草稿（不写库，仅返回结构）
+// 生成档案导入条目（不写库，仅返回结构），并按是否与档案已有值冲突分为 autoItems / conflictItems
 function buildArchiveDraft(user, questionnaire, response) {
   const answers = (response && response.answers) || {};
   const items = [];
@@ -63,13 +64,17 @@ function buildArchiveDraft(user, questionnaire, response) {
       conflict: !!(existingStr && existingStr !== valueStr),
     });
   }
+  const autoItems = items.filter(it => !it.conflict);
+  const conflictItems = items.filter(it => it.conflict);
   return {
     generatedAt: new Date(),
     questionnaireId: questionnaire._id,
     questionnaireTitle: questionnaire.title || '',
     responseId: response ? response._id : null,
     status: 'pending',
-    items,
+    items, // 兼容旧字段：全部条目
+    autoItems,
+    conflictItems,
   };
 }
 
