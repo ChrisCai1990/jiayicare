@@ -517,11 +517,29 @@ const PSYCH_SCALE_META = {
   sas:     { name: 'SAS 焦虑自评量表' },
 }
 
+// 兼容旧数据：无 byYear 的扁平量表结果（{totalScore, filledAt, ...}）归入其填写年份
+function psychByYear(raw) {
+  if (!raw) return {}
+  if (raw.byYear) return raw.byYear
+  if (raw.totalScore !== undefined) {
+    const y = String(raw.filledAt ? new Date(raw.filledAt).getFullYear() : new Date().getFullYear())
+    return { [y]: raw }
+  }
+  return {}
+}
+
 function PsychAssessmentPanel({ user }) {
   const [expandedKeys, setExpandedKeys] = useState({}) // { [scaleKey]: bool } 每个量表独立展开
+  const [scaleYear, setScaleYear] = useState({})        // { [scaleKey]: '2026' } 每个量表独立年度
   const assessments = user.psychAssessments || {}
+  const nowY = new Date().getFullYear()
   const entries = Object.entries(PSYCH_SCALE_META)
-    .map(([key, meta]) => ({ key, meta, result: assessments[key] }))
+    .map(([key, meta]) => {
+      const byYear = psychByYear(assessments[key])
+      const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
+      const curYear = (scaleYear[key] && years.includes(scaleYear[key])) ? scaleYear[key] : years[0]
+      return { key, meta, byYear, years, curYear, result: byYear[curYear] }
+    })
 
   const hasAny = entries.some(e => e.result)
   const toggle = (key) => setExpandedKeys(v => ({ ...v, [key]: !v[key] }))
@@ -535,7 +553,7 @@ function PsychAssessmentPanel({ user }) {
         {!hasAny && (
           <div style={{ color: '#8AA89C', fontSize: 13 }}>暂无心理健康评估记录，可在问卷库推送相应量表给该会员</div>
         )}
-        {entries.filter(e => e.result).map(({ key, meta, result }) => {
+        {entries.filter(e => e.result).map(({ key, meta, result, years, curYear }) => {
           const color = PSYCH_SEVERITY_COLOR[result.severity] || '#8AA89C'
           const expanded = !!expandedKeys[key]
           const answersDetail = result.answersDetail || []
@@ -545,7 +563,7 @@ function PsychAssessmentPanel({ user }) {
           const canExpand = hasFactor || hasDetail
           return (
             <div key={key} style={{ border: '1px solid #F0EDE7', borderRadius: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: canExpand ? 'pointer' : 'default' }}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: canExpand ? 'pointer' : 'default', flexWrap: 'wrap', gap: 8 }}
                 onClick={() => canExpand && toggle(key)}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>{meta.name}</span>
@@ -554,7 +572,21 @@ function PsychAssessmentPanel({ user }) {
                   </span>
                   <span style={{ fontSize: 12, color: '#8AA89C' }}>{new Date(result.filledAt).toLocaleDateString('zh-CN')}</span>
                 </div>
-                {canExpand && <span style={{ fontSize: 12, color: '#aaa' }}>{expanded ? '▲' : '▼'}</span>}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  {years.length > 1 && (
+                    <div style={{ display: 'flex', gap: 3 }} onClick={e => e.stopPropagation()}>
+                      {years.map(y => (
+                        <button key={y} onClick={() => setScaleYear(v => ({ ...v, [key]: y }))}
+                          style={{
+                            border: 'none', borderRadius: 5, padding: '1px 7px', fontSize: 11, cursor: 'pointer',
+                            background: y === curYear ? '#1E6B50' : '#F5F2EC',
+                            color: y === curYear ? '#fff' : '#4A6558',
+                          }}>{y}</button>
+                      ))}
+                    </div>
+                  )}
+                  {canExpand && <span style={{ fontSize: 12, color: '#aaa' }}>{expanded ? '▲' : '▼'}</span>}
+                </div>
               </div>
 
               {expanded && (
@@ -619,10 +651,28 @@ const ASCVD_LEVEL_COLOR = {
 function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
-  const result = user.ascvdRisk || null
+
+  // 兼容旧数据：早期版本 ascvdRisk 是单个扁平对象，无 byYear，归入其评估年份（无年份则归当前年）
+  const byYear = (() => {
+    const raw = user.ascvdRisk || null
+    if (!raw) return {}
+    if (raw.byYear) return raw.byYear
+    if (raw.level) {
+      const y = raw.evaluatedAt ? String(new Date(raw.evaluatedAt).getFullYear()) : String(new Date().getFullYear())
+      return { [y]: raw }
+    }
+    return {}
+  })()
+
+  const nowY = new Date().getFullYear()
+  const years = [...new Set([...Object.keys(byYear), String(nowY - 1), String(nowY), String(nowY + 1)])]
+    .sort((a, b) => Number(b) - Number(a))
+  const [year, setYear] = useState(String(nowY))
+  const result = byYear[year] || null
+
   // 从档案预填性别/年龄，其余体检值默认空
   const genderInit = user.gender === '女' ? 'female' : user.gender === '男' ? 'male' : 'male'
-  const [form, setForm] = useState(() => {
+  const blankForm = () => {
     const inp = result?.inputs || {}
     return {
       gender: inp.gender || genderInit,
@@ -632,20 +682,10 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
       onHypertensionTreatment: !!inp.onHypertensionTreatment,
       smoking: !!inp.smoking, diabetes: !!inp.diabetes,
     }
-  })
-
-  const openEdit = () => {
-    const inp = result?.inputs || {}
-    setForm({
-      gender: inp.gender || genderInit,
-      age: inp.age ?? (user.age || ''),
-      tc: inp.tc ?? '', ldl: inp.ldl ?? '', hdl: inp.hdl ?? '',
-      sbp: inp.sbp ?? '',
-      onHypertensionTreatment: !!inp.onHypertensionTreatment,
-      smoking: !!inp.smoking, diabetes: !!inp.diabetes,
-    })
-    setEditing(true)
   }
+  const [form, setForm] = useState(blankForm)
+
+  const openEdit = () => { setForm(blankForm()); setEditing(true) }
 
   const handleSave = async () => {
     if (!form.age || !form.sbp || (!form.tc && !form.ldl)) {
@@ -653,8 +693,8 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
     }
     setSaving(true)
     try {
-      await staffAPI.saveAscvdRisk(patientId, form)
-      toast('ASCVD风险评估已保存')
+      await staffAPI.saveAscvdRisk(patientId, { ...form, year })
+      toast(`${year}年度 ASCVD风险评估已保存`)
       setEditing(false)
       onSaved()
     } catch (err) { toast(err.message || '保存失败') }
@@ -662,8 +702,8 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   }
 
   const handleClear = async () => {
-    if (!window.confirm('确认清除本次ASCVD评估？')) return
-    try { await staffAPI.deleteAscvdRisk(patientId); onSaved() }
+    if (!window.confirm(`确认清除 ${year} 年度的ASCVD评估？`)) return
+    try { await staffAPI.deleteAscvdRisk(patientId, year); onSaved() }
     catch (err) { toast(err.message || '清除失败') }
   }
 
@@ -677,9 +717,23 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   )
 
   return (
-    <div className="card" style={{ marginBottom: 16 }}>
-      <div className="card-header" style={{ display: 'flex', alignItems: 'center' }}>
+    <div className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
+      <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div className="card-title" style={{ flex: 1 }}>❤️ 10年ASCVD风险评估</div>
+        {/* 年度切换 */}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {years.map(y => (
+            <button key={y} onClick={() => { setYear(y); setEditing(false) }}
+              style={{
+                border: 'none', borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer',
+                background: y === year ? '#1E6B50' : '#F5F2EC',
+                color: y === year ? '#fff' : '#4A6558',
+                fontWeight: y === year ? 700 : 400,
+              }}>
+              {y}{byYear[y] ? ' ●' : ''}
+            </button>
+          ))}
+        </div>
         {!editing && (
           <div style={{ display: 'flex', gap: 6 }}>
             <button className="btn btn-secondary btn-sm" onClick={openEdit}>{result ? '重新评估' : '＋ 录入评估'}</button>
@@ -689,7 +743,8 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
       </div>
       <div className="card-body">
         {editing ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+            <div style={{ fontSize: 12, color: '#8AA89C' }}>正在录入 <b style={{ color: '#1E6B50' }}>{year}</b> 年度评估</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
               <div>
                 <label style={{ fontSize: 12, color: '#8AA89C' }}>性别</label>
@@ -704,7 +759,7 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
               {numField('低密度脂蛋白 LDL-C', 'ldl', 'mmol/L')}
               {numField('高密度脂蛋白 HDL-C', 'hdl', 'mmol/L')}
             </div>
-            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', background: '#f9f7f3', borderRadius: 8, padding: '10px 14px' }}>
               <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.smoking} onChange={e => setForm(f => ({ ...f, smoking: e.target.checked }))} /> 吸烟
               </label>
@@ -722,34 +777,69 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
             </div>
           </div>
         ) : result ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 14, fontWeight: 700, color: lv.color, background: lv.bg, borderRadius: 8, padding: '4px 14px' }}>{result.levelLabel}</span>
-              <span style={{ fontSize: 13, color: '#4A6558' }}>{result.description}</span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {/* 风险等级大卡 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: lv.bg, borderRadius: 10, padding: '14px 18px' }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%', flexShrink: 0,
+                background: lv.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontSize: 16, fontWeight: 800,
+              }}>{result.levelLabel}</div>
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 700, color: lv.color }}>{result.description}</div>
+                {result.directHighRisk && (
+                  <div style={{ fontSize: 12, color: '#DC3545', marginTop: 4 }}>⚠ 直接判定高危：{result.directHighRisk}</div>
+                )}
+              </div>
             </div>
-            {result.directHighRisk && (
-              <div style={{ fontSize: 12, color: '#DC3545', background: '#FEF2F2', borderRadius: 6, padding: '6px 10px' }}>
-                直接判定高危：{result.directHighRisk}
+
+            {/* 危险因素 */}
+            {Array.isArray(result.riskFactors) && result.riskFactors.length > 0 && (
+              <div>
+                <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>危险因素</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                  {result.riskFactors.map((f, i) => (
+                    <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, background: '#F5F2EC', color: '#4A6558' }}>{f}</span>
+                  ))}
+                </div>
               </div>
             )}
-            {Array.isArray(result.riskFactors) && result.riskFactors.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {result.riskFactors.map((f, i) => (
-                  <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, background: '#F5F2EC', color: '#4A6558' }}>{f}</span>
+
+            {/* 建议 */}
+            {result.advice && (
+              <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 8, padding: '10px 14px', lineHeight: 1.6 }}>
+                💡 {result.advice}
+              </div>
+            )}
+
+            {/* 录入参数：网格化，替代原来一长串文字 */}
+            <div style={{ borderTop: '1px dashed #E0D9CE', paddingTop: 10 }}>
+              <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>录入参数</div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 8 }}>
+                {[
+                  ['性别', result.inputs.gender === 'female' ? '女' : '男'],
+                  ['年龄', `${result.inputs.age}岁`],
+                  ['收缩压', `${result.inputs.sbp} mmHg`],
+                  ['TC', result.inputs.tc ?? '-'],
+                  ['LDL-C', result.inputs.ldl ?? '-'],
+                  ['HDL-C', result.inputs.hdl ?? '-'],
+                ].map(([k, v]) => (
+                  <div key={k} style={{ background: '#f9f7f3', borderRadius: 6, padding: '5px 8px', textAlign: 'center' }}>
+                    <div style={{ fontSize: 10, color: '#aaa' }}>{k}</div>
+                    <div style={{ fontSize: 12, fontWeight: 600, color: '#1A2B24' }}>{v}</div>
+                  </div>
                 ))}
               </div>
-            )}
-            {result.advice && (
-              <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '8px 12px' }}>建议：{result.advice}</div>
-            )}
-            <div style={{ fontSize: 11, color: '#8AA89C' }}>
-              录入参数：{result.inputs.gender === 'female' ? '女' : '男'} · {result.inputs.age}岁 · 收缩压{result.inputs.sbp} · TC{result.inputs.tc ?? '-'} · LDL{result.inputs.ldl ?? '-'} · HDL{result.inputs.hdl ?? '-'}
-              {result.inputs.smoking ? ' · 吸烟' : ''}{result.inputs.diabetes ? ' · 糖尿病' : ''}
-              {result.evaluatedBy ? ` · 由${result.evaluatedBy}评估` : ''}{result.evaluatedAt ? ` · ${new Date(result.evaluatedAt).toLocaleDateString('zh-CN')}` : ''}
+              <div style={{ fontSize: 11, color: '#B0A99C', marginTop: 8 }}>
+                {result.inputs.smoking ? '吸烟 · ' : ''}{result.inputs.diabetes ? '糖尿病 · ' : ''}
+                {result.evaluatedBy ? `由${result.evaluatedBy}评估` : ''}{result.evaluatedAt ? ` · ${new Date(result.evaluatedAt).toLocaleDateString('zh-CN')}` : ''}
+              </div>
             </div>
           </div>
         ) : (
-          <div style={{ fontSize: 13, color: '#8AA89C' }}>尚未评估。点击右上角「录入评估」，填写体检参数后系统将按中国指南自动分层。</div>
+          <div style={{ fontSize: 13, color: '#8AA89C', textAlign: 'center', padding: '20px 0' }}>
+            {year} 年度尚未评估。点击「录入评估」，填写体检参数后系统将按中国指南自动分层。
+          </div>
         )}
       </div>
     </div>
@@ -887,6 +977,7 @@ export default function PatientDetailPage() {
   const [aiSummaryForm, setAiSummaryForm] = useState({})
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   // 场景八：AI风险评估
+  const [riskYear, setRiskYear] = useState(null)             // 当前查看的AI风险评估年度
   const [riskGenerating, setRiskGenerating] = useState(false)
   const [riskApproving, setRiskApproving] = useState(false)
   const [editingRisk, setEditingRisk] = useState(false)      // 是否处于编辑态
@@ -1481,27 +1572,40 @@ export default function PatientDetailPage() {
   }
 
   // 场景八：AI风险评估
-  const handleGenerateRisk = async () => {
+  // 兼容旧数据：无 byYear 的扁平 aiRiskAssessment 归入其生成年份
+  const riskByYearFE = (raw) => {
+    if (!raw) return {}
+    if (raw.byYear) return raw.byYear
+    if (raw.dimensions || raw.overallLevel) {
+      const y = String(raw.generatedAt ? new Date(raw.generatedAt).getFullYear() : new Date().getFullYear())
+      return { [y]: raw }
+    }
+    return {}
+  }
+  const handleGenerateRisk = async (year) => {
+    const y = String(year || new Date().getFullYear())
     setRiskGenerating(true)
     try {
-      await staffAPI.generateAIRisk(id)
-      toast('AI风险评估已生成')
+      await staffAPI.generateAIRisk(id, y)
+      setRiskYear(y)
+      toast(`${y}年度 AI风险评估已生成`)
       load()
     } catch (err) { toast(err.message || 'AI生成失败') }
     finally { setRiskGenerating(false) }
   }
-  const handleApproveRisk = async () => {
+  const handleApproveRisk = async (year) => {
     setRiskApproving(true)
     try {
-      await staffAPI.updateAIRisk(id, { action: 'approve' })
+      await staffAPI.updateAIRisk(id, { action: 'approve', year })
       toast('风险评估已审核确认')
       load()
     } catch (err) { toast(err.message || '操作失败') }
     finally { setRiskApproving(false) }
   }
   // 进入编辑态：把当前风险评估复制成可编辑副本
-  const startEditRisk = () => {
-    const ra = data?.user?.aiRiskAssessment || {}
+  const startEditRisk = (year) => {
+    const byYear = riskByYearFE(data?.user?.aiRiskAssessment)
+    const ra = byYear[year] || {}
     setRiskForm({
       overallSummary: ra.overallSummary || '',
       dimensions: (ra.dimensions || []).map(d => ({
@@ -1511,7 +1615,7 @@ export default function PatientDetailPage() {
     })
     setEditingRisk(true)
   }
-  const handleSaveRisk = async () => {
+  const handleSaveRisk = async (year) => {
     setRiskSaving(true)
     try {
       const dimensions = riskForm.dimensions.map(d => ({
@@ -1519,7 +1623,7 @@ export default function PatientDetailPage() {
         factors: (d.factorsText || '').split('\n').map(s => s.trim()).filter(Boolean),
         advice: d.advice || '',
       }))
-      await staffAPI.updateAIRisk(id, { dimensions, overallSummary: riskForm.overallSummary })
+      await staffAPI.updateAIRisk(id, { dimensions, overallSummary: riskForm.overallSummary, year })
       toast('风险评估已保存')
       setEditingRisk(false); setRiskForm(null)
       load()
@@ -1527,23 +1631,23 @@ export default function PatientDetailPage() {
     finally { setRiskSaving(false) }
   }
   // 风险评估讨论区：发留言 / 撤回 / 让AI回应
-  const handleRiskDiscSend = async () => {
+  const handleRiskDiscSend = async (year) => {
     if (!riskDiscInput.trim()) return
     setRiskDiscBusy(true)
     try {
-      await staffAPI.addAIRiskDiscussion(id, riskDiscInput.trim())
+      await staffAPI.addAIRiskDiscussion(id, riskDiscInput.trim(), year)
       setRiskDiscInput('')
       load()
     } catch (err) { toast(err.message || '发送失败') }
     finally { setRiskDiscBusy(false) }
   }
-  const handleRiskDiscDelete = async (index) => {
-    try { await staffAPI.deleteAIRiskDiscussion(id, index); load() }
+  const handleRiskDiscDelete = async (index, year) => {
+    try { await staffAPI.deleteAIRiskDiscussion(id, index, year); load() }
     catch (err) { toast(err.message || '撤回失败') }
   }
-  const handleRiskAiReply = async () => {
+  const handleRiskAiReply = async (year) => {
     setRiskAiReplying(true)
-    try { await staffAPI.generateAIRiskReply(id); load() }
+    try { await staffAPI.generateAIRiskReply(id, year); load() }
     catch (err) { toast(err.message || 'AI回应失败') }
     finally { setRiskAiReplying(false) }
   }
@@ -4841,7 +4945,12 @@ export default function PatientDetailPage() {
 
       {/* ── AI风险评估 Tab（场景八）── */}
       {tab === 'ai-risk' && (() => {
-        const ra = user.aiRiskAssessment || {}
+        const byYear = riskByYearFE(user.aiRiskAssessment)
+        const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
+        const nowY = new Date().getFullYear()
+        const yearOpts = [...new Set([...years, String(nowY - 1), String(nowY), String(nowY + 1)])].sort((a, b) => Number(b) - Number(a))
+        const curYear = (riskYear && yearOpts.includes(riskYear)) ? riskYear : (years[0] || String(nowY))
+        const ra = byYear[curYear] || {}
         const dims = Array.isArray(ra.dimensions) ? ra.dimensions : []
         const hasData = dims.length > 0
         const LV = {
@@ -4854,6 +4963,20 @@ export default function PatientDetailPage() {
         const overall = lvOf(ra.overallLevel)
         return (
           <div>
+            {/* 年度切换 */}
+            <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
+              {yearOpts.map(y => (
+                <button key={y} onClick={() => { setRiskYear(y); setEditingRisk(false) }}
+                  style={{
+                    border: 'none', borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer',
+                    background: y === curYear ? '#1E6B50' : '#F5F2EC',
+                    color: y === curYear ? '#fff' : '#4A6558',
+                    fontWeight: y === curYear ? 700 : 400,
+                  }}>
+                  {y}{byYear[y] ? ' ●' : ''}
+                </button>
+              ))}
+            </div>
             {/* 操作栏 */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
               {ra.approvedAt ? (
@@ -4866,21 +4989,21 @@ export default function PatientDetailPage() {
                 </div>
               )}
               {hasData && !editingRisk && (
-                <button className="btn btn-secondary btn-sm" onClick={startEditRisk}>✏️ 编辑</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => startEditRisk(curYear)}>✏️ 编辑</button>
               )}
               {hasData && !ra.approvedAt && !editingRisk && (
-                <button className="btn btn-primary btn-sm" onClick={handleApproveRisk} disabled={riskApproving}>
+                <button className="btn btn-primary btn-sm" onClick={() => handleApproveRisk(curYear)} disabled={riskApproving}>
                   {riskApproving ? '处理中...' : '审核确认'}
                 </button>
               )}
               {!editingRisk && (
-                <button className="btn btn-secondary btn-sm" onClick={handleGenerateRisk} disabled={riskGenerating}>
+                <button className="btn btn-secondary btn-sm" onClick={() => handleGenerateRisk(curYear)} disabled={riskGenerating}>
                   {riskGenerating ? 'AI评估中...' : hasData ? '重新评估' : '✨ AI生成风险评估'}
                 </button>
               )}
               {editingRisk && (
                 <>
-                  <button className="btn btn-primary btn-sm" onClick={handleSaveRisk} disabled={riskSaving}>
+                  <button className="btn btn-primary btn-sm" onClick={() => handleSaveRisk(curYear)} disabled={riskSaving}>
                     {riskSaving ? '保存中...' : '保存修改'}
                   </button>
                   <button className="btn btn-secondary btn-sm" onClick={() => { setEditingRisk(false); setRiskForm(null) }}>取消</button>
@@ -4890,7 +5013,7 @@ export default function PatientDetailPage() {
 
             {!hasData && (
               <div className="card" style={{ padding: 32, textAlign: 'center', color: '#8AA89C', fontSize: 14 }}>
-                暂无风险评估。点击右上角「AI生成风险评估」，系统将结合规则引擎与AI对心血管、糖尿病、肿瘤、慢性肾病四个维度进行风险分级。
+                {curYear} 年度暂无风险评估。点击右上角「AI生成风险评估」，系统将结合规则引擎与AI对心血管、糖尿病、肿瘤、慢性肾病四个维度进行风险分级。
               </div>
             )}
 
@@ -4978,7 +5101,7 @@ export default function PatientDetailPage() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
                     <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>💬 团队讨论 / 向AI提问</span>
                     {discussions.length > 0 && (
-                      <button className="btn btn-secondary btn-sm" onClick={handleRiskAiReply} disabled={riskAiReplying}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => handleRiskAiReply(curYear)} disabled={riskAiReplying}>
                         {riskAiReplying ? 'AI思考中…' : '✨ 让AI回应'}
                       </button>
                     )}
@@ -4998,7 +5121,7 @@ export default function PatientDetailPage() {
                             <span style={{ fontSize: 11, color: '#aaa' }}>{new Date(m.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                             {(m.isAI || String(m.staffId) === String(staff?._id) || staff?.role === 'superadmin') && (
                               <button style={{ marginLeft: 'auto', fontSize: 11, color: '#c00', background: 'none', border: 'none', cursor: 'pointer' }}
-                                onClick={() => handleRiskDiscDelete(i)}>撤回</button>
+                                onClick={() => handleRiskDiscDelete(i, curYear)}>撤回</button>
                             )}
                           </div>
                           <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{m.content}</div>
@@ -5009,10 +5132,10 @@ export default function PatientDetailPage() {
                   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                     <textarea className="form-input" rows={2} value={riskDiscInput}
                       onChange={e => setRiskDiscInput(e.target.value)}
-                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRiskDiscSend() } }}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRiskDiscSend(curYear) } }}
                       placeholder="输入对风险评估的疑问或补充，Enter 发送，Shift+Enter 换行..."
                       style={{ flex: 1, resize: 'none', fontSize: 13 }} />
-                    <button className="btn btn-primary" onClick={handleRiskDiscSend} disabled={riskDiscBusy || !riskDiscInput.trim()}>
+                    <button className="btn btn-primary" onClick={() => handleRiskDiscSend(curYear)} disabled={riskDiscBusy || !riskDiscInput.trim()}>
                       {riskDiscBusy ? '…' : '发送'}
                     </button>
                   </div>

@@ -18,7 +18,7 @@ async function pushQuestionnairesToUser(userId, titles) {
   const superadmin = await Admin.findOne({ username: 'superadmin' }).select('_id');
   if (!superadmin) { console.error('[onboarding-push] 未找到 superadmin 账号，跳过自动推送'); return; }
 
-  const questionnaires = await DynamicQuestionnaire.find({ title: { $in: titles }, status: 'active' });
+  const questionnaires = await DynamicQuestionnaire.find({ title: { $in: titles }, status: 'active', deletedAt: null });
   for (const q of questionnaires) {
     // 避免重复推送同一份问卷给同一用户
     const already = await PushRecord.findOne({ patientId: userId, type: 'questionnaire', questionnaireId: q._id });

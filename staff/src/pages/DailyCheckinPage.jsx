@@ -111,8 +111,8 @@ export default function DailyCheckinPage() {
 
                 {/* 已打卡 */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: r.missingItems.length ? 8 : 0 }}>
-                  {r.doneItems.map(item => (
-                    <span key={item.type} style={{
+                  {r.doneItems.map((item, idx) => (
+                    <span key={`${item.type}-${item.recordedAt || idx}`} style={{
                       padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500,
                       background: (TYPE_COLOR[item.type] || '#1E6B50') + '18',
                       color: TYPE_COLOR[item.type] || '#1E6B50',

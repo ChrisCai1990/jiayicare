@@ -53,6 +53,7 @@ const questionnaireSchema = new mongoose.Schema({
     description: { type: String, default: '' },   // 如：需要专业干预
     _id: false,
   }],
+  deletedAt:   { type: Date, default: null }, // 软删除：置为已删除后不再出现在任何列表，但保留答卷历史可追溯
 }, { timestamps: true });
 
 // 答卷记录

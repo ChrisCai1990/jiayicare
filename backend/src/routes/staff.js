@@ -1358,7 +1358,7 @@ router.post('/knowledge/:id/push', staffAuth, async (req, res) => {
 // ── 问卷推送 ───────────────────────────────────────────────
 // GET /api/staff/questionnaires — 问卷模板列表（含草稿，供医护查看；仅 active 可推送）
 router.get('/questionnaires', staffAuth, async (req, res) => {
-  const qs = await DynamicQuestionnaire.find().select('title description status questions deadline createdAt').sort({ createdAt: -1 });
+  const qs = await DynamicQuestionnaire.find({ deletedAt: null }).select('title description status questions deadline createdAt').sort({ createdAt: -1 });
   res.json({ success: true, data: qs });
 });
 
@@ -2895,13 +2895,14 @@ router.get('/checkin-overview', staffAuth, async (req, res) => {
       recordedAt: { $gte: start, $lte: end },
     }).select('user type value unit recordedAt imageUrl extra').sort({ recordedAt: -1 }).lean();
 
-    // 按患者分组
+    // 按患者分组：同一类型当天可能打卡多次（如血压测3次），全部保留，不只取最新一条
     const byPatient = {};
     records.forEach(r => {
       const uid = String(r.user);
       if (!byPatient[uid]) byPatient[uid] = { latestAt: r.recordedAt, types: {} };
       if (r.recordedAt > byPatient[uid].latestAt) byPatient[uid].latestAt = r.recordedAt;
-      if (!byPatient[uid].types[r.type]) byPatient[uid].types[r.type] = r; // 取每种类型第一条（最新）
+      if (!byPatient[uid].types[r.type]) byPatient[uid].types[r.type] = [];
+      byPatient[uid].types[r.type].push(r);
     });
 
     // 只返回有打卡记录的患者，按最近打卡时间倒序
@@ -2915,10 +2916,10 @@ router.get('/checkin-overview', staffAuth, async (req, res) => {
           patientName: patient.name || '-',
           patientPhone: patient.phone || '-',
           latestRecordAt: data.latestAt,
-          doneItems: doneTypes.map(t => ({
+          doneItems: doneTypes.flatMap(t => data.types[t].map(r => ({
             type: t, label: TYPE_LABEL[t] || t,
-            value: data.types[t].value, unit: data.types[t].unit || '',
-          })),
+            value: r.value, unit: r.unit || '', recordedAt: r.recordedAt,
+          }))),
           missingItems: missingTypes.map(t => ({ type: t, label: TYPE_LABEL[t] || t })),
         };
       })
@@ -3476,31 +3477,49 @@ ${recLines}
 // 规则引擎：根据体检指标给出每个维度的预警信号，供 AI 综合判级
 const { RISK_LEVELS, generateRiskAssessment } = require('../utils/aiRiskAssessment');
 
-// POST /api/staff/patients/:id/ai-risk-assessment — 生成风险评估
+// 兼容旧数据：早期版本 aiRiskAssessment 是单个扁平对象，无 byYear。
+// 归入其生成年份（无年份则归当前年），与 aiHealthSummary.byYear 的既有迁移方式一致
+function riskByYear(raw) {
+  if (!raw) return {};
+  if (raw.byYear) return raw.byYear;
+  if (raw.dimensions || raw.overallLevel) {
+    const y = String(raw.generatedAt ? new Date(raw.generatedAt).getFullYear() : new Date().getFullYear());
+    return { [y]: raw };
+  }
+  return {};
+}
+function riskYearOf(req) {
+  return String(req.body?.year || req.query?.year || new Date().getFullYear());
+}
+
+// POST /api/staff/patients/:id/ai-risk-assessment — 生成风险评估（year 不填则为当前年）
 router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
+    const year = riskYearOf(req);
     const assessment = await generateRiskAssessment(user);
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { aiRiskAssessment: assessment } }
+      { $set: { [`aiRiskAssessment.byYear.${year}`]: assessment } }
     );
-    res.json({ success: true, data: assessment });
+    res.json({ success: true, data: assessment, year });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
 });
 
-// PATCH /api/staff/patients/:id/ai-risk-assessment — 家庭医生审核/修改
+// PATCH /api/staff/patients/:id/ai-risk-assessment — 家庭医生审核/修改（body.year 指定所属年度）
 router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   try {
     const { dimensions, overallSummary, action } = req.body;
+    const year = riskYearOf(req);
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    const updated = { ...(user.aiRiskAssessment || {}) };
+    const byYear = riskByYear(user.aiRiskAssessment);
+    const updated = { ...(byYear[year] || {}) };
     if (dimensions !== undefined) {
       updated.dimensions = dimensions;
       updated.overallLevel = dimensions.reduce((max, d) =>
@@ -3516,21 +3535,23 @@ router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => 
     }
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { aiRiskAssessment: updated } }
+      { $set: { [`aiRiskAssessment.byYear.${year}`]: updated } }
     );
     res.json({ success: true, data: updated });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── AI风险评估·团队讨论区（与AI健康分析讨论区一致：团队留言 + @AI回应）──
-// POST /api/staff/patients/:id/ai-risk-assessment/discussions — 发一条讨论留言
+// ── AI风险评估·团队讨论区（与AI健康分析讨论区一致：团队留言 + @AI回应，按年度独立）──
+// POST /api/staff/patients/:id/ai-risk-assessment/discussions — 发一条讨论留言（query.year 指定年度）
 router.post('/patients/:id/ai-risk-assessment/discussions', staffAuth, async (req, res) => {
   try {
     const { content } = req.body;
     if (!content?.trim()) return res.status(400).json({ success: false, message: '留言内容不能为空' });
+    const year = riskYearOf(req);
     const user = await User.findById(req.params.id).select('aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    const ra = { ...(user.aiRiskAssessment || {}) };
+    const byYear = riskByYear(user.aiRiskAssessment);
+    const ra = { ...(byYear[year] || {}) };
     const discussions = Array.isArray(ra.discussions) ? [...ra.discussions] : [];
     discussions.push({
       staffId: req.staff._id,
@@ -3543,39 +3564,45 @@ router.post('/patients/:id/ai-risk-assessment/discussions', staffAuth, async (re
     ra.discussions = discussions;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { 'aiRiskAssessment.discussions': discussions } }
+      { $set: { [`aiRiskAssessment.byYear.${year}`]: ra } }
     );
     res.json({ success: true, data: discussions });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// DELETE /api/staff/patients/:id/ai-risk-assessment/discussions/:index — 撤回自己发的一条留言（仅本人或超管）
+// DELETE /api/staff/patients/:id/ai-risk-assessment/discussions/:index — 撤回自己发的一条留言（仅本人或超管，query.year 指定年度）
 router.delete('/patients/:id/ai-risk-assessment/discussions/:index', staffAuth, async (req, res) => {
   try {
     const idx = parseInt(req.params.index, 10);
+    const year = riskYearOf(req);
     const user = await User.findById(req.params.id).select('aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    const discussions = Array.isArray(user.aiRiskAssessment?.discussions) ? [...user.aiRiskAssessment.discussions] : [];
+    const byYear = riskByYear(user.aiRiskAssessment);
+    const ra = { ...(byYear[year] || {}) };
+    const discussions = Array.isArray(ra.discussions) ? [...ra.discussions] : [];
     const target = discussions[idx];
     if (!target) return res.status(404).json({ success: false, message: '留言不存在' });
     if (!target.isAI && String(target.staffId) !== String(req.staff._id) && req.staff.role !== 'superadmin') {
       return res.status(403).json({ success: false, message: '只能撤回自己发的留言' });
     }
     discussions.splice(idx, 1);
+    ra.discussions = discussions;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { 'aiRiskAssessment.discussions': discussions } }
+      { $set: { [`aiRiskAssessment.byYear.${year}`]: ra } }
     );
     res.json({ success: true, data: discussions });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST /api/staff/patients/:id/ai-risk-assessment/discussions/ai-reply — 针对疑问，让AI结合风险评估结论回应
+// POST /api/staff/patients/:id/ai-risk-assessment/discussions/ai-reply — 针对疑问，让AI结合风险评估结论回应（query.year 指定年度）
 router.post('/patients/:id/ai-risk-assessment/discussions/ai-reply', staffAuth, async (req, res) => {
   try {
+    const year = riskYearOf(req);
     const user = await User.findById(req.params.id).select('name gender age aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    const ra = user.aiRiskAssessment || {};
+    const byYear = riskByYear(user.aiRiskAssessment);
+    const ra = byYear[year] || {};
     const discussions = Array.isArray(ra.discussions) ? ra.discussions : [];
     if (discussions.length === 0) return res.status(400).json({ success: false, message: '暂无讨论留言，无法生成AI回应' });
 
@@ -3601,37 +3628,40 @@ ${discussionText}
       content: (text || '').trim(), createdAt: new Date(), isAI: true,
     };
     const updatedDiscussions = [...discussions, reply];
+    const updatedRa = { ...ra, discussions: updatedDiscussions };
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { 'aiRiskAssessment.discussions': updatedDiscussions } }
+      { $set: { [`aiRiskAssessment.byYear.${year}`]: updatedRa } }
     );
     res.json({ success: true, data: updatedDiscussions });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 10年ASCVD风险评估（医护端录入体检参数→按中国指南自动分层）──
-// POST /api/staff/patients/:id/ascvd-risk — 计算并保存
+// ── 10年ASCVD风险评估（医护端录入体检参数→按中国指南自动分层，按年度存储）──
+// POST /api/staff/patients/:id/ascvd-risk — 计算并保存（body.year 不填则为当前年）
 router.post('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
   try {
     const { assessAscvd } = require('../utils/ascvdRisk');
     const user = await User.findById(req.params.id).select('_id');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const year = String(req.body?.year || new Date().getFullYear());
     const result = assessAscvd(req.body || {});
     result.evaluatedBy = req.staff.name;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { ascvdRisk: result } }
+      { $set: { [`ascvdRisk.byYear.${year}`]: result } }
     );
-    res.json({ success: true, data: result });
+    res.json({ success: true, data: result, year });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// DELETE /api/staff/patients/:id/ascvd-risk — 清除评估
+// DELETE /api/staff/patients/:id/ascvd-risk?year=2026 — 清除指定年度评估（不传year默认清当前年）
 router.delete('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
   try {
+    const year = String(req.query?.year || new Date().getFullYear());
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { ascvdRisk: null } }
+      { $unset: { [`ascvdRisk.byYear.${year}`]: '' } }
     );
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -4030,7 +4060,9 @@ router.post('/patients/:id/ai-content-recommend', staffAuth, async (req, res) =>
     const pushed = await PushRecord.find({ patientId: user._id, type: 'knowledge' }).select('knowledgeId').lean();
     const pushedSet = new Set(pushed.map(p => String(p.knowledgeId)));
 
-    const riskFactors = (user.aiRiskAssessment?.dimensions || [])
+    const latestRiskYears = Object.keys(riskByYear(user.aiRiskAssessment)).sort((a, b) => Number(b) - Number(a));
+    const latestRisk = latestRiskYears.length ? riskByYear(user.aiRiskAssessment)[latestRiskYears[0]] : null;
+    const riskFactors = (latestRisk?.dimensions || [])
       .filter(d => ['high', 'medium', 'critical'].includes(d.level))
       .map(d => `${d.label}(${d.level})`).join('、') || '无';
 
@@ -4505,14 +4537,16 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 家庭医师：风险预警待处理 → User.aiRiskAssessment 高/危急 且未审核 ──
+    // ── 家庭医师：风险预警待处理 → User.aiRiskAssessment(按年度) 最近一年 高/危急 且未审核 ──
     if (can('risk_review')) {
-      const riskUsers = await User.find({
-        'aiRiskAssessment.alerted': true,
-        'aiRiskAssessment.approvedAt': null,
-      }).select('name aiRiskAssessment').limit(50).lean();
+      const riskUsers = await User.find({ aiRiskAssessment: { $ne: null } }).select('name aiRiskAssessment').limit(200).lean();
       riskUsers.forEach(u => {
-        const ra = u.aiRiskAssessment || {};
+        const byYear = riskByYear(u.aiRiskAssessment);
+        const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+        const y = years[0];
+        if (!y) return;
+        const ra = byYear[y] || {};
+        if (!ra.alerted || ra.approvedAt) return;
         const createdAt = ra.generatedAt || now;
         const critical = ra.overallLevel === 'critical';
         todos.push({
@@ -5942,7 +5976,8 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
       .sort({ createdAt: -1 }).lean();
     const lastCheckupItemNames = (lastCheckupPlan?.items || []).map(i => i.name).join('、') || '无';
 
-    const riskSummary = user.aiRiskAssessment?.overallSummary || '未进行AI风险评估';
+    const riskYears = Object.keys(riskByYear(user.aiRiskAssessment)).sort((a, b) => Number(b) - Number(a));
+    const riskSummary = (riskYears.length ? riskByYear(user.aiRiskAssessment)[riskYears[0]]?.overallSummary : null) || '未进行AI风险评估';
 
     const prompt = `你是一位健康管理专员，请根据患者信息为其生成${year}年度体检方案。
 

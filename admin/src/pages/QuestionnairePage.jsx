@@ -792,7 +792,7 @@ export default function QuestionnairePage() {
   }
 
   const del = async (q) => {
-    if (!window.confirm(`确定删除「${q.title}」及所有答卷？此操作不可恢复。`)) return
+    if (!window.confirm(`确定删除「${q.title}」？删除后将不再出现在列表和推送中，已产生的历史答卷仍会保留。`)) return
     try { await adminAPI.deleteQuestionnaire(q._id); toast('✅ 已删除'); load() }
     catch (err) { toast('❌ ' + err.message) }
   }

@@ -162,6 +162,7 @@ router.get('/pending', auth, async (req, res) => {
     const questionnaires = await DynamicQuestionnaire.find({
       _id: { $in: pushedIds },
       status: 'active',
+      deletedAt: null,
       respondedUsers: { $ne: req.user._id },
     }).select('title description questions deadline scoringEnabled createdBy').sort({ sortOrder: 1, createdAt: -1 }).lean();
 
@@ -251,12 +252,13 @@ router.post('/:id/submit', auth, async (req, res) => {
     });
 
     if (psychScaleKey) {
-      // 心理健康量表：标准公式计分，无需人工审核，直接写入档案供家庭医生查看
+      // 心理健康量表：标准公式计分，无需人工审核，直接写入档案供家庭医生查看；按填写年度存档，支持历年对比
       try {
         const psychResult = buildPsychResult(questionnaire, response, psychScaleKey);
+        const year = String(new Date(psychResult.filledAt).getFullYear());
         await User.collection.updateOne(
           { _id: req.user._id },
-          { $set: { [`psychAssessments.${psychScaleKey}`]: psychResult } }
+          { $set: { [`psychAssessments.${psychScaleKey}.byYear.${year}`]: psychResult } }
         );
       } catch (e) {
         console.error('[psych-scale-import] 心理量表自动写入档案失败', e.message);

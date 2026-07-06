@@ -410,7 +410,7 @@ function normalizeQuestions(questions) {
 // GET /api/admin/questionnaires
 router.get('/questionnaires', adminAuth, async (req, res) => {
   // 用 lean() 获取原始 JS 对象，避免 Mongoose 把旧版字符串选项转为空 subdocument
-  const list = await DynamicQuestionnaire.find().sort({ sortOrder: 1, createdAt: -1 })
+  const list = await DynamicQuestionnaire.find({ deletedAt: null }).sort({ sortOrder: 1, createdAt: -1 })
     .populate('createdBy', 'name').lean();
   const withCounts = await Promise.all(list.map(async q => {
     const count = await QuestionnaireResponse.countDocuments({ questionnaire: q._id });
@@ -506,9 +506,11 @@ router.patch('/questionnaires/:id/status', adminAuth, async (req, res) => {
 
 // DELETE /api/admin/questionnaires/:id
 router.delete('/questionnaires/:id', adminAuth, async (req, res) => {
-  await DynamicQuestionnaire.findByIdAndDelete(req.params.id);
-  await QuestionnaireResponse.deleteMany({ questionnaire: req.params.id });
-  res.json({ success: true, message: '问卷及答卷已删除' });
+  // 软删除：保留问卷与历史答卷数据（答卷只存题目id不存题干快照，物理删除会导致历史答卷无法追溯题干），
+  // 置 deletedAt 后从所有列表接口中排除，效果等同于删除，但不影响已产生的推送记录/健康档案导入历史
+  const q = await DynamicQuestionnaire.findByIdAndUpdate(req.params.id, { deletedAt: new Date() }, { new: true });
+  if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
+  res.json({ success: true, message: '问卷已删除' });
 });
 
 // GET /api/admin/questionnaires/:id/responses

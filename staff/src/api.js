@@ -315,15 +315,15 @@ export const staffAPI = {
   generateAIDraft:         (id, kind, context = {}) => req(`/staff/patients/${id}/ai-draft`, { method: 'POST', body: JSON.stringify({ kind, context }) }),
 
   // 场景八：AI 风险评估与预警
-  generateAIRisk:          (id) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'POST' }),
+  generateAIRisk:          (id, year) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'POST', body: JSON.stringify({ year }) }),
   updateAIRisk:            (id, data) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'PATCH', body: JSON.stringify(data) }),
   // AI风险评估·团队讨论区（与AI健康分析讨论区一致）
-  addAIRiskDiscussion:     (id, content) => req(`/staff/patients/${id}/ai-risk-assessment/discussions`, { method: 'POST', body: JSON.stringify({ content }) }),
-  deleteAIRiskDiscussion:  (id, index) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/${index}`, { method: 'DELETE' }),
-  generateAIRiskReply:     (id) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/ai-reply`, { method: 'POST' }),
+  addAIRiskDiscussion:     (id, content, year) => req(`/staff/patients/${id}/ai-risk-assessment/discussions?year=${year}`, { method: 'POST', body: JSON.stringify({ content }) }),
+  deleteAIRiskDiscussion:  (id, index, year) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/${index}?year=${year}`, { method: 'DELETE' }),
+  generateAIRiskReply:     (id, year) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/ai-reply?year=${year}`, { method: 'POST' }),
   // 10年ASCVD风险评估
   saveAscvdRisk:           (id, inputs) => req(`/staff/patients/${id}/ascvd-risk`, { method: 'POST', body: JSON.stringify(inputs) }),
-  deleteAscvdRisk:         (id) => req(`/staff/patients/${id}/ascvd-risk`, { method: 'DELETE' }),
+  deleteAscvdRisk:         (id, year) => req(`/staff/patients/${id}/ascvd-risk?year=${year}`, { method: 'DELETE' }),
 
   // 场景九：AI 用药建议
   generateAIMedicationSuggest: (id) => req(`/staff/patients/${id}/ai-medication-suggest`, { method: 'POST' }),

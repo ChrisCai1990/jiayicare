@@ -118,9 +118,18 @@ async function generateHealthSummarySections(user) {
 
   const pa = user.psychAssessments || {};
   const PSYCH_SCALE_LABEL = { epworth: 'Epworth嗜睡量表', scl90: 'SCL90症状自评量表', sds: 'SDS抑郁自评量表', sas: 'SAS焦虑自评量表' };
+  // 按年度存档后取最近一年的结果；兼容旧版无 byYear 的扁平数据
+  const latestPsych = (raw) => {
+    if (!raw) return null;
+    if (raw.byYear) {
+      const years = Object.keys(raw.byYear).sort((a, b) => Number(b) - Number(a));
+      return years.length ? raw.byYear[years[0]] : null;
+    }
+    return raw.totalScore !== undefined ? raw : null;
+  };
   const psychSummary = Object.entries(PSYCH_SCALE_LABEL)
     .map(([key, label]) => {
-      const r = pa[key];
+      const r = latestPsych(pa[key]);
       if (!r) return null;
       const factorStr = key === 'scl90' && r.factorScores
         ? `（因子分：${Object.entries(r.factorScores).map(([f, s]) => `${f}${s}`).join('、')}）`
