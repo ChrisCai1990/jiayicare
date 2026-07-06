@@ -1,11 +1,28 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, ActivityIndicator, Dimensions,
+  SafeAreaView, ActivityIndicator, Dimensions, Linking, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { reportsAPI } from '../../services/api';
+
+// 后端 fileUrl 存的是相对路径（如 /api/uploads/reports/xxx.pdf），拼上域名后用系统浏览器/PDF查看器打开
+const FILE_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://jiaycare.com/api').replace(/\/api$/, '');
+function resolveFileUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url)) return url;
+  return FILE_BASE_URL + url;
+}
+async function openOriginalFile(report) {
+  const urls = (report.fileUrls?.length ? report.fileUrls : [report.fileUrl]).filter(Boolean);
+  if (!urls.length) { Alert.alert('无原始文件', '该报告未上传原始文件'); return; }
+  try {
+    await Linking.openURL(resolveFileUrl(urls[0]));
+  } catch {
+    Alert.alert('打开失败', '无法打开原始文件，请稍后重试');
+  }
+}
 
 const { width: SCREEN_W } = Dimensions.get('window');
 const CHART_W = SCREEN_W - 40;
@@ -118,6 +135,7 @@ function ReportCard({ report }) {
   const [expanded, setExpanded] = useState(false);
   const hasItems = report.reportItems?.length > 0;
   const hasAI = !!report.aiSummary;
+  const hasFile = !!(report.fileUrl || report.fileUrls?.length);
 
   return (
     <View style={styles.reportCard}>
@@ -142,6 +160,12 @@ function ReportCard({ report }) {
 
       {expanded && (
         <View style={styles.reportCardBody}>
+          {hasFile && (
+            <TouchableOpacity style={styles.viewOriginalBtn} onPress={() => openOriginalFile(report)} activeOpacity={0.8}>
+              <Ionicons name="document-attach-outline" size={16} color={colors.primary} />
+              <Text style={styles.viewOriginalBtnText}>查看原始报告文件</Text>
+            </TouchableOpacity>
+          )}
           {hasAI && (
             <View style={styles.aiSummaryBox}>
               <Text style={styles.aiSummaryTitle}>AI 趋势分析{report.aiStatus === 'reviewed' ? '（已审核）' : '（待审核）'}</Text>
@@ -301,6 +325,13 @@ const styles = StyleSheet.create({
   aiPendingText:  { fontSize: 10, color: colors.warning, fontWeight: '700' },
 
   reportCardBody: { paddingHorizontal: spacing.md, paddingBottom: spacing.md, borderTopWidth: 1, borderTopColor: colors.borderLight, paddingTop: spacing.sm },
+
+  viewOriginalBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    borderWidth: 1, borderColor: colors.primary, borderRadius: radius.sm,
+    paddingVertical: 8, marginBottom: spacing.sm,
+  },
+  viewOriginalBtnText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
 
   aiSummaryBox:  { backgroundColor: '#E8F5EF', borderRadius: radius.sm, padding: spacing.sm, marginBottom: spacing.sm },
   aiSummaryTitle:{ fontSize: 11, fontWeight: '700', color: colors.primary, marginBottom: 4 },
