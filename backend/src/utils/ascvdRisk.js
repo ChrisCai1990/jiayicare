@@ -1,5 +1,13 @@
-// ── 10年 ASCVD 风险评估（《中国成人血脂异常防治指南(2016)》流程）──
+// ── 10年 ASCVD 风险评估（一级预防人群，尚无 ASCVD 病史）──
 // 动脉粥样硬化性心血管疾病（ASCVD）10年发病风险分层：低危 / 中危 / 高危。
+//
+// ⚠️ 版本说明（2026-07 校准）：《中国血脂管理指南（2023年）》已取代2016版，直接高危判定条件
+// 与低/中/高危的10年风险百分比定义已按2023版更新；但「LDL-C分档 × 危险因素个数」查表矩阵的
+// 具体数值2023版尚未从可靠信源核实到，暂沿用2016版《中国成人血脂异常防治指南》的查表逻辑作为
+// 过渡近似值，非精确校准。待拿到2023版指南原文/官方表格后需重新核对 tableRisk() 里的判定表。
+// 若患者已确诊 ASCVD（心梗/卒中/血运重建史等），2023版另有"极高危/超高危"二级预防分层，
+// 需要采集病史字段，本工具当前只服务尚无 ASCVD 病史的一级预防评估，不适用于已患病患者。
+//
 // 采用指南推荐的「危险因素分层查表法」，而非纯累加打分。
 //
 // 输入字段（医护端录入）：
@@ -12,6 +20,7 @@
 //   onHypertensionTreatment: 是否正在降压治疗（不直接影响分层，供参考展示）
 //   smoking: 是否吸烟
 //   diabetes: 是否糖尿病
+//   ckdStage34: 是否患慢性肾脏病(CKD) 3~4期（2023版新增的直接高危判定条件）
 //   bmi: 体质指数（用于余生风险参考，可选）
 
 function num(v) {
@@ -19,8 +28,8 @@ function num(v) {
   return Number.isFinite(n) ? n : null;
 }
 
-// 第一步：直接判定为高危的情形（符合任一即高危，无需查表）
-function isDirectHighRisk({ ldl, tc, diabetes, age }) {
+// 第一步：直接判定为高危的情形（符合任一即高危，无需查表）——《中国血脂管理指南(2023年)》标准
+function isDirectHighRisk({ ldl, tc, diabetes, age, ckdStage34 }) {
   const ldlV = num(ldl);
   const tcV = num(tc);
   const ageV = num(age);
@@ -29,6 +38,8 @@ function isDirectHighRisk({ ldl, tc, diabetes, age }) {
   if (tcV !== null && tcV >= 7.2) return { hit: true, reason: '总胆固醇 ≥ 7.2 mmol/L' };
   // 糖尿病 + 年龄≥40岁 直接高危
   if (diabetes && ageV !== null && ageV >= 40) return { hit: true, reason: '糖尿病且年龄 ≥ 40 岁' };
+  // CKD 3~4期 直接高危（2023版新增）
+  if (ckdStage34) return { hit: true, reason: '慢性肾脏病(CKD) 3~4期' };
   return { hit: false, reason: '' };
 }
 
@@ -63,7 +74,7 @@ function cholLevel({ tc, ldl }) {
 }
 
 // 第二步：无高血压 / 有高血压 两种情形下，按危险因素个数 + 胆固醇水平查表定低/中/高危
-// 依据指南「10年ASCVD发病危险评估流程图」简化实现
+// ⚠️ 沿用2016版《中国成人血脂异常防治指南》查表矩阵简化实现，2023版具体表格数值待校准（见文件头说明）
 function tableRisk({ sbp, riskCount, chol, hasHypertension }) {
   // riskCount 这里指“除高血压外的其他危险因素个数”（吸烟/低HDL/年龄）
   if (!hasHypertension) {
@@ -80,10 +91,11 @@ function tableRisk({ sbp, riskCount, chol, hasHypertension }) {
   return 'high'; // ≥3
 }
 
+// 低/中/高危的10年风险百分比定义（《中国血脂管理指南2023年》）
 const LEVEL_LABEL = {
-  low:    { label: '低危', desc: '10年ASCVD发病风险 < 10%' },
-  medium: { label: '中危', desc: '10年ASCVD发病风险 10%~20%' },
-  high:   { label: '高危', desc: '10年ASCVD发病风险 ≥ 20%' },
+  low:    { label: '低危', desc: '10年ASCVD发病风险 < 5%' },
+  medium: { label: '中危', desc: '10年ASCVD发病风险 5%~9%' },
+  high:   { label: '高危', desc: '10年ASCVD发病风险 ≥ 10%' },
 };
 
 // 主评估函数：返回 { level, levelLabel, description, riskFactors, directHighRisk, advice, inputs, evaluatedAt }
@@ -124,7 +136,7 @@ function assessAscvd(input = {}) {
     inputs: {
       gender, age: num(input.age), tc: num(input.tc), ldl: num(input.ldl), hdl: num(input.hdl),
       sbp: sbpV, onHypertensionTreatment: !!input.onHypertensionTreatment,
-      smoking: !!input.smoking, diabetes: !!input.diabetes, bmi: num(input.bmi),
+      smoking: !!input.smoking, diabetes: !!input.diabetes, ckdStage34: !!input.ckdStage34, bmi: num(input.bmi),
     },
     evaluatedAt: new Date(),
   };

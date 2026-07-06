@@ -202,7 +202,7 @@ export const staffAPI = {
   getActivePlanItems: (patientId) => req(`/staff/patients/${patientId}/active-plan-items`),
 
   // Annual Plan
-  getAnnualHealthPlans: (year)         => req(`/staff/annual-health-plans` + (year ? `?year=${year}` : '')),
+  getAnnualHealthPlans: (year, patientName) => req(`/staff/annual-health-plans?` + qs({ year: year || '', patientName: patientName || '' })),
   getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
   pushAnnualPlan:       (patientId, year, planType) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH' }),
@@ -286,8 +286,6 @@ export const staffAPI = {
   // 我发出的转介
   getSentReferrals: (p = {}) => req('/staff/referrals?direction=sent&' + qs(p)),
 
-  // 3.1 档案审核
-  archiveReview: (id, action) => req(`/staff/patients/${id}/archive-review`, { method: 'PATCH', body: JSON.stringify({ action }) }),
 
   // 4.2 身体成分
   saveBodyComposition: (id, data) => req(`/staff/patients/${id}/body-composition`, { method: 'PATCH', body: JSON.stringify(data) }),

@@ -573,15 +573,15 @@ function PsychAssessmentPanel({ user }) {
                   <span style={{ fontSize: 12, color: '#8AA89C' }}>{new Date(result.filledAt).toLocaleDateString('zh-CN')}</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {years.length > 1 && (
+                  {years.length > 0 && (
                     <div style={{ display: 'flex', gap: 3 }} onClick={e => e.stopPropagation()}>
                       {years.map(y => (
                         <button key={y} onClick={() => setScaleYear(v => ({ ...v, [key]: y }))}
                           style={{
-                            border: 'none', borderRadius: 5, padding: '1px 7px', fontSize: 11, cursor: 'pointer',
+                            border: 'none', borderRadius: 5, padding: '1px 7px', fontSize: 11, cursor: years.length > 1 ? 'pointer' : 'default',
                             background: y === curYear ? '#1E6B50' : '#F5F2EC',
                             color: y === curYear ? '#fff' : '#4A6558',
-                          }}>{y}</button>
+                          }}>{y}年</button>
                       ))}
                     </div>
                   )}
@@ -665,10 +665,10 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   })()
 
   const nowY = String(new Date().getFullYear())
-  // 年度标签只展示实际已有评估的年份（+当前年，方便无数据时直接录入），不预设未来空年份
-  const years = [...new Set([...Object.keys(byYear), nowY])].sort((a, b) => Number(b) - Number(a))
+  // 年度标签只展示实际已有评估的年份，一条评估都没有时不展示任何年份（避免凭空出现当前年占位）
+  const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
   const [year, setYear] = useState(null)
-  const curYear = (year && years.includes(year)) ? year : (Object.keys(byYear).sort((a, b) => Number(b) - Number(a))[0] || nowY)
+  const curYear = (year && years.includes(year)) ? year : (years[0] || nowY)
   const result = byYear[curYear] || null
 
   // 从档案预填性别/年龄，其余体检值默认空
@@ -681,7 +681,7 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
       tc: inp.tc ?? '', ldl: inp.ldl ?? '', hdl: inp.hdl ?? '',
       sbp: inp.sbp ?? '',
       onHypertensionTreatment: !!inp.onHypertensionTreatment,
-      smoking: !!inp.smoking, diabetes: !!inp.diabetes,
+      smoking: !!inp.smoking, diabetes: !!inp.diabetes, ckdStage34: !!inp.ckdStage34,
     }
   }
   const [form, setForm] = useState(blankForm)
@@ -713,8 +713,8 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   const lv = result ? (ASCVD_LEVEL_COLOR[result.level] || ASCVD_LEVEL_COLOR.low) : null
   const numField = (label, key, unit) => (
     <div>
-      <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}{unit ? `（${unit}）` : ''}</label>
-      <input className="form-control" type="number" step="0.01" value={form[key]} style={{ width: '100%', maxWidth: 160 }}
+      <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3, whiteSpace: 'nowrap' }}>{label}{unit ? `（${unit}）` : ''}</label>
+      <input className="form-control" type="number" step="0.01" value={form[key]} style={{ width: '100%' }}
         onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
     </div>
   )
@@ -723,8 +723,8 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
     <div className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div className="card-title" style={{ flex: 1 }}>❤️ 10年ASCVD风险评估</div>
-        {/* 年度切换：只列出已有评估的年份 + 当前年，纯展示历史，不可选未来空年份 */}
-        {!editing && (
+        {/* 年度切换：只列出已有评估的年份，一份评估都没有时不展示 */}
+        {!editing && years.length > 0 && (
           <div style={{ display: 'flex', gap: 4 }}>
             {years.map(y => (
               <button key={y} onClick={() => setYear(y)}
@@ -751,9 +751,9 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ fontSize: 12, color: '#8AA89C' }}>评估将自动归入 <b style={{ color: '#1E6B50' }}>{nowY}</b> 年度</div>
             <div style={{ background: '#FAFAF8', border: '1px solid #F0EDE7', borderRadius: 8, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 160px))', gap: 16 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 230px))', gap: 16 }}>
                 <div>
-                  <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>性别</label>
+                  <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3, whiteSpace: 'nowrap' }}>性别</label>
                   <select className="form-control" style={{ width: '100%' }} value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}>
                     <option value="male">男</option>
                     <option value="female">女</option>
@@ -776,8 +776,13 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
               <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
                 <input type="checkbox" checked={form.onHypertensionTreatment} onChange={e => setForm(f => ({ ...f, onHypertensionTreatment: e.target.checked }))} /> 正在降压治疗
               </label>
+              <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.ckdStage34} onChange={e => setForm(f => ({ ...f, ckdStage34: e.target.checked }))} /> 慢性肾脏病(CKD) 3~4期
+              </label>
             </div>
-            <div style={{ fontSize: 11, color: '#B0A99C' }}>依据《中国成人血脂异常防治指南》10年ASCVD发病风险评估流程自动分层。</div>
+            <div style={{ fontSize: 11, color: '#B0A99C' }}>
+              依据《中国血脂管理指南（2023年）》直接高危判定标准；具体查表分层暂沿用2016版《中国成人血脂异常防治指南》矩阵作为过渡近似值，待官方表格校准后更新。
+            </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}>取消</button>
               <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>{saving ? '计算中...' : '计算并保存'}</button>
@@ -838,14 +843,14 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
                 ))}
               </div>
               <div style={{ fontSize: 11, color: '#B0A99C', marginTop: 8 }}>
-                {result.inputs.smoking ? '吸烟 · ' : ''}{result.inputs.diabetes ? '糖尿病 · ' : ''}
+                {result.inputs.smoking ? '吸烟 · ' : ''}{result.inputs.diabetes ? '糖尿病 · ' : ''}{result.inputs.ckdStage34 ? 'CKD 3~4期 · ' : ''}
                 {result.evaluatedBy ? `由${result.evaluatedBy}评估` : ''}{result.evaluatedAt ? ` · ${new Date(result.evaluatedAt).toLocaleDateString('zh-CN')}` : ''}
               </div>
             </div>
           </div>
         ) : (
           <div style={{ fontSize: 13, color: '#8AA89C', textAlign: 'center', padding: '20px 0' }}>
-            {curYear} 年度尚未评估。点击「录入评估」，填写体检参数后系统将按中国指南自动分层。
+            {years.length > 0 ? `${curYear} 年度尚未评估` : '尚未评估'}。点击「录入评估」，填写体检参数后系统将按中国指南自动分层。
           </div>
         )}
       </div>
@@ -1429,15 +1434,6 @@ export default function PatientDetailPage() {
       setEditingDiseaseSeverity(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
-  }
-
-  // 3.1 档案审核
-  const handleArchiveReview = async () => {
-    try {
-      await staffAPI.archiveReview(id, 'approve')
-      toast('档案已审核确认')
-      load()
-    } catch (err) { toast(err.message || '审核失败') }
   }
 
   // 4.2 身体成分
@@ -2429,26 +2425,8 @@ export default function PatientDetailPage() {
       {/* ── Records Tab ── */}
       {tab === 'records' && (
         <>
-        {/* ── 整体档案审核状态（顶部） ── */}
-        <div style={{ marginBottom: 16, padding: '10px 16px', background: user.archiveReviewStatus === 'reviewed' ? '#F0FDF4' : '#FFFBEB', borderRadius: 8, border: `1px solid ${user.archiveReviewStatus === 'reviewed' ? '#BBF7D0' : '#FDE68A'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ fontSize: 13, color: '#4A6558' }}>
-            健康档案整体审核状态：
-            <span style={{ marginLeft: 6, fontWeight: 600, color: user.archiveReviewStatus === 'reviewed' ? '#22A06B' : '#D97706' }}>
-              {user.archiveReviewStatus === 'reviewed' ? '✓ 已审核' : '待审核'}
-            </span>
-            {user.archiveReviewedAt && (
-              <span style={{ marginLeft: 8, fontSize: 12, color: '#aaa' }}>
-                审核时间：{new Date(user.archiveReviewedAt).toLocaleDateString('zh-CN')}
-              </span>
-            )}
-            <span style={{ marginLeft: 12, fontSize: 12, color: '#8AA89C' }}>（对基础资料、健康档案、管理信息、医疗保障、生活方式、健康需求等全部内容进行整体审核）</span>
-          </div>
-          {user.archiveReviewStatus !== 'reviewed' ? (
-            <button className="btn btn-primary btn-sm" onClick={handleArchiveReview}>审核确认</button>
-          ) : (
-            <button className="btn btn-secondary btn-sm" onClick={async () => { await staffAPI.archiveReview(id, 'reset'); toast('已重置为待审核'); load() }}>重置审核</button>
-          )}
-        </div>
+        {/* 档案是问卷答案自动导入的，冲突提醒已在页面顶部单独展示（见"问卷自动填档"横幅）；
+            一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
         {/* ── 初始健康数据录入 ── */}
         <InitialHealthRecordForm patientId={user._id} onSaved={() => load()} toast={toast} />

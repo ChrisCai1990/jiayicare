@@ -49,6 +49,9 @@ export default function PlansPage() {
   const [ahLoading, setAhLoading] = useState(false)
   const [ahYear, setAhYear]       = useState(new Date().getFullYear())
 
+  // 会员姓名搜索（普通方案列表 / 年度管理方案列表共用）
+  const [patientName, setPatientName] = useState('')
+
   // 弹窗
   const [showModal, setShowModal]               = useState(false)
   const [showCheckupModal, setShowCheckupModal] = useState(false)
@@ -59,20 +62,20 @@ export default function PlansPage() {
   const loadPlans = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await staffAPI.getPlans({ type: typeFilter, limit: 50 })
+      const res = await staffAPI.getPlans({ type: typeFilter, patientName, limit: 50 })
       setPlans(res.data.plans)
       setTotal(res.data.total)
     } finally { setLoading(false) }
-  }, [typeFilter])
+  }, [typeFilter, patientName])
 
   const loadAhPlans = useCallback(async () => {
     setAhLoading(true)
     try {
-      const res = await staffAPI.getAnnualHealthPlans(ahYear)
+      const res = await staffAPI.getAnnualHealthPlans(ahYear, patientName)
       setAhPlans(res.data || [])
     } catch { setAhPlans([]) }
     finally { setAhLoading(false) }
-  }, [ahYear])
+  }, [ahYear, patientName])
 
   useEffect(() => {
     if (isAnnualMgmt) loadAhPlans()
@@ -106,7 +109,14 @@ export default function PlansPage() {
             className={`btn btn-sm ${typeFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setSearchParams(opt.v ? { type: opt.v } : {})}>{opt.l}</button>
         ))}
-        <div style={{ marginLeft: 'auto' }}>
+        <input
+          className="form-control"
+          placeholder="按会员姓名搜索..."
+          value={patientName}
+          onChange={e => setPatientName(e.target.value)}
+          style={{ width: 180, marginLeft: 'auto' }}
+        />
+        <div>
           <button className="btn btn-primary btn-sm" onClick={() => {
             if      (typeFilter === 'annual_checkup') setShowCheckupModal(true)
             else if (typeFilter === 'medical_assist') setShowMedicalModal(true)

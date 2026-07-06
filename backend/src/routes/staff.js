@@ -922,11 +922,15 @@ router.get('/staff-list', staffAuth, async (req, res) => {
 // ── 健康方案 ──────────────────────────────────────────────
 // GET /api/staff/plans?patientId=&type=&status=
 router.get('/plans', staffAuth, async (req, res) => {
-  const { patientId, type, status, page = 1, limit = 20 } = req.query;
+  const { patientId, type, status, patientName, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (patientId) filter.patientId = patientId;
   if (type) filter.type = type;
   if (status) filter.status = status;
+  if (patientName) {
+    const matchedUsers = await User.find({ name: { $regex: patientName, $options: 'i' } }).select('_id');
+    filter.patientId = { $in: matchedUsers.map(u => u._id) };
+  }
   // 非超管只能看自己创建的
   if (req.staff.role !== 'superadmin') filter.staffId = req.staff._id;
   const skip = (Number(page) - 1) * Number(limit);
@@ -2450,7 +2454,13 @@ router.patch('/patients/:id/membership', staffAuth, async (req, res) => {
 router.get('/annual-health-plans', staffAuth, async (req, res) => {
   try {
     const year = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
-    const plans = await AnnualPlan.find({ year })
+    const { patientName } = req.query;
+    const filter = { year };
+    if (patientName) {
+      const matchedUsers = await User.find({ name: { $regex: patientName, $options: 'i' } }).select('_id');
+      filter.patientId = { $in: matchedUsers.map(u => u._id) };
+    }
+    const plans = await AnnualPlan.find(filter)
       .populate('patientId', 'name phone')
       .populate('createdBy', 'name')
       .sort({ updatedAt: -1 });
@@ -3047,20 +3057,6 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
 // ── 我发出的转介（发起方查看进度）───────────────────────────────────
 // GET /api/staff/referrals?direction=sent
 // 已由 /referrals 路由支持 direction=sent 参数，无需新增路由
-
-// ── 3.1 档案审核：健管专员确认AI自动读取的健康档案信息 ─────────────
-// PATCH /api/staff/patients/:id/archive-review
-router.patch('/patients/:id/archive-review', staffAuth, async (req, res) => {
-  try {
-    const { action } = req.body; // 'approve' | 'reset'
-    const status = action === 'reset' ? 'pending' : 'reviewed';
-    await User.collection.updateOne(
-      { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { archiveReviewStatus: status, archiveReviewedAt: new Date(), archiveReviewedBy: req.staff._id } }
-    );
-    res.json({ success: true, data: { archiveReviewStatus: status } });
-  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
-});
 
 // ── 4.2 身体成分保存 ──────────────────────────────────────────────
 // PATCH /api/staff/patients/:id/body-composition
