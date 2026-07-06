@@ -2669,49 +2669,79 @@ export default function PatientDetailPage() {
               </div>
             ) : (() => {
               const Field = ({ label, val, full }) => !val ? null : (
-                <div style={{ gridColumn: full ? '1 / -1' : undefined, display: 'flex', gap: 0, flexDirection: 'column', padding: '4px 0' }}>
-                  <span style={{ fontSize: 11, color: '#8AA89C', marginBottom: 1 }}>{label}</span>
+                <div style={{ gridColumn: full ? '1 / -1' : undefined, display: 'flex', flexDirection: 'column', padding: '5px 0' }}>
+                  <span style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>{label}</span>
                   <span style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.4 }}>{val}</span>
                 </div>
               )
-              const SecTitle = ({ title }) => (
-                <div style={{ gridColumn: '1 / -1', fontSize: 12, fontWeight: 600, color: '#1E6B50', borderBottom: '1px solid #f0ece4', paddingBottom: 4, marginTop: 6 }}>{title}</div>
-              )
               const bloodType = [user.bloodTypeABO, user.bloodTypeRH].filter(Boolean).join(' ')
               const symptoms = (user.healthProfile?.recentSymptoms || []).join('、')
+
+              const SECTIONS = [
+                {
+                  icon: '🩸', title: '基础信息', color: '#0077B6',
+                  fields: [
+                    <Field key="bt" label="血型" val={bloodType || '-'} />,
+                    <Field key="da" label="药物过敏" val={user.healthProfile?.drugAllergy} />,
+                    <Field key="fa" label="食物过敏" val={user.healthProfile?.foodAllergy} />,
+                  ],
+                },
+                {
+                  icon: '📋', title: '病史', color: '#D97706',
+                  fields: [
+                    <Field key="ph" label="既往史" val={user.healthProfile?.pastHistory} full />,
+                    <Field key="sh" label="手术史" val={user.healthProfile?.surgeryHistory} />,
+                    <Field key="th" label="外伤史" val={user.traumaHistory} />,
+                    <Field key="tf" label="输血史" val={user.transfusionHistory} />,
+                    <Field key="ps" label="中毒史" val={user.poisoningHistory} />,
+                    <Field key="ih" label="传染病史" val={user.infectiousHistory} />,
+                    <Field key="vh" label="预防接种史" val={user.vaccinationHistory} />,
+                    <Field key="oh" label="其他特殊疾病史" val={user.otherDiseaseHistory} full />,
+                    <Field key="fh" label="家族史" val={user.healthProfile?.familyHistoryNote} full />,
+                  ],
+                },
+                {
+                  icon: '💊', title: '用药及补剂', color: '#16A34A',
+                  fields: [
+                    <Field key="mh" label="长期用药（中/西药）" val={user.healthProfile?.medicHistory} />,
+                    <Field key="suh" label="长期服用营养补剂" val={user.healthProfile?.supplementHistory} />,
+                  ],
+                },
+                ...(user.gender === '女' ? [{
+                  icon: '🌸', title: '女性专项', color: '#DB2777',
+                  fields: [
+                    <Field key="sxh" label="性生活史" val={user.healthProfile?.sexualHistory} />,
+                    <Field key="mnh" label="月经史" val={user.healthProfile?.menstrualHistory} />,
+                    <Field key="mah" label="生育史" val={user.healthProfile?.maritalHistory} />,
+                  ],
+                }] : []),
+                {
+                  icon: '🩺', title: '近期健康状态', color: '#7C3AED',
+                  fields: [
+                    <Field key="sym" label="躯体症状" val={symptoms} full />,
+                    <Field key="rm" label="近期用药（中/西药）" val={user.healthProfile?.recentMedication} />,
+                    <Field key="rs" label="近期营养补剂" val={user.healthProfile?.recentSupplement} />,
+                  ],
+                },
+              ].filter(sec => sec.fields.some(f => f !== null))
+
+              if (SECTIONS.length === 0) {
+                return <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>暂无档案信息，点击「编辑」录入</div>
+              }
+
               return (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2px 24px' }}>
-                  <SecTitle title="基础信息" />
-                  <Field label="血型" val={bloodType || '-'} />
-                  <Field label="药物过敏" val={user.healthProfile?.drugAllergy} />
-                  <Field label="食物过敏" val={user.healthProfile?.foodAllergy} />
-
-                  <SecTitle title="病史" />
-                  <Field label="既往史" val={user.healthProfile?.pastHistory} full />
-                  <Field label="手术史" val={user.healthProfile?.surgeryHistory} />
-                  <Field label="外伤史" val={user.traumaHistory} />
-                  <Field label="输血史" val={user.transfusionHistory} />
-                  <Field label="中毒史" val={user.poisoningHistory} />
-                  <Field label="传染病史" val={user.infectiousHistory} />
-                  <Field label="预防接种史" val={user.vaccinationHistory} />
-                  <Field label="其他特殊疾病史" val={user.otherDiseaseHistory} full />
-                  <Field label="家族史" val={user.healthProfile?.familyHistoryNote} full />
-
-                  <SecTitle title="用药及补剂" />
-                  <Field label="长期用药（中/西药）" val={user.healthProfile?.medicHistory} />
-                  <Field label="长期服用营养补剂" val={user.healthProfile?.supplementHistory} />
-
-                  {user.gender === '女' && <>
-                    <SecTitle title="女性专项" />
-                    <Field label="性生活史" val={user.healthProfile?.sexualHistory} />
-                    <Field label="月经史" val={user.healthProfile?.menstrualHistory} />
-                    <Field label="生育史" val={user.healthProfile?.maritalHistory} />
-                  </>}
-
-                  <SecTitle title="近期健康状态" />
-                  <Field label="躯体症状" val={symptoms} full />
-                  <Field label="近期用药（中/西药）" val={user.healthProfile?.recentMedication} />
-                  <Field label="近期营养补剂" val={user.healthProfile?.recentSupplement} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {SECTIONS.map(sec => (
+                    <div key={sec.title} style={{ background: '#FAFAF8', border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+                        <span style={{ fontSize: 13 }}>{sec.icon}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: sec.color }}>{sec.title}</span>
+                      </div>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px' }}>
+                        {sec.fields}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )
             })()}
@@ -2730,12 +2760,16 @@ export default function PatientDetailPage() {
           const setLd = (patch) => setLifestyleForm(p => ({ ...p, lifestyle_data: { ...(p.lifestyle_data || {}), ...patch } }))
           const row2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px', marginBottom: 12 }
           const row3 = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 20px', marginBottom: 12 }
-          const secTitle = { fontWeight: 600, fontSize: 13, color: '#1E6B50', margin: '12px 0 8px' }
+          const secTitle = {
+            fontWeight: 700, fontSize: 12, color: '#1E6B50', margin: '14px 0 10px',
+            background: '#E8F5EF', borderRadius: 6, padding: '4px 10px', display: 'inline-block',
+          }
           const tabBtnStyle = (k) => ({
-            padding: '6px 14px', fontSize: 13, cursor: 'pointer',
+            padding: '7px 16px', fontSize: 13, cursor: 'pointer',
             color: lifestyleTab === k ? '#1E6B50' : '#8AA89C',
-            fontWeight: lifestyleTab === k ? 600 : 400,
-            background: 'none', border: 'none',
+            fontWeight: lifestyleTab === k ? 700 : 400,
+            background: lifestyleTab === k ? '#F0FAF6' : 'none',
+            border: 'none', borderRadius: '6px 6px 0 0',
             borderBottom: lifestyleTab === k ? '2px solid #1E6B50' : '2px solid transparent',
           })
           return (

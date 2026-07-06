@@ -290,88 +290,80 @@ export default function FollowUpsPage() {
         </div>
       </div>
 
-      {/* 列表 */}
-      <div className="card">
-        {loading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
-        ) : followUps.length === 0 ? (
-          <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>
-            暂无随访记录
-          </div>
-        ) : (
-          <table className="table">
-            <thead>
-              <tr>
-                <th>会员</th>
-                <th>计划日期</th>
-                <th>随访主题</th>
-                <th>计划人员</th>
-                <th>状态</th>
-                <th>近期打卡</th>
-                <th>内容摘要</th>
-                <th>操作</th>
-              </tr>
-            </thead>
-            <tbody>
-              {followUps.map(f => (
-                <tr key={f._id}>
-                  <td>
-                    <span style={{ color: '#1E6B50', cursor: 'pointer', fontWeight: 500 }}
-                      onClick={() => nav(`/patients/${f.patientId?._id}`)}>
-                      {f.patientId?.name || '-'}
-                    </span>
-                    <div style={{ fontSize: 12, color: '#8AA89C' }}>{f.patientId?.phone}</div>
-                  </td>
-                  <td style={{ fontSize: 13, color: '#4A6558' }}>
-                    {new Date(f.date).toLocaleDateString('zh-CN')}
-                  </td>
-                  <td style={{ fontSize: 13, color: '#4A6558' }}>{f.theme || '-'}</td>
-                  <td style={{ fontSize: 13, color: '#4A6558' }}>
-                    {f.assignedTo?.name || '-'}
-                  </td>
-                  <td>
-                    <span style={{ color: STATUS_COLOR[f.status] || '#666', fontWeight: 500, fontSize: 13 }}>
-                      {STATUS_MAP[f.status] || f.status}
-                    </span>
-                    {f.status === 'cancelled' && f.cancelReason && (
-                      <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{f.cancelReason}</div>
-                    )}
-                  </td>
-                  <td>
-                    {f.patientLastRecord ? (() => {
-                      const days = Math.floor((Date.now() - new Date(f.patientLastRecord)) / 86400000)
-                      const color = days === 0 ? '#22A06B' : days <= 3 ? '#D97706' : '#aaa'
-                      const label = days === 0 ? '今日已打卡' : `${days}天前`
-                      return <span style={{ fontSize: 12, color, fontWeight: days <= 1 ? 600 : 400 }}>{label}</span>
-                    })() : <span style={{ fontSize: 12, color: '#ccc' }}>暂无记录</span>}
-                  </td>
-                  <td style={{ maxWidth: 180, fontSize: 13, color: '#4A6558' }}>
-                    {f.content ? (f.content.length > 35 ? f.content.slice(0, 35) + '…' : f.content) : '-'}
-                  </td>
-                  <td style={{ whiteSpace: 'nowrap' }}>
+      {/* 列表：卡片化展示，替代原来密集的8列表格 */}
+      {loading ? (
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>加载中...</div>
+      ) : followUps.length === 0 ? (
+        <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无随访记录</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {followUps.map(f => {
+            const sc = STATUS_COLOR[f.status] || '#8AA89C'
+            const checkin = f.patientLastRecord ? (() => {
+              const days = Math.floor((Date.now() - new Date(f.patientLastRecord)) / 86400000)
+              const color = days === 0 ? '#22A06B' : days <= 3 ? '#D97706' : '#8AA89C'
+              const label = days === 0 ? '今日已打卡' : `${days}天前打卡`
+              return { color, label }
+            })() : null
+            return (
+              <div key={f._id} className="card" style={{ padding: '14px 18px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  {/* 左侧：患者信息 + 主题 + 标签行 */}
+                  <div style={{ flex: 1, minWidth: 220 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
+                      <span style={{ color: '#1E6B50', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}
+                        onClick={() => nav(`/patients/${f.patientId?._id}`)}>
+                        {f.patientId?.name || '-'}
+                      </span>
+                      <span style={{ fontSize: 12, color: '#8AA89C' }}>{f.patientId?.phone}</span>
+                      <span style={{
+                        fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99,
+                        background: sc + '18', color: sc,
+                      }}>{STATUS_MAP[f.status] || f.status}</span>
+                    </div>
+                    <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
+                      {f.theme || '常规随访'}
+                      <span style={{ color: '#C0B8AE', margin: '0 6px' }}>·</span>
+                      <span style={{ color: '#8AA89C' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</span>
+                      {f.assignedTo?.name && <><span style={{ color: '#C0B8AE', margin: '0 6px' }}>·</span><span style={{ color: '#8AA89C' }}>负责人 {f.assignedTo.name}</span></>}
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      {checkin && (
+                        <span style={{ fontSize: 11, color: checkin.color, fontWeight: 600, background: checkin.color + '15', padding: '1px 8px', borderRadius: 6 }}>
+                          {checkin.label}
+                        </span>
+                      )}
+                      {f.content && (
+                        <span style={{ fontSize: 12, color: '#8AA89C' }}>
+                          {f.content.length > 40 ? f.content.slice(0, 40) + '…' : f.content}
+                        </span>
+                      )}
+                      {f.status === 'cancelled' && f.cancelReason && (
+                        <span style={{ fontSize: 12, color: '#8AA89C' }}>取消原因：{f.cancelReason}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* 右侧：操作按钮 */}
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
                     {isPendingExec(f) && (
-                      <button className="btn btn-primary btn-sm" style={{ marginRight: 6 }}
-                        onClick={() => openExec(f)}>执行随访</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => openExec(f)}>执行随访</button>
                     )}
                     {f.status !== 'cancelled' && staff && f.staffId && String(f.staffId._id || f.staffId) === String(staff._id) && (
-                      <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
-                        onClick={() => openEdit(f)}>编辑</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => openEdit(f)}>编辑</button>
                     )}
                     {isPendingExec(f) && (
-                      <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
-                        onClick={() => openCancel(f)}>取消</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => openCancel(f)}>取消</button>
                     )}
-                    <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }}
-                      onClick={() => setDetailItem(f)}>查看详情</button>
-                    <button className="btn btn-secondary btn-sm"
-                      onClick={() => nav(`/patients/${f.patientId?._id}`)}>查看会员</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setDetailItem(f)}>详情</button>
+                    <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${f.patientId?._id}`)}>会员</button>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* 分页 */}
       {total > limit && (
