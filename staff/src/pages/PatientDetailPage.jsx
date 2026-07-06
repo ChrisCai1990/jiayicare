@@ -3079,9 +3079,6 @@ export default function PatientDetailPage() {
                             <td style={{ padding: '4px 8px', color: STATUS_COLOR_MAP[item.status] || '#8AA89C' }}>{STATUS_TEXT[item.status] || '-'}</td>
                           </tr>
                         )),
-                        ...items.filter(it => it.conclusion).map((it, j) => (
-                          <tr key={`conc-${j}`}><td colSpan={4} style={{ padding: '2px 8px 4px', fontSize: 11, color: '#5B21B6' }}><span style={{ color: '#7C3AED', fontWeight: 600 }}>主要结论：</span>{it.conclusion}</td></tr>
-                        )),
                       ]
                       return (
                         <div style={{ marginBottom: 8 }}>
@@ -6836,11 +6833,10 @@ export default function PatientDetailPage() {
                                 {/* 部分检验类报告(睡眠呼吸监测/动态血压监测等)AI会把诊断总结文字写进同一条lab记录
                                     的diagnosis/conclusion字段而不是拆成独立imaging记录，之前这里完全不渲染这两个
                                     字段导致审核时看不到诊断描述，这里补上展示（仍允许编辑修正） */}
-                                {(it.diagnosis || it.conclusion) && (
+                                {it.diagnosis && (
                                   <tr>
                                     <td colSpan={7} style={{ padding: '2px 8px 6px', background: '#FAF8FF' }}>
-                                      {it.conclusion && <div style={{ fontSize: 11, color: '#5B21B6', marginBottom: 2 }}><span style={{ color: '#7C3AED', fontWeight: 600 }}>主要结论：</span>{it.conclusion}</div>}
-                                      {it.diagnosis && <div style={{ fontSize: 11, color: '#374151', whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>诊断意见：</span>{it.diagnosis}</div>}
+                                      <div style={{ fontSize: 11, color: '#374151', whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>诊断意见：</span>{it.diagnosis}</div>
                                     </td>
                                   </tr>
                                 )}

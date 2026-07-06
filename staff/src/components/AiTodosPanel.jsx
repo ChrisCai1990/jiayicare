@@ -31,11 +31,14 @@ function formatTime(date) {
   return `${Math.floor(diff / 86400000)}天前`
 }
 
+const PAGE_SIZE = 5
+
 export default function AiTodosPanel() {
   const nav = useNavigate()
   const { staff } = useStaff()
   const [todos, setTodos] = useState([])
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(0)
 
   useEffect(() => {
     staffAPI.getAiTodos()
@@ -47,6 +50,9 @@ export default function AiTodosPanel() {
   if (loading) return null
 
   const overdueCount = todos.filter(t => t.overdue).length
+  const pageCount = Math.max(1, Math.ceil(todos.length / PAGE_SIZE))
+  const curPage = Math.min(page, pageCount - 1)
+  const pageTodos = todos.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
 
   return (
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
@@ -76,7 +82,7 @@ export default function AiTodosPanel() {
             暂无待审核任务
           </div>
         )}
-        {todos.map((todo, i) => {
+        {pageTodos.map((todo, i) => {
           const cfg = TYPE_CONFIG[todo.type] || { icon: '📌', label: todo.type, color: '#8AA89C' }
           return (
             <div
@@ -84,7 +90,7 @@ export default function AiTodosPanel() {
               onClick={() => nav(todo.link)}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
-                borderBottom: i < todos.length - 1 ? '1px solid #f0ede8' : 'none',
+                borderBottom: i < pageTodos.length - 1 ? '1px solid #f0ede8' : 'none',
                 cursor: 'pointer',
                 background: todo.overdue ? '#FFF8F8' : 'transparent',
                 margin: todo.overdue ? '0 -20px' : undefined,
@@ -126,6 +132,21 @@ export default function AiTodosPanel() {
             </div>
           )
         })}
+        {todos.length > PAGE_SIZE && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, paddingTop: 10 }}>
+            <button
+              onClick={() => setPage(p => Math.max(0, p - 1))}
+              disabled={curPage === 0}
+              style={{ border: 'none', background: 'none', color: curPage === 0 ? '#C0B8AE' : '#1E6B50', cursor: curPage === 0 ? 'default' : 'pointer', fontSize: 13 }}
+            >‹ 上一页</button>
+            <span style={{ fontSize: 12, color: '#8AA89C' }}>{curPage + 1} / {pageCount}</span>
+            <button
+              onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
+              disabled={curPage === pageCount - 1}
+              style={{ border: 'none', background: 'none', color: curPage === pageCount - 1 ? '#C0B8AE' : '#1E6B50', cursor: curPage === pageCount - 1 ? 'default' : 'pointer', fontSize: 13 }}
+            >下一页 ›</button>
+          </div>
+        )}
       </div>
     </div>
   )

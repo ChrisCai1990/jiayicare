@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
 import AiTodosPanel from '../components/AiTodosPanel'
+import FollowUpsPanel from '../components/FollowUpsPanel'
 
 const DISEASE_COLOR = {
   '高血压': '#e74c3c', '糖尿病': '#e67e22', '高血脂': '#f39c12',
@@ -74,6 +75,9 @@ export default function HomePage() {
 
       {/* AI 待审核任务面板 */}
       <AiTodosPanel />
+
+      {/* 待随访任务面板 */}
+      <FollowUpsPanel />
 
       {/* 今日健康打卡 */}
       <div className="card" style={{ marginBottom: 20 }}>
