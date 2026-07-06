@@ -643,7 +643,11 @@ router.patch('/annual-mgmt-plans/:id/confirm', auth, async (req, res) => {
 // GET /api/user/plans
 router.get('/plans', auth, async (req, res) => {
   try {
-    const plans = await HealthPlan.find({ patientId: req.user._id, status: { $in: ['active', 'draft'] } })
+    const plans = await HealthPlan.find({
+      patientId: req.user._id,
+      status: { $in: ['active', 'draft'] },
+      'content.aiStatus': { $ne: 'pending' },
+    })
       .select('title type description content items status startDate endDate followupFrequency confirmedAt pushedAt notes year')
       .populate('staffId', 'name role title')
       .sort({ createdAt: -1 });
