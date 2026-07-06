@@ -175,6 +175,16 @@ a { text-decoration: none; color: inherit; }
 .form-input::placeholder { color: var(--text-muted); }
 textarea.form-input { resize: vertical; }
 
+/* .form-control 此前未定义样式，多处输入框因此退化成浏览器默认外观（无边框圆角/无聚焦态），与 .form-input 保持一致 */
+.form-control {
+  width: 100%; padding: 9px 13px; border: 1.5px solid var(--border);
+  border-radius: 8px; font-size: 14px; color: var(--text-primary);
+  background: var(--card-bg); transition: border-color 0.15s; box-sizing: border-box;
+}
+.form-control:focus { border-color: var(--primary); outline: none; }
+.form-control::placeholder { color: var(--text-muted); }
+textarea.form-control { resize: vertical; }
+
 /* ── Tabs ──────────────────────────────────────────────── */
 .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 2px solid var(--border); overflow-x: auto; flex-shrink: 0; }
 .tabs::-webkit-scrollbar { height: 0; }

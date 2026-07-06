@@ -4651,8 +4651,9 @@ export default function PatientDetailPage() {
         }
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
         const nowY = new Date().getFullYear()
-        const yearOpts = [...new Set([...years, String(nowY - 1), String(nowY), String(nowY + 1)])].sort((a, b) => Number(b) - Number(a))
-        // 当前查看的年度：允许查看尚未生成的年度（此时显示空状态+生成按钮）
+        // 年度候选只展示实际已生成的年份 + 当前年（用于首次生成入口），不预设未来/往年空占位
+        const yearOpts = [...new Set([...years, String(nowY)])].sort((a, b) => Number(b) - Number(a))
+        // 当前查看的年度：允许查看尚未生成的当前年度（此时显示空状态+生成按钮）
         const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : (years[0] || String(nowY))
         const ais = byYear[curYear] || {}
         // 编辑模式用 aiSummaryForm.sections，查看模式用当前年度 ais.sections
@@ -4989,7 +4990,8 @@ export default function PatientDetailPage() {
         const byYear = riskByYearFE(user.aiRiskAssessment)
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
         const nowY = new Date().getFullYear()
-        const yearOpts = [...new Set([...years, String(nowY - 1), String(nowY), String(nowY + 1)])].sort((a, b) => Number(b) - Number(a))
+        // 年度候选只展示实际已生成的年份 + 当前年（用于首次生成入口），不预设未来/往年空占位
+        const yearOpts = [...new Set([...years, String(nowY)])].sort((a, b) => Number(b) - Number(a))
         const curYear = (riskYear && yearOpts.includes(riskYear)) ? riskYear : (years[0] || String(nowY))
         const ra = byYear[curYear] || {}
         const dims = Array.isArray(ra.dimensions) ? ra.dimensions : []
