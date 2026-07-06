@@ -312,10 +312,12 @@ export default function EnterprisesPage() {
                 <div style={{ fontSize: 12, color: '#4A6558' }}>名额 {e.seatsUsed}/{e.seatsTotal || '不限'}</div>
                 <span className={`badge ${STATUS_BADGE[e.status]}`}>{STATUS_LABEL[e.status]}</span>
                 <div style={{ display: 'flex', gap: 6 }} onClick={ev => ev.stopPropagation()}>
+                  <button className="btn btn-sm btn-primary" onClick={() => toggleExpand(e._id)}>
+                    {expandedId === e._id ? '收起' : '管理员工/HR账号'}
+                  </button>
                   <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(e); setShowEditModal(true) }}>编辑</button>
                   <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => del(e)}>删除</button>
                 </div>
-                <span style={{ color: '#888' }}>{expandedId === e._id ? '▲' : '▼'}</span>
               </div>
 
               {expandedId === e._id && (
