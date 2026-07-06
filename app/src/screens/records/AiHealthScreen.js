@@ -267,6 +267,15 @@ export default function AiHealthScreen({ navigation }) {
     }
   };
 
+  // 就当前这份AI分析/评估结果跳转到AI助手继续追问；后端会自动带上用户已审核的分析要点作为上下文
+  const handleConsult = () => {
+    tts.stop();
+    navigation.navigate('Chat', {
+      greeting: `您好，我是小嘉。看到您正在查看${tab}结果，对其中的内容有任何疑问都可以问我，我会结合您的报告为您解读。`,
+      initialPrompt: `请帮我解读一下我的${tab}结果，重点说说我需要注意什么。`,
+    });
+  };
+
   useEffect(() => () => { tts.stop(); }, []);
 
   return (
@@ -334,14 +343,21 @@ export default function AiHealthScreen({ navigation }) {
           )}
 
           {curHasData && (
-            <TouchableOpacity style={styles.speakBtn} onPress={handleSpeak} disabled={speaking}>
-              {speaking ? (
-                <ActivityIndicator size="small" color={colors.primary} />
-              ) : (
-                <Ionicons name="volume-high-outline" size={16} color={colors.primary} />
-              )}
-              <Text style={styles.speakBtnText}>{speaking ? '播放中…' : '播放语音解读'}</Text>
-            </TouchableOpacity>
+            <View style={styles.actionRow}>
+              <TouchableOpacity style={[styles.speakBtn, styles.actionBtnHalf]} onPress={handleSpeak} disabled={speaking}>
+                {speaking ? (
+                  <ActivityIndicator size="small" color={colors.primary} />
+                ) : (
+                  <Ionicons name="volume-high-outline" size={16} color={colors.primary} />
+                )}
+                <Text style={styles.speakBtnText}>{speaking ? '播放中…' : '语音解读'}</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.consultBtn, styles.actionBtnHalf]} onPress={handleConsult}>
+                <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.white} />
+                <Text style={styles.consultBtnText}>就此咨询AI</Text>
+              </TouchableOpacity>
+            </View>
           )}
 
           {curHasData && tab === TABS[0] && <HealthSummaryView sections={summaryData.sections} />}
@@ -390,12 +406,20 @@ const styles = StyleSheet.create({
   },
   genBtnText: { color: colors.white, fontSize: 14, fontWeight: '700' },
 
+  actionRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  actionBtnHalf: { flex: 1 },
   speakBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
     backgroundColor: colors.primary10, borderRadius: radius.full,
-    paddingVertical: 10, marginBottom: spacing.md,
+    paddingVertical: 10,
   },
   speakBtnText: { color: colors.primary, fontSize: 13, fontWeight: '600' },
+  consultBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    backgroundColor: colors.primary, borderRadius: radius.full,
+    paddingVertical: 10,
+  },
+  consultBtnText: { color: colors.white, fontSize: 13, fontWeight: '600' },
 
   sectionCard: {
     backgroundColor: colors.white, borderRadius: radius.lg, padding: spacing.lg,

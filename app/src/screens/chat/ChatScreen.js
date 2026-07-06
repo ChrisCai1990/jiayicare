@@ -8,6 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { chatAPI } from '../../services/api';
+import tts from '../../utils/tts';
 
 const ASSISTANT = { label: '小嘉', icon: 'sparkles', color: colors.primary };
 
@@ -22,8 +23,10 @@ const TRANSFER_MSG = '您好，我需要联系专员咨询。';
 
 const DISCLAIMER = '本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
 
-function MessageBubble({ msg }) {
+function MessageBubble({ msg, speaking, onSpeak }) {
   const isUser = msg.role === 'user';
+  // 只有AI回复且有实际文字内容时才提供语音播报
+  const canSpeak = !isUser && !!(msg.content || '').trim();
   return (
     <View style={[styles.msgRow, isUser && styles.msgRowUser]}>
       {!isUser && (
@@ -39,25 +42,43 @@ function MessageBubble({ msg }) {
         {!isUser && (
           <Text style={styles.disclaimer}>{DISCLAIMER}</Text>
         )}
-        <Text style={[styles.bubbleTime, isUser && { color: 'rgba(255,255,255,0.6)' }]}>{msg.time}</Text>
+        <View style={styles.bubbleFooter}>
+          {canSpeak && (
+            <TouchableOpacity style={styles.speakChip} onPress={() => onSpeak(msg)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons
+                name={speaking ? 'volume-high' : 'volume-high-outline'}
+                size={13}
+                color={speaking ? colors.primary : colors.textMuted}
+              />
+              <Text style={[styles.speakChipText, speaking && { color: colors.primary }]}>
+                {speaking ? '播放中' : '播报'}
+              </Text>
+            </TouchableOpacity>
+          )}
+          <Text style={[styles.bubbleTime, isUser && { color: 'rgba(255,255,255,0.6)' }]}>{msg.time}</Text>
+        </View>
       </View>
     </View>
   );
 }
 
-export default function ChatScreen({ navigation }) {
+export default function ChatScreen({ navigation, route }) {
   const { user } = useAuth();
+  // 从AI健康分析/风险评估页跳转时带来的开场白与预填问题
+  const initialPrompt = route?.params?.initialPrompt;
+  const greeting = route?.params?.greeting;
   const [messages, setMessages] = useState([
     {
       id: 1, role: 'ai',
-      content: '您好，我是小嘉，您的AI健康助手。可以帮您解答健康科普问题、解读指标数据、用药提醒，也能咨询服务套餐和就医流程。请问有什么可以帮您？',
+      content: greeting || '您好，我是小嘉，您的AI健康助手。可以帮您解答健康科普问题、解读指标数据、用药提醒，也能咨询服务套餐和就医流程。请问有什么可以帮您？',
       roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
       time: '刚刚',
     },
   ]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(initialPrompt || '');
   const [isLoading, setIsLoading] = useState(false);
   const [transferred, setTransferred] = useState(false);
+  const [speakingId, setSpeakingId] = useState(null);
   const scrollRef = useRef(null);
 
   const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -135,6 +156,28 @@ export default function ChatScreen({ navigation }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages, isLoading]);
 
+  // 语音播报某条AI回复；再次点击同一条则停止
+  const handleSpeak = async (msg) => {
+    if (speakingId === msg.id) {
+      await tts.stop();
+      setSpeakingId(null);
+      return;
+    }
+    setSpeakingId(msg.id);
+    try {
+      const sound = await tts.speak(msg.content, 'chat');
+      // 播放自然结束后停止并清除高亮状态（覆盖 tts 内部回调，需自行 stop 释放资源）
+      sound?.setOnPlaybackStatusUpdate((status) => {
+        if (status.didJustFinish) { tts.stop(); setSpeakingId(null); }
+      });
+    } catch (err) {
+      setSpeakingId(null);
+    }
+  };
+
+  // 离开页面时停止正在播放的语音
+  useEffect(() => () => { tts.stop(); }, []);
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.topBar}>
@@ -162,7 +205,14 @@ export default function ChatScreen({ navigation }) {
           style={styles.msgList}
           contentContainerStyle={{ padding: spacing.lg }}
         >
-          {messages.map(msg => <MessageBubble key={msg.id} msg={msg} />)}
+          {messages.map(msg => (
+            <MessageBubble
+              key={msg.id}
+              msg={msg}
+              speaking={speakingId === msg.id}
+              onSpeak={handleSpeak}
+            />
+          ))}
 
           {isLoading && (
             <View style={styles.msgRow}>
@@ -248,7 +298,14 @@ const styles = StyleSheet.create({
   bubbleText: { fontSize: 14, color: colors.textPrimary, lineHeight: 20 },
   bubbleTextUser: { color: colors.white },
   disclaimer: { fontSize: 10, color: colors.textMuted, marginTop: spacing.xs, lineHeight: 14, fontStyle: 'italic' },
-  bubbleTime: { fontSize: 10, color: colors.textMuted, marginTop: 4, textAlign: 'right' },
+  bubbleFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4, gap: spacing.sm },
+  speakChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 3,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full,
+    backgroundColor: colors.primary + '12',
+  },
+  speakChipText: { fontSize: 11, color: colors.textMuted, fontWeight: '600' },
+  bubbleTime: { fontSize: 10, color: colors.textMuted, textAlign: 'right', flexShrink: 0 },
   typingBubble: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.xs,
     backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.sm, ...shadow.xs,
