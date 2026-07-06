@@ -679,7 +679,7 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
       gender: inp.gender || genderInit,
       age: inp.age ?? (user.age || ''),
       tc: inp.tc ?? '', ldl: inp.ldl ?? '', hdl: inp.hdl ?? '',
-      sbp: inp.sbp ?? '',
+      sbp: inp.sbp ?? '', dbp: inp.dbp ?? '', bmi: inp.bmi ?? '',
       onHypertensionTreatment: !!inp.onHypertensionTreatment,
       smoking: !!inp.smoking, diabetes: !!inp.diabetes, ckdStage34: !!inp.ckdStage34,
     }
@@ -761,9 +761,11 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
                 </div>
                 {numField('年龄', 'age', '岁')}
                 {numField('收缩压', 'sbp', 'mmHg')}
+                {numField('舒张压', 'dbp', 'mmHg')}
                 {numField('总胆固醇 TC', 'tc', 'mmol/L')}
                 {numField('低密度脂蛋白 LDL-C', 'ldl', 'mmol/L')}
                 {numField('高密度脂蛋白 HDL-C', 'hdl', 'mmol/L')}
+                {numField('体质指数 BMI', 'bmi', 'kg/m²')}
               </div>
             </div>
             <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', background: '#f9f7f3', borderRadius: 8, padding: '10px 14px' }}>
@@ -781,7 +783,7 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
               </label>
             </div>
             <div style={{ fontSize: 11, color: '#B0A99C' }}>
-              依据《中国血脂管理指南（2023年）》直接高危判定标准；具体查表分层暂沿用2016版《中国成人血脂异常防治指南》矩阵作为过渡近似值，待官方表格校准后更新。
+              依据《中国血脂管理指南（2023年）》图1"中国成人ASCVD总体发病风险评估流程图"完整校准，含直接高危判定、21格查表矩阵及余生风险判定（10年中危且年龄&lt;55岁时触发）。
             </div>
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
               <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}>取消</button>
@@ -832,9 +834,11 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
                   ['性别', result.inputs.gender === 'female' ? '女' : '男'],
                   ['年龄', `${result.inputs.age}岁`],
                   ['收缩压', `${result.inputs.sbp} mmHg`],
+                  ['舒张压', result.inputs.dbp ? `${result.inputs.dbp} mmHg` : '-'],
                   ['TC', result.inputs.tc ?? '-'],
                   ['LDL-C', result.inputs.ldl ?? '-'],
                   ['HDL-C', result.inputs.hdl ?? '-'],
+                  ['BMI', result.inputs.bmi ?? '-'],
                 ].map(([k, v]) => (
                   <div key={k} style={{ background: '#f9f7f3', borderRadius: 6, padding: '5px 8px', textAlign: 'center' }}>
                     <div style={{ fontSize: 10, color: '#aaa' }}>{k}</div>
