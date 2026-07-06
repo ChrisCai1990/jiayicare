@@ -96,6 +96,18 @@ export const adminAPI = {
   batchToggleProducts:(ids, status) => req('/products/batch-toggle', { method: 'PATCH', body: JSON.stringify({ ids, status }) }),
   deleteProduct:      (id)       => req(`/products/${id}`, { method: 'DELETE' }),
 
+  // 企业客户管理（B2B2C）
+  enterprises:            (params = {}) => req('/enterprises?' + new URLSearchParams(params).toString()),
+  createEnterprise:       (data)     => req('/enterprises', { method: 'POST', body: JSON.stringify(data) }),
+  updateEnterprise:       (id, data) => req(`/enterprises/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteEnterprise:       (id)       => req(`/enterprises/${id}`, { method: 'DELETE' }),
+  enterpriseEmployees:    (id)       => req(`/enterprises/${id}/employees`),
+  linkEnterpriseEmployees:(id, userIds) => req(`/enterprises/${id}/employees`, { method: 'PATCH', body: JSON.stringify({ userIds }) }),
+  unlinkEnterpriseEmployee:(id, userId) => req(`/enterprises/${id}/employees/${userId}`, { method: 'DELETE' }),
+  enterpriseHrAccounts:   (id)       => req(`/enterprises/${id}/hr-accounts`),
+  createEnterpriseHr:     (id, data) => req(`/enterprises/${id}/hr-accounts`, { method: 'POST', body: JSON.stringify(data) }),
+  deleteEnterpriseHr:     (id)       => req(`/hr-accounts/${id}`, { method: 'DELETE' }),
+
   // 合作伙伴管理
   partners:           (params = {}) => req('/partners?' + new URLSearchParams(params).toString()),
   createPartner:      (data)     => req('/partners', { method: 'POST', body: JSON.stringify(data) }),

@@ -20,6 +20,7 @@ const adminSchema = new mongoose.Schema({
       'tcmDoctor',       // 中医师
       'specialist',      // 专科医师
       'healthPlanner',   // 健康规划师
+      'enterprise_hr',   // 企业客户HR/行政对接人，仅可查看本企业员工聚合数据
     ],
     default: 'healthManager',
   },
@@ -29,6 +30,7 @@ const adminSchema = new mongoose.Schema({
   department: { type: String, default: '' },  // 所属部门（旧字符串，保留兼容）
   managerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   region:     { type: String, default: '' },
+  enterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null }, // role=enterprise_hr 时归属的企业
   // 新增字段
   phone:        { type: String, default: '' },  // 手机号（唯一识别码）
   email:        { type: String, default: '' },

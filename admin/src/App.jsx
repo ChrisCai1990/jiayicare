@@ -2,6 +2,7 @@ import React, { useState, useEffect, createContext, useContext } from 'react'
 import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { getToken, clearToken } from './api'
 import LoginPage from './pages/LoginPage'
+import HrApp from './pages/hr/HrApp'
 import DashboardPage from './pages/DashboardPage'
 import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
@@ -12,6 +13,7 @@ import QuestionnairePage from './pages/QuestionnairePage'
 import ChangeLogsPage from './pages/ChangeLogsPage'
 import ProductsPage from './pages/ProductsPage'
 import PartnersPage from './pages/PartnersPage'
+import EnterprisesPage from './pages/EnterprisesPage'
 import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import Layout from './components/Layout'
@@ -93,6 +95,7 @@ export default function App() {
         <ToastProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
+            <Route path="/hr/*" element={<HrApp />} />
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
@@ -107,6 +110,7 @@ export default function App() {
               <Route path="change-logs" element={<ChangeLogsPage />} />
               <Route path="products"   element={<ProductsPage />} />
               <Route path="partners"   element={<PartnersPage />} />
+              <Route path="enterprises" element={<EnterprisesPage />} />
               <Route path="member365" element={<Member365Page />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
 

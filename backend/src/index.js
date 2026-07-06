@@ -64,6 +64,7 @@ app.use('/api/chat',          require('./routes/chat'));
 app.use('/api/questionnaire', require('./routes/questionnaire'));
 app.use('/api/services',      require('./routes/services'));
 app.use('/api/partner-benefits', require('./routes/partnerBenefits'));
+app.use('/api/enterprise-hr', require('./routes/enterpriseHr'));
 app.use('/api/orders',        require('./routes/orders'));
 app.use('/api/feedback',      require('./routes/feedback'));
 app.use('/api/system',        require('./routes/system'));

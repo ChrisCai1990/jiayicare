@@ -15,6 +15,7 @@ const ProductCategory = require('../models/ProductCategory');
 const MemberType = require('../models/MemberType');
 const Partner = require('../models/Partner');
 const PartnerBenefit = require('../models/PartnerBenefit');
+const Enterprise = require('../models/Enterprise');
 const PlanTemplate = require('../models/PlanTemplate');
 const CheckupPlan = require('../models/CheckupPlan');
 const AnnualPlan = require('../models/AnnualPlan');
@@ -102,6 +103,10 @@ router.post('/login', async (req, res) => {
   const admin = await Admin.findOne({ username });
   if (!admin || !(await admin.comparePassword(password))) {
     return res.status(401).json({ success: false, message: '用户名或密码错误' });
+  }
+  // 企业HR账号仅可通过 /api/enterprise-hr/login 独立入口登录，不允许进入超管/医护后台
+  if (admin.role === 'enterprise_hr') {
+    return res.status(403).json({ success: false, message: '企业HR账号请使用企业客户专属登录入口' });
   }
   const token = jwt.sign(
     { id: admin._id, type: 'admin', role: admin.role },
@@ -952,6 +957,126 @@ router.delete('/partner-benefits/:id', adminAuth, async (req, res) => {
   const benefit = await PartnerBenefit.findByIdAndDelete(req.params.id);
   if (!benefit) return res.status(404).json({ success: false, message: '权益不存在' });
   res.json({ success: true, message: '权益已删除' });
+});
+
+// ── 企业客户管理（B2B2C）──────────────────────────────────────────
+// 仅超级管理员可维护；企业HR自身数据通过 /api/enterprise-hr 独立只读接口访问，不复用此处
+
+// GET /api/admin/enterprises
+router.get('/enterprises', adminAuth, async (req, res) => {
+  const { name, status } = req.query;
+  const filter = {};
+  if (name) filter.name = new RegExp(name, 'i');
+  if (status) filter.status = status;
+  const enterprises = await Enterprise.find(filter).sort({ createdAt: -1 });
+  // 附带每个企业当前已分配的员工数
+  const withSeatsUsed = await Promise.all(enterprises.map(async (e) => {
+    const seatsUsed = await User.countDocuments({ enterpriseId: e._id });
+    return { ...e.toObject(), seatsUsed };
+  }));
+  res.json({ success: true, data: withSeatsUsed });
+});
+
+// POST /api/admin/enterprises
+router.post('/enterprises', adminAuth, async (req, res) => {
+  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note } = req.body;
+  if (!name) return res.status(400).json({ success: false, message: '企业名称为必填项' });
+  const enterprise = await Enterprise.create({
+    name, creditCode: creditCode || '', contactName: contactName || '', contactPhone: contactPhone || '',
+    contactEmail: contactEmail || '', logo: logo || '', contractStartAt: contractStartAt || null,
+    contractEndAt: contractEndAt || null, seatsTotal: seatsTotal ?? 0, packageType: packageType || '',
+    status: status || 'active', note: note || '',
+  });
+  res.json({ success: true, data: enterprise, message: '企业客户创建成功' });
+});
+
+// PUT /api/admin/enterprises/:id
+router.put('/enterprises/:id', adminAuth, async (req, res) => {
+  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note } = req.body;
+  const enterprise = await Enterprise.findByIdAndUpdate(
+    req.params.id,
+    { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note },
+    { new: true }
+  );
+  if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
+  res.json({ success: true, data: enterprise, message: '企业信息已更新' });
+});
+
+// DELETE /api/admin/enterprises/:id
+router.delete('/enterprises/:id', adminAuth, async (req, res) => {
+  const seatsUsed = await User.countDocuments({ enterpriseId: req.params.id });
+  if (seatsUsed > 0) {
+    return res.status(400).json({ success: false, message: `该企业名下还有 ${seatsUsed} 名员工，请先解除关联再删除` });
+  }
+  const enterprise = await Enterprise.findByIdAndDelete(req.params.id);
+  if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
+  await Admin.deleteMany({ enterpriseId: req.params.id, role: 'enterprise_hr' }); // 一并清理HR账号
+  res.json({ success: true, message: '企业客户已删除' });
+});
+
+// GET /api/admin/enterprises/:id/employees —— 该企业下已关联的员工列表
+router.get('/enterprises/:id/employees', adminAuth, async (req, res) => {
+  const employees = await User.find({ enterpriseId: req.params.id })
+    .select('name phone age gender healthScore onboardingCompleted createdAt')
+    .sort({ createdAt: -1 });
+  res.json({ success: true, data: employees });
+});
+
+// PATCH /api/admin/enterprises/:id/employees —— 批量将员工关联到该企业（body: { userIds: [] }）
+router.patch('/enterprises/:id/employees', adminAuth, async (req, res) => {
+  const { userIds } = req.body;
+  if (!Array.isArray(userIds) || userIds.length === 0) {
+    return res.status(400).json({ success: false, message: '请选择要关联的员工' });
+  }
+  const enterprise = await Enterprise.findById(req.params.id);
+  if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
+  const seatsUsed = await User.countDocuments({ enterpriseId: req.params.id });
+  if (enterprise.seatsTotal > 0 && seatsUsed + userIds.length > enterprise.seatsTotal) {
+    return res.status(400).json({ success: false, message: `超出采购名额（剩余 ${Math.max(enterprise.seatsTotal - seatsUsed, 0)} 个）` });
+  }
+  await User.updateMany({ _id: { $in: userIds } }, { enterpriseId: req.params.id });
+  res.json({ success: true, message: `已关联 ${userIds.length} 名员工` });
+});
+
+// DELETE /api/admin/enterprises/:id/employees/:userId —— 解除某员工与企业的关联
+router.delete('/enterprises/:id/employees/:userId', adminAuth, async (req, res) => {
+  await User.updateOne({ _id: req.params.userId, enterpriseId: req.params.id }, { enterpriseId: null });
+  res.json({ success: true, message: '已解除关联' });
+});
+
+// GET /api/admin/enterprises/:id/hr-accounts —— 该企业的HR账号列表
+router.get('/enterprises/:id/hr-accounts', adminAuth, async (req, res) => {
+  const accounts = await Admin.find({ enterpriseId: req.params.id, role: 'enterprise_hr' }).select('-password');
+  res.json({ success: true, data: accounts });
+});
+
+// POST /api/admin/enterprises/:id/hr-accounts —— 为该企业创建HR账号
+router.post('/enterprises/:id/hr-accounts', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') {
+    return res.status(403).json({ success: false, message: '仅超级管理员可创建企业HR账号' });
+  }
+  const { username, password, name, phone } = req.body;
+  if (!password || !name) return res.status(400).json({ success: false, message: '密码、姓名不能为空' });
+  const enterprise = await Enterprise.findById(req.params.id);
+  if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
+  const finalUsername = username || `hr_${Date.now().toString(36)}`;
+  const usernameExists = await Admin.findOne({ username: finalUsername });
+  if (usernameExists) return res.status(400).json({ success: false, message: '用户名已存在' });
+  const hr = await Admin.create({
+    username: finalUsername, password, name, phone: phone || '',
+    role: 'enterprise_hr', enterpriseId: req.params.id, staffStatus: 'active',
+  });
+  res.json({ success: true, data: { _id: hr._id, username: hr.username, name: hr.name }, message: 'HR账号已创建' });
+});
+
+// DELETE /api/admin/hr-accounts/:id —— 删除HR账号
+router.delete('/hr-accounts/:id', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') {
+    return res.status(403).json({ success: false, message: '仅超级管理员可删除' });
+  }
+  const hr = await Admin.findOneAndDelete({ _id: req.params.id, role: 'enterprise_hr' });
+  if (!hr) return res.status(404).json({ success: false, message: 'HR账号不存在' });
+  res.json({ success: true, message: 'HR账号已删除' });
 });
 
 // ── 健康方案模板管理 ──────────────────────────────────────────────
