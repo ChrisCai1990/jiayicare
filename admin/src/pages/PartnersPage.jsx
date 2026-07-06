@@ -3,6 +3,10 @@ import { adminAPI } from '../api'
 import { useToast } from '../App'
 
 const CATEGORIES = ['口腔', '体检', '保险', '酒店', '其他']
+// 真实生效的会员等级——与医护端患者详情页"会员类型"下拉框（PatientDetailPage.jsx）保持一致，
+// 这是 User.memberType 字段实际会被写入的取值。admin后台另有一套 MemberType 集合（健康重塑计划等），
+// 但那套值从未被写入 User.memberType，两者是完全不同的体系，不能混用，否则权益可见性永远匹配不上。
+const MEMBER_LEVELS = ['优享', '悦享', '尊享', '卓越']
 
 const EMPTY_PARTNER = { name: '', category: CATEGORIES[0], logo: '', description: '', contactPhone: '', sortOrder: 999, status: 'on' }
 const EMPTY_BENEFIT = { title: '', subtitle: '', images: [], description: '', usageGuide: '', visibleMemberTypes: [], sortOrder: 999, status: 'on' }
@@ -163,7 +167,7 @@ function PartnerModal({ partner, onClose, onSaved }) {
 }
 
 // ── 权益表单 Modal ────────────────────────────────────────────────
-function BenefitModal({ partnerId, benefit, memberTypes, onClose, onSaved }) {
+function BenefitModal({ partnerId, benefit, onClose, onSaved }) {
   const toast = useToast()
   const isEdit = !!benefit?._id
   const [form, setForm] = useState(isEdit ? { ...benefit, partner: partnerId } : { ...EMPTY_BENEFIT, partner: partnerId })
@@ -219,11 +223,10 @@ function BenefitModal({ partnerId, benefit, memberTypes, onClose, onSaved }) {
           <div className="form-group">
             <label className="form-label">可见会员等级（不选=所有会员可见）</label>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-              {memberTypes.length === 0 && <div style={{ fontSize: 12, color: '#aaa' }}>暂无会员等级配置，默认所有会员可见</div>}
-              {memberTypes.map(mt => (
-                <label key={mt._id} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={form.visibleMemberTypes.includes(mt.name)} onChange={() => toggleMemberType(mt.name)} />
-                  {mt.name}
+              {MEMBER_LEVELS.map(name => (
+                <label key={name} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer' }}>
+                  <input type="checkbox" checked={form.visibleMemberTypes.includes(name)} onChange={() => toggleMemberType(name)} />
+                  {name}
                 </label>
               ))}
             </div>
@@ -252,7 +255,6 @@ export default function PartnersPage() {
   const [benefitsByPartner, setBenefitsByPartner] = useState({})
   const [showBenefitModal, setShowBenefitModal] = useState(false)
   const [editingBenefit, setEditingBenefit] = useState(null)
-  const [memberTypes, setMemberTypes] = useState([])
 
   const loadPartners = async () => {
     setLoading(true)
@@ -273,10 +275,7 @@ export default function PartnersPage() {
     }
   }
 
-  useEffect(() => {
-    loadPartners()
-    adminAPI.memberTypes().then(res => setMemberTypes(res.data || [])).catch(() => {})
-  }, [])
+  useEffect(() => { loadPartners() }, [])
 
   const toggleExpand = (id) => {
     if (expandedId === id) { setExpandedId(null); return }
@@ -378,7 +377,6 @@ export default function PartnersPage() {
         <BenefitModal
           partnerId={expandedId}
           benefit={editingBenefit}
-          memberTypes={memberTypes}
           onClose={() => setShowBenefitModal(false)}
           onSaved={() => loadBenefits(expandedId)}
         />
