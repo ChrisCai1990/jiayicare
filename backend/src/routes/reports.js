@@ -66,6 +66,12 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
     }
 
+    const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
+    if (await isFunctionalMedicineL1(report.screeningL1)) {
+      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
+      return res.json({ success: true, message: '功能医学检测报告不支持AI自动解析，请等待健管专员人工查阅' });
+    }
+
     if (!process.env.QWEN_API_KEY) {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '已进入 AI 解析队列，请等待健管专员审核录入' });

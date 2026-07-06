@@ -115,6 +115,7 @@ function matchAll(rawName, itemType, threshold = 0.6, excludeCategories = ['hp']
 // 叶子节点（没有子分类的节点）才是可匹配的"项目"，非叶子节点是纯分类分组，不参与匹配。
 // 名称含"功能检测"/"功能医学"的 L1 分类，跟旧版 hp 类一样不自动归类，只能人工在OCR审核弹窗手动选。
 let adminIndexCache = null;
+let functionalMedicineL1Ids = new Set(); // 「功能医学检测」类L1的 _id 集合，供 isFunctionalMedicineL1 判断
 let adminIndexCacheAt = 0;
 const ADMIN_INDEX_TTL_MS = 30 * 1000; // 30秒缓存，避免每条item都查一次库，同时保证admin改分类后很快生效
 
@@ -180,8 +181,17 @@ async function buildAdminIndex() {
     });
 
   adminIndexCache = buildIndex(nodes.filter(n => !n.excluded));
+  functionalMedicineL1Ids = excludeL1Names;
   adminIndexCacheAt = now;
   return adminIndexCache;
+}
+
+// 判断某个 screeningL1 (_id字符串) 是否属于「功能医学检测」大类——这类报告整体不做AI解析，
+// 只保存原始文件供人工阅读（如基因检测动辄上千页，OCR/VL逐页解析耗时过长且无实际意义）。
+async function isFunctionalMedicineL1(screeningL1) {
+  if (!screeningL1) return false;
+  await buildAdminIndex(); // 确保 functionalMedicineL1Ids 已按最新30秒缓存计算
+  return functionalMedicineL1Ids.has(String(screeningL1));
 }
 
 // admin分类管理增删改后调用，立即让下一次归类生效，不用等30秒缓存过期
@@ -247,5 +257,5 @@ module.exports = {
   matchAll, matchOne: (n, t) => { const r = matchAll(n, t); return r[0] || null; },
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
-  matchAllWithIndex,
+  matchAllWithIndex, isFunctionalMedicineL1,
 };

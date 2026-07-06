@@ -5711,6 +5711,7 @@ export default function PatientDetailPage() {
                   const l1Label = grpLabel || l1Node?.label || '其他'
                   const l1Idx = l1Node ? screeningTree.findIndex(n => String(n._id) === key) : -1
                   const color = l1Idx >= 0 ? L1_COLORS[l1Idx % L1_COLORS.length] : '#8AA89C'
+                  const isFunctionalMedicineGroup = /功能检测|功能医学/.test(l1Label)
                   return (
                   <div key={key} style={{ marginBottom: 16, borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
                     <div style={{ padding: '8px 16px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -5743,7 +5744,9 @@ export default function PatientDetailPage() {
                               )}
                             </td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              {r.aiStatus === 'none' && (r.fileUrl || r.content) && (
+                              {isFunctionalMedicineGroup ? (
+                                <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
+                              ) : r.aiStatus === 'none' && (r.fileUrl || r.content) && (
                                 <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
                                   disabled={parsingReportId === r._id}
                                   onClick={() => handleParseReportAI(r._id)}>
