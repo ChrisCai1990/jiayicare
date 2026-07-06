@@ -191,7 +191,7 @@ export const staffAPI = {
   getReferrals:          (p = {})    => req('/staff/referrals?' + qs(p)),
   updateReferral:        (id, data)  => req(`/staff/referrals/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   getPatientReferrals:   (patientId) => req(`/staff/referrals?patientId=${patientId}&limit=100`),
-  generateAIReferralResponseDraft: (id) => req(`/staff/referrals/${id}/ai-response-draft`, { method: 'POST' }),
+  generateAIReferralResponseDraft: (id, summary) => req(`/staff/referrals/${id}/ai-response-draft`, { method: 'POST', body: JSON.stringify({ summary: summary || '' }) }),
   markSentReferralsRead: ()          => req('/staff/referrals/mark-sent-read', { method: 'PATCH' }),
 
   // P4 — Notifications
@@ -316,6 +316,10 @@ export const staffAPI = {
   // 场景八：AI 风险评估与预警
   generateAIRisk:          (id) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'POST' }),
   updateAIRisk:            (id, data) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'PATCH', body: JSON.stringify(data) }),
+  // AI风险评估·团队讨论区（与AI健康分析讨论区一致）
+  addAIRiskDiscussion:     (id, content) => req(`/staff/patients/${id}/ai-risk-assessment/discussions`, { method: 'POST', body: JSON.stringify({ content }) }),
+  deleteAIRiskDiscussion:  (id, index) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/${index}`, { method: 'DELETE' }),
+  generateAIRiskReply:     (id) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/ai-reply`, { method: 'POST' }),
 
   // 场景九：AI 用药建议
   generateAIMedicationSuggest: (id) => req(`/staff/patients/${id}/ai-medication-suggest`, { method: 'POST' }),

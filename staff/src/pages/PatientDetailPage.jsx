@@ -743,6 +743,12 @@ export default function PatientDetailPage() {
   // 场景八：AI风险评估
   const [riskGenerating, setRiskGenerating] = useState(false)
   const [riskApproving, setRiskApproving] = useState(false)
+  const [editingRisk, setEditingRisk] = useState(false)      // 是否处于编辑态
+  const [riskForm, setRiskForm] = useState(null)             // 编辑中的风险评估副本
+  const [riskSaving, setRiskSaving] = useState(false)
+  const [riskDiscInput, setRiskDiscInput] = useState('')     // 讨论区输入
+  const [riskDiscBusy, setRiskDiscBusy] = useState(false)
+  const [riskAiReplying, setRiskAiReplying] = useState(false)
   // 场景五/六/九：AI 助手（随访建议 / 教练消息 / 内容推荐）
   const [aiHelper, setAiHelper] = useState(null)   // { type, loading, data, error }
   const [aiHelperBusy, setAiHelperBusy] = useState(false)
@@ -1346,6 +1352,54 @@ export default function PatientDetailPage() {
       load()
     } catch (err) { toast(err.message || '操作失败') }
     finally { setRiskApproving(false) }
+  }
+  // 进入编辑态：把当前风险评估复制成可编辑副本
+  const startEditRisk = () => {
+    const ra = data?.user?.aiRiskAssessment || {}
+    setRiskForm({
+      overallSummary: ra.overallSummary || '',
+      dimensions: (ra.dimensions || []).map(d => ({
+        ...d,
+        factorsText: Array.isArray(d.factors) ? d.factors.join('\n') : '',
+      })),
+    })
+    setEditingRisk(true)
+  }
+  const handleSaveRisk = async () => {
+    setRiskSaving(true)
+    try {
+      const dimensions = riskForm.dimensions.map(d => ({
+        key: d.key, label: d.label, level: d.level, score: d.score,
+        factors: (d.factorsText || '').split('\n').map(s => s.trim()).filter(Boolean),
+        advice: d.advice || '',
+      }))
+      await staffAPI.updateAIRisk(id, { dimensions, overallSummary: riskForm.overallSummary })
+      toast('风险评估已保存')
+      setEditingRisk(false); setRiskForm(null)
+      load()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setRiskSaving(false) }
+  }
+  // 风险评估讨论区：发留言 / 撤回 / 让AI回应
+  const handleRiskDiscSend = async () => {
+    if (!riskDiscInput.trim()) return
+    setRiskDiscBusy(true)
+    try {
+      await staffAPI.addAIRiskDiscussion(id, riskDiscInput.trim())
+      setRiskDiscInput('')
+      load()
+    } catch (err) { toast(err.message || '发送失败') }
+    finally { setRiskDiscBusy(false) }
+  }
+  const handleRiskDiscDelete = async (index) => {
+    try { await staffAPI.deleteAIRiskDiscussion(id, index); load() }
+    catch (err) { toast(err.message || '撤回失败') }
+  }
+  const handleRiskAiReply = async () => {
+    setRiskAiReplying(true)
+    try { await staffAPI.generateAIRiskReply(id); load() }
+    catch (err) { toast(err.message || 'AI回应失败') }
+    finally { setRiskAiReplying(false) }
   }
 
   // 场景五/六/九：AI 助手统一调用。生成结果仅在弹窗内临时预览，不写库；关闭弹窗即视为丢弃，不留痕迹
@@ -4665,14 +4719,27 @@ export default function PatientDetailPage() {
                   {hasData ? `生成时间：${new Date(ra.generatedAt).toLocaleString('zh-CN')}${ra.alerted ? ' · ⚠ 高风险待审核预警' : ''}` : '尚未生成'}
                 </div>
               )}
-              {hasData && !ra.approvedAt && (
+              {hasData && !editingRisk && (
+                <button className="btn btn-secondary btn-sm" onClick={startEditRisk}>✏️ 编辑</button>
+              )}
+              {hasData && !ra.approvedAt && !editingRisk && (
                 <button className="btn btn-primary btn-sm" onClick={handleApproveRisk} disabled={riskApproving}>
                   {riskApproving ? '处理中...' : '审核确认'}
                 </button>
               )}
-              <button className="btn btn-secondary btn-sm" onClick={handleGenerateRisk} disabled={riskGenerating}>
-                {riskGenerating ? 'AI评估中...' : hasData ? '重新评估' : '✨ AI生成风险评估'}
-              </button>
+              {!editingRisk && (
+                <button className="btn btn-secondary btn-sm" onClick={handleGenerateRisk} disabled={riskGenerating}>
+                  {riskGenerating ? 'AI评估中...' : hasData ? '重新评估' : '✨ AI生成风险评估'}
+                </button>
+              )}
+              {editingRisk && (
+                <>
+                  <button className="btn btn-primary btn-sm" onClick={handleSaveRisk} disabled={riskSaving}>
+                    {riskSaving ? '保存中...' : '保存修改'}
+                  </button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => { setEditingRisk(false); setRiskForm(null) }}>取消</button>
+                </>
+              )}
             </div>
 
             {!hasData && (
@@ -4681,7 +4748,46 @@ export default function PatientDetailPage() {
               </div>
             )}
 
-            {hasData && (
+            {/* ── 编辑态：可修改各维度等级/因子/建议 + 整体概述 ── */}
+            {hasData && editingRisk && riskForm && (
+              <>
+                <div className="card" style={{ marginBottom: 14, padding: '14px 20px' }}>
+                  <label className="form-label">整体评估概述</label>
+                  <textarea className="form-input" rows={2} value={riskForm.overallSummary}
+                    onChange={e => setRiskForm(f => ({ ...f, overallSummary: e.target.value }))}
+                    placeholder="整体风险概述..." />
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>整体风险等级会根据各维度中的最高等级自动重算。</div>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                  {riskForm.dimensions.map((d, i) => (
+                    <div key={d.key || i} className="card" style={{ padding: '12px 16px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                        <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{d.label}</span>
+                        <select className="form-input" style={{ width: 'auto', padding: '4px 8px', fontSize: 12 }}
+                          value={d.level}
+                          onChange={e => setRiskForm(f => { const nd = [...f.dimensions]; nd[i] = { ...nd[i], level: e.target.value }; return { ...f, dimensions: nd } })}>
+                          <option value="low">低风险</option>
+                          <option value="medium">中风险</option>
+                          <option value="high">高风险</option>
+                          <option value="critical">危急值</option>
+                        </select>
+                      </div>
+                      <label className="form-label" style={{ fontSize: 12 }}>风险因素（每行一条）</label>
+                      <textarea className="form-input" rows={3} value={d.factorsText}
+                        onChange={e => setRiskForm(f => { const nd = [...f.dimensions]; nd[i] = { ...nd[i], factorsText: e.target.value }; return { ...f, dimensions: nd } })}
+                        placeholder="每行一条风险因素..." style={{ fontSize: 12, marginBottom: 8 }} />
+                      <label className="form-label" style={{ fontSize: 12 }}>建议</label>
+                      <textarea className="form-input" rows={2} value={d.advice || ''}
+                        onChange={e => setRiskForm(f => { const nd = [...f.dimensions]; nd[i] = { ...nd[i], advice: e.target.value }; return { ...f, dimensions: nd } })}
+                        placeholder="干预建议..." style={{ fontSize: 12 }} />
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            {/* ── 只读态 ── */}
+            {hasData && !editingRisk && (
               <>
                 {/* 整体风险 */}
                 <div className="card" style={{ marginBottom: 14, padding: '14px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -4717,6 +4823,56 @@ export default function PatientDetailPage() {
                 <div style={{ fontSize: 11, color: '#B0B8B3', marginTop: 12 }}>本评估由 AI 结合规则引擎生成，仅供医护参考，需家庭医生审核后生效。</div>
               </>
             )}
+
+            {/* ── 团队讨论区（对评估有疑问可留言，并可让AI结合评估结论回应）── */}
+            {hasData && !editingRisk && (() => {
+              const discussions = Array.isArray(ra.discussions) ? ra.discussions : []
+              return (
+                <div className="card" style={{ marginTop: 16, padding: '14px 20px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
+                    <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>💬 团队讨论 / 向AI提问</span>
+                    {discussions.length > 0 && (
+                      <button className="btn btn-secondary btn-sm" onClick={handleRiskAiReply} disabled={riskAiReplying}>
+                        {riskAiReplying ? 'AI思考中…' : '✨ 让AI回应'}
+                      </button>
+                    )}
+                  </div>
+                  {discussions.length === 0 ? (
+                    <div style={{ fontSize: 13, color: '#8AA89C', marginBottom: 12 }}>对本次风险评估有疑问？在下方留言，或留言后点「让AI回应」，AI 会结合评估结论为您解答。</div>
+                  ) : (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+                      {discussions.map((m, i) => (
+                        <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 2,
+                          background: m.isAI ? '#EEF6FF' : '#F7F5F0', borderRadius: 8, padding: '8px 12px',
+                          borderLeft: `3px solid ${m.isAI ? '#0077B6' : '#1E6B50'}` }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: m.isAI ? '#0077B6' : '#1E6B50' }}>
+                              {m.isAI ? '🤖 AI助手' : m.staffName}{m.staffRole ? `（${m.staffRole}）` : ''}
+                            </span>
+                            <span style={{ fontSize: 11, color: '#aaa' }}>{new Date(m.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                            {(m.isAI || String(m.staffId) === String(staff?._id) || staff?.role === 'superadmin') && (
+                              <button style={{ marginLeft: 'auto', fontSize: 11, color: '#c00', background: 'none', border: 'none', cursor: 'pointer' }}
+                                onClick={() => handleRiskDiscDelete(i)}>撤回</button>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+                    <textarea className="form-input" rows={2} value={riskDiscInput}
+                      onChange={e => setRiskDiscInput(e.target.value)}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRiskDiscSend() } }}
+                      placeholder="输入对风险评估的疑问或补充，Enter 发送，Shift+Enter 换行..."
+                      style={{ flex: 1, resize: 'none', fontSize: 13 }} />
+                    <button className="btn btn-primary" onClick={handleRiskDiscSend} disabled={riskDiscBusy || !riskDiscInput.trim()}>
+                      {riskDiscBusy ? '…' : '发送'}
+                    </button>
+                  </div>
+                </div>
+              )
+            })()}
           </div>
         )
       })()}

@@ -2073,7 +2073,13 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
     const meds = await Medication.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
       .select('name dosage').limit(5).lean();
 
-    const prompt = `你是一位专业医师，收到同事的会诊转介请求，请根据以下信息草拟你的会诊回复。
+    // 接收人填写的简要概要（可选）——有则让AI围绕它展开成完整回复草稿
+    const summary = (req.body?.summary || '').trim();
+    const summaryBlock = summary
+      ? `\n【接收医师填写的处理概要（请以此为核心，扩写成专业、完整的会诊回复）】\n${summary}\n`
+      : '';
+
+    const prompt = `你是一位专业医师，收到同事的会诊转介请求，请根据以下信息草拟你的会诊回复。${summary ? '重点：接收医师已给出处理概要，请忠实围绕该概要扩写，不要偏离或臆造其未提及的诊疗结论。' : ''}
 
 【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
 【主要诊断/慢病】${(user.chronicDiseases || []).join('、') || '无'}
@@ -2081,8 +2087,7 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
 【药物过敏】${user.healthProfile?.drugAllergy || '无'}
 【发起方】${referral.fromStaffId?.name || ''}（${referral.fromStaffId?.role || ''}）
 【转介原因】${referral.reason}
-【转介详细说明】${referral.content || '无'}
-
+【转介详细说明】${referral.content || '无'}${summaryBlock}
 请分两行输出：
 问题分析：（对患者当前问题的分析评估，60字内）
 会诊意见：（会诊结论、后续建议、转归方向，80字内）`;
@@ -2152,7 +2157,20 @@ router.get('/notifications', staffAuth, async (req, res) => {
       ? { assignedFamilyDoctor: staff._id }
       : { assignedHealthManager: staff._id };
 
-  const [recentPushes, pendingReferrals, expiringPatients, unreadReferralCount, unreadRepliedCount] = await Promise.all([
+  // 按角色过滤：我负责的患者 + 我这个角色对应的留言频道，统计未读用户留言数（用于侧边栏红点）
+  const msgPatientFilter =
+    staff.role === 'superadmin'      ? {} :
+    staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: staff._id } :
+    staff.role === 'nutritionist'    ? { assignedNutritionist: staff._id } :
+    staff.role === 'healthManager' || staff.role === 'medicalAssistant'
+                                     ? { assignedHealthManager: staff._id } :
+                                       { $or: [ { assignedFamilyDoctor: staff._id }, { assignedHealthManager: staff._id }, { assignedNutritionist: staff._id } ] };
+  const msgRecipientFilter =
+    staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
+    staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
+    {};
+
+  const [recentPushes, pendingReferrals, expiringPatients, unreadReferralCount, unreadRepliedCount, myMsgPatients] = await Promise.all([
     // 最近30条推送记录（含阅读状态）
     PushRecord.find({ staffId: staff._id })
       .sort({ createdAt: -1 }).limit(30)
@@ -2170,7 +2188,17 @@ router.get('/notifications', staffAuth, async (req, res) => {
     Referral.countDocuments({ toStaffId: staff._id, status: 'pending' }),
     // 我发出的转介、对方已回复但我未查看
     Referral.countDocuments({ fromStaffId: staff._id, fromStaffUnread: true }),
+    // 我负责的患者（用于统计未读留言）
+    User.find(msgPatientFilter).select('_id').lean(),
   ]);
+
+  // 未读用户留言数（读消息后即时下降，反映到侧边栏红点）
+  const unreadMessageCount = await Message.countDocuments({
+    user: { $in: myMsgPatients.map(p => p._id) },
+    type: 'user',
+    staffReadAt: null,
+    ...msgRecipientFilter,
+  });
 
   res.json({
     success: true,
@@ -2180,10 +2208,12 @@ router.get('/notifications', staffAuth, async (req, res) => {
       expiringPatients,
       unreadReferralCount,
       unreadRepliedCount,
+      unreadMessageCount,
       summary: {
         pushCount: recentPushes.length,
         pendingReferralCount: unreadReferralCount,
         unreadRepliedCount,
+        unreadMessageCount,
         expiringCount: expiringPatients.length,
       },
     },
@@ -3474,6 +3504,93 @@ router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => 
       { $set: { aiRiskAssessment: updated } }
     );
     res.json({ success: true, data: updated });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── AI风险评估·团队讨论区（与AI健康分析讨论区一致：团队留言 + @AI回应）──
+// POST /api/staff/patients/:id/ai-risk-assessment/discussions — 发一条讨论留言
+router.post('/patients/:id/ai-risk-assessment/discussions', staffAuth, async (req, res) => {
+  try {
+    const { content } = req.body;
+    if (!content?.trim()) return res.status(400).json({ success: false, message: '留言内容不能为空' });
+    const user = await User.findById(req.params.id).select('aiRiskAssessment');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const ra = { ...(user.aiRiskAssessment || {}) };
+    const discussions = Array.isArray(ra.discussions) ? [...ra.discussions] : [];
+    discussions.push({
+      staffId: req.staff._id,
+      staffName: req.staff.name,
+      staffRole: req.staff.roleLabel || req.staff.role || '',
+      content: content.trim(),
+      createdAt: new Date(),
+      isAI: false,
+    });
+    ra.discussions = discussions;
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { 'aiRiskAssessment.discussions': discussions } }
+    );
+    res.json({ success: true, data: discussions });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/patients/:id/ai-risk-assessment/discussions/:index — 撤回自己发的一条留言（仅本人或超管）
+router.delete('/patients/:id/ai-risk-assessment/discussions/:index', staffAuth, async (req, res) => {
+  try {
+    const idx = parseInt(req.params.index, 10);
+    const user = await User.findById(req.params.id).select('aiRiskAssessment');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const discussions = Array.isArray(user.aiRiskAssessment?.discussions) ? [...user.aiRiskAssessment.discussions] : [];
+    const target = discussions[idx];
+    if (!target) return res.status(404).json({ success: false, message: '留言不存在' });
+    if (!target.isAI && String(target.staffId) !== String(req.staff._id) && req.staff.role !== 'superadmin') {
+      return res.status(403).json({ success: false, message: '只能撤回自己发的留言' });
+    }
+    discussions.splice(idx, 1);
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { 'aiRiskAssessment.discussions': discussions } }
+    );
+    res.json({ success: true, data: discussions });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/staff/patients/:id/ai-risk-assessment/discussions/ai-reply — 针对疑问，让AI结合风险评估结论回应
+router.post('/patients/:id/ai-risk-assessment/discussions/ai-reply', staffAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id).select('name gender age aiRiskAssessment');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const ra = user.aiRiskAssessment || {};
+    const discussions = Array.isArray(ra.discussions) ? ra.discussions : [];
+    if (discussions.length === 0) return res.status(400).json({ success: false, message: '暂无讨论留言，无法生成AI回应' });
+
+    const { chat } = require('../utils/ai');
+    const dimsSummary = (Array.isArray(ra.dimensions) ? ra.dimensions : [])
+      .map(d => `${d.label}：${d.level}${typeof d.score === 'number' ? `（${d.score}分）` : ''}${d.advice ? `，建议：${d.advice}` : ''}`).join('\n');
+    const discussionText = discussions.map(d => `${d.isAI ? 'AI' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
+
+    const prompt = `你是协助医护团队复核风险评估的AI助手。以下是患者${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI风险评估结论，以及医护团队围绕该评估展开的讨论。请针对团队最新提出的疑问或补充信息，结合评估结论进行解释、推理或修正说明。
+
+【整体风险】${ra.overallLevel || '未知'}${ra.overallSummary ? `：${ra.overallSummary}` : ''}
+【各维度评估】
+${dimsSummary || '无'}
+
+【讨论记录】
+${discussionText}
+
+请直接输出你对团队最新一条留言的回应（150字内，专业、有理有据，如需修正之前的判断请明确指出）：`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 500 });
+    const reply = {
+      staffId: null, staffName: 'AI助手', staffRole: '',
+      content: (text || '').trim(), createdAt: new Date(), isAI: true,
+    };
+    const updatedDiscussions = [...discussions, reply];
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { 'aiRiskAssessment.discussions': updatedDiscussions } }
+    );
+    res.json({ success: true, data: updatedDiscussions });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

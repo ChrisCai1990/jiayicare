@@ -50,8 +50,18 @@ export default function Layout() {
     }
     fetch()
     const timer = setInterval(fetch, 60000)
-    return () => clearInterval(timer)
+    // 消息页把消息标为已读后会派发此事件，侧边栏红点立即重新计算，避免"已读了红点还在"的错觉
+    window.addEventListener('notif-refresh', fetch)
+    return () => { clearInterval(timer); window.removeEventListener('notif-refresh', fetch) }
   }, [])
+
+  // 切换页面时也刷新一次红点（离开消息页后即时反映已读状态）
+  useEffect(() => {
+    staffAPI.getNotifications().then(r => {
+      const s = r.data?.summary || {}
+      setNotifBadge((s.pendingReferralCount || 0) + (s.unreadMessageCount || 0) + (s.unreadRepliedCount || 0))
+    }).catch(() => {})
+  }, [loc.pathname])
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {

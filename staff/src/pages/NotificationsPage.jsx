@@ -47,6 +47,8 @@ export default function NotificationsPage() {
       const res = await staffAPI.getUserMessages()
       if (res.data) setUserMessages(res.data)
     } catch {}
+    // 通知侧边栏重新计算红点（读完留言后未读数应立即下降）
+    window.dispatchEvent(new Event('notif-refresh'))
   }
 
   const handleRespond = async (id, status, responseAnalysis, responseOpinion) => {
@@ -54,12 +56,15 @@ export default function NotificationsPage() {
       await staffAPI.updateReferral(id, { status, responseAnalysis, responseOpinion })
       toast(status === 'accepted' ? '已接受转介' : status === 'rejected' ? '已拒绝转介' : '已完成转介')
       setRespondModal(null); load()
+      window.dispatchEvent(new Event('notif-refresh'))
     } catch (err) { toast(err.message) }
   }
 
   const handleViewSent = () => {
     setTab('sent')
-    staffAPI.markSentReferralsRead().catch(() => {})
+    staffAPI.markSentReferralsRead()
+      .then(() => window.dispatchEvent(new Event('notif-refresh')))
+      .catch(() => {})
   }
 
   if (loading) return <div className="page-loading">加载中...</div>
@@ -438,6 +443,7 @@ function RespondModal({ referral, onClose, onRespond }) {
   const [responseAnalysis, setResponseAnalysis] = useState('')
   const [responseOpinion, setResponseOpinion] = useState('')
   const [rejectReason, setRejectReason] = useState('')
+  const [summary, setSummary] = useState('')   // 接收人填写的处理概要，供AI扩写
   const [submitting, setSubmitting] = useState(false)
   const [aiDrafting, setAiDrafting] = useState(false)
   const isAccept = referral.action === 'accept'
@@ -449,7 +455,7 @@ function RespondModal({ referral, onClose, onRespond }) {
   const handleAiDraft = async () => {
     setAiDrafting(true)
     try {
-      const r = await staffAPI.generateAIReferralResponseDraft(referral._id)
+      const r = await staffAPI.generateAIReferralResponseDraft(referral._id, summary)
       setResponseAnalysis(r.data.responseAnalysis || '')
       setResponseOpinion(r.data.responseOpinion || '')
     } catch (err) { toast(err.message || 'AI生成失败') }
@@ -493,10 +499,18 @@ function RespondModal({ referral, onClose, onRespond }) {
             </div>
           ) : (
             <>
-              <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-                <button type="button" className="btn btn-secondary btn-sm" disabled={aiDrafting} onClick={handleAiDraft}>
-                  {aiDrafting ? 'AI生成中…' : '✨ AI生成草稿'}
-                </button>
+              <div className="form-group" style={{ marginBottom: 0, background: '#F7F9FC', borderRadius: 8, padding: '10px 12px' }}>
+                <label className="form-label" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span>📝 处理概要</span>
+                  <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>用几句话写下你的处理思路，AI 会据此扩写成完整回复</span>
+                </label>
+                <textarea className="form-input" rows={2} value={summary} onChange={e => setSummary(e.target.value)}
+                  placeholder="例：血压控制不佳，建议调整降压方案并加强随访监测..." />
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button type="button" className="btn btn-primary btn-sm" disabled={aiDrafting} onClick={handleAiDraft}>
+                    {aiDrafting ? 'AI生成中…' : (summary.trim() ? '✨ 按概要生成草稿' : '✨ AI生成草稿')}
+                  </button>
+                </div>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">问题分析{isAccept ? '（可选）' : ''}</label>
