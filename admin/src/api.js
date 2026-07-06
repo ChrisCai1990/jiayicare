@@ -96,6 +96,20 @@ export const adminAPI = {
   batchToggleProducts:(ids, status) => req('/products/batch-toggle', { method: 'PATCH', body: JSON.stringify({ ids, status }) }),
   deleteProduct:      (id)       => req(`/products/${id}`, { method: 'DELETE' }),
 
+  // 合作伙伴管理
+  partners:           (params = {}) => req('/partners?' + new URLSearchParams(params).toString()),
+  createPartner:      (data)     => req('/partners', { method: 'POST', body: JSON.stringify(data) }),
+  updatePartner:      (id, data) => req(`/partners/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  togglePartner:      (id)       => req(`/partners/${id}/toggle`, { method: 'PATCH' }),
+  deletePartner:      (id)       => req(`/partners/${id}`, { method: 'DELETE' }),
+
+  // 合作伙伴权益管理
+  partnerBenefits:        (params = {}) => req('/partner-benefits?' + new URLSearchParams(params).toString()),
+  createPartnerBenefit:   (data)     => req('/partner-benefits', { method: 'POST', body: JSON.stringify(data) }),
+  updatePartnerBenefit:   (id, data) => req(`/partner-benefits/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  togglePartnerBenefit:   (id)       => req(`/partner-benefits/${id}/toggle`, { method: 'PATCH' }),
+  deletePartnerBenefit:   (id)       => req(`/partner-benefits/${id}`, { method: 'DELETE' }),
+
   // 年度健康管理方案
   getAnnualPlan:  (patientId, year) => req(`/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   saveAnnualPlan: (patientId, data) => req(`/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),

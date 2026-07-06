@@ -11,6 +11,7 @@ import ServicesPage from './pages/ServicesPage'
 import QuestionnairePage from './pages/QuestionnairePage'
 import ChangeLogsPage from './pages/ChangeLogsPage'
 import ProductsPage from './pages/ProductsPage'
+import PartnersPage from './pages/PartnersPage'
 import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import Layout from './components/Layout'
@@ -105,6 +106,7 @@ export default function App() {
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
               <Route path="products"   element={<ProductsPage />} />
+              <Route path="partners"   element={<PartnersPage />} />
               <Route path="member365" element={<Member365Page />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
 

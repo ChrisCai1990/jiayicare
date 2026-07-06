@@ -11,6 +11,7 @@ const NAV_SECTIONS = [
       { label: '订单管理',     icon: '📋', path: '/orders' },
       { label: '消息中心',     icon: '💬', path: '/messages' },
       { label: '商城产品管理', icon: '🏪', path: '/products' },
+      { label: '合作伙伴权益', icon: '🤝', path: '/partners' },
       { label: '365会员管理',  icon: '🎫', path: '/member365' },
       { label: '健康方案模板', icon: '📚', path: '/health-plan-templates' },
       { label: '问卷管理',     icon: '📝', path: '/questionnaires' },

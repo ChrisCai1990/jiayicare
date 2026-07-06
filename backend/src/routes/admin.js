@@ -13,6 +13,8 @@ const Service = require('../models/Service');
 const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
 const MemberType = require('../models/MemberType');
+const Partner = require('../models/Partner');
+const PartnerBenefit = require('../models/PartnerBenefit');
 const PlanTemplate = require('../models/PlanTemplate');
 const CheckupPlan = require('../models/CheckupPlan');
 const AnnualPlan = require('../models/AnnualPlan');
@@ -845,6 +847,111 @@ router.delete('/products/:id', adminAuth, async (req, res) => {
   const product = await Product.findByIdAndDelete(req.params.id);
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, message: '产品已删除' });
+});
+
+// ── 合作伙伴管理 ──────────────────────────────────────────────────
+
+// GET /api/admin/partners
+router.get('/partners', adminAuth, async (req, res) => {
+  const { name, category, status } = req.query;
+  const filter = {};
+  if (name) filter.name = new RegExp(name, 'i');
+  if (category) filter.category = category;
+  if (status) filter.status = status;
+  const partners = await Partner.find(filter).sort({ sortOrder: 1, createdAt: -1 });
+  res.json({ success: true, data: partners });
+});
+
+// POST /api/admin/partners
+router.post('/partners', adminAuth, async (req, res) => {
+  const { name, category, logo, description, contactPhone, sortOrder, status } = req.body;
+  if (!name || !category) return res.status(400).json({ success: false, message: '名称、分类为必填项' });
+  const partner = await Partner.create({
+    name, category, logo: logo || '', description: description || '',
+    contactPhone: contactPhone || '', sortOrder: sortOrder ?? 999, status: status || 'on',
+  });
+  res.json({ success: true, data: partner, message: '合作伙伴创建成功' });
+});
+
+// PUT /api/admin/partners/:id
+router.put('/partners/:id', adminAuth, async (req, res) => {
+  const { name, category, logo, description, contactPhone, sortOrder, status } = req.body;
+  const partner = await Partner.findByIdAndUpdate(
+    req.params.id,
+    { name, category, logo, description, contactPhone, sortOrder, status },
+    { new: true }
+  );
+  if (!partner) return res.status(404).json({ success: false, message: '合作伙伴不存在' });
+  res.json({ success: true, data: partner, message: '合作伙伴更新成功' });
+});
+
+// PATCH /api/admin/partners/:id/toggle
+router.patch('/partners/:id/toggle', adminAuth, async (req, res) => {
+  const partner = await Partner.findById(req.params.id);
+  if (!partner) return res.status(404).json({ success: false, message: '合作伙伴不存在' });
+  partner.status = partner.status === 'on' ? 'off' : 'on';
+  await partner.save();
+  res.json({ success: true, data: partner, message: partner.status === 'on' ? '合作伙伴已上架' : '合作伙伴已下架' });
+});
+
+// DELETE /api/admin/partners/:id（同时删除该合作伙伴名下所有权益）
+router.delete('/partners/:id', adminAuth, async (req, res) => {
+  const partner = await Partner.findByIdAndDelete(req.params.id);
+  if (!partner) return res.status(404).json({ success: false, message: '合作伙伴不存在' });
+  await PartnerBenefit.deleteMany({ partner: req.params.id });
+  res.json({ success: true, message: '合作伙伴及其权益已删除' });
+});
+
+// ── 合作伙伴权益管理 ──────────────────────────────────────────────
+
+// GET /api/admin/partner-benefits?partnerId=
+router.get('/partner-benefits', adminAuth, async (req, res) => {
+  const { partnerId, status } = req.query;
+  const filter = {};
+  if (partnerId) filter.partner = partnerId;
+  if (status) filter.status = status;
+  const benefits = await PartnerBenefit.find(filter).populate('partner', 'name category logo').sort({ sortOrder: 1, createdAt: -1 });
+  res.json({ success: true, data: benefits });
+});
+
+// POST /api/admin/partner-benefits
+router.post('/partner-benefits', adminAuth, async (req, res) => {
+  const { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, sortOrder, status } = req.body;
+  if (!partner || !title) return res.status(400).json({ success: false, message: '合作伙伴、权益标题为必填项' });
+  const benefit = await PartnerBenefit.create({
+    partner, title, subtitle: subtitle || '', images: images || [],
+    description: description || '', usageGuide: usageGuide || '',
+    visibleMemberTypes: visibleMemberTypes || [], sortOrder: sortOrder ?? 999, status: status || 'on',
+  });
+  res.json({ success: true, data: benefit, message: '权益创建成功' });
+});
+
+// PUT /api/admin/partner-benefits/:id
+router.put('/partner-benefits/:id', adminAuth, async (req, res) => {
+  const { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, sortOrder, status } = req.body;
+  const benefit = await PartnerBenefit.findByIdAndUpdate(
+    req.params.id,
+    { partner, title, subtitle, images, description, usageGuide, visibleMemberTypes, sortOrder, status },
+    { new: true }
+  );
+  if (!benefit) return res.status(404).json({ success: false, message: '权益不存在' });
+  res.json({ success: true, data: benefit, message: '权益更新成功' });
+});
+
+// PATCH /api/admin/partner-benefits/:id/toggle
+router.patch('/partner-benefits/:id/toggle', adminAuth, async (req, res) => {
+  const benefit = await PartnerBenefit.findById(req.params.id);
+  if (!benefit) return res.status(404).json({ success: false, message: '权益不存在' });
+  benefit.status = benefit.status === 'on' ? 'off' : 'on';
+  await benefit.save();
+  res.json({ success: true, data: benefit, message: benefit.status === 'on' ? '权益已上架' : '权益已下架' });
+});
+
+// DELETE /api/admin/partner-benefits/:id
+router.delete('/partner-benefits/:id', adminAuth, async (req, res) => {
+  const benefit = await PartnerBenefit.findByIdAndDelete(req.params.id);
+  if (!benefit) return res.status(404).json({ success: false, message: '权益不存在' });
+  res.json({ success: true, message: '权益已删除' });
 });
 
 // ── 健康方案模板管理 ──────────────────────────────────────────────

@@ -35,6 +35,7 @@ import ComingSoonScreen from '../screens/common/ComingSoonScreen';
 import OrdersScreen from '../screens/orders/OrdersScreen';
 import RenewalScreen from '../screens/services/RenewalScreen';
 import BenefitsScreen from '../screens/profile/BenefitsScreen';
+import PartnerBenefitsScreen from '../screens/profile/PartnerBenefitsScreen';
 import PublicReportScreen from '../screens/records/PublicReportScreen';
 import LegalScreen from '../screens/legal/LegalScreen';
 import FamilyMembersScreen from '../screens/profile/FamilyMembersScreen';
@@ -174,6 +175,7 @@ export default function Navigation() {
             <Stack.Screen name="Renewal" component={RenewalScreen} />
             <Stack.Screen name="Legal" component={LegalScreen} />
             <Stack.Screen name="Benefits" component={BenefitsScreen} />
+            <Stack.Screen name="PartnerBenefits" component={PartnerBenefitsScreen} />
             <Stack.Screen name="FamilyMembers" component={FamilyMembersScreen} />
             <Stack.Screen name="SpecialScreening" component={SpecialScreeningScreen} />
             <Stack.Screen name="MedicalReports" component={MedicalReportsScreen} />

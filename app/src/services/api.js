@@ -218,6 +218,11 @@ export const servicesAPI = {
   order: (serviceId, note, paymentMethod) => request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod }) }),
 };
 
+// ── Partner Benefits / 合作伙伴权益 ────────────────────────────────
+export const partnerBenefitsAPI = {
+  list: () => request('/partner-benefits'),
+};
+
 // ── Orders / 我的订单 ─────────────────────────────────────────────
 export const ordersAPI = {
   list:   ()    => request('/orders'),

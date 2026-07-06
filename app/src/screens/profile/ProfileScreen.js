@@ -466,6 +466,7 @@ export default function ProfileScreen({ navigation }) {
               <MenuItem icon="ribbon-outline"   iconColor="#E91E63" label="365 健康会员"          onPress={() => navigation.navigate('Member365')} />
             )}
             <MenuItem icon="gift-outline"     iconColor="#D97706" label="服务权益"              onPress={() => navigation.navigate('Benefits')} />
+            <MenuItem icon="business-outline" iconColor="#1E6B50" label="合作伙伴权益"          onPress={() => navigation.navigate('PartnerBenefits')} />
             <MenuItem icon="people-outline"  iconColor="#22A06B" label="服务群组"  value="即将开放" onPress={() => navigation.navigate('ComingSoon', { title: '服务群组', desc: '专属健康服务群即将开放，届时可与家庭医生、营养师、健康管理师实时交流。', icon: 'people-outline' })} />
             <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} />
             <MenuItem icon="star-outline"    iconColor="#F39C12" label="评价服务"               onPress={() => navigation.navigate('ComingSoon', { title: '评价服务', desc: '服务评价功能即将上线，帮助我们持续改善服务质量。', icon: 'star-outline' })} isLast />
