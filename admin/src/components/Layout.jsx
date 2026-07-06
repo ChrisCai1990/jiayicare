@@ -13,6 +13,7 @@ const NAV_SECTIONS = [
       { label: '商城产品管理', icon: '🏪', path: '/products' },
       { label: '合作伙伴权益', icon: '🤝', path: '/partners' },
       { label: '企业客户管理', icon: '🏢', path: '/enterprises' },
+      { label: '运营看板',     icon: '📊', path: '/ops-dashboard' },
       { label: '健康方案模板', icon: '📚', path: '/health-plan-templates' },
       { label: '问卷管理',     icon: '📝', path: '/questionnaires' },
       { label: '信息变更记录', icon: '📌', path: '/change-logs' },

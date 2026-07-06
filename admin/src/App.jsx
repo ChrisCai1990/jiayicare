@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate, useNavigate, useLocation } from
 import { getToken, clearToken } from './api'
 import LoginPage from './pages/LoginPage'
 import HrApp from './pages/hr/HrApp'
+import PublicOpsDashboardPage from './pages/public/PublicOpsDashboardPage'
 import DashboardPage from './pages/DashboardPage'
 import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
@@ -14,6 +15,7 @@ import ChangeLogsPage from './pages/ChangeLogsPage'
 import ProductsPage from './pages/ProductsPage'
 import PartnersPage from './pages/PartnersPage'
 import EnterprisesPage from './pages/EnterprisesPage'
+import OpsDashboardPage from './pages/OpsDashboardPage'
 import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import Layout from './components/Layout'
@@ -95,6 +97,7 @@ export default function App() {
           <Routes>
             <Route path="/login" element={<LoginPage />} />
             <Route path="/hr/*" element={<HrApp />} />
+            <Route path="/public/ops/:slug" element={<PublicOpsDashboardPage />} />
             <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
               <Route index element={<Navigate to="/dashboard" replace />} />
               <Route path="dashboard" element={<DashboardPage />} />
@@ -110,6 +113,7 @@ export default function App() {
               <Route path="products"   element={<ProductsPage />} />
               <Route path="partners"   element={<PartnersPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
+              <Route path="ops-dashboard" element={<OpsDashboardPage />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
 
               {/* 基本设置 */}

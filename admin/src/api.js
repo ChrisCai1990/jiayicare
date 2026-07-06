@@ -31,6 +31,18 @@ async function req(path, opts = {}) {
   return data
 }
 
+// /api 根路径（非 /api/admin 前缀），供跨模块共享接口使用（如运营看板，对内对外共用同一套路由）
+const API_ROOT = BASE.replace(/\/admin$/, '')
+async function reqRoot(path, opts = {}) {
+  const headers = { 'Content-Type': 'application/json' }
+  if (_token) headers['Authorization'] = `Bearer ${_token}`
+  const res = await fetch(`${API_ROOT}${path}`, { ...opts, headers })
+  if (res.status === 401) { handleUnauthorized(); throw new Error('登录已过期，请重新登录') }
+  const data = await res.json()
+  if (!res.ok) throw new Error(data.message || `请求失败 (${res.status})`)
+  return data
+}
+
 export const adminAPI = {
   login:            (username, password) => req('/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
   dashboard:        ()                   => req('/dashboard'),
@@ -95,6 +107,11 @@ export const adminAPI = {
   toggleProduct:      (id)       => req(`/products/${id}/toggle`, { method: 'PATCH' }),
   batchToggleProducts:(ids, status) => req('/products/batch-toggle', { method: 'PATCH', body: JSON.stringify({ ids, status }) }),
   deleteProduct:      (id)       => req(`/products/${id}`, { method: 'DELETE' }),
+
+  // 运营看板（对内，共用后端 /api/ops-dashboard，非 /api/admin 前缀）
+  opsDashboardInternal: () => reqRoot('/ops-dashboard/internal'),
+  opsDashboardConfig:   () => reqRoot('/ops-dashboard/config'),
+  updateOpsDashboardConfig: (data) => reqRoot('/ops-dashboard/config', { method: 'PUT', body: JSON.stringify(data) }),
 
   // 企业客户管理（B2B2C）
   enterprises:            (params = {}) => req('/enterprises?' + new URLSearchParams(params).toString()),

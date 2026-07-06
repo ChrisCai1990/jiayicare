@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { loadToken, saveToken, clearToken, setUnauthorizedHandler } from '../services/api';
+import { loadToken, saveToken, clearToken, setUnauthorizedHandler, userAPI } from '../services/api';
 
 const AuthContext = createContext(null);
 
@@ -15,9 +15,18 @@ export function AuthProvider({ children }) {
         const t = await loadToken();
         if (t) {
           setToken(t);
-          // Try to load cached user
+          // 先用本地缓存快速展示，避免白屏；缓存可能是很久以前登录时的旧快照
+          // （如careTeam这类后续新增的字段，老账号本地缓存里根本没有），必须紧接着用
+          // /user/me 的最新响应覆盖一次，不能只依赖本地缓存
           const cached = localStorage.getItem('jy_user');
-          if (cached) setUser(JSON.parse(cached));
+          if (cached) { try { setUser(JSON.parse(cached)); } catch {} }
+          try {
+            const res = await userAPI.getMe();
+            if (res?.success && res.data) {
+              setUser(res.data);
+              localStorage.setItem('jy_user', JSON.stringify(res.data));
+            }
+          } catch {}
         }
       } catch {}
       setLoading(false);
