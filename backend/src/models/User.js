@@ -173,6 +173,9 @@ const userSchema = new mongoose.Schema({
   // 心理健康量表最新结果（问卷推送→患者填写→自动写入，无需审核）
   // { epworth: {totalScore,severity,filledAt,questionnaireId}, scl90: {totalScore,factorScores:{躯体化:2.1,...},filledAt,questionnaireId}, sds:{...}, sas:{...} }
   psychAssessments: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // 10年ASCVD风险评估（医护端录入体检参数→按中国指南自动分层，展示在心理评估下方）
+  // { level, levelLabel, description, riskFactors:[], directHighRisk, advice, inputs:{...}, evaluatedBy, evaluatedAt }
+  ascvdRisk: { type: mongoose.Schema.Types.Mixed, default: null },
   serviceStartDate: { type: String, default: '' }, // 服务开始时间
 
   // ── 健康评分相关 ─────────────────────────────────────────────────

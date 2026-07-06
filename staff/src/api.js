@@ -320,6 +320,9 @@ export const staffAPI = {
   addAIRiskDiscussion:     (id, content) => req(`/staff/patients/${id}/ai-risk-assessment/discussions`, { method: 'POST', body: JSON.stringify({ content }) }),
   deleteAIRiskDiscussion:  (id, index) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/${index}`, { method: 'DELETE' }),
   generateAIRiskReply:     (id) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/ai-reply`, { method: 'POST' }),
+  // 10年ASCVD风险评估
+  saveAscvdRisk:           (id, inputs) => req(`/staff/patients/${id}/ascvd-risk`, { method: 'POST', body: JSON.stringify(inputs) }),
+  deleteAscvdRisk:         (id) => req(`/staff/patients/${id}/ascvd-risk`, { method: 'DELETE' }),
 
   // 场景九：AI 用药建议
   generateAIMedicationSuggest: (id) => req(`/staff/patients/${id}/ai-medication-suggest`, { method: 'POST' }),

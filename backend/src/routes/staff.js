@@ -3594,6 +3594,34 @@ ${discussionText}
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// ── 10年ASCVD风险评估（医护端录入体检参数→按中国指南自动分层）──
+// POST /api/staff/patients/:id/ascvd-risk — 计算并保存
+router.post('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
+  try {
+    const { assessAscvd } = require('../utils/ascvdRisk');
+    const user = await User.findById(req.params.id).select('_id');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const result = assessAscvd(req.body || {});
+    result.evaluatedBy = req.staff.name;
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { ascvdRisk: result } }
+    );
+    res.json({ success: true, data: result });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/patients/:id/ascvd-risk — 清除评估
+router.delete('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
+  try {
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { ascvdRisk: null } }
+    );
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 场景九：AI 用药建议（已下线）──────────────────────────────────────
 // 业务决策：健康管理定位不涉足诊疗判断，用药建议交由临床医生负责，AI不再生成/审核用药建议
 router.post('/patients/:id/ai-medication-suggest', staffAuth, async (req, res) => {

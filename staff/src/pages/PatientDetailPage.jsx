@@ -610,6 +610,152 @@ function PsychAssessmentPanel({ user }) {
   )
 }
 
+// ── 10年ASCVD风险评估面板（医护录入体检参数→中国指南自动分层，展示在心理评估下方）──
+const ASCVD_LEVEL_COLOR = {
+  low:    { label: '低危', color: '#22A06B', bg: '#F0FDF4' },
+  medium: { label: '中危', color: '#D97706', bg: '#FEF9EC' },
+  high:   { label: '高危', color: '#DC3545', bg: '#FEF2F2' },
+}
+function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const result = user.ascvdRisk || null
+  // 从档案预填性别/年龄，其余体检值默认空
+  const genderInit = user.gender === '女' ? 'female' : user.gender === '男' ? 'male' : 'male'
+  const [form, setForm] = useState(() => {
+    const inp = result?.inputs || {}
+    return {
+      gender: inp.gender || genderInit,
+      age: inp.age ?? (user.age || ''),
+      tc: inp.tc ?? '', ldl: inp.ldl ?? '', hdl: inp.hdl ?? '',
+      sbp: inp.sbp ?? '',
+      onHypertensionTreatment: !!inp.onHypertensionTreatment,
+      smoking: !!inp.smoking, diabetes: !!inp.diabetes,
+    }
+  })
+
+  const openEdit = () => {
+    const inp = result?.inputs || {}
+    setForm({
+      gender: inp.gender || genderInit,
+      age: inp.age ?? (user.age || ''),
+      tc: inp.tc ?? '', ldl: inp.ldl ?? '', hdl: inp.hdl ?? '',
+      sbp: inp.sbp ?? '',
+      onHypertensionTreatment: !!inp.onHypertensionTreatment,
+      smoking: !!inp.smoking, diabetes: !!inp.diabetes,
+    })
+    setEditing(true)
+  }
+
+  const handleSave = async () => {
+    if (!form.age || !form.sbp || (!form.tc && !form.ldl)) {
+      toast('请至少填写年龄、收缩压，以及总胆固醇或LDL-C'); return
+    }
+    setSaving(true)
+    try {
+      await staffAPI.saveAscvdRisk(patientId, form)
+      toast('ASCVD风险评估已保存')
+      setEditing(false)
+      onSaved()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setSaving(false) }
+  }
+
+  const handleClear = async () => {
+    if (!window.confirm('确认清除本次ASCVD评估？')) return
+    try { await staffAPI.deleteAscvdRisk(patientId); onSaved() }
+    catch (err) { toast(err.message || '清除失败') }
+  }
+
+  const lv = result ? (ASCVD_LEVEL_COLOR[result.level] || ASCVD_LEVEL_COLOR.low) : null
+  const numField = (label, key, unit) => (
+    <div>
+      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}{unit ? `（${unit}）` : ''}</label>
+      <input className="form-control" type="number" step="0.01" value={form[key]}
+        onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
+    </div>
+  )
+
+  return (
+    <div className="card" style={{ marginBottom: 16 }}>
+      <div className="card-header" style={{ display: 'flex', alignItems: 'center' }}>
+        <div className="card-title" style={{ flex: 1 }}>❤️ 10年ASCVD风险评估</div>
+        {!editing && (
+          <div style={{ display: 'flex', gap: 6 }}>
+            <button className="btn btn-secondary btn-sm" onClick={openEdit}>{result ? '重新评估' : '＋ 录入评估'}</button>
+            {result && <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={handleClear}>清除</button>}
+          </div>
+        )}
+      </div>
+      <div className="card-body">
+        {editing ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 12, color: '#8AA89C' }}>性别</label>
+                <select className="form-control" value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}>
+                  <option value="male">男</option>
+                  <option value="female">女</option>
+                </select>
+              </div>
+              {numField('年龄', 'age', '岁')}
+              {numField('收缩压', 'sbp', 'mmHg')}
+              {numField('总胆固醇 TC', 'tc', 'mmol/L')}
+              {numField('低密度脂蛋白 LDL-C', 'ldl', 'mmol/L')}
+              {numField('高密度脂蛋白 HDL-C', 'hdl', 'mmol/L')}
+            </div>
+            <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap' }}>
+              <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.smoking} onChange={e => setForm(f => ({ ...f, smoking: e.target.checked }))} /> 吸烟
+              </label>
+              <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.diabetes} onChange={e => setForm(f => ({ ...f, diabetes: e.target.checked }))} /> 糖尿病
+              </label>
+              <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
+                <input type="checkbox" checked={form.onHypertensionTreatment} onChange={e => setForm(f => ({ ...f, onHypertensionTreatment: e.target.checked }))} /> 正在降压治疗
+              </label>
+            </div>
+            <div style={{ fontSize: 11, color: '#B0A99C' }}>依据《中国成人血脂异常防治指南》10年ASCVD发病风险评估流程自动分层。</div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary btn-sm" onClick={() => setEditing(false)}>取消</button>
+              <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>{saving ? '计算中...' : '计算并保存'}</button>
+            </div>
+          </div>
+        ) : result ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ fontSize: 14, fontWeight: 700, color: lv.color, background: lv.bg, borderRadius: 8, padding: '4px 14px' }}>{result.levelLabel}</span>
+              <span style={{ fontSize: 13, color: '#4A6558' }}>{result.description}</span>
+            </div>
+            {result.directHighRisk && (
+              <div style={{ fontSize: 12, color: '#DC3545', background: '#FEF2F2', borderRadius: 6, padding: '6px 10px' }}>
+                直接判定高危：{result.directHighRisk}
+              </div>
+            )}
+            {Array.isArray(result.riskFactors) && result.riskFactors.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {result.riskFactors.map((f, i) => (
+                  <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, background: '#F5F2EC', color: '#4A6558' }}>{f}</span>
+                ))}
+              </div>
+            )}
+            {result.advice && (
+              <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '8px 12px' }}>建议：{result.advice}</div>
+            )}
+            <div style={{ fontSize: 11, color: '#8AA89C' }}>
+              录入参数：{result.inputs.gender === 'female' ? '女' : '男'} · {result.inputs.age}岁 · 收缩压{result.inputs.sbp} · TC{result.inputs.tc ?? '-'} · LDL{result.inputs.ldl ?? '-'} · HDL{result.inputs.hdl ?? '-'}
+              {result.inputs.smoking ? ' · 吸烟' : ''}{result.inputs.diabetes ? ' · 糖尿病' : ''}
+              {result.evaluatedBy ? ` · 由${result.evaluatedBy}评估` : ''}{result.evaluatedAt ? ` · ${new Date(result.evaluatedAt).toLocaleDateString('zh-CN')}` : ''}
+            </div>
+          </div>
+        ) : (
+          <div style={{ fontSize: 13, color: '#8AA89C' }}>尚未评估。点击右上角「录入评估」，填写体检参数后系统将按中国指南自动分层。</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -2470,6 +2616,9 @@ export default function PatientDetailPage() {
 
         {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，患者自填自动写入）── */}
         <PsychAssessmentPanel user={user} />
+
+        {/* ── 10年ASCVD风险评估（医护录入体检参数→中国指南自动分层）── */}
+        <AscvdRiskPanel user={user} patientId={id} onSaved={load} toast={toast} />
 
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，打卡数据在下方 */}
         {(() => {
