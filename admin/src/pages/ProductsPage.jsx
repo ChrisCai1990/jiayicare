@@ -2,6 +2,15 @@ import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { adminAPI } from '../api'
 import { useToast } from '../App'
 
+// 历史遗留数据里存了 http://121.40.156.39 绝对地址，在 https 页面下会被浏览器 Mixed Content
+// 策略拦截而不显示——服务器同时监听 http/https 且是同一份静态文件，强制升级协议即可正常加载
+function safeImgSrc(url) {
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url?.startsWith('http://')) {
+    return url.replace(/^http:\/\//, 'https://')
+  }
+  return url
+}
+
 const EMPTY_FORM = {
   name: '', subtitle: '', category: '', originalPrice: '', sortOrder: 999,
   features: '', description: '', stock: 0, status: 'off',
@@ -128,7 +137,7 @@ function ImageUploadList({ images, onChange }) {
         {images.map((url, i) => (
           <div key={i} style={{ position: 'relative', width: 80, height: 80 }}>
             <img
-              src={url} alt=""
+              src={safeImgSrc(url)} alt=""
               style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 6, border: '1px solid #e0d9ce' }}
               onError={e => { e.target.style.background = '#f5f5f5'; e.target.alt = '加载失败' }}
             />
@@ -582,7 +591,7 @@ export default function ProductsPage() {
                   </td>
                   <td>
                     {p.images?.[0] ? (
-                      <img src={p.images[0]} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid #e0d9ce' }}
+                      <img src={safeImgSrc(p.images[0])} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid #e0d9ce' }}
                         onError={e => { e.target.style.display = 'none' }} />
                     ) : (
                       <div style={{ width: 48, height: 48, borderRadius: 6, background: '#f5f2ec', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#bbb' }}>无图</div>

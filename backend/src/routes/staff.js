@@ -1237,10 +1237,11 @@ router.patch('/medical-reports/:id/audit', staffAuth, async (req, res) => {
 
 // ── 图片上传 ─────────────────────────────────────────────
 // POST /api/staff/upload/image
+// 返回相对路径而非绝对URL——写死 http://121.40.156.39 会在 https 页面下被浏览器 Mixed Content
+// 策略拦截（HTTPS页面不允许加载HTTP资源），前端自行拼接当前协议+域名。
 router.post('/upload/image', staffAuth, upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
-  const host = process.env.API_HOST || 'http://121.40.156.39';
-  const url = `${host}/api/uploads/${req.file.filename}`;
+  const url = `/api/uploads/${req.file.filename}`;
   res.json({ success: true, data: { url } });
 });
 

@@ -745,10 +745,12 @@ router.delete('/member-types/:id', adminAuth, async (req, res) => {
 // ── 图片上传 ──────────────────────────────────────────────────────
 
 // POST /api/admin/upload/image
+// 返回相对路径而非绝对URL——历史遗留代码曾写死 http://121.40.156.39 绝对地址，导致在
+// https://jiaycare.com 页面里加载图片被浏览器 Mixed Content 策略拦截（HTTPS页面不允许加载HTTP资源），
+// 图片请求被静默阻止、控制台报错但界面上只是安静地不显示。改成相对路径由前端自行拼接当前协议+域名。
 router.post('/upload/image', adminAuth, upload.single('image'), (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
-  const host = process.env.API_HOST || 'http://121.40.156.39';
-  const url = `${host}/api/uploads/${req.file.filename}`;
+  const url = `/api/uploads/${req.file.filename}`;
   res.json({ success: true, data: { url } });
 });
 
