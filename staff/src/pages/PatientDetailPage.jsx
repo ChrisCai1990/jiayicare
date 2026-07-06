@@ -458,6 +458,23 @@ const PSYCH_SEVERITY_COLOR = {
   '轻度抑郁': '#D97706', '中度抑郁': '#EA580C', '重度抑郁': '#DC3545',
 }
 
+// SCL90 因子分正常/异常判定（与后端 psychScaleImport.assessScl90Factor 同一标准：因子均分≥2为阳性）
+// 医护端现算，兼容旧数据（写入时未带 factorAssessment 的记录也能显示）
+const SCL90_FACTOR_LEVEL = {
+  normal:   { label: '正常', color: '#22A06B' },
+  mild:     { label: '轻度', color: '#D97706' },
+  moderate: { label: '中度', color: '#EA580C' },
+  severe:   { label: '重度', color: '#DC3545' },
+  unknown:  { label: '—',   color: '#8AA89C' },
+}
+function assessScl90Factor(score) {
+  if (typeof score !== 'number' || Number.isNaN(score)) return 'unknown'
+  if (score < 2) return 'normal'
+  if (score < 3) return 'mild'
+  if (score < 4) return 'moderate'
+  return 'severe'
+}
+
 // 问卷无冲突自动写入档案的历史记录（折叠展示，避免占用过多篇幅）
 function ArchiveAutoLogPanel({ log }) {
   const [open, setOpen] = useState(false)
@@ -501,12 +518,13 @@ const PSYCH_SCALE_META = {
 }
 
 function PsychAssessmentPanel({ user }) {
-  const [expandedFactor, setExpandedFactor] = useState(false)
+  const [expandedKeys, setExpandedKeys] = useState({}) // { [scaleKey]: bool } 每个量表独立展开
   const assessments = user.psychAssessments || {}
   const entries = Object.entries(PSYCH_SCALE_META)
     .map(([key, meta]) => ({ key, meta, result: assessments[key] }))
 
   const hasAny = entries.some(e => e.result)
+  const toggle = (key) => setExpandedKeys(v => ({ ...v, [key]: !v[key] }))
 
   return (
     <div className="card" style={{ marginBottom: 16 }}>
@@ -519,26 +537,69 @@ function PsychAssessmentPanel({ user }) {
         )}
         {entries.filter(e => e.result).map(({ key, meta, result }) => {
           const color = PSYCH_SEVERITY_COLOR[result.severity] || '#8AA89C'
+          const expanded = !!expandedKeys[key]
+          const answersDetail = result.answersDetail || []
+          const factorScores = result.factorScores || {}
+          const hasFactor = key === 'scl90' && Object.keys(factorScores).length > 0
+          const hasDetail = answersDetail.length > 0
+          const canExpand = hasFactor || hasDetail
           return (
             <div key={key} style={{ border: '1px solid #F0EDE7', borderRadius: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: key === 'scl90' ? 'pointer' : 'default' }}
-                onClick={() => key === 'scl90' && setExpandedFactor(v => !v)}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', cursor: canExpand ? 'pointer' : 'default' }}
+                onClick={() => canExpand && toggle(key)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                   <span style={{ fontWeight: 600, fontSize: 13 }}>{meta.name}</span>
                   <span style={{ fontSize: 12, padding: '2px 10px', borderRadius: 99, background: color + '15', color, fontWeight: 600 }}>
                     {result.totalScore}分{result.severity ? ` · ${result.severity}` : ''}
                   </span>
                   <span style={{ fontSize: 12, color: '#8AA89C' }}>{new Date(result.filledAt).toLocaleDateString('zh-CN')}</span>
                 </div>
-                {key === 'scl90' && <span style={{ fontSize: 12, color: '#aaa' }}>{expandedFactor ? '▲' : '▼'}</span>}
+                {canExpand && <span style={{ fontSize: 12, color: '#aaa' }}>{expanded ? '▲' : '▼'}</span>}
               </div>
-              {key === 'scl90' && expandedFactor && result.factorScores && (
-                <div style={{ padding: '0 14px 12px', display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {Object.entries(result.factorScores).map(([factor, score]) => (
-                    <span key={factor} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, background: '#F5F2EC', color: '#4A6558' }}>
-                      {factor} {score}
-                    </span>
-                  ))}
+
+              {expanded && (
+                <div style={{ padding: '0 14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {/* SCL90 因子分 + 正常/异常判定 */}
+                  {hasFactor && (
+                    <div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>各因子得分（因子均分≥2为异常，分数越高症状越明显）</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                        {Object.entries(factorScores).map(([factor, score]) => {
+                          // 优先用后端写入的判定，旧数据则前端现算
+                          const lvKey = result.factorAssessment?.[factor]?.level || assessScl90Factor(score)
+                          const lv = SCL90_FACTOR_LEVEL[lvKey] || SCL90_FACTOR_LEVEL.unknown
+                          return (
+                            <span key={factor} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, background: lv.color + '12', color: lv.color, fontWeight: 500, border: `1px solid ${lv.color}30` }}>
+                              {factor} {score} · {lv.label}
+                            </span>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 逐题作答明细 */}
+                  {hasDetail ? (
+                    <div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>逐题作答情况（共{answersDetail.length}题）</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                        {answersDetail.map((it, i) => (
+                          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 12, lineHeight: 1.5 }}>
+                            <span style={{ color: '#8AA89C', minWidth: 22 }}>{i + 1}.</span>
+                            <span style={{ flex: 1, color: '#4A6558' }}>
+                              {it.factor ? <span style={{ color: '#8AA89C' }}>[{it.factor}] </span> : ''}
+                              {it.question}
+                            </span>
+                            <span style={{ color: '#1A2B24', fontWeight: 500, whiteSpace: 'nowrap' }}>
+                              {it.answer}{typeof it.score === 'number' ? `（${it.score}分）` : ''}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#B0A99C' }}>该记录为旧版数据，暂无逐题明细；客户下次填写该量表后即可查看每道题作答情况。</div>
+                  )}
                 </div>
               )}
             </div>

@@ -33,6 +33,55 @@ function getOptScore(question, ans) {
   return null;
 }
 
+// 取某题用户所选答案的文字表述（供医护端逐题查看，radio/dropdown取label，multi取多选拼接）
+function getAnswerLabel(question, ans) {
+  if (ans == null) return '';
+  if (question.type === 'multi') {
+    const labels = Array.isArray(ans) ? ans : (ans?.values || []);
+    return labels.join('、');
+  }
+  return typeof ans === 'string' ? ans : (ans?.value || '');
+}
+
+// 逐题作答明细：题干 + 用户所选答案 + 该题得分 + 因子归属（SCL90用）
+// 医护端展示"每道题答题情况"用，便于定位客户的具体问题点
+function buildAnswersDetail(questionnaire, answers) {
+  const detail = [];
+  for (const q of questionnaire.questions || []) {
+    // 只收录计分类题目（量表题），文本/日期等辅助题不纳入逐题明细
+    if (!['radio', 'multi', 'dropdown'].includes(q.type)) continue;
+    const answerLabel = getAnswerLabel(q, answers[q.id]);
+    if (!answerLabel) continue; // 未作答的题跳过
+    detail.push({
+      question: q.text,
+      answer: answerLabel,
+      score: getOptScore(q, answers[q.id]),
+      factor: q.factor || '',
+    });
+  }
+  return detail;
+}
+
+// SCL90 因子分正常/异常判定（国际通用标准：因子均分≥2为阳性/异常）
+// <2 正常；2~2.99 轻度；3~3.99 中度；≥4 重度
+function assessScl90Factor(score) {
+  if (typeof score !== 'number' || Number.isNaN(score)) return { level: 'unknown', label: '—' };
+  if (score < 2)  return { level: 'normal', label: '正常' };
+  if (score < 3)  return { level: 'mild',   label: '轻度' };
+  if (score < 4)  return { level: 'moderate', label: '中度' };
+  return { level: 'severe', label: '重度' };
+}
+
+// 对全部因子均分做正常/异常判定，返回 { 因子: { score, level, label } }
+function buildFactorAssessment(factorScores) {
+  const result = {};
+  for (const [factor, score] of Object.entries(factorScores || {})) {
+    const a = assessScl90Factor(score);
+    result[factor] = { score, level: a.level, label: a.label };
+  }
+  return result;
+}
+
 // 按 factor 分组计算各因子均分（无 factor 标记的题目忽略；用于 SCL90）
 function calcFactorScores(questionnaire, answers) {
   const groups = {}; // { factor: [scores] }
@@ -60,11 +109,22 @@ function buildPsychResult(questionnaire, response, scaleKey) {
     questionnaireId: questionnaire._id,
     responseId: response._id,
     filledAt: response.submittedAt || new Date(),
+    // 逐题作答明细（题干/答案/得分），供医护端展开查看客户在每道题上的具体问题
+    answersDetail: buildAnswersDetail(questionnaire, response.answers || {}),
   };
   if (scaleKey === 'scl90') {
     result.factorScores = response.factorScores || {};
+    // 各因子分的正常/异常程度判定
+    result.factorAssessment = buildFactorAssessment(response.factorScores || {});
   }
   return result;
 }
 
-module.exports = { getPsychScaleKey, calcFactorScores, buildPsychResult };
+module.exports = {
+  getPsychScaleKey,
+  calcFactorScores,
+  buildPsychResult,
+  buildAnswersDetail,
+  buildFactorAssessment,
+  assessScl90Factor,
+};
