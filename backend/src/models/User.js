@@ -94,10 +94,6 @@ const userSchema = new mongoose.Schema({
   belief:          { type: String, default: '' },   // 宗教信仰
   memberType:      { type: String, default: '' },   // 会员类型
   enterpriseId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null }, // 所属企业客户（B2B2C）
-  // ── 365 会员（需求20）───────────────────────────────────────────
-  member365Status:    { type: String, enum: ['none', 'pending', 'active', 'expired'], default: 'none' },
-  member365StartAt:   { type: Date, default: null },
-  member365ExpiresAt: { type: Date, default: null },
   isRegisteredClient: { type: Boolean, default: false }, // 系统正式录入客户，由医护/超管设置
 
   // ── 儿童专属档案 ──────────────────────────────────────────────────

@@ -1269,35 +1269,4 @@ router.put('/annual-plan-templates/:id', adminAuth, async (req, res) => {
   }
 });
 
-// ── 365 会员管理（需求20）──────────────────────────────────────────
-// GET /api/admin/member365/list — 获取 365 会员申请列表
-router.get('/member365/list', adminAuth, async (req, res) => {
-  const users = await User.find({ member365Status: { $in: ['pending', 'active', 'expired'] } })
-    .select('name phone member365Status member365StartAt member365ExpiresAt isRegisteredClient createdAt')
-    .sort({ createdAt: -1 });
-  res.json({ success: true, data: users });
-});
-
-// PATCH /api/admin/member365/:userId/activate — 激活 365 会员（1年）
-router.patch('/member365/:userId/activate', adminAuth, async (req, res) => {
-  const { months = 12 } = req.body;
-  const u = await User.findById(req.params.userId);
-  if (!u) return res.status(404).json({ success: false, message: '用户不存在' });
-  const start = new Date();
-  const expires = new Date(start);
-  expires.setMonth(expires.getMonth() + Number(months));
-  await User.collection.updateOne({ _id: u._id }, { $set: {
-    member365Status: 'active',
-    member365StartAt: start,
-    member365ExpiresAt: expires,
-  }});
-  res.json({ success: true, message: `已激活，有效至 ${expires.toLocaleDateString('zh-CN')}` });
-});
-
-// PATCH /api/admin/member365/:userId/revoke — 撤销 365 会员
-router.patch('/member365/:userId/revoke', adminAuth, async (req, res) => {
-  await User.collection.updateOne({ _id: req.params.userId }, { $set: { member365Status: 'none', member365StartAt: null, member365ExpiresAt: null }});
-  res.json({ success: true, message: '已撤销 365 会员资格' });
-});
-
 module.exports = router;

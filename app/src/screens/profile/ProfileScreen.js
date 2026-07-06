@@ -113,28 +113,6 @@ const styles = StyleSheet.create({
   },
   noServiceBtnText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
 
-  // 365会员推广卡
-  member365Card: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
-    backgroundColor: '#FFF0F5', borderRadius: radius.md,
-    borderWidth: 1.5, borderColor: '#E91E63' + '50',
-    padding: spacing.md,
-  },
-  member365IconWrap: {
-    width: 42, height: 42, borderRadius: 12,
-    backgroundColor: '#E91E63',
-    alignItems: 'center', justifyContent: 'center',
-  },
-  member365Title: { fontSize: 14, fontWeight: '700', color: '#1A2B24' },
-  member365Slogan: { fontSize: 11, color: '#E91E63', marginTop: 2, fontWeight: '500' },
-  member365Btn: {
-    flexDirection: 'row', alignItems: 'center', gap: 2,
-    backgroundColor: '#FCE4EC',
-    paddingHorizontal: 10, paddingVertical: 6,
-    borderRadius: radius.full,
-  },
-  member365BtnText: { fontSize: 12, color: '#E91E63', fontWeight: '700' },
-
   // 家庭成员
   addFamilyCard: {
     alignItems: 'center', justifyContent: 'center',
@@ -402,26 +380,6 @@ export default function ProfileScreen({ navigation }) {
                 <Text style={styles.renewText}>续约</Text>
               </TouchableOpacity>
             </View>
-          ) : !user?.isRegisteredClient ? (
-            <TouchableOpacity
-              style={styles.member365Card}
-              onPress={() => navigation.navigate('Member365')}
-              activeOpacity={0.85}
-            >
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, flex: 1 }}>
-                <View style={styles.member365IconWrap}>
-                  <Ionicons name="ribbon" size={22} color="#fff" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.member365Title}>365 健康会员</Text>
-                  <Text style={styles.member365Slogan}>每天一块钱，开启健康之门</Text>
-                </View>
-              </View>
-              <View style={styles.member365Btn}>
-                <Text style={styles.member365BtnText}>立即开通</Text>
-                <Ionicons name="chevron-forward" size={14} color="#E91E63" />
-              </View>
-            </TouchableOpacity>
           ) : null}
         </View>
 
@@ -462,11 +420,7 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>我的服务</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
-            {!user?.isRegisteredClient && (
-              <MenuItem icon="ribbon-outline"   iconColor="#E91E63" label="365 健康会员"          onPress={() => navigation.navigate('Member365')} />
-            )}
-            <MenuItem icon="gift-outline"     iconColor="#D97706" label="服务权益"              onPress={() => navigation.navigate('Benefits')} />
-            <MenuItem icon="business-outline" iconColor="#1E6B50" label="合作伙伴权益"          onPress={() => navigation.navigate('PartnerBenefits')} />
+            <MenuItem icon="gift-outline"     iconColor="#D97706" label="会员权益"              onPress={() => navigation.navigate('Benefits')} />
             <MenuItem icon="people-outline"  iconColor="#22A06B" label="服务群组"  value="即将开放" onPress={() => navigation.navigate('ComingSoon', { title: '服务群组', desc: '专属健康服务群即将开放，届时可与家庭医生、营养师、健康管理师实时交流。', icon: 'people-outline' })} />
             <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} />
             <MenuItem icon="star-outline"    iconColor="#F39C12" label="评价服务"               onPress={() => navigation.navigate('ComingSoon', { title: '评价服务', desc: '服务评价功能即将上线，帮助我们持续改善服务质量。', icon: 'star-outline' })} isLast />

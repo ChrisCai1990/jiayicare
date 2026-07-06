@@ -39,7 +39,6 @@ import OtherChargePage    from './pages/projects/OtherChargePage'
 import ProjectTemplatePage from './pages/projects/ProjectTemplatePage'
 import FollowUpFormPage   from './pages/projects/FollowUpFormPage'
 import FollowUpPlanPage   from './pages/projects/FollowUpPlanPage'
-import Member365Page      from './pages/Member365Page'
 
 // ── Auth Context ─────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -111,7 +110,6 @@ export default function App() {
               <Route path="products"   element={<ProductsPage />} />
               <Route path="partners"   element={<PartnersPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
-              <Route path="member365" element={<Member365Page />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
 
               {/* 基本设置 */}

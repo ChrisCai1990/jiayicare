@@ -293,7 +293,4 @@ export const adminAPI = {
   updateScoringConfig: (data) => req('/system-config/scoring', { method: 'PUT', body: JSON.stringify(data) }),
 
   // 365 会员管理（需求20）
-  member365List:     ()             => req('/member365/list'),
-  member365Activate: (userId, months) => req(`/member365/${userId}/activate`, { method: 'PATCH', body: JSON.stringify({ months }) }),
-  member365Revoke:   (userId)       => req(`/member365/${userId}/revoke`, { method: 'PATCH' }),
 }

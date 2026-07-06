@@ -175,12 +175,6 @@ export const reportsAPI = {
   parseAI:     (id)   => request(`/reports/${id}/parse-ai`, { method: 'POST' }),
 };
 
-// ── 365 会员（需求20）────────────────────────────────────────────
-export const member365API = {
-  status: ()     => request('/user/member365'),
-  apply:  ()     => request('/user/member365/apply', { method: 'POST' }),
-};
-
 // ── AI Chat ───────────────────────────────────────────────────────
 export const chatAPI = {
   send: (messages, userInfo) =>
