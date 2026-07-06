@@ -93,10 +93,11 @@ router.get('/me', auth, async (req, res) => {
     if (hmInfo) userData.manager = { name: hmInfo.name, title: hmInfo.title };
 
     // 附加完整团队字段（供 app 展示营养师）
+    // kind 为固定岗位类型，用于判断"是否配备某岗位"；role 为具体职称，仅用于展示
     userData.careTeam = [
-      fdInfo ? { name: fdInfo.name, role: fdInfo.title || '家庭医师' } : null,
-      nsInfo ? { name: nsInfo.name, role: nsInfo.title || '营养师' }   : null,
-      hmInfo ? { name: hmInfo.name, role: hmInfo.title || '健管专员' } : null,
+      fdInfo ? { name: fdInfo.name, role: fdInfo.title || '家庭医师', kind: 'familyDoctor' }  : null,
+      nsInfo ? { name: nsInfo.name, role: nsInfo.title || '营养师',   kind: 'nutritionist' }  : null,
+      hmInfo ? { name: hmInfo.name, role: hmInfo.title || '健管专员', kind: 'healthManager' } : null,
     ].filter(Boolean);
 
     // 服务包名称映射（英文代码→中文）

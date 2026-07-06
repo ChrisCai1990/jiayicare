@@ -496,12 +496,12 @@ function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo
 
 export default function MessagesScreen({ navigation }) {
   const { isDemo, user } = useAuth();
-  const careTeamRoles = new Set((user?.careTeam || []).map(m => m.role));
+  const careTeamKinds = new Set((user?.careTeam || []).map(m => m.kind));
   const hasRole = (key) => {
     if (isDemo) return true;
-    if (key === 'doctor') return careTeamRoles.has('家庭医师');
-    if (key === 'nutritionist') return careTeamRoles.has('营养师');
-    if (key === 'manager') return careTeamRoles.has('健管专员');
+    if (key === 'doctor') return careTeamKinds.has('familyDoctor');
+    if (key === 'nutritionist') return careTeamKinds.has('nutritionist');
+    if (key === 'manager') return careTeamKinds.has('healthManager');
     return false;
   };
   const [activeTab, setActiveTab] = useState('全部');
@@ -649,7 +649,7 @@ export default function MessagesScreen({ navigation }) {
           {convList.map((conv, i) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
-              ? `暂未配备${conv.label}，敬请期待`
+              ? `您尚未配备${conv.label}，暂不提供此项服务`
               : conv.last?.content || conv.last?.title || (conv.kind === 'ai' ? '随时问我健康问题，24小时在线' : conv.kind === 'notif' ? '暂无通知' : '暂无消息');
             const onPress = unassigned
               ? () => {}
