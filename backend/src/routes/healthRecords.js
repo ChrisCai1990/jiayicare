@@ -144,6 +144,9 @@ router.post('/', auth, async (req, res) => {
     // 自动判断状态
     const status = calcStatus(type, value, extra);
 
+    // AI监测异常升级（试点：血压danger级自动进入家庭医生待审核队列）
+    const aiAlertStatus = (type === 'bloodPressure' && status === 'danger') ? 'pending' : null;
+
     const record = await HealthRecord.create({
       user: req.user._id,
       category: resolvedCategory,
@@ -155,6 +158,7 @@ router.post('/', auth, async (req, res) => {
       status,
       note: note || '',
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
+      aiAlertStatus,
     });
 
     // 打卡后自动同步随访计划状态：找今日（CST UTC+8）含该 checkIn 类型的随访，更新为 completed

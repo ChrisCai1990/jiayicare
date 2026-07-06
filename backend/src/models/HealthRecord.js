@@ -14,6 +14,8 @@ const healthRecordSchema = new mongoose.Schema({
   recordedAt: { type: Date, default: Date.now },
   // 关联报告（如从报告中提取的指标数据，删除报告时级联删除）
   reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
+  // AI监测异常升级（试点：血压），danger级自动进入家庭医生待审核队列，处理后置为resolved
+  aiAlertStatus: { type: String, enum: ['pending', 'resolved', null], default: null },
 }, { timestamps: true });
 
 // 索引：按用户+时间查询

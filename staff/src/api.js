@@ -257,6 +257,7 @@ export const staffAPI = {
   deleteAIScreeningItem:    (id, data) => req(`/staff/patients/${id}/screening/ai-item`, { method: 'DELETE', body: JSON.stringify(data) }),
   getPatientHealthRecords:  (id, p={}) => req(`/staff/patients/${id}/health-records?` + qs(p)),
   createPatientHealthRecord: (id, data) => req(`/staff/patients/${id}/health-records`, { method: 'POST', body: JSON.stringify(data) }),
+  resolveHealthRecordAlert: (id) => req(`/staff/health-records/${id}/resolve-alert`, { method: 'PATCH' }),
 
   // 家庭成员关联（需求18）
   getPatientFamilyLinks:    (id)            => req(`/staff/patients/${id}/family-links`),

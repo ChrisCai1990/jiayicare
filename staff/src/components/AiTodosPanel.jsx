@@ -14,6 +14,7 @@ const TYPE_CONFIG = {
   medication_review:  { icon: '💊', label: 'AI用药建议待审核', color: '#0077B6', priority: 2 },
   supplement_review:  { icon: '🧪', label: 'AI营养素建议待审核', color: '#16A34A', priority: 3 },
   risk_review:        { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
+  bp_alert_review:    { icon: '🩸', label: '血压监测异常', color: '#DC3545', priority: 1 },
   risk_alert:      { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   transfer_human:       { icon: '🔔', label: 'AI对话转人工', color: '#DC3545', priority: 1 },
   draft_review:         { icon: '✏️', label: 'AI文案待审核', color: '#4A6558', priority: 4 },
@@ -46,6 +47,14 @@ export default function AiTodosPanel() {
       .catch(() => {})
       .finally(() => setLoading(false))
   }, [])
+
+  const resolveAlert = (e, todo) => {
+    e.stopPropagation()
+    const recordId = todo.id.replace(/^bp_alert_/, '')
+    staffAPI.resolveHealthRecordAlert(recordId)
+      .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
+      .catch(() => {})
+  }
 
   if (loading) return null
 
@@ -124,10 +133,17 @@ export default function AiTodosPanel() {
                 </div>
               </div>
 
-              {/* 时间 + 箭头 */}
+              {/* 时间 + 箭头 / 操作 */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: '#8AA89C' }}>{formatTime(todo.createdAt)}</span>
-                <span style={{ fontSize: 14, color: '#C0B8AE' }}>›</span>
+                {todo.type === 'bp_alert_review' ? (
+                  <button
+                    onClick={(e) => resolveAlert(e, todo)}
+                    style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
+                  >标记已处理</button>
+                ) : (
+                  <span style={{ fontSize: 14, color: '#C0B8AE' }}>›</span>
+                )}
               </div>
             </div>
           )

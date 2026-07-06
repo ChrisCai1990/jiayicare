@@ -739,7 +739,7 @@ router.get('/followups', staffAuth, async (req, res) => {
 
 // ── POST /api/staff/followups ─────────────────────────────────────
 router.post('/followups', staffAuth, async (req, res) => {
-  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals, checkInItems, followUpSchemeId, formData, participants, interviewMinutes } = req.body;
+  const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals, checkInItems, repeatDaily, followUpSchemeId, formData, participants, interviewMinutes } = req.body;
   if (!patientId) return res.status(400).json({ success: false, message: '会员ID不能为空' });
 
   const patient = await User.findById(patientId);
@@ -764,6 +764,7 @@ router.post('/followups', staffAuth, async (req, res) => {
     tags: tags || [],
     vitals: vitals || {},
     checkInItems: checkInItems || [],
+    repeatDaily: !!repeatDaily,
     followUpSchemeId: followUpSchemeId || null,
     formData: formData || null,
     participants: participants || '',
@@ -2750,6 +2751,20 @@ router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// ── 家庭医师处理血压异常升级（AI自动跟进试点）──
+// PATCH /api/staff/health-records/:id/resolve-alert
+router.patch('/health-records/:id/resolve-alert', staffAuth, async (req, res) => {
+  try {
+    const record = await HealthRecord.findOneAndUpdate(
+      { _id: req.params.id, aiAlertStatus: 'pending' },
+      { $set: { aiAlertStatus: 'resolved' } },
+      { new: true }
+    );
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在或已处理' });
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 医护端代患者录入初始健康数据（与用户端格式一致）─────────────────
 // POST /api/staff/patients/:id/health-records
 router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
@@ -4299,6 +4314,7 @@ const TODO_REVIEW_ROLE = {
   supplement_review:    'nutritionist',
   nutrition_plan_review:'nutritionist',
   followup_review:      'familyDoctor',
+  bp_alert_review:      'familyDoctor',
 };
 
 router.get('/ai-todos', staffAuth, async (req, res) => {
@@ -4468,6 +4484,23 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: `${f.theme || '随访'} · ${String(f.date).slice(0, 10)}${f.sourceType === 'ai_review' ? '（AI月度回顾）' : '（方案排期）'}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${f.patientId?._id}?tab=followups`,
+        });
+      });
+    }
+
+    // ── 家庭医师：血压监测异常升级（AI自动跟进试点）──
+    if (can('bp_alert_review')) {
+      const alertRecords = await HealthRecord.find({ type: 'bloodPressure', aiAlertStatus: 'pending' })
+        .populate('user', 'name').sort({ recordedAt: -1 }).limit(50).lean();
+      alertRecords.forEach(r => {
+        const createdAt = r.recordedAt || r.createdAt;
+        const sys = r.extra?.sys || String(r.value).split('/')[0];
+        todos.push({
+          id: 'bp_alert_' + r._id, type: 'bp_alert_review', label: '血压监测异常·待处理', priority: 1,
+          patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
+          summary: `AI监测发现收缩压 ${sys} mmHg（危险级），患者已自主打卡，请医生核实处理`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${r.user?._id}?tab=records`,
         });
       });
     }

@@ -99,4 +99,7 @@ app.listen(PORT, () => {
 
   // 已确认管理方案患者的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
   require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();
+
+  // AI自主随访跟进试点：血压监测该测未测自动提醒患者，每天扫描一次
+  require('./utils/bpMonitorScheduler').startBPMonitorScheduler();
 });
