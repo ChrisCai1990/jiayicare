@@ -149,7 +149,7 @@ export const adminAPI = {
   saveAnnualPlanTemplate:   (id, data) => req(`/annual-plan-templates/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // 年度管理方案列表（方案模板页专用）
-  listAnnualPlans:    ()         => req('/annual-plans'),
+  listAnnualPlans:    (name)     => req('/annual-plans' + (name ? '?name=' + encodeURIComponent(name) : '')),
 
   // 健康方案模板管理
   planTemplates:      (type, name) => req('/plan-templates?' + new URLSearchParams({ ...(type ? { type } : {}), ...(name ? { name } : {}) }).toString()),

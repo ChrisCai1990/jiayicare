@@ -1184,7 +1184,16 @@ router.put('/system-config/scoring', adminAuth, async (req, res) => {
 // GET /api/admin/annual-plans — 列出所有年度管理方案（供方案模板页展示）
 router.get('/annual-plans', adminAuth, async (req, res) => {
   try {
-    const plans = await AnnualPlan.find()
+    const { name } = req.query;
+    const filter = {};
+    if (name) {
+      // patientId 是关联字段，先按姓名/手机号查出匹配的用户ID再过滤
+      const matchedUsers = await User.find({
+        $or: [{ name: new RegExp(name, 'i') }, { phone: new RegExp(name, 'i') }],
+      }).select('_id');
+      filter.patientId = { $in: matchedUsers.map(u => u._id) };
+    }
+    const plans = await AnnualPlan.find(filter)
       .sort({ updatedAt: -1 })
       .limit(200)
       .populate('patientId', 'name phone');

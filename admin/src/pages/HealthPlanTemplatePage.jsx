@@ -583,23 +583,33 @@ function AnnualPlanView({ nav }) {
   const [plans, setPlans] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
+  const [q, setQ] = useState('')
 
   useEffect(() => {
     setLoading(true)
-    adminAPI.listAnnualPlans()
+    adminAPI.listAnnualPlans(q)
       .then(res => setPlans(res.data || []))
       .catch(() => {})
       .finally(() => setLoading(false))
-  }, [])
+  }, [q])
 
   return (
     <>
-      <div className="card" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <div className="card" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div>
           <span style={{ fontWeight: 600 }}>📅 年度管理方案</span>
           <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>共 {plans.length} 份</span>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新建年度管理方案</button>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input
+            className="search-input"
+            placeholder="🔍  搜索会员姓名或手机号..."
+            value={q}
+            onChange={e => setQ(e.target.value)}
+            style={{ width: 220 }}
+          />
+          <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新建年度管理方案</button>
+        </div>
       </div>
 
       {loading ? (
