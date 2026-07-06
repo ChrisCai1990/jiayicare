@@ -323,6 +323,14 @@ function UploadZone({ onPress, uploading, typeFilter }) {
   );
 }
 
+// 后端 fileUrl 存的是相对路径（如 /api/uploads/reports/xxx.pdf），拼上域名才能直接加载
+const FILE_BASE_URL = (process.env.EXPO_PUBLIC_API_URL || 'https://jiaycare.com/api').replace(/\/api$/, '');
+function resolveFileUrl(url) {
+  if (!url) return '';
+  if (/^https?:\/\//i.test(url) || url.startsWith('data:')) return url;
+  return FILE_BASE_URL + url;
+}
+
 // ── 报告预览 Modal ────────────────────────────────────────────────
 function ReportPreviewModal({ report, onClose }) {
   const [loading, setLoading] = useState(true);
@@ -335,8 +343,12 @@ function ReportPreviewModal({ report, onClose }) {
     reportsAPI.get(report._id || report.id)
       .then(res => {
         if (res.success) {
-          setContent(res.data.content || '');
-          setMimeType(res.data.mimeType || '');
+          const data = res.data;
+          // 新上传流程走 OSS/服务器存储只有 fileUrl，没有 base64 content——必须优先用 fileUrl，
+          // 否则这类报告在预览弹窗里会一直落到"暂无预览"分支（content 字段为空）
+          const fileUrl = data.fileUrls?.[0] || data.fileUrl || '';
+          setContent(fileUrl ? resolveFileUrl(fileUrl) : (data.content || ''));
+          setMimeType(data.mimeType || '');
         }
       })
       .catch(() => {})
@@ -345,9 +357,9 @@ function ReportPreviewModal({ report, onClose }) {
 
   if (!report) return null;
   const tm = TYPE_META[report.type] || TYPE_META.annual;
-  // 优先用 mimeType，fallback 到 content 前缀检测（兼容 mimeType 未存储的旧数据）
-  const isImage = mimeType.startsWith('image/') || content.startsWith('data:image/');
-  const isPdf   = mimeType === 'application/pdf' || content.startsWith('data:application/pdf');
+  // 优先用 mimeType，fallback 到 content/URL 后缀检测（兼容 mimeType 未存储的旧数据）
+  const isImage = mimeType.startsWith('image/') || content.startsWith('data:image/') || /\.(png|jpe?g|gif|webp)$/i.test(content);
+  const isPdf   = mimeType === 'application/pdf' || content.startsWith('data:application/pdf') || /\.pdf$/i.test(content);
   const hasContent = !!content;
 
   return (
