@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState } from 'react'
+import React, { createContext, useContext, useState, useEffect } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { getHrToken, clearHrToken } from '../../hrApi'
 import HrLoginPage from './HrLoginPage'
@@ -25,6 +25,12 @@ function RequireHrAuth({ children }) {
 
 // 独立于超管/医护后台的企业HR门户，路由前缀 /hr，token与页面完全隔离
 export default function HrApp() {
+  useEffect(() => {
+    const prevTitle = document.title
+    document.title = '企业健康管理平台'
+    return () => { document.title = prevTitle }
+  }, [])
+
   return (
     <HrProvider>
       <Routes>
