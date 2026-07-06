@@ -664,6 +664,7 @@ export default function HealthPlanTemplatePage() {
   const [activeType, setActiveType] = useState('annual_mgmt')
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
   const [showModal, setShowModal] = useState(false)
   const [editing, setEditing] = useState(null)
 
@@ -671,14 +672,14 @@ export default function HealthPlanTemplatePage() {
     if (activeType === 'annual_mgmt') return
     setLoading(true)
     try {
-      const res = await adminAPI.planTemplates(activeType)
+      const res = await adminAPI.planTemplates(activeType, q)
       setTemplates(res.data || [])
     } catch (err) {
       toast('❌ 加载失败：' + err.message)
     } finally {
       setLoading(false)
     }
-  }, [activeType])
+  }, [activeType, q])
 
   useEffect(() => { load() }, [load])
 
@@ -749,14 +750,23 @@ export default function HealthPlanTemplatePage() {
       {/* 其他 7 种方案类型：模板 CRUD */}
       {activeType !== 'annual_mgmt' && (
         <>
-          <div className="card" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="card" style={{ marginBottom: 16, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
             <div>
               <span style={{ fontWeight: 600 }}>{activeTypeMeta?.icon} {activeTypeMeta?.label}</span>
               <span style={{ color: '#888', fontSize: 12, marginLeft: 8 }}>共 {templates.length} 个模板</span>
             </div>
-            <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>
-              ＋ 新增模板
-            </button>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input
+                className="search-input"
+                placeholder="🔍  搜索模板名称..."
+                value={q}
+                onChange={e => setQ(e.target.value)}
+                style={{ width: 220 }}
+              />
+              <button className="btn btn-primary" onClick={() => { setEditing(null); setShowModal(true) }}>
+                ＋ 新增模板
+              </button>
+            </div>
           </div>
 
           {loading ? (

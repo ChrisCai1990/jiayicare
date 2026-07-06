@@ -227,6 +227,7 @@ export default function EnterprisesPage() {
   const toast = useToast()
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
   const [showEditModal, setShowEditModal] = useState(false)
   const [editing, setEditing] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
@@ -235,17 +236,17 @@ export default function EnterprisesPage() {
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [showHrModal, setShowHrModal] = useState(false)
 
-  const load = async () => {
+  const load = async (name) => {
     setLoading(true)
     try {
-      const res = await adminAPI.enterprises()
+      const res = await adminAPI.enterprises(name ? { name } : {})
       setList(res.data || [])
     } catch (err) {
       toast('❌ 加载失败：' + err.message)
     } finally { setLoading(false) }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => { load(q) }, [q])
 
   const loadDetail = async (id) => {
     try {
@@ -265,7 +266,7 @@ export default function EnterprisesPage() {
 
   const del = async (e) => {
     if (!window.confirm(`确定删除「${e.name}」？`)) return
-    try { await adminAPI.deleteEnterprise(e._id); toast('✅ 已删除'); load() }
+    try { await adminAPI.deleteEnterprise(e._id); toast('✅ 已删除'); load(q) }
     catch (err) { toast('❌ ' + err.message) }
   }
 
@@ -291,6 +292,15 @@ export default function EnterprisesPage() {
           <div className="page-subtitle">管理B2B2C企业客户、员工名额分配、HR账号</div>
         </div>
         <button className="btn btn-primary" onClick={() => { setEditing(null); setShowEditModal(true) }}>＋ 新增企业客户</button>
+      </div>
+
+      <div className="search-bar" style={{ marginBottom: 12 }}>
+        <input
+          className="search-input"
+          placeholder="🔍  搜索企业名称..."
+          value={q}
+          onChange={e => setQ(e.target.value)}
+        />
       </div>
 
       {loading ? (
@@ -360,10 +370,10 @@ export default function EnterprisesPage() {
       )}
 
       {showEditModal && (
-        <EnterpriseModal enterprise={editing} onClose={() => setShowEditModal(false)} onSaved={load} />
+        <EnterpriseModal enterprise={editing} onClose={() => setShowEditModal(false)} onSaved={() => load(q)} />
       )}
       {showLinkModal && expandedId && (
-        <LinkEmployeesModal enterprise={list.find(e => e._id === expandedId)} onClose={() => setShowLinkModal(false)} onSaved={() => { loadDetail(expandedId); load() }} />
+        <LinkEmployeesModal enterprise={list.find(e => e._id === expandedId)} onClose={() => setShowLinkModal(false)} onSaved={() => { loadDetail(expandedId); load(q) }} />
       )}
       {showHrModal && expandedId && (
         <HrAccountModal enterprise={list.find(e => e._id === expandedId)} onClose={() => setShowHrModal(false)} onSaved={() => loadDetail(expandedId)} />

@@ -1083,8 +1083,10 @@ router.delete('/hr-accounts/:id', adminAuth, async (req, res) => {
 
 // GET /api/admin/plan-templates?type=
 router.get('/plan-templates', adminAuth, async (req, res) => {
-  const { type } = req.query;
-  const filter = type ? { type } : {};
+  const { type, name } = req.query;
+  const filter = {};
+  if (type) filter.type = type;
+  if (name) filter.name = new RegExp(name, 'i');
   const templates = await PlanTemplate.find(filter).sort({ createdAt: -1 });
   res.json({ success: true, data: templates });
 });

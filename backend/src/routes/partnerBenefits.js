@@ -6,6 +6,8 @@ const PartnerBenefit = require('../models/PartnerBenefit');
 
 // GET /api/partner-benefits — 客户端只读，按当前用户会员等级过滤可见权益
 // 权益 visibleMemberTypes 为空数组 = 所有会员可见；否则需包含当前用户的 memberType
+// （User.memberType 取值为"优享/悦享/尊享/卓越"四个客户等级，医护端患者详情页手动录入，
+// 与 admin 后台另一套 MemberType 集合"健康重塑计划"等无关，两者是不同维度，不能混用）。
 router.get('/', auth, async (req, res) => {
   const memberType = req.user.memberType || '';
 

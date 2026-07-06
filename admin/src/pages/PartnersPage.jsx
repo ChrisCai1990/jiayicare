@@ -249,6 +249,7 @@ export default function PartnersPage() {
   const toast = useToast()
   const [partners, setPartners] = useState([])
   const [loading, setLoading] = useState(true)
+  const [q, setQ] = useState('')
   const [showPartnerModal, setShowPartnerModal] = useState(false)
   const [editingPartner, setEditingPartner] = useState(null)
   const [expandedId, setExpandedId] = useState(null)
@@ -256,10 +257,10 @@ export default function PartnersPage() {
   const [showBenefitModal, setShowBenefitModal] = useState(false)
   const [editingBenefit, setEditingBenefit] = useState(null)
 
-  const loadPartners = async () => {
+  const loadPartners = async (name) => {
     setLoading(true)
     try {
-      const res = await adminAPI.partners()
+      const res = await adminAPI.partners(name ? { name } : {})
       setPartners(res.data || [])
     } catch (err) {
       toast('❌ 加载失败：' + err.message)
@@ -275,7 +276,7 @@ export default function PartnersPage() {
     }
   }
 
-  useEffect(() => { loadPartners() }, [])
+  useEffect(() => { loadPartners(q) }, [q])
 
   const toggleExpand = (id) => {
     if (expandedId === id) { setExpandedId(null); return }
@@ -313,6 +314,15 @@ export default function PartnersPage() {
           <div className="page-subtitle">管理口腔/体检/保险/酒店等合作伙伴及客户可享权益</div>
         </div>
         <button className="btn btn-primary" onClick={() => { setEditingPartner(null); setShowPartnerModal(true) }}>＋ 新增合作伙伴</button>
+      </div>
+
+      <div className="search-bar" style={{ marginBottom: 12 }}>
+        <input
+          className="search-input"
+          placeholder="🔍  搜索合作伙伴名称..."
+          value={q}
+          onChange={e => setQ(e.target.value)}
+        />
       </div>
 
       {loading ? (
