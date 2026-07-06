@@ -73,8 +73,10 @@ const medicalReportSchema = new mongoose.Schema({
       'other',       // 其他
       // 兼容旧数据
       'followup', 'imaging',
-      // 专项筛查分类
+      // 专项筛查分类（2026-07 对齐医护端 admin 后台分类管理的 7 个一级分类名称）
       'tumor', 'cardiovascular', 'chronic', 'functional', 'health_promote',
+      'general_exam',   // 一般检查
+      'gender_health',  // 男性/女性健康筛查
     ],
     default: 'annual',
   },

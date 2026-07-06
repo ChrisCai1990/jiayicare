@@ -11,17 +11,16 @@ import { useAuth } from '../../context/AuthContext';
 import { mockMedicalReports } from '../../data/mockData';
 
 // ── 筛查报告类型 ─────────────────────────────────────────────────
+// 2026-07 对齐医护端 admin 后台「分类管理」的一级分类名称（ProjectCategory L1），此前用户端
+// 这里是另一套10个写死分类、名字和医护端各自维护，两边对不上；改成跟医护端相同的7个类别名称。
 const TYPE_LIST = [
-  { key: 'annual',          label: '年度体检',     icon: 'clipboard-outline',    color: '#0077B6', bg: '#EBF5FB' },
-  { key: 'tumor',           label: '肿瘤风险筛查', icon: 'flask-outline',         color: '#DC3545', bg: '#FDEEEC' },
-  { key: 'cardiovascular',  label: '心血管风险筛查', icon: 'heart-outline',       color: '#9D174D', bg: '#FCE7F3' },
-  { key: 'cerebrovascular', label: '脑血管风险筛查', icon: 'pulse-outline',       color: '#7C3AED', bg: '#F2EEFF' },
-  { key: 'chronic_disease', label: '慢性病筛查',   icon: 'medical-outline',      color: '#D97706', bg: '#FEF3E2' },
-  { key: 'dementia',        label: '老年痴呆筛查', icon: 'brain-outline',         color: '#0369A1', bg: '#E0F2FE' },
-  { key: 'osteoporosis',    label: '骨质疏松筛查', icon: 'body-outline',          color: '#059669', bg: '#D1FAE5' },
-  { key: 'menopause',       label: '更年期筛查',   icon: 'female-outline',        color: '#B45309', bg: '#FEF3C7' },
-  { key: 'health_promote',  label: '健康促进筛查', icon: 'leaf-outline',          color: '#1E6B50', bg: '#E8F5EF' },
-  { key: 'other',           label: '其他筛查',     icon: 'document-outline',      color: '#64748B', bg: '#F1F5F9' },
+  { key: 'general_exam',    label: '一般检查',       icon: 'clipboard-outline',    color: '#0077B6', bg: '#EBF5FB' },
+  { key: 'tumor',           label: '肿瘤筛查',       icon: 'flask-outline',         color: '#DC3545', bg: '#FDEEEC' },
+  { key: 'cardiovascular',  label: '心脑血管病筛查', icon: 'heart-outline',         color: '#9D174D', bg: '#FCE7F3' },
+  { key: 'chronic',         label: '慢性病筛查',     icon: 'medical-outline',       color: '#D97706', bg: '#FEF3E2' },
+  { key: 'functional',      label: '功能医学检测',   icon: 'flask-outline',         color: '#7C3AED', bg: '#F2EEFF' },
+  { key: 'gender_health',   label: '男性/女性健康筛查', icon: 'body-outline',       color: '#059669', bg: '#D1FAE5' },
+  { key: 'other',           label: '其他常规筛查',   icon: 'document-outline',      color: '#64748B', bg: '#F1F5F9' },
 ];
 
 const TYPE_META = Object.fromEntries(
@@ -506,7 +505,7 @@ function AIAnalysisCard({ onPress }) {
 // ── 上传配置 Modal ────────────────────────────────────────────────
 function UploadConfigModal({ file, initialType, onConfirm, onCancel }) {
   const [title, setTitle]   = useState(file ? file.name.replace(/\.[^/.]+$/, '') : '');
-  const [type, setType]     = useState(initialType && initialType !== 'all' ? initialType : 'annual');
+  const [type, setType]     = useState(initialType && initialType !== 'all' ? initialType : TYPE_LIST[0].key);
   const [hospital, setHospital] = useState('');
 
   if (!file) return null;
