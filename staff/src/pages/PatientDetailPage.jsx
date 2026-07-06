@@ -664,11 +664,12 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
     return {}
   })()
 
-  const nowY = new Date().getFullYear()
-  const years = [...new Set([...Object.keys(byYear), String(nowY - 1), String(nowY), String(nowY + 1)])]
-    .sort((a, b) => Number(b) - Number(a))
-  const [year, setYear] = useState(String(nowY))
-  const result = byYear[year] || null
+  const nowY = String(new Date().getFullYear())
+  // 年度标签只展示实际已有评估的年份（+当前年，方便无数据时直接录入），不预设未来空年份
+  const years = [...new Set([...Object.keys(byYear), nowY])].sort((a, b) => Number(b) - Number(a))
+  const [year, setYear] = useState(null)
+  const curYear = (year && years.includes(year)) ? year : (Object.keys(byYear).sort((a, b) => Number(b) - Number(a))[0] || nowY)
+  const result = byYear[curYear] || null
 
   // 从档案预填性别/年龄，其余体检值默认空
   const genderInit = user.gender === '女' ? 'female' : user.gender === '男' ? 'male' : 'male'
@@ -687,31 +688,33 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
 
   const openEdit = () => { setForm(blankForm()); setEditing(true) }
 
+  // 评估始终按系统当前日期自动归入当年，不允许手动指定年度（历史年度只读，只能查看不能改写）
   const handleSave = async () => {
     if (!form.age || !form.sbp || (!form.tc && !form.ldl)) {
       toast('请至少填写年龄、收缩压，以及总胆固醇或LDL-C'); return
     }
     setSaving(true)
     try {
-      await staffAPI.saveAscvdRisk(patientId, { ...form, year })
-      toast(`${year}年度 ASCVD风险评估已保存`)
+      await staffAPI.saveAscvdRisk(patientId, { ...form, year: nowY })
+      toast(`${nowY}年度 ASCVD风险评估已保存`)
       setEditing(false)
+      setYear(nowY)
       onSaved()
     } catch (err) { toast(err.message || '保存失败') }
     finally { setSaving(false) }
   }
 
   const handleClear = async () => {
-    if (!window.confirm(`确认清除 ${year} 年度的ASCVD评估？`)) return
-    try { await staffAPI.deleteAscvdRisk(patientId, year); onSaved() }
+    if (!window.confirm(`确认清除 ${curYear} 年度的ASCVD评估？`)) return
+    try { await staffAPI.deleteAscvdRisk(patientId, curYear); onSaved() }
     catch (err) { toast(err.message || '清除失败') }
   }
 
   const lv = result ? (ASCVD_LEVEL_COLOR[result.level] || ASCVD_LEVEL_COLOR.low) : null
   const numField = (label, key, unit) => (
     <div>
-      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}{unit ? `（${unit}）` : ''}</label>
-      <input className="form-control" type="number" step="0.01" value={form[key]}
+      <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}{unit ? `（${unit}）` : ''}</label>
+      <input className="form-control" type="number" step="0.01" value={form[key]} style={{ width: '100%', maxWidth: 160 }}
         onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))} />
     </div>
   )
@@ -720,44 +723,48 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
     <div className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <div className="card-title" style={{ flex: 1 }}>❤️ 10年ASCVD风险评估</div>
-        {/* 年度切换 */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {years.map(y => (
-            <button key={y} onClick={() => { setYear(y); setEditing(false) }}
-              style={{
-                border: 'none', borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer',
-                background: y === year ? '#1E6B50' : '#F5F2EC',
-                color: y === year ? '#fff' : '#4A6558',
-                fontWeight: y === year ? 700 : 400,
-              }}>
-              {y}{byYear[y] ? ' ●' : ''}
-            </button>
-          ))}
-        </div>
+        {/* 年度切换：只列出已有评估的年份 + 当前年，纯展示历史，不可选未来空年份 */}
+        {!editing && (
+          <div style={{ display: 'flex', gap: 4 }}>
+            {years.map(y => (
+              <button key={y} onClick={() => setYear(y)}
+                style={{
+                  border: 'none', borderRadius: 6, padding: '3px 10px', fontSize: 12, cursor: 'pointer',
+                  background: y === curYear ? '#1E6B50' : '#F5F2EC',
+                  color: y === curYear ? '#fff' : '#4A6558',
+                  fontWeight: y === curYear ? 700 : 400,
+                }}>
+                {y}{byYear[y] ? ' ●' : ''}
+              </button>
+            ))}
+          </div>
+        )}
         {!editing && (
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="btn btn-secondary btn-sm" onClick={openEdit}>{result ? '重新评估' : '＋ 录入评估'}</button>
+            <button className="btn btn-secondary btn-sm" onClick={openEdit}>{byYear[nowY] ? '重新评估' : '＋ 录入评估'}</button>
             {result && <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={handleClear}>清除</button>}
           </div>
         )}
       </div>
       <div className="card-body">
         {editing ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ fontSize: 12, color: '#8AA89C' }}>正在录入 <b style={{ color: '#1E6B50' }}>{year}</b> 年度评估</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 12 }}>
-              <div>
-                <label style={{ fontSize: 12, color: '#8AA89C' }}>性别</label>
-                <select className="form-control" value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}>
-                  <option value="male">男</option>
-                  <option value="female">女</option>
-                </select>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ fontSize: 12, color: '#8AA89C' }}>评估将自动归入 <b style={{ color: '#1E6B50' }}>{nowY}</b> 年度</div>
+            <div style={{ background: '#FAFAF8', border: '1px solid #F0EDE7', borderRadius: 8, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 160px))', gap: 16 }}>
+                <div>
+                  <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>性别</label>
+                  <select className="form-control" style={{ width: '100%' }} value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}>
+                    <option value="male">男</option>
+                    <option value="female">女</option>
+                  </select>
+                </div>
+                {numField('年龄', 'age', '岁')}
+                {numField('收缩压', 'sbp', 'mmHg')}
+                {numField('总胆固醇 TC', 'tc', 'mmol/L')}
+                {numField('低密度脂蛋白 LDL-C', 'ldl', 'mmol/L')}
+                {numField('高密度脂蛋白 HDL-C', 'hdl', 'mmol/L')}
               </div>
-              {numField('年龄', 'age', '岁')}
-              {numField('收缩压', 'sbp', 'mmHg')}
-              {numField('总胆固醇 TC', 'tc', 'mmol/L')}
-              {numField('低密度脂蛋白 LDL-C', 'ldl', 'mmol/L')}
-              {numField('高密度脂蛋白 HDL-C', 'hdl', 'mmol/L')}
             </div>
             <div style={{ display: 'flex', gap: 20, flexWrap: 'wrap', background: '#f9f7f3', borderRadius: 8, padding: '10px 14px' }}>
               <label style={{ fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
@@ -838,7 +845,7 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
           </div>
         ) : (
           <div style={{ fontSize: 13, color: '#8AA89C', textAlign: 'center', padding: '20px 0' }}>
-            {year} 年度尚未评估。点击「录入评估」，填写体检参数后系统将按中国指南自动分层。
+            {curYear} 年度尚未评估。点击「录入评估」，填写体检参数后系统将按中国指南自动分层。
           </div>
         )}
       </div>
