@@ -560,6 +560,7 @@ export default function ProductsPage() {
                   <input type="checkbox" checked={selected.length === products.length && products.length > 0}
                     onChange={toggleAll} />
                 </th>
+                <th style={{ width: 64 }}>图片</th>
                 <th>产品名称</th>
                 <th>分类</th>
                 <th>市场价</th>
@@ -572,12 +573,20 @@ export default function ProductsPage() {
             </thead>
             <tbody>
               {products.length === 0 && (
-                <tr><td colSpan={9} style={{ textAlign: 'center', color: '#888', padding: 32 }}>暂无产品，点击「新增产品」添加</td></tr>
+                <tr><td colSpan={10} style={{ textAlign: 'center', color: '#888', padding: 32 }}>暂无产品，点击「新增产品」添加</td></tr>
               )}
               {products.map(p => (
                 <tr key={p._id}>
                   <td>
                     <input type="checkbox" checked={selected.includes(p._id)} onChange={() => toggleSelect(p._id)} />
+                  </td>
+                  <td>
+                    {p.images?.[0] ? (
+                      <img src={p.images[0]} alt="" style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 6, border: '1px solid #e0d9ce' }}
+                        onError={e => { e.target.style.display = 'none' }} />
+                    ) : (
+                      <div style={{ width: 48, height: 48, borderRadius: 6, background: '#f5f2ec', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: '#bbb' }}>无图</div>
+                    )}
                   </td>
                   <td>
                     <div style={{ fontWeight: 600 }}>{p.name}</div>
