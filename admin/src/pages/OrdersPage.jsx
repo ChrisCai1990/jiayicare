@@ -11,6 +11,8 @@ const STATUS_META = {
 }
 const STATUS_LABELS = { scheduled: '标记已安排', completed: '标记完成', cancelled: '取消订单' }
 const STATUS_COLORS = { scheduled: '#3B82F6', completed: '#10B981', cancelled: '#EF4444' }
+const PAYMENT_METHOD_LABELS = { wechat: '微信支付', alipay: '支付宝', onsite: '到店支付', healthFund: '健康基金抵扣' }
+const PAY_STATUS_META = { unpaid: { label: '未支付', badge: 'badge-gray' }, paid: { label: '已支付', badge: 'badge-green' }, refunded: { label: '已退款', badge: 'badge-yellow' } }
 
 export default function OrdersPage() {
   const nav = useNavigate()
@@ -24,6 +26,17 @@ export default function OrdersPage() {
   const [pageSize, setPageSize] = useState(20)
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(null) // orderId being updated
+  const [payModalOrder, setPayModalOrder] = useState(null)
+  const [payMethod, setPayMethod] = useState('wechat')
+  const [verifyModalOrder, setVerifyModalOrder] = useState(null)
+  const [verifyInput, setVerifyInput] = useState('')
+  const [attrModalOrder, setAttrModalOrder] = useState(null)
+  const [attrForm, setAttrForm] = useState({ referrerId: '', fulfillerId: '' })
+  const [staffOptions, setStaffOptions] = useState([])
+
+  useEffect(() => {
+    adminAPI.staffList({ limit: 200 }).then(r => setStaffOptions(r.data || [])).catch(() => {})
+  }, [])
 
   const load = useCallback(async (p = page) => {
     setLoading(true)
@@ -48,6 +61,45 @@ export default function OrdersPage() {
       await load(page)
     } catch (err) {
       toast('❌ ' + (err.message || '更新失败'))
+    } finally { setUpdating(null) }
+  }
+
+  const confirmPay = async () => {
+    if (!payModalOrder) return
+    setUpdating(payModalOrder._id)
+    try {
+      const res = await adminAPI.payOrder(payModalOrder._id, payMethod, payModalOrder.servicePrice)
+      toast('✅ ' + res.message)
+      setPayModalOrder(null)
+      await load(page)
+    } catch (err) {
+      toast('❌ ' + (err.message || '标记支付失败'))
+    } finally { setUpdating(null) }
+  }
+
+  const confirmVerify = async () => {
+    if (!verifyModalOrder) return
+    setUpdating(verifyModalOrder._id)
+    try {
+      const res = await adminAPI.verifyOrder(verifyModalOrder._id, verifyInput)
+      toast('✅ ' + res.message)
+      setVerifyModalOrder(null); setVerifyInput('')
+      await load(page)
+    } catch (err) {
+      toast('❌ ' + (err.message || '核销失败'))
+    } finally { setUpdating(null) }
+  }
+
+  const confirmAttribution = async () => {
+    if (!attrModalOrder) return
+    setUpdating(attrModalOrder._id)
+    try {
+      await adminAPI.setOrderAttribution(attrModalOrder._id, attrForm.referrerId || null, attrForm.fulfillerId || null)
+      toast('✅ 绩效归属已设置')
+      setAttrModalOrder(null)
+      await load(page)
+    } catch (err) {
+      toast('❌ ' + (err.message || '设置失败'))
     } finally { setUpdating(null) }
   }
 
@@ -109,6 +161,7 @@ export default function OrdersPage() {
                   <th>服务项目</th>
                   <th>金额</th>
                   <th>状态</th>
+                  <th>支付</th>
                   <th>备注</th>
                   <th>下单时间</th>
                   <th>操作</th>
@@ -138,12 +191,43 @@ export default function OrdersPage() {
                       </td>
                       <td style={{ color: 'var(--primary)', fontWeight: 700 }}>¥{o.servicePrice}</td>
                       <td><span className={`badge ${sm.badge}`}>{sm.label}</span></td>
+                      <td>
+                        <span className={`badge ${(PAY_STATUS_META[o.paymentStatus] || PAY_STATUS_META.unpaid).badge}`}>
+                          {(PAY_STATUS_META[o.paymentStatus] || PAY_STATUS_META.unpaid).label}
+                        </span>
+                        {o.paymentStatus === 'paid' && (
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                            {PAYMENT_METHOD_LABELS[o.paymentMethod] || o.paymentMethod}
+                            {!o.verifiedAt && o.verifyCode && <div>核销码：{o.verifyCode}</div>}
+                            {o.verifiedAt && <div style={{ color: 'var(--primary)' }}>已核销</div>}
+                          </div>
+                        )}
+                      </td>
                       <td style={{ color: 'var(--text-secondary)', fontSize: 12, maxWidth: 160 }}>
                         {o.note ? <span title={o.note}>{o.note.slice(0, 30)}{o.note.length > 30 ? '...' : ''}</span> : '--'}
                       </td>
                       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fmtTime(o.createdAt)}</td>
                       <td>
                         <div className="status-actions">
+                          {o.paymentStatus === 'unpaid' && (
+                            <button className="btn btn-sm status-btn" style={{ borderColor: '#10B981', color: '#10B981', background: '#10B98112' }}
+                              disabled={updating === o._id} onClick={() => { setPayModalOrder(o); setPayMethod('wechat') }}>
+                              标记已支付
+                            </button>
+                          )}
+                          {!o.verifiedAt && (
+                            <button className="btn btn-sm status-btn" style={{ borderColor: '#8B5CF6', color: '#8B5CF6', background: '#8B5CF612' }}
+                              disabled={updating === o._id}
+                              onClick={() => { setAttrModalOrder(o); setAttrForm({ referrerId: o.referrerId?._id || o.referrerId || '', fulfillerId: o.fulfillerId?._id || o.fulfillerId || '' }) }}>
+                              绩效归属
+                            </button>
+                          )}
+                          {o.paymentStatus === 'paid' && !o.verifiedAt && (
+                            <button className="btn btn-sm status-btn" style={{ borderColor: '#3B82F6', color: '#3B82F6', background: '#3B82F612' }}
+                              disabled={updating === o._id} onClick={() => { setVerifyModalOrder(o); setVerifyInput('') }}>
+                              核销
+                            </button>
+                          )}
                           {nextActions.map(s => (
                             <button
                               key={s}
@@ -162,7 +246,7 @@ export default function OrdersPage() {
                   )
                 })}
                 {orders.length === 0 && (
-                  <tr><td colSpan={7}>
+                  <tr><td colSpan={8}>
                     <div className="empty-state">
                       <div className="empty-state-icon">📋</div>
                       <div className="empty-state-text">暂无{statusFilter ? STATUS_META[statusFilter]?.label : ''}订单</div>
@@ -189,6 +273,103 @@ export default function OrdersPage() {
           </div>
         )}
       </div>
+
+      {payModalOrder && (
+        <div className="modal-overlay" onClick={() => setPayModalOrder(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">标记已支付</h3>
+              <button className="modal-close" onClick={() => setPayModalOrder(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                {payModalOrder.serviceName} · ¥{payModalOrder.servicePrice}
+              </div>
+              <div className="form-group">
+                <label className="form-label">支付方式</label>
+                <select className="form-input" value={payMethod} onChange={e => setPayMethod(e.target.value)}>
+                  {Object.entries(PAYMENT_METHOD_LABELS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+                </select>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                暂未接入真实支付网关，此操作为人工确认已收到款项，确认后将生成核销码
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setPayModalOrder(null)}>取消</button>
+              <button className="btn btn-primary" onClick={confirmPay} disabled={updating === payModalOrder._id}>
+                {updating === payModalOrder._id ? '处理中...' : '确认已支付'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {attrModalOrder && (
+        <div className="modal-overlay" onClick={() => setAttrModalOrder(null)}>
+          <div className="modal" style={{ maxWidth: 460 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">设置绩效归属</h3>
+              <button className="modal-close" onClick={() => setAttrModalOrder(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                {attrModalOrder.serviceName}
+              </div>
+              <div className="form-group">
+                <label className="form-label">转介绍人（引流下单的人）</label>
+                <select className="form-input" value={attrForm.referrerId} onChange={e => setAttrForm(f => ({ ...f, referrerId: e.target.value }))}>
+                  <option value="">无</option>
+                  {staffOptions.map(s => <option key={s._id} value={s._id}>{s.name}（{s.role}）</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">服务人（实际提供服务的医护）</label>
+                <select className="form-input" value={attrForm.fulfillerId} onChange={e => setAttrForm(f => ({ ...f, fulfillerId: e.target.value }))}>
+                  <option value="">无</option>
+                  {staffOptions.map(s => <option key={s._id} value={s._id}>{s.name}（{s.role}）</option>)}
+                </select>
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                核销后系统会按该产品/服务预设的绩效规则，自动为归属人生成待结算佣金
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setAttrModalOrder(null)}>取消</button>
+              <button className="btn btn-primary" onClick={confirmAttribution} disabled={updating === attrModalOrder._id}>
+                {updating === attrModalOrder._id ? '保存中...' : '保存'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {verifyModalOrder && (
+        <div className="modal-overlay" onClick={() => setVerifyModalOrder(null)}>
+          <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">到店核销</h3>
+              <button className="modal-close" onClick={() => setVerifyModalOrder(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                {verifyModalOrder.serviceName} · 核销码：{verifyModalOrder.verifyCode}
+              </div>
+              <div className="form-group">
+                <label className="form-label">请输入客户出示的核销码</label>
+                <input className="form-input" value={verifyInput} onChange={e => setVerifyInput(e.target.value.toUpperCase())}
+                  placeholder="8位核销码" style={{ fontFamily: 'monospace', letterSpacing: 1 }} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setVerifyModalOrder(null)}>取消</button>
+              <button className="btn btn-primary" onClick={confirmVerify} disabled={updating === verifyModalOrder._id}>
+                {updating === verifyModalOrder._id ? '核销中...' : '确认核销'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   )
 }

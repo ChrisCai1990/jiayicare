@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 // 分佣记录
 const commissionSchema = new mongoose.Schema({
-  staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true }, // 推荐员工
+  staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true }, // 推荐员工（引流人或服务人，由 role 区分）
+  role:      { type: String, enum: ['referrer', 'fulfiller'], default: 'referrer' }, // referrer=转介绍人(引流) / fulfiller=服务人；一笔订单最多各生成一条，互不影响
   tenantId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键）
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  default: null },  // 购买客户
   orderId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },  // 关联订单

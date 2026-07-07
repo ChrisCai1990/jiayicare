@@ -17,6 +17,24 @@ const orderSchema = new mongoose.Schema({
   },
   scheduledAt: { type: Date },
   completedAt: { type: Date },
+
+  // ── 真实支付核算（本阶段先支持人工标记已支付，暂不接支付网关，见 backend/CLAUDE.md 待办）──
+  paymentMethod: { type: String, enum: ['wechat', 'alipay', 'onsite', 'healthFund', ''], default: '' }, // 微信/支付宝/到店/健康基金抵扣
+  paymentStatus: { type: String, enum: ['unpaid', 'paid', 'refunded'], default: 'unpaid' },
+  paidAmount:    { type: Number, default: 0 },   // 实付金额（区别于 servicePrice 标价）
+  transactionId: { type: String, default: '' },  // 支付流水号（人工标记时可留空，接入网关后由回调写入）
+  paidAt:        { type: Date, default: null },
+  paidBy:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 人工标记已支付的操作人（网关自动确认时为 null）
+
+  // ── 到店核销 ──
+  verifyCode:  { type: String, default: '' },   // 核销码（支付确认后生成，唯一）
+  verifiedAt:  { type: Date, default: null },
+  verifiedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 核销操作人
+
+  // ── 绩效归属（供佣金自动结算使用，谁引流/谁服务）──
+  referrerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 转介绍人（引流下单）
+  fulfillerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 服务人（实际提供服务）
+  commissionStatus: { type: String, enum: ['none', 'pending', 'settled'], default: 'none' }, // 绩效结算状态：无归属/待结算/已结算
 }, { timestamps: true });
 
 orderSchema.index({ user: 1, createdAt: -1 });

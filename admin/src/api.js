@@ -52,6 +52,9 @@ export const adminAPI = {
   createTask:       (id, data)           => req(`/patients/${id}/task`, { method: 'POST', body: JSON.stringify(data) }),
   orders:           (params = {})        => req('/orders?' + new URLSearchParams(params).toString()),
   updateOrderStatus:(id, status)         => req(`/orders/${id}/status`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  payOrder:         (id, paymentMethod, paidAmount) => req(`/orders/${id}/pay`, { method: 'PATCH', body: JSON.stringify({ paymentMethod, paidAmount }) }),
+  verifyOrder:      (id, verifyCode)     => req(`/orders/${id}/verify`, { method: 'PATCH', body: JSON.stringify({ verifyCode }) }),
+  setOrderAttribution: (id, referrerId, fulfillerId) => req(`/orders/${id}/attribution`, { method: 'PATCH', body: JSON.stringify({ referrerId, fulfillerId }) }),
   messages:         (params = {})        => req('/messages?' + new URLSearchParams(params).toString()),
 
   // 服务商城管理
