@@ -325,11 +325,22 @@ router.patch('/orders/:id/verify', adminAuth, async (req, res) => {
   order.completedAt = new Date();
   await order.save();
 
-  // 核销后触发绩效自动结算
+  // 核销后触发绩效自动结算——若订单未设置转介绍人/服务人归属(referrerId/fulfillerId)，
+  // settleOrderCommission 会静默跳过不生成任何记录，容易让人以为"核销成功=绩效自动生成"，
+  // 2026-07-07 用户反馈需要提醒：核销时明确告知是否真的生成了绩效，避免遗漏归属导致漏发绩效却无人察觉
   const { settleOrderCommission } = require('../utils/commissionSettlement');
   const { created } = await settleOrderCommission(order);
+  const noAttribution = !order.referrerId && !order.fulfillerId;
 
-  res.json({ success: true, data: order, message: `核销成功${created.length ? `，已生成${created.length}条待结算绩效` : ''}` });
+  res.json({
+    success: true,
+    data: order,
+    message: created.length
+      ? `核销成功，已生成${created.length}条待结算绩效`
+      : noAttribution
+        ? '核销成功，但该订单未设置转介绍人/服务人归属，未生成任何绩效记录——如需生成绩效，请先设置归属后联系超管重新触发结算'
+        : '核销成功，但该订单归属人对应的绩效规则未配置或规则为"不分佣"，未生成绩效记录',
+  });
 });
 
 // ── PATCH /api/admin/orders/:id/attribution — 设置转介绍人/服务人归属（核销结算前需先设置，否则无归属不生成绩效）──
@@ -889,7 +900,15 @@ router.delete('/member-types/:id', adminAuth, async (req, res) => {
 // 返回相对路径而非绝对URL——历史遗留代码曾写死 http://121.40.156.39 绝对地址，导致在
 // https://jiaycare.com 页面里加载图片被浏览器 Mixed Content 策略拦截（HTTPS页面不允许加载HTTP资源），
 // 图片请求被静默阻止、控制台报错但界面上只是安静地不显示。改成相对路径由前端自行拼接当前协议+域名。
-router.post('/upload/image', adminAuth, upload.single('image'), (req, res) => {
+// 2026-07-07修复：multer的fileFilter拒绝非图片文件时用cb(new Error(...))报错，这个错误此前没被
+// 路由捕获，一路冒泡到全局错误处理器变成500"服务器内部错误"，用户完全看不出是文件格式问题。
+// 现在用中间件包一层，把multer相关错误转成400+清晰提示（如iPhone拍照HEIC格式、非常规MIME类型等场景）。
+router.post('/upload/image', adminAuth, (req, res, next) => {
+  upload.single('image')(req, res, (err) => {
+    if (err) return res.status(400).json({ success: false, message: err.message || '文件上传失败，请检查文件格式是否为常见图片格式（jpg/png/webp等）' });
+    next();
+  });
+}, (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
   const url = `/api/uploads/${req.file.filename}`;
   res.json({ success: true, data: { url } });

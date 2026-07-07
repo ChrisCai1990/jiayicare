@@ -331,7 +331,8 @@ export default function OrdersPage() {
                 </select>
               </div>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                核销后系统会按该产品/服务预设的绩效规则，自动为归属人生成待结算佣金
+                核销后系统会按该产品/服务预设的绩效规则，自动为归属人生成待结算佣金；
+                <span style={{ color: '#D97706', fontWeight: 600 }}>转介绍人/服务人都不填则不会生成任何绩效记录</span>
               </div>
             </div>
             <div className="modal-footer">
