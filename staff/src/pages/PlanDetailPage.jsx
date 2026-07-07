@@ -71,6 +71,8 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
 
   const handleAdd = async () => {
     if (!form.name) { toast('项目名称不能为空'); return }
+    const dup = (plan.items || []).some(it => it.name.trim() === form.name.trim())
+    if (dup && !window.confirm(`「${form.name}」已在方案中，确认仍要重复添加？`)) return
     setSaving(true)
     try {
       const newItem = {
@@ -208,6 +210,16 @@ export default function PlanDetailPage() {
   const handleItemStatus = async (itemId, status) => {
     try { await staffAPI.updatePlanItem(id, itemId, { status }); load() }
     catch (err) { toast(err.message) }
+  }
+
+  const handleDeleteItem = async (itemId, name) => {
+    if (!window.confirm(`确认删除方案项目「${name}」？`)) return
+    try {
+      const items = (plan.items || []).filter(it => it._id !== itemId)
+      await staffAPI.updatePlan(id, { items })
+      toast('已删除')
+      load()
+    } catch (err) { toast(err.message) }
   }
 
   const handleDelete = async () => {
@@ -416,13 +428,15 @@ export default function PlanDetailPage() {
                           </span>
                           {item.completedAt && <div style={{ fontSize: 11, color: '#aaa' }}>{new Date(item.completedAt).toLocaleDateString('zh-CN')}</div>}
                         </td>
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           {item.status === 'pending' && (
-                            <button className="btn btn-secondary btn-sm" onClick={() => handleItemStatus(item._id, 'completed')}>✓ 完成</button>
+                            <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'completed')}>✓ 完成</button>
                           )}
                           {item.status === 'completed' && (
-                            <button className="btn btn-secondary btn-sm" onClick={() => handleItemStatus(item._id, 'pending')}>撤销</button>
+                            <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'pending')}>撤销</button>
                           )}
+                          <button className="btn btn-sm" style={{ color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer' }}
+                            onClick={() => handleDeleteItem(item._id, item.name)}>删除</button>
                         </td>
                       </tr>
                     ))}

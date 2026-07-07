@@ -700,8 +700,17 @@ router.get('/followups', staffAuth, async (req, res) => {
     patientFilter = { patientId: { $in: matchedUsers.map(u => u._id) } };
   }
 
-  // 数据权限：当前医护创建的 OR 分配给当前医护的
-  const ownerFilter = { $or: [{ staffId: req.staff._id }, { assignedTo: req.staff._id }] };
+  // 数据权限：随访任务归属实际执行人（assignedTo）；未指定执行人时退回创建人自己。
+  // 例外：家庭医生作为患者的第一责任人，需要看到名下患者的全部随访（含健管专员等他人执行的），
+  // 用于把控质量，但不代表随访归属改到家庭医生名下——执行人仍是 assignedTo 那个人。
+  let ownerFilter;
+  if (req.staff.role === 'familyDoctor') {
+    const myPatients = await User.find({ assignedFamilyDoctor: req.staff._id }).select('_id');
+    const myPatientIds = myPatients.map(p => p._id);
+    ownerFilter = { $or: [{ assignedTo: req.staff._id }, { assignedTo: null, staffId: req.staff._id }, { patientId: { $in: myPatientIds } }] };
+  } else {
+    ownerFilter = { $or: [{ assignedTo: req.staff._id }, { assignedTo: null, staffId: req.staff._id }] };
+  }
 
   const filter = { ...ownerFilter, ...patientFilter };
   if (status) {
@@ -4439,6 +4448,9 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       ? Object.keys(TODO_REVIEW_ROLE)
       : Object.keys(TODO_REVIEW_ROLE).filter(t => TODO_REVIEW_ROLE[t] === role);
     const can = (type) => allowedTypes.includes(type);
+    // followup_review 例外：随访待审核按来源方案类型分流给不同角色（年度管理方案/体检方案→家庭医生，营养方案→营养师），
+    // 不是固定单一角色，TODO_REVIEW_ROLE 的单值映射覆盖不了，这里放宽通过条件，具体过滤见下方按 reviewRole 分流
+    const canFollowupReview = isSuper || role === 'familyDoctor' || role === 'nutritionist';
 
     const now = new Date();
     const DAY = 24 * 60 * 60 * 1000;
@@ -4585,16 +4597,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 家庭医师：方案确认后自动生成的随访计划待审核 ──
-    if (can('followup_review')) {
+    // ── 方案确认后自动生成的随访计划待审核：按 reviewRole 分流（未设置的旧数据默认归家庭医生）──
+    if (canFollowupReview) {
       const pendingFollowUps = await FollowUp.find({ aiStatus: 'pending' })
         .populate('patientId', 'name').sort({ date: 1 }).limit(50).lean();
       pendingFollowUps.forEach(f => {
+        const belongsToRole = f.reviewRole || 'familyDoctor';
+        if (!isSuper && belongsToRole !== role) return;
         const createdAt = f.createdAt || new Date();
+        const sourceLabel = f.sourceType === 'ai_review' ? '（AI月度回顾）' : f.sourceType === 'health_plan' ? '（方案确认后生成）' : '（方案排期）';
         todos.push({
           id: 'followup_' + f._id, type: 'followup_review', label: '随访计划待审核', priority: 3,
           patientName: f.patientId?.name || '未知', patientId: String(f.patientId?._id || ''),
-          summary: `${f.theme || '随访'} · ${String(f.date).slice(0, 10)}${f.sourceType === 'ai_review' ? '（AI月度回顾）' : '（方案排期）'}`,
+          summary: `${f.theme || '随访'} · ${String(f.date).slice(0, 10)}${sourceLabel}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${f.patientId?._id}?tab=followups`,
         });

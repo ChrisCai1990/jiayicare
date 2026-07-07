@@ -615,12 +615,36 @@ async function generateScheduledFollowUps(plan) {
         sourceAnnualPlanId: plan._id,
         sourceType: 'scheduled',
         aiStatus: 'pending',
+        reviewRole: 'familyDoctor',
       });
       cursor = new Date(cursor.getTime() + days * 86400000);
     }
   }
   if (created.length) await FollowUp.insertMany(created);
   return created.length;
+}
+
+// 方案类型 → 随访待审核归属角色（体检方案由家庭医生把关，营养方案由营养师把关）
+const HEALTH_PLAN_REVIEW_ROLE = { annual_checkup: 'familyDoctor', checkup: 'familyDoctor', nutrition: 'nutritionist' };
+
+// AI体检/营养方案确认后，生成一条初始随访占位提醒对应角色跟进（不同于年度管理方案的周期性批量排期，
+// 这类方案没有频率配置，只需在确认时提醒一次即可）
+async function generateHealthPlanFollowUp(plan) {
+  const reviewRole = HEALTH_PLAN_REVIEW_ROLE[plan.type];
+  if (!reviewRole) return 0;
+  const typeLabel = plan.type === 'nutrition' ? 'AI营养方案' : 'AI体检方案';
+  await FollowUp.create({
+    patientId: plan.patientId,
+    staffId: plan.staffId,
+    date: new Date(Date.now() + 7 * 86400000),
+    theme: `${typeLabel}确认后随访 · ${plan.title || ''}`,
+    status: 'planned',
+    sourceHealthPlanId: plan._id,
+    sourceType: 'health_plan',
+    aiStatus: 'pending',
+    reviewRole,
+  });
+  return 1;
 }
 
 // PATCH /api/user/annual-mgmt-plans/:id/confirm — 用户确认年度管理方案
@@ -682,6 +706,8 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
     if (plan.status === 'draft') plan.status = 'active';
     plan.confirmedAt = new Date();
     await plan.save();
+    // 首次确认时，AI体检/营养方案自动生成一条待审核随访占位（体检→家庭医生审核，营养→营养师审核）
+    await generateHealthPlanFollowUp(plan).catch(() => {});
     res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });

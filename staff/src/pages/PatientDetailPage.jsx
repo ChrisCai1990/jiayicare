@@ -1489,6 +1489,13 @@ export default function PatientDetailPage() {
 
   const handleOpenOCRReview = (r) => {
     setOcrReviewReport(r)
+    // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
+    // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
+    if (!r.content && !r.fileUrl && !(r.fileUrls && r.fileUrls.length)) {
+      staffAPI.getReport(r._id).then(res => {
+        if (res.data) setOcrReviewReport(prev => (prev && prev._id === r._id) ? { ...prev, content: res.data.content } : prev)
+      }).catch(() => {})
+    }
     // 每次打开审核弹窗都重新拉取归类目录，确保管理后端新增/修改的分类实时生效
     staffAPI.getScreeningCatalog().then(res => setScreeningCatalog(res.data || [])).catch(() => {})
     // 旧数据迁移：影像/检查类若把所见写在 value 里且 findings 为空，迁移到 findings
