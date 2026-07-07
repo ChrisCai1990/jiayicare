@@ -143,7 +143,16 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
     })
     .filter(Boolean).join('\n') || '暂无心理健康量表评估记录';
 
-  const prompt = `你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。
+  const wantDoctor = scope === 'all' || scope === 'doctor';
+  const wantLifestyle = scope === 'all' || scope === 'nutrition';
+
+  const roleIntro = scope === 'nutrition'
+    ? '你是一位经验丰富的营养师，请根据以下患者完整健康档案，仅针对「生活方式评估」维度生成结构化分析。'
+    : scope === 'doctor'
+      ? '你是一位经验丰富的家庭医师，请根据以下患者完整健康档案，仅针对医疗5个维度（优先医疗问题/肿瘤风险/心脑血管风险/慢病管理/体检完整性）生成结构化分析。'
+      : '你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。';
+
+  const prompt = `${roleIntro}问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。
 
 分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。
 
@@ -182,9 +191,9 @@ ${labTrendLines}
 ${reportSummary}
 
 ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessment ? `\n【营养师已评估的生活方式内容（供参考，本次不需要重新生成这部分，仅作为你判断5维度分析时的背景信息）】\n${JSON.stringify(existingSections.lifestyle_assessment)}\n` : ''}${existingSections && scope === 'nutrition' && DOCTOR_KEYS.some(k => existingSections[k]) ? `\n【家庭医师已生成的5维度分析（供参考，本次请结合这些医疗判断来评估生活方式，本次不需要重新生成这部分）】\n${JSON.stringify(Object.fromEntries(DOCTOR_KEYS.map(k => [k, existingSections[k]]).filter(([, v]) => v)))}\n` : ''}
-请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容：
+请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容${!wantDoctor || !wantLifestyle ? '（本次只需输出下方列出的板块，不要输出其他板块）' : ''}：
 {
-  "sections": {
+  "sections": {${wantLifestyle ? `
     "lifestyle_assessment": {
       "items": [
         {
@@ -219,7 +228,7 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
         }
       ],
       "summary": "生活方式综合评估（50-100字，需结合最近一次体检结果，必须覆盖饮食/运动/睡眠/烟酒/情绪5个维度）"
-    },
+    }${wantDoctor ? ',' : ''}` : ''}${wantDoctor ? `
     "medical_priority": {
       "items": [
         {
@@ -257,14 +266,16 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
       "covered": ["已覆盖的主要筛查项目"],
       "missing": ["缺失的重要筛查项目"],
       "suggestion": "下年度体检补项建议（50字内）"
-    }
+    }` : ''}
   }
 }`;
 
   // maxTokens从2500提到4000：患者报告历年记录多时(如一次性上传数十份单次检验单)，
   // reportSummary本身prompt就很长，AI要输出6大板块完整JSON，2500token容易在输出中途被截断
   // 导致JSON不完整解析失败、静默降级成全空结构——2026-07-03 潘孝银"已生成但内容全空"即此原因。
-  const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 4000 });
+  // 按 scope 拆分后单独生成的板块更少，maxTokens 相应调小，省token又减少截断概率
+  const maxTokens = scope === 'all' ? 4000 : (scope === 'doctor' ? 3200 : 1200);
+  const text = await chat([{ role: 'user', content: prompt }], { maxTokens });
 
   let sections = null;
   try {
