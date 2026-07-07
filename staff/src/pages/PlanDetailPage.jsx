@@ -179,6 +179,8 @@ export default function PlanDetailPage() {
   const [editForm, setEditForm] = useState({})
   const [saving, setSaving] = useState(false)
   const [planDrafting, setPlanDrafting] = useState(false)  // 场景七：AI润色方案描述
+  const [editingItemId, setEditingItemId] = useState(null)
+  const [editingItemForm, setEditingItemForm] = useState({})
 
   const load = async () => {
     try { const r = await staffAPI.getPlan(id); setPlan(r.data) }
@@ -218,6 +220,29 @@ export default function PlanDetailPage() {
       const items = (plan.items || []).filter(it => it._id !== itemId)
       await staffAPI.updatePlan(id, { items })
       toast('已删除')
+      load()
+    } catch (err) { toast(err.message) }
+  }
+
+  const startEditItem = (item) => {
+    setEditingItemId(item._id)
+    setEditingItemForm({
+      name: item.name || '',
+      category: item.category || '',
+      scheduledDate: item.scheduledDate ? new Date(item.scheduledDate).toISOString().slice(0, 10) : '',
+      notes: item.notes || '',
+    })
+  }
+
+  const saveEditItem = async () => {
+    if (!editingItemForm.name) { toast('项目名称不能为空'); return }
+    try {
+      const items = (plan.items || []).map(it => it._id === editingItemId
+        ? { ...it, ...editingItemForm, scheduledDate: editingItemForm.scheduledDate || null }
+        : it)
+      await staffAPI.updatePlan(id, { items })
+      toast('已保存')
+      setEditingItemId(null)
       load()
     } catch (err) { toast(err.message) }
   }
@@ -414,6 +439,32 @@ export default function PlanDetailPage() {
                   </tr></thead>
                   <tbody>
                     {items.map((item, idx) => (
+                      editingItemId === item._id ? (
+                        <tr key={item._id} style={{ background: '#FAFAF8' }}>
+                          <td style={{ color: '#aaa' }}>{item._idx + 1}</td>
+                          <td>
+                            <input className="form-input" style={{ fontSize: 12, padding: '3px 6px' }} value={editingItemForm.name}
+                              onChange={e => setEditingItemForm(f => ({ ...f, name: e.target.value }))} />
+                          </td>
+                          <td>
+                            <input className="form-input" type="date" style={{ fontSize: 12, padding: '3px 6px' }} value={editingItemForm.scheduledDate}
+                              onChange={e => setEditingItemForm(f => ({ ...f, scheduledDate: e.target.value }))} />
+                          </td>
+                          <td>
+                            <input className="form-input" style={{ fontSize: 12, padding: '3px 6px' }} value={editingItemForm.notes}
+                              onChange={e => setEditingItemForm(f => ({ ...f, notes: e.target.value }))} />
+                          </td>
+                          <td>
+                            <span style={{ color: ITEM_STATUS_COLOR[item.status], fontWeight: 500, fontSize: 13 }}>
+                              {ITEM_STATUS[item.status]}
+                            </span>
+                          </td>
+                          <td style={{ whiteSpace: 'nowrap' }}>
+                            <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }} onClick={saveEditItem}>保存</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setEditingItemId(null)}>取消</button>
+                          </td>
+                        </tr>
+                      ) : (
                       <tr key={item._id}>
                         <td style={{ color: '#aaa' }}>{item._idx + 1}</td>
                         <td>
@@ -435,10 +486,12 @@ export default function PlanDetailPage() {
                           {item.status === 'completed' && (
                             <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'pending')}>撤销</button>
                           )}
+                          <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => startEditItem(item)}>编辑</button>
                           <button className="btn btn-sm" style={{ color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer' }}
                             onClick={() => handleDeleteItem(item._id, item.name)}>删除</button>
                         </td>
                       </tr>
+                      )
                     ))}
                   </tbody>
                 </table>
