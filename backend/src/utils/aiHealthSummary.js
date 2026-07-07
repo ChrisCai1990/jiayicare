@@ -278,35 +278,49 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
   const text = await chat([{ role: 'user', content: prompt }], { maxTokens });
 
   let sections = null;
+  let parseFailed = false;
   try {
     const jsonMatch = text.trim().match(/\{[\s\S]*\}/);
     if (jsonMatch) {
       const parsed = JSON.parse(jsonMatch[0]);
       sections = parsed.sections || parsed;
+    } else {
+      parseFailed = true;
     }
   } catch (parseErr) {
+    parseFailed = true;
     console.error(`[ai-health-summary] JSON解析失败，userId=${user._id}，错误：${parseErr.message}，AI原始返回（前2000字）：`, text.slice(0, 2000));
   }
 
-  if (!sections) sections = {
-    lifestyle_assessment: { items: [], summary: '' },
-    medical_priority: { items: [] },
-    tumor_risk: { completed: [], abnormal: [], missing: [], summary: '' },
-    cardiovascular_risk: { high: [], medium: [], summary: '' },
-    chronic_disease: { items: [] },
-    checkup_completeness: { covered: [], missing: [], suggestion: '' },
-  };
+  if (!sections) {
+    parseFailed = true;
+    sections = {
+      lifestyle_assessment: { items: [], summary: '' },
+      medical_priority: { items: [] },
+      tumor_risk: { completed: [], abnormal: [], missing: [], summary: '' },
+      cardiovascular_risk: { high: [], medium: [], summary: '' },
+      chronic_disease: { items: [] },
+      checkup_completeness: { covered: [], missing: [], suggestion: '' },
+    };
+  }
+
+  // 生活方式评估解析出的是空壳（items为空且summary为空）也视为失败，不能悄悄写入数据库
+  // 让上层显示"已生成"却实际没内容——2026-07-07 赵菲盈反馈的"提示已生成但看不到"即此场景
+  if (wantLifestyle) {
+    const la = sections[LIFESTYLE_KEY];
+    if (!la || ((la.items || []).length === 0 && !la.summary)) parseFailed = true;
+  }
 
   // 按 scope 只保留本次需要重新生成的板块，另一方板块交给上层用旧值合并，避免互相覆盖
   if (scope === 'doctor') {
     const doctorOnly = {};
     DOCTOR_KEYS.forEach(k => { doctorOnly[k] = sections[k]; });
-    return doctorOnly;
+    return { sections: doctorOnly, failed: parseFailed };
   }
   if (scope === 'nutrition') {
-    return { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] };
+    return { sections: { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] }, failed: parseFailed };
   }
-  return sections;
+  return { sections, failed: parseFailed };
 }
 
 module.exports = { generateHealthSummarySections, DOCTOR_KEYS, LIFESTYLE_KEY };

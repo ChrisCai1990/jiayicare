@@ -1133,7 +1133,8 @@ router.post('/ai-health-summary', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
 
-    const sections = await generateHealthSummarySections(user);
+    const { sections, failed } = await generateHealthSummarySections(user);
+    if (failed) return res.status(500).json({ success: false, message: 'AI生成失败，请重试' });
     const year = String(new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
     const byYear = { ...(existing.byYear || {}) };

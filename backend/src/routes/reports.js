@@ -488,11 +488,13 @@ router.post('/', auth, async (req, res) => {
     // 有 base64 内容且 OSS 已配置 → 上传到 OSS，不存 MongoDB
     let ossKey = '';
     let storedContent = '';
+    let effectiveMimeType = mimeType || '';
     if (content && process.env.OSS_ACCESS_KEY_ID) {
       try {
         const result = await uploadBase64(content, mimeType || 'image/jpeg');
         fileUrl = result.url;
         ossKey = result.key;
+        effectiveMimeType = result.mimeType || effectiveMimeType; // HEIC等会被转成JPEG，字段需跟实际文件保持一致
       } catch (ossErr) {
         // OSS 上传失败降级：存 base64（限10MB）
         storedContent = content.length < 10 * 1024 * 1024 ? content : '';
@@ -516,7 +518,7 @@ router.post('/', auth, async (req, res) => {
       keyFindings:        keyFindings        || [],
       note:               note               || '',
       content:            storedContent,
-      mimeType:           mimeType           || '',
+      mimeType:           effectiveMimeType,
       screeningCategory:  screeningCategory  || '',
       reportYear:         year,
       checkDate:          checkDate          || date || '',

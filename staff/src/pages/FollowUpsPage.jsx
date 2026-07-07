@@ -112,6 +112,7 @@ export default function FollowUpsPage() {
   const todayStr = new Date().toISOString().slice(0, 10)
   const [statusTab,    setStatusTab]    = useState('planned')
   const [patientName,  setPatientName]  = useState('')
+  const [assignedTo,   setAssignedTo]   = useState('')
   const [dateFrom,     setDateFrom]     = useState(todayStr)
   const [dateTo,       setDateTo]       = useState('')
   const [loading,      setLoading]      = useState(true)
@@ -167,7 +168,7 @@ export default function FollowUpsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, dateFrom, dateTo })
+      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo })
       setFollowUps(res.data.followUps)
       setTotal(res.data.total)
     } catch (err) {
@@ -175,7 +176,7 @@ export default function FollowUpsPage() {
     } finally {
       setLoading(false)
     }
-  }, [page, statusTab, patientName, dateFrom, dateTo])
+  }, [page, statusTab, patientName, assignedTo, dateFrom, dateTo])
 
   useEffect(() => { load() }, [load])
 
@@ -275,6 +276,13 @@ export default function FollowUpsPage() {
                 onChange={e => setPatientName(e.target.value)} style={{ width: 160 }} />
             </div>
             <div>
+              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访人员</label>
+              <select className="form-control" value={assignedTo} onChange={e => setAssignedTo(e.target.value)} style={{ width: 160 }}>
+                <option value="">全部</option>
+                {staffList.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+              </select>
+            </div>
+            <div>
               <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>开始日期</label>
               <input className="form-control" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
             </div>
@@ -284,7 +292,7 @@ export default function FollowUpsPage() {
             </div>
             <button className="btn btn-primary btn-sm" type="submit">搜索</button>
             <button className="btn btn-secondary btn-sm" type="button" onClick={() => {
-              setPatientName(''); setDateFrom(todayStr); setDateTo(''); setPage(1)
+              setPatientName(''); setAssignedTo(''); setDateFrom(todayStr); setDateTo(''); setPage(1)
             }}>重置</button>
           </form>
         </div>

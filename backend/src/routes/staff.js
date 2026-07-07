@@ -691,7 +691,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, async (req, res) => {
-  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '' } = req.query;
+  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '' } = req.query;
 
   // 如果按患者姓名搜索，先查出匹配的用户ID
   let patientFilter = {};
@@ -712,7 +712,7 @@ router.get('/followups', staffAuth, async (req, res) => {
     ownerFilter = { $or: [{ assignedTo: req.staff._id }, { assignedTo: null, staffId: req.staff._id }] };
   }
 
-  const filter = { ...ownerFilter, ...patientFilter };
+  const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}] };
   if (status) {
     // in_progress 同时包含旧的 missed 状态
     if (status === 'in_progress') filter.status = { $in: ['in_progress', 'missed'] };
@@ -792,7 +792,7 @@ router.post('/followups', staffAuth, async (req, res) => {
 
 // ── PUT /api/staff/followups/:id ──────────────────────────────────
 router.put('/followups/:id', staffAuth, async (req, res) => {
-  // 允许创建人或被分配人更新
+  // 允许创建人或被分配人更新（各自能改的字段范围不同，见下）
   const followUp = await FollowUp.findOne({
     _id: req.params.id,
     $or: [{ staffId: req.staff._id }, { assignedTo: req.staff._id }],
@@ -803,7 +803,14 @@ router.put('/followups/:id', staffAuth, async (req, res) => {
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
   }
 
-  const allowed = ['date', 'type', 'status', 'content', 'theme', 'cancelReason', 'assignedTo', 'nextFollowUpDate', 'tags', 'vitals', 'checkInItems', 'participants', 'interviewMinutes'];
+  const isSuper = req.staff.role === 'superadmin';
+  const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
+  // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，
+  // 不能擅自改动创建人定下的随访安排——避免执行人绕过创建人调整计划本身
+  const OWNER_ONLY = ['date', 'theme', 'type', 'assignedTo', 'nextFollowUpDate', 'tags'];
+  // 执行层字段：谁去做都能填，被指派人是实际执行随访的人
+  const EXEC_FIELDS = ['status', 'content', 'cancelReason', 'vitals', 'checkInItems', 'participants', 'interviewMinutes'];
+  const allowed = isOwner ? [...OWNER_ONLY, ...EXEC_FIELDS] : EXEC_FIELDS;
   const OBJECTID_FIELDS = ['assignedTo'];
   allowed.forEach(k => {
     if (req.body[k] !== undefined) {
@@ -858,7 +865,8 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
 // ── DELETE /api/staff/followups/:id ──────────────────────────────
 // 软删除：状态改为 cancelled，不物理删除
 router.delete('/followups/:id', staffAuth, async (req, res) => {
-  const followUp = await FollowUp.findOne({ _id: req.params.id, staffId: req.staff._id });
+  const query = req.staff.role === 'superadmin' ? { _id: req.params.id } : { _id: req.params.id, staffId: req.staff._id };
+  const followUp = await FollowUp.findOne(query);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
   followUp.status = 'cancelled';
   if (!followUp.cancelReason) followUp.cancelReason = '手动删除';
@@ -983,10 +991,13 @@ router.post('/plans', staffAuth, async (req, res) => {
   res.json({ success: true, data: plan });
 });
 
-// PUT /api/staff/plans/:id
+// PUT /api/staff/plans/:id — 只有制定人（staffId）或超管可修改，避免他人越权改动方案内容
 router.put('/plans/:id', staffAuth, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
+    return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
+  }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
   plan.markModified('content');
@@ -1025,7 +1036,13 @@ router.patch('/plans/:id/items/:itemId', staffAuth, async (req, res) => {
 });
 
 // DELETE /api/staff/plans/:id
+// DELETE /api/staff/plans/:id — 只有制定人（staffId）或超管可删除
 router.delete('/plans/:id', staffAuth, async (req, res) => {
+  const plan = await HealthPlan.findById(req.params.id);
+  if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
+    return res.status(403).json({ success: false, message: '仅方案制定人可删除' });
+  }
   await HealthPlan.findByIdAndDelete(req.params.id);
   res.json({ success: true, message: '已删除' });
 });
@@ -1075,6 +1092,16 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: `不支持的文件格式（${mimeType}）` });
     }
 
+    // HEIC/HEIF（苹果设备拍照默认格式）转JPEG存储，否则审核弹窗在非Safari设备上看不到原图
+    let effectiveContent = content || '';
+    let effectiveMimeType = mimeType || '';
+    if (content && (mimeType === 'image/heic' || mimeType === 'image/heif')) {
+      const { convertHeicBase64IfNeeded } = require('../utils/oss');
+      const converted = await convertHeicBase64IfNeeded(content, mimeType);
+      effectiveContent = converted.content;
+      effectiveMimeType = converted.mimeType;
+    }
+
     const checkDate = date || '';
     const reportYear = checkDate ? new Date(checkDate).getFullYear() : new Date().getFullYear();
 
@@ -1096,8 +1123,8 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
         if (resolvedFileUrl) {
           existing.fileUrl = resolvedFileUrl;
           existing.fileUrls = resolvedFileUrls;
-          existing.content = content || '';
-          existing.mimeType = mimeType || '';
+          existing.content = effectiveContent;
+          existing.mimeType = effectiveMimeType;
           existing.fileSize = fileSize || '';
         }
         report = await existing.save();
@@ -1115,8 +1142,8 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     report = await MedicalReport.create({
       user: patientId, title, type: type || 'other', hospital: hospital || '',
       date: checkDate, checkDate, reportYear,
-      fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, content: content || '',
-      mimeType: mimeType || '', fileSize: fileSize || '',
+      fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, content: effectiveContent,
+      mimeType: effectiveMimeType, fileSize: fileSize || '',
       uploadedBy: req.staff._id, audit_status: 'unaudited',
       planId: planId || null, planItemId: planItemId || null,
       screeningL1: screeningL1 || '', screeningL2: screeningL2 || '',
@@ -2656,20 +2683,29 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的用药记录
 router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
   try {
-    const med = await Medication.findOneAndUpdate(
-      { _id: req.params.medId, user: req.params.id },
-      { $set: req.body }, { new: true }
-    );
+    const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
     if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (req.staff.role !== 'superadmin' && String(med.staffId) !== String(req.staff._id)) {
+      return res.status(403).json({ success: false, message: '仅记录创建人可修改' });
+    }
+    Object.assign(med, req.body);
+    await med.save();
     res.json({ success: true, data: med });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
   try {
-    await Medication.findOneAndUpdate({ _id: req.params.medId, user: req.params.id }, { active: false });
+    const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
+    if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (req.staff.role !== 'superadmin' && String(med.staffId) !== String(req.staff._id)) {
+      return res.status(403).json({ success: false, message: '仅记录创建人可停用' });
+    }
+    med.active = false;
+    await med.save();
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -2695,20 +2731,29 @@ router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的营养素记录
 router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => {
   try {
-    const sup = await Supplement.findOneAndUpdate(
-      { _id: req.params.supId, user: req.params.id },
-      { $set: req.body }, { new: true }
-    );
+    const sup = await Supplement.findOne({ _id: req.params.supId, user: req.params.id });
     if (!sup) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
+      return res.status(403).json({ success: false, message: '仅记录创建人可修改' });
+    }
+    Object.assign(sup, req.body);
+    await sup.save();
     res.json({ success: true, data: sup });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 router.delete('/patients/:id/supplements/:supId', staffAuth, async (req, res) => {
   try {
-    await Supplement.findOneAndUpdate({ _id: req.params.supId, user: req.params.id }, { stopped: true });
+    const sup = await Supplement.findOne({ _id: req.params.supId, user: req.params.id });
+    if (!sup) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
+      return res.status(403).json({ success: false, message: '仅记录创建人可停用' });
+    }
+    sup.stopped = true;
+    await sup.save();
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -3208,7 +3253,12 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       }
     }
 
-    const genResult = await generateHealthSummarySections(user, { scope, existingSections: prevEntry.sections || null });
+    const { sections: genResult, failed } = await generateHealthSummarySections(user, { scope, existingSections: prevEntry.sections || null });
+    // AI返回解析失败或本该生成的板块是空壳内容：不写入数据库，直接报错，避免前端显示"已生成"却看不到内容
+    // （2026-07-07 赵菲盈反馈"生活方式评估提示已生成但实际没有"即此场景——此前空壳会被当成功写入）
+    if (failed) {
+      return res.status(500).json({ success: false, message: 'AI生成失败或返回内容为空，请重试' });
+    }
 
     // 合并：只替换本次 scope 涉及的板块，另一方板块沿用旧值，互不覆盖
     const mergedSections = { ...(prevEntry.sections || {}) };
@@ -6060,6 +6110,32 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
   }
 });
 
+// AI生成的体检方案项目名称是自由文本，容易跟admin后台"检验医嘱/检查医嘱/功能医学检测"库对不上、
+// 产生同义词不一致（如AI写"甲状腺抗体TPO"而库里叫别的名字），导致体检项目在系统里管理凌乱。
+// 生成后按名称匹配医嘱库，命中的关联itemId/itemType（与手动添加AddItemPanel走同一套关联字段），
+// 未命中的保留纯文本但不关联，医护专员审核时能一眼看出哪些需要人工核对。
+async function matchCheckupItemsToRequisitionLibrary(items) {
+  const [labOrders, specialExams, functionalTests] = await Promise.all([
+    LabTestOrder.find({ status: 'active' }).select('name mnemonic').lean(),
+    SpecialExam.find({ status: 'active', deleted: { $ne: true } }).select('name mnemonic').lean(),
+    FunctionalMedicineTest.find({ status: 'active', deleted: { $ne: true } }).select('name').lean(),
+  ]);
+  const library = [
+    ...labOrders.map(o => ({ _id: o._id, name: o.name, itemType: 'labTest' })),
+    ...specialExams.map(e => ({ _id: e._id, name: e.name, itemType: 'specialExam' })),
+    ...functionalTests.map(f => ({ _id: f._id, name: f.name, itemType: 'functionalTest' })),
+  ];
+  return items.map(item => {
+    const name = (item.name || '').trim();
+    if (!name) return item;
+    // 精确匹配优先；退而求其次做双向包含匹配（如AI写"甲状腺功能"能匹配库里"甲状腺功能五项"）
+    const exact = library.find(l => l.name === name);
+    const partial = exact || library.find(l => l.name.includes(name) || name.includes(l.name));
+    if (partial) return { ...item, itemId: partial._id, itemType: partial.itemType };
+    return item;
+  });
+}
+
 // ── 场景6：AI年度体检方案（健管专员审核） ──────────────────────────────────────
 // POST /api/staff/patients/:id/ai-annual-checkup-plan
 // 创建 HealthPlan type='annual_checkup' status='draft' content.aiStatus='pending'
@@ -6110,6 +6186,15 @@ AI风险摘要：${riskSummary}
       if (m) raw = JSON.parse(m[0]);
     } catch {}
 
+    const rawItems = (raw.items || []).map(i => ({
+      name: i.name || '',
+      category: i.category || '检验检查',
+      scheduledDate: i.scheduledDate ? new Date(i.scheduledDate) : null,
+      notes: i.notes || '',
+      status: 'pending',
+    }));
+    const matchedItems = await matchCheckupItemsToRequisitionLibrary(rawItems);
+
     const plan = await HealthPlan.create({
       patientId: user._id,
       staffId: req.staff._id,
@@ -6117,13 +6202,7 @@ AI风险摘要：${riskSummary}
       title: raw.title || `${year}年${user.name}年度体检方案`,
       description: raw.description || '',
       year,
-      items: (raw.items || []).map(i => ({
-        name: i.name || '',
-        category: i.category || '检验检查',
-        scheduledDate: i.scheduledDate ? new Date(i.scheduledDate) : null,
-        notes: i.notes || '',
-        status: 'pending',
-      })),
+      items: matchedItems,
       content: { aiStatus: 'pending', aiGeneratedBy: req.staff.name || '' },
       status: 'draft',
     });
