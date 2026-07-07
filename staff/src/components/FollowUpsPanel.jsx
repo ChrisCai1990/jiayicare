@@ -16,6 +16,7 @@ export default function FollowUpsPanel() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [page, setPage] = useState(0)
+  const [searchName, setSearchName] = useState('')
 
   useEffect(() => {
     staffAPI.getFollowUps({ status: 'planned', limit: 200 })
@@ -31,9 +32,13 @@ export default function FollowUpsPanel() {
 
   const now = new Date()
   const overdueCount = items.filter(f => new Date(f.date) < now).length
-  const pageCount = Math.max(1, Math.ceil(items.length / PAGE_SIZE))
+  // 按随访人员姓名本地筛选（家庭医生名下会看到多个执行人的随访，需要快速定位某人）
+  const filteredItems = searchName.trim()
+    ? items.filter(f => (f.assignedTo?.name || '').includes(searchName.trim()))
+    : items
+  const pageCount = Math.max(1, Math.ceil(filteredItems.length / PAGE_SIZE))
   const curPage = Math.min(page, pageCount - 1)
-  const pageItems = items.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
+  const pageItems = filteredItems.slice(curPage * PAGE_SIZE, curPage * PAGE_SIZE + PAGE_SIZE)
 
   return (
     <div className="card" style={{ marginBottom: 20, border: overdueCount > 0 ? '1.5px solid #DC354540' : undefined }}>
@@ -56,9 +61,22 @@ export default function FollowUpsPanel() {
         <button className="btn btn-secondary btn-sm" onClick={() => nav('/followups')}>查看全部</button>
       </div>
       <div className="card-body" style={{ padding: '4px 20px 12px' }}>
+        {items.length > 0 && (
+          <input
+            placeholder="搜索随访人员姓名"
+            value={searchName}
+            onChange={e => { setSearchName(e.target.value); setPage(0) }}
+            style={{ width: '100%', fontSize: 12, padding: '5px 8px', border: '1px solid #E0D9CE', borderRadius: 6, marginBottom: 8, boxSizing: 'border-box' }}
+          />
+        )}
         {items.length === 0 && (
           <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>
             暂无待随访任务
+          </div>
+        )}
+        {items.length > 0 && filteredItems.length === 0 && (
+          <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>
+            未找到该随访人员的任务
           </div>
         )}
         {pageItems.map((f, i) => {
@@ -98,6 +116,9 @@ export default function FollowUpsPanel() {
                     <span style={{ color: '#8AA89C', marginLeft: 8 }}>{f.patientId.phone}</span>
                   )}
                 </div>
+                {f.assignedTo?.name && (
+                  <div style={{ fontSize: 11, color: '#8AA89C' }}>负责人：{f.assignedTo.name}</div>
+                )}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: overdue ? '#DC3545' : '#8AA89C' }}>{formatDate(f.date)}</span>

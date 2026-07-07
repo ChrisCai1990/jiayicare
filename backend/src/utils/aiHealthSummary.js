@@ -273,8 +273,9 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
   // maxTokens从2500提到4000：患者报告历年记录多时(如一次性上传数十份单次检验单)，
   // reportSummary本身prompt就很长，AI要输出6大板块完整JSON，2500token容易在输出中途被截断
   // 导致JSON不完整解析失败、静默降级成全空结构——2026-07-03 潘孝银"已生成但内容全空"即此原因。
-  // 按 scope 拆分后单独生成的板块更少，maxTokens 相应调小，省token又减少截断概率
-  const maxTokens = scope === 'all' ? 4000 : (scope === 'doctor' ? 3200 : 1200);
+  // 2026-07-07：nutrition(生活方式评估)原定1200仍偏低——5个维度(饮食/运动/睡眠/烟酒/情绪)每个都要
+  // 输出finding+risk+suggestion三段文字，实测JSON在1700字符左右就被截断报错，1200token撑不住完整输出
+  const maxTokens = scope === 'all' ? 4000 : (scope === 'doctor' ? 3200 : 2000);
   const text = await chat([{ role: 'user', content: prompt }], { maxTokens });
 
   let sections = null;

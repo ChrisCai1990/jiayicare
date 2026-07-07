@@ -119,7 +119,7 @@ def run_deploy(backend_only=False, clean=False):
         need_app   = any(f.startswith('app/')   for f in changed_files)
         need_admin = any(f.startswith('admin/')  for f in changed_files)
         need_staff = any(f.startswith('staff/')  for f in changed_files)
-        need_pkg   = any(f in ('package.json', 'package-lock.json') for f in changed_files)
+        need_pkg   = any(f.endswith('package.json') or f.endswith('package-lock.json') for f in changed_files)
 
         # 如果检测不到（首次部署/强制），全量构建
         if not (need_app or need_admin or need_staff or need_pkg):
