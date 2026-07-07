@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
+const { tenantContext } = require('../utils/tenantScope');
 
 module.exports = async (req, res, next) => {
   try {
@@ -19,7 +20,7 @@ module.exports = async (req, res, next) => {
     }
 
     req.user = user;
-    next();
+    tenantContext(req, res, next);
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Token无效或已过期，请重新登录' });
   }

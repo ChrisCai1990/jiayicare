@@ -30,6 +30,7 @@ const reportItemSchema = new mongoose.Schema({
 
 const medicalReportSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  tenantId: { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键，创建时从 user.tenantId 冗余存一份，避免每次查询都要 populate）
   title: { type: String, required: true },
 
   // ── 年度/类目结构（需求23）───────────────────────────────────────
@@ -115,5 +116,7 @@ const medicalReportSchema = new mongoose.Schema({
   planId:           { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   screeningItemId:  { type: mongoose.Schema.Types.ObjectId, ref: 'UserScreeningItem', default: null },
 }, { timestamps: true });
+
+medicalReportSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
 module.exports = mongoose.model('MedicalReport', medicalReportSchema);

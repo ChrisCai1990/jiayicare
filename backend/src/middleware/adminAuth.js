@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
+const { tenantContext } = require('../utils/tenantScope');
 
 module.exports = async (req, res, next) => {
   const token = req.headers.authorization?.replace('Bearer ', '');
@@ -17,7 +18,7 @@ module.exports = async (req, res, next) => {
       return res.status(403).json({ success: false, message: '企业HR账号无权限访问该接口' });
     }
     req.admin = admin;
-    next();
+    tenantContext(req, res, next);
   } catch (err) {
     res.status(401).json({ success: false, message: 'Token 无效或已过期' });
   }

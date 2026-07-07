@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const Admin = require('../models/Admin');
+const { tenantContext } = require('../utils/tenantScope');
 
 // 医护端角色列表
 const STAFF_ROLES = [
@@ -24,7 +25,7 @@ module.exports = async (req, res, next) => {
       return res.status(403).json({ success: false, message: '无医护端权限' });
     }
     req.staff = admin;
-    next();
+    tenantContext(req, res, next);
   } catch (err) {
     res.status(401).json({ success: false, message: 'Token 无效或已过期' });
   }

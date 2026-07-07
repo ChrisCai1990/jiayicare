@@ -95,6 +95,7 @@ const userSchema = new mongoose.Schema({
   memberType:      { type: String, default: '' },   // 会员类型
   enterpriseId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null }, // 所属企业客户（B2B2C）
   isRegisteredClient: { type: Boolean, default: false }, // 系统正式录入客户，由医护/超管设置
+  tenantId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键）
 
   // ── 儿童专属档案 ──────────────────────────────────────────────────
   childProfile: {
@@ -260,5 +261,7 @@ userSchema.index({ assignedRehabSpecialist: 1, createdAt: -1 });
 userSchema.index({ assignedMedicalAssistant: 1, createdAt: -1 });
 userSchema.index({ createdAt: -1 });        // 超管看全部时的排序
 userSchema.index({ chronicDiseases: 1 });   // 慢病筛选
+
+userSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
 module.exports = mongoose.model('User', userSchema);

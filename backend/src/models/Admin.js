@@ -31,6 +31,7 @@ const adminSchema = new mongoose.Schema({
   managerId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   region:     { type: String, default: '' },
   enterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null }, // role=enterprise_hr 时归属的企业
+  tenantId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键，superadmin 也归属具体机构，只管理本机构）
   // 新增字段
   phone:        { type: String, default: '' },  // 手机号（唯一识别码）
   email:        { type: String, default: '' },
@@ -50,5 +51,7 @@ adminSchema.pre('save', async function (next) {
 adminSchema.methods.comparePassword = function (plain) {
   return bcrypt.compare(plain, this.password);
 };
+
+adminSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
 module.exports = mongoose.model('Admin', adminSchema);
