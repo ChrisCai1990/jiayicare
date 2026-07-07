@@ -3,7 +3,6 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
-import PdfPreview from '../components/PdfPreview'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
@@ -6928,7 +6927,7 @@ export default function PatientDetailPage() {
                           return isPdf ? (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
-                              <PdfPreview url={s} />
+                              <iframe src={s} title={`报告${idx + 1}`} style={{ width: '100%', height: '40vh', border: 'none', borderRadius: 6, background: '#fff' }} />
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
@@ -6951,7 +6950,7 @@ export default function PatientDetailPage() {
                       {isImg ? (
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
-                        <PdfPreview url={src} />
+                        <iframe src={src} title="报告PDF" style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
                       )}
