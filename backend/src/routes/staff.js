@@ -8,6 +8,12 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { calculateHealthScore } = require('../utils/healthScore');
+const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
+// 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
+const tenantMatchStage = () => {
+  const tenantId = getCurrentTenantId();
+  return (tenantId && tenantId !== BYPASS) ? { tenantId } : {};
+};
 const Admin = require('../models/Admin');
 const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
@@ -723,7 +729,7 @@ router.get('/followups', staffAuth, async (req, res) => {
   // 获取本页患者最近一次打卡（健康记录）时间
   const patientIds = [...new Set(followUps.map(f => f.patientId?._id).filter(Boolean))];
   const lastRecords = await HealthRecord.aggregate([
-    { $match: { userId: { $in: patientIds } } },
+    { $match: { userId: { $in: patientIds }, ...tenantMatchStage() } },
     { $sort: { recordedAt: -1 } },
     { $group: { _id: '$userId', lastAt: { $first: '$recordedAt' } } },
   ]);
@@ -877,7 +883,7 @@ router.get('/reports', staffAuth, async (req, res) => {
 
   // 慢病分布
   const diseaseAgg = await User.aggregate([
-    { $match: { ...myFilter, chronicDiseases: { $exists: true, $ne: [] } } },
+    { $match: { ...myFilter, ...tenantMatchStage(), chronicDiseases: { $exists: true, $ne: [] } } },
     { $unwind: '$chronicDiseases' },
     { $group: { _id: '$chronicDiseases', count: { $sum: 1 } } },
     { $sort: { count: -1 } },
@@ -1527,7 +1533,7 @@ router.get('/commission/me', staffAuth, async (req, res) => {
       .populate('patientId', 'name phone').populate('orderId', 'total'),
     Commission.countDocuments(filter),
     Commission.aggregate([
-      { $match: { staffId: req.staff._id, status: { $in: ['confirmed', 'paid'] } } },
+      { $match: { staffId: req.staff._id, status: { $in: ['confirmed', 'paid'] }, ...tenantMatchStage() } },
       { $group: { _id: null, total: { $sum: '$commissionAmount' } } },
     ]),
   ]);
@@ -1547,6 +1553,7 @@ router.get('/commission/team', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '无权限' });
   }
   const stats = await Commission.aggregate([
+    { $match: tenantMatchStage() },
     { $group: {
       _id: '$staffId',
       totalAmount: { $sum: '$commissionAmount' },
@@ -1578,13 +1585,13 @@ router.get('/operations/dashboard', staffAuth, async (req, res) => {
     User.countDocuments({ createdAt: { $gte: today } }),
     User.countDocuments({ createdAt: { $gte: monthStart } }),
     User.aggregate([
-      { $match: { chronicDiseases: { $exists: true, $ne: [] } } },
+      { $match: { ...tenantMatchStage(), chronicDiseases: { $exists: true, $ne: [] } } },
       { $unwind: '$chronicDiseases' },
       { $group: { _id: '$chronicDiseases', count: { $sum: 1 } } },
       { $sort: { count: -1 } }, { $limit: 8 },
     ]),
     Order.aggregate([
-      { $match: { status: { $in: ['paid', 'completed'] } } },
+      { $match: { status: { $in: ['paid', 'completed'] }, ...tenantMatchStage() } },
       { $group: {
         _id: null,
         total: { $sum: '$total' },

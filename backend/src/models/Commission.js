@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 // 分佣记录
 const commissionSchema = new mongoose.Schema({
   staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true }, // 推荐员工
+  tenantId:  { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键）
   patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  default: null },  // 购买客户
   orderId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },  // 关联订单
   // 推荐链接
@@ -25,5 +26,7 @@ const commissionSchema = new mongoose.Schema({
 
 commissionSchema.index({ staffId: 1, createdAt: -1 });
 commissionSchema.index({ referralCode: 1 });
+
+commissionSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
 module.exports = mongoose.model('Commission', commissionSchema);
