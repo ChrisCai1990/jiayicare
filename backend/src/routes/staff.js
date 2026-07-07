@@ -3120,7 +3120,8 @@ router.delete('/patients/:id/body-composition-history/:index', staffAuth, async 
 
 // ── 4.4 AI健康汇总分析：生成 ──────────────────────────────────────
 // POST /api/staff/patients/:id/ai-health-summary
-const { generateHealthSummarySections } = require('../utils/aiHealthSummary');
+// body: { year, scope: 'doctor'|'nutrition'|'all'（默认all，兼容旧前端）, force: boolean（对方已审核时二次确认后传true）}
+const { generateHealthSummarySections, DOCTOR_KEYS, LIFESTYLE_KEY } = require('../utils/aiHealthSummary');
 router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id)
@@ -3129,9 +3130,8 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       .populate('assignedNutritionist', 'name');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
-    const sections = await generateHealthSummarySections(user);
-
-    // 按年度归档：body.year 指定生成的年度，默认当前年
+    const scope = req.body.scope || 'all';
+    const force = !!req.body.force;
     const year = String(req.body.year || new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
     const byYear = { ...(existing.byYear || {}) };
@@ -3140,8 +3140,45 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       const oy = String(existing.generatedAt ? new Date(existing.generatedAt).getFullYear() : 2026);
       byYear[oy] = { sections: existing.sections, generatedAt: existing.generatedAt || null, approvedAt: existing.approvedAt || null, approvedBy: existing.approvedBy || null };
     }
-    byYear[year] = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null, doctorApprovedAt: null, doctorApprovedBy: null, nutritionApprovedAt: null, nutritionApprovedBy: null };
-    const summary = { sections, generatedAt: new Date(), approvedAt: null, approvedBy: null, doctorApprovedAt: null, doctorApprovedBy: null, nutritionApprovedAt: null, nutritionApprovedBy: null, byYear, latestYear: year };
+    const prevEntry = byYear[year] || {};
+
+    // 对方维度已审核时需二次确认，未带 force 标志直接拒绝，前端据此弹确认框
+    if (!force) {
+      if ((scope === 'doctor' || scope === 'all') && prevEntry.doctorApprovedAt) {
+        return res.status(409).json({ success: false, needConfirm: true, message: '5维度分析已由家庭医师审核通过，重新生成将清除该审核状态', approvedBy: prevEntry.doctorApprovedBy });
+      }
+      if ((scope === 'nutrition' || scope === 'all') && prevEntry.nutritionApprovedAt) {
+        return res.status(409).json({ success: false, needConfirm: true, message: '生活方式评估已由营养师审核通过，重新生成将清除该审核状态', approvedBy: prevEntry.nutritionApprovedBy });
+      }
+    }
+
+    const genResult = await generateHealthSummarySections(user, { scope, existingSections: prevEntry.sections || null });
+
+    // 合并：只替换本次 scope 涉及的板块，另一方板块沿用旧值，互不覆盖
+    const mergedSections = { ...(prevEntry.sections || {}) };
+    if (scope === 'all') {
+      Object.assign(mergedSections, genResult);
+    } else if (scope === 'doctor') {
+      DOCTOR_KEYS.forEach(k => { if (genResult[k] !== undefined) mergedSections[k] = genResult[k]; });
+    } else if (scope === 'nutrition') {
+      if (genResult[LIFESTYLE_KEY] !== undefined) mergedSections[LIFESTYLE_KEY] = genResult[LIFESTYLE_KEY];
+    }
+
+    const entry = { ...prevEntry, sections: mergedSections, generatedAt: new Date() };
+    // 清空审核状态：只清本次实际重新生成一方的审核字段，未涉及的一方保留
+    if (scope === 'doctor' || scope === 'all') { entry.doctorApprovedAt = null; entry.doctorApprovedBy = null; }
+    if (scope === 'nutrition' || scope === 'all') { entry.nutritionApprovedAt = null; entry.nutritionApprovedBy = null; }
+    entry.approvedAt = (entry.doctorApprovedAt && entry.nutritionApprovedAt) ? entry.approvedAt : null;
+    if (!entry.approvedAt) entry.approvedBy = null;
+
+    byYear[year] = entry;
+    const summary = {
+      sections: mergedSections, generatedAt: entry.generatedAt,
+      approvedAt: entry.approvedAt || null, approvedBy: entry.approvedBy || null,
+      doctorApprovedAt: entry.doctorApprovedAt || null, doctorApprovedBy: entry.doctorApprovedBy || null,
+      nutritionApprovedAt: entry.nutritionApprovedAt || null, nutritionApprovedBy: entry.nutritionApprovedBy || null,
+      byYear, latestYear: year,
+    };
 
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },

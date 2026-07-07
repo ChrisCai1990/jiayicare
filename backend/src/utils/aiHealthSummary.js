@@ -1,7 +1,12 @@
 const { chat } = require('./ai');
 
+const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
+const LIFESTYLE_KEY = 'lifestyle_assessment';
+
 // 生成AI健康汇总分析的 sections 内容（不含审核字段），供医护端接口和用户端自助接口共用
-async function generateHealthSummarySections(user) {
+// scope: 'all'（默认，全量生成）| 'doctor'（仅5维度，生活方式评估留空对象供上层合并旧值）| 'nutrition'（仅生活方式评估）
+// existingSections: 已有的 sections（用于生成时给AI提供另一方内容作为上下文，实现两部分内容互相关联而非孤立）
+async function generateHealthSummarySections(user, { scope = 'all', existingSections = null } = {}) {
   const MedicalReport = require('../models/MedicalReport');
   const Medication = require('../models/Medication');
   const Supplement = require('../models/Supplement');
@@ -176,6 +181,7 @@ ${labTrendLines}
 【历年专项筛查报告（按年份列出所有记录）】
 ${reportSummary}
 
+${existingSections && scope === 'doctor' && existingSections.lifestyle_assessment ? `\n【营养师已评估的生活方式内容（供参考，本次不需要重新生成这部分，仅作为你判断5维度分析时的背景信息）】\n${JSON.stringify(existingSections.lifestyle_assessment)}\n` : ''}${existingSections && scope === 'nutrition' && DOCTOR_KEYS.some(k => existingSections[k]) ? `\n【家庭医师已生成的5维度分析（供参考，本次请结合这些医疗判断来评估生活方式，本次不需要重新生成这部分）】\n${JSON.stringify(Object.fromEntries(DOCTOR_KEYS.map(k => [k, existingSections[k]]).filter(([, v]) => v)))}\n` : ''}
 请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容：
 {
   "sections": {
@@ -280,7 +286,16 @@ ${reportSummary}
     checkup_completeness: { covered: [], missing: [], suggestion: '' },
   };
 
+  // 按 scope 只保留本次需要重新生成的板块，另一方板块交给上层用旧值合并，避免互相覆盖
+  if (scope === 'doctor') {
+    const doctorOnly = {};
+    DOCTOR_KEYS.forEach(k => { doctorOnly[k] = sections[k]; });
+    return doctorOnly;
+  }
+  if (scope === 'nutrition') {
+    return { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] };
+  }
   return sections;
 }
 
-module.exports = { generateHealthSummarySections };
+module.exports = { generateHealthSummarySections, DOCTOR_KEYS, LIFESTYLE_KEY };

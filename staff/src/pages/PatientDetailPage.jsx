@@ -1453,17 +1453,26 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
   }
 
-  // 4.4 AI汇总
-  const handleGenerateAISummary = async (year) => {
+  // 4.4 AI汇总（scope: 'doctor'=仅5维度 / 'nutrition'=仅生活方式评估 / 'all'=兼容旧逻辑全量）
+  const handleGenerateAISummary = async (year, scope = 'all', force = false) => {
     const y = String(year || new Date().getFullYear())
     try {
       setAiSummaryLoading(true)
-      const res = await staffAPI.generateAIHealthSummary(id, y)
+      const res = await staffAPI.generateAIHealthSummary(id, y, scope, force)
       setAiSummaryForm(res.data)
       setAiYear(y)
       toast(`${y}年度AI分析已生成`)
       load()
-    } catch (err) { toast(err.message || 'AI生成失败') }
+    } catch (err) {
+      if (err.needConfirm) {
+        const label = scope === 'nutrition' ? '生活方式评估' : (scope === 'doctor' ? '5维度分析' : 'AI健康分析')
+        if (window.confirm(`${err.message}${err.approvedBy ? `（审核人：${err.approvedBy}）` : ''}\n是否确认重新生成${label}？`)) {
+          return handleGenerateAISummary(year, scope, true)
+        }
+      } else {
+        toast(err.message || 'AI生成失败')
+      }
+    }
     finally { setAiSummaryLoading(false) }
   }
 
@@ -4754,8 +4763,19 @@ export default function PatientDetailPage() {
                   <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(false)}>保存</button>
                 </>
               )}
-              {!editingAISummary && (
-                <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(curYear)}>
+              {/* 生成按钮按角色拆分：家医只生成5维度，营养师只生成生活方式评估，超管两者都能触发（走 all，一次生成全部） */}
+              {!editingAISummary && (roleScope === 'doctor') && (
+                <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(curYear, 'doctor')}>
+                  {aiSummaryLoading ? '生成中…' : (hasData ? `重新生成5维度分析` : `生成5维度分析`)}
+                </button>
+              )}
+              {!editingAISummary && (roleScope === 'nutrition') && (
+                <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(curYear, 'nutrition')}>
+                  {aiSummaryLoading ? '生成中…' : (hasData ? `重新生成生活方式评估` : `生成生活方式评估`)}
+                </button>
+              )}
+              {!editingAISummary && (roleScope === 'all') && (
+                <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(curYear, 'all')}>
                   {aiSummaryLoading ? '生成中…' : (hasData ? `重新生成${curYear}年度` : `生成${curYear}年度`)}
                 </button>
               )}

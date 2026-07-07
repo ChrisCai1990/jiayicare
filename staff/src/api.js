@@ -27,7 +27,11 @@ async function req(path, options = {}) {
     window.location.href = '/login'
     throw new Error(data.message || 'Token 无效或已过期，请重新登录')
   }
-  if (!res.ok) throw new Error(data.message || '请求失败')
+  if (!res.ok) {
+    const err = new Error(data.message || '请求失败')
+    if (data.needConfirm) { err.needConfirm = true; err.approvedBy = data.approvedBy }
+    throw err
+  }
   return data
 }
 
@@ -302,7 +306,7 @@ export const staffAPI = {
   dismissArchiveDraft:       (id) => req(`/staff/patients/${id}/archive-draft/dismiss`, { method: 'POST' }),
 
   // 4.4 AI健康汇总 / 4.5 AI管理方案生成
-  generateAIHealthSummary: (id, year) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year }) }),
+  generateAIHealthSummary: (id, year, scope, force) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force }) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
   addAIHealthSummaryDiscussion:    (id, content, year) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year }) }),
   deleteAIHealthSummaryDiscussion: (id, index, year) => req(`/staff/patients/${id}/ai-health-summary/discussions/${index}?year=${year || ''}`, { method: 'DELETE' }),
