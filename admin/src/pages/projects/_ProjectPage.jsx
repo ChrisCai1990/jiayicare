@@ -69,6 +69,53 @@ export function StatusBadge({ active }) {
   )
 }
 
+const EMPTY_PERFORMANCE_RULE = { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 }
+
+// 转介绍绩效规则（各机构自行设定，引流人/服务人各自比例或固定金额）——供检验/检查/服务等收费类项目共用
+export function PerformanceRuleFields({ rule, onChange }) {
+  const r = rule || EMPTY_PERFORMANCE_RULE
+  const set = (k, v) => onChange({ ...r, [k]: v })
+
+  return (
+    <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2', borderTop: '1px dashed #E5E7EB', paddingTop: 12, marginTop: 4 }}>
+      <label className="form-label">转介绍绩效规则</label>
+      <select className="form-input" value={r.ruleType} onChange={e => set('ruleType', e.target.value)}>
+        <option value="none">不设置绩效（默认）</option>
+        <option value="percentage">按比例分配</option>
+        <option value="fixedAmount">按固定金额分配</option>
+      </select>
+      {r.ruleType === 'percentage' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <div>
+            <label className="form-label">转介绍人比例（%）</label>
+            <input className="form-input" type="number" min="0" max="100" value={r.referrerRate}
+              onChange={e => set('referrerRate', parseFloat(e.target.value) || 0)} placeholder="0" />
+          </div>
+          <div>
+            <label className="form-label">服务人比例（%）</label>
+            <input className="form-input" type="number" min="0" max="100" value={r.fulfillerRate}
+              onChange={e => set('fulfillerRate', parseFloat(e.target.value) || 0)} placeholder="0" />
+          </div>
+        </div>
+      )}
+      {r.ruleType === 'fixedAmount' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <div>
+            <label className="form-label">转介绍人固定金额（¥）</label>
+            <input className="form-input" type="number" min="0" value={r.referrerAmount}
+              onChange={e => set('referrerAmount', parseFloat(e.target.value) || 0)} placeholder="0.00" />
+          </div>
+          <div>
+            <label className="form-label">服务人固定金额（¥）</label>
+            <input className="form-input" type="number" min="0" value={r.fulfillerAmount}
+              onChange={e => set('fulfillerAmount', parseFloat(e.target.value) || 0)} placeholder="0.00" />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // fields: [{ key, label, type('text'|'number'|'select'), required, options, placeholder }]
 export default function ProjectPage({ title, desc, fields, fetchFn, createFn, updateFn, toggleFn, deleteFn, extraFilter }) {
   const toast = useToast()
@@ -100,7 +147,7 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
   }
 
   const buildEmpty = () => {
-    const obj = { categoryId: '' }
+    const obj = { categoryId: '', performanceRule: { ...EMPTY_PERFORMANCE_RULE } }
     fields.forEach(f => { obj[f.key] = f.defaultValue ?? (f.type === 'number' ? 0 : f.type === 'checkbox' ? true : '') })
     return obj
   }
@@ -118,7 +165,7 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
   const openCreate = () => { setEditId(null); setForm(buildEmpty()); setMnemonicEdited(false); setError(''); setShowModal(true) }
   const openEdit = item => {
     setEditId(item._id)
-    const f = { categoryId: item.categoryId?._id || item.categoryId || '' }
+    const f = { categoryId: item.categoryId?._id || item.categoryId || '', performanceRule: item.performanceRule || { ...EMPTY_PERFORMANCE_RULE } }
     fields.forEach(fd => {
       if (fd.type === 'checkbox') f[fd.key] = item[fd.key] !== false
       else f[fd.key] = item[fd.key] ?? (fd.type === 'number' ? 0 : '')
@@ -255,6 +302,7 @@ export default function ProjectPage({ title, desc, fields, fetchFn, createFn, up
                     {cats.map(c => <option key={c._id} value={c._id}>{'　'.repeat(c.depth)}{c.name}</option>)}
                   </select>
                 </div>
+                <PerformanceRuleFields rule={form.performanceRule} onChange={v => setForm(p => ({ ...p, performanceRule: v }))} />
               </div>
             </div>
             <div className="modal-footer">
