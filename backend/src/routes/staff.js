@@ -1138,8 +1138,8 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     }
     if (title !== undefined) report.title = title;
     if (type !== undefined) report.type = type;
-    if (hospital !== undefined) report.hospital = hospital;
-    if (date !== undefined) report.date = date;
+    if (hospital !== undefined) { report.hospital = hospital; report.institution = hospital; }
+    if (date !== undefined) { report.date = date; report.checkDate = date; }
     if (note !== undefined) report.note = note;
     // AI 审核字段
     if (aiStatus !== undefined) { report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id; }
@@ -1569,6 +1569,7 @@ router.get('/commission/team', staffAuth, async (req, res) => {
 
 // ── 运营数据看板 ───────────────────────────────────────────
 // GET /api/staff/operations/dashboard
+// 营收统计基于真实支付确认(paymentStatus:'paid')，不是订单状态(status)——订单状态只代表服务流程，不代表是否真的收到钱
 router.get('/operations/dashboard', staffAuth, async (req, res) => {
   const OPS_ROLES = ['superadmin', 'manager'];
   if (!OPS_ROLES.includes(req.staff.role)) {
@@ -1576,10 +1577,10 @@ router.get('/operations/dashboard', staffAuth, async (req, res) => {
   }
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-  const weekStart = new Date(today); weekStart.setDate(today.getDate() - today.getDay());
   const [
     totalPatients, todayNew, monthNew,
-    diseaseAgg, orderStats,
+    diseaseAgg, revenueAgg, revenueByProduct,
+    commissionAgg, teamCommissionAgg,
   ] = await Promise.all([
     User.countDocuments(),
     User.countDocuments({ createdAt: { $gte: today } }),
@@ -1590,16 +1591,45 @@ router.get('/operations/dashboard', staffAuth, async (req, res) => {
       { $group: { _id: '$chronicDiseases', count: { $sum: 1 } } },
       { $sort: { count: -1 } }, { $limit: 8 },
     ]),
+    // 真实营收总览：只统计已确认支付的订单
     Order.aggregate([
-      { $match: { status: { $in: ['paid', 'completed'] }, ...tenantMatchStage() } },
+      { $match: { paymentStatus: 'paid', ...tenantMatchStage() } },
       { $group: {
         _id: null,
-        total: { $sum: '$total' },
-        thisMonth: { $sum: { $cond: [{ $gte: ['$createdAt', monthStart] }, '$total', 0] } },
+        total: { $sum: '$paidAmount' },
+        thisMonth: { $sum: { $cond: [{ $gte: ['$paidAt', monthStart] }, '$paidAmount', 0] } },
         count: { $sum: 1 },
       }},
     ]),
+    // 各服务品类营收占比（按 orderType 分组：service/package/product）
+    Order.aggregate([
+      { $match: { paymentStatus: 'paid', ...tenantMatchStage() } },
+      { $group: { _id: '$orderType', total: { $sum: '$paidAmount' }, count: { $sum: 1 } } },
+      { $sort: { total: -1 } },
+    ]),
+    // 佣金结算总览（按状态汇总，反映待审核/待打款/已打款规模）
+    Commission.aggregate([
+      { $match: tenantMatchStage() },
+      { $group: { _id: '$status', total: { $sum: '$commissionAmount' }, count: { $sum: 1 } } },
+    ]),
+    // 团队绩效排名（按员工+角色汇总，区分转介绍/服务两条业绩线）
+    Commission.aggregate([
+      { $match: { ...tenantMatchStage(), status: { $ne: 'cancelled' } } },
+      { $group: {
+        _id: { staffId: '$staffId', role: '$role' },
+        totalAmount: { $sum: '$commissionAmount' },
+        orderCount: { $sum: 1 },
+      }},
+      { $sort: { totalAmount: -1 } },
+      { $limit: 20 },
+    ]),
   ]);
+
+  await Admin.populate(teamCommissionAgg, { path: '_id.staffId', select: 'name role title' });
+
+  const commissionByStatus = { pending: 0, confirmed: 0, paid: 0, cancelled: 0 };
+  const commissionCountByStatus = { pending: 0, confirmed: 0, paid: 0, cancelled: 0 };
+  commissionAgg.forEach(c => { commissionByStatus[c._id] = c.total; commissionCountByStatus[c._id] = c.count; });
 
   res.json({
     success: true,
@@ -1607,10 +1637,20 @@ router.get('/operations/dashboard', staffAuth, async (req, res) => {
       patients: { total: totalPatients, todayNew, monthNew },
       diseaseDistribution: diseaseAgg.map(d => ({ disease: d._id, count: d.count })),
       revenue: {
-        total: orderStats[0]?.total || 0,
-        thisMonth: orderStats[0]?.thisMonth || 0,
-        orderCount: orderStats[0]?.count || 0,
+        total: revenueAgg[0]?.total || 0,
+        thisMonth: revenueAgg[0]?.thisMonth || 0,
+        orderCount: revenueAgg[0]?.count || 0,
       },
+      revenueByCategory: revenueByProduct.map(r => ({ orderType: r._id, total: r.total, count: r.count })),
+      commissionOverview: {
+        pendingAmount: commissionByStatus.pending, pendingCount: commissionCountByStatus.pending,
+        confirmedAmount: commissionByStatus.confirmed, confirmedCount: commissionCountByStatus.confirmed,
+        paidAmount: commissionByStatus.paid, paidCount: commissionCountByStatus.paid,
+      },
+      teamPerformance: teamCommissionAgg.map(t => ({
+        staffId: t._id.staffId?._id, staffName: t._id.staffId?.name || '未知', staffRole: t._id.staffId?.role,
+        role: t._id.role, totalAmount: t.totalAmount, orderCount: t.orderCount,
+      })),
     },
   });
 });

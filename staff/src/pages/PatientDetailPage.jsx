@@ -902,8 +902,9 @@ export default function PatientDetailPage() {
   const [basicInfoForm, setBasicInfoForm] = useState({})
   const [editingHealthNeeds, setEditingHealthNeeds] = useState(false)
   const [healthNeedsForm, setHealthNeedsForm] = useState({})
-  const [editingTitleReportId, setEditingTitleReportId] = useState(null)
-  const [editingTitleValue, setEditingTitleValue] = useState('')
+  const [editingReport, setEditingReport] = useState(null)
+  const [editingReportForm, setEditingReportForm] = useState({})
+  const [editingReportSaving, setEditingReportSaving] = useState(false)
   const [editingHealth, setEditingHealth] = useState(false)
   const [editingLifestyle, setEditingLifestyle] = useState(false)
   const [editingInsurance, setEditingInsurance] = useState(false)
@@ -4651,7 +4652,7 @@ export default function PatientDetailPage() {
         const sec = editingAISummary ? (aiSummaryForm.sections || {}) : (ais.sections || {})
         const docEditing = editingAISummary === 'doctor'
         const nutEditing = editingAISummary === 'nutrition'
-        const hasData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.chronic_disease)
+        const hasData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.chronic_disease || ais.sections?.lifestyle_assessment)
 
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
         const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
@@ -5780,24 +5781,16 @@ export default function PatientDetailPage() {
                                 </button>
                               )}
                               {r.audit_status !== 'audited' && (
-                                editingTitleReportId === r._id ? (
-                                  <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-                                    <input style={{ fontSize: 12, padding: '2px 6px', border: '1px solid #E0D9CE', borderRadius: 4, width: 140 }}
-                                      value={editingTitleValue}
-                                      onChange={e => setEditingTitleValue(e.target.value)}
-                                      onKeyDown={async e => {
-                                        if (e.key === 'Enter') {
-                                          try { await staffAPI.updateReport(r._id, { title: editingTitleValue }); setEditingTitleReportId(null); loadReports() } catch (err) { toast(err.message) }
-                                        } else if (e.key === 'Escape') { setEditingTitleReportId(null) }
-                                      }} autoFocus />
-                                    <button className="btn btn-primary btn-sm"
-                                      onClick={async () => { try { await staffAPI.updateReport(r._id, { title: editingTitleValue }); setEditingTitleReportId(null); loadReports() } catch (err) { toast(err.message) } }}>✓</button>
-                                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingTitleReportId(null)}>✕</button>
-                                  </span>
-                                ) : (
-                                  <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }}
-                                    onClick={() => { setEditingTitleReportId(r._id); setEditingTitleValue(r.title) }}>改标题</button>
-                                )
+                                <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }}
+                                  onClick={() => {
+                                    setEditingReport(r)
+                                    setEditingReportForm({
+                                      title: r.title || '',
+                                      hospital: r.hospital || r.institution || '',
+                                      date: r.date || r.checkDate || '',
+                                      note: r.note || '',
+                                    })
+                                  }}>编辑</button>
                               )}
                               {(r.aiStatus === 'pending' || r.aiStatus === 'reviewed') && (
                                 <button className="btn btn-sm" style={{ background: r.aiStatus === 'reviewed' ? '#22A06B' : '#7C3AED', color:'#fff', border:'none', marginRight: 4 }}
@@ -6522,6 +6515,53 @@ export default function PatientDetailPage() {
           onClose={() => setShowFollowUpModal(false)}
           onSaved={handleFollowUpCreated}
         />
+      )}
+
+      {/* 体检报告编辑弹窗 */}
+      {editingReport && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditingReport(null) }}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">编辑报告信息</h3>
+              <button className="modal-close" onClick={() => setEditingReport(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'grid', gap: 12 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">报告标题</label>
+                <input className="form-input" value={editingReportForm.title || ''}
+                  onChange={e => setEditingReportForm(f => ({ ...f, title: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">医院 / 机构</label>
+                <input className="form-input" value={editingReportForm.hospital || ''}
+                  onChange={e => setEditingReportForm(f => ({ ...f, hospital: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">检查日期</label>
+                <input className="form-input" type="date" value={editingReportForm.date || ''}
+                  onChange={e => setEditingReportForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">备注</label>
+                <input className="form-input" value={editingReportForm.note || ''}
+                  onChange={e => setEditingReportForm(f => ({ ...f, note: e.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingReport(null)}>取消</button>
+              <button className="btn btn-primary" disabled={editingReportSaving} onClick={async () => {
+                if (!editingReportForm.title) { toast('请填写报告标题'); return }
+                setEditingReportSaving(true)
+                try {
+                  await staffAPI.updateReport(editingReport._id, editingReportForm)
+                  setEditingReport(null)
+                  loadReports()
+                } catch (err) { toast(err.message) }
+                finally { setEditingReportSaving(false) }
+              }}>{editingReportSaving ? '保存中…' : '保存'}</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 体检报告详情弹窗 */}
