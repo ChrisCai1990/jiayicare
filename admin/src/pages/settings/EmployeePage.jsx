@@ -14,9 +14,65 @@ const SYSTEM_ROLE_LABEL = {
   healthPlanner:   '健康规划师',
 }
 
+const EMPTY_PERFORMANCE_RULE = { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 }
+
 const EMPTY_FORM = {
   username: '', password: '', name: '', role: 'healthManager',
   phone: '', title: '', email: '', certNumber: '', deptId: '', customRoleId: '',
+  personalPerformanceRule: EMPTY_PERFORMANCE_RULE,
+}
+
+// 个人绩效比例：优先于产品全局比例——同岗位不同人可以有不同分佣比例
+// （如基础薪酬高的人绩效比例相应调低），不设置则该员工按产品全局比例结算。
+function PersonalPerformanceRuleForm({ rule, onChange }) {
+  const r = rule || EMPTY_PERFORMANCE_RULE
+  const set = (k, v) => onChange({ ...r, [k]: v })
+
+  return (
+    <div>
+      <div className="form-group" style={{ marginBottom: 0 }}>
+        <label className="form-label">个人绩效比例</label>
+        <select className="form-input" value={r.ruleType} onChange={e => set('ruleType', e.target.value)}>
+          <option value="none">不设置（按产品全局比例结算，默认）</option>
+          <option value="percentage">按比例分配（覆盖产品比例）</option>
+          <option value="fixedAmount">按固定金额分配（覆盖产品比例）</option>
+        </select>
+        <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
+          同岗位不同人可设不同比例，如基础薪酬更高的员工可调低个人绩效比例
+        </div>
+      </div>
+
+      {r.ruleType === 'percentage' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">作为转介绍人比例（%）</label>
+            <input className="form-input" type="number" min="0" max="100" value={r.referrerRate}
+              onChange={e => set('referrerRate', parseFloat(e.target.value) || 0)} placeholder="0" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">作为服务人比例（%）</label>
+            <input className="form-input" type="number" min="0" max="100" value={r.fulfillerRate}
+              onChange={e => set('fulfillerRate', parseFloat(e.target.value) || 0)} placeholder="0" />
+          </div>
+        </div>
+      )}
+
+      {r.ruleType === 'fixedAmount' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">作为转介绍人固定金额（¥）</label>
+            <input className="form-input" type="number" min="0" value={r.referrerAmount}
+              onChange={e => set('referrerAmount', parseFloat(e.target.value) || 0)} placeholder="0.00" />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">作为服务人固定金额（¥）</label>
+            <input className="form-input" type="number" min="0" value={r.fulfillerAmount}
+              onChange={e => set('fulfillerAmount', parseFloat(e.target.value) || 0)} placeholder="0.00" />
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function EmployeePage() {
@@ -67,6 +123,7 @@ export default function EmployeePage() {
       certNumber: emp.certNumber || '',
       deptId: emp.deptId?._id || emp.deptId || '',
       customRoleId: emp.customRoleId?._id || emp.customRoleId || '',
+      personalPerformanceRule: emp.personalPerformanceRule || EMPTY_PERFORMANCE_RULE,
     })
     setError(''); setShowModal(true)
   }
@@ -263,6 +320,9 @@ export default function EmployeePage() {
                   <label className="form-label">证书编号</label>
                   <input className="form-input" value={form.certNumber} onChange={set('certNumber')} placeholder="如医师执业证号" />
                 </div>
+              </div>
+              <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #E5E7EB' }}>
+                <PersonalPerformanceRuleForm rule={form.personalPerformanceRule} onChange={v => setForm(f => ({ ...f, personalPerformanceRule: v }))} />
               </div>
             </form>
             <div className="modal-footer">

@@ -150,9 +150,10 @@ router.post('/order', auth, async (req, res) => {
   const isPkg     = !!PACKAGE_CATALOG.find(p => p.id === serviceId);
   const orderNote = [note, paymentMethod ? `支付方式：${paymentMethod}` : ''].filter(Boolean).join('；');
 
-  // 谁推送谁获推广费：查该患者对这个产品最近一次的推送记录，把推送人自动定为转介绍人(referrerId)，
-  // 不需要超管事后手动指定——2026-07-07 用户明确规则："推送的时候自动就定了"。
-  // 服务人(fulfillerId)由推荐人后续自己指定（可能是他本人，也可能转介给别人服务），这里先不填。
+  // 谁推送谁获推广费：查该患者对这个产品最近一次的推送记录，推送人自动定为转介绍人(referrerId)，
+  // 不需要超管事后手动指定。服务人(fulfillerId)不默认等于推送人——用户明确"推送人和服务人不一定是
+  // 同一个"，仍需推荐人本人或超管另行指定（PATCH /staff/orders/:id/fulfiller），不产生服务人时
+  // 该订单只生成推广费，不生成服务费。
   let referrerId = null;
   if (product) {
     const lastPush = await PushRecord.findOne({ patientId: req.user._id, type: 'product', productId: service.id })

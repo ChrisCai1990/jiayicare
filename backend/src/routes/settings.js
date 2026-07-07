@@ -174,7 +174,7 @@ router.post('/employees', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可创建员工账号' });
   }
-  const { username, password, name, role, title, email, certNumber, deptId, customRoleId, phone } = req.body;
+  const { username, password, name, role, title, email, certNumber, deptId, customRoleId, phone, personalPerformanceRule } = req.body;
   if (!password || !name || !role) {
     return res.status(400).json({ success: false, message: '密码、姓名、角色不能为空' });
   }
@@ -194,6 +194,7 @@ router.post('/employees', adminAuth, async (req, res) => {
     username: finalUsername, password, name, role, phone,
     title: title || '', email: email || '', certNumber: certNumber || '',
     deptId: deptId || null, customRoleId: customRoleId || null,
+    personalPerformanceRule: personalPerformanceRule || undefined,
     staffStatus: 'active',
   });
   res.json({ success: true, data: { _id: emp._id, name: emp.name, username: emp.username }, message: '员工账号已创建' });
@@ -203,7 +204,7 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可修改员工账号' });
   }
-  const { name, role, title, email, certNumber, deptId, customRoleId, password, phone } = req.body;
+  const { name, role, title, email, certNumber, deptId, customRoleId, password, phone, personalPerformanceRule } = req.body;
   const emp = await Admin.findById(req.params.id);
   if (!emp || !SYSTEM_ROLES.includes(emp.role)) {
     return res.status(404).json({ success: false, message: '员工不存在' });
@@ -220,6 +221,7 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (certNumber !== undefined) emp.certNumber = certNumber;
   if (deptId !== undefined) emp.deptId = deptId || null;
   if (customRoleId !== undefined) emp.customRoleId = customRoleId || null;
+  if (personalPerformanceRule !== undefined) emp.personalPerformanceRule = personalPerformanceRule;
   if (password) emp.password = password;
   await emp.save();
   res.json({ success: true, data: { _id: emp._id, name: emp.name }, message: '员工信息已更新' });

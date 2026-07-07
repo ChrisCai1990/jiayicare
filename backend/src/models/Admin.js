@@ -39,6 +39,10 @@ const adminSchema = new mongoose.Schema({
   staffStatus:  { type: String, enum: ['active', 'inactive'], default: 'active' },
   deptId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
   customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffRole', default: null },
+  // 个人绩效比例覆盖：同岗位不同人可以有不同分佣比例（如基础薪酬高的人绩效比例相应调低）。
+  // ruleType='none'（默认）表示该员工没有个人特殊设置，结算时退回产品的全局performanceRule；
+  // 2026-07-07 用户明确规则："同样岗位，保障薪酬高，那么绩效就低"——按人覆盖，不是按产品覆盖。
+  personalPerformanceRule: require('../utils/tenantScope').performanceRuleSchema,
 }, { timestamps: true });
 
 // 密码哈希
