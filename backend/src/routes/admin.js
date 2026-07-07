@@ -805,7 +805,7 @@ router.get('/products', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule } = req.body;
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
   }
@@ -814,16 +814,17 @@ router.post('/products', adminAuth, async (req, res) => {
     originalPrice, servicePrices: servicePrices || [], memberPrices: memberPrices || {},
     category, sortOrder: sortOrder ?? 999, features: features || [],
     description: description || '', stock: stock ?? 0, status: status || 'off',
+    performanceRule: performanceRule || undefined,
   });
   res.json({ success: true, data: product, message: '产品创建成功' });
 });
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule } = req.body;
   const product = await Product.findByIdAndUpdate(
     req.params.id,
-    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status },
+    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule },
     { new: true }
   );
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });

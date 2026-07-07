@@ -15,6 +15,59 @@ const EMPTY_FORM = {
   name: '', subtitle: '', category: '', originalPrice: '', sortOrder: 999,
   features: '', description: '', stock: 0, status: 'off',
   images: [], servicePrices: [],
+  performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
+}
+
+// ── 转介绍绩效规则（各机构自行设定，引流人/服务人各自比例或固定金额） ──
+function PerformanceRuleForm({ rule, onChange }) {
+  const r = rule || { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 }
+  const set = (k, v) => onChange({ ...r, [k]: v })
+
+  return (
+    <div>
+      <div className="form-group">
+        <label className="form-label">规则类型</label>
+        <select className="form-input" value={r.ruleType} onChange={e => set('ruleType', e.target.value)}>
+          <option value="none">不设置绩效（默认）</option>
+          <option value="percentage">按比例分配</option>
+          <option value="fixedAmount">按固定金额分配</option>
+        </select>
+        <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>
+          转介绍人（引流客户下单的人）和服务人（实际提供服务的医护）可各自设置独立的绩效
+        </div>
+      </div>
+
+      {r.ruleType === 'percentage' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <div className="form-group">
+            <label className="form-label">转介绍人比例（%）</label>
+            <input className="form-input" type="number" min="0" max="100" value={r.referrerRate}
+              onChange={e => set('referrerRate', parseFloat(e.target.value) || 0)} placeholder="0" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">服务人比例（%）</label>
+            <input className="form-input" type="number" min="0" max="100" value={r.fulfillerRate}
+              onChange={e => set('fulfillerRate', parseFloat(e.target.value) || 0)} placeholder="0" />
+          </div>
+        </div>
+      )}
+
+      {r.ruleType === 'fixedAmount' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
+          <div className="form-group">
+            <label className="form-label">转介绍人固定金额（¥）</label>
+            <input className="form-input" type="number" min="0" value={r.referrerAmount}
+              onChange={e => set('referrerAmount', parseFloat(e.target.value) || 0)} placeholder="0.00" />
+          </div>
+          <div className="form-group">
+            <label className="form-label">服务人固定金额（¥）</label>
+            <input className="form-input" type="number" min="0" value={r.fulfillerAmount}
+              onChange={e => set('fulfillerAmount', parseFloat(e.target.value) || 0)} placeholder="0.00" />
+          </div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 // ── 自定义价格列表 ──────────────────────────────────────────────
@@ -175,6 +228,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       status: product.status || 'off',
       images: product.images || [],
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price) })),
+      performanceRule: product.performanceRule || { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
     }
   })
   const [loading, setLoading] = useState(false)
@@ -205,6 +259,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         status: form.status,
         images: form.images,
         servicePrices: cleanedPrices,
+        performanceRule: form.performanceRule,
       }
       if (isEdit) {
         await adminAPI.updateProduct(product._id, payload)
@@ -224,6 +279,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   const tabs = [
     { key: 'basic', label: '基本信息' },
     { key: 'price', label: '收费项目' },
+    { key: 'performance', label: '转介绍绩效' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
   ]
@@ -322,6 +378,10 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                 />
               </div>
             </div>
+          )}
+
+          {tab === 'performance' && (
+            <PerformanceRuleForm rule={form.performanceRule} onChange={v => set('performanceRule', v)} />
           )}
 
           {tab === 'images' && (
