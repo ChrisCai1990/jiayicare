@@ -1,7 +1,8 @@
 const mongoose = require('mongoose');
 
 const serviceSchema = new mongoose.Schema({
-  serviceId:    { type: String, required: true, unique: true }, // 如 S1, S2
+  tenantId:     { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键）
+  serviceId:    { type: String, required: true }, // 如 S1, S2（原为全局unique，多租户后改为 tenantId+serviceId 联合唯一，见下方索引）
   category:     { type: String, required: true },
   name:         { type: String, required: true },
   subtitle:     { type: String, default: '' },
@@ -18,6 +19,13 @@ const serviceSchema = new mongoose.Schema({
   description:  { type: String, default: '' }, // 富文本详情
   active:       { type: Boolean, default: true },
   sortOrder:    { type: Number, default: 0 },
+  // 绩效分配规则（字段先占位，识别"谁是引流人/谁是服务人"的具体逻辑和自动分配触发链路待设计后再接入）
+  performanceRule: require('../utils/tenantScope').performanceRuleSchema,
 }, { timestamps: true });
+
+// 原 serviceId 是全局 unique，现改为按机构联合唯一（tenantId 为 null 的存量数据仍保持全局互斥，避免落库前迁移期冲突）
+serviceSchema.index({ tenantId: 1, serviceId: 1 }, { unique: true });
+
+serviceSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
 module.exports = mongoose.model('Service', serviceSchema);

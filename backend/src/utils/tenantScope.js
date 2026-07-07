@@ -52,4 +52,15 @@ function tenantScopePlugin(schema) {
   });
 }
 
-module.exports = { tenantContext, tenantScopePlugin, getCurrentTenantId, runWithoutTenantScope, BYPASS };
+// 绩效分配规则字段片段：挂在定价类模型（Product/Service/ServiceItem等）上，供后续"自动分配绩效"功能使用。
+// 目前只做字段占位——"谁是引流人/谁是服务人"的识别方式和自动分配触发链路待设计明确后再接入，
+// 现在先统一好每个产品/服务自身携带的规则结构，避免后续每个模型分别改一遍。
+const performanceRuleSchema = {
+  ruleType:        { type: String, enum: ['none', 'percentage', 'fixedAmount'], default: 'none' },
+  referrerRate:    { type: Number, default: 0 },   // 引流人比例（%）
+  fulfillerRate:   { type: Number, default: 0 },   // 服务人比例（%）
+  referrerAmount:  { type: Number, default: 0 },   // 引流人固定金额
+  fulfillerAmount: { type: Number, default: 0 },   // 服务人固定金额
+};
+
+module.exports = { tenantContext, tenantScopePlugin, getCurrentTenantId, runWithoutTenantScope, BYPASS, performanceRuleSchema };
