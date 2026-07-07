@@ -10,11 +10,14 @@ JiayiCare 一键部署脚本
 """
 
 import sys
+import re
 import time
 import subprocess
 import argparse
 import os
 from datetime import datetime
+
+ANSI_ESCAPE_RE = re.compile(r'\x1b\[[0-9;?]*[a-zA-Z]|\x1b[=>]')
 
 # ── 配置 ──────────────────────────────────────────────
 HOST     = '121.40.156.39'
@@ -86,7 +89,11 @@ def run_deploy(backend_only=False, clean=False):
         _, stdout, stderr = ssh.exec_command(cmd, timeout=timeout, get_pty=True)
         out = ''
         for line in iter(stdout.readline, ''):
-            line = line.rstrip()
+            # get_pty=True 会让远程终端给输出加 ANSI 颜色/控制码（如 git diff 每行末尾的 \x1b[m），
+            # 2026-07-07 排查到：这导致 f.endswith('package.json') 之类的字符串判断永远匹配不上，
+            # 部署脚本误判"package.json未变"跳过npm install，新依赖(heic-convert)漏装导致后端启动崩溃。
+            # 这里统一清掉控制码，保证 run() 返回值是纯文本，后续逻辑判断才可靠。
+            line = ANSI_ESCAPE_RE.sub('', line).lstrip('\r').rstrip()
             if line:
                 print(f'   {line}')
                 out += line + '\n'
