@@ -35,10 +35,12 @@ async function buildDashboardData() {
       { $sort: { count: -1 } },
       { $limit: 10 },
     ]),
-    // 营收：按已完成订单的 servicePrice 粗略估算，非真实支付流水，仅供演示参考
+    // 营收：按 paymentStatus='paid' 真实支付确认口径统计（不是订单状态status，订单状态只代表
+    // 服务流程进度，不代表是否真的收到钱）。2026-07-07 与医护端运营看板统一口径，此前用
+    // servicePrice(标价)+status='completed' 是粗略估算，跟真实营收有出入
     Order.aggregate([
-      { $match: { status: 'completed' } },
-      { $group: { _id: null, total: { $sum: '$servicePrice' }, count: { $sum: 1 } } },
+      { $match: { paymentStatus: 'paid' } },
+      { $group: { _id: null, total: { $sum: '$paidAmount' }, count: { $sum: 1 } } },
     ]),
   ]);
 
@@ -65,10 +67,9 @@ async function buildDashboardData() {
     chronicDiseases: chronicAgg.map(c => ({ name: c._id, count: c.count })),
     dailyNewUsers: dailyNewUsers.map(d => ({ date: d._id, count: d.count })),
     revenue: {
-      estimateTotal: revenueEstimate,
+      total: revenueEstimate,
       orderCount: revenueOrderCount,
-      isEstimate: true, // 明确标注：非真实支付流水，按已完成订单价格粗略估算
-      note: '该数据为演示估算值，非真实财务流水',
+      isEstimate: false,
     },
   };
 }

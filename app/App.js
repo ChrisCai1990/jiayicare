@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import Navigation from './src/navigation';
 import { AuthProvider } from './src/context/AuthContext';
+import ErrorBoundary from './src/components/ErrorBoundary';
 
 // Web 端：把 Ionicons 字体 base64 直接注入 CSS
 // 这样完全不依赖网络路径，字体随 JS bundle 一起加载，彻底解决 404 问题
@@ -32,9 +33,11 @@ if (Platform.OS === 'web' && typeof document !== 'undefined') {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <StatusBar style="light" />
-      <Navigation />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <StatusBar style="light" />
+        <Navigation />
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

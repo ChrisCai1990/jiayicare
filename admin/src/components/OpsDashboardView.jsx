@@ -71,9 +71,9 @@ export default function OpsDashboardView({ data, lastUpdated }) {
         <StatCard label="近7天新增" value={data.users?.new7d ?? '-'} color="#D97706" />
         <StatCard label="近30天新增" value={data.users?.new30d ?? '-'} color="#D97706" />
         <StatCard
-          label="累计营收（估算）"
-          value={`¥${(data.revenue?.estimateTotal || 0).toLocaleString()}`}
-          sub={data.revenue?.note || '演示估算值'}
+          label="累计营收"
+          value={`¥${(data.revenue?.total || 0).toLocaleString()}`}
+          sub={`${data.revenue?.orderCount || 0} 笔已支付订单`}
           color="#7C3AED"
         />
       </div>
@@ -89,7 +89,6 @@ export default function OpsDashboardView({ data, lastUpdated }) {
 
       <div style={{ fontSize: 12, color: '#aaa', marginTop: 18, textAlign: 'center' }}>
         数据每次刷新自动更新 · 最后更新时间 {lastUpdated ? new Date(lastUpdated).toLocaleString('zh-CN') : '-'}
-        {data.revenue?.isEstimate && ' · 营收为演示估算值，非真实财务流水'}
       </div>
     </div>
   )

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, SafeAreaView, ActivityIndicator,
-  Modal, Image,
+  Modal, Image, Platform, Linking,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -395,7 +395,11 @@ function ReportPreviewModal({ report, onClose }) {
                 <Text style={styles.previewPdfText}>PDF 报告</Text>
                 <TouchableOpacity
                   style={styles.previewOpenBtn}
-                  onPress={() => window.open(content, '_blank')}
+                  onPress={() => {
+                    // Web端用window.open；移动原生端window不存在，用Linking打开系统浏览器/PDF查看器
+                    if (Platform.OS === 'web') window.open(content, '_blank');
+                    else Linking.openURL(content).catch(() => {});
+                  }}
                 >
                   <Text style={styles.previewOpenBtnText}>在新窗口打开</Text>
                   <Ionicons name="open-outline" size={14} color={colors.white} />
@@ -966,7 +970,7 @@ export default function ReportUploadScreen({ navigation, route }) {
           >
             <Ionicons name="clipboard-outline" size={16} color="#D97706" />
             <Text style={{ flex: 1, fontSize: 13, fontWeight: '600', color: '#92400E', marginLeft: 6 }}>
-              待上传检查单（{requisitions.filter(r => r.status === 'open' || r.status === 'partial').reduce((s, r) => s + r.items.filter(i => i.status === 'pending').length, 0)}项待上传）
+              待上传检查单（{requisitions.filter(r => r.status === 'open' || r.status === 'partial').reduce((s, r) => s + (r.items || []).filter(i => i.status === 'pending').length, 0)}项待上传）
             </Text>
             <Ionicons name={reqExpanded ? 'chevron-up' : 'chevron-down'} size={14} color="#92400E" />
           </TouchableOpacity>
@@ -975,7 +979,7 @@ export default function ReportUploadScreen({ navigation, route }) {
               <Text style={{ fontSize: 12, fontWeight: '600', color: '#1A2B24', marginBottom: 4 }}>
                 {r.title || '检查开单'} · {r.staffId?.name ? r.staffId.name + '开单' : ''} · {new Date(r.createdAt).toLocaleDateString('zh-CN')}
               </Text>
-              {r.items.filter(i => i.status === 'pending').map((item, idx) => (
+              {(r.items || []).filter(i => i.status === 'pending').map((item, idx) => (
                 <View key={idx} style={{ flexDirection: 'row', alignItems: 'center', paddingVertical: 4, paddingLeft: 8 }}>
                   <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: '#D97706', marginRight: 8 }} />
                   <Text style={{ flex: 1, fontSize: 12, color: '#4A6558' }}>{item.itemName}</Text>
