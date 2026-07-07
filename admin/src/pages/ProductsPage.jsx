@@ -1,11 +1,15 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
-import { adminAPI } from '../api'
+import { adminAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
 
 // 历史遗留数据里存了 http://121.40.156.39 绝对地址，在 https 页面下会被浏览器 Mixed Content
-// 策略拦截而不显示——服务器同时监听 http/https 且是同一份静态文件，强制升级协议即可正常加载
+// 策略拦截而不显示——服务器同时监听 http/https 且是同一份静态文件，强制升级协议即可正常加载。
+// 2026-07-07 修复：上传接口返回的是相对路径(/api/uploads/xxx.jpg)，admin后台域名跟后端API域名
+// 不是同一个，相对路径会按当前页面域名解析导致404、图片"上传后不展示"——需要拼上API_ORIGIN。
 function safeImgSrc(url) {
-  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url?.startsWith('http://')) {
+  if (!url) return url
+  if (url.startsWith('/')) return API_ORIGIN + url
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http://')) {
     return url.replace(/^http:\/\//, 'https://')
   }
   return url

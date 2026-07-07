@@ -1,4 +1,8 @@
 const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/admin` : 'http://121.40.156.39/api/admin'
+// 上传接口返回相对路径(如/api/uploads/xxx.jpg)，admin后台域名(admin.jiaycare.com)跟后端API
+// 域名(jiaycare.com)不同，直接用相对路径渲染<img>会按当前页面域名解析导致404——
+// 2026-07-07 商城产品图片"上传后不展示"的根因即此。导出API_ORIGIN供页面拼接完整图片URL。
+export const API_ORIGIN = BASE.replace(/\/api\/admin$/, '')
 
 let _token = localStorage.getItem('jy_admin_token') || ''
 

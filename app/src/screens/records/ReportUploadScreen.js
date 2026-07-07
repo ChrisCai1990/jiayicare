@@ -355,7 +355,7 @@ function ReportPreviewModal({ report, onClose }) {
   }, [report]);
 
   if (!report) return null;
-  const tm = TYPE_META[report.type] || TYPE_META.annual;
+  const tm = TYPE_META[report.type] || TYPE_META.other;
   // 优先用 mimeType，fallback 到 content/URL 后缀检测（兼容 mimeType 未存储的旧数据）
   const isImage = mimeType.startsWith('image/') || content.startsWith('data:image/') || /\.(png|jpe?g|gif|webp)$/i.test(content);
   const isPdf   = mimeType === 'application/pdf' || content.startsWith('data:application/pdf') || /\.pdf$/i.test(content);
@@ -427,7 +427,7 @@ function ReportPreviewModal({ report, onClose }) {
 }
 
 function ReportCard({ report, onDelete, onPreview }) {
-  const tm = TYPE_META[report.type] || TYPE_META.annual;
+  const tm = TYPE_META[report.type] || TYPE_META.other;
   const sm = STATUS_META[report.status] || STATUS_META.pending;
   return (
     <TouchableOpacity style={styles.reportCard} activeOpacity={0.85} onPress={() => onPreview(report)}>
