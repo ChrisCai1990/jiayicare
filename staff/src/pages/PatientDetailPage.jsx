@@ -887,6 +887,8 @@ export default function PatientDetailPage() {
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [showSRDetail, setShowSRDetail] = useState(null)
   const [staffList, setStaffList] = useState([])
+  const [assigningFulfillerOrder, setAssigningFulfillerOrder] = useState(null)
+  const [fulfillerChoice, setFulfillerChoice] = useState('')
   const [showFollowUpModal, setShowFollowUpModal] = useState(false)
   const [followUpDetail, setFollowUpDetail] = useState(null)
   const [editingFollowUp, setEditingFollowUp] = useState(null)
@@ -6124,15 +6126,29 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无购买记录</div>
               ) : (
                 <table className="table">
-                  <thead><tr><th>产品名称</th><th>金额</th><th>下单时间</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>产品名称</th><th>金额</th><th>下单时间</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
-                    {patientOrders.map(order => (
+                    {patientOrders.map(order => {
+                      // 谁推送谁获推广费(referrerId=推送时自动关联)，谁服务谁获服务费(fulfillerId)——
+                      // 只有该订单的推荐人本人或超管能指定服务人，不是随便谁都能改
+                      const canAssignFulfiller = staff?.role === 'superadmin' || String(order.referrerId?._id) === String(staff?._id)
+                      return (
                       <tr key={order._id}>
                         <td style={{ fontWeight: 500 }}>{order.serviceName || order.serviceId}</td>
                         <td style={{ color: '#D97706', fontWeight: 600 }}>
                           {order.servicePrice != null ? `¥${order.servicePrice}` : '-'}
                         </td>
                         <td style={{ fontSize: 13, color: '#8AA89C' }}>{new Date(order.createdAt).toLocaleDateString('zh-CN')}</td>
+                        <td style={{ fontSize: 12 }}>
+                          <div style={{ color: order.referrerId ? '#1E6B50' : '#C0B8AE' }}>推 {order.referrerId?.name || '—'}</div>
+                          <div style={{ color: order.fulfillerId ? '#0077B6' : '#C0B8AE' }}>
+                            服 {order.fulfillerId?.name || '未指定'}
+                            {canAssignFulfiller && (
+                              <button className="btn btn-sm" style={{ marginLeft: 4, padding: '0 4px', fontSize: 11 }}
+                                onClick={() => { setAssigningFulfillerOrder(order); setFulfillerChoice(order.fulfillerId?._id || '') }}>指定</button>
+                            )}
+                          </div>
+                        </td>
                         <td>
                           <span style={{ fontSize: 12, padding: '2px 8px', borderRadius: 99, fontWeight: 600,
                             background: (ORDER_STATUS_COLOR[order.status] || '#aaa') + '20',
@@ -6161,11 +6177,47 @@ export default function PatientDetailPage() {
                           )}
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
               )}
             </div>
+
+            {/* 指定服务人弹窗 */}
+            {assigningFulfillerOrder && (
+              <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setAssigningFulfillerOrder(null) }}>
+                <div className="modal" style={{ maxWidth: 420 }} onClick={e => e.stopPropagation()}>
+                  <div className="modal-header">
+                    <h3 className="modal-title">指定服务人</h3>
+                    <button className="modal-close" onClick={() => setAssigningFulfillerOrder(null)}>✕</button>
+                  </div>
+                  <div className="modal-body">
+                    <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
+                      谁服务谁获得服务费；不指定则该订单只产生推广费，不产生服务费
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0 }}>
+                      <label className="form-label">服务人</label>
+                      <select className="form-input" value={fulfillerChoice} onChange={e => setFulfillerChoice(e.target.value)}>
+                        <option value="">不指定（可以是我自己）</option>
+                        {staffList.map(s => <option key={s._id} value={s._id}>{s.name}（{s.role}）</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div className="modal-footer">
+                    <button className="btn btn-ghost" onClick={() => setAssigningFulfillerOrder(null)}>取消</button>
+                    <button className="btn btn-primary" onClick={async () => {
+                      try {
+                        const res = await staffAPI.setOrderFulfiller(assigningFulfillerOrder._id, fulfillerChoice || null)
+                        setPatientOrders(prev => prev.map(o => o._id === assigningFulfillerOrder._id ? res.data : o))
+                        toast('已设置服务人')
+                        setAssigningFulfillerOrder(null)
+                      } catch (err) { toast(err.message || '设置失败') }
+                    }}>保存</button>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 健康基金收支 */}
             <div className="card">

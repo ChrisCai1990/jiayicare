@@ -213,6 +213,7 @@ export const staffAPI = {
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),
   startOrder:           (orderId, data)   => req(`/staff/orders/${orderId}/start`, { method: 'PATCH', body: JSON.stringify(data) }),
+  setOrderFulfiller:    (orderId, fulfillerId) => req(`/staff/orders/${orderId}/fulfiller`, { method: 'PATCH', body: JSON.stringify({ fulfillerId }) }),
 
   // Abnormal Reviews
   getAbnormalReviews:    (p = {})   => req('/staff/abnormal-reviews?' + qs(p)),

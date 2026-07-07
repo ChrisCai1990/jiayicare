@@ -2673,8 +2673,31 @@ router.get('/patients/:id/orders', staffAuth, async (req, res) => {
   try {
     const orders = await Order.find({ user: req.params.id })
       .sort({ createdAt: -1 })
-      .limit(30);
+      .limit(30)
+      .populate('referrerId', 'name role')
+      .populate('fulfillerId', 'name role');
     res.json({ success: true, data: orders });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── PATCH /api/staff/orders/:id/fulfiller ────────────────────────
+// 指定服务人（谁服务谁获得服务费）：只有该订单的推荐人(referrerId)本人或超管可指定——
+// 2026-07-07 用户明确规则："推送的时候自动就定了(谁推送谁获推广费)，由推广的人员直接定"服务人，
+// 超管只负责在后台配置不同岗位的分佣比例，不参与具体每一单归属指定这类业务操作。
+// 没有指定服务人时，settleOrderCommission 只会生成 referrer 一条记录（"没有服务的，就只产生推广费"）。
+router.patch('/orders/:id/fulfiller', staffAuth, async (req, res) => {
+  try {
+    const { fulfillerId } = req.body;
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (req.staff.role !== 'superadmin' && String(order.referrerId) !== String(req.staff._id)) {
+      return res.status(403).json({ success: false, message: '仅该订单的推荐人可指定服务人' });
+    }
+    order.fulfillerId = fulfillerId || null;
+    await order.save();
+    res.json({ success: true, data: order, message: '服务人已设置' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

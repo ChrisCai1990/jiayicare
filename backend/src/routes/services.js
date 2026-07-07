@@ -4,6 +4,7 @@ const auth    = require('../middleware/auth');
 const Task    = require('../models/Task');
 const Order   = require('../models/Order');
 const Service = require('../models/Service');
+const PushRecord = require('../models/PushRecord');
 
 // ── 静态兜底（DB 为空时使用 / 订单查找用）────────────────────────
 const SERVICE_CATALOG = [
@@ -149,6 +150,16 @@ router.post('/order', auth, async (req, res) => {
   const isPkg     = !!PACKAGE_CATALOG.find(p => p.id === serviceId);
   const orderNote = [note, paymentMethod ? `支付方式：${paymentMethod}` : ''].filter(Boolean).join('；');
 
+  // 谁推送谁获推广费：查该患者对这个产品最近一次的推送记录，把推送人自动定为转介绍人(referrerId)，
+  // 不需要超管事后手动指定——2026-07-07 用户明确规则："推送的时候自动就定了"。
+  // 服务人(fulfillerId)由推荐人后续自己指定（可能是他本人，也可能转介给别人服务），这里先不填。
+  let referrerId = null;
+  if (product) {
+    const lastPush = await PushRecord.findOne({ patientId: req.user._id, type: 'product', productId: service.id })
+      .sort({ createdAt: -1 }).select('staffId');
+    if (lastPush) referrerId = lastPush.staffId;
+  }
+
   const [order] = await Promise.all([
     Order.create({
       user:         req.user._id,
@@ -159,6 +170,7 @@ router.post('/order', auth, async (req, res) => {
       note:         orderNote,
       status:       'pending',
       orderType:    isPkg ? 'package' : 'service',
+      referrerId,
     }),
     Task.create({
       user:        req.user._id,
