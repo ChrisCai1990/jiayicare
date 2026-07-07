@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { useToast } from '../App'
+import { useToast, useStaff } from '../App'
 
 // ── 方案类型 ─────────────────────────────────────────────────────────
 const PLAN_TYPES = [
@@ -334,6 +334,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const { id } = useParams()
   const nav = useNavigate()
   const toast = useToast()
+  const { staff } = useStaff()
+  // 年度管理方案只归家庭医生负责：营养师等其他角色可以查看方案内容，但不该看到能编辑/推送的入口
+  const canEdit = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const [searchParams, setSearchParams] = useSearchParams()
 
   const [patient, setPatient]       = useState(null)
@@ -560,7 +563,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </span>
           ) : null}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
-          {patientMode && (
+          {/* 年度管理方案只归家庭医生负责：营养师等其他角色可以查看，但不显示生成/推送这些编辑入口 */}
+          {patientMode && canEdit && (
             <>
               <button
                 onClick={handleGenerateAIAnnualPlan}
@@ -658,7 +662,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         >
           返回方案列表
         </button>
-        {patientMode && (
+        {patientMode && canEdit && (
           <button
             onClick={handlePush}
             disabled={pushing || dirty || !planType}
@@ -667,13 +671,15 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             {pushing ? '推送中...' : '推送给客户'}
           </button>
         )}
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '10px 28px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}
-        >
-          {saving ? '保存中...' : '保存年度管理方案'}
-        </button>
+        {canEdit && (
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            style={{ background: '#1E6B50', color: '#fff', border: 'none', padding: '10px 28px', borderRadius: 8, cursor: 'pointer', fontSize: 14, fontWeight: 600, opacity: saving ? 0.7 : 1 }}
+          >
+            {saving ? '保存中...' : '保存年度管理方案'}
+          </button>
+        )}
       </div>
     </div>
   )

@@ -459,7 +459,19 @@ export default function PlanDetailPage() {
                         <td style={{ color: '#aaa' }}>{item._idx + 1}</td>
                         <td>
                           <strong>{item.name}</strong>
-                          {item.itemType && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', background: '#f0ece4', padding: '1px 5px', borderRadius: 3 }}>已关联库</span>}
+                          {/* 2026-07-07修复：此前只判断itemType非空就显示"已关联库"，但历史数据/生成失败场景
+                              可能itemType有值而itemId是null(其实没有真正关联到具体医嘱库条目)，
+                              导致展示"假关联"。改成itemId和itemType都存在才算真正关联；未关联的（AI生成的
+                              项目名在admin医嘱库里找不到匹配）不自动新建库条目（避免污染正式库），
+                              标"待人工关联"提示健管/医生手动去库里核对或新建 */}
+                          {item.itemId && item.itemType && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', background: '#f0ece4', padding: '1px 5px', borderRadius: 3 }}>已关联库</span>
+                          )}
+                          {/* 待人工关联标签只在体检方案(涉及医嘱库匹配)展示，营养方案等类型的items本来
+                              就不走医嘱库关联逻辑，itemId天然为空，不应误标"待关联" */}
+                          {!item.itemId && plan.type === 'annual_checkup' && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#FEF3E2', padding: '1px 5px', borderRadius: 3 }}>待人工关联</span>
+                          )}
                         </td>
                         <td style={{ fontSize: 13, color: '#666' }}>{item.scheduledDate ? new Date(item.scheduledDate).toLocaleDateString('zh-CN') : '-'}</td>
                         <td style={{ maxWidth: 220, fontSize: 12, color: '#8AA89C', whiteSpace: 'pre-wrap' }}>{item.notes || '-'}</td>

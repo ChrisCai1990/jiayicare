@@ -5480,39 +5480,47 @@ export default function PatientDetailPage() {
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="card-title">管理方案</div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-secondary btn-sm" disabled={aiNutritionGenerating} onClick={async () => {
-                setAiNutritionGenerating(true)
-                try {
-                  await staffAPI.generateAINutritionPlan(id)
-                  toast('AI营养方案已生成，待营养师审核')
-                  loadPlans()
-                } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
-                finally { setAiNutritionGenerating(false) }
-              }}>{aiNutritionGenerating ? '生成中…' : '✨ AI营养方案'}</button>
-              <button className="btn btn-secondary btn-sm" disabled={aiCheckupGenerating} onClick={async () => {
-                setAiCheckupGenerating(true)
-                try {
-                  await staffAPI.generateAIAnnualCheckupPlan(id)
-                  toast('AI体检方案已生成，待健管专员审核')
-                  loadPlans()
-                } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
-                finally { setAiCheckupGenerating(false) }
-              }}>{aiCheckupGenerating ? '生成中…' : '✨ AI体检方案'}</button>
-              <select className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }} value=""
-                onChange={e => {
-                  const planType = e.target.value
-                  if (!planType) return
-                  // 年度管理方案需要先选定4种类型之一（健康重塑/年轻态/慢病维稳/健康预防），
-                  // 不像营养方案/体检方案可以直接一键生成，所以这里跳转到独立页面并带上
-                  // planType+autoGen=1，让页面加载完成后自动触发一次AI生成，省得用户再点一次
-                  nav(`/patients/${id}/annual-health?planType=${planType}&autoGen=1`)
-                }}>
-                <option value="">✨ AI年度管理方案</option>
-                <option value="health_reshape">健康重塑方案</option>
-                <option value="young_state">健康年轻态方案</option>
-                <option value="chronic_stable">慢病维稳方案</option>
-                <option value="health_prevention">健康预防方案</option>
-              </select>
+              {/* 2026-07-07 用户明确规则：AI营养方案只有营养师能生成；AI体检方案/年度管理方案
+                  只有家庭医生能生成（营养师能查看这些方案内容，但不该有生成入口） */}
+              {['nutritionist', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" disabled={aiNutritionGenerating} onClick={async () => {
+                  setAiNutritionGenerating(true)
+                  try {
+                    await staffAPI.generateAINutritionPlan(id)
+                    toast('AI营养方案已生成，待营养师审核')
+                    loadPlans()
+                  } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
+                  finally { setAiNutritionGenerating(false) }
+                }}>{aiNutritionGenerating ? '生成中…' : '✨ AI营养方案'}</button>
+              )}
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" disabled={aiCheckupGenerating} onClick={async () => {
+                  setAiCheckupGenerating(true)
+                  try {
+                    await staffAPI.generateAIAnnualCheckupPlan(id)
+                    toast('AI体检方案已生成，待健管专员审核')
+                    loadPlans()
+                  } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
+                  finally { setAiCheckupGenerating(false) }
+                }}>{aiCheckupGenerating ? '生成中…' : '✨ AI体检方案'}</button>
+              )}
+              {['familyDoctor', 'superadmin'].includes(staff?.role) && (
+                <select className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }} value=""
+                  onChange={e => {
+                    const planType = e.target.value
+                    if (!planType) return
+                    // 年度管理方案需要先选定4种类型之一（健康重塑/年轻态/慢病维稳/健康预防），
+                    // 不像营养方案/体检方案可以直接一键生成，所以这里跳转到独立页面并带上
+                    // planType+autoGen=1，让页面加载完成后自动触发一次AI生成，省得用户再点一次
+                    nav(`/patients/${id}/annual-health?planType=${planType}&autoGen=1`)
+                  }}>
+                  <option value="">✨ AI年度管理方案</option>
+                  <option value="health_reshape">健康重塑方案</option>
+                  <option value="young_state">健康年轻态方案</option>
+                  <option value="chronic_stable">慢病维稳方案</option>
+                  <option value="health_prevention">健康预防方案</option>
+                </select>
+              )}
             </div>
           </div>
           {plans.length === 0 ? (

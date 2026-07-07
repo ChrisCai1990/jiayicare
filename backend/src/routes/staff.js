@@ -3491,7 +3491,11 @@ ${discussionText}
 
 // ── 4.5 AI管理方案生成 ──────────────────────────────────────────
 // POST /api/staff/patients/:id/ai-annual-plan
+// 年度管理方案只有家庭医生/超管可生成（同 annual-plan PUT 接口的角色限制）
 router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅家庭医生可生成年度管理方案' });
+  }
   try {
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
