@@ -1,7 +1,16 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { useToast } from '../App'
+import { useToast, useStaff } from '../App'
+
+// 部分方案类型只归特定角色编辑（跟后端 PLAN_TYPE_OWNER_ROLE 对齐）：
+// 年度体检/年度管理方案只有家庭医生，营养干预方案只有营养师
+const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', annual_mgmt: 'familyDoctor', nutrition: 'nutritionist' }
+function canEditPlanType(planType, staffRole) {
+  const requiredRole = PLAN_TYPE_OWNER_ROLE[planType]
+  if (!requiredRole) return true
+  return staffRole === 'superadmin' || staffRole === requiredRole
+}
 
 const TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预方案', rehab:'运动康复方案', tcm:'中医方案', annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案', medical_assist:'就医协助方案', psychology:'心理咨询方案' }
 const STATUS_LABEL = { draft:'草稿', active:'已推送', completed:'已完成', cancelled:'已取消' }
@@ -172,6 +181,7 @@ export default function PlanDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
   const toast = useToast()
+  const { staff } = useStaff()
   const [plan, setPlan] = useState(null)
   const [loading, setLoading] = useState(true)
   const [showAddItem, setShowAddItem] = useState(false)
@@ -301,6 +311,7 @@ export default function PlanDetailPage() {
   if (loading) return <div className="page-loading">加载中...</div>
   if (!plan) return <div className="page">方案不存在</div>
 
+  const canEdit = canEditPlanType(plan.type, staff?.role)
   const completedCount = plan.items?.filter(i => i.status === 'completed').length || 0
   const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
 
@@ -326,26 +337,31 @@ export default function PlanDetailPage() {
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {plan.content?.aiStatus === 'pending' && (
+          {!canEdit && (
+            <span style={{ fontSize: 12, color: '#8AA89C', alignSelf: 'center' }}>
+              {TYPE_LABEL[plan.type]}仅{plan.type === 'nutrition' ? '营养师' : '家庭医生'}可编辑，你当前只能查看
+            </span>
+          )}
+          {canEdit && plan.content?.aiStatus === 'pending' && (
             <>
               <span style={{ fontSize: 12, color: '#D97706', alignSelf: 'center', background: '#FFF8F0', border: '1px solid #D97706', padding: '3px 10px', borderRadius: 6 }}>✨ AI生成草稿，待审核</span>
               <button className="btn btn-primary btn-sm" onClick={handleAdoptAI}>✅ 采纳方案</button>
               <button className="btn btn-secondary btn-sm" style={{ color: '#DC3545', borderColor: '#DC3545' }} onClick={handleRejectAI}>❌ 拒绝删除</button>
             </>
           )}
-          {plan.status === 'draft' && !editMode && (
+          {canEdit && plan.status === 'draft' && !editMode && (
             <button className="btn btn-secondary" onClick={startEdit}>✏️ 编辑信息</button>
           )}
-          {plan.status === 'draft' && (
+          {canEdit && plan.status === 'draft' && (
             <button className="btn btn-primary" onClick={handlePush}>📤 推送给会员</button>
           )}
-          {plan.status === 'active' && (
+          {canEdit && plan.status === 'active' && (
             <button className="btn btn-secondary" onClick={handleResetToDraft}>✏️ 重新编辑</button>
           )}
-          {plan.status === 'active' && (
+          {canEdit && plan.status === 'active' && (
             <button className="btn btn-primary" onClick={handlePush}>📤 重新推送</button>
           )}
-          <button className="btn btn-secondary" onClick={handleDelete}>删除</button>
+          {canEdit && <button className="btn btn-secondary" onClick={handleDelete}>删除</button>}
         </div>
       </div>
 
@@ -417,10 +433,10 @@ export default function PlanDetailPage() {
       <div className="card">
         <div className="card-header">
           <div className="card-title">方案项目</div>
-          <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(!showAddItem)}>＋ 添加项目</button>
+          {canEdit && <button className="btn btn-primary btn-sm" onClick={() => setShowAddItem(!showAddItem)}>＋ 添加项目</button>}
         </div>
 
-        {showAddItem && (
+        {canEdit && showAddItem && (
           <AddItemPanel plan={plan} onAdded={() => { setShowAddItem(false); load() }} onCancel={() => setShowAddItem(false)} />
         )}
 
@@ -439,32 +455,6 @@ export default function PlanDetailPage() {
                   </tr></thead>
                   <tbody>
                     {items.map((item, idx) => (
-                      editingItemId === item._id ? (
-                        <tr key={item._id} style={{ background: '#FAFAF8' }}>
-                          <td style={{ color: '#aaa' }}>{item._idx + 1}</td>
-                          <td>
-                            <input className="form-input" style={{ fontSize: 12, padding: '3px 6px' }} value={editingItemForm.name}
-                              onChange={e => setEditingItemForm(f => ({ ...f, name: e.target.value }))} />
-                          </td>
-                          <td>
-                            <input className="form-input" type="date" style={{ fontSize: 12, padding: '3px 6px' }} value={editingItemForm.scheduledDate}
-                              onChange={e => setEditingItemForm(f => ({ ...f, scheduledDate: e.target.value }))} />
-                          </td>
-                          <td>
-                            <input className="form-input" style={{ fontSize: 12, padding: '3px 6px' }} value={editingItemForm.notes}
-                              onChange={e => setEditingItemForm(f => ({ ...f, notes: e.target.value }))} />
-                          </td>
-                          <td>
-                            <span style={{ color: ITEM_STATUS_COLOR[item.status], fontWeight: 500, fontSize: 13 }}>
-                              {ITEM_STATUS[item.status]}
-                            </span>
-                          </td>
-                          <td style={{ whiteSpace: 'nowrap' }}>
-                            <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }} onClick={saveEditItem}>保存</button>
-                            <button className="btn btn-secondary btn-sm" onClick={() => setEditingItemId(null)}>取消</button>
-                          </td>
-                        </tr>
-                      ) : (
                       <tr key={item._id}>
                         <td style={{ color: '#aaa' }}>{item._idx + 1}</td>
                         <td>
@@ -472,7 +462,7 @@ export default function PlanDetailPage() {
                           {item.itemType && <span style={{ marginLeft: 6, fontSize: 11, color: '#8AA89C', background: '#f0ece4', padding: '1px 5px', borderRadius: 3 }}>已关联库</span>}
                         </td>
                         <td style={{ fontSize: 13, color: '#666' }}>{item.scheduledDate ? new Date(item.scheduledDate).toLocaleDateString('zh-CN') : '-'}</td>
-                        <td style={{ maxWidth: 180, fontSize: 12, color: '#8AA89C' }}>{item.notes || '-'}</td>
+                        <td style={{ maxWidth: 220, fontSize: 12, color: '#8AA89C', whiteSpace: 'pre-wrap' }}>{item.notes || '-'}</td>
                         <td>
                           <span style={{ color: ITEM_STATUS_COLOR[item.status], fontWeight: 500, fontSize: 13 }}>
                             {ITEM_STATUS[item.status]}
@@ -486,12 +476,13 @@ export default function PlanDetailPage() {
                           {item.status === 'completed' && (
                             <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => handleItemStatus(item._id, 'pending')}>撤销</button>
                           )}
-                          <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => startEditItem(item)}>编辑</button>
-                          <button className="btn btn-sm" style={{ color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer' }}
-                            onClick={() => handleDeleteItem(item._id, item.name)}>删除</button>
+                          {canEdit && <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }} onClick={() => startEditItem(item)}>编辑</button>}
+                          {canEdit && (
+                            <button className="btn btn-sm" style={{ color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer' }}
+                              onClick={() => handleDeleteItem(item._id, item.name)}>删除</button>
+                          )}
                         </td>
                       </tr>
-                      )
                     ))}
                   </tbody>
                 </table>
@@ -500,6 +491,42 @@ export default function PlanDetailPage() {
           </>
         )}
       </div>
+
+      {/* 方案项目编辑弹窗——注意事项是可能写详细建议的长文本(如营养方案早餐建议)，
+          之前用行内单行input，2026-07-07反馈"编辑框太小"，改成弹窗+textarea */}
+      {editingItemId && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setEditingItemId(null) }}>
+          <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">编辑方案项目</h3>
+              <button className="modal-close" onClick={() => setEditingItemId(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'grid', gap: 14 }}>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">项目名称 *</label>
+                <input className="form-input" value={editingItemForm.name}
+                  onChange={e => setEditingItemForm(f => ({ ...f, name: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">计划日期</label>
+                <input className="form-input" type="date" value={editingItemForm.scheduledDate}
+                  onChange={e => setEditingItemForm(f => ({ ...f, scheduledDate: e.target.value }))} />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">注意事项 / 具体建议</label>
+                <textarea className="form-input" rows={6} placeholder="具体可执行的建议内容..."
+                  style={{ resize: 'vertical', lineHeight: 1.6, fontFamily: 'inherit' }}
+                  value={editingItemForm.notes}
+                  onChange={e => setEditingItemForm(f => ({ ...f, notes: e.target.value }))} />
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-ghost" onClick={() => setEditingItemId(null)}>取消</button>
+              <button className="btn btn-primary" onClick={saveEditItem}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

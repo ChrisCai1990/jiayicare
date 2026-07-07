@@ -955,8 +955,27 @@ router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, re
     const matchedUsers = await User.find({ name: { $regex: patientName, $options: 'i' } }).select('_id');
     filter.patientId = { $in: matchedUsers.map(u => u._id) };
   }
-  // 非超管只能看自己创建的
-  if (req.staff.role !== 'superadmin') filter.staffId = req.staff._id;
+  // 查看权限按"患者归属"而非"创建人"：家庭医生需要看到自己名下患者的全部方案（含营养师生成的营养方案）
+  // 才能全面了解患者情况，但只有对应角色能编辑——查看范围和编辑范围是两条独立规则。
+  // 2026-07-07 用户反馈："家庭医生看不到客户的营养干预方案，家庭医生要能看到客户的所有信息"
+  const ROLE_ASSIGN_FIELD_FOR_PLANS = {
+    healthManager: 'assignedHealthManager', familyDoctor: 'assignedFamilyDoctor',
+    nutritionist: 'assignedNutritionist', medicalAssistant: 'assignedMedicalAssistant',
+    psychologist: 'assignedPsychologist', rehabSpecialist: 'assignedRehabSpecialist',
+    tcmDoctor: 'assignedTcmDoctor', specialist: 'assignedSpecialist',
+  };
+  if (req.staff.role !== 'superadmin') {
+    const assignField = ROLE_ASSIGN_FIELD_FOR_PLANS[req.staff.role];
+    if (assignField) {
+      const myPatients = await User.find({ [assignField]: req.staff._id }).select('_id');
+      const myPatientIds = myPatients.map(p => p._id);
+      filter.patientId = filter.patientId
+        ? { $in: (filter.patientId.$in || [filter.patientId]).filter(id => myPatientIds.some(p => String(p) === String(id))) }
+        : { $in: myPatientIds };
+    } else {
+      filter.staffId = req.staff._id; // 无归属字段的角色（如healthPlanner）退回按创建人过滤
+    }
+  }
   const skip = (Number(page) - 1) * Number(limit);
   const [plans, total] = await Promise.all([
     HealthPlan.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
@@ -992,10 +1011,24 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), async (req,
   res.json({ success: true, data: plan });
 });
 
-// PUT /api/staff/plans/:id — 只有制定人（staffId）或超管可修改，避免他人越权改动方案内容
+// 部分方案类型只归特定角色负责（不论谁生成的），跟"仅制定人可改"是两条独立限制都要满足：
+// 年度体检方案/年度管理方案只有家庭医生能编辑/审核，营养干预方案只有营养师——
+// 2026-07-07 用户明确规则：家庭医生生成的方案营养师不能删改，反之亦然，按患者角色分工而非单纯创建人
+const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist' };
+function checkPlanTypeRole(plan, staffRole) {
+  const requiredRole = PLAN_TYPE_OWNER_ROLE[plan.type];
+  if (!requiredRole) return true; // 未限定角色的类型（如医嘱/心理咨询方案）不受此限制
+  return staffRole === 'superadmin' || staffRole === requiredRole;
+}
+
+// PUT /api/staff/plans/:id — 只有制定人（staffId）或超管可修改，避免他人越权改动方案内容；
+// 部分方案类型（年度体检/营养方案）额外要求角色匹配，不论是不是本人生成
 router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  if (!checkPlanTypeRole(plan, req.staff.role)) {
+    return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（家庭医生/营养师）修改' });
+  }
   if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
   }
@@ -1036,11 +1069,13 @@ router.patch('/plans/:id/items/:itemId', staffAuth, async (req, res) => {
   res.json({ success: true, data: plan });
 });
 
-// DELETE /api/staff/plans/:id
-// DELETE /api/staff/plans/:id — 只有制定人（staffId）或超管可删除
+// DELETE /api/staff/plans/:id — 只有制定人（staffId）或超管可删除；部分方案类型额外要求角色匹配
 router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  if (!checkPlanTypeRole(plan, req.staff.role)) {
+    return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（家庭医生/营养师）删除' });
+  }
   if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
     return res.status(403).json({ success: false, message: '仅方案制定人可删除' });
   }
@@ -2574,7 +2609,12 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   }
 });
 
+// 年度管理方案：只有家庭医生/超管可生成和编辑（2026-07-07 用户明确规则：年度管理方案和年度体检方案
+// 只由家庭医生负责，营养师等其他角色不应有生成/编辑权限，此前任何登录角色都能操作）
 router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅家庭医生可生成/编辑年度管理方案' });
+  }
   try {
     const { planType, moduleData, notes, year } = req.body;
     if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
@@ -4507,9 +4547,36 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const DAY = 24 * 60 * 60 * 1000;
     const todos = [];
 
+    // 患者归属过滤：AI待办此前只按"角色能不能审这个类型"过滤，完全没按"这个患者是不是自己名下"过滤——
+    // 2026-07-07 反馈：患者潘孝银归属营养师吴苗苗，但营养师赵菲盈也能在自己的待审核列表里看到该患者的任务。
+    // 这里按角色对应的 assignedXxx 字段查出"自己名下患者"的ID集合，下面每个查询都加上这个范围限制。
+    const ROLE_ASSIGN_FIELD = {
+      healthManager: 'assignedHealthManager',
+      familyDoctor: 'assignedFamilyDoctor',
+      nutritionist: 'assignedNutritionist',
+      medicalAssistant: 'assignedMedicalAssistant',
+      psychologist: 'assignedPsychologist',
+      rehabSpecialist: 'assignedRehabSpecialist',
+      tcmDoctor: 'assignedTcmDoctor',
+      specialist: 'assignedSpecialist',
+    };
+    let myPatientIds = null; // null = 不限制（超管）；否则是当前角色名下患者ID数组
+    if (!isSuper) {
+      const assignField = ROLE_ASSIGN_FIELD[role];
+      if (assignField) {
+        const myPatients = await User.find({ [assignField]: req.staff._id }).select('_id').lean();
+        myPatientIds = myPatients.map(p => p._id);
+      } else {
+        myPatientIds = []; // 角色没有对应归属字段（如healthPlanner），保守起见不展示任何患者相关待办
+      }
+    }
+    const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
+    const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
+
     // ── 健管专员：体检报告 OCR 待审核（aiStatus=pending）──
     if (can('report_review')) {
-      const pendingReports = await MedicalReport.find({ aiStatus: 'pending' })
+      const reportFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
+      const pendingReports = await MedicalReport.find(reportFilter)
         .populate('user', 'name phone').sort({ updatedAt: -1 }).limit(50).lean();
       pendingReports.forEach(r => {
         const createdAt = r.updatedAt || r.createdAt;
@@ -4525,7 +4592,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 健管专员：健康档案问卷 AI 识别草稿待审核（archiveDraft 非空）──
     if (can('archive_review')) {
-      const draftUsers = await User.find({ archiveDraft: { $ne: null } })
+      const archiveFilter = { archiveDraft: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
+      const draftUsers = await User.find(archiveFilter)
         .select('name archiveDraft updatedAt').limit(50).lean();
       draftUsers.forEach(u => {
         const d = u.archiveDraft || {};
@@ -4543,7 +4611,10 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 家庭医师 / 营养师：AI 汇总分析按维度拆分审核 ──
     if (can('summary_review') || can('lifestyle_review')) {
-      const sumUsers = await User.find({ aiHealthSummary: { $ne: null } })
+      // summary_review(家庭医生)和lifestyle_review(营养师)各自归属字段不同，若都能审(如superadmin)则不限制；
+      // 否则用当前角色对应的患者范围（myPatientIds 已按 role 算好）
+      const sumFilter = { aiHealthSummary: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
+      const sumUsers = await User.find(sumFilter)
         .select('name aiHealthSummary').limit(100).lean();
       sumUsers.forEach(u => {
         const root = u.aiHealthSummary || {};
@@ -4586,7 +4657,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 家庭医师：AI用药建议待审核 ──
     if (can('medication_review')) {
-      const pendingMeds = await Medication.find({ aiStatus: 'pending' })
+      const medFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
+      const pendingMeds = await Medication.find(medFilter)
         .populate('user', 'name').sort({ createdAt: -1 }).limit(50).lean();
       pendingMeds.forEach(m => {
         const createdAt = m.createdAt || new Date();
@@ -4602,7 +4674,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 营养师：AI营养素建议待审核 ──
     if (can('supplement_review')) {
-      const pendingSups = await Supplement.find({ aiStatus: 'pending' })
+      const supFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
+      const pendingSups = await Supplement.find(supFilter)
         .populate('user', 'name').sort({ createdAt: -1 }).limit(50).lean();
       pendingSups.forEach(s => {
         const createdAt = s.createdAt || new Date();
@@ -4618,7 +4691,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 营养师：AI营养干预方案待审核 ──
     if (can('nutrition_plan_review')) {
-      const nutritionPlans = await HealthPlan.find({ type: 'nutrition', 'content.aiStatus': 'pending' })
+      const nutriPlanFilter = { type: 'nutrition', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const nutritionPlans = await HealthPlan.find(nutriPlanFilter)
         .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
       nutritionPlans.forEach(p => {
         const createdAt = p.createdAt || new Date();
@@ -4634,7 +4708,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 健管专员：AI年度体检方案待审核 ──
     if (can('checkup_plan_review')) {
-      const checkupPlans = await HealthPlan.find({ type: 'annual_checkup', 'content.aiStatus': 'pending' })
+      const checkupPlanFilter = { type: 'annual_checkup', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const checkupPlans = await HealthPlan.find(checkupPlanFilter)
         .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
       checkupPlans.forEach(p => {
         const createdAt = p.createdAt || new Date();
@@ -4655,6 +4730,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       pendingFollowUps.forEach(f => {
         const belongsToRole = f.reviewRole || 'familyDoctor';
         if (!isSuper && belongsToRole !== role) return;
+        if (!inMyScope(f.patientId?._id)) return;
         const createdAt = f.createdAt || new Date();
         const sourceLabel = f.sourceType === 'ai_review' ? '（AI月度回顾）' : f.sourceType === 'health_plan' ? '（方案确认后生成）' : '（方案排期）';
         todos.push({
@@ -4669,7 +4745,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 家庭医师：血压监测异常升级（AI自动跟进试点）──
     if (can('bp_alert_review')) {
-      const alertRecords = await HealthRecord.find({ type: 'bloodPressure', aiAlertStatus: 'pending' })
+      const bpFilter = { type: 'bloodPressure', aiAlertStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
+      const alertRecords = await HealthRecord.find(bpFilter)
         .populate('user', 'name').sort({ recordedAt: -1 }).limit(50).lean();
       alertRecords.forEach(r => {
         const createdAt = r.recordedAt || r.createdAt;
@@ -4686,7 +4763,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 家庭医师：风险预警待处理 → User.aiRiskAssessment(按年度) 最近一年 高/危急 且未审核 ──
     if (can('risk_review')) {
-      const riskUsers = await User.find({ aiRiskAssessment: { $ne: null } }).select('name aiRiskAssessment').limit(200).lean();
+      const riskFilter = { aiRiskAssessment: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
+      const riskUsers = await User.find(riskFilter).select('name aiRiskAssessment').limit(200).lean();
       riskUsers.forEach(u => {
         const byYear = riskByYear(u.aiRiskAssessment);
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
@@ -6044,7 +6122,11 @@ ${monitoringText}
 // ── 场景8：AI营养干预方案（营养师审核） ──────────────────────────────────────────
 // POST /api/staff/patients/:id/ai-nutrition-plan
 // 创建 HealthPlan type='nutrition' status='draft' content.aiStatus='pending'
+// 只有营养师/超管可生成营养干预方案（用户规则：营养方案只归营养师负责）
 router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
+  if (!['nutritionist', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅营养师可生成营养干预方案' });
+  }
   try {
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile lifestyle_data aiRiskAssessment');
@@ -6126,13 +6208,58 @@ async function matchCheckupItemsToRequisitionLibrary(items) {
     ...specialExams.map(e => ({ _id: e._id, name: e.name, itemType: 'specialExam' })),
     ...functionalTests.map(f => ({ _id: f._id, name: f.name, itemType: 'functionalTest' })),
   ];
+  // 去除括号符号(保留括号内文字，那常是关键信息)和常见修饰性噪声词后归一化，供相似度打分——
+  // 2026-07-07 用户给出3个具体反例：AI"胸部低剂量CT" vs 库"胸部（低剂量螺旋）CT"、
+  // AI"骨密度检测（双能X线法，腰椎+股骨颈）" vs 库"双能x线骨密度"（词序完全颠倒）、
+  // AI"妇科超声（经阴道）" vs 库"阴道超声"——字面顺序/括号修饰差异很大，简单includes子串匹配覆盖不了。
+  const NOISE_WORDS = ['检测', '检查', '化验', '法', '科', '经'];
+  const normalize = (s) => {
+    let t = s.replace(/[（）()，,、+\s]/g, '');
+    NOISE_WORDS.forEach(w => { t = t.split(w).join(''); });
+    return t.toLowerCase();
+  };
+  // 最长公共子序列长度：衡量"顺序一致的核心内容重合度"（如"胸部低剂量CT"→"胸部低剂量螺旋CT"）
+  function lcsLength(a, b) {
+    const m = a.length, n = b.length;
+    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] + 1 : Math.max(dp[i - 1][j], dp[i][j - 1]);
+      }
+    }
+    return dp[m][n];
+  }
+  // 多重集合交集（计数式）：衡量"字都在但顺序打乱"的情况（如"经阴道超声"vs"阴道超声"）
+  function multisetOverlap(a, b) {
+    const count = {};
+    for (const ch of a) count[ch] = (count[ch] || 0) + 1;
+    let inter = 0;
+    for (const ch of b) { if (count[ch] > 0) { inter++; count[ch]--; } }
+    return inter;
+  }
+  // 取LCS和多重集合交集中较高者：两种匹配方式分别覆盖"顺序一致"和"词序打乱"两类真实场景
+  const similarityScore = (a, b) => {
+    if (!a || !b) return 0;
+    return Math.max(lcsLength(a, b), multisetOverlap(a, b)) / Math.min(a.length, b.length);
+  };
   return items.map(item => {
     const name = (item.name || '').trim();
     if (!name) return item;
-    // 精确匹配优先；退而求其次做双向包含匹配（如AI写"甲状腺功能"能匹配库里"甲状腺功能五项"）
+    // 1) 精确匹配
     const exact = library.find(l => l.name === name);
-    const partial = exact || library.find(l => l.name.includes(name) || name.includes(l.name));
+    if (exact) return { ...item, itemId: exact._id, itemType: exact.itemType };
+    // 2) 双向包含匹配（如AI写"甲状腺功能"能匹配库里"甲状腺功能五项"）
+    const partial = library.find(l => l.name.includes(name) || name.includes(l.name));
     if (partial) return { ...item, itemId: partial._id, itemType: partial.itemType };
+    // 3) 归一化后相似度打分，取最高分且超过阈值（0.75）的一项——
+    // 阈值不宜过低，避免"血常规"误配到"尿常规"这类同字数但语义不同的项目（实测两者分数为0.67）
+    const normName = normalize(name);
+    let best = null, bestScore = 0;
+    library.forEach(l => {
+      const s = similarityScore(normName, normalize(l.name));
+      if (s > bestScore) { bestScore = s; best = l; }
+    });
+    if (best && bestScore >= 0.75) return { ...item, itemId: best._id, itemType: best.itemType };
     return item;
   });
 }
@@ -6140,7 +6267,11 @@ async function matchCheckupItemsToRequisitionLibrary(items) {
 // ── 场景6：AI年度体检方案（健管专员审核） ──────────────────────────────────────
 // POST /api/staff/patients/:id/ai-annual-checkup-plan
 // 创建 HealthPlan type='annual_checkup' status='draft' content.aiStatus='pending'
+// 只有家庭医生/超管可生成年度体检方案（跟年度管理方案同一条用户规则）
 router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅家庭医生可生成年度体检方案' });
+  }
   try {
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile aiRiskAssessment');

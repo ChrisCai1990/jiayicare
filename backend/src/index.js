@@ -12,12 +12,11 @@ const app = express();
 // 连接数据库
 connectDB();
 
-// 静态文件（上传图片）
-const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads');
-if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
-app.use('/api/uploads', express.static(UPLOADS_DIR));
-
 // 中间件 — CORS 白名单（生产域名 + 本地开发端口）
+// 2026-07-07 修复：CORS 中间件此前挂载在静态文件服务(/api/uploads)之后，导致上传的图片/PDF等
+// 静态文件响应完全没有 Access-Control-Allow-Origin 头。三端各自跑在不同域名下(staff.jiaycare.com
+// 访问 jiaycare.com/api/uploads/...)，pdf.js等用fetch读取跨域静态文件时被浏览器CORS策略拦截，
+// 报"PDF预览失败"——医护端审核弹窗看不到原图的真正根因。CORS必须在静态文件服务之前挂载。
 const ALLOWED_ORIGINS = [
   'https://jiaycare.com',
   'https://admin.jiaycare.com',
@@ -39,6 +38,11 @@ app.use(cors({
   },
   credentials: true,
 }));
+
+// 静态文件（上传图片/PDF）
+const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+app.use('/api/uploads', express.static(UPLOADS_DIR));
 app.use(express.json({ limit: '25mb' }));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 app.use(morgan('dev'));

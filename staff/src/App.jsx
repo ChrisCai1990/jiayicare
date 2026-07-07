@@ -15,7 +15,7 @@ class ErrorBoundary extends Component {
   }
 }
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { getToken, clearToken } from './api'
+import { getToken, clearToken, staffAPI } from './api'
 import LoginPage from './pages/LoginPage'
 import Layout from './components/Layout'
 import HomePage from './pages/HomePage'
@@ -54,6 +54,18 @@ function AuthProvider({ children }) {
     localStorage.setItem('jy_staff_info', JSON.stringify(staffInfo))
   }
   const logout = () => { setStaff(null); clearToken() }
+
+  // 员工登录后 staff 信息(含 customPermissions)只在登录那一刻写入 localStorage，此后不再刷新——
+  // 2026-07-07 排查确认：超管在角色管理里事后给该员工分配/修改自定义角色权限，员工浏览器缓存的
+  // 旧 staff 对象里 customPermissions 仍是登录时的旧值(通常是null)，导致侧边栏按固定角色显示全部菜单，
+  // 必须手动退出重新登录才生效。这里应用挂载时主动拉一次最新 /staff/me 覆盖缓存，不依赖重新登录。
+  React.useEffect(() => {
+    if (!getToken()) return
+    staffAPI.me().then(r => {
+      if (r.data) { setStaff(r.data); localStorage.setItem('jy_staff_info', JSON.stringify(r.data)) }
+    }).catch(() => {})
+  }, [])
+
   return <AuthCtx.Provider value={{ staff, login, logout }}>{children}</AuthCtx.Provider>
 }
 
