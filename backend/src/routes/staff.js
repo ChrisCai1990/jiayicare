@@ -51,6 +51,7 @@ const Medication        = require('../models/Medication');
 const Supplement        = require('../models/Supplement');
 const UserScreeningItem = require('../models/UserScreeningItem');
 const staffAuth = require('../middleware/staffAuth');
+const checkPermission = require('../middleware/checkPermission');
 const router = express.Router();
 
 // ── 图片上传（multer） ─────────────────────────────────────────
@@ -183,7 +184,7 @@ async function getSubordinateIds(staffId) {
 
 // ── GET /api/staff/patients ───────────────────────────────────────
 // 查询分配给当前医护人员（及其下属）的患者列表
-router.get('/patients', staffAuth, async (req, res) => {
+router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
   const { page = 1, limit = 20, search = '', disease = '', type = '' } = req.query;
   const staff = req.staff;
 
@@ -361,7 +362,7 @@ router.post('/patients/assign', staffAuth, async (req, res) => {
 
 // ── POST /api/staff/patients ──────────────────────────────────────
 // 新建患者（录入）
-router.post('/patients', staffAuth, async (req, res) => {
+router.post('/patients', staffAuth, checkPermission('patients', 'create'), async (req, res) => {
   const staff = req.staff;
   const {
     name, phone, gender, age, height, weight,
@@ -555,7 +556,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 });
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
-router.put('/patients/:id', staffAuth, async (req, res) => {
+router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
   const allowed = [
     'name', 'gender', 'age', 'height', 'weight',
     'birthDate', 'memberType', 'belief',
@@ -690,7 +691,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
-router.get('/followups', staffAuth, async (req, res) => {
+router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
   const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '' } = req.query;
 
   // 如果按患者姓名搜索，先查出匹配的用户ID
@@ -753,7 +754,7 @@ router.get('/followups', staffAuth, async (req, res) => {
 });
 
 // ── POST /api/staff/followups ─────────────────────────────────────
-router.post('/followups', staffAuth, async (req, res) => {
+router.post('/followups', staffAuth, checkPermission('followups', 'create'), async (req, res) => {
   const { patientId, date, type, status, content, theme, assignedTo, cancelReason, nextFollowUpDate, tags, vitals, checkInItems, repeatDaily, followUpSchemeId, formData, participants, interviewMinutes } = req.body;
   if (!patientId) return res.status(400).json({ success: false, message: '会员ID不能为空' });
 
@@ -791,7 +792,7 @@ router.post('/followups', staffAuth, async (req, res) => {
 });
 
 // ── PUT /api/staff/followups/:id ──────────────────────────────────
-router.put('/followups/:id', staffAuth, async (req, res) => {
+router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), async (req, res) => {
   // 允许创建人或被分配人更新（各自能改的字段范围不同，见下）
   const followUp = await FollowUp.findOne({
     _id: req.params.id,
@@ -864,7 +865,7 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
 
 // ── DELETE /api/staff/followups/:id ──────────────────────────────
 // 软删除：状态改为 cancelled，不物理删除
-router.delete('/followups/:id', staffAuth, async (req, res) => {
+router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'), async (req, res) => {
   const query = req.staff.role === 'superadmin' ? { _id: req.params.id } : { _id: req.params.id, staffId: req.staff._id };
   const followUp = await FollowUp.findOne(query);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
@@ -944,7 +945,7 @@ router.get('/staff-list', staffAuth, async (req, res) => {
 
 // ── 健康方案 ──────────────────────────────────────────────
 // GET /api/staff/plans?patientId=&type=&status=
-router.get('/plans', staffAuth, async (req, res) => {
+router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, res) => {
   const { patientId, type, status, patientName, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (patientId) filter.patientId = patientId;
@@ -974,7 +975,7 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/plans
-router.post('/plans', staffAuth, async (req, res) => {
+router.post('/plans', staffAuth, checkPermission('plans', 'create'), async (req, res) => {
   const { patientId, type, title, description, year, startDate, endDate, items, followupFrequency, summary, content } = req.body;
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   const plan = await HealthPlan.create({
@@ -992,7 +993,7 @@ router.post('/plans', staffAuth, async (req, res) => {
 });
 
 // PUT /api/staff/plans/:id — 只有制定人（staffId）或超管可修改，避免他人越权改动方案内容
-router.put('/plans/:id', staffAuth, async (req, res) => {
+router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
@@ -1037,7 +1038,7 @@ router.patch('/plans/:id/items/:itemId', staffAuth, async (req, res) => {
 
 // DELETE /api/staff/plans/:id
 // DELETE /api/staff/plans/:id — 只有制定人（staffId）或超管可删除
-router.delete('/plans/:id', staffAuth, async (req, res) => {
+router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
@@ -1049,7 +1050,7 @@ router.delete('/plans/:id', staffAuth, async (req, res) => {
 
 // ── 报告管理 ──────────────────────────────────────────────
 // GET /api/staff/medical-reports?patientId=&status=
-router.get('/medical-reports', staffAuth, async (req, res) => {
+router.get('/medical-reports', staffAuth, checkPermission('reports', 'view'), async (req, res) => {
   const { patientId, status, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (patientId) filter.user = patientId;
@@ -1206,7 +1207,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
 });
 
 // DELETE /api/staff/medical-reports/:id — 删除报告（审核前可删）
-router.delete('/medical-reports/:id', staffAuth, async (req, res) => {
+router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'delete'), async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
@@ -1223,7 +1224,7 @@ router.delete('/medical-reports/:id', staffAuth, async (req, res) => {
 });
 
 // PATCH /api/staff/medical-reports/:id/audit — 审核报告
-router.patch('/medical-reports/:id/audit', staffAuth, async (req, res) => {
+router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports', 'audit'), async (req, res) => {
   const { action, rejectReason, abnormalItems, reviewReason, reviewHospital, reviewDepartment, reviewDate, notes } = req.body;
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
