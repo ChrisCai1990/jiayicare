@@ -8,6 +8,7 @@ import DashboardPage from './pages/DashboardPage'
 import PatientsPage from './pages/PatientsPage'
 import PatientDetailPage from './pages/PatientDetailPage'
 import OrdersPage from './pages/OrdersPage'
+import CommissionsPage from './pages/CommissionsPage'
 import MessagesPage from './pages/MessagesPage'
 import ServicesPage from './pages/ServicesPage'
 import QuestionnairePage from './pages/QuestionnairePage'
@@ -106,6 +107,7 @@ export default function App() {
               <Route path="patients/:id/annual-plan" element={<AnnualPlanPage />} />
               <Route path="annual-plan/template/:templateId" element={<AnnualPlanPage templateMode />} />
               <Route path="orders" element={<OrdersPage />} />
+              <Route path="commissions" element={<CommissionsPage />} />
               <Route path="messages" element={<MessagesPage />} />
               <Route path="services" element={<ServicesPage />} />
               <Route path="questionnaires" element={<QuestionnairePage />} />

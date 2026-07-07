@@ -9,6 +9,7 @@ const NAV_SECTIONS = [
       { label: '数据总览',     icon: '📊', path: '/dashboard' },
       { label: '会员管理',     icon: '👥', path: '/patients' },
       { label: '订单管理',     icon: '📋', path: '/orders' },
+      { label: '佣金审核打款', icon: '💰', path: '/commissions' },
       { label: '消息中心',     icon: '💬', path: '/messages' },
       { label: '商城产品管理', icon: '🏪', path: '/products' },
       { label: '合作伙伴权益', icon: '🤝', path: '/partners' },

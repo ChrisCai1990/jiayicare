@@ -26,6 +26,7 @@ const UserChangeLog = require('../models/UserChangeLog');
 const MedicalReport = require('../models/MedicalReport');
 const SystemConfig  = require('../models/SystemConfig');
 const FollowUpPlan  = require('../models/FollowUpPlan');
+const Commission    = require('../models/Commission');
 const adminAuth = require('../middleware/adminAuth');
 const router = express.Router();
 
@@ -341,6 +342,86 @@ router.patch('/orders/:id/attribution', adminAuth, async (req, res) => {
   ).populate('referrerId', 'name role').populate('fulfillerId', 'name role');
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   res.json({ success: true, data: order, message: '绩效归属已更新' });
+});
+
+// ── 佣金审核打款流程 ────────────────────────────────────────────
+// 状态机：pending（核销后自动生成，待审核）→ confirmed（超管/manager审核通过，待打款）→ paid（已打款）
+//                                        └→ cancelled（审核驳回，不予结算）
+const COMMISSION_ADMIN_ROLES = ['superadmin', 'manager'];
+
+// GET /api/admin/commissions — 佣金列表（按状态/角色/员工筛选）
+router.get('/commissions', adminAuth, async (req, res) => {
+  if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
+    return res.status(403).json({ success: false, message: '无权限查看佣金数据' });
+  }
+  const { status, role, staffId, page = 1, limit = 20 } = req.query;
+  const filter = {};
+  if (status) filter.status = status;
+  if (role) filter.role = role;
+  if (staffId) filter.staffId = staffId;
+  const skip = (parseInt(page) - 1) * parseInt(limit);
+  const [records, total] = await Promise.all([
+    Commission.find(filter).sort({ createdAt: -1 }).skip(skip).limit(parseInt(limit))
+      .populate('staffId', 'name role').populate('patientId', 'name phone').populate('orderId', 'serviceName servicePrice'),
+    Commission.countDocuments(filter),
+  ]);
+  res.json({ success: true, data: records, total, page: parseInt(page) });
+});
+
+// PATCH /api/admin/commissions/:id/confirm — 审核通过（pending → confirmed）
+router.patch('/commissions/:id/confirm', adminAuth, async (req, res) => {
+  if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
+    return res.status(403).json({ success: false, message: '无权限审核佣金' });
+  }
+  const commission = await Commission.findById(req.params.id);
+  if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
+  if (commission.status !== 'pending') return res.status(400).json({ success: false, message: '仅待审核状态可审核通过' });
+  commission.status = 'confirmed';
+  await commission.save();
+  res.json({ success: true, data: commission, message: '已审核通过，待打款' });
+});
+
+// PATCH /api/admin/commissions/:id/reject — 审核驳回（pending → cancelled）
+router.patch('/commissions/:id/reject', adminAuth, async (req, res) => {
+  if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
+    return res.status(403).json({ success: false, message: '无权限审核佣金' });
+  }
+  const { reason } = req.body;
+  const commission = await Commission.findById(req.params.id);
+  if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
+  if (commission.status !== 'pending') return res.status(400).json({ success: false, message: '仅待审核状态可驳回' });
+  commission.status = 'cancelled';
+  if (reason) commission.remark = reason;
+  await commission.save();
+  res.json({ success: true, data: commission, message: '已驳回' });
+});
+
+// PATCH /api/admin/commissions/:id/pay — 确认打款（confirmed → paid）
+router.patch('/commissions/:id/pay', adminAuth, async (req, res) => {
+  if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
+    return res.status(403).json({ success: false, message: '无权限操作打款' });
+  }
+  const commission = await Commission.findById(req.params.id);
+  if (!commission) return res.status(404).json({ success: false, message: '记录不存在' });
+  if (commission.status !== 'confirmed') return res.status(400).json({ success: false, message: '仅已审核通过状态可打款' });
+  commission.status = 'paid';
+  commission.paidAt = new Date();
+  await commission.save();
+  res.json({ success: true, data: commission, message: '已确认打款' });
+});
+
+// PATCH /api/admin/commissions/batch-pay — 批量打款（对多条confirmed记录一次性打款）
+router.patch('/commissions/batch-pay', adminAuth, async (req, res) => {
+  if (!COMMISSION_ADMIN_ROLES.includes(req.admin.role)) {
+    return res.status(403).json({ success: false, message: '无权限操作打款' });
+  }
+  const { ids } = req.body;
+  if (!Array.isArray(ids) || !ids.length) return res.status(400).json({ success: false, message: '请选择要打款的记录' });
+  const result = await Commission.updateMany(
+    { _id: { $in: ids }, status: 'confirmed' },
+    { $set: { status: 'paid', paidAt: new Date() } }
+  );
+  res.json({ success: true, message: `已批量打款 ${result.modifiedCount} 条` });
 });
 
 // ── GET /api/admin/messages ───────────────────────────────────────

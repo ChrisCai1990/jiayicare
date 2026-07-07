@@ -57,6 +57,13 @@ export const adminAPI = {
   setOrderAttribution: (id, referrerId, fulfillerId) => req(`/orders/${id}/attribution`, { method: 'PATCH', body: JSON.stringify({ referrerId, fulfillerId }) }),
   messages:         (params = {})        => req('/messages?' + new URLSearchParams(params).toString()),
 
+  // 佣金审核打款
+  commissions:        (params = {})      => req('/commissions?' + new URLSearchParams(params).toString()),
+  confirmCommission:  (id)               => req(`/commissions/${id}/confirm`, { method: 'PATCH' }),
+  rejectCommission:   (id, reason)       => req(`/commissions/${id}/reject`, { method: 'PATCH', body: JSON.stringify({ reason }) }),
+  payCommission:      (id)               => req(`/commissions/${id}/pay`, { method: 'PATCH' }),
+  batchPayCommissions:(ids)              => req('/commissions/batch-pay', { method: 'PATCH', body: JSON.stringify({ ids }) }),
+
   // 服务商城管理
   services:           ()         => req('/services'),
   createService:      (data)     => req('/services', { method: 'POST', body: JSON.stringify(data) }),
