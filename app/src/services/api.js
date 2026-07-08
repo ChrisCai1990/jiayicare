@@ -1,6 +1,15 @@
 // ─── API Service ─────────────────────────────────────────────────
 const BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://jiaycare.com/api';
 
+// 后端返回的图片等资源常是相对路径(/api/uploads/xxx.png)，App 的 <Image> 需要完整 URL 才能加载。
+// origin = BASE_URL 去掉末尾 /api。mediaUrl 把相对路径拼成完整地址，已是 http(s) 的原样返回。
+const API_ORIGIN = BASE_URL.replace(/\/api\/?$/, '');
+export function mediaUrl(u) {
+  if (!u) return u;
+  if (/^https?:\/\//.test(u)) return u;
+  return API_ORIGIN + (u.startsWith('/') ? u : '/' + u);
+}
+
 // Simple storage: uses localStorage on web, falls back gracefully
 const storage = {
   getItem: (key) => {

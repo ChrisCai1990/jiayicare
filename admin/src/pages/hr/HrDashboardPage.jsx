@@ -93,15 +93,29 @@ export default function HrDashboardPage() {
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
             <StatCard label="体检机构" value={overview.hrData.examOrg || '-'} />
             <StatCard label="当年体检人数" value={overview.hrData.examCount || 0} sub="人" />
-            <StatCard label="客单价" value={`¥${overview.hrData.examUnitPrice || 0}`} color="#0077B6" />
+            <StatCard label="客单价（总体）" value={`¥${overview.hrData.examUnitPrice || 0}`} color="#0077B6" />
             <StatCard label="体检总额" value={`¥${(overview.hrData.examTotal || 0).toLocaleString()}`} color="#DC3545" />
           </div>
+          {(overview.hrData.examUnitPriceMale || overview.hrData.examUnitPriceMarriedFemale || overview.hrData.examUnitPriceSingleFemale) ? (
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+              <StatCard label="客单价·男性" value={`¥${overview.hrData.examUnitPriceMale || 0}`} />
+              <StatCard label="客单价·已婚女性" value={`¥${overview.hrData.examUnitPriceMarriedFemale || 0}`} />
+              <StatCard label="客单价·未婚女性" value={`¥${overview.hrData.examUnitPriceSingleFemale || 0}`} />
+            </div>
+          ) : null}
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
             <StatCard label="保险公司" value={overview.hrData.insurerName || '-'} />
-            <StatCard label="参保人数" value={overview.hrData.insuredCount || 0} sub="人" />
+            <StatCard label="参保人数（总体）" value={overview.hrData.insuredCount || 0} sub="人" />
             <StatCard label="保险金额" value={`¥${(overview.hrData.insuredAmount || 0).toLocaleString()}`} color="#0077B6" />
             <StatCard label="健康管理费" value={`¥${(overview.hrData.healthMgmtFee || 0).toLocaleString()}`} color="#D97706" />
           </div>
+          {(overview.hrData.insuredExecCount || overview.hrData.insuredFamilyCount || overview.hrData.insuredChildCount) ? (
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+              <StatCard label="参保·高管" value={overview.hrData.insuredExecCount || 0} sub="人" />
+              <StatCard label="参保·家属" value={overview.hrData.insuredFamilyCount || 0} sub="人" />
+              <StatCard label="参保·孩子" value={overview.hrData.insuredChildCount || 0} sub="人" />
+            </div>
+          ) : null}
           {(overview.hrData.otherServices || []).length > 0 && (
             <div style={{ marginTop: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 8 }}>其他付费单项服务</div>

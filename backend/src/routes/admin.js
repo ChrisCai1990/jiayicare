@@ -755,7 +755,7 @@ router.put('/staff/:id', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可修改医护账号' });
   }
-  const { name, role, title, department, region, password, phone, teamId } = req.body;
+  const { name, role, title, department, region, password, phone, teamId, mentorOfTeamId } = req.body;
   const update = {};
   if (name) update.name = name;
   if (role && STAFF_ROLES.includes(role)) update.role = role;
@@ -776,6 +776,19 @@ router.put('/staff/:id', adminAuth, async (req, res) => {
   staff.set(update);
   if (password) staff.password = password; // triggers bcrypt pre-save
   await staff.save();
+
+  // 在员工侧直接设/解除"团队负责人(导师)"：mentorOfTeamId 有值则把该团队 mentor 设为此员工；
+  // 传空字符串则解除该员工当前担任的所有团队导师职务。
+  if (mentorOfTeamId !== undefined) {
+    if (mentorOfTeamId) {
+      // 一个团队只有一个导师：先把此员工原本负责的其它团队导师清掉，再设到目标团队
+      await Team.updateMany({ mentorId: staff._id, _id: { $ne: mentorOfTeamId } }, { $set: { mentorId: null } });
+      await Team.findByIdAndUpdate(mentorOfTeamId, { mentorId: staff._id });
+    } else {
+      await Team.updateMany({ mentorId: staff._id }, { $set: { mentorId: null } });
+    }
+  }
+
   res.json({ success: true, data: { _id: staff._id, name: staff.name, role: staff.role } });
 });
 
@@ -1313,7 +1326,7 @@ router.delete('/enterprises/:id', adminAuth, async (req, res) => {
 
 // PUT /api/admin/enterprises/:id/hr-data —— 录入/更新某年度的HR看板数据（体检/保险/费用，手工录入）
 router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
-  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可录入企业财务数据' });
+  if (!['superadmin', 'platformSuper'].includes(req.admin.role)) return res.status(403).json({ success: false, message: '仅超级管理员可录入企业财务数据' });
   const { year, data } = req.body;
   if (!year) return res.status(400).json({ success: false, message: '请指定年度' });
   const enterprise = await Enterprise.findById(req.params.id);
@@ -1323,10 +1336,18 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
   const clean = {
     examOrg:       (data?.examOrg || '').trim(),
     examCount:     num(data?.examCount),
-    examUnitPrice: num(data?.examUnitPrice),
+    examUnitPrice: num(data?.examUnitPrice),  // 保留兼容：总体客单价
+    // 客单价按人群细分（男性/已婚女性/未婚女性）
+    examUnitPriceMale:          num(data?.examUnitPriceMale),
+    examUnitPriceMarriedFemale: num(data?.examUnitPriceMarriedFemale),
+    examUnitPriceSingleFemale:  num(data?.examUnitPriceSingleFemale),
     examTotal:     num(data?.examTotal),
     insurerName:   (data?.insurerName || '').trim(),
-    insuredCount:  num(data?.insuredCount),
+    insuredCount:  num(data?.insuredCount),   // 保留兼容：参保总人数
+    // 参保人数按人群细分（高管/家属/孩子）
+    insuredExecCount:   num(data?.insuredExecCount),
+    insuredFamilyCount: num(data?.insuredFamilyCount),
+    insuredChildCount:  num(data?.insuredChildCount),
     insuredAmount: num(data?.insuredAmount),
     healthMgmtFee: num(data?.healthMgmtFee),
     otherServices: Array.isArray(data?.otherServices)

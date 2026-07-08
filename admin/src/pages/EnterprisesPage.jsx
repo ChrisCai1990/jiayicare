@@ -393,7 +393,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
   const years = [yearNow + 1, yearNow, yearNow - 1, yearNow - 2]
   const byYear = enterprise.hrDataByYear || {}
   const [year, setYear] = useState(String(yearNow))
-  const blank = { examOrg: '', examCount: '', examUnitPrice: '', examTotal: '', insurerName: '', insuredCount: '', insuredAmount: '', healthMgmtFee: '', otherServices: [] }
+  const blank = { examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', otherServices: [] }
   const [form, setForm] = useState(() => ({ ...blank, ...(byYear[String(yearNow)] || {}) }))
   const [saving, setSaving] = useState(false)
 
@@ -444,7 +444,10 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
               <input className="form-input" value={form.examOrg} onChange={e => set('examOrg', e.target.value)} placeholder="如：美年大健康 / 慈铭体检" />
             </div>
             {numField('当年体检人数', 'examCount', '人')}
-            {numField('客单价', 'examUnitPrice', '¥')}
+            {numField('客单价（总体）', 'examUnitPrice', '¥')}
+            {numField('客单价·男性', 'examUnitPriceMale', '¥')}
+            {numField('客单价·已婚女性', 'examUnitPriceMarriedFemale', '¥')}
+            {numField('客单价·未婚女性', 'examUnitPriceSingleFemale', '¥')}
             {numField('体检总额', 'examTotal', '¥')}
           </div>
 
@@ -454,7 +457,10 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
               <label className="form-label">保险公司</label>
               <input className="form-input" value={form.insurerName} onChange={e => set('insurerName', e.target.value)} placeholder="如：中国平安 / 友邦" />
             </div>
-            {numField('参保人数', 'insuredCount', '人')}
+            {numField('参保人数（总体）', 'insuredCount', '人')}
+            {numField('参保·高管', 'insuredExecCount', '人')}
+            {numField('参保·家属', 'insuredFamilyCount', '人')}
+            {numField('参保·孩子', 'insuredChildCount', '人')}
             {numField('保险金额', 'insuredAmount', '¥')}
           </div>
 

@@ -1000,7 +1000,10 @@ router.post('/family-links', auth, async (req, res) => {
     });
     await userB.save();
 
-    // 发送系统消息通知被邀请方
+    // 取回刚 push 的这条邀请，拿到它的 _id，供消息里直接带操作入口
+    const savedInvite = userB.familyInvites[userB.familyInvites.length - 1];
+
+    // 发送系统消息通知被邀请方，带 action 让消息中心直接渲染「去确认」按钮，不依赖用户自己找入口
     const senderName = req.user.name || req.user.phone;
     const relationText = relation ? `（${relation}）` : '';
     await Message.create({
@@ -1008,8 +1011,9 @@ router.post('/family-links', auth, async (req, res) => {
       type:    'system',
       sender:  '系统通知',
       title:   '家庭成员邀请',
-      content: `${senderName} 邀请您成为家庭成员${relationText}，请前往「我的 → 家庭成员」确认或拒绝。`,
+      content: `${senderName} 邀请您成为家庭成员${relationText}，点击下方「去确认」即可接受或拒绝。`,
       unread:  true,
+      action:  { type: 'family_invite', inviteId: String(savedInvite?._id || ''), route: 'FamilyMembers' },
     });
 
     res.json({ success: true, message: `邀请已发送，等待 ${userB.name} 确认` });
@@ -1049,12 +1053,21 @@ router.patch('/family-links/invites/:inviteId/accept', auth, async (req, res) =>
     if (!userA) return res.status(404).json({ success: false, message: '邀请方用户不存在' });
 
     invite.status = 'accepted';
+    // A 邀请时填的 relation 语义是"B 是 A 的 X"（如 A 选"父亲"表示 B 是 A 的父亲）。
+    // 接受方 B 可在 accept 时传 relation 覆盖"A 是 B 的什么"；未传则按亲属关系自动推导反向称谓。
+    const REVERSE_RELATION = {
+      '配偶': '配偶', '兄弟': '兄弟姐妹', '姐妹': '兄弟姐妹',
+      '父亲': '子女', '母亲': '子女', '子女': '父母',
+      '祖父': '孙辈', '祖母': '孙辈',
+    };
+    const bRelationToA = invite.relation || '';                       // A 视角：B 是 A 的什么
+    const aRelationToB = (req.body.relation || REVERSE_RELATION[invite.relation] || '').trim(); // B 视角：A 是 B 的什么
     // 双向建立关联
     if (!userA.familyLinks.find(l => String(l.linkedUser) === String(req.user._id))) {
-      userA.familyLinks.push({ linkedUser: req.user._id, relation: '' });
+      userA.familyLinks.push({ linkedUser: req.user._id, relation: bRelationToA });
     }
     if (!userB.familyLinks.find(l => String(l.linkedUser) === String(invite.fromUser))) {
-      userB.familyLinks.push({ linkedUser: invite.fromUser, relation: invite.relation || '' });
+      userB.familyLinks.push({ linkedUser: invite.fromUser, relation: aRelationToB });
     }
     await Promise.all([userA.save(), userB.save()]);
     res.json({ success: true, message: '已接受邀请，家庭成员关联成功' });

@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl, Modal,
-  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator,
+  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI } from '../../services/api';
+import { messagesAPI, pushRecordsAPI, mediaUrl } from '../../services/api';
 import { mockMessages } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/Avatar';
@@ -76,6 +76,12 @@ function MessageItem({ msg, onPress }) {
         >
           {msg.content}
         </Text>
+        {msg.action?.type === 'family_invite' && (
+          <View style={styles.inviteActionBtn}>
+            <Ionicons name="people" size={13} color={colors.white} />
+            <Text style={styles.inviteActionText}>去确认</Text>
+          </View>
+        )}
       </View>
       <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
     </TouchableOpacity>
@@ -206,13 +212,21 @@ function ProductPushDetail({ msg, onClose }) {
                   }}>
                     {isChecked && <Ionicons name="checkmark" size={13} color={colors.white} />}
                   </View>
-                  {/* 图标 */}
-                  <View style={{
-                    width: 40, height: 40, borderRadius: 10, marginRight: spacing.sm, flexShrink: 0,
-                    backgroundColor: catColor + '15', alignItems: 'center', justifyContent: 'center',
-                  }}>
-                    <Text style={{ fontSize: 18 }}>{p.icon || '🛍'}</Text>
-                  </View>
+                  {/* 封面图（有图显示真实图片，无图回退 emoji 图标）*/}
+                  {p.images && p.images.length > 0 ? (
+                    <Image
+                      source={{ uri: mediaUrl(p.images[0]) }}
+                      style={{ width: 48, height: 48, borderRadius: 10, marginRight: spacing.sm, flexShrink: 0, backgroundColor: colors.background }}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={{
+                      width: 40, height: 40, borderRadius: 10, marginRight: spacing.sm, flexShrink: 0,
+                      backgroundColor: catColor + '15', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <Text style={{ fontSize: 18 }}>{p.icon || '🛍'}</Text>
+                    </View>
+                  )}
                   {/* 信息 */}
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontWeight: '600', color: colors.textPrimary, marginBottom: 2 }}>{p.name}</Text>
@@ -557,7 +571,9 @@ export default function MessagesScreen({ navigation }) {
 
   const handlePress = async (msg) => {
     const msgId = msg._id || msg.id;
-    setSelectedMsg(msg);
+    // 可操作消息（如家庭成员邀请）：直接跳到对应页面处理，不弹详情，省去用户自己找入口
+    const isActionable = msg.action?.type === 'family_invite';
+    if (!isActionable) setSelectedMsg(msg);
     if (msg.unread) {
       setMessages(prev =>
         prev.map(m => (m._id || m.id) === msgId ? { ...m, unread: false } : m)
@@ -566,6 +582,9 @@ export default function MessagesScreen({ navigation }) {
         if (msg.isPushRecord) await pushRecordsAPI.markRead(msgId);
         else await messagesAPI.markRead(msgId);
       } catch {}
+    }
+    if (isActionable) {
+      navigation.navigate(msg.action.route || 'FamilyMembers');
     }
   };
 
@@ -1172,6 +1191,12 @@ const styles = StyleSheet.create({
   msgTime: { fontSize: 11, color: colors.textMuted },
   msgText: { fontSize: 13, color: colors.textSecondary, lineHeight: 19 },
   msgTextUnread: { color: colors.textPrimary, fontWeight: '500' },
+  inviteActionBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
+    backgroundColor: colors.primary, borderRadius: radius.full,
+    paddingHorizontal: 12, paddingVertical: 5, marginTop: 8,
+  },
+  inviteActionText: { fontSize: 12, color: colors.white, fontWeight: '700' },
   // Detail modal
   detailOverlay: {
     flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end',

@@ -26,6 +26,8 @@ const pushRecordSchema = new mongoose.Schema({
     price:     { type: Number },
     category:  { type: String },
     icon:      { type: String, default: '🛍' },
+    images:    [{ type: String }],   // 产品图片，供推送详情展示封面
+    servicePrices: [{ label: { type: String }, price: { type: Number } }], // 多规格
   }],
   // 推送时为产品指定的各服务岗位具体人员（产品维度 servicePerformerRoles 定义岗位+比例，这里落到人）。
   // 客户据此下单后，核销时把这些人员写入 order.servicePerformers，按岗位比例发放绩效。

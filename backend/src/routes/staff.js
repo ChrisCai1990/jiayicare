@@ -1823,6 +1823,7 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
   const productItems = products.map(p => ({
     productId: p._id.toString(), name: p.name,
     price: priceMap[p._id.toString()] ?? p.originalPrice, category: p.category, icon: '🛍',
+    images: p.images || [], servicePrices: p.servicePrices || [],
   }));
   const totalPrice = productItems.reduce((sum, p) => sum + p.price, 0);
   const title = products.length === 1 ? products[0].name : `产品推荐（${products.length}项）`;

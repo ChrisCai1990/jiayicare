@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow, gradient } from '../../theme';
 import { mockServices, mockServiceCategories } from '../../data/mockData';
-import { servicesAPI } from '../../services/api';
+import { servicesAPI, mediaUrl } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
 function StarRow({ rating }) {
@@ -26,7 +26,7 @@ function ImageViewer({ url, onClose }) {
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <TouchableOpacity style={styles.imgViewerOverlay} activeOpacity={1} onPress={onClose}>
-        <Image source={{ uri: url }} style={styles.imgViewerImg} resizeMode="contain" />
+        <Image source={{ uri: mediaUrl(url) }} style={styles.imgViewerImg} resizeMode="contain" />
         <View style={styles.imgViewerHint}>
           <Ionicons name="close" size={18} color="#fff" />
           <Text style={styles.imgViewerHintText}>点击任意处关闭</Text>
@@ -65,7 +65,7 @@ function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
               <View style={{ marginBottom: spacing.md, gap: spacing.sm }}>
                 {item.images.map((url, i) => (
                   <TouchableOpacity key={i} activeOpacity={0.9} onPress={() => setPreviewImg(url)}>
-                    <Image source={{ uri: url }} style={styles.detailImg} resizeMode="contain" />
+                    <Image source={{ uri: mediaUrl(url) }} style={styles.detailImg} resizeMode="contain" />
                   </TouchableOpacity>
                 ))}
               </View>
@@ -126,15 +126,23 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errMsg, setErrMsg]       = useState('');
+  // 多规格：默认选第一个规格
+  const hasSpecs = !!(item?.servicePrices && item.servicePrices.length > 0);
+  const [specIdx, setSpecIdx] = useState(0);
 
   if (!item) return null;
+
+  const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
+  const currentSpecLabel = hasSpecs ? item.servicePrices[specIdx]?.label : '';
 
   const handleSubmit = async () => {
     setSubmitting(true);
     setErrMsg('');
     try {
+      // 把选中的规格名一并写进备注，让健管师明确客户选了哪个规格
+      const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
       // 付费模式带上支付方式，后端据此标记订单为线上支付并生成待收款任务
-      const res = await servicesAPI.order(item.id, note.trim(), isPay ? payMethod : undefined);
+      const res = await servicesAPI.order(item.id, noteWithSpec, isPay ? payMethod : undefined);
       if (res.success) {
         setSubmitted(true);
       } else {
@@ -158,7 +166,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             <Text style={styles.successTitle}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
             <Text style={styles.successDesc}>
               {isPay
-                ? `已为您生成 ¥${item.price} 的订单（${payMethod}）。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
+                ? `已为您生成 ¥${currentPrice} 的订单（${payMethod}）。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
                 : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
             </Text>
             <TouchableOpacity style={styles.successBtn} onPress={onClose} activeOpacity={0.85}>
@@ -186,15 +194,37 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             </View>
           </View>
 
-          {item.servicePrices && item.servicePrices.length > 0 ? (
-            <View style={[styles.modalPriceRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 6 }]}>
-              <Text style={styles.modalPriceLabel}>收费项目</Text>
-              {item.servicePrices.map((sp, i) => (
-                <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', width: '100%' }}>
-                  <Text style={{ fontSize: 14, color: colors.textSecondary }}>{sp.label}</Text>
-                  <Text style={{ fontSize: 15, fontWeight: '700', color: colors.danger }}>¥{sp.price}</Text>
-                </View>
-              ))}
+          {hasSpecs ? (
+            <View style={[styles.modalPriceRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 8 }]}>
+              <Text style={styles.modalPriceLabel}>选择规格</Text>
+              {item.servicePrices.map((sp, i) => {
+                const active = i === specIdx;
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    activeOpacity={0.85}
+                    onPress={() => setSpecIdx(i)}
+                    style={{
+                      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+                      paddingVertical: 10, paddingHorizontal: 12, borderRadius: radius.md,
+                      borderWidth: 1.5, borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active ? colors.primary + '0D' : colors.white,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{
+                        width: 18, height: 18, borderRadius: 9, borderWidth: 2,
+                        borderColor: active ? colors.primary : colors.border,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {active && <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.primary }} />}
+                      </View>
+                      <Text style={{ fontSize: 14, color: colors.textPrimary, fontWeight: active ? '700' : '500' }}>{sp.label}</Text>
+                    </View>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.danger }}>¥{sp.price}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
           ) : (
             <View style={styles.modalPriceRow}>
@@ -275,7 +305,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             >
               {submitting
                 ? <ActivityIndicator color={colors.white} />
-                : <Text style={styles.submitBtnText}>{isPay ? `确认支付 ¥${item.price}` : '提交预约'}</Text>
+                : <Text style={styles.submitBtnText}>{isPay ? `确认支付 ¥${currentPrice}` : '提交预约'}</Text>
               }
             </TouchableOpacity>
           </View>
@@ -297,7 +327,7 @@ function ServiceCard({ item, onDetail, onBuy, onPay }) {
       ) : null}
       {/* 封面图：有图直接展示（不点开也能看到），无图退回图标 */}
       {item.images && item.images.length > 0 && (
-        <Image source={{ uri: item.images[0] }} style={styles.serviceCover} resizeMode="cover" />
+        <Image source={{ uri: mediaUrl(item.images[0]) }} style={styles.serviceCover} resizeMode="cover" />
       )}
       <View style={styles.serviceCardTop}>
         <View style={[styles.serviceIcon, { backgroundColor: item.iconColor + '15' }]}>

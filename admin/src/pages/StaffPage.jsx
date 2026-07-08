@@ -18,7 +18,7 @@ const STAFF_ROLES = Object.keys(ROLE_LABEL)
 
 const EMPTY_FORM = {
   username: '', password: '', name: '', role: 'healthManager',
-  title: '', department: '', region: '', phone: '', teamId: '',
+  title: '', department: '', region: '', phone: '', teamId: '', mentorOfTeamId: '',
 }
 
 export default function StaffPage() {
@@ -68,7 +68,8 @@ export default function StaffPage() {
 
   const openEdit = (s) => {
     setEditId(s._id)
-    setForm({ username: s.username, password: '', name: s.name, role: s.role, title: s.title || '', department: s.department || '', region: s.region || '', phone: s.phone || '', teamId: s.teamId ? String(s.teamId) : '' })
+    const mentorTeam = teams.find(t => String(t.mentorId?._id || t.mentorId) === String(s._id))
+    setForm({ username: s.username, password: '', name: s.name, role: s.role, title: s.title || '', department: s.department || '', region: s.region || '', phone: s.phone || '', teamId: s.teamId ? String(s.teamId) : '', mentorOfTeamId: mentorTeam ? String(mentorTeam._id) : '' })
     setError('')
     setShowModal(true)
   }
@@ -91,7 +92,7 @@ export default function StaffPage() {
     setError('')
     try {
       if (editId) {
-        const payload = { name: form.name, role: form.role, title: form.title, department: form.department, region: form.region, phone: form.phone, teamId: form.teamId || null }
+        const payload = { name: form.name, role: form.role, title: form.title, department: form.department, region: form.region, phone: form.phone, teamId: form.teamId || null, mentorOfTeamId: form.mentorOfTeamId || '' }
         if (form.password) payload.password = form.password
         await adminAPI.updateStaff(editId, payload)
         toast('账号已更新')
@@ -229,9 +230,19 @@ export default function StaffPage() {
                   <label className="form-label">所属团队</label>
                   <select className="form-input" value={form.teamId} onChange={set('teamId')}>
                     <option value="">不属于任何团队</option>
-                    {teams.map(t => <option key={t._id} value={t._id}>{t.name}{t.mentorId?.name ? `（导师：${t.mentorId.name}）` : ''}</option>)}
+                    {teams.map(t => <option key={t._id} value={t._id}>{t.name}{t.mentorId?.name ? `（负责人：${t.mentorId.name}）` : ''}</option>)}
                   </select>
                 </div>
+                {editId && (
+                  <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                    <label className="form-label">担任团队负责人（可查看该团队全部成员的健康档案）</label>
+                    <select className="form-input" value={form.mentorOfTeamId} onChange={set('mentorOfTeamId')}>
+                      <option value="">不担任负责人</option>
+                      {teams.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}
+                    </select>
+                    <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>设为某团队负责人后，此员工即可查看该团队所有成员名下的客户档案</div>
+                  </div>
+                )}
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">职称</label>
                   <input className="form-input" placeholder="如：主任医师" value={form.title} onChange={set('title')} />

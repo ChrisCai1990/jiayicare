@@ -149,9 +149,7 @@ function LinkCard({ link, onDelete }) {
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.xs }}>
           <Text style={styles.memberName}>{u.name}</Text>
-          {link.relation ? (
-            <Text style={styles.memberRelation}>{link.relation}</Text>
-          ) : null}
+          <Text style={styles.memberRelation}>{link.relation || '家人'}</Text>
           {u.gender ? <Text style={styles.memberGender}>{u.gender}</Text> : null}
         </View>
         <Text style={styles.memberPhone}>{u.phone}</Text>
