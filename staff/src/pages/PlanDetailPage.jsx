@@ -2,6 +2,14 @@ import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
+import AiRuleHint from '../components/AiRuleHint'
+
+// 方案类型 → AI 规则说明场景
+const PLAN_AI_SCENE = {
+  nutrition: 'nutrition_plan',
+  checkup: 'checkup_plan', annual_checkup: 'checkup_plan',
+  annual_mgmt: 'annual_plan', health: 'annual_plan',
+}
 
 // 部分方案类型只归特定角色编辑（跟后端 PLAN_TYPE_OWNER_ROLE 对齐）：
 // 年度体检/年度管理方案只有家庭医生，营养干预方案只有营养师
@@ -364,6 +372,8 @@ export default function PlanDetailPage() {
           {canEdit && <button className="btn btn-secondary" onClick={handleDelete}>删除</button>}
         </div>
       </div>
+
+      {PLAN_AI_SCENE[plan.type] && <AiRuleHint scene={PLAN_AI_SCENE[plan.type]} />}
 
       {/* 基本信息 */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>

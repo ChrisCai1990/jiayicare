@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import AiRuleHint from '../components/AiRuleHint'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
@@ -4693,6 +4694,7 @@ export default function PatientDetailPage() {
 
         return (
           <div>
+            <AiRuleHint scene="health_analysis" />
             {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>📅 年度</span>
@@ -5018,6 +5020,7 @@ export default function PatientDetailPage() {
         const overall = lvOf(ra.overallLevel)
         return (
           <div>
+            <AiRuleHint scene="risk_assessment" />
             {/* 年度切换 */}
             <div style={{ display: 'flex', gap: 4, marginBottom: 12 }}>
               {yearOpts.map(y => (
@@ -6262,6 +6265,7 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setAiHelper(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <AiRuleHint scene={aiHelper.type === 'followup' ? 'followup_suggestion' : aiHelper.type === 'coach' ? 'coach_message' : 'content_recommend'} />
               {aiHelper.loading && <div style={{ padding: 30, textAlign: 'center', color: '#8AA89C' }}>AI 生成中，请稍候…</div>}
               {aiHelper.error && <div style={{ padding: 16, color: '#DC2626', background: '#FEF2F2', borderRadius: 8 }}>{aiHelper.error}</div>}
 

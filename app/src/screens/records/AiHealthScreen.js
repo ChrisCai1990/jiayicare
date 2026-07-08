@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { userAPI } from '../../services/api';
 import tts from '../../utils/tts';
+import AiRuleHint from '../../components/AiRuleHint';
 
 const TABS = ['AI健康分析', 'AI风险评估'];
 
@@ -307,6 +308,7 @@ export default function AiHealthScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
+          <AiRuleHint scene={tab === TABS[0] ? 'health_analysis' : 'risk_assessment'} />
           {!!message && (
             <View style={[styles.doctorNotice, { backgroundColor: '#FEF2F2' }]}>
               <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />

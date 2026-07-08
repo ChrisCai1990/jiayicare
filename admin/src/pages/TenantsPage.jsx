@@ -14,6 +14,7 @@ export default function TenantsPage() {
   const [editing, setEditing] = useState(null)   // null=新建
   const [form, setForm] = useState(EMPTY)
   const [saving, setSaving] = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
 
   const isPlatform = admin?.role === 'platformSuper'
 
@@ -57,7 +58,19 @@ export default function TenantsPage() {
           <h1 className="page-title">🏛️ 机构管理</h1>
           <p className="page-subtitle">多机构 SaaS 运营 · 每家机构数据相互隔离</p>
         </div>
-        <button className="btn btn-primary" onClick={openCreate}>＋ 新建机构</button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-secondary" onClick={() => setShowGuide(true)}>📖 开通流程</button>
+          <button className="btn btn-primary" onClick={openCreate}>＋ 新建机构</button>
+        </div>
+      </div>
+
+      {/* 顶部流程提示条 */}
+      <div style={{ background: '#F0FAF5', border: '1px solid #CDE9DC', borderRadius: 10, padding: '12px 16px', marginBottom: 16, fontSize: 13, color: '#2C6E52', lineHeight: 1.7 }}>
+        <b>同行接入 SaaS 一句话流程：</b>
+        ①点「新建机构」填机构名+英文标识，同时设好该机构管理员账号 →
+        ②系统自动为其创建独立数据空间（与其他机构完全隔离）→
+        ③把管理员账号交给同行，他用它登录 <code>admin.jiaycare.com</code> 独立运营，看不到也改不了别家数据。
+        <span style={{ color: '#888', cursor: 'pointer', marginLeft: 6, textDecoration: 'underline' }} onClick={() => setShowGuide(true)}>查看详细步骤</span>
       </div>
 
       <div className="card">
@@ -155,6 +168,38 @@ export default function TenantsPage() {
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowModal(false)}>取消</button>
               <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? '保存中...' : (editing ? '保存' : '创建机构')}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showGuide && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowGuide(false) }}>
+          <div className="modal" style={{ maxWidth: 560 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">📖 同行接入 SaaS 完整流程</h3>
+              <button className="modal-close" onClick={() => setShowGuide(false)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ fontSize: 14, lineHeight: 1.8, color: '#333' }}>
+              {[
+                ['第 1 步 · 平台超管登录', '用平台超管账号（platform）登录本后台，只有平台超管能看到「机构管理」入口，普通机构的超管看不到。'],
+                ['第 2 步 · 新建机构', '点右上「＋ 新建机构」，填写：机构名称（如"华东康养中心"）、机构标识（英文/拼音，如 huadong，创建后不可改）、可选主题色和标语。'],
+                ['第 3 步 · 设机构管理员', '在同一弹窗里填写该机构的管理员用户名和初始密码。系统会自动为这家机构创建一个独立的超级管理员账号。'],
+                ['第 4 步 · 数据自动隔离', '机构一经创建，它名下的员工、客户、报告、订单等所有数据都自动打上该机构标识，与其他机构完全隔离——各家互不可见、互不干扰。'],
+                ['第 5 步 · 交付同行使用', '把第 3 步的管理员账号交给同行。他用它登录 admin.jiaycare.com，进入的就是他自己机构的独立后台，正常添加员工、客户、配置商城，全程看不到也改不了别家的数据。'],
+                ['第 6 步 · 平台侧管理', '平台超管随时可在本页查看各机构的员工数/客户数，或暂停（status=已暂停）某机构。机构下已有员工或客户时不允许直接删除，需先清理，防误删。'],
+              ].map(([t, d], i) => (
+                <div key={i} style={{ marginBottom: 14 }}>
+                  <div style={{ fontWeight: 700, color: '#1E6B50', marginBottom: 2 }}>{t}</div>
+                  <div style={{ color: '#555' }}>{d}</div>
+                </div>
+              ))}
+              <div style={{ background: '#FFFDF7', border: '1px solid #F0E6C8', borderRadius: 8, padding: '10px 12px', fontSize: 13, color: '#8A6D3B' }}>
+                💡 目前尚未做的（需人工线下处理）：机构自助注册开户、按机构计费/续费、每家机构独立登录域名。当前所有机构共用 admin.jiaycare.com 登录，靠账号自动区分归属。
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-primary" onClick={() => setShowGuide(false)}>知道了</button>
             </div>
           </div>
         </div>
