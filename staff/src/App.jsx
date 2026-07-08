@@ -14,7 +14,7 @@ class ErrorBoundary extends Component {
     return this.props.children
   }
 }
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom'
 import { getToken, clearToken, staffAPI } from './api'
 import LoginPage from './pages/LoginPage'
 import Layout from './components/Layout'
@@ -44,6 +44,34 @@ import DailyCheckinPage from './pages/DailyCheckinPage'
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
 export function useStaff() { return useContext(AuthCtx) }
+
+// 路由 path → 权限模块 key。与 Layout.jsx 的 ALL_NAV.moduleKey 保持一致。
+// 未列出的路由（工作台/消息/个人中心/患者详情等）不做模块级权限拦截。
+export const ROUTE_MODULE = {
+  '/patients': 'patients',
+  '/followups': 'followups',
+  '/plans': 'plans',
+  '/reports': 'reports',
+  '/abnormal-reviews': 'abnormal_review',
+  '/service-records': 'service_records',
+  '/knowledge': 'knowledge',
+  '/questionnaires': 'questionnaires',
+  '/products': 'products',
+  '/commission': 'commission',
+  '/marketing': 'marketing',
+  '/team': 'team',
+  '/operations': 'operations',
+  '/daily-checkin': 'daily_checkin',
+}
+
+// 判断某员工是否有权访问某模块（view 权限）。
+// - 未配置自定义角色权限（customPermissions 为 null）→ 走内置角色，一律放行（老员工兼容，与 Layout 一致）
+// - 配了自定义角色权限 → 严格按 customPermissions[moduleKey].view
+export function canViewModule(staff, moduleKey) {
+  if (!moduleKey) return true
+  if (!staff?.customPermissions) return true
+  return !!staff.customPermissions[moduleKey]?.view
+}
 
 function AuthProvider({ children }) {
   const [staff, setStaff] = useState(() => {
@@ -95,6 +123,19 @@ function RequireAuth({ children }) {
   return children
 }
 
+// 模块级权限守卫：无权限的模块即使直接敲 URL 也跳回工作台，
+// 不再是"菜单藏了但路由能进"。moduleKey 从当前 pathname 前缀匹配 ROUTE_MODULE。
+function RequireModule({ children }) {
+  const { staff } = useStaff()
+  const loc = useLocation()
+  const matched = Object.keys(ROUTE_MODULE).find(
+    p => loc.pathname === p || loc.pathname.startsWith(p + '/')
+  )
+  const moduleKey = matched ? ROUTE_MODULE[matched] : null
+  if (!canViewModule(staff, moduleKey)) return <Navigate to="/home" replace />
+  return children
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -102,7 +143,7 @@ export default function App() {
         <ToastProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/" element={<RequireAuth><Layout /></RequireAuth>}>
+            <Route path="/" element={<RequireAuth><RequireModule><Layout /></RequireModule></RequireAuth>}>
               <Route index element={<Navigate to="/home" replace />} />
               <Route path="home" element={<HomePage />} />
               <Route path="patients" element={<PatientsPage />} />

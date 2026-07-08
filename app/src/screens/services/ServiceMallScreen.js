@@ -20,8 +20,25 @@ function StarRow({ rating }) {
   );
 }
 
+// ── 图片全屏预览 ──────────────────────────────────────────────────
+function ImageViewer({ url, onClose }) {
+  if (!url) return null;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.imgViewerOverlay} activeOpacity={1} onPress={onClose}>
+        <Image source={{ uri: url }} style={styles.imgViewerImg} resizeMode="contain" />
+        <View style={styles.imgViewerHint}>
+          <Ionicons name="close" size={18} color="#fff" />
+          <Text style={styles.imgViewerHintText}>点击任意处关闭</Text>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
 // ── 服务详情弹窗（图文内容）───────────────────────────────────────
-function ServiceDetailModal({ item, onClose, onBuy }) {
+function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
+  const [previewImg, setPreviewImg] = useState(null);
   if (!item) return null;
   const hasContent = item.description || (item.images && item.images.length > 0);
   return (
@@ -42,14 +59,16 @@ function ServiceDetailModal({ item, onClose, onBuy }) {
           </View>
 
           {/* 图文内容区 */}
-          <ScrollView style={{ maxHeight: 380 }} showsVerticalScrollIndicator={false}>
-            {/* 图片轮播 */}
+          <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            {/* 图片：完整宽度纵向平铺，不裁切，点击看大图 */}
             {item.images && item.images.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.md }}>
+              <View style={{ marginBottom: spacing.md, gap: spacing.sm }}>
                 {item.images.map((url, i) => (
-                  <Image key={i} source={{ uri: url }} style={{ width: 280, height: 180, borderRadius: radius.md, marginRight: spacing.sm }} resizeMode="cover" />
+                  <TouchableOpacity key={i} activeOpacity={0.9} onPress={() => setPreviewImg(url)}>
+                    <Image source={{ uri: url }} style={styles.detailImg} resizeMode="contain" />
+                  </TouchableOpacity>
                 ))}
-              </ScrollView>
+              </View>
             )}
 
             {/* 描述文字 */}
@@ -81,24 +100,29 @@ function ServiceDetailModal({ item, onClose, onBuy }) {
             </View>
           </ScrollView>
 
-          {/* 底部按钮 */}
+          {/* 底部按钮：先付费，付款后进入预约（付费为主流程） */}
           <View style={[styles.modalBtns, { paddingVertical: spacing.lg }]}>
             <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
               <Text style={styles.cancelBtnText}>返回</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.submitBtn} onPress={onBuy} activeOpacity={0.85}>
-              <Text style={styles.submitBtnText}>立即预约</Text>
+            <TouchableOpacity style={styles.payBtn} onPress={onPay} activeOpacity={0.85}>
+              <Ionicons name="card-outline" size={16} color={colors.white} />
+              <Text style={styles.payBtnText}>立即购买 ¥{item.price}</Text>
             </TouchableOpacity>
           </View>
         </View>
       </View>
+      <ImageViewer url={previewImg} onClose={() => setPreviewImg(null)} />
     </Modal>
   );
 }
 
 // ── 购买确认弹窗 ────────────────────────────────────────────────────
-function PurchaseModal({ item, onClose }) {
+// mode: 'consult' 预约咨询（走线索，健管师联系）| 'pay' 自主付费（选支付方式，生成待收款订单）
+function PurchaseModal({ item, mode = 'consult', onClose }) {
+  const isPay = mode === 'pay';
   const [note, setNote]           = useState('');
+  const [payMethod, setPayMethod] = useState('微信支付');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errMsg, setErrMsg]       = useState('');
@@ -109,7 +133,8 @@ function PurchaseModal({ item, onClose }) {
     setSubmitting(true);
     setErrMsg('');
     try {
-      const res = await servicesAPI.order(item.id, note.trim());
+      // 付费模式带上支付方式，后端据此标记订单为线上支付并生成待收款任务
+      const res = await servicesAPI.order(item.id, note.trim(), isPay ? payMethod : undefined);
       if (res.success) {
         setSubmitted(true);
       } else {
@@ -130,8 +155,12 @@ function PurchaseModal({ item, onClose }) {
             <View style={styles.successIconWrap}>
               <Ionicons name="checkmark-circle" size={52} color={colors.success} />
             </View>
-            <Text style={styles.successTitle}>预约申请已提交</Text>
-            <Text style={styles.successDesc}>健管师将在 1-2 个工作日内与您联系，请保持手机畅通。</Text>
+            <Text style={styles.successTitle}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
+            <Text style={styles.successDesc}>
+              {isPay
+                ? `已为您生成 ¥${item.price} 的订单（${payMethod}）。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
+                : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
+            </Text>
             <TouchableOpacity style={styles.successBtn} onPress={onClose} activeOpacity={0.85}>
               <Text style={styles.successBtnText}>知道了</Text>
             </TouchableOpacity>
@@ -186,6 +215,30 @@ function PurchaseModal({ item, onClose }) {
             ))}
           </View>
 
+          {/* 支付方式（仅自主付费时展示） */}
+          {isPay && (
+            <>
+              <Text style={styles.noteLabel}>支付方式</Text>
+              <View style={styles.payMethodRow}>
+                {['微信支付', '支付宝'].map(m => (
+                  <TouchableOpacity
+                    key={m}
+                    style={[styles.payMethodChip, payMethod === m && styles.payMethodChipActive]}
+                    onPress={() => setPayMethod(m)}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons
+                      name={m === '微信支付' ? 'logo-wechat' : 'wallet-outline'}
+                      size={16}
+                      color={payMethod === m ? colors.primary : colors.textMuted}
+                    />
+                    <Text style={[styles.payMethodText, payMethod === m && styles.payMethodTextActive]}>{m}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
           <Text style={styles.noteLabel}>备注（可选）</Text>
           <TextInput
             style={styles.noteInput}
@@ -203,7 +256,11 @@ function PurchaseModal({ item, onClose }) {
 
           <View style={styles.hintRow}>
             <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
-            <Text style={styles.hintText}>提交后，健管师将与您联系确认具体服务安排</Text>
+            <Text style={styles.hintText}>
+              {isPay
+                ? '提交后生成待收款订单，健管师将与您确认并完成收款，可在「我的订单」查看'
+                : '提交后，健管师将与您联系确认具体服务安排'}
+            </Text>
           </View>
 
           <View style={styles.modalBtns}>
@@ -218,7 +275,7 @@ function PurchaseModal({ item, onClose }) {
             >
               {submitting
                 ? <ActivityIndicator color={colors.white} />
-                : <Text style={styles.submitBtnText}>提交预约</Text>
+                : <Text style={styles.submitBtnText}>{isPay ? `确认支付 ¥${item.price}` : '提交预约'}</Text>
               }
             </TouchableOpacity>
           </View>
@@ -228,7 +285,7 @@ function PurchaseModal({ item, onClose }) {
   );
 }
 
-function ServiceCard({ item, onDetail, onBuy }) {
+function ServiceCard({ item, onDetail, onBuy, onPay }) {
   const discount = Math.round((1 - item.price / item.originalPrice) * 10);
   const hasDiscount = item.price < item.originalPrice;
   return (
@@ -238,6 +295,10 @@ function ServiceCard({ item, onDetail, onBuy }) {
           <Text style={styles.serviceTagText}>{item.tag}</Text>
         </View>
       ) : null}
+      {/* 封面图：有图直接展示（不点开也能看到），无图退回图标 */}
+      {item.images && item.images.length > 0 && (
+        <Image source={{ uri: item.images[0] }} style={styles.serviceCover} resizeMode="cover" />
+      )}
       <View style={styles.serviceCardTop}>
         <View style={[styles.serviceIcon, { backgroundColor: item.iconColor + '15' }]}>
           <Ionicons name={item.icon} size={26} color={item.iconColor} />
@@ -272,8 +333,8 @@ function ServiceCard({ item, onDetail, onBuy }) {
             )}
           </View>
         </View>
-        <TouchableOpacity style={styles.buyBtn} onPress={() => onDetail(item)}>
-          <Text style={styles.buyBtnText}>立即预约</Text>
+        <TouchableOpacity style={styles.buyBtn} onPress={() => onPay(item)} activeOpacity={0.85}>
+          <Text style={styles.buyBtnText}>立即购买</Text>
         </TouchableOpacity>
       </View>
     </TouchableOpacity>
@@ -336,6 +397,8 @@ export default function ServiceMallScreen({ navigation, route }) {
   const [activeCategory, setActiveCategory] = useState('全部');
   const [detailService, setDetailService]   = useState(null);   // 详情弹窗
   const [selectedService, setSelectedService] = useState(null); // 购买弹窗
+  const [purchaseMode, setPurchaseMode]     = useState('consult'); // consult 预约 | pay 付费
+  const openPurchase = (svc, mode) => { setPurchaseMode(mode); setSelectedService(svc); };
   const [services, setServices]     = useState(mockServices);
   const [categories, setCategories] = useState(mockServiceCategories);
   const [loadingList, setLoadingList] = useState(true);
@@ -418,7 +481,13 @@ export default function ServiceMallScreen({ navigation, route }) {
             <>
               <Text style={styles.resultCount}>共 {filtered.length} 个服务</Text>
               {filtered.map(s => (
-                <ServiceCard key={s.id} item={s} onDetail={setDetailService} onBuy={setSelectedService} />
+                <ServiceCard
+                  key={s.id}
+                  item={s}
+                  onDetail={setDetailService}
+                  onBuy={(svc) => openPurchase(svc, 'consult')}
+                  onPay={(svc) => openPurchase(svc, 'pay')}
+                />
               ))}
             </>
           )}
@@ -430,13 +499,14 @@ export default function ServiceMallScreen({ navigation, route }) {
         <ServiceDetailModal
           item={detailService}
           onClose={() => setDetailService(null)}
-          onBuy={() => { setSelectedService(detailService); setDetailService(null); }}
+          onBuy={() => { openPurchase(detailService, 'consult'); setDetailService(null); }}
+          onPay={() => { openPurchase(detailService, 'pay'); setDetailService(null); }}
         />
       )}
 
       {/* Purchase Modal */}
       {selectedService && (
-        <PurchaseModal item={selectedService} onClose={() => setSelectedService(null)} />
+        <PurchaseModal item={selectedService} mode={purchaseMode} onClose={() => setSelectedService(null)} />
       )}
     </SafeAreaView>
   );
@@ -526,8 +596,42 @@ const styles = StyleSheet.create({
   priceOriginal: { fontSize: 12, color: colors.textMuted, textDecorationLine: 'line-through' },
   discountBadge: { backgroundColor: colors.danger + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
   discountText: { fontSize: 11, color: colors.danger, fontWeight: '700' },
-  buyBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.lg, paddingVertical: 10, borderRadius: radius.full },
+  buyBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.full },
   buyBtnText: { fontSize: 14, color: colors.white, fontWeight: '700' },
+  consultBtnSm: {
+    paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.full,
+    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.white,
+  },
+  consultBtnSmText: { fontSize: 14, color: colors.primary, fontWeight: '700' },
+  // 列表卡片封面图
+  serviceCover: { width: '100%', height: 160, borderRadius: radius.md, marginBottom: spacing.sm, backgroundColor: colors.background },
+  // 详情弹窗完整图片
+  detailImg: { width: '100%', minHeight: 200, borderRadius: radius.md, backgroundColor: colors.background },
+  // 图片全屏预览
+  imgViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
+  imgViewerImg: { width: '100%', height: '80%' },
+  imgViewerHint: { position: 'absolute', bottom: 40, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  imgViewerHintText: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+  // 详情弹窗双按钮：预约咨询 / 立即支付
+  consultBtn: {
+    flex: 1, flexDirection: 'row', gap: 5, paddingVertical: 14, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  consultBtnText: { fontSize: 15, color: colors.primary, fontWeight: '700' },
+  payBtn: {
+    flex: 1.4, flexDirection: 'row', gap: 5, paddingVertical: 14, borderRadius: radius.md,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  payBtnText: { fontSize: 15, color: colors.white, fontWeight: '700' },
+  // 支付方式选择
+  payMethodRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  payMethodChip: {
+    flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  payMethodChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + '0D' },
+  payMethodText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
+  payMethodTextActive: { color: colors.primary, fontWeight: '700' },
 
   // Modal
   modalOverlay: {

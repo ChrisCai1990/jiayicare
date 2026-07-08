@@ -1390,7 +1390,7 @@ router.get('/followup-plans', staffAuth, async (req, res) => {
 
 // ── 科普知识库 ────────────────────────────────────────────
 // GET /api/staff/knowledge?category=&tag=
-router.get('/knowledge', staffAuth, async (req, res) => {
+router.get('/knowledge', staffAuth, checkPermission('knowledge', 'view'), async (req, res) => {
   const { category, tag, search, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (category) filter.category = category;
@@ -1406,7 +1406,7 @@ router.get('/knowledge', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/knowledge — 创建知识条目
-router.post('/knowledge', staffAuth, async (req, res) => {
+router.post('/knowledge', staffAuth, checkPermission('knowledge', 'send'), async (req, res) => {
   const { title, category, tags, content, fileUrl, fileType, coverUrl } = req.body;
   if (!title) return res.status(400).json({ success: false, message: '标题不能为空' });
   const item = await KnowledgeItem.create({
@@ -1418,13 +1418,13 @@ router.post('/knowledge', staffAuth, async (req, res) => {
 });
 
 // DELETE /api/staff/knowledge/:id
-router.delete('/knowledge/:id', staffAuth, async (req, res) => {
+router.delete('/knowledge/:id', staffAuth, checkPermission('knowledge', 'send'), async (req, res) => {
   await KnowledgeItem.findByIdAndDelete(req.params.id);
   res.json({ success: true, message: '已删除' });
 });
 
 // POST /api/staff/knowledge/:id/push — 推送给会员
-router.post('/knowledge/:id/push', staffAuth, async (req, res) => {
+router.post('/knowledge/:id/push', staffAuth, checkPermission('knowledge', 'send'), async (req, res) => {
   const { patientIds } = req.body; // 数组
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const item = await KnowledgeItem.findById(req.params.id);
@@ -1440,13 +1440,13 @@ router.post('/knowledge/:id/push', staffAuth, async (req, res) => {
 
 // ── 问卷推送 ───────────────────────────────────────────────
 // GET /api/staff/questionnaires — 问卷模板列表（含草稿，供医护查看；仅 active 可推送）
-router.get('/questionnaires', staffAuth, async (req, res) => {
+router.get('/questionnaires', staffAuth, checkPermission('questionnaires', 'view'), async (req, res) => {
   const qs = await DynamicQuestionnaire.find({ deletedAt: null }).select('title description status questions deadline createdAt').sort({ createdAt: -1 });
   res.json({ success: true, data: qs });
 });
 
 // POST /api/staff/questionnaires/:id/push — 推送问卷给会员
-router.post('/questionnaires/:id/push', staffAuth, async (req, res) => {
+router.post('/questionnaires/:id/push', staffAuth, checkPermission('questionnaires', 'send'), async (req, res) => {
   const { patientIds, deadline } = req.body;
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const q = await DynamicQuestionnaire.findById(req.params.id);
@@ -1473,7 +1473,7 @@ router.post('/questionnaires/:id/push', staffAuth, async (req, res) => {
 });
 
 // GET /api/staff/questionnaires/:id/responses — 查看问卷回答列表（医护端）
-router.get('/questionnaires/:id/responses', staffAuth, async (req, res) => {
+router.get('/questionnaires/:id/responses', staffAuth, checkPermission('questionnaires', 'view'), async (req, res) => {
   try {
     const q = await DynamicQuestionnaire.findById(req.params.id).select('title questions');
     if (!q) return res.status(404).json({ success: false, message: '问卷不存在' });
@@ -1503,7 +1503,7 @@ router.get('/push-records', staffAuth, async (req, res) => {
 
 // ── 服务记录（就医/专科/心理/运动/中医） ──────────────────
 // GET /api/staff/service-records?patientId=&type=
-router.get('/service-records', staffAuth, async (req, res) => {
+router.get('/service-records', staffAuth, checkPermission('service_records', 'view'), async (req, res) => {
   const { patientId, type, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (req.staff.role !== 'superadmin') filter.staffId = req.staff._id;
@@ -1519,7 +1519,7 @@ router.get('/service-records', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/service-records
-router.post('/service-records', staffAuth, async (req, res) => {
+router.post('/service-records', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
   const { patientId, type, date, title, content, result, nextDate, diseaseName, medicalEscort, tcmRecord, specialistRecord } = req.body;
   if (!patientId || !type) return res.status(400).json({ success: false, message: '会员和类型不能为空' });
   const record = await ServiceRecord.create({
@@ -1535,7 +1535,7 @@ router.post('/service-records', staffAuth, async (req, res) => {
 });
 
 // PUT /api/staff/service-records/:id
-router.put('/service-records/:id', staffAuth, async (req, res) => {
+router.put('/service-records/:id', staffAuth, checkPermission('service_records', 'edit'), async (req, res) => {
   const record = await ServiceRecord.findOne({ _id: req.params.id, staffId: req.staff._id });
   if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
   const allowed = ['date', 'title', 'content', 'result', 'nextDate', 'diseaseName', 'medicalEscort', 'tcmRecord', 'specialistRecord'];
@@ -1545,7 +1545,7 @@ router.put('/service-records/:id', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/service-records/:id/supplement — 追加补充记录
-router.post('/service-records/:id/supplement', staffAuth, async (req, res) => {
+router.post('/service-records/:id/supplement', staffAuth, checkPermission('service_records', 'edit'), async (req, res) => {
   try {
     const record = await ServiceRecord.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
@@ -1558,7 +1558,7 @@ router.post('/service-records/:id/supplement', staffAuth, async (req, res) => {
 });
 
 // PUT /api/staff/service-records/:id/supplement/:suppId — 编辑补充记录（仅本人）
-router.put('/service-records/:id/supplement/:suppId', staffAuth, async (req, res) => {
+router.put('/service-records/:id/supplement/:suppId', staffAuth, checkPermission('service_records', 'edit'), async (req, res) => {
   try {
     const record = await ServiceRecord.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
@@ -1574,7 +1574,7 @@ router.put('/service-records/:id/supplement/:suppId', staffAuth, async (req, res
 });
 
 // DELETE /api/staff/service-records/:id/supplement/:suppId — 删除补充记录（仅本人）
-router.delete('/service-records/:id/supplement/:suppId', staffAuth, async (req, res) => {
+router.delete('/service-records/:id/supplement/:suppId', staffAuth, checkPermission('service_records', 'delete'), async (req, res) => {
   try {
     const record = await ServiceRecord.findById(req.params.id);
     if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
@@ -1588,7 +1588,7 @@ router.delete('/service-records/:id/supplement/:suppId', staffAuth, async (req, 
 });
 
 // DELETE /api/staff/service-records/:id
-router.delete('/service-records/:id', staffAuth, async (req, res) => {
+router.delete('/service-records/:id', staffAuth, checkPermission('service_records', 'delete'), async (req, res) => {
   await ServiceRecord.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
   res.json({ success: true, message: '已删除' });
 });
@@ -1756,7 +1756,7 @@ router.put('/me/password', staffAuth, async (req, res) => {
 
 // ── 产品推送 ───────────────────────────────────────────────
 // GET /api/staff/products — 从商城产品集合获取（与管理后台联通）
-router.get('/products', staffAuth, async (req, res) => {
+router.get('/products', staffAuth, checkPermission('products', 'view'), async (req, res) => {
   const { category = '' } = req.query;
   const filter = { status: 'on' };
   if (category) filter.category = category;
@@ -1776,7 +1776,7 @@ router.get('/products', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
-router.post('/products/push-bundle', staffAuth, async (req, res) => {
+router.post('/products/push-bundle', staffAuth, checkPermission('products', 'send'), async (req, res) => {
   const { productIds, patientIds, pricedProducts } = req.body;
   if (!productIds?.length) return res.status(400).json({ success: false, message: '请选择产品' });
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
@@ -1805,7 +1805,7 @@ router.post('/products/push-bundle', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/products/:id/push — 推送产品给会员（兼容旧版）
-router.post('/products/:id/push', staffAuth, async (req, res) => {
+router.post('/products/:id/push', staffAuth, checkPermission('products', 'send'), async (req, res) => {
   const { patientIds } = req.body;
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const product = await Product.findById(req.params.id).catch(() => null);
@@ -1824,7 +1824,7 @@ router.post('/products/:id/push', staffAuth, async (req, res) => {
 
 // ── 团队管理 ───────────────────────────────────────────────
 // GET /api/staff/team — 获取团队成员列表（可见下级）
-router.get('/team', staffAuth, async (req, res) => {
+router.get('/team', staffAuth, checkPermission('team', 'view'), async (req, res) => {
   const MANAGER_ROLES = ['superadmin', 'familyDoctor', 'nutritionist', 'medicalAssistant', 'healthManager'];
   if (!MANAGER_ROLES.includes(req.staff.role)) {
     return res.status(403).json({ success: false, message: '无权限查看团队' });
@@ -2373,73 +2373,73 @@ router.get('/patients/:id/active-plan-items', staffAuth, async (req, res) => {
 // ════════════════════════════════════════════════════════
 
 // ── 会员等级 ────────────────────────────────────────────
-router.get('/marketing/levels', staffAuth, async (req, res) => {
+router.get('/marketing/levels', staffAuth, checkPermission('marketing', 'view'), async (req, res) => {
   const levels = await MemberLevel.find().sort({ sortOrder: 1, minPoints: 1 });
   res.json({ success: true, data: levels });
 });
-router.post('/marketing/levels', staffAuth, async (req, res) => {
+router.post('/marketing/levels', staffAuth, checkPermission('marketing', 'create'), async (req, res) => {
   const { name, minPoints, color, benefits, sortOrder } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '等级名称不能为空' });
   const level = await MemberLevel.create({ name, minPoints: minPoints || 0, color: color || '#8AA89C', benefits: benefits || [], sortOrder: sortOrder || 0 });
   res.json({ success: true, data: level });
 });
-router.put('/marketing/levels/:id', staffAuth, async (req, res) => {
+router.put('/marketing/levels/:id', staffAuth, checkPermission('marketing', 'edit'), async (req, res) => {
   const level = await MemberLevel.findByIdAndUpdate(req.params.id, req.body, { new: true });
   if (!level) return res.status(404).json({ success: false, message: '等级不存在' });
   res.json({ success: true, data: level });
 });
-router.delete('/marketing/levels/:id', staffAuth, async (req, res) => {
+router.delete('/marketing/levels/:id', staffAuth, checkPermission('marketing', 'delete'), async (req, res) => {
   await MemberLevel.findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
 
 // ── 活动管理 ────────────────────────────────────────────
-router.get('/marketing/activities', staffAuth, async (req, res) => {
+router.get('/marketing/activities', staffAuth, checkPermission('marketing', 'view'), async (req, res) => {
   const { isActive } = req.query;
   const filter = {};
   if (isActive !== undefined) filter.isActive = isActive === 'true';
   const activities = await Activity.find(filter).sort({ createdAt: -1 }).populate('createdBy', 'name');
   res.json({ success: true, data: activities });
 });
-router.post('/marketing/activities', staffAuth, async (req, res) => {
+router.post('/marketing/activities', staffAuth, checkPermission('marketing', 'create'), async (req, res) => {
   if (!req.body.title) return res.status(400).json({ success: false, message: '活动名称不能为空' });
   const activity = await Activity.create({ ...req.body, createdBy: req.staff._id });
   res.json({ success: true, data: activity });
 });
-router.put('/marketing/activities/:id', staffAuth, async (req, res) => {
+router.put('/marketing/activities/:id', staffAuth, checkPermission('marketing', 'edit'), async (req, res) => {
   const activity = await Activity.findByIdAndUpdate(req.params.id, req.body, { new: true });
   if (!activity) return res.status(404).json({ success: false, message: '活动不存在' });
   res.json({ success: true, data: activity });
 });
-router.delete('/marketing/activities/:id', staffAuth, async (req, res) => {
+router.delete('/marketing/activities/:id', staffAuth, checkPermission('marketing', 'delete'), async (req, res) => {
   await Activity.findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
 
 // ── 次卡套餐 ────────────────────────────────────────────
-router.get('/marketing/packages', staffAuth, async (req, res) => {
+router.get('/marketing/packages', staffAuth, checkPermission('marketing', 'view'), async (req, res) => {
   const packages = await SessionPackage.find().sort({ createdAt: -1 }).populate('createdBy', 'name');
   res.json({ success: true, data: packages });
 });
-router.post('/marketing/packages', staffAuth, async (req, res) => {
+router.post('/marketing/packages', staffAuth, checkPermission('marketing', 'create'), async (req, res) => {
   const { name, count, price } = req.body;
   if (!name || !count || !price) return res.status(400).json({ success: false, message: '名称、次数、价格不能为空' });
   const pkg = await SessionPackage.create({ ...req.body, createdBy: req.staff._id });
   res.json({ success: true, data: pkg });
 });
-router.put('/marketing/packages/:id', staffAuth, async (req, res) => {
+router.put('/marketing/packages/:id', staffAuth, checkPermission('marketing', 'edit'), async (req, res) => {
   const pkg = await SessionPackage.findByIdAndUpdate(req.params.id, req.body, { new: true });
   if (!pkg) return res.status(404).json({ success: false, message: '套餐不存在' });
   res.json({ success: true, data: pkg });
 });
-router.delete('/marketing/packages/:id', staffAuth, async (req, res) => {
+router.delete('/marketing/packages/:id', staffAuth, checkPermission('marketing', 'delete'), async (req, res) => {
   await SessionPackage.findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
 
 // ── 异常复查模块 ─────────────────────────────────────────────────────
 // GET /api/staff/abnormal-reviews
-router.get('/abnormal-reviews', staffAuth, async (req, res) => {
+router.get('/abnormal-reviews', staffAuth, checkPermission('abnormal_review', 'view'), async (req, res) => {
   try {
     const { patientId, status, limit = 50 } = req.query;
     const filter = {};
@@ -2468,7 +2468,7 @@ router.get('/abnormal-reviews', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/abnormal-reviews
-router.post('/abnormal-reviews', staffAuth, async (req, res) => {
+router.post('/abnormal-reviews', staffAuth, checkPermission('abnormal_review', 'create'), async (req, res) => {
   try {
     const {
       patientId, reportId, title, abnormalItems, reviewDate, notes,
@@ -2514,7 +2514,7 @@ router.post('/abnormal-reviews', staffAuth, async (req, res) => {
 });
 
 // PATCH /api/staff/abnormal-reviews/:id
-router.patch('/abnormal-reviews/:id', staffAuth, async (req, res) => {
+router.patch('/abnormal-reviews/:id', staffAuth, checkPermission('abnormal_review', 'edit'), async (req, res) => {
   try {
     const { status, reviewDate, notes, resolvedNote } = req.body;
     const update = {};
@@ -2534,7 +2534,7 @@ router.patch('/abnormal-reviews/:id', staffAuth, async (req, res) => {
 });
 
 // DELETE /api/staff/abnormal-reviews/:id
-router.delete('/abnormal-reviews/:id', staffAuth, async (req, res) => {
+router.delete('/abnormal-reviews/:id', staffAuth, checkPermission('abnormal_review', 'delete'), async (req, res) => {
   await AbnormalReview.findByIdAndDelete(req.params.id);
   res.json({ success: true });
 });
@@ -3039,7 +3039,7 @@ router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) 
 // ── 日常健康打卡总览（新增需求）────────────────────────────────────
 // GET /api/staff/checkin-overview?date=&patientName=
 // 返回当天（默认今天）每位客户的打卡汇总：已打卡项、未打卡项、最近打卡时间
-router.get('/checkin-overview', staffAuth, async (req, res) => {
+router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'view'), async (req, res) => {
   try {
     const { date, patientName } = req.query;
     const staff = req.staff;
