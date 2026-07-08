@@ -1514,6 +1514,31 @@ router.get('/system-config/scoring', adminAuth, async (req, res) => {
   }
 });
 
+// GET /api/admin/system-config/daily-care —— AI每日健康关怀开关（默认开启）
+router.get('/system-config/daily-care', adminAuth, async (req, res) => {
+  try {
+    const cfg = await SystemConfig.findOne({ key: 'dailyCare' });
+    res.json({ success: true, data: cfg ? cfg.value : { enabled: true } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PUT /api/admin/system-config/daily-care —— 开关AI每日关怀
+router.put('/system-config/daily-care', adminAuth, async (req, res) => {
+  try {
+    const value = { enabled: req.body.enabled !== false };
+    await SystemConfig.findOneAndUpdate(
+      { key: 'dailyCare' },
+      { key: 'dailyCare', value, label: 'AI每日健康关怀开关' },
+      { upsert: true, new: true }
+    );
+    res.json({ success: true, message: value.enabled ? '已开启每日健康关怀' : '已关闭每日健康关怀' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // PUT /api/admin/system-config/scoring
 router.put('/system-config/scoring', adminAuth, async (req, res) => {
   try {

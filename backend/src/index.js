@@ -109,4 +109,7 @@ app.listen(PORT, () => {
 
   // AI自主随访跟进试点：血压监测该测未测自动提醒患者，每天扫描一次
   require('./utils/bpMonitorScheduler').startBPMonitorScheduler();
+
+  // AI每日健康关怀：每天给活跃客户推一条专属关怀+去打卡入口，提升打开率与打卡留存
+  require('./utils/dailyCareScheduler').startDailyCareScheduler();
 });

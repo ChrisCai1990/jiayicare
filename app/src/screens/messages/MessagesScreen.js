@@ -82,6 +82,12 @@ function MessageItem({ msg, onPress }) {
             <Text style={styles.inviteActionText}>去确认</Text>
           </View>
         )}
+        {msg.action?.type === 'checkin' && (
+          <View style={styles.inviteActionBtn}>
+            <Ionicons name="add-circle" size={13} color={colors.white} />
+            <Text style={styles.inviteActionText}>去打卡</Text>
+          </View>
+        )}
       </View>
       <Ionicons name="chevron-forward" size={15} color={colors.textMuted} />
     </TouchableOpacity>
@@ -572,7 +578,8 @@ export default function MessagesScreen({ navigation }) {
   const handlePress = async (msg) => {
     const msgId = msg._id || msg.id;
     // 可操作消息（如家庭成员邀请）：直接跳到对应页面处理，不弹详情，省去用户自己找入口
-    const isActionable = msg.action?.type === 'family_invite';
+    // 可操作消息（家庭成员邀请 / 每日打卡关怀等）：直接跳对应页面处理，不弹详情
+    const isActionable = msg.action?.type === 'family_invite' || msg.action?.type === 'checkin';
     if (!isActionable) setSelectedMsg(msg);
     if (msg.unread) {
       setMessages(prev =>
