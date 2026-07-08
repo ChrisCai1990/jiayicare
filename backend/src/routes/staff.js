@@ -65,10 +65,11 @@ const upload = multer({
       cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
     },
   }),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) cb(null, true);
-    else cb(new Error('只支持图片文件'));
+    // 支持各类图片（含手机 HEIC）+ PDF；医院电子报告常为 PDF，客户手机拍照也可能是 HEIC
+    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('仅支持图片（JPG/PNG/HEIC 等）或 PDF 文件'));
   },
 });
 

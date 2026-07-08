@@ -41,10 +41,11 @@ const upload = multer({
       cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${ext}`);
     },
   }),
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    if (/^image\//.test(file.mimetype)) cb(null, true);
-    else cb(new Error('只支持图片文件'));
+    // 图片全类型 + PDF，覆盖产品图、素材及各类附件
+    if (/^image\//.test(file.mimetype) || file.mimetype === 'application/pdf') cb(null, true);
+    else cb(new Error('仅支持图片（JPG/PNG/HEIC 等）或 PDF 文件'));
   },
 });
 

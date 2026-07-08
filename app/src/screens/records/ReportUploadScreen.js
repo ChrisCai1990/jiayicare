@@ -852,7 +852,8 @@ export default function ReportUploadScreen({ navigation, route }) {
   const handleUpload = () => {
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.pdf,.jpg,.jpeg,.png';
+    // 支持常见图片格式（含手机 HEIC/webp）+ PDF；不写死扩展名，用通配放开各类图片
+    input.accept = 'image/*,.pdf,.heic,.heif';
     input.onchange = async (e) => {
       const file = e.target.files[0];
       if (!file) return;
