@@ -182,6 +182,29 @@ async function getSubordinateIds(staffId) {
   return subs.map(s => s._id);
 }
 
+// 获取某员工作为"团队导师"时能额外看到的团队成员 ID。
+// 只有当该员工是某个团队的 mentorId 时，才返回该团队全体成员（含自己，去重由调用方处理）；
+// 普通成员不因所属团队而扩大可见范围——只有导师能看全团队。
+const Team = require('../models/Team');
+async function getMentoredTeamMemberIds(staffId) {
+  const teams = await Team.find({ mentorId: staffId, status: 'active' }).select('_id');
+  if (!teams.length) return [];
+  const teamIds = teams.map(t => t._id);
+  const members = await Admin.find({ teamId: { $in: teamIds } }).select('_id');
+  return members.map(m => m._id);
+}
+
+// 汇总某员工在患者归属过滤中的可见 staffId 集合：本人 + 下属 + （作为导师时）团队成员
+async function getVisibleStaffIds(staff) {
+  const ids = [staff._id];
+  const [subIds, teamMemberIds] = await Promise.all([
+    getSubordinateIds(staff._id),
+    getMentoredTeamMemberIds(staff._id),
+  ]);
+  const all = [...ids, ...subIds, ...teamMemberIds].map(String);
+  return [...new Set(all)];
+}
+
 // ── GET /api/staff/patients ───────────────────────────────────────
 // 查询分配给当前医护人员（及其下属）的患者列表
 router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
@@ -190,39 +213,49 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
 
   // 超管看全部，其他角色只看分配给自己（及下属）的患者
   let staffIds = [staff._id];
+  const mentoredIds = staff.role !== 'superadmin' ? await getMentoredTeamMemberIds(staff._id) : [];
+  const isMentor = mentoredIds.length > 0;
   if (staff.role !== 'superadmin') {
     const subIds = await getSubordinateIds(staff._id);
-    staffIds = [staff._id, ...subIds];
+    staffIds = [...new Set([staff._id, ...subIds, ...mentoredIds].map(String))];
   }
+
+  const ASSIGN_FIELDS = [
+    'assignedFamilyDoctor', 'assignedNutritionist', 'assignedSpecialist', 'assignedTcmDoctor',
+    'assignedPsychologist', 'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthManager',
+  ];
+  const ROLE_ASSIGN_FIELD = {
+    familyDoctor: 'assignedFamilyDoctor', nutritionist: 'assignedNutritionist',
+    specialist: 'assignedSpecialist', tcmDoctor: 'assignedTcmDoctor',
+    psychologist: 'assignedPsychologist', rehabSpecialist: 'assignedRehabSpecialist',
+    medicalAssistant: 'assignedMedicalAssistant',
+  };
 
   const assignFilter = {};
   if (staff.role !== 'superadmin') {
-    if (staff.role === 'familyDoctor') {
-      assignFilter.assignedFamilyDoctor = { $in: staffIds };
-    } else if (staff.role === 'nutritionist') {
-      assignFilter.assignedNutritionist = { $in: staffIds };
-    } else if (staff.role === 'specialist') {
-      assignFilter.assignedSpecialist = { $in: staffIds };
-    } else if (staff.role === 'tcmDoctor') {
-      assignFilter.assignedTcmDoctor = { $in: staffIds };
-    } else if (staff.role === 'psychologist') {
-      assignFilter.assignedPsychologist = { $in: staffIds };
-    } else if (staff.role === 'rehabSpecialist') {
-      assignFilter.assignedRehabSpecialist = { $in: staffIds };
-    } else if (staff.role === 'medicalAssistant') {
-      assignFilter.assignedMedicalAssistant = { $in: staffIds };
+    if (isMentor) {
+      // 导师模式：团队成员角色各异，凡是团队任一成员挂在任意归属字段上的患者都可见（跨字段 OR）
+      assignFilter.$or = ASSIGN_FIELDS.map(f => ({ [f]: { $in: staffIds } }));
     } else {
-      // healthManager 及所有其他角色（含组长下属）
-      assignFilter.assignedHealthManager = { $in: staffIds };
+      // 普通模式：只看自己角色对应的归属字段（healthManager 及未列出角色归入 assignedHealthManager）
+      const field = ROLE_ASSIGN_FIELD[staff.role] || 'assignedHealthManager';
+      assignFilter[field] = { $in: staffIds };
     }
   }
 
   const filter = { ...assignFilter };
   if (search) {
-    filter.$or = [
+    const searchOr = [
       { name: { $regex: search, $options: 'i' } },
       { phone: { $regex: search, $options: 'i' } },
     ];
+    // 导师模式下 assignFilter 已占用 $or（归属过滤），此时用 $and 组合归属与搜索，避免互相覆盖
+    if (filter.$or) {
+      filter.$and = [{ $or: filter.$or }, { $or: searchOr }];
+      delete filter.$or;
+    } else {
+      filter.$or = searchOr;
+    }
   }
   if (disease) {
     filter.chronicDiseases = disease;

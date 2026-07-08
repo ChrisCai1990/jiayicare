@@ -718,7 +718,7 @@ router.post('/staff', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可创建医护账号' });
   }
-  const { password, name, role, title, department, region, phone } = req.body;
+  const { password, name, role, title, department, region, phone, teamId } = req.body;
   let { username } = req.body;
   if (!phone || !password || !name || !role) {
     return res.status(400).json({ success: false, message: '手机号码、密码、姓名、角色不能为空' });
@@ -737,7 +737,7 @@ router.post('/staff', adminAuth, async (req, res) => {
     username = `${phone}_${Math.random().toString(36).slice(2, 6)}`;
   }
 
-  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '', phone });
+  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '', phone, teamId: teamId || null });
   res.json({ success: true, data: { _id: staff._id, username: staff.username, name: staff.name, role: staff.role } });
 });
 
@@ -746,7 +746,7 @@ router.put('/staff/:id', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可修改医护账号' });
   }
-  const { name, role, title, department, region, password, phone } = req.body;
+  const { name, role, title, department, region, password, phone, teamId } = req.body;
   const update = {};
   if (name) update.name = name;
   if (role && STAFF_ROLES.includes(role)) update.role = role;
@@ -754,6 +754,7 @@ router.put('/staff/:id', adminAuth, async (req, res) => {
   if (department !== undefined) update.department = department;
   if (region !== undefined) update.region = region;
   if (phone !== undefined) update.phone = phone;
+  if (teamId !== undefined) update.teamId = teamId || null;
 
   const staff = await Admin.findById(req.params.id);
   if (!staff || !STAFF_ROLES.includes(staff.role)) {
@@ -780,6 +781,55 @@ router.delete('/staff/:id', adminAuth, async (req, res) => {
   }
   await staff.deleteOne();
   res.json({ success: true, message: '账号已删除' });
+});
+
+// ── 团队管理（导师可查看全团队客户档案）──────────────────────────────
+const Team = require('../models/Team');
+
+// GET /api/admin/teams — 团队列表（带导师姓名 + 成员数）
+router.get('/teams', adminAuth, async (req, res) => {
+  const teams = await Team.find({}).sort({ sortOrder: 1, createdAt: -1 }).populate('mentorId', 'name role title').lean();
+  const counts = await Admin.aggregate([
+    { $match: { teamId: { $ne: null } } },
+    { $group: { _id: '$teamId', count: { $sum: 1 } } },
+  ]);
+  const countMap = Object.fromEntries(counts.map(c => [String(c._id), c.count]));
+  teams.forEach(t => { t.memberCount = countMap[String(t._id)] || 0; });
+  res.json({ success: true, data: teams });
+});
+
+// POST /api/admin/teams — 新建团队
+router.post('/teams', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可管理团队' });
+  const { name, mentorId, note, sortOrder } = req.body;
+  if (!name) return res.status(400).json({ success: false, message: '团队名称不能为空' });
+  const team = await Team.create({ name, mentorId: mentorId || null, note: note || '', sortOrder: sortOrder || 0 });
+  res.json({ success: true, data: team, message: '团队创建成功' });
+});
+
+// PUT /api/admin/teams/:id — 更新团队
+router.put('/teams/:id', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可管理团队' });
+  const { name, mentorId, note, status, sortOrder } = req.body;
+  const update = {};
+  if (name !== undefined) update.name = name;
+  if (mentorId !== undefined) update.mentorId = mentorId || null;
+  if (note !== undefined) update.note = note;
+  if (status !== undefined) update.status = status;
+  if (sortOrder !== undefined) update.sortOrder = sortOrder;
+  const team = await Team.findByIdAndUpdate(req.params.id, update, { new: true });
+  if (!team) return res.status(404).json({ success: false, message: '团队不存在' });
+  res.json({ success: true, data: team, message: '团队更新成功' });
+});
+
+// DELETE /api/admin/teams/:id — 删除团队（成员的 teamId 一并清空）
+router.delete('/teams/:id', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可管理团队' });
+  const team = await Team.findById(req.params.id);
+  if (!team) return res.status(404).json({ success: false, message: '团队不存在' });
+  await Admin.updateMany({ teamId: team._id }, { $set: { teamId: null } });
+  await team.deleteOne();
+  res.json({ success: true, message: '团队已删除，成员归属已清空' });
 });
 
 // ── 体检报告管理 ───────────────────────────────────────────────────
@@ -965,7 +1015,7 @@ router.get('/products', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles } = req.body;
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
   }
@@ -975,16 +1025,17 @@ router.post('/products', adminAuth, async (req, res) => {
     category, sortOrder: sortOrder ?? 999, features: features || [],
     description: description || '', stock: stock ?? 0, status: status || 'off',
     performanceRule: performanceRule || undefined,
+    servicePerformerRoles: servicePerformerRoles || [],
   });
   res.json({ success: true, data: product, message: '产品创建成功' });
 });
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles } = req.body;
   const product = await Product.findByIdAndUpdate(
     req.params.id,
-    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule },
+    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [] },
     { new: true }
   );
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
@@ -1175,6 +1226,37 @@ router.delete('/enterprises/:id', adminAuth, async (req, res) => {
   if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
   await Admin.deleteMany({ enterpriseId: req.params.id, role: 'enterprise_hr' }); // 一并清理HR账号
   res.json({ success: true, message: '企业客户已删除' });
+});
+
+// PUT /api/admin/enterprises/:id/hr-data —— 录入/更新某年度的HR看板数据（体检/保险/费用，手工录入）
+router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可录入企业财务数据' });
+  const { year, data } = req.body;
+  if (!year) return res.status(400).json({ success: false, message: '请指定年度' });
+  const enterprise = await Enterprise.findById(req.params.id);
+  if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
+
+  const num = (v) => (v === '' || v === null || v === undefined ? 0 : Number(v) || 0);
+  const clean = {
+    examOrg:       (data?.examOrg || '').trim(),
+    examCount:     num(data?.examCount),
+    examUnitPrice: num(data?.examUnitPrice),
+    examTotal:     num(data?.examTotal),
+    insurerName:   (data?.insurerName || '').trim(),
+    insuredCount:  num(data?.insuredCount),
+    insuredAmount: num(data?.insuredAmount),
+    healthMgmtFee: num(data?.healthMgmtFee),
+    otherServices: Array.isArray(data?.otherServices)
+      ? data.otherServices.filter(s => (s?.name || '').trim()).map(s => ({ name: s.name.trim(), amount: num(s.amount) }))
+      : [],
+  };
+  // Mixed 字段整体替换该年度键（findByIdAndUpdate 对 Mixed 子键需用 markModified，这里直接读改存）
+  const byYear = { ...(enterprise.hrDataByYear || {}) };
+  byYear[String(year)] = clean;
+  enterprise.hrDataByYear = byYear;
+  enterprise.markModified('hrDataByYear');
+  await enterprise.save();
+  res.json({ success: true, data: enterprise.hrDataByYear, message: `${year}年度数据已保存` });
 });
 
 // GET /api/admin/enterprises/:id/employees —— 该企业下已关联的员工列表

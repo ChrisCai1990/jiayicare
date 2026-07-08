@@ -89,6 +89,12 @@ export const adminAPI = {
   updateStaff: (id, data)    => req(`/staff/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteStaff: (id)          => req(`/staff/${id}`, { method: 'DELETE' }),
 
+  // 团队管理（导师可查看全团队客户档案）
+  teams:       ()            => req('/teams'),
+  createTeam:  (data)        => req('/teams', { method: 'POST', body: JSON.stringify(data) }),
+  updateTeam:  (id, data)    => req(`/teams/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTeam:  (id)          => req(`/teams/${id}`, { method: 'DELETE' }),
+
   // 会员类型管理（旧，保留兼容）
   memberTypes:        ()         => req('/member-types'),
   createMemberType:   (data)     => req('/member-types', { method: 'POST', body: JSON.stringify(data) }),
@@ -132,6 +138,7 @@ export const adminAPI = {
   createEnterprise:       (data)     => req('/enterprises', { method: 'POST', body: JSON.stringify(data) }),
   updateEnterprise:       (id, data) => req(`/enterprises/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEnterprise:       (id)       => req(`/enterprises/${id}`, { method: 'DELETE' }),
+  saveEnterpriseHrData:   (id, year, data) => req(`/enterprises/${id}/hr-data`, { method: 'PUT', body: JSON.stringify({ year, data }) }),
   enterpriseEmployees:    (id)       => req(`/enterprises/${id}/employees`),
   linkEnterpriseEmployees:(id, userIds) => req(`/enterprises/${id}/employees`, { method: 'PATCH', body: JSON.stringify({ userIds }) }),
   unlinkEnterpriseEmployee:(id, userId) => req(`/enterprises/${id}/employees/${userId}`, { method: 'DELETE' }),

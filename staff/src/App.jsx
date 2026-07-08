@@ -68,9 +68,21 @@ export const ROUTE_MODULE = {
 // - 未配置自定义角色权限（customPermissions 为 null）→ 走内置角色，一律放行（老员工兼容，与 Layout 一致）
 // - 配了自定义角色权限 → 严格按 customPermissions[moduleKey].view
 export function canViewModule(staff, moduleKey) {
+  return can(staff, moduleKey, 'view')
+}
+
+// 通用按钮级权限判断：staff 是否有某模块的某操作(view/create/edit/delete/send/audit)权限。
+// 未配置自定义角色权限的老员工一律放行（与菜单/路由守卫策略一致）。
+export function can(staff, moduleKey, action) {
   if (!moduleKey) return true
   if (!staff?.customPermissions) return true
-  return !!staff.customPermissions[moduleKey]?.view
+  return !!staff.customPermissions[moduleKey]?.[action]
+}
+
+// hook 形式，页面里用：const can = usePermission(); ... can('patients','create')
+export function usePermission() {
+  const { staff } = useStaff()
+  return (moduleKey, action) => can(staff, moduleKey, action)
 }
 
 function AuthProvider({ children }) {

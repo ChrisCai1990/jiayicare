@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { useToast } from '../App'
+import { useToast, usePermission } from '../App'
 
 const TYPE_LABEL = {
   annual_checkup:  '年度体检方案',
@@ -34,6 +34,7 @@ const ANNUAL_PLAN_TYPE_COLOR = {
 export default function PlansPage() {
   const nav = useNavigate()
   const toast = useToast()
+  const can = usePermission()
   const [searchParams, setSearchParams] = useSearchParams()
   const typeFilter = searchParams.get('type') || ''
 
@@ -117,7 +118,7 @@ export default function PlansPage() {
           style={{ width: 180, marginLeft: 'auto' }}
         />
         <div>
-          <button className="btn btn-primary btn-sm" onClick={() => {
+          {can('plans', 'create') && <button className="btn btn-primary btn-sm" onClick={() => {
             if      (typeFilter === 'annual_checkup') setShowCheckupModal(true)
             else if (typeFilter === 'medical_assist') setShowMedicalModal(true)
             else if (typeFilter === 'nutrition')      setShowNutritionModal(true)
@@ -125,7 +126,7 @@ export default function PlansPage() {
             else setShowModal(true)
           }}>
             ＋ {TYPE_LABEL[typeFilter] ? `新建${TYPE_LABEL[typeFilter]}` : '新建方案'}
-          </button>
+          </button>}
         </div>
       </div>
 

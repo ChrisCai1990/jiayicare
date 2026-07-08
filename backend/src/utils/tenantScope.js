@@ -1,4 +1,5 @@
 const { AsyncLocalStorage } = require('async_hooks');
+const mongoose = require('mongoose');
 
 // 多租户数据隔离核心：用 AsyncLocalStorage 在一次请求的整个异步调用链里携带当前 tenantId，
 // 不用把 tenantId 当参数层层传递到每个路由/查询里，也不会像全局变量一样被并发请求互相污染。
@@ -63,4 +64,30 @@ const performanceRuleSchema = {
   fulfillerAmount: { type: Number, default: 0 },   // 服务人固定金额
 };
 
-module.exports = { tenantContext, tenantScopePlugin, getCurrentTenantId, runWithoutTenantScope, BYPASS, performanceRuleSchema };
+// 服务岗位枚举：一个产品可能由多个岗位协同提供服务（如"轻享健康管理"涉及家医+营养师+AI）。
+// 与 Admin.role 的一线岗位保持一致，供多服务人员绩效分配使用。
+const SERVICE_PERFORMER_ROLES = [
+  'familyDoctor',      // 家庭医生
+  'nutritionist',      // 营养师
+  'healthManager',     // 健管专员
+  'medicalAssistant',  // 就医专员
+  'psychologist',      // 心理咨询师
+  'rehabSpecialist',   // 运动复健师
+  'specialist',        // 专科医师
+  'tcmDoctor',         // 中医师
+];
+
+// 多服务岗位绩效配置：产品维度配置"这个产品由哪些岗位提供服务，每岗位绩效占产品实付价的百分比"。
+// 具体是哪个人由推送/核销时指定（fulfillerId 按岗位落到具体员工），比例来自这里（个人比例可再覆盖，
+// 见 Admin.personalPerformanceRule）。比例制为主：rate 为占产品实付价的百分比。
+const servicePerformerRoleSchema = {
+  role: { type: String, enum: SERVICE_PERFORMER_ROLES, required: true },
+  rate: { type: Number, default: 0 }, // 该岗位绩效比例（%，占产品实付价）
+  // 可选：产品维度预设的默认服务人（推送时可改）。不设则推送/核销时再指定具体人。
+  defaultStaffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+};
+
+module.exports = {
+  tenantContext, tenantScopePlugin, getCurrentTenantId, runWithoutTenantScope, BYPASS,
+  performanceRuleSchema, servicePerformerRoleSchema, SERVICE_PERFORMER_ROLES,
+};

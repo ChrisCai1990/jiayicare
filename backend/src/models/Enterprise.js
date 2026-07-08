@@ -15,6 +15,26 @@ const enterpriseSchema = new mongoose.Schema({
   packageType:     { type: String, default: '' },   // 采购的服务包类型，如 pkg_1y
   status:          { type: String, enum: ['active', 'expired', 'suspended'], default: 'active' },
   note:            { type: String, default: '' },
+
+  // ── HR看板财务数据（超管后台手工录入，按年度记录）──────────────────
+  // 一个企业跨年度可能有多份数据，用 byYear 存：{ '2026': { ...一年的各项 } }
+  // 当年数据供 HR 看板展示体检机构/人数/客单价/总额、保险、健康管理费、其他付费服务等。
+  hrDataByYear: {
+    type: mongoose.Schema.Types.Mixed,
+    default: {},
+    // 每年结构（均为手工录入）：
+    // {
+    //   examOrg:        String   体检机构
+    //   examCount:      Number   当年体检人数
+    //   examUnitPrice:  Number   客单价
+    //   examTotal:      Number   体检总额
+    //   insurerName:    String   保险公司
+    //   insuredCount:   Number   参保人数（如给高管买高端医疗险）
+    //   insuredAmount:  Number   保险金额
+    //   healthMgmtFee:  Number   健康管理费
+    //   otherServices:  [{ name: String, amount: Number }]  其他付费单项服务
+    // }
+  },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Enterprise', enterpriseSchema);

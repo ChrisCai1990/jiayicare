@@ -15,8 +15,11 @@ const productSchema = new mongoose.Schema({
   stock:         { type: Number, default: 0 },
   sales:         { type: Number, default: 0 },
   status:        { type: String, enum: ['on', 'off'], default: 'off' },
-  // 绩效分配规则（字段先占位，识别"谁是引流人/谁是服务人"的具体逻辑和自动分配触发链路待设计后再接入）
+  // 绩效分配规则（引流人+单一服务人两个比例，历史结构，保留兼容）
   performanceRule: require('../utils/tenantScope').performanceRuleSchema,
+  // 多服务岗位绩效：一个产品由多个岗位协同提供服务，每岗位各自的绩效比例（占实付价%）。
+  // 具体是哪个人由推送/核销时按岗位指定。为空数组时退回 performanceRule 单服务人逻辑。
+  servicePerformerRoles: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
 }, { timestamps: true });
 
 productSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

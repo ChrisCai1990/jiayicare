@@ -235,6 +235,7 @@ export default function EnterprisesPage() {
   const [hrByEnt, setHrByEnt] = useState({})
   const [showLinkModal, setShowLinkModal] = useState(false)
   const [showHrModal, setShowHrModal] = useState(false)
+  const [hrDataEnt, setHrDataEnt] = useState(null)   // 正在录入HR看板数据的企业
 
   const load = async (name) => {
     setLoading(true)
@@ -326,6 +327,7 @@ export default function EnterprisesPage() {
                     {expandedId === e._id ? '收起' : '管理员工/HR账号'}
                   </button>
                   <button className="btn btn-sm btn-ghost" onClick={() => { setEditing(e); setShowEditModal(true) }}>编辑</button>
+                  <button className="btn btn-sm btn-ghost" onClick={() => setHrDataEnt(e)}>📊 HR数据</button>
                   <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => del(e)}>删除</button>
                 </div>
               </div>
@@ -378,6 +380,106 @@ export default function EnterprisesPage() {
       {showHrModal && expandedId && (
         <HrAccountModal enterprise={list.find(e => e._id === expandedId)} onClose={() => setShowHrModal(false)} onSaved={() => loadDetail(expandedId)} />
       )}
+      {hrDataEnt && (
+        <HrDataModal enterprise={hrDataEnt} onClose={() => setHrDataEnt(null)} onSaved={() => load(q)} toast={toast} />
+      )}
+    </div>
+  )
+}
+
+// ── 企业HR看板数据录入（超管手工，按年度）────────────────────────────
+function HrDataModal({ enterprise, onClose, onSaved, toast }) {
+  const yearNow = new Date().getFullYear()
+  const years = [yearNow + 1, yearNow, yearNow - 1, yearNow - 2]
+  const byYear = enterprise.hrDataByYear || {}
+  const [year, setYear] = useState(String(yearNow))
+  const blank = { examOrg: '', examCount: '', examUnitPrice: '', examTotal: '', insurerName: '', insuredCount: '', insuredAmount: '', healthMgmtFee: '', otherServices: [] }
+  const [form, setForm] = useState(() => ({ ...blank, ...(byYear[String(yearNow)] || {}) }))
+  const [saving, setSaving] = useState(false)
+
+  const switchYear = (y) => { setYear(y); setForm({ ...blank, ...(byYear[y] || {}) }) }
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const setOther = (i, k, v) => setForm(f => ({ ...f, otherServices: f.otherServices.map((o, idx) => idx === i ? { ...o, [k]: v } : o) }))
+  const addOther = () => setForm(f => ({ ...f, otherServices: [...(f.otherServices || []), { name: '', amount: '' }] }))
+  const rmOther = (i) => setForm(f => ({ ...f, otherServices: f.otherServices.filter((_, idx) => idx !== i) }))
+
+  const save = async () => {
+    setSaving(true)
+    try {
+      await adminAPI.saveEnterpriseHrData(enterprise._id, year, form)
+      toast(`✅ ${year}年度数据已保存`)
+      onSaved(); onClose()
+    } catch (err) { toast('❌ ' + (err.message || '保存失败')) } finally { setSaving(false) }
+  }
+
+  const numField = (label, key, unit) => (
+    <div className="form-group" style={{ marginBottom: 0 }}>
+      <label className="form-label">{label}</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+        <input className="form-input" type="number" value={form[key]} onChange={e => set(key, e.target.value)} placeholder="0" />
+        {unit && <span style={{ fontSize: 12, color: '#888' }}>{unit}</span>}
+      </div>
+    </div>
+  )
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header">
+          <div className="modal-title">📊 「{enterprise.name}」HR看板数据</div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ overflowY: 'auto' }}>
+          <div className="form-group">
+            <label className="form-label">年度</label>
+            <select className="form-input" style={{ maxWidth: 160 }} value={year} onChange={e => switchYear(e.target.value)}>
+              {years.map(y => <option key={y} value={String(y)}>{y}年{byYear[String(y)] ? '（已录）' : ''}</option>)}
+            </select>
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '12px 0 8px' }}>体检</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+              <label className="form-label">体检机构</label>
+              <input className="form-input" value={form.examOrg} onChange={e => set('examOrg', e.target.value)} placeholder="如：美年大健康 / 慈铭体检" />
+            </div>
+            {numField('当年体检人数', 'examCount', '人')}
+            {numField('客单价', 'examUnitPrice', '¥')}
+            {numField('体检总额', 'examTotal', '¥')}
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '16px 0 8px' }}>保险（如为高管购买高端医疗险）</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+              <label className="form-label">保险公司</label>
+              <input className="form-input" value={form.insurerName} onChange={e => set('insurerName', e.target.value)} placeholder="如：中国平安 / 友邦" />
+            </div>
+            {numField('参保人数', 'insuredCount', '人')}
+            {numField('保险金额', 'insuredAmount', '¥')}
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '16px 0 8px' }}>费用</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {numField('健康管理费', 'healthMgmtFee', '¥')}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '16px 0 8px' }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>其他付费单项服务</div>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={addOther}>+ 添加</button>
+          </div>
+          {(form.otherServices || []).map((o, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <input className="form-input" value={o.name} onChange={e => setOther(i, 'name', e.target.value)} placeholder="服务名称" />
+              <input className="form-input" type="number" value={o.amount} onChange={e => setOther(i, 'amount', e.target.value)} placeholder="金额 ¥" />
+              <button type="button" onClick={() => rmOther(i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
+            </div>
+          ))}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? '保存中...' : '保存'}</button>
+        </div>
+      </div>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
-import { useToast, useStaff } from '../App'
+import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
@@ -252,7 +252,7 @@ export default function FollowUpsPage() {
           <h1 className="page-title">随访管理</h1>
           <p className="page-subtitle">共 {total} 条记录</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增随访</button>
+        {can(staff, 'followups', 'create') && <button className="btn btn-primary" onClick={() => setShowModal(true)}>＋ 新增随访</button>}
       </div>
 
       {/* 状态标签 */}

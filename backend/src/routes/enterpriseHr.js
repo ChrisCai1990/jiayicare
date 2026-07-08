@@ -36,6 +36,12 @@ router.get('/overview', enterpriseHrAuth, async (req, res) => {
     User.countDocuments({ enterpriseId: req.enterpriseId, onboardingCompleted: true }),
   ]);
 
+  // 当年 HR 财务数据（超管手工录入）；可通过 ?year= 指定，默认当前年
+  const year = String(req.query.year || new Date().getFullYear());
+  const hrByYear = enterprise.hrDataByYear || {};
+  const hrData = hrByYear[year] || null;
+  const availableYears = Object.keys(hrByYear).sort((a, b) => Number(b) - Number(a));
+
   res.json({
     success: true,
     data: {
@@ -47,6 +53,9 @@ router.get('/overview', enterpriseHrAuth, async (req, res) => {
       seatsRemaining: Math.max(enterprise.seatsTotal - seatsUsed, 0),
       activated,
       activationRate: seatsUsed > 0 ? Math.round((activated / seatsUsed) * 100) : 0,
+      year,
+      availableYears,
+      hrData,   // 体检机构/人数/客单价/总额、保险、健康管理费、其他付费服务（无数据时为 null）
     },
   });
 });

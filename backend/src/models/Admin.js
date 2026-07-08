@@ -38,6 +38,7 @@ const adminSchema = new mongoose.Schema({
   certNumber:   { type: String, default: '' }, // 证书编号（如医师执业证号）
   staffStatus:  { type: String, enum: ['active', 'inactive'], default: 'active' },
   deptId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Department', default: null },
+  teamId:       { type: mongoose.Schema.Types.ObjectId, ref: 'Team', default: null }, // 所属团队（导师可看全团队客户档案）
   customRoleId: { type: mongoose.Schema.Types.ObjectId, ref: 'StaffRole', default: null },
   // 个人绩效比例覆盖：同岗位不同人可以有不同分佣比例（如基础薪酬高的人绩效比例相应调低）。
   // ruleType='none'（默认）表示该员工没有个人特殊设置，结算时退回产品的全局performanceRule；

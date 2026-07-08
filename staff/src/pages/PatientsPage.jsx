@@ -1,6 +1,7 @@
 ﻿import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
+import { usePermission } from '../App'
 
 const DISEASE_TAGS = ['高血压', '糖尿病', '高血脂', '冠心病', '慢阻肺', '骨质疏松']
 const TYPE_LABEL = { regular: '普通', vip: 'VIP', trial: '试用', '': '全部' }
@@ -94,6 +95,7 @@ function AssignModal({ onClose, onSuccess }) {
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function PatientsPage() {
   const nav = useNavigate()
+  const can = usePermission()
   const [patients, setPatients] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -133,8 +135,8 @@ export default function PatientsPage() {
           <p className="page-subtitle">共 {total} 位会员</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
-          <button className="btn btn-secondary" onClick={() => setShowAssign(true)}>分配已有会员</button>
-          <button className="btn btn-primary" onClick={() => nav('/patients/new')}>＋ 新增会员</button>
+          {can('patients', 'create') && <button className="btn btn-secondary" onClick={() => setShowAssign(true)}>分配已有会员</button>}
+          {can('patients', 'create') && <button className="btn btn-primary" onClick={() => nav('/patients/new')}>＋ 新增会员</button>}
         </div>
       </div>
 

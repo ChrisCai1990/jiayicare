@@ -16,9 +16,13 @@ async function settleOrderCommission(order) {
   if (!order || order.commissionStatus === 'settled') return { created: [] };
 
   let productRule = null;
+  let performerRoles = [];   // 多服务岗位绩效配置（产品维度）
   if (order.orderType === 'product' || mongoose.Types.ObjectId.isValid(order.serviceId)) {
     const product = await Product.findById(order.serviceId).catch(() => null);
-    if (product) productRule = product.performanceRule;
+    if (product) {
+      productRule = product.performanceRule;
+      performerRoles = product.servicePerformerRoles || [];
+    }
   }
   if (!productRule) {
     const service = await Service.findOne({ serviceId: order.serviceId }).catch(() => null);
@@ -41,25 +45,44 @@ async function settleOrderCommission(order) {
     return { amount: 0, rate: 0 };
   };
 
-  const roles = [
-    { role: 'referrer', staffId: order.referrerId },
-    { role: 'fulfiller', staffId: order.fulfillerId },
-  ];
-
-  for (const { role, staffId } of roles) {
-    if (!staffId) continue;
-    // 该员工有个人比例设置(ruleType!=='none')就用个人的，否则退回产品全局比例
-    const staff = await Admin.findById(staffId).select('personalPerformanceRule').catch(() => null);
-    const personalRule = staff?.personalPerformanceRule;
-    const effectiveRule = (personalRule && personalRule.ruleType !== 'none') ? personalRule : productRule;
-    const { amount, rate } = buildAmount(role, effectiveRule);
-    if (!amount || amount <= 0) continue;
+  const createCommission = async (staffId, role, rate, amount) => {
+    if (!staffId || !amount || amount <= 0) return;
     const commission = await Commission.create({
       staffId, role, tenantId: order.tenantId, patientId: order.user, orderId: order._id,
       orderAmount: base, commissionRate: rate, commissionAmount: amount,
       status: 'pending', productName: order.serviceName, productType: order.orderType,
     });
     created.push(commission);
+  };
+
+  // ── 引流人（referrer）：始终按 performanceRule 结算 ──
+  if (order.referrerId) {
+    const staff = await Admin.findById(order.referrerId).select('personalPerformanceRule').catch(() => null);
+    const personalRule = staff?.personalPerformanceRule;
+    const effectiveRule = (personalRule && personalRule.ruleType !== 'none') ? personalRule : productRule;
+    const { amount, rate } = buildAmount('referrer', effectiveRule);
+    await createCommission(order.referrerId, 'referrer', rate, amount);
+  }
+
+  // ── 服务人：产品配了多服务岗位则按岗位逐个结算，否则退回单 fulfiller 逻辑 ──
+  const hasMultiPerformers = Array.isArray(performerRoles) && performerRoles.length > 0;
+  if (hasMultiPerformers) {
+    // 订单上按岗位指定的具体服务人；未指定的岗位退回产品预设 defaultStaffId
+    const orderPerformerMap = {};
+    (order.servicePerformers || []).forEach(sp => { if (sp.role && sp.staffId) orderPerformerMap[sp.role] = sp.staffId; });
+    for (const pr of performerRoles) {
+      const staffId = orderPerformerMap[pr.role] || pr.defaultStaffId;
+      if (!staffId) continue; // 该岗位没落实到具体人，跳过不生成
+      const rate = (parseFloat(pr.rate) || 0) / 100;
+      const amount = Math.round(base * rate * 100) / 100;
+      await createCommission(staffId, 'fulfiller', rate, amount);
+    }
+  } else if (order.fulfillerId) {
+    const staff = await Admin.findById(order.fulfillerId).select('personalPerformanceRule').catch(() => null);
+    const personalRule = staff?.personalPerformanceRule;
+    const effectiveRule = (personalRule && personalRule.ruleType !== 'none') ? personalRule : productRule;
+    const { amount, rate } = buildAmount('fulfiller', effectiveRule);
+    await createCommission(order.fulfillerId, 'fulfiller', rate, amount);
   }
 
   order.commissionStatus = created.length ? 'pending' : 'none';

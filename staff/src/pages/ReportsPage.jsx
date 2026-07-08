@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { staffAPI } from '../api'
-import { useToast } from '../App'
+import { useToast, usePermission } from '../App'
 
 const REPORT_TYPE = { annual:'年度体检', blood:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜', pathology:'病理', other:'其他' }
 const AUDIT_STATUS = { unaudited:'待审核', audited:'已审核', rejected:'已驳回' }
@@ -8,6 +8,7 @@ const AUDIT_COLOR = { unaudited:'#D97706', audited:'#22A06B', rejected:'#DC3545'
 
 export default function ReportsPage() {
   const toast = useToast()
+  const can = usePermission()
   const [reports, setReports] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -117,14 +118,14 @@ export default function ReportsPage() {
                       {r.audit_status !== 'audited' && (
                         <button className="btn btn-secondary btn-sm" onClick={() => { setEditModal(r); setEditForm({ title: r.title || '', type: r.type || 'annual', hospital: r.hospital || '', date: r.date || '', note: r.note || '' }) }}>✏️ 修改</button>
                       )}
-                      {r.audit_status === 'unaudited' && (
+                      {can('reports', 'audit') && r.audit_status === 'unaudited' && (
                         <>
                           <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
                           <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                             onClick={() => { setAbnormalModal(r); setAbnormalItems([{ name: '', value: '', reference: '', severity: 'mild' }]) }}>⚠️ 含异常</button>
                         </>
                       )}
-                      {(r.audit_status === 'unaudited' || r.audit_status === 'audited') && (
+                      {can('reports', 'audit') && (r.audit_status === 'unaudited' || r.audit_status === 'audited') && (
                         <button className="btn btn-danger btn-sm" onClick={() => { setRejectModal(r); setRejectReason('') }}>✗ 驳回</button>
                       )}
                     </div>

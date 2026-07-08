@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   features: '', description: '', stock: 0, status: 'off',
   images: [], servicePrices: [],
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
+  servicePerformerRoles: [],
 }
 
 // ── 转介绍绩效规则（各机构自行设定，引流人/服务人各自比例或固定金额） ──
@@ -68,6 +69,62 @@ function PerformanceRuleForm({ rule, onChange }) {
             <input className="form-input" type="number" min="0" value={r.fulfillerAmount}
               onChange={e => set('fulfillerAmount', parseFloat(e.target.value) || 0)} placeholder="0.00" />
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── 多服务岗位绩效（一个产品由多岗位协同服务，每岗位占实付价%）──────────
+const PERFORMER_ROLE_OPTIONS = [
+  { value: 'familyDoctor', label: '家庭医生' },
+  { value: 'nutritionist', label: '营养师' },
+  { value: 'healthManager', label: '健管专员' },
+  { value: 'medicalAssistant', label: '就医专员' },
+  { value: 'psychologist', label: '心理咨询师' },
+  { value: 'rehabSpecialist', label: '运动复健师' },
+  { value: 'specialist', label: '专科医师' },
+  { value: 'tcmDoctor', label: '中医师' },
+]
+const ROLE_LABEL_MAP = Object.fromEntries(PERFORMER_ROLE_OPTIONS.map(o => [o.value, o.label]))
+
+function ServicePerformerRolesForm({ roles, staffList, onChange }) {
+  const list = roles || []
+  const add = () => onChange([...list, { role: 'familyDoctor', rate: 0, defaultStaffId: '' }])
+  const remove = (i) => onChange(list.filter((_, idx) => idx !== i))
+  const update = (i, field, val) => onChange(list.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
+  const totalRate = list.reduce((s, r) => s + (parseFloat(r.rate) || 0), 0)
+
+  return (
+    <div style={{ marginTop: 20, borderTop: '1px dashed #e0d9ce', paddingTop: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+        <label className="form-label" style={{ margin: 0 }}>多服务岗位绩效</label>
+        <button type="button" onClick={add} style={{ fontSize: 12, color: '#1E6B50', background: '#e8f5ef', border: 'none', borderRadius: 4, padding: '4px 10px', cursor: 'pointer' }}>+ 添加岗位</button>
+      </div>
+      <div style={{ fontSize: 12, color: '#aaa', marginBottom: 10 }}>
+        产品由多个岗位协同提供服务时，逐个岗位设置绩效比例（占产品实付价%）。具体是哪个人可在此预设默认服务人，也可推送时再指定。
+      </div>
+      {list.length === 0 && <div style={{ fontSize: 12, color: '#bbb', padding: '8px 0' }}>未配置。留空则按上方「引流人/服务人」单服务人规则结算。</div>}
+      {list.map((r, i) => (
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1.4fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+          <select className="form-input" value={r.role} onChange={e => update(i, 'role', e.target.value)}>
+            {PERFORMER_ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <input className="form-input" type="number" min="0" max="100" value={r.rate}
+              onChange={e => update(i, 'rate', parseFloat(e.target.value) || 0)} placeholder="0" />
+            <span style={{ fontSize: 12, color: '#888' }}>%</span>
+          </div>
+          <select className="form-input" value={r.defaultStaffId || ''} onChange={e => update(i, 'defaultStaffId', e.target.value)}>
+            <option value="">默认服务人（可选）</option>
+            {staffList.filter(s => s.role === r.role).map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
+          </select>
+          <button type="button" onClick={() => remove(i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
+        </div>
+      ))}
+      {list.length > 0 && (
+        <div style={{ fontSize: 12, color: totalRate > 100 ? '#c0392b' : '#888', marginTop: 4 }}>
+          各岗位绩效合计：{totalRate}%{totalRate > 100 ? '（超过100%，请检查）' : ''}
         </div>
       )}
     </div>
@@ -233,10 +290,20 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       images: product.images || [],
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price) })),
       performanceRule: product.performanceRule || { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
+      servicePerformerRoles: (product.servicePerformerRoles || []).map(r => ({
+        role: r.role, rate: r.rate || 0, defaultStaffId: r.defaultStaffId ? String(r.defaultStaffId) : '',
+      })),
     }
   })
   const [loading, setLoading] = useState(false)
   const [tab, setTab] = useState('basic')
+  const [staffList, setStaffList] = useState([])
+
+  useEffect(() => {
+    adminAPI.staffList({ pageSize: 500 }).then(r => {
+      setStaffList(r.data?.staff || r.data?.list || r.data || [])
+    }).catch(() => {})
+  }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
 
@@ -264,6 +331,13 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         images: form.images,
         servicePrices: cleanedPrices,
         performanceRule: form.performanceRule,
+        servicePerformerRoles: (form.servicePerformerRoles || [])
+          .filter(r => r.role)
+          .map(r => ({
+            role: r.role,
+            rate: parseFloat(r.rate) || 0,
+            defaultStaffId: r.defaultStaffId || null,
+          })),
       }
       if (isEdit) {
         await adminAPI.updateProduct(product._id, payload)
@@ -283,7 +357,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   const tabs = [
     { key: 'basic', label: '基本信息' },
     { key: 'price', label: '收费项目' },
-    { key: 'performance', label: '转介绍绩效' },
+    { key: 'performance', label: '绩效分配' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
   ]
@@ -385,7 +459,14 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           )}
 
           {tab === 'performance' && (
-            <PerformanceRuleForm rule={form.performanceRule} onChange={v => set('performanceRule', v)} />
+            <div>
+              <PerformanceRuleForm rule={form.performanceRule} onChange={v => set('performanceRule', v)} />
+              <ServicePerformerRolesForm
+                roles={form.servicePerformerRoles}
+                staffList={staffList}
+                onChange={v => set('servicePerformerRoles', v)}
+              />
+            </div>
           )}
 
           {tab === 'images' && (

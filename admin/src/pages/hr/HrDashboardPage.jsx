@@ -85,6 +85,39 @@ export default function HrDashboardPage() {
         <StatCard label="激活率" value={`${overview?.activationRate ?? 0}%`} color="#D97706" />
       </div>
 
+      {overview?.hrData && (
+        <div className="card" style={{ padding: 20, marginBottom: 16 }}>
+          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14, color: '#1A2B24' }}>
+            📊 {overview.year} 年度服务概览
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <StatCard label="体检机构" value={overview.hrData.examOrg || '-'} />
+            <StatCard label="当年体检人数" value={overview.hrData.examCount || 0} sub="人" />
+            <StatCard label="客单价" value={`¥${overview.hrData.examUnitPrice || 0}`} color="#0077B6" />
+            <StatCard label="体检总额" value={`¥${(overview.hrData.examTotal || 0).toLocaleString()}`} color="#DC3545" />
+          </div>
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+            <StatCard label="保险公司" value={overview.hrData.insurerName || '-'} />
+            <StatCard label="参保人数" value={overview.hrData.insuredCount || 0} sub="人" />
+            <StatCard label="保险金额" value={`¥${(overview.hrData.insuredAmount || 0).toLocaleString()}`} color="#0077B6" />
+            <StatCard label="健康管理费" value={`¥${(overview.hrData.healthMgmtFee || 0).toLocaleString()}`} color="#D97706" />
+          </div>
+          {(overview.hrData.otherServices || []).length > 0 && (
+            <div style={{ marginTop: 16 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 8 }}>其他付费单项服务</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                {overview.hrData.otherServices.map((o, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '6px 12px', background: '#f8faf9', borderRadius: 6 }}>
+                    <span style={{ color: '#4A6558' }}>{o.name}</span>
+                    <span style={{ fontWeight: 700, color: '#1E6B50' }}>¥{(o.amount || 0).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ flex: 1, minWidth: 320 }}>
           <BucketBar title="员工心血管风险分层（10年ASCVD风险，脱敏聚合）" buckets={ascvdBuckets} colorMap={ASCVD_COLOR} />
