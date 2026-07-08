@@ -16,6 +16,7 @@ import ChangeLogsPage from './pages/ChangeLogsPage'
 import ProductsPage from './pages/ProductsPage'
 import PartnersPage from './pages/PartnersPage'
 import EnterprisesPage from './pages/EnterprisesPage'
+import TenantsPage from './pages/TenantsPage'
 import OpsDashboardPage from './pages/OpsDashboardPage'
 import HealthPlanTemplatePage from './pages/HealthPlanTemplatePage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
@@ -115,6 +116,7 @@ export default function App() {
               <Route path="products"   element={<ProductsPage />} />
               <Route path="partners"   element={<PartnersPage />} />
               <Route path="enterprises" element={<EnterprisesPage />} />
+              <Route path="tenants" element={<TenantsPage />} />
               <Route path="ops-dashboard" element={<OpsDashboardPage />} />
               <Route path="health-plan-templates" element={<HealthPlanTemplatePage />} />
 

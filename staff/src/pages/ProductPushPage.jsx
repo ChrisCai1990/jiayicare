@@ -277,11 +277,39 @@ export default function ProductPushPage() {
   )
 }
 
+const PERFORMER_ROLE_LABEL = {
+  familyDoctor: '家庭医生', nutritionist: '营养师', healthManager: '健管专员',
+  medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师',
+  specialist: '专科医师', tcmDoctor: '中医师',
+}
+
 function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrices, onClose, onSaved }) {
   const [selectedPatients, setSelectedPatients] = useState([])
   const [search, setSearch] = useState('')
   const [pushing, setPushing] = useState(false)
+  const [staffList, setStaffList] = useState([])
+  // 岗位服务人选择：{ [productId]: { [role]: staffId } }
+  const [performers, setPerformers] = useState({})
   const toggle = id => setSelectedPatients(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
+
+  // 有产品配了服务岗位才需要加载员工列表供选人
+  const productsWithRoles = selectedItems.filter(p => (p.servicePerformerRoles || []).length > 0)
+  useEffect(() => {
+    if (productsWithRoles.length === 0) return
+    staffAPI.getStaffList({ pageSize: 500 }).then(r => {
+      setStaffList(r.data?.staff || r.data?.list || r.data || [])
+    }).catch(() => {})
+    // 用产品预设的默认服务人预填
+    const init = {}
+    productsWithRoles.forEach(p => {
+      init[p.id] = {}
+      ;(p.servicePerformerRoles || []).forEach(sr => { if (sr.defaultStaffId) init[p.id][sr.role] = String(sr.defaultStaffId) })
+    })
+    setPerformers(init)
+  }, [selectedItems.length])
+
+  const setPerformer = (productId, role, staffId) =>
+    setPerformers(prev => ({ ...prev, [productId]: { ...(prev[productId] || {}), [role]: staffId } }))
 
   const filtered = patients.filter(p =>
     !search || p.name?.includes(search) || p.phone?.includes(search)
@@ -291,10 +319,18 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
     if (!selectedPatients.length) return
     setPushing(true)
     try {
+      // 把各产品各岗位选定的人展平成 [{productId, role, staffId}]
+      const servicePerformers = []
+      Object.entries(performers).forEach(([productId, roleMap]) => {
+        Object.entries(roleMap || {}).forEach(([role, staffId]) => {
+          if (staffId) servicePerformers.push({ productId, role, staffId })
+        })
+      })
       await staffAPI.pushBundle({
         productIds: selectedItems.map(p => p.id),
         patientIds: selectedPatients,
         pricedProducts: selectedItems.map(p => ({ productId: p.id, price: selectedPrices?.[p.id] ?? p.price })),
+        servicePerformers,
       })
       onSaved(selectedPatients.length)
     } catch (e) {
@@ -328,6 +364,36 @@ function PatientSelectModal({ patients, selectedItems, totalPrice, selectedPrice
             ))}
           </div>
         </div>
+
+        {/* 岗位服务人员：产品配了服务岗位时，逐岗位指定具体人员（供客户下单后按岗位比例发绩效）*/}
+        {productsWithRoles.length > 0 && (
+          <div style={{ padding: '10px 20px', borderBottom: '1px solid #E0D9CE', background: '#FFFDF7' }}>
+            <div style={{ fontSize: 12, color: '#8A6D3B', marginBottom: 8 }}>👥 指定服务人员（可预留空，核销时也可再定）</div>
+            {productsWithRoles.map(p => (
+              <div key={p.id} style={{ marginBottom: 8 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: '#4A6558', marginBottom: 4 }}>{p.name}</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {(p.servicePerformerRoles || []).map(sr => (
+                    <div key={sr.role} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                      <span style={{ fontSize: 12, color: '#8AA89C' }}>{PERFORMER_ROLE_LABEL[sr.role] || sr.role}({sr.rate}%)</span>
+                      <select
+                        className="form-input"
+                        style={{ width: 120, padding: '4px 8px', fontSize: 12 }}
+                        value={performers[p.id]?.[sr.role] || ''}
+                        onChange={e => setPerformer(p.id, sr.role, e.target.value)}
+                      >
+                        <option value="">未指定</option>
+                        {staffList.filter(s => s.role === sr.role).map(s => (
+                          <option key={s._id} value={s._id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
           <input

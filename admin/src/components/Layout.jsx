@@ -48,9 +48,16 @@ const NAV_SECTIONS = [
       { label: '随访方案',     icon: '🗓️', path: '/projects/followup-plans' },
     ],
   },
+  {
+    label: '平台运营',
+    platformOnly: true,   // 仅平台超管(platformSuper)可见——跨机构SaaS运营
+    items: [
+      { label: '机构管理', icon: '🏛️', path: '/tenants' },
+    ],
+  },
 ]
 
-const ROLE_MAP = { doctor: '医生', manager: '健管师', superadmin: '超级管理员' }
+const ROLE_MAP = { doctor: '医生', manager: '健管师', superadmin: '超级管理员', platformSuper: '平台超管' }
 
 export default function Layout() {
   const { admin, logout } = useAdmin()
@@ -88,7 +95,7 @@ export default function Layout() {
         </div>
 
         <nav className="sidebar-nav">
-          {NAV_SECTIONS.map(section => (
+          {NAV_SECTIONS.filter(s => !s.platformOnly || admin?.role === 'platformSuper').map(section => (
             <div key={section.label}>
               <div
                 className="sidebar-section-label"

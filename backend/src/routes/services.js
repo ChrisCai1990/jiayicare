@@ -155,10 +155,17 @@ router.post('/order', auth, async (req, res) => {
   // 同一个"，仍需推荐人本人或超管另行指定（PATCH /staff/orders/:id/fulfiller），不产生服务人时
   // 该订单只生成推广费，不生成服务费。
   let referrerId = null;
+  let servicePerformers = [];
   if (product) {
     const lastPush = await PushRecord.findOne({ patientId: req.user._id, type: 'product', productId: service.id })
-      .sort({ createdAt: -1 }).select('staffId');
-    if (lastPush) referrerId = lastPush.staffId;
+      .sort({ createdAt: -1 }).select('staffId servicePerformers');
+    if (lastPush) {
+      referrerId = lastPush.staffId;
+      // 推送时为该产品指定的各岗位服务人（productId 匹配或未标 productId 的通用项）带入订单，供核销结算按岗位发绩效
+      servicePerformers = (lastPush.servicePerformers || [])
+        .filter(sp => sp.role && sp.staffId && (!sp.productId || String(sp.productId) === String(service.id)))
+        .map(sp => ({ role: sp.role, staffId: sp.staffId }));
+    }
   }
 
   const [order] = await Promise.all([
@@ -172,6 +179,7 @@ router.post('/order', auth, async (req, res) => {
       status:       'pending',
       orderType:    isPkg ? 'package' : 'service',
       referrerId,
+      servicePerformers,
     }),
     Task.create({
       user:        req.user._id,

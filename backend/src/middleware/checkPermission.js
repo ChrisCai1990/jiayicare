@@ -13,7 +13,7 @@ const StaffRole = require('../models/StaffRole');
 function checkPermission(moduleKey, action) {
   return async (req, res, next) => {
     try {
-      if (req.staff.role === 'superadmin') return next();
+      if (req.staff.role === 'superadmin' || req.staff.role === 'platformSuper') return next();
       if (!req.staff.customRoleId) return next();
 
       const role = await StaffRole.findById(req.staff.customRoleId).select('permissions').lean();

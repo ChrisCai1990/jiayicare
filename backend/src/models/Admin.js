@@ -9,7 +9,8 @@ const adminSchema = new mongoose.Schema({
   role: {
     type: String,
     enum: [
-      'superadmin',      // 超级管理员
+      'platformSuper',   // 平台超管（SaaS运营方，可跨所有机构管理，不受 tenantId 隔离）
+      'superadmin',      // 超级管理员（单机构最高权限，归属具体 tenantId）
       'doctor', 'manager', // 旧管理员角色（兼容）
       'familyDoctor',    // 家庭医师
       'nutritionist',    // 营养师

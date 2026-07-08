@@ -1804,13 +1804,14 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
     icon: '🛍',
     servicePrices: p.servicePrices || [],
     features: p.features || [],
+    servicePerformerRoles: p.servicePerformerRoles || [],
   }));
   res.json({ success: true, data: { products: list } });
 });
 
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
 router.post('/products/push-bundle', staffAuth, checkPermission('products', 'send'), async (req, res) => {
-  const { productIds, patientIds, pricedProducts } = req.body;
+  const { productIds, patientIds, pricedProducts, servicePerformers } = req.body;
   if (!productIds?.length) return res.status(400).json({ success: false, message: '请选择产品' });
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const products = await Product.find({ _id: { $in: productIds } });
@@ -1826,12 +1827,18 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
   const totalPrice = productItems.reduce((sum, p) => sum + p.price, 0);
   const title = products.length === 1 ? products[0].name : `产品推荐（${products.length}项）`;
   const content = productItems.map(p => `${p.name} ¥${p.price}`).join('、');
+  // 清洗推送时指定的各岗位服务人（[{productId, role, staffId}]）
+  const cleanPerformers = Array.isArray(servicePerformers)
+    ? servicePerformers.filter(sp => sp && sp.role && sp.staffId)
+        .map(sp => ({ productId: sp.productId || null, role: sp.role, staffId: sp.staffId }))
+    : [];
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,
     type: 'product', title, content,
     price: totalPrice,
     productId: products.length === 1 ? products[0]._id.toString() : null,
     products: productItems,
+    servicePerformers: cleanPerformers,
   }));
   await PushRecord.insertMany(records);
   res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
@@ -1839,10 +1846,14 @@ router.post('/products/push-bundle', staffAuth, checkPermission('products', 'sen
 
 // POST /api/staff/products/:id/push — 推送产品给会员（兼容旧版）
 router.post('/products/:id/push', staffAuth, checkPermission('products', 'send'), async (req, res) => {
-  const { patientIds } = req.body;
+  const { patientIds, servicePerformers } = req.body;
   if (!patientIds?.length) return res.status(400).json({ success: false, message: '请选择会员' });
   const product = await Product.findById(req.params.id).catch(() => null);
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
+  const cleanPerformers = Array.isArray(servicePerformers)
+    ? servicePerformers.filter(sp => sp && sp.role && sp.staffId)
+        .map(sp => ({ productId: product._id.toString(), role: sp.role, staffId: sp.staffId }))
+    : [];
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,
     type: 'product',
@@ -1850,6 +1861,7 @@ router.post('/products/:id/push', staffAuth, checkPermission('products', 'send')
     content: product.subtitle || '',
     price: product.originalPrice || null,
     productId: product._id.toString(),
+    servicePerformers: cleanPerformers,
   }));
   await PushRecord.insertMany(records);
   res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });

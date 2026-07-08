@@ -76,6 +76,15 @@ async function ensureStaffTestAccounts() {
     console.log('🔑 superadmin 密码已同步');
   }
 
+  // 平台超管（SaaS运营方，跨机构）——不存在则创建，供机构管理入口使用
+  const ps = await Admin.findOne({ username: 'platform' });
+  if (!ps) {
+    await Admin.create({ username: 'platform', password: 'jiayi2024', name: '平台超管', role: 'platformSuper', title: '平台运营' });
+    console.log('✅ 创建 platformSuper 账号: platform / jiayi2024');
+  } else if (ps.role !== 'platformSuper') {
+    ps.role = 'platformSuper'; await ps.save();
+  }
+
   const testAccounts = [
     { username: 'jy_super', password: 'jiayi2024', name: '超管测试',   role: 'superadmin',       title: '超级管理员' },
     { username: 'jy_hm',    password: 'jiayi2024', name: '测试健管',   role: 'healthManager',    title: '健康管理师' },
@@ -781,6 +790,80 @@ router.delete('/staff/:id', adminAuth, async (req, res) => {
   }
   await staff.deleteOne();
   res.json({ success: true, message: '账号已删除' });
+});
+
+// ── 机构/租户管理（SaaS：平台超管跨机构运营）─────────────────────────
+const Tenant = require('../models/Tenant');
+const { runWithoutTenantScope } = require('../utils/tenantScope');
+
+// 仅平台超管可管理机构（跨租户运营方）
+function requirePlatformSuper(req, res, next) {
+  if (req.admin.role !== 'platformSuper') {
+    return res.status(403).json({ success: false, message: '仅平台超管可管理机构' });
+  }
+  next();
+}
+
+// GET /api/admin/tenants — 机构列表（含每个机构的员工数/客户数）
+router.get('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
+  // 平台超管本就 BYPASS 隔离，这里直接查全部机构
+  const tenants = await Tenant.find({}).sort({ createdAt: -1 }).lean();
+  const [staffAgg, userAgg] = await Promise.all([
+    runWithoutTenantScope(() => Admin.aggregate([{ $match: { tenantId: { $ne: null } } }, { $group: { _id: '$tenantId', c: { $sum: 1 } } }])),
+    runWithoutTenantScope(() => User.aggregate([{ $match: { tenantId: { $ne: null } } }, { $group: { _id: '$tenantId', c: { $sum: 1 } } }])),
+  ]);
+  const staffMap = Object.fromEntries(staffAgg.map(x => [String(x._id), x.c]));
+  const userMap = Object.fromEntries(userAgg.map(x => [String(x._id), x.c]));
+  tenants.forEach(t => { t.staffCount = staffMap[String(t._id)] || 0; t.userCount = userMap[String(t._id)] || 0; });
+  res.json({ success: true, data: tenants });
+});
+
+// POST /api/admin/tenants — 新建机构，并为其创建一个 superadmin 账号（归属该机构）
+router.post('/tenants', adminAuth, requirePlatformSuper, async (req, res) => {
+  const { code, name, slogan, logo, themeColor, adminUsername, adminPassword } = req.body;
+  if (!code || !name) return res.status(400).json({ success: false, message: '机构标识和名称为必填项' });
+  const dup = await Tenant.findOne({ code });
+  if (dup) return res.status(400).json({ success: false, message: '该机构标识已存在' });
+  const tenant = await Tenant.create({ code, name, slogan: slogan || '', logo: logo || '', themeColor: themeColor || '#1E6B50' });
+
+  // 为新机构建一个 superadmin，否则该机构无人能登录管理
+  let createdAdmin = null;
+  if (adminUsername && adminPassword) {
+    const exists = await runWithoutTenantScope(() => Admin.findOne({ username: adminUsername }));
+    if (exists) {
+      await tenant.deleteOne();
+      return res.status(400).json({ success: false, message: '管理员用户名已被占用，机构创建已回滚' });
+    }
+    createdAdmin = await Admin.create({
+      username: adminUsername, password: adminPassword, name: `${name}管理员`,
+      role: 'superadmin', phone: `t_${code}`, tenantId: tenant._id,
+    });
+  }
+  res.json({ success: true, data: { tenant, adminId: createdAdmin?._id || null }, message: '机构创建成功' });
+});
+
+// PUT /api/admin/tenants/:id — 更新机构信息
+router.put('/tenants/:id', adminAuth, requirePlatformSuper, async (req, res) => {
+  const { name, slogan, logo, themeColor, status, note } = req.body;
+  const update = {};
+  ['name', 'slogan', 'logo', 'themeColor', 'status', 'note'].forEach(k => { if (req.body[k] !== undefined) update[k] = req.body[k]; });
+  const tenant = await Tenant.findByIdAndUpdate(req.params.id, update, { new: true });
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
+  res.json({ success: true, data: tenant, message: '机构信息已更新' });
+});
+
+// DELETE /api/admin/tenants/:id — 删除机构（有员工/客户时拒绝，避免误删数据）
+router.delete('/tenants/:id', adminAuth, requirePlatformSuper, async (req, res) => {
+  const [staffCount, userCount] = await Promise.all([
+    runWithoutTenantScope(() => Admin.countDocuments({ tenantId: req.params.id })),
+    runWithoutTenantScope(() => User.countDocuments({ tenantId: req.params.id })),
+  ]);
+  if (staffCount > 0 || userCount > 0) {
+    return res.status(400).json({ success: false, message: `该机构下还有 ${staffCount} 名员工、${userCount} 名客户，请先迁移或清理后再删除` });
+  }
+  const tenant = await Tenant.findByIdAndDelete(req.params.id);
+  if (!tenant) return res.status(404).json({ success: false, message: '机构不存在' });
+  res.json({ success: true, message: '机构已删除' });
 });
 
 // ── 团队管理（导师可查看全团队客户档案）──────────────────────────────

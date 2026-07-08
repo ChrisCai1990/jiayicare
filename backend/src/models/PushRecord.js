@@ -27,6 +27,14 @@ const pushRecordSchema = new mongoose.Schema({
     category:  { type: String },
     icon:      { type: String, default: '🛍' },
   }],
+  // 推送时为产品指定的各服务岗位具体人员（产品维度 servicePerformerRoles 定义岗位+比例，这里落到人）。
+  // 客户据此下单后，核销时把这些人员写入 order.servicePerformers，按岗位比例发放绩效。
+  // 多产品组合时按 productId 区分各自的服务人。
+  servicePerformers: [{
+    productId: { type: String },
+    role:      { type: String },
+    staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+  }],
   // 阅读状态
   readAt: { type: Date, default: null },
 }, { timestamps: true });

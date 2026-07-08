@@ -89,6 +89,12 @@ export const adminAPI = {
   updateStaff: (id, data)    => req(`/staff/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteStaff: (id)          => req(`/staff/${id}`, { method: 'DELETE' }),
 
+  // 机构/租户管理（SaaS，仅平台超管）
+  tenants:      ()           => req('/tenants'),
+  createTenant: (data)       => req('/tenants', { method: 'POST', body: JSON.stringify(data) }),
+  updateTenant: (id, data)   => req(`/tenants/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTenant: (id)         => req(`/tenants/${id}`, { method: 'DELETE' }),
+
   // 团队管理（导师可查看全团队客户档案）
   teams:       ()            => req('/teams'),
   createTeam:  (data)        => req('/teams', { method: 'POST', body: JSON.stringify(data) }),
