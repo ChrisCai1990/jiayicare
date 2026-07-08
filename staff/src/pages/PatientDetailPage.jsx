@@ -1231,6 +1231,7 @@ export default function PatientDetailPage() {
 
   const buildBasicInfoForm = (u) => ({
     name: u.name || '',
+    preferredTitle: u.preferredTitle || '',
     gender: u.gender || '未知',
     birthDate: u.birthDate || '',
     idNumber: u.idNumber || '',
@@ -2042,6 +2043,12 @@ export default function PatientDetailPage() {
                     <select className="form-input" value={basicInfoForm.gender || '未知'} onChange={e => setBasicInfoForm(f => ({ ...f, gender: e.target.value }))}>
                       <option value="未知">未知</option><option value="男">男</option><option value="女">女</option>
                     </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>称呼（AI发消息用）</label>
+                    <input className="form-input" value={basicInfoForm.preferredTitle || ''}
+                      placeholder="如：潘老师 / 张姐 / 李先生（留空则按性别自动称呼）"
+                      onChange={e => setBasicInfoForm(f => ({ ...f, preferredTitle: e.target.value }))} />
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>婚姻状况</label>

@@ -6,6 +6,9 @@ const userSchema = new mongoose.Schema({
   name:     { type: String, default: '用户' },
   age:      { type: Number },
   gender:   { type: String, enum: ['男', '女', '未知'], default: '未知' },
+  // 客户偏好称呼：医护端可为每个客户单独标注(如"潘老师""张姐""李先生")，AI 发消息时优先用它，
+  // 让称呼贴合日常习惯、避免叫错性别。未填则 AI 按性别得体兜底。
+  preferredTitle: { type: String, default: '' },
   avatar:   { type: String },
   healthScore: { type: Number, default: 0 },
   servicePackage: { type: String, default: '' },

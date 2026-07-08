@@ -592,7 +592,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
   const allowed = [
-    'name', 'gender', 'age', 'height', 'weight',
+    'name', 'gender', 'age', 'height', 'weight', 'preferredTitle',
     'birthDate', 'memberType', 'belief',
     'chronicDiseases', 'patientType', 'source', 'remark',
     'idNumber', 'workplace', 'occupation', 'maritalStatus',
@@ -4205,8 +4205,16 @@ router.post('/patients/:id/ai-followup-monthly-review', staffAuth, async (req, r
 // POST /api/staff/patients/:id/ai-coach-message
 router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('name gender age chronicDiseases');
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases preferredTitle');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    // 称呼：优先医护标注的 preferredTitle，否则按性别得体兜底
+    const surname = (user.name || '').trim().charAt(0);
+    const coachTitle = (user.preferredTitle && user.preferredTitle.trim())
+      ? user.preferredTitle.trim()
+      : (user.gender === '男' ? (surname ? surname + '先生' : user.name)
+         : user.gender === '女' ? (surname ? surname + '女士' : user.name)
+         : user.name);
 
     const { chat } = require('../utils/ai');
     // 近14天打卡，按自然日去重计算连续打卡天数
@@ -4234,7 +4242,8 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
 
     const prompt = `你是一位温暖、专业的健康教练，请给会员发一条${tone}消息（40-80字，口语化、有温度、不说教，可用1个emoji，不要分点）。
 
-【会员】${user.name}，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【会员】${user.name}，性别：${user.gender || '未知'}，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【称呼】必须称呼对方为"${coachTitle}"，不要自己改称呼，绝对不要叫错性别（如男性叫"姐"）。
 【打卡情况】连续打卡 ${streak} 天，距上次打卡 ${daysSinceLast >= 999 ? '很久' : daysSinceLast + ' 天'}
 【消息类型】${tone}（依从性${adherence === 'high' ? '良好' : adherence === 'medium' ? '一般' : '偏低'}）
 

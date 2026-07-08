@@ -27,9 +27,18 @@ async function calcAdherence(userId) {
   return { streak, daysSinceLast, hasAnyRecord: records.length > 0 };
 }
 
+// 得到该客户的称呼：优先用医护标注的 preferredTitle，否则按性别得体兜底（男→先生 / 女→女士 / 未知→姓名）
+function resolveTitle(user) {
+  if (user.preferredTitle && user.preferredTitle.trim()) return user.preferredTitle.trim();
+  const surname = (user.name || '').trim().charAt(0);
+  if (user.gender === '男') return surname ? `${surname}先生` : (user.name || '您');
+  if (user.gender === '女') return surname ? `${surname}女士` : (user.name || '您');
+  return user.name || '您';
+}
+
 // 预设暖心模板（AI 不可用时兜底），按依从性区分语气
 function fallbackMessage(user, adh) {
-  const name = user.name || '您';
+  const name = resolveTitle(user);
   if (adh.daysSinceLast >= 3) {
     return `${name}，好几天没见您打卡啦～花一分钟记录下今天的身体状况吧，我们一直在关注您的健康 💚`;
   }
@@ -48,9 +57,11 @@ async function generateCareMessage(user) {
 
   try {
     const { chat } = require('./ai');
+    const title = resolveTitle(user);
     const prompt = `你是一位温暖、专业的健康教练，请给会员发一条${tone}消息（40-80字，口语化、有温度、不说教，可用1个emoji，不要分点，不要出现"作为AI"之类的字样）。
 
-【会员】${user.name}，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【会员】${user.name}，性别：${user.gender || '未知'}，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【称呼】必须称呼对方为"${title}"，不要自己改称呼，绝对不要叫错性别（如男性叫"姐"）。
 【打卡情况】连续打卡 ${adh.streak} 天，距上次打卡 ${adh.daysSinceLast >= 999 ? '很久' : adh.daysSinceLast + ' 天'}
 【消息基调】${tone}
 
@@ -89,7 +100,7 @@ async function scanAndSendDailyCare() {
         user: uid, type: 'system', title: '今日健康关怀', createdAt: { $gt: oneDayAgo },
       });
       if (exists) continue;
-      const user = await User.findById(uid).select('name gender age chronicDiseases').lean();
+      const user = await User.findById(uid).select('name gender age chronicDiseases preferredTitle').lean();
       if (!user) continue;
 
       const content = await generateCareMessage(user);
