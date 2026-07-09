@@ -23,11 +23,17 @@ function fmtPeriod(start, end) {
 }
 
 // 三维度分区容器：体检 / 保险 / 健康管理，每块独立卡片+标题+服务期间，避免所有指标挤成一堆
+// 2026-07-09：标题栏支持点击展开/收起（默认展开），企业方看某一块时可把其余两块收起，减少一屏内的信息拥挤。
 function ServiceSection({ icon, title, period, children }) {
+  const [open, setOpen] = useState(true)
   return (
     <div className="card" style={{ padding: 20, marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+      <div
+        onClick={() => setOpen(o => !o)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: open ? 14 : 0, cursor: 'pointer', userSelect: 'none' }}
+      >
         <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 12, color: '#8AA89C', transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none', display: 'inline-block' }}>▶</span>
           <span>{icon}</span><span>{title}</span>
         </div>
         {period && (
@@ -36,7 +42,7 @@ function ServiceSection({ icon, title, period, children }) {
           </span>
         )}
       </div>
-      {children}
+      {open && children}
     </div>
   )
 }
@@ -158,7 +164,7 @@ export default function HrDashboardPage() {
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <StatCard label="体检机构" value={hr.examOrg || '-'} />
                 <StatCard label="当年体检人数" value={hr.examCount || 0} sub="人" />
-                <StatCard label="客单价（总体）" value={`¥${hr.examUnitPrice || 0}`} color="#0077B6" />
+                {/* 2026-07-09：去掉"客单价（总体）"——体检基本都按类别（男/已婚女/未婚女）计价，没有统一总体客单价可填 */}
                 <StatCard label="体检总额" value={`¥${(hr.examTotal || 0).toLocaleString()}`} color="#DC3545" />
               </div>
               {(hr.examUnitPriceMale || hr.examUnitPriceMarriedFemale || hr.examUnitPriceSingleFemale) ? (

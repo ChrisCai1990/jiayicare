@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl, Dimensions,
-  Modal, TextInput, Image, Platform,
+  Modal, TextInput, Image, Platform, Alert,
 } from 'react-native';
 import Svg, { Rect, Line, Text as SvgText, Defs, LinearGradient, Stop, Polyline, Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -71,7 +71,7 @@ const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
 
 // ── 打卡项目定义 ─────────────────────────────────────────────────
 const CHECKIN_DEFS = {
-  diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食打卡' },
+  diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食打卡', allowMultiple: true },
   exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动打卡' },
   sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',          color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠打卡' },
   weight:        { key: 'weight',        label: '体重', icon: 'scale-outline',         color: '#059669', measureType: 'weight',        category: 'vitals',    recordLabel: '体重打卡' },
@@ -711,8 +711,7 @@ export default function HomeScreen({ navigation }) {
             </View>
           </View>
 
-          {/* ── 成长卡片（连续打卡激励 + 趋势正反馈）────────────────── */}
-          <GrowthCard growth={dashData?.growth} onCheckin={() => navigation.navigate('AddRecord')} />
+          {/* 成长卡片（连续打卡）已下移到"今日健康打卡"板块顶部，与打卡网格合并为一个整体（2026-07-09） */}
 
           {/* ── 健康指标区块 ──────────────────────────────────────── */}
           <View style={styles.section}>
@@ -881,12 +880,15 @@ export default function HomeScreen({ navigation }) {
           {/* ── 今日健康打卡 ──────────────────────────────────────── */}
           {(() => {
             const items = dynamicCheckinItems;
-            const doneCount = items.filter(item =>
-              item.measureType
-                ? (!!checkin[item.key]?.done || todayRecordedTypes.has(item.measureType))
-                : !!checkin[item.key]?.done
-            ).length;
+            // 2026-07-09：统一"是否已打卡"判定——本地checkin(即时反馈) 或 后端当天有该type记录(todayRecordedTypes)。
+            // 后端记录按 item.key 匹配(打卡写库时 type=item.key)，覆盖全部类型，不再只对 measureType 项生效。
+            // 这样医护端首次代录入(写后端HealthRecord)后，用户端能正确显示对应项已打卡✓，实现两端同步。
+            const isItemDone = (item) => !!checkin[item.key]?.done || todayRecordedTypes.has(item.key) || (item.measureType && todayRecordedTypes.has(item.measureType));
+            const doneCount = items.filter(isItemDone).length;
             const openCheckinModal = (item) => {
+              // 2026-07-09 #11 防重复打卡：当天已打卡(本地或后端)的项不允许再次打卡。
+              // 例外：饮食(allowMultiple)一日三餐/加餐都要打卡，不做当天去重，可反复记录。
+              if (isItemDone(item) && !item.allowMultiple) { Alert.alert('今日已打卡', '这一项今天已经打过卡了，明天再来吧～'); return; }
               if (item.measureType) {
                 navigation.navigate('AddRecord');
                 return;
@@ -920,6 +922,9 @@ export default function HomeScreen({ navigation }) {
               setCheckinModal(null);
             };
             return (
+              <>
+              {/* 连续打卡成长卡片：与今日打卡网格合并为一个整体，点"去打卡"不再跳转，直接在下方网格打卡 */}
+              <GrowthCard growth={dashData?.growth} onCheckin={() => {}} />
               <View style={styles.checkinCard}>
                 <View style={styles.checkinHeader}>
                   <View style={styles.sectionTitleRow}>
@@ -941,9 +946,7 @@ export default function HomeScreen({ navigation }) {
                   <>
                     <View style={styles.checkinGrid}>
                       {items.map(item => {
-                        const isDone = item.measureType
-                          ? (!!checkin[item.key]?.done || todayRecordedTypes.has(item.measureType))
-                          : !!checkin[item.key]?.done;
+                        const isDone = isItemDone(item);
                         const hasNote = !!(checkin[item.key]?.note || checkin[item.key]?.image);
                         return (
                           <TouchableOpacity
@@ -1050,6 +1053,7 @@ export default function HomeScreen({ navigation }) {
                   </View>
                 </Modal>
               </View>
+              </>
             );
           })()}
 

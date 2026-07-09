@@ -497,7 +497,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
               <input className="form-input" value={form.examOrg} onChange={e => set('examOrg', e.target.value)} placeholder="如：美年大健康 / 慈铭体检" />
             </div>
             {numField('当年体检人数', 'examCount', '人')}
-            {numField('客单价（总体）', 'examUnitPrice', '¥')}
+            {/* 2026-07-09：去掉"客单价（总体）"录入——体检按类别计价，无统一总体客单价 */}
             {numField('客单价·男性', 'examUnitPriceMale', '¥')}
             {numField('客单价·已婚女性', 'examUnitPriceMarriedFemale', '¥')}
             {numField('客单价·未婚女性', 'examUnitPriceSingleFemale', '¥')}

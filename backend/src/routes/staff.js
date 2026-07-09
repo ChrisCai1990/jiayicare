@@ -1245,7 +1245,16 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (title !== undefined) report.title = title;
     if (type !== undefined) report.type = type;
     if (hospital !== undefined) { report.hospital = hospital; report.institution = hospital; }
-    if (date !== undefined) { report.date = date; report.checkDate = date; }
+    if (date !== undefined) {
+      report.date = date; report.checkDate = date;
+      // 2026-07-09修复"同一检查同时出现在2025和2026"：编辑改了检查日期时，reportYear 必须跟着日期重算，
+      // 否则会出现 checkDate=2025-08-06 但 reportYear 仍停留在旧值2026 的错位，导致这份报告在两个年度里都出现。
+      // 若前端本次同时显式传了 reportYear（见下方），以显式值为准；否则一律按新日期推导。
+      if (reportYear === undefined && date) {
+        const y = new Date(date).getFullYear();
+        if (!isNaN(y)) report.reportYear = y;
+      }
+    }
     if (note !== undefined) report.note = note;
     // AI 审核字段
     if (aiStatus !== undefined) { report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id; }
@@ -2888,16 +2897,27 @@ router.get('/patients/:id/screening', staffAuth, async (req, res) => {
       const obj = item.toObject();
       const report = obj.reportId;
       if (report) {
-        obj.checkDate = report.checkDate || '';
-        obj.institution = report.institution || '';
         obj.reportTitle = report.title || '';
         // 在该报告的 reportItems 里找所有 screeningKey 匹配的条目（一个itemId可能对应多个子项）
+        // 2026-07-09：单值 screeningKey 是医护审核确认后的权威归类，screeningKeys 数组可能残留审核前
+        // AI 二次匹配的过期值。两者都参与反查(itemId 命中任一即算该子项属于此节点)，保证人工改过的归类
+        // 能正确把报告子项挂到对应筛查节点下，不再出现"改了归类但报告数据显示不出来/挂到错节点"。
         const matchedItems = (report.reportItems || []).filter(ri =>
           (ri.screeningKeys && ri.screeningKeys.includes(obj.itemId)) ||
           ri.screeningKey === obj.itemId
         );
         obj.matchedItems = matchedItems;
         const matched = matchedItems[0];
+        // 2026-07-09修复日期/机构错乱：单条检查项(如妇科阴道超声2025-08-06)可能被并进一份跨年度的
+        // 汇总报告(如2026年度体检)里，它有自己的 examDate/institution。此前只取报告级 checkDate/institution，
+        // 导致2025年的检查被显示成2026年、机构显示成整份报告的体检机构名。改为优先取 item 级真实日期/机构，
+        // 仅在 item 级为空时才回退报告级，从根本上消除"时间归错年、机构归错家"。
+        obj.checkDate = (matched && matched.examDate) || report.checkDate || '';
+        // 2026-07-09修复机构名错乱：report.institution 多来自 AI OCR（常残缺/是社区名/带识别乱码），
+        // report.hospital 才是医护上传时手动录入的规范机构名。此前只读 institution，导致展示的机构跟
+        // 医护实际录入的不符。改为「人工录入(hospital)优先 → item级 → 报告级 institution 兜底」，
+        // 与用户诉求"以人工录入/确认为准，不要用 AI 自动值覆盖"一致。
+        obj.institution = report.hospital || (matched && matched.institution) || report.institution || '';
         if (matched) {
           obj.value = matched.value || '';
           obj.unit = matched.unit || '';
@@ -5568,19 +5588,19 @@ async function upsertScreeningKey(userId, reportId, key, fallbackName) {
 }
 
 // 将报告已归类项同步写入 UserScreeningItem（upsert，同一 itemId 按 reportId 各自保留一条，支持多年数据并存）
-// 每条 reportItem 可携带多个 screeningKeys，每个 key 写一条 UserScreeningItem 记录
+// 2026-07-09（用户决策"一项只归一类"）：每个检验项只写【一条】——优先医护在审核弹窗确认的单值 screeningKey，
+// 回退 screeningKeys 数组的第一个（最佳匹配）。不再对 AI 多匹配出的每个 screeningKey 都写一条，
+// 从根上消除金娟反馈的"专项筛查里多出 AI 单独生成的部分"（如球蛋白同时被写进肝功能+免疫球蛋白两处）。
 async function syncScreeningItems(userId, reportId, items) {
   try {
     const matched = (items || []).filter(it => it.matchStatus === 'matched');
     let syncCount = 0;
     for (const it of matched) {
-      const keys = (it.screeningKeys && it.screeningKeys.length)
-        ? it.screeningKeys
-        : (it.screeningKey ? [it.screeningKey] : []);
-      for (const key of keys) {
-        await upsertScreeningKey(userId, reportId, key, it.name);
-        syncCount++;
-      }
+      // 单一归类键：人工确认值最优先，其次数组首位（最佳匹配），都没有则跳过
+      const key = it.screeningKey || (it.screeningKeys && it.screeningKeys[0]) || '';
+      if (!key) continue;
+      await upsertScreeningKey(userId, reportId, key, it.name);
+      syncCount++;
     }
     if (syncCount) console.log(`[screening-sync] userId=${userId} reportId=${reportId} 同步${syncCount}项`);
   } catch (err) {

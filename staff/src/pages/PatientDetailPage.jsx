@@ -2514,6 +2514,22 @@ export default function PatientDetailPage() {
                             </div>
                           ))}
                         </div>
+                        {/* 2026-07-09：生活方式扣分明细，展示"扣N分具体扣在哪"（吸烟/运动/膳食/睡眠等各扣多少），
+                            回应金娟"生活方式扣8分不知道扣的什么"。仅当有扣分明细时展示。 */}
+                        {Array.isArray(detail.lifestyleBreakdown) && detail.lifestyleBreakdown.length > 0 && (
+                          <div style={{ marginTop: 10, background: '#FFF8F5', border: '1px solid #FBE3D8', borderRadius: 8, padding: '10px 12px' }}>
+                            <div style={{ fontSize: 12, color: '#B45309', fontWeight: 600, marginBottom: 6 }}>生活方式扣分明细</div>
+                            {detail.lifestyleBreakdown.map((b, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: 12, padding: '3px 0', gap: 12 }}>
+                                <span style={{ color: '#4A6558' }}>
+                                  <span style={{ fontWeight: 600, color: '#1A2B24' }}>{b.label}</span>
+                                  {b.reason ? <span style={{ color: '#8AA89C', marginLeft: 6 }}>{b.reason}</span> : null}
+                                </span>
+                                <span style={{ fontWeight: 700, color: '#DC3545', flexShrink: 0 }}>{b.points}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {detail.calculatedAt && (
                           <div style={{ fontSize: 11, color: '#aaa', marginTop: 8 }}>
                             计算时间：{new Date(detail.calculatedAt).toLocaleString('zh-CN')}
@@ -3064,8 +3080,17 @@ export default function PatientDetailPage() {
           const STATUS_COLOR_MAP = { normal: '#22A06B', abnormal: '#DC3545', attention: '#D97706', unknown: '#8AA89C' }
 
           // 构建三层树：{ l1key: { l2label: { l3label: records[] } } }
+          // 2026-07-09修复"专项筛查多出一模一样的一份"（金娟/潘孝银）：treeData 有两个来源——
+          // ①screeningReports(报告本身按 screeningL1/L2/L3 挂树) ②aiVirtualMap(UserScreeningItem，AI归类写入)。
+          // 一份经过 AI 解析归类的报告，其筛查项已通过 UserScreeningItem 展示，若这份报告在 screeningReports 里
+          // 又带了 screeningL1/L2/L3，就会被再挂一次，同一内容出现两遍。这里跳过"已有对应 UserScreeningItem 的报告"，
+          // 由 aiVirtualMap 统一负责展示，报告派生只处理纯手动录入(无 AI 归类项)的报告。
+          const reportIdsWithScreeningItems = new Set(
+            (screeningItems || []).map(it => String(it.reportId || '')).filter(Boolean)
+          )
           const treeData = {}
           screeningReports.forEach(r => {
+            if (reportIdsWithScreeningItems.has(String(r._id))) return // 已由 UserScreeningItem 展示，避免重复
             const l1 = r.screeningL1 || r.screeningCategory || 'other'
             const l2 = r.screeningL2 || r.title || '未分类'
             const l3 = r.screeningL3 || r.title || '未命名'
@@ -4081,8 +4106,10 @@ export default function PatientDetailPage() {
                 ggt:   ['γ-谷氨酰转肽酶','γ-谷氨酸转肽酶','GGT','γ-GT','γGT','谷氨酸转肽酶'],
                 // 排除'结晶/盐结晶'：三大常规里的"尿酸结晶"不是血尿酸
                 ua:    { names: ['尿酸','UA','SUA'], exclude: ['结晶','盐结晶'] },
-                // 故意不含短形式'Cr'，避免匹配到 尿Cr（尿液肌酐）
-                cr:    ['血肌酐','肌酐','CREA','SCr','S-Cr','血Cr'],
+                // 血肌酐：不含短形式'Cr'，避免匹配到尿Cr（尿液肌酐）。
+                // 2026-07-09修复"血肌酐夹杂尿肌酐"：names含裸"肌酐"会匹配到"尿肌酐/尿液肌酐/U-肌酐"，
+                // 用exclude排除所有尿液标本的肌酐（带"尿"字），确保只取血清肌酐。
+                cr:    { names: ['血肌酐','血清肌酐','肌酐','CREA','SCr','S-Cr','血Cr'], exclude: ['尿','U-','U肌酐','U-Cr'] },
                 umalb: ['尿微量白蛋白','尿微量蛋白','mAlb','MAU','微量白蛋白','MALB'],
                 egfr:  ['肾小球滤过率','eGFR','GFR','估算肾小球滤过率'],
                 hcy:   ['同型半胱氨酸','Hcy','HCY'],
@@ -5784,7 +5811,7 @@ export default function PatientDetailPage() {
                               <span style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title}</span>
                               {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 1 }}>{r.screeningL2}</div>}
                             </td>
-                            <td style={{ fontSize: 12, color: '#666' }}>{r.institution || r.hospital || '-'}</td>
+                            <td style={{ fontSize: 12, color: '#666' }}>{r.hospital || r.institution || '-'}</td>
                             <td style={{ fontSize: 12, color: '#8AA89C' }}>{r.checkDate || r.date || '-'}</td>
                             <td>
                               <span style={{ fontSize: 12, fontWeight: 500, color: r.audit_status === 'audited' ? '#22A06B' : r.audit_status === 'rejected' ? '#DC3545' : '#D97706' }}>
@@ -6922,9 +6949,13 @@ export default function PatientDetailPage() {
           opts: (cat.opts || []),
         }))
         const setClassify = (i, key) => {
-          if (!key) return updItem(i, { screeningKey: '', screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 })
+          // 2026-07-09修复：医护手动改归类时必须同步 screeningKeys 数组。
+          // 后端展示层(GET screening)和写入层(syncScreeningItems)都优先读 screeningKeys 数组，
+          // 只改单值 screeningKey 而不动数组，会导致「人工改了归类但仍按 AI 二次模糊匹配的旧错值展示/写入」
+          // ——正是金娟反馈的"尿转铁蛋白改了没用还归到肿瘤铁蛋白"的根因。清空归类时数组也一并清空。
+          if (!key) return updItem(i, { screeningKey: '', screeningKeys: [], screeningCategory: '', screeningParent: '', matchStatus: 'unclassified', matchConfidence: 0 })
           const parts = key.split('|')
-          updItem(i, { screeningKey: key, screeningCategory: parts[0], screeningParent: parts[1], matchStatus: 'matched', matchConfidence: 1 })
+          updItem(i, { screeningKey: key, screeningKeys: [key], screeningCategory: parts[0], screeningParent: parts[1], matchStatus: 'matched', matchConfidence: 1 })
         }
         const matchedN = ocrEditItems.filter(it => it.matchStatus === 'matched' && it.screeningKey).length
         const unclassifiedN = ocrEditItems.length - matchedN
@@ -7127,16 +7158,9 @@ export default function PatientDetailPage() {
                                     <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                                   </td>
                                 </tr>
-                                {/* 部分检验类报告(睡眠呼吸监测/动态血压监测等)AI会把诊断总结文字写进同一条lab记录
-                                    的diagnosis/conclusion字段而不是拆成独立imaging记录，之前这里完全不渲染这两个
-                                    字段导致审核时看不到诊断描述，这里补上展示（仍允许编辑修正） */}
-                                {it.diagnosis && (
-                                  <tr>
-                                    <td colSpan={7} style={{ padding: '2px 8px 6px', background: '#FAF8FF' }}>
-                                      <div style={{ fontSize: 11, color: '#374151', whiteSpace: 'pre-wrap' }}><span style={{ color: '#6B7280' }}>诊断意见：</span>{it.diagnosis}</div>
-                                    </td>
-                                  </tr>
-                                )}
+                                {/* 2026-07-09：普通检验项(血红蛋白/钾/氯/肌酐等)不应有"诊断意见"——那是影像/检查类项目
+                                    才有的字段。AI 会给每条检验项编一句"未见异常"这类冗余诊断，用户明确反馈检验类不需要。
+                                    诊断意见的展示统一收敛到下方"影像/检查描述"区(imgRows)，此处 lab 检验项区不再渲染。 */}
                                 </React.Fragment>
                               )
                             })}
@@ -8420,28 +8444,35 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
 
   const curType = TYPES.find(t => t.key === type)
 
-  const handleSave = async () => {
-    let value, extra = {}
-    const cur = vals[type]
-    if (curType.kind === 'bp') {
-      if (!cur.sys || !cur.dia) { toastFn('请填写收缩压和舒张压'); return }
-      value = cur.sys + '/' + cur.dia
-      extra = { sys: Number(cur.sys), dia: Number(cur.dia) }
-    } else if (curType.kind === 'sleep') {
-      if (!cur.sleepTime || !cur.wakeTime) { toastFn('请填写入睡和起床时间'); return }
+  // 把某一类型的当前输入解析成 { value, extra }；未填写返回 null（跳过，不提交）
+  const buildPayload = (t) => {
+    const cur = vals[t.key]
+    if (t.kind === 'bp') {
+      if (!cur.sys || !cur.dia) return null
+      return { value: cur.sys + '/' + cur.dia, extra: { sys: Number(cur.sys), dia: Number(cur.dia) } }
+    }
+    if (t.kind === 'sleep') {
+      if (!cur.sleepTime || !cur.wakeTime) return null
       const [sh, sm] = cur.sleepTime.split(':').map(Number)
       const [wh, wm] = cur.wakeTime.split(':').map(Number)
       const dur = ((wh * 60 + wm) - (sh * 60 + sm) + 1440) % 1440 / 60
-      value = dur.toFixed(1)
-      extra = { sleepTime: cur.sleepTime, wakeTime: cur.wakeTime }
-    } else {
-      if (!cur.val) { toastFn('请填写内容'); return }
-      value = cur.val
+      return { value: dur.toFixed(1), extra: { sleepTime: cur.sleepTime, wakeTime: cur.wakeTime } }
     }
+    if (!cur.val) return null
+    return { value: cur.val, extra: {} }
+  }
+
+  // 2026-07-09：首次建档一次性罗列全部打卡项，医护填了几项就批量提交几项。
+  // 此前是单选类型逐条录入(一次只提交当前选中那条)，医护以为填了多项、实际只存了最后确认的一条(金娟只剩"饮酒")。
+  const handleSave = async () => {
+    const toSubmit = TYPES.map(t => ({ t, payload: buildPayload(t) })).filter(x => x.payload)
+    if (!toSubmit.length) { toastFn('请至少填写一项数据'); return }
     setSaving(true)
     try {
-      await staffAPI.createPatientHealthRecord(patientId, { type, value, extra })
-      toastFn('健康数据已录入，已同步到用户端')
+      for (const { t, payload } of toSubmit) {
+        await staffAPI.createPatientHealthRecord(patientId, { type: t.key, value: payload.value, extra: payload.extra })
+      }
+      toastFn(`已录入 ${toSubmit.length} 项健康数据，已同步到用户端`)
       reset(); onSaved()
     } catch (e) { toastFn(e.message || '录入失败') }
     finally { setSaving(false) }
@@ -8468,71 +8499,58 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
         <button className="btn btn-secondary btn-sm" onClick={() => { setOpen(false); reset() }}>取消</button>
       </div>
       <div className="card-body">
-        <div style={{ marginBottom: 14 }}>
-          <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 6 }}>数据类型</label>
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-            {TYPES.map(t => (
-              <button key={t.key}
-                className={'btn btn-sm ' + (type === t.key ? 'btn-primary' : 'btn-secondary')}
-                onClick={() => setType(t.key)}>{t.label}</button>
-            ))}
-          </div>
+        <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
+          罗列全部打卡项，填写哪些就录入哪些（留空的不提交），一次性作为首次建档基础数据同步到用户端。
         </div>
 
-        {curType.kind === 'bp' && (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-            <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>收缩压（高压）</label>
-              <input className="form-control" type="number" placeholder="如 120" value={vals.bloodPressure.sys}
-                onChange={e => setField('sys', e.target.value)} style={{ width: 120 }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>舒张压（低压）</label>
-              <input className="form-control" type="number" placeholder="如 80" value={vals.bloodPressure.dia}
-                onChange={e => setField('dia', e.target.value)} style={{ width: 120 }} />
-            </div>
-            <span style={{ color: '#8AA89C', fontSize: 13, marginBottom: 8 }}>mmHg</span>
-          </div>
-        )}
+        {/* 2026-07-09：所有打卡项平铺，各自独立填写，一次确认批量提交，不再单选逐条录入 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {TYPES.map(t => {
+            const setFieldFor = (field, v) => setVals(p => ({ ...p, [t.key]: { ...p[t.key], [field]: v } }))
+            return (
+              <div key={t.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, borderBottom: '1px solid #f2efe9', paddingBottom: 10 }}>
+                <div style={{ width: 56, fontSize: 13, color: '#1A2B24', fontWeight: 600, paddingTop: 8, flexShrink: 0 }}>{t.label}</div>
+                <div style={{ flex: 1 }}>
+                  {t.kind === 'bp' && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input className="form-control" type="number" placeholder="高压 如120" value={vals[t.key].sys}
+                        onChange={e => setFieldFor('sys', e.target.value)} style={{ width: 110 }} />
+                      <span style={{ color: '#8AA89C' }}>/</span>
+                      <input className="form-control" type="number" placeholder="低压 如80" value={vals[t.key].dia}
+                        onChange={e => setFieldFor('dia', e.target.value)} style={{ width: 110 }} />
+                      <span style={{ color: '#8AA89C', fontSize: 13 }}>mmHg</span>
+                    </div>
+                  )}
+                  {t.kind === 'sleep' && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input className="form-control" type="time" value={vals[t.key].sleepTime}
+                        onChange={e => setFieldFor('sleepTime', e.target.value)} style={{ width: 130 }} />
+                      <span style={{ color: '#8AA89C', fontSize: 12 }}>入睡 →</span>
+                      <input className="form-control" type="time" value={vals[t.key].wakeTime}
+                        onChange={e => setFieldFor('wakeTime', e.target.value)} style={{ width: 130 }} />
+                      <span style={{ color: '#8AA89C', fontSize: 12 }}>起床</span>
+                    </div>
+                  )}
+                  {t.kind === 'num' && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <input className="form-control" type="number" step="0.1" value={vals[t.key].val}
+                        onChange={e => setFieldFor('val', e.target.value)} style={{ width: 150 }}
+                        placeholder={t.placeholder} />
+                      <span style={{ color: '#8AA89C', fontSize: 13 }}>{t.unit}</span>
+                    </div>
+                  )}
+                  {t.kind === 'text' && (
+                    <textarea className="form-control" rows={1} value={vals[t.key].val}
+                      onChange={e => setFieldFor('val', e.target.value)}
+                      placeholder={t.placeholder} style={{ width: '100%', resize: 'vertical' }} />
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
 
-        {curType.kind === 'sleep' && (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-            <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>入睡时间</label>
-              <input className="form-control" type="time" value={vals.sleep.sleepTime}
-                onChange={e => setField('sleepTime', e.target.value)} style={{ width: 130 }} />
-            </div>
-            <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>起床时间</label>
-              <input className="form-control" type="time" value={vals.sleep.wakeTime}
-                onChange={e => setField('wakeTime', e.target.value)} style={{ width: 130 }} />
-            </div>
-          </div>
-        )}
-
-        {curType.kind === 'num' && (
-          <div style={{ display: 'flex', gap: 12, alignItems: 'flex-end' }}>
-            <div>
-              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{curType.label}</label>
-              <input className="form-control" type="number" step="0.1" value={vals[type].val}
-                onChange={e => setField('val', e.target.value)} style={{ width: 150 }}
-                placeholder={curType.placeholder} />
-            </div>
-            <span style={{ color: '#8AA89C', fontSize: 13, marginBottom: 8 }}>{curType.unit}</span>
-          </div>
-        )}
-
-        {curType.kind === 'text' && (
-          <div>
-            <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>{curType.label}</label>
-            <textarea className="form-control" rows={2} value={vals[type].val}
-              onChange={e => setField('val', e.target.value)}
-              placeholder={curType.placeholder}
-              style={{ width: '100%' }} />
-          </div>
-        )}
-
-        <button className="btn btn-primary" style={{ marginTop: 12 }}
+        <button className="btn btn-primary" style={{ marginTop: 14 }}
           onClick={handleSave} disabled={saving}>
           {saving ? '录入中...' : '确认录入'}
         </button>
