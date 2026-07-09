@@ -24,6 +24,12 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* 2026-07-09 金娟反复反馈"界面看不到全局，要键盘左右移动才能找到按键"：
+   根级别硬兜底，禁止整个视口横向滚动。无论溢出来自页面主体、逃逸裁剪的 fixed 弹窗、
+   还是某个撑破的宽表格，都不会再产生页面级横向滚动条。需要横向滚动的局部区块
+   （趋势图/tab条/宽表格）各自用 overflow-x:auto 自理，不受此影响。 */
+html, body { overflow-x: hidden; max-width: 100%; }
+
 body {
   font-family: -apple-system, BlinkMacSystemFont, 'PingFang SC', 'Microsoft YaHei', sans-serif;
   background: var(--bg);
