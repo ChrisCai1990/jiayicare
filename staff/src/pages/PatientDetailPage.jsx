@@ -752,7 +752,10 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <div style={{ fontSize: 12, color: '#8AA89C' }}>评估将自动归入 <b style={{ color: '#1E6B50' }}>{nowY}</b> 年度</div>
             <div style={{ background: '#FAFAF8', border: '1px solid #F0EDE7', borderRadius: 8, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 230px))', gap: 16 }}>
+              {/* 2026-07-09修复金娟"界面看不到全局要键盘左右移动才能找到按键"：原固定 repeat(3, 230px)=690px 网格
+                  在窄容器里会横向溢出，把靠右的"计算并保存"按钮挤出视口。改用 auto-fit 自适应，列数随容器宽度换行，
+                  按钮永远在可视区内。 */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 16 }}>
                 <div>
                   <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3, whiteSpace: 'nowrap' }}>性别</label>
                   <select className="form-control" style={{ width: '100%' }} value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))}>

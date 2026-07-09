@@ -1260,7 +1260,16 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     if (aiStatus !== undefined) { report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id; }
     if (screeningCategory !== undefined) report.screeningCategory = screeningCategory;
     if (reportYear !== undefined) report.reportYear = reportYear;
-    if (reportItems !== undefined) report.reportItems = reportItems;
+    if (reportItems !== undefined) {
+      // 2026-07-09修复金娟"超声提取混乱/保存不成功"：AI解析超声等影像报告时常产生 name 与所有内容字段
+      // (value/findings/diagnosis/conclusion) 全空的空壳项（金娟2023-05-16超声7项里有5项是空壳），
+      // 既让页面显示混乱，又污染专项筛查。保存时统一剔除这类完全空白的项，保留至少有名称或有任一内容的项。
+      const _blank = (v) => String(v == null ? '' : v).trim() === '';
+      report.reportItems = (Array.isArray(reportItems) ? reportItems : []).filter(it => {
+        if (!it || typeof it !== 'object') return false;
+        return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
+      });
+    }
     if (aiSummary !== undefined) report.aiSummary = aiSummary;
     // 补传/替换文件
     if (content !== undefined) {
@@ -3922,8 +3931,18 @@ router.post('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
     const year = String(req.body?.year || new Date().getFullYear());
     const result = assessAscvd(req.body || {});
     result.evaluatedBy = req.staff.name;
+    // 2026-07-09修复金娟反馈"ASCVD无法保存"：老用户 ascvdRisk 字段可能是 null（非对象），
+    // 直接用点路径 $set 'ascvdRisk.byYear.2026' 会报 "Cannot create field 'byYear' in element {ascvdRisk: null}" → 500。
+    // 先确保 ascvdRisk / ascvdRisk.byYear 是对象再写入。
+    const _oid = new mongoose.Types.ObjectId(req.params.id);
+    const cur = await User.collection.findOne({ _id: _oid }, { projection: { ascvdRisk: 1 } });
+    if (!cur || cur.ascvdRisk === null || typeof cur.ascvdRisk !== 'object' || Array.isArray(cur.ascvdRisk)) {
+      await User.collection.updateOne({ _id: _oid }, { $set: { ascvdRisk: { byYear: {} } } });
+    } else if (cur.ascvdRisk.byYear === null || typeof cur.ascvdRisk.byYear !== 'object' || Array.isArray(cur.ascvdRisk.byYear)) {
+      await User.collection.updateOne({ _id: _oid }, { $set: { 'ascvdRisk.byYear': {} } });
+    }
     await User.collection.updateOne(
-      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { _id: _oid },
       { $set: { [`ascvdRisk.byYear.${year}`]: result } }
     );
     res.json({ success: true, data: result, year });
