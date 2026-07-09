@@ -32,7 +32,7 @@ const enterpriseSchema = new mongoose.Schema({
     //   insuredCount:   Number   参保人数（如给高管买高端医疗险）
     //   insuredAmount:  Number   保险金额
     //   healthMgmtFee:  Number   健康管理费
-    //   otherServices:  [{ name, amount, status:'未启动'|'进行中'|'已完成' }]  付费健康管理服务清单（含实际启动情况）
+    //   otherServices:  [{ name, amount, status:'未启动'|'进行中'|'已完成', detail:String }]  付费健康管理服务清单（detail=具体内容/启动情况）
     //   healthFund:     健康基金 { transactions:[{source:'企业自有'|'平台赠送', amount, date, note}], used, total, balance }
     //                   total=充值流水累加，balance=total-used（系统算）
     // }

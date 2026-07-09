@@ -198,12 +198,19 @@ export default function HrDashboardPage() {
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 8 }}>付费健康管理服务清单</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {hr.otherServices.map((o, i) => (
-                      <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 13, padding: '8px 12px', background: '#f8faf9', borderRadius: 6 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                          <StatusBadge status={o.status} />
-                          <span style={{ color: '#1A2B24' }}>{o.name}</span>
+                      <div key={i} style={{ fontSize: 13, padding: '10px 12px', background: '#f8faf9', borderRadius: 6 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <StatusBadge status={o.status} />
+                            <span style={{ color: '#1A2B24', fontWeight: 600 }}>{o.name}</span>
+                          </div>
+                          <span style={{ fontWeight: 700, color: '#1E6B50' }}>¥{(o.amount || 0).toLocaleString()}</span>
                         </div>
-                        <span style={{ fontWeight: 700, color: '#1E6B50' }}>¥{(o.amount || 0).toLocaleString()}</span>
+                        {o.detail && (
+                          <div style={{ fontSize: 12, color: '#4A6558', lineHeight: 1.6, marginTop: 6, paddingLeft: 2 }}>
+                            {o.detail}
+                          </div>
+                        )}
                       </div>
                     ))}
                   </div>

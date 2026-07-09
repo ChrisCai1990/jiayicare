@@ -390,8 +390,9 @@ export default function EnterprisesPage() {
 // ── 企业HR看板数据录入（超管手工，按年度）────────────────────────────
 function HrDataModal({ enterprise, onClose, onSaved, toast }) {
   const yearNow = new Date().getFullYear()
-  const years = [yearNow + 1, yearNow, yearNow - 1, yearNow - 2]
   const byYear = enterprise.hrDataByYear || {}
+  // 已录入过的年份（快捷切换用），倒序
+  const savedYears = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
   const [year, setYear] = useState(String(yearNow))
   const blankFund = { transactions: [], used: '' }
   const blank = { examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', otherServices: [], healthFund: { ...blankFund } }
@@ -444,9 +445,37 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
         <div className="modal-body" style={{ overflowY: 'auto' }}>
           <div className="form-group">
             <label className="form-label">年度</label>
-            <select className="form-input" style={{ maxWidth: 160 }} value={year} onChange={e => switchYear(e.target.value)}>
-              {years.map(y => <option key={y} value={String(y)}>{y}年{byYear[String(y)] ? '（已录）' : ''}</option>)}
-            </select>
+            {/* 年份可直接输入任意年（不写死，2027年之后也能录）；已录年份点标签快捷切换 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <input
+                className="form-input"
+                type="number"
+                style={{ maxWidth: 120 }}
+                value={year}
+                min="2020"
+                max="2099"
+                onChange={e => switchYear(e.target.value)}
+                placeholder="如 2026"
+              />
+              <span style={{ fontSize: 12, color: '#888' }}>年{byYear[year] ? '（已录，可修改）' : '（新建）'}</span>
+            </div>
+            {savedYears.length > 0 && (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+                {savedYears.map(y => (
+                  <button
+                    key={y}
+                    type="button"
+                    onClick={() => switchYear(y)}
+                    style={{
+                      fontSize: 12, padding: '3px 12px', borderRadius: 999, cursor: 'pointer',
+                      border: y === year ? '1px solid #1E6B50' : '1px solid #E0D9CE',
+                      background: y === year ? '#EAF5EF' : '#fff',
+                      color: y === year ? '#1E6B50' : '#4A6558', fontWeight: y === year ? 700 : 400,
+                    }}
+                  >{y} 年</button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '12px 0 8px' }}>体检</div>
@@ -486,15 +515,24 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
             <button type="button" className="btn btn-sm btn-secondary" onClick={addOther}>+ 添加</button>
           </div>
           {(form.otherServices || []).map((o, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
-              <input className="form-input" value={o.name} onChange={e => setOther(i, 'name', e.target.value)} placeholder="服务名称" />
-              <input className="form-input" type="number" value={o.amount} onChange={e => setOther(i, 'amount', e.target.value)} placeholder="金额 ¥" />
-              <select className="form-input" value={o.status || '未启动'} onChange={e => setOther(i, 'status', e.target.value)}>
-                <option value="未启动">未启动</option>
-                <option value="进行中">进行中</option>
-                <option value="已完成">已完成</option>
-              </select>
-              <button type="button" onClick={() => rmOther(i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
+            <div key={i} style={{ border: '1px solid #EEE9E0', borderRadius: 8, padding: 10, marginBottom: 8, background: '#fcfbf9' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+                <input className="form-input" value={o.name} onChange={e => setOther(i, 'name', e.target.value)} placeholder="服务名称，如：健康讲座" />
+                <input className="form-input" type="number" value={o.amount} onChange={e => setOther(i, 'amount', e.target.value)} placeholder="金额 ¥" />
+                <select className="form-input" value={o.status || '未启动'} onChange={e => setOther(i, 'status', e.target.value)}>
+                  <option value="未启动">未启动</option>
+                  <option value="进行中">进行中</option>
+                  <option value="已完成">已完成</option>
+                </select>
+                <button type="button" onClick={() => rmOther(i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
+              </div>
+              <textarea
+                className="form-input"
+                style={{ marginTop: 8, minHeight: 52, resize: 'vertical', width: '100%' }}
+                value={o.detail || ''}
+                onChange={e => setOther(i, 'detail', e.target.value)}
+                placeholder="具体服务内容 / 启动情况，如：全年组织4场，主题涵盖三高防治、颈椎健康，累计参与320人次"
+              />
             </div>
           ))}
 

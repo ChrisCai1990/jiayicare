@@ -1357,6 +1357,7 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
           name: s.name.trim(),
           amount: num(s.amount),
           status: ['未启动', '进行中', '已完成'].includes(s?.status) ? s.status : '未启动',
+          detail: (s?.detail || '').trim(),   // 具体服务内容/启动情况说明
         }))
       : [],
     // 企业健康基金：充值流水（区分企业自有/平台赠送）+ 已用金额；总额/余额由系统算
