@@ -29,6 +29,7 @@ const NAV_SECTIONS = [
       { label: '员工管理',   icon: '👨‍⚕️', path: '/settings/employees' },
       { label: '会员设置',     icon: '🪪', path: '/settings/members' },
       { label: '健康评分配置', icon: '📈', path: '/settings/scoring' },
+      { label: 'AI每日关怀',  icon: '💚', path: '/settings/daily-care' },
     ],
   },
   {

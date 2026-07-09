@@ -355,6 +355,77 @@ function ReminderItem({ reminder, isLast }) {
   );
 }
 
+// ── 成长卡片（增长杠杆②：连续打卡激励 + 趋势正反馈）──────────────────
+// 数据来自 dashboard 的 growth 字段。目的是给客户「连续记录」和「看到自己在变好」的正反馈，
+// 提升打卡留存。无数据（从未打卡）时不渲染，不打扰新用户。
+function GrowthCard({ growth, onCheckin }) {
+  if (!growth) return null;
+  const { streak = 0, totalCheckinDays = 0, monthCalendar = [], trendHighlight = null } = growth;
+  // 从未打卡则不显示（新用户先引导打卡，不空谈成长）
+  if (streak === 0 && totalCheckinDays === 0) return null;
+
+  const today = new Date().getDate();
+  return (
+    <View style={{
+      backgroundColor: '#FFFFFF', borderRadius: 20, padding: 18, marginBottom: 16,
+      shadowColor: '#1E6B50', shadowOpacity: 0.06, shadowRadius: 12, shadowOffset: { width: 0, height: 4 }, elevation: 2,
+    }}>
+      {/* 连续天数 + 累计 */}
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+          <Text style={{ fontSize: 20, marginRight: 6 }}>🔥</Text>
+          <Text style={{ fontSize: 34, fontWeight: '800', color: '#1E6B50', lineHeight: 38 }}>{streak}</Text>
+          <Text style={{ fontSize: 15, color: '#4A6558', fontWeight: '600', marginLeft: 4 }}>天连续打卡</Text>
+        </View>
+        <View style={{ alignItems: 'flex-end' }}>
+          <Text style={{ fontSize: 12, color: '#8AA89C' }}>近30天累计</Text>
+          <Text style={{ fontSize: 18, fontWeight: '700', color: '#1A2B24' }}>{totalCheckinDays} 天</Text>
+        </View>
+      </View>
+
+      {/* 趋势亮点：你的 XX 在变好 */}
+      {trendHighlight && (
+        <View style={{
+          flexDirection: 'row', alignItems: 'center', backgroundColor: '#EAF5EF',
+          borderRadius: 12, padding: 10, marginTop: 14,
+        }}>
+          <Text style={{ fontSize: 16, marginRight: 8 }}>{trendHighlight.direction === 'up' ? '📈' : '📉'}</Text>
+          <Text style={{ fontSize: 13, color: '#1E6B50', fontWeight: '600', flex: 1 }}>
+            你的{trendHighlight.label}在变好：{trendHighlight.from}{trendHighlight.unit} → {trendHighlight.to}{trendHighlight.unit}
+          </Text>
+        </View>
+      )}
+
+      {/* 本月打卡日历（圆点） */}
+      {monthCalendar.length > 0 && (
+        <View style={{ marginTop: 14 }}>
+          <Text style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>本月打卡</Text>
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 5 }}>
+            {monthCalendar.map(d => (
+              <View key={d.day} style={{
+                width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center',
+                backgroundColor: d.checked ? '#1E6B50' : (d.future ? '#F3F4F6' : '#E8E1D5'),
+                borderWidth: d.day === today ? 1.5 : 0, borderColor: '#D97706',
+              }}>
+                <Text style={{ fontSize: 9, color: d.checked ? '#fff' : '#B8AC99', fontWeight: '600' }}>{d.day}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {/* 去打卡入口 */}
+      <TouchableOpacity onPress={onCheckin} style={{
+        marginTop: 16, backgroundColor: '#1E6B50', borderRadius: 12, paddingVertical: 11, alignItems: 'center',
+      }}>
+        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
+          {streak > 0 ? `坚持第 ${streak + 1} 天 · 去打卡` : '记录今天 · 去打卡'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function HomeScreen({ navigation }) {
   const { user: authUser, isDemo } = useAuth();
@@ -639,6 +710,9 @@ export default function HomeScreen({ navigation }) {
               )}
             </View>
           </View>
+
+          {/* ── 成长卡片（连续打卡激励 + 趋势正反馈）────────────────── */}
+          <GrowthCard growth={dashData?.growth} onCheckin={() => navigation.navigate('AddRecord')} />
 
           {/* ── 健康指标区块 ──────────────────────────────────────── */}
           <View style={styles.section}>

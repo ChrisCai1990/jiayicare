@@ -29,6 +29,7 @@ import RolePage           from './pages/settings/RolePage'
 import EmployeePage       from './pages/settings/EmployeePage'
 import MemberSettingsPage from './pages/settings/MemberSettingsPage'
 import ScoringConfigPage  from './pages/settings/ScoringConfigPage'
+import DailyCareConfigPage from './pages/settings/DailyCareConfigPage'
 
 // 项目设置
 import CategoryPage       from './pages/projects/CategoryPage'
@@ -127,6 +128,7 @@ export default function App() {
               <Route path="settings/employees"   element={<EmployeePage />} />
               <Route path="settings/members"  element={<MemberSettingsPage />} />
               <Route path="settings/scoring"  element={<ScoringConfigPage />} />
+              <Route path="settings/daily-care" element={<DailyCareConfigPage />} />
 
               {/* 项目设置 */}
               <Route path="projects/categories"       element={<CategoryPage />} />

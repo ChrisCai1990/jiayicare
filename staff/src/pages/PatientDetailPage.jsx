@@ -2129,6 +2129,14 @@ export default function PatientDetailPage() {
               ) : (
                 <>
                   <InfoRow label="姓名" value={user.name} />
+                  <InfoRow label="称呼（AI用）" value={(() => {
+                    // 与后端 resolveTitle 对齐：preferredTitle 优先，否则按性别+姓氏兜底，未标注时标「自动」
+                    if (user.preferredTitle && user.preferredTitle.trim()) return user.preferredTitle.trim()
+                    const surname = (user.name || '').trim().charAt(0)
+                    if (user.gender === '男') return `${surname ? surname + '先生' : (user.name || '您')}（自动）`
+                    if (user.gender === '女') return `${surname ? surname + '女士' : (user.name || '您')}（自动）`
+                    return `${user.name || '您'}（自动）`
+                  })()} />
                   <InfoRow label="手机号" value={user.phone} />
                   <InfoRow label="性别" value={user.gender} />
                   <InfoRow label="年龄" value={age} />

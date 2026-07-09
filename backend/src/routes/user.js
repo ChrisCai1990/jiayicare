@@ -239,6 +239,66 @@ router.post('/onboarding', auth, async (req, res) => {
   }
 });
 
+// 计算「成长数据」：连续打卡天数 / 近30天累计打卡天数 / 本月打卡日历 / 一条趋势亮点
+// 用于首页「成长」卡片，给客户正向反馈以提升打卡留存（增长杠杆②）。
+// streak 口径与 dailyCareScheduler 一致：今天或昨天有打卡即续上，断一天归零。
+async function buildGrowthData(userId) {
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000);
+  const records = await HealthRecord.find({ user: userId, recordedAt: { $gte: thirtyDaysAgo } })
+    .sort({ recordedAt: 1 }).select('type value recordedAt').lean();
+
+  // 打卡日期集合（YYYY-MM-DD，按本地日切）
+  const fmtDay = (d) => {
+    const dt = new Date(d);
+    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`;
+  };
+  const daySet = new Set(records.map(r => fmtDay(r.recordedAt)));
+
+  // 连续打卡天数：从今天往回数，允许今天还没打卡（从昨天续上）
+  let streak = 0;
+  for (let i = 0; i < 30; i++) {
+    const d = fmtDay(new Date(Date.now() - i * 86400000));
+    if (daySet.has(d)) streak++;
+    else if (i === 0) continue; // 今天还没打卡不算断
+    else break;
+  }
+
+  // 本月打卡日历：当月每一天是否打卡（供前端画热力/圆点）
+  const now = new Date();
+  const year = now.getFullYear(), month = now.getMonth();
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const monthCalendar = [];
+  for (let day = 1; day <= daysInMonth; day++) {
+    const d = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    monthCalendar.push({ day, checked: daySet.has(d), future: day > now.getDate() });
+  }
+
+  // 趋势亮点：睡眠/体重取近30天最早 vs 最新对比，给一条「在变好」的正反馈
+  const trendHighlight = (() => {
+    // 睡眠评分越高越好，体重朝健康区间靠拢算好；这里优先睡眠时长、其次体重
+    const pickTrend = (type, label, unit, betterWhenLower) => {
+      const arr = records.filter(r => r.type === type && r.value != null);
+      if (arr.length < 2) return null;
+      const first = parseFloat(arr[0].value);
+      const last = parseFloat(arr[arr.length - 1].value);
+      if (isNaN(first) || isNaN(last) || first === last) return null;
+      const improved = betterWhenLower ? last < first : last > first;
+      if (!improved) return null;
+      return { label, from: first, to: last, unit, direction: betterWhenLower ? 'down' : 'up' };
+    };
+    return pickTrend('sleep', '睡眠时长', '小时', false)
+        || pickTrend('weight', '体重', 'kg', true)
+        || null;
+  })();
+
+  return {
+    streak,
+    totalCheckinDays: daySet.size,          // 近30天累计打卡天数
+    monthCalendar,
+    trendHighlight,                          // 可能为 null（数据不足或无改善）
+  };
+}
+
 // 首页汇总数据
 router.get('/dashboard', auth, async (req, res) => {
   try {
@@ -246,7 +306,7 @@ router.get('/dashboard', auth, async (req, res) => {
 
     // 最新各类指标 —— 全部并行查询（原串行 for 循环改为 Promise.all）
     const VITAL_TYPES = ['bloodPressure', 'bloodSugar', 'heartRate', 'weight', 'sleep'];
-    const [vitalResults, pendingTasks, allReminders, hasAnyHealthData] = await Promise.all([
+    const [vitalResults, pendingTasks, allReminders, hasAnyHealthData, growth] = await Promise.all([
       Promise.all(
         VITAL_TYPES.map(type =>
           HealthRecord.findOne({ user: userId, type }).sort({ recordedAt: -1 }).lean()
@@ -256,6 +316,7 @@ router.get('/dashboard', auth, async (req, res) => {
         .sort({ priority: 1, createdAt: 1 }).limit(5).lean(),
       Reminder.find({ user: userId, enabled: true }).lean(),
       HealthRecord.countDocuments({ user: userId }),
+      buildGrowthData(userId),
     ]);
 
     const latestByType = Object.fromEntries(
@@ -298,6 +359,7 @@ router.get('/dashboard', auth, async (req, res) => {
         scoreHistory: history.slice(-14),  // 返回最近 14 天
         has_any_health_data: hasAnyHealthData,
         bmi,               // 基于最新体重记录实时计算
+        growth,            // 成长数据：连续打卡/累计打卡/本月日历/趋势亮点（增长杠杆②）
       },
     });
   } catch (err) {

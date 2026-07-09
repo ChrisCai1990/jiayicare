@@ -336,5 +336,9 @@ export const adminAPI = {
   getScoringConfig:    ()     => req('/system-config/scoring'),
   updateScoringConfig: (data) => req('/system-config/scoring', { method: 'PUT', body: JSON.stringify(data) }),
 
+  // AI 每日健康关怀开关
+  getDailyCareConfig:    ()        => req('/system-config/daily-care'),
+  updateDailyCareConfig: (enabled) => req('/system-config/daily-care', { method: 'PUT', body: JSON.stringify({ enabled }) }),
+
   // 365 会员管理（需求20）
 }
