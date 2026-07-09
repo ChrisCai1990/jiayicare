@@ -1840,7 +1840,12 @@ export default function PatientDetailPage() {
     : null
 
   return (
-    <div className="page">
+    // 2026-07-09 金娟反复反馈"界面看不到全局，要键盘左右移动才能找到按键"：患者详情页内某些
+    // grid(repeat(3,1fr) 含固定宽input/nowrap长label) 会把格子撑到 min-content 宽度，导致整页横向溢出。
+    // 逐个格子加 minmax(0,1fr) 风险大且易漏，这里在页面根容器统一加 overflowX:hidden 兜底——
+    // 消灭页面级横向滚动条(金娟"键盘左右移动"的直接根源)；内部需要横向滚动的区块(趋势图/tab条/表格)
+    // 各自已有 overflowX:auto，不受影响。
+    <div className="page" style={{ overflowX: 'hidden', maxWidth: '100%' }}>
       <div className="page-header">
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <button className="btn btn-secondary btn-sm" onClick={() => nav('/patients')}>← 返回</button>
@@ -3544,7 +3549,10 @@ export default function PatientDetailPage() {
                       key: String(n._id), label: n.label, node: n,
                       color: L1_COLORS[idx % L1_COLORS.length], isLegacy: false,
                     })),
-                  ...(hasLegacy ? [{ key: '__legacy__', label: '其他', node: null, color: '#8AA89C', isLegacy: true }] : []),
+                  // 2026-07-09 金娟明确要求去掉「其他」tab：它是 AI 自动归类失败落到 legacy 兜底的项
+                  //（如整份年度体检报告、归不进标准筛查树的超声），金娟原话"这个其他是AI自动生成的，不需要"。
+                  // 这些项的原始数据在体检报告详情/体检指标等界面已有展示，专项筛查视图不再单独堆一个「其他」分类。
+                  // （legacyMap/hasLegacy 变量保留但不再注入 tab；下方 isLegacy 渲染分支随之成为不可达代码，无副作用。）
                   // ai_hp（功能医学）和 ai_other（其他筛查）不在专项筛查视图展示，由人工维护
                   ...aiOnlyKeys.filter(k => k !== 'ai_hp' && k !== 'ai_other').map((k, i) => ({
                     key: k, label: AI_CAT_LABEL[k.replace('ai_', '')] || k, node: null,
@@ -4041,14 +4049,14 @@ export default function PatientDetailPage() {
                 <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>填写最近一次体检结果（用于健康评分，留空表示正常）</div>
                 <div>
                   <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>体征 / 血压</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px', marginBottom: 16 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px 20px', marginBottom: 16 }}>
                     <LabField label="体重" unit="kg" placeholder="如 65" value={labForm.weight || ''} onChange={e => setLabForm(f => ({ ...f, weight: e.target.value }))} />
                     <LabField label="收缩压 SBP" unit="mmHg" placeholder="如 120" value={labForm.sbp || ''} onChange={e => setLabForm(f => ({ ...f, sbp: e.target.value }))} />
                     <LabField label="舒张压 DBP" unit="mmHg" placeholder="如 80" value={labForm.dbp || ''} onChange={e => setLabForm(f => ({ ...f, dbp: e.target.value }))} />
                     <LabField label="腰围" unit="cm" placeholder="如 80" value={labForm.waist || ''} onChange={e => setLabForm(f => ({ ...f, waist: e.target.value }))} />
                   </div>
                   <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>血糖 / 血脂</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px', marginBottom: 16 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px 20px', marginBottom: 16 }}>
                     <LabField label="空腹血糖 FPG" unit="mmol/L" placeholder="如 5.6" value={labForm.fpg || ''} onChange={e => setLabForm(f => ({ ...f, fpg: e.target.value }))} />
                     <LabField label="糖化血红蛋白 HbA1c" unit="%" placeholder="如 5.4" value={labForm.hba1c || ''} onChange={e => setLabForm(f => ({ ...f, hba1c: e.target.value }))} />
                     <LabField label="总胆固醇 TC" unit="mmol/L" placeholder="如 4.8" value={labForm.tc || ''} onChange={e => setLabForm(f => ({ ...f, tc: e.target.value }))} />
@@ -4057,7 +4065,7 @@ export default function PatientDetailPage() {
                     <LabField label="甘油三酯 TG" unit="mmol/L" placeholder="如 1.2" value={labForm.tg || ''} onChange={e => setLabForm(f => ({ ...f, tg: e.target.value }))} />
                   </div>
                   <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>肝肾 / 代谢</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px', marginBottom: 16 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px 20px', marginBottom: 16 }}>
                     <LabField label="谷丙转氨酶 ALT" unit="U/L" placeholder="如 25" value={labForm.alt || ''} onChange={e => setLabForm(f => ({ ...f, alt: e.target.value }))} />
                     <LabField label="谷草转氨酶 AST" unit="U/L" placeholder="如 22" value={labForm.ast || ''} onChange={e => setLabForm(f => ({ ...f, ast: e.target.value }))} />
                     <LabField label="γ-谷氨酰转肽酶 GGT" unit="U/L" placeholder="如 30" value={labForm.ggt || ''} onChange={e => setLabForm(f => ({ ...f, ggt: e.target.value }))} />
@@ -4303,7 +4311,7 @@ export default function PatientDetailPage() {
                   )}
 
                   {/* 数值指标卡片 */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px 12px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '8px 12px' }}>
                     {displayDefs.filter(d => d && !d.isText).map(d => {
                       const cur = getVal(d.key)
                       if (!cur) return null
@@ -4394,7 +4402,7 @@ export default function PatientDetailPage() {
           </div>
           <div style={{ padding: '12px 20px' }}>
             {editingBodyComp ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px 20px' }}>
                 {[
                   { label: '骨骼肌量', field: 'skelMuscle', unit: 'kg', placeholder: '如 28.5' },
                   { label: '内脏脂肪等级/指数', field: 'visceralFat', unit: '', placeholder: '如 9级 或 指数110' },
@@ -4415,7 +4423,7 @@ export default function PatientDetailPage() {
             ) : (
               <div>
                 {user.bodyComposition && (user.bodyComposition.skelMuscle || user.bodyComposition.visceralFat || user.bodyComposition.bodyFatRate) ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px 16px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px 16px' }}>
                     {[
                       ['骨骼肌量', user.bodyComposition.skelMuscle, 'kg'],
                       ['内脏脂肪', user.bodyComposition.visceralFat, ''],
@@ -4518,7 +4526,7 @@ export default function PatientDetailPage() {
             </div>
             <div style={{ padding: '12px 20px' }}>
               <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>设置每种慢性病的严重程度，影响基础健康分扣分幅度</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '10px 20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px 20px' }}>
                 {user.chronicDiseases.map(disease => (
                   <div key={disease}>
                     <div style={{ fontSize: 13, color: '#1A2B24', fontWeight: 500, marginBottom: 4 }}>{disease}</div>
@@ -6149,7 +6157,7 @@ export default function PatientDetailPage() {
             {/* 账户概览 */}
             <div className="card">
               <div className="card-header"><div className="card-title">账户概览</div></div>
-              <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+              <div className="card-body" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: 12 }}>
                 {[
                   { label: '健康基金余额', value: `¥${(user.healthFundBalance || 0).toFixed(2)}`, color: '#1E6B50' },
                   { label: `${thisYear}年消费总额`, value: `¥${yearTotal.toFixed(2)}`, color: '#DC3545' },
