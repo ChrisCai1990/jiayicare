@@ -28,10 +28,13 @@ const enterpriseSchema = new mongoose.Schema({
     //   examCount:      Number   当年体检人数
     //   examUnitPrice:  Number   客单价
     //   examTotal:      Number   体检总额
+    //   examStartAt/examEndAt:   体检服务起止（三维度时间各不相同，各自记）
     //   insurerName:    String   保险公司
     //   insuredCount:   Number   参保人数（如给高管买高端医疗险）
     //   insuredAmount:  Number   保险金额
+    //   insuredStartAt/insuredEndAt:  高端险起止
     //   healthMgmtFee:  Number   健康管理费
+    //   healthMgmtStartAt/healthMgmtEndAt:  健康管理服务起止
     //   otherServices:  [{ name, frequency:String, detail:String }]  付费健康管理服务清单（frequency=频次如"每季度1次"，detail=具体内容）
     //   healthFund:     健康基金 { transactions:[{source:'企业自有'|'平台赠送', amount, date, note}], used, total, balance }
     //                   total=充值流水累加，balance=total-used（系统算）

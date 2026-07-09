@@ -36,11 +36,17 @@ router.get('/overview', enterpriseHrAuth, async (req, res) => {
     User.countDocuments({ enterpriseId: req.enterpriseId, onboardingCompleted: true }),
   ]);
 
-  // 当年 HR 财务数据（超管手工录入）；可通过 ?year= 指定，默认当前年
-  const year = String(req.query.year || new Date().getFullYear());
+  // HR 财务数据（超管手工录入）；可通过 ?year= 指定
   const hrByYear = enterprise.hrDataByYear || {};
-  const hrData = hrByYear[year] || null;
   const availableYears = Object.keys(hrByYear).sort((a, b) => Number(b) - Number(a));
+  // 默认年份智能落位：显式指定则用指定年；否则当前年有数据就用当前年，
+  // 没有则落到最近有数据的那一年（避免企业只录了往年数据时，HR 登录默认看到空白当前年）
+  const currentYear = String(new Date().getFullYear());
+  let year;
+  if (req.query.year) year = String(req.query.year);
+  else if (hrByYear[currentYear]) year = currentYear;
+  else year = availableYears[0] || currentYear;
+  const hrData = hrByYear[year] || null;
 
   res.json({
     success: true,

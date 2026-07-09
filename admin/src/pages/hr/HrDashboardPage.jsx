@@ -14,12 +14,27 @@ function StatCard({ label, value, sub, color = '#1E6B50' }) {
   )
 }
 
-// 三维度分区容器：体检 / 保险 / 健康管理，每块独立卡片+标题，避免所有指标挤成一堆
-function ServiceSection({ icon, title, children }) {
+// 服务期间格式化：起止都空返回 null（不展示），单边也能显示
+function fmtPeriod(start, end) {
+  if (!start && !end) return null
+  const f = (d) => d ? new Date(d).toLocaleDateString('zh-CN') : ''
+  if (start && end) return `${f(start)} ~ ${f(end)}`
+  return start ? `${f(start)} 起` : `至 ${f(end)}`
+}
+
+// 三维度分区容器：体检 / 保险 / 健康管理，每块独立卡片+标题+服务期间，避免所有指标挤成一堆
+function ServiceSection({ icon, title, period, children }) {
   return (
     <div className="card" style={{ padding: 20, marginBottom: 14 }}>
-      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span>{icon}</span><span>{title}</span>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>{icon}</span><span>{title}</span>
+        </div>
+        {period && (
+          <span style={{ fontSize: 12, color: '#8AA89C', background: '#f8faf9', padding: '3px 12px', borderRadius: 999 }}>
+            服务期间 {period}
+          </span>
+        )}
       </div>
       {children}
     </div>
@@ -165,7 +180,7 @@ export default function HrDashboardPage() {
               {(hr.insuredExecCount || hr.insuredFamilyCount || hr.insuredChildCount) ? (
                 <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
                   <StatCard label="参保·高管" value={hr.insuredExecCount || 0} sub="人" />
-                  <StatCard label="参保·家属" value={hr.insuredFamilyCount || 0} sub="人" />
+                  <StatCard label="参保·配偶" value={hr.insuredFamilyCount || 0} sub="人" />
                   <StatCard label="参保·孩子" value={hr.insuredChildCount || 0} sub="人" />
                 </div>
               ) : null}

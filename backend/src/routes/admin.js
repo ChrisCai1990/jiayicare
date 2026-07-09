@@ -1334,6 +1334,7 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
   if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });
 
   const num = (v) => (v === '' || v === null || v === undefined ? 0 : Number(v) || 0);
+  const str = (v) => (v || '').trim();
   const clean = {
     examOrg:       (data?.examOrg || '').trim(),
     examCount:     num(data?.examCount),
@@ -1343,15 +1344,21 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
     examUnitPriceMarriedFemale: num(data?.examUnitPriceMarriedFemale),
     examUnitPriceSingleFemale:  num(data?.examUnitPriceSingleFemale),
     examTotal:     num(data?.examTotal),
+    examStartAt:   str(data?.examStartAt),    // 体检服务起止（三维度时间各不相同，各自记）
+    examEndAt:     str(data?.examEndAt),
     insurerName:   (data?.insurerName || '').trim(),
     insuredCount:  num(data?.insuredCount),   // 保留兼容：参保总人数
-    // 参保人数按人群细分（高管/家属/孩子）
+    // 参保人数按人群细分（高管/配偶/孩子）；字段名 insuredFamilyCount 沿用（改名会丢历史数据）
     insuredExecCount:   num(data?.insuredExecCount),
     insuredFamilyCount: num(data?.insuredFamilyCount),
     insuredChildCount:  num(data?.insuredChildCount),
     insuredAmount: num(data?.insuredAmount),
+    insuredStartAt: str(data?.insuredStartAt),  // 高端险起止
+    insuredEndAt:   str(data?.insuredEndAt),
     healthMgmtFee: num(data?.healthMgmtFee),
-    // 付费健康管理服务清单：每项带启动状态，供企业看清过去一年提供了哪些服务、实际启动情况
+    healthMgmtStartAt: str(data?.healthMgmtStartAt),  // 健康管理服务起止
+    healthMgmtEndAt:   str(data?.healthMgmtEndAt),
+    // 付费健康管理服务清单：name+频次+具体内容
     otherServices: Array.isArray(data?.otherServices)
       ? data.otherServices.filter(s => (s?.name || '').trim()).map(s => ({
           name: s.name.trim(),

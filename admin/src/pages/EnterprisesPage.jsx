@@ -435,6 +435,18 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
     </div>
   )
 
+  // 服务起止日期（三维度各一对，时间可能都不同）
+  const dateRange = (startKey, endKey) => (
+    <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+      <label className="form-label">服务起止</label>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <input className="form-input" type="date" value={form[startKey] || ''} onChange={e => set(startKey, e.target.value)} />
+        <span style={{ color: '#888' }}>至</span>
+        <input className="form-input" type="date" value={form[endKey] || ''} onChange={e => set(endKey, e.target.value)} />
+      </div>
+    </div>
+  )
+
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
@@ -490,6 +502,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
             {numField('客单价·已婚女性', 'examUnitPriceMarriedFemale', '¥')}
             {numField('客单价·未婚女性', 'examUnitPriceSingleFemale', '¥')}
             {numField('体检总额', 'examTotal', '¥')}
+            {dateRange('examStartAt', 'examEndAt')}
           </div>
 
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '16px 0 8px' }}>保险（如为高管购买高端医疗险）</div>
@@ -500,18 +513,20 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
             </div>
             {numField('参保人数（总体）', 'insuredCount', '人')}
             {numField('参保·高管', 'insuredExecCount', '人')}
-            {numField('参保·家属', 'insuredFamilyCount', '人')}
+            {numField('参保·配偶', 'insuredFamilyCount', '人')}
             {numField('参保·孩子', 'insuredChildCount', '人')}
             {numField('保险金额', 'insuredAmount', '¥')}
+            {dateRange('insuredStartAt', 'insuredEndAt')}
           </div>
 
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '16px 0 8px' }}>费用</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '16px 0 8px' }}>健康管理</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             {numField('健康管理费', 'healthMgmtFee', '¥')}
+            {dateRange('healthMgmtStartAt', 'healthMgmtEndAt')}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '16px 0 8px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>付费健康管理服务清单（含启动情况）</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>付费健康管理服务清单</div>
             <button type="button" className="btn btn-sm btn-secondary" onClick={addOther}>+ 添加</button>
           </div>
           {(form.otherServices || []).map((o, i) => (
