@@ -33,6 +33,6 @@ async function req(path, opts = {}) {
 
 export const hrAPI = {
   login:        (username, password) => req('/login', { method: 'POST', body: JSON.stringify({ username, password }) }),
-  overview:     () => req('/overview'),
+  overview:     (year) => req('/overview' + (year ? `?year=${year}` : '')),
   healthSummary:() => req('/health-summary'),
 }

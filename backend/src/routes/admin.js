@@ -1351,9 +1351,30 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
     insuredChildCount:  num(data?.insuredChildCount),
     insuredAmount: num(data?.insuredAmount),
     healthMgmtFee: num(data?.healthMgmtFee),
+    // 付费健康管理服务清单：每项带启动状态，供企业看清过去一年提供了哪些服务、实际启动情况
     otherServices: Array.isArray(data?.otherServices)
-      ? data.otherServices.filter(s => (s?.name || '').trim()).map(s => ({ name: s.name.trim(), amount: num(s.amount) }))
+      ? data.otherServices.filter(s => (s?.name || '').trim()).map(s => ({
+          name: s.name.trim(),
+          amount: num(s.amount),
+          status: ['未启动', '进行中', '已完成'].includes(s?.status) ? s.status : '未启动',
+        }))
       : [],
+    // 企业健康基金：充值流水（区分企业自有/平台赠送）+ 已用金额；总额/余额由系统算
+    healthFund: (() => {
+      const transactions = Array.isArray(data?.healthFund?.transactions)
+        ? data.healthFund.transactions
+            .filter(t => num(t?.amount) > 0)
+            .map(t => ({
+              source: ['企业自有', '平台赠送'].includes(t?.source) ? t.source : '企业自有',
+              amount: num(t.amount),
+              date: (t?.date || '').trim(),
+              note: (t?.note || '').trim(),
+            }))
+        : [];
+      const total = transactions.reduce((sum, t) => sum + t.amount, 0);
+      const used = num(data?.healthFund?.used);
+      return { transactions, used, total, balance: total - used };  // 总额-已用=余额
+    })(),
   };
   // Mixed 字段整体替换该年度键（findByIdAndUpdate 对 Mixed 子键需用 markModified，这里直接读改存）
   const byYear = { ...(enterprise.hrDataByYear || {}) };

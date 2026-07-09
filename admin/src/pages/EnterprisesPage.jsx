@@ -393,15 +393,27 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
   const years = [yearNow + 1, yearNow, yearNow - 1, yearNow - 2]
   const byYear = enterprise.hrDataByYear || {}
   const [year, setYear] = useState(String(yearNow))
-  const blank = { examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', otherServices: [] }
-  const [form, setForm] = useState(() => ({ ...blank, ...(byYear[String(yearNow)] || {}) }))
+  const blankFund = { transactions: [], used: '' }
+  const blank = { examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', otherServices: [], healthFund: { ...blankFund } }
+  // 载入已有年度数据时，确保 healthFund 结构完整（旧数据可能没有这个字段）
+  const withDefaults = (d) => ({ ...blank, ...d, healthFund: { ...blankFund, ...(d?.healthFund || {}) } })
+  const [form, setForm] = useState(() => withDefaults(byYear[String(yearNow)]))
   const [saving, setSaving] = useState(false)
 
-  const switchYear = (y) => { setYear(y); setForm({ ...blank, ...(byYear[y] || {}) }) }
+  const switchYear = (y) => { setYear(y); setForm(withDefaults(byYear[y])) }
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  // 付费服务清单（含启动状态）
   const setOther = (i, k, v) => setForm(f => ({ ...f, otherServices: f.otherServices.map((o, idx) => idx === i ? { ...o, [k]: v } : o) }))
-  const addOther = () => setForm(f => ({ ...f, otherServices: [...(f.otherServices || []), { name: '', amount: '' }] }))
+  const addOther = () => setForm(f => ({ ...f, otherServices: [...(f.otherServices || []), { name: '', amount: '', status: '未启动' }] }))
   const rmOther = (i) => setForm(f => ({ ...f, otherServices: f.otherServices.filter((_, idx) => idx !== i) }))
+  // 健康基金充值明细
+  const setFund = (k, v) => setForm(f => ({ ...f, healthFund: { ...f.healthFund, [k]: v } }))
+  const setFundTx = (i, k, v) => setForm(f => ({ ...f, healthFund: { ...f.healthFund, transactions: f.healthFund.transactions.map((t, idx) => idx === i ? { ...t, [k]: v } : t) } }))
+  const addFundTx = () => setForm(f => ({ ...f, healthFund: { ...f.healthFund, transactions: [...(f.healthFund.transactions || []), { source: '企业自有', amount: '', date: '', note: '' }] } }))
+  const rmFundTx = (i) => setForm(f => ({ ...f, healthFund: { ...f.healthFund, transactions: f.healthFund.transactions.filter((_, idx) => idx !== i) } }))
+  // 基金总额/余额实时预览（与后端算法一致）
+  const fundTotal = (form.healthFund?.transactions || []).reduce((s, t) => s + (Number(t.amount) || 0), 0)
+  const fundBalance = fundTotal - (Number(form.healthFund?.used) || 0)
 
   const save = async () => {
     setSaving(true)
@@ -470,16 +482,48 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '16px 0 8px' }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>其他付费单项服务</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>付费健康管理服务清单（含启动情况）</div>
             <button type="button" className="btn btn-sm btn-secondary" onClick={addOther}>+ 添加</button>
           </div>
           {(form.otherServices || []).map((o, i) => (
-            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
               <input className="form-input" value={o.name} onChange={e => setOther(i, 'name', e.target.value)} placeholder="服务名称" />
               <input className="form-input" type="number" value={o.amount} onChange={e => setOther(i, 'amount', e.target.value)} placeholder="金额 ¥" />
+              <select className="form-input" value={o.status || '未启动'} onChange={e => setOther(i, 'status', e.target.value)}>
+                <option value="未启动">未启动</option>
+                <option value="进行中">进行中</option>
+                <option value="已完成">已完成</option>
+              </select>
               <button type="button" onClick={() => rmOther(i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
             </div>
           ))}
+
+          {/* ── 健康基金账户 ────────────────────────────────────── */}
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '18px 0 8px' }}>健康基金账户</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 12, color: '#888' }}>充值明细（区分企业自有 / 平台赠送）</div>
+            <button type="button" className="btn btn-sm btn-secondary" onClick={addFundTx}>+ 添加充值</button>
+          </div>
+          {(form.healthFund?.transactions || []).map((t, i) => (
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+              <select className="form-input" value={t.source || '企业自有'} onChange={e => setFundTx(i, 'source', e.target.value)}>
+                <option value="企业自有">企业自有</option>
+                <option value="平台赠送">平台赠送</option>
+              </select>
+              <input className="form-input" type="number" value={t.amount} onChange={e => setFundTx(i, 'amount', e.target.value)} placeholder="金额 ¥" />
+              <input className="form-input" type="date" value={t.date} onChange={e => setFundTx(i, 'date', e.target.value)} />
+              <input className="form-input" value={t.note} onChange={e => setFundTx(i, 'note', e.target.value)} placeholder="备注" />
+              <button type="button" onClick={() => rmFundTx(i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
+            </div>
+          ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, marginTop: 8, alignItems: 'end' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">已使用金额</label>
+              <input className="form-input" type="number" value={form.healthFund?.used} onChange={e => setFund('used', e.target.value)} placeholder="0" />
+            </div>
+            <div style={{ fontSize: 13, color: '#888', paddingBottom: 8 }}>基金总额：<b style={{ color: '#1A2B24' }}>¥{fundTotal.toLocaleString()}</b></div>
+            <div style={{ fontSize: 13, color: '#888', paddingBottom: 8 }}>可用余额：<b style={{ color: fundBalance < 0 ? '#c0392b' : '#1E6B50' }}>¥{fundBalance.toLocaleString()}</b></div>
+          </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>取消</button>
