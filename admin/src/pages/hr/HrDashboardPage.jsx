@@ -26,21 +26,6 @@ function ServiceSection({ icon, title, children }) {
   )
 }
 
-// 服务启动状态徽章
-const SERVICE_STATUS_STYLE = {
-  未启动: { bg: '#F3F4F6', color: '#8AA89C' },
-  进行中: { bg: '#FEF3E2', color: '#D97706' },
-  已完成: { bg: '#EAF5EF', color: '#1E6B50' },
-}
-function StatusBadge({ status }) {
-  const s = SERVICE_STATUS_STYLE[status] || SERVICE_STATUS_STYLE.未启动
-  return (
-    <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 10px', borderRadius: 999, background: s.bg, color: s.color }}>
-      {status || '未启动'}
-    </span>
-  )
-}
-
 function BucketBar({ title, buckets, colorMap }) {
   const total = Object.values(buckets).reduce((a, b) => a + b, 0) || 1
   return (
@@ -192,19 +177,20 @@ export default function HrDashboardPage() {
                 <StatCard label="健康管理费" value={`¥${(hr.healthMgmtFee || 0).toLocaleString()}`} color="#D97706" />
               </div>
 
-              {/* 付费服务清单：让企业看清过去一年提供了哪些服务及实际启动情况 */}
+              {/* 付费服务清单：让企业看清过去一年提供了哪些服务、频次及具体内容 */}
               {(hr.otherServices || []).length > 0 && (
                 <div style={{ marginTop: 16 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 8 }}>付费健康管理服务清单</div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                     {hr.otherServices.map((o, i) => (
                       <div key={i} style={{ fontSize: 13, padding: '10px 12px', background: '#f8faf9', borderRadius: 6 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                            <StatusBadge status={o.status} />
-                            <span style={{ color: '#1A2B24', fontWeight: 600 }}>{o.name}</span>
-                          </div>
-                          <span style={{ fontWeight: 700, color: '#1E6B50' }}>¥{(o.amount || 0).toLocaleString()}</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ color: '#1A2B24', fontWeight: 600 }}>{o.name}</span>
+                          {o.frequency && (
+                            <span style={{ fontSize: 12, fontWeight: 600, padding: '2px 10px', borderRadius: 999, background: '#EAF1F8', color: '#0077B6' }}>
+                              {o.frequency}
+                            </span>
+                          )}
                         </div>
                         {o.detail && (
                           <div style={{ fontSize: 12, color: '#4A6558', lineHeight: 1.6, marginTop: 6, paddingLeft: 2 }}>

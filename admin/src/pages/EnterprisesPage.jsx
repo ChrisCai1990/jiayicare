@@ -405,7 +405,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   // 付费服务清单（含启动状态）
   const setOther = (i, k, v) => setForm(f => ({ ...f, otherServices: f.otherServices.map((o, idx) => idx === i ? { ...o, [k]: v } : o) }))
-  const addOther = () => setForm(f => ({ ...f, otherServices: [...(f.otherServices || []), { name: '', amount: '', status: '未启动' }] }))
+  const addOther = () => setForm(f => ({ ...f, otherServices: [...(f.otherServices || []), { name: '', frequency: '', detail: '' }] }))
   const rmOther = (i) => setForm(f => ({ ...f, otherServices: f.otherServices.filter((_, idx) => idx !== i) }))
   // 健康基金充值明细
   const setFund = (k, v) => setForm(f => ({ ...f, healthFund: { ...f.healthFund, [k]: v } }))
@@ -516,14 +516,9 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
           </div>
           {(form.otherServices || []).map((o, i) => (
             <div key={i} style={{ border: '1px solid #EEE9E0', borderRadius: 8, padding: 10, marginBottom: 8, background: '#fcfbf9' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr 1fr auto', gap: 8, alignItems: 'center' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1.6fr 1fr auto', gap: 8, alignItems: 'center' }}>
                 <input className="form-input" value={o.name} onChange={e => setOther(i, 'name', e.target.value)} placeholder="服务名称，如：健康讲座" />
-                <input className="form-input" type="number" value={o.amount} onChange={e => setOther(i, 'amount', e.target.value)} placeholder="金额 ¥" />
-                <select className="form-input" value={o.status || '未启动'} onChange={e => setOther(i, 'status', e.target.value)}>
-                  <option value="未启动">未启动</option>
-                  <option value="进行中">进行中</option>
-                  <option value="已完成">已完成</option>
-                </select>
+                <input className="form-input" value={o.frequency || ''} onChange={e => setOther(i, 'frequency', e.target.value)} placeholder="频次，如：每季度1次" />
                 <button type="button" onClick={() => rmOther(i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>×</button>
               </div>
               <textarea
