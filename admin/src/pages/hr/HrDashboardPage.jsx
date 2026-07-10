@@ -53,26 +53,38 @@ function AttachmentList({ list }) {
 }
 
 // 三维度分区容器：体检 / 保险 / 健康管理，每块独立卡片+标题+服务期间，避免所有指标挤成一堆
-// 2026-07-09：标题栏支持点击展开/收起（默认展开），企业方看某一块时可把其余两块收起，减少一屏内的信息拥挤。
+// 2026-07-10：改为默认全部收起，点标题展开——此前默认展开导致三块一次性铺开显得笨拙，
+// 收起后只看标题行，需要哪块点哪块，页面更精简。标题行加hover高亮，明确提示可点击。
 function ServiceSection({ icon, title, period, children }) {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(false)
+  const [hover, setHover] = useState(false)
   return (
     <div className="card" style={{ padding: 20, marginBottom: 14 }}>
       <div
         onClick={() => setOpen(o => !o)}
-        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: open ? 14 : 0, cursor: 'pointer', userSelect: 'none' }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+        style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          marginBottom: open ? 14 : 0, cursor: 'pointer', userSelect: 'none',
+          margin: '-4px -4px 0', padding: '4px', borderRadius: 8,
+          background: hover ? '#f8faf9' : 'transparent', transition: 'background .12s',
+        }}
       >
         <div style={{ fontSize: 15, fontWeight: 700, color: '#1A2B24', display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 12, color: '#8AA89C', transition: 'transform .15s', transform: open ? 'rotate(90deg)' : 'none', display: 'inline-block' }}>▶</span>
           <span>{icon}</span><span>{title}</span>
         </div>
-        {period && (
-          <span style={{ fontSize: 12, color: '#8AA89C', background: '#f8faf9', padding: '3px 12px', borderRadius: 999 }}>
-            服务期间 {period}
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {period && (
+            <span style={{ fontSize: 12, color: '#8AA89C', background: '#f8faf9', padding: '3px 12px', borderRadius: 999 }}>
+              服务期间 {period}
+            </span>
+          )}
+          <span style={{ fontSize: 11, color: '#B0A99C' }}>{open ? '收起' : '展开'}</span>
+        </div>
       </div>
-      {open && children}
+      {open && <div style={{ marginTop: 14 }}>{children}</div>}
     </div>
   )
 }
