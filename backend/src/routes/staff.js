@@ -3021,7 +3021,7 @@ router.patch('/health-records/:id/resolve-alert', staffAuth, async (req, res) =>
 // POST /api/staff/patients/:id/health-records
 router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
   try {
-    const { type, value, extra, note } = req.body;
+    const { type, value, extra, note, recordedAt } = req.body;
     if (!type || value === undefined) {
       return res.status(400).json({ success: false, message: 'type 和 value 必填' });
     }
@@ -3043,7 +3043,8 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '无效的数据类型' });
     }
     const meta = TYPE_META[type];
-    const record = await HealthRecord.create({
+    // recordedAt 支持历史补录（老客户既往数据整理录入）——未传则用当前时间。（2026-07-10 金娟）
+    const recRecord = {
       user:     req.params.id,
       category: meta.category,
       type,
@@ -3052,7 +3053,12 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
       value:    String(value),
       extra:    extra || {},
       note:     note || '',
-    });
+    };
+    if (recordedAt) {
+      const d = new Date(recordedAt);
+      if (!isNaN(d.getTime())) recRecord.recordedAt = d;
+    }
+    const record = await HealthRecord.create(recRecord);
     res.json({ success: true, data: record });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

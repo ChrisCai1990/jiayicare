@@ -8468,8 +8468,11 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
   ))
 
   const [vals, setVals] = React.useState(initVals)
+  // 归属日期：支持老客户历史数据补录（默认今天，可选任意过去日期）（2026-07-10 金娟）
+  const todayISO = new Date().toISOString().slice(0, 10)
+  const [recordDate, setRecordDate] = React.useState(todayISO)
   const setField = (field, v) => setVals(p => ({ ...p, [type]: { ...p[type], [field]: v } }))
-  const reset = () => setVals(initVals())
+  const reset = () => { setVals(initVals()); setRecordDate(todayISO) }
 
   const curType = TYPES.find(t => t.key === type)
 
@@ -8498,10 +8501,12 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
     if (!toSubmit.length) { toastFn('请至少填写一项数据'); return }
     setSaving(true)
     try {
+      // 归属日期非今天时传 recordedAt（补录历史数据），设为当天中午避免时区错算一天
+      const recordedAt = recordDate === todayISO ? undefined : `${recordDate}T12:00:00`
       for (const { t, payload } of toSubmit) {
-        await staffAPI.createPatientHealthRecord(patientId, { type: t.key, value: payload.value, extra: payload.extra })
+        await staffAPI.createPatientHealthRecord(patientId, { type: t.key, value: payload.value, extra: payload.extra, recordedAt })
       }
-      toastFn(`已录入 ${toSubmit.length} 项健康数据，已同步到用户端`)
+      toastFn(`已录入 ${toSubmit.length} 项健康数据（${recordDate === todayISO ? '今日' : recordDate}），已同步到用户端`)
       reset(); onSaved()
     } catch (e) { toastFn(e.message || '录入失败') }
     finally { setSaving(false) }
@@ -8530,6 +8535,18 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
       <div className="card-body">
         <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
           罗列全部打卡项，填写哪些就录入哪些（留空的不提交），一次性作为首次建档基础数据同步到用户端。
+        </div>
+
+        {/* 归属日期：老客户历史数据补录用，默认今天，可选任意过去日期（2026-07-10 金娟） */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14, padding: '10px 12px', background: '#F0FAF5', borderRadius: 8 }}>
+          <span style={{ fontSize: 13, color: '#1A2B24', fontWeight: 600 }}>数据归属日期</span>
+          <input type="date" value={recordDate} max={todayISO}
+            onChange={e => e.target.value && setRecordDate(e.target.value)}
+            style={{ padding: '5px 10px', borderRadius: 6, border: '1px solid #D0E0D8', fontSize: 13 }} />
+          {recordDate !== todayISO && (
+            <span style={{ fontSize: 12, color: '#D97706' }}>补录历史数据（{recordDate}）</span>
+          )}
+          <button className="btn btn-secondary btn-sm" style={{ marginLeft: 'auto', fontSize: 12 }} onClick={() => setRecordDate(todayISO)}>今天</button>
         </div>
 
         {/* 2026-07-09：所有打卡项平铺，各自独立填写，一次确认批量提交，不再单选逐条录入 */}

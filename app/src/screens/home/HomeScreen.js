@@ -449,6 +449,9 @@ export default function HomeScreen({ navigation }) {
   const [checkinModal, setCheckinModal] = useState(null); // { key, label, icon, color }
   const [checkinNote, setCheckinNote]   = useState('');
   const [checkinImage, setCheckinImage] = useState(null);
+  // 打卡归属日期（默认今天，可补录昨天/过去日期）——饮水/排便/运动/睡眠常是昨天的数据（2026-07-10 金娟）
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const [checkinDate, setCheckinDate] = useState(todayStr);
   // 任务详情弹窗
   const [taskDetailModal, setTaskDetailModal] = useState(null);
   const [taskCompleting, setTaskCompleting]   = useState(false);
@@ -730,17 +733,19 @@ export default function HomeScreen({ navigation }) {
               const existing = checkin[item.key] || {};
               setCheckinNote(existing.note || '');
               setCheckinImage(existing.image || null);
+              setCheckinDate(todayStr); // 每次打开默认今天，用户可改为昨天/过去日期补录
               setCheckinModal(item);
             };
             const saveCheckin = async () => {
               const item = checkinModal;
-              const next = {
-                ...checkin,
-                [item.key]: { done: true, note: checkinNote, image: checkinImage }
-              };
-              setCheckin(next);
-              try { localStorage.setItem(TODAY_KEY, JSON.stringify(next)); } catch {}
-              // 同步到后端健康档案
+              const isToday = checkinDate === todayStr;
+              // 只有归属日=今天的打卡，才更新"今日已打卡"本地状态；补录过去日期不影响今天的打卡进度显示
+              if (isToday) {
+                const next = { ...checkin, [item.key]: { done: true, note: checkinNote, image: checkinImage } };
+                setCheckin(next);
+                try { localStorage.setItem(TODAY_KEY, JSON.stringify(next)); } catch {}
+              }
+              // 同步到后端健康档案，带归属日期（recordedAt）。补录昨天时设为当天中午12点，避免时区把日期算错一天
               try {
                 await recordsAPI.create({
                   category: item.category || 'lifestyle',
@@ -751,6 +756,7 @@ export default function HomeScreen({ navigation }) {
                   status: 'normal',
                   imageUrl: checkinImage || '',
                   extra: checkinImage ? { imageUrl: checkinImage } : undefined,
+                  recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
                 });
               } catch { /* 静默失败，本地已保存 */ }
               setCheckinModal(null);
@@ -832,6 +838,37 @@ export default function HomeScreen({ navigation }) {
                           <Ionicons name="close" size={22} color={colors.textMuted} />
                         </TouchableOpacity>
                       </View>
+
+                      {/* 归属日期：默认今天，可补录昨天/前天/任意过去日期（饮水/排便/运动/睡眠常是昨天的） */}
+                      <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>这是哪一天的情况</Text>
+                      <View style={{ flexDirection: 'row', gap: 8, marginBottom: 6, flexWrap: 'wrap' }}>
+                        {[
+                          { label: '今天', d: 0 },
+                          { label: '昨天', d: 1 },
+                          { label: '前天', d: 2 },
+                        ].map(({ label, d }) => {
+                          const dt = new Date(); dt.setDate(dt.getDate() - d);
+                          const ds = dt.toISOString().slice(0, 10);
+                          const active = checkinDate === ds;
+                          return (
+                            <TouchableOpacity key={label} onPress={() => setCheckinDate(ds)}
+                              style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8,
+                                backgroundColor: active ? colors.primary : colors.border + '50',
+                                borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
+                              <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.textSecondary }}>{label}</Text>
+                            </TouchableOpacity>
+                          );
+                        })}
+                      </View>
+                      {/* 更早日期：web 用原生日期选择，原生端提示用快捷键 */}
+                      {Platform.OS === 'web' ? (
+                        <input type="date" value={checkinDate} max={todayStr}
+                          onChange={(e) => e.target.value && setCheckinDate(e.target.value)}
+                          style={{ marginBottom: 14, padding: '7px 10px', borderRadius: 8, border: `1px solid ${colors.border}`, fontSize: 14, color: colors.textPrimary, background: colors.surface, width: '60%' }} />
+                      ) : (
+                        <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 14 }}>当前记录归属：{checkinDate}</Text>
+                      )}
+
                       <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>记录内容（可选）</Text>
                       <TextInput
                         style={styles.checkinNoteInput}
