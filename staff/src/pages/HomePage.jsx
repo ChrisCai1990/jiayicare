@@ -19,6 +19,7 @@ export default function HomePage() {
   const [unreadMsgCount, setUnreadMsgCount] = useState(0)
   const [checkinRecords, setCheckinRecords] = useState([])
   const [checkupProgress, setCheckupProgress] = useState([])
+  const [expiringPatients, setExpiringPatients] = useState([])
 
   useEffect(() => {
     staffAPI.getReports()
@@ -41,6 +42,7 @@ export default function HomePage() {
       if (notifRes.status === 'fulfilled') {
         const s = notifRes.value.data?.summary || {}
         setPendingReferralCount((s.pendingReferralCount || 0) + (s.unreadRepliedCount || 0))
+        setExpiringPatients(notifRes.value.data?.expiringPatients || [])
       }
       if (msgRes.status === 'fulfilled') {
         setUnreadMsgCount(msgRes.value.unreadCount ?? msgRes.value.data?.filter(m => m.staffUnread)?.length ?? 0)
@@ -78,6 +80,55 @@ export default function HomePage() {
 
       {/* 待随访任务面板 */}
       <FollowUpsPanel />
+
+      {/* 即将到期客户（30天内，提前一月提醒续约） */}
+      {expiringPatients.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>⏰ 即将到期客户</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', background: '#DC354518', padding: '2px 8px', borderRadius: 99 }}>
+                {expiringPatients.length}
+              </span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => nav('/notifications')}>查看全部</button>
+          </div>
+          <div className="card-body" style={{ padding: '8px 20px' }}>
+            {expiringPatients.slice(0, 5).map((p, i) => {
+              const daysLeft = Math.ceil((new Date(p.serviceExpiry) - new Date()) / 86400000)
+              return (
+                <div key={p._id}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '10px 0',
+                    borderBottom: i < Math.min(expiringPatients.length, 5) - 1 ? '1px solid #f0ede8' : 'none',
+                    cursor: 'pointer',
+                  }}
+                  onClick={() => nav(`/patients/${p._id}`)}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60 }}>{p.name}</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>{p.phone}</span>
+                    <span style={{ fontSize: 12, color: '#aaa' }}>{p.servicePackage}</span>
+                  </div>
+                  <span style={{
+                    fontSize: 12, fontWeight: 600, padding: '2px 8px', borderRadius: 99,
+                    color: daysLeft <= 7 ? '#DC3545' : '#D97706',
+                    background: daysLeft <= 7 ? '#DC354518' : '#D9780618',
+                  }}>
+                    {daysLeft} 天后到期
+                  </span>
+                </div>
+              )
+            })}
+            {expiringPatients.length > 5 && (
+              <div style={{ textAlign: 'center', padding: '10px 0 2px', fontSize: 13, color: '#8AA89C', cursor: 'pointer' }}
+                onClick={() => nav('/notifications')}>
+                还有 {expiringPatients.length - 5} 位客户 →
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 今日健康打卡 */}
       <div className="card" style={{ marginBottom: 20 }}>
