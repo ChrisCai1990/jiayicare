@@ -12,10 +12,15 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   const MedicalReport = require('../models/MedicalReport');
   const Medication = require('../models/Medication');
   const Supplement = require('../models/Supplement');
+  const HealthRecord = require('../models/HealthRecord');
 
-  const [activeMeds, activeSupplements] = await Promise.all([
+  const [activeMeds, activeSupplements, recentCheckins] = await Promise.all([
     Medication.find({ user: user._id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
     Supplement.find({ user: user._id, stopped: false }).select('name dosage frequency purpose startDate').lean(),
+    // 近30天打卡记录（体重/血压/血糖/睡眠/运动/情绪等），2026-07-11新增：此前AI健康分析完全没读打卡数据，
+    // 只看体检报告和手动录入的档案字段，导致日常打卡趋势(如体重变化/运动频率/睡眠时长)无法体现在分析里
+    HealthRecord.find({ user: user._id, recordedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) } })
+      .sort({ recordedAt: -1 }).select('type value extra unit recordedAt').lean(),
   ]);
   const medicationSummary = activeMeds.length
     ? activeMeds.map(m => `${m.name} ${m.dosage}，${m.frequency}${m.purpose ? `（${m.purpose}）` : ''}${m.startDate ? `，自${m.startDate}起` : ''}`).join('；')
@@ -79,6 +84,28 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   // 肿瘤筛查覆盖度（规则引擎确定性结论，按男女前十大肿瘤逐项判断"该做的筛查做了没"，
   // 含胃镜免胃蛋白酶原/肠镜免便潜血/HP连续3年阴性/乳腺钼靶40岁等规则）——2026-07-10 金娟
   const coverageText = buildCoverageText(assessCancerCoverage(user, allReports));
+
+  // 近30天打卡记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
+  const CHECKIN_LABEL = { weight: '体重(kg)', bloodPressure: '血压(mmHg)', bloodSugar: '血糖(mmol/L)', heartRate: '心率(次/分)', sleep: '睡眠(小时)', mood: '情绪(1-10分)', exercise: '运动', diet: '饮食', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒' };
+  const NUMERIC_CHECKIN_TYPES = new Set(['weight', 'bloodSugar', 'heartRate', 'sleep', 'mood']);
+  const checkinByType = {};
+  recentCheckins.forEach(r => { (checkinByType[r.type] = checkinByType[r.type] || []).push(r); });
+  const checkinSummary = Object.entries(checkinByType).map(([type, recs]) => {
+    const label = CHECKIN_LABEL[type] || type;
+    if (type === 'bloodPressure') {
+      const first = recs[recs.length - 1], last = recs[0];
+      const fmt = (r) => r.extra?.sys && r.extra?.dia ? `${r.extra.sys}/${r.extra.dia}` : r.value;
+      return `${label}：近30天共${recs.length}次记录，最早${fmt(first)}→最近${fmt(last)}`;
+    }
+    if (NUMERIC_CHECKIN_TYPES.has(type)) {
+      const nums = recs.map(r => parseFloat(r.value)).filter(v => !isNaN(v));
+      if (!nums.length) return null;
+      const avg = (nums.reduce((s, v) => s + v, 0) / nums.length).toFixed(1);
+      return `${label}：近30天共${recs.length}次记录，最早${nums[nums.length - 1]}→最近${nums[0]}，均值${avg}`;
+    }
+    // 文本类（运动/饮食/饮水/排便/吸烟/饮酒）：列最近3条原文，体现近期习惯
+    return `${label}：近30天共${recs.length}次记录，最近几条 - ${recs.slice(0, 3).map(r => r.value).join('；')}`;
+  }).filter(Boolean).join('\n') || '近30天暂无打卡记录';
 
   const ls  = user.lifestyle || {};
   const lsd = user.lifestyle_data || {};
@@ -148,7 +175,7 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
 
 【心理量表铁律——必须严格遵守】①SCL90各因子分必须严格按系统标注的正常/异常判定来解读：因子分＜2一律属正常范围，即使某因子（如精神病性1.2）在数值上略高于其他因子，只要＜2就是正常，绝不能描述为"升高/偏高/异常"。②心理量表（SCL90/SAS/SDS/嗜睡）的因子和结论只能写进"情绪/心理"相关分析，严禁把精神病性、偏执等心理因子塞进 cardiovascular_risk（心脑血管）、tumor_risk（肿瘤）等躯体维度——这些心理因子与躯体疾病风险无直接因果关系。③只有当系统明确标注某因子为异常时，才可在情绪维度提示。
 
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。你手上的是该患者全部专项筛查数据（体检指标/肿瘤标志物/影像内镜所见/基因/心理量表/听力视力等专科检查），请充分利用，不要只盯着少数几个指标。【专科检查异常发现】里列出的每一条（如听力高频下降、视力/屈光异常、口腔、骨密度等）都必须在分析中被提及并给出建议，这类非主流指标最容易被遗漏，务必逐条覆盖，纳入 medical_priority 或 chronic_disease 相应维度。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。每个分析维度都应体现「几年数据的趋势变化 → 原因分析 → 未来建议」三段式，而非仅描述当前值。
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【近30天打卡记录】【当前用药与营养素补充】综合评估。【近30天打卡记录】反映的是体检之后更实时的自测数据（如体重是否持续下降、血压近期是否稳定、运动频率、睡眠时长），如果与体检报告结论有出入（如体检时血压正常但近期打卡持续偏高），应在相应维度中明确指出这一变化趋势并给出建议，不能只字不提。你手上的是该患者全部专项筛查数据（体检指标/肿瘤标志物/影像内镜所见/基因/心理量表/听力视力等专科检查），请充分利用，不要只盯着少数几个指标。【专科检查异常发现】里列出的每一条（如听力高频下降、视力/屈光异常、口腔、骨密度等）都必须在分析中被提及并给出建议，这类非主流指标最容易被遗漏，务必逐条覆盖，纳入 medical_priority 或 chronic_disease 相应维度。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。每个分析维度都应体现「几年数据的趋势变化 → 原因分析 → 未来建议」三段式，而非仅描述当前值。
 
 【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议患者恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
 
@@ -170,6 +197,9 @@ ${psychSummary}
 
 【生活方式与膳食调查】
 ${lifestyleSummary}
+
+【近30天打卡记录（体重/血压/血糖/心率/睡眠/情绪等日常自测数据，体现短期真实趋势，可与体检报告互相印证或提示体检后的变化）】
+${checkinSummary}
 
 【当前用药】
 ${medicationSummary}

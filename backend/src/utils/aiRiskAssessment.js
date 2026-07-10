@@ -28,14 +28,28 @@ function ruleEngineSignals(lv = {}) {
   return sig;
 }
 
+// 严格取"最近一年"报告（2026-07-11）：此前按数量截断50-60条，等于把几年前的旧数据也一起喂给AI做风险判断，
+// 会用过时数据污染当前风险等级；改为按 checkDate 过滤近365天，若近一年完全没有报告才回退到最近一次（避免无数据可用）。
+async function selectRecentReports(MedicalReport, userId, selectFields, limit) {
+  const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
+  const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
+  const recent = await MedicalReport.find({ user: userId, checkDate: { $gte: oneYearAgoStr } })
+    .sort({ checkDate: -1, createdAt: -1 })
+    .select(selectFields)
+    .limit(limit);
+  if (recent.length > 0) return recent;
+  // 近一年无任何报告：回退取最近一次，避免风险评估完全没有体检数据可用
+  return MedicalReport.find({ user: userId })
+    .sort({ checkDate: -1, createdAt: -1 })
+    .select(selectFields)
+    .limit(1);
+}
+
 const TUMOR_MARKER_KEYWORDS = ['肿瘤标志物', 'PSA', 'AFP', 'CEA', 'CA199', 'CA125', 'CA153', 'NSE', 'CA724', 'CA242'];
 const TUMOR_FINDING_KEYWORDS = ['息肉', '结节', '肠化', '不典型增生', '异型增生', '囊实性', 'TI-RADS', 'BI-RADS', '占位', '肿物'];
 async function tumorSignalsFromReports(userId) {
   const MedicalReport = require('../models/MedicalReport');
-  const reports = await MedicalReport.find({ user: userId })
-    .sort({ checkDate: -1, createdAt: -1 })
-    .select('title type checkDate screeningCategory reportItems')
-    .limit(50);
+  const reports = await selectRecentReports(MedicalReport, userId, 'title type checkDate screeningCategory reportItems', 50);
   const lines = [];
   const geneticLines = [];
   reports.forEach(r => {
@@ -73,10 +87,8 @@ async function generateRiskAssessment(user) {
 
   // 【体检关键指标】+ 规则引擎信号：从专项筛查报告 reportItems 派生真实数值（与医护端「体检关键指标」卡片同源），
   // 而非读几乎为空的 user.labValues（2026-07-10 根因修复："AI提取数据没一次对的"）。
-  const reports = await MedicalReport.find({ user: user._id })
-    .sort({ checkDate: -1, date: -1, createdAt: -1 })
-    .select('title screeningL2 checkDate date reportYear reportItems')
-    .limit(60);
+  // 2026-07-11：严格限定最近一年，避免过时体检数据污染当前风险判断（近一年无数据则回退最近一次，见selectRecentReports）。
+  const reports = await selectRecentReports(MedicalReport, user._id, 'title screeningL2 checkDate date reportYear reportItems', 60);
   const { latest: derivedLab } = deriveLabFromReports(reports);
   // 派生真实值优先，user.labValues 仅作补充兜底（万一某指标报告没有但医护手动录了）
   const lv = { ...(user.labValues || {}), ...latestToLabValues(derivedLab) };
@@ -98,17 +110,36 @@ async function generateRiskAssessment(user) {
 
   const geneticText = geneticLines.length ? geneticLines.join('\n') : '暂无基因检测报告';
 
+  // 近30天打卡记录：与体检报告互补，体现更实时的血压/血糖/体重波动，可能影响心血管/糖尿病风险的即时判断（2026-07-11）
+  const HealthRecord = require('../models/HealthRecord');
+  const recentCheckins = await HealthRecord.find({
+    user: user._id, type: { $in: ['bloodPressure', 'bloodSugar', 'weight', 'heartRate'] },
+    recordedAt: { $gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+  }).sort({ recordedAt: -1 }).select('type value extra recordedAt').lean();
+  const CHECKIN_LABEL2 = { bloodPressure: '血压', bloodSugar: '血糖', weight: '体重', heartRate: '心率' };
+  const checkinByType2 = {};
+  recentCheckins.forEach(r => { (checkinByType2[r.type] = checkinByType2[r.type] || []).push(r); });
+  const checkinText = Object.entries(checkinByType2).map(([type, recs]) => {
+    const label = CHECKIN_LABEL2[type] || type;
+    const fmt = (r) => type === 'bloodPressure' && r.extra?.sys && r.extra?.dia ? `${r.extra.sys}/${r.extra.dia}` : r.value;
+    const first = recs[recs.length - 1], last = recs[0];
+    return `${label}：近30天共${recs.length}次打卡，最早${fmt(first)}→最近${fmt(last)}`;
+  }).join('\n') || '近30天暂无相关打卡记录';
+
   const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。
 
 【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
 【个人生活习惯】${lifestyleLines}
-【体检关键指标】${labLines}
+【体检关键指标（近一年）】${labLines}
 【规则引擎预警信号】
 ${sigText}
 【基因检测报告】
 ${geneticText}
+【近30天打卡记录（血压/血糖/体重/心率日常自测，体现比体检报告更实时的波动）】
+${checkinText}
 
-肿瘤风险维度请结合上方"tumor"信号（历年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、个人生活习惯（吸烟/饮酒/饮食是肺癌/肝癌/胃肠癌的强相关因素）、既往史、家族史、基因检测报告（如有明确高风险位点/基因，应显著提高风险等级）综合判断；信号为空不代表零风险，需结合年龄、性别、生活习惯、家族史等基础风险因素给出合理评估，不要机械地判为low。
+心血管和糖尿病风险维度请特别关注【近30天打卡记录】：如果打卡显示血压/血糖近期持续偏高或波动明显，即使体检报告是达标的，也应在相应维度提示"近期自测数据显示XX有上升趋势，建议复查"，不能仅依赖可能已经过时的体检报告下结论。
+肿瘤风险维度请结合上方"tumor"信号（近一年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、个人生活习惯（吸烟/饮酒/饮食是肺癌/肝癌/胃肠癌的强相关因素）、既往史、家族史、基因检测报告（如有明确高风险位点/基因，应显著提高风险等级）综合判断；信号为空不代表零风险，需结合年龄、性别、生活习惯、家族史等基础风险因素给出合理评估，不要机械地判为low。
 
 请严格按以下JSON输出（level 取值：low/medium/high/critical，分别代表低/中/高/危急值；score 0-100）：
 {
