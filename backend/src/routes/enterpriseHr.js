@@ -53,15 +53,15 @@ router.get('/overview', enterpriseHrAuth, async (req, res) => {
     data: {
       enterprise: {
         name: enterprise.name, contractStartAt: enterprise.contractStartAt, contractEndAt: enterprise.contractEndAt,
-        seatsTotal: enterprise.seatsTotal, packageType: enterprise.packageType, status: enterprise.status,
+        packageType: enterprise.packageType, status: enterprise.status,
       },
+      // 已分配/已激活/激活率：员工账号跨年沿用，无年度归属，统计的是当前实时状态，不随下方年度选择变化
       seatsUsed,
-      seatsRemaining: Math.max(enterprise.seatsTotal - seatsUsed, 0),
       activated,
       activationRate: seatsUsed > 0 ? Math.round((activated / seatsUsed) * 100) : 0,
       year,
       availableYears,
-      hrData,   // 体检机构/人数/客单价/总额、保险、健康管理费、其他付费服务（无数据时为 null）
+      hrData,   // 体检机构/人数/客单价/总额、保险、健康管理费、其他付费服务、当年采购名额（无数据时为 null）
     },
   });
 });

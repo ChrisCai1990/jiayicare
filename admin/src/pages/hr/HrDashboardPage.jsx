@@ -183,9 +183,10 @@ export default function HrDashboardPage() {
         </div>
       </div>
 
+      {/* 员工账号跨年沿用，无年度归属，这三项是当前实时状态，不随下方年度切换变化 */}
+      <div style={{ fontSize: 11, color: '#B0A99C', marginBottom: 6 }}>员工账号数据 · 实时统计，与下方服务年度无关</div>
       <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
-        <StatCard label="采购名额" value={overview?.enterprise?.seatsTotal || '不限'} />
-        <StatCard label="已分配员工" value={overview?.seatsUsed} sub={`剩余 ${overview?.seatsRemaining ?? '-'}`} />
+        <StatCard label="已分配员工" value={overview?.seatsUsed} />
         <StatCard label="已激活账号" value={overview?.activated} color="#0077B6" />
         <StatCard label="激活率" value={`${overview?.activationRate ?? 0}%`} color="#D97706" />
       </div>
@@ -201,6 +202,13 @@ export default function HrDashboardPage() {
         const fund = hr.healthFund || {}
         return (
           <>
+            {/* 服务名额：按年度录入，不同年度采购批次/类型可能不同，与上方"员工账号实时统计"区分开 */}
+            {!!hr.seatsTotal && (
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+                <StatCard label={`${overview.year} 年采购名额`} value={hr.seatsTotal} sub="人" />
+              </div>
+            )}
+
             {/* 维度一：体检服务 */}
             <ServiceSection icon="🩺" title={`${overview.year} 年 · 体检服务`} period={fmtPeriod(hr.examStartAt, hr.examEndAt)}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>

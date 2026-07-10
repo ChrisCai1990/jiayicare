@@ -1352,6 +1352,7 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
     ? arr.filter(a => (a?.url || '').trim()).map(a => ({ name: (a?.name || '').trim() || '附件', url: a.url.trim() }))
     : [];
   const clean = {
+    seatsTotal:    num(data?.seatsTotal),   // 该年度采购名额（按年度录入，不同年度采购批次/类型可能不同）
     examOrg:       (data?.examOrg || '').trim(),
     examCount:     num(data?.examCount),
     examUnitPrice: num(data?.examUnitPrice),  // 保留兼容：总体客单价

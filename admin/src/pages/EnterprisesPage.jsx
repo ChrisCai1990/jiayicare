@@ -401,7 +401,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
   const savedYears = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
   const [year, setYear] = useState(String(yearNow))
   const blankFund = { transactions: [], used: '' }
-  const blank = { examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', healthMgmtCount: '', otherServices: [], healthFund: { ...blankFund }, examAttachments: [], insuredAttachments: [], healthMgmtAttachments: [] }
+  const blank = { seatsTotal: '', examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', healthMgmtCount: '', otherServices: [], healthFund: { ...blankFund }, examAttachments: [], insuredAttachments: [], healthMgmtAttachments: [] }
   // 载入已有年度数据时，确保 healthFund 结构完整（旧数据可能没有这个字段）
   const withDefaults = (d) => ({ ...blank, ...d, healthFund: { ...blankFund, ...(d?.healthFund || {}) } })
   const [form, setForm] = useState(() => withDefaults(byYear[String(yearNow)]))
@@ -538,7 +538,12 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
             )}
           </div>
 
-          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '12px 0 8px' }}>体检</div>
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '12px 0 8px' }}>服务名额</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {numField('该年度采购名额', 'seatsTotal', '人')}
+          </div>
+
+          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '16px 0 8px' }}>体检</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
               <label className="form-label">体检机构</label>
