@@ -8564,20 +8564,50 @@ function InitialHealthRecordForm({ patientId, onSaved, toast: toastFn }) {
 
   // 2026-07-09：首次建档一次性罗列全部打卡项，医护填了几项就批量提交几项。
   // 此前是单选类型逐条录入(一次只提交当前选中那条)，医护以为填了多项、实际只存了最后确认的一条(金娟只剩"饮酒")。
+  // 2026-07-11修复：①血压类要求sys/dia都填才提交，漏填一项会被buildPayload静默过滤掉，之前完全没提示——
+  // 现在提交前单独检查"填了一半"的项，明确告知哪项不完整。②逐条await的循环里任何一条失败就会用throw中断
+  // 后续未提交的项，但外层只提示"录入失败"，医护完全不知道前面几条是否已经成功、更不知道哪项丢了——
+  // 这正是金娟案例的根因：血压这项因为以上任一原因没能真正落库，医护端却显示过"已录入"，用户端自然看不到。
+  // 现在改为逐条独立捕获错误，全部提交完后汇总成功/失败清单，不再用一句话笼统提示。
   const handleSave = async () => {
+    // 检测"只填了一半"的项（如血压只填收缩压），避免被buildPayload静默丢弃却毫无提示
+    const partial = TYPES.filter(t => {
+      const cur = vals[t.key]
+      if (t.kind === 'bp') return (cur.sys && !cur.dia) || (!cur.sys && cur.dia)
+      if (t.kind === 'sleep') return (cur.sleepTime && !cur.wakeTime) || (!cur.sleepTime && cur.wakeTime)
+      return false
+    })
+    if (partial.length > 0) {
+      toastFn(`${partial.map(t => t.label).join('、')} 只填了一半，请补全后再提交（否则会被跳过不录入）`)
+      return
+    }
+
     const toSubmit = TYPES.map(t => ({ t, payload: buildPayload(t) })).filter(x => x.payload)
     if (!toSubmit.length) { toastFn('请至少填写一项数据'); return }
     setSaving(true)
-    try {
-      // 归属日期非今天时传 recordedAt（补录历史数据），设为当天中午避免时区错算一天
-      const recordedAt = recordDate === todayISO ? undefined : `${recordDate}T12:00:00`
-      for (const { t, payload } of toSubmit) {
+    // 归属日期非今天时传 recordedAt（补录历史数据），设为当天中午避免时区错算一天
+    const recordedAt = recordDate === todayISO ? undefined : `${recordDate}T12:00:00`
+    const succeeded = []
+    const failed = []
+    for (const { t, payload } of toSubmit) {
+      try {
         await staffAPI.createPatientHealthRecord(patientId, { type: t.key, value: payload.value, extra: payload.extra, recordedAt })
+        succeeded.push(t.label)
+      } catch (e) {
+        failed.push(`${t.label}(${e.message || '失败'})`)
       }
-      toastFn(`已录入 ${toSubmit.length} 项健康数据（${recordDate === todayISO ? '今日' : recordDate}），已同步到用户端`)
+    }
+    setSaving(false)
+    if (failed.length === 0) {
+      toastFn(`已录入 ${succeeded.length} 项健康数据（${recordDate === todayISO ? '今日' : recordDate}），已同步到用户端`)
       reset(); onSaved()
-    } catch (e) { toastFn(e.message || '录入失败') }
-    finally { setSaving(false) }
+    } else if (succeeded.length === 0) {
+      toastFn(`录入全部失败：${failed.join('；')}`)
+    } else {
+      // 部分成功：明确告知哪些成功哪些失败，不用笼统的"录入失败"掩盖已成功的部分
+      toastFn(`成功 ${succeeded.join('、')}；失败 ${failed.join('；')}，请重新提交失败项`)
+      onSaved()
+    }
   }
 
   if (!open) {
