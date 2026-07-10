@@ -206,6 +206,8 @@ export default function AiHealthScreen({ navigation }) {
   const [riskData, setRiskData] = useState(null);
   const [summaryPending, setSummaryPending] = useState(false);
   const [riskPending, setRiskPending] = useState(false);
+  // 健康分析两部分各自的审核状态：5维度(医疗,家医审)/生活方式(营养师审)
+  const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, nutritionApproved: false, hasLifestyle: false, isSelfService: false });
   const [message, setMessage] = useState('');
   const [speaking, setSpeaking] = useState(false);
 
@@ -220,6 +222,7 @@ export default function AiHealthScreen({ navigation }) {
         setHasDoctor(!!sRes.value.hasDoctor);
         setSummaryData(sRes.value.data || null);
         setSummaryPending(!!sRes.value.pendingReview);
+        if (sRes.value.reviewStatus) setReviewStatus(sRes.value.reviewStatus);
         if (sRes.value.message) setMessage(sRes.value.message);
       }
       if (rRes.status === 'fulfilled' && rRes.value?.success) {
@@ -255,6 +258,10 @@ export default function AiHealthScreen({ navigation }) {
   const riskHasData = Array.isArray(riskData?.dimensions) && riskData.dimensions.length > 0;
   const curHasData = tab === TABS[0] ? summaryHasData : riskHasData;
   const curPending = tab === TABS[0] ? summaryPending : riskPending;
+  // 健康分析：只要任一部分（5维度/生活方式）已被审核，就锁定生成（客户端生成是整份覆盖，会毁掉已审部分）
+  const summaryLocked = hasDoctor && !reviewStatus.isSelfService && (reviewStatus.doctorApproved || reviewStatus.nutritionApproved);
+  const riskLocked = hasDoctor && riskHasData && !riskPending; // 风险评估单一审核，已审即锁
+  const curLocked = tab === TABS[0] ? summaryLocked : riskLocked;
 
   const handleSpeak = async () => {
     setSpeaking(true);
@@ -316,19 +323,38 @@ export default function AiHealthScreen({ navigation }) {
             </View>
           )}
 
-          {hasDoctor && curHasData && (
+          {/* 健康分析：5维度(医疗)与生活方式各自独立审核，分开显示状态 */}
+          {tab === TABS[0] && hasDoctor && curHasData && !reviewStatus.isSelfService && (
+            <View style={{ marginBottom: spacing.sm }}>
+              <View style={[styles.doctorNotice, { marginBottom: 6 }]}>
+                <Ionicons name={reviewStatus.doctorApproved ? 'medkit-outline' : 'time-outline'} size={18} color={reviewStatus.doctorApproved ? colors.success : colors.info} />
+                <Text style={styles.doctorNoticeText}>
+                  医疗分析（5维度）：{reviewStatus.doctorApproved ? '已由家庭医生审核确认' : '草稿待家庭医生审核，结果可能调整'}
+                </Text>
+              </View>
+              {reviewStatus.hasLifestyle && (
+                <View style={styles.doctorNotice}>
+                  <Ionicons name={reviewStatus.nutritionApproved ? 'nutrition-outline' : 'time-outline'} size={18} color={reviewStatus.nutritionApproved ? colors.success : colors.info} />
+                  <Text style={styles.doctorNoticeText}>
+                    生活方式评估：{reviewStatus.nutritionApproved ? '已由营养师审核确认' : '草稿待营养师审核，结果可能调整'}
+                  </Text>
+                </View>
+              )}
+            </View>
+          )}
+
+          {/* 风险评估 tab 的审核状态（单一审核） */}
+          {tab === TABS[1] && hasDoctor && curHasData && (
             <View style={styles.doctorNotice}>
-              <Ionicons name={curPending ? 'time-outline' : 'medkit-outline'} size={18} color={colors.info} />
+              <Ionicons name={curPending ? 'time-outline' : 'medkit-outline'} size={18} color={curPending ? colors.info : colors.success} />
               <Text style={styles.doctorNoticeText}>
                 {curPending ? '草稿已生成，待您的家庭医生团队审核，审核结果可能有调整' : '已由您的家庭医生团队审核确认'}
               </Text>
             </View>
           )}
 
-          {/* 已由家庭医生团队审核确认的结果，客户端不再提供「重新生成」入口——
-              重生成会得到与已审核结果完全不同的内容（2026-07-10 金娟反馈①）。
-              待审核草稿(curPending)、无家医自助模式、尚无数据时，仍可生成。 */}
-          {hasDoctor && curHasData && !curPending ? (
+          {/* 任一部分已审核 → 锁定生成入口，防止客户端整份覆盖毁掉已审内容（2026-07-10 金娟反馈①，按部分判断修复） */}
+          {curLocked ? (
             <View style={styles.doctorNotice}>
               <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
               <Text style={styles.doctorNoticeText}>结果已审核确认，如需更新请联系您的健康管理师</Text>

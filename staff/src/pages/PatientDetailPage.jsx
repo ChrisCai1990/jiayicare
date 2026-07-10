@@ -4132,7 +4132,8 @@ export default function PatientDetailPage() {
               const REPORT_KEY_MAP = {
                 fpg:   ['空腹血糖','空腹葡萄糖','GLU','FPG','Glu(空腹)','血糖-0'],
                 hba1c: ['糖化血红蛋白','HbA1c','HbA1C','HBA1C','HBA1c','HbA1c(%)'],
-                tc:    ['总胆固醇','TC','CHOL','胆固醇'],
+                // 裸'胆固醇'会误命中'高密度脂蛋白胆固醇'(HDL)/'低密度脂蛋白胆固醇'(LDL)——金娟2026 TC误取成HDL的1.73(应4.42)。排除脂蛋白类
+                tc:    { names: ['总胆固醇','TC','CHOL','胆固醇'], exclude: ['高密度','低密度','脂蛋白','HDL','LDL'] },
                 tg:    ['甘油三酯','TG','三酰甘油','TRIG'],
                 ldl:   ['低密度脂蛋白','LDL','LDL-C','LDL-胆固醇'],
                 hdl:   ['高密度脂蛋白','HDL','HDL-C','HDL-胆固醇'],
@@ -4838,20 +4839,27 @@ export default function PatientDetailPage() {
                   <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISummary(false)}>保存</button>
                 </>
               )}
-              {/* 生成按钮按角色拆分：家医只生成5维度，营养师只生成生活方式评估，超管两者都能触发（走 all，一次生成全部） */}
+              {/* 生成按钮按角色拆分：家医只生成5维度，营养师只生成生活方式评估，超管两者都能触发（走 all，一次生成全部）
+                  已审核的部分，生成按钮变灰并提示，点击需二次确认，防止误点覆盖已审核内容（2026-07-10 金娟：家医端要提示已审核防误点） */}
               {!editingAISummary && (roleScope === 'doctor') && (
-                <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(curYear, 'doctor')}>
-                  {aiSummaryLoading ? '生成中…' : (hasData ? `重新生成5维度分析` : `生成5维度分析`)}
+                <button className="btn btn-sm" disabled={aiSummaryLoading}
+                  style={docApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
+                  onClick={() => { if (docApproved && !window.confirm('5维度分析已审核确认，重新生成将覆盖已审核内容并需重新审核，确定继续？')) return; handleGenerateAISummary(curYear, 'doctor') }}>
+                  {aiSummaryLoading ? '生成中…' : (docApproved ? '已审核·重新生成5维度' : (hasData ? '重新生成5维度分析' : '生成5维度分析'))}
                 </button>
               )}
               {!editingAISummary && (roleScope === 'nutrition') && (
-                <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(curYear, 'nutrition')}>
-                  {aiSummaryLoading ? '生成中…' : (hasData ? `重新生成生活方式评估` : `生成生活方式评估`)}
+                <button className="btn btn-sm" disabled={aiSummaryLoading}
+                  style={nutApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
+                  onClick={() => { if (nutApproved && !window.confirm('生活方式评估已审核确认，重新生成将覆盖已审核内容并需重新审核，确定继续？')) return; handleGenerateAISummary(curYear, 'nutrition') }}>
+                  {aiSummaryLoading ? '生成中…' : (nutApproved ? '已审核·重新生成生活方式' : (hasData ? '重新生成生活方式评估' : '生成生活方式评估'))}
                 </button>
               )}
               {!editingAISummary && (roleScope === 'all') && (
-                <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading} onClick={() => handleGenerateAISummary(curYear, 'all')}>
-                  {aiSummaryLoading ? '生成中…' : (hasData ? `重新生成${curYear}年度` : `生成${curYear}年度`)}
+                <button className="btn btn-sm" disabled={aiSummaryLoading}
+                  style={(docApproved || nutApproved) ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
+                  onClick={() => { if ((docApproved || nutApproved) && !window.confirm('本年度分析已有部分审核确认，重新生成将覆盖已审核内容并需重新审核，确定继续？')) return; handleGenerateAISummary(curYear, 'all') }}>
+                  {aiSummaryLoading ? '生成中…' : ((docApproved || nutApproved) ? '已审核·重新生成' : (hasData ? `重新生成${curYear}年度` : `生成${curYear}年度`))}
                 </button>
               )}
             </div>
