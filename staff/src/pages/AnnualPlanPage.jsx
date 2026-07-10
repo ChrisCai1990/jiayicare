@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, createContext, useContext } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
@@ -69,6 +69,9 @@ function setModuleField(moduleData, moduleKey, field, value) {
     },
   }
 }
+
+// ── 员工列表上下文：供各模块的"协调专员"下拉选项使用，避免逐层透传 props ──
+const StaffListContext = createContext([])
 
 // ── 折叠面板组件 ──────────────────────────────────────────────────────
 function ModulePanel({ module: mod, moduleData, onChange, patientId, nav }) {
@@ -221,6 +224,23 @@ function SelectInput({ value, onChange, options, placeholder }) {
   )
 }
 
+// ── 员工选择（协调专员/评估人员，从 admin 员工管理名单选，不再手工输入）──
+function StaffSelectInput({ value, onChange, placeholder }) {
+  const staffList = useContext(StaffListContext)
+  return (
+    <select
+      value={value || ''}
+      onChange={e => onChange(e.target.value)}
+      style={{ width: '100%', padding: '7px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, background: '#fff', boxSizing: 'border-box' }}
+    >
+      <option value="">{placeholder || '请选择'}</option>
+      {staffList.map(s => (
+        <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>
+      ))}
+    </select>
+  )
+}
+
 // ── 日期输入 ──────────────────────────────────────────────────────────
 function DateInput({ value, onChange, placeholder }) {
   return (
@@ -275,7 +295,7 @@ function MedicalTreatmentFields({ data, set, nav, patientId }) {
         <TextInput value={data.reason} onChange={v => set('reason', v)} placeholder="主要诊疗需求或问题" multiline />
       </FieldRow>
       <FieldRow label="协调专员">
-        <TextInput value={data.coordinator} onChange={v => set('coordinator', v)} placeholder="负责协调的健管专员姓名" />
+        <StaffSelectInput value={data.coordinator} onChange={v => set('coordinator', v)} placeholder="请选择协调专员" />
       </FieldRow>
       <FieldRow label="备注">
         <TextInput value={data.notes} onChange={v => set('notes', v)} placeholder="其他说明" multiline />
@@ -309,7 +329,7 @@ function SpecialistCollabFields({ data, set, nav, patientId }) {
         <TextInput value={data.reason} onChange={v => set('reason', v)} placeholder="会诊解决的核心问题" multiline />
       </FieldRow>
       <FieldRow label="协调专员">
-        <TextInput value={data.coordinator} onChange={v => set('coordinator', v)} placeholder="负责协调的健管专员" />
+        <StaffSelectInput value={data.coordinator} onChange={v => set('coordinator', v)} placeholder="请选择协调专员" />
       </FieldRow>
       <FieldRow label="备注">
         <TextInput value={data.notes} onChange={v => set('notes', v)} placeholder="其他说明" multiline />
@@ -481,6 +501,11 @@ export default function AnnualPlanPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  const [staffList, setStaffList] = useState([])
+
+  useEffect(() => {
+    staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
+  }, [])
 
   // 加载患者信息和方案
   useEffect(() => {
@@ -533,6 +558,7 @@ export default function AnnualPlanPage() {
   const patientName = patient?.name || '会员'
 
   return (
+    <StaffListContext.Provider value={staffList}>
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px' }}>
 
       {/* ── 顶部导航 ── */}
@@ -655,5 +681,6 @@ export default function AnnualPlanPage() {
         </>
       )}
     </div>
+    </StaffListContext.Provider>
   )
 }

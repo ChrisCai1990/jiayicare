@@ -2739,7 +2739,11 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
       { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.staff._id },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
-    res.json({ success: true, data: plan });
+    // 保存方案的同时按模块内容同步生成随访占位（就医/会诊/复查/接种/检测各条记录直接生成，
+    // 日常监测/季度评估按周期批量排期），不用等客户在app端确认才生成。
+    const { syncAnnualPlanFollowUps } = require('../utils/annualPlanFollowUps');
+    const followUpCount = await syncAnnualPlanFollowUps(plan).catch(() => 0);
+    res.json({ success: true, data: plan, followUpCount });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

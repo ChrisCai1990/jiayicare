@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, createContext, useContext } from 'react'
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
@@ -21,7 +21,7 @@ const MODULE_DEFS = {
       { key: 'department',   label: '就诊科室',   type: 'text', placeholder: '如：心内科' },
       { key: 'expert',       label: '专家姓名',   type: 'text' },
       { key: 'reason',       label: '就医原因',   type: 'textarea' },
-      { key: 'coordinator',  label: '协调专员',   type: 'text' },
+      { key: 'coordinator',  label: '协调专员',   type: 'staff-select' },
       { key: 'notes',        label: '注意事项',   type: 'textarea', internal: true },
     ],
   },
@@ -34,7 +34,7 @@ const MODULE_DEFS = {
       { key: 'department',   label: '会诊科室',     type: 'text' },
       { key: 'expert',       label: '会诊专家',     type: 'text' },
       { key: 'purpose',      label: '会诊目的',     type: 'textarea' },
-      { key: 'coordinator',  label: '协调专员',     type: 'text' },
+      { key: 'coordinator',  label: '协调专员',     type: 'staff-select' },
       { key: 'notes',        label: '注意事项',     type: 'textarea', internal: true },
     ],
   },
@@ -50,7 +50,7 @@ const MODULE_DEFS = {
       { key: 'order_dept',      label: '开单科室',       type: 'text' },
       { key: 'order_expert',    label: '开单专家',       type: 'text' },
       { key: 'assist',          label: '是否安排就医协助', type: 'yesno' },
-      { key: 'coordinator',     label: '协调专员',       type: 'text' },
+      { key: 'coordinator',     label: '协调专员',       type: 'staff-select' },
       { key: 'notes',           label: '注意事项',       type: 'textarea', internal: true },
     ],
   },
@@ -80,7 +80,7 @@ const MODULE_DEFS = {
     fields: [
       { key: 'time',  label: '评估周期', type: 'text', placeholder: '如：2026年上半年' },
       { key: 'focus', label: '评估重点', type: 'textarea' },
-      { key: 'staff', label: '评估人员', type: 'text' },
+      { key: 'staff', label: '评估人员', type: 'staff-select' },
       { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
     ],
   },
@@ -119,6 +119,9 @@ const PLAN_TYPE_MODULES = {
   chronic_stable:    ['abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup', 'quarterly_eval'],
   health_prevention: ['abnormal_followup', 'vaccine', 'monitoring', 'annual_checkup'],
 }
+
+// ── 员工列表上下文：供 FieldInput 里的 staff-select 字段渲染下拉选项，避免逐层透传 props ──
+const StaffListContext = createContext([])
 
 // ── 小组件 ────────────────────────────────────────────────────────────
 function Toggle({ value, onChange }) {
@@ -183,6 +186,17 @@ function FieldInput({ field, value, onChange }) {
         <Toggle value={!!value} onChange={onChange} />
         <span style={{ fontSize: 13, color: value ? '#1E6B50' : '#aaa' }}>{value ? '是' : '否'}</span>
       </div>
+    )
+  }
+  if (field.type === 'staff-select') {
+    const staffList = useContext(StaffListContext)
+    return (
+      <select value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle}>
+        <option value="">请选择{field.label}</option>
+        {staffList.map(s => (
+          <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>
+        ))}
+      </select>
     )
   }
   return (
@@ -352,6 +366,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [pushedAt, setPushedAt]     = useState(null)
   const [confirmedAt, setConfirmedAt] = useState(null)
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
+  const [staffList, setStaffList]   = useState([])
+
+  useEffect(() => {
+    staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
+  }, [])
 
   useEffect(() => {
     setLoading(true)
@@ -447,10 +466,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           setPushedAt(saved.pushedAt || null)
           setConfirmedAt(saved.confirmedAt || null)
         }
+        // 保存方案已同步按内容生成/更新随访占位（就医/会诊/复查等各条记录、日常监测/季度评估周期排期），
+        // 已被医护审核过的随访不受影响，只有还没处理的自动占位会按最新方案内容重新排期
+        toast(res.followUpCount ? `方案已保存，同步生成 ${res.followUpCount} 条随访计划` : '方案已保存')
       } else {
         await staffAPI.updatePlan(id, { content: { planType, moduleData } })
+        toast('方案已保存')
       }
-      toast('方案已保存')
       setDirty(false)
     } catch (err) {
       toast(err.message || '保存失败')
@@ -523,6 +545,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>加载中...</div>
 
   return (
+    <StaffListContext.Provider value={staffList}>
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px' }}>
 
       {/* 顶部导航 */}
@@ -682,5 +705,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         )}
       </div>
     </div>
+    </StaffListContext.Provider>
   )
 }
