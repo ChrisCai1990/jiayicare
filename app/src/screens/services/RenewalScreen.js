@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, Modal, ActivityIndicator, Alert,
+  StyleSheet, SafeAreaView, Modal, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { servicesAPI, messagesAPI } from '../../services/api';
+import { servicesAPI } from '../../services/api';
 
 // 命名型服务方案（非通用服务包），需要在商城中单独配置
 const NAMED_PLAN_LABELS = {
@@ -104,17 +104,45 @@ const PAYMENT_METHODS = [
   { key: 'bank',   label: '银行转账', icon: 'business-outline', color: '#6B7280' },
 ];
 
-// ── 确认弹窗（自带 loading/error 状态）────────────────────────────
-function ConfirmModal({ pkg, visible, onClose, onSuccess }) {
+// ── 确认弹窗（自带 loading/error 状态 + 健康基金/优惠券抵扣）────────
+function ConfirmModal({ pkg, visible, onClose, onSuccess, isRenewal }) {
+  const { user } = useAuth();
   const [payMethod, setPayMethod] = useState('wechat');
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState('');
+
+  const fundBalance = user?.healthFund?.total || 0;
+  const [useFund, setUseFund] = useState(false);
+  const [fundAmountInput, setFundAmountInput] = useState('');
+  const [coupons, setCoupons] = useState([]);
+  const [couponId, setCouponId] = useState(null);
+
+  useEffect(() => {
+    if (!visible) return;
+    servicesAPI.coupons().then(res => {
+      if (res.success) setCoupons(res.data || []);
+    }).catch(() => {});
+  }, [visible]);
+
+  if (!pkg) return null;
+
+  const selectedCoupon = coupons.find(c => c._id === couponId) || null;
+  const couponDiscount = selectedCoupon
+    ? Math.min(
+        selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(pkg.price * (100 - selectedCoupon.value)) / 100,
+        pkg.price
+      )
+    : 0;
+  const priceAfterCoupon = Math.max(0, Math.round((pkg.price - couponDiscount) * 100) / 100);
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
     setErrMsg('');
     setSubmitting(true);
     try {
-      const res = await servicesAPI.order(pkg.id, `服务包申请：${pkg.name}（${pkg.duration}）`, payMethod);
+      const noteLabel = isRenewal ? `续约申请：${pkg.name}（${pkg.duration}）` : `服务包申请：${pkg.name}（${pkg.duration}）`;
+      const res = await servicesAPI.order(pkg.id, noteLabel, payMethod, fundApplied, couponId);
       if (res.success) {
         onSuccess(res.data?.orderNo || '');
       } else {
@@ -127,13 +155,12 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess }) {
     }
   };
 
-  if (!pkg) return null;
   return (
     <Modal visible={!!visible} animationType="slide" transparent onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
           <View style={styles.modalHandle} />
-          <Text style={styles.modalTitle}>确认开通</Text>
+          <Text style={styles.modalTitle}>{isRenewal ? '确认续约' : '确认开通'}</Text>
 
           <View style={styles.modalSummary}>
             <View style={styles.modalSummaryRow}>
@@ -144,11 +171,71 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess }) {
               <Text style={styles.modalSummaryLabel}>原价</Text>
               <Text style={[styles.modalSummaryVal, { textDecorationLine: 'line-through', color: colors.textMuted }]}>¥{pkg.originalPrice}</Text>
             </View>
+            {couponDiscount > 0 && (
+              <View style={styles.modalSummaryRow}>
+                <Text style={styles.modalSummaryLabel}>优惠券抵扣</Text>
+                <Text style={[styles.modalSummaryVal, { color: colors.danger }]}>-¥{couponDiscount}</Text>
+              </View>
+            )}
+            {fundApplied > 0 && (
+              <View style={styles.modalSummaryRow}>
+                <Text style={styles.modalSummaryLabel}>健康基金抵扣</Text>
+                <Text style={[styles.modalSummaryVal, { color: colors.danger }]}>-¥{fundApplied}</Text>
+              </View>
+            )}
             <View style={[styles.modalSummaryRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }]}>
               <Text style={[styles.modalSummaryLabel, { fontWeight: '700', color: colors.textPrimary }]}>实付金额</Text>
-              <Text style={styles.modalFinalPrice}>¥{pkg.price}</Text>
+              <Text style={styles.modalFinalPrice}>¥{finalPrice}</Text>
             </View>
           </View>
+
+          {/* 优惠券 */}
+          {coupons.length > 0 && (
+            <>
+              <Text style={styles.payLabel}>优惠券</Text>
+              <View style={{ gap: 8, marginBottom: spacing.md }}>
+                <TouchableOpacity
+                  style={[styles.payChip, { flex: 0 }, !couponId && styles.payChipActive]}
+                  onPress={() => setCouponId(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.payChipText, !couponId && { color: colors.textPrimary, fontWeight: '700' }]}>不使用优惠券</Text>
+                </TouchableOpacity>
+                {coupons.map(c => (
+                  <TouchableOpacity
+                    key={c._id}
+                    style={[styles.payChip, { flex: 0 }, couponId === c._id && styles.payChipActive]}
+                    onPress={() => setCouponId(c._id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.payChipText, couponId === c._id && { color: colors.textPrimary, fontWeight: '700' }]}>
+                      {(c.title || (c.type === 'amount' ? `¥${c.value}抵用券` : `${c.value / 10}折优惠券`))}{c.minSpend > 0 ? `（满¥${c.minSpend}可用）` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {/* 健康基金抵扣 */}
+          {fundBalance > 0 && (
+            <>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs }}>
+                <Text style={styles.payLabel}>健康基金抵扣（余额 ¥{fundBalance.toFixed(2)}）</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    const next = !useFund;
+                    setUseFund(next);
+                    if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+                  }}
+                  style={[styles.payChip, { flex: 0, paddingHorizontal: 12 }, useFund && styles.payChipActive]}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.payChipText, useFund && { color: colors.textPrimary, fontWeight: '700' }]}>{useFund ? '已启用' : '使用基金'}</Text>
+                </TouchableOpacity>
+              </View>
+            </>
+          )}
 
           {/* 支付方式 */}
           <Text style={styles.payLabel}>支付方式</Text>
@@ -217,7 +304,6 @@ export default function RenewalScreen({ navigation }) {
   const [orderNo, setOrderNo]     = useState('');
   const [renewProduct, setRenewProduct] = useState(null);  // 命名方案的续约商城产品
   const [productLoading, setProductLoading] = useState(false);
-  const [intentSending, setIntentSending] = useState(false);
 
   // 如果是命名型方案，查找对应商城产品
   useEffect(() => {
@@ -230,21 +316,6 @@ export default function RenewalScreen({ navigation }) {
       setRenewProduct(matched || null);
     }).catch(() => {}).finally(() => setProductLoading(false));
   }, [isNamedPlan, user?.servicePackage]);
-
-  // 已有服务的用户点续约 → 发意向通知给健管师，不直接支付
-  const handleRenewalIntent = async () => {
-    setIntentSending(true);
-    try {
-      const pkg = availablePackages[0] || selected;
-      const content = `【续约意向】我希望续约${pkg?.name || '当前服务包'}（当前到期日：${user.serviceExpiry}），请安排续约方案。`;
-      await messagesAPI.send('manager', content);
-      setSuccess(true);
-    } catch (e) {
-      Alert.alert('发送失败', e.message || '网络错误，请稍后重试');
-    } finally {
-      setIntentSending(false);
-    }
-  };
 
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
@@ -265,7 +336,7 @@ export default function RenewalScreen({ navigation }) {
           <View style={styles.successIconRing}>
             <Ionicons name="checkmark-circle" size={56} color={colors.success} />
           </View>
-          <Text style={styles.successTitle}>{hasService ? '续约意向已发送' : '申请已提交'}</Text>
+          <Text style={styles.successTitle}>申请已提交</Text>
           {!!orderNo && (
             <View style={styles.orderNoRow}>
               <Text style={styles.orderNoLabel}>订单号</Text>
@@ -273,10 +344,7 @@ export default function RenewalScreen({ navigation }) {
             </View>
           )}
           <Text style={styles.successDesc}>
-            {hasService
-              ? <>健管师将在 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>1 个工作日内</Text> 联系您，为您定制续约方案并推送确认，确认后再完成支付激活。</>
-              : <>健管师将在 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>1 个工作日内</Text> 与您联系，确认支付并激活 {selected.name}，请保持手机畅通。</>
-            }
+            健管师将在 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>1 个工作日内</Text> 与您联系，确认支付并{hasService ? '完成续约' : `激活 ${selected?.name}`}，请保持手机畅通。
           </Text>
 
           {/* 后续步骤 */}
@@ -404,37 +472,20 @@ export default function RenewalScreen({ navigation }) {
 
       {/* 底部按钮 */}
       <View style={styles.bottomBar}>
-        {hasService ? (
-          // 已有服务 → 发续约意向通知，由健管师定制方案后推送
-          <TouchableOpacity
-            style={[styles.renewBtn, { flex: 1 }, intentSending && { opacity: 0.6 }]}
-            onPress={handleRenewalIntent}
-            disabled={intentSending}
-            activeOpacity={0.85}
-          >
-            {intentSending
-              ? <ActivityIndicator color={colors.white} size="small" />
-              : <Text style={styles.renewBtnText}>发起续约意向</Text>
-            }
-          </TouchableOpacity>
-        ) : (
-          // 无服务 → 选套餐后正常下单开通
-          <>
-            <View>
-              <Text style={styles.bottomPrice}>¥{selected?.price}</Text>
-              <Text style={styles.bottomDuration}>{selected?.name} · {selected?.duration}</Text>
-            </View>
-            <TouchableOpacity style={styles.renewBtn} onPress={() => setConfirming(true)} activeOpacity={0.85}>
-              <Text style={styles.renewBtnText}>立即开通</Text>
-            </TouchableOpacity>
-          </>
-        )}
+        <View>
+          <Text style={styles.bottomPrice}>¥{selected?.price}</Text>
+          <Text style={styles.bottomDuration}>{selected?.name} · {selected?.duration}</Text>
+        </View>
+        <TouchableOpacity style={styles.renewBtn} onPress={() => setConfirming(true)} activeOpacity={0.85}>
+          <Text style={styles.renewBtnText}>{hasService ? '立即续约' : '立即开通'}</Text>
+        </TouchableOpacity>
       </View>
 
-      {!hasService && (
+      {!isNamedPlan && (
         <ConfirmModal
           pkg={selected}
           visible={confirming}
+          isRenewal={hasService}
           onClose={() => setConfirming(false)}
           onSuccess={(no) => { setOrderNo(no); setConfirming(false); setSuccess(true); }}
         />

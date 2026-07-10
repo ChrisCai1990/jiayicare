@@ -3,7 +3,36 @@ const auth = require('../middleware/auth');
 const HealthRecord = require('../models/HealthRecord');
 const FollowUp = require('../models/FollowUp');
 const User = require('../models/User');
+const PointsLog = require('../models/PointsLog');
 const router = express.Router();
+
+// 打卡固定积分：每种打卡类型每天（CST）限计一次，防刷分
+const CHECKIN_POINTS = 5;
+async function awardCheckinPoints(userId, type, recordedAt) {
+  try {
+    const CST_OFFSET = 8 * 60 * 60 * 1000;
+    const now = new Date();
+    // 只有录入日期就是今天（CST）才算真实打卡，历史补录（recordedAt 指向过去）不给分，防止批量导入刷分
+    const nowCST = new Date(now.getTime() + CST_OFFSET);
+    const todayStr = nowCST.toISOString().slice(0, 10);
+    const recCST = new Date(recordedAt.getTime() + CST_OFFSET);
+    const recDateStr = recCST.toISOString().slice(0, 10);
+    if (recDateStr !== todayStr) return;
+
+    const todayStart = new Date(todayStr + 'T00:00:00+08:00');
+    const todayEnd   = new Date(todayStr + 'T23:59:59.999+08:00');
+    const already = await PointsLog.findOne({
+      user: userId, source: 'checkin', refType: type,
+      createdAt: { $gte: todayStart, $lte: todayEnd },
+    });
+    if (already) return;
+
+    await Promise.all([
+      User.collection.updateOne({ _id: userId }, { $inc: { pointsBalance: CHECKIN_POINTS } }),
+      PointsLog.create({ user: userId, amount: CHECKIN_POINTS, source: 'checkin', refType: type, remark: `${type} 打卡` }),
+    ]);
+  } catch { /* 不阻断主流程 */ }
+}
 
 // ── 健康评分计算（需求1）──────────────────────────────────────────
 async function recalcHealthScore(userId) {
@@ -211,6 +240,9 @@ router.post('/', auth, async (req, res) => {
 
     // 异步重算健康评分（不阻断响应）
     recalcHealthScore(req.user._id).catch(() => {});
+
+    // 异步打卡积分（不阻断响应，历史补录不计分）
+    awardCheckinPoints(req.user._id, type, record.recordedAt).catch(() => {});
 
     res.status(201).json({ success: true, data: record, message: '记录成功' });
   } catch (err) {

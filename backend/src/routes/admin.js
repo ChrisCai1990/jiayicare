@@ -10,6 +10,7 @@ const HealthRecord = require('../models/HealthRecord');
 const Task = require('../models/Task');
 const Message = require('../models/Message');
 const Order = require('../models/Order');
+const PointsLog = require('../models/PointsLog');
 const Service = require('../models/Service');
 const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
@@ -314,6 +315,17 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   // 生成核销码（8位大写字母数字，供到店核销时输入/扫码比对）
   order.verifyCode = crypto.randomBytes(4).toString('hex').toUpperCase();
   await order.save();
+
+  // 消费积分：按实付金额（现金部分，不含健康基金/优惠券抵扣）1元=1积分，确认收款后才发放
+  if (order.paidAmount > 0) {
+    const pointsAmount = Math.floor(order.paidAmount);
+    if (pointsAmount > 0) {
+      Promise.all([
+        User.collection.updateOne({ _id: order.user }, { $inc: { pointsBalance: pointsAmount } }),
+        PointsLog.create({ user: order.user, amount: pointsAmount, source: 'consumption', refType: 'Order', refId: order._id, remark: `消费订单 ${order.serviceName}` }),
+      ]).catch(() => {});
+    }
+  }
 
   res.json({ success: true, data: order, message: '已标记为已支付，核销码：' + order.verifyCode });
 });

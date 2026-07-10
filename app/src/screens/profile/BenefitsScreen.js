@@ -6,7 +6,9 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { giftsAPI, partnerBenefitsAPI } from '../../services/api';
+import { giftsAPI, partnerBenefitsAPI, pointsAPI } from '../../services/api';
+
+const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
 
 const FUND_TYPE_LABEL  = { enterprise: '企业赠送', promotion: '活动奖励', other: '其他赠送' };
 const GIFT_TYPE_LABEL  = { fund: '健康基金', service: '服务权益' };
@@ -56,6 +58,22 @@ const styles = StyleSheet.create({
   fundRow:   { flexDirection: 'row', gap: spacing.xl },
   fundItemLabel: { fontSize: 11, color: 'rgba(255,255,255,0.5)', marginBottom: 2 },
   fundItemVal:   { fontSize: 17, fontWeight: '700', color: '#fff' },
+
+  // 积分卡片
+  pointsCard: {
+    marginHorizontal: spacing.lg, marginBottom: spacing.md, borderRadius: radius.md,
+    backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.lg, ...shadow.xs,
+  },
+  pointsLabel: { fontSize: 12, color: colors.textMuted, marginBottom: 4 },
+  pointsTotal: { fontSize: 26, fontWeight: '800', color: colors.textPrimary },
+  pointsLogRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingVertical: 8,
+  },
+  pointsLogRemark: { fontSize: 13, color: colors.textPrimary, fontWeight: '500' },
+  pointsLogDate:   { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  pointsLogAmount: { fontSize: 14, fontWeight: '700' },
 
   // Section
   sectionTitle: {
@@ -219,6 +237,17 @@ export default function BenefitsScreen({ navigation }) {
     finally { setGiftsLoading(false); setRefreshing(false); }
   }, []);
 
+  // ── 积分 ──
+  const [pointsBalance, setPointsBalance] = useState(0);
+  const [pointsLogs, setPointsLogs] = useState([]);
+  const [pointsExpanded, setPointsExpanded] = useState(false);
+  const loadPoints = useCallback(async () => {
+    try {
+      const res = await pointsAPI.get();
+      if (res.success) { setPointsBalance(res.data.balance || 0); setPointsLogs(res.data.logs || []); }
+    } catch {}
+  }, []);
+
   // ── 合作伙伴权益 ──
   const [groups, setGroups] = useState([]);
   const [groupsLoading, setGroupsLoading] = useState(true);
@@ -232,7 +261,7 @@ export default function BenefitsScreen({ navigation }) {
     finally { setGroupsLoading(false); setRefreshing(false); }
   }, []);
 
-  useEffect(() => { loadGifts(); loadPartnerBenefits(); }, [loadGifts, loadPartnerBenefits]);
+  useEffect(() => { loadGifts(); loadPartnerBenefits(); loadPoints(); }, [loadGifts, loadPartnerBenefits, loadPoints]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -294,6 +323,36 @@ export default function BenefitsScreen({ navigation }) {
                 </View>
               </View>
             </View>
+
+            {/* 积分卡片 */}
+            <TouchableOpacity style={styles.pointsCard} onPress={() => setPointsExpanded(v => !v)} activeOpacity={0.85}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                <View>
+                  <Text style={styles.pointsLabel}>我的积分</Text>
+                  <Text style={styles.pointsTotal}>{pointsBalance}</Text>
+                </View>
+                <Ionicons name={pointsExpanded ? 'chevron-up' : 'chevron-down'} size={20} color={colors.textMuted} />
+              </View>
+              {pointsExpanded && (
+                <View style={{ marginTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm }}>
+                  {pointsLogs.length === 0 ? (
+                    <Text style={{ fontSize: 12, color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.md }}>暂无积分记录，打卡或消费即可获得积分</Text>
+                  ) : (
+                    pointsLogs.slice(0, 20).map(log => (
+                      <View key={log._id} style={styles.pointsLogRow}>
+                        <View style={{ flex: 1 }}>
+                          <Text style={styles.pointsLogRemark}>{log.remark || POINTS_SOURCE_LABEL[log.source] || log.source}</Text>
+                          <Text style={styles.pointsLogDate}>{new Date(log.createdAt).toLocaleDateString('zh-CN')}</Text>
+                        </View>
+                        <Text style={[styles.pointsLogAmount, { color: log.amount >= 0 ? colors.success : colors.danger }]}>
+                          {log.amount >= 0 ? '+' : ''}{log.amount}
+                        </Text>
+                      </View>
+                    ))
+                  )}
+                </View>
+              )}
+            </TouchableOpacity>
 
             {giftsLoading ? (
               <View style={styles.loadingWrap}><ActivityIndicator color={colors.primary} /></View>

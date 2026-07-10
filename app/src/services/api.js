@@ -263,6 +263,10 @@ export const giftsAPI = {
   list: () => request('/user/gifts'),
 };
 
+export const pointsAPI = {
+  get: () => request('/user/points'),
+};
+
 export const followupTasksAPI = {
   list: () => request('/user/followup-tasks'),
   done: (id, done = true) => request(`/user/followup-tasks/${id}/done`, { method: 'PATCH', body: JSON.stringify({ done }) }),

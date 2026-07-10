@@ -25,6 +25,7 @@ const SystemConfig = require('../models/SystemConfig');
 const ShareToken = require('../models/ShareToken');
 const CheckupPlan = require('../models/CheckupPlan');
 const GiftRecord   = require('../models/GiftRecord');
+const PointsLog    = require('../models/PointsLog');
 const HealthPlan   = require('../models/HealthPlan');
 const PushRecord   = require('../models/PushRecord');
 const Order        = require('../models/Order');
@@ -802,6 +803,17 @@ router.get('/gifts', auth, async (req, res) => {
     res.json({ success: true, data: gifts });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取权益记录失败', error: err.message });
+  }
+});
+
+// ── 积分：账户余额 + 流水（打卡/消费获得，兑换消耗待后续） ─────────
+// GET /api/user/points
+router.get('/points', auth, async (req, res) => {
+  try {
+    const logs = await PointsLog.find({ user: req.user._id }).sort({ createdAt: -1 }).limit(100);
+    res.json({ success: true, data: { balance: req.user.pointsBalance || 0, logs } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取积分记录失败', error: err.message });
   }
 });
 
