@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react'
-import { adminAPI } from '../api'
+import { adminAPI, API_ORIGIN } from '../api'
 import { useToast } from '../App'
+
+// 上传接口返回相对路径(/api/uploads/xxx)，admin域名与后端API域名不同，需拼上API_ORIGIN才能正常打开
+function safeFileSrc(url) {
+  if (!url) return url
+  if (url.startsWith('/')) return API_ORIGIN + url
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http://')) {
+    return url.replace(/^http:\/\//, 'https://')
+  }
+  return url
+}
 
 const EMPTY_ENTERPRISE = {
   name: '', creditCode: '', contactName: '', contactPhone: '', contactEmail: '',
@@ -76,11 +86,7 @@ function EnterpriseModal({ enterprise, onClose, onSaved }) {
             <label className="form-label">合同结束日期</label>
             <input className="form-input" type="date" value={form.contractEndAt} onChange={e => set('contractEndAt', e.target.value)} />
           </div>
-          <div className="form-group">
-            <label className="form-label">采购名额总数</label>
-            <input className="form-input" type="number" value={form.seatsTotal} onChange={e => set('seatsTotal', e.target.value)} />
-          </div>
-          <div className="form-group">
+          <div className="form-group" style={{ gridColumn: '1/-1' }}>
             <label className="form-label">采购服务包类型</label>
             <input className="form-input" value={form.packageType} onChange={e => set('packageType', e.target.value)} placeholder="如 pkg_1y" />
           </div>
@@ -395,7 +401,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
   const savedYears = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
   const [year, setYear] = useState(String(yearNow))
   const blankFund = { transactions: [], used: '' }
-  const blank = { examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', otherServices: [], healthFund: { ...blankFund } }
+  const blank = { examOrg: '', examCount: '', examUnitPrice: '', examUnitPriceMale: '', examUnitPriceMarriedFemale: '', examUnitPriceSingleFemale: '', examTotal: '', insurerName: '', insuredCount: '', insuredExecCount: '', insuredFamilyCount: '', insuredChildCount: '', insuredAmount: '', healthMgmtFee: '', healthMgmtCount: '', otherServices: [], healthFund: { ...blankFund }, examAttachments: [], insuredAttachments: [], healthMgmtAttachments: [] }
   // 载入已有年度数据时，确保 healthFund 结构完整（旧数据可能没有这个字段）
   const withDefaults = (d) => ({ ...blank, ...d, healthFund: { ...blankFund, ...(d?.healthFund || {}) } })
   const [form, setForm] = useState(() => withDefaults(byYear[String(yearNow)]))
@@ -416,6 +422,18 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
   const fundTotal = (form.healthFund?.transactions || []).reduce((s, t) => s + (Number(t.amount) || 0), 0)
   const fundBalance = fundTotal - (Number(form.healthFund?.used) || 0)
 
+  // 附件（服务合约等），三个维度各自一份列表：[{ name, url }]
+  const [uploadingKey, setUploadingKey] = useState('')
+  const addAttachment = async (key, file) => {
+    if (!file) return
+    setUploadingKey(key)
+    try {
+      const res = await adminAPI.uploadImage(file)
+      setForm(f => ({ ...f, [key]: [...(f[key] || []), { name: file.name, url: res.data.url }] }))
+    } catch (err) { toast('❌ ' + (err.message || '上传失败')) } finally { setUploadingKey('') }
+  }
+  const rmAttachment = (key, i) => setForm(f => ({ ...f, [key]: f[key].filter((_, idx) => idx !== i) }))
+
   const save = async () => {
     setSaving(true)
     try {
@@ -432,6 +450,36 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
         <input className="form-input" type="number" value={form[key]} onChange={e => set(key, e.target.value)} placeholder="0" />
         {unit && <span style={{ fontSize: 12, color: '#888' }}>{unit}</span>}
       </div>
+    </div>
+  )
+
+  // 附件列表（服务合约等，每个维度独立存储，支持多文件）
+  const attachmentList = (key, label) => (
+    <div style={{ gridColumn: 'span 2', marginTop: 4 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+        <label className="form-label" style={{ marginBottom: 0 }}>{label}</label>
+        <label className="btn btn-sm btn-secondary" style={{ cursor: 'pointer', margin: 0 }}>
+          {uploadingKey === key ? '上传中...' : '+ 上传附件'}
+          <input
+            type="file"
+            accept="image/*,.pdf"
+            style={{ display: 'none' }}
+            disabled={uploadingKey === key}
+            onChange={e => { addAttachment(key, e.target.files[0]); e.target.value = '' }}
+          />
+        </label>
+      </div>
+      {(form[key] || []).length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {form[key].map((a, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, background: '#f8faf9', borderRadius: 6, padding: '6px 10px' }}>
+              <span>📎</span>
+              <a href={safeFileSrc(a.url)} target="_blank" rel="noreferrer" style={{ flex: 1, color: '#1E6B50', textDecoration: 'none', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{a.name}</a>
+              <button type="button" onClick={() => rmAttachment(key, i)} style={{ color: '#c0392b', background: 'none', border: 'none', cursor: 'pointer', fontSize: 16 }}>×</button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 
@@ -503,6 +551,7 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
             {numField('客单价·未婚女性', 'examUnitPriceSingleFemale', '¥')}
             {numField('体检总额', 'examTotal', '¥')}
             {dateRange('examStartAt', 'examEndAt')}
+            {attachmentList('examAttachments', '体检服务合约附件')}
           </div>
 
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '16px 0 8px' }}>保险（如为高管购买高端医疗险）</div>
@@ -517,12 +566,15 @@ function HrDataModal({ enterprise, onClose, onSaved, toast }) {
             {numField('参保·孩子', 'insuredChildCount', '人')}
             {numField('保险金额', 'insuredAmount', '¥')}
             {dateRange('insuredStartAt', 'insuredEndAt')}
+            {attachmentList('insuredAttachments', '保险服务合约附件')}
           </div>
 
           <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', margin: '16px 0 8px' }}>健康管理</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            {numField('服务人数', 'healthMgmtCount', '人')}
             {numField('健康管理费', 'healthMgmtFee', '¥')}
             {dateRange('healthMgmtStartAt', 'healthMgmtEndAt')}
+            {attachmentList('healthMgmtAttachments', '健康管理服务合约附件')}
           </div>
 
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '16px 0 8px' }}>

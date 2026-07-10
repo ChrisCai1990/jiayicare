@@ -1,5 +1,7 @@
 // 企业HR门户专用 API 封装：独立 token 存储（jy_hr_token），与超管/医护端 token 完全隔离
 const BASE = import.meta.env.VITE_API_URL ? `${import.meta.env.VITE_API_URL}/enterprise-hr` : 'http://121.40.156.39/api/enterprise-hr'
+// 附件等静态资源用（/api/uploads/xxx 相对路径需拼域名才能访问，同 admin/src/api.js 的 API_ORIGIN 用法）
+export const API_ORIGIN = BASE.replace(/\/api\/enterprise-hr$/, '')
 
 let _token = localStorage.getItem('jy_hr_token') || ''
 

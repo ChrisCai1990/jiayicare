@@ -1347,6 +1347,10 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
 
   const num = (v) => (v === '' || v === null || v === undefined ? 0 : Number(v) || 0);
   const str = (v) => (v || '').trim();
+  // 附件列表清洗：[{ name, url }]，过滤掉没有url的脏数据
+  const cleanAttachments = (arr) => Array.isArray(arr)
+    ? arr.filter(a => (a?.url || '').trim()).map(a => ({ name: (a?.name || '').trim() || '附件', url: a.url.trim() }))
+    : [];
   const clean = {
     examOrg:       (data?.examOrg || '').trim(),
     examCount:     num(data?.examCount),
@@ -1358,6 +1362,7 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
     examTotal:     num(data?.examTotal),
     examStartAt:   str(data?.examStartAt),    // 体检服务起止（三维度时间各不相同，各自记）
     examEndAt:     str(data?.examEndAt),
+    examAttachments: cleanAttachments(data?.examAttachments),   // 体检服务合约附件
     insurerName:   (data?.insurerName || '').trim(),
     insuredCount:  num(data?.insuredCount),   // 保留兼容：参保总人数
     // 参保人数按人群细分（高管/配偶/孩子）；字段名 insuredFamilyCount 沿用（改名会丢历史数据）
@@ -1367,9 +1372,12 @@ router.put('/enterprises/:id/hr-data', adminAuth, async (req, res) => {
     insuredAmount: num(data?.insuredAmount),
     insuredStartAt: str(data?.insuredStartAt),  // 高端险起止
     insuredEndAt:   str(data?.insuredEndAt),
+    insuredAttachments: cleanAttachments(data?.insuredAttachments),   // 保险服务合约附件
+    healthMgmtCount: num(data?.healthMgmtCount),   // 健康管理服务人数
     healthMgmtFee: num(data?.healthMgmtFee),
     healthMgmtStartAt: str(data?.healthMgmtStartAt),  // 健康管理服务起止
     healthMgmtEndAt:   str(data?.healthMgmtEndAt),
+    healthMgmtAttachments: cleanAttachments(data?.healthMgmtAttachments),   // 健康管理服务合约附件
     // 付费健康管理服务清单：name+频次+具体内容
     otherServices: Array.isArray(data?.otherServices)
       ? data.otherServices.filter(s => (s?.name || '').trim()).map(s => ({

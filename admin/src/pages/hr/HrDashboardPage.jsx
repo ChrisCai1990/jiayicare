@@ -1,8 +1,18 @@
 import React, { useEffect, useState } from 'react'
-import { hrAPI } from '../../hrApi'
+import { hrAPI, API_ORIGIN } from '../../hrApi'
 import { useHr } from './HrApp'
 
 const STATUS_LABEL = { active: '合作中', expired: '已到期', suspended: '已暂停' }
+
+// 附件相对路径(/api/uploads/xxx)需拼上后端域名才能打开，与admin端产品图片同一套修复逻辑
+function safeFileSrc(url) {
+  if (!url) return url
+  if (url.startsWith('/')) return API_ORIGIN + url
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && url.startsWith('http://')) {
+    return url.replace(/^http:\/\//, 'https://')
+  }
+  return url
+}
 
 function StatCard({ label, value, sub, color = '#1E6B50' }) {
   return (
@@ -20,6 +30,26 @@ function fmtPeriod(start, end) {
   const f = (d) => d ? new Date(d).toLocaleDateString('zh-CN') : ''
   if (start && end) return `${f(start)} ~ ${f(end)}`
   return start ? `${f(start)} 起` : `至 ${f(end)}`
+}
+
+// 服务合约附件列表（下载/查看），三维度各自展示各自的
+function AttachmentList({ list }) {
+  if (!list || list.length === 0) return null
+  return (
+    <div style={{ marginTop: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: '#4A6558', marginBottom: 8 }}>服务合约附件</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        {list.map((a, i) => (
+          <a key={i} href={safeFileSrc(a.url)} target="_blank" rel="noreferrer" style={{
+            display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#1E6B50',
+            textDecoration: 'none', padding: '8px 12px', background: '#f8faf9', borderRadius: 6,
+          }}>
+            <span>📎</span><span>{a.name}</span>
+          </a>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 // 三维度分区容器：体检 / 保险 / 健康管理，每块独立卡片+标题+服务期间，避免所有指标挤成一堆
@@ -174,6 +204,7 @@ export default function HrDashboardPage() {
                   <StatCard label="客单价·未婚女性" value={`¥${hr.examUnitPriceSingleFemale || 0}`} />
                 </div>
               ) : null}
+              <AttachmentList list={hr.examAttachments} />
             </ServiceSection>
 
             {/* 维度二：保险服务 */}
@@ -190,11 +221,13 @@ export default function HrDashboardPage() {
                   <StatCard label="参保·孩子" value={hr.insuredChildCount || 0} sub="人" />
                 </div>
               ) : null}
+              <AttachmentList list={hr.insuredAttachments} />
             </ServiceSection>
 
             {/* 维度三：健康管理服务（含服务清单+启动状态、健康基金） */}
             <ServiceSection icon="💚" title={`${overview.year} 年 · 健康管理服务`}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <StatCard label="服务人数" value={hr.healthMgmtCount || 0} sub="人" />
                 <StatCard label="健康管理费" value={`¥${(hr.healthMgmtFee || 0).toLocaleString()}`} color="#D97706" />
               </div>
 
@@ -253,6 +286,7 @@ export default function HrDashboardPage() {
                   )}
                 </div>
               )}
+              <AttachmentList list={hr.healthMgmtAttachments} />
             </ServiceSection>
           </>
         )
