@@ -1,5 +1,5 @@
 const { chat } = require('./ai');
-const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings } = require('./labFromScreening');
+const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings, extractExamFindings } = require('./labFromScreening');
 const { assessCancerCoverage, buildCoverageText } = require('./cancerScreeningCoverage');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
@@ -73,6 +73,9 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   // 肿瘤标志物（单独维度）+ 基因检测：数据源扩全，健康分析要读全部专项筛查数据（2026-07-10 金娟）
   const tumorMarkerText = buildTumorMarkerText(extractTumorMarkers(allReports));
   const geneticText = extractGeneticFindings(allReports);
+  // 专科检查异常发现：从所有报告 diagnosis/conclusion 文字里识别明确异常（听力/视力/眼耳鼻喉/口腔/骨密度等），
+  // 解决"异常写在文字里但 status 没标 abnormal 就被 AI 忽略"（金娟2026右耳高频听力下降此前未体现）——2026-07-10
+  const examFindingsText = extractExamFindings(allReports);
   // 肿瘤筛查覆盖度（规则引擎确定性结论，按男女前十大肿瘤逐项判断"该做的筛查做了没"，
   // 含胃镜免胃蛋白酶原/肠镜免便潜血/HP连续3年阴性/乳腺钼靶40岁等规则）——2026-07-10 金娟
   const coverageText = buildCoverageText(assessCancerCoverage(user, allReports));
@@ -135,7 +138,7 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
 
   const prompt = `${roleIntro}问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。
 
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。你手上的是该患者全部专项筛查数据（体检指标/肿瘤标志物/影像内镜所见/基因/心理量表），请充分利用，不要只盯着少数几个指标。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。每个分析维度都应体现「几年数据的趋势变化 → 原因分析 → 未来建议」三段式，而非仅描述当前值。
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。你手上的是该患者全部专项筛查数据（体检指标/肿瘤标志物/影像内镜所见/基因/心理量表/听力视力等专科检查），请充分利用，不要只盯着少数几个指标。【专科检查异常发现】里列出的每一条（如听力高频下降、视力/屈光异常、口腔、骨密度等）都必须在分析中被提及并给出建议，这类非主流指标最容易被遗漏，务必逐条覆盖，纳入 medical_priority 或 chronic_disease 相应维度。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。每个分析维度都应体现「几年数据的趋势变化 → 原因分析 → 未来建议」三段式，而非仅描述当前值。
 
 【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议患者恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
 
@@ -172,6 +175,9 @@ ${labTrendLines}
 
 【历年专项筛查报告（按年份列出所有记录）】
 ${reportSummary}
+
+【专科检查异常发现（含听力/视力/眼耳鼻喉/口腔/骨密度等所有专科，务必逐条纳入分析，不要遗漏）】
+${examFindingsText}
 
 【肿瘤标志物（历年，单独维度分析）】
 ${tumorMarkerText}

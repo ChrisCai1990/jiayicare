@@ -203,10 +203,47 @@ function extractGeneticFindings(reports) {
   return lines.length ? lines.join('\n') : '暂无基因检测报告';
 }
 
+// 从所有报告的 diagnosis/conclusion/findings 文字里识别「明确异常的专科检查发现」，
+// 单独成高优先级清单——解决"异常写在文字里但 status 没标 abnormal 就被 AI 忽略"的问题。
+// 典型场景（金娟2026）：纯音听阈测试 diagnosis="右耳高频听力下降"、眼科 diagnosis="右眼屈光不正"，
+// 这些 status 都是 unknown，此前不进异常清单，AI 分析看不到。覆盖听力/视力/眼耳鼻喉/口腔/骨密度/肺功能等所有专科。
+const ABNORMAL_HINT = ['下降', '减退', '不正', '异常', '增生', '结节', '囊肿', '息肉', '钙化', '斑块', '狭窄', '肥大', '萎缩', '病变', '硬化', '肿大', '偏高', '偏低', '升高', '降低', '缺失', '龋', '牙周', '受损', '损伤', '障碍', '不足', '减低', '增厚', '积液', '炎', '阳性', '可疑', '肠化', '化生', '糜烂', '溃疡', '返流', '反流'];
+// 明确正常的措辞——命中这些且不含异常词，判为正常，不进异常清单
+const NORMAL_HINT = ['未见异常', '未见明显异常', '正常', '阴性', '未见明显', '无异常'];
+
+function extractExamFindings(reports) {
+  const sorted = [...(reports || [])].sort((a, b) => new Date(reportDate(b)) - new Date(reportDate(a)));
+  const lines = [];
+  const seen = new Set();
+  sorted.forEach(r => {
+    const d = (reportDate(r) || '').toString().slice(0, 10);
+    (r.reportItems || []).forEach(it => {
+      const dx = `${it.diagnosis || ''}`.trim();
+      const cc = `${it.conclusion || ''}`.trim();
+      const text = (dx || cc || '').replace(/^小结[:：]\s*/, '').trim();
+      if (!text) return;
+      // 先把"未见异常/未见明显异常/无异常/正常/阴性"这类正常措辞整体剔除，
+      // 再判断剩余文字里有没有真正的异常词——避免"未见异常"里的"异常"被误判成异常（金娟耳鼻喉科"未见异常"曾误入）
+      const residual = text
+        .replace(/未见明显异常|未见异常|无异常|未见明显|未见/g, '')
+        .replace(/正常|阴性/g, '');
+      const hasAbn = ABNORMAL_HINT.some(k => residual.includes(k)) || (it.status === 'abnormal');
+      if (!hasAbn) return;
+      const key = `${it.name}|${text}`;
+      if (seen.has(key)) return; // 同一异常发现只取最近一次
+      seen.add(key);
+      const fnd = `${it.findings || ''}`.trim().slice(0, 180);
+      lines.push(`  [${d}] ${it.name || '检查'}：${text}${fnd ? `（所见：${fnd}）` : ''}`);
+    });
+  });
+  return lines.length ? lines.join('\n') : '未见明确异常的专科检查发现';
+}
+
 module.exports = {
   REPORT_KEY_MAP,
   LAB_LABEL,
   TUMOR_MARKERS,
+  extractExamFindings,
   deriveLabFromReports,
   buildLatestLabText,
   buildTrendText,
