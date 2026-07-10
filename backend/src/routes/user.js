@@ -29,6 +29,7 @@ const PointsLog    = require('../models/PointsLog');
 const HealthPlan   = require('../models/HealthPlan');
 const PushRecord   = require('../models/PushRecord');
 const Order        = require('../models/Order');
+const Coupon       = require('../models/Coupon');
 const Message      = require('../models/Message');
 const FollowUp         = require('../models/FollowUp');
 const ExamRequisition  = require('../models/ExamRequisition');
@@ -880,26 +881,88 @@ router.get('/push-records', auth, async (req, res) => {
 });
 
 // POST /api/user/push-records/:id/pay — 从推送记录直接下单
+// useHealthFund: 抵扣的健康基金金额（作用于勾选产品合计）；couponId: 使用的优惠券；paymentMethod: 支付方式
 router.post('/push-records/:id/pay', auth, async (req, res) => {
   try {
     const record = await PushRecord.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!record) return res.status(404).json({ success: false, message: '推送记录不存在' });
-    const { selectedProductIds } = req.body;
+    const { selectedProductIds, useHealthFund, couponId, paymentMethod } = req.body;
     if (!selectedProductIds?.length) return res.status(400).json({ success: false, message: '请选择要购买的产品' });
     // 从 products 数组里找出选中的项
     const toPay = (record.products || []).filter(p => selectedProductIds.includes(p.productId));
     if (!toPay.length) return res.status(400).json({ success: false, message: '所选产品不在推送列表中' });
-    const orders = await Order.insertMany(toPay.map(p => ({
-      user: req.user._id,
-      serviceId: p.productId,
-      serviceName: p.name,
-      servicePrice: p.price,
-      orderType: 'product',
-      pushRecordId: record._id,
-      status: 'pending',
-    })));
-    if (!record.readAt) await PushRecord.updateOne({ _id: record._id }, { readAt: new Date() });
-    res.json({ success: true, data: orders, message: `已创建 ${orders.length} 个订单` });
+
+    const totalPrice = toPay.reduce((s, p) => s + (p.price || 0), 0);
+
+    // ── 健康基金 + 优惠券抵扣（作用于勾选产品合计，按价格占比分摊到各订单）──
+    let coupon = null;
+    let couponDiscount = 0;
+    if (couponId) {
+      coupon = await Coupon.findOne({ _id: couponId, patientId: req.user._id, status: 'active' });
+      if (!coupon) return res.status(400).json({ success: false, message: '优惠券不可用或已使用' });
+      if (coupon.validTo && new Date(coupon.validTo) < new Date()) {
+        return res.status(400).json({ success: false, message: '优惠券已过期' });
+      }
+      if (coupon.minSpend && totalPrice < coupon.minSpend) {
+        return res.status(400).json({ success: false, message: `订单需满 ¥${coupon.minSpend} 才能使用此券` });
+      }
+      couponDiscount = coupon.type === 'amount' ? coupon.value : Math.round(totalPrice * (100 - coupon.value)) / 100;
+      couponDiscount = Math.min(couponDiscount, totalPrice);
+    }
+    const priceAfterCoupon = Math.max(0, Math.round((totalPrice - couponDiscount) * 100) / 100);
+
+    let fundUsed = 0;
+    if (useHealthFund > 0) {
+      const balance = req.user.healthFundBalance || 0;
+      if (useHealthFund > balance) return res.status(400).json({ success: false, message: '健康基金余额不足' });
+      fundUsed = Math.min(useHealthFund, priceAfterCoupon);
+    }
+    const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
+    const totalDiscount = couponDiscount + fundUsed;
+
+    // 按各产品价格占比分摊抵扣，得到每个订单的实付金额（最后一项吸收舍入误差）
+    let allocated = 0;
+    const orderDocs = toPay.map((p, idx) => {
+      const share = totalPrice > 0 ? (p.price || 0) / totalPrice : 0;
+      let paid = idx === toPay.length - 1
+        ? Math.max(0, Math.round((finalPrice - allocated) * 100) / 100)
+        : Math.round((p.price || 0) * (1 - totalDiscount / (totalPrice || 1)) * 100) / 100;
+      paid = Math.max(0, paid);
+      allocated += paid;
+      return {
+        user: req.user._id,
+        serviceId: p.productId,
+        serviceName: p.name,
+        servicePrice: p.price,
+        orderType: 'product',
+        pushRecordId: record._id,
+        status: 'pending',
+        paymentMethod: fundUsed > 0 && finalPrice === 0 ? 'healthFund' : (paymentMethod || ''),
+        paidAmount: paid,
+      };
+    });
+
+    const orders = await Order.insertMany(orderDocs);
+
+    const followUps = [];
+    if (!record.readAt) followUps.push(PushRecord.updateOne({ _id: record._id }, { readAt: new Date() }));
+    if (fundUsed > 0) {
+      followUps.push(User.collection.updateOne({ _id: req.user._id }, { $inc: { healthFundBalance: -fundUsed } }));
+    }
+    if (coupon) {
+      coupon.status = 'used';
+      coupon.usedAt = new Date();
+      coupon.usedOrderId = orders[0]._id;
+      followUps.push(coupon.save());
+    }
+    await Promise.all(followUps);
+
+    res.json({
+      success: true,
+      data: orders,
+      message: `已创建 ${orders.length} 个订单`,
+      summary: { totalPrice, couponDiscount, fundUsed, finalPrice },
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: '下单失败', error: err.message });
   }

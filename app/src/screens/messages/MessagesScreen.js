@@ -6,7 +6,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI, mediaUrl } from '../../services/api';
+import { messagesAPI, pushRecordsAPI, servicesAPI, mediaUrl } from '../../services/api';
 import { mockMessages } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import Avatar from '../../components/Avatar';
@@ -99,7 +99,13 @@ const CAT_COLOR_MAP = {
   '健康课程': '#8e44ad', '服务包': '#D97706',
 };
 
+const RENEWAL_PAYMENT_METHODS = [
+  { key: 'wechat', label: '微信支付', icon: 'logo-wechat', color: '#07C160' },
+  { key: 'alipay', label: '支付宝',   icon: 'card-outline', color: '#1677FF' },
+];
+
 function ProductPushDetail({ msg, onClose }) {
+  const { user } = useAuth();
   // products 数组：新版多产品；兜底：用旧版单产品构造一条
   const productList = (msg.products && msg.products.length > 0)
     ? msg.products
@@ -109,6 +115,17 @@ function ProductPushDetail({ msg, onClose }) {
   const [paying, setPaying] = useState(false);
   const [paid, setPaid] = useState(false);
   const [payError, setPayError] = useState('');
+  const [payMethod, setPayMethod] = useState('wechat');
+
+  const fundBalance = user?.healthFund?.total || 0;
+  const [useFund, setUseFund] = useState(false);
+  const [fundAmountInput, setFundAmountInput] = useState('');
+  const [coupons, setCoupons] = useState([]);
+  const [couponId, setCouponId] = useState(null);
+
+  useEffect(() => {
+    servicesAPI.coupons().then(res => { if (res.success) setCoupons(res.data || []); }).catch(() => {});
+  }, []);
 
   const toggleItem = (id) =>
     setCheckedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
@@ -120,11 +137,27 @@ function ProductPushDetail({ msg, onClose }) {
   const checkedItems = productList.filter(p => checkedIds.includes(p.productId));
   const total = checkedItems.reduce((s, p) => s + (p.price || 0), 0);
 
+  const selectedCoupon = coupons.find(c => c._id === couponId) || null;
+  const couponDiscount = selectedCoupon
+    ? Math.min(
+        selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(total * (100 - selectedCoupon.value)) / 100,
+        total
+      )
+    : 0;
+  const priceAfterCoupon = Math.max(0, Math.round((total - couponDiscount) * 100) / 100);
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
+
   const handlePay = async () => {
     if (!checkedIds.length) return;
     setPaying(true); setPayError('');
     try {
-      await pushRecordsAPI.pay(msg._id, { selectedProductIds: checkedIds });
+      await pushRecordsAPI.pay(msg._id, {
+        selectedProductIds: checkedIds,
+        useHealthFund: fundApplied,
+        couponId,
+        paymentMethod: payMethod,
+      });
       setPaid(true);
     } catch (e) {
       setPayError(e.message || '下单失败，请稍后重试');
@@ -144,7 +177,7 @@ function ProductPushDetail({ msg, onClose }) {
             </View>
             <Text style={{ fontSize: 20, fontWeight: '800', color: colors.textPrimary, marginBottom: 8 }}>订单已提交</Text>
             <Text style={{ fontSize: 14, color: colors.textMuted, marginBottom: 8 }}>
-              共 {checkedItems.length} 项，合计 ¥{total}
+              共 {checkedItems.length} 项，实付 ¥{finalPrice}
             </Text>
             <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingHorizontal: 32, lineHeight: 20, marginBottom: 32 }}>
               健管师将尽快与您确认并安排后续服务
@@ -253,6 +286,80 @@ function ProductPushDetail({ msg, onClose }) {
             })}
           </ScrollView>
 
+          {/* 优惠券 */}
+          {coupons.length > 0 && (
+            <View style={{ marginBottom: spacing.sm }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textPrimary, marginBottom: 6 }}>优惠券</Text>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => setCouponId(null)}
+                  style={{
+                    paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md, marginRight: 8,
+                    borderWidth: 1.5, borderColor: !couponId ? colors.primary : colors.border,
+                    backgroundColor: !couponId ? colors.primary + '0D' : colors.white,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: !couponId ? colors.primary : colors.textMuted, fontWeight: !couponId ? '700' : '500' }}>不使用</Text>
+                </TouchableOpacity>
+                {coupons.map(c => (
+                  <TouchableOpacity
+                    key={c._id}
+                    onPress={() => setCouponId(c._id)}
+                    style={{
+                      paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.md, marginRight: 8,
+                      borderWidth: 1.5, borderColor: couponId === c._id ? colors.primary : colors.border,
+                      backgroundColor: couponId === c._id ? colors.primary + '0D' : colors.white,
+                    }}
+                  >
+                    <Text style={{ fontSize: 12, color: couponId === c._id ? colors.primary : colors.textMuted, fontWeight: couponId === c._id ? '700' : '500' }}>
+                      {(c.title || (c.type === 'amount' ? `¥${c.value}抵用券` : `${c.value / 10}折优惠券`))}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          )}
+
+          {/* 健康基金抵扣 */}
+          {fundBalance > 0 && (
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: colors.textPrimary }}>健康基金抵扣（余额 ¥{fundBalance.toFixed(2)}）</Text>
+              <TouchableOpacity
+                onPress={() => {
+                  const next = !useFund;
+                  setUseFund(next);
+                  if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+                }}
+                style={{
+                  paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full,
+                  borderWidth: 1.5, borderColor: useFund ? colors.primary : colors.border,
+                  backgroundColor: useFund ? colors.primary : colors.white,
+                }}
+              >
+                <Text style={{ fontSize: 12, fontWeight: '600', color: useFund ? colors.white : colors.textMuted }}>{useFund ? '已启用' : '使用基金'}</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+
+          {/* 支付方式 */}
+          <View style={{ flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.sm }}>
+            {RENEWAL_PAYMENT_METHODS.map(m => (
+              <TouchableOpacity
+                key={m.key}
+                onPress={() => setPayMethod(m.key)}
+                style={{
+                  flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5,
+                  paddingVertical: 10, borderRadius: radius.md,
+                  borderWidth: 1.5, borderColor: payMethod === m.key ? colors.primary : colors.border,
+                  backgroundColor: payMethod === m.key ? colors.primary + '08' : colors.background,
+                }}
+              >
+                <Ionicons name={m.icon} size={16} color={payMethod === m.key ? m.color : colors.textMuted} />
+                <Text style={{ fontSize: 12, color: payMethod === m.key ? colors.textPrimary : colors.textMuted, fontWeight: payMethod === m.key ? '700' : '500' }}>{m.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
           {/* 错误提示 */}
           {!!payError && (
             <Text style={{ fontSize: 12, color: colors.danger, textAlign: 'center', marginBottom: 6 }}>{payError}</Text>
@@ -262,10 +369,10 @@ function ProductPushDetail({ msg, onClose }) {
           <View style={[styles.detailFooter, { flexDirection: 'column', gap: 10 }]}>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
               <Text style={{ fontSize: 13, color: colors.textMuted }}>
-                已选 {checkedIds.length}/{productList.length} 项
+                已选 {checkedIds.length}/{productList.length} 项{(couponDiscount > 0 || fundApplied > 0) ? `（原价¥${total}）` : ''}
               </Text>
               <Text style={{ fontSize: 18, fontWeight: '800', color: colors.primary }}>
-                合计 ¥{total}
+                合计 ¥{finalPrice}
               </Text>
             </View>
             <View style={{ flexDirection: 'row', gap: spacing.sm }}>
@@ -283,7 +390,7 @@ function ProductPushDetail({ msg, onClose }) {
               >
                 <Ionicons name="card-outline" size={16} color={colors.white} />
                 <Text style={styles.detailBuyBtnText}>
-                  {paying ? '提交中...' : `立即支付 ¥${total}`}
+                  {paying ? '提交中...' : `立即支付 ¥${finalPrice}`}
                 </Text>
               </TouchableOpacity>
             </View>

@@ -1,22 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, Modal, ActivityIndicator,
+  StyleSheet, SafeAreaView, Modal, ActivityIndicator, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { servicesAPI } from '../../services/api';
+import { servicesAPI, messagesAPI } from '../../services/api';
 
-// 命名型服务方案（非通用服务包），需要在商城中单独配置
-const NAMED_PLAN_LABELS = {
-  health_prevention: '健康预防计划',
-  chronic_stable:    '慢病维稳计划',
-  young_state:       '健康年轻态计划',
-  health_reshape:    '健康重塑计划',
-};
-
-// ── 续费套餐配置 ──────────────────────────────────────────────────
+// ── 服务套餐配置（仅无服务的新用户自主开通用；已有服务的续约走健管师推送+消息页支付，不用这套）──
 const PACKAGES = [
   {
     id: 'pkg_1y',
@@ -291,31 +283,33 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess, isRenewal }) {
 }
 
 // ── 主页面 ────────────────────────────────────────────────────────
+// 已有服务的用户：续约都由健管师在商城选好产品后推送，客户只需在「消息」里勾选支付，
+// 这里只展示当前所属计划状态 + 引导去联系健管师，不再自己拼商城套餐名称乱猜。
+// 无服务的新用户：仍可在此自主选 4 个通用服务包开通（这不是续约场景）。
 export default function RenewalScreen({ navigation }) {
   const { user } = useAuth();
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
-  const isNamedPlan = !!(user?.servicePackage && NAMED_PLAN_LABELS[user.servicePackage]);
-  // 续约时只展示与当前订阅套餐一致的选项；方案类型用户 or 新开通用户展示全部
-  const matchedPackages = PACKAGES.filter(p => p.id === user?.servicePackage);
-  const availablePackages = (hasService && matchedPackages.length > 0) ? matchedPackages : PACKAGES;
-  const [selected, setSelected]   = useState(availablePackages[0] || PACKAGES[0]);
+  const [selected, setSelected]   = useState(PACKAGES[0]);
   const [confirming, setConfirming] = useState(false);
   const [success, setSuccess]     = useState(false);
   const [orderNo, setOrderNo]     = useState('');
-  const [renewProduct, setRenewProduct] = useState(null);  // 命名方案的续约商城产品
-  const [productLoading, setProductLoading] = useState(false);
+  const [intentSending, setIntentSending] = useState(false);
 
-  // 如果是命名型方案，查找对应商城产品
-  useEffect(() => {
-    if (!isNamedPlan) return;
-    setProductLoading(true);
-    servicesAPI.list().then(res => {
-      const products = res?.data || res || [];
-      const planLabel = NAMED_PLAN_LABELS[user.servicePackage] || '';
-      const matched = products.find(p => p.name?.includes(planLabel) || p.tags?.includes(user.servicePackage));
-      setRenewProduct(matched || null);
-    }).catch(() => {}).finally(() => setProductLoading(false));
-  }, [isNamedPlan, user?.servicePackage]);
+  const handleContactManager = async () => {
+    setIntentSending(true);
+    try {
+      const content = `【续约意向】我希望续约当前服务方案（${user?.servicePackage || ''}，到期日：${user?.serviceExpiry}），请协助安排续约。`;
+      await messagesAPI.send('manager', content);
+      Alert.alert('已发送', '续约意向已通知健管师，请留意「消息」页面的产品推送并完成支付。', [
+        { text: '去看消息', onPress: () => navigation.navigate('Messages') },
+        { text: '好的', style: 'cancel' },
+      ]);
+    } catch (e) {
+      Alert.alert('发送失败', e.message || '网络错误，请稍后重试');
+    } finally {
+      setIntentSending(false);
+    }
+  };
 
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
   const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
@@ -344,7 +338,7 @@ export default function RenewalScreen({ navigation }) {
             </View>
           )}
           <Text style={styles.successDesc}>
-            健管师将在 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>1 个工作日内</Text> 与您联系，确认支付并{hasService ? '完成续约' : `激活 ${selected?.name}`}，请保持手机畅通。
+            健管师将在 <Text style={{ fontWeight: '700', color: colors.textPrimary }}>1 个工作日内</Text> 与您联系，确认支付并激活 {selected?.name}，请保持手机畅通。
           </Text>
 
           {/* 后续步骤 */}
@@ -380,21 +374,19 @@ export default function RenewalScreen({ navigation }) {
     );
   }
 
-  return (
-    <SafeAreaView style={styles.container}>
-      {/* 顶部栏 */}
-      <View style={styles.topBar}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-          <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
-        </TouchableOpacity>
-        <Text style={styles.pageTitle}>{hasService ? '服务续费' : '开通服务包'}</Text>
-        <View style={{ width: 36 }} />
-      </View>
+  // 已有服务的用户：纯状态展示 + 联系健管师，不再自主选套餐
+  if (hasService) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={styles.topBar}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+          </TouchableOpacity>
+          <Text style={styles.pageTitle}>服务续费</Text>
+          <View style={{ width: 36 }} />
+        </View>
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 120 }}>
-
-        {/* 当前状态 */}
-        {hasService && (
+        <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 120 }}>
           <View style={[styles.statusCard, isExpired && styles.statusCardDanger, isExpiring && styles.statusCardWarning]}>
             <Ionicons
               name={isExpired ? 'alert-circle' : isExpiring ? 'time' : 'shield-checkmark'}
@@ -402,7 +394,7 @@ export default function RenewalScreen({ navigation }) {
               color={isExpired ? colors.danger : isExpiring ? colors.warning : colors.success}
             />
             <View style={{ flex: 1 }}>
-              <Text style={styles.statusCardTitle}>{availablePackages[0]?.name || user.servicePackage}</Text>
+              <Text style={styles.statusCardTitle}>{user.servicePackage}</Text>
               <Text style={styles.statusCardSub}>
                 {isExpired ? '服务包已到期，续费后立即恢复全部功能'
                   : isExpiring ? `服务包将于 ${daysLeft} 天后到期`
@@ -410,56 +402,74 @@ export default function RenewalScreen({ navigation }) {
               </Text>
             </View>
           </View>
-        )}
 
-        {/* 命名型方案续约（young_state等） */}
-        {isNamedPlan ? (
-          <View>
-            <Text style={styles.sectionTitle}>续约</Text>
-            {productLoading ? (
-              <View style={{ padding: spacing.lg, alignItems: 'center' }}>
-                <ActivityIndicator color={colors.primary} />
-              </View>
-            ) : renewProduct ? (
-              <TouchableOpacity
-                style={{ backgroundColor: colors.primary, borderRadius: radius.md, padding: spacing.lg, alignItems: 'center' }}
-                onPress={() => navigation.navigate('ServiceMall', { highlightId: renewProduct._id })}
-              >
-                <Text style={{ color: colors.white, fontSize: 15, fontWeight: '700' }}>前往商城续约 →</Text>
-                <Text style={{ color: colors.white + 'cc', fontSize: 13, marginTop: 4 }}>{renewProduct.name}</Text>
-              </TouchableOpacity>
-            ) : (
-              <View style={{ backgroundColor: '#FEF3E2', borderRadius: radius.md, padding: spacing.lg, alignItems: 'center', gap: spacing.sm }}>
-                <Ionicons name="information-circle-outline" size={32} color={colors.warning} />
-                <Text style={{ fontSize: 14, fontWeight: '600', color: '#92400E' }}>暂不可续约，请联系健康管家</Text>
-                <Text style={{ fontSize: 12, color: '#B45309', textAlign: 'center' }}>
-                  您当前的服务方案（{NAMED_PLAN_LABELS[user?.servicePackage]}）需由健康管家协助续约，请直接联系您的专属管家。
-                </Text>
-              </View>
-            )}
+          <View style={{ backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, gap: spacing.sm }}>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: colors.textPrimary }}>续约由健管师为您安排</Text>
+            <Text style={{ fontSize: 13, color: colors.textSecondary, lineHeight: 20 }}>
+              点击下方按钮通知健管师，健管师确认续约方案后会以消息形式推送给您，届时可在「消息」页面直接勾选支付（支持健康基金和优惠券抵扣）。
+            </Text>
           </View>
-        ) : (
-          /* 标准服务包续约 */
-          <View>
-            <Text style={styles.sectionTitle}>选择续费套餐</Text>
-            {availablePackages.map(pkg => (
-              <PackageCard
-                key={pkg.id}
-                pkg={pkg}
-                selected={selected?.id === pkg.id}
-                onSelect={setSelected}
-              />
-            ))}
-          </View>
-        )}
+
+          <TouchableOpacity
+            style={{ backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.primary, padding: spacing.md, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+            onPress={() => navigation.navigate('Messages')}
+            activeOpacity={0.85}
+          >
+            <Ionicons name="chatbubbles-outline" size={16} color={colors.primary} />
+            <Text style={{ fontSize: 14, color: colors.primary, fontWeight: '700' }}>查看消息里的续约推送</Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        <View style={styles.bottomBar}>
+          <TouchableOpacity
+            style={[styles.renewBtn, { flex: 1 }, intentSending && { opacity: 0.6 }]}
+            onPress={handleContactManager}
+            disabled={intentSending}
+            activeOpacity={0.85}
+          >
+            {intentSending
+              ? <ActivityIndicator color={colors.white} size="small" />
+              : <Text style={styles.renewBtnText}>联系健管师续约</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* 顶部栏 */}
+      <View style={styles.topBar}>
+        <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+          <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
+        </TouchableOpacity>
+        <Text style={styles.pageTitle}>开通服务包</Text>
+        <View style={{ width: 36 }} />
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{ padding: spacing.lg, gap: spacing.md, paddingBottom: 120 }}>
+
+        {/* 标准服务包开通 */}
+        <View>
+          <Text style={styles.sectionTitle}>选择服务套餐</Text>
+          {PACKAGES.map(pkg => (
+            <PackageCard
+              key={pkg.id}
+              pkg={pkg}
+              selected={selected?.id === pkg.id}
+              onSelect={setSelected}
+            />
+          ))}
+        </View>
 
         {/* 权益说明 */}
         <View style={styles.benefitCard}>
-          <Text style={styles.benefitTitle}>续费专属权益</Text>
+          <Text style={styles.benefitTitle}>专属权益</Text>
           {[
-            '续费不中断：在有效期内续费，服务时间自动顺延',
-            '老用户优惠：在原套餐基础上额外享 97 折',
-            '无缝衔接：续费即激活，不损失已积累的健康数据',
+            '专属健管师全程陪伴管理',
+            '专属家庭医生咨询问诊',
+            '无缝衔接：开通即激活，全部功能立即可用',
           ].map((b, i) => (
             <View key={i} style={styles.benefitRow}>
               <Ionicons name="gift-outline" size={14} color={colors.primary} />
@@ -477,19 +487,17 @@ export default function RenewalScreen({ navigation }) {
           <Text style={styles.bottomDuration}>{selected?.name} · {selected?.duration}</Text>
         </View>
         <TouchableOpacity style={styles.renewBtn} onPress={() => setConfirming(true)} activeOpacity={0.85}>
-          <Text style={styles.renewBtnText}>{hasService ? '立即续约' : '立即开通'}</Text>
+          <Text style={styles.renewBtnText}>立即开通</Text>
         </TouchableOpacity>
       </View>
 
-      {!isNamedPlan && (
-        <ConfirmModal
-          pkg={selected}
-          visible={confirming}
-          isRenewal={hasService}
-          onClose={() => setConfirming(false)}
-          onSuccess={(no) => { setOrderNo(no); setConfirming(false); setSuccess(true); }}
-        />
-      )}
+      <ConfirmModal
+        pkg={selected}
+        visible={confirming}
+        isRenewal={false}
+        onClose={() => setConfirming(false)}
+        onSuccess={(no) => { setOrderNo(no); setConfirming(false); setSuccess(true); }}
+      />
 
     </SafeAreaView>
   );
