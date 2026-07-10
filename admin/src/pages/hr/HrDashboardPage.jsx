@@ -190,7 +190,7 @@ export default function HrDashboardPage() {
         return (
           <>
             {/* 维度一：体检服务 */}
-            <ServiceSection icon="🩺" title={`${overview.year} 年 · 体检服务`}>
+            <ServiceSection icon="🩺" title={`${overview.year} 年 · 体检服务`} period={fmtPeriod(hr.examStartAt, hr.examEndAt)}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <StatCard label="体检机构" value={hr.examOrg || '-'} />
                 <StatCard label="当年体检人数" value={hr.examCount || 0} sub="人" />
@@ -208,7 +208,7 @@ export default function HrDashboardPage() {
             </ServiceSection>
 
             {/* 维度二：保险服务 */}
-            <ServiceSection icon="🛡️" title={`${overview.year} 年 · 保险服务`}>
+            <ServiceSection icon="🛡️" title={`${overview.year} 年 · 保险服务`} period={fmtPeriod(hr.insuredStartAt, hr.insuredEndAt)}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <StatCard label="保险公司" value={hr.insurerName || '-'} />
                 <StatCard label="参保人数（总体）" value={hr.insuredCount || 0} sub="人" />
@@ -225,7 +225,7 @@ export default function HrDashboardPage() {
             </ServiceSection>
 
             {/* 维度三：健康管理服务（含服务清单+启动状态、健康基金） */}
-            <ServiceSection icon="💚" title={`${overview.year} 年 · 健康管理服务`}>
+            <ServiceSection icon="💚" title={`${overview.year} 年 · 健康管理服务`} period={fmtPeriod(hr.healthMgmtStartAt, hr.healthMgmtEndAt)}>
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
                 <StatCard label="服务人数" value={hr.healthMgmtCount || 0} sub="人" />
                 <StatCard label="健康管理费" value={`¥${(hr.healthMgmtFee || 0).toLocaleString()}`} color="#D97706" />
