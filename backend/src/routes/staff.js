@@ -177,6 +177,25 @@ router.get('/me', staffAuth, async (req, res) => {
   });
 });
 
+// GET /api/staff/service-options — 医护端归类时「服务包」下拉选项（读 admin 配好的商城服务列表）
+// 2026-07-10 金娟：服务包不再手工录入，从 admin 端配好的服务里选
+router.get('/service-options', staffAuth, async (req, res) => {
+  try {
+    const Service = require('../models/Service');
+    const services = await Service.find({ active: true }).sort({ sortOrder: 1, createdAt: 1 }).select('name category price');
+    res.json({ success: true, data: services });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// GET /api/staff/member-source-options — 医护端「会员来源」下拉选项（读 admin 配好的会员来源）
+router.get('/member-source-options', staffAuth, async (req, res) => {
+  try {
+    const MemberSource = require('../models/MemberSource');
+    const sources = await MemberSource.find({ status: 'active' }).sort({ createdAt: 1 }).select('name');
+    res.json({ success: true, data: sources });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // 获取某员工所有下属 ID（递归一层，支持组长看下属）
 async function getSubordinateIds(staffId) {
   const subs = await Admin.find({ managerId: staffId }).select('_id');

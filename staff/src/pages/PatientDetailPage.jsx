@@ -970,6 +970,9 @@ export default function PatientDetailPage() {
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
+  // 管理信息下拉选项：服务包(admin商城服务) + 会员来源(admin配置)，替代手工录入（2026-07-10 金娟）
+  const [serviceOptions, setServiceOptions] = useState([])
+  const [memberSourceOptions, setMemberSourceOptions] = useState([])
   // 趋势图
   const [trendRecords, setTrendRecords] = useState(null) // null=未加载，[]+=已加载
   const [trendLoading, setTrendLoading] = useState(false)
@@ -1023,6 +1026,9 @@ export default function PatientDetailPage() {
   const [ocrClassifyOpen, setOcrClassifyOpen] = useState({})    // {[rowIndex]: bool}
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
+  // 管理信息下拉选项（服务包/会员来源），一次性加载
+  useEffect(() => { staffAPI.serviceOptions().then(r => setServiceOptions(r.data || [])).catch(() => {}) }, [])
+  useEffect(() => { staffAPI.memberSourceOptions().then(r => setMemberSourceOptions(r.data || [])).catch(() => {}) }, [])
 
   // 问卷 → 健康档案 自动导入审核
   const [archiveDraftOpen, setArchiveDraftOpen] = useState(false)
@@ -2257,8 +2263,17 @@ export default function PatientDetailPage() {
                   ))}
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务包</label>
-                    <input className="form-input" placeholder="如：年度服务包" value={editForm.servicePackage}
-                      onChange={e => setEditForm(f => ({ ...f, servicePackage: e.target.value }))} />
+                    {/* 从 admin 商城服务列表选，不再手工录（2026-07-10 金娟）；兼容历史手工值：不在选项内也保留可见 */}
+                    <select className="form-input" value={editForm.servicePackage}
+                      onChange={e => setEditForm(f => ({ ...f, servicePackage: e.target.value }))}>
+                      <option value="">请选择服务包</option>
+                      {serviceOptions.map(s => (
+                        <option key={s._id} value={s.name}>{s.name}{s.price ? `（¥${s.price}）` : ''}</option>
+                      ))}
+                      {editForm.servicePackage && !serviceOptions.some(s => s.name === editForm.servicePackage) && (
+                        <option value={editForm.servicePackage}>{editForm.servicePackage}（历史值）</option>
+                      )}
+                    </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务开始时间</label>
@@ -2272,8 +2287,17 @@ export default function PatientDetailPage() {
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">会员来源</label>
-                    <input className="form-input" value={editForm.source}
-                      onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))} />
+                    {/* 从 admin 会员来源配置选，不再手工录（2026-07-10 金娟）；兼容历史手工值 */}
+                    <select className="form-input" value={editForm.source}
+                      onChange={e => setEditForm(f => ({ ...f, source: e.target.value }))}>
+                      <option value="">请选择会员来源</option>
+                      {memberSourceOptions.map(s => (
+                        <option key={s._id} value={s.name}>{s.name}</option>
+                      ))}
+                      {editForm.source && !memberSourceOptions.some(s => s.name === editForm.source) && (
+                        <option value={editForm.source}>{editForm.source}（历史值）</option>
+                      )}
+                    </select>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">备注</label>

@@ -48,6 +48,8 @@ export const staffAPI = {
   createPatient:      (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
   updatePatient:      (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   recalculateScore:   (id)     => req(`/staff/patients/${id}/recalculate-score`, { method: 'POST' }),
+  serviceOptions:     ()       => req('/staff/service-options'),        // 服务包下拉选项（admin商城服务）
+  memberSourceOptions:()       => req('/staff/member-source-options'),  // 会员来源下拉选项（admin配置）
   searchRegistered:   (q)      => req('/staff/patients/search-registered?q=' + encodeURIComponent(q || '')),
   assignPatient:      (data)   => req('/staff/patients/assign', { method: 'POST', body: JSON.stringify(data) }),
 
