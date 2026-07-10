@@ -22,9 +22,26 @@ const DATED_RECORD_MODULES = [
 // ③季度评估(quarterly_eval)固定每3个月生成一条，排到未来一年内
 // ④年度体检(annual_checkup)按 date 字段生成一条
 // ⑤生活方式评估(lifestyle)的评估周期是自由文本（如"2026年上半年"），无法解析成具体日期，不自动生成，需医护手动建随访
-function buildAnnualPlanFollowUps(plan) {
+async function buildAnnualPlanFollowUps(plan) {
   const moduleData = plan.moduleData || {};
   const created = [];
+
+  // "协调专员/评估人员"字段存的是 Admin _id（staff-select 选择器），拼进 content 前要解析成姓名，
+  // 否则客户端会看到一串无意义的 ObjectId 字符串。一次性查出本方案里出现过的所有员工id。
+  const Admin = require('../models/Admin');
+  const staffIds = new Set();
+  DATED_RECORD_MODULES.forEach(mod => {
+    (moduleData[mod.key]?.records || []).forEach(rec => { if (rec.coordinator) staffIds.add(String(rec.coordinator)); });
+  });
+  if (moduleData.lifestyle?.staff) staffIds.add(String(moduleData.lifestyle.staff));
+  const staffNameMap = {};
+  if (staffIds.size) {
+    const mongoose = require('mongoose');
+    const validIds = [...staffIds].filter(id => mongoose.Types.ObjectId.isValid(id));
+    const staffs = await Admin.find({ _id: { $in: validIds } }).select('name').lean();
+    staffs.forEach(s => { staffNameMap[String(s._id)] = s.name; });
+  }
+  const staffName = (idOrName) => staffNameMap[String(idOrName)] || idOrName;
   // content：客户端详情弹窗展示的"随访内容"，此前自动生成的随访只有 theme 标题、content 为空，
   // 用户打开详情只看到一句通用兜底文案（"健管师会在随访时详细沟通"），看不到具体要做什么——
   // 现在按模块字段拼出有信息量的说明，让客户提前知道这次随访/提醒具体关于什么。
@@ -61,28 +78,36 @@ function buildAnnualPlanFollowUps(plan) {
         rec.items && `项目：${rec.items}`,
         rec.institution && `机构：${rec.institution}`,
         rec.brand && `品牌：${rec.brand}`,
+        rec.order_dept && `开单科室：${rec.order_dept}`,
+        rec.order_expert && rec.order_expert !== '无' && `开单专家：${rec.order_expert}`,
+        rec.assist && '已安排就医协助',
+        rec.coordinator && `协调专员：${staffName(rec.coordinator)}`,
+        rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean);
       push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'));
     });
   }
 
-  // ② 日常监测：按配置频率批量排期到未来一年
-  const monitoring = moduleData.monitoring;
-  if (monitoring && monitoring.enabled !== false) {
-    const days = FREQUENCY_DAYS[monitoring.frequency];
-    if (days) {
+  // ② 日常监测：multi:true 多条记录，每条各自按 frequency 批量排期到未来一年
+  const monitoringRecords = moduleData.monitoring?.records;
+  if (Array.isArray(monitoringRecords)) {
+    monitoringRecords.forEach((rec) => {
+      const days = FREQUENCY_DAYS[rec.frequency];
+      if (!days) return;
       const yearEnd = new Date(Date.now() + 365 * 86400000);
       let cursor = new Date(Date.now() + days * 86400000);
       const monitorLines = [
-        monitoring.items && `监测项目：${monitoring.items}`,
-        monitoring.purpose && `监测目的：${monitoring.purpose}`,
-        `监测频率：${monitoring.frequency}`,
+        rec.items && `监测项目：${rec.items}`,
+        rec.time && `监测时间：${rec.time}`,
+        rec.purpose && `监测目的：${rec.purpose}`,
+        rec.frequency && `监测频率：${rec.frequency}`,
+        rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean).join('\n');
       while (cursor <= yearEnd) {
-        push(cursor, `日常监测随访 · ${monitoring.items || ''}`, monitorLines);
+        push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines);
         cursor = new Date(cursor.getTime() + days * 86400000);
       }
-    }
+    });
   }
 
   // ③ 季度评估：固定每3个月一条，排到未来一年
@@ -121,7 +146,7 @@ function buildAnnualPlanFollowUps(plan) {
 // 避免"跟客户沟通后已手动调整"的随访被下一次保存方案时静默覆盖丢失。
 async function syncAnnualPlanFollowUps(plan) {
   await FollowUp.deleteMany({ sourceAnnualPlanId: plan._id, sourceType: 'scheduled', aiStatus: 'pending' });
-  const toCreate = buildAnnualPlanFollowUps(plan);
+  const toCreate = await buildAnnualPlanFollowUps(plan);
   if (toCreate.length) await FollowUp.insertMany(toCreate);
   return toCreate.length;
 }
