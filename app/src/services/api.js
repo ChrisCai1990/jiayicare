@@ -196,6 +196,7 @@ export const chatAPI = {
       method: 'POST',
       body: JSON.stringify({ lastMessage }),
     }),
+  getLogs: (userId) => request(`/chat/logs/${userId}`),
 };
 
 // ── Questionnaire ─────────────────────────────────────────────────
