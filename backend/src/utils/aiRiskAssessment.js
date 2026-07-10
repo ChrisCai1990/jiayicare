@@ -126,7 +126,7 @@ async function generateRiskAssessment(user) {
     return `${label}：近30天共${recs.length}次打卡，最早${fmt(first)}→最近${fmt(last)}`;
   }).join('\n') || '近30天暂无相关打卡记录';
 
-  const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。
+  const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。建议内容如涉及需要医生跟进，一律使用"家庭医生"这一称呼，不要用"主治医生"（本平台提供的是家庭医生服务）。
 
 【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
 【个人生活习惯】${lifestyleLines}

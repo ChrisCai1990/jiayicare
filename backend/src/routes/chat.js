@@ -13,7 +13,7 @@ const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康
 2. 回答控制在200字以内，简洁精准
 3. 涉及药物剂量调整、诊断等，必须建议用户咨询专科医师
 4. 每次回答末尾加：「本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。」
-5. 不捏造数据，对不确定的信息说"建议咨询您的主治医生"`;
+5. 不捏造数据，对不确定的信息说"建议咨询您的家庭医生"`;
 
 // 从AI健康分析/风险评估结果中摘取要点，供对话时结合上下文回答（只取已审核可见的版本，与患者当前实际看到的一致）
 function buildHealthInsightContext(user) {
@@ -111,7 +111,7 @@ router.post('/', auth, async (req, res) => {
 
   // 超出范围直接返回
   if (intent === 'out_of_scope') {
-    const reply = '您的问题涉及专业诊疗范畴，AI助手无法提供此类建议。请联系您的主治医生或拨打急救电话。本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
+    const reply = '您的问题涉及专业诊疗范畴，AI助手无法提供此类建议。请联系您的家庭医生或拨打急救电话。本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
     await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: reply });
     return res.json({ success: true, data: { content: reply, intent } });
   }

@@ -25,7 +25,10 @@ const DATED_RECORD_MODULES = [
 function buildAnnualPlanFollowUps(plan) {
   const moduleData = plan.moduleData || {};
   const created = [];
-  const push = (date, theme) => {
+  // content：客户端详情弹窗展示的"随访内容"，此前自动生成的随访只有 theme 标题、content 为空，
+  // 用户打开详情只看到一句通用兜底文案（"健管师会在随访时详细沟通"），看不到具体要做什么——
+  // 现在按模块字段拼出有信息量的说明，让客户提前知道这次随访/提醒具体关于什么。
+  const push = (date, theme, content) => {
     if (!date) return;
     const d = new Date(date);
     if (isNaN(d.getTime())) return;
@@ -34,6 +37,7 @@ function buildAnnualPlanFollowUps(plan) {
       staffId: plan.createdBy,
       date: d,
       theme,
+      content: content || '',
       status: 'planned',
       sourceAnnualPlanId: plan._id,
       sourceType: 'scheduled',
@@ -42,13 +46,23 @@ function buildAnnualPlanFollowUps(plan) {
     });
   };
 
-  // ① 有具体日期的多条记录模块：每条各生成一条
+  // ① 有具体日期的多条记录模块：每条各生成一条，content拼该条记录的关键字段
   for (const mod of DATED_RECORD_MODULES) {
     const records = moduleData[mod.key]?.records;
     if (!Array.isArray(records)) continue;
     records.forEach((rec, i) => {
       const label = rec.hospital || rec.name || rec.items || `第${i + 1}条`;
-      push(rec[mod.dateField], `${mod.theme} · ${label}`);
+      const lines = [
+        rec.hospital && `就医/会诊医院：${rec.hospital}`,
+        rec.department && `科室：${rec.department}`,
+        rec.expert && `专家：${rec.expert}`,
+        rec.reason && `原因：${rec.reason}`,
+        rec.purpose && `目的：${rec.purpose}`,
+        rec.items && `项目：${rec.items}`,
+        rec.institution && `机构：${rec.institution}`,
+        rec.brand && `品牌：${rec.brand}`,
+      ].filter(Boolean);
+      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'));
     });
   }
 
@@ -59,8 +73,13 @@ function buildAnnualPlanFollowUps(plan) {
     if (days) {
       const yearEnd = new Date(Date.now() + 365 * 86400000);
       let cursor = new Date(Date.now() + days * 86400000);
+      const monitorLines = [
+        monitoring.items && `监测项目：${monitoring.items}`,
+        monitoring.purpose && `监测目的：${monitoring.purpose}`,
+        `监测频率：${monitoring.frequency}`,
+      ].filter(Boolean).join('\n');
       while (cursor <= yearEnd) {
-        push(cursor, `日常监测随访 · ${monitoring.items || ''}`);
+        push(cursor, `日常监测随访 · ${monitoring.items || ''}`, monitorLines);
         cursor = new Date(cursor.getTime() + days * 86400000);
       }
     }
@@ -71,8 +90,13 @@ function buildAnnualPlanFollowUps(plan) {
   if (quarterlyEval && quarterlyEval.enabled !== false) {
     const yearEnd = new Date(Date.now() + 365 * 86400000);
     let cursor = new Date(Date.now() + 90 * 86400000);
+    const evalItems = [
+      quarterlyEval.body_composition && '人体成分测量',
+      quarterlyEval.diet_analysis && '膳食调研及分析',
+    ].filter(Boolean);
+    const evalContent = evalItems.length ? `本次评估内容：${evalItems.join('、')}` : '';
     while (cursor <= yearEnd) {
-      push(cursor, '季度评估随访');
+      push(cursor, '季度评估随访', evalContent);
       cursor = new Date(cursor.getTime() + 90 * 86400000);
     }
   }
@@ -80,7 +104,12 @@ function buildAnnualPlanFollowUps(plan) {
   // ④ 年度体检：按计划日期生成一条
   const annualCheckup = moduleData.annual_checkup;
   if (annualCheckup && annualCheckup.enabled !== false) {
-    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`);
+    const checkupLines = [
+      annualCheckup.institution && `计划体检机构：${annualCheckup.institution}`,
+      annualCheckup.focus && `重点关注：${annualCheckup.focus}`,
+      annualCheckup.escort && '已安排陪检服务',
+    ].filter(Boolean).join('\n');
+    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines);
   }
 
   return created;
