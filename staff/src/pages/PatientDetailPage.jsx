@@ -981,6 +981,10 @@ export default function PatientDetailPage() {
   const [editingLabValues, setEditingLabValues] = useState(false)
   const [labNewRecord, setLabNewRecord] = useState(false) // true=新增记录 false=编辑当前
   const [labForm, setLabForm] = useState({})
+  // 单项修改体检关键指标（直接改来源报告的 reportItem，不依赖AI重跑）
+  const [editingMetric, setEditingMetric] = useState(null) // { key, reportId, itemName, label }
+  const [editingMetricVal, setEditingMetricVal] = useState('')
+  const [savingMetric, setSavingMetric] = useState(false)
   const [editingDiseaseSeverity, setEditingDiseaseSeverity] = useState(false)
   const [severityForm, setSeverityForm] = useState({})
   const [showTagEditor, setShowTagEditor] = useState(false)
@@ -1436,6 +1440,32 @@ export default function PatientDetailPage() {
       setLabNewRecord(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  // 单项修改体检关键指标：把新值写回它来源报告里的那条 reportItem（走 updateReport，不依赖AI重跑）
+  const handleSaveMetric = async () => {
+    if (!editingMetric || !editingMetric.reportId) { toast('该指标无来源报告，暂不能单项修改'); return }
+    const newVal = editingMetricVal.trim()
+    if (!newVal) { toast('请输入数值'); return }
+    setSavingMetric(true)
+    try {
+      const report = screeningReports.find(r => String(r._id) === String(editingMetric.reportId))
+      if (!report) { toast('找不到来源报告，请刷新后重试'); setSavingMetric(false); return }
+      const items = (report.reportItems || []).map(it => ({ ...it }))
+      const target = items.find(it => it.name === editingMetric.itemName)
+      if (!target) { toast('来源报告中找不到该项目，请刷新后重试'); setSavingMetric(false); return }
+      target.value = newVal
+      await staffAPI.updateReport(editingMetric.reportId, { reportItems: items })
+      await staffAPI.recalculateScore(id)
+      toast(`${editingMetric.label} 已更新为 ${newVal}`)
+      setEditingMetric(null)
+      setEditingMetricVal('')
+      load()
+    } catch (err) {
+      toast(err.message || '保存失败')
+    } finally {
+      setSavingMetric(false)
+    }
   }
 
   const handleSaveDiseaseSeverity = async () => {
@@ -4088,11 +4118,6 @@ export default function PatientDetailPage() {
                       </select>
                     </div>
                   </div>
-                  <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8, fontWeight: 600 }}>超声</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 20px', marginBottom: 16 }}>
-                    <LabTextarea label="肝脏超声" placeholder="如：脂肪肝（轻度）" value={labForm.liverUs || ''} onChange={e => setLabForm(f => ({ ...f, liverUs: e.target.value }))} />
-                    <LabTextarea label="颈动脉超声" placeholder="如：内膜增厚，IMT 0.9mm" value={labForm.carotiUs || ''} onChange={e => setLabForm(f => ({ ...f, carotiUs: e.target.value }))} />
-                  </div>
                   <div>
                     <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>检测日期</span>
                     <input className="form-control" type="date" value={labForm.labDate || ''}
@@ -4112,7 +4137,8 @@ export default function PatientDetailPage() {
                 ldl:   ['低密度脂蛋白','LDL','LDL-C','LDL-胆固醇'],
                 hdl:   ['高密度脂蛋白','HDL','HDL-C','HDL-胆固醇'],
                 alt:   ['谷丙转氨酶','ALT','丙氨酸转氨酶','丙氨酸氨基转移酶'],
-                ast:   ['谷草转氨酶','AST','天冬氨酸转氨酶','门冬氨酸氨基转移酶'],
+                // 天/门冬 × 转氨酶/氨基转移酶 四种写法全覆盖（2026-07-10：金娟名下"天冬氨酸氨基转移酶"此前漏配，导致历年AST只显示最新一年）
+                ast:   ['谷草转氨酶','AST','天冬氨酸转氨酶','天冬氨酸氨基转移酶','门冬氨酸转氨酶','门冬氨酸氨基转移酶'],
                 // 故意不含'谷氨酰转肽酶'，避免匹配到 尿谷氨酰转肽酶G（尿液GGT）
                 ggt:   ['γ-谷氨酰转肽酶','γ-谷氨酸转肽酶','GGT','γ-GT','γGT','谷氨酸转肽酶'],
                 // 排除'结晶/盐结晶'：三大常规里的"尿酸结晶"不是血尿酸
@@ -4131,11 +4157,6 @@ export default function PatientDetailPage() {
                 sbp:   { names: ['收缩压','SBP','收缩压(mmHg)'], exclude: ['下降率','最大值','最小值','负荷','标准差','变异'] },
                 dbp:   { names: ['舒张压','DBP','舒张压(mmHg)'], exclude: ['下降率','最大值','最小值','负荷','标准差','变异'] },
                 weight:['体重','Weight','BW'],
-              }
-              // 超声：按标题匹配整条报告的 note
-              const US_TITLE_MAP = {
-                liverUs:  ['肝脏超声','肝胆超声','腹部超声','肝脏彩超','肝胆彩超'],
-                carotiUs: ['颈动脉超声','颈动脉彩超','颈部血管超声'],
               }
               // 排序报告（最新在前）
               const sortedReports = [...screeningReports].sort((a, b) =>
@@ -4160,6 +4181,9 @@ export default function PatientDetailPage() {
                       source: report.title || '专项筛查',
                       abnormal: item.status === 'abnormal',
                       referenceRange: item.referenceRange || '',
+                      // 供「单项修改」精确回写：记来源报告 id 与命中的项目名
+                      reportId: report._id,
+                      itemName: item.name,
                     }
                     break
                   }
@@ -4183,26 +4207,14 @@ export default function PatientDetailPage() {
                   }
                 }
               })
-              // 从报告标题派生超声文字
-              for (const [key, titles] of Object.entries(US_TITLE_MAP)) {
-                for (const report of sortedReports) {
-                  if (titles.some(t => (report.title || '').includes(t))) {
-                    const text = report.note || (report.reportItems || []).map(ri => ri.name + (ri.value ? '：' + ri.value : '')).join('；')
-                    if (text) {
-                      derived[key] = { value: text, date: report.checkDate || '', source: report.title }
-                      break
-                    }
-                  }
-                }
-              }
+              // （超声不纳入体检关键指标——金娟明确无此要求，2026-07-10 移除）
 
               // 合并：labValues 优先（手动录入），derived 作为来源补充展示
               const lv = user.labValues || {}
               const history = user.labHistory || []
               const gender = user.gender === '女' ? 'F' : 'M'
-              const ABNORMAL_KEYWORDS = ['异常','增生','结节','增厚','囊肿','脂肪肝','钙化','斑块','狭窄','病变','硬化','肿大','回声','低回声']
 
-              // 17 项指标定义：key / label / unit / 判断函数
+              // 指标定义：key / label / unit / 判断函数
               const LAB_DEFS = [
                 { key: 'weight',  label: '体重',           unit: 'kg',           check: () => null },
                 { key: 'sbp',     label: '收缩压',          unit: 'mmHg',         check: v => parseFloat(v) >= 130, ref: '90-130',  refLow: 90,  refHigh: 130 },
@@ -4222,8 +4234,6 @@ export default function PatientDetailPage() {
                 { key: 'ggt',     label: 'GGT',            unit: 'U/L',           check: v => parseFloat(v) > (gender === 'F' ? 35 : 50), ref: gender === 'F' ? '7-35' : '11-50', refLow: gender === 'F' ? 7 : 11, refHigh: gender === 'F' ? 35 : 50 },
                 { key: 'hcy',     label: '同型半胱氨酸 Hcy', unit: 'μmol/L',      check: v => parseFloat(v) > 15,   ref: '≤15',     refHigh: 15 },
                 { key: 'lpla2',   label: 'Lp-PLA2',        unit: 'ng/mL',        check: v => parseFloat(v) > 200,  ref: '≤200',    refHigh: 200 },
-                { key: 'liverUs', label: '肝脏超声',        unit: '',             isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
-                { key: 'carotiUs',label: '颈动脉超声',      unit: '',             isText: true, check: v => ABNORMAL_KEYWORDS.some(kw => v.includes(kw)) },
               ]
 
               // 解析保存的参考范围文字 → { refLow, refHigh, ref }
@@ -4260,7 +4270,12 @@ export default function PatientDetailPage() {
                   )
                   if (item && item.value && parseFloat(item.value)) {
                     const d = report.checkDate || report.date || ''
-                    const dateStr = d ? new Date(d).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '?'
+                    // 带年份（如 25/12），否则跨年历史点在 x 轴上无法区分（2026-07-10 金娟"AST历年只显示最新一年"同源问题）
+                    let dateStr = '?'
+                    if (d) {
+                      const dt = new Date(d)
+                      dateStr = `${String(dt.getFullYear()).slice(2)}/${dt.getMonth() + 1}`
+                    }
                     pts.push({ x: dateStr, y: parseFloat(item.value) })
                   }
                 })
@@ -4325,17 +4340,37 @@ export default function PatientDetailPage() {
                       const displayRef = savedRef.ref || d.ref
                       const displayRefLow = savedRef.refLow ?? d.refLow
                       const displayRefHigh = savedRef.refHigh ?? d.refHigh
+                      const src = derived[d.key] || {}
+                      const canEdit = !!src.reportId && !!src.itemName
+                      const isEditingThis = editingMetric && editingMetric.key === d.key
                       return (
                         <div key={d.key} style={{ padding: '10px 12px', background: bgColor, borderRadius: 8, borderLeft: `3px solid ${borderColor}` }}>
                           <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
                             <span>{d.label}</span>
                             {displayRef && <span style={{ color: isAbnormal ? '#DC354560' : '#8AA89C' }}>参考 {displayRef}</span>}
                           </div>
-                          <div style={{ fontSize: 15, fontWeight: 700, color: textColor }}>
-                            {val} <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C' }}>{d.unit}</span>
-                          </div>
+                          {isEditingThis ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0' }}>
+                              <input className="form-control" autoFocus type="text" value={editingMetricVal}
+                                onChange={e => setEditingMetricVal(e.target.value)}
+                                onKeyDown={e => { if (e.key === 'Enter' && !savingMetric) handleSaveMetric() }}
+                                style={{ fontSize: 14, fontWeight: 700, padding: '3px 8px', width: 80 }} />
+                              <span style={{ fontSize: 11, color: '#8AA89C' }}>{d.unit}</span>
+                              <button className="btn btn-primary btn-sm" style={{ fontSize: 11, padding: '2px 8px' }} disabled={savingMetric} onClick={handleSaveMetric}>{savingMetric ? '...' : '保存'}</button>
+                              <button className="btn btn-secondary btn-sm" style={{ fontSize: 11, padding: '2px 8px' }} disabled={savingMetric} onClick={() => { setEditingMetric(null); setEditingMetricVal('') }}>取消</button>
+                            </div>
+                          ) : (
+                            <div style={{ fontSize: 15, fontWeight: 700, color: textColor, display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                              <span>{val} <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C' }}>{d.unit}</span></span>
+                              {canEdit && (
+                                <button title="单项修改（直接改来源报告数据，无需AI重跑）"
+                                  style={{ fontSize: 11, fontWeight: 400, color: '#1E6B50', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                                  onClick={() => { setEditingMetric({ key: d.key, reportId: src.reportId, itemName: src.itemName, label: d.label }); setEditingMetricVal(String(val)) }}>改</button>
+                              )}
+                            </div>
+                          )}
                           {sourceLabel && <div style={{ fontSize: 10, color: '#8AA89C', marginTop: 2 }}>{sourceLabel}{date ? `  ${date}` : ''}</div>}
-                          {pts.length >= 2 && (
+                          {!isEditingThis && pts.length >= 2 && (
                             <div style={{ marginTop: 4 }}>
                               <MiniTrendChart
                                 data={pts}
@@ -4350,31 +4385,6 @@ export default function PatientDetailPage() {
                       )
                     })}
                   </div>
-
-                  {/* 文字指标（超声） */}
-                  {(() => {
-                    const textDefs = displayDefs.filter(d => d && d.isText)
-                    if (!textDefs.length) return null
-                    return (
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 12px', marginTop: 8 }}>
-                        {textDefs.map(d => {
-                          const cur = getVal(d.key)
-                          if (!cur) return null
-                          const { val, sourceLabel, date, abnormal: itemAbnormal } = cur
-                          const isAbnormal = itemAbnormal === true || (itemAbnormal !== false && d.check && d.check(val))
-                          return (
-                            <div key={d.key} style={{ padding: '8px 12px', background: isAbnormal ? '#FEF2F2' : '#f9f7f3', borderRadius: 8, borderLeft: `3px solid ${isAbnormal ? '#DC3545' : '#aaa'}` }}>
-                              <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 3, display: 'flex', justifyContent: 'space-between' }}>
-                                <span>{d.label}</span>
-                                <span style={{ fontSize: 10 }}>{sourceLabel}{date ? `  ${date}` : ''}</span>
-                              </div>
-                              <div style={{ fontSize: 13, color: isAbnormal ? '#DC3545' : '#1A2B24', fontWeight: isAbnormal ? 600 : 400 }}>{val}</div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )
-                  })()}
 
                   {lv.labDate && <div style={{ fontSize: 12, color: '#aaa', marginTop: 10 }}>检测日期：{lv.labDate}</div>}
                 </div>
