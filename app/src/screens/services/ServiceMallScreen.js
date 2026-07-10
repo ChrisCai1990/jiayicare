@@ -9,6 +9,8 @@ import { mockServices, mockServiceCategories } from '../../data/mockData';
 import { servicesAPI, mediaUrl } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
+const PAY_METHOD_LABEL = { wechat: '微信支付', alipay: '支付宝' };
+
 function formatCouponLabel(c) {
   const val = c.type === 'amount' ? `¥${c.value}抵用券` : `${c.value / 10}折优惠券`;
   return c.title || val;
@@ -128,7 +130,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   const { user } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote]           = useState('');
-  const [payMethod, setPayMethod] = useState('微信支付');
+  const [payMethod, setPayMethod] = useState('wechat');
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errMsg, setErrMsg]       = useState('');
@@ -200,7 +202,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             <Text style={styles.successTitle}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
             <Text style={styles.successDesc}>
               {isPay
-                ? `已为您生成 ¥${finalPrice} 的订单${finalPrice > 0 ? `（${payMethod}）` : '（已用健康基金/优惠券全额抵扣）'}。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
+                ? `已为您生成 ¥${finalPrice} 的订单${finalPrice > 0 ? `（${PAY_METHOD_LABEL[payMethod] || payMethod}）` : '（已用健康基金/优惠券全额抵扣）'}。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
                 : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
             </Text>
             <TouchableOpacity style={styles.successBtn} onPress={onClose} activeOpacity={0.85}>
@@ -284,19 +286,19 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             <>
               <Text style={styles.noteLabel}>支付方式</Text>
               <View style={styles.payMethodRow}>
-                {['微信支付', '支付宝'].map(m => (
+                {[{ key: 'wechat', label: '微信支付', icon: 'logo-wechat' }, { key: 'alipay', label: '支付宝', icon: 'wallet-outline' }].map(m => (
                   <TouchableOpacity
-                    key={m}
-                    style={[styles.payMethodChip, payMethod === m && styles.payMethodChipActive]}
-                    onPress={() => setPayMethod(m)}
+                    key={m.key}
+                    style={[styles.payMethodChip, payMethod === m.key && styles.payMethodChipActive]}
+                    onPress={() => setPayMethod(m.key)}
                     activeOpacity={0.85}
                   >
                     <Ionicons
-                      name={m === '微信支付' ? 'logo-wechat' : 'wallet-outline'}
+                      name={m.icon}
                       size={16}
-                      color={payMethod === m ? colors.primary : colors.textMuted}
+                      color={payMethod === m.key ? colors.primary : colors.textMuted}
                     />
-                    <Text style={[styles.payMethodText, payMethod === m && styles.payMethodTextActive]}>{m}</Text>
+                    <Text style={[styles.payMethodText, payMethod === m.key && styles.payMethodTextActive]}>{m.label}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
