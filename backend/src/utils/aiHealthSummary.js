@@ -120,10 +120,18 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
     .map(([key, label]) => {
       const r = latestPsych(pa[key]);
       if (!r) return null;
-      const factorStr = key === 'scl90' && r.factorScores
-        ? `（因子分：${Object.entries(r.factorScores).map(([f, s]) => `${f}${s}`).join('、')}）`
-        : '';
-      return `${label}（${String(r.filledAt).slice(0,10)}）：总分${r.totalScore}分，${r.severity}${factorStr}`;
+      let factorStr = '';
+      if (key === 'scl90' && r.factorScores) {
+        // 带上每个因子的正常/异常判定（SCL90因子分≥2才算异常），避免AI把正常范围内偏高值(如1.2)误读成"升高"
+        // ——金娟名下患者精神病性因子1.2实为正常，此前被AI说成"升高"且错塞进心脑血管维度
+        const fa = r.factorAssessment || {};
+        const abn = Object.entries(r.factorScores).filter(([f]) => (fa[f] && fa[f].level && fa[f].level !== 'normal'));
+        factorStr = abn.length
+          ? `（因子分≥2为异常；异常因子：${abn.map(([f, s]) => `${f}${s}(${fa[f].label})`).join('、')}；其余因子均在正常范围）`
+          : `（全部10个因子分均<2，均为正常范围，无异常因子；最高为${Object.entries(r.factorScores).sort((a, b) => b[1] - a[1])[0].join('')}但仍属正常）`;
+      }
+      const sev = r.severity || (key === 'scl90' ? '总分参考：<160为阴性' : '');
+      return `${label}（${String(r.filledAt).slice(0,10)}）：总分${r.totalScore}分${sev ? '，' + sev : ''}${factorStr}`;
     })
     .filter(Boolean).join('\n') || '暂无心理健康量表评估记录';
 
@@ -137,6 +145,8 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
       : '你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。';
 
   const prompt = `${roleIntro}问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。
+
+【心理量表铁律——必须严格遵守】①SCL90各因子分必须严格按系统标注的正常/异常判定来解读：因子分＜2一律属正常范围，即使某因子（如精神病性1.2）在数值上略高于其他因子，只要＜2就是正常，绝不能描述为"升高/偏高/异常"。②心理量表（SCL90/SAS/SDS/嗜睡）的因子和结论只能写进"情绪/心理"相关分析，严禁把精神病性、偏执等心理因子塞进 cardiovascular_risk（心脑血管）、tumor_risk（肿瘤）等躯体维度——这些心理因子与躯体疾病风险无直接因果关系。③只有当系统明确标注某因子为异常时，才可在情绪维度提示。
 
 分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。你手上的是该患者全部专项筛查数据（体检指标/肿瘤标志物/影像内镜所见/基因/心理量表/听力视力等专科检查），请充分利用，不要只盯着少数几个指标。【专科检查异常发现】里列出的每一条（如听力高频下降、视力/屈光异常、口腔、骨密度等）都必须在分析中被提及并给出建议，这类非主流指标最容易被遗漏，务必逐条覆盖，纳入 medical_priority 或 chronic_disease 相应维度。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。每个分析维度都应体现「几年数据的趋势变化 → 原因分析 → 未来建议」三段式，而非仅描述当前值。
 
