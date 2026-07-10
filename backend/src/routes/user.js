@@ -1208,6 +1208,13 @@ router.post('/ai-health-summary', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
 
+    // 已由家庭医生团队审核通过的版本，客户端不能再重新生成覆盖（否则重生成内容与已审核结果完全不同）。
+    // self_service 是无家医时客户自助免审核生成的，可自行更新，不在此限。（2026-07-10 金娟反馈①）
+    const existingSummary = user.aiHealthSummary || {};
+    if (existingSummary.approvedAt && existingSummary.source !== 'self_service') {
+      return res.status(409).json({ success: false, code: 'ALREADY_REVIEWED', message: '当前分析已由您的健康管理团队审核确认，如需更新请联系您的健康管理师' });
+    }
+
     const { sections, failed } = await generateHealthSummarySections(user);
     if (failed) return res.status(500).json({ success: false, message: 'AI生成失败，请重试' });
     const year = String(new Date().getFullYear());
@@ -1258,8 +1265,14 @@ router.get('/ai-risk-assessment', auth, async (req, res) => {
 router.post('/ai-risk-assessment', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
-      .select('name gender age chronicDiseases healthProfile labValues lifestyle assignedFamilyDoctor');
+      .select('name gender age chronicDiseases healthProfile labValues lifestyle assignedFamilyDoctor aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+
+    // 已由家庭医生团队审核通过的版本，客户端不能再重新生成覆盖。（2026-07-10 金娟反馈①）
+    const existingRisk = user.aiRiskAssessment || {};
+    if (existingRisk.approvedAt && existingRisk.source !== 'self_service') {
+      return res.status(409).json({ success: false, code: 'ALREADY_REVIEWED', message: '当前风险评估已由您的健康管理团队审核确认，如需更新请联系您的健康管理师' });
+    }
 
     const assessment = await generateRiskAssessment(user);
     const hasDoctor = !!user.assignedFamilyDoctor;

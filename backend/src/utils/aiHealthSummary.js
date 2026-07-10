@@ -1,4 +1,5 @@
 const { chat } = require('./ai');
+const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings } = require('./labFromScreening');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -22,34 +23,23 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
     ? activeSupplements.map(s => `${s.name} ${s.dosage}，${s.frequency}${s.purpose ? `（${s.purpose}）` : ''}${s.startDate ? `，自${s.startDate}起` : ''}`).join('；')
     : '暂无长期营养素补充记录';
 
+  const allReports = await MedicalReport.find({ user: user._id })
+    .sort({ checkDate: -1, date: -1, createdAt: -1 })
+    .select('title screeningL2 examConclusion checkDate date reportYear screeningCategory reportItems note');
+
+  // 【体检关键指标】立足点：优先从专项筛查报告 reportItems 派生真实数值（与医护端「体检关键指标」卡片同源），
+  // 而非读几乎为空的 user.labValues。这是"AI提取数据没一次对的"的根因修复（2026-07-10）。
+  const { latest: derivedLab, trend: derivedTrend } = deriveLabFromReports(allReports);
   const lv = user.labValues || {};
   const bc = user.bodyComposition || {};
-  const labLines = [
-    lv.fpg   && `空腹血糖 ${lv.fpg} mmol/L`,
-    lv.hba1c && `糖化血红蛋白 ${lv.hba1c}%`,
-    lv.sbp   && `血压 ${lv.sbp}/${lv.dbp} mmHg`,
-    lv.tc    && `总胆固醇 ${lv.tc} mmol/L`,
-    lv.ldl   && `LDL-C ${lv.ldl} mmol/L`,
-    lv.hdl   && `HDL-C ${lv.hdl} mmol/L`,
-    lv.tg    && `甘油三酯 ${lv.tg} mmol/L`,
-    lv.ua    && `尿酸 ${lv.ua} μmol/L`,
-    lv.alt   && `ALT ${lv.alt} U/L`,
-    lv.ast   && `AST ${lv.ast} U/L`,
-    lv.ggt   && `GGT ${lv.ggt} U/L`,
-    lv.hcy   && `同型半胱氨酸 ${lv.hcy} μmol/L`,
-    lv.lpla2 && `Lp-PLA2 ${lv.lpla2} U/L`,
+  // 身体成分（超声/体成分不在专项筛查数值提取范围内，仍读手动录入字段作为补充）
+  const bcLines = [
     lv.waist && `腰围 ${lv.waist} cm`,
-    lv.liverUs  && `肝脏超声：${lv.liverUs}`,
-    lv.carotiUs && `颈动脉超声：${lv.carotiUs}`,
     bc.skelMuscle  && `骨骼肌量 ${bc.skelMuscle} kg`,
     bc.visceralFat && `内脏脂肪 ${bc.visceralFat}`,
     bc.bodyFatRate && `体脂率 ${bc.bodyFatRate}%`,
   ].filter(Boolean);
-  const labSummary = labLines.join('、') || '暂无体检数据';
-
-  const allReports = await MedicalReport.find({ user: user._id })
-    .sort({ checkDate: -1, date: -1, createdAt: -1 })
-    .select('title screeningL2 examConclusion checkDate date reportYear screeningCategory reportItems note');
+  const labSummary = [buildLatestLabText(derivedLab), bcLines.join('、')].filter(Boolean).join('、');
 
   const reportsByYear = {};
   allReports.forEach(r => {
@@ -76,25 +66,12 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   });
   const reportSummary = reportSummaryLines.length > 0 ? reportSummaryLines.join('\n') : '暂无专项筛查记录';
 
-  const labHistory = (user.labHistory || [])
-    .filter(h => h.recordedAt)
-    .sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt))
-    .slice(0, 5);
-  const labTrendLines = labHistory.length > 1
-    ? labHistory.map(h => {
-        const yr = new Date(h.recordedAt).getFullYear();
-        const vals = [
-          h.sbp   && `血压${h.sbp}/${h.dbp}`,
-          h.fpg   && `空腹血糖${h.fpg}`,
-          h.hba1c && `糖化${h.hba1c}%`,
-          h.tc    && `总胆固醇${h.tc}`,
-          h.ldl   && `LDL${h.ldl}`,
-          h.ua    && `尿酸${h.ua}`,
-          h.alt   && `ALT${h.alt}`,
-        ].filter(Boolean).join('、');
-        return `  ${yr}年（${String(h.recordedAt).slice(0,10)}）：${vals || '无数据'}`;
-      }).join('\n')
-    : '  仅有当次数据，无法比较趋势';
+  // 历年趋势：从专项筛查报告按年份提取各指标历次真实值（不再依赖几乎为空的 user.labHistory）
+  const labTrendLines = buildTrendText(derivedTrend);
+
+  // 肿瘤标志物（单独维度）+ 基因检测：数据源扩全，健康分析要读全部专项筛查数据（2026-07-10 金娟）
+  const tumorMarkerText = buildTumorMarkerText(extractTumorMarkers(allReports));
+  const geneticText = extractGeneticFindings(allReports);
 
   const ls  = user.lifestyle || {};
   const lsd = user.lifestyle_data || {};
@@ -154,7 +131,9 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
 
   const prompt = `${roleIntro}问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。
 
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【当前用药与营养素补充】综合评估。你手上的是该患者全部专项筛查数据（体检指标/肿瘤标志物/影像内镜所见/基因/心理量表），请充分利用，不要只盯着少数几个指标。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。每个分析维度都应体现「几年数据的趋势变化 → 原因分析 → 未来建议」三段式，而非仅描述当前值。
+
+【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议患者恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
 
 【重要】发现检查异常时，请先排查是否与当前用药或营养素补充相关，不要只从疾病角度解读：
 - 长期服用蒽醌类泻药（番泻叶、大黄、芦荟等成分）是结肠黑变病的明确诱因，肠镜发现黑变时应结合用药记录判断，若确实在用此类泻药应在medical_priority中建议评估更换通便方式而非仅当作独立疾病处理
@@ -189,6 +168,12 @@ ${labTrendLines}
 
 【历年专项筛查报告（按年份列出所有记录）】
 ${reportSummary}
+
+【肿瘤标志物（历年，单独维度分析）】
+${tumorMarkerText}
+
+【基因检测报告】
+${geneticText}
 
 ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessment ? `\n【营养师已评估的生活方式内容（供参考，本次不需要重新生成这部分，仅作为你判断5维度分析时的背景信息）】\n${JSON.stringify(existingSections.lifestyle_assessment)}\n` : ''}${existingSections && scope === 'nutrition' && DOCTOR_KEYS.some(k => existingSections[k]) ? `\n【家庭医师已生成的5维度分析（供参考，本次请结合这些医疗判断来评估生活方式，本次不需要重新生成这部分）】\n${JSON.stringify(Object.fromEntries(DOCTOR_KEYS.map(k => [k, existingSections[k]]).filter(([, v]) => v)))}\n` : ''}
 请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容${!wantDoctor || !wantLifestyle ? '（本次只需输出下方列出的板块，不要输出其他板块）' : ''}：

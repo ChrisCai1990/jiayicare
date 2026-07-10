@@ -325,16 +325,26 @@ export default function AiHealthScreen({ navigation }) {
             </View>
           )}
 
-          <TouchableOpacity style={styles.genBtn} onPress={handleGenerate} disabled={generating}>
-            {generating ? (
-              <ActivityIndicator size="small" color={colors.white} />
-            ) : (
-              <Ionicons name="sparkles-outline" size={16} color={colors.white} />
-            )}
-            <Text style={styles.genBtnText}>
-              {generating ? 'AI生成中…' : (curHasData ? '重新生成' : `✨ 生成${tab}`)}
-            </Text>
-          </TouchableOpacity>
+          {/* 已由家庭医生团队审核确认的结果，客户端不再提供「重新生成」入口——
+              重生成会得到与已审核结果完全不同的内容（2026-07-10 金娟反馈①）。
+              待审核草稿(curPending)、无家医自助模式、尚无数据时，仍可生成。 */}
+          {hasDoctor && curHasData && !curPending ? (
+            <View style={styles.doctorNotice}>
+              <Ionicons name="lock-closed-outline" size={18} color={colors.textMuted} />
+              <Text style={styles.doctorNoticeText}>结果已审核确认，如需更新请联系您的健康管理师</Text>
+            </View>
+          ) : (
+            <TouchableOpacity style={styles.genBtn} onPress={handleGenerate} disabled={generating}>
+              {generating ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Ionicons name="sparkles-outline" size={16} color={colors.white} />
+              )}
+              <Text style={styles.genBtnText}>
+                {generating ? 'AI生成中…' : (curHasData ? '重新生成' : `✨ 生成${tab}`)}
+              </Text>
+            </TouchableOpacity>
+          )}
 
           {!curHasData && (
             <View style={styles.emptyWrap}>

@@ -68,7 +68,18 @@ async function tumorSignalsFromReports(userId) {
 
 // 生成AI风险评估：供医护端接口和用户端自助接口共用
 async function generateRiskAssessment(user) {
-  const lv = user.labValues || {};
+  const MedicalReport = require('../models/MedicalReport');
+  const { deriveLabFromReports, buildLatestLabText, latestToLabValues } = require('./labFromScreening');
+
+  // 【体检关键指标】+ 规则引擎信号：从专项筛查报告 reportItems 派生真实数值（与医护端「体检关键指标」卡片同源），
+  // 而非读几乎为空的 user.labValues（2026-07-10 根因修复："AI提取数据没一次对的"）。
+  const reports = await MedicalReport.find({ user: user._id })
+    .sort({ checkDate: -1, date: -1, createdAt: -1 })
+    .select('title screeningL2 checkDate date reportYear reportItems')
+    .limit(60);
+  const { latest: derivedLab } = deriveLabFromReports(reports);
+  // 派生真实值优先，user.labValues 仅作补充兜底（万一某指标报告没有但医护手动录了）
+  const lv = { ...(user.labValues || {}), ...latestToLabValues(derivedLab) };
   const signals = ruleEngineSignals(lv);
   const { markerAndFindingLines, geneticLines } = await tumorSignalsFromReports(user._id);
   if (markerAndFindingLines.length) signals.tumor = markerAndFindingLines;
@@ -76,12 +87,7 @@ async function generateRiskAssessment(user) {
     .map(([k, arr]) => `${k}：${arr.length ? arr.join('；') : '规则引擎未发现明显异常'}`)
     .join('\n');
 
-  const labLines = [
-    lv.sbp && `血压 ${lv.sbp}/${lv.dbp} mmHg`, lv.fpg && `空腹血糖 ${lv.fpg}`,
-    lv.hba1c && `糖化 ${lv.hba1c}%`, lv.tc && `总胆固醇 ${lv.tc}`, lv.ldl && `LDL ${lv.ldl}`,
-    lv.hdl && `HDL ${lv.hdl}`, lv.tg && `甘油三酯 ${lv.tg}`, lv.ua && `尿酸 ${lv.ua}`,
-    lv.cr && `肌酐 ${lv.cr}`, lv.egfr && `eGFR ${lv.egfr}`, lv.hcy && `同型半胱氨酸 ${lv.hcy}`,
-  ].filter(Boolean).join('、') || '暂无体检数据';
+  const labLines = buildLatestLabText(derivedLab);
 
   const ls = user.lifestyle || {};
   const lifestyleLines = [
