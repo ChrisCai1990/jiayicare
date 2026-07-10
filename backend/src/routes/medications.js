@@ -4,9 +4,11 @@ const Medication = require('../models/Medication');
 const router = express.Router();
 
 // 获取用药列表（含全生命周期：进行中 + 已停用，包括医护录入）
+// 此前固定加 active:true 过滤，但 active 字段并未被停用/删除操作正确维护，与注释里
+// "含全生命周期"的意图矛盾——一旦 active 被设置过反而会把已停用记录筛掉。改为只按 stopped 过滤。
 router.get('/', auth, async (req, res) => {
   const { status } = req.query; // 'active' | 'stopped' | all
-  const filter = { user: req.user._id, active: true };
+  const filter = { user: req.user._id };
   if (status === 'active')  filter.stopped = false;
   if (status === 'stopped') filter.stopped = true;
   const meds = await Medication.find(filter).sort({ createdByStaff: -1, createdAt: -1 });

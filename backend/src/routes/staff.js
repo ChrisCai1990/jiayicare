@@ -2842,12 +2842,11 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
 });
 
 // ── 患者药物管理（医护端 CRUD）────────────────────────────────────
+// 停用不等于删除：停用后记录仍应在列表可见（标"已停用"，可恢复），此前用 active:true 过滤导致
+// 停用后从列表消失、跟真删除没区别——医护端无法找回来查看或恢复。改为返回全部，前端按 stopped 标注状态。
 router.get('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
-    const meds = await Medication.find({
-      user: req.params.id,
-      $or: [{ active: true }, { aiStatus: 'pending' }],
-    }).sort({ createdAt: -1 });
+    const meds = await Medication.find({ user: req.params.id }).sort({ createdAt: -1 });
     res.json({ success: true, data: meds });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -2879,23 +2878,26 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// 真正的物理删除（此前这里只是设 active=false，跟"停用"按钮效果重复，名为删除实际不可用；
+// 删除是不可逆操作，需先与客户确认，前端已加强提示）
 router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
   try {
     const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
     if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
     if (req.staff.role !== 'superadmin' && String(med.staffId) !== String(req.staff._id)) {
-      return res.status(403).json({ success: false, message: '仅记录创建人可停用' });
+      return res.status(403).json({ success: false, message: '仅记录创建人可删除' });
     }
-    med.active = false;
-    await med.save();
+    await med.deleteOne();
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // ── 患者营养素管理（医护端 CRUD）──────────────────────────────────
+// 停用不等于删除：停用后记录仍应在列表可见（标"已停用"，可恢复），此前用 stopped:false 过滤导致
+// 停用后从列表消失、跟真删除没区别——医护端无法找回来查看或恢复。改为返回全部，前端按 stopped 标注状态。
 router.get('/patients/:id/supplements', staffAuth, async (req, res) => {
   try {
-    const sups = await Supplement.find({ user: req.params.id, stopped: false }).sort({ createdAt: -1 });
+    const sups = await Supplement.find({ user: req.params.id }).sort({ createdAt: -1 });
     res.json({ success: true, data: sups });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -2927,15 +2929,16 @@ router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// 真正的物理删除（此前这里只是又设了一次 stopped=true，跟"停用"按钮效果重复，
+// 名为删除实际不可用；删除是不可逆操作，需先与客户确认，前端已加强提示）
 router.delete('/patients/:id/supplements/:supId', staffAuth, async (req, res) => {
   try {
     const sup = await Supplement.findOne({ _id: req.params.supId, user: req.params.id });
     if (!sup) return res.status(404).json({ success: false, message: '记录不存在' });
     if (req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
-      return res.status(403).json({ success: false, message: '仅记录创建人可停用' });
+      return res.status(403).json({ success: false, message: '仅记录创建人可删除' });
     }
-    sup.stopped = true;
-    await sup.save();
+    await sup.deleteOne();
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });

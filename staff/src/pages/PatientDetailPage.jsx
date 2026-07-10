@@ -7,6 +7,41 @@ import AiRuleHint from '../components/AiRuleHint'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
+// ── 停用确认弹窗：停用会改变客户实际用药/营养素方案，需先勾选"已与客户沟通确认"才能提交 ──
+function ConfirmStopModal({ title, itemName, onClose, onConfirm }) {
+  const [checked, setChecked] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const handleConfirm = async () => {
+    setSubmitting(true)
+    try { await onConfirm() } finally { setSubmitting(false) }
+  }
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 420 }}>
+        <div className="modal-header">
+          <div className="modal-title">{title}</div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div style={{ fontSize: 14, color: '#1A2B24', marginBottom: 10 }}>
+            确认停用「{itemName}」？停用会改变客户当前的用药/营养素方案。
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#4A6558', cursor: 'pointer' }}>
+            <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
+            已与客户沟通并确认停用
+          </label>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn" style={{ background: '#D97706', color: '#fff' }} disabled={!checked || submitting} onClick={handleConfirm}>
+            {submitting ? '停用中...' : '确认停用'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 生活方式表单子组件（定义在组件外，引用稳定，避免每次渲染重新挂载）─────
 const LS_LABEL_STYLE = { fontSize: 12, color: '#8AA89C', marginBottom: 4, display: 'block' }
 
@@ -930,6 +965,8 @@ export default function PatientDetailPage() {
   const [showSupModal, setShowSupModal] = useState(false)
   const [editingMed, setEditingMed] = useState(null)
   const [editingSup, setEditingSup] = useState(null)
+  const [stoppingMed, setStoppingMed] = useState(null) // 待确认停用的用药记录
+  const [stoppingSup, setStoppingSup] = useState(null) // 待确认停用的营养素记录
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
   const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
   const [medForm, setMedForm] = useState({})
@@ -5381,12 +5418,12 @@ export default function PatientDetailPage() {
                                 恢复用药
                               </button>
                             : <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
-                                onClick={async () => { if (window.confirm('确认停用此药物？')) { await staffAPI.updatePatientMedication(id, m._id, { stopped: true }); loadMedications() } }}>
+                                onClick={() => setStoppingMed(m)}>
                                 停用
                               </button>
                           }
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                              onClick={async () => { if (window.confirm('确认删除？')) { await staffAPI.deletePatientMedication(id, m._id); loadMedications() } }}>
+                              onClick={async () => { if (window.confirm(`确认删除「${m.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停药请用"停用"。`)) { await staffAPI.deletePatientMedication(id, m._id); loadMedications() } }}>
                               删除
                             </button>
                           </div>
@@ -5483,12 +5520,12 @@ export default function PatientDetailPage() {
                                   恢复补充
                                 </button>
                               : <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
-                                  onClick={async () => { if (window.confirm('确认停用？')) { await staffAPI.updatePatientSupplement(id, s._id, { stopped: true }); loadSupplements() } }}>
+                                  onClick={() => setStoppingSup(s)}>
                                   停用
                                 </button>
                             }
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                              onClick={async () => { if (window.confirm('确认删除？')) { await staffAPI.deletePatientSupplement(id, s._id); loadSupplements() } }}>
+                              onClick={async () => { if (window.confirm(`确认删除「${s.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停用请用"停用"。`)) { await staffAPI.deletePatientSupplement(id, s._id); loadSupplements() } }}>
                               删除
                             </button>
                           </div>
@@ -5591,6 +5628,28 @@ export default function PatientDetailPage() {
                 </div>
               </div>
             </div>
+          )}
+          {stoppingMed && (
+            <ConfirmStopModal
+              title="停用用药"
+              itemName={stoppingMed.name}
+              onClose={() => setStoppingMed(null)}
+              onConfirm={async () => {
+                await staffAPI.updatePatientMedication(id, stoppingMed._id, { stopped: true })
+                setStoppingMed(null); loadMedications()
+              }}
+            />
+          )}
+          {stoppingSup && (
+            <ConfirmStopModal
+              title="停用营养素"
+              itemName={stoppingSup.name}
+              onClose={() => setStoppingSup(null)}
+              onConfirm={async () => {
+                await staffAPI.updatePatientSupplement(id, stoppingSup._id, { stopped: true })
+                setStoppingSup(null); loadSupplements()
+              }}
+            />
           )}
         </div>
       )}
