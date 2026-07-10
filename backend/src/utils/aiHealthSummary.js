@@ -1,5 +1,6 @@
 const { chat } = require('./ai');
 const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings } = require('./labFromScreening');
+const { assessCancerCoverage, buildCoverageText } = require('./cancerScreeningCoverage');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -72,6 +73,9 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   // 肿瘤标志物（单独维度）+ 基因检测：数据源扩全，健康分析要读全部专项筛查数据（2026-07-10 金娟）
   const tumorMarkerText = buildTumorMarkerText(extractTumorMarkers(allReports));
   const geneticText = extractGeneticFindings(allReports);
+  // 肿瘤筛查覆盖度（规则引擎确定性结论，按男女前十大肿瘤逐项判断"该做的筛查做了没"，
+  // 含胃镜免胃蛋白酶原/肠镜免便潜血/HP连续3年阴性/乳腺钼靶40岁等规则）——2026-07-10 金娟
+  const coverageText = buildCoverageText(assessCancerCoverage(user, allReports));
 
   const ls  = user.lifestyle || {};
   const lsd = user.lifestyle_data || {};
@@ -175,6 +179,9 @@ ${tumorMarkerText}
 【基因检测报告】
 ${geneticText}
 
+【肿瘤筛查覆盖度（系统按男女高发肿瘤规则判定，✓已覆盖/△部分/✗未筛查）】
+${coverageText}
+
 ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessment ? `\n【营养师已评估的生活方式内容（供参考，本次不需要重新生成这部分，仅作为你判断5维度分析时的背景信息）】\n${JSON.stringify(existingSections.lifestyle_assessment)}\n` : ''}${existingSections && scope === 'nutrition' && DOCTOR_KEYS.some(k => existingSections[k]) ? `\n【家庭医师已生成的5维度分析（供参考，本次请结合这些医疗判断来评估生活方式，本次不需要重新生成这部分）】\n${JSON.stringify(Object.fromEntries(DOCTOR_KEYS.map(k => [k, existingSections[k]]).filter(([, v]) => v)))}\n` : ''}
 请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容${!wantDoctor || !wantLifestyle ? '（本次只需输出下方列出的板块，不要输出其他板块）' : ''}：
 {
@@ -227,10 +234,10 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
       ]
     },
     "tumor_risk": {
-      "completed": ["已完成的筛查项目（含年份）"],
-      "abnormal": ["异常发现（有则填，无则空数组）"],
-      "missing": ["未覆盖的重要筛查项目"],
-      "summary": "肿瘤筛查总评（50-100字）"
+      "completed": ["已完成的筛查项目（含年份），严格依据【肿瘤筛查覆盖度】中✓已覆盖的项，不要臆造"],
+      "abnormal": ["异常发现（结合肿瘤标志物动态趋势+影像内镜所见；标志物单项轻度升高须注明特异性局限不得判癌；无则空数组）"],
+      "missing": ["待补做的筛查项目，严格依据【肿瘤筛查覆盖度】中△部分/✗未筛查的待补项（如乳腺钼靶未做、HP需复查、肺癌LDCT未做等），逐条给出补做建议"],
+      "summary": "肿瘤筛查总评（50-100字）：按男女高发肿瘤说明覆盖情况，点明哪些该补做，并强调标志物特异性局限避免制造恐慌"
     },
     "cardiovascular_risk": {
       "high": ["高风险因素（有则填，无则空数组）"],
