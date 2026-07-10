@@ -142,7 +142,8 @@ const userSchema = new mongoose.Schema({
   assignedRehabSpecialist:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 运动复健师
   assignedMedicalAssistant: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 就医专员
   chronicDiseases: { type: [String], default: [] }, // 慢病标签，如 ['高血压','糖尿病']
-  idNumber:        { type: String, default: '' },   // 身份证号
+  idNumber:        { type: String, default: '' },   // 证件号（身份证号或护照号，具体类型见 idType）
+  idType:          { type: String, enum: ['idCard', 'passport'], default: 'idCard' }, // 证件类型：身份证/护照。护照号跳过身份证格式校验与性别/生日自动解析
   source:          { type: String, default: '' },   // 患者来源
   patientType:     { type: String, enum: ['regular', 'vip', 'trial', ''], default: '' }, // 患者类型
   remark:          { type: String, default: '' },   // 备注

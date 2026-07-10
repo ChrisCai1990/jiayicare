@@ -8,7 +8,8 @@ const ARCHIVE_FIELDS = [
   // 基本信息
   { path: 'gender',            label: '性别',         group: '基本信息', type: 'enum', options: ['男', '女', '未知'] },
   { path: 'birthDate',         label: '出生日期',     group: '基本信息', type: 'date' },
-  { path: 'idNumber',          label: '身份证号',     group: '基本信息', type: 'text' },
+  { path: 'idType',            label: '证件类型',     group: '基本信息', type: 'enum', options: ['idCard', 'passport'] },
+  { path: 'idNumber',          label: '身份证号/护照号', group: '基本信息', type: 'text' },
   { path: 'maritalStatus',     label: '婚姻状况',     group: '基本信息', type: 'text' },
   { path: 'ethnicity',         label: '民族',         group: '基本信息', type: 'text' },
   { path: 'workplace',         label: '所在企业',     group: '基本信息', type: 'text' },

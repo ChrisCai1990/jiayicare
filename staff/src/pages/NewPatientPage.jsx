@@ -76,7 +76,7 @@ export default function NewPatientPage() {
     name: '', phone: '', gender: '未知', birthDate: '', age: '',
     height: '', weight: '',
     // 身份
-    idNumber: '', maritalStatus: '', ethnicity: '', belief: '', memberType: '',
+    idType: 'idCard', idNumber: '', maritalStatus: '', ethnicity: '', belief: '', memberType: '',
     // 联系
     address: '', contactPhone: '', contactPhone2: '', contactName: '', contactPhone3: '',
     deliveryAddress: '',
@@ -149,11 +149,12 @@ export default function NewPatientPage() {
     setForm(f => ({ ...f, birthDate: val, age: calcAge(val) }))
   }
 
-  // 身份证号输入 → 校验 + 自动填充
+  // 证件号输入 → 身份证走校验+自动填充；护照号格式各国不一，不做校验和自动解析
   const handleIdNumberChange = e => {
     const val = e.target.value
     setForm(f => ({ ...f, idNumber: val }))
     setIdError('')
+    if (form.idType === 'passport') return
     if (val.length === 15 || val.length === 18) {
       if (!validateIdCard(val)) {
         setIdError('身份证号格式或校验码不正确')
@@ -177,7 +178,7 @@ export default function NewPatientPage() {
     e.preventDefault()
     if (!form.phone) return toast('手机号不能为空')
     if (!/^1[3-9]\d{9}$/.test(form.phone)) return toast('手机号格式不正确')
-    if (form.idNumber && !validateIdCard(form.idNumber)) return toast('身份证号格式不正确')
+    if (form.idType !== 'passport' && form.idNumber && !validateIdCard(form.idNumber)) return toast('身份证号格式不正确')
     if (form.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate)) return toast('出生日期格式须为 YYYY-MM-DD')
     setSaving(true)
     try {
@@ -297,8 +298,14 @@ export default function NewPatientPage() {
                 {birthDateError && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{birthDateError}</div>}
               </F>
               <F label="年龄（岁）"><input className="form-input" type="number" placeholder="自动计算" value={form.age} onChange={set('age')} min={0} max={150} readOnly={!!form.birthDate} style={{ background: form.birthDate ? '#f5f5f5' : undefined }} /></F>
-              <F label="身份证号">
-                <input className="form-input" placeholder="输入后自动识别性别和出生日期" value={form.idNumber} onChange={handleIdNumberChange} maxLength={18} />
+              <F label="证件类型">
+                <select className="form-input" value={form.idType} onChange={e => { setForm(f => ({ ...f, idType: e.target.value })); setIdError('') }}>
+                  <option value="idCard">身份证</option>
+                  <option value="passport">护照</option>
+                </select>
+              </F>
+              <F label={form.idType === 'passport' ? '护照号' : '身份证号'}>
+                <input className="form-input" placeholder={form.idType === 'passport' ? '请输入护照号' : '输入后自动识别性别和出生日期'} value={form.idNumber} onChange={handleIdNumberChange} maxLength={form.idType === 'passport' ? 20 : 18} />
                 {idError && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{idError}</div>}
               </F>
               <F label="身高(cm)"><input className="form-input" type="number" value={form.height} onChange={set('height')} /></F>

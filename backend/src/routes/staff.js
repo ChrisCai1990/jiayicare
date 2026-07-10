@@ -420,7 +420,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
   const staff = req.staff;
   const {
     name, phone, gender, age, height, weight,
-    birthDate, idNumber, maritalStatus, ethnicity, belief, memberType,
+    birthDate, idNumber, idType, maritalStatus, ethnicity, belief, memberType,
     chronicDiseases, patientType, source, remark,
     workplace, occupation,
     address, contactPhone, contactPhone2, contactName, contactPhone3, deliveryAddress,
@@ -461,6 +461,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     age, height, weight,
     birthDate: birthDate || '',
     idNumber: idNumber || '',
+    idType: idType === 'passport' ? 'passport' : 'idCard',
     maritalStatus: maritalStatus || '',
     ethnicity: ethnicity || '',
     belief: belief || '',
@@ -615,7 +616,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     'name', 'gender', 'age', 'height', 'weight', 'preferredTitle',
     'birthDate', 'memberType', 'belief',
     'chronicDiseases', 'patientType', 'source', 'remark',
-    'idNumber', 'workplace', 'occupation', 'maritalStatus',
+    'idNumber', 'idType', 'workplace', 'occupation', 'maritalStatus',
     'ethnicity', 'address', 'contactPhone', 'contactPhone2', 'contactName', 'contactPhone3', 'deliveryAddress',
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
     'assignedSpecialist', 'assignedTcmDoctor', 'assignedPsychologist',

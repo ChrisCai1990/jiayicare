@@ -205,13 +205,15 @@ router.put('/me', auth, async (req, res) => {
 // 其余健康信息（既往史/生活方式/心理健康等）交给问卷库分批推送采集，不在此处重复询问
 router.post('/onboarding', auth, async (req, res) => {
   try {
-    const { name, idNumber, contactPhone } = req.body;
+    const { name, idNumber, idType, contactPhone } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
 
+    // 护照号格式各国不一，不做身份证格式校验也不做性别/生日自动解析；仅身份证号走原有解析逻辑
+    const isPassport = idType === 'passport';
     const { parseIdCard } = require('../utils/idCard');
-    const parsed = idNumber ? parseIdCard(idNumber) : null;
-    if (idNumber && !parsed) return res.status(400).json({ success: false, message: '身份证号格式不正确' });
+    const parsed = (idNumber && !isPassport) ? parseIdCard(idNumber) : null;
+    if (idNumber && !isPassport && !parsed) return res.status(400).json({ success: false, message: '身份证号格式不正确' });
 
     const updateData = {
       name: name.trim(),
@@ -219,7 +221,7 @@ router.post('/onboarding', auth, async (req, res) => {
       onboardingCompleted: true,
       onboardingCompletedAt: new Date(),
     };
-    if (idNumber) updateData.idNumber = idNumber;
+    if (idNumber) { updateData.idNumber = idNumber; updateData.idType = isPassport ? 'passport' : 'idCard'; }
     if (parsed) {
       updateData.gender = parsed.gender;
       updateData.birthDate = parsed.birthDate;

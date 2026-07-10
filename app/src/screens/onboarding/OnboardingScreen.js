@@ -14,6 +14,7 @@ import { useAuth } from '../../context/AuthContext';
 export default function OnboardingScreen({ navigation }) {
   const { updateUser } = useAuth();
   const [name, setName] = useState('');
+  const [idType, setIdType] = useState('idCard'); // idCard 身份证 | passport 护照
   const [idNumber, setIdNumber] = useState('');
   const [contactPhone, setContactPhone] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -30,6 +31,7 @@ export default function OnboardingScreen({ navigation }) {
       const res = await userAPI.onboarding({
         name: name.trim(),
         idNumber: idNumber.trim() || undefined,
+        idType,
         contactPhone: contactPhone.trim(),
       });
       if (res.success) {
@@ -72,14 +74,33 @@ export default function OnboardingScreen({ navigation }) {
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.formLabel}>身份证号</Text>
+          <Text style={styles.formLabel}>证件类型</Text>
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            {[{ key: 'idCard', label: '身份证' }, { key: 'passport', label: '护照' }].map(t => (
+              <TouchableOpacity
+                key={t.key}
+                onPress={() => setIdType(t.key)}
+                style={{
+                  flex: 1, paddingVertical: 10, borderRadius: radius.md, alignItems: 'center',
+                  borderWidth: 1.5, borderColor: idType === t.key ? colors.primary : colors.border,
+                  backgroundColor: idType === t.key ? colors.primary + '0D' : colors.surface,
+                }}
+              >
+                <Text style={{ fontSize: 14, fontWeight: idType === t.key ? '700' : '500', color: idType === t.key ? colors.primary : colors.textMuted }}>{t.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.formGroup}>
+          <Text style={styles.formLabel}>{idType === 'passport' ? '护照号' : '身份证号'}</Text>
           <View style={styles.inputBox}>
             <TextInput
               style={styles.input}
-              placeholder="用于自动识别性别与出生日期"
+              placeholder={idType === 'passport' ? '请输入护照号' : '用于自动识别性别与出生日期'}
               value={idNumber}
               onChangeText={setIdNumber}
-              maxLength={18}
+              maxLength={idType === 'passport' ? 20 : 18}
               autoCapitalize="characters"
               placeholderTextColor={colors.textMuted}
             />

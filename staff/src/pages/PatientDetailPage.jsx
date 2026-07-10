@@ -1247,6 +1247,7 @@ export default function PatientDetailPage() {
     preferredTitle: u.preferredTitle || '',
     gender: u.gender || '未知',
     birthDate: u.birthDate || '',
+    idType: u.idType || 'idCard',
     idNumber: u.idNumber || '',
     maritalStatus: u.maritalStatus || '',
     ethnicity: u.ethnicity || '',
@@ -2067,7 +2068,28 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {[
                     { key: 'name', label: '姓名' },
-                    { key: 'idNumber', label: '身份证号' },
+                  ].map(({ key, label, type }) => (
+                    <div key={key} className="form-group" style={{ marginBottom: 0 }}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
+                      <input className="form-input" type={type || 'text'} value={basicInfoForm[key] || ''}
+                        onChange={e => setBasicInfoForm(f => ({ ...f, [key]: e.target.value }))} />
+                    </div>
+                  ))}
+                  <div className="form-group" style={{ marginBottom: 0, display: 'flex', gap: 8 }}>
+                    <div style={{ flexShrink: 0, width: 90 }}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>证件类型</label>
+                      <select className="form-input" value={basicInfoForm.idType || 'idCard'} onChange={e => setBasicInfoForm(f => ({ ...f, idType: e.target.value }))}>
+                        <option value="idCard">身份证</option>
+                        <option value="passport">护照</option>
+                      </select>
+                    </div>
+                    <div style={{ flex: 1 }}>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>{basicInfoForm.idType === 'passport' ? '护照号' : '身份证号'}</label>
+                      <input className="form-input" value={basicInfoForm.idNumber || ''}
+                        onChange={e => setBasicInfoForm(f => ({ ...f, idNumber: e.target.value }))} />
+                    </div>
+                  </div>
+                  {[
                     { key: 'birthDate', label: '出生日期', type: 'date' },
                     { key: 'height', label: '身高(cm)', type: 'number' },
                     { key: 'weight', label: '体重(kg)', type: 'number' },
@@ -2187,7 +2209,7 @@ export default function PatientDetailPage() {
                   <InfoRow label="身高" value={user.height ? `${user.height} cm` : '-'} />
                   <InfoRow label="体重" value={user.weight ? `${user.weight} kg` : '-'} />
                   {bmi && <InfoRow label="BMI" value={bmi} />}
-                  <InfoRow label="身份证" value={user.idNumber || '-'} />
+                  <InfoRow label={user.idType === 'passport' ? '护照' : '身份证'} value={user.idNumber || '-'} />
                   <InfoRow label="婚姻状况" value={user.maritalStatus || '-'} />
                   <InfoRow label="民族" value={user.ethnicity || '-'} />
                   <InfoRow label="学历" value={user.education || '-'} />
