@@ -9,6 +9,11 @@ import { mockServices, mockServiceCategories } from '../../data/mockData';
 import { servicesAPI, mediaUrl } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
+function formatCouponLabel(c) {
+  const val = c.type === 'amount' ? `¥${c.value}抵用券` : `${c.value / 10}折优惠券`;
+  return c.title || val;
+}
+
 function StarRow({ rating }) {
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
@@ -120,6 +125,7 @@ function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
 // ── 购买确认弹窗 ────────────────────────────────────────────────────
 // mode: 'consult' 预约咨询（走线索，健管师联系）| 'pay' 自主付费（选支付方式，生成待收款订单）
 function PurchaseModal({ item, mode = 'consult', onClose }) {
+  const { user } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote]           = useState('');
   const [payMethod, setPayMethod] = useState('微信支付');
@@ -130,10 +136,35 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
   const hasSpecs = !!(item?.servicePrices && item.servicePrices.length > 0);
   const [specIdx, setSpecIdx] = useState(0);
 
+  // 健康基金抵扣 + 优惠券
+  const fundBalance = user?.healthFund?.total || 0;
+  const [useFund, setUseFund] = useState(false);
+  const [fundAmountInput, setFundAmountInput] = useState('');
+  const [coupons, setCoupons] = useState([]);
+  const [couponId, setCouponId] = useState(null);
+
+  useEffect(() => {
+    if (!isPay) return;
+    servicesAPI.coupons().then(res => {
+      if (res.success) setCoupons(res.data || []);
+    }).catch(() => {});
+  }, [isPay]);
+
   if (!item) return null;
 
   const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
   const currentSpecLabel = hasSpecs ? item.servicePrices[specIdx]?.label : '';
+
+  const selectedCoupon = coupons.find(c => c._id === couponId) || null;
+  const couponDiscount = selectedCoupon
+    ? Math.min(
+        selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(currentPrice * (100 - selectedCoupon.value)) / 100,
+        currentPrice
+      )
+    : 0;
+  const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
     setSubmitting(true);
@@ -142,7 +173,10 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
       // 把选中的规格名一并写进备注，让健管师明确客户选了哪个规格
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
       // 付费模式带上支付方式，后端据此标记订单为线上支付并生成待收款任务
-      const res = await servicesAPI.order(item.id, noteWithSpec, isPay ? payMethod : undefined);
+      const res = await servicesAPI.order(
+        item.id, noteWithSpec, isPay ? payMethod : undefined,
+        isPay ? fundApplied : undefined, isPay ? couponId : undefined
+      );
       if (res.success) {
         setSubmitted(true);
       } else {
@@ -166,7 +200,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             <Text style={styles.successTitle}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
             <Text style={styles.successDesc}>
               {isPay
-                ? `已为您生成 ¥${currentPrice} 的订单（${payMethod}）。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
+                ? `已为您生成 ¥${finalPrice} 的订单${finalPrice > 0 ? `（${payMethod}）` : '（已用健康基金/优惠券全额抵扣）'}。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
                 : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
             </Text>
             <TouchableOpacity style={styles.successBtn} onPress={onClose} activeOpacity={0.85}>
@@ -269,6 +303,90 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             </>
           )}
 
+          {/* 优惠券（仅自主付费且有可用券时展示） */}
+          {isPay && coupons.length > 0 && (
+            <>
+              <Text style={styles.noteLabel}>优惠券</Text>
+              <View style={{ gap: 8, marginBottom: spacing.md }}>
+                <TouchableOpacity
+                  style={[styles.couponChip, !couponId && styles.couponChipActive]}
+                  onPress={() => setCouponId(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.couponChipText, !couponId && styles.couponChipTextActive]}>不使用优惠券</Text>
+                </TouchableOpacity>
+                {coupons.map(c => (
+                  <TouchableOpacity
+                    key={c._id}
+                    style={[styles.couponChip, couponId === c._id && styles.couponChipActive]}
+                    onPress={() => setCouponId(c._id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.couponChipText, couponId === c._id && styles.couponChipTextActive]}>
+                      {formatCouponLabel(c)}{c.minSpend > 0 ? `（满¥${c.minSpend}可用）` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {/* 健康基金抵扣（仅自主付费且有余额时展示） */}
+          {isPay && fundBalance > 0 && (
+            <>
+              <View style={styles.fundHeaderRow}>
+                <Text style={styles.noteLabel}>健康基金抵扣（余额 ¥{fundBalance.toFixed(2)}）</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    const next = !useFund;
+                    setUseFund(next);
+                    if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+                  }}
+                  style={[styles.fundToggle, useFund && styles.fundToggleActive]}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.fundToggleText, useFund && styles.fundToggleTextActive]}>{useFund ? '已启用' : '使用基金'}</Text>
+                </TouchableOpacity>
+              </View>
+              {useFund && (
+                <TextInput
+                  style={[styles.noteInput, { minHeight: 0, marginBottom: spacing.md }]}
+                  keyboardType="numeric"
+                  placeholder={`最多可抵扣 ¥${Math.min(fundBalance, priceAfterCoupon)}`}
+                  placeholderTextColor={colors.textMuted}
+                  value={fundAmountInput}
+                  onChangeText={setFundAmountInput}
+                />
+              )}
+            </>
+          )}
+
+          {/* 应付金额（有抵扣时展示明细） */}
+          {isPay && (couponDiscount > 0 || fundApplied > 0) && (
+            <View style={styles.summaryBox}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>商品原价</Text>
+                <Text style={styles.summaryVal}>¥{currentPrice}</Text>
+              </View>
+              {couponDiscount > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>优惠券抵扣</Text>
+                  <Text style={[styles.summaryVal, { color: colors.danger }]}>-¥{couponDiscount}</Text>
+                </View>
+              )}
+              {fundApplied > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>健康基金抵扣</Text>
+                  <Text style={[styles.summaryVal, { color: colors.danger }]}>-¥{fundApplied}</Text>
+                </View>
+              )}
+              <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 6, marginTop: 2 }]}>
+                <Text style={[styles.summaryLabel, { fontWeight: '700', color: colors.textPrimary }]}>应付金额</Text>
+                <Text style={styles.summaryFinal}>¥{finalPrice}</Text>
+              </View>
+            </View>
+          )}
+
           <Text style={styles.noteLabel}>备注（可选）</Text>
           <TextInput
             style={styles.noteInput}
@@ -305,7 +423,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
             >
               {submitting
                 ? <ActivityIndicator color={colors.white} />
-                : <Text style={styles.submitBtnText}>{isPay ? `确认支付 ¥${currentPrice}` : '提交预约'}</Text>
+                : <Text style={styles.submitBtnText}>{isPay ? `确认支付 ¥${finalPrice}` : '提交预约'}</Text>
               }
             </TouchableOpacity>
           </View>
@@ -714,6 +832,35 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary, alignItems: 'center',
   },
   submitBtnText: { fontSize: 15, color: colors.white, fontWeight: '700' },
+
+  // 优惠券选择
+  couponChip: {
+    paddingVertical: 10, paddingHorizontal: 12, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  couponChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + '0D' },
+  couponChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+  couponChipTextActive: { color: colors.primary, fontWeight: '700' },
+
+  // 健康基金抵扣
+  fundHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs },
+  fundToggle: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  fundToggleActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  fundToggleText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  fundToggleTextActive: { color: colors.white },
+
+  // 价格明细
+  summaryBox: {
+    backgroundColor: colors.background, borderRadius: radius.md,
+    padding: spacing.md, marginBottom: spacing.md, gap: 4,
+  },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { fontSize: 13, color: colors.textSecondary },
+  summaryVal: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
+  summaryFinal: { fontSize: 18, color: colors.danger, fontWeight: '800' },
 
   // Success state
   successIconWrap: { alignItems: 'center', marginBottom: spacing.md, marginTop: spacing.md },

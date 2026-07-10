@@ -218,7 +218,9 @@ export const checkupAPI = {
 // ── Services / 服务商城 ───────────────────────────────────────────
 export const servicesAPI = {
   list:  ()                    => request('/services'),
-  order: (serviceId, note, paymentMethod) => request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId }) }),
+  coupons: () => request('/services/coupons'),
 };
 
 // ── Partner Benefits / 合作伙伴权益 ────────────────────────────────

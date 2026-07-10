@@ -1,10 +1,13 @@
 const express = require('express');
+const mongoose = require('mongoose');
 const router  = express.Router();
 const auth    = require('../middleware/auth');
 const Task    = require('../models/Task');
 const Order   = require('../models/Order');
 const Service = require('../models/Service');
 const PushRecord = require('../models/PushRecord');
+const User    = require('../models/User');
+const Coupon  = require('../models/Coupon');
 
 // ── 静态兜底（DB 为空时使用 / 订单查找用）────────────────────────
 const SERVICE_CATALOG = [
@@ -117,6 +120,17 @@ router.get('/', auth, async (req, res) => {
   res.json({ success: true, data: { categories, services } });
 });
 
+// GET /api/services/coupons — 当前用户可用的优惠券
+router.get('/coupons', auth, async (req, res) => {
+  const now = new Date();
+  const coupons = await Coupon.find({
+    patientId: req.user._id,
+    status: 'active',
+    $or: [{ validTo: null }, { validTo: { $gte: now } }],
+  }).sort({ createdAt: -1 });
+  res.json({ success: true, data: coupons });
+});
+
 // ── 服务包目录（首次开通 & 续费使用）────────────────────────────
 const PACKAGE_CATALOG = [
   { id: 'pkg_1y', name: '年度服务包', duration: '12 个月', price: 3650, originalPrice: 5000, icon: 'shield-checkmark', category: '服务包' },
@@ -125,8 +139,10 @@ const PACKAGE_CATALOG = [
 ];
 
 // POST /api/services/order — 提交服务预约（支持单项服务 & 服务包）
+// useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
+// couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
-  const { serviceId, note, paymentMethod } = req.body;
+  const { serviceId, note, paymentMethod, useHealthFund, couponId } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -148,7 +164,45 @@ router.post('/order', auth, async (req, res) => {
   }
 
   const isPkg     = !!PACKAGE_CATALOG.find(p => p.id === serviceId);
-  const orderNote = [note, paymentMethod ? `支付方式：${paymentMethod}` : ''].filter(Boolean).join('；');
+
+  // ── 健康基金 + 优惠券抵扣（下单即扣，实时校验余额/券状态）──────────
+  let coupon = null;
+  let couponDiscount = 0;
+  if (couponId) {
+    coupon = await Coupon.findOne({ _id: couponId, patientId: req.user._id, status: 'active' });
+    if (!coupon) {
+      return res.status(400).json({ success: false, message: '优惠券不可用或已使用' });
+    }
+    if (coupon.validTo && new Date(coupon.validTo) < new Date()) {
+      return res.status(400).json({ success: false, message: '优惠券已过期' });
+    }
+    if (coupon.minSpend && service.price < coupon.minSpend) {
+      return res.status(400).json({ success: false, message: `订单需满 ¥${coupon.minSpend} 才能使用此券` });
+    }
+    couponDiscount = coupon.type === 'amount'
+      ? coupon.value
+      : Math.round(service.price * (100 - coupon.value)) / 100;
+    couponDiscount = Math.min(couponDiscount, service.price);
+  }
+
+  const priceAfterCoupon = Math.max(0, Math.round((service.price - couponDiscount) * 100) / 100);
+
+  let fundUsed = 0;
+  if (useHealthFund > 0) {
+    const balance = req.user.healthFundBalance || 0;
+    if (useHealthFund > balance) {
+      return res.status(400).json({ success: false, message: '健康基金余额不足' });
+    }
+    fundUsed = Math.min(useHealthFund, priceAfterCoupon);
+  }
+
+  const paidAmount = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
+
+  const paymentParts = [];
+  if (fundUsed > 0) paymentParts.push(`健康基金抵扣¥${fundUsed}`);
+  if (couponDiscount > 0) paymentParts.push(`优惠券抵扣¥${couponDiscount}`);
+  if (paymentMethod) paymentParts.push(`支付方式：${paymentMethod}`);
+  const orderNote = [note, paymentParts.join('；')].filter(Boolean).join('；');
 
   // 谁推送谁获推广费：查该患者对这个产品最近一次的推送记录，推送人自动定为转介绍人(referrerId)，
   // 不需要超管事后手动指定。服务人(fulfillerId)不默认等于推送人——用户明确"推送人和服务人不一定是
@@ -168,19 +222,22 @@ router.post('/order', auth, async (req, res) => {
     }
   }
 
-  const [order] = await Promise.all([
-    Order.create({
-      user:         req.user._id,
-      serviceId:    service.id,
-      serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
-      servicePrice: service.price,
-      serviceIcon:  service.icon || 'shield-checkmark',
-      note:         orderNote,
-      status:       'pending',
-      orderType:    isPkg ? 'package' : 'service',
-      referrerId,
-      servicePerformers,
-    }),
+  const order = await Order.create({
+    user:         req.user._id,
+    serviceId:    service.id,
+    serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
+    servicePrice: service.price,
+    serviceIcon:  service.icon || 'shield-checkmark',
+    note:         orderNote,
+    status:       'pending',
+    orderType:    isPkg ? 'package' : 'service',
+    referrerId,
+    servicePerformers,
+    paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paymentMethod || ''),
+    paidAmount,
+  });
+
+  const followUps = [
     Task.create({
       user:        req.user._id,
       title:       isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
@@ -193,12 +250,34 @@ router.post('/order', auth, async (req, res) => {
       type:        'consultation',
       category:    isPkg ? '服务包开通' : '服务预约',
     }),
-  ]);
+  ];
+  // 健康基金实时扣减（与订单绑定，note 记录用于哪笔订单）
+  if (fundUsed > 0) {
+    followUps.push(User.collection.updateOne(
+      { _id: req.user._id },
+      { $inc: { healthFundBalance: -fundUsed } }
+    ));
+  }
+  // 优惠券标记已用
+  if (coupon) {
+    coupon.status = 'used';
+    coupon.usedAt = new Date();
+    coupon.usedOrderId = order._id;
+    followUps.push(coupon.save());
+  }
+  await Promise.all(followUps);
 
   res.json({
     success: true,
     message: isPkg ? '服务包申请已提交，健管师将在 1 个工作日内联系您完成支付与激活' : '预约申请已提交，健管师将在 1-2 个工作日内与您联系',
-    data: { orderId: order._id, orderNo: order._id.toString().slice(-8).toUpperCase() },
+    data: {
+      orderId: order._id,
+      orderNo: order._id.toString().slice(-8).toUpperCase(),
+      originalPrice: service.price,
+      fundUsed,
+      couponDiscount,
+      paidAmount,
+    },
   });
 });
 

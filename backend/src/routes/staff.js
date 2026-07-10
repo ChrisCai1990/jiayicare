@@ -26,6 +26,7 @@ const Commission = require('../models/Commission');
 const ServiceRecord = require('../models/ServiceRecord');
 const Order = require('../models/Order');
 const GiftRecord = require('../models/GiftRecord');
+const Coupon = require('../models/Coupon');
 const Referral = require('../models/Referral');
 const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const Message        = require('../models/Message');
@@ -2181,6 +2182,34 @@ router.get('/patients/:id/gifts', staffAuth, async (req, res) => {
     .sort({ createdAt: -1 })
     .populate('staffId', 'name role');
   res.json({ success: true, data: gifts });
+});
+
+// ── 优惠券（商城下单抵用，健管/超管手动发放） ───────────────────
+// POST /api/staff/patients/:id/coupons
+router.post('/patients/:id/coupons', staffAuth, async (req, res) => {
+  const { type, value, title, minSpend, validTo, remark } = req.body;
+  if (!type || !value) return res.status(400).json({ success: false, message: '券类型和面额不能为空' });
+  if (type === 'percent' && (value <= 0 || value >= 100)) {
+    return res.status(400).json({ success: false, message: '折扣值需在 0-100 之间（如 90 表示 9 折）' });
+  }
+  const coupon = await Coupon.create({
+    patientId: req.params.id,
+    staffId:   req.staff._id,
+    type, value,
+    title:     title || (type === 'amount' ? `¥${value} 抵用券` : `${value / 10}折优惠券`),
+    minSpend:  minSpend || 0,
+    validTo:   validTo ? new Date(validTo) : null,
+    remark:    remark || '',
+  });
+  res.json({ success: true, data: coupon });
+});
+
+// GET /api/staff/patients/:id/coupons
+router.get('/patients/:id/coupons', staffAuth, async (req, res) => {
+  const coupons = await Coupon.find({ patientId: req.params.id })
+    .sort({ createdAt: -1 })
+    .populate('staffId', 'name role');
+  res.json({ success: true, data: coupons });
 });
 
 // ── 发送消息给会员 ──────────────────────────────────────────
