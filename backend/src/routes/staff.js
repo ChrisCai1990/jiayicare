@@ -910,7 +910,6 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
       EDITABLE.forEach(k => { if (edits[k] !== undefined) followUp[k] = edits[k]; });
     }
     followUp.aiStatus = 'approved';
-    followUp.staffId = req.staff._id;
     await followUp.save();
     res.json({ success: true, message: '已通过审核', data: followUp });
   } catch (err) {

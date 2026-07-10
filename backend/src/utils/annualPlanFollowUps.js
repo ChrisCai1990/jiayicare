@@ -31,9 +31,15 @@ async function buildAnnualPlanFollowUps(plan) {
   const Admin = require('../models/Admin');
   const staffIds = new Set();
   DATED_RECORD_MODULES.forEach(mod => {
-    (moduleData[mod.key]?.records || []).forEach(rec => { if (rec.coordinator) staffIds.add(String(rec.coordinator)); });
+    (moduleData[mod.key]?.records || []).forEach(rec => {
+      if (rec.coordinator) staffIds.add(String(rec.coordinator));
+      if (rec.followUpStaff) staffIds.add(String(rec.followUpStaff));
+    });
   });
+  (moduleData.monitoring?.records || []).forEach(rec => { if (rec.followUpStaff) staffIds.add(String(rec.followUpStaff)); });
   if (moduleData.lifestyle?.staff) staffIds.add(String(moduleData.lifestyle.staff));
+  if (moduleData.quarterly_eval?.followUpStaff) staffIds.add(String(moduleData.quarterly_eval.followUpStaff));
+  if (moduleData.annual_checkup?.followUpStaff) staffIds.add(String(moduleData.annual_checkup.followUpStaff));
   const staffNameMap = {};
   if (staffIds.size) {
     const mongoose = require('mongoose');
@@ -45,13 +51,17 @@ async function buildAnnualPlanFollowUps(plan) {
   // content：客户端详情弹窗展示的"随访内容"，此前自动生成的随访只有 theme 标题、content 为空，
   // 用户打开详情只看到一句通用兜底文案（"健管师会在随访时详细沟通"），看不到具体要做什么——
   // 现在按模块字段拼出有信息量的说明，让客户提前知道这次随访/提醒具体关于什么。
-  const push = (date, theme, content) => {
+  // assignedTo：随访任务实际归属的执行人（方案里填的"随访人员"），决定随访出现在谁的工作台"名下"；
+  // staffId 仅表示创建人，两者语义不同，混用会导致审核通过后随访挂不到指定人名下。
+  const push = (date, theme, content, assignedTo) => {
     if (!date) return;
     const d = new Date(date);
     if (isNaN(d.getTime())) return;
+    const mongoose = require('mongoose');
     created.push({
       patientId: plan.patientId,
       staffId: plan.createdBy,
+      assignedTo: (assignedTo && mongoose.Types.ObjectId.isValid(assignedTo)) ? assignedTo : null,
       date: d,
       theme,
       content: content || '',
@@ -82,9 +92,10 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.order_expert && rec.order_expert !== '无' && `开单专家：${rec.order_expert}`,
         rec.assist && '已安排就医协助',
         rec.coordinator && `协调专员：${staffName(rec.coordinator)}`,
+        rec.followUpStaff && `随访人员：${staffName(rec.followUpStaff)}`,
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean);
-      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'));
+      push(rec[mod.dateField], `${mod.theme} · ${label}`, lines.join('\n'), rec.followUpStaff);
     });
   }
 
@@ -101,10 +112,11 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.time && `监测时间：${rec.time}`,
         rec.purpose && `监测目的：${rec.purpose}`,
         rec.frequency && `监测频率：${rec.frequency}`,
+        rec.followUpStaff && `随访人员：${staffName(rec.followUpStaff)}`,
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean).join('\n');
       while (cursor <= yearEnd) {
-        push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines);
+        push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines, rec.followUpStaff);
         cursor = new Date(cursor.getTime() + days * 86400000);
       }
     });
@@ -121,7 +133,7 @@ async function buildAnnualPlanFollowUps(plan) {
     ].filter(Boolean);
     const evalContent = evalItems.length ? `本次评估内容：${evalItems.join('、')}` : '';
     while (cursor <= yearEnd) {
-      push(cursor, '季度评估随访', evalContent);
+      push(cursor, '季度评估随访', evalContent, quarterlyEval.followUpStaff);
       cursor = new Date(cursor.getTime() + 90 * 86400000);
     }
   }
@@ -134,7 +146,7 @@ async function buildAnnualPlanFollowUps(plan) {
       annualCheckup.focus && `重点关注：${annualCheckup.focus}`,
       annualCheckup.escort && '已安排陪检服务',
     ].filter(Boolean).join('\n');
-    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines);
+    push(annualCheckup.date, `年度体检提醒 · ${annualCheckup.institution || ''}`, checkupLines, annualCheckup.followUpStaff);
   }
 
   return created;
