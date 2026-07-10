@@ -2268,7 +2268,7 @@ export default function PatientDetailPage() {
                       onChange={e => setEditForm(f => ({ ...f, servicePackage: e.target.value }))}>
                       <option value="">请选择服务包</option>
                       {serviceOptions.map(s => (
-                        <option key={s._id} value={s.name}>{s.name}{s.price ? `（¥${s.price}）` : ''}</option>
+                        <option key={s._id} value={s.name}>{s.name}</option>
                       ))}
                       {editForm.servicePackage && !serviceOptions.some(s => s.name === editForm.servicePackage) && (
                         <option value={editForm.servicePackage}>{editForm.servicePackage}（历史值）</option>

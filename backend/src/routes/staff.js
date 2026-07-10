@@ -177,13 +177,13 @@ router.get('/me', staffAuth, async (req, res) => {
   });
 });
 
-// GET /api/staff/service-options — 医护端归类时「服务包」下拉选项（读 admin 配好的商城服务列表）
-// 2026-07-10 金娟：服务包不再手工录入，从 admin 端配好的服务里选
+// GET /api/staff/service-options — 医护端归类时「服务包」下拉选项
+// 2026-07-10 金娟：服务包=admin商城产品里「年度健康计划」分类下的产品（健康预防/维稳/重塑/年轻态/更年期/轻享等）
 router.get('/service-options', staffAuth, async (req, res) => {
   try {
-    const Service = require('../models/Service');
-    const services = await Service.find({ active: true }).sort({ sortOrder: 1, createdAt: 1 }).select('name category price');
-    res.json({ success: true, data: services });
+    const Product = require('../models/Product');
+    const products = await Product.find({ category: '年度健康计划' }).sort({ sortOrder: 1, createdAt: 1 }).select('name');
+    res.json({ success: true, data: products });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
