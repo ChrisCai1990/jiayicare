@@ -5414,7 +5414,11 @@ export default function PatientDetailPage() {
                             }}>编辑</button>
                             {m.stopped
                             ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
-                                onClick={async () => { if (window.confirm('确认恢复用药？')) { await staffAPI.updatePatientMedication(id, m._id, { stopped: false, endDate: '' }); loadMedications() } }}>
+                                onClick={async () => {
+                                  if (!window.confirm('确认恢复用药？')) return
+                                  try { await staffAPI.updatePatientMedication(id, m._id, { stopped: false, endDate: '' }); loadMedications() }
+                                  catch (err) { toast(err.message || '操作失败') }
+                                }}>
                                 恢复用药
                               </button>
                             : <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
@@ -5423,7 +5427,11 @@ export default function PatientDetailPage() {
                               </button>
                           }
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                              onClick={async () => { if (window.confirm(`确认删除「${m.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停药请用"停用"。`)) { await staffAPI.deletePatientMedication(id, m._id); loadMedications() } }}>
+                              onClick={async () => {
+                                if (!window.confirm(`确认删除「${m.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停药请用"停用"。`)) return
+                                try { await staffAPI.deletePatientMedication(id, m._id); loadMedications() }
+                                catch (err) { toast(err.message || '删除失败') }
+                              }}>
                               删除
                             </button>
                           </div>
@@ -5516,7 +5524,11 @@ export default function PatientDetailPage() {
                             }}>编辑</button>
                             {s.stopped
                               ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
-                                  onClick={async () => { if (window.confirm('确认恢复补充？')) { await staffAPI.updatePatientSupplement(id, s._id, { stopped: false }); loadSupplements() } }}>
+                                  onClick={async () => {
+                                    if (!window.confirm('确认恢复补充？')) return
+                                    try { await staffAPI.updatePatientSupplement(id, s._id, { stopped: false }); loadSupplements() }
+                                    catch (err) { toast(err.message || '操作失败') }
+                                  }}>
                                   恢复补充
                                 </button>
                               : <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
@@ -5525,7 +5537,11 @@ export default function PatientDetailPage() {
                                 </button>
                             }
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                              onClick={async () => { if (window.confirm(`确认删除「${s.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停用请用"停用"。`)) { await staffAPI.deletePatientSupplement(id, s._id); loadSupplements() } }}>
+                              onClick={async () => {
+                                if (!window.confirm(`确认删除「${s.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停用请用"停用"。`)) return
+                                try { await staffAPI.deletePatientSupplement(id, s._id); loadSupplements() }
+                                catch (err) { toast(err.message || '删除失败') }
+                              }}>
                               删除
                             </button>
                           </div>
@@ -5635,8 +5651,10 @@ export default function PatientDetailPage() {
               itemName={stoppingMed.name}
               onClose={() => setStoppingMed(null)}
               onConfirm={async () => {
-                await staffAPI.updatePatientMedication(id, stoppingMed._id, { stopped: true })
-                setStoppingMed(null); loadMedications()
+                try {
+                  await staffAPI.updatePatientMedication(id, stoppingMed._id, { stopped: true })
+                  setStoppingMed(null); loadMedications()
+                } catch (err) { toast(err.message || '停用失败') }
               }}
             />
           )}
@@ -5646,8 +5664,10 @@ export default function PatientDetailPage() {
               itemName={stoppingSup.name}
               onClose={() => setStoppingSup(null)}
               onConfirm={async () => {
-                await staffAPI.updatePatientSupplement(id, stoppingSup._id, { stopped: true })
-                setStoppingSup(null); loadSupplements()
+                try {
+                  await staffAPI.updatePatientSupplement(id, stoppingSup._id, { stopped: true })
+                  setStoppingSup(null); loadSupplements()
+                } catch (err) { toast(err.message || '停用失败') }
               }}
             />
           )}
