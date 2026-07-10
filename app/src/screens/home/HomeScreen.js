@@ -414,14 +414,13 @@ function GrowthCard({ growth, onCheckin }) {
         </View>
       )}
 
-      {/* 去打卡入口 */}
-      <TouchableOpacity onPress={onCheckin} style={{
-        marginTop: 16, backgroundColor: '#1E6B50', borderRadius: 12, paddingVertical: 11, alignItems: 'center',
-      }}>
-        <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>
-          {streak > 0 ? `坚持第 ${streak + 1} 天 · 去打卡` : '记录今天 · 去打卡'}
+      {/* 打卡入口已移除：打卡统一在下方「今日健康打卡」网格里进行，此处只做连续天数/日历的激励展示。
+          （2026-07-10 金娟：原「坚持第N天·去打卡」按钮绑的是空函数 onCheckin={()=>{}}，点击无反应且与下方网格重复） */}
+      {streak > 0 && (
+        <Text style={{ marginTop: 12, textAlign: 'center', fontSize: 13, color: '#4A6558' }}>
+          今天是坚持第 {streak + 1} 天，在下方完成今日打卡 👇
         </Text>
-      </TouchableOpacity>
+      )}
     </View>
   );
 }
@@ -712,171 +711,6 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           {/* 成长卡片（连续打卡）已下移到"今日健康打卡"板块顶部，与打卡网格合并为一个整体（2026-07-09） */}
-
-          {/* ── 健康指标区块 ──────────────────────────────────────── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>健康指标</Text>
-            <View style={styles.metricsGrid}>
-
-              {/* 血压 */}
-              <View style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>血压</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: bpStatus.bg }]}>
-                    <Text style={[styles.statusBadgeText, { color: bpStatus.color }]}>{bpStatus.label}</Text>
-                  </View>
-                </View>
-                <View style={styles.metricValueRow}>
-                  <Text style={styles.metricValue}>{bpVal}</Text>
-                  <Text style={styles.metricUnit}>mmHg</Text>
-                </View>
-                <BloodPressureChart data={bpTrend} onAdd={() => navigation.navigate('AddRecord')} />
-              </View>
-
-              {/* 血糖 */}
-              <View style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>血糖</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: bsStatus.bg }]}>
-                    <Text style={[styles.statusBadgeText, { color: bsStatus.color }]}>{bsStatus.label}</Text>
-                  </View>
-                </View>
-                <View style={styles.metricValueRow}>
-                  <Text style={styles.metricValue}>{bsVal}</Text>
-                  <Text style={styles.metricUnit}>mmol/L</Text>
-                </View>
-                <BloodSugarChart data={sugarTrend} onAdd={() => navigation.navigate('AddRecord')} />
-              </View>
-
-              {/* BMI */}
-              <View style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>BMI</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: bmiStatus.bg }]}>
-                    <Text style={[styles.statusBadgeText, { color: bmiStatus.color }]}>{bmiStatus.label}</Text>
-                  </View>
-                </View>
-                <View style={styles.metricValueRow}>
-                  <Text style={styles.metricValue}>{bmiVal ?? '--'}</Text>
-                  <Text style={styles.metricUnit}>kg/m²</Text>
-                </View>
-                {bmiVal ? <BmiBar value={parseFloat(bmiVal)} /> : (
-                  <TouchableOpacity style={styles.chartEmptyMini} onPress={() => navigation.navigate('EditProfile')} activeOpacity={0.7}>
-                    <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-                    <Text style={styles.chartEmptyMiniText}>完善身高体重</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* 睡眠 */}
-              <View style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>睡眠</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: sleepBg }]}>
-                    <Text style={[styles.statusBadgeText, { color: sleepLabelColor }]}>{sleepLabel}</Text>
-                  </View>
-                </View>
-                <View style={styles.sleepRow}>
-                  <Text style={styles.sleepRowLabel}>入睡时间</Text>
-                  <Text style={[styles.sleepRowValue, !sleepHours && { color: colors.textDisabled }]}>{sleepBedTime}</Text>
-                </View>
-                <View style={[styles.sleepRow, { borderTopWidth: 1, borderTopColor: colors.borderLight }]}>
-                  <Text style={styles.sleepRowLabel}>晨起时间</Text>
-                  <Text style={[styles.sleepRowValue, !sleepHours && { color: colors.textDisabled }]}>{sleepWakeTime}</Text>
-                </View>
-                <View style={[styles.sleepRow, { borderTopWidth: 1, borderTopColor: colors.borderLight, marginTop: 2 }]}>
-                  <Text style={styles.sleepRowLabel}>睡眠时长</Text>
-                  {sleepHours != null ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Text style={[styles.sleepRowValue, { color: colors.primary, fontWeight: '700' }]}>
-                        {sleepHours} 小时
-                      </Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity onPress={() => navigation.navigate('AddRecord')} activeOpacity={0.7}>
-                      <Text style={[styles.sleepRowValue, { color: colors.primary, fontSize: 11 }]}>点击录入</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              {/* 情绪 */}
-              <View style={[styles.metricCard, styles.metricCardFull]}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>情绪</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: moodScore >= 6 ? '#E8F5EF' : '#FDECEA' }]}>
-                    <Text style={[styles.statusBadgeText, { color: moodLabelColor }]}>{moodLabel}</Text>
-                  </View>
-                </View>
-                <View style={styles.metricValueRow}>
-                  <Text style={styles.metricValue}>{moodScore}</Text>
-                  <Text style={styles.metricUnit}>分</Text>
-                </View>
-                {/* 圆点选分 */}
-                <View style={styles.moodDots}>
-                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                    <TouchableOpacity
-                      key={n}
-                      onPress={() => {
-                        setMoodScore(n);
-                        recordsAPI.create({
-                          category: 'lifestyle', type: 'mood', label: '情绪',
-                          value: String(n), unit: '分', status: n >= 8 ? 'normal' : n >= 6 ? 'normal' : 'warning',
-                        }).catch(() => {});
-                      }}
-                      activeOpacity={0.7}
-                      style={[
-                        styles.moodDot,
-                        n === moodScore && styles.moodDotActive,
-                      ]}
-                    >
-                      <Text style={[
-                        styles.moodDotLabel,
-                        n === moodScore && styles.moodDotLabelActive,
-                      ]}>{n}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <Text style={styles.moodHint}>
-                  1分 · 情绪低落 &nbsp;&nbsp;&nbsp; 5分 · 一般 &nbsp;&nbsp;&nbsp; 10分 · 心情愉悦
-                </Text>
-              </View>
-
-            </View>
-          </View>
-
-          {/* ── 新用户引导卡（无任何健康数据时显示） ────────────────── */}
-          {!isDemo && !bpRec && !bsSrc && !sleepRec && (
-            <View style={styles.onboardBanner}>
-              <View style={styles.onboardHeader}>
-                <Ionicons name="rocket-outline" size={20} color={colors.primary} />
-                <Text style={styles.onboardTitle}>开始您的健康管理之旅</Text>
-              </View>
-              <Text style={styles.onboardSub}>完成以下步骤，激活个人健康档案</Text>
-              {[
-                { icon: 'person-outline', label: '完善健康资料', done: !!(user?.height && user?.weight), screen: 'EditProfile' },
-                { icon: 'add-circle-outline', label: '录入第一条健康数据', done: false, screen: 'AddRecord' },
-                { icon: 'medical-outline', label: '咨询 AI 健康助手', done: false, screen: 'Chat' },
-              ].map((step, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={[styles.onboardStep, step.done && styles.onboardStepDone]}
-                  onPress={() => !step.done && navigation.navigate(step.screen)}
-                  activeOpacity={step.done ? 1 : 0.75}
-                >
-                  <View style={[styles.onboardStepIcon, step.done && { backgroundColor: '#E8F5EF' }]}>
-                    <Ionicons name={step.done ? 'checkmark' : step.icon} size={15}
-                      color={step.done ? colors.success : colors.primary} />
-                  </View>
-                  <Text style={[styles.onboardStepLabel, step.done && { color: colors.textMuted, textDecorationLine: 'line-through' }]}>
-                    {step.label}
-                  </Text>
-                  {!step.done && <Ionicons name="chevron-forward" size={13} color={colors.textMuted} />}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
           {/* ── 今日健康打卡 ──────────────────────────────────────── */}
           {(() => {
             const items = dynamicCheckinItems;
@@ -1056,6 +890,171 @@ export default function HomeScreen({ navigation }) {
               </>
             );
           })()}
+
+          {/* ── 健康指标区块 ──────────────────────────────────────── */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>健康指标</Text>
+            <View style={styles.metricsGrid}>
+
+              {/* 血压 */}
+              <View style={styles.metricCard}>
+                <View style={styles.metricHeader}>
+                  <Text style={styles.metricCardTitle}>血压</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: bpStatus.bg }]}>
+                    <Text style={[styles.statusBadgeText, { color: bpStatus.color }]}>{bpStatus.label}</Text>
+                  </View>
+                </View>
+                <View style={styles.metricValueRow}>
+                  <Text style={styles.metricValue}>{bpVal}</Text>
+                  <Text style={styles.metricUnit}>mmHg</Text>
+                </View>
+                <BloodPressureChart data={bpTrend} onAdd={() => navigation.navigate('AddRecord')} />
+              </View>
+
+              {/* 血糖 */}
+              <View style={styles.metricCard}>
+                <View style={styles.metricHeader}>
+                  <Text style={styles.metricCardTitle}>血糖</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: bsStatus.bg }]}>
+                    <Text style={[styles.statusBadgeText, { color: bsStatus.color }]}>{bsStatus.label}</Text>
+                  </View>
+                </View>
+                <View style={styles.metricValueRow}>
+                  <Text style={styles.metricValue}>{bsVal}</Text>
+                  <Text style={styles.metricUnit}>mmol/L</Text>
+                </View>
+                <BloodSugarChart data={sugarTrend} onAdd={() => navigation.navigate('AddRecord')} />
+              </View>
+
+              {/* BMI */}
+              <View style={styles.metricCard}>
+                <View style={styles.metricHeader}>
+                  <Text style={styles.metricCardTitle}>BMI</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: bmiStatus.bg }]}>
+                    <Text style={[styles.statusBadgeText, { color: bmiStatus.color }]}>{bmiStatus.label}</Text>
+                  </View>
+                </View>
+                <View style={styles.metricValueRow}>
+                  <Text style={styles.metricValue}>{bmiVal ?? '--'}</Text>
+                  <Text style={styles.metricUnit}>kg/m²</Text>
+                </View>
+                {bmiVal ? <BmiBar value={parseFloat(bmiVal)} /> : (
+                  <TouchableOpacity style={styles.chartEmptyMini} onPress={() => navigation.navigate('EditProfile')} activeOpacity={0.7}>
+                    <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
+                    <Text style={styles.chartEmptyMiniText}>完善身高体重</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              {/* 睡眠 */}
+              <View style={styles.metricCard}>
+                <View style={styles.metricHeader}>
+                  <Text style={styles.metricCardTitle}>睡眠</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: sleepBg }]}>
+                    <Text style={[styles.statusBadgeText, { color: sleepLabelColor }]}>{sleepLabel}</Text>
+                  </View>
+                </View>
+                <View style={styles.sleepRow}>
+                  <Text style={styles.sleepRowLabel}>入睡时间</Text>
+                  <Text style={[styles.sleepRowValue, !sleepHours && { color: colors.textDisabled }]}>{sleepBedTime}</Text>
+                </View>
+                <View style={[styles.sleepRow, { borderTopWidth: 1, borderTopColor: colors.borderLight }]}>
+                  <Text style={styles.sleepRowLabel}>晨起时间</Text>
+                  <Text style={[styles.sleepRowValue, !sleepHours && { color: colors.textDisabled }]}>{sleepWakeTime}</Text>
+                </View>
+                <View style={[styles.sleepRow, { borderTopWidth: 1, borderTopColor: colors.borderLight, marginTop: 2 }]}>
+                  <Text style={styles.sleepRowLabel}>睡眠时长</Text>
+                  {sleepHours != null ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                      <Text style={[styles.sleepRowValue, { color: colors.primary, fontWeight: '700' }]}>
+                        {sleepHours} 小时
+                      </Text>
+                    </View>
+                  ) : (
+                    <TouchableOpacity onPress={() => navigation.navigate('AddRecord')} activeOpacity={0.7}>
+                      <Text style={[styles.sleepRowValue, { color: colors.primary, fontSize: 11 }]}>点击录入</Text>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* 情绪 */}
+              <View style={[styles.metricCard, styles.metricCardFull]}>
+                <View style={styles.metricHeader}>
+                  <Text style={styles.metricCardTitle}>情绪</Text>
+                  <View style={[styles.statusBadge, { backgroundColor: moodScore >= 6 ? '#E8F5EF' : '#FDECEA' }]}>
+                    <Text style={[styles.statusBadgeText, { color: moodLabelColor }]}>{moodLabel}</Text>
+                  </View>
+                </View>
+                <View style={styles.metricValueRow}>
+                  <Text style={styles.metricValue}>{moodScore}</Text>
+                  <Text style={styles.metricUnit}>分</Text>
+                </View>
+                {/* 圆点选分 */}
+                <View style={styles.moodDots}>
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                    <TouchableOpacity
+                      key={n}
+                      onPress={() => {
+                        setMoodScore(n);
+                        recordsAPI.create({
+                          category: 'lifestyle', type: 'mood', label: '情绪',
+                          value: String(n), unit: '分', status: n >= 8 ? 'normal' : n >= 6 ? 'normal' : 'warning',
+                        }).catch(() => {});
+                      }}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.moodDot,
+                        n === moodScore && styles.moodDotActive,
+                      ]}
+                    >
+                      <Text style={[
+                        styles.moodDotLabel,
+                        n === moodScore && styles.moodDotLabelActive,
+                      ]}>{n}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+                <Text style={styles.moodHint}>
+                  1分 · 情绪低落 &nbsp;&nbsp;&nbsp; 5分 · 一般 &nbsp;&nbsp;&nbsp; 10分 · 心情愉悦
+                </Text>
+              </View>
+
+            </View>
+          </View>
+
+          {/* ── 新用户引导卡（无任何健康数据时显示） ────────────────── */}
+          {!isDemo && !bpRec && !bsSrc && !sleepRec && (
+            <View style={styles.onboardBanner}>
+              <View style={styles.onboardHeader}>
+                <Ionicons name="rocket-outline" size={20} color={colors.primary} />
+                <Text style={styles.onboardTitle}>开始您的健康管理之旅</Text>
+              </View>
+              <Text style={styles.onboardSub}>完成以下步骤，激活个人健康档案</Text>
+              {[
+                { icon: 'person-outline', label: '完善健康资料', done: !!(user?.height && user?.weight), screen: 'EditProfile' },
+                { icon: 'add-circle-outline', label: '录入第一条健康数据', done: false, screen: 'AddRecord' },
+                { icon: 'medical-outline', label: '咨询 AI 健康助手', done: false, screen: 'Chat' },
+              ].map((step, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={[styles.onboardStep, step.done && styles.onboardStepDone]}
+                  onPress={() => !step.done && navigation.navigate(step.screen)}
+                  activeOpacity={step.done ? 1 : 0.75}
+                >
+                  <View style={[styles.onboardStepIcon, step.done && { backgroundColor: '#E8F5EF' }]}>
+                    <Ionicons name={step.done ? 'checkmark' : step.icon} size={15}
+                      color={step.done ? colors.success : colors.primary} />
+                  </View>
+                  <Text style={[styles.onboardStepLabel, step.done && { color: colors.textMuted, textDecorationLine: 'line-through' }]}>
+                    {step.label}
+                  </Text>
+                  {!step.done && <Ionicons name="chevron-forward" size={13} color={colors.textMuted} />}
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
 
           {/* ── 待办任务 ──────────────────────────────────────────── */}
           <View style={styles.section}>
