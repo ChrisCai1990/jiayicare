@@ -20,6 +20,7 @@ export default function HomePage() {
   const [checkinRecords, setCheckinRecords] = useState([])
   const [checkupProgress, setCheckupProgress] = useState([])
   const [expiringPatients, setExpiringPatients] = useState([])
+  const [recentMessages, setRecentMessages] = useState([])
 
   useEffect(() => {
     staffAPI.getReports()
@@ -46,6 +47,7 @@ export default function HomePage() {
       }
       if (msgRes.status === 'fulfilled') {
         setUnreadMsgCount(msgRes.value.unreadCount ?? msgRes.value.data?.filter(m => m.staffUnread)?.length ?? 0)
+        setRecentMessages((msgRes.value.data || []).filter(m => m.staffUnread).slice(0, 5))
       }
     })
   }, [])
@@ -66,6 +68,56 @@ export default function HomePage() {
           ＋ 新增会员
         </button>
       </div>
+
+      {/* 消息通知：放最上面，确保医护第一时间看到未读留言+待处理转介 */}
+      {(recentMessages.length > 0 || pendingReferralCount > 0) && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🔔 消息通知</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#DC3545', background: '#DC354518', padding: '2px 8px', borderRadius: 99 }}>
+                {unreadMsgCount + pendingReferralCount}
+              </span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => nav('/notifications')}>查看全部</button>
+          </div>
+          <div className="card-body" style={{ padding: '8px 20px' }}>
+            {pendingReferralCount > 0 && (
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 0',
+                  borderBottom: recentMessages.length > 0 ? '1px solid #f0ede8' : 'none',
+                  cursor: 'pointer',
+                }}
+                onClick={() => nav('/notifications')}>
+                <span style={{ fontSize: 14, color: '#1A2B24' }}>🔀 待处理转介 + 未读回复</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#D97706', background: '#D9780618', padding: '2px 8px', borderRadius: 99 }}>
+                  {pendingReferralCount}
+                </span>
+              </div>
+            )}
+            {recentMessages.map((m, i) => (
+              <div key={m._id}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 0',
+                  borderBottom: i < recentMessages.length - 1 ? '1px solid #f0ede8' : 'none',
+                  cursor: 'pointer',
+                }}
+                onClick={() => nav('/notifications')}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{m.patientName}</span>
+                  <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.content}</span>
+                </div>
+                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>
+                  {new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* 数据卡片 */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)', marginBottom: 24 }}>
@@ -217,80 +269,35 @@ export default function HomePage() {
         </div>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-        {/* 慢病分布 */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">慢病分布</div>
-          </div>
-          <div className="card-body">
-            {reports?.diseaseDistribution?.length > 0 ? (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {reports.diseaseDistribution.map(d => (
-                  <div key={d.disease} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{
-                      background: DISEASE_COLOR[d.disease] || '#8AA89C',
-                      color: '#fff', padding: '2px 10px', borderRadius: 99, fontSize: 12, minWidth: 60, textAlign: 'center'
-                    }}>{d.disease}</span>
-                    <div style={{ flex: 1, height: 8, background: '#f0f0f0', borderRadius: 4 }}>
-                      <div style={{
-                        width: `${Math.min(100, (d.count / (reports.totalPatients || 1)) * 100)}%`,
-                        height: '100%',
-                        background: DISEASE_COLOR[d.disease] || '#1E6B50',
-                        borderRadius: 4,
-                      }} />
-                    </div>
-                    <span style={{ fontSize: 13, color: '#666', minWidth: 30, textAlign: 'right' }}>{d.count}人</span>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 14 }}>暂无慢病数据</div>
-            )}
-          </div>
+      {/* 慢病分布 */}
+      <div className="card">
+        <div className="card-header">
+          <div className="card-title">慢病分布</div>
         </div>
-
-        {/* 快速入口 */}
-        <div className="card">
-          <div className="card-header">
-            <div className="card-title">快速操作</div>
-          </div>
-          <div className="card-body">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              {[
-                { icon: '➕', label: '新增会员', path: '/patients/new', badge: 0 },
-                { icon: '🔔', label: '消息通知', path: '/notifications', badge: pendingReferralCount + unreadMsgCount },
-                { icon: '🛍', label: '产品推送', path: '/products', badge: 0 },
-              ].map(item => (
-                <button
-                  key={item.label}
-                  className="quick-btn"
-                  onClick={() => nav(item.path)}
-                  style={{
-                    padding: '16px 12px', borderRadius: 12,
-                    border: item.badge > 0 ? '1.5px solid #D97706' : '1px solid #E0D9CE',
-                    background: item.badge > 0 ? '#FFFBF5' : '#f9f7f3',
-                    cursor: 'pointer', textAlign: 'center',
-                    display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
-                    fontSize: 13, color: '#1A2B24', transition: 'all 0.15s',
-                    position: 'relative',
-                  }}
-                >
-                  {item.badge > 0 && (
-                    <span style={{
-                      position: 'absolute', top: 8, right: 8,
-                      background: '#DC3545', color: '#fff',
-                      borderRadius: 99, fontSize: 11, fontWeight: 700,
-                      minWidth: 18, height: 18, lineHeight: '18px',
-                      textAlign: 'center', padding: '0 4px',
-                    }}>{item.badge}</span>
-                  )}
-                  <span style={{ fontSize: 24 }}>{item.icon}</span>
-                  <span>{item.label}</span>
-                </button>
+        <div className="card-body">
+          {reports?.diseaseDistribution?.length > 0 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {reports.diseaseDistribution.map(d => (
+                <div key={d.disease} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <span style={{
+                    background: DISEASE_COLOR[d.disease] || '#8AA89C',
+                    color: '#fff', padding: '2px 10px', borderRadius: 99, fontSize: 12, minWidth: 60, textAlign: 'center'
+                  }}>{d.disease}</span>
+                  <div style={{ flex: 1, height: 8, background: '#f0f0f0', borderRadius: 4 }}>
+                    <div style={{
+                      width: `${Math.min(100, (d.count / (reports.totalPatients || 1)) * 100)}%`,
+                      height: '100%',
+                      background: DISEASE_COLOR[d.disease] || '#1E6B50',
+                      borderRadius: 4,
+                    }} />
+                  </div>
+                  <span style={{ fontSize: 13, color: '#666', minWidth: 30, textAlign: 'right' }}>{d.count}人</span>
+                </div>
               ))}
             </div>
-          </div>
+          ) : (
+            <div style={{ color: '#aaa', textAlign: 'center', padding: '20px 0', fontSize: 14 }}>暂无慢病数据</div>
+          )}
         </div>
       </div>
     </div>

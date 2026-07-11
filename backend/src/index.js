@@ -112,4 +112,7 @@ app.listen(PORT, () => {
 
   // AI每日健康关怀：每天给活跃客户推一条专属关怀+去打卡入口，提升打开率与打卡留存
   require('./utils/dailyCareScheduler').startDailyCareScheduler();
+
+  // AI消息兜底回复：用户留言5分钟内医护未读，AI先安抚回复一条（不涉及诊断/建议），医护看到后仍可人工回复
+  require('./utils/aiMessageFallbackScheduler').startAIMessageFallbackScheduler();
 });

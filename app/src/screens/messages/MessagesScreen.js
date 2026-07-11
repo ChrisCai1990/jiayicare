@@ -1087,7 +1087,16 @@ function ConversationThreadModal({ role, onClose }) {
                       </View>
                     )}
                     <View style={[threadStyles.bubble, isMine ? threadStyles.bubbleUser : threadStyles.bubbleAI]}>
-                      {!isMine && <Text style={[threadStyles.bubbleName, { color: meta.color }]}>{m.sender || meta.label}</Text>}
+                      {!isMine && (
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+                          <Text style={[threadStyles.bubbleName, { color: meta.color, marginBottom: 0 }]}>{m.sender || meta.label}</Text>
+                          {m.isAI && (
+                            <View style={{ marginLeft: 6, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 99, backgroundColor: meta.color + '20' }}>
+                              <Text style={{ fontSize: 10, fontWeight: '700', color: meta.color }}>AI</Text>
+                            </View>
+                          )}
+                        </View>
+                      )}
                       <Text style={[threadStyles.bubbleText, isMine && threadStyles.bubbleTextUser]}>{m.content}</Text>
                     </View>
                   </View>

@@ -722,12 +722,15 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                   {isUser ? (userName?.[0] || '?') : '医'}
                 </div>
                 <div style={{ maxWidth: '72%' }}>
-                  <div style={{ fontSize: 11, color: '#aaa', marginBottom: 3, textAlign: isUser ? 'left' : 'right' }}>
-                    {isUser ? userName : m.sender} · {fmtTime(m.createdAt)}
+                  <div style={{ fontSize: 11, color: '#aaa', marginBottom: 3, textAlign: isUser ? 'left' : 'right', display: 'flex', alignItems: 'center', gap: 4, justifyContent: isUser ? 'flex-start' : 'flex-end' }}>
+                    <span>{isUser ? userName : m.sender} · {fmtTime(m.createdAt)}</span>
+                    {m.isAI && (
+                      <span style={{ fontSize: 10, fontWeight: 700, color: '#D97706', background: '#D9780618', padding: '1px 6px', borderRadius: 99 }}>AI已代答</span>
+                    )}
                   </div>
                   <div style={{
                     padding: '10px 14px', borderRadius: isUser ? '4px 16px 16px 16px' : '16px 4px 16px 16px',
-                    background: isUser ? '#fff' : '#1E6B50', color: isUser ? '#1A2B24' : '#fff',
+                    background: isUser ? '#fff' : (m.isAI ? '#D97706' : '#1E6B50'), color: isUser ? '#1A2B24' : '#fff',
                     fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
                   }}>{m.content}</div>
