@@ -315,8 +315,7 @@ router.get('/checkup-progress', staffAuth, async (req, res) => {
     const staff = req.staff;
     let staffIds = [staff._id];
     if (staff.role !== 'superadmin') {
-      const subIds = await getSubordinateIds(staff._id);
-      staffIds = [staff._id, ...subIds];
+      staffIds = await getVisibleStaffIds(staff);
     }
     const assignFilter = {};
     if (staff.role !== 'superadmin') {
@@ -581,10 +580,10 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .populate('assignedMedicalAssistant', 'name title role');
   if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
-  // 权限校验：非超管只能查看分配给自己（或下属）的患者
+  // 权限校验：非超管只能查看分配给自己（或下属、团队成员）的患者
   if (req.staff.role !== 'superadmin') {
-    const staffIds = [req.staff._id, ...(await getSubordinateIds(req.staff._id))];
-    const matches = (field) => field && staffIds.some(id => id.equals(field._id || field));
+    const staffIds = (await getVisibleStaffIds(req.staff)).map(String);
+    const matches = (field) => field && staffIds.includes(String(field._id || field));
     const hasAccess = [
       user.assignedHealthManager, user.assignedFamilyDoctor, user.assignedNutritionist,
       user.assignedSpecialist, user.assignedTcmDoctor, user.assignedPsychologist,
@@ -760,12 +759,13 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   // 例外：家庭医生作为患者的第一责任人，需要看到名下患者的全部随访（含健管专员等他人执行的），
   // 用于把控质量，但不代表随访归属改到家庭医生名下——执行人仍是 assignedTo 那个人。
   let ownerFilter;
+  const visibleStaffIds = await getVisibleStaffIds(req.staff);
   if (req.staff.role === 'familyDoctor') {
-    const myPatients = await User.find({ assignedFamilyDoctor: req.staff._id }).select('_id');
+    const myPatients = await User.find({ assignedFamilyDoctor: { $in: visibleStaffIds } }).select('_id');
     const myPatientIds = myPatients.map(p => p._id);
-    ownerFilter = { $or: [{ assignedTo: req.staff._id }, { assignedTo: null, staffId: req.staff._id }, { patientId: { $in: myPatientIds } }] };
+    ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }, { patientId: { $in: myPatientIds } }] };
   } else {
-    ownerFilter = { $or: [{ assignedTo: req.staff._id }, { assignedTo: null, staffId: req.staff._id }] };
+    ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }] };
   }
 
   const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}] };
@@ -933,10 +933,11 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
 // 简报：我的患者数、今日随访数、本月随访数
 router.get('/reports', staffAuth, async (req, res) => {
   const staff = req.staff;
+  const visibleStaffIds = staff.role === 'superadmin' ? null : await getVisibleStaffIds(staff);
   const myFilter = staff.role === 'superadmin' ? {} :
     staff.role === 'familyDoctor'
-      ? { assignedFamilyDoctor: staff._id }
-      : { assignedHealthManager: staff._id };
+      ? { assignedFamilyDoctor: { $in: visibleStaffIds } }
+      : { assignedHealthManager: { $in: visibleStaffIds } };
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -2366,10 +2367,11 @@ router.get('/patients/expiring', staffAuth, async (req, res) => {
   const cutoff = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
 
   const staff = req.staff;
+  const visibleStaffIds = staff.role === 'superadmin' ? null : await getVisibleStaffIds(staff);
   const myFilter = staff.role === 'superadmin' ? {} :
     staff.role === 'familyDoctor'
-      ? { assignedFamilyDoctor: staff._id }
-      : { assignedHealthManager: staff._id };
+      ? { assignedFamilyDoctor: { $in: visibleStaffIds } }
+      : { assignedHealthManager: { $in: visibleStaffIds } };
 
   const patients = await User.find({
     ...myFilter,
@@ -2390,19 +2392,20 @@ router.get('/notifications', staffAuth, async (req, res) => {
   const now = new Date();
   const cutoff30 = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
 
+  const visibleStaffIds = staff.role === 'superadmin' ? null : await getVisibleStaffIds(staff);
   const myFilter = staff.role === 'superadmin' ? {} :
     staff.role === 'familyDoctor'
-      ? { assignedFamilyDoctor: staff._id }
-      : { assignedHealthManager: staff._id };
+      ? { assignedFamilyDoctor: { $in: visibleStaffIds } }
+      : { assignedHealthManager: { $in: visibleStaffIds } };
 
-  // 按角色过滤：我负责的患者 + 我这个角色对应的留言频道，统计未读用户留言数（用于侧边栏红点）
+  // 按角色过滤：我负责的患者（含下属、团队成员）+ 我这个角色对应的留言频道，统计未读用户留言数（用于侧边栏红点）
   const msgPatientFilter =
     staff.role === 'superadmin'      ? {} :
-    staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: staff._id } :
-    staff.role === 'nutritionist'    ? { assignedNutritionist: staff._id } :
+    staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: { $in: visibleStaffIds } } :
+    staff.role === 'nutritionist'    ? { assignedNutritionist: { $in: visibleStaffIds } } :
     staff.role === 'healthManager' || staff.role === 'medicalAssistant'
-                                     ? { assignedHealthManager: staff._id } :
-                                       { $or: [ { assignedFamilyDoctor: staff._id }, { assignedHealthManager: staff._id }, { assignedNutritionist: staff._id } ] };
+                                     ? { assignedHealthManager: { $in: visibleStaffIds } } :
+                                       { $or: [ { assignedFamilyDoctor: { $in: visibleStaffIds } }, { assignedHealthManager: { $in: visibleStaffIds } }, { assignedNutritionist: { $in: visibleStaffIds } } ] };
   const msgRecipientFilter =
     staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
     staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
@@ -2559,11 +2562,12 @@ router.get('/abnormal-reviews', staffAuth, checkPermission('abnormal_review', 'v
     if (patientId) filter.patientId = patientId;
     if (status) filter.status = status;
 
-    // 权限过滤：非 superadmin/manager 只看自己管的患者
+    // 权限过滤：非 superadmin/manager 只看自己（含下属、团队成员）管的患者
     if (!['superadmin', 'manager'].includes(req.staff.role)) {
-      const myPatients = await User.find({ assignedFamilyDoctor: req.staff._id }).select('_id');
+      const visibleStaffIds = await getVisibleStaffIds(req.staff);
+      const myPatients = await User.find({ assignedFamilyDoctor: { $in: visibleStaffIds } }).select('_id');
       const myPatientsSet = new Set(myPatients.map(p => p._id.toString()));
-      const managed = await User.find({ assignedHealthManager: req.staff._id }).select('_id');
+      const managed = await User.find({ assignedHealthManager: { $in: visibleStaffIds } }).select('_id');
       managed.forEach(p => myPatientsSet.add(p._id.toString()));
       if (!patientId) filter.patientId = { $in: [...myPatientsSet] };
     }
@@ -3185,11 +3189,14 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const ALL_CHECKIN_TYPES = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
     const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒' };
 
-    // 管辖患者
+    // 管辖患者（团队负责人/组长可见范围扩展到下属及团队成员名下患者）
     const patientFilter = {};
-    if (staff.role === 'healthManager') patientFilter.assignedHealthManager = staff._id;
-    else if (staff.role === 'familyDoctor') patientFilter.assignedFamilyDoctor = staff._id;
-    else if (staff.role === 'nutritionist') patientFilter.assignedNutritionist = staff._id;
+    if (staff.role !== 'superadmin') {
+      const visibleStaffIds = await getVisibleStaffIds(staff);
+      if (staff.role === 'healthManager') patientFilter.assignedHealthManager = { $in: visibleStaffIds };
+      else if (staff.role === 'familyDoctor') patientFilter.assignedFamilyDoctor = { $in: visibleStaffIds };
+      else if (staff.role === 'nutritionist') patientFilter.assignedNutritionist = { $in: visibleStaffIds };
+    }
     if (patientName) patientFilter.name = new RegExp(patientName, 'i');
 
     const patients = await User.find(patientFilter).select('name phone').lean();
@@ -3248,13 +3255,14 @@ router.get('/user-messages', staffAuth, async (req, res) => {
   try {
     const staff = req.staff;
 
-    // 找到分配给该医护人员的患者
+    // 找到分配给该医护人员（含下属、团队成员）的患者
+    const visibleStaffIds = await getVisibleStaffIds(staff);
     const myFilter =
-      staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: staff._id } :
-      staff.role === 'nutritionist'    ? { assignedNutritionist: staff._id } :
+      staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: { $in: visibleStaffIds } } :
+      staff.role === 'nutritionist'    ? { assignedNutritionist: { $in: visibleStaffIds } } :
       staff.role === 'healthManager' || staff.role === 'medicalAssistant'
-                                       ? { assignedHealthManager: staff._id } :
-                                         { $or: [ { assignedFamilyDoctor: staff._id }, { assignedHealthManager: staff._id }, { assignedNutritionist: staff._id } ] };
+                                       ? { assignedHealthManager: { $in: visibleStaffIds } } :
+                                         { $or: [ { assignedFamilyDoctor: { $in: visibleStaffIds } }, { assignedHealthManager: { $in: visibleStaffIds } }, { assignedNutritionist: { $in: visibleStaffIds } } ] };
 
     const myPatients = await User.find(myFilter).select('_id name phone').lean();
     const patientIds = myPatients.map(p => p._id);
@@ -4743,11 +4751,13 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       tcmDoctor: 'assignedTcmDoctor',
       specialist: 'assignedSpecialist',
     };
-    let myPatientIds = null; // null = 不限制（超管）；否则是当前角色名下患者ID数组
+    let myPatientIds = null; // null = 不限制（超管）；否则是当前角色（含团队/下属扩展）名下患者ID数组
     if (!isSuper) {
       const assignField = ROLE_ASSIGN_FIELD[role];
       if (assignField) {
-        const myPatients = await User.find({ [assignField]: req.staff._id }).select('_id').lean();
+        // 团队负责人/组长（Team.mentorId）或有下属（Admin.managerId）时，扩大到团队/下属名下患者
+        const visibleStaffIds = await getVisibleStaffIds(req.staff);
+        const myPatients = await User.find({ [assignField]: { $in: visibleStaffIds } }).select('_id').lean();
         myPatientIds = myPatients.map(p => p._id);
       } else {
         myPatientIds = []; // 角色没有对应归属字段（如healthPlanner），保守起见不展示任何患者相关待办
