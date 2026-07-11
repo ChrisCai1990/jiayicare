@@ -146,7 +146,8 @@ const userSchema = new mongoose.Schema({
   idType:          { type: String, enum: ['idCard', 'passport'], default: 'idCard' }, // 证件类型：身份证/护照。护照号跳过身份证格式校验与性别/生日自动解析
   source:          { type: String, default: '' },   // 患者来源
   patientType:     { type: String, enum: ['regular', 'vip', 'trial', ''], default: '' }, // 患者类型
-  remark:          { type: String, default: '' },   // 备注
+  remark:          { type: String, default: '' },   // 备注（管理信息卡）
+  basicRemark:     { type: String, default: '' },   // 备注（基本信息卡，与 remark 独立）
   workplace:       { type: String, default: '' },   // 所在企业
   occupation:      { type: String, default: '' },   // 所在行业
   education:       { type: String, default: '' },   // 学历

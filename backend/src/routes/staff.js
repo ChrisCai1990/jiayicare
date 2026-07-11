@@ -633,7 +633,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   const allowed = [
     'name', 'gender', 'age', 'height', 'weight', 'preferredTitle',
     'birthDate', 'memberType', 'belief',
-    'chronicDiseases', 'patientType', 'source', 'remark',
+    'chronicDiseases', 'patientType', 'source', 'remark', 'basicRemark',
     'idNumber', 'idType', 'workplace', 'occupation', 'maritalStatus',
     'ethnicity', 'address', 'contactPhone', 'contactPhone2', 'contactName', 'contactPhone3', 'deliveryAddress',
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',

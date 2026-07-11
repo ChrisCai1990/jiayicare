@@ -1299,6 +1299,7 @@ export default function PatientDetailPage() {
     contactPhone2: u.contactPhone2 || '',
     deliveryAddress: u.deliveryAddress || '',
     chronicDiseases: u.chronicDiseases || [],
+    basicRemark: u.basicRemark || '',
   })
 
   const handleSaveBasicInfo = async () => {
@@ -2233,6 +2234,12 @@ export default function PatientDetailPage() {
                       ))}
                     </div>
                   </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>备注</label>
+                    <textarea className="form-input" rows={3} value={basicInfoForm.basicRemark || ''}
+                      placeholder="基本信息相关的补充说明"
+                      onChange={e => setBasicInfoForm(f => ({ ...f, basicRemark: e.target.value }))} />
+                  </div>
                 </div>
               ) : (
                 <>
@@ -2273,6 +2280,11 @@ export default function PatientDetailPage() {
                         : <span style={{ fontSize: 13, color: '#1A2B24' }}>-</span>}
                     </span>
                   </div>
+                  {user.basicRemark && (
+                    <div style={{ marginTop: 10, padding: '8px 12px', background: '#F7F5F0', borderRadius: 8, fontSize: 13, color: '#4A6558', whiteSpace: 'pre-wrap' }}>
+                      📝 {user.basicRemark}
+                    </div>
+                  )}
                 </>
               )}
             </div>
