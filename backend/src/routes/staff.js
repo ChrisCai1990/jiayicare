@@ -900,6 +900,17 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
   }
 
+  // 已完成/已取消的随访不允许再转派负责人：转派本应发生在处理之前，
+  // 若任务已结束还改assignedTo，会导致被转派人登录后在"待随访任务"里完全看不到（因为已是completed/cancelled状态），
+  // 转派等于白转，误导被转派人以为自己接到了任务
+  if (
+    ['completed', 'cancelled'].includes(followUp.status) &&
+    req.body.assignedTo !== undefined &&
+    String(req.body.assignedTo || '') !== String(followUp.assignedTo || '')
+  ) {
+    return res.status(400).json({ success: false, message: '该随访已结束，不能再修改负责人' });
+  }
+
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
   // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，

@@ -6749,10 +6749,14 @@ export default function PatientDetailPage() {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">随访人员</label>
                 <select className="form-input" value={editingFollowUp.assignedTo}
+                  disabled={['completed', 'cancelled'].includes(followUpDetail.status)}
                   onChange={e => setEditingFollowUp(f => ({ ...f, assignedTo: e.target.value }))}>
                   <option value="">-- 当前登录人 --</option>
                   {staffList.map(s => <option key={s._id} value={s._id}>{s.name} · {s.roleLabel || s.role}</option>)}
                 </select>
+                {['completed', 'cancelled'].includes(followUpDetail.status) && (
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 4 }}>该随访已结束，不能再转派负责人</div>
+                )}
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">随访主题</label>

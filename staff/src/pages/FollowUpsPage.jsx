@@ -536,10 +536,14 @@ export default function FollowUpsPage() {
               <div>
                 <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>负责人员</label>
                 <select className="form-control" value={editForm.assignedTo}
+                  disabled={['completed', 'cancelled'].includes(editItem.status)}
                   onChange={e => setEditForm(f => ({ ...f, assignedTo: e.target.value }))}>
                   <option value="">-- 不指定 --</option>
                   {staffList.map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
                 </select>
+                {['completed', 'cancelled'].includes(editItem.status) && (
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 4 }}>该随访已结束，不能再转派负责人</div>
+                )}
               </div>
             </div>
             <div className="modal-footer">
