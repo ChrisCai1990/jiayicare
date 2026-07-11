@@ -2,8 +2,10 @@ import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
 
-const CATEGORIES = ['全部', '检测套餐', '专家咨询', '上门服务', '健康课程', '服务包']
+// 分类颜色：已知分类给固定色，其余按名称稳定哈希分配一个色板色
 const CAT_COLOR = { '检测套餐':'#0077B6', '专家咨询':'#1E6B50', '上门服务':'#22A06B', '健康课程':'#8e44ad', '服务包':'#D97706' }
+const CAT_PALETTE = ['#0077B6', '#1E6B50', '#22A06B', '#8e44ad', '#D97706', '#DC3545', '#0EA5E9', '#EA580C']
+const catColor = (name) => CAT_COLOR[name] || CAT_PALETTE[[...(name || '')].reduce((s, c) => s + c.charCodeAt(0), 0) % CAT_PALETTE.length]
 
 export default function ProductPushPage() {
   const toast = useToast()
@@ -11,6 +13,7 @@ export default function ProductPushPage() {
   const [patients, setPatients] = useState([])
   const [loading, setLoading] = useState(true)
   const [catFilter, setCatFilter] = useState('全部')
+  const [categories, setCategories] = useState(['全部'])
   const [selected, setSelected] = useState([])   // 已选产品 id 数组
   const [selectedPrices, setSelectedPrices] = useState({})  // { productId: price }
   const [pushRecords, setPushRecords] = useState([])
@@ -21,10 +24,12 @@ export default function ProductPushPage() {
       staffAPI.getProducts(),
       staffAPI.getPatients({ limit: 200 }),
       staffAPI.getPushRecords({ type: 'product', limit: 20 }),
-    ]).then(([p, pt, pr]) => {
+      staffAPI.getProductCategories().catch(() => ({ data: { categories: [] } })),
+    ]).then(([p, pt, pr, cat]) => {
       setProducts(p.data.products)
       setPatients(pt.data.patients)
       setPushRecords(pr.data.records)
+      setCategories(['全部', ...(cat.data?.categories || [])])
     }).catch(console.error).finally(() => setLoading(false))
   }, [])
 
@@ -66,7 +71,7 @@ export default function ProductPushPage() {
 
       {/* 分类筛选 */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
-        {CATEGORIES.map(c => (
+        {categories.map(c => (
           <button key={c}
             className={catFilter === c ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
             onClick={() => setCatFilter(c)}
@@ -109,7 +114,7 @@ export default function ProductPushPage() {
                     {/* 图标 */}
                     <div style={{
                       width: 48, height: 48, borderRadius: 10, flexShrink: 0,
-                      background: (CAT_COLOR[p.category] || '#1E6B50') + '15',
+                      background: catColor(p.category) + '15',
                       display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22,
                     }}>
                       {p.icon}
@@ -119,8 +124,8 @@ export default function ProductPushPage() {
                         <span style={{ fontWeight: 600, fontSize: 14 }}>{p.name}</span>
                         <span style={{
                           fontSize: 11, padding: '1px 7px', borderRadius: 99,
-                          background: (CAT_COLOR[p.category] || '#1E6B50') + '20',
-                          color: CAT_COLOR[p.category] || '#1E6B50',
+                          background: catColor(p.category) + '20',
+                          color: catColor(p.category),
                         }}>{p.category}</span>
                       </div>
                       <div style={{ fontSize: 12, color: '#8AA89C' }}>{p.subtitle}</div>

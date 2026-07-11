@@ -1888,6 +1888,13 @@ router.get('/products', staffAuth, checkPermission('products', 'view'), async (r
   res.json({ success: true, data: { products: list } });
 });
 
+// GET /api/staff/product-categories — 商城产品分类（与管理后台同源，读 ProductCategory 集合）
+router.get('/product-categories', staffAuth, checkPermission('products', 'view'), async (req, res) => {
+  const ProductCategory = require('../models/ProductCategory');
+  const cats = await ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).select('name');
+  res.json({ success: true, data: { categories: cats.map(c => c.name) } });
+});
+
 // POST /api/staff/products/push-bundle — 推送多产品组合给会员
 router.post('/products/push-bundle', staffAuth, checkPermission('products', 'send'), async (req, res) => {
   const { productIds, patientIds, pricedProducts, servicePerformers } = req.body;
