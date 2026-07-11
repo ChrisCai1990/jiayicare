@@ -508,7 +508,20 @@ export default function HomeScreen({ navigation }) {
         setAllTasks((tasksRes.value.data || []).filter(t => t.status === 'pending'));
       }
       if (todayRecRes.status === 'fulfilled' && todayRecRes.value?.data) {
-        const types = new Set((todayRecRes.value.data || []).map(r => r.type));
+        // 只把「归属日期=今天」的记录算作今日已打卡。
+        // 后端 days:1 返回的是最近24小时内的记录，昨天下午的记录今天上午仍在窗口内，
+        // 若不按日期过滤会误判成今天已打卡，导致运动/体重/排便等今天打不了卡（2026-07-11 金娟反馈）。
+        const sameLocalDay = (a, b) =>
+          a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+        const now = new Date();
+        const types = new Set(
+          (todayRecRes.value.data || [])
+            .filter(r => {
+              const d = r.recordedAt ? new Date(r.recordedAt) : null;
+              return d && !isNaN(d) && sameLocalDay(d, now);
+            })
+            .map(r => r.type)
+        );
         setTodayRecordedTypes(types);
       }
     } catch {}
