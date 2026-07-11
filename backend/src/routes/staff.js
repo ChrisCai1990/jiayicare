@@ -777,7 +777,8 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .skip(skip)
       .limit(Number(limit))
       .populate('staffId', 'name role title')
-      .populate('assignedTo', 'name role title'),
+      .populate('assignedTo', 'name role title')
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount status paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments({ patientId: req.params.id }),
   ]);
   res.json({ success: true, data: { followUps, total } });
@@ -828,7 +829,8 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .skip(skip)
       .limit(Number(limit))
       .populate('patientId', 'name phone gender age chronicDiseases')
-      .populate('assignedTo', 'name role'),
+      .populate('assignedTo', 'name role')
+      .populate('sourceOrderId', 'serviceName servicePrice paidAmount status paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
 
@@ -861,13 +863,20 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
     return res.status(400).json({ success: false, message: '取消随访必须填写取消原因' });
   }
 
+  // 派单/扭转判定：指派给了别人（assignedTo 有值且不是当前登录人）→ 这是"把活交给执行人去做"，
+  // 逻辑上不可能一创建就已完成，强制置 planned，否则执行人（如就医专员嘉小夏）在所有按
+  // status=planned 过滤的待办入口里都看不到，等于扭转白转（金娟反馈的真根因）。
+  // 医护端"记录随访"表单默认传 status=completed（语义是"我刚做完记一笔"），只在派给自己/不指派时成立。
+  const assignedToOther = assignedTo && String(assignedTo) !== String(req.staff._id);
+  const finalStatus = assignedToOther ? 'planned' : (status || 'completed');
+
   const followUp = await FollowUp.create({
     staffId: req.staff._id,
     patientId,
     date: date ? new Date(date) : new Date(),
     type: type || 'phone',
-    status: status || 'completed',
-    completedAt: (status || 'completed') === 'completed' ? new Date() : null, // 完成态记录完成时间
+    status: finalStatus,
+    completedAt: finalStatus === 'completed' ? new Date() : null, // 完成态记录完成时间
     content: content || '',
     theme: theme || '',
     cancelReason: cancelReason || '',

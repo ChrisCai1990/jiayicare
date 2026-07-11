@@ -5848,6 +5848,12 @@ export default function PatientDetailPage() {
                     </td>
                     <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
                     <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 200 }}>
+                      {f.sourceType === 'order' && (
+                        <div style={{ marginBottom: 2 }}>
+                          <span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>服务预约</span>
+                          <span style={{ fontWeight: 600 }}>{f.theme}</span>
+                        </div>
+                      )}
                       {f.content ? (f.content.length > 60 ? f.content.slice(0, 60) + '…' : f.content) : '-'}
                     </td>
                     <td style={{ fontSize: 12, color: '#8AA89C' }}>
@@ -6644,6 +6650,24 @@ export default function PatientDetailPage() {
                   </div>
                 ))}
               </div>
+              {/* 订单信息：sourceType='order'时展示，让健管专员知道具体是哪笔订单、金额、支付状态 */}
+              {followUpDetail.sourceType === 'order' && followUpDetail.sourceOrderId && (
+                <div>
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>关联订单</div>
+                  <div style={{ background: '#E8F5EF', borderRadius: 8, padding: '10px 14px', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#1A2B24' }}>{followUpDetail.sourceOrderId.serviceName}</span>
+                      <span style={{ fontSize: 14, fontWeight: 700, color: '#DC3545' }}>¥{followUpDetail.sourceOrderId.paidAmount ?? followUpDetail.sourceOrderId.servicePrice}</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: '#4A6558' }}>
+                      支付方式：{{ wechat: '微信', alipay: '支付宝', onsite: '到店', healthFund: '健康基金抵扣', '': '未支付' }[followUpDetail.sourceOrderId.paymentMethod] || '-'}
+                      <span style={{ marginLeft: 12 }}>下单时间：{new Date(followUpDetail.sourceOrderId.createdAt).toLocaleString('zh-CN')}</span>
+                    </div>
+                    <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                      onClick={() => { setFollowUpDetail(null); setTab('consumption') }}>查看消费记录</button>
+                  </div>
+                </div>
+              )}
               {/* 随访内容 */}
               {followUpDetail.content && (
                 <div>
