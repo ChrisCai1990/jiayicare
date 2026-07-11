@@ -1263,9 +1263,8 @@ export default function PatientDetailPage() {
     patientType: u.patientType || '',
     source: u.source || '',
     remark: u.remark || '',
-    contactPhone2: u.contactPhone2 || '',
-    contactName: u.contactName || '',
-    deliveryAddress: u.deliveryAddress || '',
+    // contactPhone2/contactName/deliveryAddress 已移到基本信息卡(basicInfoForm)统一管理，
+    // 此处不再纳入 editForm，避免管理信息卡保存时用旧值覆盖基本信息卡刚存的新值（2026-07-11）
     assignedHealthManager:    u.assignedHealthManager?._id    || '',
     assignedFamilyDoctor:     u.assignedFamilyDoctor?._id     || '',
     assignedNutritionist:     u.assignedNutritionist?._id     || '',
@@ -1296,6 +1295,9 @@ export default function PatientDetailPage() {
     weight: u.weight || '',
     address: u.address || '',
     contactPhone: u.contactPhone || '',
+    contactName: u.contactName || '',
+    contactPhone2: u.contactPhone2 || '',
+    deliveryAddress: u.deliveryAddress || '',
     chronicDiseases: u.chronicDiseases || [],
   })
 
@@ -2132,6 +2134,9 @@ export default function PatientDetailPage() {
                     { key: 'weight', label: '体重(kg)', type: 'number' },
                     { key: 'address', label: '联系地址' },
                     { key: 'contactPhone', label: '联系电话' },
+                    { key: 'contactName', label: '紧急联系人' },
+                    { key: 'contactPhone2', label: '紧急联系电话' },
+                    { key: 'deliveryAddress', label: '快递配送地址' },
                     { key: 'workplace', label: '所在企业' },
                     { key: 'occupation', label: '所在行业' },
                   ].map(({ key, label, type }) => (
@@ -2247,12 +2252,27 @@ export default function PatientDetailPage() {
                   <InfoRow label="体重" value={user.weight ? `${user.weight} kg` : '-'} />
                   {bmi && <InfoRow label="BMI" value={bmi} />}
                   <InfoRow label={user.idType === 'passport' ? '护照' : '身份证'} value={user.idNumber || '-'} />
+                  <InfoRow label="联系地址" value={user.address || '-'} />
+                  <InfoRow label="联系电话" value={user.contactPhone || '-'} />
+                  <InfoRow label="紧急联系人" value={user.contactName || '-'} />
+                  <InfoRow label="紧急联系电话" value={user.contactPhone2 || '-'} />
+                  <InfoRow label="快递配送地址" value={user.deliveryAddress || '-'} />
                   <InfoRow label="婚姻状况" value={user.maritalStatus || '-'} />
                   <InfoRow label="民族" value={user.ethnicity || '-'} />
                   <InfoRow label="学历" value={user.education || '-'} />
                   <InfoRow label="所在企业" value={user.workplace || '-'} />
                   <InfoRow label="所在行业" value={user.occupation || '-'} />
                   <InfoRow label="每年体检" value={user.hasAnnualCheckup || '-'} />
+                  <div style={{ display: 'flex', padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
+                    <span style={{ fontSize: 13, color: '#8AA89C', width: 90, flexShrink: 0 }}>慢性病</span>
+                    <span style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {(user.chronicDiseases || []).length
+                        ? user.chronicDiseases.map((d, i) => (
+                            <span key={i} style={{ padding: '1px 10px', borderRadius: 99, background: '#fee2e2', color: '#DC3545', fontSize: 12, fontWeight: 500 }}>{d}</span>
+                          ))
+                        : <span style={{ fontSize: 13, color: '#1A2B24' }}>-</span>}
+                    </span>
+                  </div>
                 </>
               )}
             </div>
@@ -2273,21 +2293,7 @@ export default function PatientDetailPage() {
             <div className="card-body">
               {editing ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">紧急联系电话</label>
-                    <input className="form-input" value={editForm.contactPhone2}
-                      onChange={e => setEditForm(f => ({ ...f, contactPhone2: e.target.value }))} />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">紧急联系人</label>
-                    <input className="form-input" value={editForm.contactName}
-                      onChange={e => setEditForm(f => ({ ...f, contactName: e.target.value }))} />
-                  </div>
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">配送地址</label>
-                    <input className="form-input" value={editForm.deliveryAddress}
-                      onChange={e => setEditForm(f => ({ ...f, deliveryAddress: e.target.value }))} />
-                  </div>
+                  {/* 紧急联系人/紧急联系电话/快递配送地址已统一归到「基本信息」卡（与问卷自动填档字段口径一致，2026-07-11） */}
                   <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">会员类型</label>
                     <select className="form-input" value={editForm.memberType || ''}
@@ -2366,9 +2372,7 @@ export default function PatientDetailPage() {
                 </div>
               ) : (
                 <>
-                  <InfoRow label="紧急联系电话" value={user.contactPhone2 || '-'} />
-                  <InfoRow label="紧急联系人" value={user.contactName || '-'} />
-                  <InfoRow label="配送地址" value={user.deliveryAddress || '-'} />
+                  {/* 紧急联系人/紧急联系电话/快递配送地址已移至「基本信息」卡（2026-07-11） */}
                   <InfoRow label="会员类型" value={user.memberType || '-'} />
                   <InfoRow label="家庭医师"   value={user.assignedFamilyDoctor?.name     || '-'} />
                   <InfoRow label="营养师"     value={user.assignedNutritionist?.name     || '-'} />
