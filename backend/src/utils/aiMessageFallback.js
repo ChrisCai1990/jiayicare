@@ -1,4 +1,5 @@
 const Message = require('../models/Message');
+const User = require('../models/User');
 const { chat } = require('./ai');
 
 let _ssePublish = null;
@@ -12,39 +13,39 @@ const SENDER_MAP = { doctor: 'AI健康助手（代家庭医师）', nutritionist
 const FULL_DISCLAIMER = '以上为AI初步回复，仅供参考，不构成医疗诊断或建议，您的专属医护人员会尽快跟进。';
 const SHORT_DISCLAIMER = '（AI回复，仅供参考）';
 
-const SYSTEM_PROMPT_FIRST = `你是嘉医汇健康管理平台的AI助手，正在代替繁忙的医护人员对用户留言做一个即时的初步回应，这是本次对话的第一条回复。
+// 得到客户称呼：优先用医护标注的 preferredTitle，否则按性别得体兜底（男→先生 / 女→女士 / 未知→姓名）
+function resolveTitle(user) {
+  if (user?.preferredTitle && user.preferredTitle.trim()) return user.preferredTitle.trim();
+  const surname = (user?.name || '').trim().charAt(0);
+  if (user?.gender === '男') return surname ? `${surname}先生` : (user.name || '您');
+  if (user?.gender === '女') return surname ? `${surname}女士` : (user.name || '您');
+  return user?.name || '您';
+}
+
+function buildSystemPrompt(isFirstAIReply, title) {
+  return `你是嘉医汇健康管理平台的AI助手，正在代替繁忙的医护人员对用户留言做一个即时的回应。当前用户称呼："${title}"。
 
 要求：
-1. 用中文，语气自然温和、有真实的情感温度，像真人在关心地聊天，不要套话术、不要每句都重复"已收到留言"这类客套开场
-2. 简要告知留言已收到、专属医护人员会尽快跟进，可结合用户内容给通用的生活方式/健康科普类建议
-3. 用户表达情绪（开心、担心、感谢等）时要先回应情绪本身，再接话，让对方感觉到真的被关心，不要只回信息不回感情
-4. 严禁给出任何具体诊断结论、用药调整、检查建议等医疗决策类内容
-5. 控制在100字以内
+1. 开口称呼用户为"${title}"（自然融入，不用每句都喊，别生硬），用中文，语气自然温和、有真实的情感温度，像真人在关心地聊天
+2. ${isFirstAIReply ? '这是本次对话的第一条回复，简要打个招呼即可，不用说"已收到留言/已记录/会跟进/会分析"这类话——用户每条消息家庭医生/营养师/健管师本来就都会看到，不需要反复强调' : '直接针对用户这句话的内容自然接话，绝对不要出现"已记录""已为您记录""会结合情况分析""会及时跟进"这类重复的客套尾巴'}
+3. 用户表达情绪（开心、担心、感谢、抱怨等）时要先回应情绪本身，再接话，让对方感觉真的被关心，不要只回信息不回感情
+4. 严禁给出任何具体诊断结论、用药调整、检查建议等医疗决策类内容；如果用户问的问题超出你能安全回答的范围，坦诚说明需要等专属医护人员来解答，不要硬答
+5. 控制在80字以内，简洁自然，不要写成客服话术
 6. 不要自己加免责声明，结尾会由系统统一附加`;
-
-const SYSTEM_PROMPT_FOLLOWUP = `你是嘉医汇健康管理平台的AI助手，正在代替繁忙的医护人员回复用户在同一次对话里的后续消息。
-
-要求：
-1. 用中文，语气自然温和、有真实的情感温度，像真人在关心地聊天
-2. 直接针对用户这句话的内容回应，不要再重复"留言已收到""专属医护人员会跟进"这类开场客套话（前面已经说过，重复会显得机械）
-3. 用户表达情绪（开心、担心、感谢、抱怨等）时要先回应情绪本身，再接话，让对方感觉到真的被关心，不要只回信息不回感情
-4. 严禁给出任何具体诊断结论、用药调整、检查建议等医疗决策类内容；如果用户问的问题超出你能安全回答的范围，坦诚说明需要等专属医护人员来解答
-5. 控制在100字以内
-6. 不要自己加免责声明，结尾会由系统统一附加`;
+}
 
 // 供 messages.js 在用户发送留言后异步调用，不阻塞发送响应
 async function replyWithAI({ userId, recipient, content, conversationId }) {
   try {
-    // 拉取该对话历史，让AI知道之前说过什么，避免每次都当新对话开场重复客套话
-    const history = await Message.find({ conversationId })
-      .sort({ createdAt: 1 })
-      .limit(20)
-      .select('type content')
-      .lean();
+    const [history, user] = await Promise.all([
+      Message.find({ conversationId }).sort({ createdAt: 1 }).limit(20).select('type content').lean(),
+      User.findById(userId).select('name gender preferredTitle').lean(),
+    ]);
 
     const isFirstAIReply = !history.some(m => m.type !== 'user');
     const disclaimer = isFirstAIReply ? FULL_DISCLAIMER : SHORT_DISCLAIMER;
-    const systemPrompt = isFirstAIReply ? SYSTEM_PROMPT_FIRST : SYSTEM_PROMPT_FOLLOWUP;
+    const title = resolveTitle(user);
+    const systemPrompt = buildSystemPrompt(isFirstAIReply, title);
 
     const chatMessages = history.map(m => ({
       role: m.type === 'user' ? 'user' : 'assistant',
