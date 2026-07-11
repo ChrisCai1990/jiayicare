@@ -8,6 +8,8 @@ const Service = require('../models/Service');
 const PushRecord = require('../models/PushRecord');
 const User    = require('../models/User');
 const Coupon  = require('../models/Coupon');
+const FollowUp = require('../models/FollowUp');
+const Admin   = require('../models/Admin');
 
 // ── 静态兜底（DB 为空时使用 / 订单查找用）────────────────────────
 const SERVICE_CATALOG = [
@@ -237,7 +239,17 @@ router.post('/order', auth, async (req, res) => {
     paidAmount,
   });
 
-  const followUps = [
+  // 下单后需要健管专员跟进的待办：Task 只写用户端"待办任务"卡片展示用，不会被医护端任何接口查询到，
+  // 之前只创建 Task 导致医护端完全看不到新订单；这里补一条 FollowUp（医护端"待随访任务"面板的数据源），
+  // staffId 优先归到该患者名下的健管专员，没分配则退回家庭医生，都没有（新客户尚未分配）则兜底给 superadmin，避免漏单
+  const patientForStaff = await User.findById(req.user._id).select('assignedHealthManager assignedFamilyDoctor');
+  let followUpStaffId = patientForStaff?.assignedHealthManager || patientForStaff?.assignedFamilyDoctor || null;
+  if (!followUpStaffId) {
+    const superadmin = await Admin.findOne({ role: 'superadmin' }).select('_id');
+    followUpStaffId = superadmin?._id || null;
+  }
+
+  const pendingTasks = [
     Task.create({
       user:        req.user._id,
       title:       isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
@@ -251,9 +263,20 @@ router.post('/order', auth, async (req, res) => {
       category:    isPkg ? '服务包开通' : '服务预约',
     }),
   ];
+  if (followUpStaffId) {
+    pendingTasks.push(FollowUp.create({
+      staffId:   followUpStaffId,
+      patientId: req.user._id,
+      type:      'other',
+      status:    'planned',
+      theme:     isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
+      content:   orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排'),
+      sourceType: null,
+    }));
+  }
   // 健康基金实时扣减（与订单绑定，note 记录用于哪笔订单）
   if (fundUsed > 0) {
-    followUps.push(User.collection.updateOne(
+    pendingTasks.push(User.collection.updateOne(
       { _id: req.user._id },
       { $inc: { healthFundBalance: -fundUsed } }
     ));
@@ -263,9 +286,9 @@ router.post('/order', auth, async (req, res) => {
     coupon.status = 'used';
     coupon.usedAt = new Date();
     coupon.usedOrderId = order._id;
-    followUps.push(coupon.save());
+    pendingTasks.push(coupon.save());
   }
-  await Promise.all(followUps);
+  await Promise.all(pendingTasks);
 
   res.json({
     success: true,
