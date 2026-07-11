@@ -6,6 +6,7 @@ const CompanyInfo    = require('../models/CompanyInfo');
 const Department     = require('../models/Department');
 const StaffRole      = require('../models/StaffRole');
 const Admin          = require('../models/Admin');
+const Team           = require('../models/Team');
 const MemberTag      = require('../models/MemberTag');
 const MemberSource   = require('../models/MemberSource');
 const MemberType     = require('../models/MemberType');
@@ -161,6 +162,7 @@ router.get('/employees', adminAuth, async (req, res) => {
     Admin.find(filter)
       .populate('deptId', 'name')
       .populate('customRoleId', 'name')
+      .populate('teamId', 'name')
       .select('-password')
       .sort({ createdAt: -1 })
       .skip(skip)
@@ -174,7 +176,7 @@ router.post('/employees', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可创建员工账号' });
   }
-  const { username, password, name, role, title, email, certNumber, deptId, customRoleId, phone, personalPerformanceRule } = req.body;
+  const { username, password, name, role, title, email, certNumber, deptId, customRoleId, phone, personalPerformanceRule, teamId, mentorOfTeamId } = req.body;
   if (!password || !name || !role) {
     return res.status(400).json({ success: false, message: '密码、姓名、角色不能为空' });
   }
@@ -194,9 +196,11 @@ router.post('/employees', adminAuth, async (req, res) => {
     username: finalUsername, password, name, role, phone,
     title: title || '', email: email || '', certNumber: certNumber || '',
     deptId: deptId || null, customRoleId: customRoleId || null,
+    teamId: teamId || null,
     personalPerformanceRule: personalPerformanceRule || undefined,
     staffStatus: 'active',
   });
+  if (mentorOfTeamId) await Team.findByIdAndUpdate(mentorOfTeamId, { mentorId: emp._id });
   res.json({ success: true, data: { _id: emp._id, name: emp.name, username: emp.username }, message: '员工账号已创建' });
 });
 
@@ -204,7 +208,7 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') {
     return res.status(403).json({ success: false, message: '仅超级管理员可修改员工账号' });
   }
-  const { name, role, title, email, certNumber, deptId, customRoleId, password, phone, personalPerformanceRule } = req.body;
+  const { name, role, title, email, certNumber, deptId, customRoleId, password, phone, personalPerformanceRule, teamId, mentorOfTeamId } = req.body;
   const emp = await Admin.findById(req.params.id);
   if (!emp || !SYSTEM_ROLES.includes(emp.role)) {
     return res.status(404).json({ success: false, message: '员工不存在' });
@@ -221,9 +225,15 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (certNumber !== undefined) emp.certNumber = certNumber;
   if (deptId !== undefined) emp.deptId = deptId || null;
   if (customRoleId !== undefined) emp.customRoleId = customRoleId || null;
+  if (teamId !== undefined) emp.teamId = teamId || null;
   if (personalPerformanceRule !== undefined) emp.personalPerformanceRule = personalPerformanceRule;
   if (password) emp.password = password;
   await emp.save();
+  // mentorOfTeamId：该员工被设为哪个团队的导师（先清除其原有导师身份，再按提交值设置新团队）
+  if (mentorOfTeamId !== undefined) {
+    await Team.updateMany({ mentorId: emp._id }, { $set: { mentorId: null } });
+    if (mentorOfTeamId) await Team.findByIdAndUpdate(mentorOfTeamId, { mentorId: emp._id });
+  }
   res.json({ success: true, data: { _id: emp._id, name: emp.name }, message: '员工信息已更新' });
 });
 

@@ -20,6 +20,7 @@ const EMPTY_FORM = {
   username: '', password: '', name: '', role: 'healthManager',
   phone: '', title: '', email: '', certNumber: '', deptId: '', customRoleId: '',
   personalPerformanceRule: EMPTY_PERFORMANCE_RULE,
+  teamId: '', mentorOfTeamId: '',
 }
 
 // 个人绩效比例：优先于产品全局比例——同岗位不同人可以有不同分佣比例
@@ -91,6 +92,8 @@ export default function EmployeePage() {
   const [newPwd, setNewPwd] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [teams, setTeams] = useState([])
+  const [showTeamMgr, setShowTeamMgr] = useState(false)
 
   const isSuperAdmin = admin?.role === 'superadmin'
 
@@ -107,7 +110,15 @@ export default function EmployeePage() {
     }).catch(e => toast(e.message)).finally(() => setLoading(false))
   }
 
+  const loadTeams = async () => {
+    try {
+      const res = await adminAPI.teams()
+      setTeams(res.data || [])
+    } catch { /* 团队功能可选，加载失败不阻塞员工管理 */ }
+  }
+
   useEffect(() => { loadAll() }, [q])
+  useEffect(() => { loadTeams() }, [])
 
   const openCreate = () => {
     setEditId(null); setForm(EMPTY_FORM); setError(''); setShowModal(true)
@@ -115,6 +126,7 @@ export default function EmployeePage() {
 
   const openEdit = emp => {
     setEditId(emp._id)
+    const mentorTeam = teams.find(t => String(t.mentorId?._id || t.mentorId) === String(emp._id))
     setForm({
       username: emp.username, password: '',
       name: emp.name, role: emp.role,
@@ -124,6 +136,8 @@ export default function EmployeePage() {
       deptId: emp.deptId?._id || emp.deptId || '',
       customRoleId: emp.customRoleId?._id || emp.customRoleId || '',
       personalPerformanceRule: emp.personalPerformanceRule || EMPTY_PERFORMANCE_RULE,
+      teamId: emp.teamId?._id || emp.teamId || '',
+      mentorOfTeamId: mentorTeam ? String(mentorTeam._id) : '',
     })
     setError(''); setShowModal(true)
   }
@@ -144,7 +158,7 @@ export default function EmployeePage() {
         await adminAPI.createEmployee(payload)
         toast('员工账号已创建')
       }
-      setShowModal(false); setForm(EMPTY_FORM); setEditId(null); loadAll()
+      setShowModal(false); setForm(EMPTY_FORM); setEditId(null); loadAll(); loadTeams()
     } catch (e) {
       setError(e.message || '操作失败')
     } finally { setSaving(false) }
@@ -186,6 +200,7 @@ export default function EmployeePage() {
             value={q}
             onChange={e => setQ(e.target.value)}
           />
+          {isSuperAdmin && <button className="btn btn-secondary" onClick={() => setShowTeamMgr(true)}>🫂 团队管理</button>}
           {isSuperAdmin && <button className="btn btn-primary" onClick={openCreate}>＋ 新建员工</button>}
         </div>
       </div>
@@ -203,7 +218,7 @@ export default function EmployeePage() {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: '#f8fafc' }}>
-                {['姓名', '用户名', '系统角色', '自定义角色', '部门', '联系方式', '状态', '操作'].map(h => (
+                {['姓名', '用户名', '系统角色', '自定义角色', '所属团队', '部门', '联系方式', '状态', '操作'].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '10px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
                 ))}
               </tr>
@@ -223,6 +238,9 @@ export default function EmployeePage() {
                   </td>
                   <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 13 }}>
                     {emp.customRoleId?.name || '-'}
+                  </td>
+                  <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 13 }}>
+                    {emp.teamId?.name || '-'}
                   </td>
                   <td style={{ padding: '12px 14px', color: '#6B7280' }}>{emp.deptId?.name || '-'}</td>
                   <td style={{ padding: '12px 14px', color: '#6B7280', fontSize: 12 }}>
@@ -320,6 +338,23 @@ export default function EmployeePage() {
                   <label className="form-label">证书编号</label>
                   <input className="form-input" value={form.certNumber} onChange={set('certNumber')} placeholder="如医师执业证号" />
                 </div>
+                <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                  <label className="form-label">所属团队</label>
+                  <select className="form-input" value={form.teamId} onChange={set('teamId')}>
+                    <option value="">不属于任何团队</option>
+                    {teams.map(t => <option key={t._id} value={t._id}>{t.name}{t.mentorId?.name ? `（负责人：${t.mentorId.name}）` : ''}</option>)}
+                  </select>
+                </div>
+                {editId && (
+                  <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
+                    <label className="form-label">担任团队负责人（可查看该团队全部成员的健康档案）</label>
+                    <select className="form-input" value={form.mentorOfTeamId} onChange={set('mentorOfTeamId')}>
+                      <option value="">不担任负责人</option>
+                      {teams.map(t => <option key={t._id} value={t._id}>{t.name}</option>)}
+                    </select>
+                    <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>设为某团队负责人后，此员工即可查看该团队所有成员名下的客户档案</div>
+                  </div>
+                )}
               </div>
               <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #E5E7EB' }}>
                 <PersonalPerformanceRuleForm rule={form.personalPerformanceRule} onChange={v => setForm(f => ({ ...f, personalPerformanceRule: v }))} />
@@ -356,6 +391,107 @@ export default function EmployeePage() {
           </div>
         </div>
       )}
+
+      {showTeamMgr && (
+        <TeamManagerModal
+          teams={teams}
+          staffList={list}
+          onClose={() => setShowTeamMgr(false)}
+          onChanged={() => { loadTeams(); loadAll() }}
+          toast={toast}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── 团队管理弹窗：新建/编辑/删除团队 + 指定导师 ──────────────────────
+function TeamManagerModal({ teams, staffList, onClose, onChanged, toast }) {
+  const [name, setName] = useState('')
+  const [mentorId, setMentorId] = useState('')
+  const [editId, setEditId] = useState(null)
+  const [saving, setSaving] = useState(false)
+
+  const reset = () => { setName(''); setMentorId(''); setEditId(null) }
+
+  const submit = async () => {
+    if (!name.trim()) { toast('请填写团队名称'); return }
+    setSaving(true)
+    try {
+      if (editId) await adminAPI.updateTeam(editId, { name: name.trim(), mentorId: mentorId || null })
+      else await adminAPI.createTeam({ name: name.trim(), mentorId: mentorId || null })
+      toast(editId ? '团队已更新' : '团队已创建')
+      reset()
+      onChanged()
+    } catch (err) { toast(err.message || '操作失败') } finally { setSaving(false) }
+  }
+
+  const startEdit = (t) => { setEditId(t._id); setName(t.name); setMentorId(t.mentorId?._id ? String(t.mentorId._id) : '') }
+
+  const del = async (t) => {
+    if (!window.confirm(`删除团队「${t.name}」？成员的团队归属会被清空（不会删除成员账号）。`)) return
+    try { await adminAPI.deleteTeam(t._id); toast('团队已删除'); if (editId === t._id) reset(); onChanged() }
+    catch (err) { toast(err.message || '删除失败') }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 560 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">团队管理</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 12, lineHeight: 1.6 }}>
+            设置团队并指定导师后，<b>导师能查看本团队全部成员名下的客户档案</b>（用于带教/质量把控），普通成员仍只看自己名下客户。
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.4fr auto', gap: 8, alignItems: 'end', marginBottom: 16 }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">团队名称</label>
+              <input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="如：华北一组" />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">导师</label>
+              <select className="form-input" value={mentorId} onChange={e => setMentorId(e.target.value)}>
+                <option value="">暂不指定</option>
+                {staffList.map(s => <option key={s._id} value={s._id}>{s.name}（{SYSTEM_ROLE_LABEL[s.role] || s.role}）</option>)}
+              </select>
+            </div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              <button className="btn btn-primary" onClick={submit} disabled={saving}>{editId ? '保存' : '新建'}</button>
+              {editId && <button className="btn btn-ghost" onClick={reset}>取消</button>}
+            </div>
+          </div>
+
+          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+            <thead>
+              <tr style={{ background: '#f8fafc' }}>
+                {['团队', '导师', '成员数', '操作'].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '8px 12px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {teams.length === 0 ? (
+                <tr><td colSpan={4} style={{ padding: 24, textAlign: 'center', color: '#aaa' }}>暂无团队</td></tr>
+              ) : teams.map(t => (
+                <tr key={t._id}>
+                  <td style={{ padding: '10px 12px', fontWeight: 600 }}>{t.name}</td>
+                  <td style={{ padding: '10px 12px', color: '#6B7280' }}>{t.mentorId?.name || '未指定'}</td>
+                  <td style={{ padding: '10px 12px', color: '#6B7280' }}>{t.memberCount ?? 0}</td>
+                  <td style={{ padding: '10px 12px' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => startEdit(t)} style={{ marginRight: 6 }}>编辑</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => del(t)}>删除</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" onClick={onClose}>关闭</button>
+        </div>
+      </div>
     </div>
   )
 }
