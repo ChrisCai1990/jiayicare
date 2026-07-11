@@ -195,11 +195,23 @@ const styles = StyleSheet.create({
 });
 
 // ── 任务卡片 ─────────────────────────────────────────────────────
+// 随访类任务的处理进度：待确认（医护还没安排具体时间）/ 已安排（有负责人+日期，等待执行）/ 已完成
+const FOLLOWUP_STAGE = {
+  pending:     { label: '待确认', color: colors.textMuted, bg: colors.border },
+  in_progress: { label: '已安排', color: colors.info,       bg: '#E3F2FB' },
+  completed:   { label: '已完成', color: colors.success,    bg: '#D1FAE5' },
+};
+
 function TaskCard({ task, onToggle, onPress }) {
   const pConf = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.low;
   const tMeta = TYPE_META[task.type] || DEFAULT_TYPE_META;
   const isCompleted = task.status === 'completed';
   const id = task._id || task.id;
+  // 随访任务有负责人+具体日期时视为"已安排"，即使 FollowUp.status 还是 planned（对应前端映射的 pending）
+  const followupStage = task.isFollowup
+    ? (task.status === 'completed' ? 'completed' : (task.assignee ? 'in_progress' : 'pending'))
+    : null;
+  const stageConf = followupStage ? FOLLOWUP_STAGE[followupStage] : null;
 
   return (
     <TouchableOpacity
@@ -221,9 +233,15 @@ function TaskCard({ task, onToggle, onPress }) {
           <Text style={[styles.taskTitle, isCompleted && styles.taskTitleDone]} numberOfLines={1}>
             {task.title}
           </Text>
-          <View style={[styles.priorityBadge, { backgroundColor: pConf.bg }]}>
-            <Text style={[styles.priorityText, { color: pConf.color }]}>{pConf.label}</Text>
-          </View>
+          {stageConf ? (
+            <View style={[styles.priorityBadge, { backgroundColor: stageConf.bg }]}>
+              <Text style={[styles.priorityText, { color: stageConf.color }]}>{stageConf.label}</Text>
+            </View>
+          ) : (
+            <View style={[styles.priorityBadge, { backgroundColor: pConf.bg }]}>
+              <Text style={[styles.priorityText, { color: pConf.color }]}>{pConf.label}</Text>
+            </View>
+          )}
         </View>
         {!!task.description && (
           <Text style={styles.taskDesc} numberOfLines={1}>{task.description}</Text>
@@ -305,7 +323,10 @@ export default function TasksScreen({ navigation }) {
         followupTasksAPI.list(),
       ]);
       if (taskRes.status === 'fulfilled' && taskRes.value?.success) {
-        setTasks(taskRes.value.data);
+        // 服务预约/服务包开通类的历史Task记录（下单时生成，此前会与FollowUp重复展示且状态不同步）
+        // 已改为只用FollowUp展示，这里过滤掉旧数据，避免过渡期仍然重复出现
+        const ORDER_TASK_CATEGORIES = new Set(['服务预约', '服务包开通']);
+        setTasks(taskRes.value.data.filter(t => !ORDER_TASK_CATEGORIES.has(t.category)));
       } else {
         setTasks(isDemo ? mockTasks : []);
       }

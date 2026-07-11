@@ -2,7 +2,6 @@ const express = require('express');
 const mongoose = require('mongoose');
 const router  = express.Router();
 const auth    = require('../middleware/auth');
-const Task    = require('../models/Task');
 const Order   = require('../models/Order');
 const Service = require('../models/Service');
 const PushRecord = require('../models/PushRecord');
@@ -239,8 +238,9 @@ router.post('/order', auth, async (req, res) => {
     paidAmount,
   });
 
-  // 下单后需要健管专员跟进的待办：Task 只写用户端"待办任务"卡片展示用，不会被医护端任何接口查询到，
-  // 之前只创建 Task 导致医护端完全看不到新订单；这里补一条 FollowUp（医护端"待随访任务"面板的数据源），
+  // 下单后需要健管专员跟进的待办：只生成 FollowUp（医护端"待随访任务"面板的数据源，也是用户端展示的唯一数据源），
+  // 不再同时创建 Task——此前两套模型无关联字段，导致同一次预约在用户端出现两条重复卡片，
+  // 且医护端处理完 FollowUp 后 Task 状态永远不变，用户看不出到底有没有被处理。
   // staffId 优先归到该患者名下的健管专员，没分配则退回家庭医生，都没有（新客户尚未分配）则兜底给 superadmin，避免漏单
   const patientForStaff = await User.findById(req.user._id).select('assignedHealthManager assignedFamilyDoctor');
   let followUpStaffId = patientForStaff?.assignedHealthManager || patientForStaff?.assignedFamilyDoctor || null;
@@ -249,20 +249,7 @@ router.post('/order', auth, async (req, res) => {
     followUpStaffId = superadmin?._id || null;
   }
 
-  const pendingTasks = [
-    Task.create({
-      user:        req.user._id,
-      title:       isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
-      description: orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排'),
-      priority:    'high',
-      status:      'pending',
-      dueDate:     '待确认',
-      dueTime:     '',
-      assignee:    '健管专员',
-      type:        'consultation',
-      category:    isPkg ? '服务包开通' : '服务预约',
-    }),
-  ];
+  const pendingTasks = [];
   if (followUpStaffId) {
     pendingTasks.push(FollowUp.create({
       staffId:   followUpStaffId,
