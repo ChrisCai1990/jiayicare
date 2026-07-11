@@ -415,7 +415,7 @@ export default function TasksScreen({ navigation }) {
     dueTime: '',
     priority: 'medium',
     status: f.status === 'completed' ? 'completed' : (f.status === 'in_progress' ? 'in_progress' : 'pending'),
-    assignee: f.staffId?.name || f.assignedTo?.name || '',
+    assignee: f.assignedTo?.name || f.staffId?.name || '',
     isFollowup: true,
   });
 

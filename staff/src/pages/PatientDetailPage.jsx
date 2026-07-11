@@ -6633,7 +6633,7 @@ export default function PatientDetailPage() {
                   { label: '随访日期', value: new Date(followUpDetail.date).toLocaleDateString('zh-CN') },
                   { label: '随访方式', value: TYPE_MAP[followUpDetail.type] || followUpDetail.type || '-' },
                   { label: '随访状态', value: STATUS_MAP[followUpDetail.status] || followUpDetail.status || '-' },
-                  { label: '随访人员', value: followUpDetail.staffId?.name || '-' },
+                  { label: '随访人员', value: followUpDetail.assignedTo?.name || followUpDetail.staffId?.name || '-' },
                   { label: '参与人员', value: followUpDetail.participants || '-' },
                   { label: '随访主题', value: followUpDetail.theme || followUpDetail.planName || '-' },
                   { label: '下次随访', value: followUpDetail.nextFollowUpDate ? new Date(followUpDetail.nextFollowUpDate).toLocaleDateString('zh-CN') : '-' },

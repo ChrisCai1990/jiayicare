@@ -776,7 +776,8 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .sort({ date: -1 })
       .skip(skip)
       .limit(Number(limit))
-      .populate('staffId', 'name role title'),
+      .populate('staffId', 'name role title')
+      .populate('assignedTo', 'name role title'),
     FollowUp.countDocuments({ patientId: req.params.id }),
   ]);
   res.json({ success: true, data: { followUps, total } });
