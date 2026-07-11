@@ -440,9 +440,13 @@ export default function TasksScreen({ navigation }) {
     isFollowup: true,
   });
 
-  const pendingFollowups = followupTasks.filter(f => f.status !== 'completed' && f.status !== 'cancelled' && !f.completedByUser);
-  // 已完成 = 用户自己标记完成 或 医护端执行完成(status=completed)
-  const completedFollowups = followupTasks.filter(f => f.completedByUser || f.status === 'completed');
+  // 服务预约类待办（下单商城服务生成，sourceType='order'）一旦医护端安排了负责人，
+  // 用户就不用再关注了——不像"每日血压监测"这类持续性随访要留在待办里提醒用户配合，
+  // 服务预约只是"通知医护有新订单"，安排完即代表已经进入服务流程，应直接归入已完成
+  const isOrderHandled = f => f.sourceType === 'order' && !!(f.assignedTo?.name || f.staffId?.name);
+  const pendingFollowups = followupTasks.filter(f => f.status !== 'completed' && f.status !== 'cancelled' && !f.completedByUser && !isOrderHandled(f));
+  // 已完成 = 用户自己标记完成 或 医护端执行完成(status=completed) 或 服务预约已被医护安排
+  const completedFollowups = followupTasks.filter(f => f.completedByUser || f.status === 'completed' || isOrderHandled(f));
   const allItems     = [
     ...tasks.filter(t => t.status !== 'completed'),
     ...reminders.filter(r => r.enabled).map(reminderToItem),

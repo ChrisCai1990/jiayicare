@@ -447,7 +447,7 @@ function ServiceCard({ item, onDetail, onBuy, onPay }) {
       ) : null}
       {/* 封面图：有图直接展示（不点开也能看到），无图退回图标 */}
       {item.images && item.images.length > 0 && (
-        <Image source={{ uri: mediaUrl(item.images[0]) }} style={styles.serviceCover} resizeMode="cover" />
+        <Image source={{ uri: mediaUrl(item.images[0]) }} style={styles.serviceCover} resizeMode="contain" />
       )}
       <View style={styles.serviceCardTop}>
         <View style={[styles.serviceIcon, { backgroundColor: item.iconColor + '15' }]}>
