@@ -88,6 +88,11 @@ router.post('/', auth, async (req, res) => {
     ssePublish(conversationId, { type: 'message', data: msg });
     console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);
     res.json({ success: true, data: msg, message: '消息已发送' });
+
+    // AI立即先回一句安抚（不阻塞响应），医护看到后仍可正常人工回复追加
+    require('../utils/aiMessageFallback').replyWithAI({
+      userId: req.user._id, recipient: to, content: content.trim(), conversationId,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: '发送失败', error: err.message });
   }
