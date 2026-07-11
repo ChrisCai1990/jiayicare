@@ -271,7 +271,7 @@ router.post('/order', auth, async (req, res) => {
       status:    'planned',
       theme:     isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
       content:   orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排'),
-      sourceType: null,
+      sourceType: 'order',
     }));
   }
   // 健康基金实时扣减（与订单绑定，note 记录用于哪笔订单）

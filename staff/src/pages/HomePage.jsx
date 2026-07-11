@@ -21,6 +21,7 @@ export default function HomePage() {
   const [checkupProgress, setCheckupProgress] = useState([])
   const [expiringPatients, setExpiringPatients] = useState([])
   const [recentMessages, setRecentMessages] = useState([])
+  const [pendingOrders, setPendingOrders] = useState([])
 
   useEffect(() => {
     staffAPI.getReports()
@@ -34,6 +35,11 @@ export default function HomePage() {
 
     staffAPI.getCheckupProgress()
       .then(r => setCheckupProgress(r.data || []))
+      .catch(() => {})
+
+    // 服务预约类待办（用户下单商城服务后生成）容易被淹没在普通随访任务列表里，单独摘出来醒目提醒
+    staffAPI.getFollowUps({ status: 'planned', sourceType: 'order', limit: 20 })
+      .then(r => setPendingOrders(r.data?.followUps || []))
       .catch(() => {})
 
     Promise.allSettled([
@@ -112,6 +118,41 @@ export default function HomePage() {
                 </div>
                 <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>
                   {new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* 待处理服务预约：用户下单商城服务后生成，单独摘出来避免被淹没在普通随访任务列表里 */}
+      {pendingOrders.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, border: '1.5px solid #22A06B40' }}>
+          <div className="card-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>🛍 待处理服务预约</span>
+              <span style={{ fontSize: 12, fontWeight: 600, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>
+                {pendingOrders.length}
+              </span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={() => nav('/followups')}>查看全部</button>
+          </div>
+          <div className="card-body" style={{ padding: '8px 20px' }}>
+            {pendingOrders.map((f, i) => (
+              <div key={f._id}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  padding: '10px 0',
+                  borderBottom: i < pendingOrders.length - 1 ? '1px solid #f0ede8' : 'none',
+                  cursor: 'pointer',
+                }}
+                onClick={() => nav(`/patients/${f.patientId?._id}?tab=followups`)}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
+                  <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{f.patientId?.name || '未知'}</span>
+                  <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.theme}</span>
+                </div>
+                <span style={{ fontSize: 12, color: '#aaa', flexShrink: 0, marginLeft: 12 }}>
+                  {new Date(f.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}
                 </span>
               </div>
             ))}

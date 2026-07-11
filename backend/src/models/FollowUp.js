@@ -46,7 +46,7 @@ const followUpSchema = new mongoose.Schema({
   // 方案确认后自动生成的随访计划：sourceType区分固定周期占位 / 月度AI回顾建议，aiStatus走审核
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成
-  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', null], default: null },
+  sourceType: { type: String, enum: ['scheduled', 'ai_review', 'health_plan', 'order', null], default: null },
   aiStatus:   { type: String, enum: ['pending', 'approved', null], default: null },
   // 待审核归属角色：为空时按固定规则由家庭医生审核（年度管理方案）；health_plan来源按方案类型区分（营养方案→营养师，体检方案→家庭医生）
   reviewRole: { type: String, enum: ['familyDoctor', 'nutritionist', null], default: null },

@@ -786,7 +786,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
-  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '' } = req.query;
+  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '' } = req.query;
 
   // 如果按患者姓名搜索，先查出匹配的用户ID
   let patientFilter = {};
@@ -809,6 +809,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   }
 
   const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}] };
+  if (sourceType) filter.sourceType = sourceType;
   if (status) {
     // in_progress 同时包含旧的 missed 状态
     if (status === 'in_progress') filter.status = { $in: ['in_progress', 'missed'] };
