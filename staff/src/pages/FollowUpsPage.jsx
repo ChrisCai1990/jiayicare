@@ -109,7 +109,9 @@ export default function FollowUpsPage() {
   const [followUps,    setFollowUps]    = useState([])
   const [total,        setTotal]        = useState(0)
   const [page,         setPage]         = useState(1)
-  const todayStr = new Date().toISOString().slice(0, 10)
+  // 用本地时间取"今天"日期，不能用 toISOString（会转成UTC，凌晨0-8点北京时间会倒退一天，导致当天记录被默认筛选范围漏掉）
+  const now = new Date()
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
   const [statusTab,    setStatusTab]    = useState('planned')
   const [patientName,  setPatientName]  = useState('')
   const [assignedTo,   setAssignedTo]   = useState('')
