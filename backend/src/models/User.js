@@ -1,7 +1,7 @@
 ﻿const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
-  phone:    { type: String, required: true, unique: true },
+  phone:    { type: String, required: false, unique: true, sparse: true },
   wechatOpenid: { type: String, sparse: true, unique: true },
   name:     { type: String, default: '用户' },
   age:      { type: Number },

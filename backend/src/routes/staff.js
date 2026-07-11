@@ -8,6 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const { calculateHealthScore } = require('../utils/healthScore');
+const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
 const tenantMatchStage = () => {
@@ -440,10 +441,26 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     initialBloodPressure, initialHeartRate, initialWeight, initialSleepHours, initialMoodScore,
   } = req.body;
 
-  if (!phone) return res.status(400).json({ success: false, message: '手机号不能为空' });
+  // 手机号非必填（配偶共用手机号、未成年子女无手机号等场景）；填了则仍需唯一
+  if (phone) {
+    const existing = await User.findOne({ phone });
+    if (existing) return res.status(400).json({ success: false, message: '该手机号已存在' });
+  }
 
-  const existing = await User.findOne({ phone });
-  if (existing) return res.status(400).json({ success: false, message: '该手机号已存在' });
+  // 根据身份证号/出生日期自动核算年龄（未显式传 age 时）
+  let resolvedAge = (age !== undefined && age !== null && age !== '') ? age : undefined;
+  let resolvedBirthDate = birthDate || '';
+  if ((idType || 'idCard') !== 'passport' && idNumber) {
+    const parsed = parseIdCard(idNumber);
+    if (parsed) {
+      if (!resolvedBirthDate) resolvedBirthDate = parsed.birthDate;
+      if (resolvedAge === undefined) resolvedAge = parsed.age;
+    }
+  }
+  if (resolvedAge === undefined && resolvedBirthDate) {
+    const calced = calcAgeFromBirthDate(resolvedBirthDate);
+    if (calced !== null) resolvedAge = calced;
+  }
 
   // 自动分配：如果创建者是对应角色，默认分配给自己
   const hm = assignedHealthManager ||
@@ -454,11 +471,10 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     (staff.role === 'nutritionist' ? staff._id : null);
 
   const createData = {
-    phone,
     name: name || '会员',
     gender: gender || '未知',
-    age, height, weight,
-    birthDate: birthDate || '',
+    age: resolvedAge, height, weight,
+    birthDate: resolvedBirthDate || '',
     idNumber: idNumber || '',
     idType: idType === 'passport' ? 'passport' : 'idCard',
     maritalStatus: maritalStatus || '',
@@ -535,6 +551,9 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
   if (patientCategory === 'child' && childProfile) {
     createData.childProfile = childProfile;
   }
+
+  // phone 字段留空时不写入（sparse unique 索引要求：字段缺失才不冲突，空字符串仍会冲突）
+  if (phone) createData.phone = phone;
 
   const user = await User.create(createData);
 
@@ -633,6 +652,26 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   allowed.forEach(k => {
     if (req.body[k] !== undefined) updateData[k] = req.body[k];
   });
+
+  // 身份证号/出生日期变更时，若本次请求未显式传 age，则自动核算年龄写回
+  if (req.body.age === undefined && (updateData.idNumber !== undefined || updateData.birthDate !== undefined)) {
+    const effectiveIdType = updateData.idType !== undefined ? updateData.idType : req.body.idType;
+    const effectiveIdNumber = updateData.idNumber !== undefined ? updateData.idNumber : undefined;
+    const effectiveBirthDate = updateData.birthDate !== undefined ? updateData.birthDate : undefined;
+    let calcedAge;
+    if ((effectiveIdType || 'idCard') !== 'passport' && effectiveIdNumber) {
+      const parsed = parseIdCard(effectiveIdNumber);
+      if (parsed) {
+        calcedAge = parsed.age;
+        if (!effectiveBirthDate) updateData.birthDate = parsed.birthDate;
+      }
+    }
+    if (calcedAge === undefined && effectiveBirthDate) {
+      const calced = calcAgeFromBirthDate(effectiveBirthDate);
+      if (calced !== null) calcedAge = calced;
+    }
+    if (calcedAge !== undefined) updateData.age = calcedAge;
+  }
 
   // 归属字段：空字符串跳过（不清空原值），有值则必须转为 ObjectId
   // 原因：User.collection.updateOne 绕过 Mongoose 类型转换，字符串无法匹配 ObjectId 查询

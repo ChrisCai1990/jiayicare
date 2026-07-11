@@ -32,4 +32,17 @@ function parseIdCard(id) {
   return { gender, birthDate, age };
 }
 
-module.exports = { isValidIdCard, parseIdCard };
+// 根据出生日期（'YYYY-MM-DD' 或 Date）计算周岁
+function calcAgeFromBirthDate(birthDate) {
+  if (!birthDate) return null;
+  const birth = birthDate instanceof Date ? birthDate : new Date(birthDate);
+  if (isNaN(birth.getTime())) return null;
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const hasHadBirthdayThisYear = (today.getMonth() > birth.getMonth())
+    || (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate());
+  if (!hasHadBirthdayThisYear) age -= 1;
+  return age >= 0 ? age : null;
+}
+
+module.exports = { isValidIdCard, parseIdCard, calcAgeFromBirthDate };

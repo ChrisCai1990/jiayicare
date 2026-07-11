@@ -176,8 +176,7 @@ export default function NewPatientPage() {
 
   const handleSubmit = async e => {
     e.preventDefault()
-    if (!form.phone) return toast('手机号不能为空')
-    if (!/^1[3-9]\d{9}$/.test(form.phone)) return toast('手机号格式不正确')
+    if (form.phone && !/^1[3-9]\d{9}$/.test(form.phone)) return toast('手机号格式不正确')
     if (form.idType !== 'passport' && form.idNumber && !validateIdCard(form.idNumber)) return toast('身份证号格式不正确')
     if (form.birthDate && !/^\d{4}-\d{2}-\d{2}$/.test(form.birthDate)) return toast('出生日期格式须为 YYYY-MM-DD')
     setSaving(true)
@@ -288,7 +287,7 @@ export default function NewPatientPage() {
           <Section title="基本信息">
             <Grid>
               <F label="姓名 *" span={2}><input className="form-input" placeholder="真实姓名" value={form.name} onChange={set('name')} required /></F>
-              <F label="手机号 *" span={2}><input className="form-input" placeholder={isChild ? '监护人手机号（作为登录账号）' : '手机号（登录账号）'} value={form.phone} onChange={set('phone')} required /></F>
+              <F label="手机号" span={2}><input className="form-input" placeholder={isChild ? '监护人手机号（作为登录账号，可留空）' : '手机号（登录账号，可留空）'} value={form.phone} onChange={set('phone')} /></F>
               <F label="性别"><select className="form-input" value={form.gender} onChange={set('gender')}><option value="未知">未知</option><option value="男">男</option><option value="女">女</option></select></F>
               <F label="出生日期">
                 <input className="form-input" type="date" value={form.birthDate}
