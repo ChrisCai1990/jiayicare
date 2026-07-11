@@ -3315,11 +3315,13 @@ router.get('/user-messages', staffAuth, async (req, res) => {
     const patientMap = {};
     myPatients.forEach(p => { patientMap[String(p._id)] = p; });
 
-    // 按角色过滤：家庭医师看 doctor 留言，营养师看 nutritionist，其他看 manager
+    // 按角色过滤：家庭医师只看 doctor 留言，营养师只看 nutritionist 留言，健管专员/医助只看 manager 留言，superadmin 不受限看全部
+    // （此前健管端用 {} 不过滤，会越权看到发给家庭医生/营养师的留言，也会在点开时误将其标记已读导致家庭医生端漏看）
     const recipientFilter =
       staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
       staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
-      {};
+      staff.role === 'superadmin'    ? {} :
+      { recipient: { $in: ['manager', null, undefined] } };
 
     const messages = await Message.find({ user: { $in: patientIds }, type: 'user', ...recipientFilter })
       .sort({ createdAt: -1 })
@@ -3340,11 +3342,25 @@ router.get('/user-messages', staffAuth, async (req, res) => {
   }
 });
 
+// 角色只能查看/操作自己对应频道的对话（家庭医师→doctor，营养师→nutritionist，健管专员/医助→manager），
+// 防止越权看到并误将其他角色的留言标记已读（曾导致健管专员点开家庭医生的对话后，家庭医生端误判为"已读"而漏看）
+function assertRoleMatchesChannel(staffRole, channelRole) {
+  if (staffRole === 'superadmin') return true;
+  const allowed =
+    staffRole === 'familyDoctor'  ? 'doctor' :
+    staffRole === 'nutritionist'  ? 'nutritionist' :
+    'manager';
+  return allowed === channelRole;
+}
+
 // ── 获取某用户的对话线程（按 roleKey 区分）────────────────────────
 // GET /api/staff/user-messages/:userId/thread?role=manager
 router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
   try {
     const { role = 'manager' } = req.query;
+    if (!assertRoleMatchesChannel(req.staff.role, role)) {
+      return res.status(403).json({ success: false, message: '无权查看该频道的对话' });
+    }
     const conversationId = `${req.params.userId}_${role}`;
     const messages = await Message.find({ conversationId }).sort({ createdAt: 1 }).limit(100);
     // 标记该会话所有用户消息为医护已读
@@ -3361,6 +3377,9 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
 router.patch('/user-messages/:userId/read', staffAuth, async (req, res) => {
   try {
     const { role = 'manager' } = req.body;
+    if (!assertRoleMatchesChannel(req.staff.role, role)) {
+      return res.status(403).json({ success: false, message: '无权操作该频道的对话' });
+    }
     const conversationId = `${req.params.userId}_${role}`;
     await Message.updateMany(
       { conversationId, type: 'user', staffReadAt: null },
