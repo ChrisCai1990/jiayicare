@@ -5884,13 +5884,16 @@ export default function PatientDetailPage() {
             </div>
           </div>
           {(() => {
-            const PENDING_STATUSES = ['planned', 'in_progress']
-            const DONE_STATUSES = ['completed', 'missed', 'cancelled']
+            const PENDING_STATUSES = ['planned', 'in_progress', 'missed']
+            const DONE_STATUSES = ['completed']
+            const CANCELLED_STATUSES = ['cancelled']
             const filtered = followUpFilter === 'pending' ? followUps.filter(f => PENDING_STATUSES.includes(f.status))
               : followUpFilter === 'done' ? followUps.filter(f => DONE_STATUSES.includes(f.status))
+              : followUpFilter === 'cancelled' ? followUps.filter(f => CANCELLED_STATUSES.includes(f.status))
               : followUps
             const pendingCount = followUps.filter(f => PENDING_STATUSES.includes(f.status)).length
             const doneCount = followUps.filter(f => DONE_STATUSES.includes(f.status)).length
+            const cancelledCount = followUps.filter(f => CANCELLED_STATUSES.includes(f.status)).length
             return (
             <>
             <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
@@ -5898,6 +5901,7 @@ export default function PatientDetailPage() {
                 { k: 'all', label: `全部 ${followUps.length}` },
                 { k: 'pending', label: `未随访 ${pendingCount}` },
                 { k: 'done', label: `已随访 ${doneCount}` },
+                { k: 'cancelled', label: `已取消 ${cancelledCount}` },
               ].map(t => (
                 <button key={t.k} className={followUpFilter === t.k ? 'btn btn-sm' : 'btn btn-secondary btn-sm'}
                   style={followUpFilter === t.k ? { background: '#1E6B50', color: '#fff' } : {}}
@@ -5905,7 +5909,7 @@ export default function PatientDetailPage() {
               ))}
             </div>
             {filtered.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无随访记录' : followUpFilter === 'pending' ? '暂无未随访计划' : '暂无已随访记录'}</div>
+              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无随访记录' : followUpFilter === 'pending' ? '暂无未随访计划' : followUpFilter === 'cancelled' ? '暂无已取消记录' : '暂无已随访记录'}</div>
             ) : (
             <table className="table">
               <thead>
