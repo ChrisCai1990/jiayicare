@@ -4,6 +4,7 @@ const { chat } = require('../utils/ai');
 const ChatLog = require('../models/ChatLog');
 const HealthRecord = require('../models/HealthRecord');
 const User = require('../models/User');
+const Message = require('../models/Message');
 const router = express.Router();
 
 const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康助手，主要服务于慢性病（高血压、糖尿病、心血管疾病等）患者。职责涵盖：日常健康科普、指标解读、用药提醒建议、服务套餐咨询、就医流程指导。
@@ -165,7 +166,8 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// POST /api/chat/transfer — 转人工，落库为待办，健管专员在 ai-todos 待审核列表可见（chat_transfer 场景）
+// POST /api/chat/transfer — 转人工，落库为待办，健管专员在 ai-todos 待审核列表可见（transfer_human 场景），
+// 同时把最近几轮AI聊天摘要注入到健管的人工对话（Message，manager频道），避免患者需要重新描述一遍问题
 router.post('/transfer', auth, async (req, res) => {
   const { lastMessage = '' } = req.body;
   try {
@@ -178,6 +180,24 @@ router.post('/transfer', auth, async (req, res) => {
       transferred: true,
       resolved: false,
     });
+
+    // 取最近5轮AI对话组装摘要，作为system消息插入manager会话，健管打开"发消息"对话框即可看到上下文
+    const recentLogs = await ChatLog.find({ user: req.user._id, role: { $ne: 'transfer' } })
+      .sort({ createdAt: -1 }).limit(5).lean();
+    const historyLines = recentLogs.reverse()
+      .map(l => `患者：${l.userMessage}\n小嘉：${l.aiReply}`)
+      .join('\n\n');
+    await Message.create({
+      user: req.user._id,
+      type: 'system',
+      sender: '系统',
+      title: 'AI对话转人工',
+      content: historyLines
+        ? `患者从AI健康助手转来，以下是此前对话摘要：\n\n${historyLines}\n\n患者当前问题：${lastMessage}`
+        : `患者从AI健康助手转来人工咨询：${lastMessage}`,
+      conversationId: `${req.user._id}_manager`,
+    });
+
     const hasManager = !!(await User.findById(req.user._id).select('assignedHealthManager').lean())?.assignedHealthManager;
     res.json({
       success: true,

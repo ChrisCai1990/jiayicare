@@ -5270,7 +5270,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           patientName: c.user?.name || '未知', patientId: String(c.user?._id || ''),
           summary: c.userMessage ? c.userMessage.slice(0, 60) : '患者请求转接人工',
           createdAt, overdue: (now - new Date(createdAt)) > (2 * 60 * 60 * 1000), // 转人工时效性强，2小时未处理即算超时
-          link: `/patients/${c.user?._id}?tab=messages`,
+          link: `/patients/${c.user?._id}?openChat=1`,
         });
       });
     }

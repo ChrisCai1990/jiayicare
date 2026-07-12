@@ -945,7 +945,7 @@ export default function PatientDetailPage() {
   const [editingFollowUp, setEditingFollowUp] = useState(null)
   const [followUpSaving, setFollowUpSaving] = useState(false)
   const [showUploadReport, setShowUploadReport] = useState(false)
-  const [showMessageModal, setShowMessageModal] = useState(false)
+  const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
   const [auditLoading, setAuditLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [showRejectInput, setShowRejectInput] = useState(false)
@@ -8051,8 +8051,22 @@ function SendMessageModal({ patientId, patientName, onClose }) {
           ) : msgs.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>暂无消息，发送第一条吧</div>
           ) : msgs.map((m, i) => {
-            const isStaff = m.type !== 'user'
+            const isStaff = m.type !== 'user' && m.type !== 'system'
             const showTime = i === 0 || (new Date(m.createdAt) - new Date(msgs[i-1].createdAt)) > 300000
+            if (m.type === 'system') {
+              return (
+                <div key={m._id}>
+                  {showTime && <div style={{ textAlign: 'center', fontSize: 11, color: '#8AA89C', margin: '4px 0' }}>{fmtTime(m.createdAt)}</div>}
+                  <div style={{
+                    background: '#FFF8E6', border: '1px solid #F3E0A8', borderRadius: 10,
+                    padding: '10px 13px', fontSize: 12.5, lineHeight: 1.6, color: '#7A5C00', whiteSpace: 'pre-wrap',
+                  }}>
+                    {m.title && <div style={{ fontWeight: 700, marginBottom: 4 }}>🔔 {m.title}</div>}
+                    {m.content}
+                  </div>
+                </div>
+              )
+            }
             return (
               <div key={m._id}>
                 {showTime && <div style={{ textAlign: 'center', fontSize: 11, color: '#8AA89C', margin: '4px 0' }}>{fmtTime(m.createdAt)}</div>}
