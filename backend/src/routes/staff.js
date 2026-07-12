@@ -3630,6 +3630,15 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const scope = req.body.scope || 'all';
+    // 生成权限按维度分流：5维分析(doctor)限家庭医师、生活方式(nutrition)限营养师、all限超管；
+    // 健管专员等其他角色只能查看不能生成（后端兜底，防越权直调接口）
+    const role = req.staff.role;
+    const canGen = role === 'superadmin'
+      || (scope === 'doctor' && role === 'familyDoctor')
+      || (scope === 'nutrition' && role === 'nutritionist');
+    if (!canGen) {
+      return res.status(403).json({ success: false, message: '您没有生成该AI健康分析的权限，仅可查看' });
+    }
     const force = !!req.body.force;
     const year = String(req.body.year || new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
@@ -4037,6 +4046,10 @@ function riskYearOf(req) {
 // POST /api/staff/patients/:id/ai-risk-assessment — 生成风险评估（year 不填则为当前年）
 router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   try {
+    // 风险评估仅家庭医师/超管可生成，健管专员等只能查看（与前端按钮隐藏一致，后端兜底防越权直调接口）
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅家庭医师可生成风险评估' });
+    }
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });

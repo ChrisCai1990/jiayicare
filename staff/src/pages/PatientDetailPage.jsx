@@ -5235,7 +5235,8 @@ export default function PatientDetailPage() {
                   {riskApproving ? '处理中...' : '审核确认'}
                 </button>
               )}
-              {!editingRisk && (
+              {/* AI风险评估仅家庭医师/超管可生成，健管专员等其他角色只能查看 */}
+              {!editingRisk && (staff?.role === 'familyDoctor' || staff?.role === 'superadmin') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => handleGenerateRisk(curYear)} disabled={riskGenerating}>
                   {riskGenerating ? 'AI评估中...' : hasData ? '重新评估' : '✨ AI生成风险评估'}
                 </button>
