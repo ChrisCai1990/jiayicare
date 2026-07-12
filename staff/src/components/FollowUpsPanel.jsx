@@ -84,7 +84,7 @@ export default function FollowUpsPanel() {
           return (
             <div
               key={f._id}
-              onClick={() => nav(`/patients/${f.patientId?._id}?tab=followups`)}
+              onClick={() => nav(`/patients/${f.patientId?._id}?tab=followups`, { state: { openFollowUp: f } })}
               style={{
                 display: 'flex', alignItems: 'flex-start', gap: 12,
                 borderBottom: i < pageItems.length - 1 ? '1px solid #f0ede8' : 'none',

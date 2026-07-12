@@ -1244,6 +1244,15 @@ export default function PatientDetailPage() {
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
   }, [])
+  // 从工作台/随访任务面板点击某条随访直接跳转过来时，带着该条完整记录（location.state.openFollowUp），
+  // 不依赖列表分页/折叠命中，进详情页直接弹出对应的随访详情（即执行随访要看的内容），
+  // 不用用户在列表里再翻找一遍（2026-07-13 反馈：点进来还得自己找，应该直接到随访内容界面）。
+  useEffect(() => {
+    if (tab === 'followups' && location.state?.openFollowUp) {
+      setFollowUpDetail(location.state.openFollowUp)
+      nav(location.pathname + location.search, { replace: true, state: {} })
+    }
+  }, [tab])
   useEffect(() => {
     if (tab === 'followups') loadFollowUps()
     else if (tab === 'plans') loadPlans()

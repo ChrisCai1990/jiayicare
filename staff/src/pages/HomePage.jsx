@@ -146,7 +146,7 @@ export default function HomePage() {
                   borderBottom: i < pendingOrders.length - 1 ? '1px solid #f0ede8' : 'none',
                   cursor: 'pointer',
                 }}
-                onClick={() => nav(`/patients/${f.patientId?._id}?tab=followups`)}>
+                onClick={() => nav(`/patients/${f.patientId?._id}?tab=followups`, { state: { openFollowUp: f } })}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <span style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24', minWidth: 60, flexShrink: 0 }}>{f.patientId?.name || '未知'}</span>
                   <span style={{ fontSize: 13, color: '#666', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.theme}</span>
