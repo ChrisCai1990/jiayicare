@@ -926,6 +926,7 @@ export default function PatientDetailPage() {
   const toast = useToast()
   const { staff } = useStaff()
   const [data, setData] = useState(null)
+  const [loadError, setLoadError] = useState(null) // 加载患者详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
   const initialTab = new URLSearchParams(location.search).get('tab') || 'info'
   const [tab, setTab] = useState(initialTab)  // info | records | reports | medications | requisitions | plans | followups | serviceRecords | consumption | family | membership
@@ -1145,6 +1146,7 @@ export default function PatientDetailPage() {
         staffAPI.getScreeningReports(id),
       ])
       if (res.status === 'fulfilled') {
+        setLoadError(null)
         setData(res.value.data)
         setEditForm(buildEditForm(res.value.data.user))
         setBasicInfoForm(buildBasicInfoForm(res.value.data.user))
@@ -1161,6 +1163,7 @@ export default function PatientDetailPage() {
       }
       if (scrRes.status === 'fulfilled') setScreeningReports(scrRes.value.data || [])
     } catch (err) {
+      setLoadError(err.status === 403 ? '无权限查看该会员' : (err.message || '会员不存在'))
       toast(err.message || '加载失败')
     } finally {
       setLoading(false)
@@ -1990,7 +1993,7 @@ export default function PatientDetailPage() {
   }
 
   if (loading) return <div className="page-loading">加载中...</div>
-  if (!data) return <div className="page">会员不存在</div>
+  if (!data) return <div className="page">{loadError || '会员不存在'}</div>
 
   const { user, recentFollowUps, recentRecords } = data
   const age = user.age ? `${user.age}岁` : '-'

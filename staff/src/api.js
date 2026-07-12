@@ -29,6 +29,7 @@ async function req(path, options = {}) {
   }
   if (!res.ok) {
     const err = new Error(data.message || '请求失败')
+    err.status = res.status
     if (data.needConfirm) { err.needConfirm = true; err.approvedBy = data.approvedBy }
     throw err
   }
