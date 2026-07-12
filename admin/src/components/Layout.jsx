@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useAdmin } from '../App'
+import { adminAPI } from '../api'
 
 const NAV_SECTIONS = [
   {
@@ -11,7 +12,7 @@ const NAV_SECTIONS = [
       { label: '订单管理',     icon: '📋', path: '/orders' },
       { label: '佣金审核打款', icon: '💰', path: '/commissions' },
       { label: '消息中心',     icon: '💬', path: '/messages' },
-      { label: '用户反馈',     icon: '📮', path: '/feedback' },
+      { label: '用户反馈',     icon: '📮', path: '/feedback', badgeKey: 'feedback' },
       { label: '商城产品管理', icon: '🏪', path: '/products' },
       { label: '合作伙伴权益', icon: '🤝', path: '/partners' },
       { label: '企业客户管理', icon: '🏢', path: '/enterprises' },
@@ -66,6 +67,20 @@ export default function Layout() {
   const nav = useNavigate()
   const loc = useLocation()
   const [collapsed, setCollapsed] = useState({})
+  const [pendingFeedback, setPendingFeedback] = useState(0)
+
+  useEffect(() => {
+    let cancelled = false
+    const loadPending = async () => {
+      try {
+        const res = await adminAPI.feedbackList({ status: 'pending' })
+        if (!cancelled) setPendingFeedback((res.data || []).length)
+      } catch { /* 静默失败，不影响侧边栏其余功能 */ }
+    }
+    loadPending()
+    const timer = setInterval(loadPending, 30000)
+    return () => { cancelled = true; clearInterval(timer) }
+  }, [])
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -119,6 +134,9 @@ export default function Layout() {
                   >
                     <span className="sidebar-item-icon">{item.icon}</span>
                     <span>{item.label}</span>
+                    {item.badgeKey === 'feedback' && pendingFeedback > 0 && (
+                      <span className="sidebar-badge">{pendingFeedback > 99 ? '99+' : pendingFeedback}</span>
+                    )}
                   </div>
                 )
               })}
