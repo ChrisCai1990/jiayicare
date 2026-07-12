@@ -1341,6 +1341,7 @@ export default function PatientDetailPage() {
     remark: u.remark || '',
     // contactPhone2/contactName/deliveryAddress 已移到基本信息卡(basicInfoForm)统一管理，
     // 此处不再纳入 editForm，避免管理信息卡保存时用旧值覆盖基本信息卡刚存的新值（2026-07-11）
+    assignedHealthPlanner:    u.assignedHealthPlanner?._id    || '',
     assignedHealthManager:    u.assignedHealthManager?._id    || '',
     assignedFamilyDoctor:     u.assignedFamilyDoctor?._id     || '',
     assignedNutritionist:     u.assignedNutritionist?._id     || '',
@@ -2403,6 +2404,7 @@ export default function PatientDetailPage() {
                     </select>
                   </div>
                   {[
+                    { label: '健康规划师',field: 'assignedHealthPlanner',    role: 'healthPlanner' },
                     { label: '家庭医师',  field: 'assignedFamilyDoctor',     role: 'familyDoctor' },
                     { label: '营养师',    field: 'assignedNutritionist',     role: 'nutritionist' },
                     { label: '健管专员',  field: 'assignedHealthManager',    role: 'healthManager' },
@@ -2471,6 +2473,7 @@ export default function PatientDetailPage() {
                 <>
                   {/* 紧急联系人/紧急联系电话/快递配送地址已移至「基本信息」卡（2026-07-11） */}
                   <InfoRow label="会员类型" value={user.memberType || '-'} />
+                  <InfoRow label="健康规划师" value={user.assignedHealthPlanner?.name    || '-'} />
                   <InfoRow label="家庭医师"   value={user.assignedFamilyDoctor?.name     || '-'} />
                   <InfoRow label="营养师"     value={user.assignedNutritionist?.name     || '-'} />
                   <InfoRow label="健管专员"   value={user.assignedHealthManager?.name    || '-'} />
