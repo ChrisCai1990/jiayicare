@@ -176,6 +176,16 @@ const SERVICE_PACKAGE_LABELS = {
 const getServicePackageLabel = (pkg) => SERVICE_PACKAGE_LABELS[pkg] || pkg || '-'
 const STATUS_MAP = { completed: '已完成', missed: '未接通', planned: '计划中', in_progress: '进行中', cancelled: '已取消' }
 const STATUS_COLOR = { completed: '#22A06B', missed: '#DC3545', planned: '#D97706', in_progress: '#0077B6', cancelled: '#8AA89C' }
+// 报告归类一级大类（与用户端 ReportUploadScreen / admin 分类管理对齐的 7 类）
+const REPORT_L1_TYPES = [
+  { key: 'general_exam',   label: '一般检查' },
+  { key: 'tumor',          label: '肿瘤筛查' },
+  { key: 'cardiovascular', label: '心脑血管病筛查' },
+  { key: 'chronic',        label: '慢性病筛查' },
+  { key: 'functional',     label: '功能医学检测' },
+  { key: 'gender_health',  label: '男性/女性健康筛查' },
+  { key: 'other',          label: '其他常规筛查' },
+]
 const PLAN_TYPE_LABEL = {
   annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案',
   nutrition:'营养干预方案', medical_assist:'就医协助方案',
@@ -6075,13 +6085,15 @@ export default function PatientDetailPage() {
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {isFunctionalMedicineGroup ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
-                              ) : r.aiStatus === 'none' && (r.fileUrl || r.content) && (
+                              ) : r.aiStatus === 'none' && (r.fileUrl || r.content || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
                                   disabled={parsingReportId === r._id}
                                   onClick={() => handleParseReportAI(r._id)}>
                                   {parsingReportId === r._id ? '提交中…' : 'AI解析'}
                                 </button>
-                              )}
+                              ) : r.aiStatus === 'none' ? (
+                                <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
+                              ) : null}
                               {r.aiStatus === 'processing' && (
                                 <button className="btn btn-sm" style={{ marginRight: 4, background:'#EDE7F9', color:'#7C3AED', border:'1px solid #d9cef2', cursor:'default' }} disabled>
                                   <span style={{ display:'inline-block', width:10, height:10, border:'2px solid #7C3AED', borderTopColor:'transparent', borderRadius:'50%', marginRight:6, verticalAlign:'middle', animation:'spin 0.8s linear infinite' }} />
@@ -6097,6 +6109,7 @@ export default function PatientDetailPage() {
                                       hospital: r.hospital || r.institution || '',
                                       date: r.date || r.checkDate || '',
                                       note: r.note || '',
+                                      type: r.type || 'general_exam',
                                     })
                                   }}>编辑</button>
                               )}
@@ -6924,6 +6937,14 @@ export default function PatientDetailPage() {
                 <label className="form-label">检查日期</label>
                 <input className="form-input" type="date" value={editingReportForm.date || ''}
                   onChange={e => setEditingReportForm(f => ({ ...f, date: e.target.value }))} />
+              </div>
+              {/* 报告归类（一级大类，与用户端上传保持同一套）：客户上传时可能归错，健管可在此改正 */}
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">报告归类</label>
+                <select className="form-input" value={editingReportForm.type || ''}
+                  onChange={e => setEditingReportForm(f => ({ ...f, type: e.target.value }))}>
+                  {REPORT_L1_TYPES.map(t => <option key={t.key} value={t.key}>{t.label}</option>)}
+                </select>
               </div>
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">备注</label>
@@ -8212,25 +8233,13 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
             </div>
           </div>
 
-          {/* L2 具体分类（年度体检不展示） */}
-          {!isAnnual && form.l1Id && (
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">具体分类</label>
-              {l2Options.length > 0 ? (
-                <select className="form-input" value={form.l2Label} onChange={e => handleL2Change(e.target.value)}>
-                  <option value="">-- 选择具体项目（可选）--</option>
-                  {l2Options.map(c => <option key={c.label} value={c.label}>{c.label}</option>)}
-                </select>
-              ) : (
-                <div style={{ fontSize: 12, color: '#aaa', padding: '6px 0' }}>该大类暂无子分类</div>
-              )}
-            </div>
-          )}
+          {/* 二级具体分类已按需求移除：上传时只归一级大类，与用户端一致，避免设了二级标签又不做归类。
+              精细归类统一交给 AI 解析后由健管在报告详情里调整。 */}
 
-          {/* 当前分类路径提示 */}
+          {/* 当前分类提示（仅一级大类） */}
           {form.l1Id && (
             <div style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '5px 10px' }}>
-              {isAnnual ? '年度体检报告（整份报告）' : [currentL1?.label, form.l2Label].filter(Boolean).join(' › ')}
+              {isAnnual ? '年度体检报告（整份报告）' : (currentL1?.label || '')}
             </div>
           )}
 

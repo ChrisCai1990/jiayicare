@@ -4912,6 +4912,7 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
 // 健管专员：健康档案问卷 / 体检报告OCR / 检查开单 / 随访建议
 // 就医专员：就医协助记录
 const TODO_REVIEW_ROLE = {
+  report_parse:         'healthManager',
   report_review:        'healthManager',
   archive_review:       'healthManager',
   checkup_plan_review:  'healthManager',
@@ -4973,6 +4974,24 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
 
     // ── 健管专员：体检报告 OCR 待审核（aiStatus=pending）──
+    // ── 健管专员：用户自己上传、尚未AI解析的体检报告（待解析）──
+    // 用户端上传的报告 aiStatus=none 且 uploadedBy=null（非医护录入），需健管触发AI解析
+    if (can('report_parse')) {
+      const parseFilter = { aiStatus: 'none', uploadedBy: null, ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
+      const toParseReports = await MedicalReport.find(parseFilter)
+        .populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
+      toParseReports.forEach(r => {
+        const createdAt = r.createdAt;
+        todos.push({
+          id: 'reportparse_' + r._id, type: 'report_parse', label: '体检报告待解析', priority: 2,
+          patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
+          summary: `${r.title} · 客户上传，待AI解析`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+        });
+      });
+    }
+
     if (can('report_review')) {
       const reportFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const pendingReports = await MedicalReport.find(reportFilter)
