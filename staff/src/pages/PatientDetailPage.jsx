@@ -6071,7 +6071,11 @@ export default function PatientDetailPage() {
                             <td style={{ fontSize: 12, color: '#8AA89C' }}>{r.checkDate || r.date || '-'}</td>
                             <td>
                               <span style={{ fontSize: 12, fontWeight: 500, color: r.audit_status === 'audited' ? '#22A06B' : r.audit_status === 'rejected' ? '#DC3545' : '#D97706' }}>
-                                {r.audit_status === 'audited' ? '已审核' : r.audit_status === 'rejected' ? '已驳回' : '待审核'}
+                                {r.audit_status === 'audited' ? '已审核'
+                                  : r.audit_status === 'rejected' ? '已驳回'
+                                  : r.aiStatus === 'none' ? '待解析'
+                                  : r.aiStatus === 'processing' ? '解析中'
+                                  : '待审核'}
                               </span>
                             </td>
                             <td>
@@ -6085,7 +6089,7 @@ export default function PatientDetailPage() {
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {isFunctionalMedicineGroup ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
-                              ) : r.aiStatus === 'none' && (r.fileUrl || r.content || (r.fileUrls && r.fileUrls.length)) ? (
+                              ) : r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
                                   disabled={parsingReportId === r._id}
                                   onClick={() => handleParseReportAI(r._id)}>

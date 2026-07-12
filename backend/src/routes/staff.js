@@ -2106,6 +2106,15 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
     .sort({ createdAt: 1 })
     .populate('uploadedBy', 'name role');
 
+  // content 是大字段(base64图片)，列表已用 -content 排除以省流量，但前端判断"有无报告文件可解析"需要知道
+  // content 是否存在。这里单独用聚合算一个轻量布尔 hasContent，避免把整段 base64 传到前端。
+  const contentFlags = await MedicalReport.aggregate([
+    { $match: { user: new mongoose.Types.ObjectId(req.params.id) } },
+    { $project: { hasContent: { $gt: [{ $strLenCP: { $ifNull: ['$content', ''] } }, 0] } } },
+  ]);
+  const hasContentMap = {};
+  contentFlags.forEach(f => { hasContentMap[String(f._id)] = f.hasContent; });
+
   // 显示层去重：同一 (checkDate, screeningL1) 的两条记录合并为一条
   const keyMap = {};
   const result = [];
@@ -2115,8 +2124,10 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
       const primary = keyMap[key];
       if (!primary.fileUrl && r.fileUrl) { primary.fileUrl = r.fileUrl; primary.mimeType = r.mimeType; }
       if ((r.reportItems?.length || 0) > (primary.reportItems?.length || 0)) primary.reportItems = r.reportItems;
+      if (!primary.hasContent && hasContentMap[String(r._id)]) primary.hasContent = true;
     } else {
       const obj = r.toObject();
+      obj.hasContent = !!hasContentMap[String(r._id)];
       if (key) keyMap[key] = obj;
       result.push(key ? keyMap[key] : obj);
     }
