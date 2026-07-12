@@ -2968,16 +2968,25 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
 // 其余角色（家医/营养师本人、超管等）录入直接生效，避免自己审自己。
 const NEEDS_REVIEW_ROLES = ['healthManager', 'medicalAssistant'];
 
-// 药物审核（限家庭医师/超管）：通过=激活(aiStatus=approved)，驳回=删除该待审记录
+// 药物待审处理：approve/reject 限家庭医师/超管（审核权限）；withdraw 限录入本人或超管（撤回自己提交的待审记录）
 router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, res) => {
   try {
-    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-      return res.status(403).json({ success: false, message: '仅家庭医师可审核药物' });
-    }
     const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
     if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
     if (med.aiStatus !== 'pending') return res.status(400).json({ success: false, message: '该记录无需审核' });
-    const { action } = req.body; // 'approve' | 'reject'
+    const { action } = req.body; // 'approve' | 'reject' | 'withdraw'
+    const isDoctor = ['familyDoctor', 'superadmin'].includes(req.staff.role);
+    const isCreator = String(med.staffId) === String(req.staff._id);
+
+    if (action === 'withdraw') {
+      if (!isCreator && req.staff.role !== 'superadmin') {
+        return res.status(403).json({ success: false, message: '仅提交人本人可撤回' });
+      }
+      await med.deleteOne();
+      return res.json({ success: true, message: '已撤回' });
+    }
+
+    if (!isDoctor) return res.status(403).json({ success: false, message: '仅家庭医师可审核药物' });
     if (action === 'reject') {
       await med.deleteOne();
       return res.json({ success: true, message: '已驳回并删除' });

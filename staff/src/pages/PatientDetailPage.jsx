@@ -1825,7 +1825,7 @@ export default function PatientDetailPage() {
   const reviewMedication = async (medId, action) => {
     try {
       await staffAPI.reviewPatientMedication(id, medId, action)
-      toast(action === 'approve' ? '审核通过，药物已生效' : '已驳回')
+      toast(action === 'approve' ? '审核通过，药物已生效' : action === 'withdraw' ? '已撤回' : '已驳回')
       loadMedications()
     } catch (err) { toast(err.message || '操作失败') }
   }
@@ -5442,6 +5442,12 @@ export default function PatientDetailPage() {
                               }}>编辑</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
                                 onClick={() => { if (window.confirm('确认驳回并删除这条待审核药物？')) reviewMedication(m._id, 'reject') }}>驳回</button>
+                            </div>
+                          ) : (staff?._id && String(m.staffId) === String(staff._id)) ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 12, color: '#8AA89C' }}>等待家庭医师审核</span>
+                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
+                                onClick={() => { if (window.confirm('确认撤回这条你提交的待审核药物？')) reviewMedication(m._id, 'withdraw') }}>撤回</button>
                             </div>
                           ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待家庭医师审核</span>}
                         </td>
