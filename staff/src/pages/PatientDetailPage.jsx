@@ -185,7 +185,7 @@ const PLAN_TYPE_LABEL = {
 const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' }
 const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
 const SR_TYPE_LABEL = {
-  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', routine:'日常随访',
+  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', routine:'日常随访', doctor_followup:'医生随访',
   medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊',
 }
 const SR_CATEGORY = {
@@ -193,8 +193,9 @@ const SR_CATEGORY = {
   disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
   medical_visit: '医院就医', medical_escort: '医院就医',
   routine:       '日常随访',
+  doctor_followup: '医生随访',
 }
-const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7' }
+const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7', '医生随访':'#0088CC' }
 
 // ── 开单弹窗 ─────────────────────────────────────────────
 function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '', prefillSuggestions = [] }) {
@@ -925,7 +926,6 @@ export default function PatientDetailPage() {
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [showSRDetail, setShowSRDetail] = useState(null)
-  const [routineDraftGenerating, setRoutineDraftGenerating] = useState(false)
   const [reviewingDraft, setReviewingDraft] = useState(null)
   const [staffList, setStaffList] = useState([])
   const [assigningFulfillerOrder, setAssigningFulfillerOrder] = useState(null)
@@ -6063,7 +6063,7 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访']
+        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访', '医生随访']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
@@ -6107,22 +6107,7 @@ export default function PatientDetailPage() {
               <div className="card" key={cat}>
                 <div className="card-header">
                   <div className="card-title" style={{ color: SR_CATEGORY_COLOR[cat] }}>{cat}</div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    {cat === '日常随访' && (
-                      <button className="btn btn-secondary btn-sm" disabled={routineDraftGenerating}
-                        onClick={async () => {
-                          setRoutineDraftGenerating(true)
-                          try {
-                            const res = await staffAPI.generateRoutineDraft(id)
-                            toast(res.reused ? '已有待审核的草稿' : 'AI草稿已生成，请审核')
-                            loadServiceRecords()
-                            setReviewingDraft(res.data)
-                          } catch (err) { toast(err.message) }
-                          finally { setRoutineDraftGenerating(false) }
-                        }}>{routineDraftGenerating ? '生成中…' : '🤖 AI生成随访草稿'}</button>
-                    )}
-                    <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
-                  </div>
+                  <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
                 </div>
                 {grouped[cat].length === 0 ? (
                   <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{cat}记录</div>
@@ -7505,6 +7490,7 @@ export default function PatientDetailPage() {
 
       {/* AI随访草稿审核弹窗 */}
       {reviewingDraft && (() => {
+        const isDoctorDraft = reviewingDraft.type === 'doctor_followup'
         const DraftReviewModal = () => {
           const [form, setForm] = React.useState({
             title: reviewingDraft.title || '', content: reviewingDraft.content || '',
@@ -7536,25 +7522,33 @@ export default function PatientDetailPage() {
             <div className="modal-overlay" onClick={() => setReviewingDraft(null)}>
               <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
-                  <h3 className="modal-title">审核AI生成的随访记录</h3>
+                  <h3 className="modal-title">审核AI生成的{isDoctorDraft ? '医生随访' : '随访'}记录</h3>
                   <button className="modal-close" onClick={() => setReviewingDraft(null)}>×</button>
                 </div>
                 <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                  <div style={{ fontSize: 12, color: '#7C3AED', background: '#7C3AED10', padding: '6px 10px', borderRadius: 6 }}>
-                    此内容由AI根据与患者的聊天记录自动提炼，请核实后再确认入档
-                  </div>
+                  {isDoctorDraft ? (
+                    <div style={{ fontSize: 12, color: '#B91C1C', background: '#FEF2F2', border: '1px solid #FCA5A5', padding: '8px 10px', borderRadius: 6 }}>
+                      ⚠️ 涉及医疗沟通内容，AI仅客观提炼聊天记录，不构成诊疗建议，请医生本人核实内容准确性后再确认入档
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#7C3AED', background: '#7C3AED10', padding: '6px 10px', borderRadius: 6 }}>
+                      此内容由AI根据与患者的聊天记录自动提炼，请核实后再确认入档
+                    </div>
+                  )}
                   <div>
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>标题</label>
                     <input className="form-control" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
                   </div>
                   <div>
-                    <label style={{ fontSize: 12, color: '#8AA89C' }}>随访要点</label>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>{isDoctorDraft ? '沟通要点' : '随访要点'}</label>
                     <textarea className="form-control" rows={5} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} />
                   </div>
-                  <div>
-                    <label style={{ fontSize: 12, color: '#8AA89C' }}>结论/评估</label>
-                    <textarea className="form-control" rows={2} value={form.result} onChange={e => setForm(f => ({ ...f, result: e.target.value }))} />
-                  </div>
+                  {!isDoctorDraft && (
+                    <div>
+                      <label style={{ fontSize: 12, color: '#8AA89C' }}>结论/评估</label>
+                      <textarea className="form-control" rows={2} value={form.result} onChange={e => setForm(f => ({ ...f, result: e.target.value }))} />
+                    </div>
+                  )}
                   <div>
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>下次随访日期（可选）</label>
                     <input type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />

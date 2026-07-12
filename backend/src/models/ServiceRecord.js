@@ -16,6 +16,7 @@ const serviceRecordSchema = new mongoose.Schema({
       'nutrition',        // 营养干预记录（新）
       'medical_visit',    // 医院就医记录（新）
       'routine',          // 日常随访记录（新）
+      'doctor_followup',  // 医生随访记录（新，家庭医生日常沟通，非到院就医）
     ],
     required: true,
   },
@@ -60,10 +61,12 @@ const serviceRecordSchema = new mongoose.Schema({
     staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   }],
 
-  // AI 从患者聊天记录提炼生成的日常随访草稿（type=routine 专用）
+  // AI 从患者聊天记录提炼生成的随访草稿（routine/doctor_followup/nutrition 均可能来源于此）
   aiStatus:         { type: String, enum: ['pending', 'approved', null], default: null },
   aiSourceMessageIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
   aiGeneratedAt:    { type: Date, default: null },
+  aiRangeStart:     { type: Date, default: null }, // 本次草稿覆盖的聊天时间窗口起点，用于避免同一时段重复生成
+  aiRangeEnd:       { type: Date, default: null },
 }, { timestamps: true });
 
 serviceRecordSchema.index({ patientId: 1, type: 1, date: -1 });

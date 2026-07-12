@@ -658,15 +658,33 @@ function ReplyModal({ userId, userName, onClose, onSent }) {
 }
 
 // ── 对话线程弹窗 ──
+const CHAT_DRAFT_RANGE_LABEL = { today: '当日', '3d': '近3天', week: '近1周' }
+const CHAT_DRAFT_RANGE_OPTIONS = { doctor: ['today', '3d'], manager: ['today', '3d', 'week'], nutritionist: ['today', '3d', 'week'] }
+const CHAT_DRAFT_DEFAULT_RANGE = { doctor: 'today', manager: 'today', nutritionist: 'week' }
+
 function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate }) {
+  const toast = useToast()
   const [messages, setMessages] = useState([])
   const [loading, setLoading] = useState(true)
   const [content, setContent] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const [err, setErr] = useState('')
+  const [draftRange, setDraftRange] = useState(CHAT_DRAFT_DEFAULT_RANGE[roleKey] || 'today')
+  const [draftGenerating, setDraftGenerating] = useState(false)
+  const [draftReview, setDraftReview] = useState(null)
   const bottomRef = useRef(null)
 
   const ROLE_LABEL = { doctor: '家庭医师', nutritionist: '营养师', manager: '健管师' }
+
+  const handleGenerateDraft = async () => {
+    setDraftGenerating(true)
+    try {
+      const res = await staffAPI.generateChatFollowupDraft(userId, roleKey, draftRange)
+      if (res.reused) toast('已有待审核的草稿')
+      setDraftReview(res.data)
+    } catch (e) { toast(e.message || '生成失败') }
+    finally { setDraftGenerating(false) }
+  }
 
   const loadThread = async () => {
     try {
@@ -701,7 +719,14 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
             <h3 className="modal-title">与 {userName} 的对话</h3>
             <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>频道：{ROLE_LABEL[roleKey] || roleKey}</div>
           </div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select className="form-input" value={draftRange} onChange={e => setDraftRange(e.target.value)}
+              style={{ fontSize: 12, padding: '4px 6px', width: 'auto' }}>
+              {(CHAT_DRAFT_RANGE_OPTIONS[roleKey] || ['today']).map(r => <option key={r} value={r}>{CHAT_DRAFT_RANGE_LABEL[r]}</option>)}
+            </select>
+            <button className="btn btn-secondary btn-sm" disabled={draftGenerating} onClick={handleGenerateDraft}>
+              {draftGenerating ? '生成中…' : '🤖 生成随访草稿'}
+            </button>
             {onNavigate && <button className="btn btn-secondary btn-sm" onClick={() => { onNavigate(`/patients/${userId}`); onClose() }}>查看档案</button>}
             <button className="modal-close" onClick={onClose}>✕</button>
           </div>
@@ -753,6 +778,84 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
             </button>
           </div>
           {err && <div style={{ color: '#DC3545', fontSize: 12, marginTop: 4 }}>{err}</div>}
+        </div>
+      </div>
+      {draftReview && (
+        <DraftReviewModal draft={draftReview} onClose={() => setDraftReview(null)}
+          onDone={() => { setDraftReview(null); toast('已确认入档') }} />
+      )}
+    </div>
+  )
+}
+
+// ── AI生成随访草稿的审核弹窗（聊天记录提炼稿，需专员核实后确认入档）──
+function DraftReviewModal({ draft, onClose, onDone }) {
+  const toast = useToast()
+  const isDoctorDraft = draft.type === 'doctor_followup'
+  const [form, setForm] = useState({
+    title: draft.title || '', content: draft.content || '', result: draft.result || '',
+    nextDate: draft.nextDate ? new Date(draft.nextDate).toISOString().slice(0, 10) : '',
+  })
+  const [saving, setSaving] = useState(false)
+
+  const handleApprove = async () => {
+    setSaving(true)
+    try {
+      await staffAPI.reviewRoutineDraft(draft._id, { action: 'approve', edits: { ...form, nextDate: form.nextDate || null } })
+      onDone()
+    } catch (e) { toast(e.message || '保存失败') }
+    finally { setSaving(false) }
+  }
+
+  const handleDiscard = async () => {
+    if (!window.confirm('确定丢弃这条AI草稿？')) return
+    setSaving(true)
+    try {
+      await staffAPI.reviewRoutineDraft(draft._id, { action: 'discard' })
+      toast('已丢弃'); onClose()
+    } catch (e) { toast(e.message || '操作失败') }
+    finally { setSaving(false) }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal" style={{ maxWidth: 520 }}>
+        <div className="modal-header">
+          <h3 className="modal-title">审核AI生成的{isDoctorDraft ? '医生随访' : '随访'}记录</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {isDoctorDraft ? (
+            <div style={{ fontSize: 12, color: '#B91C1C', background: '#FEF2F2', border: '1px solid #FCA5A5', padding: '8px 10px', borderRadius: 6 }}>
+              ⚠️ 涉及医疗沟通内容，AI仅客观提炼聊天记录，不构成诊疗建议，请医生本人核实内容准确性后再确认入档
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: '#7C3AED', background: '#7C3AED10', padding: '6px 10px', borderRadius: 6 }}>
+              此内容由AI根据与患者的聊天记录自动提炼，请核实后再确认入档
+            </div>
+          )}
+          <div>
+            <label style={{ fontSize: 12, color: '#8AA89C' }}>标题</label>
+            <input className="form-control" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+          </div>
+          <div>
+            <label style={{ fontSize: 12, color: '#8AA89C' }}>{isDoctorDraft ? '沟通要点' : '随访要点'}</label>
+            <textarea className="form-control" rows={5} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} />
+          </div>
+          {!isDoctorDraft && (
+            <div>
+              <label style={{ fontSize: 12, color: '#8AA89C' }}>结论/评估</label>
+              <textarea className="form-control" rows={2} value={form.result} onChange={e => setForm(f => ({ ...f, result: e.target.value }))} />
+            </div>
+          )}
+          <div>
+            <label style={{ fontSize: 12, color: '#8AA89C' }}>下次随访日期（可选）</label>
+            <input type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
+          </div>
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-secondary" disabled={saving} onClick={handleDiscard}>丢弃</button>
+          <button className="btn btn-primary" disabled={saving} onClick={handleApprove}>{saving ? '保存中…' : '确认入档'}</button>
         </div>
       </div>
     </div>
