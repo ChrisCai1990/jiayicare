@@ -980,6 +980,8 @@ export default function PatientDetailPage() {
   const [aiExamSuggesting, setAiExamSuggesting] = useState(false)
   const [aiNutritionGenerating, setAiNutritionGenerating] = useState(false)
   const [aiCheckupGenerating, setAiCheckupGenerating] = useState(false)
+  const [aiMedicalAssistGenerating, setAiMedicalAssistGenerating] = useState(false)
+  const [autoGenMedicalAssistOrderId, setAutoGenMedicalAssistOrderId] = useState(null) // 非null时代表从工作台商城订单待办跳转过来，需自动触发AI生成一次
   const [reqPrefill, setReqPrefill] = useState(null)
   const [showMedModal, setShowMedModal] = useState(false)
   const [showSupModal, setShowSupModal] = useState(false)
@@ -1215,6 +1217,15 @@ export default function PatientDetailPage() {
   const loadPlans = async () => {
     try { const res = await staffAPI.getPatientPlans(id); setPlans(res.data) } catch {}
   }
+  const genAIMedicalAssistPlan = async (orderId) => {
+    setAiMedicalAssistGenerating(true)
+    try {
+      await staffAPI.generateAIMedicalAssistPlan(id, orderId)
+      toast('AI就医协助方案已生成，待就医专员审核')
+      loadPlans()
+    } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
+    finally { setAiMedicalAssistGenerating(false) }
+  }
   const loadReports = async () => {
     try { const res = await staffAPI.getPatientReports(id); setReports(res.data) } catch {}
   }
@@ -1295,23 +1306,39 @@ export default function PatientDetailPage() {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
   }, [])
   // 从工作台/随访任务面板点击某条随访直接跳转过来时，带着该条完整记录（location.state.openFollowUp），
-  // 不依赖列表分页/折叠命中，进详情页直接弹出对应弹窗，不用用户在列表里再翻找一遍。
-  // 两种来源目的不同，跳转的弹窗也不同：
+  // 不依赖列表分页/折叠命中，进详情页直接跳到对应界面，不用用户在列表里再翻找一遍。
+  // 来源+当前角色不同，目的地也不同：
   // - 普通随访任务（sourceType!=='order'）：工作台点进来就是要去处理，直接跳"执行随访"弹窗填写结果
   //   （2026-07-13 反馈：应该直接到执行随访界面，不然怎么填写随访内容）。
-  // - 商城服务订单（sourceType==='order'）：健康规划师点进来的目的是"选执行人转派"，不是自己执行，
+  // - 商城服务订单（sourceType==='order'）+ 就医专员本人：目的是去生成就医协助方案，不是转派/执行随访，
+  //   直接跳"管理方案"tab并自动触发AI生成（2026-07-13 需求：就医专员点进来应跳到就医协助方案，
+  //   AI先生成方案，审核后推送给客户，并自动建立随访计划）。
+  // - 商城服务订单 + 其他角色（如健康规划师）：目的是"选执行人转派"，不是自己执行，
   //   执行随访弹窗没有转派入口会把这条路堵死（2026-07-13 反馈：跳到执行随访界面，无法选择执行人，
-  //   没办法真正转到实际服务的人员）——改为跳只读详情弹窗，里面"编辑"按钮能选执行人(assignedTo)。
+  //   没办法真正转到实际服务的人员）——跳只读详情弹窗，里面"编辑"按钮能选执行人(assignedTo)。
   // 已完成/已取消的记录都没有"执行/转派"的意义，统一退回只读详情。
   useEffect(() => {
     if (tab === 'followups' && location.state?.openFollowUp) {
       const f = location.state.openFollowUp
+      if (f.sourceType === 'order' && staff?.role === 'medicalAssistant') {
+        setTab('plans')
+        setAutoGenMedicalAssistOrderId(f.sourceOrderId || '')
+        nav(location.pathname + '?tab=plans', { replace: true })
+        return
+      }
       if (f.sourceType === 'order') setFollowUpDetail(f)
       else if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
       else setFollowUpDetail(f)
       nav(location.pathname + location.search, { replace: true, state: {} })
     }
   }, [tab])
+  // 从商城订单待办跳转到"管理方案"tab后，自动触发一次AI生成，不用就医专员自己再点一次按钮
+  useEffect(() => {
+    if (tab === 'plans' && autoGenMedicalAssistOrderId !== null) {
+      genAIMedicalAssistPlan(autoGenMedicalAssistOrderId)
+      setAutoGenMedicalAssistOrderId(null)
+    }
+  }, [tab, autoGenMedicalAssistOrderId])
   useEffect(() => {
     if (tab === 'followups') loadFollowUps()
     else if (tab === 'plans') loadPlans()
@@ -5871,6 +5898,12 @@ export default function PatientDetailPage() {
                   } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
                   finally { setAiCheckupGenerating(false) }
                 }}>{aiCheckupGenerating ? '生成中…' : '✨ AI体检方案'}</button>
+              )}
+              {['medicalAssistant', 'superadmin'].includes(staff?.role) && (
+                <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
+                  onClick={() => genAIMedicalAssistPlan(autoGenMedicalAssistOrderId || '')}>
+                  {aiMedicalAssistGenerating ? '生成中…' : '✨ AI就医协助方案'}
+                </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
                 <select className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }} value=""

@@ -1158,7 +1158,7 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
 // 部分方案类型只归特定角色负责（不论谁生成的），跟"仅制定人可改"是两条独立限制都要满足：
 // 年度体检方案/年度管理方案只有家庭医生能编辑/审核，营养干预方案只有营养师——
 // 2026-07-07 用户明确规则：家庭医生生成的方案营养师不能删改，反之亦然，按患者角色分工而非单纯创建人
-const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist' };
+const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' };
 function checkPlanTypeRole(plan, staffRole) {
   const requiredRole = PLAN_TYPE_OWNER_ROLE[plan.type];
   if (!requiredRole) return true; // 未限定角色的类型（如医嘱/心理咨询方案）不受此限制
@@ -1212,6 +1212,22 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     type: 'plan', planId: plan._id,
     title: plan.title, content: plan.summary || plan.description,
   });
+  // 就医协助方案推送后立即生成一条待随访，不用等客户确认（跟年度体检/营养方案"确认后才生成"不同——
+  // 就医协助本身就是要立刻跟进安排的服务，2026-07-13 需求：推送方案后自动建立随访计划，
+  // 审核通过后客户端能收到待随访任务）；如果方案有关联订单，随访完成后据此可联动订单/消费记录状态
+  if (plan.type === 'medical_assist') {
+    await FollowUp.create({
+      patientId: plan.patientId,
+      staffId: plan.staffId,
+      date: new Date(),
+      theme: `就医协助方案随访 · ${plan.title || ''}`,
+      content: plan.description || '',
+      status: 'planned',
+      sourceHealthPlanId: plan._id,
+      sourceType: 'health_plan',
+      assignedTo: plan.staffId,
+    }).catch(() => {});
+  }
   res.json({ success: true, data: plan });
 });
 
@@ -4980,6 +4996,7 @@ const TODO_REVIEW_ROLE = {
   lifestyle_review:     'nutritionist',
   supplement_review:    'nutritionist',
   nutrition_plan_review:'nutritionist',
+  medical_assist_plan_review: 'medicalAssistant',
   followup_review:      'familyDoctor',
   bp_alert_review:      'familyDoctor',
   transfer_human:       'healthManager',
@@ -5178,6 +5195,23 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           id: 'nutrition_plan_' + p._id, type: 'nutrition_plan_review', label: 'AI营养方案待审核', priority: 3,
           patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
           summary: 'AI生成营养干预方案，待营养师审核',
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/plans/${p._id}`,
+        });
+      });
+    }
+
+    // ── 就医专员：AI就医协助方案待审核 ──
+    if (can('medical_assist_plan_review')) {
+      const medicalAssistPlanFilter = { type: 'medical_assist', 'content.aiStatus': 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const medicalAssistPlans = await HealthPlan.find(medicalAssistPlanFilter)
+        .populate('patientId', 'name').sort({ createdAt: -1 }).limit(50).lean();
+      medicalAssistPlans.forEach(p => {
+        const createdAt = p.createdAt || new Date();
+        todos.push({
+          id: 'medical_assist_plan_' + p._id, type: 'medical_assist_plan_review', label: 'AI就医协助方案待审核', priority: 3,
+          patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
+          summary: 'AI生成就医协助方案，待就医专员审核',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/plans/${p._id}`,
         });
@@ -6713,6 +6747,95 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
       })),
       content: { aiStatus: 'pending', aiGeneratedBy: req.staff.name || '' },
       status: 'draft',
+    });
+
+    res.json({ success: true, data: plan });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── 场景9：AI就医协助方案（就医专员审核） ──────────────────────────────────────
+// POST /api/staff/patients/:id/ai-medical-assist-plan?orderId=xxx
+// 创建 HealthPlan type='medical_assist' status='draft' content.aiStatus='pending'
+// 只有就医专员/超管可生成（与就医协助方案审核角色一致）；orderId 可选——商城订单流转过来的场景会带上，
+// 用订单里的服务名称/备注作为生成依据，关联 sourceOrderId 便于订单-方案-随访状态联动追溯
+// （2026-07-13 需求：客户商城下单就医类服务 → 转派就医专员 → AI生成方案 → 审核 → 推送 → 自动建随访）
+router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) => {
+  if (!['medicalAssistant', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅就医专员可生成就医协助方案' });
+  }
+  try {
+    const user = await User.findById(req.params.id)
+      .select('name gender age chronicDiseases healthProfile');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    const { orderId } = req.query;
+    let order = null;
+    if (orderId) {
+      order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note paidAmount').lean();
+    }
+
+    const { chat } = require('../utils/ai');
+    const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
+    const orderInfo = order
+      ? `客户已下单服务：${order.serviceName}${order.note ? `，备注：${order.note}` : ''}`
+      : '（无关联订单，请按患者情况酌情安排）';
+
+    const prompt = `你是一位就医协助服务专员，请根据患者信息和已下单的服务生成个性化就医协助方案。
+
+【患者信息】
+姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+过敏史：${allergyInfo}
+
+【订单信息】
+${orderInfo}
+
+请以JSON格式输出方案，仅输出JSON：
+{
+  "title": "方案名称（如：${user.name}就医协助方案）",
+  "description": "方案简介，说明本次就医协助的目的（100字以内）",
+  "hospital": "建议就诊医院（结合患者慢病情况推断合适的医院，无法判断则留空）",
+  "department": "建议就诊科室",
+  "tasks": "具体服务事项，每行一项，如：陪同挂号、代取报告、陪同检查",
+  "notes": "注意事项，如需要携带的证件、既往病历等"
+}
+
+注意：需结合患者慢病标签和订单信息给出针对性建议，tasks至少2项。`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200 });
+    let raw = {};
+    try {
+      const m = text.trim().match(/\{[\s\S]*\}/);
+      if (m) raw = JSON.parse(m[0]);
+    } catch {}
+
+    const items = [];
+    if (raw.hospital) {
+      const dept = raw.department ? ` · ${raw.department}` : '';
+      items.push({ name: `就诊：${raw.hospital}${dept}`, category: '就医协助' });
+    }
+    if (order) items.push({ name: `关联订单：${order.serviceName}`, category: '就医协助' });
+    if (raw.tasks) raw.tasks.split('\n').filter(t => t.trim()).forEach(t =>
+      items.push({ name: t.trim(), category: '就医协助' })
+    );
+    if (raw.notes) items.push({ name: `注意事项：${raw.notes}`, category: '就医协助' });
+
+    const plan = await HealthPlan.create({
+      patientId: user._id,
+      staffId: req.staff._id,
+      type: 'medical_assist',
+      title: raw.title || `${user.name}就医协助方案`,
+      description: raw.description || '',
+      year: new Date().getFullYear(),
+      items: items.map(i => ({ ...i, status: 'pending' })),
+      content: {
+        aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
+        hospital: raw.hospital || '', department: raw.department || '',
+        tasks: raw.tasks || '', notes: raw.notes || '',
+      },
+      status: 'draft',
+      sourceOrderId: order ? order._id : null,
     });
 
     res.json({ success: true, data: plan });

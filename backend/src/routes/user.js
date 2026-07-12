@@ -653,7 +653,7 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
 const { syncAnnualPlanFollowUps } = require('../utils/annualPlanFollowUps');
 
 // 方案类型 → 随访待审核归属角色（体检方案由家庭医生把关，营养方案由营养师把关）
-const HEALTH_PLAN_REVIEW_ROLE = { annual_checkup: 'familyDoctor', checkup: 'familyDoctor', nutrition: 'nutritionist' };
+const HEALTH_PLAN_REVIEW_ROLE = { annual_checkup: 'familyDoctor', checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' };
 
 // AI体检/营养方案确认后，生成一条初始随访占位提醒对应角色跟进（不同于年度管理方案的周期性批量排期，
 // 这类方案没有频率配置，只需在确认时提醒一次即可）

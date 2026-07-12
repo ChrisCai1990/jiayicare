@@ -50,6 +50,8 @@ const healthPlanSchema = new mongoose.Schema({
   followupResponsible: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   // 结构化内容（年度管理方案板块数据；营养/就医模板内容）
   content: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // 来源商城订单（就医协助方案等由订单触发生成时关联，用于订单-方案-随访状态联动追溯）
+  sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null },
   // 状态
   status: {
     type: String,

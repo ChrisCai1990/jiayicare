@@ -362,6 +362,8 @@ export const staffAPI = {
   generateAINutritionPlan: (id) => req(`/staff/patients/${id}/ai-nutrition-plan`, { method: 'POST' }),
   // 场景6：AI年度体检方案（健管专员审核）
   generateAIAnnualCheckupPlan: (id) => req(`/staff/patients/${id}/ai-annual-checkup-plan`, { method: 'POST' }),
+  // 场景9：AI就医协助方案（就医专员审核），orderId 可选——从商城订单流转过来时带上，用作生成依据
+  generateAIMedicalAssistPlan: (id, orderId) => req(`/staff/patients/${id}/ai-medical-assist-plan${orderId ? `?orderId=${orderId}` : ''}`, { method: 'POST' }),
 
   // 4.3 专项筛查
   getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),
