@@ -31,7 +31,11 @@ export default function FollowUpsPanel() {
   if (loading) return null
 
   const now = new Date()
-  const overdueCount = items.filter(f => new Date(f.date) < now).length
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  // 按自然日比较，不按精确时刻——此前用 date < now（精确到秒）比较，商城下单生成待办时
+  // date 存的是下单那一秒的时间戳，导致下单几乎立刻就被判定"已过期"（2026-07-13 反馈）
+  const isOverdue = (d) => new Date(d) < todayStart
+  const overdueCount = items.filter(f => isOverdue(f.date)).length
   // 按随访人员姓名本地筛选（家庭医生名下会看到多个执行人的随访，需要快速定位某人）
   const filteredItems = searchName.trim()
     ? items.filter(f => (f.assignedTo?.name || '').includes(searchName.trim()))
@@ -80,7 +84,7 @@ export default function FollowUpsPanel() {
           </div>
         )}
         {pageItems.map((f, i) => {
-          const overdue = new Date(f.date) < now
+          const overdue = isOverdue(f.date)
           return (
             <div
               key={f._id}

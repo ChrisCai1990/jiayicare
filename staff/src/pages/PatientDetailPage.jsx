@@ -1295,14 +1295,19 @@ export default function PatientDetailPage() {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
   }, [])
   // 从工作台/随访任务面板点击某条随访直接跳转过来时，带着该条完整记录（location.state.openFollowUp），
-  // 不依赖列表分页/折叠命中，进详情页直接弹出"执行随访"弹窗（填写随访结果、标记完成），
-  // 不是只读详情——工作台点进来的目的就是要去处理这条随访，不是先看一眼再自己找入口填写
-  // （2026-07-13 反馈：应该直接到执行随访界面，不然怎么填写随访内容）。
-  // 待随访/随访中的记录可以执行；已完成/已取消的没有"执行"的意义，退回只读详情。
+  // 不依赖列表分页/折叠命中，进详情页直接弹出对应弹窗，不用用户在列表里再翻找一遍。
+  // 两种来源目的不同，跳转的弹窗也不同：
+  // - 普通随访任务（sourceType!=='order'）：工作台点进来就是要去处理，直接跳"执行随访"弹窗填写结果
+  //   （2026-07-13 反馈：应该直接到执行随访界面，不然怎么填写随访内容）。
+  // - 商城服务订单（sourceType==='order'）：健康规划师点进来的目的是"选执行人转派"，不是自己执行，
+  //   执行随访弹窗没有转派入口会把这条路堵死（2026-07-13 反馈：跳到执行随访界面，无法选择执行人，
+  //   没办法真正转到实际服务的人员）——改为跳只读详情弹窗，里面"编辑"按钮能选执行人(assignedTo)。
+  // 已完成/已取消的记录都没有"执行/转派"的意义，统一退回只读详情。
   useEffect(() => {
     if (tab === 'followups' && location.state?.openFollowUp) {
       const f = location.state.openFollowUp
-      if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
+      if (f.sourceType === 'order') setFollowUpDetail(f)
+      else if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
       else setFollowUpDetail(f)
       nav(location.pathname + location.search, { replace: true, state: {} })
     }
@@ -6071,6 +6076,9 @@ export default function PatientDetailPage() {
                             <button className="btn btn-secondary btn-sm"
                               onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'reject' }); loadFollowUps() }}>驳回</button>
                           </div>
+                        ) : f.sourceType === 'order' ? (
+                          // 商城服务订单：核心动作是"选执行人转派"，不是自己执行，主按钮走详情→编辑(assignedTo)
+                          <button className="btn btn-sm" onClick={() => setFollowUpDetail(f)}>查看/转派</button>
                         ) : ['planned', 'in_progress', 'missed'].includes(f.status) ? (
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button className="btn btn-sm" onClick={() => openExec(f)}>执行随访</button>
