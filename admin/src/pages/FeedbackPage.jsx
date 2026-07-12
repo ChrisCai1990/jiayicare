@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../api'
+import { useToast } from '../App'
 
 const TYPE_COLOR = {
   '意见建议': '#0077B6',
@@ -9,6 +10,7 @@ const TYPE_COLOR = {
 }
 
 export default function FeedbackPage() {
+  const toast = useToast()
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('') // '' | pending | resolved
@@ -41,9 +43,10 @@ export default function FeedbackPage() {
       await adminAPI.replyFeedback(id, replyText.trim())
       setReplyingId(null)
       setReplyText('')
+      toast('✅ 已回复，用户可在App内查看')
       load()
     } catch (err) {
-      alert(err.message || '回复失败')
+      toast('❌ ' + (err.message || '回复失败'))
     } finally {
       setSaving(false)
     }
@@ -52,9 +55,10 @@ export default function FeedbackPage() {
   const markResolved = async (id) => {
     try {
       await adminAPI.resolveFeedback(id)
+      toast('✅ 已标记为已处理')
       load()
     } catch (err) {
-      alert(err.message || '操作失败')
+      toast('❌ ' + (err.message || '操作失败'))
     }
   }
 

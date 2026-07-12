@@ -240,6 +240,7 @@ export const ordersAPI = {
 export const feedbackAPI = {
   submit: (type, content) =>
     request('/feedback', { method: 'POST', body: JSON.stringify({ type, content }) }),
+  mine: () => request('/feedback/mine'),
 };
 
 // ── System / 系统消息推送 ─────────────────────────────────────────

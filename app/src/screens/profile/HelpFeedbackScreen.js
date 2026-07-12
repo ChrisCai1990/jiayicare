@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, SafeAreaView, ActivityIndicator,
@@ -53,15 +53,60 @@ function FaqItem({ item }) {
   );
 }
 
+const FEEDBACK_STATUS_META = {
+  pending:  { label: '待处理', color: colors.warning },
+  resolved: { label: '已回复', color: colors.success },
+};
+
+function MyFeedbackItem({ item, isLast }) {
+  const meta = FEEDBACK_STATUS_META[item.status] || FEEDBACK_STATUS_META.pending;
+  return (
+    <View style={[styles.myFbItem, !isLast && styles.myFbItemBorder]}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Text style={styles.myFbType}>{item.type}</Text>
+          <Text style={styles.myFbTime}>
+            {item.createdAt ? new Date(item.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : ''}
+          </Text>
+        </View>
+        <View style={[styles.myFbStatusBadge, { backgroundColor: meta.color + '15' }]}>
+          <Text style={[styles.myFbStatusText, { color: meta.color }]}>{meta.label}</Text>
+        </View>
+      </View>
+      <Text style={styles.myFbContent}>{item.content}</Text>
+      {item.reply ? (
+        <View style={styles.myFbReplyBox}>
+          <Ionicons name="return-down-forward-outline" size={14} color={colors.primary} />
+          <Text style={styles.myFbReplyText}>{item.reply}</Text>
+        </View>
+      ) : (
+        <Text style={styles.myFbWaiting}>等待处理中，我们会尽快回复您</Text>
+      )}
+    </View>
+  );
+}
+
 export default function HelpFeedbackScreen({ navigation }) {
   const [type, setType]       = useState('意见建议');
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [toast, setToast]     = useState('');
+  const [myFeedback, setMyFeedback] = useState([]);
+  const [loadingMine, setLoadingMine] = useState(true);
 
   const showToast = (msg) => {
     setToast(msg); setTimeout(() => setToast(''), 3000);
   };
+
+  const loadMine = useCallback(async () => {
+    try {
+      const res = await feedbackAPI.mine();
+      if (res.success) setMyFeedback(res.data || []);
+    } catch (e) { /* 静默失败，不影响页面其余功能 */ }
+    finally { setLoadingMine(false); }
+  }, []);
+
+  useEffect(() => { loadMine(); }, [loadMine]);
 
   const submit = async () => {
     if (!content.trim()) { showToast('请描述您的问题或建议'); return; }
@@ -71,6 +116,7 @@ export default function HelpFeedbackScreen({ navigation }) {
       if (res.success) {
         setContent('');
         showToast(res.message || '提交成功，感谢您的反馈！');
+        loadMine();
       } else {
         showToast(res.message || '提交失败，请稍后重试');
       }
@@ -155,6 +201,24 @@ export default function HelpFeedbackScreen({ navigation }) {
           </View>
         </View>
 
+        {/* My feedback history */}
+        {(loadingMine || myFeedback.length > 0) && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>我的反馈</Text>
+            <View style={styles.faqCard}>
+              {loadingMine ? (
+                <View style={{ padding: spacing.lg, alignItems: 'center' }}>
+                  <ActivityIndicator color={colors.primary} />
+                </View>
+              ) : (
+                myFeedback.map((item, i) => (
+                  <MyFeedbackItem key={item._id} item={item} isLast={i === myFeedback.length - 1} />
+                ))
+              )}
+            </View>
+          </View>
+        )}
+
         {/* Contact */}
         <View style={styles.contactWrap}>
           <Ionicons name="headset-outline" size={16} color={colors.textMuted} />
@@ -223,4 +287,18 @@ const styles = StyleSheet.create({
     gap: 6, marginTop: spacing.lg,
   },
   contactText: { fontSize: 12, color: colors.textMuted },
+
+  myFbItem: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm + 2 },
+  myFbItemBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  myFbType: { fontSize: 12, fontWeight: '700', color: colors.textPrimary },
+  myFbTime: { fontSize: 11, color: colors.textMuted },
+  myFbStatusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full },
+  myFbStatusText: { fontSize: 11, fontWeight: '700' },
+  myFbContent: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginTop: 6 },
+  myFbReplyBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginTop: 8,
+    backgroundColor: colors.primary + '0C', borderRadius: radius.sm, padding: spacing.sm,
+  },
+  myFbReplyText: { flex: 1, fontSize: 13, color: colors.textPrimary, lineHeight: 19 },
+  myFbWaiting: { fontSize: 12, color: colors.textMuted, marginTop: 6 },
 });

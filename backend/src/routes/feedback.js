@@ -21,6 +21,14 @@ router.post('/', auth, async (req, res) => {
   res.json({ success: true, message: '感谢您的反馈！我们会在 3 个工作日内处理。' });
 });
 
+// GET /api/feedback/mine — 用户端查看自己提交过的反馈及回复
+router.get('/mine', auth, async (req, res) => {
+  const list = await Feedback.find({ user: req.user._id })
+    .sort({ createdAt: -1 })
+    .limit(50);
+  res.json({ success: true, data: list });
+});
+
 // GET /api/feedback — 超管后台反馈列表（?status=pending|resolved）
 router.get('/', adminAuth, async (req, res) => {
   const { status } = req.query;
