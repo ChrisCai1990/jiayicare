@@ -139,6 +139,11 @@ export const adminAPI = {
   opsDashboardConfig:   () => reqRoot('/ops-dashboard/config'),
   updateOpsDashboardConfig: (data) => reqRoot('/ops-dashboard/config', { method: 'PUT', body: JSON.stringify(data) }),
 
+  // 用户反馈（共用后端 /api/feedback，非 /api/admin 前缀）
+  feedbackList:  (params = {}) => reqRoot('/feedback?' + new URLSearchParams(params).toString()),
+  replyFeedback: (id, reply)   => reqRoot(`/feedback/${id}`, { method: 'PATCH', body: JSON.stringify({ reply }) }),
+  resolveFeedback: (id)        => reqRoot(`/feedback/${id}`, { method: 'PATCH', body: JSON.stringify({ status: 'resolved' }) }),
+
   // 企业客户管理（B2B2C）
   enterprises:            (params = {}) => req('/enterprises?' + new URLSearchParams(params).toString()),
   createEnterprise:       (data)     => req('/enterprises', { method: 'POST', body: JSON.stringify(data) }),

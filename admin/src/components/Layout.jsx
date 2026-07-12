@@ -11,6 +11,7 @@ const NAV_SECTIONS = [
       { label: '订单管理',     icon: '📋', path: '/orders' },
       { label: '佣金审核打款', icon: '💰', path: '/commissions' },
       { label: '消息中心',     icon: '💬', path: '/messages' },
+      { label: '用户反馈',     icon: '📮', path: '/feedback' },
       { label: '商城产品管理', icon: '🏪', path: '/products' },
       { label: '合作伙伴权益', icon: '🤝', path: '/partners' },
       { label: '企业客户管理', icon: '🏢', path: '/enterprises' },

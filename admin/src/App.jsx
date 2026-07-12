@@ -10,6 +10,7 @@ import PatientDetailPage from './pages/PatientDetailPage'
 import OrdersPage from './pages/OrdersPage'
 import CommissionsPage from './pages/CommissionsPage'
 import MessagesPage from './pages/MessagesPage'
+import FeedbackPage from './pages/FeedbackPage'
 import ServicesPage from './pages/ServicesPage'
 import QuestionnairePage from './pages/QuestionnairePage'
 import ChangeLogsPage from './pages/ChangeLogsPage'
@@ -111,6 +112,7 @@ export default function App() {
               <Route path="orders" element={<OrdersPage />} />
               <Route path="commissions" element={<CommissionsPage />} />
               <Route path="messages" element={<MessagesPage />} />
+              <Route path="feedback" element={<FeedbackPage />} />
               <Route path="services" element={<ServicesPage />} />
               <Route path="questionnaires" element={<QuestionnairePage />} />
               <Route path="change-logs" element={<ChangeLogsPage />} />
