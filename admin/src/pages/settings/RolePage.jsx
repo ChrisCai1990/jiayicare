@@ -2,11 +2,23 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
+// 健康方案的方案类型子权限：勾选=该角色可管理此类方案，不勾=不可（后端按方案 type 校验）。
+// 与用户举例一致的4类 + 中医/复健/心理，共7类，与 staff 端 PLAN_TYPE_LABEL 对齐。
+const PLAN_TYPES = [
+  { key: 'annual_checkup', label: '年度体检方案' },
+  { key: 'annual_mgmt',    label: '年度管理方案' },
+  { key: 'nutrition',      label: '营养干预方案' },
+  { key: 'medical_assist', label: '就医协助方案' },
+  { key: 'tcm',            label: '中医调理方案' },
+  { key: 'rehab',          label: '运动复健方案' },
+  { key: 'psychology',     label: '心理咨询方案' },
+]
+
 // 医护端（staff portal）功能模块权限配置
 const MODULES = [
   { key: 'patients',        label: '我的会员',     actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'followups',       label: '随访管理',     actions: ['view', 'create', 'edit', 'delete'] },
-  { key: 'plans',           label: '健康方案',     actions: ['view', 'create', 'edit', 'delete'] },
+  { key: 'plans',           label: '健康方案',     actions: ['view', 'create', 'edit', 'delete'], planTypes: PLAN_TYPES },
   { key: 'reports',         label: '报告管理',     actions: ['view', 'audit', 'delete'] },
   { key: 'abnormal_review', label: '异常复查',     actions: ['view', 'create', 'edit'] },
   { key: 'service_records', label: '服务记录',     actions: ['view', 'create', 'edit', 'delete'] },
@@ -27,6 +39,12 @@ function buildEmptyPermissions() {
   MODULES.forEach(m => {
     perms[m.key] = {}
     m.actions.forEach(a => { perms[m.key][a] = false })
+    // 方案类型子权限默认全开：不勾选子项时行为与旧版一致（有 plans 权限即可管理所有类型），
+    // 只有当管理员显式取消某类型时才限制，避免升级后老角色突然管不了任何方案。
+    if (m.planTypes) {
+      perms[m.key].planTypes = {}
+      m.planTypes.forEach(t => { perms[m.key].planTypes[t.key] = true })
+    }
   })
   return perms
 }
@@ -60,6 +78,10 @@ export default function RolePage() {
       MODULES.forEach(m => {
         if (r.permissions[m.key]) {
           m.actions.forEach(a => { p[m.key][a] = !!r.permissions[m.key][a] })
+          // 读取已保存的方案类型子权限；旧角色没存过 planTypes 时保持默认全开
+          if (m.planTypes && r.permissions[m.key].planTypes) {
+            m.planTypes.forEach(t => { p[m.key].planTypes[t.key] = !!r.permissions[m.key].planTypes[t.key] })
+          }
         }
       })
     }
@@ -70,6 +92,16 @@ export default function RolePage() {
     setPermissions(p => ({
       ...p,
       [module]: { ...p[module], [action]: !p[module][action] }
+    }))
+  }
+
+  const togglePlanType = (module, typeKey) => {
+    setPermissions(p => ({
+      ...p,
+      [module]: {
+        ...p[module],
+        planTypes: { ...p[module].planTypes, [typeKey]: !p[module].planTypes?.[typeKey] },
+      },
     }))
   }
 
@@ -169,7 +201,8 @@ export default function RolePage() {
                     {MODULES.map(m => {
                       const allOn = m.actions.every(a => permissions[m.key]?.[a])
                       return (
-                        <tr key={m.key} style={{ borderTop: '1px solid #F3F4F6' }}>
+                        <React.Fragment key={m.key}>
+                        <tr style={{ borderTop: '1px solid #F3F4F6' }}>
                           <td style={{ padding: '10px 12px', fontSize: 13, fontWeight: 500, verticalAlign: 'middle' }}>
                             <label style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
                               <input type="checkbox" checked={allOn} onChange={() => toggleAllModule(m.key)} />
@@ -191,6 +224,27 @@ export default function RolePage() {
                             </div>
                           </td>
                         </tr>
+                        {/* 健康方案：按方案类型细分授权（不勾则该角色不能管理此类方案） */}
+                        {m.planTypes && (
+                          <tr style={{ background: '#FAFBFC' }}>
+                            <td style={{ padding: '6px 12px 10px 28px', fontSize: 12, color: '#9CA3AF', verticalAlign: 'top' }}>可管理方案类型</td>
+                            <td style={{ padding: '6px 12px 10px' }}>
+                              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+                                {m.planTypes.map(t => (
+                                  <label key={t.key} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
+                                    <input
+                                      type="checkbox"
+                                      checked={permissions[m.key]?.planTypes?.[t.key] !== false}
+                                      onChange={() => togglePlanType(m.key, t.key)}
+                                    />
+                                    {t.label}
+                                  </label>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                        </React.Fragment>
                       )
                     })}
                   </tbody>

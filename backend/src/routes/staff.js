@@ -54,6 +54,7 @@ const Supplement        = require('../models/Supplement');
 const UserScreeningItem = require('../models/UserScreeningItem');
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
+const { checkPlanType } = require('../middleware/checkPermission');
 const router = express.Router();
 
 // ── 图片上传（multer） ─────────────────────────────────────────
@@ -1110,7 +1111,7 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/plans
-router.post('/plans', staffAuth, checkPermission('plans', 'create'), async (req, res) => {
+router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanType(req => req.body.type), async (req, res) => {
   const { patientId, type, title, description, year, startDate, endDate, items, followupFrequency, summary, content } = req.body;
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   const plan = await HealthPlan.create({
@@ -1137,6 +1138,19 @@ function checkPlanTypeRole(plan, staffRole) {
   return staffRole === 'superadmin' || staffRole === requiredRole;
 }
 
+// 自定义角色的「方案类型」授权校验（用于 edit/delete：plan 已查出、可拿 plan.type）。
+// 返回 true=放行，false=该角色被管理员关闭了此类方案的管理权。兼容逻辑与中间件 checkPlanType 一致。
+async function planTypeAllowed(req, planType) {
+  if (req.staff.role === 'superadmin' || req.staff.role === 'platformSuper') return true;
+  if (!req.staff.customRoleId) return true;
+  const StaffRole = require('../models/StaffRole');
+  const role = await StaffRole.findById(req.staff.customRoleId).select('permissions').lean();
+  if (!role) return true;
+  const planTypes = role.permissions?.plans?.planTypes;
+  if (!planTypes || planTypes[planType] === undefined) return true;
+  return planTypes[planType] !== false;
+}
+
 // PUT /api/staff/plans/:id — 只有制定人（staffId）或超管可修改，避免他人越权改动方案内容；
 // 部分方案类型（年度体检/营养方案）额外要求角色匹配，不论是不是本人生成
 router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req, res) => {
@@ -1144,6 +1158,9 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   if (!checkPlanTypeRole(plan, req.staff.role)) {
     return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（家庭医生/营养师）修改' });
+  }
+  if (!(await planTypeAllowed(req, plan.type))) {
+    return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
   }
   if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
@@ -1191,6 +1208,9 @@ router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   if (!checkPlanTypeRole(plan, req.staff.role)) {
     return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（家庭医生/营养师）删除' });
+  }
+  if (!(await planTypeAllowed(req, plan.type))) {
+    return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
   }
   if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
     return res.status(403).json({ success: false, message: '仅方案制定人可删除' });

@@ -32,4 +32,37 @@ function checkPermission(moduleKey, action) {
   };
 }
 
+// 健康方案按「方案类型」细分授权：管理员在角色管理里可对某角色关闭某类方案（如只让营养师管营养干预方案）。
+// getType(req) 返回本次操作的方案 type（create 从 body.type、edit/delete 从已加载的 plan）。
+// 兼容：①superadmin/无自定义角色 放行 ②角色没存过 planTypes（旧角色或该类型键缺失）默认放行，
+//        只有管理员显式把某类型设为 false 才拦截——避免升级后老角色突然管不了方案。
+// 注意：本函数只管「类型维度」，模块级 view/create/edit/delete 仍由 checkPermission('plans', …) 把关，两者叠加。
+function checkPlanType(getType) {
+  return async (req, res, next) => {
+    try {
+      if (req.staff.role === 'superadmin' || req.staff.role === 'platformSuper') return next();
+      if (!req.staff.customRoleId) return next();
+
+      const type = typeof getType === 'function' ? getType(req) : null;
+      if (!type) return next(); // 拿不到类型时不拦（交由业务层处理）
+
+      const StaffRole = require('../models/StaffRole');
+      const role = await StaffRole.findById(req.staff.customRoleId).select('permissions').lean();
+      if (!role) return next();
+
+      const planTypes = role.permissions?.plans?.planTypes;
+      // 没配置 planTypes（旧角色）或该类型键未显式设置：默认放行
+      if (!planTypes || planTypes[type] === undefined) return next();
+      if (planTypes[type] === false) {
+        return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
+      }
+      next();
+    } catch (err) {
+      console.error('[checkPlanType] 权限校验异常：', err.message);
+      next();
+    }
+  };
+}
+
 module.exports = checkPermission;
+module.exports.checkPlanType = checkPlanType;
