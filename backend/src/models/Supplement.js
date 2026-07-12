@@ -20,9 +20,12 @@ const supplementSchema = new mongoose.Schema({
   // 医护端录入标识
   createdByStaff: { type: Boolean, default: false },
   staffId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
-  // AI生成草稿审核（场景10：营养师审核后激活）
+  createdByName:  { type: String, default: '' },   // 新增操作人姓名（谁录入的）
+  // 审核（场景10：营养师审核后激活）；健管专员/就医专员手动新增也走此审核流
   aiStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: null },
   aiGeneratedBy: { type: String, default: '' },
+  reviewedByName: { type: String, default: '' },   // 审核人姓名（营养师）
+  reviewedAt:     { type: Date, default: null },   // 审核时间
 }, { timestamps: true });
 
 supplementSchema.index({ user: 1, stopped: 1 });

@@ -2964,6 +2964,34 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
   }
 });
 
+// 健管专员/就医专员手动新增药物、营养素时需上级审核（药物→家庭医师，营养素→营养师）。
+// 其余角色（家医/营养师本人、超管等）录入直接生效，避免自己审自己。
+const NEEDS_REVIEW_ROLES = ['healthManager', 'medicalAssistant'];
+
+// 药物审核（限家庭医师/超管）：通过=激活(aiStatus=approved)，驳回=删除该待审记录
+router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅家庭医师可审核药物' });
+    }
+    const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
+    if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (med.aiStatus !== 'pending') return res.status(400).json({ success: false, message: '该记录无需审核' });
+    const { action } = req.body; // 'approve' | 'reject'
+    if (action === 'reject') {
+      await med.deleteOne();
+      return res.json({ success: true, message: '已驳回并删除' });
+    }
+    med.aiStatus = 'approved';
+    med.reviewedByName = req.staff.name || '';
+    med.reviewedAt = new Date();
+    await med.save();
+    res.json({ success: true, data: med, message: '审核通过，药物已生效' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 注：营养素审核复用已有的 PATCH .../supplements/:sid/ai-review 接口（营养师审核，已补审核人字段），此处不再重复定义。
+
 // ── 患者药物管理（医护端 CRUD）────────────────────────────────────
 // 停用不等于删除：停用后记录仍应在列表可见（标"已停用"，可恢复），此前用 active:true 过滤导致
 // 停用后从列表消失、跟真删除没区别——医护端无法找回来查看或恢复。改为返回全部，前端按 stopped 标注状态。
@@ -2978,10 +3006,14 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
     const { name, brandName, dosage, method, frequency, timing, startDate, endDate, purpose, note } = req.body;
     if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
+    // 健管专员/就医专员手动新增的药物需家庭医师审核后才生效；家医/超管等本人录入直接生效（不必自审）
+    const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
     const med = await Medication.create({
       user: req.params.id, name, brandName: brandName || '', dosage, method: method || '口服',
       frequency, timing: timing || '', startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
+      createdByName: req.staff.name || '',
+      aiStatus: needReview ? 'pending' : null,
     });
     res.status(201).json({ success: true, data: med });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -3029,10 +3061,14 @@ router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
   try {
     const { name, brand, dosage, method, frequency, startDate, endDate, purpose, note } = req.body;
     if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '名称、剂量、频次不能为空' });
+    // 健管专员/就医专员手动新增的营养素需营养师审核后才生效；营养师/超管等本人录入直接生效（不必自审）
+    const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
     const sup = await Supplement.create({
       user: req.params.id, name, brand: brand || '', dosage, method: method || '随餐',
       frequency, startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
+      createdByName: req.staff.name || '',
+      aiStatus: needReview ? 'pending' : null,
     });
     res.status(201).json({ success: true, data: sup });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -4262,6 +4298,8 @@ router.patch('/patients/:id/supplements/:sid/ai-review', staffAuth, async (req, 
       if (!isNutritionist) return res.status(403).json({ success: false, message: '仅营养师可审核该建议' });
       if (action === 'approve') {
         sup.aiStatus = 'approved';
+        sup.reviewedByName = req.staff.name || '';
+        sup.reviewedAt = new Date();
         await sup.save();
         return res.json({ success: true, message: '已采纳营养素建议' });
       }
@@ -4998,7 +5036,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       pendingMeds.forEach(m => {
         const createdAt = m.createdAt || new Date();
         todos.push({
-          id: 'medication_' + m._id, type: 'medication_review', label: 'AI用药建议待审核', priority: 2,
+          id: 'medication_' + m._id, type: 'medication_review', label: '药物待审核', priority: 2,
           patientName: m.user?.name || '未知', patientId: String(m.user?._id || ''),
           summary: `${m.name} ${m.dosage} ${m.frequency}${m.purpose ? ' · ' + m.purpose : ''}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
@@ -5015,7 +5053,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       pendingSups.forEach(s => {
         const createdAt = s.createdAt || new Date();
         todos.push({
-          id: 'supplement_' + s._id, type: 'supplement_review', label: 'AI营养素建议待审核', priority: 3,
+          id: 'supplement_' + s._id, type: 'supplement_review', label: '营养素待审核', priority: 3,
           patientName: s.user?.name || '未知', patientId: String(s.user?._id || ''),
           summary: `${s.name} ${s.dosage} ${s.frequency}${s.purpose ? ' · ' + s.purpose : ''}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,

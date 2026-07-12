@@ -1821,6 +1821,15 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '操作失败') }
   }
 
+  // 药物审核（家庭医师）：approve=通过生效 / reject=驳回删除
+  const reviewMedication = async (medId, action) => {
+    try {
+      await staffAPI.reviewPatientMedication(id, medId, action)
+      toast(action === 'approve' ? '审核通过，药物已生效' : '已驳回')
+      loadMedications()
+    } catch (err) { toast(err.message || '操作失败') }
+  }
+
   // 场景五：推送推荐内容
   const pushRecommendedContent = async (knowledgeId) => {
     setAiHelperBusy(true)
@@ -5401,15 +5410,53 @@ export default function PatientDetailPage() {
           </div>
 
           {medSubTab === 'med' && (() => {
+            const pendingMeds = medications.filter(m => m.aiStatus === 'pending')
             const activeMeds = medications.filter(m => m.aiStatus !== 'pending')
+            const canApproveMed = staff?.role === 'familyDoctor' || staff?.role === 'superadmin'
             return (
             <>
+            {pendingMeds.length > 0 && (
+              <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
+                <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 16 }}>💊</span>
+                  <span className="card-title" style={{ color: '#0077B6' }}>药物待审核·需家庭医师确认</span>
+                  <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
+                </div>
+                <table className="table" style={{ marginBottom: 0 }}>
+                  <thead><tr><th>药品名称</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>录入人</th><th>操作</th></tr></thead>
+                  <tbody>
+                    {pendingMeds.map(m => (
+                      <tr key={m._id} style={{ background: '#F5FBFF' }}>
+                        <td style={{ fontWeight: 600 }}>{m.name}{m.brandName ? <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 4 }}>({m.brandName})</span> : ''}</td>
+                        <td>{m.dosage}</td>
+                        <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
+                        <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || '-'}</td>
+                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.createdByName || '-'}</td>
+                        <td>
+                          {canApproveMed ? (
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              <button className="btn btn-sm" style={{ background: '#0077B6', color: '#fff' }} onClick={() => reviewMedication(m._id, 'approve')}>通过</button>
+                              <button className="btn btn-secondary btn-sm" onClick={() => {
+                                setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
+                                setEditingMed(m._id); setShowMedModal(true)
+                              }}>编辑</button>
+                              <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
+                                onClick={() => { if (window.confirm('确认驳回并删除这条待审核药物？')) reviewMedication(m._id, 'reject') }}>驳回</button>
+                            </div>
+                          ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待家庭医师审核</span>}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
             <div className="card" style={{ padding: 0 }}>
               {activeMeds.length === 0 ? (
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用药记录</div>
               ) : (
                 <table className="table">
-                  <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>开始日期</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
                     {activeMeds.map(m => (
                       <tr key={m._id}>
@@ -5419,6 +5466,11 @@ export default function PatientDetailPage() {
                         <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || m.note || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.endDate ? ` → ${m.endDate}` : ''}</td>
+                        <td style={{ fontSize: 11, color: '#8AA89C' }}>
+                          {m.createdByName ? <div>录入：{m.createdByName}</div> : null}
+                          {m.reviewedByName ? <div>审核：{m.reviewedByName}</div> : null}
+                          {!m.createdByName && !m.reviewedByName ? '-' : null}
+                        </td>
                         <td>
                           <span style={{ fontSize: 12, fontWeight: 600, color: m.stopped ? '#aaa' : '#22A06B' }}>
                             {m.stopped ? '已停用' : '服用中'}
@@ -5474,11 +5526,11 @@ export default function PatientDetailPage() {
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #16A34A' }}>
                 <div className="card-header" style={{ background: '#F0FDF4', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 16 }}>🧪</span>
-                  <span className="card-title" style={{ color: '#16A34A' }}>AI营养素建议·待营养师审核</span>
+                  <span className="card-title" style={{ color: '#16A34A' }}>营养素待审核·需营养师确认</span>
                   <span style={{ background: '#16A34A15', color: '#16A34A', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingSups.length}</span>
                 </div>
                 <table className="table" style={{ marginBottom: 0 }}>
-                  <thead><tr><th>营养素名称</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>生成人</th><th>操作</th></tr></thead>
+                  <thead><tr><th>营养素名称</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>录入人</th><th>操作</th></tr></thead>
                   <tbody>
                     {pendingSups.map(s => {
                       const isGenerator = staff?._id && String(s.staffId) === String(staff._id)
@@ -5488,7 +5540,7 @@ export default function PatientDetailPage() {
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || '-'}</td>
-                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.aiGeneratedBy || 'AI'}</td>
+                        <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.createdByName || s.aiGeneratedBy || 'AI'}</td>
                         <td>
                           {canApprove ? (
                             <div style={{ display: 'flex', gap: 6 }}>
@@ -5519,7 +5571,7 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无营养素记录</div>
               ) : (
                 <table className="table">
-                  <thead><tr><th>营养素名称</th><th>品牌</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>开始日期</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>营养素名称</th><th>品牌</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
                     {activeSups.map(s => (
                       <tr key={s._id}>
@@ -5529,6 +5581,11 @@ export default function PatientDetailPage() {
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || s.note || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.startDate || '-'}{s.endDate ? ` → ${s.endDate}` : ''}</td>
+                        <td style={{ fontSize: 11, color: '#8AA89C' }}>
+                          {s.createdByName ? <div>录入：{s.createdByName}</div> : null}
+                          {s.reviewedByName ? <div>审核：{s.reviewedByName}</div> : null}
+                          {!s.createdByName && !s.reviewedByName ? '-' : null}
+                        </td>
                         <td>
                           <span style={{ fontSize: 12, fontWeight: 600, color: s.stopped ? '#aaa' : '#22A06B' }}>
                             {s.stopped ? '已停用' : '补充中'}

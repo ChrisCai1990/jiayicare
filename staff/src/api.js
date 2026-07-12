@@ -341,6 +341,7 @@ export const staffAPI = {
   // 场景十：AI 营养素建议
   generateAISupplementSuggest: (id) => req(`/staff/patients/${id}/ai-supplement-suggest`, { method: 'POST' }),
   reviewAISupplement: (patientId, supId, action) => req(`/staff/patients/${patientId}/supplements/${supId}/ai-review`, { method: 'PATCH', body: JSON.stringify({ action }) }),
+  reviewPatientMedication: (patientId, medId, action) => req(`/staff/patients/${patientId}/medications/${medId}/review`, { method: 'PATCH', body: JSON.stringify({ action }) }),
   // 场景十五：AI 转介草稿
   generateAIReferralDraft: (id, toRole, toName, reason, attachedHealthInfo) => req(`/staff/patients/${id}/ai-referral-draft`, { method: 'POST', body: JSON.stringify({ toRole, toName, reason, attachedHealthInfo }) }),
 
