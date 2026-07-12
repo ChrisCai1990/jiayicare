@@ -911,6 +911,8 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     const totalDiscount = couponDiscount + fundUsed;
 
     // 按各产品价格占比分摊抵扣，得到每个订单的实付金额（最后一项吸收舍入误差）
+    // referrerId/servicePerformers 沿用推送记录里的推送人/各岗位服务人（推送人=转介绍人，与 services.js
+    // 普通下单同一套语义），此前这里完全没写，导致推送购买的订单核销后拿不到推广费/服务费归属
     let allocated = 0;
     const orderDocs = toPay.map((p, idx) => {
       const share = totalPrice > 0 ? (p.price || 0) / totalPrice : 0;
@@ -927,12 +929,27 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
         orderType: 'product',
         pushRecordId: record._id,
         status: 'pending',
+        referrerId: record.staffId,
+        servicePerformers: (record.servicePerformers || [])
+          .filter(sp => sp.role && sp.staffId && (!sp.productId || String(sp.productId) === String(p.productId)))
+          .map(sp => ({ role: sp.role, staffId: sp.staffId })),
         paymentMethod: fundUsed > 0 && finalPrice === 0 ? 'healthFund' : (paymentMethod || ''),
         paidAmount: paid,
       };
     });
 
     const orders = await Order.insertMany(orderDocs);
+
+    // 下单后需要人工跟进的待办：与 services.js 的 /order 普通下单同一套逻辑——
+    // 此前这里完全没生成 FollowUp，导致推送购买的订单不会出现在健康规划师/健管专员工作台
+    // （2026-07-13 反馈：员工推送给客户、客户付费后，订单没有在工作台展示）。
+    // staffId 优先归到患者名下的健康规划师，退回健管专员，再退回家庭医生，都没有则兜底给 superadmin
+    const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner assignedHealthManager assignedFamilyDoctor');
+    let followUpStaffId = patientForStaff?.assignedHealthPlanner || patientForStaff?.assignedHealthManager || patientForStaff?.assignedFamilyDoctor || null;
+    if (!followUpStaffId) {
+      const superadmin = await Admin.findOne({ role: 'superadmin' }).select('_id');
+      followUpStaffId = superadmin?._id || null;
+    }
 
     const followUps = [];
     if (!record.readAt) followUps.push(PushRecord.updateOne({ _id: record._id }, { readAt: new Date() }));
@@ -944,6 +961,20 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       coupon.usedAt = new Date();
       coupon.usedOrderId = orders[0]._id;
       followUps.push(coupon.save());
+    }
+    if (followUpStaffId) {
+      orders.forEach(order => {
+        followUps.push(FollowUp.create({
+          staffId:   followUpStaffId,
+          patientId: req.user._id,
+          type:      'other',
+          status:    'planned',
+          theme:     `预约：${order.serviceName}`,
+          content:   '用户已通过推送购买提交服务预约，请联系确认安排',
+          sourceType: 'order',
+          sourceOrderId: order._id,
+        }));
+      });
     }
     await Promise.all(followUps);
 
