@@ -875,6 +875,11 @@ function NutritionPlanModal({ onClose, onSaved }) {
             <label className="form-label">方案名称 *</label>
             <input className="form-input" value={planTitle} onChange={e => setPlanTitle(e.target.value)} placeholder="营养干预方案名称" />
           </div>
+          {/* 方案说明（紧跟名称，纲领性内容前置） */}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">方案说明</label>
+            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
+          </div>
           {/* 每日饮水 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">每日饮水量（毫升）</label>
@@ -925,11 +930,6 @@ function NutritionPlanModal({ onClose, onSaved }) {
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">方案年度</label>
             <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
-          </div>
-          {/* 方案说明 */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案说明</label>
-            <textarea className="form-input" rows={3} placeholder="简要说明方案目标" value={description} onChange={e => setDescription(e.target.value)} />
           </div>
         </div>
         <div className="modal-footer">

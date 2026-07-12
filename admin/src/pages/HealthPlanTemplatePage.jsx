@@ -294,6 +294,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
 
   if (type === 'nutrition') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <FieldRow label="方案说明" fieldKey="description" rows={3} placeholder="标准化方案说明，创建方案时会自动带出，可再修改" content={content} set={set} />
       <FieldRow label="每日饮水量（毫升）" fieldKey="dailyWater" placeholder="如：2000" half content={content} set={set} />
       <div style={{ gridColumn: '1/-1' }} />
       {[
@@ -323,7 +324,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <FieldRow label="运动建议" fieldKey="exerciseSuggestion" rows={3} placeholder="运动类型、频率、时长、强度" content={content} set={set} />
       <FieldRow label="推荐食物" fieldKey="allowedFoods" rows={2} placeholder="逗号分隔" content={content} set={set} />
       <FieldRow label="禁忌食物" fieldKey="forbiddenFoods" rows={2} placeholder="逗号分隔" content={content} set={set} />
-      <FieldRow label="方案说明" fieldKey="description" rows={3} placeholder="标准化方案说明，创建方案时会自动带出，可再修改" content={content} set={set} />
     </div>
   )
 
