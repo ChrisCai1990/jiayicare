@@ -176,6 +176,13 @@ const SERVICE_PACKAGE_LABELS = {
 const getServicePackageLabel = (pkg) => SERVICE_PACKAGE_LABELS[pkg] || pkg || '-'
 const STATUS_MAP = { completed: '已完成', missed: '未接通', planned: '计划中', in_progress: '进行中', cancelled: '已取消' }
 const STATUS_COLOR = { completed: '#22A06B', missed: '#DC3545', planned: '#D97706', in_progress: '#0077B6', cancelled: '#8AA89C' }
+const TYPE_OPTIONS = [
+  { v: 'phone',  l: '电话' },
+  { v: 'wechat', l: '微信' },
+  { v: 'visit',  l: '上门' },
+  { v: 'video',  l: '视频' },
+  { v: 'other',  l: '其他' },
+]
 // 报告归类一级大类（与用户端 ReportUploadScreen / admin 分类管理对齐的 7 类）
 const REPORT_L1_TYPES = [
   { key: 'general_exam',   label: '一般检查' },
@@ -982,6 +989,11 @@ export default function PatientDetailPage() {
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
   const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
   const [expandedMonitorGroups, setExpandedMonitorGroups] = useState({}) // 随访记录表格里日常监测折叠组的展开状态，key: theme+status
+  // 执行随访（填写随访结果、标记完成/随访中），逻辑与 FollowUpsPage.jsx 的 execItem/execForm 一致
+  const [execItem, setExecItem] = useState(null)
+  const [execForm, setExecForm] = useState({ type: 'phone', content: '', status: 'completed' })
+  const [execSaving, setExecSaving] = useState(false)
+  const [execDraftLoading, setExecDraftLoading] = useState(false)
   const [medForm, setMedForm] = useState({})
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
@@ -1162,6 +1174,41 @@ export default function PatientDetailPage() {
     } catch {}
   }
 
+  // 执行随访：填写随访结果、标记完成/随访中，逻辑与 FollowUpsPage.jsx 一致
+  const openExec = (f) => {
+    setExecItem(f)
+    setExecForm({ type: f.type || 'phone', content: '', status: 'completed' })
+  }
+  const handleExec = async () => {
+    if (!execForm.content.trim()) { toast('请填写随访结果'); return }
+    setExecSaving(true)
+    try {
+      await staffAPI.updateFollowUp(execItem._id, {
+        type: execForm.type,
+        content: execForm.content,
+        status: execForm.status,
+      })
+      toast('随访记录已更新')
+      setExecItem(null)
+      loadFollowUps()
+    } catch (err) { toast(err.message || '保存失败') }
+    finally { setExecSaving(false) }
+  }
+  const handleExecAIDraft = async () => {
+    if (!id) return
+    setExecDraftLoading(true)
+    try {
+      const r = await staffAPI.generateAIDraft(id, 'followup', {
+        theme: execItem.theme || '',
+        type: TYPE_OPTIONS.find(o => o.v === execForm.type)?.l || execForm.type,
+        focus: execItem.theme || '',
+      })
+      setExecForm(f => ({ ...f, content: r.data.draft }))
+      toast('AI草稿已生成，请审核修改后保存')
+    } catch (err) { toast(err.message || 'AI生成失败') }
+    finally { setExecDraftLoading(false) }
+  }
+
   const loadPlans = async () => {
     try { const res = await staffAPI.getPatientPlans(id); setPlans(res.data) } catch {}
   }
@@ -1245,11 +1292,15 @@ export default function PatientDetailPage() {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
   }, [])
   // 从工作台/随访任务面板点击某条随访直接跳转过来时，带着该条完整记录（location.state.openFollowUp），
-  // 不依赖列表分页/折叠命中，进详情页直接弹出对应的随访详情（即执行随访要看的内容），
-  // 不用用户在列表里再翻找一遍（2026-07-13 反馈：点进来还得自己找，应该直接到随访内容界面）。
+  // 不依赖列表分页/折叠命中，进详情页直接弹出"执行随访"弹窗（填写随访结果、标记完成），
+  // 不是只读详情——工作台点进来的目的就是要去处理这条随访，不是先看一眼再自己找入口填写
+  // （2026-07-13 反馈：应该直接到执行随访界面，不然怎么填写随访内容）。
+  // 待随访/随访中的记录可以执行；已完成/已取消的没有"执行"的意义，退回只读详情。
   useEffect(() => {
     if (tab === 'followups' && location.state?.openFollowUp) {
-      setFollowUpDetail(location.state.openFollowUp)
+      const f = location.state.openFollowUp
+      if (['planned', 'in_progress', 'missed'].includes(f.status)) openExec(f)
+      else setFollowUpDetail(f)
       nav(location.pathname + location.search, { replace: true, state: {} })
     }
   }, [tab])
@@ -6014,6 +6065,11 @@ export default function PatientDetailPage() {
                             <button className="btn btn-secondary btn-sm"
                               onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'reject' }); loadFollowUps() }}>驳回</button>
                           </div>
+                        ) : ['planned', 'in_progress', 'missed'].includes(f.status) ? (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn btn-sm" onClick={() => openExec(f)}>执行随访</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>详情</button>
+                          </div>
                         ) : (
                           <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
                         )}
@@ -6057,7 +6113,14 @@ export default function PatientDetailPage() {
                             <td style={{ fontSize: 12, color: '#8AA89C', maxWidth: 200 }}>{f.content ? (f.content.length > 40 ? f.content.slice(0, 40) + '…' : f.content) : '-'}</td>
                             <td style={{ fontSize: 12, color: '#8AA89C' }}>{f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
                             <td onClick={e => e.stopPropagation()}>
-                              <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
+                              {['planned', 'in_progress', 'missed'].includes(f.status) ? (
+                                <div style={{ display: 'flex', gap: 6 }}>
+                                  <button className="btn btn-sm" onClick={() => openExec(f)}>执行随访</button>
+                                  <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>详情</button>
+                                </div>
+                              ) : (
+                                <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -6822,6 +6885,81 @@ export default function PatientDetailPage() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 执行随访弹窗：填写随访结果、标记完成/随访中，与 FollowUpsPage.jsx 的执行随访弹窗逻辑/UI一致 */}
+      {execItem && (
+        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setExecItem(null) }}>
+          <div className="modal" style={{ maxWidth: 520 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">执行随访</h3>
+              <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划日期：</span>
+                  <span style={{ fontSize: 13 }}>{new Date(execItem.date).toLocaleDateString('zh-CN')}</span>
+                </div>
+                {execItem.theme && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>随访主题：</span>
+                    <span style={{ fontSize: 13 }}>{execItem.theme}</span>
+                  </div>
+                )}
+                {execItem.content && (
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划内容：</span>
+                    <span style={{ fontSize: 13, whiteSpace: 'pre-line', flex: 1 }}>{execItem.content}</span>
+                  </div>
+                )}
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 4 }}>随访方式</label>
+                <select className="form-control" value={execForm.type}
+                  onChange={e => setExecForm(f => ({ ...f, type: e.target.value }))}>
+                  {TYPE_OPTIONS.map(o => <option key={o.v} value={o.v}>{o.l}</option>)}
+                </select>
+              </div>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                  <label style={{ fontSize: 12, color: '#8AA89C' }}>随访结果 *</label>
+                  <button type="button" className="btn btn-secondary"
+                    style={{ fontSize: 12, padding: '2px 10px' }}
+                    onClick={handleExecAIDraft} disabled={execDraftLoading}>
+                    {execDraftLoading ? '生成中...' : '✨ AI生成草稿'}
+                  </button>
+                </div>
+                <textarea className="form-control" rows={5}
+                  placeholder="记录本次随访的实际情况、会员反馈、建议等..."
+                  value={execForm.content}
+                  onChange={e => setExecForm(f => ({ ...f, content: e.target.value }))} />
+              </div>
+              <div>
+                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 8 }}>随访结果状态</label>
+                <div style={{ display: 'flex', gap: 16 }}>
+                  {[
+                    { v: 'completed',   l: '✅ 已随访（圆满完成）' },
+                    { v: 'in_progress', l: '🔄 随访中（未完成/未接通）' },
+                  ].map(o => (
+                    <label key={o.v} style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontSize: 14 }}>
+                      <input type="radio" name="execStatus" value={o.v}
+                        checked={execForm.status === o.v}
+                        onChange={() => setExecForm(f => ({ ...f, status: o.v }))} />
+                      {o.l}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setExecItem(null)}>取消</button>
+              <button className="btn btn-primary" onClick={handleExec} disabled={execSaving}>
+                {execSaving ? '保存中...' : '保存随访结果'}
+              </button>
             </div>
           </div>
         </div>
