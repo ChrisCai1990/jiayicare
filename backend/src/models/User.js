@@ -133,6 +133,7 @@ const userSchema = new mongoose.Schema({
   },
 
   // 医护端管理字段
+  assignedHealthPlanner:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健康规划师：客户经理，负责转化规划/方案统筹/订单与服务进度监控/佣金归属，与健管专员(日常执行)分工不同
   assignedHealthManager:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健管专员
   assignedFamilyDoctor:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医师
   assignedNutritionist:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 营养师

@@ -238,12 +238,13 @@ router.post('/order', auth, async (req, res) => {
     paidAmount,
   });
 
-  // 下单后需要健管专员跟进的待办：只生成 FollowUp（医护端"待随访任务"面板的数据源，也是用户端展示的唯一数据源），
+  // 下单后需要人工跟进的待办：只生成 FollowUp（医护端"待随访任务"面板的数据源，也是用户端展示的唯一数据源），
   // 不再同时创建 Task——此前两套模型无关联字段，导致同一次预约在用户端出现两条重复卡片，
   // 且医护端处理完 FollowUp 后 Task 状态永远不变，用户看不出到底有没有被处理。
-  // staffId 优先归到该患者名下的健管专员，没分配则退回家庭医生，都没有（新客户尚未分配）则兜底给 superadmin，避免漏单
-  const patientForStaff = await User.findById(req.user._id).select('assignedHealthManager assignedFamilyDoctor');
-  let followUpStaffId = patientForStaff?.assignedHealthManager || patientForStaff?.assignedFamilyDoctor || null;
+  // staffId 优先归到该患者名下的健康规划师（客户经理，负责商城订单的接单/分派执行人，2026-07-13 新增角色）；
+  // 没分配规划师（老客户尚未补分配）则退回健管专员，再退回家庭医生，都没有（全新客户）则兜底给 superadmin，避免漏单
+  const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner assignedHealthManager assignedFamilyDoctor');
+  let followUpStaffId = patientForStaff?.assignedHealthPlanner || patientForStaff?.assignedHealthManager || patientForStaff?.assignedFamilyDoctor || null;
   if (!followUpStaffId) {
     const superadmin = await Admin.findOne({ role: 'superadmin' }).select('_id');
     followUpStaffId = superadmin?._id || null;

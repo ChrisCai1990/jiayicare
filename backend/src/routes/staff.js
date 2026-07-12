@@ -247,12 +247,13 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
   const ASSIGN_FIELDS = [
     'assignedFamilyDoctor', 'assignedNutritionist', 'assignedSpecialist', 'assignedTcmDoctor',
     'assignedPsychologist', 'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthManager',
+    'assignedHealthPlanner',
   ];
   const ROLE_ASSIGN_FIELD = {
     familyDoctor: 'assignedFamilyDoctor', nutritionist: 'assignedNutritionist',
     specialist: 'assignedSpecialist', tcmDoctor: 'assignedTcmDoctor',
     psychologist: 'assignedPsychologist', rehabSpecialist: 'assignedRehabSpecialist',
-    medicalAssistant: 'assignedMedicalAssistant',
+    medicalAssistant: 'assignedMedicalAssistant', healthPlanner: 'assignedHealthPlanner',
   };
 
   const assignFilter = {};
@@ -294,7 +295,7 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
-      .select('name phone gender age height weight healthScore servicePackage serviceExpiry chronicDiseases patientType assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant source createdAt contactPhone')
+      .select('name phone gender age height weight healthScore servicePackage serviceExpiry chronicDiseases patientType assignedHealthManager assignedFamilyDoctor assignedNutritionist assignedSpecialist assignedTcmDoctor assignedPsychologist assignedRehabSpecialist assignedMedicalAssistant assignedHealthPlanner source createdAt contactPhone')
       .populate('assignedHealthManager', 'name title')
       .populate('assignedFamilyDoctor', 'name title')
       .populate('assignedNutritionist', 'name title')
@@ -302,7 +303,8 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
       .populate('assignedTcmDoctor', 'name title')
       .populate('assignedPsychologist', 'name title')
       .populate('assignedRehabSpecialist', 'name title')
-      .populate('assignedMedicalAssistant', 'name title'),
+      .populate('assignedMedicalAssistant', 'name title')
+      .populate('assignedHealthPlanner', 'name title'),
     User.countDocuments(filter),
   ]);
 
@@ -404,6 +406,7 @@ router.post('/patients/assign', staffAuth, async (req, res) => {
     psychologist:     'assignedPsychologist',
     rehabSpecialist:  'assignedRehabSpecialist',
     medicalAssistant: 'assignedMedicalAssistant',
+    healthPlanner:    'assignedHealthPlanner',
     superadmin:       'assignedHealthManager',
     health_manager:   'assignedHealthManager',
     family_doctor:    'assignedFamilyDoctor',
@@ -436,7 +439,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     menstrualHistory, maritalHistory,
     assignedHealthManager, assignedFamilyDoctor, assignedNutritionist,
     assignedSpecialist, assignedTcmDoctor, assignedPsychologist,
-    assignedRehabSpecialist, assignedMedicalAssistant,
+    assignedRehabSpecialist, assignedMedicalAssistant, assignedHealthPlanner,
     patientCategory, childProfile,
     servicePackage, serviceStartDate, serviceExpiry,
     basic_insurance, commercial_medical, critical_illness,
@@ -519,6 +522,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     assignedPsychologist:     assignedPsychologist     || null,
     assignedRehabSpecialist:  assignedRehabSpecialist  || null,
     assignedMedicalAssistant: assignedMedicalAssistant || null,
+    assignedHealthPlanner:    assignedHealthPlanner    || null,
     servicePackage: servicePackage || '',
     serviceStartDate: serviceStartDate || '',
     serviceExpiry: serviceExpiry || '',
@@ -598,7 +602,8 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .populate('assignedTcmDoctor', 'name title role')
     .populate('assignedPsychologist', 'name title role')
     .populate('assignedRehabSpecialist', 'name title role')
-    .populate('assignedMedicalAssistant', 'name title role');
+    .populate('assignedMedicalAssistant', 'name title role')
+    .populate('assignedHealthPlanner', 'name title role');
   if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
   // 权限校验：非超管只能查看分配给自己（或下属、团队成员）的患者
@@ -608,7 +613,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     const hasAccess = [
       user.assignedHealthManager, user.assignedFamilyDoctor, user.assignedNutritionist,
       user.assignedSpecialist, user.assignedTcmDoctor, user.assignedPsychologist,
-      user.assignedRehabSpecialist, user.assignedMedicalAssistant,
+      user.assignedRehabSpecialist, user.assignedMedicalAssistant, user.assignedHealthPlanner,
     ].some(matches);
     if (!hasAccess) {
       return res.status(403).json({ success: false, message: '无权限查看该会员' });
@@ -640,7 +645,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     'ethnicity', 'address', 'contactPhone', 'contactPhone2', 'contactName', 'contactPhone3', 'deliveryAddress',
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
     'assignedSpecialist', 'assignedTcmDoctor', 'assignedPsychologist',
-    'assignedRehabSpecialist', 'assignedMedicalAssistant',
+    'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthPlanner',
     'servicePackage', 'serviceExpiry', 'serviceStartDate', 'isRegisteredClient',
     'bloodTypeABO', 'bloodTypeRH',
     'traumaHistory', 'transfusionHistory', 'poisoningHistory', 'infectiousHistory', 'vaccinationHistory', 'otherDiseaseHistory',
@@ -679,7 +684,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   // 原因：User.collection.updateOne 绕过 Mongoose 类型转换，字符串无法匹配 ObjectId 查询
   ['assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
    'assignedSpecialist', 'assignedTcmDoctor', 'assignedPsychologist',
-   'assignedRehabSpecialist', 'assignedMedicalAssistant'].forEach(k => {
+   'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthPlanner'].forEach(k => {
     if (updateData[k] === '' || updateData[k] === null || updateData[k] === undefined) {
       delete updateData[k];
     } else {
@@ -1060,9 +1065,10 @@ router.get('/reports', staffAuth, async (req, res) => {
 // ── GET /api/staff/staff-list ─────────────────────────────────────
 // 获取同部门医护人员列表（用于患者分配下拉）
 router.get('/staff-list', staffAuth, async (req, res) => {
-  const { role = '' } = req.query;
+  const { role = '', roles = '' } = req.query;
   const filter = {};
   if (role) filter.role = role;
+  else if (roles) filter.role = { $in: roles.split(',').map(r => r.trim()).filter(Boolean) };
   const list = await Admin.find(filter).select('name role title department').sort({ name: 1 });
   const ROLE_LABEL_MAP = ROLE_LABEL;
   const result = list.map(s => ({
@@ -1100,6 +1106,7 @@ router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, re
     nutritionist: 'assignedNutritionist', medicalAssistant: 'assignedMedicalAssistant',
     psychologist: 'assignedPsychologist', rehabSpecialist: 'assignedRehabSpecialist',
     tcmDoctor: 'assignedTcmDoctor', specialist: 'assignedSpecialist',
+    healthPlanner: 'assignedHealthPlanner',
   };
   if (req.staff.role !== 'superadmin') {
     const assignField = ROLE_ASSIGN_FIELD_FOR_PLANS[req.staff.role];
@@ -5009,6 +5016,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       rehabSpecialist: 'assignedRehabSpecialist',
       tcmDoctor: 'assignedTcmDoctor',
       specialist: 'assignedSpecialist',
+      healthPlanner: 'assignedHealthPlanner',
     };
     let myPatientIds = null; // null = 不限制（超管）；否则是当前角色（含团队/下属扩展）名下患者ID数组
     if (!isSuper) {

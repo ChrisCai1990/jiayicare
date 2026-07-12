@@ -163,7 +163,8 @@ export default function FollowUpsPage() {
   }
 
   const [staffList, setStaffList] = useState([])
-  useEffect(() => { staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {}) }, [])
+  // 健康规划师只负责订单接单/转派，不作为执行人被选（避免转派给自己形成空转），前端过滤掉
+  useEffect(() => { staffAPI.getStaffList().then(r => setStaffList((r.data || []).filter(s => s.role !== 'healthPlanner'))).catch(() => {}) }, [])
 
   const limit = 20
 
