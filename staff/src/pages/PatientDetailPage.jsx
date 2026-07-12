@@ -5884,14 +5884,23 @@ export default function PatientDetailPage() {
             </div>
           </div>
           {(() => {
-            const PENDING_STATUSES = ['planned', 'in_progress', 'missed']
+            // tab 划分与随访记录状态文案，均与随访管理列表页（FollowUpsPage.jsx STATUS_TABS/STATUS_MAP）保持一致：
+            // 全部/待随访(planned)/随访中(in_progress+missed)/已随访(completed)/已取消(cancelled)，
+            // 此前这里把"待随访"和"随访中"合并成一个"未随访"、状态文案也用的是"计划中/进行中"等另一套措辞，
+            // 与随访管理页tab结构和文案不一致（2026-07-13 反馈）。
+            const FOLLOWUP_LIST_STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
+            const FOLLOWUP_LIST_STATUS_COLOR = { planned: '#D97706', in_progress: '#0077B6', missed: '#0077B6', completed: '#22A06B', cancelled: '#8AA89C' }
+            const PLANNED_STATUSES = ['planned']
+            const IN_PROGRESS_STATUSES = ['in_progress', 'missed']
             const DONE_STATUSES = ['completed']
             const CANCELLED_STATUSES = ['cancelled']
-            const filtered = followUpFilter === 'pending' ? followUps.filter(f => PENDING_STATUSES.includes(f.status))
+            const filtered = followUpFilter === 'planned' ? followUps.filter(f => PLANNED_STATUSES.includes(f.status))
+              : followUpFilter === 'in_progress' ? followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status))
               : followUpFilter === 'done' ? followUps.filter(f => DONE_STATUSES.includes(f.status))
               : followUpFilter === 'cancelled' ? followUps.filter(f => CANCELLED_STATUSES.includes(f.status))
               : followUps
-            const pendingCount = followUps.filter(f => PENDING_STATUSES.includes(f.status)).length
+            const plannedCount = followUps.filter(f => PLANNED_STATUSES.includes(f.status)).length
+            const inProgressCount = followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)).length
             const doneCount = followUps.filter(f => DONE_STATUSES.includes(f.status)).length
             const cancelledCount = followUps.filter(f => CANCELLED_STATUSES.includes(f.status)).length
             return (
@@ -5899,7 +5908,8 @@ export default function PatientDetailPage() {
             <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
               {[
                 { k: 'all', label: `全部 ${followUps.length}` },
-                { k: 'pending', label: `未随访 ${pendingCount}` },
+                { k: 'planned', label: `待随访 ${plannedCount}` },
+                { k: 'in_progress', label: `随访中 ${inProgressCount}` },
                 { k: 'done', label: `已随访 ${doneCount}` },
                 { k: 'cancelled', label: `已取消 ${cancelledCount}` },
               ].map(t => (
@@ -5909,7 +5919,7 @@ export default function PatientDetailPage() {
               ))}
             </div>
             {filtered.length === 0 ? (
-              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无随访记录' : followUpFilter === 'pending' ? '暂无未随访计划' : followUpFilter === 'cancelled' ? '暂无已取消记录' : '暂无已随访记录'}</div>
+              <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>{followUpFilter === 'all' ? '暂无随访记录' : followUpFilter === 'planned' ? '暂无待随访计划' : followUpFilter === 'in_progress' ? '暂无随访中记录' : followUpFilter === 'cancelled' ? '暂无已取消记录' : '暂无已随访记录'}</div>
             ) : (
             <table className="table">
               <thead>
@@ -5921,8 +5931,8 @@ export default function PatientDetailPage() {
                     <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
                     <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
                     <td>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: STATUS_COLOR[f.status] || '#666' }}>
-                        {STATUS_MAP[f.status] || f.status}
+                      <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
+                        {FOLLOWUP_LIST_STATUS_MAP[f.status] || f.status}
                       </span>
                       {f.aiStatus === 'pending' && (
                         <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#D9770615', padding: '1px 6px', borderRadius: 4 }}>
