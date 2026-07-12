@@ -681,9 +681,11 @@ export default function HomeScreen({ navigation }) {
   const dynamicCheckinItems = FIXED_CHECKIN_KEYS.map(k => CHECKIN_DEFS[k]).filter(Boolean);
 
   // ── 合并待办：Task 表任务 + 随访计划（作为任务展示）─────────────
+  // 已完成/已取消的随访（不管是用户自己标记完成，还是医护端执行随访后置为completed）都不再展示为待办，
+  // 首页与"全部待办"页面（TasksScreen.js）保持同一口径，避免此前"医护端已完成但首页仍显示待办"的不一致。
   const allPendingTaskItems = [
     ...allTasks,
-    ...followupPlans.filter(plan => !plan.completedByUser).map(plan => ({
+    ...followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => ({
       _id: plan._id,
       type: 'followup',
       title: plan.theme || '随访计划',
@@ -1312,8 +1314,8 @@ export default function HomeScreen({ navigation }) {
                 </View>
               ) : (
                 <>
-                  {allPendingTaskItems.map((t, i) => {
-                    const isLast = i === allPendingTaskItems.length - 1 && todayReminders.length === 0;
+                  {allPendingTaskItems.slice(0, 5).map((t, i, arr) => {
+                    const isLast = i === arr.length - 1 && todayReminders.length === 0;
                     return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={setTaskDetailModal} />;
                   })}
                   {todayReminders.map((r, i) => (
@@ -1326,6 +1328,17 @@ export default function HomeScreen({ navigation }) {
                 </>
               )}
             </View>
+            {allPendingTaskItems.length > 5 && (
+              <TouchableOpacity
+                style={styles.reminderHint}
+                onPress={() => navigation.navigate('Tasks')}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="ellipsis-horizontal-circle-outline" size={12} color={colors.primary} />
+                <Text style={styles.reminderHintText}>还有 {allPendingTaskItems.length - 5} 项待办 · 查看全部</Text>
+                <Ionicons name="chevron-forward" size={12} color={colors.primary} />
+              </TouchableOpacity>
+            )}
             {todayReminders.length > 0 && (
               <TouchableOpacity
                 style={styles.reminderHint}

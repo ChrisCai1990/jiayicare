@@ -5929,6 +5929,11 @@ export default function PatientDetailPage() {
                           待审核{f.sourceType === 'ai_review' ? '·AI月度回顾' : f.sourceType === 'scheduled' ? '·方案排期' : ''}
                         </span>
                       )}
+                      {f.status === 'completed' && f.completedBy && (
+                        <span style={{ marginLeft: 6, fontSize: 11, color: f.completedBy === 'user' ? '#0077B6' : '#22A06B', background: f.completedBy === 'user' ? '#0077B615' : '#22A06B15', padding: '1px 6px', borderRadius: 4 }}>
+                          {f.completedBy === 'user' ? '客户自主标记' : '健管专员执行'}
+                        </span>
+                      )}
                     </td>
                     <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
                     <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 200 }}>

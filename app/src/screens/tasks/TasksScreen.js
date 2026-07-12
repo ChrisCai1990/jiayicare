@@ -57,6 +57,11 @@ function scheduleText(r) {
 }
 
 const FILTER_TABS = ['全部', '今日', '本周', '本月'];
+const STATUS_FILTER_TABS = [
+  { key: 'active',    label: '未随访' },
+  { key: 'done',      label: '已随访' },
+  { key: 'cancelled', label: '已取消' },
+];
 
 // ── 样式 ──────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
@@ -114,6 +119,7 @@ const styles = StyleSheet.create({
     marginRight: spacing.sm, marginTop: 2, flexShrink: 0,
   },
   checkboxChecked: { backgroundColor: colors.success, borderColor: colors.success },
+  checkboxCancelled: { backgroundColor: colors.border, borderColor: colors.border },
   taskBody:  { flex: 1 },
   taskRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
   taskTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: 4 },
@@ -192,6 +198,20 @@ const styles = StyleSheet.create({
   modalCompleteBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
   modalDoneBtn:         { flex: 2, paddingVertical: 11, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, backgroundColor: colors.success + '20' },
   modalDoneBtnText:     { fontSize: 14, fontWeight: '700', color: colors.success },
+
+  // 随访完成确认弹窗
+  confirmOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  confirmCard:     { width: '100%', maxWidth: 360, backgroundColor: colors.white, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center' },
+  confirmIconWrap: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
+  confirmTitle:    { fontSize: 16, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginBottom: 6 },
+  confirmDesc:     { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, marginBottom: spacing.md },
+  confirmBtnRow:   { flexDirection: 'row', gap: spacing.sm, width: '100%' },
+  confirmBtnGhost: { flex: 1, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' },
+  confirmBtnGhostText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
+  confirmBtnPrimary:   { flex: 1, paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.primary, alignItems: 'center' },
+  confirmBtnPrimaryText: { fontSize: 13, fontWeight: '700', color: colors.white, textAlign: 'center' },
+  confirmCancelBtn: { marginTop: spacing.sm, paddingVertical: 6 },
+  confirmCancelText: { fontSize: 13, color: colors.textMuted },
 });
 
 // ── 任务卡片 ─────────────────────────────────────────────────────
@@ -206,26 +226,30 @@ function TaskCard({ task, onToggle, onPress }) {
   const pConf = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.low;
   const tMeta = TYPE_META[task.type] || DEFAULT_TYPE_META;
   const isCompleted = task.status === 'completed';
+  const isCancelled = task.status === 'cancelled';
   const id = task._id || task.id;
   // 随访任务有负责人+具体日期时视为"已安排"，即使 FollowUp.status 还是 planned（对应前端映射的 pending）
   const followupStage = task.isFollowup
-    ? (task.status === 'completed' ? 'completed' : (task.assignee ? 'in_progress' : 'pending'))
+    ? (isCompleted ? 'completed' : (task.assignee ? 'in_progress' : 'pending'))
     : null;
   const stageConf = followupStage ? FOLLOWUP_STAGE[followupStage] : null;
+  // 健管专员执行完成的记录，用户端不可撤销勾选（只读展示，避免误触改动医护的处理结果）
+  const checkboxLocked = task.isFollowup && isCompleted && task.completedBy === 'staff';
 
   return (
     <TouchableOpacity
-      style={[styles.taskCard, isCompleted && styles.taskCardCompleted]}
+      style={[styles.taskCard, (isCompleted || isCancelled) && styles.taskCardCompleted]}
       activeOpacity={0.8}
       onPress={() => !task.isReminder && onPress && onPress(task)}
     >
       {/* 勾选框（点击仅切换状态） */}
       <TouchableOpacity
-        style={[styles.checkbox, isCompleted && styles.checkboxChecked]}
-        onPress={(e) => { e.stopPropagation?.(); onToggle(id); }}
+        style={[styles.checkbox, isCompleted && styles.checkboxChecked, isCancelled && styles.checkboxCancelled]}
+        onPress={(e) => { e.stopPropagation?.(); if (!checkboxLocked && !isCancelled) onToggle(id); }}
         hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
       >
         {isCompleted && <Ionicons name="checkmark" size={14} color={colors.white} />}
+        {isCancelled && <Ionicons name="close" size={14} color={colors.textMuted} />}
       </TouchableOpacity>
 
       <View style={styles.taskBody}>
@@ -257,6 +281,12 @@ function TaskCard({ task, onToggle, onPress }) {
             <View style={styles.metaItem}>
               <Ionicons name="person-outline" size={12} color={colors.textMuted} />
               <Text style={styles.metaText}>{task.assignee}</Text>
+            </View>
+          )}
+          {task.isFollowup && isCompleted && (
+            <View style={styles.metaItem}>
+              <Ionicons name={task.completedBy === 'staff' ? 'medkit-outline' : 'checkmark-done-outline'} size={12} color={colors.textMuted} />
+              <Text style={styles.metaText}>{task.completedBy === 'staff' ? '专员随访完成' : '客户自主完成'}</Text>
             </View>
           )}
         </View>
@@ -314,6 +344,10 @@ export default function TasksScreen({ navigation }) {
   // 任务详情弹窗
   const [detailTask, setDetailTask] = useState(null);
   const [completing, setCompleting] = useState(false);
+  // 状态筛选：全部 / planned+in_progress(未随访) / completed(已随访) / cancelled(已取消)，仅对随访类任务生效
+  const [statusFilter, setStatusFilter] = useState('active');
+  // 随访完成确认弹窗：{ id, isFromModal, alreadyInProgress }
+  const [confirmFollowup, setConfirmFollowup] = useState(null);
 
   const loadData = useCallback(async () => {
     try {
@@ -365,17 +399,54 @@ export default function TasksScreen({ navigation }) {
     }
   };
 
-  const toggleFollowup = async (id) => {
+  // 点击勾选框：用户自己标记完成的随访可以点击撤销；健管专员执行完成的记录用户不能改（只能查看），
+  // 未完成的随访点击需要先确认是否需要健管跟进，避免用户误点直接把随访标记完成、健管专员完全不知情
+  const toggleFollowup = (id) => {
     const current = followupTasks.find(f => f._id === id);
     if (!current) return;
-    const nextDone = !current.completedByUser;
+    if (current.status === 'completed' && current.completedBy === 'staff') return; // 医护执行完成的，用户端不可撤销
+    if (current.status === 'completed' || current.completedByUser) {
+      undoFollowupDone(id);
+      return;
+    }
+    setConfirmFollowup({ id, alreadyInProgress: current.status === 'in_progress' || !!current.assignedTo });
+  };
+
+  const undoFollowupDone = async (id) => {
+    const current = followupTasks.find(f => f._id === id);
+    if (!current) return;
     setFollowupTasks(prev => prev.map(f =>
-      f._id === id ? { ...f, completedByUser: nextDone, completedByUserAt: nextDone ? new Date().toISOString() : null } : f
+      f._id === id ? { ...f, completedByUser: false, completedByUserAt: null, status: f.completedBy === 'user' ? 'planned' : f.status } : f
     ));
     try {
-      await followupTasksAPI.done(id, nextDone);
+      await followupTasksAPI.done(id, false);
     } catch {
-      setFollowupTasks(prev => prev.map(f => f._id === id ? { ...f, completedByUser: current.completedByUser, completedByUserAt: current.completedByUserAt } : f));
+      setFollowupTasks(prev => prev.map(f => f._id === id ? current : f));
+    }
+  };
+
+  // 确认弹窗选择后的实际提交：needFollowUp=true 表示用户仍需健管跟进（不算完成，转入随访中队列）；
+  // false 表示用户确认不需要跟进，直接闭环为已完成
+  const submitFollowupDone = async (needFollowUp) => {
+    const target = confirmFollowup;
+    if (!target) return;
+    const { id } = target;
+    const current = followupTasks.find(f => f._id === id);
+    setConfirmFollowup(null);
+    if (!current) return;
+
+    const optimistic = needFollowUp
+      ? { ...current, status: current.status === 'planned' ? 'in_progress' : current.status }
+      : { ...current, status: 'completed', completedBy: 'user', completedByUser: true, completedByUserAt: new Date().toISOString() };
+    setFollowupTasks(prev => prev.map(f => f._id === id ? optimistic : f));
+    if (target.isFromModal) {
+      setDetailTask(t => t ? { ...t, status: needFollowUp ? (t.status === 'pending' ? 'in_progress' : t.status) : 'completed', completedAt: needFollowUp ? t.completedAt : new Date().toISOString() } : t);
+    }
+    try {
+      await followupTasksAPI.done(id, true, needFollowUp);
+    } catch {
+      setFollowupTasks(prev => prev.map(f => f._id === id ? current : f));
+      if (target.isFromModal) setDetailTask(t => t ? { ...t, status: current.status === 'completed' ? 'completed' : 'pending' } : t);
     }
   };
 
@@ -388,28 +459,24 @@ export default function TasksScreen({ navigation }) {
     }
   };
 
-  // 从详情弹窗完成任务
+  // 从详情弹窗完成任务：随访类先弹确认框问是否需要健管跟进，普通任务直接完成
   const handleCompleteFromModal = async () => {
     if (!detailTask || detailTask.status === 'completed') return;
     const id = detailTask._id || detailTask.id;
+    if (detailTask.isFollowup) {
+      const current = followupTasks.find(f => f._id === id);
+      setConfirmFollowup({ id, isFromModal: true, alreadyInProgress: current?.status === 'in_progress' || !!current?.assignedTo });
+      return;
+    }
     setCompleting(true);
     const prev = detailTask;
     setDetailTask(t => ({ ...t, status: 'completed', completedAt: new Date().toISOString() }));
     try {
-      if (detailTask.isFollowup) {
-        setFollowupTasks(fs => fs.map(f => f._id === id ? { ...f, completedByUser: true, completedByUserAt: new Date().toISOString() } : f));
-        await followupTasksAPI.done(id);
-      } else {
-        setTasks(ts => ts.map(t => (t._id || t.id) === id ? { ...t, status: 'completed', completedAt: new Date().toISOString() } : t));
-        await tasksAPI.complete(id);
-      }
+      setTasks(ts => ts.map(t => (t._id || t.id) === id ? { ...t, status: 'completed', completedAt: new Date().toISOString() } : t));
+      await tasksAPI.complete(id);
     } catch {
       setDetailTask(prev);
-      if (detailTask.isFollowup) {
-        setFollowupTasks(fs => fs.map(f => f._id === id ? { ...f, completedByUser: false, completedByUserAt: null } : f));
-      } else {
-        setTasks(ts => ts.map(t => (t._id || t.id) === id ? prev : t));
-      }
+      setTasks(ts => ts.map(t => (t._id || t.id) === id ? prev : t));
     } finally {
       setCompleting(false);
     }
@@ -436,6 +503,7 @@ export default function TasksScreen({ navigation }) {
     dueTime: '',
     priority: 'medium',
     status: f.status === 'completed' ? 'completed' : (f.status === 'in_progress' ? 'in_progress' : 'pending'),
+    completedBy: f.completedBy || null,
     assignee: f.assignedTo?.name || f.staffId?.name || '',
     isFollowup: true,
   });
@@ -444,28 +512,35 @@ export default function TasksScreen({ navigation }) {
   // 用户就不用再关注了——不像"每日血压监测"这类持续性随访要留在待办里提醒用户配合，
   // 服务预约只是"通知医护有新订单"，安排完即代表已经进入服务流程，应直接归入已完成
   const isOrderHandled = f => f.sourceType === 'order' && !!(f.assignedTo?.name || f.staffId?.name);
-  const pendingFollowups = followupTasks.filter(f => f.status !== 'completed' && f.status !== 'cancelled' && !f.completedByUser && !isOrderHandled(f));
-  // 已完成 = 用户自己标记完成 或 医护端执行完成(status=completed) 或 服务预约已被医护安排
+  // 三态互斥分组，与医护端"未随访/已随访/已取消"口径对齐：
+  const activeFollowups    = followupTasks.filter(f => !['completed', 'cancelled'].includes(f.status) && !f.completedByUser && !isOrderHandled(f));
   const completedFollowups = followupTasks.filter(f => f.completedByUser || f.status === 'completed' || isOrderHandled(f));
+  const cancelledFollowups = followupTasks.filter(f => f.status === 'cancelled' && !f.completedByUser);
+
   const allItems     = [
     ...tasks.filter(t => t.status !== 'completed'),
     ...reminders.filter(r => r.enabled).map(reminderToItem),
-    ...pendingFollowups.map(followupToItem),
+    ...activeFollowups.map(followupToItem),
   ];
   const completedItems = [
     ...tasks.filter(t => t.status === 'completed'),
     ...completedFollowups.map(f => ({ ...followupToItem(f), status: 'completed', completedAt: f.completedByUserAt || f.completedAt || f.date })),
   ];
+  const cancelledItems = cancelledFollowups.map(f => ({ ...followupToItem(f), status: 'cancelled' }));
 
   const today    = new Date().toISOString().slice(0, 10);
   const weekEnd  = new Date(Date.now() +  7 * 86400000).toISOString().slice(0, 10);
   const monthEnd = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
 
+  // 状态筛选：active=未随访(默认，即原有全部/今日/本周/本月的时间筛选对象)，done=已随访，cancelled=已取消
+  const baseList = statusFilter === 'done' ? completedItems : statusFilter === 'cancelled' ? cancelledItems : allItems;
+
   const filteredTasks = (() => {
+    if (statusFilter !== 'active') return baseList; // 已随访/已取消不再叠加时间维度，直接展示全部
     if (filter === '今日') return [...tasks.filter(t => t.status !== 'completed' && (!t.dueDate || t.dueDate <= today)), ...reminders.filter(r => r.enabled && r.isActiveToday).map(reminderToItem)];
-    if (filter === '本周') return allItems.filter(t => !t.dueDate || t.dueDate <= weekEnd);
-    if (filter === '本月') return allItems.filter(t => !t.dueDate || t.dueDate <= monthEnd);
-    return allItems;
+    if (filter === '本周') return baseList.filter(t => !t.dueDate || t.dueDate <= weekEnd);
+    if (filter === '本月') return baseList.filter(t => !t.dueDate || t.dueDate <= monthEnd);
+    return baseList;
   })();
 
   const pendingCount   = tasks.filter(t => t.status === 'pending').length;
@@ -493,7 +568,9 @@ export default function TasksScreen({ navigation }) {
         {filteredTasks.length > 0 && (
           <View style={styles.pendingBadge}>
             <Ionicons name="time-outline" size={13} color={colors.primary} />
-            <Text style={styles.pendingBadgeText}>{filteredTasks.length} 项待办</Text>
+            <Text style={styles.pendingBadgeText}>
+              {filteredTasks.length} 项{statusFilter === 'done' ? '已随访' : statusFilter === 'cancelled' ? '已取消' : '待办'}
+            </Text>
           </View>
         )}
       </View>
@@ -516,14 +593,28 @@ export default function TasksScreen({ navigation }) {
         ))}
       </View>
 
-      {/* Filter tabs */}
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
-        {FILTER_TABS.map(tab => (
-          <TouchableOpacity key={tab} style={[styles.filterChip, filter === tab && styles.filterChipActive]} onPress={() => setFilter(tab)}>
-            <Text style={[styles.filterText, filter === tab && styles.filterTextActive]}>{tab}</Text>
+      {/* Status filter tabs：未随访/已随访/已取消 */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterScroll, { paddingBottom: 0 }]} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
+        {STATUS_FILTER_TABS.map(tab => (
+          <TouchableOpacity key={tab.key} style={[styles.filterChip, statusFilter === tab.key && styles.filterChipActive]} onPress={() => setStatusFilter(tab.key)}>
+            <Text style={[styles.filterText, statusFilter === tab.key && styles.filterTextActive]}>
+              {tab.label}
+              {tab.key === 'done' ? ` (${completedItems.length})` : tab.key === 'cancelled' ? ` (${cancelledItems.length})` : ''}
+            </Text>
           </TouchableOpacity>
         ))}
       </ScrollView>
+
+      {/* Time filter tabs：仅"未随访"状态下才有意义（已随访/已取消不再按时间切分） */}
+      {statusFilter === 'active' && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
+          {FILTER_TABS.map(tab => (
+            <TouchableOpacity key={tab} style={[styles.filterChip, filter === tab && styles.filterChipActive]} onPress={() => setFilter(tab)}>
+              <Text style={[styles.filterText, filter === tab && styles.filterTextActive]}>{tab}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
 
       {/* List */}
       <ScrollView showsVerticalScrollIndicator={false} style={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
@@ -539,8 +630,13 @@ export default function TasksScreen({ navigation }) {
               </View>
             ))}
           </View>
-        ) : filteredTasks.length === 0 && completedItems.length === 0 ? (
-          <EmptyState icon="checkmark-circle-outline" title="暂无待办任务" subtitle="您的健康管家会为您安排任务" color={colors.primary} />
+        ) : filteredTasks.length === 0 ? (
+          <EmptyState
+            icon={statusFilter === 'done' ? 'checkmark-done-circle-outline' : statusFilter === 'cancelled' ? 'close-circle-outline' : 'checkmark-circle-outline'}
+            title={statusFilter === 'done' ? '暂无已随访记录' : statusFilter === 'cancelled' ? '暂无已取消记录' : '暂无待办任务'}
+            subtitle={statusFilter === 'active' ? '您的健康管家会为您安排任务' : ''}
+            color={colors.primary}
+          />
         ) : (
           <>
             {filteredTasks.map(task => (
@@ -548,17 +644,6 @@ export default function TasksScreen({ navigation }) {
                 ? <ReminderCard key={task._id} reminder={reminders.find(r => r._id === task._id) || task} onToggle={toggleReminder} />
                 : <TaskCard key={task._id || task.id} task={task} onToggle={task.isFollowup ? toggleFollowup : toggleTask} onPress={setDetailTask} />
             ))}
-            {completedItems.length > 0 && (
-              <View style={styles.completedSection}>
-                <View style={styles.completedHeader}>
-                  <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-                  <Text style={styles.completedHeaderText}>已完成 ({completedItems.length})</Text>
-                </View>
-                {completedItems.map(task => (
-                  <TaskCard key={task._id || task.id} task={task} onToggle={task.isFollowup ? toggleFollowup : toggleTask} onPress={setDetailTask} />
-                ))}
-              </View>
-            )}
           </>
         )}
         <View style={{ height: spacing.xl * 2 }} />
@@ -782,6 +867,36 @@ export default function TasksScreen({ navigation }) {
               </View>
             </View>
           )}
+        </View>
+      </Modal>
+
+      {/* ── 随访完成确认弹窗：避免误点直接完成，健管专员完全不知情 ── */}
+      <Modal visible={!!confirmFollowup} transparent animationType="fade" onRequestClose={() => setConfirmFollowup(null)}>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmIconWrap}>
+              <Ionicons name="help-circle" size={32} color={colors.primary} />
+            </View>
+            <Text style={styles.confirmTitle}>
+              {confirmFollowup?.alreadyInProgress ? '这件事是否已经处理完毕？' : '是否需要健管专员跟进此事？'}
+            </Text>
+            <Text style={styles.confirmDesc}>
+              {confirmFollowup?.alreadyInProgress
+                ? '如已处理完毕将直接标记完成；如仍需继续跟进，将保持当前处理进度。'
+                : '如不需要人工介入，将直接标记为已完成；如需要，健管专员会尽快联系您跟进。'}
+            </Text>
+            <View style={styles.confirmBtnRow}>
+              <TouchableOpacity style={styles.confirmBtnGhost} onPress={() => submitFollowupDone(true)}>
+                <Text style={styles.confirmBtnGhostText}>{confirmFollowup?.alreadyInProgress ? '仍需继续跟进' : '需要，请联系我'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmBtnPrimary} onPress={() => submitFollowupDone(false)}>
+                <Text style={styles.confirmBtnPrimaryText}>{confirmFollowup?.alreadyInProgress ? '是，已处理' : '不需要，标记完成'}</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setConfirmFollowup(null)}>
+              <Text style={styles.confirmCancelText}>取消</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </Modal>
     </SafeAreaView>

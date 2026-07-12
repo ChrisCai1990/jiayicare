@@ -790,7 +790,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
     const followups = await FollowUp.find({
       patientId: req.user._id,
       $or: [
-        { status: { $in: ['planned', 'in_progress', 'completed'] } }, // 医护端完成的随访(status=completed)也要显示在「已完成」
+        { status: { $in: ['planned', 'in_progress', 'missed', 'completed', 'cancelled'] } }, // 已取消也要展示，供用户端"已取消"筛选查看
         { completedByUser: true },
       ],
     })
@@ -805,15 +805,38 @@ router.get('/followup-tasks', auth, async (req, res) => {
 });
 
 // PATCH /api/user/followup-tasks/:id/done — 用户标记/取消随访任务已完成
+// needFollowUp: true  → 用户表示"仍需健管专员跟进"，写入 status=in_progress，进入医护端待跟进队列，不算完成
+// needFollowUp: false（默认）→ 用户确认"不需要跟进"，直接 status=completed + completedBy=user，闭环
 router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
     const followup = await FollowUp.findOne({ _id: req.params.id, patientId: req.user._id });
     if (!followup) return res.status(404).json({ success: false, message: '随访任务不存在' });
     const done = req.body.done !== false; // 默认 true，传 false 则取消
+    const needFollowUp = req.body.needFollowUp === true;
+
     followup.completedByUser = done;
     followup.completedByUserAt = done ? new Date() : null;
+
+    if (done) {
+      if (needFollowUp) {
+        // 用户表示还需要人工跟进：不算完成，转入医护端"随访中"队列
+        if (followup.status === 'planned') followup.status = 'in_progress';
+      } else {
+        // 用户确认不需要跟进：直接闭环为已完成
+        followup.status = 'completed';
+        followup.completedBy = 'user';
+        followup.completedAt = new Date();
+      }
+    } else {
+      // 取消标记：仅撤销用户自己标记的完成，不影响健管专员执行完成的记录
+      if (followup.status === 'completed' && followup.completedBy === 'user') {
+        followup.status = 'planned';
+        followup.completedBy = null;
+      }
+    }
+
     await followup.save();
-    res.json({ success: true });
+    res.json({ success: true, data: followup });
   } catch (err) {
     res.status(500).json({ success: false, message: '操作失败', error: err.message });
   }

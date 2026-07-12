@@ -43,6 +43,8 @@ const followUpSchema = new mongoose.Schema({
   interviewMinutes: { type: String, default: '' }, // 面谈纪要
   completedByUser:   { type: Boolean, default: false }, // 用户主动标记已完成
   completedByUserAt: { type: Date, default: null },
+  // status=completed 时，标记这条完成是谁触发的：user=用户端自主标记（点"不需要跟进"）；staff=健管专员在医护端执行随访后完成
+  completedBy: { type: String, enum: ['user', 'staff', null], default: null },
   // 方案确认后自动生成的随访计划：sourceType区分固定周期占位 / 月度AI回顾建议，aiStatus走审核
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 来自AI体检/营养方案确认后自动生成

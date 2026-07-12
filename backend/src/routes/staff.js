@@ -879,6 +879,7 @@ router.post('/followups', staffAuth, checkPermission('followups', 'create'), asy
     type: type || 'phone',
     status: finalStatus,
     completedAt: finalStatus === 'completed' ? new Date() : null, // 完成态记录完成时间
+    completedBy: finalStatus === 'completed' ? 'staff' : null,
     content: content || '',
     theme: theme || '',
     cancelReason: cancelReason || '',
@@ -944,8 +945,11 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   // 完成时记录完成时间（供用户端「已完成」展示）；非完成态则清空
   if (followUp.status === 'completed') {
     if (!followUp.completedAt) followUp.completedAt = new Date();
+    // 医护端在这里把状态改成completed，即为专员执行完成；不覆盖已经是'user'的情况（理论上不会走到这，用户端走的是另一个接口）
+    if (!followUp.completedBy) followUp.completedBy = 'staff';
   } else {
     followUp.completedAt = null;
+    followUp.completedBy = null;
   }
   await followUp.save();
   res.json({ success: true, data: followUp });

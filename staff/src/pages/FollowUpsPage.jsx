@@ -330,6 +330,11 @@ export default function FollowUpsPage() {
                         fontSize: 11, fontWeight: 700, padding: '2px 10px', borderRadius: 99,
                         background: sc + '18', color: sc,
                       }}>{STATUS_MAP[f.status] || f.status}</span>
+                      {f.status === 'completed' && f.completedBy && (
+                        <span style={{ fontSize: 11, color: f.completedBy === 'user' ? '#0077B6' : '#22A06B', background: f.completedBy === 'user' ? '#0077B615' : '#22A06B15', padding: '2px 10px', borderRadius: 99, fontWeight: 700 }}>
+                          {f.completedBy === 'user' ? '客户自主标记' : '健管专员执行'}
+                        </span>
+                      )}
                     </div>
                     <div style={{ fontSize: 13, color: '#4A6558', marginBottom: 4 }}>
                       {f.theme || '常规随访'}

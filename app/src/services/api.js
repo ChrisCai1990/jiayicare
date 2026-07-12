@@ -272,7 +272,7 @@ export const pointsAPI = {
 
 export const followupTasksAPI = {
   list: () => request('/user/followup-tasks'),
-  done: (id, done = true) => request(`/user/followup-tasks/${id}/done`, { method: 'PATCH', body: JSON.stringify({ done }) }),
+  done: (id, done = true, needFollowUp = false) => request(`/user/followup-tasks/${id}/done`, { method: 'PATCH', body: JSON.stringify({ done, needFollowUp }) }),
   submitForm: (id, formData) => request(`/user/followup-tasks/${id}/form`, { method: 'POST', body: JSON.stringify({ formData }) }),
 };
 
