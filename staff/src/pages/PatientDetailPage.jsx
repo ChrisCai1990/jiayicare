@@ -5665,9 +5665,11 @@ export default function PatientDetailPage() {
                     if (!medForm.name || !medForm.dosage || !medForm.frequency) { toast('请填写必填项'); return }
                     setMedSaving(true)
                     try {
+                      const needReview = !editingMed && (staff?.role === 'healthManager' || staff?.role === 'medicalAssistant')
                       if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
                       else await staffAPI.createPatientMedication(id, medForm)
                       setShowMedModal(false); loadMedications()
+                      toast(editingMed ? '已保存' : needReview ? '已提交，待家庭医师审核' : '添加成功')
                     } catch (err) { toast(err.message) }
                     finally { setMedSaving(false) }
                   }}>{medSaving ? '保存中...' : '保存'}</button>
@@ -5709,10 +5711,12 @@ export default function PatientDetailPage() {
                     if (!supForm.name || !supForm.dosage || !supForm.frequency) { toast('请填写必填项'); return }
                     setMedSaving(true)
                     try {
+                      const supNeedReview = !editingSup && !editingSupAiApprove && (staff?.role === 'healthManager' || staff?.role === 'medicalAssistant')
                       if (editingSupAiApprove) await staffAPI.updatePatientSupplement(id, editingSup, { ...supForm, aiStatus: 'approved' })
                       else if (editingSup) await staffAPI.updatePatientSupplement(id, editingSup, supForm)
                       else await staffAPI.createPatientSupplement(id, supForm)
                       setShowSupModal(false); setEditingSupAiApprove(false); loadSupplements()
+                      toast(editingSupAiApprove ? '已采纳并生效' : editingSup ? '已保存' : supNeedReview ? '已提交，待营养师审核' : '添加成功')
                     } catch (err) { toast(err.message) }
                     finally { setMedSaving(false) }
                   }}>{medSaving ? '保存中...' : editingSupAiApprove ? '保存并采纳' : '保存'}</button>

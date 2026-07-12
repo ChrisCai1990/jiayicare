@@ -3074,15 +3074,19 @@ router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的营养素记录
+// 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的营养素记录。
+// 例外：营养师「编辑后采纳」待审记录（pending→approved）属于审核动作，虽非创建人也放行，并记审核人。
 router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => {
   try {
     const sup = await Supplement.findOne({ _id: req.params.supId, user: req.params.id });
     if (!sup) return res.status(404).json({ success: false, message: '记录不存在' });
-    if (req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
+    const isApproveReview = sup.aiStatus === 'pending' && req.body.aiStatus === 'approved'
+      && (req.staff.role === 'nutritionist' || req.staff.role === 'superadmin');
+    if (!isApproveReview && req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
       return res.status(403).json({ success: false, message: '仅记录创建人可修改' });
     }
     Object.assign(sup, req.body);
+    if (isApproveReview) { sup.reviewedByName = req.staff.name || ''; sup.reviewedAt = new Date(); }
     await sup.save();
     res.json({ success: true, data: sup });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
