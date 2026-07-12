@@ -1810,10 +1810,13 @@ ${chatText}
       return res.status(500).json({ success: false, message: 'AI生成失败，请重试或手动记录' });
     }
 
+    const parsedNextDate = parsed.nextDate && /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.nextDate).trim())
+      ? new Date(parsed.nextDate) : null;
+
     const record = await ServiceRecord.create({
       staffId: req.staff._id, patientId, type: recordType, date: new Date(),
       title: parsed.title || '', content: parsed.content || '', result: parsed.result || '',
-      nextDate: parsed.nextDate ? new Date(parsed.nextDate) : null,
+      nextDate: parsedNextDate,
       aiStatus: 'pending', aiSourceMessageIds: messages.map(m => m._id), aiGeneratedAt: new Date(),
       aiRangeStart: rangeStart, aiRangeEnd: rangeEnd,
     });
@@ -1835,7 +1838,10 @@ router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('servi
     if (action === 'approve') {
       if (edits) {
         ['title', 'content', 'result'].forEach(k => { if (edits[k] !== undefined) record[k] = edits[k]; });
-        if (edits.nextDate !== undefined) record.nextDate = edits.nextDate ? new Date(edits.nextDate) : null;
+        if (edits.nextDate !== undefined) {
+          const d = edits.nextDate ? new Date(edits.nextDate) : null;
+          record.nextDate = d && !isNaN(d.getTime()) ? d : null;
+        }
       }
       record.aiStatus = 'approved';
       await record.save();
