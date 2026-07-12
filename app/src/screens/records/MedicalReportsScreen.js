@@ -242,15 +242,22 @@ export default function MedicalReportsScreen({ navigation }) {
             {currentYear?.categories.map(cat => {
               const meta = CATEGORY_META[cat.key] || { label: cat.label, icon: 'document-outline', color: colors.primary };
 
-              // 收集数据类指标用于曲线图
-              const dataItems = {};
+              // 收集数据类指标用于曲线图。同一指标同一天可能因AI解析重复提取出多条记录（同一次化验被拆成两条），
+              // 若不去重会在同一天内伪造出"两个时间点"，画出毫无意义的趋势线（两端日期相同、看起来像文字重叠）。
+              // 按"指标名+日期"去重，同一天只保留最后一条（通常是最终修正后的解析结果）。
+              const dataItemsByDate = {};
               cat.reports.forEach(r => {
+                const date = r.checkDate || r.date || '';
                 (r.reportItems || []).filter(i => i.itemType === 'data' || i.itemType === 'lab').forEach(item => {
                   if (!isNaN(parseFloat(item.value))) {
-                    if (!dataItems[item.name]) dataItems[item.name] = [];
-                    dataItems[item.name].push({ value: item.value, date: r.checkDate || r.date || '' });
+                    if (!dataItemsByDate[item.name]) dataItemsByDate[item.name] = {};
+                    dataItemsByDate[item.name][date] = { value: item.value, date };
                   }
                 });
+              });
+              const dataItems = {};
+              Object.entries(dataItemsByDate).forEach(([name, byDate]) => {
+                dataItems[name] = Object.values(byDate).sort((a, b) => new Date(a.date) - new Date(b.date));
               });
 
               return (
