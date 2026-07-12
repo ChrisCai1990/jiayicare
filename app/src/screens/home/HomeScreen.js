@@ -680,6 +680,16 @@ export default function HomeScreen({ navigation }) {
   // ── 固定打卡项目（11项，始终显示）────────────────────────────────
   const dynamicCheckinItems = FIXED_CHECKIN_KEYS.map(k => CHECKIN_DEFS[k]).filter(Boolean);
 
+  // 随访计划紧急程度：按实际日期与今天的差值动态算，不再写死"今天"
+  // 逾期未随访=紧急，当天=今天，1-2天内=即将，更远=不特别标注（沿用即将样式）
+  const urgencyByDate = (dateVal) => {
+    if (!dateVal) return 'low'
+    const diffDays = Math.floor((new Date(dateVal).setHours(0,0,0,0) - new Date().setHours(0,0,0,0)) / 86400000)
+    if (diffDays < 0) return 'high'
+    if (diffDays === 0) return 'medium'
+    return 'low'
+  }
+
   // ── 合并待办：Task 表任务 + 随访计划（作为任务展示）─────────────
   // 已完成/已取消的随访（不管是用户自己标记完成，还是医护端执行随访后置为completed）都不再展示为待办，
   // 首页与"全部待办"页面（TasksScreen.js）保持同一口径，避免此前"医护端已完成但首页仍显示待办"的不一致。
@@ -695,7 +705,7 @@ export default function HomeScreen({ navigation }) {
         ? new Date(plan.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
         : '',
       dueTime: '',
-      priority: 'medium',
+      priority: urgencyByDate(plan.date),
       followupType: plan.type,
       checkInItems: plan.checkInItems,
       formFields: plan.followUpSchemeId?.formId?.fields || [],

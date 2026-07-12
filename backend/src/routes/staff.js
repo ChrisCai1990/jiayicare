@@ -229,6 +229,32 @@ async function getVisibleStaffIds(staff) {
   return [...new Set(all)];
 }
 
+const PATIENT_ASSIGN_FIELDS = [
+  'assignedFamilyDoctor', 'assignedNutritionist', 'assignedSpecialist', 'assignedTcmDoctor',
+  'assignedPsychologist', 'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthManager',
+];
+const ROLE_PATIENT_ASSIGN_FIELD = {
+  familyDoctor: 'assignedFamilyDoctor', nutritionist: 'assignedNutritionist',
+  specialist: 'assignedSpecialist', tcmDoctor: 'assignedTcmDoctor',
+  psychologist: 'assignedPsychologist', rehabSpecialist: 'assignedRehabSpecialist',
+  medicalAssistant: 'assignedMedicalAssistant',
+};
+
+// 算出某员工能看到的"患者"过滤条件（与 /staff/patients 同一套归属口径）。
+// 超管返回 null（不过滤，看全部）。用于随访等按患者维度展示的列表，
+// 保证"客户详情页随访记录"和"随访管理列表"看到的是同一批患者名下的全部随访，
+// 不再按单条随访记录的 assignedTo 过滤（那样会把同患者下其他同事执行的随访藏起来）。
+async function getVisiblePatientFilter(staff) {
+  if (staff.role === 'superadmin') return null;
+  const staffIds = await getVisibleStaffIds(staff);
+  const mentoredIds = await getMentoredTeamMemberIds(staff._id);
+  if (mentoredIds.length > 0) {
+    return { $or: PATIENT_ASSIGN_FIELDS.map(f => ({ [f]: { $in: staffIds } })) };
+  }
+  const field = ROLE_PATIENT_ASSIGN_FIELD[staff.role] || 'assignedHealthManager';
+  return { [field]: { $in: staffIds } };
+}
+
 // ── GET /api/staff/patients ───────────────────────────────────────
 // 查询分配给当前医护人员（及其下属）的患者列表
 router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
@@ -798,17 +824,15 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     patientFilter = { patientId: { $in: matchedUsers.map(u => u._id) } };
   }
 
-  // 数据权限：随访任务归属实际执行人（assignedTo）；未指定执行人时退回创建人自己。
-  // 例外：家庭医生作为患者的第一责任人，需要看到名下患者的全部随访（含健管专员等他人执行的），
-  // 用于把控质量，但不代表随访归属改到家庭医生名下——执行人仍是 assignedTo 那个人。
-  let ownerFilter;
-  const visibleStaffIds = await getVisibleStaffIds(req.staff);
-  if (req.staff.role === 'familyDoctor') {
-    const myPatients = await User.find({ assignedFamilyDoctor: { $in: visibleStaffIds } }).select('_id');
-    const myPatientIds = myPatients.map(p => p._id);
-    ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }, { patientId: { $in: myPatientIds } }] };
-  } else {
-    ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }] };
+  // 数据权限：按"患者是否归属于我（或我可见范围）"过滤，与 /staff/patients、
+  // 客户详情页随访记录 tab 同一套归属口径 —— 只要这个患者是我负责的，
+  // 名下全部随访记录（不论具体是谁执行/分配给谁）都可见，避免同一患者在
+  // "随访管理列表"和"客户详情页"看到的记录数量/日期对不上。
+  const visiblePatientFilter = await getVisiblePatientFilter(req.staff);
+  let ownerFilter = {};
+  if (visiblePatientFilter) {
+    const myPatients = await User.find(visiblePatientFilter).select('_id');
+    ownerFilter = { patientId: { $in: myPatients.map(p => p._id) } };
   }
 
   const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}] };
