@@ -925,6 +925,8 @@ export default function PatientDetailPage() {
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [showSRDetail, setShowSRDetail] = useState(null)
+  const [routineDraftGenerating, setRoutineDraftGenerating] = useState(false)
+  const [reviewingDraft, setReviewingDraft] = useState(null)
   const [staffList, setStaffList] = useState([])
   const [assigningFulfillerOrder, setAssigningFulfillerOrder] = useState(null)
   const [fulfillerChoice, setFulfillerChoice] = useState('')
@@ -6073,8 +6075,11 @@ export default function PatientDetailPage() {
             <thead><tr><th>类型</th><th>标题</th><th>内容摘要</th><th>负责人</th><th>日期</th></tr></thead>
             <tbody>
               {records.map(r => (
-                <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => setShowSRDetail(r)}>
-                  <td><span className="badge badge-success" style={{ background: SR_CATEGORY_COLOR['专病管理'] + '20', color: SR_CATEGORY_COLOR['专病管理'] }}>{SR_TYPE_LABEL[r.type] || r.type}</span></td>
+                <tr key={r._id} style={{ cursor: 'pointer' }} onClick={() => r.aiStatus === 'pending' ? setReviewingDraft(r) : setShowSRDetail(r)}>
+                  <td>
+                    <span className="badge badge-success" style={{ background: SR_CATEGORY_COLOR['专病管理'] + '20', color: SR_CATEGORY_COLOR['专病管理'] }}>{SR_TYPE_LABEL[r.type] || r.type}</span>
+                    {r.aiStatus === 'pending' && <span style={{ marginLeft: 6, fontSize: 11, padding: '2px 6px', borderRadius: 999, background: '#7C3AED20', color: '#7C3AED', fontWeight: 600 }}>AI待审</span>}
+                  </td>
                   <td style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title || '-'}</td>
                   <td style={{ fontSize: 13, color: '#666', maxWidth: 200 }}>{r.content ? (r.content.length > 60 ? r.content.slice(0, 60) + '...' : r.content) : '-'}</td>
                   <td style={{ fontSize: 13, color: '#666' }}>{r.staffId?.name || '-'}</td>
@@ -6102,7 +6107,22 @@ export default function PatientDetailPage() {
               <div className="card" key={cat}>
                 <div className="card-header">
                   <div className="card-title" style={{ color: SR_CATEGORY_COLOR[cat] }}>{cat}</div>
-                  <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    {cat === '日常随访' && (
+                      <button className="btn btn-secondary btn-sm" disabled={routineDraftGenerating}
+                        onClick={async () => {
+                          setRoutineDraftGenerating(true)
+                          try {
+                            const res = await staffAPI.generateRoutineDraft(id)
+                            toast(res.reused ? '已有待审核的草稿' : 'AI草稿已生成，请审核')
+                            loadServiceRecords()
+                            setReviewingDraft(res.data)
+                          } catch (err) { toast(err.message) }
+                          finally { setRoutineDraftGenerating(false) }
+                        }}>{routineDraftGenerating ? '生成中…' : '🤖 AI生成随访草稿'}</button>
+                    )}
+                    <span style={{ fontSize: 13, color: '#aaa' }}>{grouped[cat].length} 条</span>
+                  </div>
                 </div>
                 {grouped[cat].length === 0 ? (
                   <div style={{ padding: '16px 20px', color: '#aaa', fontSize: 13 }}>暂无{cat}记录</div>
@@ -7482,6 +7502,74 @@ export default function PatientDetailPage() {
           </div>
         </div>
       )}
+
+      {/* AI随访草稿审核弹窗 */}
+      {reviewingDraft && (() => {
+        const DraftReviewModal = () => {
+          const [form, setForm] = React.useState({
+            title: reviewingDraft.title || '', content: reviewingDraft.content || '',
+            result: reviewingDraft.result || '',
+            nextDate: reviewingDraft.nextDate ? new Date(reviewingDraft.nextDate).toISOString().slice(0, 10) : '',
+          })
+          const [saving, setSaving] = React.useState(false)
+
+          const handleApprove = async () => {
+            setSaving(true)
+            try {
+              await staffAPI.reviewRoutineDraft(reviewingDraft._id, { action: 'approve', edits: { ...form, nextDate: form.nextDate || null } })
+              toast('已确认入档'); setReviewingDraft(null); loadServiceRecords()
+            } catch (err) { toast(err.message || '保存失败') }
+            finally { setSaving(false) }
+          }
+
+          const handleDiscard = async () => {
+            if (!window.confirm('确定丢弃这条AI草稿？')) return
+            setSaving(true)
+            try {
+              await staffAPI.reviewRoutineDraft(reviewingDraft._id, { action: 'discard' })
+              toast('已丢弃'); setReviewingDraft(null); loadServiceRecords()
+            } catch (err) { toast(err.message || '操作失败') }
+            finally { setSaving(false) }
+          }
+
+          return (
+            <div className="modal-overlay" onClick={() => setReviewingDraft(null)}>
+              <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+                <div className="modal-header">
+                  <h3 className="modal-title">审核AI生成的随访记录</h3>
+                  <button className="modal-close" onClick={() => setReviewingDraft(null)}>×</button>
+                </div>
+                <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  <div style={{ fontSize: 12, color: '#7C3AED', background: '#7C3AED10', padding: '6px 10px', borderRadius: 6 }}>
+                    此内容由AI根据与患者的聊天记录自动提炼，请核实后再确认入档
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>标题</label>
+                    <input className="form-control" value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>随访要点</label>
+                    <textarea className="form-control" rows={5} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>结论/评估</label>
+                    <textarea className="form-control" rows={2} value={form.result} onChange={e => setForm(f => ({ ...f, result: e.target.value }))} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>下次随访日期（可选）</label>
+                    <input type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button className="btn btn-secondary" disabled={saving} onClick={handleDiscard}>丢弃</button>
+                  <button className="btn btn-primary" disabled={saving} onClick={handleApprove}>{saving ? '保存中…' : '确认入档'}</button>
+                </div>
+              </div>
+            </div>
+          )
+        }
+        return <DraftReviewModal />
+      })()}
 
       {/* 服务记录详情弹窗 */}
       {showSRDetail && (() => {

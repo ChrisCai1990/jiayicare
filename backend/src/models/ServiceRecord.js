@@ -59,6 +59,11 @@ const serviceRecordSchema = new mongoose.Schema({
     staffName: { type: String, default: '' },
     staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   }],
+
+  // AI 从患者聊天记录提炼生成的日常随访草稿（type=routine 专用）
+  aiStatus:         { type: String, enum: ['pending', 'approved', null], default: null },
+  aiSourceMessageIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Message' }],
+  aiGeneratedAt:    { type: Date, default: null },
 }, { timestamps: true });
 
 serviceRecordSchema.index({ patientId: 1, type: 1, date: -1 });

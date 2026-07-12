@@ -1736,6 +1736,89 @@ router.delete('/service-records/:id', staffAuth, checkPermission('service_record
   res.json({ success: true, message: '已删除' });
 });
 
+// POST /api/staff/patients/:id/routine-followup/ai-draft — AI从与患者的聊天记录提炼生成"日常随访"草稿
+router.post('/patients/:id/routine-followup/ai-draft', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
+  try {
+    const patientId = req.params.id;
+    const user = await User.findById(patientId).select('name');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+
+    // 已有未处理的草稿，直接返回，避免重复生成
+    const existing = await ServiceRecord.findOne({ patientId, type: 'routine', aiStatus: 'pending' });
+    if (existing) return res.json({ success: true, data: existing, reused: true });
+
+    const conversationId = `${patientId}_manager`;
+    const lastRecord = await ServiceRecord.findOne({ patientId, type: 'routine', aiStatus: { $ne: 'pending' } }).sort({ date: -1 });
+    const msgFilter = { conversationId };
+    if (lastRecord) msgFilter.createdAt = { $gt: lastRecord.date };
+
+    let messages;
+    if (lastRecord) {
+      messages = await Message.find(msgFilter).sort({ createdAt: 1 });
+    } else {
+      messages = await Message.find({ conversationId }).sort({ createdAt: -1 }).limit(Number(req.body?.limit) || 50);
+      messages.reverse();
+    }
+    if (messages.length === 0) return res.status(400).json({ success: false, message: '该患者近期无新聊天记录，暂无法生成草稿' });
+
+    const chatText = messages.map(m => `${m.type === 'user' ? '患者' : '健管专员'}：${m.content}`).join('\n');
+    const prompt = `你是健康管理专员的随访记录助手。以下是你与患者${user.name}近期的聊天记录，请提炼成一条"日常随访"服务记录，不要逐句复述聊天内容，要总结随访的核心信息。若聊天记录与健康管理无实质关联，content中如实说明"本次沟通无实质随访内容"。
+
+【聊天记录】
+${chatText}
+
+请严格按以下JSON格式输出（仅JSON，不要其他文字）：
+{"title":"本次随访主题（10字内）","content":"随访要点摘要（100-200字，包含患者近期状态/主诉、专员给出的建议或干预、患者反馈或依从情况）","result":"结论性评估（30-50字）","nextDate":"YYYY-MM-DD 或 null"}`;
+
+    const { chat } = require('../utils/ai');
+    let text;
+    try {
+      text = await chat([{ role: 'user', content: prompt }], { maxTokens: 800 });
+    } catch (err) {
+      return res.status(500).json({ success: false, message: 'AI生成失败，请重试或手动记录' });
+    }
+
+    let parsed;
+    try {
+      parsed = JSON.parse((text || '').replace(/```json|```/g, '').trim());
+    } catch {
+      return res.status(500).json({ success: false, message: 'AI生成失败，请重试或手动记录' });
+    }
+
+    const record = await ServiceRecord.create({
+      staffId: req.staff._id, patientId, type: 'routine', date: new Date(),
+      title: parsed.title || '', content: parsed.content || '', result: parsed.result || '',
+      nextDate: parsed.nextDate ? new Date(parsed.nextDate) : null,
+      aiStatus: 'pending', aiSourceMessageIds: messages.map(m => m._id), aiGeneratedAt: new Date(),
+    });
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PATCH /api/staff/service-records/:id/ai-review — 确认/编辑或丢弃AI生成的随访草稿
+router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('service_records', 'edit'), async (req, res) => {
+  try {
+    const record = await ServiceRecord.findOne({ _id: req.params.id, aiStatus: 'pending' });
+    if (!record) return res.status(404).json({ success: false, message: '草稿不存在或已处理' });
+
+    const { action, edits } = req.body;
+    if (action === 'discard') {
+      await record.deleteOne();
+      return res.json({ success: true, discarded: true });
+    }
+    if (action === 'approve') {
+      if (edits) {
+        ['title', 'content', 'result'].forEach(k => { if (edits[k] !== undefined) record[k] = edits[k]; });
+        if (edits.nextDate !== undefined) record.nextDate = edits.nextDate ? new Date(edits.nextDate) : null;
+      }
+      record.aiStatus = 'approved';
+      await record.save();
+      return res.json({ success: true, data: record });
+    }
+    res.status(400).json({ success: false, message: 'action 必须是 approve 或 discard' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 分佣中心 ───────────────────────────────────────────────
 // GET /api/staff/commission/me — 我的分佣记录
 router.get('/commission/me', staffAuth, async (req, res) => {

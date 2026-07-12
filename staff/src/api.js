@@ -153,6 +153,8 @@ export const staffAPI = {
   editServiceSupplement:   (id, suppId, d) => req(`/staff/service-records/${id}/supplement/${suppId}`, { method: 'PUT', body: JSON.stringify(d) }),
   deleteServiceSupplement: (id, suppId)    => req(`/staff/service-records/${id}/supplement/${suppId}`, { method: 'DELETE' }),
   deleteServiceRecord:  (id)     => req(`/staff/service-records/${id}`, { method: 'DELETE' }),
+  generateRoutineDraft: (patientId) => req(`/staff/patients/${patientId}/routine-followup/ai-draft`, { method: 'POST' }),
+  reviewRoutineDraft:   (id, d)     => req(`/staff/service-records/${id}/ai-review`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   // Commission
   getMyCommission:  (p = {}) => req('/staff/commission/me?' + qs(p)),
