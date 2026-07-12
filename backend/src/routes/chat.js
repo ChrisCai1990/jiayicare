@@ -185,7 +185,7 @@ router.post('/transfer', auth, async (req, res) => {
     const recentLogs = await ChatLog.find({ user: req.user._id, role: { $ne: 'transfer' } })
       .sort({ createdAt: -1 }).limit(5).lean();
     const historyLines = recentLogs.reverse()
-      .map(l => `患者：${l.userMessage}\n小嘉：${l.aiReply}`)
+      .map(l => `会员：${l.userMessage}\n小嘉：${l.aiReply}`)
       .join('\n\n');
     await Message.create({
       user: req.user._id,
@@ -193,8 +193,8 @@ router.post('/transfer', auth, async (req, res) => {
       sender: '系统',
       title: 'AI对话转人工',
       content: historyLines
-        ? `患者从AI健康助手转来，以下是此前对话摘要：\n\n${historyLines}\n\n患者当前问题：${lastMessage}`
-        : `患者从AI健康助手转来人工咨询：${lastMessage}`,
+        ? `会员从AI健康助手转来，以下是此前对话摘要：\n\n${historyLines}\n\n会员当前问题：${lastMessage}`
+        : `会员从AI健康助手转来人工咨询：${lastMessage}`,
       conversationId: `${req.user._id}_manager`,
     });
 
