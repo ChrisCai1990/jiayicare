@@ -789,6 +789,7 @@ function NutritionPlanModal({ onClose, onSaved }) {
     const c = tpl.content || {}
     setPlanTitle(tpl.name || '')
     setForm({ ...NUTRITION_INIT, ...Object.fromEntries(Object.keys(NUTRITION_INIT).map(k => [k, c[k] || ''])) })
+    setDescription(c.description || '')   // 预填模板里设置的标准化方案说明，创建时可再修改
     setStep(2); setError('')
   }
 
