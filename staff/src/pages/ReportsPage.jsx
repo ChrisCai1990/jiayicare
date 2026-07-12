@@ -13,6 +13,8 @@ export default function ReportsPage() {
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('')
+  const [search, setSearch] = useState('')
+  const [searchInput, setSearchInput] = useState('')
   const [page, setPage] = useState(1)
   const [showUpload, setShowUpload] = useState(false)
   const [showDetail, setShowDetail] = useState(null)
@@ -31,13 +33,19 @@ export default function ReportsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await staffAPI.getReports({ status: statusFilter, page, limit })
+      const res = await staffAPI.getReports({ status: statusFilter, search, page, limit })
       setReports(res.data.reports); setTotal(res.data.total)
     } finally { setLoading(false) }
-  }, [statusFilter, page])
+  }, [statusFilter, search, page])
 
   useEffect(() => { load() }, [load])
   useEffect(() => { staffAPI.getPatients({ limit: 200 }).then(r => setPatients(r.data.patients)).catch(() => {}) }, [])
+
+  // 搜索防抖：停止输入 400ms 后再请求，避免每敲一个字就打后端
+  useEffect(() => {
+    const t = setTimeout(() => { setSearch(searchInput.trim()); setPage(1) }, 400)
+    return () => clearTimeout(t)
+  }, [searchInput])
 
   const openDetail = async (r) => {
     setDetailLoading(true)
@@ -84,12 +92,21 @@ export default function ReportsPage() {
         <button className="btn btn-primary" onClick={() => setShowUpload(true)}>＋ 上传报告</button>
       </div>
 
-      {/* 状态筛选 */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-        {[{ v: '', l: '全部' }, { v: 'unaudited', l: '待审核' }, { v: 'audited', l: '已审核' }, { v: 'rejected', l: '已驳回' }].map(opt => (
-          <button key={opt.v} className={`btn btn-sm ${statusFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => { setStatusFilter(opt.v); setPage(1) }}>{opt.l}</button>
-        ))}
+      {/* 状态筛选 + 搜索 */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {[{ v: '', l: '全部' }, { v: 'unaudited', l: '待审核' }, { v: 'audited', l: '已审核' }, { v: 'rejected', l: '已驳回' }].map(opt => (
+            <button key={opt.v} className={`btn btn-sm ${statusFilter === opt.v ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => { setStatusFilter(opt.v); setPage(1) }}>{opt.l}</button>
+          ))}
+        </div>
+        <input
+          className="form-input"
+          style={{ width: 240 }}
+          placeholder="🔍 搜索会员姓名/手机号/报告标题"
+          value={searchInput}
+          onChange={e => setSearchInput(e.target.value)}
+        />
       </div>
 
       <div className="card">

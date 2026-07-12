@@ -1200,14 +1200,23 @@ router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async
 });
 
 // ── 报告管理 ──────────────────────────────────────────────
-// GET /api/staff/medical-reports?patientId=&status=
+// GET /api/staff/medical-reports?patientId=&status=&search=
+// search 同时匹配报告标题和会员姓名/手机号（会员字段在关联表，先查User拿到匹配的userId再一并用$or过滤）
 router.get('/medical-reports', staffAuth, checkPermission('reports', 'view'), async (req, res) => {
-  const { patientId, status, page = 1, limit = 20 } = req.query;
+  const { patientId, status, search, page = 1, limit = 20 } = req.query;
   const filter = {};
   if (patientId) filter.user = patientId;
   if (status === 'unaudited') filter.audit_status = 'unaudited';
   else if (status === 'audited') filter.audit_status = 'audited';
   else if (status === 'rejected') filter.audit_status = 'rejected';
+
+  const kw = (search || '').trim();
+  if (kw) {
+    const matchedUsers = await User.find({ $or: [{ name: new RegExp(kw, 'i') }, { phone: new RegExp(kw, 'i') }] }).select('_id').lean();
+    const userIds = matchedUsers.map(u => u._id);
+    filter.$or = [{ title: new RegExp(kw, 'i') }, ...(userIds.length ? [{ user: { $in: userIds } }] : [])];
+  }
+
   const skip = (Number(page) - 1) * Number(limit);
   const [reports, total] = await Promise.all([
     MedicalReport.find(filter).sort({ createdAt: -1 }).skip(skip).limit(Number(limit))
