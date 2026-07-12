@@ -308,8 +308,9 @@ function RecordRow({ record, typeCfg, isLast }) {
         <Text style={styles.recordDate}>{dt}</Text>
         {record.extra?.sleepTime && record.extra?.wakeTime
           ? <Text style={styles.recordNote}>{record.extra.sleepTime} 入睡 → {record.extra.wakeTime} 醒来</Text>
-          : record.note ? <Text style={styles.recordNote}>{record.note}</Text> : null
+          : null
         }
+        {record.note ? <Text style={styles.recordNote}>{record.note}</Text> : null}
       </View>
       <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
         <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>

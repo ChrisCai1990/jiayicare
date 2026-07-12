@@ -623,7 +623,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   const recentRecords = await HealthRecord.find({ user: user._id })
     .sort({ recordedAt: -1 })
     .limit(30)
-    .select('type value extra recordedAt');
+    .select('type value extra recordedAt note imageUrl');
 
   res.json({ success: true, data: { user, recentFollowUps, recentRecords } });
 });
@@ -3290,7 +3290,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const records = await HealthRecord.find({
       user: { $in: patientIds },
       recordedAt: { $gte: start, $lte: end },
-    }).select('user type value unit recordedAt imageUrl extra').sort({ recordedAt: -1 }).lean();
+    }).select('user type value unit recordedAt imageUrl extra note').sort({ recordedAt: -1 }).lean();
 
     // 按患者分组：同一类型当天可能打卡多次（如血压测3次），全部保留，不只取最新一条
     const byPatient = {};
@@ -3316,6 +3316,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
           doneItems: doneTypes.flatMap(t => data.types[t].map(r => ({
             type: t, label: TYPE_LABEL[t] || t,
             value: r.value, unit: r.unit || '', recordedAt: r.recordedAt,
+            extra: r.extra || null, note: r.note || '',
           }))),
           missingItems: missingTypes.map(t => ({ type: t, label: TYPE_LABEL[t] || t })),
         };

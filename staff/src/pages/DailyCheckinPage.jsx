@@ -119,6 +119,8 @@ export default function DailyCheckinPage() {
                       border: `1px solid ${TYPE_COLOR[item.type] || '#1E6B50'}30`,
                     }}>
                       ✓ {item.label}{item.value ? `：${item.value}${item.unit}` : ''}
+                      {item.extra?.sleepTime && item.extra?.wakeTime ? `（${item.extra.sleepTime}入睡→${item.extra.wakeTime}醒）` : ''}
+                      {item.note ? `，${item.note}` : ''}
                     </span>
                   ))}
                 </div>

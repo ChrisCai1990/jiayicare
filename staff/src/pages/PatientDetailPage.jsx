@@ -7790,15 +7790,21 @@ const RECORD_TYPE_LABEL = {
 }
 
 function formatRecordValue(r) {
+  let base
   if (r.type === 'bloodPressure' && r.extra) {
-    return `${r.extra.sys}/${r.extra.dia} mmHg`
+    base = `${r.extra.sys}/${r.extra.dia} mmHg`
+  } else if (r.type === 'bloodSugar') base = `${r.value} mmol/L`
+  else if (r.type === 'heartRate') base = `${r.value} 次/分`
+  else if (r.type === 'weight') base = `${r.value} kg`
+  else if (r.type === 'sleep') base = `${r.value} h`
+  else if (r.type === 'mood') base = `${r.value} / 10`
+  else base = r.value ?? '-'
+
+  if (r.type === 'sleep' && r.extra?.sleepTime && r.extra?.wakeTime) {
+    base += `（${r.extra.sleepTime}入睡→${r.extra.wakeTime}醒）`
   }
-  if (r.type === 'bloodSugar') return `${r.value} mmol/L`
-  if (r.type === 'heartRate') return `${r.value} 次/分`
-  if (r.type === 'weight') return `${r.value} kg`
-  if (r.type === 'sleep') return `${r.value} h`
-  if (r.type === 'mood') return `${r.value} / 10`
-  return r.value ?? '-'
+  if (r.note) base += `，${r.note}`
+  return base
 }
 
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
