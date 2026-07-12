@@ -981,6 +981,7 @@ export default function PatientDetailPage() {
   const [stoppingSup, setStoppingSup] = useState(null) // 待确认停用的营养素记录
   const [editingSupAiApprove, setEditingSupAiApprove] = useState(false)
   const [followUpFilter, setFollowUpFilter] = useState('all') // all | pending | done
+  const [expandedMonitorGroups, setExpandedMonitorGroups] = useState({}) // 随访记录表格里日常监测折叠组的展开状态，key: theme+status
   const [medForm, setMedForm] = useState({})
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
@@ -5903,6 +5904,43 @@ export default function PatientDetailPage() {
             const inProgressCount = followUps.filter(f => IN_PROGRESS_STATUSES.includes(f.status)).length
             const doneCount = followUps.filter(f => DONE_STATUSES.includes(f.status)).length
             const cancelledCount = followUps.filter(f => CANCELLED_STATUSES.includes(f.status)).length
+
+            // 日常监测随访（sourceType=scheduled，theme形如"日常监测随访 · xxx"）按频率每天/每周生成一条占位，
+            // 同一客户能连续攒出十几二十条同主题记录，把就医随访/体检提醒/订单预约等真正有意义的记录
+            // 挤到分页很后面（2026-07-13 反馈：客户详情页只看到7/25之后的，7/14的记录翻不到）。
+            // 这里按"主题+状态"分组折叠成一行，组内明细可展开查看，折叠行取组内最新日期用于排序，
+            // 保证真实记录不再被同质占位淹没。
+            const MONITOR_PREFIX = '日常监测随访 · '
+            const monitorGroups = {} // key: theme+status → { theme, status, items: [] }
+            const rows = [] // 最终渲染的行：{ type: 'single', item } | { type: 'group', key, theme, status, items }
+            filtered.forEach(f => {
+              if (f.sourceType === 'scheduled' && (f.theme || '').startsWith(MONITOR_PREFIX)) {
+                const key = f.theme + '|' + f.status
+                if (!monitorGroups[key]) {
+                  monitorGroups[key] = { type: 'group', key, theme: f.theme, status: f.status, items: [] }
+                  rows.push(monitorGroups[key])
+                }
+                monitorGroups[key].items.push(f)
+              } else {
+                rows.push({ type: 'single', item: f })
+              }
+            })
+            // 排序方向：待随访/随访中是还没发生的未来计划，按日期从近到远（离今天最近的先处理）；
+            // 已随访/已取消是历史事件，按最近发生的在前。"全部"tab混合两类，按每行自身状态各自判断方向。
+            const isFutureStatus = (status) => PLANNED_STATUSES.includes(status) || IN_PROGRESS_STATUSES.includes(status)
+            const rowStatus = (row) => row.type === 'group' ? row.status : row.item.status
+            const rowDate = (row) => row.type === 'group'
+              ? (isFutureStatus(row.status) ? Math.min(...row.items.map(i => new Date(i.date).getTime())) : Math.max(...row.items.map(i => new Date(i.date).getTime())))
+              : new Date(row.item.date).getTime()
+            rows.sort((a, b) => {
+              const aFuture = isFutureStatus(rowStatus(a))
+              const bFuture = isFutureStatus(rowStatus(b))
+              const da = rowDate(a), db = rowDate(b)
+              if (aFuture && bFuture) return da - db // 待随访/随访中：从近到远
+              if (!aFuture && !bFuture) return db - da // 已随访/已取消：最近发生在前
+              return aFuture ? -1 : 1 // 混合时（"全部"tab）：未来计划排在历史记录前面
+            })
+
             return (
             <>
             <div style={{ display: 'flex', gap: 6, padding: '10px 16px 0' }}>
@@ -5926,52 +5964,98 @@ export default function PatientDetailPage() {
                 <tr><th>日期</th><th>方式</th><th>状态</th><th>随访人</th><th>随访内容</th><th>下次随访</th><th>操作</th></tr>
               </thead>
               <tbody>
-                {filtered.map(f => (
-                  <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => setFollowUpDetail(f)}>
-                    <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
-                    <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
-                    <td>
-                      <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
-                        {FOLLOWUP_LIST_STATUS_MAP[f.status] || f.status}
-                      </span>
-                      {f.aiStatus === 'pending' && (
-                        <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#D9770615', padding: '1px 6px', borderRadius: 4 }}>
-                          待审核{f.sourceType === 'ai_review' ? '·AI月度回顾' : f.sourceType === 'scheduled' ? '·方案排期' : ''}
+                {(() => {
+                  const renderRow = (f) => (
+                    <tr key={f._id} style={{ cursor: 'pointer', background: f.aiStatus === 'pending' ? '#FFFBEB' : undefined }} onClick={() => setFollowUpDetail(f)}>
+                      <td style={{ fontSize: 13, color: '#666' }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
+                      <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
+                      <td>
+                        <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
+                          {FOLLOWUP_LIST_STATUS_MAP[f.status] || f.status}
                         </span>
-                      )}
-                      {f.status === 'completed' && f.completedBy && (
-                        <span style={{ marginLeft: 6, fontSize: 11, color: f.completedBy === 'user' ? '#0077B6' : '#22A06B', background: f.completedBy === 'user' ? '#0077B615' : '#22A06B15', padding: '1px 6px', borderRadius: 4 }}>
-                          {f.completedBy === 'user' ? '客户自主标记' : '健管专员执行'}
-                        </span>
-                      )}
-                    </td>
-                    <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
-                    <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 200 }}>
-                      {f.sourceType === 'order' && (
-                        <div style={{ marginBottom: 2 }}>
-                          <span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>服务预约</span>
-                          <span style={{ fontWeight: 600 }}>{f.theme}</span>
-                        </div>
-                      )}
-                      {f.content ? (f.content.length > 60 ? f.content.slice(0, 60) + '…' : f.content) : '-'}
-                    </td>
-                    <td style={{ fontSize: 12, color: '#8AA89C' }}>
-                      {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
-                    </td>
-                    <td onClick={e => e.stopPropagation()}>
-                      {f.aiStatus === 'pending' ? (
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff' }}
-                            onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'approve' }); loadFollowUps() }}>通过</button>
-                          <button className="btn btn-secondary btn-sm"
-                            onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'reject' }); loadFollowUps() }}>驳回</button>
-                        </div>
-                      ) : (
-                        <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+                        {f.aiStatus === 'pending' && (
+                          <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#D9770615', padding: '1px 6px', borderRadius: 4 }}>
+                            待审核{f.sourceType === 'ai_review' ? '·AI月度回顾' : f.sourceType === 'scheduled' ? '·方案排期' : ''}
+                          </span>
+                        )}
+                        {f.status === 'completed' && f.completedBy && (
+                          <span style={{ marginLeft: 6, fontSize: 11, color: f.completedBy === 'user' ? '#0077B6' : '#22A06B', background: f.completedBy === 'user' ? '#0077B615' : '#22A06B15', padding: '1px 6px', borderRadius: 4 }}>
+                            {f.completedBy === 'user' ? '客户自主标记' : '健管专员执行'}
+                          </span>
+                        )}
+                      </td>
+                      <td style={{ fontSize: 13, color: '#666' }}>{f.staffId?.name || '-'}</td>
+                      <td style={{ fontSize: 13, color: '#1A2B24', maxWidth: 200 }}>
+                        {f.sourceType === 'order' && (
+                          <div style={{ marginBottom: 2 }}>
+                            <span style={{ fontSize: 11, color: '#22A06B', background: '#22A06B18', padding: '1px 6px', borderRadius: 4, marginRight: 4 }}>服务预约</span>
+                            <span style={{ fontWeight: 600 }}>{f.theme}</span>
+                          </div>
+                        )}
+                        {f.content ? (f.content.length > 60 ? f.content.slice(0, 60) + '…' : f.content) : '-'}
+                      </td>
+                      <td style={{ fontSize: 12, color: '#8AA89C' }}>
+                        {f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}
+                      </td>
+                      <td onClick={e => e.stopPropagation()}>
+                        {f.aiStatus === 'pending' ? (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff' }}
+                              onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'approve' }); loadFollowUps() }}>通过</button>
+                            <button className="btn btn-secondary btn-sm"
+                              onClick={async () => { await staffAPI.reviewFollowUp(f._id, { action: 'reject' }); loadFollowUps() }}>驳回</button>
+                          </div>
+                        ) : (
+                          <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                  return rows.map(row => {
+                    if (row.type === 'single') return renderRow(row.item)
+                    const expanded = !!expandedMonitorGroups[row.key]
+                    const sortedItems = [...row.items].sort((a, b) =>
+                      isFutureStatus(row.status) ? new Date(a.date) - new Date(b.date) : new Date(b.date) - new Date(a.date))
+                    const nearest = sortedItems[0]
+                    return (
+                      <React.Fragment key={row.key}>
+                        <tr style={{ cursor: 'pointer', background: '#F7F5F0' }}
+                          onClick={() => setExpandedMonitorGroups(s => ({ ...s, [row.key]: !s[row.key] }))}>
+                          <td style={{ fontSize: 13, color: '#666' }}>{new Date(nearest.date).toLocaleDateString('zh-CN')}{row.items.length > 1 ? ' 起' : ''}</td>
+                          <td><span className="badge badge-info">{TYPE_MAP[nearest.type] || nearest.type}</span></td>
+                          <td>
+                            <span style={{ fontSize: 13, fontWeight: 500, color: FOLLOWUP_LIST_STATUS_COLOR[row.status] || '#666' }}>
+                              {FOLLOWUP_LIST_STATUS_MAP[row.status] || row.status}
+                            </span>
+                          </td>
+                          <td style={{ fontSize: 13, color: '#666' }}>{nearest.staffId?.name || '-'}</td>
+                          <td style={{ fontSize: 13, color: '#1A2B24' }} colSpan={2}>
+                            <span style={{ fontWeight: 600 }}>{row.theme.replace(MONITOR_PREFIX, '')}</span>
+                            <span style={{ marginLeft: 6, fontSize: 12, color: '#8AA89C' }}>× {row.items.length}条{expanded ? ' ▲' : ' ▼'}</span>
+                          </td>
+                          <td />
+                        </tr>
+                        {expanded && sortedItems.map(f => (
+                          <tr key={f._id} style={{ cursor: 'pointer', background: '#FCFBF8' }} onClick={() => setFollowUpDetail(f)}>
+                            <td style={{ fontSize: 12, color: '#999', paddingLeft: 28 }}>{new Date(f.date).toLocaleDateString('zh-CN')}</td>
+                            <td><span className="badge badge-info">{TYPE_MAP[f.type] || f.type}</span></td>
+                            <td>
+                              <span style={{ fontSize: 12, color: FOLLOWUP_LIST_STATUS_COLOR[f.status] || '#666' }}>
+                                {FOLLOWUP_LIST_STATUS_MAP[f.status] || f.status}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: 12, color: '#666' }}>{f.staffId?.name || '-'}</td>
+                            <td style={{ fontSize: 12, color: '#8AA89C', maxWidth: 200 }}>{f.content ? (f.content.length > 40 ? f.content.slice(0, 40) + '…' : f.content) : '-'}</td>
+                            <td style={{ fontSize: 12, color: '#8AA89C' }}>{f.nextFollowUpDate ? new Date(f.nextFollowUpDate).toLocaleDateString('zh-CN') : '-'}</td>
+                            <td onClick={e => e.stopPropagation()}>
+                              <button className="btn btn-secondary btn-sm" onClick={() => setFollowUpDetail(f)}>查看详情</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    )
+                  })
+                })()}
               </tbody>
             </table>
             )}
