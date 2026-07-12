@@ -87,6 +87,39 @@ const CHECKIN_DEFS = {
 // 11个固定打卡项目（顺序按需求文档）
 const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
 
+// 生理指标打卡项的字段定义（血压/体重/心率/血糖为数值录入，睡眠为时间录入），与 AddRecordScreen 字段口径保持一致
+const MEASURE_FIELDS = {
+  bloodPressure: [
+    { key: 'sys', label: '收缩压', unit: 'mmHg', placeholder: '如：130', normal: '90-139' },
+    { key: 'dia', label: '舒张压', unit: 'mmHg', placeholder: '如：80', normal: '60-89' },
+  ],
+  bloodSugar: [
+    { key: 'value', label: '血糖值', unit: 'mmol/L', placeholder: '如：6.1', normal: '3.9-6.1' },
+  ],
+  heartRate: [
+    { key: 'value', label: '心率', unit: '次/分', placeholder: '如：72', normal: '60-100' },
+  ],
+  weight: [
+    { key: 'value', label: '体重', unit: 'kg', placeholder: '如：70.5', normal: '视BMI而定' },
+  ],
+  sleep: [],
+};
+const MEASURE_OPTIONS_HOME = { bloodSugar: ['空腹', '餐后2小时', '睡前', '随机'], bloodPressure: ['左臂', '右臂'] };
+
+// 根据入睡和醒来时间计算睡眠时长（跨午夜自动处理）
+function calcSleepDurationHome(sleepTime, wakeTime) {
+  const parse = (t) => {
+    const parts = t.replace('：', ':').split(':');
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parseInt(parts[1], 10) || 0;
+    return h * 60 + m;
+  };
+  let s = parse(sleepTime);
+  let w = parse(wakeTime);
+  if (w <= s) w += 24 * 60;
+  return ((w - s) / 60).toFixed(1);
+}
+
 // 主题关键词 → 打卡类型（兜底匹配，不依赖 checkInItems 字段）
 function deriveCheckInFromTheme(theme) {
   const t = theme || '';
@@ -449,6 +482,10 @@ export default function HomeScreen({ navigation }) {
   const [checkinModal, setCheckinModal] = useState(null); // { key, label, icon, color }
   const [checkinNote, setCheckinNote]   = useState('');
   const [checkinImage, setCheckinImage] = useState(null);
+  // 生理指标打卡弹窗（血压/体重/睡眠/心率/血糖），原地填写，不跳转页面
+  const [measureModal, setMeasureModal] = useState(null); // { key, label, icon, color, measureType }
+  const [measureValues, setMeasureValues] = useState({});
+  const [measureOption, setMeasureOption] = useState('');
   // 打卡归属日期（默认今天，可补录昨天/过去日期）——饮水/排便/运动/睡眠常是昨天的数据（2026-07-10 金娟）
   const todayStr = new Date().toISOString().slice(0, 10);
   const [checkinDate, setCheckinDate] = useState(todayStr);
@@ -740,7 +777,11 @@ export default function HomeScreen({ navigation }) {
               // 例外：饮食(allowMultiple)一日三餐/加餐都要打卡，不做当天去重，可反复记录。
               if (isItemDone(item) && !item.allowMultiple) { Alert.alert('今日已打卡', '这一项今天已经打过卡了，明天再来吧～'); return; }
               if (item.measureType) {
-                navigation.navigate('AddRecord');
+                // 生理指标类（血压/体重/睡眠/心率/血糖）：原地弹窗填写，不跳转页面，与饮食/运动打卡体验一致
+                setMeasureValues({});
+                setMeasureOption('');
+                setCheckinDate(todayStr);
+                setMeasureModal(item);
                 return;
               }
               const existing = checkin[item.key] || {};
@@ -748,6 +789,64 @@ export default function HomeScreen({ navigation }) {
               setCheckinImage(existing.image || null);
               setCheckinDate(todayStr); // 每次打开默认今天，用户可改为昨天/过去日期补录
               setCheckinModal(item);
+            };
+            const saveMeasureCheckin = async () => {
+              const item = measureModal;
+              const measureType = item.measureType;
+              const fields = MEASURE_FIELDS[measureType] || [];
+              const isToday = checkinDate === todayStr;
+
+              const hasValue = measureType === 'sleep'
+                ? (measureValues.sleepTime && measureValues.wakeTime)
+                : fields.every(f => measureValues[f.key]);
+              if (!hasValue) {
+                Alert.alert('请填写完整', measureType === 'sleep' ? '请填写入睡时间和醒来时间' : '请填写完整数值');
+                return;
+              }
+
+              let payload = {
+                category: item.category || 'vitals',
+                type: measureType,
+                label: item.recordLabel || item.label,
+                unit: fields[0]?.unit || '',
+                note: measureOption || '',
+                recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
+              };
+
+              if (measureType === 'bloodPressure') {
+                const sys = parseInt(measureValues.sys, 10);
+                const dia = parseInt(measureValues.dia, 10);
+                payload.value = `${sys}/${dia}`;
+                payload.extra = { sys, dia };
+                payload.status = sys >= 140 || dia >= 90 ? 'warning' : sys < 90 || dia < 60 ? 'low' : 'normal';
+              } else if (measureType === 'sleep') {
+                const dur = calcSleepDurationHome(measureValues.sleepTime, measureValues.wakeTime);
+                payload.value = String(dur);
+                payload.unit = '小时';
+                payload.extra = { sleepTime: measureValues.sleepTime, wakeTime: measureValues.wakeTime };
+                const durF = parseFloat(dur);
+                payload.status = durF >= 7 && durF <= 9 ? 'normal' : durF < 7 ? 'low' : 'warning';
+              } else {
+                payload.value = String(measureValues.value);
+                const v = parseFloat(measureValues.value);
+                payload.status = measureType === 'bloodSugar' ? (v > 7 ? 'warning' : v < 3.9 ? 'low' : 'normal')
+                  : measureType === 'heartRate' ? (v > 100 ? 'warning' : v < 60 ? 'low' : 'normal')
+                  : 'normal';
+                if (measureType === 'bloodSugar' && measureOption) payload.extra = { mealType: measureOption };
+              }
+
+              if (isToday) {
+                const next = { ...checkin, [item.key]: { done: true, note: '', image: null } };
+                setCheckin(next);
+                try { localStorage.setItem(TODAY_KEY, JSON.stringify(next)); } catch {}
+              }
+              try {
+                await recordsAPI.create(payload);
+              } catch (err) {
+                Alert.alert('保存失败', err.message || '网络异常，请重试');
+                return;
+              }
+              setMeasureModal(null);
             };
             const saveCheckin = async () => {
               const item = checkinModal;
@@ -929,6 +1028,93 @@ export default function HomeScreen({ navigation }) {
                           <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: checkinModal?.color || colors.primary, flex: 2 }]} onPress={saveCheckin}>
+                          <Ionicons name="checkmark" size={18} color="#fff" />
+                          <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>完成打卡</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </View>
+                  </View>
+                </Modal>
+
+                {/* 生理指标打卡弹窗（血压/体重/睡眠/心率/血糖），原地填写，独立提交 */}
+                <Modal visible={!!measureModal} transparent animationType="slide" onRequestClose={() => setMeasureModal(null)}>
+                  <View style={styles.checkinModalOverlay}>
+                    <View style={styles.checkinModalBox}>
+                      <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          {measureModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: measureModal.color + '20', alignItems: 'center', justifyContent: 'center' }}>
+                            <Ionicons name={measureModal.icon} size={18} color={measureModal.color} />
+                          </View>}
+                          <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{measureModal?.label} 打卡</Text>
+                        </View>
+                        <TouchableOpacity onPress={() => setMeasureModal(null)}>
+                          <Ionicons name="close" size={22} color={colors.textMuted} />
+                        </TouchableOpacity>
+                      </View>
+
+                      {measureModal && MEASURE_OPTIONS_HOME[measureModal.measureType] && (
+                        <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                          {MEASURE_OPTIONS_HOME[measureModal.measureType].map(opt => {
+                            const active = measureOption === opt;
+                            return (
+                              <TouchableOpacity key={opt} onPress={() => setMeasureOption(opt)}
+                                style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8,
+                                  backgroundColor: active ? colors.primary : colors.border + '50',
+                                  borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
+                                <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.textSecondary }}>{opt}</Text>
+                              </TouchableOpacity>
+                            );
+                          })}
+                        </View>
+                      )}
+
+                      {measureModal && measureModal.measureType === 'sleep' ? (
+                        <View>
+                          {[
+                            { key: 'sleepTime', label: '入睡时间', placeholder: '如：22:30' },
+                            { key: 'wakeTime',  label: '醒来时间', placeholder: '如：06:30' },
+                          ].map(f => (
+                            <View key={f.key} style={{ marginBottom: 12 }}>
+                              <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>{f.label}</Text>
+                              <TextInput
+                                style={styles.checkinNoteInput}
+                                placeholder={f.placeholder}
+                                placeholderTextColor={colors.textMuted}
+                                value={measureValues[f.key] || ''}
+                                onChangeText={v => setMeasureValues(prev => ({ ...prev, [f.key]: v }))}
+                              />
+                            </View>
+                          ))}
+                          {measureValues.sleepTime && measureValues.wakeTime ? (
+                            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 8 }}>
+                              睡眠时长：<Text style={{ fontWeight: '700', color: '#7B68EE' }}>{calcSleepDurationHome(measureValues.sleepTime, measureValues.wakeTime)} 小时</Text>
+                            </Text>
+                          ) : null}
+                        </View>
+                      ) : (
+                        measureModal && (MEASURE_FIELDS[measureModal.measureType] || []).map(field => (
+                          <View key={field.key} style={{ marginBottom: 12 }}>
+                            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 2 }}>{field.label}（正常值：{field.normal}）</Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.background, borderRadius: radius.sm, borderWidth: 2, borderColor: colors.border, paddingHorizontal: spacing.sm, paddingVertical: spacing.xs + 2 }}>
+                              <TextInput
+                                style={{ flex: 1, fontSize: 20, fontWeight: '700', color: colors.textPrimary }}
+                                placeholder={field.placeholder}
+                                placeholderTextColor={colors.textMuted}
+                                keyboardType="decimal-pad"
+                                value={measureValues[field.key] || ''}
+                                onChangeText={v => setMeasureValues(prev => ({ ...prev, [field.key]: v }))}
+                              />
+                              <Text style={{ fontSize: 12, color: colors.textMuted }}>{field.unit}</Text>
+                            </View>
+                          </View>
+                        ))
+                      )}
+
+                      <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setMeasureModal(null)}>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: measureModal?.color || colors.primary, flex: 2 }]} onPress={saveMeasureCheckin}>
                           <Ionicons name="checkmark" size={18} color="#fff" />
                           <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>完成打卡</Text>
                         </TouchableOpacity>
