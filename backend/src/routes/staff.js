@@ -1743,12 +1743,13 @@ const CHAT_DRAFT_ROLE_MAP = {
   nutritionist: { recordType: 'nutrition',      label: '营养师',   recordLabel: '营养干预' },
 };
 
-// 时间范围简写 → 天数
+// 时间范围简写 → 天数（仅用于"首次生成"时回看多久；此后自动从上次截止点接续，不会漏中间内容）
 const CHAT_DRAFT_RANGE_DAYS = { today: 1, '3d': 3, week: 7 };
 
 // POST /api/staff/patients/:id/chat-followup/ai-draft — AI从与患者的聊天记录提炼生成随访草稿
 // body.role: manager(健管，默认) / doctor(家庭医生) / nutritionist(营养师)，分别写入对应服务记录分类
-// body.range: today(当日，默认) / 3d(近3天) / week(近1周) —— 决定拉取聊天记录的时间窗口
+// body.range: today(当日，默认) / 3d(近3天) / week(近1周) —— 仅在该患者该角色从未生成过草稿时，决定首次回看多久；
+//   此后自动从上一次草稿的截止时间接续取到现在，无论中间隔了多久都不会漏掉聊天内容
 router.post('/patients/:id/chat-followup/ai-draft', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
   try {
     const patientId = req.params.id;
@@ -1759,34 +1760,30 @@ router.post('/patients/:id/chat-followup/ai-draft', staffAuth, checkPermission('
     const user = await User.findById(patientId).select('name');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
-    const rangeEnd = new Date();
-    const rangeStart = new Date(rangeEnd.getTime() - days * 24 * 60 * 60 * 1000);
-
     // 已有未处理的草稿，直接返回，避免重复生成
     const existingPending = await ServiceRecord.findOne({ patientId, type: recordType, aiStatus: 'pending' });
     if (existingPending) return res.json({ success: true, data: existingPending, reused: true });
 
-    // 该时间窗口与已生成过的草稿区间存在重叠，视为已生成过，不重复生成
-    const overlapping = await ServiceRecord.findOne({
-      patientId, type: recordType, aiStatus: 'approved',
-      aiRangeStart: { $lt: rangeEnd }, aiRangeEnd: { $gt: rangeStart },
-    });
-    if (overlapping) return res.status(400).json({ success: false, message: `该时段（${overlapping.aiRangeStart.toLocaleDateString('zh-CN')} ~ ${overlapping.aiRangeEnd.toLocaleDateString('zh-CN')}）已生成过随访记录，不重复生成` });
+    const rangeEnd = new Date();
+    // 从上一次已确认草稿的截止点接续取，避免专员间隔多久才点一次导致中间聊天内容被漏掉；
+    // 若从未生成过，则用所选range作为首次回看起点
+    const lastApproved = await ServiceRecord.findOne({ patientId, type: recordType, aiStatus: 'approved' }).sort({ aiRangeEnd: -1 });
+    const rangeStart = lastApproved?.aiRangeEnd || new Date(rangeEnd.getTime() - days * 24 * 60 * 60 * 1000);
 
     const conversationId = `${patientId}_${role}`;
-    const messages = await Message.find({ conversationId, createdAt: { $gte: rangeStart, $lte: rangeEnd } }).sort({ createdAt: 1 });
-    if (messages.length === 0) return res.status(400).json({ success: false, message: `该患者与${label}在所选时段内无聊天记录，暂无法生成草稿` });
+    const messages = await Message.find({ conversationId, createdAt: { $gt: rangeStart, $lte: rangeEnd } }).sort({ createdAt: 1 });
+    if (messages.length === 0) return res.status(400).json({ success: false, message: `该患者与${label}在${lastApproved ? '上次生成之后' : '所选时段内'}无新聊天记录，暂无法生成草稿` });
 
     const chatText = messages.map(m => `${m.type === 'user' ? '患者' : label}：${m.content}`).join('\n');
     const isDoctor = role === 'doctor';
     const prompt = isDoctor
-      ? `你是协助家庭医生整理沟通记录的助手。以下是家庭医生与患者${user.name}在${days === 1 ? '当日' : days + '天内'}的聊天记录，请客观提炼成一条"医生随访"沟通摘要，只总结双方实际交流的信息，不要添加、推测或补充聊天记录之外的诊断、用药建议或医疗判断。若聊天记录与健康管理无实质关联，content中如实说明"本次沟通无实质随访内容"。
+      ? `你是协助家庭医生整理沟通记录的助手。以下是家庭医生与患者${user.name}在${days === 1 ? '当日' : days + '天内'}的聊天记录，请提炼成一条"医生随访"记录草稿，内容仅基于聊天记录中双方实际交流的信息总结，不要凭空添加或推测聊天记录之外的诊断、用药建议或医疗判断。此草稿最终会交由医生本人审核修改后才正式生效。若聊天记录与健康管理无实质关联，content中如实说明"本次沟通无实质随访内容"。
 
 【聊天记录】
 ${chatText}
 
 请严格按以下JSON格式输出（仅JSON，不要其他文字）：
-{"title":"本次沟通主题（10字内）","content":"沟通要点摘要（100-200字，仅客观复述患者反映的情况和医生实际给出的回应，不做额外推断）","result":"","nextDate":"YYYY-MM-DD 或 null"}`
+{"title":"本次随访主题（10字内）","content":"随访要点摘要（100-200字，包含患者近期状态/主诉、医生实际给出的回应或建议、患者反馈情况）","result":"结论性评估（30-50字，基于聊天记录总结，供医生审核确认）","nextDate":"YYYY-MM-DD 或 null"}`
       : `你是${label}的随访记录助手。以下是${label}与患者${user.name}在${days === 1 ? '当日' : days + '天内'}的聊天记录，请提炼成一条"${recordLabel}"服务记录，不要逐句复述聊天内容，要总结随访的核心信息。若聊天记录与健康管理无实质关联，content中如实说明"本次沟通无实质随访内容"。
 
 【聊天记录】

@@ -7543,12 +7543,10 @@ export default function PatientDetailPage() {
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>{isDoctorDraft ? '沟通要点' : '随访要点'}</label>
                     <textarea className="form-control" rows={5} value={form.content} onChange={e => setForm(f => ({ ...f, content: e.target.value }))} />
                   </div>
-                  {!isDoctorDraft && (
-                    <div>
-                      <label style={{ fontSize: 12, color: '#8AA89C' }}>结论/评估</label>
-                      <textarea className="form-control" rows={2} value={form.result} onChange={e => setForm(f => ({ ...f, result: e.target.value }))} />
-                    </div>
-                  )}
+                  <div>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>结论/评估</label>
+                    <textarea className="form-control" rows={2} value={form.result} onChange={e => setForm(f => ({ ...f, result: e.target.value }))} />
+                  </div>
                   <div>
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>下次随访日期（可选）</label>
                     <input type="date" className="form-control" value={form.nextDate} onChange={e => setForm(f => ({ ...f, nextDate: e.target.value }))} />
