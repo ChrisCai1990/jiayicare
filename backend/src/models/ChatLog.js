@@ -7,6 +7,7 @@ const chatLogSchema = new mongoose.Schema({
   userMessage:{ type: String, required: true },
   aiReply:    { type: String, default: '' },
   transferred:{ type: Boolean, default: false }, // 是否转人工
+  resolved:   { type: Boolean, default: false }, // 转人工待办是否已被医护端处理（联系患者后标记）
   tokens:     { type: Number, default: 0 },
   durationMs: { type: Number, default: 0 },
 }, { timestamps: true });

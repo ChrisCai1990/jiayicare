@@ -165,18 +165,30 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
-// POST /api/chat/transfer — 转人工
+// POST /api/chat/transfer — 转人工，落库为待办，健管专员在 ai-todos 待审核列表可见（chat_transfer 场景）
 router.post('/transfer', auth, async (req, res) => {
   const { lastMessage = '' } = req.body;
-  await ChatLog.create({
-    user: req.user._id,
-    role: 'transfer',
-    intent: 'out_of_scope',
-    userMessage: lastMessage,
-    aiReply: '',
-    transferred: true,
-  }).catch(() => {});
-  res.json({ success: true, message: '已通知健管专员，稍后将有专员与您联系。' });
+  try {
+    await ChatLog.create({
+      user: req.user._id,
+      role: 'transfer',
+      intent: 'out_of_scope',
+      userMessage: lastMessage,
+      aiReply: '',
+      transferred: true,
+      resolved: false,
+    });
+    const hasManager = !!(await User.findById(req.user._id).select('assignedHealthManager').lean())?.assignedHealthManager;
+    res.json({
+      success: true,
+      message: hasManager
+        ? '已通知健管专员，稍后将有专员与您联系。'
+        : '已记录您的咨询，客服会尽快为您安排专员对接。',
+    });
+  } catch (err) {
+    console.error('Chat transfer error:', err.message);
+    res.status(500).json({ success: false, message: '转接失败，请稍后重试或直接拨打客服电话。' });
+  }
 });
 
 // GET /api/chat/logs/:userId — 查看自己的对话记录（只能查自己）

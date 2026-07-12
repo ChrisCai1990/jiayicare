@@ -17,6 +17,7 @@ const tenantMatchStage = () => {
 };
 const Admin = require('../models/Admin');
 const User = require('../models/User');
+const ChatLog = require('../models/ChatLog');
 const FollowUp = require('../models/FollowUp');
 const HealthRecord = require('../models/HealthRecord');
 const MedicalReport = require('../models/MedicalReport');
@@ -4955,6 +4956,7 @@ const TODO_REVIEW_ROLE = {
   nutrition_plan_review:'nutritionist',
   followup_review:      'familyDoctor',
   bp_alert_review:      'familyDoctor',
+  transfer_human:       'healthManager',
 };
 
 router.get('/ai-todos', staffAuth, async (req, res) => {
@@ -5256,6 +5258,23 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
+    // ── 健管专员：AI聊天转人工待办（患者在AI健康助手里点了"转人工"）──
+    if (can('transfer_human')) {
+      const transferFilter = { transferred: true, resolved: false, ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
+      const pendingTransfers = await ChatLog.find(transferFilter)
+        .populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
+      pendingTransfers.forEach(c => {
+        const createdAt = c.createdAt;
+        todos.push({
+          id: 'transferhuman_' + c._id, type: 'transfer_human', label: 'AI对话转人工', priority: 1,
+          patientName: c.user?.name || '未知', patientId: String(c.user?._id || ''),
+          summary: c.userMessage ? c.userMessage.slice(0, 60) : '患者请求转接人工',
+          createdAt, overdue: (now - new Date(createdAt)) > (2 * 60 * 60 * 1000), // 转人工时效性强，2小时未处理即算超时
+          link: `/patients/${c.user?._id}?tab=messages`,
+        });
+      });
+    }
+
     // 按优先级排序：priority越小越紧急，同级按时间倒序；超时优先
     todos.sort((a, b) => {
       if (b.overdue !== a.overdue) return b.overdue ? 1 : -1;
@@ -5264,6 +5283,17 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     });
 
     res.json({ success: true, data: todos, total: todos.length, role });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/staff/chat-transfers/:id/resolve — 标记AI聊天转人工待办为已处理（联系过患者后调用）
+router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
+  try {
+    const log = await ChatLog.findByIdAndUpdate(req.params.id, { resolved: true }, { new: true });
+    if (!log) return res.status(404).json({ success: false, message: '记录不存在' });
+    res.json({ success: true, data: log });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

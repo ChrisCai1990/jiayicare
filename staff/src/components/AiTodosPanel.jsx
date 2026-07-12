@@ -58,6 +58,14 @@ export default function AiTodosPanel() {
       .catch(() => {})
   }
 
+  const resolveTransfer = (e, todo) => {
+    e.stopPropagation()
+    const logId = todo.id.replace(/^transferhuman_/, '')
+    staffAPI.resolveChatTransfer(logId)
+      .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
+      .catch(() => {})
+  }
+
   if (loading) return null
 
   const overdueCount = todos.filter(t => t.overdue).length
@@ -143,6 +151,11 @@ export default function AiTodosPanel() {
                     onClick={(e) => resolveAlert(e, todo)}
                     style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
                   >标记已处理</button>
+                ) : todo.type === 'transfer_human' ? (
+                  <button
+                    onClick={(e) => resolveTransfer(e, todo)}
+                    style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
+                  >标记已联系</button>
                 ) : (
                   <span style={{ fontSize: 14, color: '#C0B8AE' }}>›</span>
                 )}
