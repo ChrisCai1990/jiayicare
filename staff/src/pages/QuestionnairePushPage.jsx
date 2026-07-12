@@ -389,6 +389,7 @@ export default function QuestionnairePushPage() {
   const [viewModal, setViewModal] = useState(null)   // { questionnaire, filterPatientId? }
   const [previewModal, setPreviewModal] = useState(null)
   const [activeTab, setActiveTab] = useState('templates')
+  const [search, setSearch] = useState('')
 
   useEffect(() => {
     Promise.all([
@@ -445,8 +446,22 @@ export default function QuestionnairePushPage() {
               创建并发布问卷
             </div>
           ) : (
+            <>
+              <input
+                type="text"
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="搜索问卷名称"
+                style={{ width: '100%', maxWidth: 320, padding: '8px 12px', borderRadius: 8, border: '1px solid #E0D9CE', fontSize: 13, marginBottom: 12 }}
+              />
+              {(() => {
+                const filtered = questionnaires.filter(q => q.title?.toLowerCase().includes(search.trim().toLowerCase()))
+                if (filtered.length === 0) {
+                  return <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>没有找到匹配的问卷</div>
+                }
+                return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {questionnaires.map(q => {
+              {filtered.map(q => {
                 const meta = STATUS_META[q.status] || STATUS_META.draft
                 const canPush = q.status === 'active'
                 return (
@@ -482,6 +497,9 @@ export default function QuestionnairePushPage() {
                 )
               })}
             </div>
+                )
+              })()}
+            </>
           )}
         </div>
       )}
