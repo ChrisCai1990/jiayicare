@@ -1303,13 +1303,29 @@ router.post('/ai-health-summary', auth, async (req, res) => {
   }
 });
 
+// 兼容旧数据：早期版本 aiRiskAssessment 是单个扁平对象，无 byYear（与 staff.js 的 riskByYear 保持同一迁移口径）
+function riskByYearUser(raw) {
+  if (!raw) return {};
+  if (raw.byYear) return raw.byYear;
+  if (raw.dimensions || raw.overallLevel) {
+    const y = String(raw.generatedAt ? new Date(raw.generatedAt).getFullYear() : new Date().getFullYear());
+    return { [y]: raw };
+  }
+  return {};
+}
+
 // GET /api/user/ai-risk-assessment — 查看AI风险评估（有家医时草稿也可见，附带审核状态）
+// 医护端审核是按年度写入 aiRiskAssessment.byYear.{year}.approvedAt 的（staff.js），此前这里只读顶层扁平
+// 字段，家医审核后用户端仍显示"待审核"，是两端数据结构不一致导致的展示bug。改为取最新年度的记录来判断。
 router.get('/ai-risk-assessment', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id).select('assignedFamilyDoctor aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
     const hasDoctor = !!user.assignedFamilyDoctor;
-    const data = user.aiRiskAssessment || {};
+    const byYear = riskByYearUser(user.aiRiskAssessment);
+    const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+    const latestYear = years[0];
+    const data = latestYear ? byYear[latestYear] : {};
     if (hasDoctor && Array.isArray(data.dimensions) && data.dimensions.length && !data.approvedAt) {
       return res.json({ success: true, data, hasDoctor, pendingReview: true, message: '草稿已生成，待家庭医生团队审核' });
     }
@@ -1327,8 +1343,12 @@ router.post('/ai-risk-assessment', auth, async (req, res) => {
       .select('name gender age chronicDiseases healthProfile labValues lifestyle assignedFamilyDoctor aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
 
+    const year = String(new Date().getFullYear());
+    const byYear = riskByYearUser(user.aiRiskAssessment);
+    const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+    const existingRisk = years.length ? byYear[years[0]] : {};
+
     // 已由家庭医生团队审核通过的版本，客户端不能再重新生成覆盖。（2026-07-10 金娟反馈①）
-    const existingRisk = user.aiRiskAssessment || {};
     if (existingRisk.approvedAt && existingRisk.source !== 'self_service') {
       return res.status(409).json({ success: false, code: 'ALREADY_REVIEWED', message: '当前风险评估已由您的健康管理团队审核确认，如需更新请联系您的健康管理师' });
     }
@@ -1342,9 +1362,10 @@ router.post('/ai-risk-assessment', auth, async (req, res) => {
       assessment.source = 'self_service';
     }
 
+    // 写入 byYear，不再整体覆盖 aiRiskAssessment（此前直接 $set 顶层对象会把医护端已有的其他年度数据连根拔起）
     await User.collection.updateOne(
       { _id: user._id },
-      { $set: { aiRiskAssessment: assessment } }
+      { $set: { [`aiRiskAssessment.byYear.${year}`]: assessment } }
     );
     res.json({ success: true, data: assessment, pendingReview: hasDoctor });
   } catch (err) {
