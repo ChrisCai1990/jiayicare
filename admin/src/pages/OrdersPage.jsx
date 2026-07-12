@@ -131,7 +131,7 @@ export default function OrdersPage() {
           <div style={{ flex: 1, minWidth: 200, display: 'flex', gap: 8 }}>
             <input
               style={{ flex: 1, padding: '6px 12px', borderRadius: 8, border: '1.5px solid var(--border)', fontSize: 13 }}
-              placeholder="搜索患者姓名/手机/服务名称..."
+              placeholder="搜索会员姓名/手机/服务名称..."
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { setSearch(searchInput); setPage(1) } }}
@@ -157,7 +157,7 @@ export default function OrdersPage() {
             <table>
               <thead>
                 <tr>
-                  <th>患者</th>
+                  <th>会员</th>
                   <th>服务项目</th>
                   <th>金额</th>
                   <th>状态</th>
@@ -179,7 +179,7 @@ export default function OrdersPage() {
                           style={{ padding: 0, color: 'var(--primary)', fontWeight: 700 }}
                           onClick={() => nav(`/patients/${o.user?._id}`)}
                         >
-                          {o.user?.name || '未知患者'}
+                          {o.user?.name || '未知会员'}
                         </button>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{o.user?.phone}</div>
                       </td>

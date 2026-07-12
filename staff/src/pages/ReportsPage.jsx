@@ -249,7 +249,7 @@ export default function ReportsPage() {
             </div>
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               <div style={{ marginBottom: 12, fontSize: 13, color: '#4A6558' }}>报告：{abnormalModal.title}</div>
-              <div style={{ marginBottom: 12, fontSize: 12, color: '#8AA89C' }}>填写异常指标后，系统将自动为该患者创建复查任务</div>
+              <div style={{ marginBottom: 12, fontSize: 12, color: '#8AA89C' }}>填写异常指标后，系统将自动为该会员创建复查任务</div>
 
               {/* 异常项目列表 */}
               {abnormalItems.map((item, idx) => (

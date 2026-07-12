@@ -831,7 +831,7 @@ function DraftReviewModal({ draft, onClose, onDone }) {
             </div>
           ) : (
             <div style={{ fontSize: 12, color: '#7C3AED', background: '#7C3AED10', padding: '6px 10px', borderRadius: 6 }}>
-              此内容由AI根据与患者的聊天记录自动提炼，请核实后再确认入档
+              此内容由AI根据与会员的聊天记录自动提炼，请核实后再确认入档
             </div>
           )}
           <div>

@@ -104,7 +104,7 @@ function CreateModal({ onClose, onSaved }) {
   const removeItem = (idx) => setForm(f => ({ ...f, abnormalItems: f.abnormalItems.filter((_, i) => i !== idx) }))
 
   const save = async () => {
-    if (!form.patientId) { toast('请选择患者'); return }
+    if (!form.patientId) { toast('请选择会员'); return }
     if (!form.abnormalItems[0]?.name) { toast('请至少填写一个异常项目'); return }
     setSaving(true)
     try {
@@ -131,7 +131,7 @@ function CreateModal({ onClose, onSaved }) {
         <div className="modal-body">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div className="form-group">
-              <label className="form-label">患者 *</label>
+              <label className="form-label">会员 *</label>
               <PatientSearchInput value={form.patientId} onChange={v => setField('patientId', v)} />
             </div>
             <div className="form-group">
@@ -352,7 +352,7 @@ export default function AbnormalReviewPage() {
         <div>
           <div className="page-title">⚠️ 异常复查</div>
           <div className="page-subtitle">
-            跟踪患者报告中的异常指标，安排复查和处理
+            跟踪会员报告中的异常指标，安排复查和处理
             {pendingCount > 0 && <span style={{ marginLeft: 8, background: '#DC3545', color: '#fff', fontSize: 11, padding: '2px 7px', borderRadius: 10 }}>{pendingCount} 待处理</span>}
           </div>
         </div>
@@ -366,7 +366,7 @@ export default function AbnormalReviewPage() {
           {Object.entries(STATUS_LABEL).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
         <select className="form-input" style={{ width: 200 }} value={filterPatient} onChange={e => setFilterPatient(e.target.value)}>
-          <option value="">全部患者</option>
+          <option value="">全部会员</option>
           {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
         </select>
       </div>
@@ -393,7 +393,7 @@ export default function AbnormalReviewPage() {
         ) : (
           <table className="table">
             <thead><tr>
-              <th>患者</th><th>任务标题</th><th>异常项目</th><th>计划复查</th><th>状态</th><th>创建时间</th><th>操作</th>
+              <th>会员</th><th>任务标题</th><th>异常项目</th><th>计划复查</th><th>状态</th><th>创建时间</th><th>操作</th>
             </tr></thead>
             <tbody>
               {reviews.map(r => (

@@ -29,7 +29,7 @@ export default function MessagesPage() {
       <div className="page-header">
         <div>
           <div className="page-title">💬 消息中心</div>
-          <div className="page-sub">共 {total} 条患者留言</div>
+          <div className="page-sub">共 {total} 条会员留言</div>
         </div>
       </div>
 
@@ -41,7 +41,7 @@ export default function MessagesPage() {
             <table>
               <thead>
                 <tr>
-                  <th>患者</th>
+                  <th>会员</th>
                   <th>留言标题</th>
                   <th>内容摘要</th>
                   <th>发送时间</th>
@@ -78,7 +78,7 @@ export default function MessagesPage() {
                   <tr><td colSpan={5}>
                     <div className="empty-state">
                       <div className="empty-state-icon">💬</div>
-                      <div className="empty-state-text">暂无患者留言</div>
+                      <div className="empty-state-text">暂无会员留言</div>
                     </div>
                   </td></tr>
                 )}

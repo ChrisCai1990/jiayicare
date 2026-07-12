@@ -7629,7 +7629,7 @@ export default function PatientDetailPage() {
                     </div>
                   ) : (
                     <div style={{ fontSize: 12, color: '#7C3AED', background: '#7C3AED10', padding: '6px 10px', borderRadius: 6 }}>
-                      此内容由AI根据与患者的聊天记录自动提炼，请核实后再确认入档
+                      此内容由AI根据与会员的聊天记录自动提炼，请核实后再确认入档
                     </div>
                   )}
                   <div>
@@ -7992,6 +7992,8 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   const [input, setInput] = useState('')
   const [sending, setSending] = useState(false)
   const scrollRef = useRef(null)
+  const msgCountRef = useRef(0) // 上次渲染的消息条数，用于判断是否真的有新消息（而不是轮询刷新了同样内容）
+  const isNearBottomRef = useRef(true) // 用户是否停留在底部附近；往上翻看历史时轮询不应打断
 
   const loadThread = async () => {
     try {
@@ -8015,8 +8017,20 @@ function SendMessageModal({ patientId, patientName, onClose }) {
     return () => clearInterval(interval)
   }, [patientId])
 
+  const handleScroll = () => {
+    const el = scrollRef.current
+    if (!el) return
+    isNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' })
+    // 只有真的新增了消息、且用户当前停留在底部附近时，才自动滚动到底部；
+    // 用户正在往上翻看历史记录时，不能被轮询强制拽回底部（此前的bug）
+    const hasNewMessage = msgs.length > msgCountRef.current
+    msgCountRef.current = msgs.length
+    if (hasNewMessage && isNearBottomRef.current) {
+      scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' })
+    }
   }, [msgs])
 
   const send = async () => {
@@ -8025,6 +8039,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
     try {
       const res = await staffAPI.replyChatMessage(patientId, input.trim())
       setInput('')
+      isNearBottomRef.current = true // 自己发消息后，无论之前翻到哪，都应该跟到底部
       if (res.data) setMsgs(prev => [...prev, res.data])
       setTimeout(() => scrollRef.current?.scrollTo({ top: 99999, behavior: 'smooth' }), 80)
     } catch {}
@@ -8045,7 +8060,7 @@ function SendMessageModal({ patientId, patientName, onClose }) {
         </div>
 
         {/* 消息列表 */}
-        <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3' }}>
+        <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: 12, backgroundColor: '#F2EDE3' }}>
           {loading ? (
             <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>加载中…</div>
           ) : msgs.length === 0 ? (

@@ -97,7 +97,7 @@ export default function DailyCareConfigPage() {
               </div>
             </div>
             <p style={{ fontSize: 12, color: '#8AA89C', lineHeight: 1.7, marginTop: 14, marginBottom: 0 }}>
-              开关实时生效，无需重启系统。关闭后仅停止「自动」推送，医护在患者详情页手动发送 AI 教练消息不受影响。
+              开关实时生效，无需重启系统。关闭后仅停止「自动」推送，医护在会员详情页手动发送 AI 教练消息不受影响。
             </p>
           </div>
         </div>

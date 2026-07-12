@@ -208,7 +208,7 @@ export default function FollowUpsPage() {
   // 场景七：AI 生成随访记录草稿
   const handleAIDraft = async () => {
     const pid = execItem?.patientId?._id || execItem?.patientId
-    if (!pid) { toast('缺少患者信息'); return }
+    if (!pid) { toast('缺少会员信息'); return }
     setDraftLoading(true)
     try {
       const r = await staffAPI.generateAIDraft(pid, 'followup', {

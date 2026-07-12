@@ -55,7 +55,7 @@ export default function PatientsPage() {
             onChange={e => setQ(e.target.value)}
           />
           <select className="filter-select" value={hasService} onChange={e => setHasService(e.target.value)}>
-            <option value="">全部患者</option>
+            <option value="">全部会员</option>
             <option value="true">已开通服务</option>
             <option value="false">未开通服务</option>
           </select>
@@ -114,7 +114,7 @@ export default function PatientsPage() {
                   <tr><td colSpan={8}>
                     <div className="empty-state">
                       <div className="empty-state-icon">🔍</div>
-                      <div className="empty-state-text">未找到符合条件的患者</div>
+                      <div className="empty-state-text">未找到符合条件的会员</div>
                     </div>
                   </td></tr>
                 )}

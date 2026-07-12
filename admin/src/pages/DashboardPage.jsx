@@ -4,10 +4,10 @@ import { adminAPI } from '../api'
 import { useAdmin } from '../App'
 
 const STAT_CARDS = [
-  { key: 'totalPatients', label: '总患者数',     icon: '👥', color: '#3B82F6', bg: '#EFF6FF' },
-  { key: 'newPatients',   label: '本周新增患者', icon: '🆕', color: '#10B981', bg: '#ECFDF5' },
+  { key: 'totalPatients', label: '总会员数',     icon: '👥', color: '#3B82F6', bg: '#EFF6FF' },
+  { key: 'newPatients',   label: '本周新增会员', icon: '🆕', color: '#10B981', bg: '#ECFDF5' },
   { key: 'pendingOrders', label: '待跟进订单',   icon: '📋', color: '#F59E0B', bg: '#FFFBEB' },
-  { key: 'unreadMessages',label: '患者留言数',   icon: '💬', color: '#8B5CF6', bg: '#F5F3FF' },
+  { key: 'unreadMessages',label: '会员留言数',   icon: '💬', color: '#8B5CF6', bg: '#F5F3FF' },
 ]
 
 function ScoreBadge({ score }) {
@@ -56,7 +56,7 @@ export default function DashboardPage() {
       {/* 最近患者 */}
       <div className="card">
         <div className="card-title">
-          <span>👥</span> 最新注册患者
+          <span>👥</span> 最新注册会员
           <button className="btn btn-outline btn-sm" style={{ marginLeft: 'auto' }} onClick={() => nav('/patients')}>查看全部</button>
         </div>
         <div className="table-wrap">
