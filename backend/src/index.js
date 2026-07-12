@@ -117,4 +117,7 @@ app.listen(PORT, () => {
 
   // AI每日健康关怀：每天给活跃客户推一条专属关怀+去打卡入口，提升打开率与打卡留存
   require('./utils/dailyCareScheduler').startDailyCareScheduler();
+
+  // 健管专员/营养师与患者的聊天记录，每半月自动提炼生成随访草稿待审核（家庭医生频道保留人工触发）
+  require('./utils/chatFollowupScheduler').startChatFollowupScheduler();
 });

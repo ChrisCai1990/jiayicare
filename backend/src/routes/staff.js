@@ -1736,88 +1736,18 @@ router.delete('/service-records/:id', staffAuth, checkPermission('service_record
   res.json({ success: true, message: '已删除' });
 });
 
-// 聊天角色 → 生成草稿的服务记录类型 / 角色展示名 / 记录标签
-const CHAT_DRAFT_ROLE_MAP = {
-  manager:      { recordType: 'routine',       label: '健管专员', recordLabel: '日常随访' },
-  doctor:       { recordType: 'doctor_followup', label: '家庭医生', recordLabel: '医生随访' },
-  nutritionist: { recordType: 'nutrition',      label: '营养师',   recordLabel: '营养干预' },
-};
-
-// 时间范围简写 → 天数（仅用于"首次生成"时回看多久；此后自动从上次截止点接续，不会漏中间内容）
-const CHAT_DRAFT_RANGE_DAYS = { today: 1, '3d': 3, week: 7 };
-
 // POST /api/staff/patients/:id/chat-followup/ai-draft — AI从与患者的聊天记录提炼生成随访草稿
 // body.role: manager(健管，默认) / doctor(家庭医生) / nutritionist(营养师)，分别写入对应服务记录分类
 // body.range: today(当日，默认) / 3d(近3天) / week(近1周) —— 仅在该患者该角色从未生成过草稿时，决定首次回看多久；
 //   此后自动从上一次草稿的截止时间接续取到现在，无论中间隔了多久都不会漏掉聊天内容
 router.post('/patients/:id/chat-followup/ai-draft', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
   try {
-    const patientId = req.params.id;
-    const role = CHAT_DRAFT_ROLE_MAP[req.body?.role] ? req.body.role : 'manager';
-    const { recordType, label, recordLabel } = CHAT_DRAFT_ROLE_MAP[role];
-    const range = CHAT_DRAFT_RANGE_DAYS[req.body?.range] ? req.body.range : 'today';
-    const days = CHAT_DRAFT_RANGE_DAYS[range];
-    const user = await User.findById(patientId).select('name');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-
-    // 已有未处理的草稿，直接返回，避免重复生成
-    const existingPending = await ServiceRecord.findOne({ patientId, type: recordType, aiStatus: 'pending' });
-    if (existingPending) return res.json({ success: true, data: existingPending, reused: true });
-
-    const rangeEnd = new Date();
-    // 从上一次已确认草稿的截止点接续取，避免专员间隔多久才点一次导致中间聊天内容被漏掉；
-    // 若从未生成过，则用所选range作为首次回看起点
-    const lastApproved = await ServiceRecord.findOne({ patientId, type: recordType, aiStatus: 'approved' }).sort({ aiRangeEnd: -1 });
-    const rangeStart = lastApproved?.aiRangeEnd || new Date(rangeEnd.getTime() - days * 24 * 60 * 60 * 1000);
-
-    const conversationId = `${patientId}_${role}`;
-    const messages = await Message.find({ conversationId, createdAt: { $gt: rangeStart, $lte: rangeEnd } }).sort({ createdAt: 1 });
-    if (messages.length === 0) return res.status(400).json({ success: false, message: `该患者与${label}在${lastApproved ? '上次生成之后' : '所选时段内'}无新聊天记录，暂无法生成草稿` });
-
-    const chatText = messages.map(m => `${m.type === 'user' ? '患者' : label}：${m.content}`).join('\n');
-    const isDoctor = role === 'doctor';
-    const prompt = isDoctor
-      ? `你是协助家庭医生整理沟通记录的助手。以下是家庭医生与患者${user.name}在${days === 1 ? '当日' : days + '天内'}的聊天记录，请提炼成一条"医生随访"记录草稿，内容仅基于聊天记录中双方实际交流的信息总结，不要凭空添加或推测聊天记录之外的诊断、用药建议或医疗判断。此草稿最终会交由医生本人审核修改后才正式生效。若聊天记录与健康管理无实质关联，content中如实说明"本次沟通无实质随访内容"。
-
-【聊天记录】
-${chatText}
-
-请严格按以下JSON格式输出（仅JSON，不要其他文字）：
-{"title":"本次随访主题（10字内）","content":"随访要点摘要（100-200字，包含患者近期状态/主诉、医生实际给出的回应或建议、患者反馈情况）","result":"结论性评估（30-50字，基于聊天记录总结，供医生审核确认）","nextDate":"YYYY-MM-DD 或 null"}`
-      : `你是${label}的随访记录助手。以下是${label}与患者${user.name}在${days === 1 ? '当日' : days + '天内'}的聊天记录，请提炼成一条"${recordLabel}"服务记录，不要逐句复述聊天内容，要总结随访的核心信息。若聊天记录与健康管理无实质关联，content中如实说明"本次沟通无实质随访内容"。
-
-【聊天记录】
-${chatText}
-
-请严格按以下JSON格式输出（仅JSON，不要其他文字）：
-{"title":"本次随访主题（10字内）","content":"随访要点摘要（100-200字，包含患者近期状态/主诉、${label}给出的建议或干预、患者反馈或依从情况）","result":"结论性评估（30-50字）","nextDate":"YYYY-MM-DD 或 null"}`;
-
-    const { chat } = require('../utils/ai');
-    let text;
-    try {
-      text = await chat([{ role: 'user', content: prompt }], { maxTokens: 800 });
-    } catch (err) {
-      return res.status(500).json({ success: false, message: 'AI生成失败，请重试或手动记录' });
-    }
-
-    let parsed;
-    try {
-      parsed = JSON.parse((text || '').replace(/```json|```/g, '').trim());
-    } catch {
-      return res.status(500).json({ success: false, message: 'AI生成失败，请重试或手动记录' });
-    }
-
-    const parsedNextDate = parsed.nextDate && /^\d{4}-\d{2}-\d{2}$/.test(String(parsed.nextDate).trim())
-      ? new Date(parsed.nextDate) : null;
-
-    const record = await ServiceRecord.create({
-      staffId: req.staff._id, patientId, type: recordType, date: new Date(),
-      title: parsed.title || '', content: parsed.content || '', result: parsed.result || '',
-      nextDate: parsedNextDate,
-      aiStatus: 'pending', aiSourceMessageIds: messages.map(m => m._id), aiGeneratedAt: new Date(),
-      aiRangeStart: rangeStart, aiRangeEnd: rangeEnd,
+    const { generateChatFollowupDraft } = require('../utils/chatFollowupDraft');
+    const result = await generateChatFollowupDraft({
+      patientId: req.params.id, role: req.body?.role, range: req.body?.range, staffId: req.staff._id,
     });
-    res.json({ success: true, data: record });
+    if (result.status === 'skip') return res.status(result.message === '患者不存在' ? 404 : 400).json({ success: false, message: result.message });
+    res.json({ success: true, data: result.record, reused: result.status === 'reused' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -1840,6 +1770,7 @@ router.patch('/service-records/:id/ai-review', staffAuth, checkPermission('servi
           record.nextDate = d && !isNaN(d.getTime()) ? d : null;
         }
       }
+      if (!record.staffId) record.staffId = req.staff._id; // 定时任务生成时未指定负责人，审核人即为负责人
       record.aiStatus = 'approved';
       await record.save();
       return res.json({ success: true, data: record });
@@ -4942,6 +4873,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     // followup_review 例外：随访待审核按来源方案类型分流给不同角色（年度管理方案/体检方案→家庭医生，营养方案→营养师），
     // 不是固定单一角色，TODO_REVIEW_ROLE 的单值映射覆盖不了，这里放宽通过条件，具体过滤见下方按 reviewRole 分流
     const canFollowupReview = isSuper || role === 'familyDoctor' || role === 'nutritionist';
+    // service_draft_review 同理：AI聊天记录生成的随访草稿按 ServiceRecord.type 分流给三个角色，也不是固定单一角色
+    const canServiceDraftReview = isSuper || role === 'familyDoctor' || role === 'nutritionist' || role === 'healthManager' || role === 'medicalAssistant';
 
     const now = new Date();
     const DAY = 24 * 60 * 60 * 1000;
@@ -5183,6 +5116,28 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: (ra.overallSummary || '').slice(0, 60) || 'AI检测到高风险，请家庭医师审核',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${u._id}?tab=ai-risk`,
+        });
+      });
+    }
+
+    // ── 健管专员/家庭医师/营养师：AI从聊天记录提炼的随访草稿待审核（ServiceRecord.aiStatus=pending）──
+    if (canServiceDraftReview) {
+      const roleTypeMap = { familyDoctor: 'doctor_followup', nutritionist: 'nutrition', healthManager: 'routine', medicalAssistant: 'routine' };
+      const draftFilter = { aiStatus: 'pending' };
+      if (!isSuper) draftFilter.type = roleTypeMap[role];
+      if (myPatientIds) draftFilter.patientId = { $in: myPatientIds };
+      const draftLabel = { routine: '日常随访', doctor_followup: '医生随访', nutrition: '营养干预' };
+      const pendingDrafts = await ServiceRecord.find(draftFilter)
+        .populate('patientId', 'name').sort({ aiGeneratedAt: -1 }).limit(50).lean();
+      pendingDrafts.forEach(r => {
+        const createdAt = r.aiGeneratedAt || r.createdAt;
+        todos.push({
+          id: 'service_draft_' + r._id, type: 'service_draft_review',
+          label: `AI${draftLabel[r.type] || '随访'}草稿待审核`, priority: 3,
+          patientName: r.patientId?.name || '未知', patientId: String(r.patientId?._id || ''),
+          summary: r.title ? `${r.title} · ${(r.content || '').slice(0, 40)}` : (r.content || '').slice(0, 60),
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${r.patientId?._id}?tab=serviceRecords`,
         });
       });
     }

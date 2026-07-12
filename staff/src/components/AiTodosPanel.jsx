@@ -21,6 +21,7 @@ const TYPE_CONFIG = {
   nutrition_plan_review:{ icon: '🥗', label: 'AI营养方案待审核', color: '#16A34A', priority: 3 },
   checkup_plan_review:  { icon: '🏥', label: 'AI体检方案待审核', color: '#0077B6', priority: 3 },
   followup_review:      { icon: '📅', label: '随访计划待审核', color: '#0077B6', priority: 3 },
+  service_draft_review: { icon: '🤖', label: 'AI随访草稿待审核', color: '#7C3AED', priority: 3 },
 }
 
 function formatTime(date) {
