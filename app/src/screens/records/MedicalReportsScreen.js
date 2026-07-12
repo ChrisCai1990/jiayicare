@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, ActivityIndicator, Dimensions, Linking, Alert,
+  SafeAreaView, ActivityIndicator, Linking, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -24,10 +24,6 @@ async function openOriginalFile(report) {
   }
 }
 
-const { width: SCREEN_W } = Dimensions.get('window');
-const CHART_W = SCREEN_W - 40;
-const CHART_H = 80;
-
 const CATEGORY_META = {
   tumor:          { label: '常见肿瘤筛查',  icon: 'scan-circle-outline',   color: '#DC3545' },
   cardiovascular: { label: '心血管筛查',    icon: 'heart-outline',         color: '#E91E63' },
@@ -38,67 +34,6 @@ const CATEGORY_META = {
 };
 const ITEM_STATUS_COLOR = { normal: colors.success, abnormal: colors.danger, attention: colors.warning, unknown: colors.textMuted };
 const ITEM_STATUS_LABEL = { normal: '正常', abnormal: '异常', attention: '关注', unknown: '未知' };
-
-// 简单 SVG 折线图（纯 RN View，支持 Web）
-function MiniLineChart({ points = [], color = colors.primary, label }) {
-  if (points.length < 2) return null;
-  const vals = points.map(p => parseFloat(p.value)).filter(v => !isNaN(v));
-  if (vals.length < 2) return null;
-  const min = Math.min(...vals), max = Math.max(...vals);
-  const range = max - min || 1;
-  const pw = CHART_W / (vals.length - 1);
-
-  const dots = vals.map((v, i) => ({
-    x: i * pw,
-    y: CHART_H - ((v - min) / range) * (CHART_H - 16) - 8,
-    v,
-  }));
-
-  return (
-    <View style={{ marginTop: 10 }}>
-      <Text style={{ fontSize: 11, color: colors.textMuted, marginBottom: 4 }}>{label} 趋势</Text>
-      <View style={{ width: CHART_W, height: CHART_H, backgroundColor: colors.background, borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
-        {/* 折线用多段 View 模拟 */}
-        {dots.slice(0, -1).map((d, i) => {
-          const next = dots[i + 1];
-          const dx = next.x - d.x;
-          const dy = next.y - d.y;
-          const len = Math.sqrt(dx * dx + dy * dy);
-          const angle = Math.atan2(dy, dx) * 180 / Math.PI;
-          return (
-            <View key={i} style={{
-              position: 'absolute', left: d.x, top: d.y,
-              width: len, height: 2, backgroundColor: color,
-              transformOrigin: '0 50%',
-              transform: [{ rotate: `${angle}deg` }],
-            }} />
-          );
-        })}
-        {/* 数据点 */}
-        {dots.map((d, i) => (
-          <View key={i} style={{
-            position: 'absolute', left: d.x - 4, top: d.y - 4,
-            width: 8, height: 8, borderRadius: 4,
-            backgroundColor: color, borderWidth: 1.5, borderColor: '#fff',
-          }}>
-            {i === dots.length - 1 && (
-              <Text style={{ position: 'absolute', top: -18, left: -12, fontSize: 10, color, fontWeight: '700', width: 36, textAlign: 'center' }}>
-                {d.v}
-              </Text>
-            )}
-          </View>
-        ))}
-        {/* 最早 & 最近日期 */}
-        {points.length >= 2 && (
-          <>
-            <Text style={{ position: 'absolute', bottom: 2, left: 0, fontSize: 9, color: colors.textMuted }}>{points[0].date || ''}</Text>
-            <Text style={{ position: 'absolute', bottom: 2, right: 0, fontSize: 9, color: colors.textMuted }}>{points[points.length - 1].date || ''}</Text>
-          </>
-        )}
-      </View>
-    </View>
-  );
-}
 
 function ReportItemRow({ item }) {
   const statusColor = ITEM_STATUS_COLOR[item.status] || colors.textMuted;
@@ -242,24 +177,6 @@ export default function MedicalReportsScreen({ navigation }) {
             {currentYear?.categories.map(cat => {
               const meta = CATEGORY_META[cat.key] || { label: cat.label, icon: 'document-outline', color: colors.primary };
 
-              // 收集数据类指标用于曲线图。同一指标同一天可能因AI解析重复提取出多条记录（同一次化验被拆成两条），
-              // 若不去重会在同一天内伪造出"两个时间点"，画出毫无意义的趋势线（两端日期相同、看起来像文字重叠）。
-              // 按"指标名+日期"去重，同一天只保留最后一条（通常是最终修正后的解析结果）。
-              const dataItemsByDate = {};
-              cat.reports.forEach(r => {
-                const date = r.checkDate || r.date || '';
-                (r.reportItems || []).filter(i => i.itemType === 'data' || i.itemType === 'lab').forEach(item => {
-                  if (!isNaN(parseFloat(item.value))) {
-                    if (!dataItemsByDate[item.name]) dataItemsByDate[item.name] = {};
-                    dataItemsByDate[item.name][date] = { value: item.value, date };
-                  }
-                });
-              });
-              const dataItems = {};
-              Object.entries(dataItemsByDate).forEach(([name, byDate]) => {
-                dataItems[name] = Object.values(byDate).sort((a, b) => new Date(a.date) - new Date(b.date));
-              });
-
               return (
                 <View key={cat.key} style={styles.categorySection}>
                   <View style={styles.categoryHeader}>
@@ -269,14 +186,6 @@ export default function MedicalReportsScreen({ navigation }) {
                     <Text style={[styles.categoryTitle, { color: meta.color }]}>{meta.label}</Text>
                     <Text style={styles.categoryCount}>{cat.reports.length} 份</Text>
                   </View>
-
-                  {/* 数据趋势曲线 */}
-                  {Object.entries(dataItems)
-                    .filter(([, pts]) => pts.length >= 2)
-                    .map(([name, pts]) => (
-                      <MiniLineChart key={name} label={name} points={pts} color={meta.color} />
-                    ))
-                  }
 
                   {cat.reports.map(r => (
                     <ReportCard key={r._id} report={r} />
