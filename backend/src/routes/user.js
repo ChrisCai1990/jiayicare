@@ -1274,6 +1274,13 @@ router.post('/ai-health-summary', auth, async (req, res) => {
       return res.status(409).json({ success: false, code: 'ALREADY_REVIEWED', message: '当前分析已由您的健康管理团队审核确认，如需更新请联系您的健康管理师' });
     }
 
+    // 无家庭医生团队的客户，自助生成每年限1次（硬性限制，不论本次结果后续是否被认为无效，均不可当年再生）
+    const hasDoctorPre = !!user.assignedFamilyDoctor;
+    const curYear = String(new Date().getFullYear());
+    if (!hasDoctorPre && existingSummary.byYear?.[curYear]?.source === 'self_service') {
+      return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI健康分析（每年限1次），如需更新请联系客服升级家庭医生团队服务' });
+    }
+
     const { sections, failed } = await generateHealthSummarySections(user);
     if (failed) return res.status(500).json({ success: false, message: 'AI生成失败，请重试' });
     const year = String(new Date().getFullYear());
@@ -1351,6 +1358,12 @@ router.post('/ai-risk-assessment', auth, async (req, res) => {
     // 已由家庭医生团队审核通过的版本，客户端不能再重新生成覆盖。（2026-07-10 金娟反馈①）
     if (existingRisk.approvedAt && existingRisk.source !== 'self_service') {
       return res.status(409).json({ success: false, code: 'ALREADY_REVIEWED', message: '当前风险评估已由您的健康管理团队审核确认，如需更新请联系您的健康管理师' });
+    }
+
+    // 无家庭医生团队的客户，自助生成每年限1次（硬性限制，不论本次结果后续是否被认为无效，均不可当年再生）
+    const hasDoctorPre = !!user.assignedFamilyDoctor;
+    if (!hasDoctorPre && byYear[year]?.source === 'self_service') {
+      return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI风险评估（每年限1次），如需更新请联系客服升级家庭医生团队服务' });
     }
 
     const assessment = await generateRiskAssessment(user);

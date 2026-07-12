@@ -54,19 +54,24 @@ app.get('/', (req, res) => {
 
 // 路由
 app.use('/api/auth',    require('./routes/auth'));
-app.use('/api/user',    require('./routes/user'));
-app.use('/api/records', require('./routes/healthRecords'));
-app.use('/api/medications', require('./routes/medications'));
-app.use('/api/supplements', require('./routes/supplements'));
-app.use('/api/tasks',   require('./routes/tasks'));
+
+// 用户端(app)专属路由：服务到期锁定统一在此挂载（默认锁+白名单放行，见 checkServiceActive.js 注释）。
+// auth 已把 req.user 挂好，checkServiceActive 直接读 req.user.serviceExpiry 判断，不需要每个路由文件单独引入。
+const { checkServiceActive } = require('./middleware/checkServiceActive');
+const auth = require('./middleware/auth');
+app.use('/api/user', auth, checkServiceActive, require('./routes/user'));
+app.use('/api/records', auth, checkServiceActive, require('./routes/healthRecords'));
+app.use('/api/medications', auth, checkServiceActive, require('./routes/medications'));
+app.use('/api/supplements', auth, checkServiceActive, require('./routes/supplements'));
+app.use('/api/tasks',   auth, checkServiceActive, require('./routes/tasks'));
 const messagesRouter = require('./routes/messages');
-app.use('/api/messages', messagesRouter);
+app.use('/api/messages', auth, checkServiceActive, messagesRouter);
 app.locals.ssePublish = messagesRouter.ssePublish;
-app.use('/api/reminders', require('./routes/reminders'));
-app.use('/api/reports',       require('./routes/reports'));
-app.use('/api/chat',          require('./routes/chat'));
-app.use('/api/questionnaire', require('./routes/questionnaire'));
-app.use('/api/services',      require('./routes/services'));
+app.use('/api/reminders', auth, checkServiceActive, require('./routes/reminders'));
+app.use('/api/reports',       auth, checkServiceActive, require('./routes/reports'));
+app.use('/api/chat',          auth, checkServiceActive, require('./routes/chat'));
+app.use('/api/questionnaire', auth, checkServiceActive, require('./routes/questionnaire'));
+app.use('/api/services',      auth, checkServiceActive, require('./routes/services'));
 app.use('/api/partner-benefits', require('./routes/partnerBenefits'));
 app.use('/api/enterprise-hr', require('./routes/enterpriseHr'));
 app.use('/api/ops-dashboard', require('./routes/opsDashboard'));
