@@ -23,10 +23,12 @@ const TRANSFER_MSG = '您好，我需要联系专员咨询。';
 
 const DISCLAIMER = '本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
 
-function MessageBubble({ msg, speaking, onSpeak }) {
+function MessageBubble({ msg, speaking, onSpeak, onRecall }) {
   const isUser = msg.role === 'user';
   // 只有AI回复且有实际文字内容时才提供语音播报
   const canSpeak = !isUser && !!(msg.content || '').trim();
+  // 撤回仅对本轮会话里用户自己发的消息开放：历史记录(id以h-开头)已进入AI已读的上下文，撤回也无法让AI忘记，容易造成误解
+  const canRecall = isUser && typeof msg.id === 'number';
   return (
     <View style={[styles.msgRow, isUser && styles.msgRowUser]}>
       {!isUser && (
@@ -34,7 +36,11 @@ function MessageBubble({ msg, speaking, onSpeak }) {
           <Ionicons name={msg.roleIcon || 'person'} size={16} color={msg.roleColor || colors.primary} />
         </View>
       )}
-      <View style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAI]}>
+      <TouchableOpacity
+        activeOpacity={canRecall ? 0.7 : 1}
+        onLongPress={canRecall ? () => onRecall(msg) : undefined}
+        style={[styles.bubble, isUser ? styles.bubbleUser : styles.bubbleAI]}
+      >
         {!isUser && msg.roleName && (
           <Text style={[styles.bubbleRole, { color: msg.roleColor || colors.primary }]}>{msg.roleName}</Text>
         )}
@@ -55,9 +61,11 @@ function MessageBubble({ msg, speaking, onSpeak }) {
               </Text>
             </TouchableOpacity>
           )}
-          <Text style={[styles.bubbleTime, isUser && { color: 'rgba(255,255,255,0.6)' }]}>{msg.time}</Text>
+          <Text style={[styles.bubbleTime, isUser && { color: 'rgba(255,255,255,0.6)' }]}>
+            {canRecall ? `${msg.time} · 长按撤回` : msg.time}
+          </Text>
         </View>
-      </View>
+      </TouchableOpacity>
     </View>
   );
 }
@@ -174,6 +182,18 @@ export default function ChatScreen({ navigation, route }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages, isLoading]);
 
+  // 撤回一条自己发的消息：消息内容可能有误需要改问，撤回后连带其后紧跟的AI回复一起移除（回复是针对该问题的，留着无意义）
+  const recallMessage = (msg) => {
+    setMessages(prev => {
+      const idx = prev.findIndex(m => m.id === msg.id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      next.splice(idx, 1);
+      if (next[idx] && next[idx].role === 'assistant') next.splice(idx, 1);
+      return next;
+    });
+  };
+
   // 语音播报某条AI回复；再次点击同一条则停止
   const handleSpeak = async (msg) => {
     if (speakingId === msg.id) {
@@ -229,6 +249,7 @@ export default function ChatScreen({ navigation, route }) {
               msg={msg}
               speaking={speakingId === msg.id}
               onSpeak={handleSpeak}
+              onRecall={recallMessage}
             />
           ))}
 

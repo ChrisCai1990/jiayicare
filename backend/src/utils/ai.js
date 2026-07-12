@@ -20,7 +20,9 @@ function selectProvider() {
 }
 
 // HTTP POST 工具（避免额外依赖）
-function httpPost(url, headers, body) {
+// timeoutMs：DashScope 偶发网络挂起时原生 https 模块不会自动超时，会一直挂到系统TCP超时（远超前端15s等待），
+// 这是聊天/AI追问类接口报"响应失败"的主因之一，必须显式设置超时并给出可辨识的错误信息
+function httpPost(url, headers, body, timeoutMs = 45000) {
   return new Promise((resolve, reject) => {
     const u = new URL(url);
     const data = JSON.stringify(body);
@@ -37,6 +39,7 @@ function httpPost(url, headers, body) {
         catch { reject(new Error('JSON parse error: ' + raw.slice(0, 200))); }
       });
     });
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`AI接口请求超时（${timeoutMs / 1000}秒）`)));
     req.on('error', reject);
     req.write(data);
     req.end();

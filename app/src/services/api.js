@@ -190,6 +190,7 @@ export const chatAPI = {
     request('/chat', {
       method: 'POST',
       body: JSON.stringify({ messages, userInfo }),
+      timeout: 50000, // AI回复耗时不定，需长于后端AI调用超时(45s)，避免客户端先于后端判定失败
     }),
   transfer: (lastMessage) =>
     request('/chat/transfer', {

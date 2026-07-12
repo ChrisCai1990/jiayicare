@@ -161,7 +161,7 @@ router.post('/', auth, async (req, res) => {
     res.json({ success: true, data: { content: replyText, intent } });
   } catch (err) {
     console.error('Chat error:', err.message);
-    res.status(500).json({ success: false, message: 'AI响应失败，请稍后重试。' });
+    res.status(500).json({ success: false, message: `AI响应失败，请稍后重试。（${err.message}）` });
   }
 });
 
