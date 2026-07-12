@@ -120,4 +120,8 @@ app.listen(PORT, () => {
 
   // 健管专员/营养师与患者的聊天记录，每半月自动提炼生成随访草稿待审核（家庭医生频道保留人工触发）
   require('./utils/chatFollowupScheduler').startChatFollowupScheduler();
+
+  // 年度管理方案的"日常监测/季度评估"随访占位滚动窗口补生成，每天扫描一次
+  // （此前一次性预生成未来365天导致单个客户堆积几百条占位，2026-07-13 改为滚动窗口）
+  require('./utils/scheduledFollowUpWindowScheduler').startScheduledFollowUpWindowScheduler();
 });

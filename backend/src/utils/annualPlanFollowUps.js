@@ -6,6 +6,15 @@ const FREQUENCY_DAYS = {
   '每月一次': 30, '每季度一次': 90, '每半年一次': 182, '每年一次': 365,
 };
 
+// 占位记录预生成窗口：只提前生成未来 N 天内的，而不是一次性铺满全年。
+// 此前"每天"频率的监测项会一次性生成365条占位，单个客户能堆到几百条，
+// 把真实/已完成的随访记录挤到分页后面（2026-07-13 反馈：客户详情页随访记录
+// 被2027年的占位数据淹没，"已随访"计数看起来是0）。改为滚动窗口后，
+// 每日定时任务（syncScheduledFollowUpsWindow）负责每天补生成窗口最后一天的占位。
+// 30天对齐用户端 TasksScreen 的"本月"筛选口径（Date.now()+30天），
+// 保证用户端切到"本月"看到的随访计划是完整的，同时不会像365天那样疯狂堆积。
+const HORIZON_DAYS = 30;
+
 // 多条记录模块（就医/会诊/复查/接种/检测）：每条记录本身就有明确日期，直接各生成一条随访。
 // key = moduleData 里的模块 key；dateField = 该条记录里存日期的字段名；theme = 随访主题前缀。
 const DATED_RECORD_MODULES = [
@@ -99,13 +108,13 @@ async function buildAnnualPlanFollowUps(plan) {
     });
   }
 
-  // ② 日常监测：multi:true 多条记录，每条各自按 frequency 批量排期到未来一年
+  // ② 日常监测：multi:true 多条记录，每条各自按 frequency 排期，只提前生成未来 HORIZON_DAYS 天内的
   const monitoringRecords = moduleData.monitoring?.records;
   if (Array.isArray(monitoringRecords)) {
     monitoringRecords.forEach((rec) => {
       const days = FREQUENCY_DAYS[rec.frequency];
       if (!days) return;
-      const yearEnd = new Date(Date.now() + 365 * 86400000);
+      const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
       let cursor = new Date(Date.now() + days * 86400000);
       const monitorLines = [
         rec.items && `监测项目：${rec.items}`,
@@ -115,24 +124,24 @@ async function buildAnnualPlanFollowUps(plan) {
         rec.followUpStaff && `随访人员：${staffName(rec.followUpStaff)}`,
         rec.notes && `注意事项：${rec.notes}`,
       ].filter(Boolean).join('\n');
-      while (cursor <= yearEnd) {
+      while (cursor <= horizonEnd) {
         push(cursor, `日常监测随访 · ${rec.items || ''}`, monitorLines, rec.followUpStaff);
         cursor = new Date(cursor.getTime() + days * 86400000);
       }
     });
   }
 
-  // ③ 季度评估：固定每3个月一条，排到未来一年
+  // ③ 季度评估：固定每3个月一条，只提前生成未来 HORIZON_DAYS 天内到期的那一条（如果有）
   const quarterlyEval = moduleData.quarterly_eval;
   if (quarterlyEval && quarterlyEval.enabled !== false) {
-    const yearEnd = new Date(Date.now() + 365 * 86400000);
+    const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
     let cursor = new Date(Date.now() + 90 * 86400000);
     const evalItems = [
       quarterlyEval.body_composition && '人体成分测量',
       quarterlyEval.diet_analysis && '膳食调研及分析',
     ].filter(Boolean);
     const evalContent = evalItems.length ? `本次评估内容：${evalItems.join('、')}` : '';
-    while (cursor <= yearEnd) {
+    while (cursor <= horizonEnd) {
       push(cursor, '季度评估随访', evalContent, quarterlyEval.followUpStaff);
       cursor = new Date(cursor.getTime() + 90 * 86400000);
     }

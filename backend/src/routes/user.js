@@ -805,7 +805,9 @@ router.get('/followup-tasks', auth, async (req, res) => {
 });
 
 // PATCH /api/user/followup-tasks/:id/done — 用户标记/取消随访任务已完成
-// needFollowUp: true  → 用户表示"仍需健管专员跟进"，写入 status=in_progress，进入医护端待跟进队列，不算完成
+// needFollowUp: true  → 用户表示"仍需健管专员跟进"，保持 status=planned，进入医护端"待随访"队列，不算完成
+//   （此前误写为 status=in_progress，但医护端工作台"待随访任务"面板只查 planned，
+//   导致这类"用户明确要求跟进"的记录反而从健管专员视野里消失，2026-07-13 修复）
 // needFollowUp: false（默认）→ 用户确认"不需要跟进"，直接 status=completed + completedBy=user，闭环
 router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
   try {
@@ -819,8 +821,8 @@ router.patch('/followup-tasks/:id/done', auth, async (req, res) => {
 
     if (done) {
       if (needFollowUp) {
-        // 用户表示还需要人工跟进：不算完成，转入医护端"随访中"队列
-        if (followup.status === 'planned') followup.status = 'in_progress';
+        // 用户表示还需要人工跟进：保持/回退为 planned，留在医护端"待随访"队列，不算完成
+        if (followup.status !== 'completed' && followup.status !== 'cancelled') followup.status = 'planned';
       } else {
         // 用户确认不需要跟进：直接闭环为已完成
         followup.status = 'completed';
