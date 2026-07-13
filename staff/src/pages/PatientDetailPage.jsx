@@ -8183,7 +8183,7 @@ export default function PatientDetailPage() {
           onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
           onGenerate={async (templateId, briefNote) => {
             if (showSelectTplModal === 'annual_checkup') {
-              await staffAPI.generateAIAnnualCheckupPlan(id, templateId)
+              await staffAPI.generateAIAnnualCheckupPlan(id, templateId, briefNote)
               toast('AI体检方案已生成，待健管专员审核')
             } else if (showSelectTplModal === 'nutrition') {
               await staffAPI.generateAINutritionPlan(id, templateId, briefNote)
@@ -9492,6 +9492,17 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
           <h3 className="modal-title">{title} — 选择模板</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
+        {/* 服务目标固定在模板列表之前，不随列表滚动，选模板前就能先看到并填写 */}
+        <div style={{ flexShrink: 0, padding: '14px 20px 0' }}>
+          <div className="form-group" style={{ marginBottom: 12 }}>
+            <label className="form-label">服务目标（可选，AI会结合目标更有方向地生成初稿）</label>
+            <textarea className="form-input" rows={2} placeholder={
+              planType === 'medical_assist' ? '如：这次去北京协和看内分泌科，患者行动不便需要轮椅，希望尽快安排'
+                : planType === 'nutrition' ? '如：控制血糖、三个月内减重5公斤'
+                  : '如：重点排查心血管风险——会影响AI在加项库里的选择倾向'
+            } value={briefNote} onChange={e => setBriefNote(e.target.value)} />
+          </div>
+        </div>
         <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
             方案的标准内容以模板为准，AI只会结合患者情况在模板基础上做定制，不会脱离模板另起一套。
@@ -9517,14 +9528,6 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
               </div>
             )
           })}
-          <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
-            <label className="form-label">服务目标（可选，AI会结合目标更有方向地生成初稿）</label>
-            <textarea className="form-input" rows={3} placeholder={
-              planType === 'medical_assist' ? '如：这次去北京协和看内分泌科，患者行动不便需要轮椅，希望尽快安排'
-                : planType === 'nutrition' ? '如：控制血糖、三个月内减重5公斤'
-                  : '如：控制血压平稳、减少并发症风险'
-            } value={briefNote} onChange={e => setBriefNote(e.target.value)} />
-          </div>
         </div>
         <div className="modal-footer" style={{ flexShrink: 0 }}>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>

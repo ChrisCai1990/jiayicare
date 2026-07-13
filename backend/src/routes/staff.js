@@ -7143,7 +7143,7 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
     return res.status(403).json({ success: false, message: '仅家庭医生可生成年度体检方案' });
   }
   try {
-    const { templateId } = req.body;
+    const { templateId, goal } = req.body;
     if (!templateId) return res.status(400).json({ success: false, message: '请先选择体检套餐模板' });
     const template = await PlanTemplate.findOne({ _id: templateId, type: 'annual_checkup' }).lean();
     if (!template) return res.status(404).json({ success: false, message: '套餐模板不存在' });
@@ -7173,6 +7173,9 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
 姓名：${user.name}，年龄：${user.age || '未知'}岁，性别：${user.gender || '未知'}
 慢病标签：${user.chronicDiseases?.join('、') || '无'}
 AI风险摘要：${riskSummary}
+
+【本次服务目标（家庭医生填写，选加项时优先照顾这个方向，如"重点排查心血管风险"就优先选心血管相关加项）】
+${goal ? goal : '（未填写目标，按患者信息与风险摘要常规判断）'}
 
 【可选加项库（只能从这些编号里选，不能新增任何库外项目）】
 ${addonListText}

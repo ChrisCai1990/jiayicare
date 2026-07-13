@@ -155,7 +155,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [pushedAt, setPushedAt]     = useState(null)
   const [confirmedAt, setConfirmedAt] = useState(null)
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
-  const [notes, setNotes]           = useState('') // 服务目标：AnnualPlan.notes 字段，AI生成方案时会参考
   const [staffList, setStaffList]   = useState([])
 
   useEffect(() => {
@@ -184,20 +183,17 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         if (target) {
           setPlanType(target.planType)
           setModuleData(target.moduleData || {})
-          setNotes(target.notes || '')
           setPushedAt(target.pushedAt || null)
           setConfirmedAt(target.confirmedAt || null)
         } else if (queryPlanType) {
           // 该类型还没有任何已保存数据，选中类型但板块留空，等用户点AI生成
           setPlanType(queryPlanType)
           setModuleData({})
-          setNotes('')
           setPushedAt(null)
           setConfirmedAt(null)
         } else {
           setPlanType('')
           setModuleData({})
-          setNotes('')
           setPushedAt(null)
           setConfirmedAt(null)
         }
@@ -236,7 +232,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     const p = plansByType[key]
     setPlanType(key)
     setModuleData(p?.moduleData || {})
-    setNotes(p?.notes || '')
     setPushedAt(p?.pushedAt || null)
     setConfirmedAt(p?.confirmedAt || null)
     setDirty(false)
@@ -247,7 +242,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setSaving(true)
     try {
       if (patientMode) {
-        const res = await staffAPI.saveAnnualPlan(id, { planType, moduleData, notes, year })
+        const res = await staffAPI.saveAnnualPlan(id, { planType, moduleData, year })
         const saved = res.data
         if (saved) {
           setPlansByType(prev => ({ ...prev, [planType]: saved }))
@@ -258,7 +253,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         // 已被医护审核过的随访不受影响，只有还没处理的自动占位会按最新方案内容重新排期
         toast(res.followUpCount ? `方案已保存，同步生成 ${res.followUpCount} 条随访计划` : '方案已保存')
       } else {
-        await staffAPI.updatePlan(id, { content: { planType, moduleData }, description: notes })
+        await staffAPI.updatePlan(id, { content: { planType, moduleData } })
         toast('方案已保存')
       }
       setDirty(false)
@@ -278,7 +273,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     if (!skipConfirm && !window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
     setAiPlanLoading(true)
     try {
-      const res = await staffAPI.generateAIAnnualPlan(id, type, notes)
+      const res = await staffAPI.generateAIAnnualPlan(id, type)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
       const allowedKeys = PLAN_TYPE_MODULES[type] || []
@@ -436,19 +431,6 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
         </div>
       </div>
 
-      {/* 服务目标 */}
-      {planType && (
-        <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
-          <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 10 }}>服务目标</div>
-          <textarea
-            rows={2}
-            placeholder="如：控制血压平稳、减少并发症风险——AI生成方案时会参考这里的目标"
-            value={notes}
-            onChange={e => { setNotes(e.target.value); setDirty(true) }}
-            style={{ width: '100%', padding: '8px 10px', border: '1px solid #E0D9CE', borderRadius: 8, fontSize: 13, boxSizing: 'border-box', fontFamily: 'inherit', resize: 'vertical' }}
-          />
-        </div>
-      )}
 
       {/* 板块列表 */}
       {planType ? (
