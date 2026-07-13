@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { staffAPI } from '../api'
+import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, usePermission } from '../App'
 
 const REPORT_TYPE = { annual:'年度体检', blood:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜', pathology:'病理', other:'其他' }
@@ -192,7 +192,12 @@ export default function ReportsPage() {
               <div style={{ marginTop: 12 }}>
                 <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>报告文件</div>
                 {(() => {
-                  const src = showDetail.content || showDetail.fileUrl;
+                  // fileUrl 是后端相对路径（如 /api/uploads/reports/xxx.pdf），必须拼上 API_ORIGIN
+                  // 才是完整地址——之前直接把相对路径丢给 <img>/<iframe src>，浏览器会基于当前页面
+                  // 域名(staff.jiaycare.com)解析，而文件实际只在API域名(jiaycare.com)下可访问，
+                  // 导致请求404，AI解析后完全打不开原件（2026-07-13 反馈）
+                  const rawSrc = showDetail.content || showDetail.fileUrl;
+                  const src = rawSrc && rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc;
                   if (!src) {
                     return (
                       <div style={{ padding: '12px 14px', background: '#f9f7f3', borderRadius: 8, fontSize: 13, color: '#8AA89C' }}>
