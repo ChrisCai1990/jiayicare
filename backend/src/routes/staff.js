@@ -6845,11 +6845,14 @@ ${templateBlock}
       const dept = raw.department ? ` · ${raw.department}` : '';
       items.push({ name: `就诊：${raw.hospital}${dept}`, category: '就医协助' });
     }
+    if (raw.expert) items.push({ name: `专家：${raw.expert}`, category: '就医协助' });
     if (order) items.push({ name: `关联订单：${order.serviceName}`, category: '就医协助' });
     const tasksText = Array.isArray(raw.tasks) ? raw.tasks.join('\n') : (raw.tasks || '');
     if (tasksText) tasksText.split('\n').filter(t => t.trim()).forEach(t =>
       items.push({ name: t.trim(), category: '就医协助' })
     );
+    if (raw.hotel) items.push({ name: `住宿安排：${raw.hotel}`, category: '就医协助' });
+    if (raw.transport) items.push({ name: `交通安排：${raw.transport}`, category: '就医协助' });
     if (raw.notes) items.push({ name: `注意事项：${raw.notes}`, category: '就医协助' });
 
     const usedTemplate = matchedTemplate || (candidateTemplates.length ? candidateTemplates.find(t => t.name === raw.title) : null);

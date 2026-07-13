@@ -105,6 +105,15 @@ const s = StyleSheet.create({
   },
   planSummary: { fontSize: 13, color: colors.textSecondary, lineHeight: 19, marginBottom: spacing.sm },
 
+  // 就医协助方案：结构化信息卡片
+  assistInfoCard: {
+    backgroundColor: colors.background, borderRadius: radius.sm,
+    padding: spacing.sm, marginBottom: spacing.sm, gap: 6,
+  },
+  assistInfoRow: { flexDirection: 'row', gap: 6 },
+  assistInfoLabel: { fontSize: 12, color: colors.textMuted, width: 60, flexShrink: 0 },
+  assistInfoValue: { fontSize: 12, color: colors.textSecondary, flex: 1, lineHeight: 18 },
+
   // 草稿确认横幅
   draftBanner: {
     flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
@@ -303,6 +312,28 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
       {expanded && (
         <View style={s.planBody}>
           {plan.summary ? <Text style={s.planSummary}>{plan.summary}</Text> : null}
+
+          {/* 就医协助方案：医院/科室/专家/住宿/交通等结构化信息，与任务清单(items)分开展示，
+              避免只有 items 时看不到方案核心信息（2026-07-13 客户反馈"看不到具体方案"修复） */}
+          {plan.type === 'medical_assist' && (() => {
+            const c = plan.content || {};
+            const rows = [
+              ['医院', c.hospital && c.department ? `${c.hospital} · ${c.department}` : (c.hospital || c.department)],
+              ['专家', c.expert],
+              ['住宿', c.hotel],
+              ['交通', c.transport],
+            ].filter(([, v]) => !!v);
+            return rows.length > 0 ? (
+              <View style={s.assistInfoCard}>
+                {rows.map(([label, value]) => (
+                  <View key={label} style={s.assistInfoRow}>
+                    <Text style={s.assistInfoLabel}>{label}</Text>
+                    <Text style={s.assistInfoValue}>{value}</Text>
+                  </View>
+                ))}
+              </View>
+            ) : null;
+          })()}
 
           {/* 草稿待确认提示 */}
           {isDraft && (
