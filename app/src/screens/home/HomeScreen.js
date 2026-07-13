@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl, Dimensions,
-  Modal, TextInput, Image, Platform, Alert,
+  Modal, TextInput, Image, Platform, Alert, ActivityIndicator,
 } from 'react-native';
 import Svg, { Rect, Line, Text as SvgText, Defs, LinearGradient, Stop, Polyline, Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,6 +10,13 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { userAPI, recordsAPI, systemAPI, followupTasksAPI, tasksAPI } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
+
+// 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期，国内时区凌晨0-8点时
+// 会比本地日期整整慢一天，导致"今天/昨天/前天"打卡归属日算错（2026-07-13 排查昨日打卡问题时发现）
+function toLocalDateStr(d) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 import { HomeScreenSkeleton } from '../../components/SkeletonLoader';
 import { mockBloodPressureData, mockBloodSugarData, mockTasks } from '../../data/mockData';
 
@@ -473,7 +480,7 @@ export default function HomeScreen({ navigation }) {
   const [allTasks, setAllTasks]             = useState([]);
   const [todayRecordedTypes, setTodayRecordedTypes] = useState(new Set());
   // 今日健康打卡（localStorage按日存储）
-  const TODAY_KEY = `jy_checkin_${new Date().toISOString().slice(0, 10)}`;
+  const TODAY_KEY = `jy_checkin_${toLocalDateStr(new Date())}`;
   const loadCheckin = () => {
     try { return JSON.parse(localStorage.getItem(TODAY_KEY)) || {}; } catch { return {}; }
   };
@@ -482,12 +489,14 @@ export default function HomeScreen({ navigation }) {
   const [checkinModal, setCheckinModal] = useState(null); // { key, label, icon, color }
   const [checkinNote, setCheckinNote]   = useState('');
   const [checkinImage, setCheckinImage] = useState(null);
+  const [checkinMealType, setCheckinMealType] = useState(''); // 饮食打卡专用：早餐/午餐/晚餐/加餐（2026-07-13 需求）
+  const [checkinSaving, setCheckinSaving] = useState(false);
   // 生理指标打卡弹窗（血压/体重/睡眠/心率/血糖），原地填写，不跳转页面
   const [measureModal, setMeasureModal] = useState(null); // { key, label, icon, color, measureType }
   const [measureValues, setMeasureValues] = useState({});
   const [measureOption, setMeasureOption] = useState('');
   // 打卡归属日期（默认今天，可补录昨天/过去日期）——饮水/排便/运动/睡眠常是昨天的数据（2026-07-10 金娟）
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = toLocalDateStr(new Date());
   const [checkinDate, setCheckinDate] = useState(todayStr);
   // 任务详情弹窗
   const [taskDetailModal, setTaskDetailModal] = useState(null);
@@ -570,7 +579,7 @@ export default function HomeScreen({ navigation }) {
     // 系统推送检查：每天最多触发一次（localStorage 记录日期）
     try {
       const pushKey = 'jy_last_push';
-      const today = new Date().toISOString().slice(0, 10);
+      const today = toLocalDateStr(new Date());
       const lastPush = localStorage.getItem(pushKey);
       if (lastPush !== today) {
         systemAPI.push().then((res) => {
@@ -796,9 +805,19 @@ export default function HomeScreen({ navigation }) {
                 setMeasureModal(item);
                 return;
               }
-              const existing = checkin[item.key] || {};
-              setCheckinNote(existing.note || '');
-              setCheckinImage(existing.image || null);
+              // 支持多次打卡的项目（目前仅饮食，一日三餐/加餐分开记录）：每次打开都是全新的一次记录，
+              // 不带上一次填写的内容——此前预填充 existing.note/image，导致用户打完早餐卡再打午餐卡时，
+              // 早餐的备注文字还留在输入框里（2026-07-13 反馈"不要把之前的记忆留着"）
+              if (item.allowMultiple) {
+                setCheckinNote('');
+                setCheckinImage(null);
+              } else {
+                const existing = checkin[item.key] || {};
+                setCheckinNote(existing.note || '');
+                setCheckinImage(existing.image || null);
+              }
+              setCheckinMealType('');
+              setCheckinSaving(false);
               setCheckinDate(todayStr); // 每次打开默认今天，用户可改为昨天/过去日期补录
               setCheckinModal(item);
             };
@@ -862,27 +881,41 @@ export default function HomeScreen({ navigation }) {
             };
             const saveCheckin = async () => {
               const item = checkinModal;
+              // 饮食打卡必须标注是哪一餐，否则医护端看不出这次记录对应早中晚还是加餐（2026-07-13 需求）
+              if (item.key === 'diet' && !checkinMealType) {
+                Alert.alert('请选择餐次', '这次记录的是早餐、午餐、晚餐还是加餐？');
+                return;
+              }
               const isToday = checkinDate === todayStr;
+              setCheckinSaving(true);
+              const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
+              try {
+                // 同步到后端健康档案，带归属日期（recordedAt）。补录昨天时设为当天中午12点，避免时区把日期算错一天
+                await recordsAPI.create({
+                  category: item.category || 'lifestyle',
+                  type: item.key,
+                  label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}` : (item.recordLabel || item.label),
+                  value: (mealPrefix + checkinNote) || checkinMealType || '已打卡',
+                  note: checkinNote || '',
+                  status: 'normal',
+                  imageUrl: checkinImage || '',
+                  extra: { ...(checkinImage ? { imageUrl: checkinImage } : {}), ...(checkinMealType ? { mealType: checkinMealType } : {}) },
+                  recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
+                });
+              } catch (err) {
+                // 此前这里是空 catch 静默吞掉错误，弹窗照样关闭，用户会以为提交成功了，实际后端没收到——
+                // 2026-07-13 反馈"设置昨天时，提交并没有保存"就是这里：请求失败没有任何提示，看起来像卡住不动
+                setCheckinSaving(false);
+                Alert.alert('保存失败', err.message || '网络异常，请重试');
+                return;
+              }
+              setCheckinSaving(false);
               // 只有归属日=今天的打卡，才更新"今日已打卡"本地状态；补录过去日期不影响今天的打卡进度显示
               if (isToday) {
                 const next = { ...checkin, [item.key]: { done: true, note: checkinNote, image: checkinImage } };
                 setCheckin(next);
                 try { localStorage.setItem(TODAY_KEY, JSON.stringify(next)); } catch {}
               }
-              // 同步到后端健康档案，带归属日期（recordedAt）。补录昨天时设为当天中午12点，避免时区把日期算错一天
-              try {
-                await recordsAPI.create({
-                  category: item.category || 'lifestyle',
-                  type: item.key,
-                  label: item.recordLabel || item.label,
-                  value: checkinNote || '已打卡',
-                  note: checkinNote || '',
-                  status: 'normal',
-                  imageUrl: checkinImage || '',
-                  extra: checkinImage ? { imageUrl: checkinImage } : undefined,
-                  recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
-                });
-              } catch { /* 静默失败，本地已保存 */ }
               setCheckinModal(null);
             };
             return (
@@ -972,7 +1005,7 @@ export default function HomeScreen({ navigation }) {
                           { label: '前天', d: 2 },
                         ].map(({ label, d }) => {
                           const dt = new Date(); dt.setDate(dt.getDate() - d);
-                          const ds = dt.toISOString().slice(0, 10);
+                          const ds = toLocalDateStr(dt);
                           const active = checkinDate === ds;
                           return (
                             <TouchableOpacity key={label} onPress={() => setCheckinDate(ds)}
@@ -991,6 +1024,27 @@ export default function HomeScreen({ navigation }) {
                           style={{ marginBottom: 14, padding: '7px 10px', borderRadius: 8, border: `1px solid ${colors.border}`, fontSize: 14, color: colors.textPrimary, background: colors.surface, width: '60%' }} />
                       ) : (
                         <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 14 }}>当前记录归属：{checkinDate}</Text>
+                      )}
+
+                      {/* 饮食打卡必须标注是哪一餐：可能一次性打一天的卡，也可能一日三餐+加餐分开各打一次，
+                          医护端要能一眼看出这条记录对应哪一餐（2026-07-13 需求） */}
+                      {checkinModal?.key === 'diet' && (
+                        <>
+                          <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>这是哪一餐</Text>
+                          <View style={{ flexDirection: 'row', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+                            {['早餐', '午餐', '晚餐', '加餐'].map(mt => {
+                              const active = checkinMealType === mt;
+                              return (
+                                <TouchableOpacity key={mt} onPress={() => setCheckinMealType(mt)}
+                                  style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8,
+                                    backgroundColor: active ? checkinModal.color : colors.border + '50',
+                                    borderWidth: 1, borderColor: active ? checkinModal.color : colors.border }}>
+                                  <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.textSecondary }}>{mt}</Text>
+                                </TouchableOpacity>
+                              );
+                            })}
+                          </View>
+                        </>
                       )}
 
                       <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>记录内容（可选）</Text>
@@ -1036,12 +1090,12 @@ export default function HomeScreen({ navigation }) {
                         </TouchableOpacity>
                       )}
                       <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setCheckinModal(null)}>
+                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setCheckinModal(null)} disabled={checkinSaving}>
                           <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: checkinModal?.color || colors.primary, flex: 2 }]} onPress={saveCheckin}>
-                          <Ionicons name="checkmark" size={18} color="#fff" />
-                          <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>完成打卡</Text>
+                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: checkinModal?.color || colors.primary, flex: 2, opacity: checkinSaving ? 0.6 : 1 }]} onPress={saveCheckin} disabled={checkinSaving}>
+                          {checkinSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
+                          <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{checkinSaving ? '保存中...' : '完成打卡'}</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
