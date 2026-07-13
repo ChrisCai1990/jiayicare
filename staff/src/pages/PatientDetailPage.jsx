@@ -7299,9 +7299,10 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* 体检报告详情弹窗 */}
+      {/* 体检报告详情弹窗：审核编辑内容较多，鼠标稍微移出弹窗点到遮罩层就会误触关闭丢失未保存内容，
+          去掉点遮罩关闭，只能点右上角✕关闭 */}
       {showReportDetail && (
-        <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowReportDetail(null) }}>
+        <div className="modal-overlay">
           <div className="modal" style={{ maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-header" style={{ flexShrink: 0 }}>
               <h3 className="modal-title">{showReportDetail.title}</h3>
