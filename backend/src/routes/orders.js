@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Order = require('../models/Order');
+const { refundOrderPoints } = require('../utils/orderPoints');
 const router = express.Router();
 
 // 获取当前用户的订单列表
@@ -36,6 +37,7 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     }
     order.status = 'cancelled';
     await order.save();
+    await refundOrderPoints(order); // 若下单时预记过消费积分，取消订单要退回
     res.json({ success: true, message: '订单已取消', data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: '取消失败', error: err.message });

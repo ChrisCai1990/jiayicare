@@ -646,7 +646,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   const allowed = [
     'name', 'gender', 'age', 'height', 'weight', 'preferredTitle',
     'birthDate', 'memberType', 'belief',
-    'chronicDiseases', 'patientType', 'source', 'remark', 'basicRemark',
+    'chronicDiseases', 'patientType', 'source', 'remark', 'basicRemark', 'preferences',
     'idNumber', 'idType', 'workplace', 'occupation', 'maritalStatus',
     'ethnicity', 'address', 'contactPhone', 'contactPhone2', 'contactName', 'contactPhone3', 'deliveryAddress',
     'assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
@@ -686,18 +686,22 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     if (calcedAge !== undefined) updateData.age = calcedAge;
   }
 
-  // 归属字段：空字符串跳过（不清空原值），有值则必须转为 ObjectId
+  // 归属字段：字段本身未出现在请求体里才跳过（保持原值不动）；一旦前端显式传了这个key，
+  // 哪怕值是空字符串（前端"-- 未分配 --"选项对应的值），也要当成"清空指派"处理，写入 null。
+  // 此前把"传了空字符串"和"根本没传"混为一谈、一律 delete 跳过，导致把家庭医生/健管专员
+  // 改成"未分配"后保存不生效、页面刷新还是原来的指派人（2026-07-13 反馈，以黄辉为例复现）。
   // 原因：User.collection.updateOne 绕过 Mongoose 类型转换，字符串无法匹配 ObjectId 查询
   ['assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
    'assignedSpecialist', 'assignedTcmDoctor', 'assignedPsychologist',
    'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthPlanner'].forEach(k => {
-    if (updateData[k] === '' || updateData[k] === null || updateData[k] === undefined) {
-      delete updateData[k];
+    if (!(k in updateData)) return; // 前端没传这个字段，不动原值
+    if (updateData[k] === '' || updateData[k] === null) {
+      updateData[k] = null; // 显式清空为未分配
     } else {
       try {
         updateData[k] = new mongoose.Types.ObjectId(updateData[k]);
       } catch (e) {
-        delete updateData[k]; // 无效ID，跳过
+        delete updateData[k]; // 格式非法，不是"未分配"意图，跳过避免脏数据
       }
     }
   });
@@ -4519,7 +4523,7 @@ function verifyDraftToken(token, patientId, kind, staffId) {
 // POST /api/staff/patients/:id/ai-followup-suggestion
 router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues');
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues preferences');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const { chat } = require('../utils/ai');
@@ -4539,6 +4543,7 @@ router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) 
     const prompt = `你是慢病管理随访专员，请根据患者近期数据判断随访时机并生成随访提纲。
 
 【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【个性化喜好/禁忌】${user.preferences || '无'}（若提及不希望在某些时段/节日被打扰、忌讳某些话题，suggestedDate和outline都要相应避开或调整，如患者不喜欢过年期间到医院，无特殊异常指标时不要在春节期间安排常规随访，可改为仅送上节日祝福）
 【上次随访】${lastFuText}
 【已排期下次随访】${nextPlannedText}
 【近30天打卡数据】
@@ -4631,7 +4636,7 @@ router.post('/patients/:id/ai-followup-monthly-review', staffAuth, async (req, r
 // POST /api/staff/patients/:id/ai-coach-message
 router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('name gender age chronicDiseases preferredTitle');
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases preferredTitle preferences');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     // 称呼：优先医护标注的 preferredTitle，否则按性别得体兜底
@@ -4669,6 +4674,7 @@ router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
     const prompt = `你是一位温暖、专业的健康教练，请给会员发一条${tone}消息（40-80字，口语化、有温度、不说教，可用1个emoji，不要分点）。
 
 【会员】${user.name}，性别：${user.gender || '未知'}，慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【个性化喜好/禁忌】${user.preferences || '无'}（措辞和内容需照顾这些偏好，如有节日/时段忌讳，当天只送祝福不谈健康提醒）
 【称呼】必须称呼对方为"${coachTitle}"，不要自己改称呼，绝对不要叫错性别（如男性叫"姐"）。
 【打卡情况】连续打卡 ${streak} 天，距上次打卡 ${daysSinceLast >= 999 ? '很久' : daysSinceLast + ' 天'}
 【消息类型】${tone}（依从性${adherence === 'high' ? '良好' : adherence === 'medium' ? '一般' : '偏低'}）
@@ -4735,7 +4741,7 @@ router.post('/patients/:id/coach-message/send', staffAuth, async (req, res) => {
 // POST /api/staff/patients/:id/ai-content-recommend
 router.post('/patients/:id/ai-content-recommend', staffAuth, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id).select('name gender age chronicDiseases aiRiskAssessment');
+    const user = await User.findById(req.params.id).select('name gender age chronicDiseases aiRiskAssessment preferences');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const { chat } = require('../utils/ai');
@@ -4762,7 +4768,7 @@ router.post('/patients/:id/ai-content-recommend', staffAuth, async (req, res) =>
 
     const prompt = `你是健康内容运营，请根据会员画像，从候选知识库中挑选最适合推送的3-5条内容，做到"千人千面"，避免推送已推送过的内容。
 
-【会员画像】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；风险维度：${riskFactors}
+【会员画像】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；风险维度：${riskFactors}；个性化喜好/禁忌：${user.preferences || '无'}（避免推送与禁忌相关的内容）
 
 【候选内容】
 ${candText}

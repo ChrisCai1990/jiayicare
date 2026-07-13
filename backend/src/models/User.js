@@ -149,6 +149,7 @@ const userSchema = new mongoose.Schema({
   patientType:     { type: String, enum: ['regular', 'vip', 'trial', ''], default: '' }, // 患者类型
   remark:          { type: String, default: '' },   // 备注（管理信息卡）
   basicRemark:     { type: String, default: '' },   // 备注（基本信息卡，与 remark 独立）
+  preferences:     { type: String, default: '' },   // 个性化喜好/禁忌（AI生成随访/消息/内容推荐时需读取遵守，如"不喜欢过年期间到医院"）
   workplace:       { type: String, default: '' },   // 所在企业
   occupation:      { type: String, default: '' },   // 所在行业
   education:       { type: String, default: '' },   // 学历

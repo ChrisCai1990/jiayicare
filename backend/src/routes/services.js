@@ -9,6 +9,7 @@ const User    = require('../models/User');
 const Coupon  = require('../models/Coupon');
 const FollowUp = require('../models/FollowUp');
 const Admin   = require('../models/Admin');
+const { awardOrderPoints } = require('../utils/orderPoints');
 
 // ── 静态兜底（DB 为空时使用 / 订单查找用）────────────────────────
 const SERVICE_CATALOG = [
@@ -277,6 +278,10 @@ router.post('/order', auth, async (req, res) => {
     coupon.usedOrderId = order._id;
     pendingTasks.push(coupon.save());
   }
+  // 消费积分预记录：下单即按现金实付部分(paidAmount)记积分，不再等待后台人工标记已支付——
+  // 那一步在实际业务里经常被跳过，导致用户明明支付了却查不到积分记录。订单后续若被取消/退款，
+  // 会反查这笔预记积分退回（见 orders.js 取消接口 + admin.js 退款接口）
+  pendingTasks.push(awardOrderPoints(order));
   await Promise.all(pendingTasks);
 
   res.json({

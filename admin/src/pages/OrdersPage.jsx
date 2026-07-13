@@ -77,6 +77,18 @@ export default function OrdersPage() {
     } finally { setUpdating(null) }
   }
 
+  const handleRefund = async (order) => {
+    if (!window.confirm(`确认为「${order.serviceName}」（${order.user?.name || ''}）办理退款？将退回已预记的消费积分，此操作不可撤销。`)) return
+    setUpdating(order._id)
+    try {
+      const res = await adminAPI.refundOrder(order._id)
+      toast('✅ ' + res.message)
+      await load(page)
+    } catch (err) {
+      toast('❌ ' + (err.message || '退款失败'))
+    } finally { setUpdating(null) }
+  }
+
   const confirmVerify = async () => {
     if (!verifyModalOrder) return
     setUpdating(verifyModalOrder._id)
@@ -226,6 +238,12 @@ export default function OrdersPage() {
                             <button className="btn btn-sm status-btn" style={{ borderColor: '#3B82F6', color: '#3B82F6', background: '#3B82F612' }}
                               disabled={updating === o._id} onClick={() => { setVerifyModalOrder(o); setVerifyInput('') }}>
                               核销
+                            </button>
+                          )}
+                          {o.paymentStatus === 'paid' && (
+                            <button className="btn btn-sm status-btn" style={{ borderColor: '#DC3545', color: '#DC3545', background: '#DC354512' }}
+                              disabled={updating === o._id} onClick={() => handleRefund(o)}>
+                              退款
                             </button>
                           )}
                           {nextActions.map(s => (

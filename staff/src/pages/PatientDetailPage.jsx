@@ -1409,6 +1409,7 @@ export default function PatientDetailPage() {
     deliveryAddress: u.deliveryAddress || '',
     chronicDiseases: u.chronicDiseases || [],
     basicRemark: u.basicRemark || '',
+    preferences: u.preferences || '',
   })
 
   const handleSaveBasicInfo = async () => {
@@ -2353,6 +2354,15 @@ export default function PatientDetailPage() {
                     </div>
                   </div>
                   <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label style={{ fontSize: 12, color: '#8AA89C' }}>
+                      个性化喜好/禁忌
+                      <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#FEF3E2', border: '1px solid #F6D860', borderRadius: 4, padding: '1px 5px' }}>AI会读取</span>
+                    </label>
+                    <textarea className="form-input" rows={3} value={basicInfoForm.preferences || ''}
+                      placeholder="如：不喜欢过年期间到医院、忌讳提及某疾病名称——AI生成随访建议/健康教练消息/内容推荐时会参考"
+                      onChange={e => setBasicInfoForm(f => ({ ...f, preferences: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label style={{ fontSize: 12, color: '#8AA89C' }}>备注</label>
                     <textarea className="form-input" rows={3} value={basicInfoForm.basicRemark || ''}
                       placeholder="基本信息相关的补充说明"
@@ -2398,6 +2408,12 @@ export default function PatientDetailPage() {
                         : <span style={{ fontSize: 13, color: '#1A2B24' }}>-</span>}
                     </span>
                   </div>
+                  {user.preferences && (
+                    <div style={{ marginTop: 10, padding: '8px 12px', background: '#FEF3E2', border: '1px solid #F6D860', borderRadius: 8, fontSize: 13, color: '#92400E', whiteSpace: 'pre-wrap' }}>
+                      <div style={{ fontSize: 11, fontWeight: 600, marginBottom: 3 }}>⚠️ 个性化喜好/禁忌（AI会读取）</div>
+                      {user.preferences}
+                    </div>
+                  )}
                   {user.basicRemark && (
                     <div style={{ marginTop: 10, padding: '8px 12px', background: '#F7F5F0', borderRadius: 8, fontSize: 13, color: '#4A6558', whiteSpace: 'pre-wrap' }}>
                       📝 {user.basicRemark}

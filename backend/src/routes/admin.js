@@ -11,6 +11,7 @@ const Task = require('../models/Task');
 const Message = require('../models/Message');
 const Order = require('../models/Order');
 const PointsLog = require('../models/PointsLog');
+const { refundOrderPoints } = require('../utils/orderPoints');
 const Service = require('../models/Service');
 const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
@@ -293,6 +294,9 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
     .populate('user', 'name phone');
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
 
+  // 订单被取消：若之前预记过消费积分，退回
+  if (status === 'cancelled') await refundOrderPoints(order);
+
   res.json({ success: true, data: order, message: `订单已更新为：${status}` });
 });
 
@@ -316,8 +320,10 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   order.verifyCode = crypto.randomBytes(4).toString('hex').toUpperCase();
   await order.save();
 
-  // 消费积分：按实付金额（现金部分，不含健康基金/优惠券抵扣）1元=1积分，确认收款后才发放
-  if (order.paidAmount > 0) {
+  // 消费积分：下单时已按 paidAmount 预记过（见 services.js POST /order），这里只对还没记过分的
+  // 老订单补记，避免同一笔订单人工标记支付时重复计分（2026-07-13 改为下单即预记后新增的保护）
+  const alreadyAwarded = await PointsLog.findOne({ refType: 'Order', refId: order._id, source: 'consumption' });
+  if (!alreadyAwarded && order.paidAmount > 0) {
     const pointsAmount = Math.floor(order.paidAmount);
     if (pointsAmount > 0) {
       Promise.all([
@@ -328,6 +334,21 @@ router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   }
 
   res.json({ success: true, data: order, message: '已标记为已支付，核销码：' + order.verifyCode });
+});
+
+// ── PATCH /api/admin/orders/:id/refund — 退款（paymentStatus 之前只定义了 refunded 枚举值，
+//    从未有接口真正写入过；2026-07-13 新增：退款时把预记的消费积分退回）──
+router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+  if (order.paymentStatus !== 'paid') return res.status(400).json({ success: false, message: '只有已支付的订单才能退款' });
+
+  order.paymentStatus = 'refunded';
+  if (order.status === 'pending' || order.status === 'scheduled') order.status = 'cancelled';
+  await order.save();
+  await refundOrderPoints(order);
+
+  res.json({ success: true, data: order, message: '已退款，积分已退回' });
 });
 
 // ── PATCH /api/admin/orders/:id/verify — 到店核销 ──
