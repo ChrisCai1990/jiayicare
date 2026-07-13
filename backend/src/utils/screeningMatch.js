@@ -94,7 +94,11 @@ function buildIndex(nodes) {
 // 通用匹配：给定任意 index，返回所有置信度 >= 阈值的节点，按置信度降序排列
 function matchAllWithIndex(rawName, itemType, index, threshold = 0.6, excludeCategories = []) {
   const q = norm(rawName);
-  if (!q || q.length < 2) return [];
+  // 2026-07-13修复：原门槛 q.length < 2 把电解质"钾/钠/氯/钙/镁"这类单字检验项目名全部短路掉，
+  // 连精确匹配(c.n === q，置信度1.0)都不会走到，导致这几项永远归类失败（screeningTree.js里
+  // "电解质"节点的钾/钠/氯别名配置本身没问题，是这里的长度门槛把它们拦在了匹配循环之外）。
+  // 只拦截空字符串即可——精确匹配分支本身已经足够严格，不会因为放行单字符而引入误配风险。
+  if (!q) return [];
   const results = [];
   for (const { node, cands } of index) {
     if (excludeCategories.includes(node.category)) continue;
