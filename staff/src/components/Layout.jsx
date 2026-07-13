@@ -18,7 +18,6 @@ const ALL_NAV = [
   { label: '随访管理',     icon: '📋', path: '/followups',         roles: [],                                                                                  moduleKey: 'followups' },
   { label: '健康方案',     icon: '📄', path: '/plans',             roles: ['familyDoctor','nutritionist','rehabSpecialist','tcmDoctor','superadmin'],           moduleKey: 'plans', children: PLAN_CHILDREN },
   { label: '报告管理',     icon: '🔬', path: '/reports',           roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'reports' },
-  { label: '异常复查',     icon: '⚠️', path: '/abnormal-reviews',  roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'abnormal_review' },
   { label: '服务记录',     icon: '🏥', path: '/service-records',   roles: [],                                                                                  moduleKey: 'service_records' },
   { label: '科普推送',     icon: '📢', path: '/knowledge',         roles: ['healthManager','nutritionist','familyDoctor','superadmin'],                         moduleKey: 'knowledge' },
   { label: '问卷推送',     icon: '📝', path: '/questionnaires',    roles: ['healthManager','familyDoctor','superadmin'],                                        moduleKey: 'questionnaires' },

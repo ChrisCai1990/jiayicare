@@ -38,7 +38,6 @@ import NotificationsPage from './pages/NotificationsPage'
 import MarketingPage from './pages/MarketingPage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import AnnualMgmtPlanPage from './pages/AnnualMgmtPlanPage'
-import AbnormalReviewPage from './pages/AbnormalReviewPage'
 import DailyCheckinPage from './pages/DailyCheckinPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
@@ -52,7 +51,6 @@ export const ROUTE_MODULE = {
   '/followups': 'followups',
   '/plans': 'plans',
   '/reports': 'reports',
-  '/abnormal-reviews': 'abnormal_review',
   '/service-records': 'service_records',
   '/knowledge': 'knowledge',
   '/questionnaires': 'questionnaires',
@@ -178,7 +176,6 @@ export default function App() {
               <Route path="profile" element={<ProfilePage />} />
               <Route path="notifications" element={<NotificationsPage />} />
               <Route path="marketing" element={<MarketingPage />} />
-              <Route path="abnormal-reviews" element={<AbnormalReviewPage />} />
               <Route path="daily-checkin" element={<DailyCheckinPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/home" replace />} />
