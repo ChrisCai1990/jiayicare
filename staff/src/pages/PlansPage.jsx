@@ -197,7 +197,7 @@ export default function PlansPage() {
                 </tr></thead>
                 <tbody>
                   {plans.map(p => (
-                    <tr key={p._id} onClick={() => nav(`/plans/${p._id}`)} style={{ cursor: 'pointer' }}>
+                    <tr key={p._id} onClick={() => nav(['nutrition', 'medical_assist'].includes(p.type) ? `/plans/${p._id}/modules` : `/plans/${p._id}`)} style={{ cursor: 'pointer' }}>
                       <td>
                         <strong>{p.title}</strong>
                         {/* 就医协助按模板细分服务类型，同一会员多次生成时标题常年雷同（AI都写"XX就医协助方案"），
@@ -216,7 +216,7 @@ export default function PlansPage() {
                       <td>{p.items?.length || 0} 项</td>
                       <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                       <td>
-                        <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(`/plans/${p._id}`) }}>编辑</button>
+                        <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(['nutrition', 'medical_assist'].includes(p.type) ? `/plans/${p._id}/modules` : `/plans/${p._id}`) }}>编辑</button>
                       </td>
                     </tr>
                   ))}

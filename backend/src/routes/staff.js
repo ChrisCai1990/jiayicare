@@ -6821,14 +6821,31 @@ ${goal ? goal : '（未填写目标，按患者信息与模板骨架常规定制
     } catch {}
 
     // 骨架字段原样锁定，只有三餐+加餐内容用AI具体化结果（留空则回退模板参考值）
+    const breakfast = raw.breakfast || tc.breakfast || '';
+    const lunch = raw.lunch || tc.lunch || '';
+    const dinner = raw.dinner || tc.dinner || '';
+    const snack = raw.snack || tc.snack || '';
     const items = [
-      { name: '早餐方案', category: '营养干预', notes: raw.breakfast || tc.breakfast || '' },
-      { name: '午餐方案', category: '营养干预', notes: raw.lunch || tc.lunch || '' },
-      { name: '晚餐方案', category: '营养干预', notes: raw.dinner || tc.dinner || '' },
-      ...(tc.snack || raw.snack ? [{ name: '加餐方案', category: '营养干预', notes: raw.snack || tc.snack || '' }] : []),
+      { name: '早餐方案', category: '营养干预', notes: breakfast },
+      { name: '午餐方案', category: '营养干预', notes: lunch },
+      { name: '晚餐方案', category: '营养干预', notes: dinner },
+      ...(snack ? [{ name: '加餐方案', category: '营养干预', notes: snack }] : []),
       ...(tc.nutritionSupplements ? [{ name: '营养素补充建议', category: '营养干预', notes: tc.nutritionSupplements }] : []),
       ...(tc.exerciseSuggestion ? [{ name: '运动建议', category: '运动康复', notes: tc.exerciseSuggestion }] : []),
     ].map(i => ({ ...i, status: 'pending' }));
+
+    // moduleData：跟年度管理方案同一套板块化呈现结构（staff/src/pages/PlanModulesPage.jsx 消费），
+    // 2026-07-13 需求"营养/就医协助方案呈现要跟年度管理方案一致"
+    const moduleData = {
+      breakfast: { content: breakfast },
+      lunch: { content: lunch },
+      dinner: { content: dinner },
+      snack: { content: snack },
+      principle: { dietPrinciple: tc.dietPrinciple || '', cookingMethod: tc.cookingMethod || '', mealOrder: tc.mealOrder || '', dailyWater: tc.dailyWater || '' },
+      forbidden: { allowedFoods: tc.allowedFoods || '', forbiddenFoods: tc.forbiddenFoods || '' },
+      supplement: { content: tc.nutritionSupplements || '' },
+      exercise: { content: tc.exerciseSuggestion || '' },
+    };
 
     const plan = await HealthPlan.create({
       patientId: user._id,
@@ -6841,8 +6858,8 @@ ${goal ? goal : '（未填写目标，按患者信息与模板骨架常规定制
       content: {
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
         templateId: template._id, templateName: template.name || '',
-        dietPrinciple: tc.dietPrinciple || '', allowedFoods: tc.allowedFoods || '', forbiddenFoods: tc.forbiddenFoods || '',
-        cookingMethod: tc.cookingMethod || '', mealOrder: tc.mealOrder || '', dailyWater: tc.dailyWater || '',
+        goal: goal || '',
+        moduleData,
       },
       status: 'draft',
     });
@@ -6979,6 +6996,17 @@ ${templateBlock}
 
     const usedTemplate = matchedTemplate || (candidateTemplates.length ? candidateTemplates.find(t => t.name === raw.title) : null) || templateForFields;
 
+    // moduleData：跟年度管理方案同一套板块化呈现结构（staff/src/pages/PlanModulesPage.jsx 消费），
+    // 2026-07-13 需求"营养/就医协助方案呈现要跟年度管理方案一致"；tasks 板块是多条记录模式，
+    // 把AI生成的逐行任务文本拆成独立记录，负责人默认留空由就医专员自行分配
+    const taskRecords = tasksText.split('\n').map(t => t.trim()).filter(Boolean).map(t => ({ task: t }));
+    const moduleData = {
+      visit: { hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '' },
+      logistics: { hotel: raw.hotel || '', transport: raw.transport || '' },
+      tasks: { records: taskRecords },
+      notes: { content: raw.notes || '' },
+    };
+
     const plan = await HealthPlan.create({
       patientId: user._id,
       staffId: req.staff._id,
@@ -6991,6 +7019,7 @@ ${templateBlock}
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
         templateId: usedTemplate?._id || null,
         templateName: usedTemplate?.name || '',
+        goal: briefNote || '',
         // 模板原始骨架快照——不经AI改写，前端"标准动作"区块直接展示这份，
         // 跟下面AI生成的个性化内容分开陈列，避免两者混在一起分不清
         templateSnapshot: usedTemplate ? {
@@ -7002,6 +7031,7 @@ ${templateBlock}
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',
+        moduleData,
       },
       status: 'draft',
       sourceOrderId: order ? order._id : null,

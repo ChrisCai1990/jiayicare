@@ -38,6 +38,7 @@ import NotificationsPage from './pages/NotificationsPage'
 import MarketingPage from './pages/MarketingPage'
 import AnnualPlanPage from './pages/AnnualPlanPage'
 import AnnualMgmtPlanPage from './pages/AnnualMgmtPlanPage'
+import PlanModulesPage from './pages/PlanModulesPage'
 import DailyCheckinPage from './pages/DailyCheckinPage'
 
 // ── Auth Context ──────────────────────────────────────────────────
@@ -164,6 +165,7 @@ export default function App() {
               <Route path="plans" element={<PlansPage />} />
               <Route path="plans/mgmt/:id" element={<AnnualMgmtPlanPage />} />
               <Route path="patients/:id/annual-health" element={<AnnualMgmtPlanPage patientMode />} />
+              <Route path="plans/:id/modules" element={<PlanModulesPage />} />
               <Route path="plans/:id" element={<PlanDetailPage />} />
               <Route path="reports" element={<ReportsPage />} />
               <Route path="service-records" element={<ServiceRecordsPage />} />

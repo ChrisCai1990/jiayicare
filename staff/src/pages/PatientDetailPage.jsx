@@ -5952,7 +5952,9 @@ export default function PatientDetailPage() {
                   const total = p.items?.length || 0
                   return (
                     <tr key={p._id} style={{ cursor: 'pointer' }}
-                      onClick={() => p.isAnnualPlan ? nav(`/patients/${id}/annual-health`) : nav(`/plans/${p._id}`)}>
+                      onClick={() => p.isAnnualPlan ? nav(`/patients/${id}/annual-health`)
+                        : ['nutrition', 'medical_assist'].includes(p.type) ? nav(`/plans/${p._id}/modules`)
+                          : nav(`/plans/${p._id}`)}>
                       <td style={{ fontWeight: 500, color: '#1E6B50' }}>
                         {p.title}
                         {p.isAnnualPlan && <span style={{ marginLeft: 6, fontSize: 11, color: '#1E6B50', background: '#E8F5EF', padding: '1px 6px', borderRadius: 4 }}>年度</span>}
