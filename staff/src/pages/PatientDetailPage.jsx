@@ -1848,7 +1848,7 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
     finally { setRiskSaving(false) }
   }
-  // 风险评估讨论区：发留言 / 撤回 / 让AI回应
+  // 风险评估讨论区：发留言后自动让AI接话，形成对话式讨论，无需再手动点按钮
   const handleRiskDiscSend = async (year) => {
     if (!riskDiscInput.trim()) return
     setRiskDiscBusy(true)
@@ -1856,8 +1856,14 @@ export default function PatientDetailPage() {
       await staffAPI.addAIRiskDiscussion(id, riskDiscInput.trim(), year)
       setRiskDiscInput('')
       load()
-    } catch (err) { toast(err.message || '发送失败') }
-    finally { setRiskDiscBusy(false) }
+    } catch (err) { toast(err.message || '发送失败'); setRiskDiscBusy(false); return }
+    setRiskDiscBusy(false)
+    setRiskAiReplying(true)
+    try {
+      await staffAPI.generateAIRiskReply(id, year)
+      load()
+    } catch (err) { toast(err.message || 'AI回应失败') }
+    finally { setRiskAiReplying(false) }
   }
   const handleRiskDiscDelete = async (index, year) => {
     try { await staffAPI.deleteAIRiskDiscussion(id, index, year); load() }
