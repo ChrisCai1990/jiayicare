@@ -21,7 +21,6 @@ const ALL_CATEGORIES = Object.keys(CATEGORY_LABEL);
 router.get('/by-category', auth, async (req, res) => {
   try {
     const reports = await MedicalReport.find({ user: req.user._id })
-      .select('-content')
       .sort({ reportYear: -1, checkDate: -1, createdAt: -1 });
 
     // 按年份分组
@@ -31,7 +30,10 @@ router.get('/by-category', auth, async (req, res) => {
       if (!yearMap[year]) yearMap[year] = {};
       const cat = r.screeningCategory || 'other_routine';
       if (!yearMap[year][cat]) yearMap[year][cat] = [];
-      yearMap[year][cat].push(r);
+      const obj = r.toObject();
+      obj.hasContent = !!obj.content;
+      delete obj.content;
+      yearMap[year][cat].push(obj);
     });
 
     // 转成数组，年份倒序
@@ -456,13 +458,18 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
   }
 });
 
-// ── 获取用户体检报告列表（列表不返回 content，避免传输过大）
+// ── 获取用户体检报告列表（列表不返回 content，避免传输过大；用 hasContent 标记是否有 base64 原件可查看）
 router.get('/', auth, async (req, res) => {
   try {
     const reports = await MedicalReport.find({ user: req.user._id })
-      .select('-content')
       .sort({ createdAt: -1 });
-    res.json({ success: true, data: reports });
+    const data = reports.map(r => {
+      const obj = r.toObject();
+      obj.hasContent = !!obj.content;
+      delete obj.content;
+      return obj;
+    });
+    res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取报告列表失败', error: err.message });
   }

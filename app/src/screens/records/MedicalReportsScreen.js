@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, ActivityIndicator, Linking, Alert,
+  SafeAreaView, ActivityIndicator, Linking, Alert, Modal, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -14,14 +14,33 @@ function resolveFileUrl(url) {
   if (/^https?:\/\//i.test(url)) return url;
   return FILE_BASE_URL + url;
 }
-async function openOriginalFile(report) {
+// OSS 未配置时原件以 base64 存 content 字段，data URI 无法用 Linking 交给系统程序打开，
+// 图片走 App 内预览，PDF/其他类型系统查看器不支持 data URI，暂只能提示。
+async function openOriginalFile(report, setPreviewUri) {
   const urls = (report.fileUrls?.length ? report.fileUrls : [report.fileUrl]).filter(Boolean);
-  if (!urls.length) { Alert.alert('无原始文件', '该报告未上传原始文件'); return; }
-  try {
-    await Linking.openURL(resolveFileUrl(urls[0]));
-  } catch {
-    Alert.alert('打开失败', '无法打开原始文件，请稍后重试');
+  if (urls.length) {
+    try {
+      await Linking.openURL(resolveFileUrl(urls[0]));
+    } catch {
+      Alert.alert('打开失败', '无法打开原始文件，请稍后重试');
+    }
+    return;
   }
+  if (report.hasContent) {
+    try {
+      const res = await reportsAPI.get(report._id);
+      const full = res.data;
+      if (full?.content && full.mimeType?.startsWith('image/')) {
+        setPreviewUri(`data:${full.mimeType};base64,${full.content}`);
+      } else {
+        Alert.alert('暂不支持预览', '该报告为非图片格式原件，暂不支持在App内查看，请联系健管专员');
+      }
+    } catch {
+      Alert.alert('加载失败', '无法加载原始文件，请稍后重试');
+    }
+    return;
+  }
+  Alert.alert('无原始文件', '该报告未上传原始文件');
 }
 
 const CATEGORY_META = {
@@ -66,11 +85,11 @@ function ReportItemRow({ item }) {
   );
 }
 
-function ReportCard({ report }) {
+function ReportCard({ report, onPreview }) {
   const [expanded, setExpanded] = useState(false);
   const hasItems = report.reportItems?.length > 0;
   const hasAI = !!report.aiSummary;
-  const hasFile = !!(report.fileUrl || report.fileUrls?.length);
+  const hasFile = !!(report.fileUrl || report.fileUrls?.length || report.hasContent);
 
   return (
     <View style={styles.reportCard}>
@@ -96,7 +115,7 @@ function ReportCard({ report }) {
       {expanded && (
         <View style={styles.reportCardBody}>
           {hasFile && (
-            <TouchableOpacity style={styles.viewOriginalBtn} onPress={() => openOriginalFile(report)} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.viewOriginalBtn} onPress={() => openOriginalFile(report, onPreview)} activeOpacity={0.8}>
               <Ionicons name="document-attach-outline" size={16} color={colors.primary} />
               <Text style={styles.viewOriginalBtnText}>查看原始报告文件</Text>
             </TouchableOpacity>
@@ -127,6 +146,7 @@ export default function MedicalReportsScreen({ navigation }) {
   const [years, setYears]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [selYear, setSelYear]   = useState(null);
+  const [previewUri, setPreviewUri] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -188,7 +208,7 @@ export default function MedicalReportsScreen({ navigation }) {
                   </View>
 
                   {cat.reports.map(r => (
-                    <ReportCard key={r._id} report={r} />
+                    <ReportCard key={r._id} report={r} onPreview={setPreviewUri} />
                   ))}
                 </View>
               );
@@ -197,6 +217,15 @@ export default function MedicalReportsScreen({ navigation }) {
           </ScrollView>
         </>
       )}
+
+      <Modal visible={!!previewUri} transparent animationType="fade" onRequestClose={() => setPreviewUri(null)}>
+        <TouchableOpacity style={styles.previewBackdrop} activeOpacity={1} onPress={() => setPreviewUri(null)}>
+          <Image source={{ uri: previewUri }} style={styles.previewImage} resizeMode="contain" />
+          <TouchableOpacity style={styles.previewCloseBtn} onPress={() => setPreviewUri(null)}>
+            <Ionicons name="close" size={26} color="#fff" />
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -248,6 +277,10 @@ const styles = StyleSheet.create({
     paddingVertical: 8, marginBottom: spacing.sm,
   },
   viewOriginalBtnText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
+
+  previewBackdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', alignItems: 'center', justifyContent: 'center' },
+  previewImage: { width: '100%', height: '80%' },
+  previewCloseBtn: { position: 'absolute', top: 48, right: 20, padding: 8 },
 
   aiSummaryBox:  { backgroundColor: '#E8F5EF', borderRadius: radius.sm, padding: spacing.sm, marginBottom: spacing.sm },
   aiSummaryTitle:{ fontSize: 11, fontWeight: '700', color: colors.primary, marginBottom: 4 },
