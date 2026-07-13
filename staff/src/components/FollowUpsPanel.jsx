@@ -21,8 +21,12 @@ export default function FollowUpsPanel() {
   useEffect(() => {
     staffAPI.getFollowUps({ status: 'planned', limit: 200 })
       .then(r => {
-        setItems(r.data?.followUps || [])
-        setTotal(r.data?.total || 0)
+        // 订单来源的待办（sourceType='order'，商城下单后生成）已经在首页"待处理服务预约"面板单独展示，
+        // 这里要排除掉，否则同一条记录会在"待随访任务"里重复出现——它本质是服务预约，不是随访动作
+        // （2026-07-13 反馈：如"预约：医疗代诊服务"这类不该混进待随访列表）
+        const followUpsOnly = (r.data?.followUps || []).filter(f => f.sourceType !== 'order')
+        setItems(followUpsOnly)
+        setTotal(followUpsOnly.length)
       })
       .catch(() => {})
       .finally(() => setLoading(false))

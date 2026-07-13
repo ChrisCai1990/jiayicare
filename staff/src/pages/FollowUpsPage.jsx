@@ -171,7 +171,7 @@ export default function FollowUpsPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo })
+      const res = await staffAPI.getFollowUps({ page, limit, status: statusTab, patientName, assignedTo, dateFrom, dateTo, excludeSourceType: 'order' })
       setFollowUps(res.data.followUps)
       setTotal(res.data.total)
     } catch (err) {

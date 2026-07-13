@@ -809,7 +809,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
-  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '' } = req.query;
+  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '' } = req.query;
 
   // 如果按患者姓名搜索，先查出匹配的用户ID
   let patientFilter = {};
@@ -833,6 +833,9 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
 
   const filter = { $and: [ownerFilter, patientFilter, assignedTo ? { assignedTo } : {}] };
   if (sourceType) filter.sourceType = sourceType;
+  // 订单来源的待办(sourceType='order')有独立的"待处理服务预约"展示位，随访列表页需要排除，
+  // 避免"预约：医疗代诊服务"这类服务预约混进随访任务列表（2026-07-13反馈）
+  if (excludeSourceType) filter.sourceType = { $ne: excludeSourceType };
   if (status) {
     // in_progress 同时包含旧的 missed 状态
     if (status === 'in_progress') filter.status = { $in: ['in_progress', 'missed'] };
