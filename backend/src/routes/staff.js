@@ -6816,7 +6816,8 @@ ${orderInfo}
       items.push({ name: `就诊：${raw.hospital}${dept}`, category: '就医协助' });
     }
     if (order) items.push({ name: `关联订单：${order.serviceName}`, category: '就医协助' });
-    if (raw.tasks) raw.tasks.split('\n').filter(t => t.trim()).forEach(t =>
+    const tasksText = Array.isArray(raw.tasks) ? raw.tasks.join('\n') : (raw.tasks || '');
+    if (tasksText) tasksText.split('\n').filter(t => t.trim()).forEach(t =>
       items.push({ name: t.trim(), category: '就医协助' })
     );
     if (raw.notes) items.push({ name: `注意事项：${raw.notes}`, category: '就医协助' });
@@ -6832,7 +6833,7 @@ ${orderInfo}
       content: {
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
         hospital: raw.hospital || '', department: raw.department || '',
-        tasks: raw.tasks || '', notes: raw.notes || '',
+        tasks: tasksText, notes: raw.notes || '',
       },
       status: 'draft',
       sourceOrderId: order ? order._id : null,
