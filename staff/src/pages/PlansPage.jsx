@@ -198,14 +198,23 @@ export default function PlansPage() {
                 <tbody>
                   {plans.map(p => (
                     <tr key={p._id} onClick={() => nav(`/plans/${p._id}`)} style={{ cursor: 'pointer' }}>
-                      <td><strong>{p.title}</strong></td>
+                      <td>
+                        <strong>{p.title}</strong>
+                        {/* 就医协助按模板细分服务类型，同一会员多次生成时标题常年雷同（AI都写"XX就医协助方案"），
+                            列表里加模板名标签，不然专员分不清是哪次预约（2026-07-13 反馈"名称都一样"）*/}
+                        {p.type === 'medical_assist' && p.content?.templateName && (
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: '#7C3AED', background: '#F2EEFF', borderRadius: 4, padding: '1px 6px' }}>
+                            {p.content.templateName}
+                          </span>
+                        )}
+                      </td>
                       <td><span className="badge badge-info">{TYPE_LABEL[p.type]}</span></td>
                       <td>{p.patientId?.name || '-'} <span style={{ color: '#aaa', fontSize: 12 }}>{p.patientId?.phone}</span></td>
                       <td>
                         <span style={{ color: STATUS_COLOR[getPlanStatus(p)], fontWeight: 500 }}>{STATUS_LABEL[getPlanStatus(p)]}</span>
                       </td>
                       <td>{p.items?.length || 0} 项</td>
-                      <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleDateString('zh-CN')}</td>
+                      <td style={{ color: '#8AA89C', fontSize: 12 }}>{new Date(p.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                       <td>
                         <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); nav(`/plans/${p._id}`) }}>编辑</button>
                       </td>
