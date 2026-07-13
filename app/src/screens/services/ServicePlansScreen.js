@@ -314,6 +314,13 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
               <Text style={[s.statusChipText, { color: sm.color }]}>{sm.label}</Text>
             </View>
           </View>
+          {/* 就医协助按模板细分服务类型（如"医疗代诊服务"），同一患者多次生成时标题常年雷同（AI都写"XX就医协助方案"），
+              不加这个标签折叠态完全分不清是哪次预约（2026-07-13 反馈"三份方案命名都一样"）*/}
+          {plan.type === 'medical_assist' && plan.content?.templateName && (
+            <View style={{ backgroundColor: meta.bg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 2 }}>
+              <Text style={{ fontSize: 11, color: meta.color, fontWeight: '600' }}>{plan.content.templateName}</Text>
+            </View>
+          )}
           {plan.year && (
             <View style={{ backgroundColor: meta.bg, borderRadius: 4, paddingHorizontal: 6, paddingVertical: 2, alignSelf: 'flex-start', marginBottom: 2 }}>
               <Text style={{ fontSize: 11, color: meta.color, fontWeight: '600' }}>{plan.year} 年度</Text>

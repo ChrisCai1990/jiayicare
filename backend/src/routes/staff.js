@@ -6853,7 +6853,7 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
     }
 
     const fieldSpecs = [
-      `"title": "方案名称（如：${user.name}就医协助方案）"`,
+      `"title": "方案名称，必须包含具体服务类型${templateForFields ? `（本次是${templateForFields.name}）` : ''}和月日，如：${user.name}${templateForFields?.name || '就医协助'}方案（${new Date().getMonth() + 1}月${new Date().getDate()}日），不要只写笼统的'就医协助方案'——同一患者可能多次生成，必须能一眼区分是哪次"`,
       `"description": "方案简介，说明本次就医协助的目的（100字以内）"`,
       askFields.hospital && `"hospital": "建议就诊医院（结合患者慢病情况推断合适的医院，无法判断则留空）"`,
       askFields.department && `"department": "建议就诊科室"`,
@@ -6911,7 +6911,7 @@ ${templateBlock}
       patientId: user._id,
       staffId: req.staff._id,
       type: 'medical_assist',
-      title: raw.title || usedTemplate?.name || `${user.name}就医协助方案`,
+      title: raw.title || `${user.name}${usedTemplate?.name || '就医协助'}方案（${new Date().getMonth() + 1}月${new Date().getDate()}日）`,
       description: raw.description || '',
       year: new Date().getFullYear(),
       items: items.map(i => ({ ...i, status: 'pending' })),
