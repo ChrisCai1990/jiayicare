@@ -1397,10 +1397,14 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
         }
         report = await existing.save();
         if (planId && planItemId) {
-          const plan = await HealthPlan.findById(planId);
-          if (plan) {
-            const item = plan.items.id(planItemId);
-            if (item) { item.reportId = report._id; await plan.save(); }
+          try {
+            const plan = await HealthPlan.findById(planId);
+            if (plan) {
+              const item = plan.items.id(planItemId);
+              if (item) { item.reportId = report._id; await plan.save(); }
+            }
+          } catch (planErr) {
+            console.error('报告已上传成功，但回填体检方案条目失败:', planErr);
           }
         }
         return res.json({ success: true, data: report });
@@ -1416,11 +1420,18 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       planId: planId || null, planItemId: planItemId || null,
       screeningL1: screeningL1 || '', screeningL2: screeningL2 || '',
     });
+    // report 已成功入库，回填体检方案条目失败不应让前端误判整次上传失败（此前 plan.save() 抛错会被下面
+    // 的 catch 捕到、返回500"上传失败"，但 report 记录其实已经存在——健管专员据此又重传一次，导致同一
+    // (checkDate, screeningL1) 下出现两条真实报告）。回填单独 try/catch，失败只记日志不影响上传结果。
     if (planId && planItemId) {
-      const plan = await HealthPlan.findById(planId);
-      if (plan) {
-        const item = plan.items.id(planItemId);
-        if (item) { item.reportId = report._id; await plan.save(); }
+      try {
+        const plan = await HealthPlan.findById(planId);
+        if (plan) {
+          const item = plan.items.id(planItemId);
+          if (item) { item.reportId = report._id; await plan.save(); }
+        }
+      } catch (planErr) {
+        console.error('报告已上传成功，但回填体检方案条目失败:', planErr);
       }
     }
     res.json({ success: true, data: report });
@@ -2222,21 +2233,26 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   const hasContentMap = {};
   contentFlags.forEach(f => { hasContentMap[String(f._id)] = f.hasContent; });
 
-  // 显示层去重：同一 (checkDate, screeningL1) 的两条记录合并为一条
+  // 显示层去重：同一 (checkDate, screeningL1) 下，"还没有文件的占位记录"合并进后续补文件的真实记录。
+  // 2026-07-13修复：原逻辑只要 key 相同就无条件合并，导致同一大类（如"功能医学检测"）同一天分别上传
+  // 的多份不同真实报告（screeningL2 未填、彼此靠标题区分）被误判成同一条筛查记录，除第一条外全部在
+  // 医护端列表消失（用户端走的是另一套不去重的接口，能看到全部）。收紧为：只有 primary 自己还没有
+  // fileUrl（即它是空壳占位，不是独立上传的真实报告）才允许后续同 key 记录合并进它；primary 已经带
+  // 真实文件后，后续同 key 记录视为独立报告，各自展示。
   const keyMap = {};
   const result = [];
   for (const r of reports) {
     const key = r.screeningL1 && r.checkDate ? `${r.checkDate}|${String(r.screeningL1)}` : null;
-    if (key && keyMap[key]) {
-      const primary = keyMap[key];
-      if (!primary.fileUrl && r.fileUrl) { primary.fileUrl = r.fileUrl; primary.mimeType = r.mimeType; }
+    const primary = key ? keyMap[key] : null;
+    if (primary && !primary.fileUrl) {
+      if (r.fileUrl) { primary.fileUrl = r.fileUrl; primary.mimeType = r.mimeType; }
       if ((r.reportItems?.length || 0) > (primary.reportItems?.length || 0)) primary.reportItems = r.reportItems;
       if (!primary.hasContent && hasContentMap[String(r._id)]) primary.hasContent = true;
     } else {
       const obj = r.toObject();
       obj.hasContent = !!hasContentMap[String(r._id)];
-      if (key) keyMap[key] = obj;
-      result.push(key ? keyMap[key] : obj);
+      if (key && !primary) keyMap[key] = obj;
+      result.push(obj);
     }
   }
   result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
