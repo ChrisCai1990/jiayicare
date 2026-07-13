@@ -5435,6 +5435,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则F：检验数值必须与其对应项目严格匹配，不可串行填写。
 规则G：findings/diagnosis/conclusion 字段只填报告原文，不加解释或分析。
 规则H：诊断结论性短语本身不是检查项目，禁止单独作为一条 name 提取。如"左肾上腺稍增粗""慢性浅表性胃炎""窦性心动过缓""血脂异常""饮酒史""内痔"这类词，只是某个检查项目（如腹部超声/胃镜/心电图/血脂化验/既往史问诊）的诊断结论或病史条目，必须整句放进对应检查项目的 diagnosis/findings 字段里，不能单独拆出来生成新的 name/条目。判断标准：如果这段文字没有具体的测量数值/检查所见描述，只是一个诊断名词或病史陈述，就不能作为独立项目。
+规则I：diagnosis/conclusion 严禁把报告原文的中文自行替换/翻译成英文。部分检查（如宫颈液基细胞学/TCT病理）国内报告的诊断结论原文其实是中文（如"未见上皮内病变或恶性病变"），但AI可能凭自己知道的TBS分类法英文术语把它替换成英文短语（如"Negative for intraepithelial lesion or malignancy"）——这是幻觉错误，违反规则零。报告上印的是什么文字就原样提取什么文字，不能用自己知道的专业术语替换原文，无论中译英还是英译中都不允许。只有报告原文确实印刷的是英文（少数境外机构报告）时，才翻译成中文标准表述填入。此规则只管diagnosis/conclusion这类结论性文字，name/value/unit和findings里的英文缩写指标代号（如DOB/CRP/IgG等）仍按原文提取。
 
 【提取规则（按检查类型）】
 
@@ -5473,8 +5474,12 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → diagnosis=结论/小结原文
 
 7. 碳13 / 碳14 呼气试验
-   → itemType="imaging"
-   → findings=检查结果，diagnosis=结论，conclusion=同 diagnosis
+   该检查既有具体测定数值（DOB值）又有阳性/阴性结论，需提取两类条目，不能只写一条imaging把数值丢在文字里：
+   ① 测量数值（itemType="lab"，一条）：name="碳13尿素呼气试验"或"碳14尿素呼气试验"（严格区分，不得改名）；
+      value=DOB测定值，unit=单位，referenceRange=报告印刷的阳性判断阈值（无则留空），status=normal/abnormal；
+      orderName="幽门螺杆菌检测"；diagnosis/conclusion 留空
+   ② 检查结论（itemType="imaging"，一条）：name=同①，findings=检查结果完整原文（可含①的数值），
+      diagnosis=结论原文，conclusion=同 diagnosis
 
 8. 超声（肝脏/胆胰脾/双肾输尿管膀胱/前列腺/甲状腺/颈动脉/心脏超声/乳腺/子宫附件或阴道等）
    → 【核心规则】常见器官固定为：肝脏、胆胰脾（胆囊/胰腺/脾脏，常与肝脏同页/同单，但仍需按器官拆开）、甲状腺、乳腺、子宫附件或阴道、双肾输尿管膀胱、前列腺、颈动脉、心脏超声。
