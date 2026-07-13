@@ -937,6 +937,7 @@ export default function PatientDetailPage() {
   const [patientReferrals, setPatientReferrals] = useState([])
   const [expandedReferralCats, setExpandedReferralCats] = useState({})
   const [expandedReportYears, setExpandedReportYears] = useState({})
+  const [reportSearchKw, setReportSearchKw] = useState('')
   const [patientOrders, setPatientOrders] = useState([])
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
@@ -6232,6 +6233,12 @@ export default function PatientDetailPage() {
         const AI_COLOR = { none:'#ccc', processing:'#7C3AED', pending:'#D97706', reviewed:'#22A06B', rejected:'#DC3545' }
         const AI_LABEL = { none:'未解析', processing:'识别中…', pending:'待审核', reviewed:'已审核', rejected:'已驳回' }
 
+        // 搜索：按标题/医院/机构关键词过滤，不影响下面按年份+分类分组的展示逻辑
+        const kw = reportSearchKw.trim().toLowerCase()
+        const filteredReports = kw
+          ? reports.filter(r => [r.title, r.hospital, r.institution].some(v => (v || '').toLowerCase().includes(kw)))
+          : reports
+
         // 标题 → L1 节点映射（用 screeningTree）
         const titleToL1 = {}
         const titleL2Order = {} // title → L2 order index（用于组内排序）
@@ -6248,7 +6255,7 @@ export default function PatientDetailPage() {
         const ANNUAL_KEY = '__annual__'
         const OTHER_KEY  = '__other__'
         const yearMap = {}
-        reports.forEach(r => {
+        filteredReports.forEach(r => {
           const dateStr = r.checkDate || r.date
           const yr = r.reportYear || (dateStr ? new Date(dateStr).getFullYear() : new Date(r.createdAt).getFullYear()) || '未知'
           if (!yearMap[yr]) yearMap[yr] = {}
@@ -6279,12 +6286,18 @@ export default function PatientDetailPage() {
 
         return (
           <div>
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
               <div className="card-title">体检报告</div>
-              <button className="btn btn-primary btn-sm" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input className="form-input" style={{ width: 200 }} placeholder="🔍 搜索报告标题/医院"
+                  value={reportSearchKw} onChange={e => setReportSearchKw(e.target.value)} />
+                <button className="btn btn-primary btn-sm" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>
+              </div>
             </div>
             {reports.length === 0 ? (
               <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无体检报告</div>
+            ) : filteredReports.length === 0 ? (
+              <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>没有匹配"{reportSearchKw}"的报告</div>
             ) : years.map((yr, yrIdx) => {
               const isExpanded = expandedReportYears[yr] !== undefined ? expandedReportYears[yr] : yrIdx === 0
               return (

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
-  SafeAreaView, ActivityIndicator, Linking, Alert, Modal, Image,
+  SafeAreaView, ActivityIndicator, Linking, Alert, Modal, Image, TextInput,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -147,6 +147,7 @@ export default function MedicalReportsScreen({ navigation }) {
   const [loading, setLoading]   = useState(true);
   const [selYear, setSelYear]   = useState(null);
   const [previewUri, setPreviewUri] = useState(null);
+  const [searchKw, setSearchKw] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -162,6 +163,13 @@ export default function MedicalReportsScreen({ navigation }) {
 
   const currentYear = years.find(y => y.year === selYear);
 
+  // 搜索：跨全部年份/分类按标题匹配，命中时用扁平列表展示，不受年份Tab影响
+  const kw = searchKw.trim();
+  const searchResults = kw
+    ? years.flatMap(y => y.categories.flatMap(cat => cat.reports))
+        .filter(r => (r.title || '').toLowerCase().includes(kw.toLowerCase()))
+    : null;
+
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
@@ -172,6 +180,24 @@ export default function MedicalReportsScreen({ navigation }) {
         <View style={{ width: 36 }} />
       </View>
 
+      {years.length > 0 && (
+        <View style={styles.searchBarWrap}>
+          <Ionicons name="search-outline" size={16} color={colors.textMuted} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="搜索报告标题"
+            placeholderTextColor={colors.textMuted}
+            value={searchKw}
+            onChangeText={setSearchKw}
+          />
+          {searchKw ? (
+            <TouchableOpacity onPress={() => setSearchKw('')}>
+              <Ionicons name="close-circle" size={16} color={colors.textMuted} />
+            </TouchableOpacity>
+          ) : null}
+        </View>
+      )}
+
       {loading ? (
         <ActivityIndicator color={colors.primary} style={{ marginTop: 60 }} />
       ) : years.length === 0 ? (
@@ -180,6 +206,18 @@ export default function MedicalReportsScreen({ navigation }) {
           <Text style={styles.emptyTitle}>暂无体检报告</Text>
           <Text style={styles.emptyDesc}>上传报告后，将按年度和类目自动归类展示</Text>
         </View>
+      ) : searchResults ? (
+        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg }}>
+          {searchResults.length === 0 ? (
+            <View style={styles.emptyWrap}>
+              <Ionicons name="search-outline" size={56} color={colors.textMuted} />
+              <Text style={styles.emptyDesc}>没有匹配"{kw}"的报告</Text>
+            </View>
+          ) : searchResults.map(r => (
+            <ReportCard key={r._id} report={r} onPreview={setPreviewUri} />
+          ))}
+          <View style={{ height: spacing.xl * 2 }} />
+        </ScrollView>
       ) : (
         <>
           {/* 年份 Tab */}
@@ -239,6 +277,14 @@ const styles = StyleSheet.create({
   },
   backBtn:      { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
   headerTitle:  { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
+
+  searchBarWrap: {
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    marginHorizontal: spacing.lg, marginTop: spacing.sm, marginBottom: spacing.xs,
+    paddingHorizontal: 12, height: 36, borderRadius: radius.full,
+    backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border,
+  },
+  searchInput: { flex: 1, fontSize: 13, color: colors.textPrimary, padding: 0 },
 
   yearTab:      { maxHeight: 52, paddingVertical: spacing.sm },
   yearChip: {
