@@ -8185,7 +8185,7 @@ export default function PatientDetailPage() {
               await staffAPI.generateAIAnnualCheckupPlan(id, templateId)
               toast('AI体检方案已生成，待健管专员审核')
             } else if (showSelectTplModal === 'nutrition') {
-              await staffAPI.generateAINutritionPlan(id, templateId)
+              await staffAPI.generateAINutritionPlan(id, templateId, briefNote)
               toast('AI营养方案已生成，待营养师审核')
             } else {
               await staffAPI.generateAIMedicalAssistPlan(id, pendingMedicalAssistOrderId, templateId, briefNote)
@@ -9516,13 +9516,14 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
               </div>
             )
           })}
-          {planType === 'medical_assist' && (
-            <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
-              <label className="form-label">本次简要情况（可选，AI会结合这段话生成初稿）</label>
-              <textarea className="form-input" rows={3} placeholder="如：这次去北京协和看内分泌科，患者行动不便需要轮椅，希望尽快安排"
-                value={briefNote} onChange={e => setBriefNote(e.target.value)} />
-            </div>
-          )}
+          <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+            <label className="form-label">服务目标（可选，AI会结合目标更有方向地生成初稿）</label>
+            <textarea className="form-input" rows={3} placeholder={
+              planType === 'medical_assist' ? '如：这次去北京协和看内分泌科，患者行动不便需要轮椅，希望尽快安排'
+                : planType === 'nutrition' ? '如：控制血糖、三个月内减重5公斤'
+                  : '如：控制血压平稳、减少并发症风险'
+            } value={briefNote} onChange={e => setBriefNote(e.target.value)} />
+          </div>
         </div>
         <div className="modal-footer" style={{ flexShrink: 0 }}>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>

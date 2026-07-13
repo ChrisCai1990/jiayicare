@@ -6763,7 +6763,7 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '仅营养师可生成营养干预方案' });
   }
   try {
-    const { templateId } = req.body;
+    const { templateId, goal } = req.body;
     if (!templateId) return res.status(400).json({ success: false, message: '请先选择营养方案模板' });
     const template = await PlanTemplate.findOne({ _id: templateId, type: 'nutrition' }).lean();
     if (!template) return res.status(404).json({ success: false, message: '营养方案模板不存在' });
@@ -6789,6 +6789,9 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
 食物过敏/忌口：${allergyInfo}
 当前营养素补充：${supText}
 饮食习惯：${lifestyle.diet || '未记录'}，运动习惯：${lifestyle.exercise || '未记录'}
+
+【本次服务目标（营养师填写，方案要朝这个方向靠，如与模板骨架冲突以骨架为准）】
+${goal ? goal : '（未填写目标，按患者信息与模板骨架常规定制）'}
 
 【模板固定骨架（不可修改，仅供你参考约束）】
 膳食总原则：${tc.dietPrinciple || '无'}

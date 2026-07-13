@@ -359,7 +359,7 @@ export const staffAPI = {
   // 场景11：AI开单建议（从管理方案异常复查生成，返回建议，不创建记录）
   generateAIExamSuggest: (id) => req(`/staff/patients/${id}/ai-exam-requisition-suggest`, { method: 'POST' }),
   // 场景8：AI营养干预方案（营养师审核）——2026-07-13起必须先选定 templateId 模板，AI只在模板骨架基础上具体化
-  generateAINutritionPlan: (id, templateId) => req(`/staff/patients/${id}/ai-nutrition-plan`, { method: 'POST', body: JSON.stringify({ templateId }) }),
+  generateAINutritionPlan: (id, templateId, goal) => req(`/staff/patients/${id}/ai-nutrition-plan`, { method: 'POST', body: JSON.stringify({ templateId, goal }) }),
   // 场景6：AI年度体检方案（健管专员审核）——2026-07-13起必须先选定 templateId 套餐模板，标准项目原样锁定，AI只在加项库里做选择
   generateAIAnnualCheckupPlan: (id, templateId) => req(`/staff/patients/${id}/ai-annual-checkup-plan`, { method: 'POST', body: JSON.stringify({ templateId }) }),
   // 场景9：AI就医协助方案（就医专员审核），orderId 可选——从商城订单流转过来时带上，用作生成依据；
