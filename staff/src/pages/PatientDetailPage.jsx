@@ -5939,6 +5939,13 @@ export default function PatientDetailPage() {
                       <td style={{ fontWeight: 500, color: '#1E6B50' }}>
                         {p.title}
                         {p.isAnnualPlan && <span style={{ marginLeft: 6, fontSize: 11, color: '#1E6B50', background: '#E8F5EF', padding: '1px 6px', borderRadius: 4 }}>年度</span>}
+                        {/* 就医协助按模板细分服务类型，同一会员多次生成时标题常年雷同，加模板名标签区分
+                            （2026-07-13 反馈"名称都一样"，与全局方案列表页/客户端保持同一套标签逻辑） */}
+                        {p.type === 'medical_assist' && p.content?.templateName && (
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 600, color: '#7C3AED', background: '#F2EEFF', borderRadius: 4, padding: '1px 6px' }}>
+                            {p.content.templateName}
+                          </span>
+                        )}
                       </td>
                       <td><span className="badge badge-info">{PLAN_TYPE_LABEL[p.type] || p.type}</span></td>
                       <td><span style={{ color: PLAN_STATUS_COLOR[p.status], fontWeight: 500, fontSize: 13 }}>{PLAN_STATUS_LABEL[p.status]}</span></td>
@@ -5966,7 +5973,7 @@ export default function PatientDetailPage() {
                         </div>
                       </td>
                       <td style={{ fontSize: 13, color: '#666' }}>{p.staffId?.name || '-'}</td>
-                      <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(p.createdAt).toLocaleDateString('zh-CN')}</td>
+                      <td style={{ fontSize: 12, color: '#aaa' }}>{new Date(p.createdAt).toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}</td>
                     </tr>
                   )
                 })}
