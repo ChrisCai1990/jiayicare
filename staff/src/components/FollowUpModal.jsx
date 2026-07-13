@@ -169,6 +169,66 @@ function PlanSchemeSearchInput({ plans, value, onChange }) {
   )
 }
 
+// ── 随访人员搜索选择组件（按姓名/角色本地过滤，员工人数多时下拉逐个找太慢）─────────
+// 2026-07-13 反馈：健康规划师转派订单选执行人时人数多，普通<select>下拉要一个个翻找，改成可输入搜索
+function StaffSearchSelect({ staffList, value, onChange, placeholder = '搜索姓名...' }) {
+  const [keyword, setKeyword] = useState('')
+  const [open, setOpen] = useState(false)
+  const wrapRef = useRef(null)
+  const selected = staffList.find(s => s._id === value)
+
+  useEffect(() => {
+    const handler = e => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const kw = keyword.trim()
+  const filtered = kw
+    ? staffList.filter(s => s.name?.includes(kw) || (s.roleLabel || s.role || '').includes(kw))
+    : staffList
+
+  return (
+    <div style={{ position: 'relative' }} ref={wrapRef}>
+      <input
+        className="form-input"
+        placeholder={placeholder}
+        value={selected ? `${selected.name} · ${selected.roleLabel || selected.role}` : keyword}
+        onFocus={() => { setOpen(true); if (selected) setKeyword('') }}
+        onChange={e => { setKeyword(e.target.value); setOpen(true); if (!e.target.value) onChange('') }}
+      />
+      {value && (
+        <span
+          onClick={() => { onChange(''); setKeyword(''); setOpen(false) }}
+          style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)', cursor: 'pointer', color: '#aaa', fontSize: 16 }}
+        >✕</span>
+      )}
+      {open && (
+        <div style={{ position: 'absolute', zIndex: 1000, top: '100%', left: 0, right: 0, background: '#fff', border: '1px solid #ddd', borderRadius: 8, boxShadow: '0 4px 12px rgba(0,0,0,0.1)', maxHeight: 220, overflowY: 'auto' }}>
+          <div
+            onMouseDown={() => { onChange(''); setKeyword(''); setOpen(false) }}
+            style={{ padding: '9px 14px', fontSize: 13, color: '#8AA89C', cursor: 'pointer', borderBottom: '1px solid #f5f2ec' }}
+          >-- 当前登录人 --</div>
+          {filtered.map(s => (
+            <div
+              key={s._id}
+              onMouseDown={() => { onChange(s._id); setKeyword(''); setOpen(false) }}
+              style={{ padding: '9px 14px', fontSize: 13, color: '#1A2B24', cursor: 'pointer', background: value === s._id ? '#F0FAF5' : '#fff', borderBottom: '1px solid #f5f2ec' }}
+            >
+              {s.name} <span style={{ color: '#8AA89C', fontSize: 12 }}>· {s.roleLabel || s.role}</span>
+            </div>
+          ))}
+          {filtered.length === 0 && (
+            <div style={{ padding: '9px 14px', fontSize: 13, color: '#aaa' }}>无匹配人员</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 const today = () => new Date().toISOString().slice(0, 10)
 
 // 计算 N 天后的日期
@@ -491,10 +551,7 @@ export default function FollowUpModal({ patientId, patientName, defaultTheme, on
 
             <div className="form-group" style={{ marginBottom: 0 }}>
               <label className="form-label">随访人员（可选，默认为当前登录人）</label>
-              <select className="form-input" value={form.assignedTo} onChange={set('assignedTo')}>
-                <option value="">-- 当前登录人 --</option>
-                {staffOptions}
-              </select>
+              <StaffSearchSelect staffList={staffList} value={form.assignedTo} onChange={v => setForm(f => ({ ...f, assignedTo: v }))} />
             </div>
 
             {form.type === 'visit' && (
