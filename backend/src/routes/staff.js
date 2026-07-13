@@ -6747,11 +6747,22 @@ ${monitoringText}
 // POST /api/staff/patients/:id/ai-nutrition-plan
 // 创建 HealthPlan type='nutrition' status='draft' content.aiStatus='pending'
 // 只有营养师/超管可生成营养干预方案（用户规则：营养方案只归营养师负责）
+//
+// 2026-07-13 改造：跟年度体检方案同一套问题——模板本身就是为了标准化，此前AI完全自由生成六个板块，
+// 同一营养师给不同患者写的方案结构、用词随时在变，模板形同摆设。改为强制先选 PlanTemplate(nutrition)
+// 模板：模板里"膳食总原则/推荐食物/禁忌食物/营养素补充建议/运动建议/烹饪方式/进餐顺序/每日饮水量"这些
+// 固定字段原样锁定作为骨架，AI只负责把"早/午/晚/加餐"具体食物内容，结合患者情况在骨架约束下具体化，
+// 不允许违反模板里的禁忌食物/膳食原则。
 router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
   if (!['nutritionist', 'superadmin'].includes(req.staff.role)) {
     return res.status(403).json({ success: false, message: '仅营养师可生成营养干预方案' });
   }
   try {
+    const { templateId } = req.body;
+    if (!templateId) return res.status(400).json({ success: false, message: '请先选择营养方案模板' });
+    const template = await PlanTemplate.findOne({ _id: templateId, type: 'nutrition' }).lean();
+    if (!template) return res.status(404).json({ success: false, message: '营养方案模板不存在' });
+
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile lifestyle_data aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
@@ -6762,8 +6773,11 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
     const supText = supplements.length ? supplements.map(s => `${s.name}（${s.dosage}）：${s.purpose || ''}`).join('、') : '无';
     const lifestyle = user.lifestyle_data || {};
+    const tc = template.content || {};
 
-    const prompt = `你是一位注册营养师，请根据患者信息生成个性化营养干预方案。
+    const prompt = `你是一位注册营养师，正在为患者定制营养干预方案。方案的膳食原则/禁忌/营养素补充/运动建议等标准骨架
+已经由模板固定（不可修改），你唯一的任务是：在骨架约束下，把早餐/午餐/晚餐/加餐的具体食物内容，结合患者个人情况
+具体化到可执行的程度。绝对不能推荐模板"禁忌食物"里的东西，也不能违反"膳食总原则"。
 
 【患者信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
@@ -6771,43 +6785,57 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
 当前营养素补充：${supText}
 饮食习惯：${lifestyle.diet || '未记录'}，运动习惯：${lifestyle.exercise || '未记录'}
 
-请以JSON格式输出方案，仅输出JSON：
+【模板固定骨架（不可修改，仅供你参考约束）】
+膳食总原则：${tc.dietPrinciple || '无'}
+推荐食物：${tc.allowedFoods || '无限制'}
+禁忌食物：${tc.forbiddenFoods || '无'}
+烹饪方式：${tc.cookingMethod || '不限'}
+进餐顺序：${tc.mealOrder || '不限'}
+模板早餐参考：${tc.breakfast || '无'}
+模板午餐参考：${tc.lunch || '无'}
+模板晚餐参考：${tc.dinner || '无'}
+模板加餐参考：${tc.snack || '无'}
+
+请以JSON格式输出，仅输出JSON：
 {
-  "title": "方案名称（如：2026年${user.name}营养干预方案）",
-  "description": "方案简介（100字以内）",
-  "items": [
-    { "name": "早餐方案", "category": "营养干预", "notes": "具体早餐建议，含食物种类和分量" },
-    { "name": "午餐方案", "category": "营养干预", "notes": "具体午餐建议" },
-    { "name": "晚餐方案", "category": "营养干预", "notes": "具体晚餐建议" },
-    { "name": "加餐方案", "category": "营养干预", "notes": "两餐间加餐建议（若需要）" },
-    { "name": "运动建议", "category": "运动康复", "notes": "每周运动频次、类型、强度" },
-    { "name": "营养素补充建议", "category": "营养干预", "notes": "具体补充剂建议，含剂量和时机" }
-  ]
-}
+  "description": "结合患者情况的方案说明（100字以内）",
+  "breakfast": "具体早餐内容（食物种类+分量，符合模板原则和禁忌）",
+  "lunch": "具体午餐内容",
+  "dinner": "具体晚餐内容",
+  "snack": "具体加餐内容（模板没有加餐参考则可留空）"
+}`;
 
-注意：需结合慢病标签和忌口调整方案，items至少4条，每条notes要具体可执行。`;
-
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500 });
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1000 });
     let raw = {};
     try {
       const m = text.trim().match(/\{[\s\S]*\}/);
       if (m) raw = JSON.parse(m[0]);
     } catch {}
 
+    // 骨架字段原样锁定，只有三餐+加餐内容用AI具体化结果（留空则回退模板参考值）
+    const items = [
+      { name: '早餐方案', category: '营养干预', notes: raw.breakfast || tc.breakfast || '' },
+      { name: '午餐方案', category: '营养干预', notes: raw.lunch || tc.lunch || '' },
+      { name: '晚餐方案', category: '营养干预', notes: raw.dinner || tc.dinner || '' },
+      ...(tc.snack || raw.snack ? [{ name: '加餐方案', category: '营养干预', notes: raw.snack || tc.snack || '' }] : []),
+      ...(tc.nutritionSupplements ? [{ name: '营养素补充建议', category: '营养干预', notes: tc.nutritionSupplements }] : []),
+      ...(tc.exerciseSuggestion ? [{ name: '运动建议', category: '运动康复', notes: tc.exerciseSuggestion }] : []),
+    ].map(i => ({ ...i, status: 'pending' }));
+
     const plan = await HealthPlan.create({
       patientId: user._id,
       staffId: req.staff._id,
       type: 'nutrition',
-      title: raw.title || `${new Date().getFullYear()}年${user.name}营养干预方案`,
-      description: raw.description || '',
+      title: `${new Date().getFullYear()}年${user.name}营养干预方案`,
+      description: raw.description || tc.description || '',
       year: new Date().getFullYear(),
-      items: (raw.items || []).map(i => ({
-        name: i.name || '',
-        category: i.category || '营养干预',
-        notes: i.notes || '',
-        status: 'pending',
-      })),
-      content: { aiStatus: 'pending', aiGeneratedBy: req.staff.name || '' },
+      items,
+      content: {
+        aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
+        templateId: template._id, templateName: template.name || '',
+        dietPrinciple: tc.dietPrinciple || '', allowedFoods: tc.allowedFoods || '', forbiddenFoods: tc.forbiddenFoods || '',
+        cookingMethod: tc.cookingMethod || '', mealOrder: tc.mealOrder || '', dailyWater: tc.dailyWater || '',
+      },
       status: 'draft',
     });
 
@@ -6832,18 +6860,23 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       .select('name gender age chronicDiseases healthProfile');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
-    const { orderId } = req.query;
+    const { orderId, templateId } = req.query;
     let order = null;
     if (orderId) {
       order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note paidAmount').lean();
     }
 
-    // 按订单服务名匹配就医协助模板库：服务名一般能对应到具体模板（如"医疗代诊服务"）；
-    // 少数笼统服务名（如"就医陪同服务"）在模板库里被拆成多个细分模板，此时精确匹配不到，
-    // 转为把候选模板都给AI，让AI结合患者情况+订单备注选最贴近的一个
+    // 2026-07-13：就医专员现在可以在生成前先手动选定模板（templateId），选了就必须严格用这份，
+    // 不再靠订单服务名去猜——猜测匹配只作为"未指定模板"时的历史兜底路径保留，避免误配到别的服务模板。
     let matchedTemplate = null;
     let candidateTemplates = [];
-    if (order?.serviceName) {
+    if (templateId) {
+      matchedTemplate = await PlanTemplate.findOne({ _id: templateId, type: 'medical_assist' }).lean();
+      if (!matchedTemplate) return res.status(404).json({ success: false, message: '就医协助方案模板不存在' });
+    } else if (order?.serviceName) {
+      // 按订单服务名匹配就医协助模板库：服务名一般能对应到具体模板（如"医疗代诊服务"）；
+      // 少数笼统服务名（如"就医陪同服务"）在模板库里被拆成多个细分模板，此时精确匹配不到，
+      // 转为把候选模板都给AI，让AI结合患者情况+订单备注选最贴近的一个
       matchedTemplate = await PlanTemplate.findOne({ type: 'medical_assist', status: 'active', name: order.serviceName }).lean();
       if (!matchedTemplate) {
         candidateTemplates = await PlanTemplate.find({
@@ -7040,15 +7073,36 @@ async function matchCheckupItemsToRequisitionLibrary(items) {
   });
 }
 
+// 检验/检查/功能医学检测三类项目 → 分类名 + itemType 映射，跟 staff 前端 PlansPage.jsx 的
+// ORDER_TYPE_META（PlanTemplate.content.checkItems/addons 里 type: lab/exam/func）保持一致
+const ORDER_TYPE_META_BACKEND = {
+  lab:  { category: '检验检查', itemType: 'labTest' },
+  exam: { category: '影像检查', itemType: 'specialExam' },
+  func: { category: '功能医学检测', itemType: 'functionalTest' },
+};
+function orderTypeMetaBackend(t) { return ORDER_TYPE_META_BACKEND[t] || ORDER_TYPE_META_BACKEND.exam; }
+
 // ── 场景6：AI年度体检方案（健管专员审核） ──────────────────────────────────────
 // POST /api/staff/patients/:id/ai-annual-checkup-plan
 // 创建 HealthPlan type='annual_checkup' status='draft' content.aiStatus='pending'
 // 只有家庭医生/超管可生成年度体检方案（跟年度管理方案同一条用户规则）
+//
+// 2026-07-13 改造：体检项目最终要安排到线下体检中心执行，体检中心只认自己的标准套餐，此前让AI
+// 自由发明检查项目名称、事后靠模糊字符串匹配(matchCheckupItemsToRequisitionLibrary)去对照医嘱库，
+// 匹配不上就留纯文本——生成的方案跟任何体检中心的实际套餐都对不上，没法真正拿去执行。改为强制先
+// 选定 PlanTemplate(annual_checkup) 套餐模板：模板 content.checkItems（体检中心标准套餐项目）原样
+// 固定写入结果，AI 不再自由发明项目，只能在该模板 content.addons（可选加项库）范围内判断要不要
+// 给这个患者加哪些项、给出理由，天然保证标准部分精确对应体检中心套餐，AI只负责加项决策。
 router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
     return res.status(403).json({ success: false, message: '仅家庭医生可生成年度体检方案' });
   }
   try {
+    const { templateId } = req.body;
+    if (!templateId) return res.status(400).json({ success: false, message: '请先选择体检套餐模板' });
+    const template = await PlanTemplate.findOne({ _id: templateId, type: 'annual_checkup' }).lean();
+    if (!template) return res.status(404).json({ success: false, message: '套餐模板不存在' });
+
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
@@ -7056,65 +7110,79 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
     const year = new Date().getFullYear();
     const { chat } = require('../utils/ai');
 
-    // 读取历史体检方案供参考
-    const lastCheckupPlan = await HealthPlan.findOne({ patientId: user._id, type: 'annual_checkup' })
-      .sort({ createdAt: -1 }).lean();
-    const lastCheckupItemNames = (lastCheckupPlan?.items || []).map(i => i.name).join('、') || '无';
+    const tplContent = template.content || {};
+    const checkItems = tplContent.checkItems || [];
+    const addonPool = tplContent.addons || [];
 
     const riskYears = Object.keys(riskByYear(user.aiRiskAssessment)).sort((a, b) => Number(b) - Number(a));
     const riskSummary = (riskYears.length ? riskByYear(user.aiRiskAssessment)[riskYears[0]]?.overallSummary : null) || '未进行AI风险评估';
 
-    const prompt = `你是一位健康管理专员，请根据患者信息为其生成${year}年度体检方案。
+    // 加项库为空时无需调用AI，标准项目直接落地即可
+    let chosenAddonIds = [];
+    let aiNote = '';
+    if (addonPool.length > 0) {
+      const addonListText = addonPool.map((a, i) => `${i + 1}. ${a.name}${a.reason ? `（适用场景：${a.reason}）` : ''}`).join('\n');
+      const prompt = `你是一位健康管理专员，正在为患者定制${year}年度体检方案。方案的标准套餐项目已经固定（体检中心套餐，不可修改），你唯一的任务是：从下面给定的"可选加项库"里，判断该患者需要加哪些项，不允许提出加项库之外的任何项目。
 
 【患者信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，性别：${user.gender || '未知'}
 慢病标签：${user.chronicDiseases?.join('、') || '无'}
 AI风险摘要：${riskSummary}
-去年体检项目（参考，避免重复）：${lastCheckupItemNames}
 
-请以JSON格式输出方案，仅输出JSON：
+【可选加项库（只能从这些编号里选，不能新增任何库外项目）】
+${addonListText}
+
+请以JSON格式输出，仅输出JSON：
 {
-  "title": "方案名称（如：2026年${user.name}年度体检方案）",
-  "description": "方案说明（50字以内）",
-  "items": [
-    { "name": "项目名称", "category": "检验检查|影像检查|体格检查|专项检查", "scheduledDate": "${year}-09-01", "notes": "注意事项（如空腹/带历史报告等）" }
-  ]
+  "chosen": [
+    { "index": 编号（对应上面列表的数字）, "reason": "为什么建议加这项（结合患者信息，30字以内）" }
+  ],
+  "note": "整体方案说明（50字以内，可为空）"
 }
+没有需要加的项就返回 "chosen": []。`;
 
-说明：
-- 【重要】每条 items 必须是单一独立的检验/检查项目，禁止用"+""、""，"等符号把多个项目合并写进一个name
-  里（如"空腹血糖+糖化血红蛋白"必须拆成两条独立记录：一条name="空腹血糖"，一条name="糖化血红蛋白"）。
-  这是因为每条方案项目后续要跟admin后台的检验/检查医嘱库逐项精确关联，合并写法无法准确关联到具体医嘱。
-- 常规体检必选：血常规、生化全套、血糖、血脂、甲状腺功能（含TSH，如涉及多指标请逐项拆开列出）、尿常规
-- 根据慢病标签增加专项：桥本/甲减→甲状腺抗体TPO/TgAb+甲状腺超声（拆成独立条目）；高血压→心电图+颈动脉超声（拆成独立条目）；糖尿病→HbA1c+眼底检查（拆成独立条目）
-- 年龄>40建议：肿瘤标志物（AFP/CEA/CA125等，逐项拆开）、胸部低剂量CT
-- 项目数量不设硬性上限，按需覆盖，不要为了凑数或减少条数而合并项目名；scheduledDate集中在${year}年9-11月，重点项目安排早一些`;
+      const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 800 });
+      let raw = {};
+      try {
+        const m = text.trim().match(/\{[\s\S]*\}/);
+        if (m) raw = JSON.parse(m[0]);
+      } catch {}
+      aiNote = raw.note || '';
+      const chosen = Array.isArray(raw.chosen) ? raw.chosen : [];
+      chosenAddonIds = chosen
+        .map(c => ({ addon: addonPool[Number(c.index) - 1], reason: c.reason || '' }))
+        .filter(c => c.addon)
+        .map(c => ({ ...c.addon, reason: c.reason || c.addon.reason || '' }));
+    }
 
-    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500 });
-    let raw = {};
-    try {
-      const m = text.trim().match(/\{[\s\S]*\}/);
-      if (m) raw = JSON.parse(m[0]);
-    } catch {}
-
-    const rawItems = (raw.items || []).map(i => ({
-      name: i.name || '',
-      category: i.category || '检验检查',
-      scheduledDate: i.scheduledDate ? new Date(i.scheduledDate) : null,
-      notes: i.notes || '',
+    const toPlanItem = (ci, extra = {}) => ({
+      name: ci.name,
+      category: orderTypeMetaBackend(ci.type).category,
+      itemId: ci.id || null,
+      itemType: orderTypeMetaBackend(ci.type).itemType,
       status: 'pending',
-    }));
-    const matchedItems = await matchCheckupItemsToRequisitionLibrary(rawItems);
+      ...extra,
+    });
+    const items = [
+      ...checkItems.map(ci => toPlanItem(ci)),
+      ...chosenAddonIds.map(ci => toPlanItem(ci, { notes: ci.reason ? `AI建议加项：${ci.reason}` : 'AI建议加项' })),
+    ];
 
     const plan = await HealthPlan.create({
       patientId: user._id,
       staffId: req.staff._id,
       type: 'annual_checkup',
-      title: raw.title || `${year}年${user.name}年度体检方案`,
-      description: raw.description || '',
+      title: `${year}年${user.name}年度体检方案`,
+      description: aiNote,
       year,
-      items: matchedItems,
-      content: { aiStatus: 'pending', aiGeneratedBy: req.staff.name || '' },
+      items,
+      content: {
+        aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
+        packageName: tplContent.packageName || template.name || '',
+        packageDesc: tplContent.packageDesc || '',
+        checkItems, addons: addonPool,
+        templateId: template._id,
+      },
       status: 'draft',
     });
 

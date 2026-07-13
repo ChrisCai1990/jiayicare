@@ -982,6 +982,8 @@ export default function PatientDetailPage() {
   const [aiNutritionGenerating, setAiNutritionGenerating] = useState(false)
   const [aiCheckupGenerating, setAiCheckupGenerating] = useState(false)
   const [aiMedicalAssistGenerating, setAiMedicalAssistGenerating] = useState(false)
+  // 三类方案生成前先选模板：值为要打开的弹窗类型('annual_checkup'|'nutrition'|'medical_assist')或null
+  const [showSelectTplModal, setShowSelectTplModal] = useState(null)
   const [autoGenMedicalAssistOrderId, setAutoGenMedicalAssistOrderId] = useState(null) // 非null时代表从工作台商城订单待办跳转过来，需自动触发AI生成一次
   const [reqPrefill, setReqPrefill] = useState(null)
   const [showMedModal, setShowMedModal] = useState(false)
@@ -1218,10 +1220,10 @@ export default function PatientDetailPage() {
   const loadPlans = async () => {
     try { const res = await staffAPI.getPatientPlans(id); setPlans(res.data) } catch {}
   }
-  const genAIMedicalAssistPlan = async (orderId) => {
+  const genAIMedicalAssistPlan = async (orderId, templateId) => {
     setAiMedicalAssistGenerating(true)
     try {
-      await staffAPI.generateAIMedicalAssistPlan(id, orderId)
+      await staffAPI.generateAIMedicalAssistPlan(id, orderId, templateId)
       toast('AI就医协助方案已生成，待就医专员审核')
       loadPlans()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
@@ -5901,30 +5903,22 @@ export default function PatientDetailPage() {
               {/* 2026-07-07 用户明确规则：AI营养方案只有营养师能生成；AI体检方案/年度管理方案
                   只有家庭医生能生成（营养师能查看这些方案内容，但不该有生成入口） */}
               {['nutritionist', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" disabled={aiNutritionGenerating} onClick={async () => {
-                  setAiNutritionGenerating(true)
-                  try {
-                    await staffAPI.generateAINutritionPlan(id)
-                    toast('AI营养方案已生成，待营养师审核')
-                    loadPlans()
-                  } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
-                  finally { setAiNutritionGenerating(false) }
-                }}>{aiNutritionGenerating ? '生成中…' : '✨ AI营养方案'}</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowSelectTplModal('nutrition')}>
+                  ✨ AI营养方案
+                </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
-                <button className="btn btn-secondary btn-sm" disabled={aiCheckupGenerating} onClick={async () => {
-                  setAiCheckupGenerating(true)
-                  try {
-                    await staffAPI.generateAIAnnualCheckupPlan(id)
-                    toast('AI体检方案已生成，待健管专员审核')
-                    loadPlans()
-                  } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
-                  finally { setAiCheckupGenerating(false) }
-                }}>{aiCheckupGenerating ? '生成中…' : '✨ AI体检方案'}</button>
+                <button className="btn btn-secondary btn-sm" onClick={() => setShowSelectTplModal('annual_checkup')}>
+                  ✨ AI体检方案
+                </button>
               )}
               {['medicalAssistant', 'superadmin'].includes(staff?.role) && (
+                // 从商城订单待办跳转过来（autoGenMedicalAssistOrderId非null）时，服务名已能唯一确定模板，
+                // 保留原有自动匹配路径直接生成；手动点击场景改为先选模板，不再靠订单名/无订单时全靠AI猜
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
-                  onClick={() => genAIMedicalAssistPlan(autoGenMedicalAssistOrderId || '')}>
+                  onClick={() => autoGenMedicalAssistOrderId
+                    ? genAIMedicalAssistPlan(autoGenMedicalAssistOrderId)
+                    : setShowSelectTplModal('medical_assist')}>
                   {aiMedicalAssistGenerating ? '生成中…' : '✨ AI就医协助方案'}
                 </button>
               )}
@@ -8177,6 +8171,28 @@ export default function PatientDetailPage() {
         />
       )}
 
+      {/* AI方案生成前先选模板弹窗（体检/营养/就医协助三类通用） */}
+      {showSelectTplModal && (
+        <SelectTemplateAndGenerateModal
+          planType={showSelectTplModal}
+          title={showSelectTplModal === 'annual_checkup' ? 'AI体检方案' : showSelectTplModal === 'nutrition' ? 'AI营养方案' : 'AI就医协助方案'}
+          onClose={() => setShowSelectTplModal(null)}
+          onGenerate={async (templateId) => {
+            if (showSelectTplModal === 'annual_checkup') {
+              await staffAPI.generateAIAnnualCheckupPlan(id, templateId)
+              toast('AI体检方案已生成，待健管专员审核')
+            } else if (showSelectTplModal === 'nutrition') {
+              await staffAPI.generateAINutritionPlan(id, templateId)
+              toast('AI营养方案已生成，待营养师审核')
+            } else {
+              await staffAPI.generateAIMedicalAssistPlan(id, '', templateId)
+              toast('AI就医协助方案已生成，待就医专员审核')
+            }
+            loadPlans()
+          }}
+        />
+      )}
+
       {/* 上传体检报告弹窗 */}
       {showUploadReport && (
         <UploadReportModal
@@ -9429,6 +9445,78 @@ function AttachedHealthInfoView({ info }) {
           </div>
         )
       })}
+    </div>
+  )
+}
+
+// ── AI方案生成前先选模板弹窗（体检方案/营养方案/就医协助方案通用）───────────────────
+// 2026-07-13：三类方案都是"AI只在模板骨架基础上定制"，不该让AI自由发明。此前AI一点即生成，
+// 完全跳过模板；改为先弹出模板选择，选定后才真正调用AI生成，模板骨架部分由后端原样锁定。
+function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }) {
+  const toast = useToast()
+  const [templates, setTemplates] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+  const [selectedId, setSelectedId] = useState('')
+  const [generating, setGenerating] = useState(false)
+
+  useEffect(() => {
+    staffAPI.getPlanTemplates(planType)
+      .then(res => setTemplates(res.data || []))
+      .catch(err => setError(err.message || '加载失败'))
+      .finally(() => setLoading(false))
+  }, [planType])
+
+  const handleGenerate = async () => {
+    if (!selectedId) { toast('请先选择模板'); return }
+    setGenerating(true)
+    try {
+      await onGenerate(selectedId)
+      onClose()
+    } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
+    finally { setGenerating(false) }
+  }
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{ maxWidth: 480, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header" style={{ flexShrink: 0 }}>
+          <h3 className="modal-title">{title} — 选择模板</h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
+            方案的标准内容以模板为准，AI只会结合患者情况在模板基础上做定制，不会脱离模板另起一套。
+          </div>
+          {loading && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
+          {error && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {error}</div>}
+          {!loading && !error && templates.length === 0 && (
+            <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建方案模板</div>
+          )}
+          {templates.map(tpl => {
+            const c = tpl.content || {}
+            const name = c.packageName || tpl.name
+            const desc = c.packageDesc || c.description || ''
+            const isSel = selectedId === tpl._id
+            return (
+              <div key={tpl._id} onClick={() => setSelectedId(tpl._id)}
+                style={{
+                  border: isSel ? '1.5px solid #1E6B50' : '1px solid #E0D9CE', borderRadius: 10, padding: '12px 16px',
+                  marginBottom: 8, cursor: 'pointer', background: isSel ? '#F0F9F4' : '#fff',
+                }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: '#1A2B24' }}>{name}</div>
+                {desc && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{desc}</div>}
+              </div>
+            )
+          })}
+        </div>
+        <div className="modal-footer" style={{ flexShrink: 0 }}>
+          <button className="btn btn-secondary" onClick={onClose}>取消</button>
+          <button className="btn btn-primary" disabled={!selectedId || generating} onClick={handleGenerate}>
+            {generating ? 'AI生成中…' : '✨ 确认生成'}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
