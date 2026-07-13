@@ -19,7 +19,20 @@ function answerToText(ans) {
   if (ans == null) return '';
   if (Array.isArray(ans)) return ans.filter(x => x && x !== '无').join('、');
   if (typeof ans === 'object') {
-    if (ans.value !== undefined) return [ans.value, ans.input].filter(Boolean).join(' ').trim(); // {value,input}
+    // 多选+备注题型：{values:[选中的选项...], inputs:{选项名: 用户填的具体备注文本}}
+    // 与用户端问卷汇总页 QuestionnaireScreen.js 的 fmtAns 保持同一套解析规则，
+    // 此前只认单数 {value,input}，真实数据是复数 {values,inputs}，导致命中不到，
+    // 掉进下面的"矩阵"兜底分支，把 inputs 对象直接字符串化成了 [object Object]
+    // （2026-07-13 反馈：医护端审核过敏史/家族史/既往史时看到 "inputs：[object Object]"）
+    if (Array.isArray(ans.values)) {
+      const inputsStr = Object.entries(ans.inputs || {}).map(([k, v]) => `${k}：${v}`).join('，');
+      return ans.values.filter(x => x && x !== '无').join('、') + (inputsStr ? `（${inputsStr}）` : '');
+    }
+    if (ans.value !== undefined) {
+      // 单选+备注题型：{value:'其他', inputs:{'其他':'具体内容'}} 或旧结构 {value,input}
+      const inputsStr = Object.entries(ans.inputs || {}).map(([k, v]) => `${k}：${v}`).join('，');
+      return [ans.value, inputsStr ? `（${inputsStr}）` : ans.input].filter(Boolean).join(' ').trim();
+    }
     // matrix：{行: 列}
     return Object.entries(ans).map(([k, v]) => `${k}：${Array.isArray(v) ? v.join('/') : v}`).join('；');
   }
