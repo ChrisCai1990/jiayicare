@@ -1322,7 +1322,7 @@ export default function PatientDetailPage() {
       const f = location.state.openFollowUp
       if (f.sourceType === 'order' && staff?.role === 'medicalAssistant') {
         setTab('plans')
-        setAutoGenMedicalAssistOrderId(f.sourceOrderId || '')
+        setAutoGenMedicalAssistOrderId((f.sourceOrderId?._id || f.sourceOrderId) || '')
         nav(location.pathname + '?tab=plans', { replace: true })
         return
       }
