@@ -984,7 +984,8 @@ export default function PatientDetailPage() {
   const [aiMedicalAssistGenerating, setAiMedicalAssistGenerating] = useState(false)
   // 三类方案生成前先选模板：值为要打开的弹窗类型('annual_checkup'|'nutrition'|'medical_assist')或null
   const [showSelectTplModal, setShowSelectTplModal] = useState(null)
-  const [autoGenMedicalAssistOrderId, setAutoGenMedicalAssistOrderId] = useState(null) // 非null时代表从工作台商城订单待办跳转过来，需自动触发AI生成一次
+  const [pendingMedicalAssistOrderId, setPendingMedicalAssistOrderId] = useState('') // 手动点按钮生成时若有关联订单，带给选模板弹窗
+  const [autoGenMedicalAssistOrderId, setAutoGenMedicalAssistOrderId] = useState(null) // 非null时代表从工作台商城订单待办跳转过来，服务名已能唯一定模板，自动触发AI生成一次
   const [reqPrefill, setReqPrefill] = useState(null)
   const [showMedModal, setShowMedModal] = useState(false)
   const [showSupModal, setShowSupModal] = useState(false)
@@ -1325,6 +1326,8 @@ export default function PatientDetailPage() {
       const f = location.state.openFollowUp
       if (f.sourceType === 'order' && staff?.role === 'medicalAssistant') {
         setTab('plans')
+        // 订单服务名已能唯一对应到具体模板，无需人工确认，跳转到方案tab后直接自动生成
+        // （后端按服务名匹配到templateId后同样走模板固定内容锁定的生成逻辑，不是自由发挥）
         setAutoGenMedicalAssistOrderId((f.sourceOrderId?._id || f.sourceOrderId) || '')
         nav(location.pathname + '?tab=plans', { replace: true })
         return
@@ -1335,7 +1338,8 @@ export default function PatientDetailPage() {
       nav(location.pathname + location.search, { replace: true, state: {} })
     }
   }, [tab])
-  // 从商城订单待办跳转到"管理方案"tab后，自动触发一次AI生成，不用就医专员自己再点一次按钮
+  // 从商城订单待办跳转到"管理方案"tab后，自动触发一次AI生成，不用就医专员自己再点一次按钮；
+  // 后端按订单服务名匹配到templateId后走的是模板固定内容锁定的生成逻辑，不是AI自由发挥
   useEffect(() => {
     if (tab === 'plans' && autoGenMedicalAssistOrderId !== null) {
       genAIMedicalAssistPlan(autoGenMedicalAssistOrderId)
@@ -5913,12 +5917,8 @@ export default function PatientDetailPage() {
                 </button>
               )}
               {['medicalAssistant', 'superadmin'].includes(staff?.role) && (
-                // 从商城订单待办跳转过来（autoGenMedicalAssistOrderId非null）时，服务名已能唯一确定模板，
-                // 保留原有自动匹配路径直接生成；手动点击场景改为先选模板，不再靠订单名/无订单时全靠AI猜
                 <button className="btn btn-secondary btn-sm" disabled={aiMedicalAssistGenerating}
-                  onClick={() => autoGenMedicalAssistOrderId
-                    ? genAIMedicalAssistPlan(autoGenMedicalAssistOrderId)
-                    : setShowSelectTplModal('medical_assist')}>
+                  onClick={() => { setPendingMedicalAssistOrderId(''); setShowSelectTplModal('medical_assist') }}>
                   {aiMedicalAssistGenerating ? '生成中…' : '✨ AI就医协助方案'}
                 </button>
               )}
@@ -8179,8 +8179,8 @@ export default function PatientDetailPage() {
         <SelectTemplateAndGenerateModal
           planType={showSelectTplModal}
           title={showSelectTplModal === 'annual_checkup' ? 'AI体检方案' : showSelectTplModal === 'nutrition' ? 'AI营养方案' : 'AI就医协助方案'}
-          onClose={() => setShowSelectTplModal(null)}
-          onGenerate={async (templateId) => {
+          onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
+          onGenerate={async (templateId, briefNote) => {
             if (showSelectTplModal === 'annual_checkup') {
               await staffAPI.generateAIAnnualCheckupPlan(id, templateId)
               toast('AI体检方案已生成，待健管专员审核')
@@ -8188,7 +8188,7 @@ export default function PatientDetailPage() {
               await staffAPI.generateAINutritionPlan(id, templateId)
               toast('AI营养方案已生成，待营养师审核')
             } else {
-              await staffAPI.generateAIMedicalAssistPlan(id, '', templateId)
+              await staffAPI.generateAIMedicalAssistPlan(id, pendingMedicalAssistOrderId, templateId, briefNote)
               toast('AI就医协助方案已生成，待就医专员审核')
             }
             loadPlans()
@@ -9462,6 +9462,10 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
   const [error, setError] = useState('')
   const [selectedId, setSelectedId] = useState('')
   const [generating, setGenerating] = useState(false)
+  // 就医协助方案：模板本身是固定骨架(SOP)，不像体检/营养方案有结构化的"标准项目"可锁定，
+  // 就医场景每次的具体情况差异很大（去哪家医院/是否加急/患者状况等），需要专员当场填一句
+  // 简要说明，AI结合这句话+模板类型生成初稿，而不是完全靠AI自己猜（2026-07-13需求）
+  const [briefNote, setBriefNote] = useState('')
 
   useEffect(() => {
     staffAPI.getPlanTemplates(planType)
@@ -9474,7 +9478,7 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
     if (!selectedId) { toast('请先选择模板'); return }
     setGenerating(true)
     try {
-      await onGenerate(selectedId)
+      await onGenerate(selectedId, briefNote.trim())
       onClose()
     } catch (err) { toast('AI生成失败：' + (err.message || '未知错误')) }
     finally { setGenerating(false) }
@@ -9512,6 +9516,13 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
               </div>
             )
           })}
+          {planType === 'medical_assist' && (
+            <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+              <label className="form-label">本次简要情况（可选，AI会结合这段话生成初稿）</label>
+              <textarea className="form-input" rows={3} placeholder="如：这次去北京协和看内分泌科，患者行动不便需要轮椅，希望尽快安排"
+                value={briefNote} onChange={e => setBriefNote(e.target.value)} />
+            </div>
+          )}
         </div>
         <div className="modal-footer" style={{ flexShrink: 0 }}>
           <button className="btn btn-secondary" onClick={onClose}>取消</button>

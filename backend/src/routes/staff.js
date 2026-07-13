@@ -6865,7 +6865,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       .select('name gender age chronicDiseases healthProfile');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
-    const { orderId, templateId } = req.query;
+    const { orderId, templateId, briefNote } = req.query;
     let order = null;
     if (orderId) {
       order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note paidAmount').lean();
@@ -6938,6 +6938,9 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
 
 【订单信息】
 ${orderInfo}
+
+【本次简要情况（就医专员当场填写，优先级高于订单信息，如有冲突以此为准）】
+${briefNote ? briefNote : '（就医专员未补充说明，按患者信息与订单信息判断）'}
 
 【标准模板（参考，不要照抄）】
 ${templateBlock}

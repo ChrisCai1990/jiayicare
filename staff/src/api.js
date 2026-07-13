@@ -364,7 +364,7 @@ export const staffAPI = {
   generateAIAnnualCheckupPlan: (id, templateId) => req(`/staff/patients/${id}/ai-annual-checkup-plan`, { method: 'POST', body: JSON.stringify({ templateId }) }),
   // 场景9：AI就医协助方案（就医专员审核），orderId 可选——从商城订单流转过来时带上，用作生成依据；
   // templateId 可选——手动生成场景传入表示专员已手选模板，严格使用；两者都不传则走订单服务名自动匹配的历史兜底路径
-  generateAIMedicalAssistPlan: (id, orderId, templateId) => req(`/staff/patients/${id}/ai-medical-assist-plan?${orderId ? `orderId=${orderId}&` : ''}${templateId ? `templateId=${templateId}` : ''}`, { method: 'POST' }),
+  generateAIMedicalAssistPlan: (id, orderId, templateId, briefNote) => req(`/staff/patients/${id}/ai-medical-assist-plan?${orderId ? `orderId=${orderId}&` : ''}${templateId ? `templateId=${templateId}&` : ''}${briefNote ? `briefNote=${encodeURIComponent(briefNote)}` : ''}`, { method: 'POST' }),
 
   // 4.3 专项筛查
   getScreeningReports:   (id)   => req(`/staff/patients/${id}/screening-reports`),
