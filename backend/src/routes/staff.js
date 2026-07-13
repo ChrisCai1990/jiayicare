@@ -1227,6 +1227,15 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       sourceType: 'health_plan',
       assignedTo: plan.staffId,
     }).catch(() => {});
+    // 方案推送=本次服务预约已正式处理完毕，把下单时生成、指派给健康规划师/就医专员的原始订单待办标记完成，
+    // 否则该待办会一直挂在"待处理服务预约"/"待随访任务"里，即使专员已经走完生成方案→推送的完整流程
+    // （2026-07-13 反馈：进详情页/工作台待随访任务处理后应该自动转已完成，不该继续停在待处理）
+    if (plan.sourceOrderId) {
+      await FollowUp.updateMany(
+        { sourceType: 'order', sourceOrderId: plan.sourceOrderId, status: { $ne: 'completed' } },
+        { $set: { status: 'completed', completedAt: new Date() } }
+      ).catch(() => {});
+    }
   }
   res.json({ success: true, data: plan });
 });
