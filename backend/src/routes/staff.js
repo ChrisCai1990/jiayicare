@@ -6797,14 +6797,38 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       ? `客户已下单服务：${order.serviceName}${order.note ? `，备注：${order.note}` : ''}`
       : '（无关联订单，请按患者情况酌情安排）';
 
+    // 模板字段是否存在标准值（非空）决定是否让AI生成对应个性化内容：
+    // 模板本身没有hotel/transport（如"医疗咨询服务"这类无需住宿交通的服务）就不该在方案里凭空编造，
+    // 避免不同服务类型看起来字段都一样、看不出差异（2026-07-13 反馈"模板就是为了标准化"）
+    const templateForFields = matchedTemplate || candidateTemplates[0] || null;
+    const askFields = {
+      hospital: true, department: true,
+      expert: !templateForFields || !!templateForFields.content?.expert,
+      hotel: !templateForFields || !!templateForFields.content?.hotel,
+      transport: !templateForFields || !!templateForFields.content?.transport,
+    };
+
     let templateBlock = '（无匹配模板，请根据患者与订单信息自行拟定方案）';
     if (matchedTemplate) {
-      templateBlock = `已匹配到标准模板《${matchedTemplate.name}》，请严格按此模板结构生成，只把模板里的空白项结合患者与订单信息具体化，不要改变模板已有的骨架内容（如tasks的步骤条目、hotel/transport的固定安排）：
+      templateBlock = `已匹配到标准模板《${matchedTemplate.name}》，这是该服务的标准SOP，仅供你参考具体化个性化内容，
+不要把模板原文抄进你的输出——标准步骤会由系统单独展示，你只需结合患者与订单信息给出针对这个患者的具体安排：
 ${JSON.stringify(matchedTemplate.content)}`;
     } else if (candidateTemplates.length) {
-      templateBlock = `该服务下有多个细分模板，请先判断本次最贴近哪一个，再严格按其结构生成（只填充空白项，保留tasks步骤条目和hotel/transport固定安排）：
+      templateBlock = `该服务下有多个细分模板，请先判断本次最贴近哪一个（用其模板名作为参考），再结合其标准内容给出针对该患者的个性化安排：
 ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).join('\n')}`;
     }
+
+    const fieldSpecs = [
+      `"title": "方案名称（如：${user.name}就医协助方案）"`,
+      `"description": "方案简介，说明本次就医协助的目的（100字以内）"`,
+      askFields.hospital && `"hospital": "建议就诊医院（结合患者慢病情况推断合适的医院，无法判断则留空）"`,
+      askFields.department && `"department": "建议就诊科室"`,
+      askFields.expert && `"expert": "建议专家，无法判断则留空"`,
+      askFields.hotel && `"hotel": "本次住宿安排（结合患者情况具体化，如模板固定为'无需安排'则原样返回）"`,
+      askFields.transport && `"transport": "本次交通安排（结合患者情况具体化，如模板固定为'无需安排'则原样返回）"`,
+      `"tasks": "针对该患者的具体执行安排，每行一项，需结合模板步骤但要写出本次的具体内容（如具体日期、具体证件），不要原样照抄模板"`,
+      `"notes": "本次注意事项，若模板notes是待填空的清单（如'挂号科室：\\n时间安排：'），请把冒号后面的内容具体填好"`,
+    ].filter(Boolean).join(',\n  ');
 
     const prompt = `你是一位就医协助服务专员，请根据患者信息、已下单的服务和标准方案模板生成个性化就医协助方案。
 
@@ -6815,23 +6839,15 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
 【订单信息】
 ${orderInfo}
 
-【标准模板】
+【标准模板（参考，不要照抄）】
 ${templateBlock}
 
 请以JSON格式输出方案，仅输出JSON：
 {
-  "title": "方案名称（如：${user.name}就医协助方案）",
-  "description": "方案简介，说明本次就医协助的目的（100字以内）",
-  "hospital": "建议就诊医院（结合患者慢病情况推断合适的医院，无法判断则留空）",
-  "department": "建议就诊科室",
-  "expert": "建议专家，无法判断则留空",
-  "hotel": "住宿安排，若模板已有固定内容则沿用",
-  "transport": "交通安排，若模板已有固定内容则沿用",
-  "tasks": "具体服务事项，若匹配到模板则沿用模板步骤条目并结合患者情况细化，每行一项",
-  "notes": "注意事项，如需要携带的证件、既往病历等，若模板已有固定内容则沿用并补充患者个性化信息"
+  ${fieldSpecs}
 }
 
-注意：有标准模板时必须以模板结构为骨架填空，不得脱离模板另起炉灶；tasks至少2项。`;
+注意：tasks至少2项，且必须是针对该患者的具体安排，不是模板步骤的复述。`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200 });
     let raw = {};
@@ -6855,20 +6871,28 @@ ${templateBlock}
     if (raw.transport) items.push({ name: `交通安排：${raw.transport}`, category: '就医协助' });
     if (raw.notes) items.push({ name: `注意事项：${raw.notes}`, category: '就医协助' });
 
-    const usedTemplate = matchedTemplate || (candidateTemplates.length ? candidateTemplates.find(t => t.name === raw.title) : null);
+    const usedTemplate = matchedTemplate || (candidateTemplates.length ? candidateTemplates.find(t => t.name === raw.title) : null) || templateForFields;
 
     const plan = await HealthPlan.create({
       patientId: user._id,
       staffId: req.staff._id,
       type: 'medical_assist',
-      title: raw.title || matchedTemplate?.name || `${user.name}就医协助方案`,
+      title: raw.title || usedTemplate?.name || `${user.name}就医协助方案`,
       description: raw.description || '',
       year: new Date().getFullYear(),
       items: items.map(i => ({ ...i, status: 'pending' })),
       content: {
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
-        templateId: (usedTemplate || matchedTemplate)?._id || null,
-        templateName: (usedTemplate || matchedTemplate)?.name || '',
+        templateId: usedTemplate?._id || null,
+        templateName: usedTemplate?.name || '',
+        // 模板原始骨架快照——不经AI改写，前端"标准动作"区块直接展示这份，
+        // 跟下面AI生成的个性化内容分开陈列，避免两者混在一起分不清
+        templateSnapshot: usedTemplate ? {
+          tasks: usedTemplate.content?.tasks || '',
+          hotel: usedTemplate.content?.hotel || '',
+          transport: usedTemplate.content?.transport || '',
+          notes: usedTemplate.content?.notes || '',
+        } : null,
         hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
         hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',

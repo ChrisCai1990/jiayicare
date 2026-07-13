@@ -23,6 +23,25 @@ const TYPE_META = {
 };
 const DEFAULT_META = { icon: 'document-text-outline', color: colors.primary, bg: colors.primary + '12', label: '健康方案' };
 
+// 就医协助按模板细分服务类型，标签用具体服务名而非笼统"就医协助"，
+// 让客户一眼看出这次买的是哪种标准化服务（2026-07-13反馈"模版就是为了标准化"，与医护端徽章一致）
+const MEDICAL_ASSIST_SUB_META = [
+  { match: /代配药|代取药/,       icon: 'medkit-outline' },
+  { match: /代约检/,             icon: 'reader-outline' },
+  { match: /医疗代诊/,           icon: 'medical-outline' },
+  { match: /陪同就医|陪同治疗/,   icon: 'people-outline' },
+  { match: /陪同检查|陪同体检/,   icon: 'flask-outline' },
+  { match: /健康体检/,           icon: 'calendar-outline' },
+  { match: /一站式|住院/,        icon: 'star-outline' },
+  { match: /咨询/,               icon: 'chatbubble-ellipses-outline' },
+];
+function getAssistSubMeta(templateName) {
+  const base = TYPE_META.medical_assist;
+  if (!templateName) return base;
+  const hit = MEDICAL_ASSIST_SUB_META.find(m => m.match.test(templateName));
+  return { ...base, icon: hit?.icon || base.icon, label: templateName };
+}
+
 const STATUS_META = {
   active:    { label: '进行中', color: colors.success,  bg: '#E8F5EF' },
   draft:     { label: '待确认', color: colors.warning,  bg: '#FEF3E2' },
@@ -263,7 +282,9 @@ function ConfirmModal({ visible, title, message, confirmText, confirmColor, onCo
 
 // ── 方案卡片 ─────────────────────────────────────────────────────
 function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confirming, onConsult, onRenew }) {
-  const meta = TYPE_META[plan.type] || DEFAULT_META;
+  const meta = plan.type === 'medical_assist'
+    ? getAssistSubMeta(plan.content?.templateName)
+    : (TYPE_META[plan.type] || DEFAULT_META);
   const sm   = STATUS_META[plan.status] || STATUS_META.draft;
   const isDraft = plan.status === 'draft';
   const needsConfirm = !plan.confirmedAt && (plan.pushedAt || plan.status === 'active' || isDraft);
@@ -323,16 +344,33 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
               ['住宿', c.hotel],
               ['交通', c.transport],
             ].filter(([, v]) => !!v);
-            return rows.length > 0 ? (
-              <View style={s.assistInfoCard}>
-                {rows.map(([label, value]) => (
-                  <View key={label} style={s.assistInfoRow}>
-                    <Text style={s.assistInfoLabel}>{label}</Text>
-                    <Text style={s.assistInfoValue}>{value}</Text>
+            const standardSteps = c.templateSnapshot?.tasks;
+            return (
+              <>
+                {c.templateName && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: spacing.sm }}>
+                    <Ionicons name="ribbon-outline" size={13} color={colors.primary} />
+                    <Text style={{ fontSize: 11, color: colors.primary, fontWeight: '700' }}>标准化服务 · {c.templateName}</Text>
                   </View>
-                ))}
-              </View>
-            ) : null;
+                )}
+                {standardSteps && (
+                  <View style={[s.assistInfoCard, { backgroundColor: colors.primary + '0C' }]}>
+                    <Text style={[s.assistInfoLabel, { width: 'auto', marginBottom: 2 }]}>标准服务步骤</Text>
+                    <Text style={s.assistInfoValue}>{standardSteps}</Text>
+                  </View>
+                )}
+                {rows.length > 0 && (
+                  <View style={s.assistInfoCard}>
+                    {rows.map(([label, value]) => (
+                      <View key={label} style={s.assistInfoRow}>
+                        <Text style={s.assistInfoLabel}>{label}</Text>
+                        <Text style={s.assistInfoValue}>{value}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </>
+            );
           })()}
 
           {/* 草稿待确认提示 */}

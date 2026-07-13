@@ -22,6 +22,25 @@ function canEditPlanType(planType, staffRole) {
 
 const TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预方案', rehab:'运动康复方案', tcm:'中医方案', annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案', medical_assist:'就医协助方案', psychology:'心理咨询方案' }
 const STATUS_LABEL = { draft:'草稿', active:'已推送', completed:'已完成', cancelled:'已取消' }
+
+// 就医协助模板 → 图标/颜色，用于详情页顶部醒目展示"当前是哪种标准化服务"
+// （跟年度管理方案顶部 activePlanType 徽章同一视觉语言，2026-07-13反馈"模版就是为了标准化"，
+// 只用小字提示不够，专员和客户都要能一眼看出这是哪个模板/SOP）
+const MEDICAL_ASSIST_TEMPLATE_META = [
+  { match: /代配药|代取药/,       icon: '💊', color: '#0077B6', bg: '#E3F2FB' },
+  { match: /代约检/,             icon: '📋', color: '#0077B6', bg: '#E3F2FB' },
+  { match: /医疗代诊/,           icon: '🩺', color: '#7C3AED', bg: '#F2EEFF' },
+  { match: /陪同就医|陪同治疗/,   icon: '🤝', color: '#1E6B50', bg: '#E8F5EF' },
+  { match: /陪同检查|陪同体检/,   icon: '🔬', color: '#1E6B50', bg: '#E8F5EF' },
+  { match: /健康体检/,           icon: '📅', color: '#0077B6', bg: '#E3F2FB' },
+  { match: /一站式|住院/,        icon: '⭐', color: '#D97706', bg: '#FEF3E2' },
+  { match: /咨询/,               icon: '💬', color: '#9D174D', bg: '#FCE7F3' },
+]
+const DEFAULT_ASSIST_META = { icon: '🏥', color: '#7C3AED', bg: '#F2EEFF' }
+function getAssistTemplateMeta(templateName) {
+  if (!templateName) return DEFAULT_ASSIST_META
+  return MEDICAL_ASSIST_TEMPLATE_META.find(m => m.match.test(templateName)) || DEFAULT_ASSIST_META
+}
 const ITEM_STATUS = { pending:'待完成', completed:'已完成', skipped:'已跳过' }
 const ITEM_STATUS_COLOR = { pending:'#D97706', completed:'#22A06B', skipped:'#aaa' }
 
@@ -335,6 +354,7 @@ export default function PlanDetailPage() {
   const canEdit = canEditPlanType(plan.type, staff?.role)
   const completedCount = plan.items?.filter(i => i.status === 'completed').length || 0
   const progress = plan.items?.length ? Math.round((completedCount / plan.items.length) * 100) : 0
+  const assistMeta = plan.type === 'medical_assist' ? getAssistTemplateMeta(plan.content?.templateName) : null
 
   // 按分类分组显示
   const groupedItems = {}
@@ -356,6 +376,15 @@ export default function PlanDetailPage() {
             <h1 className="page-title">{plan.title}</h1>
             <p className="page-subtitle">{TYPE_LABEL[plan.type]} · {plan.patientId?.name} · {plan.year}年</p>
           </div>
+          {assistMeta && (
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              padding: '6px 14px', borderRadius: 20, fontSize: 14, fontWeight: 700,
+              color: assistMeta.color, background: assistMeta.bg, border: `1.5px solid ${assistMeta.color}`,
+            }}>
+              {assistMeta.icon} {plan.content?.templateName || '就医协助（无匹配模板）'}
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {!canEdit && (
@@ -388,6 +417,32 @@ export default function PlanDetailPage() {
 
       {PLAN_AI_SCENE[plan.type] && <AiRuleHint scene={PLAN_AI_SCENE[plan.type]} />}
 
+      {/* 标准动作（模板SOP，只读）——直接来自模板原始骨架，不经AI改写，跟下方"本次个性化安排"分开陈列，
+          避免模板标准动作和AI针对该患者的个性化内容混在一起分不清（2026-07-13反馈"模版就是为了标准化"） */}
+      {plan.type === 'medical_assist' && plan.content?.templateSnapshot && (
+        <div className="card" style={{ marginBottom: 20, borderColor: assistMeta?.color, borderWidth: 1.5 }}>
+          <div className="card-header" style={{ background: assistMeta?.bg }}>
+            <div className="card-title" style={{ color: assistMeta?.color }}>
+              {assistMeta?.icon} 标准动作 · {plan.content.templateName}
+            </div>
+            <span style={{ fontSize: 11, color: '#8AA89C' }}>模板固定内容，仅供参考</span>
+          </div>
+          <div className="card-body" style={{ display: 'grid', gap: 10 }}>
+            {[
+              ['服务步骤', plan.content.templateSnapshot.tasks],
+              ['住宿安排', plan.content.templateSnapshot.hotel],
+              ['交通安排', plan.content.templateSnapshot.transport],
+              ['注意事项模板', plan.content.templateSnapshot.notes],
+            ].filter(([, v]) => !!v).map(([k, v]) => (
+              <div key={k}>
+                <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 3 }}>{k}</div>
+                <div style={{ fontSize: 13, color: '#4A6558', whiteSpace: 'pre-wrap', lineHeight: 1.6, background: '#FAFAF8', borderRadius: 6, padding: '8px 10px' }}>{v}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* 基本信息 */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
         <div className="card">
@@ -411,11 +466,10 @@ export default function PlanDetailPage() {
                 </div>
                 {plan.type === 'medical_assist' && (
                   <>
-                    {plan.content?.templateName && (
-                      <div style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '5px 10px', marginBottom: 12 }}>
-                        沿用模板《{plan.content.templateName}》生成，以下内容可按患者情况调整
-                      </div>
-                    )}
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginBottom: 10, paddingTop: 4, borderTop: '1px dashed #E0D9CE' }}>
+                      ✏️ 本次个性化安排
+                      <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C', marginLeft: 8 }}>针对该患者的具体内容，可按需调整</span>
+                    </div>
                     <div style={{ display: 'flex', gap: 10 }}>
                       <div className="form-group" style={{ marginBottom: 12, flex: 1 }}>
                         <label className="form-label">就诊医院</label>
@@ -456,29 +510,44 @@ export default function PlanDetailPage() {
                 </div>
               </>
             ) : (
-              [
-                ['会员', plan.patientId?.name + ' · ' + plan.patientId?.phone],
-                ['类型', TYPE_LABEL[plan.type]],
-                ['状态', plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
-                ['年度', plan.year + ' 年'],
-                ['制定人', plan.staffId?.name],
-                ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
-                ...(plan.confirmedAt ? [['会员确认时间', new Date(plan.confirmedAt).toLocaleDateString('zh-CN')]] : []),
-                ...(plan.type === 'medical_assist' && plan.content?.templateName ? [['沿用模板', plan.content.templateName]] : []),
-                ...(plan.type === 'medical_assist' && plan.content?.hospital ? [['就诊医院', plan.content.hospital]] : []),
-                ...(plan.type === 'medical_assist' && plan.content?.department ? [['科室', plan.content.department]] : []),
-                ...(plan.type === 'medical_assist' && plan.content?.expert ? [['专家', plan.content.expert]] : []),
-                ...(plan.type === 'medical_assist' && plan.content?.hotel ? [['住宿安排', plan.content.hotel]] : []),
-                ...(plan.type === 'medical_assist' && plan.content?.transport ? [['交通安排', plan.content.transport]] : []),
-                ...(plan.type === 'medical_assist' && plan.content?.tasks ? [['服务事项', plan.content.tasks]] : []),
-                ...(plan.description ? [['描述', plan.description]] : []),
-                ...(plan.notes ? [['备注', plan.notes]] : []),
-              ].map(([k, v]) => (
-                <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f5f2ec', fontSize: 14 }}>
-                  <span style={{ color: '#8AA89C' }}>{k}</span>
-                  <span style={{ fontWeight: 500, maxWidth: '65%', textAlign: 'right', whiteSpace: 'pre-wrap' }}>{v}</span>
-                </div>
-              ))
+              <>
+                {[
+                  ['会员', plan.patientId?.name + ' · ' + plan.patientId?.phone],
+                  ['类型', TYPE_LABEL[plan.type]],
+                  ['状态', plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
+                  ['年度', plan.year + ' 年'],
+                  ['制定人', plan.staffId?.name],
+                  ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
+                  ...(plan.confirmedAt ? [['会员确认时间', new Date(plan.confirmedAt).toLocaleDateString('zh-CN')]] : []),
+                  ...(plan.description ? [['描述', plan.description]] : []),
+                  ...(plan.notes ? [['备注', plan.notes]] : []),
+                ].map(([k, v]) => (
+                  <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f5f2ec', fontSize: 14 }}>
+                    <span style={{ color: '#8AA89C' }}>{k}</span>
+                    <span style={{ fontWeight: 500, maxWidth: '65%', textAlign: 'right', whiteSpace: 'pre-wrap' }}>{v}</span>
+                  </div>
+                ))}
+                {plan.type === 'medical_assist' && (
+                  <>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginTop: 14, marginBottom: 4, paddingTop: 10, borderTop: '1px dashed #E0D9CE' }}>
+                      ✏️ 本次个性化安排
+                    </div>
+                    {[
+                      ['就诊医院', plan.content?.hospital],
+                      ['科室', plan.content?.department],
+                      ['专家', plan.content?.expert],
+                      ['住宿安排', plan.content?.hotel],
+                      ['交通安排', plan.content?.transport],
+                      ['服务事项', plan.content?.tasks],
+                    ].filter(([, v]) => !!v).map(([k, v]) => (
+                      <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f5f2ec', fontSize: 14 }}>
+                        <span style={{ color: '#8AA89C' }}>{k}</span>
+                        <span style={{ fontWeight: 500, maxWidth: '65%', textAlign: 'right', whiteSpace: 'pre-wrap' }}>{v}</span>
+                      </div>
+                    ))}
+                  </>
+                )}
+              </>
             )}
           </div>
         </div>
