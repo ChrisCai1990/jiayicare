@@ -1,4 +1,5 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
@@ -72,6 +73,7 @@ const ROLE_DEFAULT = { medicalAssistant:'medical_visit', psychologist:'routine',
 export default function ServiceRecordsPage() {
   const { staff } = useStaff()
   const toast = useToast()
+  const nav = useNavigate()
   const defaultType = ROLE_DEFAULT[staff?.role] || ''
   const [records, setRecords] = useState([])
   const [total, setTotal] = useState(0)
@@ -147,7 +149,14 @@ export default function ServiceRecordsPage() {
                   </td>
                   <td>{r.patientId?.name} <div style={{ fontSize: 11, color: '#aaa' }}>{r.patientId?.phone}</div></td>
                   <td style={{ fontSize: 13, color: '#4A6558' }}>{new Date(r.date).toLocaleDateString('zh-CN')}</td>
-                  <td style={{ fontWeight: 500 }}>{r.title || '-'}</td>
+                  <td style={{ fontWeight: 500 }}>
+                    {r.title || '-'}
+                    {r.sourceHealthPlanId && !r.result && (
+                      <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 600, color: '#D97706', background: '#FEF3E2', border: '1px solid #F6D860', borderRadius: 4, padding: '1px 5px' }}>
+                        待补录
+                      </span>
+                    )}
+                  </td>
                   <td style={{ maxWidth: 220, fontSize: 13, color: '#4A6558' }}>
                     {r.content ? (r.content.length > 45 ? r.content.slice(0, 45) + '...' : r.content) : '-'}
                   </td>
@@ -200,6 +209,24 @@ export default function ServiceRecordsPage() {
                 <div>
                   <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>完整内容</div>
                   <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 14, fontSize: 13, color: '#1A2B24', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{detailRecord.content}</div>
+                </div>
+              )}
+              {detailRecord.result && (
+                <div style={{ padding: 12, background: '#EFF6FF', borderRadius: 8, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
+                  <div style={{ fontSize: 11, color: '#0077B6', marginBottom: 4, fontWeight: 600 }}>结果/建议</div>
+                  {detailRecord.result}
+                </div>
+              )}
+              {/* 就医协助方案推送后自动生成的记录（无result），提示去患者详情页用"补充记录"追加就医结果——
+                  与日常随访/医生随访/营养干预统一走同一套追加机制，不单独另造一套编辑覆盖的交互
+                  （2026-07-13 需求：方案要能自动记一笔，等就医完毕可以补录信息） */}
+              {detailRecord.sourceHealthPlanId && !detailRecord.result && (
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: '8px 12px', background: '#FEF3E2', border: '1px solid #F6D860', borderRadius: 8 }}>
+                  <span style={{ fontSize: 12, color: '#D97706' }}>就医尚未完成，待就医后到会员详情页补充实际结果</span>
+                  <button className="btn btn-secondary btn-sm" style={{ flexShrink: 0 }}
+                    onClick={() => nav(`/patients/${detailRecord.patientId?._id || detailRecord.patientId}?tab=serviceRecords`)}>
+                    去补录 →
+                  </button>
                 </div>
               )}
               {detailRecord.staffId?.name && (

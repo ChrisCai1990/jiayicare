@@ -22,6 +22,7 @@ const serviceRecordSchema = new mongoose.Schema({
     required: true,
   },
   date:    { type: Date, default: Date.now },
+  sourceHealthPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null }, // 就医协助方案推送后自动生成时关联的方案
   // 通用字段
   title:   { type: String, default: '' },   // 记录标题/主题
   content: { type: String, default: '' },   // 详细内容记录

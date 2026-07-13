@@ -1239,6 +1239,28 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
         { $set: { status: 'completed', completedAt: new Date() } }
       ).catch(() => {});
     }
+    // 同步在"服务记录·医院就医"留一笔底稿：把方案里已确定的医院/科室/专家/安排先记下来，
+    // result（就医结果）留空，等专员实际陪诊/代诊完成后回来补录——与详情页新增的"补录信息"入口配套
+    // （2026-07-13 需求：方案要能自动在服务记录里记上一笔，等就医完毕可以补录信息）
+    const c = plan.content || {};
+    const contentLines = [
+      c.hospital && `医院：${c.hospital}`,
+      c.department && `科室：${c.department}`,
+      c.expert && `医生：${c.expert}`,
+      plan.description && `就医原因：${plan.description}`,
+      c.tasks && `安排：${c.tasks}`,
+    ].filter(Boolean).join('\n');
+    await ServiceRecord.create({
+      staffId: plan.staffId,
+      patientId: plan.patientId,
+      type: 'medical_visit',
+      date: new Date(),
+      title: plan.title || '就医协助方案',
+      content: contentLines,
+      result: '',
+      medicalEscort: { hospital: c.hospital || '', department: c.department || '', doctor: c.expert || '' },
+      sourceHealthPlanId: plan._id,
+    }).catch(() => {});
   }
   res.json({ success: true, data: plan });
 });
