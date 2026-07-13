@@ -626,11 +626,17 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .limit(3)
     .populate('staffId', 'name role');
 
-  // 最近健康记录（血压、血糖、体重）
-  const recentRecords = await HealthRecord.find({ user: user._id })
-    .sort({ recordedAt: -1 })
-    .limit(30)
-    .select('type value extra recordedAt note imageUrl');
+  // 最近健康记录（血压/血糖/体重/运动/饮食等全部打卡类型）——按类型分别取最近几条再合并，
+  // 不能直接对全部类型 sort+limit(30)：血压/血糖这类高频打卡会迅速占满30条名额，把运动/饮食
+  // 这类低频或补录历史日期的记录挤出窗口，导致医护端"看不到运动打卡"（2026-07-13 反馈：
+  // 今天打卡能看到，昨天补录的却看不到，正是被高频类型挤没了，不是没保存成功）
+  const recentTypes = await HealthRecord.distinct('type', { user: user._id });
+  const recentRecordsByType = await Promise.all(
+    recentTypes.map(t => HealthRecord.find({ user: user._id, type: t })
+      .sort({ recordedAt: -1 }).limit(10)
+      .select('type value extra recordedAt note imageUrl'))
+  );
+  const recentRecords = recentRecordsByType.flat().sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt));
 
   res.json({ success: true, data: { user, recentFollowUps, recentRecords } });
 });

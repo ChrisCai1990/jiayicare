@@ -4882,7 +4882,7 @@ export default function PatientDetailPage() {
 
         {/* 日常健康打卡数据 */}
         <div className="card" style={{ marginTop: 16 }}>
-          <div className="card-header"><div className="card-title">日常健康打卡数据（最近30条）</div></div>
+          <div className="card-header"><div className="card-title">日常健康打卡数据（每类型最近10条）</div></div>
           {recentRecords?.length > 0 ? (
             <table className="table">
               <thead>
