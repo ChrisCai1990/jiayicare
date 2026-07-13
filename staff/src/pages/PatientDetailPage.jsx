@@ -7635,7 +7635,10 @@ export default function PatientDetailPage() {
           )
         }
         return (
-          <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setOcrReviewReport(null) }}>
+          // 审核内容多且耗时，鼠标稍微移出弹窗点到遮罩层就会误触关闭丢失未保存的编辑，去掉点遮罩关闭，
+          // 只能点右上角✕关闭（2026-07-13 反馈：之前只改了纯查看用的"体检报告详情弹窗"，这个才是真正
+          // 审核AI识别结果、会长时间编辑的弹窗，之前漏改了）
+          <div className="modal-overlay">
             <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
