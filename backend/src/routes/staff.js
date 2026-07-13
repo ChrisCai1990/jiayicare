@@ -4016,6 +4016,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     // 后端实际能生成的板块全集
     const GENERATABLE = ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'];
     const planType = req.body.planType || '';
+    const notes = req.body.notes || '';
     const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k));
 
     const { chat } = require('../utils/ai');
@@ -4052,6 +4053,9 @@ ${chronicText}
 ${missingCheckups}
 
 【患者慢病标签】${user.chronicDiseases?.join('、') || '无'}
+
+【本次服务目标（家庭医生填写，方案要朝这个方向靠）】
+${notes ? notes : '（未填写目标，按患者情况常规定制）'}
 
 请严格按以下JSON格式输出，仅输出JSON：
 {

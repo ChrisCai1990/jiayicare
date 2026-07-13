@@ -5927,10 +5927,9 @@ export default function PatientDetailPage() {
                   onChange={e => {
                     const planType = e.target.value
                     if (!planType) return
-                    // 年度管理方案需要先选定4种类型之一（健康重塑/年轻态/慢病维稳/健康预防），
-                    // 不像营养方案/体检方案可以直接一键生成，所以这里跳转到独立页面并带上
-                    // planType+autoGen=1，让页面加载完成后自动触发一次AI生成，省得用户再点一次
-                    nav(`/patients/${id}/annual-health?planType=${planType}&autoGen=1`)
+                    // 2026-07-14反馈：不该跳转就自动生成，用户要先看清楚页面、确认板块内容，
+                    // 再自己点"✨ AI生成方案"按钮——只带 planType 定位选中类型，不带 autoGen
+                    nav(`/patients/${id}/annual-health?planType=${planType}`)
                   }}>
                   <option value="">✨ AI年度管理方案</option>
                   <option value="health_reshape">健康重塑方案</option>
