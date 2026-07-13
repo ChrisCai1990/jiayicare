@@ -281,7 +281,15 @@ export default function PlanDetailPage() {
   }
 
   const startEdit = () => {
-    setEditForm({ title: plan.title, description: plan.description || '', notes: plan.notes || '' })
+    const base = { title: plan.title, description: plan.description || '', notes: plan.notes || '' }
+    if (plan.type === 'medical_assist') {
+      const c = plan.content || {}
+      Object.assign(base, {
+        hospital: c.hospital || '', department: c.department || '', expert: c.expert || '',
+        hotel: c.hotel || '', transport: c.transport || '', tasks: c.tasks || '',
+      })
+    }
+    setEditForm(base)
     setEditMode(true)
   }
 
@@ -308,7 +316,12 @@ export default function PlanDetailPage() {
     if (!editForm.title?.trim()) { toast('方案标题不能为空'); return }
     setSaving(true)
     try {
-      await staffAPI.updatePlan(id, editForm)
+      const { hospital, department, expert, hotel, transport, tasks, ...rest } = editForm
+      const payload = { ...rest }
+      if (plan.type === 'medical_assist') {
+        payload.content = { ...(plan.content || {}), hospital, department, expert, hotel, transport, tasks }
+      }
+      await staffAPI.updatePlan(id, payload)
       toast('已保存')
       setEditMode(false)
       load()
@@ -396,6 +409,43 @@ export default function PlanDetailPage() {
                   </div>
                   <textarea className="form-input" rows={3} placeholder="方案整体说明..." value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
+                {plan.type === 'medical_assist' && (
+                  <>
+                    {plan.content?.templateName && (
+                      <div style={{ fontSize: 12, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '5px 10px', marginBottom: 12 }}>
+                        沿用模板《{plan.content.templateName}》生成，以下内容可按患者情况调整
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <div className="form-group" style={{ marginBottom: 12, flex: 1 }}>
+                        <label className="form-label">就诊医院</label>
+                        <input className="form-input" value={editForm.hospital} onChange={e => setEditForm(f => ({ ...f, hospital: e.target.value }))} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 12, flex: 1 }}>
+                        <label className="form-label">科室</label>
+                        <input className="form-input" value={editForm.department} onChange={e => setEditForm(f => ({ ...f, department: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 12 }}>
+                      <label className="form-label">专家</label>
+                      <input className="form-input" value={editForm.expert} onChange={e => setEditForm(f => ({ ...f, expert: e.target.value }))} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 10 }}>
+                      <div className="form-group" style={{ marginBottom: 12, flex: 1 }}>
+                        <label className="form-label">住宿安排</label>
+                        <textarea className="form-input" rows={2} value={editForm.hotel} onChange={e => setEditForm(f => ({ ...f, hotel: e.target.value }))} />
+                      </div>
+                      <div className="form-group" style={{ marginBottom: 12, flex: 1 }}>
+                        <label className="form-label">交通安排</label>
+                        <textarea className="form-input" rows={2} value={editForm.transport} onChange={e => setEditForm(f => ({ ...f, transport: e.target.value }))} />
+                      </div>
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 12 }}>
+                      <label className="form-label">服务事项（每行一项）</label>
+                      <textarea className="form-input" rows={4} value={editForm.tasks} onChange={e => setEditForm(f => ({ ...f, tasks: e.target.value }))} />
+                    </div>
+                  </>
+                )}
                 <div className="form-group" style={{ marginBottom: 16 }}>
                   <label className="form-label">备注</label>
                   <textarea className="form-input" rows={2} placeholder="补充备注..." value={editForm.notes} onChange={e => setEditForm(f => ({ ...f, notes: e.target.value }))} />
@@ -414,12 +464,19 @@ export default function PlanDetailPage() {
                 ['制定人', plan.staffId?.name],
                 ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
                 ...(plan.confirmedAt ? [['会员确认时间', new Date(plan.confirmedAt).toLocaleDateString('zh-CN')]] : []),
+                ...(plan.type === 'medical_assist' && plan.content?.templateName ? [['沿用模板', plan.content.templateName]] : []),
+                ...(plan.type === 'medical_assist' && plan.content?.hospital ? [['就诊医院', plan.content.hospital]] : []),
+                ...(plan.type === 'medical_assist' && plan.content?.department ? [['科室', plan.content.department]] : []),
+                ...(plan.type === 'medical_assist' && plan.content?.expert ? [['专家', plan.content.expert]] : []),
+                ...(plan.type === 'medical_assist' && plan.content?.hotel ? [['住宿安排', plan.content.hotel]] : []),
+                ...(plan.type === 'medical_assist' && plan.content?.transport ? [['交通安排', plan.content.transport]] : []),
+                ...(plan.type === 'medical_assist' && plan.content?.tasks ? [['服务事项', plan.content.tasks]] : []),
                 ...(plan.description ? [['描述', plan.description]] : []),
                 ...(plan.notes ? [['备注', plan.notes]] : []),
               ].map(([k, v]) => (
                 <div key={k} style={{ display: 'flex', justifyContent: 'space-between', padding: '7px 0', borderBottom: '1px solid #f5f2ec', fontSize: 14 }}>
                   <span style={{ color: '#8AA89C' }}>{k}</span>
-                  <span style={{ fontWeight: 500, maxWidth: '65%', textAlign: 'right' }}>{v}</span>
+                  <span style={{ fontWeight: 500, maxWidth: '65%', textAlign: 'right', whiteSpace: 'pre-wrap' }}>{v}</span>
                 </div>
               ))
             )}

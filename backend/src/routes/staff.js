@@ -6776,13 +6776,37 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       order = await Order.findOne({ _id: orderId, user: user._id }).select('serviceName note paidAmount').lean();
     }
 
+    // 按订单服务名匹配就医协助模板库：服务名一般能对应到具体模板（如"医疗代诊服务"）；
+    // 少数笼统服务名（如"就医陪同服务"）在模板库里被拆成多个细分模板，此时精确匹配不到，
+    // 转为把候选模板都给AI，让AI结合患者情况+订单备注选最贴近的一个
+    let matchedTemplate = null;
+    let candidateTemplates = [];
+    if (order?.serviceName) {
+      matchedTemplate = await PlanTemplate.findOne({ type: 'medical_assist', status: 'active', name: order.serviceName }).lean();
+      if (!matchedTemplate) {
+        candidateTemplates = await PlanTemplate.find({
+          type: 'medical_assist', status: 'active',
+          name: { $regex: order.serviceName.replace(/服务$/, '') },
+        }).lean();
+      }
+    }
+
     const { chat } = require('../utils/ai');
     const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
     const orderInfo = order
       ? `客户已下单服务：${order.serviceName}${order.note ? `，备注：${order.note}` : ''}`
       : '（无关联订单，请按患者情况酌情安排）';
 
-    const prompt = `你是一位就医协助服务专员，请根据患者信息和已下单的服务生成个性化就医协助方案。
+    let templateBlock = '（无匹配模板，请根据患者与订单信息自行拟定方案）';
+    if (matchedTemplate) {
+      templateBlock = `已匹配到标准模板《${matchedTemplate.name}》，请严格按此模板结构生成，只把模板里的空白项结合患者与订单信息具体化，不要改变模板已有的骨架内容（如tasks的步骤条目、hotel/transport的固定安排）：
+${JSON.stringify(matchedTemplate.content)}`;
+    } else if (candidateTemplates.length) {
+      templateBlock = `该服务下有多个细分模板，请先判断本次最贴近哪一个，再严格按其结构生成（只填充空白项，保留tasks步骤条目和hotel/transport固定安排）：
+${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).join('\n')}`;
+    }
+
+    const prompt = `你是一位就医协助服务专员，请根据患者信息、已下单的服务和标准方案模板生成个性化就医协助方案。
 
 【患者信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
@@ -6791,17 +6815,23 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
 【订单信息】
 ${orderInfo}
 
+【标准模板】
+${templateBlock}
+
 请以JSON格式输出方案，仅输出JSON：
 {
   "title": "方案名称（如：${user.name}就医协助方案）",
   "description": "方案简介，说明本次就医协助的目的（100字以内）",
   "hospital": "建议就诊医院（结合患者慢病情况推断合适的医院，无法判断则留空）",
   "department": "建议就诊科室",
-  "tasks": "具体服务事项，每行一项，如：陪同挂号、代取报告、陪同检查",
-  "notes": "注意事项，如需要携带的证件、既往病历等"
+  "expert": "建议专家，无法判断则留空",
+  "hotel": "住宿安排，若模板已有固定内容则沿用",
+  "transport": "交通安排，若模板已有固定内容则沿用",
+  "tasks": "具体服务事项，若匹配到模板则沿用模板步骤条目并结合患者情况细化，每行一项",
+  "notes": "注意事项，如需要携带的证件、既往病历等，若模板已有固定内容则沿用并补充患者个性化信息"
 }
 
-注意：需结合患者慢病标签和订单信息给出针对性建议，tasks至少2项。`;
+注意：有标准模板时必须以模板结构为骨架填空，不得脱离模板另起炉灶；tasks至少2项。`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200 });
     let raw = {};
@@ -6822,17 +6852,22 @@ ${orderInfo}
     );
     if (raw.notes) items.push({ name: `注意事项：${raw.notes}`, category: '就医协助' });
 
+    const usedTemplate = matchedTemplate || (candidateTemplates.length ? candidateTemplates.find(t => t.name === raw.title) : null);
+
     const plan = await HealthPlan.create({
       patientId: user._id,
       staffId: req.staff._id,
       type: 'medical_assist',
-      title: raw.title || `${user.name}就医协助方案`,
+      title: raw.title || matchedTemplate?.name || `${user.name}就医协助方案`,
       description: raw.description || '',
       year: new Date().getFullYear(),
       items: items.map(i => ({ ...i, status: 'pending' })),
       content: {
         aiStatus: 'pending', aiGeneratedBy: req.staff.name || '',
-        hospital: raw.hospital || '', department: raw.department || '',
+        templateId: (usedTemplate || matchedTemplate)?._id || null,
+        templateName: (usedTemplate || matchedTemplate)?.name || '',
+        hospital: raw.hospital || '', department: raw.department || '', expert: raw.expert || '',
+        hotel: raw.hotel || '', transport: raw.transport || '',
         tasks: tasksText, notes: raw.notes || '',
       },
       status: 'draft',
