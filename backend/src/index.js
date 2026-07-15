@@ -52,6 +52,10 @@ app.get('/', (req, res) => {
   res.json({ success: true, message: '嘉医汇 API 服务运行中 🏥', version: '1.0.2' });
 });
 
+app.get('/api/health', (req, res) => {
+  res.json({ success: true, service: 'jiayicare-backend' });
+});
+
 // 路由
 app.use('/api/auth',    require('./routes/auth'));
 

@@ -18,7 +18,9 @@
     "serve:staff": "npx serve staff/dist -s -l $PORT",
     "build:app": "cd app && npm run export:web",
     "build:admin": "cd admin && npm run build",
-    "build:staff": "cd staff && npm run build"
+    "build:staff": "cd staff && npm run build",
+    "build": "npm run build:app && npm run build:admin && npm run build:staff",
+    "test": "npm --workspace app test"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.1",

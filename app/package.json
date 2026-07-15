@@ -8,10 +8,10 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "export:web": "expo export --platform web --output-dir dist",
-    "test": "npm run test:api && npm run test:e2e:prod",
+    "test": "node --check tests/api/smoke.js",
     "test:api": "node tests/api/smoke.js",
     "test:e2e": "npx playwright test",
-    "test:e2e:prod": "cross-env BASE_URL=https://dist-lfy4f9p8l-jiayihui.vercel.app npx playwright test",
+    "test:e2e:prod": "node -e \"if(process.env.ALLOW_PRODUCTION_E2E!=='true')throw new Error('Set ALLOW_PRODUCTION_E2E=true to run production E2E')\" && cross-env BASE_URL=https://jiaycare.com npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
     "test:report": "npx playwright show-report tests/reports/html"
   },

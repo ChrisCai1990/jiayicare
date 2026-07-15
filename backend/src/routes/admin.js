@@ -51,62 +51,62 @@ const upload = multer({
   },
 });
 
-// ── 初始化默认管理员账号（首次启动时） ──────────────────────────
-async function seedAdmins() {
-  const count = await Admin.countDocuments();
-  if (count > 0) return;
-  await Admin.create([
-    { username: 'superadmin', password: 'jiayi2024', name: '超级管理员', role: 'superadmin', title: '' },
-    { username: 'doctor1',    password: 'jiayi2024', name: '王主任',     role: 'doctor',     title: '心血管内科主任医师' },
-    { username: 'manager1',   password: 'jiayi2024', name: '李健管',     role: 'manager',    title: '高级健康管理师' },
-    { username: 'staff001', password: 'jiayi2024', name: '张健管', role: 'healthManager', title: '健康管理师' },
-    { username: 'staff002', password: 'jiayi2024', name: '李医生', role: 'familyDoctor',  title: '全科医生' },
-  ]);
-  console.log('✅ 已创建默认账号（含医护端）');
+// ── 显式初始化管理员账号（仅创建，不在启动时重置密码） ──────────
+async function createAdminIfMissing(account, password) {
+  const exists = await Admin.exists({ username: account.username });
+  if (exists) return false;
+  await Admin.create({ ...account, password });
+  console.log(`✅ 已创建管理员账号: ${account.username}`);
+  return true;
 }
-seedAdmins().catch(console.error);
 
-// ── 确保关键账号始终存在且密码正确 ──────────────────────────────
-async function ensureStaffTestAccounts() {
-  // superadmin 每次启动无条件更新密码，防止 DB 中存的是明文或旧哈希
-  const sa = await Admin.findOne({ username: 'superadmin' });
-  if (!sa) {
-    await Admin.create({ username: 'superadmin', password: 'jiayi2024', name: '超级管理员', role: 'superadmin', title: '' });
-    console.log('✅ 创建 superadmin 账号');
-  } else {
-    sa.password = 'jiayi2024';
-    await sa.save(); // 触发 bcrypt pre-save 重新哈希
-    console.log('🔑 superadmin 密码已同步');
+async function bootstrapAdmins() {
+  const superadmin = await Admin.exists({ username: 'superadmin' });
+  if (!superadmin) {
+    const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+    if (password) {
+      await createAdminIfMissing(
+        { username: 'superadmin', name: '超级管理员', role: 'superadmin', title: '' },
+        password
+      );
+    } else {
+      console.warn('⚠️ superadmin 不存在；请设置 BOOTSTRAP_ADMIN_PASSWORD 后重启一次');
+    }
   }
 
-  // 平台超管（SaaS运营方，跨机构）——不存在则创建，供机构管理入口使用
-  const ps = await Admin.findOne({ username: 'platform' });
-  if (!ps) {
-    await Admin.create({ username: 'platform', password: 'jiayi2024', name: '平台超管', role: 'platformSuper', title: '平台运营' });
-    console.log('✅ 创建 platformSuper 账号: platform / jiayi2024');
-  } else if (ps.role !== 'platformSuper') {
-    ps.role = 'platformSuper'; await ps.save();
+  const platform = await Admin.findOne({ username: 'platform' });
+  if (!platform && process.env.PLATFORM_ADMIN_PASSWORD) {
+    await createAdminIfMissing(
+      { username: 'platform', name: '平台超管', role: 'platformSuper', title: '平台运营' },
+      process.env.PLATFORM_ADMIN_PASSWORD
+    );
+  } else if (platform && platform.role !== 'platformSuper') {
+    platform.role = 'platformSuper';
+    await platform.save();
+  }
+
+  if (process.env.SEED_DEMO_ACCOUNTS !== 'true') return;
+  const demoPassword = process.env.DEMO_ACCOUNT_PASSWORD;
+  if (!demoPassword) {
+    console.warn('⚠️ 已启用演示账号，但未设置 DEMO_ACCOUNT_PASSWORD；跳过创建');
+    return;
   }
 
   const testAccounts = [
-    { username: 'jy_super', password: 'jiayi2024', name: '超管测试',   role: 'superadmin',       title: '超级管理员' },
-    { username: 'jy_hm',    password: 'jiayi2024', name: '测试健管',   role: 'healthManager',    title: '健康管理师' },
-    { username: 'jy_fd',    password: 'jiayi2024', name: '测试家医',   role: 'familyDoctor',     title: '全科医生' },
-    { username: 'jy_ns',    password: 'jiayi2024', name: '测试营养',   role: 'nutritionist',     title: '注册营养师' },
-    { username: 'jy_ma',    password: 'jiayi2024', name: '测试就医',   role: 'medicalAssistant', title: '就医专员' },
-    { username: 'jy_hp',    password: 'jiayi2024', name: '测试规划',   role: 'healthPlanner',    title: '健康规划师' },
-    { username: 'jy_tcm',   password: 'jiayi2024', name: '测试中医',   role: 'tcmDoctor',        title: '中医师' },
-    { username: 'jy_rb',    password: 'jiayi2024', name: '测试复健',   role: 'rehabSpecialist',  title: '运动复健师' },
+    { username: 'jy_super', name: '超管测试', role: 'superadmin', title: '超级管理员' },
+    { username: 'jy_hm', name: '测试健管', role: 'healthManager', title: '健康管理师' },
+    { username: 'jy_fd', name: '测试家医', role: 'familyDoctor', title: '全科医生' },
+    { username: 'jy_ns', name: '测试营养', role: 'nutritionist', title: '注册营养师' },
+    { username: 'jy_ma', name: '测试就医', role: 'medicalAssistant', title: '就医专员' },
+    { username: 'jy_hp', name: '测试规划', role: 'healthPlanner', title: '健康规划师' },
+    { username: 'jy_tcm', name: '测试中医', role: 'tcmDoctor', title: '中医师' },
+    { username: 'jy_rb', name: '测试复健', role: 'rehabSpecialist', title: '运动复健师' },
   ];
-  for (const acc of testAccounts) {
-    const exists = await Admin.findOne({ username: acc.username });
-    if (!exists) {
-      await Admin.create(acc);
-      console.log(`✅ 创建测试医护账号: ${acc.username}`);
-    }
+  for (const account of testAccounts) {
+    await createAdminIfMissing(account, demoPassword);
   }
 }
-ensureStaffTestAccounts().catch(console.error);
+bootstrapAdmins().catch((error) => console.error('管理员初始化失败:', error));
 
 // ── POST /api/admin/login ─────────────────────────────────────────
 router.post('/login', async (req, res) => {

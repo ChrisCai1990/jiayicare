@@ -1,8 +1,7 @@
-﻿import paramiko, sys
+import sys
+from scripts.ssh_config import connect
 sys.stdout.reconfigure(encoding='utf-8')
-client = paramiko.SSHClient()
-client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-client.connect('121.40.156.39', username='root', password='Jiayi2026!', timeout=15)
+client = connect()
 
 # Check server index.html
 stdin, stdout, stderr = client.exec_command('cat /var/www/jiayicare/app/dist/index.html')

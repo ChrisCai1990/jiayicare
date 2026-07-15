@@ -8,9 +8,15 @@
  *
  * 退出码：0 = 全部通过，1 = 有失败
  */
+const http = require('http');
 const https = require('https');
 
-const BASE = 'mongodb-production-06f7.up.railway.app';
+const rawBaseUrl = process.env.API_BASE_URL;
+if (!rawBaseUrl) {
+  console.error('请先设置 API_BASE_URL（例如 http://127.0.0.1:3000）再运行 API 冒烟测试。');
+  process.exit(2);
+}
+const BASE = new URL(rawBaseUrl);
 const TOKEN = process.argv.find(a => a.startsWith('--token='))?.split('=')[1] || null;
 
 // ── ANSI 颜色 ────────────────────────────────────────────────────
@@ -34,10 +40,13 @@ function req(method, path, body, extraHeaders = {}) {
       ...extraHeaders,
     };
     const options = {
-      hostname: BASE, path: `/api${path}`,
+      hostname: BASE.hostname,
+      port: BASE.port || undefined,
+      path: `${BASE.pathname.replace(/\/$/, '')}/api${path}`,
       method, headers, timeout: 10000,
     };
-    const r = https.request(options, (res) => {
+    const client = BASE.protocol === 'http:' ? http : https;
+    const r = client.request(options, (res) => {
       let data = '';
       res.on('data', d => data += d);
       res.on('end', () => {
@@ -76,7 +85,7 @@ function assert(cond, msg) {
 // ── 测试套件 ─────────────────────────────────────────────────────
 async function run() {
   console.log('\n📋 JiayiCare API 冒烟测试');
-  console.log(`   后端: https://${BASE}/api`);
+  console.log(`   后端: ${BASE.origin}${BASE.pathname.replace(/\/$/, '')}/api`);
   console.log(`   Token: ${TOKEN ? TOKEN.slice(0, 20) + '…' : '未提供（部分测试将跳过）'}\n`);
 
   // ── 1. 健康检查（无需 auth）─────────────────────────────────────

@@ -1,8 +1,6 @@
-import paramiko
+from ssh_config import connect
 
-ssh = paramiko.SSHClient()
-ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-ssh.connect('121.40.156.39', username='root', password='Jiayi2026!', timeout=15)
+ssh = connect()
 
 def run(cmd, timeout=30):
     _, out, _ = ssh.exec_command(cmd, timeout=timeout, get_pty=True)

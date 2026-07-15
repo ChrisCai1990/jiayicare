@@ -2,5 +2,12 @@ node_modules/
 dist/
 .env
 .env.local
+.env.*
+!.env.example
+.deploy_config
 *.log
 .expo/
+playwright-report/
+test-results/
+__pycache__/
+*.py[cod]

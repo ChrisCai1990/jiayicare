@@ -1,7 +1,11 @@
 const { MongoClient } = require('mongodb');
 
-const SRC_URI = 'mongodb://mongo:JdpeVcLfUCPbXjOVzdZEPvLihTYBhtjK@autorack.proxy.rlwy.net:40817';
-const DST_URI = 'mongodb://127.0.0.1:27017';
+const SRC_URI = process.env.SOURCE_MONGODB_URI;
+const DST_URI = process.env.DESTINATION_MONGODB_URI || 'mongodb://127.0.0.1:27017';
+
+if (!SRC_URI) {
+  throw new Error('Set SOURCE_MONGODB_URI before running this one-off migration.');
+}
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 

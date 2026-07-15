@@ -1,8 +1,7 @@
-﻿import paramiko, sys
+import sys
+from scripts.ssh_config import connect
 sys.stdout.reconfigure(encoding='utf-8')
-c = paramiko.SSHClient()
-c.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-c.connect('121.40.156.39', username='root', password='Jiayi2026!', timeout=10)
+c = connect()
 
 # Check uploads dir
 i,o,e = c.exec_command('ls -la /var/www/jiayicare/uploads/ 2>/dev/null && ls -la /var/www/jiayicare/uploads/reports/ 2>/dev/null || echo "UPLOADS DIR MISSING"')
