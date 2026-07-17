@@ -89,10 +89,11 @@ const CHECKIN_DEFS = {
   bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',         color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压打卡' },
   heartRate:     { key: 'heartRate',     label: '心率', icon: 'heart-outline',         color: '#DC3545', measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率打卡' },
   bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',         color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖打卡' },
+  mood:          { key: 'mood',          label: '情绪', icon: 'happy-outline',         color: '#7C3AED', measureType: 'mood',          category: 'lifestyle', recordLabel: '情绪打卡' },
 };
 
-// 11个固定打卡项目（顺序按需求文档）
-const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
+// 12个固定打卡项目（顺序按需求文档，情绪紧跟血糖之后）
+const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','mood'];
 
 // 生理指标打卡项的字段定义（血压/体重/心率/血糖为数值录入，睡眠为时间录入），与 AddRecordScreen 字段口径保持一致
 const MEASURE_FIELDS = {
@@ -108,6 +109,9 @@ const MEASURE_FIELDS = {
   ],
   weight: [
     { key: 'value', label: '体重', unit: 'kg', placeholder: '如：70.5', normal: '视BMI而定' },
+  ],
+  mood: [
+    { key: 'value', label: '情绪评分', unit: '分', placeholder: '1-10分', normal: '6-10' },
   ],
   sleep: [],
 };
@@ -476,6 +480,9 @@ export default function HomeScreen({ navigation }) {
   const [refreshing, setRefreshing]         = useState(false);
   const [taskTab, setTaskTab]               = useState('全部');
   const [moodScore, setMoodScore]           = useState(7);
+  const [moodNote, setMoodNote]             = useState(''); // 情绪波动原因备注，选分后可填写
+  const [moodPendingSubmit, setMoodPendingSubmit] = useState(false); // 已选分但未确认提交（等待用户可能补充备注）
+  const [moodSaving, setMoodSaving]         = useState(false);
   const [followupPlans, setFollowupPlans]   = useState([]);
   const [allTasks, setAllTasks]             = useState([]);
   const [todayRecordedTypes, setTodayRecordedTypes] = useState(new Set());
@@ -491,10 +498,12 @@ export default function HomeScreen({ navigation }) {
   const [checkinImage, setCheckinImage] = useState(null);
   const [checkinMealType, setCheckinMealType] = useState(''); // 饮食打卡专用：早餐/午餐/晚餐/加餐（2026-07-13 需求）
   const [checkinSaving, setCheckinSaving] = useState(false);
+  const [measureSaving, setMeasureSaving] = useState(false);
   // 生理指标打卡弹窗（血压/体重/睡眠/心率/血糖），原地填写，不跳转页面
   const [measureModal, setMeasureModal] = useState(null); // { key, label, icon, color, measureType }
   const [measureValues, setMeasureValues] = useState({});
   const [measureOption, setMeasureOption] = useState('');
+  const [measureNote, setMeasureNote] = useState(''); // 测量类打卡的自由文本备注，如"血压异常，昨晚没睡好"
   // 打卡归属日期（默认今天，可补录昨天/过去日期）——饮水/排便/运动/睡眠常是昨天的数据（2026-07-10 金娟）
   const todayStr = toLocalDateStr(new Date());
   const [checkinDate, setCheckinDate] = useState(todayStr);
@@ -801,6 +810,7 @@ export default function HomeScreen({ navigation }) {
                 // 生理指标类（血压/体重/睡眠/心率/血糖）：原地弹窗填写，不跳转页面，与饮食/运动打卡体验一致
                 setMeasureValues({});
                 setMeasureOption('');
+                setMeasureNote('');
                 setCheckinDate(todayStr);
                 setMeasureModal(item);
                 return;
@@ -822,6 +832,7 @@ export default function HomeScreen({ navigation }) {
               setCheckinModal(item);
             };
             const saveMeasureCheckin = async () => {
+              if (measureSaving) return;
               const item = measureModal;
               const measureType = item.measureType;
               const fields = MEASURE_FIELDS[measureType] || [];
@@ -840,7 +851,7 @@ export default function HomeScreen({ navigation }) {
                 type: measureType,
                 label: item.recordLabel || item.label,
                 unit: fields[0]?.unit || '',
-                note: measureOption || '',
+                note: [measureOption, measureNote].filter(Boolean).join(' · '),
                 recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
               };
 
@@ -862,10 +873,13 @@ export default function HomeScreen({ navigation }) {
                 const v = parseFloat(measureValues.value);
                 payload.status = measureType === 'bloodSugar' ? (v > 7 ? 'warning' : v < 3.9 ? 'low' : 'normal')
                   : measureType === 'heartRate' ? (v > 100 ? 'warning' : v < 60 ? 'low' : 'normal')
+                  : measureType === 'mood' ? (v >= 6 ? 'normal' : 'warning')
                   : 'normal';
                 if (measureType === 'bloodSugar' && measureOption) payload.extra = { mealType: measureOption };
+                if (measureType === 'mood') setMoodScore(v);
               }
 
+              setMeasureSaving(true);
               if (isToday) {
                 const next = { ...checkin, [item.key]: { done: true, note: '', image: null } };
                 setCheckin(next);
@@ -874,12 +888,15 @@ export default function HomeScreen({ navigation }) {
               try {
                 await recordsAPI.create(payload);
               } catch (err) {
+                setMeasureSaving(false);
                 Alert.alert('保存失败', err.message || '网络异常，请重试');
                 return;
               }
+              setMeasureSaving(false);
               setMeasureModal(null);
             };
             const saveCheckin = async () => {
+              if (checkinSaving) return;
               const item = checkinModal;
               // 饮食打卡必须标注是哪一餐，否则医护端看不出这次记录对应早中晚还是加餐（2026-07-13 需求）
               if (item.key === 'diet' && !checkinMealType) {
@@ -1176,13 +1193,25 @@ export default function HomeScreen({ navigation }) {
                         ))
                       )}
 
+                      <View style={{ marginBottom: 12 }}>
+                        <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>备注（可选，如异常原因）</Text>
+                        <TextInput
+                          style={styles.checkinNoteInput}
+                          placeholder="如：血压偏高，昨晚熬夜了"
+                          placeholderTextColor={colors.textMuted}
+                          value={measureNote}
+                          onChangeText={setMeasureNote}
+                          multiline
+                        />
+                      </View>
+
                       <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setMeasureModal(null)}>
+                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setMeasureModal(null)} disabled={measureSaving}>
                           <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: measureModal?.color || colors.primary, flex: 2 }]} onPress={saveMeasureCheckin}>
-                          <Ionicons name="checkmark" size={18} color="#fff" />
-                          <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>完成打卡</Text>
+                        <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: measureModal?.color || colors.primary, flex: 2, opacity: measureSaving ? 0.6 : 1 }]} onPress={saveMeasureCheckin} disabled={measureSaving}>
+                          {measureSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
+                          <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{measureSaving ? '保存中...' : '完成打卡'}</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -1299,10 +1328,7 @@ export default function HomeScreen({ navigation }) {
                       key={n}
                       onPress={() => {
                         setMoodScore(n);
-                        recordsAPI.create({
-                          category: 'lifestyle', type: 'mood', label: '情绪',
-                          value: String(n), unit: '分', status: n >= 8 ? 'normal' : n >= 6 ? 'normal' : 'warning',
-                        }).catch(() => {});
+                        setMoodPendingSubmit(true);
                       }}
                       activeOpacity={0.7}
                       style={[
@@ -1320,43 +1346,55 @@ export default function HomeScreen({ navigation }) {
                 <Text style={styles.moodHint}>
                   1分 · 情绪低落 &nbsp;&nbsp;&nbsp; 5分 · 一般 &nbsp;&nbsp;&nbsp; 10分 · 心情愉悦
                 </Text>
+                {moodPendingSubmit && (
+                  <View style={{ marginTop: 10 }}>
+                    <TextInput
+                      style={styles.checkinNoteInput}
+                      placeholder="备注（可选，如情绪波动原因）"
+                      placeholderTextColor={colors.textMuted}
+                      value={moodNote}
+                      onChangeText={setMoodNote}
+                      multiline
+                    />
+                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
+                      <TouchableOpacity
+                        style={[styles.checkinModalBtn, { backgroundColor: colors.border }]}
+                        onPress={() => { setMoodPendingSubmit(false); setMoodNote(''); }}
+                        disabled={moodSaving}
+                      >
+                        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.checkinModalBtn, { backgroundColor: colors.primary, flex: 2, opacity: moodSaving ? 0.6 : 1 }]}
+                        onPress={async () => {
+                          if (moodSaving) return;
+                          setMoodSaving(true);
+                          try {
+                            await recordsAPI.create({
+                              category: 'lifestyle', type: 'mood', label: '情绪',
+                              value: String(moodScore), unit: '分',
+                              status: moodScore >= 6 ? 'normal' : 'warning',
+                              note: moodNote || '',
+                            });
+                            setMoodPendingSubmit(false);
+                            setMoodNote('');
+                          } catch (err) {
+                            Alert.alert('保存失败', err.message || '网络异常，请重试');
+                          }
+                          setMoodSaving(false);
+                        }}
+                        disabled={moodSaving}
+                      >
+                        {moodSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
+                        <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{moodSaving ? '保存中...' : '记录'}</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                )}
               </View>
 
             </View>
           </View>
-
-          {/* ── 新用户引导卡（无任何健康数据时显示） ────────────────── */}
-          {!isDemo && !bpRec && !bsSrc && !sleepRec && (
-            <View style={styles.onboardBanner}>
-              <View style={styles.onboardHeader}>
-                <Ionicons name="rocket-outline" size={20} color={colors.primary} />
-                <Text style={styles.onboardTitle}>开始您的健康管理之旅</Text>
-              </View>
-              <Text style={styles.onboardSub}>完成以下步骤，激活个人健康档案</Text>
-              {[
-                { icon: 'person-outline', label: '完善健康资料', done: !!(user?.height && user?.weight), screen: 'EditProfile' },
-                { icon: 'add-circle-outline', label: '录入第一条健康数据', done: false, screen: 'AddRecord' },
-                { icon: 'medical-outline', label: '咨询 AI 健康助手', done: false, screen: 'Chat' },
-              ].map((step, i) => (
-                <TouchableOpacity
-                  key={i}
-                  style={[styles.onboardStep, step.done && styles.onboardStepDone]}
-                  onPress={() => !step.done && navigation.navigate(step.screen)}
-                  activeOpacity={step.done ? 1 : 0.75}
-                >
-                  <View style={[styles.onboardStepIcon, step.done && { backgroundColor: '#E8F5EF' }]}>
-                    <Ionicons name={step.done ? 'checkmark' : step.icon} size={15}
-                      color={step.done ? colors.success : colors.primary} />
-                  </View>
-                  <Text style={[styles.onboardStepLabel, step.done && { color: colors.textMuted, textDecorationLine: 'line-through' }]}>
-                    {step.label}
-                  </Text>
-                  {!step.done && <Ionicons name="chevron-forward" size={13} color={colors.textMuted} />}
-                </TouchableOpacity>
-              ))}
-            </View>
-          )}
-
 
           {/* ── 待办任务 ──────────────────────────────────────────── */}
           <View style={styles.section}>

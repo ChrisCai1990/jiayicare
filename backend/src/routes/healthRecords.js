@@ -250,6 +250,36 @@ router.post('/', auth, async (req, res) => {
   }
 });
 
+// 编辑记录（仅本人录入的记录，修正录入有误的数值/备注/时间）
+router.put('/:id', auth, async (req, res) => {
+  try {
+    const { value, unit, extra, note, recordedAt } = req.body;
+
+    const record = await HealthRecord.findOne({ _id: req.params.id, user: req.user._id });
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+
+    if (value === undefined || value === null || value === '') {
+      return res.status(400).json({ success: false, message: '数值不能为空' });
+    }
+
+    record.value = String(value);
+    if (unit !== undefined) record.unit = unit;
+    if (extra !== undefined) record.extra = extra;
+    if (note !== undefined) record.note = note;
+    if (recordedAt) record.recordedAt = new Date(recordedAt);
+    record.status = calcStatus(record.type, value, extra !== undefined ? extra : record.extra);
+    record.aiAlertStatus = (record.type === 'bloodPressure' && record.status === 'danger') ? 'pending' : null;
+
+    await record.save();
+
+    recalcHealthScore(req.user._id).catch(() => {});
+
+    res.json({ success: true, data: record, message: '修改成功' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '修改失败', error: err.message });
+  }
+});
+
 // 删除记录
 router.delete('/:id', auth, async (req, res) => {
   try {

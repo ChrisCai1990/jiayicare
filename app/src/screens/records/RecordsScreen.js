@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, Dimensions, Modal, TextInput,
-  RefreshControl, ActivityIndicator, KeyboardAvoidingView, Platform,
+  RefreshControl, ActivityIndicator, KeyboardAvoidingView, Platform, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Polyline, Circle, Path, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
@@ -132,6 +132,20 @@ const SLEEP_STATUS_CFG = {
   warning: { label: '偏高',   bg: '#FEF3E2', color: '#D97706' },
   low:     { label: '睡眠不足', bg: '#FDECEA', color: '#DC3545' },
 };
+
+// ── 工具：睡眠时长计算 ────────────────────────────────────────────
+function calcSleepDuration(sleepTime, wakeTime) {
+  const parse = (t) => {
+    const parts = t.replace('：', ':').split(':');
+    const h = parseInt(parts[0], 10) || 0;
+    const m = parseInt(parts[1], 10) || 0;
+    return h * 60 + m;
+  };
+  let s = parse(sleepTime);
+  let w = parse(wakeTime);
+  if (w <= s) w += 24 * 60;
+  return ((w - s) / 60).toFixed(1);
+}
 
 // ── 工具：日期格式化 ──────────────────────────────────────────────
 function fmtDate(str, period) {
@@ -291,7 +305,7 @@ function TrendChart({ data, data2, typeCfg, period }) {
 }
 
 // ── 历史记录条目 ──────────────────────────────────────────────────
-function RecordRow({ record, typeCfg, isLast }) {
+function RecordRow({ record, typeCfg, isLast, onPress }) {
   const stMap = typeCfg.key === 'sleep' ? SLEEP_STATUS_CFG : STATUS_CFG;
   const st  = stMap[record.status] || stMap.normal;
   const val = typeCfg.getDisplay(record);
@@ -299,7 +313,7 @@ function RecordRow({ record, typeCfg, isLast }) {
     ? new Date(record.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '-';
   return (
-    <View style={[styles.recordRow, !isLast && styles.recordRowBorder]}>
+    <TouchableOpacity style={[styles.recordRow, !isLast && styles.recordRowBorder]} onPress={() => onPress?.(record)} activeOpacity={0.7}>
       <View style={styles.recordLeft}>
         <Text style={styles.recordVal}>{val}</Text>
         <Text style={styles.recordUnit}>{typeCfg.unit}</Text>
@@ -315,7 +329,8 @@ function RecordRow({ record, typeCfg, isLast }) {
       <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
         <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
       </View>
-    </View>
+      <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
+    </TouchableOpacity>
   );
 }
 
@@ -440,6 +455,10 @@ export default function RecordsScreen({ navigation }) {
   // 历史记录
   const [historyData, setHistoryData] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [editRecord, setEditRecord] = useState(null); // 正在编辑的打卡记录
+  const [editValues, setEditValues] = useState({});
+  const [editNote, setEditNote] = useState('');
+  const [editSaving, setEditSaving] = useState(false);
 
   // 个人档案
   const [profile, setProfile]         = useState(EMPTY_PROFILE);
@@ -562,6 +581,58 @@ export default function RecordsScreen({ navigation }) {
       setHistoryLoading(false);
     }
   }, []);
+
+  // ── 编辑历史记录 ──────────────────────────────────────────────────
+  const openEditRecord = (record) => {
+    setEditRecord(record);
+    if (record.type === 'bloodPressure') {
+      setEditValues({
+        sys: String(record.extra?.sys ?? String(record.value).split('/')[0] ?? ''),
+        dia: String(record.extra?.dia ?? String(record.value).split('/')[1] ?? ''),
+      });
+    } else if (record.type === 'sleep') {
+      setEditValues({
+        sleepTime: record.extra?.sleepTime || '',
+        wakeTime: record.extra?.wakeTime || '',
+      });
+    } else {
+      setEditValues({ value: String(record.value ?? '') });
+    }
+    setEditNote(record.note || '');
+  };
+
+  const saveEditRecord = async () => {
+    if (!editRecord || editSaving) return;
+    setEditSaving(true);
+    try {
+      let payload = { note: editNote };
+      if (editRecord.type === 'bloodPressure') {
+        const sys = parseInt(editValues.sys, 10);
+        const dia = parseInt(editValues.dia, 10);
+        if (!sys || !dia) { Alert.alert('请填写完整', '收缩压和舒张压不能为空'); setEditSaving(false); return; }
+        payload.value = `${sys}/${dia}`;
+        payload.extra = { ...editRecord.extra, sys, dia };
+      } else if (editRecord.type === 'sleep') {
+        if (!editValues.sleepTime || !editValues.wakeTime) { Alert.alert('请填写完整', '入睡和醒来时间不能为空'); setEditSaving(false); return; }
+        const dur = calcSleepDuration(editValues.sleepTime, editValues.wakeTime);
+        payload.value = String(dur);
+        payload.extra = { ...editRecord.extra, sleepTime: editValues.sleepTime, wakeTime: editValues.wakeTime };
+      } else {
+        if (!editValues.value) { Alert.alert('请填写数值', '数值不能为空'); setEditSaving(false); return; }
+        payload.value = editValues.value;
+        payload.extra = editRecord.extra;
+      }
+      await recordsAPI.update(editRecord._id, payload);
+      setEditRecord(null);
+      loadHistory(chartType);
+      loadChart(chartType, chartPeriod);
+      loadDashboard();
+    } catch (err) {
+      Alert.alert('修改失败', err.message || '网络异常，请重试');
+    } finally {
+      setEditSaving(false);
+    }
+  };
 
   // ── 初始加载 ──────────────────────────────────────────────────────
   const loadAll = useCallback(async () => {
@@ -1158,6 +1229,7 @@ export default function RecordsScreen({ navigation }) {
                   record={rec}
                   typeCfg={currentTypeCfg}
                   isLast={i === historyData.length - 1}
+                  onPress={openEditRecord}
                 />
               ))
             )}
@@ -1223,6 +1295,62 @@ export default function RecordsScreen({ navigation }) {
               <TouchableOpacity style={styles.saveBtn} onPress={saveLifestyle} activeOpacity={0.85}>
                 <Ionicons name="checkmark-circle" size={18} color={colors.white} />
                 <Text style={styles.saveBtnText}>保存生活方式</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
+
+      {/* ── 编辑打卡记录 Modal ───────────────────────────────────── */}
+      <Modal visible={!!editRecord} animationType="slide" transparent onRequestClose={() => setEditRecord(null)}>
+        <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+          <View style={styles.editOverlay}>
+            <View style={styles.editCard}>
+              <View style={styles.editHandle} />
+              <View style={styles.editHeader}>
+                <Text style={styles.editTitle}>编辑{currentTypeCfg.label}记录</Text>
+                <TouchableOpacity onPress={() => setEditRecord(null)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                  <Ionicons name="close" size={22} color={colors.textSecondary} />
+                </TouchableOpacity>
+              </View>
+              <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+                {editRecord?.type === 'bloodPressure' ? (
+                  <>
+                    <View style={styles.editField}>
+                      <View style={styles.editFieldLabel}><Text style={styles.editFieldLabelText}>收缩压（mmHg）</Text></View>
+                      <TextInput style={styles.editInput} keyboardType="number-pad" value={editValues.sys || ''} onChangeText={v => setEditValues(p => ({ ...p, sys: v }))} />
+                    </View>
+                    <View style={styles.editField}>
+                      <View style={styles.editFieldLabel}><Text style={styles.editFieldLabelText}>舒张压（mmHg）</Text></View>
+                      <TextInput style={styles.editInput} keyboardType="number-pad" value={editValues.dia || ''} onChangeText={v => setEditValues(p => ({ ...p, dia: v }))} />
+                    </View>
+                  </>
+                ) : editRecord?.type === 'sleep' ? (
+                  <>
+                    <View style={styles.editField}>
+                      <View style={styles.editFieldLabel}><Text style={styles.editFieldLabelText}>入睡时间</Text></View>
+                      <TextInput style={styles.editInput} placeholder="如：22:30" placeholderTextColor={colors.textMuted} value={editValues.sleepTime || ''} onChangeText={v => setEditValues(p => ({ ...p, sleepTime: v }))} />
+                    </View>
+                    <View style={styles.editField}>
+                      <View style={styles.editFieldLabel}><Text style={styles.editFieldLabelText}>醒来时间</Text></View>
+                      <TextInput style={styles.editInput} placeholder="如：06:30" placeholderTextColor={colors.textMuted} value={editValues.wakeTime || ''} onChangeText={v => setEditValues(p => ({ ...p, wakeTime: v }))} />
+                    </View>
+                  </>
+                ) : (
+                  <View style={styles.editField}>
+                    <View style={styles.editFieldLabel}><Text style={styles.editFieldLabelText}>{currentTypeCfg.label}（{currentTypeCfg.unit}）</Text></View>
+                    <TextInput style={styles.editInput} keyboardType="decimal-pad" value={editValues.value || ''} onChangeText={v => setEditValues(p => ({ ...p, value: v }))} />
+                  </View>
+                )}
+                <View style={styles.editField}>
+                  <View style={styles.editFieldLabel}><Text style={styles.editFieldLabelText}>备注</Text></View>
+                  <TextInput style={styles.editInput} placeholder="如：异常原因" placeholderTextColor={colors.textMuted} value={editNote} onChangeText={setEditNote} multiline />
+                </View>
+                <View style={{ height: 20 }} />
+              </ScrollView>
+              <TouchableOpacity style={[styles.saveBtn, editSaving && { opacity: 0.6 }]} onPress={saveEditRecord} activeOpacity={0.85} disabled={editSaving}>
+                {editSaving ? <ActivityIndicator size="small" color={colors.white} /> : <Ionicons name="checkmark-circle" size={18} color={colors.white} />}
+                <Text style={styles.saveBtnText}>{editSaving ? '保存中...' : '保存修改'}</Text>
               </TouchableOpacity>
             </View>
           </View>

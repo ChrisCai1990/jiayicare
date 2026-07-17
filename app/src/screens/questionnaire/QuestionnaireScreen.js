@@ -676,8 +676,11 @@ export default function QuestionnaireScreen({ navigation }) {
               <Text style={styles.errorText}>{errorMsg}</Text>
             </View>
           )}
+          <View style={{ height: 100 }} />
+        </ScrollView>
 
-          <TouchableOpacity style={styles.submitBtn} onPress={submit} disabled={submitting} activeOpacity={0.85}>
+        <View style={styles.footer}>
+          <TouchableOpacity style={[styles.submitBtn, { flex: 1 }]} onPress={submit} disabled={submitting} activeOpacity={0.85}>
             {submitting
               ? <ActivityIndicator color={colors.white} />
               : <>
@@ -686,8 +689,7 @@ export default function QuestionnaireScreen({ navigation }) {
                 </>
             }
           </TouchableOpacity>
-          <View style={{ height: spacing.xl }} />
-        </ScrollView>
+        </View>
       </SafeAreaView>
     );
   }
@@ -935,7 +937,7 @@ const styles = StyleSheet.create({
   summaryA: { fontSize: 13, color: colors.textSecondary, lineHeight: 20 },
   submitBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: spacing.sm,
-    backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 15, marginTop: spacing.lg,
+    backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 15,
   },
   submitBtnText: { fontSize: 16, color: colors.white, fontWeight: '700' },
 
