@@ -220,9 +220,10 @@ router.post('/wechat-mp', async (req, res) => {
 
   try {
     // code → openid + session_key
-    const sessionUrl = `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`;
+    const sessionUrl = `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`;
     const sessionData = await httpsGet(sessionUrl);
     if (sessionData.errcode) {
+      console.error('jscode2session error:', sessionData.errcode, sessionData.errmsg);
       return res.status(400).json({ success: false, message: `小程序登录失败: ${sessionData.errmsg}` });
     }
     const { openid } = sessionData;
