@@ -10,15 +10,15 @@ import { userAPI, recordsAPI, tasksAPI, followupTasksAPI } from '../../services/
 // 小程序端按「核心链路完整可跑通」原则做了简化，详见 miniprogram/CLAUDE.md 的"简化实现"清单。
 
 const CHECKIN_ITEMS = [
-  { key: 'diet', label: '饮食', icon: '🍽️' },
-  { key: 'exercise', label: '运动', icon: '🏃' },
+  { key: 'diet', label: '饮食', icon: '🍽️', allowMultiple: true },
+  { key: 'exercise', label: '运动', icon: '🏃', allowMultiple: true },
   { key: 'sleep', label: '睡眠', icon: '🌙' },
   { key: 'weight', label: '体重', icon: '⚖️' },
   { key: 'bowel', label: '排便', icon: '🍃' },
   { key: 'water', label: '饮水', icon: '💧' },
-  { key: 'bloodPressure', label: '血压', icon: '💗' },
+  { key: 'bloodPressure', label: '血压', icon: '💗', allowMultiple: true },
   { key: 'heartRate', label: '心率', icon: '❤️' },
-  { key: 'bloodSugar', label: '血糖', icon: '🩸' },
+  { key: 'bloodSugar', label: '血糖', icon: '🩸', allowMultiple: true },
 ];
 
 export default function HomePage() {
@@ -107,7 +107,14 @@ export default function HomePage() {
               return (
                 <View
                   key={item.key}
-                  onClick={() => Taro.navigateTo({ url: `/pages/records/add/index?type=${item.key}` })}
+                  onClick={() => {
+                    // 今日已打卡且不允许多次的项目直接拦截，防止重复写入同一天多条记录（2026-07-17）
+                    if (done && !item.allowMultiple) {
+                      Taro.showToast({ title: '今天已经打过卡了，明天再来吧～', icon: 'none' });
+                      return;
+                    }
+                    Taro.navigateTo({ url: `/pages/records/add/index?type=${item.key}` });
+                  }}
                   style={{
                     width: 'calc(33.33% - 7px)', padding: '10px 0', borderRadius: `${radius.sm}px`, textAlign: 'center',
                     backgroundColor: done ? colors.primary10 : colors.background,

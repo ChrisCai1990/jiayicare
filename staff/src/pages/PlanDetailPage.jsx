@@ -299,6 +299,15 @@ export default function PlanDetailPage() {
     } catch (err) { toast(err.message) }
   }
 
+  const handleComplete = async () => {
+    if (!window.confirm('确认此方案已服务完毕？标记完成后会从会员端"进行中"列表移除，不可再推送。')) return
+    try {
+      await staffAPI.updatePlan(id, { status: 'completed' })
+      toast('已标记完成')
+      load()
+    } catch (err) { toast(err.message) }
+  }
+
   const startEdit = () => {
     const base = { title: plan.title, description: plan.description || '', notes: plan.notes || '' }
     if (plan.type === 'medical_assist') {
@@ -410,6 +419,12 @@ export default function PlanDetailPage() {
           )}
           {canEdit && plan.status === 'active' && (
             <button className="btn btn-primary" onClick={handlePush}>📤 重新推送</button>
+          )}
+          {canEdit && plan.status === 'active' && (
+            <button className="btn btn-primary" style={{ background: '#22A06B', borderColor: '#22A06B' }} onClick={handleComplete}>✔️ 标记完成</button>
+          )}
+          {plan.status === 'completed' && (
+            <span style={{ fontSize: 12, color: '#22A06B', alignSelf: 'center', background: '#E8F5EF', border: '1px solid #22A06B', padding: '3px 10px', borderRadius: 6 }}>✔️ 服务已完成</span>
           )}
           {canEdit && <button className="btn btn-secondary" onClick={handleDelete}>删除</button>}
         </div>

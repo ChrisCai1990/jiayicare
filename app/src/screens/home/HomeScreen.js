@@ -79,16 +79,16 @@ const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
 // ── 打卡项目定义 ─────────────────────────────────────────────────
 const CHECKIN_DEFS = {
   diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食打卡', allowMultiple: true },
-  exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动打卡' },
+  exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动打卡', allowMultiple: true },
   sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',          color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠打卡' },
   weight:        { key: 'weight',        label: '体重', icon: 'scale-outline',         color: '#059669', measureType: 'weight',        category: 'vitals',    recordLabel: '体重打卡' },
   bowel:         { key: 'bowel',         label: '排便', icon: 'leaf-outline',          color: '#92400E', measureType: null,            category: 'lifestyle', recordLabel: '排便打卡' },
   water:         { key: 'water',         label: '饮水', icon: 'water-outline',         color: '#0EA5E9', measureType: null,            category: 'lifestyle', recordLabel: '饮水打卡' },
   smoking:       { key: 'smoking',       label: '吸烟', icon: 'warning-outline',       color: '#6B7280', measureType: null,            category: 'lifestyle', recordLabel: '吸烟记录' },
   alcohol:       { key: 'alcohol',       label: '饮酒', icon: 'wine-outline',          color: '#9D174D', measureType: null,            category: 'lifestyle', recordLabel: '饮酒记录' },
-  bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',         color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压打卡' },
+  bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',         color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压打卡', allowMultiple: true },
   heartRate:     { key: 'heartRate',     label: '心率', icon: 'heart-outline',         color: '#DC3545', measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率打卡' },
-  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',         color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖打卡' },
+  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',         color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖打卡', allowMultiple: true },
   mood:          { key: 'mood',          label: '情绪', icon: 'happy-outline',         color: '#7C3AED', measureType: 'mood',          category: 'lifestyle', recordLabel: '情绪打卡' },
 };
 

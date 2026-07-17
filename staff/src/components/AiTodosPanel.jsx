@@ -23,6 +23,7 @@ const TYPE_CONFIG = {
   checkup_plan_review:  { icon: '🏥', label: 'AI体检方案待审核', color: '#0077B6', priority: 3 },
   followup_review:      { icon: '📅', label: '随访计划待审核', color: '#0077B6', priority: 3 },
   service_draft_review: { icon: '🤖', label: 'AI随访草稿待审核', color: '#7C3AED', priority: 3 },
+  medical_assist_plan_review: { icon: '🚑', label: 'AI就医协助方案待审核', color: '#0077B6', priority: 2 },
 }
 
 function formatTime(date) {

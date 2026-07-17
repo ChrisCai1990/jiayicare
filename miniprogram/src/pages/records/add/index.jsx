@@ -50,6 +50,7 @@ export default function AddRecordPage() {
   useEffect(() => { setValues({}); setError(''); }, [activeType]);
 
   const save = async () => {
+    if (saving) return;
     setError('');
     let payload;
     if (activeType.id === 'bloodPressure') {
