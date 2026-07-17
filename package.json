@@ -6,20 +6,23 @@
     "app",
     "admin",
     "staff",
-    "backend"
+    "backend",
+    "miniprogram"
   ],
   "scripts": {
     "dev:app": "cd app && npx expo start",
     "dev:admin": "cd admin && npm run dev",
     "dev:staff": "cd staff && npm run dev",
     "dev:backend": "cd backend && npm run dev",
+    "dev:miniprogram": "cd miniprogram && npm run dev:weapp",
     "serve:app": "npx serve app/dist -s -l $PORT",
     "serve:admin": "npx serve admin/dist -s -l $PORT",
     "serve:staff": "npx serve staff/dist -s -l $PORT",
     "build:app": "cd app && npm run export:web",
     "build:admin": "cd admin && npm run build",
     "build:staff": "cd staff && npm run build",
-    "build": "npm run build:app && npm run build:admin && npm run build:staff",
+    "build:miniprogram": "cd miniprogram && npm run build:weapp",
+    "build": "npm run build:app && npm run build:admin && npm run build:staff && npm run build:miniprogram",
     "test": "npm --workspace app test"
   },
   "devDependencies": {

@@ -34,21 +34,25 @@
 
 # JiayiCare Monorepo 完整说明
 
-## 目录结构（4个端）
+## 目录结构（5个端）
 ```
 JiayiCare-mono/
-├── app/        React Native + Expo 用户端（患者使用）
-├── admin/      React + Vite 超级管理后台（运营/超管使用）
-├── staff/      React + Vite 医护端（医生/健管师使用）
-├── backend/    Node.js + Express + MongoDB API
+├── app/            React Native + Expo 用户端（患者使用，移动App）
+├── miniprogram/    Taro 3 + React 微信小程序端（患者使用，功能对标 app/）
+├── admin/          React + Vite 超级管理后台（运营/超管使用）
+├── staff/          React + Vite 医护端（医生/健管师使用）
+├── backend/        Node.js + Express + MongoDB API
 └── package.json
 ```
 
 ### 各端职责
 - **app/**：患者使用的移动端App（健康数据、问诊、服务购买等）
+- **miniprogram/**：患者使用的微信小程序端，1:1 对标 app/ 的用户端功能，共用同一套后端 API。
+  技术栈 Taro 3 + React（非 app/ 的 React Native），因为小程序无法直接运行 RN 代码，是独立工程。
+  详见 `miniprogram/CLAUDE.md`。
 - **admin/**：超级管理员后台（患者总览、订单、服务管理、商城产品管理、健康方案模板、医护账号管理等）
 - **staff/**：医护人员工作台（随访、患者管理、服务记录、计划、提成等）
-- **backend/**：统一API服务，三端共用
+- **backend/**：统一API服务，四端共用（app/miniprogram/admin/staff）
 
 ## 部署命令
 
@@ -73,6 +77,19 @@ python scripts/deploy.py --backend
 
 > `scripts/deploy.py` 通过 SSH 直连服务器执行部署，实时输出日志，自动验证结果。
 > 不依赖 Webhook——Webhook 仍保留作为备份，但不在关键路径上。
+
+### 小程序端部署（miniprogram/，与其余三端完全不同）
+```bash
+npm run build:miniprogram   # 等价于 cd miniprogram && npm run build:weapp，产出 miniprogram/dist/
+```
+`deploy.py` 的自动部署流程**不适用**于小程序：小程序不是网页，不能扔进 Nginx 静态目录了事。
+构建产物 `miniprogram/dist/` 必须：
+1. 用**微信开发者工具**导入 `miniprogram/dist` 目录本地预览/调试；
+2. 确认无误后，在微信开发者工具里点击「上传」，或用 `miniprogram-ci`（需要小程序管理后台生成的私钥）命令行上传体验版；
+3. 登录[微信公众平台](https://mp.weixin.qq.com)小程序管理后台，把上传的版本提交**微信官方审核**；
+4. 审核通过后手动点击发布。
+
+目前没有把小程序纳入 `scripts/deploy.py` 的自动化路径——微信审核是人工环节，无法绕过，如需要 CI 自动上传体验版可以后续接入 `miniprogram-ci`，但提审和发布必须人工在公众平台操作。
 
 ## 线上地址
 - 用户端 app：https://jiaycare.com
@@ -186,6 +203,7 @@ const { user, token, isDemo, loading, updateUser, logout } = useAuth();
 POST /api/auth/send-code       发送验证码
 POST /api/auth/login           手机号登录
 POST /api/auth/wechat          微信登录
+POST /api/auth/wechat-mp       微信小程序登录（code2session，body:{code,userInfo?}）
 
 GET  /api/user/me              获取当前用户
 PUT  /api/user/me              更新用户信息

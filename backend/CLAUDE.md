@@ -9,6 +9,7 @@
 POST /api/auth/send-code       发送验证码
 POST /api/auth/login           手机号登录
 POST /api/auth/wechat          微信登录
+POST /api/auth/wechat-mp       微信小程序登录（code2session，body:{code,userInfo?}，需配置 WECHAT_MP_APPID/WECHAT_MP_SECRET）
 
 GET  /api/user/me              获取当前用户
 PUT  /api/user/me              更新用户信息（用原生driver，见下）
@@ -49,10 +50,12 @@ const PACKAGE_CATALOG = [
 - 数组字段（Mixed）：allergies / medicalHistory / medications / familyHistory / surgeries
 - 字符串字段：bloodType / drugAllergy / foodAllergy / pastHistory / medicHistory / surgeryHistory
 - phone: required+unique（匹配 MongoDB 现有索引，不要改为 sparse）
-- wechatOpenid: sparse+unique（新字段）
+- wechatOpenid: sparse+unique（网页/公众号授权登录用）
+- wechatMpOpenid: sparse+unique（小程序 code2session 登录用，appid 不同于网页授权，openid 也不同，必须独立字段）
 
 ## 环境变量（Railway Variables）
 - MONGODB_URI
 - JWT_SECRET
-- WECHAT_SECRET（微信登录用）
+- WECHAT_SECRET（微信网页授权登录用，配合 WECHAT_APPID）
+- WECHAT_MP_APPID / WECHAT_MP_SECRET（小程序 code2session 登录用，未配置时 /auth/wechat-mp 返回503）
 - FRONTEND_URL

@@ -1,0 +1,73 @@
+export default defineAppConfig({
+  pages: [
+    // 首屏：登录页判断放在 app.jsx 里做重定向，pages[0] 必须是实际入口
+    'pages/auth/login/index',
+    'pages/home/index',
+    'pages/records/index/index',
+    'pages/tasks/index',
+    'pages/messages/index',
+    'pages/profile/index/index',
+
+    'pages/onboarding/index',
+    'pages/records/add/index',
+    'pages/records/report/index',
+    'pages/records/upload/index',
+    'pages/chat/index',
+    'pages/medication/index',
+    'pages/reminders/index',
+    'pages/services/mall/index',
+    'pages/services/renewal/index',
+    'pages/profile/edit/index',
+    'pages/profile/security/index',
+    'pages/profile/feedback/index',
+    'pages/profile/notifications/index',
+    'pages/orders/index',
+    'pages/legal/index',
+    'pages/common/coming-soon/index',
+  ],
+  window: {
+    backgroundTextStyle: 'light',
+    navigationBarBackgroundColor: '#1E6B50',
+    navigationBarTitleText: '嘉医汇',
+    navigationBarTextStyle: 'white',
+    backgroundColor: '#F2EDE3',
+  },
+  tabBar: {
+    color: '#8AA89C',
+    selectedColor: '#1E6B50',
+    backgroundColor: '#FFFFFF',
+    borderStyle: 'black',
+    list: [
+      {
+        pagePath: 'pages/home/index',
+        text: '首页',
+        iconPath: 'assets/tab/home.png',
+        selectedIconPath: 'assets/tab/home-active.png',
+      },
+      {
+        pagePath: 'pages/records/index/index',
+        text: '健康档案',
+        iconPath: 'assets/tab/records.png',
+        selectedIconPath: 'assets/tab/records-active.png',
+      },
+      {
+        pagePath: 'pages/tasks/index',
+        text: '随访',
+        iconPath: 'assets/tab/tasks.png',
+        selectedIconPath: 'assets/tab/tasks-active.png',
+      },
+      {
+        pagePath: 'pages/messages/index',
+        text: '消息',
+        iconPath: 'assets/tab/messages.png',
+        selectedIconPath: 'assets/tab/messages-active.png',
+      },
+      {
+        pagePath: 'pages/profile/index/index',
+        text: '我的',
+        iconPath: 'assets/tab/profile.png',
+        selectedIconPath: 'assets/tab/profile-active.png',
+      },
+    ],
+  },
+});
