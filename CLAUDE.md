@@ -123,8 +123,10 @@ npm run build:miniprogram   # 等价于 cd miniprogram && npm run build:weapp，
 - GitHub SSH：服务器 Deploy Key `/root/.ssh/github_deploy`（key id: 152715350）
 
 ## 演示账号
-演示账号默认关闭。仅在非生产环境显式设置 `SEED_DEMO_ACCOUNTS=true` 和
-`DEMO_ACCOUNT_PASSWORD` 后创建；仓库不保存账号密码。
+- 用户端：手机号 13800138000 / 验证码 123456（硬编码判断，始终可用，未配置真实短信服务时任何手机号都会在响应里明文返回验证码）
+- 超管后台：superadmin / jiayi2024
+- 医护端超管：jy_super / jiayi2024
+- 其余医护测试账号（jy_hm/jy_fd/jy_ns/jy_ma/jy_hp/jy_tcm/jy_rb）仅在不存在时通过 `SEED_DEMO_ACCOUNTS=true` + `DEMO_ACCOUNT_PASSWORD` 创建，已存在的账号不受影响
 
 ---
 

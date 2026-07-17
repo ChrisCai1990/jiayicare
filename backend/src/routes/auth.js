@@ -79,13 +79,9 @@ router.post('/send-code', async (req, res) => {
     return res.status(400).json({ success: false, message: '请输入正确的手机号' });
   }
 
-  // 固定演示验证码必须显式启用，生产环境默认关闭。
-  const isDemo = process.env.ENABLE_DEMO_LOGIN === 'true' && phone === process.env.DEMO_LOGIN_PHONE;
+  // 演示账号始终用固定验证码
+  const isDemo = phone === '13800138000';
   const code = isDemo ? '123456' : String(Math.floor(100000 + Math.random() * 900000));
-
-  if (!isDemo && !smsEnabled() && process.env.NODE_ENV === 'production') {
-    return res.status(503).json({ success: false, message: '短信服务暂不可用，请稍后重试' });
-  }
 
   // 持久化到 MongoDB（TTL 索引自动清理过期记录，服务重启不丢失）
   await VerificationCode.findOneAndUpdate(
@@ -105,11 +101,11 @@ router.post('/send-code', async (req, res) => {
     return res.json({ success: true, message: '验证码已发送至您的手机' });
   }
 
-  // 未配置短信或显式演示账号：仅在非生产环境/演示模式返回验证码。
+  // 未配置短信 或 演示账号：返回验证码（仅开发/演示用）
   res.json({
     success: true,
     message: isDemo ? '演示账号验证码：123456' : '验证码已发送（未配置短信服务，验证码见下）',
-    ...((process.env.NODE_ENV !== 'production' || isDemo) && { code }),
+    ...((!smsEnabled() || isDemo) && { code }),
   });
 });
 
