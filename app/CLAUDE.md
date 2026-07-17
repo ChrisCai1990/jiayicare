@@ -151,9 +151,7 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 - ✅ 服务包购买：去除伪造成功的兜底逻辑，错误正确显示在弹窗内
 
 ## ⚠️ 遗留问题
-- **EditProfileScreen 数组字段被注释掉**（allergies/medicalHistory/medications/familyHistory/surgeries）
-  - 位置：`src/screens/profile/EditProfileScreen.js` handleSave 的 healthProfile 里
-  - 恢复方式：直接取消注释那5个字段即可（当前后端 User.js 已是 Mixed 数组类型）
+（原"EditProfileScreen数组字段被注释掉"问题已于2026-07-17前修复确认，healthProfile对象字段已完整启用，此条移除）
 
 ## 待办任务
 - [ ] 用户提出的 UI 修改建议（图片中有多条，已确认：健康档案加睡眠 ✅、睡眠录入加时间 ✅）

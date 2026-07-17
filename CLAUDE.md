@@ -295,6 +295,4 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 ---
 
 ## ⚠️ 遗留问题
-- **EditProfileScreen 数组字段被注释掉**（allergies/medicalHistory/medications/familyHistory/surgeries）
-  - 位置：`app/src/screens/profile/EditProfileScreen.js` handleSave 的 healthProfile 里
-  - 恢复方式：直接取消注释那5个字段即可（当前 User.js 已是 Mixed 数组类型，阿里云部署版本支持）
+（原"EditProfileScreen数组字段被注释掉"问题已于2026-07-17前修复确认，healthProfile对象字段已完整启用，此条移除）
