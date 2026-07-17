@@ -1037,6 +1037,9 @@ export default function PatientDetailPage() {
   const [expandedExamKey, setExpandedExamKey] = useState(null) // 展开的检查医嘱子项 key
   const [editingScreeningId, setEditingScreeningId] = useState(null) // 编辑中的记录 _id
   const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
+  const [editingRecord, setEditingRecord] = useState(null) // 正在修正的打卡记录（数据有疑问时医护端修改，留痕修改人）
+  const [editRecordForm, setEditRecordForm] = useState({ value: '', sys: '', dia: '', note: '' })
+  const [editRecordSaving, setEditRecordSaving] = useState(false)
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
   // 管理信息下拉选项：服务包(admin商城服务) + 会员来源(admin配置)，替代手工录入（2026-07-10 金娟）
@@ -1173,6 +1176,43 @@ export default function PatientDetailPage() {
       toast(err.message || '加载失败')
     } finally {
       setLoading(false)
+    }
+  }
+
+  // 打卡数据有疑问时医护端修正：血压拆sys/dia两个数值输入，其余类型统一走单值输入
+  const startEditRecord = (r) => {
+    setEditingRecord(r)
+    if (r.type === 'bloodPressure') {
+      setEditRecordForm({ value: '', sys: String(r.extra?.sys ?? ''), dia: String(r.extra?.dia ?? ''), note: r.note || '' })
+    } else {
+      setEditRecordForm({ value: String(r.value ?? ''), sys: '', dia: '', note: r.note || '' })
+    }
+  }
+
+  const saveEditRecord = async () => {
+    if (!editingRecord || editRecordSaving) return
+    setEditRecordSaving(true)
+    try {
+      let payload = { note: editRecordForm.note }
+      if (editingRecord.type === 'bloodPressure') {
+        const sys = parseInt(editRecordForm.sys, 10)
+        const dia = parseInt(editRecordForm.dia, 10)
+        if (!sys || !dia) { toast('收缩压和舒张压不能为空'); setEditRecordSaving(false); return }
+        payload.value = `${sys}/${dia}`
+        payload.extra = { ...editingRecord.extra, sys, dia }
+      } else {
+        if (!editRecordForm.value) { toast('数值不能为空'); setEditRecordSaving(false); return }
+        payload.value = editRecordForm.value
+        payload.extra = editingRecord.extra
+      }
+      await staffAPI.updatePatientHealthRecord(id, editingRecord._id, payload)
+      toast('已修正')
+      setEditingRecord(null)
+      load()
+    } catch (err) {
+      toast(err.message || '修正失败')
+    } finally {
+      setEditRecordSaving(false)
     }
   }
 
@@ -4920,6 +4960,7 @@ export default function PatientDetailPage() {
                   <th>数值 / 备注</th>
                   <th>图片</th>
                   <th>记录时间</th>
+                  <th>操作</th>
                 </tr>
               </thead>
               <tbody>
@@ -4928,7 +4969,14 @@ export default function PatientDetailPage() {
                   return (
                     <tr key={r._id}>
                       <td><span className="badge badge-info">{RECORD_TYPE_LABEL[r.type] || r.type}</span></td>
-                      <td>{formatRecordValue(r)}</td>
+                      <td>
+                        {formatRecordValue(r)}
+                        {r.editedBy?.editedAt && (
+                          <div style={{ fontSize: 11, color: '#D97706', marginTop: 2 }}>
+                            {r.editedBy.staffName} 修正于 {new Date(r.editedBy.editedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}（原值 {r.editedBy.prevValue}）
+                          </div>
+                        )}
+                      </td>
                       <td>
                         {imgUrl ? (
                           <img
@@ -4941,6 +4989,9 @@ export default function PatientDetailPage() {
                       </td>
                       <td style={{ color: '#8AA89C', fontSize: 13 }}>
                         {new Date(r.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      </td>
+                      <td>
+                        <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>数据有误，修正</button>
                       </td>
                     </tr>
                   )
@@ -6219,6 +6270,49 @@ export default function PatientDetailPage() {
             style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             ✕
           </button>
+        </div>
+      )}
+
+      {/* 打卡数据修正弹窗：数据有疑问时医护端修正，修改人+时间+原值自动留痕 */}
+      {editingRecord && (
+        <div onClick={() => !editRecordSaving && setEditingRecord(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={e => e.stopPropagation()} className="card" style={{ width: 360, padding: 20 }}>
+            <div className="card-title" style={{ marginBottom: 12 }}>
+              修正{RECORD_TYPE_LABEL[editingRecord.type] || editingRecord.type}记录
+            </div>
+            {editingRecord.type === 'bloodPressure' ? (
+              <>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 13, color: '#4A6558', display: 'block', marginBottom: 4 }}>收缩压（mmHg）</label>
+                  <input className="input" type="number" value={editRecordForm.sys}
+                    onChange={e => setEditRecordForm(p => ({ ...p, sys: e.target.value }))} />
+                </div>
+                <div style={{ marginBottom: 10 }}>
+                  <label style={{ fontSize: 13, color: '#4A6558', display: 'block', marginBottom: 4 }}>舒张压（mmHg）</label>
+                  <input className="input" type="number" value={editRecordForm.dia}
+                    onChange={e => setEditRecordForm(p => ({ ...p, dia: e.target.value }))} />
+                </div>
+              </>
+            ) : (
+              <div style={{ marginBottom: 10 }}>
+                <label style={{ fontSize: 13, color: '#4A6558', display: 'block', marginBottom: 4 }}>数值</label>
+                <input className="input" value={editRecordForm.value}
+                  onChange={e => setEditRecordForm(p => ({ ...p, value: e.target.value }))} />
+              </div>
+            )}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ fontSize: 13, color: '#4A6558', display: 'block', marginBottom: 4 }}>备注（如：修正原因）</label>
+              <input className="input" value={editRecordForm.note}
+                onChange={e => setEditRecordForm(p => ({ ...p, note: e.target.value }))} />
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="btn btn-secondary" onClick={() => setEditingRecord(null)} disabled={editRecordSaving}>取消</button>
+              <button className="btn btn-primary" onClick={saveEditRecord} disabled={editRecordSaving}>
+                {editRecordSaving ? '保存中...' : '保存修正'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

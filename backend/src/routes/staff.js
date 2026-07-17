@@ -20,6 +20,7 @@ const User = require('../models/User');
 const ChatLog = require('../models/ChatLog');
 const FollowUp = require('../models/FollowUp');
 const HealthRecord = require('../models/HealthRecord');
+const { calcStatus: calcHealthRecordStatus } = require('../utils/healthRecordStatus');
 const MedicalReport = require('../models/MedicalReport');
 const HealthPlan = require('../models/HealthPlan');
 const KnowledgeItem = require('../models/KnowledgeItem');
@@ -3422,6 +3423,36 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
     }
     const record = await HealthRecord.create(recRecord);
     res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 医护端修正患者打卡数据（数据有疑问，确认后修正；留痕修改人+修改时间+原值）────
+// PUT /api/staff/patients/:patientId/health-records/:recordId
+router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (req, res) => {
+  try {
+    const { value, extra, note, recordedAt } = req.body;
+    const record = await HealthRecord.findOne({ _id: req.params.recordId, user: req.params.patientId });
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (value === undefined || value === null || value === '') {
+      return res.status(400).json({ success: false, message: '数值不能为空' });
+    }
+
+    const prevValue = record.value;
+    record.value = String(value);
+    if (extra !== undefined) record.extra = extra;
+    if (note !== undefined) record.note = note;
+    if (recordedAt) { const d = new Date(recordedAt); if (!isNaN(d.getTime())) record.recordedAt = d; }
+    record.status = calcHealthRecordStatus(record.type, value, extra !== undefined ? extra : record.extra);
+    record.aiAlertStatus = (record.type === 'bloodPressure' && record.status === 'danger') ? 'pending' : null;
+    record.editedBy = {
+      staffId: req.staff._id,
+      staffName: req.staff.name || req.staff.username || '',
+      editedAt: new Date(),
+      prevValue,
+    };
+
+    await record.save();
+    res.json({ success: true, data: record, message: '修改成功' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

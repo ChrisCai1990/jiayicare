@@ -4,6 +4,7 @@ const HealthRecord = require('../models/HealthRecord');
 const FollowUp = require('../models/FollowUp');
 const User = require('../models/User');
 const PointsLog = require('../models/PointsLog');
+const { calcStatus } = require('../utils/healthRecordStatus');
 const router = express.Router();
 
 // 打卡固定积分：每种打卡类型每天（CST）限计一次，防刷分
@@ -293,31 +294,5 @@ router.delete('/:id', auth, async (req, res) => {
     res.status(500).json({ success: false, message: '删除失败', error: err.message });
   }
 });
-
-// 状态判断
-function calcStatus(type, value, extra) {
-  const v = parseFloat(value);
-  if (type === 'bloodPressure') {
-    const sys = extra?.sys ? parseFloat(extra.sys) : v;
-    if (sys >= 140) return 'danger';
-    if (sys >= 130) return 'warning';
-    return 'normal';
-  }
-  if (type === 'bloodSugar') {
-    if (v >= 7.0) return 'danger';
-    if (v >= 6.1) return 'warning';
-    if (v < 3.9)  return 'danger';   // 低血糖（< 3.9 mmol/L）危及生命，等级应为 danger
-    return 'normal';
-  }
-  if (type === 'heartRate') {
-    if (v > 100 || v < 60) return 'warning';
-    return 'normal';
-  }
-  if (type === 'sleep') {
-    if (v < 6) return 'warning';
-    return 'normal';
-  }
-  return 'normal';
-}
 
 module.exports = router;

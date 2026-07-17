@@ -17,6 +17,13 @@ const healthRecordSchema = new mongoose.Schema({
   reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   // AI监测异常升级（试点：血压），danger级自动进入家庭医生待审核队列，处理后置为resolved
   aiAlertStatus: { type: String, enum: ['pending', 'resolved', null], default: null },
+  // 医护端修正数据时留痕：谁在什么时候改的，原始值是多少（用户端自行编辑不记录，只留最新值）
+  editedBy: {
+    staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    staffName: { type: String, default: '' },
+    editedAt:  { type: Date, default: null },
+    prevValue: { type: String, default: '' },
+  },
 }, { timestamps: true });
 
 // 索引：按用户+时间查询

@@ -270,6 +270,7 @@ export const staffAPI = {
   deleteAIScreeningItem:    (id, data) => req(`/staff/patients/${id}/screening/ai-item`, { method: 'DELETE', body: JSON.stringify(data) }),
   getPatientHealthRecords:  (id, p={}) => req(`/staff/patients/${id}/health-records?` + qs(p)),
   createPatientHealthRecord: (id, data) => req(`/staff/patients/${id}/health-records`, { method: 'POST', body: JSON.stringify(data) }),
+  updatePatientHealthRecord: (patientId, recordId, data) => req(`/staff/patients/${patientId}/health-records/${recordId}`, { method: 'PUT', body: JSON.stringify(data) }),
   resolveHealthRecordAlert: (id) => req(`/staff/health-records/${id}/resolve-alert`, { method: 'PATCH' }),
   resolveChatTransfer: (id) => req(`/staff/chat-transfers/${id}/resolve`, { method: 'PATCH' }),
 
