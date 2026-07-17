@@ -39,6 +39,7 @@ function normalizePushRecord(pr) {
     sender: pr.staffId?.name || '健康管理团队',
     title: PUSH_TYPE_LABEL[pr.type] || '推送通知',
     content: pr.title + (pr.content ? `\n${pr.content}` : ''),
+    coverUrl: pr.coverUrl || '',
     unread: !pr.readAt,
     time: new Date(pr.createdAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }),
     createdAt: pr.createdAt,
@@ -481,6 +482,9 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
           </View>
           {msg.title && <Text style={styles.detailTitle}>{msg.title}</Text>}
           <ScrollView style={styles.detailBody} showsVerticalScrollIndicator={false}>
+            {msg.coverUrl ? (
+              <Image source={{ uri: msg.coverUrl }} style={styles.detailCoverImg} resizeMode="cover" />
+            ) : null}
             <Text style={styles.detailContent}>{msg.content || '（暂无详细内容，请点击下方按钮查看）'}</Text>
           </ScrollView>
           <View style={styles.detailFooter}>
@@ -1351,6 +1355,10 @@ const styles = StyleSheet.create({
     marginBottom: spacing.sm, lineHeight: 24,
   },
   detailBody: { flex: 1, marginBottom: spacing.md },
+  detailCoverImg: {
+    width: '100%', aspectRatio: 4 / 3, borderRadius: radius.md,
+    backgroundColor: colors.border, marginBottom: spacing.md,
+  },
   detailContent: {
     fontSize: 15, color: colors.textSecondary,
     lineHeight: 24, letterSpacing: 0.1,

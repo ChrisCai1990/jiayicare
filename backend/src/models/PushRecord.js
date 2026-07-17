@@ -16,6 +16,7 @@ const pushRecordSchema = new mongoose.Schema({
   // 内容摘要（用于列表展示）
   title:   { type: String, default: '' },
   content: { type: String, default: '' },
+  coverUrl: { type: String, default: '' }, // 科普推送等带封面图/海报的推送，用户端详情展示用
   // 产品推送附加信息（单品兼容字段）
   price:     { type: Number, default: null },
   productId: { type: String, default: null },

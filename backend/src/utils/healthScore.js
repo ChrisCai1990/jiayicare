@@ -192,7 +192,8 @@ function getLifestyleDeduction(lifestyleData, weight, height) {
   // 膳食/体重: 0 / -6 / -10
   let dietDeduction = 0;
   const bmi = (weight && height) ? weight / Math.pow(height / 100, 2) : null;
-  const badHabits = (d.badDietHabits || []).length;
+  // "无不良饮食习惯"是否定选项，不能计入不良习惯数量（2026-07-17修复：否则会被误扣分）
+  const badHabits = (d.badDietHabits || []).filter(h => h !== '无不良饮食习惯').length;
   const lowVeg = d.dailyVegetables === '300克以内' || d.dailyVegetables === '几乎不吃';
   const lowFruit = d.fruitFrequency === '几乎不吃';
   const dietIsBad = badHabits >= 3 || (lowVeg && lowFruit);

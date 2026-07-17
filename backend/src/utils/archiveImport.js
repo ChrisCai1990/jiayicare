@@ -41,8 +41,11 @@ function answerToText(ans) {
 
 // 依据字段类型归一化答案 → 写入值
 function normalizeValue(fieldDef, ans) {
+  // "无XX"类否定选项（如膳食调查"无不良饮食习惯"）语义上代表"这个数组应为空"，不能当成数组的一条内容存进去，
+  // 否则会被误判为"存在不良饮食习惯"（2026-07-17反馈：问卷新增此选项后，医护端未同步识别，风险提示会误报）
+  const NEGATIVE_ARRAY_VALUES = ['无', '无不良饮食习惯'];
   if (fieldDef.type === 'array') {
-    if (Array.isArray(ans)) return ans.filter(x => x && x !== '无');
+    if (Array.isArray(ans)) return ans.filter(x => x && !NEGATIVE_ARRAY_VALUES.includes(x));
     const t = answerToText(ans);
     return t ? t.split(/[、,，;；]/).map(s => s.trim()).filter(Boolean) : [];
   }

@@ -1467,7 +1467,16 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     }
     if (note !== undefined) report.note = note;
     // AI 审核字段
-    if (aiStatus !== undefined) { report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id; }
+    if (aiStatus !== undefined) {
+      report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id;
+      // 驳回后重新编辑AI结果并提交，此前只更新了aiStatus，audit_status一直停留在rejected，
+      // 界面又把审核按钮组隐藏，导致再也无法审核（2026-07-17反馈）。重新提交视为"撤回驳回，
+      // 回到待审核"，不能直接跳到已审核——还是要走一遍人工审核。
+      if (aiStatus === 'reviewed' && report.audit_status === 'rejected') {
+        report.audit_status = 'unaudited';
+        report.reject_reason = '';
+      }
+    }
     if (screeningCategory !== undefined) report.screeningCategory = screeningCategory;
     if (reportYear !== undefined) report.reportYear = reportYear;
     if (reportItems !== undefined) {
@@ -1694,8 +1703,9 @@ router.post('/knowledge/:id/push', staffAuth, checkPermission('knowledge', 'send
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,
     type: 'knowledge', knowledgeId: item._id,
-    // 此前这里截断成100字符，长文章推送后用户端只能看到开头，2026-07-17反馈"看不到具体内容"就是这里
-    title: item.title, content: item.content || '',
+    // 此前这里截断成100字符，长文章推送后用户端只能看到开头，2026-07-17反馈"看不到具体内容"就是这里；
+    // 同批反馈还发现coverUrl（封面/海报图）此前压根没带，用户端看不到海报，一并补上
+    title: item.title, content: item.content || '', coverUrl: item.coverUrl || '',
   }));
   await PushRecord.insertMany(records);
   res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });

@@ -1559,8 +1559,8 @@ export default function PatientDetailPage() {
     }
     // 主食过多
     if (d.dailyStaple === '400克以上') flags.push('精制主食摄入过多')
-    // 不良饮食习惯
-    const badHabits = d.badDietHabits || []
+    // 不良饮食习惯（"无不良饮食习惯"是否定选项，不计入"存在不良习惯"判定，2026-07-17修复误判）
+    const badHabits = (d.badDietHabits || []).filter(h => h !== '无不良饮食习惯')
     if (badHabits.length > 0) flags.push('存在不良饮食习惯（油炸、甜品、腌制、重油、偏咸、夜宵等）')
     // 作息/运动
     if (d.scheduleRegularity === '不规律' || d.exerciseFrequency === '无') flags.push('作息不规律或运动不足')
@@ -3229,7 +3229,7 @@ export default function PatientDetailPage() {
                     </div>
                     <div style={{ marginBottom: 12 }}>
                       <LsCheckbox label="不良饮食习惯（可多选）" value={ld.badDietHabits || []} editing={editingLifestyle}
-                        options={['三餐不规律', '常吃夜宵', '常吃外卖', '进餐速度过快', '常吃油炸食品', '常吃甜品及含糖饮料', '常吃腌制食品', '常吃动物内脏', '饮食重油', '口味偏咸']}
+                        options={['三餐不规律', '常吃夜宵', '常吃外卖', '进餐速度过快', '常吃油炸食品', '常吃甜品及含糖饮料', '常吃腌制食品', '常吃动物内脏', '饮食重油', '口味偏咸', '无不良饮食习惯']}
                         onChange={v => setLd({ badDietHabits: v })} />
                     </div>
                     <LsRadio label="应酬频率" value={ld.entertainment} editing={editingLifestyle} options={['1-2次/周', '3-5次/周', '6-7次/周', '无或偶尔']} onChange={v => setLd({ entertainment: v })} />
@@ -5827,10 +5827,10 @@ export default function PatientDetailPage() {
             )
           })()}
 
-          {/* 新增/编辑药物弹窗 */}
+          {/* 新增/编辑药物弹窗：表单字段多，鼠标移出边界误触遮罩会丢失编辑，去掉点遮罩关闭 */}
           {showMedModal && (
-            <div className="modal-overlay" onClick={() => setShowMedModal(false)}>
-              <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-overlay">
+              <div className="modal" style={{ maxWidth: 560 }}>
                 <div className="modal-header">
                   <h3 className="modal-title">{editingMed ? '编辑药物' : '新增药物'}</h3>
                   <button className="modal-close" onClick={() => setShowMedModal(false)}>✕</button>
@@ -5874,10 +5874,10 @@ export default function PatientDetailPage() {
             </div>
           )}
 
-          {/* 新增/编辑营养素弹窗 */}
+          {/* 新增/编辑营养素弹窗：表单字段多，鼠标移出边界误触遮罩会丢失编辑，去掉点遮罩关闭 */}
           {showSupModal && (
-            <div className="modal-overlay" onClick={() => { setShowSupModal(false); setEditingSupAiApprove(false) }}>
-              <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-overlay">
+              <div className="modal" style={{ maxWidth: 560 }}>
                 <div className="modal-header">
                   <h3 className="modal-title">{editingSupAiApprove ? '编辑AI营养素建议后采纳' : editingSup ? '编辑营养素' : '新增营养素'}</h3>
                   <button className="modal-close" onClick={() => { setShowSupModal(false); setEditingSupAiApprove(false) }}>✕</button>
@@ -6363,8 +6363,12 @@ export default function PatientDetailPage() {
           const l1Node = r.screeningL1
             ? screeningTree.find(n => String(n._id) === r.screeningL1)
             : titleToL1[r.title]
-          const key = l1Node ? String(l1Node._id) : (r.type === 'annual' ? ANNUAL_KEY : OTHER_KEY)
-          if (!yearMap[yr][key]) yearMap[yr][key] = { node: l1Node, label: key === ANNUAL_KEY ? '年度体检报告' : null, reports: [] }
+          // screeningL1/标题都匹配不上时（多为用户端自主上传+编辑改归类的报告），按 type 字段（REPORT_L1_TYPES）
+          // 分组，而不是一律扔进"其他"——此前这里只认字面量'annual'，编辑弹窗改了报告归类却完全不影响分组展示，
+          // 看起来像"改了没生效"（2026-07-17反馈）
+          const l1TypeMeta = !l1Node && r.type && r.type !== 'other' ? REPORT_L1_TYPES.find(t => t.key === r.type) : null
+          const key = l1Node ? String(l1Node._id) : (l1TypeMeta ? `type_${l1TypeMeta.key}` : (r.type === 'annual' ? ANNUAL_KEY : OTHER_KEY))
+          if (!yearMap[yr][key]) yearMap[yr][key] = { node: l1Node, label: l1TypeMeta ? l1TypeMeta.label : (key === ANNUAL_KEY ? '年度体检报告' : null), reports: [] }
           yearMap[yr][key].reports.push(r)
         })
         const years = Object.keys(yearMap).sort((a, b) => b - a)
@@ -6377,12 +6381,13 @@ export default function PatientDetailPage() {
             return ia !== ib ? ia - ib : (a.title || '').localeCompare(b.title || '', 'zh')
           })
 
-        // L1 显示顺序：年度体检 → screeningTree 顺序 → 其他
+        // L1 显示顺序：年度体检 → screeningTree 顺序 → type分组(REPORT_L1_TYPES顺序) → 其他
         const getL1Keys = (yrData) => {
           const annualKey = yrData[ANNUAL_KEY] ? [ANNUAL_KEY] : []
           const treeKeys  = screeningTree.map(n => String(n._id)).filter(k => yrData[k])
+          const typeKeys  = REPORT_L1_TYPES.map(t => `type_${t.key}`).filter(k => yrData[k])
           const otherKey  = yrData[OTHER_KEY] ? [OTHER_KEY] : []
-          return [...annualKey, ...treeKeys, ...otherKey]
+          return [...annualKey, ...treeKeys, ...typeKeys, ...otherKey]
         }
 
         return (
@@ -7273,10 +7278,10 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* 随访记录编辑弹窗 */}
+      {/* 随访记录编辑弹窗：表单字段多，鼠标移出边界误触遮罩会丢失编辑，去掉点遮罩关闭 */}
       {editingFollowUp && followUpDetail && (
-        <div className="modal-overlay" onClick={() => setEditingFollowUp(null)}>
-          <div className="modal" style={{ maxWidth: 560 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-overlay">
+          <div className="modal" style={{ maxWidth: 560 }}>
             <div className="modal-header">
               <h3 className="modal-title">编辑随访记录</h3>
               <button className="modal-close" onClick={() => setEditingFollowUp(null)}>✕</button>
@@ -8056,8 +8061,10 @@ export default function PatientDetailPage() {
           }
 
           return (
-            <div className="modal-overlay" onClick={() => setReviewingDraft(null)}>
-              <div className="modal" style={{ maxWidth: 520 }} onClick={e => e.stopPropagation()}>
+            // 审核内容含可编辑文本框，鼠标稍微移出弹窗点到遮罩层会误触关闭丢失未保存的编辑，
+            // 与体检报告审核弹窗是同一类问题（2026-07-13已修两处，这处漏改），去掉点遮罩关闭
+            <div className="modal-overlay">
+              <div className="modal" style={{ maxWidth: 520 }}>
                 <div className="modal-header">
                   <h3 className="modal-title">审核AI生成的{isDoctorDraft ? '医生随访' : '随访'}记录</h3>
                   <button className="modal-close" onClick={() => setReviewingDraft(null)}>×</button>
