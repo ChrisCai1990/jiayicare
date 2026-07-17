@@ -33,7 +33,16 @@ function ruleEngineSignals(lv = {}) {
 async function selectRecentReports(MedicalReport, userId, selectFields, limit) {
   const oneYearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000);
   const oneYearAgoStr = oneYearAgo.toISOString().slice(0, 10);
-  const recent = await MedicalReport.find({ user: userId, checkDate: { $gte: oneYearAgoStr } })
+  // checkDate是自由文本字符串，不少报告(手动补录漏填日期/AI OCR未能识别出日期)该字段是空值，
+  // 字符串比较$gte对空值永远不成立，会被无声漏掉——即使内容齐全、即使刚上传，也不会喂给AI，
+  // AI据此误判"没做过该检查"。用createdAt兜底这批checkDate缺失的报告（2026-07-17反馈排查确认）。
+  const recent = await MedicalReport.find({
+    user: userId,
+    $or: [
+      { checkDate: { $gte: oneYearAgoStr } },
+      { checkDate: { $in: [null, ''] }, createdAt: { $gte: oneYearAgo } },
+    ],
+  })
     .sort({ checkDate: -1, createdAt: -1 })
     .select(selectFields)
     .limit(limit);
