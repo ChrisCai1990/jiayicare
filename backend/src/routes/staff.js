@@ -635,7 +635,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
   const recentRecordsByType = await Promise.all(
     recentTypes.map(t => HealthRecord.find({ user: user._id, type: t })
       .sort({ recordedAt: -1 }).limit(10)
-      .select('type value extra recordedAt note imageUrl'))
+      .select('type value extra recordedAt note imageUrl editedBy'))
   );
   const recentRecords = recentRecordsByType.flat().sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt));
 
