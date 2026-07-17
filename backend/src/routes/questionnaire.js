@@ -260,6 +260,13 @@ router.post('/:id/submit', auth, async (req, res) => {
           { _id: req.user._id },
           { $set: { [`psychAssessments.${psychScaleKey}.byYear.${year}`]: psychResult } }
         );
+        // 第三批问卷条件触发：SAS/SDS标准分≥53（异常）才追加推送SCL90，帮助进一步定位具体症状因子
+        // （2026-07-17 需求：焦虑抑郁异常再推送SCL90，而非固定定时推送）
+        if ((psychScaleKey === 'sas' || psychScaleKey === 'sds') && psychResult.abnormal) {
+          const { pushBatch3ForAbnormalPsych } = require('../utils/onboardingPush');
+          pushBatch3ForAbnormalPsych(req.user._id).catch(e =>
+            console.error('[onboarding-push] 第三批(SCL90)条件推送失败', e.message));
+        }
       } catch (e) {
         console.error('[psych-scale-import] 心理量表自动写入档案失败', e.message);
       }

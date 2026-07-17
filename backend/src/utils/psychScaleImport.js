@@ -98,6 +98,13 @@ function calcFactorScores(questionnaire, answers) {
   return result;
 }
 
+// SAS/SDS 标准分：国际通用换算公式 = 粗分(totalScore) × 1.25，四舍五入取整
+// 标准分≥53视为有症状/异常（临床通用分界线），与 scoreRanges 配置的"粗分区间"是两套独立判定，不复用
+const SAS_SDS_ABNORMAL_THRESHOLD = 53;
+function calcStandardScore(totalScore) {
+  return Math.round(totalScore * 1.25);
+}
+
 // 生成写入 User.psychAssessments.<scaleKey> 的结果对象
 function buildPsychResult(questionnaire, response, scaleKey) {
   const severity = (questionnaire.scoreRanges || [])
@@ -117,6 +124,10 @@ function buildPsychResult(questionnaire, response, scaleKey) {
     // 各因子分的正常/异常程度判定
     result.factorAssessment = buildFactorAssessment(response.factorScores || {});
   }
+  if (scaleKey === 'sas' || scaleKey === 'sds') {
+    result.standardScore = calcStandardScore(response.totalScore);
+    result.abnormal = result.standardScore >= SAS_SDS_ABNORMAL_THRESHOLD;
+  }
   return result;
 }
 
@@ -127,4 +138,6 @@ module.exports = {
   buildAnswersDetail,
   buildFactorAssessment,
   assessScl90Factor,
+  calcStandardScore,
+  SAS_SDS_ABNORMAL_THRESHOLD,
 };

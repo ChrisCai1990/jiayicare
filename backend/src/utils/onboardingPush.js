@@ -1,12 +1,15 @@
 // ── 首次登录问卷分批推送 ────────────────────────────────────────────
-// 第一批（onboarding 完成后立即推送）：健康问卷表（成人）
-// 第二批（间隔数天后自动推送）：膳食调查问卷 + 心理健康量表（Epworth/SCL90/SDS/SAS）
-// 分批是为了避免新用户一次性面对过多题目导致弃填率过高（已与用户确认）
+// 第一批（onboarding 完成后立即推送）：健康问卷表（成人）+ 膳食调查问卷 + Epworth 嗜睡量表
+// 第二批（间隔数天后自动推送）：焦虑自评量表（SAS）+ 抑郁自评量表（SDS）
+// 第三批（条件触发，非定时）：症状自评量表（SCL90）—— 仅当第二批SAS/SDS任一标准分≥53（异常）才推送，
+//   触发点在 questionnaire.js 提交接口里判定完异常后调用 pushBatch3ForAbnormalPsych()
+// 分批是为了避免新用户一次性面对过多题目导致弃填率过高（已与用户确认，2026-07-17 改为条件触发第三批）
 
 const BATCH2_DELAY_DAYS = 3; // 第二批推送延迟天数
 
-const BATCH1_TITLES = ['健康问卷表（成人）'];
-const BATCH2_TITLES = ['膳食调查问卷', 'Epworth 嗜睡量表', '症状自评量表（SCL90）', '抑郁自评量表（SDS）', '焦虑自评量表（SAS）'];
+const BATCH1_TITLES = ['健康问卷表（成人）', '膳食调查问卷', 'Epworth 嗜睡量表'];
+const BATCH2_TITLES = ['焦虑自评量表（SAS）', '抑郁自评量表（SDS）'];
+const BATCH3_TITLES = ['症状自评量表（SCL90）'];
 
 // 给单个用户推送一批问卷（按标题匹配，找不到的标题静默跳过，不影响其余问卷推送）
 async function pushQuestionnairesToUser(userId, titles) {
@@ -72,4 +75,11 @@ function startBatch2Scheduler() {
   }, 24 * 60 * 60 * 1000);
 }
 
-module.exports = { pushBatch1, scanAndPushBatch2, startBatch2Scheduler };
+// 第三批（SCL90）条件触发：SAS/SDS任一份标准分≥53（异常）才推送，由questionnaire.js提交接口在
+// 判定完psychResult.abnormal后调用。pushQuestionnairesToUser内部已有防重复推送（同一份问卷不会推两次），
+// 所以SAS/SDS都异常时重复调用本函数也不会导致SCL90被推送两次。
+async function pushBatch3ForAbnormalPsych(userId) {
+  await pushQuestionnairesToUser(userId, BATCH3_TITLES);
+}
+
+module.exports = { pushBatch1, scanAndPushBatch2, startBatch2Scheduler, pushBatch3ForAbnormalPsych };
