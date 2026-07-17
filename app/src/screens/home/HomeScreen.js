@@ -912,8 +912,9 @@ export default function HomeScreen({ navigation }) {
                   category: item.category || 'lifestyle',
                   type: item.key,
                   label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}` : (item.recordLabel || item.label),
+                  // value已经把checkinNote拼进去展示了，note不能再存一遍同样的文字，否则医护端"数值+备注"拼接展示会重复两遍
                   value: (mealPrefix + checkinNote) || checkinMealType || '已打卡',
-                  note: checkinNote || '',
+                  note: '',
                   status: 'normal',
                   imageUrl: checkinImage || '',
                   extra: { ...(checkinImage ? { imageUrl: checkinImage } : {}), ...(checkinMealType ? { mealType: checkinMealType } : {}) },

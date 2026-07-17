@@ -4991,7 +4991,7 @@ export default function PatientDetailPage() {
                         {new Date(r.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                       </td>
                       <td>
-                        <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>数据有误，修正</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
                       </td>
                     </tr>
                   )
@@ -6273,48 +6273,60 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* 打卡数据修正弹窗：数据有疑问时医护端修正，修改人+时间+原值自动留痕 */}
-      {editingRecord && (
-        <div onClick={() => !editRecordSaving && setEditingRecord(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <div onClick={e => e.stopPropagation()} className="card" style={{ width: 360, padding: 20 }}>
-            <div className="card-title" style={{ marginBottom: 12 }}>
-              修正{RECORD_TYPE_LABEL[editingRecord.type] || editingRecord.type}记录
-            </div>
-            {editingRecord.type === 'bloodPressure' ? (
-              <>
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 13, color: '#4A6558', display: 'block', marginBottom: 4 }}>收缩压（mmHg）</label>
-                  <input className="input" type="number" value={editRecordForm.sys}
-                    onChange={e => setEditRecordForm(p => ({ ...p, sys: e.target.value }))} />
-                </div>
-                <div style={{ marginBottom: 10 }}>
-                  <label style={{ fontSize: 13, color: '#4A6558', display: 'block', marginBottom: 4 }}>舒张压（mmHg）</label>
-                  <input className="input" type="number" value={editRecordForm.dia}
-                    onChange={e => setEditRecordForm(p => ({ ...p, dia: e.target.value }))} />
-                </div>
-              </>
-            ) : (
-              <div style={{ marginBottom: 10 }}>
-                <label style={{ fontSize: 13, color: '#4A6558', display: 'block', marginBottom: 4 }}>数值</label>
-                <input className="input" value={editRecordForm.value}
-                  onChange={e => setEditRecordForm(p => ({ ...p, value: e.target.value }))} />
+      {/* 打卡数据编辑弹窗：数据有疑问时医护端修正，修改人+时间+原值自动留痕 */}
+      {editingRecord && (() => {
+        const meta = RECORD_VALUE_META[editingRecord.type]
+        const isFreeText = editingRecord.type !== 'bloodPressure' && !meta
+        return (
+          <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget && !editRecordSaving) setEditingRecord(null) }}>
+            <div className="modal" style={{ maxWidth: 420 }}>
+              <div className="modal-header">
+                <div className="modal-title">编辑{RECORD_TYPE_LABEL[editingRecord.type] || editingRecord.type}记录</div>
+                <button className="modal-close" onClick={() => setEditingRecord(null)} disabled={editRecordSaving}>✕</button>
               </div>
-            )}
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ fontSize: 13, color: '#4A6558', display: 'block', marginBottom: 4 }}>备注（如：修正原因）</label>
-              <input className="input" value={editRecordForm.note}
-                onChange={e => setEditRecordForm(p => ({ ...p, note: e.target.value }))} />
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary" onClick={() => setEditingRecord(null)} disabled={editRecordSaving}>取消</button>
-              <button className="btn btn-primary" onClick={saveEditRecord} disabled={editRecordSaving}>
-                {editRecordSaving ? '保存中...' : '保存修正'}
-              </button>
+              <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {editingRecord.type === 'bloodPressure' ? (
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                      <label className="form-label">收缩压（mmHg）</label>
+                      <input className="form-input" type="number" value={editRecordForm.sys}
+                        onChange={e => setEditRecordForm(p => ({ ...p, sys: e.target.value }))} />
+                    </div>
+                    <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
+                      <label className="form-label">舒张压（mmHg）</label>
+                      <input className="form-input" type="number" value={editRecordForm.dia}
+                        onChange={e => setEditRecordForm(p => ({ ...p, dia: e.target.value }))} />
+                    </div>
+                  </div>
+                ) : isFreeText ? (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">记录内容</label>
+                    <textarea className="form-input" rows={3} value={editRecordForm.value}
+                      onChange={e => setEditRecordForm(p => ({ ...p, value: e.target.value }))} />
+                  </div>
+                ) : (
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">{RECORD_TYPE_LABEL[editingRecord.type]}（{meta.unit}）</label>
+                    <input className="form-input" type="number" step="any" value={editRecordForm.value}
+                      onChange={e => setEditRecordForm(p => ({ ...p, value: e.target.value }))} />
+                  </div>
+                )}
+                <div className="form-group" style={{ marginBottom: 0 }}>
+                  <label className="form-label">备注（可选，如异常原因）</label>
+                  <input className="form-input" value={editRecordForm.note}
+                    onChange={e => setEditRecordForm(p => ({ ...p, note: e.target.value }))} />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setEditingRecord(null)} disabled={editRecordSaving}>取消</button>
+                <button className="btn btn-primary" onClick={saveEditRecord} disabled={editRecordSaving}>
+                  {editRecordSaving ? '保存中...' : '保存'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
 
       {/* ── Reports Tab ── */}
       {tab === 'reports' && (() => {
@@ -8414,6 +8426,15 @@ const RECORD_TYPE_LABEL = {
   weight: '体重', sleep: '睡眠', mood: '情绪',
   diet: '饮食', exercise: '运动', water: '饮水',
   alcohol: '饮酒', bowel: '排便', smoking: '吸烟',
+}
+
+// 编辑弹窗用：数值类型有单位，生活方式类是自由文本描述（如"跑步10分钟"），字段含义不同，编辑表单要分开呈现
+const RECORD_VALUE_META = {
+  bloodSugar: { unit: 'mmol/L', freeText: false },
+  heartRate:  { unit: '次/分', freeText: false },
+  weight:     { unit: 'kg', freeText: false },
+  sleep:      { unit: '小时', freeText: false },
+  mood:       { unit: '分（1-10）', freeText: false },
 }
 
 function formatRecordValue(r) {
