@@ -319,7 +319,7 @@ export const staffAPI = {
   // 4.4 AI健康汇总 / 4.5 AI管理方案生成
   generateAIHealthSummary: (id, year, scope, force) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force }) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
-  addAIHealthSummaryDiscussion:    (id, content, year) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year }) }),
+  addAIHealthSummaryDiscussion:    (id, content, year, images) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year, images }) }),
   deleteAIHealthSummaryDiscussion: (id, index, year) => req(`/staff/patients/${id}/ai-health-summary/discussions/${index}?year=${year || ''}`, { method: 'DELETE' }),
   generateAIHealthSummaryReply:    (id, year) => req(`/staff/patients/${id}/ai-health-summary/discussions/ai-reply`, { method: 'POST', body: JSON.stringify({ year }) }),
   generateAIAnnualPlan:    (id, planType, notes) => req(`/staff/patients/${id}/ai-annual-plan`,    { method: 'POST', body: JSON.stringify({ planType, notes }) }),
@@ -331,7 +331,7 @@ export const staffAPI = {
   generateAIRisk:          (id, year) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'POST', body: JSON.stringify({ year }) }),
   updateAIRisk:            (id, data) => req(`/staff/patients/${id}/ai-risk-assessment`, { method: 'PATCH', body: JSON.stringify(data) }),
   // AI风险评估·团队讨论区（与AI健康分析讨论区一致）
-  addAIRiskDiscussion:     (id, content, year) => req(`/staff/patients/${id}/ai-risk-assessment/discussions?year=${year}`, { method: 'POST', body: JSON.stringify({ content }) }),
+  addAIRiskDiscussion:     (id, content, year, images) => req(`/staff/patients/${id}/ai-risk-assessment/discussions?year=${year}`, { method: 'POST', body: JSON.stringify({ content, images }) }),
   deleteAIRiskDiscussion:  (id, index, year) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/${index}?year=${year}`, { method: 'DELETE' }),
   generateAIRiskReply:     (id, year) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/ai-reply?year=${year}`, { method: 'POST' }),
   // 10年ASCVD风险评估

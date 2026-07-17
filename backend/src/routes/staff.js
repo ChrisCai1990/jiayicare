@@ -233,7 +233,7 @@ async function getVisibleStaffIds(staff) {
 // ── GET /api/staff/patients ───────────────────────────────────────
 // 查询分配给当前医护人员（及其下属）的患者列表
 router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
-  const { page = 1, limit = 20, search = '', disease = '', type = '' } = req.query;
+  const { page = 1, limit = 20, search = '', disease = '', type = '', scope = '' } = req.query;
   const staff = req.staff;
 
   // 超管看全部，其他角色只看分配给自己（及下属）的患者
@@ -243,6 +243,11 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
   if (staff.role !== 'superadmin') {
     const subIds = await getSubordinateIds(staff._id);
     staffIds = [...new Set([staff._id, ...subIds, ...mentoredIds].map(String))];
+    // 导师默认能看全团队客户，但列表混在一起分不清是谁的客户（2026-07-17反馈）。
+    // scope=mine 时只看自己名下（不含团队其他成员），前端据此做"我的客户/团队客户"分Tab
+    if (isMentor && scope === 'mine') {
+      staffIds = [String(staff._id)];
+    }
   }
 
   const ASSIGN_FIELDS = [
@@ -309,7 +314,9 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
     User.countDocuments(filter),
   ]);
 
-  res.json({ success: true, data: { patients, total, page: Number(page), limit: Number(limit) } });
+  // isMentor：前端据此判断要不要展示"我的客户/团队客户"分组Tab（2026-07-17反馈：导师看到的列表
+  // 混着自己和团队其他成员的客户分不清）；非导师角色本来就只能看自己名下，不需要这个Tab
+  res.json({ success: true, data: { patients, total, page: Number(page), limit: Number(limit), isMentor } });
 });
 
 // GET /api/staff/checkup-progress — 体检方案回传进度总览（避免健管专员逐个客户查询漏检）
@@ -3935,8 +3942,11 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 // POST /api/staff/patients/:id/ai-health-summary/discussions — 团队针对AI健康分析的讨论留言（按年度，纯团队内部留言，AI不参与回复）
 router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req, res) => {
   try {
-    const { content, year } = req.body;
-    if (!content || !content.trim()) return res.status(400).json({ success: false, message: '留言内容不能为空' });
+    const { content, year, images } = req.body;
+    // 图片可选，但至少要有文字或图片其中一样（2026-07-17需求：AI认为某检查没做，实际做了，截图说明更直观）
+    if ((!content || !content.trim()) && !(Array.isArray(images) && images.length)) {
+      return res.status(400).json({ success: false, message: '留言内容不能为空' });
+    }
     const user = await User.findById(req.params.id).select('aiHealthSummary');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
     const current = user.aiHealthSummary || {};
@@ -3948,7 +3958,8 @@ router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req
       staffId: req.staff._id,
       staffName: req.staff.name || '',
       staffRole: req.staff.roleLabel || req.staff.role || '',
-      content: content.trim(),
+      content: (content || '').trim(),
+      images: Array.isArray(images) ? images.filter(Boolean) : [],
       createdAt: new Date(),
     });
     entry.discussions = discussions;
@@ -4280,8 +4291,10 @@ router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => 
 // POST /api/staff/patients/:id/ai-risk-assessment/discussions — 发一条讨论留言（query.year 指定年度）
 router.post('/patients/:id/ai-risk-assessment/discussions', staffAuth, async (req, res) => {
   try {
-    const { content } = req.body;
-    if (!content?.trim()) return res.status(400).json({ success: false, message: '留言内容不能为空' });
+    const { content, images } = req.body;
+    if (!content?.trim() && !(Array.isArray(images) && images.length)) {
+      return res.status(400).json({ success: false, message: '留言内容不能为空' });
+    }
     const year = riskYearOf(req);
     const user = await User.findById(req.params.id).select('aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
@@ -4292,7 +4305,8 @@ router.post('/patients/:id/ai-risk-assessment/discussions', staffAuth, async (re
       staffId: req.staff._id,
       staffName: req.staff.name,
       staffRole: req.staff.roleLabel || req.staff.role || '',
-      content: content.trim(),
+      content: (content || '').trim(),
+      images: Array.isArray(images) ? images.filter(Boolean) : [],
       createdAt: new Date(),
       isAI: false,
     });

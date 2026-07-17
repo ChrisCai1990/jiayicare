@@ -181,8 +181,12 @@ function CreateKnowledgeModal({ onClose, onSaved }) {
 function PushModal({ item, patients, onClose, onSaved }) {
   const [selected, setSelected] = useState([])
   const [pushing, setPushing] = useState(false)
+  const [search, setSearch] = useState('') // 客户多时靠滚动找不过来，按姓名/手机号搜索（2026-07-17反馈）
   const toggle = id => setSelected(s => s.includes(id) ? s.filter(x => x !== id) : [...s, id])
-  const selectAll = () => setSelected(patients.map(p => p._id))
+  const filtered = search.trim()
+    ? patients.filter(p => (p.name || '').includes(search.trim()) || (p.phone || '').includes(search.trim()))
+    : patients
+  const selectAll = () => setSelected(filtered.map(p => p._id))
   const clearAll = () => setSelected([])
 
   const handlePush = async () => {
@@ -201,13 +205,18 @@ function PushModal({ item, patients, onClose, onSaved }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ flex: 1, overflowY: 'auto' }}>
+          <input className="form-input" placeholder="🔍 搜索会员姓名/手机号..." value={search}
+            onChange={e => setSearch(e.target.value)} style={{ marginBottom: 10 }} />
           <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-            <button className="btn btn-secondary btn-sm" onClick={selectAll}>全选 ({patients.length})</button>
+            <button className="btn btn-secondary btn-sm" onClick={selectAll}>全选 ({filtered.length})</button>
             <button className="btn btn-secondary btn-sm" onClick={clearAll}>清空</button>
             <span style={{ fontSize: 13, color: '#1E6B50', lineHeight: '28px' }}>已选 {selected.length} 人</span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            {patients.map(p => (
+            {filtered.length === 0 && (
+              <div style={{ padding: 20, textAlign: 'center', color: '#aaa', fontSize: 13 }}>没有匹配的会员</div>
+            )}
+            {filtered.map(p => (
               <div key={p._id} onClick={() => toggle(p._id)} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', borderRadius: 8, border: `1px solid ${selected.includes(p._id) ? '#1E6B50' : '#E0D9CE'}`, background: selected.includes(p._id) ? '#E8F5EF' : '#fff', cursor: 'pointer' }}>
                 <div style={{ width: 18, height: 18, borderRadius: 4, border: `2px solid ${selected.includes(p._id) ? '#1E6B50' : '#ccc'}`, background: selected.includes(p._id) ? '#1E6B50' : '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {selected.includes(p._id) && <span style={{ color: '#fff', fontSize: 12 }}>✓</span>}

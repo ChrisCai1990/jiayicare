@@ -155,7 +155,16 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
           </>
         )}
         <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={pts} />
-        {xs.map((x, i) => <circle key={i} cx={x} cy={ys[i]} r="3" fill={color} />)}
+        {xs.map((x, i) => {
+          // 不同机构参考范围可能不同，悬停查看该次检查所在机构+当时的参考范围（原生SVG title，无需额外UI）
+          const p = data[i]
+          const tip = [p.institution, p.ref ? `参考范围 ${p.ref}` : ''].filter(Boolean).join(' · ')
+          return (
+            <circle key={i} cx={x} cy={ys[i]} r="3" fill={color}>
+              {tip && <title>{tip}</title>}
+            </circle>
+          )
+        })}
         {/* 每个数据点都标注数值，不只是最后一个点，方便一眼看出历次具体读数 */}
         {xs.map((x, i) => (
           <text key={`v-${i}`} x={x} y={Math.max(ys[i] - 6, 9)} textAnchor="middle" fontSize="9" fill={color}>{vals[i]}</text>
@@ -405,19 +414,34 @@ function AIArrEdit({ value, placeholder, onChange }) {
 }
 
 // AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯团队内部留言，AI不参与回复
-function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefresh }) {
+function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefresh, onPreviewImage }) {
   const toast = useToast()
   const [text, setText] = useState('')
+  const [images, setImages] = useState([]) // 已上传图片URL，如"AI认为某检查没做，实际做了"可截图说明
+  const [uploadingImg, setUploadingImg] = useState(false)
   const [posting, setPosting] = useState(false)
   const [aiReplying, setAiReplying] = useState(false)
   const list = Array.isArray(discussions) ? discussions : []
 
+  const handlePickImage = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploadingImg(true)
+    try {
+      const data = await staffAPI.uploadReportFile(file, () => {})
+      setImages(prev => [...prev, data.url])
+    } catch (err) { toast(err.message || '图片上传失败') }
+    finally { setUploadingImg(false) }
+  }
+
   const handlePost = async () => {
-    if (!text.trim()) return
+    if (!text.trim() && images.length === 0) return
     setPosting(true)
     try {
-      await staffAPI.addAIHealthSummaryDiscussion(patientId, text.trim(), year)
+      await staffAPI.addAIHealthSummaryDiscussion(patientId, text.trim(), year, images)
       setText('')
+      setImages([])
       onRefresh()
     } catch (err) { toast(err.message || '发布失败'); setPosting(false); return }
     // 发布成功后自动让AI接话，形成对话式讨论，无需再手动点按钮
@@ -480,6 +504,17 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
                     </div>
                   </div>
                   <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{d.content}</div>
+                  {Array.isArray(d.images) && d.images.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                      {d.images.map((img, ii) => {
+                        const src = img.startsWith('/') ? API_ORIGIN + img : img
+                        return (
+                          <img key={ii} src={src} alt="留言图片" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, cursor: 'zoom-in', border: '1px solid #E0D9CE' }}
+                            onClick={() => onPreviewImage?.(src)} />
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -493,10 +528,28 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
             {aiReplying ? '分析中...' : '✨ 让AI再想一次'}
           </button>
         )}
+        {images.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {images.map((img, ii) => {
+              const src = img.startsWith('/') ? API_ORIGIN + img : img
+              return (
+                <div key={ii} style={{ position: 'relative' }}>
+                  <img src={src} alt="待发送图片" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid #E0D9CE' }} />
+                  <span onClick={() => setImages(prev => prev.filter((_, x) => x !== ii))}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', background: '#DC3545', color: '#fff', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
           <textarea className="form-input" rows={2} style={{ flex: 1, resize: 'vertical' }}
-            placeholder="提出疑问、补充信息，AI会自动回复..." value={text} onChange={e => setText(e.target.value)} />
-          <button className="btn btn-primary btn-sm" disabled={posting || !text.trim()} onClick={handlePost}>
+            placeholder="提出疑问、补充信息，AI会自动回复...（如某检查AI认为没做，实际已做，可截图说明）" value={text} onChange={e => setText(e.target.value)} />
+          <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImg ? 'not-allowed' : 'pointer', opacity: uploadingImg ? 0.6 : 1 }}>
+            {uploadingImg ? '上传中...' : '📷 图片'}
+            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingImg} onChange={handlePickImage} />
+          </label>
+          <button className="btn btn-primary btn-sm" disabled={posting || (!text.trim() && images.length === 0)} onClick={handlePost}>
             {posting ? (aiReplying ? 'AI回复中...' : '发布中...') : '发布'}
           </button>
         </div>
@@ -1086,6 +1139,8 @@ export default function PatientDetailPage() {
   const [riskForm, setRiskForm] = useState(null)             // 编辑中的风险评估副本
   const [riskSaving, setRiskSaving] = useState(false)
   const [riskDiscInput, setRiskDiscInput] = useState('')     // 讨论区输入
+  const [riskDiscImages, setRiskDiscImages] = useState([])   // 待发送图片，如"AI认为某检查没做，实际已做"可截图说明
+  const [riskDiscImgUploading, setRiskDiscImgUploading] = useState(false)
   const [riskDiscBusy, setRiskDiscBusy] = useState(false)
   const [riskAiReplying, setRiskAiReplying] = useState(false)
   // 场景五/六/九：AI 助手（随访建议 / 教练消息 / 内容推荐）
@@ -1895,13 +1950,25 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '保存失败') }
     finally { setRiskSaving(false) }
   }
+  const handleRiskDiscPickImage = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setRiskDiscImgUploading(true)
+    try {
+      const data = await staffAPI.uploadReportFile(file, () => {})
+      setRiskDiscImages(prev => [...prev, data.url])
+    } catch (err) { toast(err.message || '图片上传失败') }
+    finally { setRiskDiscImgUploading(false) }
+  }
   // 风险评估讨论区：发留言后自动让AI接话，形成对话式讨论，无需再手动点按钮
   const handleRiskDiscSend = async (year) => {
-    if (!riskDiscInput.trim()) return
+    if (!riskDiscInput.trim() && riskDiscImages.length === 0) return
     setRiskDiscBusy(true)
     try {
-      await staffAPI.addAIRiskDiscussion(id, riskDiscInput.trim(), year)
+      await staffAPI.addAIRiskDiscussion(id, riskDiscInput.trim(), year, riskDiscImages)
       setRiskDiscInput('')
+      setRiskDiscImages([])
       load()
     } catch (err) { toast(err.message || '发送失败'); setRiskDiscBusy(false); return }
     setRiskDiscBusy(false)
@@ -4565,7 +4632,13 @@ export default function PatientDetailPage() {
                       const dt = new Date(d)
                       dateStr = `${String(dt.getFullYear()).slice(2)}/${dt.getMonth() + 1}`
                     }
-                    pts.push({ x: dateStr, y: parseFloat(item.value) })
+                    // 不同检查机构参考范围可能不一致，每个历史点带上各自的机构+参考范围，
+                    // 供悬停查看（2026-07-17反馈：不能统一用固定/最新一条的参考范围）
+                    pts.push({
+                      x: dateStr, y: parseFloat(item.value),
+                      institution: report.hospital || report.institution || '',
+                      ref: item.referenceRange || '',
+                    })
                   }
                 })
                 return pts
@@ -5362,7 +5435,7 @@ export default function PatientDetailPage() {
                 </AISectionCard>
 
                 {/* AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯留言，AI不参与回复 */}
-                <AISummaryDiscussionPanel patientId={id} year={curYear} discussions={ais.discussions || []} staff={staff} onRefresh={load} />
+                <AISummaryDiscussionPanel patientId={id} year={curYear} discussions={ais.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} />
               </>
             )}
           </div>
@@ -5554,17 +5627,46 @@ export default function PatientDetailPage() {
                             )}
                           </div>
                           <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{m.content}</div>
+                          {Array.isArray(m.images) && m.images.length > 0 && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 4 }}>
+                              {m.images.map((img, ii) => {
+                                const src = img.startsWith('/') ? API_ORIGIN + img : img
+                                return (
+                                  <img key={ii} src={src} alt="留言图片" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, cursor: 'zoom-in', border: '1px solid #E0D9CE' }}
+                                    onClick={() => setPreviewImageUrl(src)} />
+                                )
+                              })}
+                            </div>
+                          )}
                         </div>
                       ))}
+                    </div>
+                  )}
+                  {riskDiscImages.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+                      {riskDiscImages.map((img, ii) => {
+                        const src = img.startsWith('/') ? API_ORIGIN + img : img
+                        return (
+                          <div key={ii} style={{ position: 'relative' }}>
+                            <img src={src} alt="待发送图片" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid #E0D9CE' }} />
+                            <span onClick={() => setRiskDiscImages(prev => prev.filter((_, x) => x !== ii))}
+                              style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', background: '#DC3545', color: '#fff', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</span>
+                          </div>
+                        )
+                      })}
                     </div>
                   )}
                   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
                     <textarea className="form-input" rows={2} value={riskDiscInput}
                       onChange={e => setRiskDiscInput(e.target.value)}
                       onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRiskDiscSend(curYear) } }}
-                      placeholder="输入对风险评估的疑问或补充，Enter 发送，Shift+Enter 换行..."
+                      placeholder="输入对风险评估的疑问或补充，Enter 发送，Shift+Enter 换行...（如某检查AI认为没做，实际已做，可截图说明）"
                       style={{ flex: 1, resize: 'none', fontSize: 13 }} />
-                    <button className="btn btn-primary" onClick={() => handleRiskDiscSend(curYear)} disabled={riskDiscBusy || !riskDiscInput.trim()}>
+                    <label className="btn btn-secondary" style={{ cursor: riskDiscImgUploading ? 'not-allowed' : 'pointer', opacity: riskDiscImgUploading ? 0.6 : 1 }}>
+                      {riskDiscImgUploading ? '上传中...' : '📷'}
+                      <input type="file" accept="image/*" style={{ display: 'none' }} disabled={riskDiscImgUploading} onChange={handleRiskDiscPickImage} />
+                    </label>
+                    <button className="btn btn-primary" onClick={() => handleRiskDiscSend(curYear)} disabled={riskDiscBusy || (!riskDiscInput.trim() && riskDiscImages.length === 0)}>
                       {riskDiscBusy ? '…' : '发送'}
                     </button>
                   </div>

@@ -104,20 +104,23 @@ export default function PatientsPage() {
   const [loading, setLoading] = useState(true)
   const [showAssign, setShowAssign] = useState(false)
   const [sortByScore, setSortByScore] = useState(false) // 按评分从低到高排序（高危优先）
+  const [isMentor, setIsMentor] = useState(false) // 是否团队导师，决定要不要显示"我的客户/团队客户"Tab
+  const [scope, setScope] = useState('team') // mine=只看自己名下 team=看全团队（默认，与此前行为一致）
   const limit = 20
 
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await staffAPI.getPatients({ page, limit, search, disease })
+      const res = await staffAPI.getPatients({ page, limit, search, disease, scope })
       setPatients(res.data.patients)
       setTotal(res.data.total)
+      setIsMentor(!!res.data.isMentor)
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
-  }, [page, search, disease])
+  }, [page, search, disease, scope])
 
   useEffect(() => { load() }, [load])
 
@@ -171,6 +174,20 @@ export default function PatientsPage() {
         </div>
       </div>
 
+      {/* 团队导师专属：区分"我的客户"和"团队客户"，避免混在一起看不出是谁管理的（2026-07-17反馈） */}
+      {isMentor && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+          <button
+            className={scope === 'mine' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+            onClick={() => { setScope('mine'); setPage(1) }}
+          >我的客户</button>
+          <button
+            className={scope === 'team' ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+            onClick={() => { setScope('team'); setPage(1) }}
+          >团队客户（含我）</button>
+        </div>
+      )}
+
       {/* 会员列表 */}
       <div className="card">
         {loading ? (
@@ -190,6 +207,7 @@ export default function PatientsPage() {
                 <th>慢病</th>
                 <th>健管专员</th>
                 <th>家庭医师</th>
+                <th>健康规划师</th>
                 <th>会员类型</th>
                 <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setSortByScore(s => !s)}>
                   健康评分 {sortByScore ? '↑低→高' : '↓'}
@@ -215,6 +233,7 @@ export default function PatientsPage() {
                   </td>
                   <td style={{ color: '#666' }}>{p.assignedHealthManager?.name || '-'}</td>
                   <td style={{ color: '#666' }}>{p.assignedFamilyDoctor?.name || '-'}</td>
+                  <td style={{ color: '#666' }}>{p.assignedHealthPlanner?.name || '-'}</td>
                   <td>
                     {p.servicePackage
                       ? <span className="badge badge-success">{p.servicePackage}</span>
