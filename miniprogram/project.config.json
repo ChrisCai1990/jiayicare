@@ -2,7 +2,7 @@
   "miniprogramRoot": "dist/",
   "projectname": "jiayicare-miniprogram",
   "description": "嘉医汇 微信小程序端",
-  "appid": "wx1631398eb9f9ed45",
+  "appid": "wxa5fd7a7eb7cde164",
   "setting": {
     "urlCheck": true,
     "es6": true,
