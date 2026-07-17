@@ -1694,7 +1694,8 @@ router.post('/knowledge/:id/push', staffAuth, checkPermission('knowledge', 'send
   const records = patientIds.map(pid => ({
     staffId: req.staff._id, patientId: pid,
     type: 'knowledge', knowledgeId: item._id,
-    title: item.title, content: item.content?.slice(0, 100) || '',
+    // 此前这里截断成100字符，长文章推送后用户端只能看到开头，2026-07-17反馈"看不到具体内容"就是这里
+    title: item.title, content: item.content || '',
   }));
   await PushRecord.insertMany(records);
   res.json({ success: true, message: `已推送给 ${patientIds.length} 位会员` });
