@@ -180,6 +180,7 @@ const { user, token, isDemo, loading, updateUser, logout } = useAuth();
 POST /api/auth/send-code       发送验证码
 POST /api/auth/login           手机号登录
 POST /api/auth/wechat          微信登录
+POST /api/auth/wechat-mp       微信小程序登录（code2session，body:{code,userInfo?}）
 
 GET  /api/user/me              获取当前用户
 PUT  /api/user/me              更新用户信息

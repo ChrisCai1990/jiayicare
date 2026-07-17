@@ -202,4 +202,56 @@ router.post('/wechat', async (req, res) => {
   }
 });
 
+// ── 微信小程序登录 ────────────────────────────────────────────────
+// POST /auth/wechat-mp  body: { code, userInfo? }
+// 小程序登录流程与网页授权完全不同：前端 wx.login() 拿到临时 code，
+// 后端用 code2session 接口换 openid + session_key（无 access_token，无用户信息接口）。
+// 小程序 appid 与网页/公众号 appid 不同，因此 openid 也不同，存到独立字段 wechatMpOpenid。
+router.post('/wechat-mp', async (req, res) => {
+  const { code, userInfo } = req.body;
+  if (!code) return res.status(400).json({ success: false, message: '缺少 code' });
+
+  const appid  = process.env.WECHAT_MP_APPID;
+  const secret = process.env.WECHAT_MP_SECRET;
+
+  if (!appid || !secret) {
+    return res.status(503).json({ success: false, message: '小程序登录暂未配置，请使用手机号登录' });
+  }
+
+  try {
+    // code → openid + session_key
+    const sessionUrl = `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${code}&grant_type=authorization_code`;
+    const sessionData = await httpsGet(sessionUrl);
+    if (sessionData.errcode) {
+      return res.status(400).json({ success: false, message: `小程序登录失败: ${sessionData.errmsg}` });
+    }
+    const { openid } = sessionData;
+
+    // 查找或创建用户（以 wechatMpOpenid 为唯一键）
+    let user = await User.findOne({ wechatMpOpenid: openid });
+    const isNew = !user;
+    if (!user) {
+      user = await User.create({
+        wechatMpOpenid: openid,
+        name: userInfo?.nickName || '微信用户',
+      });
+    } else if (userInfo?.nickName && !user.name) {
+      user = await User.findByIdAndUpdate(user._id, { name: userInfo.nickName }, { new: true });
+    }
+
+    const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
+      expiresIn: process.env.JWT_EXPIRES_IN || '30d',
+    });
+
+    const healthFund = await computeHealthFund(user);
+    res.json({
+      success: true,
+      message: isNew ? '微信注册成功' : '登录成功',
+      data: { token, user: { ...user.toObject(), healthFund }, isNew },
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '小程序登录失败', error: err.message });
+  }
+});
+
 module.exports = router;

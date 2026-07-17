@@ -3,6 +3,9 @@
 const userSchema = new mongoose.Schema({
   phone:    { type: String, required: false, unique: true, sparse: true },
   wechatOpenid: { type: String, sparse: true, unique: true },
+  // 小程序 openid：同一微信开放平台账号下，小程序 appid 与网页/公众号 appid 不同，
+  // 换算出的 openid 也不同，必须用独立字段存储，避免和 wechatOpenid 互相覆盖
+  wechatMpOpenid: { type: String, sparse: true, unique: true },
   name:     { type: String, default: '用户' },
   age:      { type: Number },
   gender:   { type: String, enum: ['男', '女', '未知'], default: '未知' },
