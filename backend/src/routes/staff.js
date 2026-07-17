@@ -1297,6 +1297,93 @@ router.patch('/plans/:id/items/:itemId', staffAuth, async (req, res) => {
   res.json({ success: true, data: plan });
 });
 
+// ── AI体检方案讨论区：家庭医生对AI给出的加项/未加项有疑问可留言，AI结合方案内容回应
+// （2026-07-17需求：新增了更年期相关检查需求但方案没跟着调整时，医生可在此提出疑问）────
+// POST /api/staff/plans/:id/discussions
+router.post('/plans/:id/discussions', staffAuth, async (req, res) => {
+  try {
+    const { content, images } = req.body;
+    if ((!content || !content.trim()) && !(Array.isArray(images) && images.length)) {
+      return res.status(400).json({ success: false, message: '留言内容不能为空' });
+    }
+    const plan = await HealthPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    const discussions = Array.isArray(plan.content?.discussions) ? [...plan.content.discussions] : [];
+    discussions.push({
+      staffId: req.staff._id,
+      staffName: req.staff.name || '',
+      staffRole: req.staff.roleLabel || req.staff.role || '',
+      content: (content || '').trim(),
+      images: Array.isArray(images) ? images.filter(Boolean) : [],
+      createdAt: new Date(),
+    });
+    plan.content = { ...(plan.content || {}), discussions };
+    plan.markModified('content');
+    await plan.save();
+    res.json({ success: true, data: discussions });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/plans/:id/discussions/:index — 撤回自己发的一条留言（仅本人或超管）
+router.delete('/plans/:id/discussions/:index', staffAuth, async (req, res) => {
+  try {
+    const plan = await HealthPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    const discussions = Array.isArray(plan.content?.discussions) ? [...plan.content.discussions] : [];
+    const idx = parseInt(req.params.index, 10);
+    const target = discussions[idx];
+    if (!target) return res.status(404).json({ success: false, message: '留言不存在' });
+    if (!target.isAI && String(target.staffId) !== String(req.staff._id) && req.staff.role !== 'superadmin') {
+      return res.status(403).json({ success: false, message: '仅本人或超管可撤回' });
+    }
+    discussions.splice(idx, 1);
+    plan.content = { ...(plan.content || {}), discussions };
+    plan.markModified('content');
+    await plan.save();
+    res.json({ success: true, data: discussions });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/staff/plans/:id/discussions/ai-reply — 针对疑问，让AI结合本次方案的套餐/加项理由回应
+router.post('/plans/:id/discussions/ai-reply', staffAuth, async (req, res) => {
+  try {
+    const plan = await HealthPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    if (plan.type !== 'annual_checkup') return res.status(400).json({ success: false, message: '仅体检方案支持AI讨论' });
+    const discussions = Array.isArray(plan.content?.discussions) ? [...plan.content.discussions] : [];
+    if (!discussions.length) return res.status(400).json({ success: false, message: '暂无讨论内容' });
+
+    const { chat } = require('../utils/ai');
+    const c = plan.content || {};
+    const baseItems = (plan.items || []).filter(i => i.itemGroup === 'base').map(i => i.name).join('、');
+    const addonItems = (plan.items || []).filter(i => i.itemGroup === 'addon').map(i => `${i.name}（${i.notes || ''}）`).join('；');
+    const discussionText = discussions.map(d => `${d.isAI ? 'AI' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
+
+    const prompt = `你是协助家庭医生复核AI年度体检方案的助手。以下是本次方案的构成，以及医生围绕方案提出的疑问。请针对医生最新的疑问给出解释或修正建议。
+
+【套餐名称】${c.packageName || plan.title || ''}
+【基础项目（体检中心标准套餐，固定不可改）】${baseItems || '无'}
+【AI加项及理由】${addonItems || '无加项'}
+【本次方案说明】${plan.description || '无'}
+
+【讨论记录】
+${discussionText}
+
+请直接输出你对医生最新一条留言的回应（150字内，专业、有理有据；如果医生指出遗漏了某类检查需求，明确说明是否应该补充加项、具体建议加什么项目）：`;
+
+    const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 500 });
+    const reply = {
+      staffId: null, staffName: 'AI助手', staffRole: '',
+      content: (text || '').trim(), createdAt: new Date(), isAI: true,
+    };
+    const updated = [...discussions, reply];
+    plan.content = { ...(plan.content || {}), discussions: updated };
+    plan.markModified('content');
+    await plan.save();
+    res.json({ success: true, data: updated });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // DELETE /api/staff/plans/:id — 只有制定人（staffId）或超管可删除；部分方案类型额外要求角色匹配
 router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
@@ -4387,15 +4474,19 @@ ${discussionText}
 });
 
 // ── 10年ASCVD风险评估（医护端录入体检参数→按中国指南自动分层，按年度存储）──
-// POST /api/staff/patients/:id/ascvd-risk — 计算并保存（body.year 不填则为当前年）
+// POST /api/staff/patients/:id/ascvd-risk — 计算并新增一条评估记录（body.year 不填则按body.evaluatedAt/当前日期推导）
+// 2026-07-17改：此前同一年内再次评估会直接覆盖旧结果，客户可能一年内需要多次复评（如调理后复查）；
+// 现在改成按年度存一个 records 数组，每条各自带 evaluatedAt 具体日期，支持同年内新增多条不再互相覆盖。
 router.post('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
   try {
     const { assessAscvd } = require('../utils/ascvdRisk');
     const user = await User.findById(req.params.id).select('_id');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    const year = String(req.body?.year || new Date().getFullYear());
+    const evaluatedAt = req.body?.evaluatedAt ? new Date(req.body.evaluatedAt) : new Date();
+    const year = String(req.body?.year || evaluatedAt.getFullYear());
     const result = assessAscvd(req.body || {});
     result.evaluatedBy = req.staff.name;
+    result.evaluatedAt = evaluatedAt;
     // 2026-07-09修复金娟反馈"ASCVD无法保存"：老用户 ascvdRisk 字段可能是 null（非对象），
     // 直接用点路径 $set 'ascvdRisk.byYear.2026' 会报 "Cannot create field 'byYear' in element {ascvdRisk: null}" → 500。
     // 先确保 ascvdRisk / ascvdRisk.byYear 是对象再写入。
@@ -4406,22 +4497,46 @@ router.post('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
     } else if (cur.ascvdRisk.byYear === null || typeof cur.ascvdRisk.byYear !== 'object' || Array.isArray(cur.ascvdRisk.byYear)) {
       await User.collection.updateOne({ _id: _oid }, { $set: { 'ascvdRisk.byYear': {} } });
     }
+    // 兼容旧数据：该年度此前是单条扁平结果（无records数组），先迁移成records数组再追加新的一条
+    const existingEntry = cur?.ascvdRisk?.byYear?.[year];
+    let records = [];
+    if (existingEntry) {
+      records = Array.isArray(existingEntry.records) ? [...existingEntry.records] : [existingEntry];
+    }
+    records.push(result);
+    // 存储时按评估日期新→旧排好序，保证前端展示顺序和DELETE按index删除时对应的是同一条记录
+    records.sort((a, b) => new Date(b.evaluatedAt || 0) - new Date(a.evaluatedAt || 0));
     await User.collection.updateOne(
       { _id: _oid },
-      { $set: { [`ascvdRisk.byYear.${year}`]: result } }
+      { $set: { [`ascvdRisk.byYear.${year}`]: { records } } }
     );
     res.json({ success: true, data: result, year });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// DELETE /api/staff/patients/:id/ascvd-risk?year=2026 — 清除指定年度评估（不传year默认清当前年）
+// DELETE /api/staff/patients/:id/ascvd-risk?year=2026&index=0 — 删除该年度指定一条评估记录
+// index 不传时兼容旧行为，清除整个年度（用于清理仍是旧扁平格式的历史脏数据）
 router.delete('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
   try {
     const year = String(req.query?.year || new Date().getFullYear());
-    await User.collection.updateOne(
-      { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $unset: { [`ascvdRisk.byYear.${year}`]: '' } }
-    );
+    const _oid = new mongoose.Types.ObjectId(req.params.id);
+    if (req.query?.index === undefined) {
+      await User.collection.updateOne({ _id: _oid }, { $unset: { [`ascvdRisk.byYear.${year}`]: '' } });
+      return res.json({ success: true });
+    }
+    const idx = parseInt(req.query.index, 10);
+    const cur = await User.collection.findOne({ _id: _oid }, { projection: { ascvdRisk: 1 } });
+    const entry = cur?.ascvdRisk?.byYear?.[year];
+    const records = entry ? (Array.isArray(entry.records) ? [...entry.records] : [entry]) : [];
+    if (isNaN(idx) || idx < 0 || idx >= records.length) {
+      return res.status(400).json({ success: false, message: '记录不存在' });
+    }
+    records.splice(idx, 1);
+    if (records.length === 0) {
+      await User.collection.updateOne({ _id: _oid }, { $unset: { [`ascvdRisk.byYear.${year}`]: '' } });
+    } else {
+      await User.collection.updateOne({ _id: _oid }, { $set: { [`ascvdRisk.byYear.${year}`]: { records } } });
+    }
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -7268,8 +7383,13 @@ ${addonListText}
       ...extra,
     });
     const items = [
-      ...checkItems.map(ci => toPlanItem(ci)),
-      ...chosenAddonIds.map(ci => toPlanItem(ci, { notes: ci.reason ? `AI建议加项：${ci.reason}` : 'AI建议加项' })),
+      ...checkItems.map(ci => toPlanItem(ci, { itemGroup: 'base' })),
+      ...chosenAddonIds.map(ci => toPlanItem(ci, {
+        itemGroup: 'addon',
+        // 加项必须标注检查意义，AI已按prompt要求给每项reason，缺失时用模板库自带的适用场景兜底，
+        // 避免出现"加了但不知道为什么加"（2026-07-17需求）
+        notes: `检查意义：${ci.reason || '结合患者情况建议增加此项检查'}`,
+      })),
     ];
 
     const plan = await HealthPlan.create({

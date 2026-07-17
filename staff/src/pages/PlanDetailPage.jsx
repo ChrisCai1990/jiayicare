@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { staffAPI } from '../api'
+import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import AiRuleHint from '../components/AiRuleHint'
 
@@ -610,6 +610,13 @@ export default function PlanDetailPage() {
                         <td style={{ color: '#aaa' }}>{item._idx + 1}</td>
                         <td>
                           <strong>{item.name}</strong>
+                          {/* 套餐基础项/AI加项明确区分，加项的"检查意义"在下方"注意事项"列展示（2026-07-17需求） */}
+                          {item.itemGroup === 'base' && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: '#4A6558', background: '#EFEBE3', padding: '1px 5px', borderRadius: 3 }}>基础项</span>
+                          )}
+                          {item.itemGroup === 'addon' && (
+                            <span style={{ marginLeft: 6, fontSize: 11, color: '#7C3AED', background: '#F3EEFF', padding: '1px 5px', borderRadius: 3 }}>✨ 加项</span>
+                          )}
                           {/* 2026-07-07修复：此前只判断itemType非空就显示"已关联库"，但历史数据/生成失败场景
                               可能itemType有值而itemId是null(其实没有真正关联到具体医嘱库条目)，
                               导致展示"假关联"。改成itemId和itemType都存在才算真正关联；未关联的（AI生成的
@@ -655,6 +662,12 @@ export default function PlanDetailPage() {
         )}
       </div>
 
+      {/* AI体检方案讨论区：家庭医生对加项/未加项有疑问可留言，AI结合本次方案内容回应
+          （2026-07-17需求：如新增了更年期相关检查需求但方案未调整，医生可在此提出疑问并让AI解释/修正）*/}
+      {plan.type === 'annual_checkup' && (
+        <PlanDiscussionPanel planId={plan._id} discussions={plan.content?.discussions || []} staff={staff} onRefresh={load} />
+      )}
+
       {/* 方案项目编辑弹窗——注意事项是可能写详细建议的长文本(如营养方案早餐建议)，
           之前用行内单行input，2026-07-07反馈"编辑框太小"，改成弹窗+textarea */}
       {editingItemId && (
@@ -688,6 +701,138 @@ export default function PlanDetailPage() {
               <button className="btn btn-primary" onClick={saveEditItem}>保存</button>
             </div>
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// AI体检方案讨论区：家庭医生对加项/未加项有疑问可留言，AI结合方案内容回应，支持发图（截图说明）
+function PlanDiscussionPanel({ planId, discussions, staff, onRefresh }) {
+  const toast = useToast()
+  const [text, setText] = useState('')
+  const [images, setImages] = useState([])
+  const [uploadingImg, setUploadingImg] = useState(false)
+  const [posting, setPosting] = useState(false)
+  const [aiReplying, setAiReplying] = useState(false)
+  const [previewUrl, setPreviewUrl] = useState(null)
+  const list = Array.isArray(discussions) ? discussions : []
+
+  const handlePickImage = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setUploadingImg(true)
+    try {
+      const data = await staffAPI.uploadReportFile(file, () => {})
+      setImages(prev => [...prev, data.url])
+    } catch (err) { toast(err.message || '图片上传失败') }
+    finally { setUploadingImg(false) }
+  }
+
+  const handlePost = async () => {
+    if (!text.trim() && images.length === 0) return
+    setPosting(true)
+    try {
+      await staffAPI.addPlanDiscussion(planId, text.trim(), images)
+      setText(''); setImages([])
+      onRefresh()
+    } catch (err) { toast(err.message || '发布失败'); setPosting(false); return }
+    setAiReplying(true)
+    try {
+      await staffAPI.generatePlanDiscussionReply(planId)
+      onRefresh()
+    } catch (err) { toast(err.message || 'AI回应失败') }
+    finally { setPosting(false); setAiReplying(false) }
+  }
+
+  const handleDelete = async (idx) => {
+    if (!window.confirm('确认删除这条留言？')) return
+    try { await staffAPI.deletePlanDiscussion(planId, idx); toast('已删除'); onRefresh() }
+    catch (err) { toast(err.message || '删除失败') }
+  }
+
+  return (
+    <div className="card" style={{ marginTop: 16 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
+        <span style={{ fontSize: 17 }}>💬</span>
+        <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>方案讨论</span>
+        <span style={{ fontSize: 12, color: '#8AA89C' }}>{list.length} 条留言</span>
+      </div>
+      <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {list.length === 0 ? (
+          <div style={{ fontSize: 13, color: '#8AA89C' }}>对方案的加项/未加项有疑问，或有新的检查需求觉得方案没跟上，可在此留言，AI会结合本次方案内容解释或给出修正建议</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {list.map((d, i) => {
+              const isOwner = staff?._id && d.staffId && String(d.staffId) === String(staff._id)
+              return (
+                <div key={i} style={{
+                  background: d.isAI ? '#EFF8FF' : '#F9F6F0',
+                  borderLeft: d.isAI ? '3px solid #0077B6' : 'none',
+                  borderRadius: 8, padding: '10px 14px',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: d.isAI ? '#0077B6' : '#4A6558' }}>
+                      {d.isAI ? '✨ ' : ''}{d.staffName}{d.staffRole ? ` · ${d.staffRole}` : ''}
+                    </span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 11, color: '#8AA89C' }}>{d.createdAt ? new Date(d.createdAt).toLocaleString('zh-CN') : ''}</span>
+                      {(isOwner || staff?.role === 'superadmin') && (
+                        <span onClick={() => handleDelete(i)} style={{ fontSize: 11, color: '#DC3545', cursor: 'pointer' }}>删除</span>
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>{d.content}</div>
+                  {Array.isArray(d.images) && d.images.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 6 }}>
+                      {d.images.map((img, ii) => {
+                        const src = img.startsWith('/') ? API_ORIGIN + img : img
+                        return (
+                          <img key={ii} src={src} alt="留言图片" style={{ width: 72, height: 72, objectFit: 'cover', borderRadius: 6, cursor: 'zoom-in', border: '1px solid #E0D9CE' }}
+                            onClick={() => setPreviewUrl(src)} />
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {aiReplying && (
+          <div style={{ fontSize: 12, color: '#0077B6', display: 'flex', alignItems: 'center', gap: 6 }}>✨ AI思考中...</div>
+        )}
+        {images.length > 0 && (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {images.map((img, ii) => {
+              const src = img.startsWith('/') ? API_ORIGIN + img : img
+              return (
+                <div key={ii} style={{ position: 'relative' }}>
+                  <img src={src} alt="待发送图片" style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, border: '1px solid #E0D9CE' }} />
+                  <span onClick={() => setImages(prev => prev.filter((_, x) => x !== ii))}
+                    style={{ position: 'absolute', top: -6, right: -6, width: 18, height: 18, borderRadius: '50%', background: '#DC3545', color: '#fff', fontSize: 12, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>✕</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+          <textarea className="form-input" rows={2} style={{ flex: 1, resize: 'vertical' }}
+            placeholder="对方案有疑问、觉得漏了什么检查需求，AI会自动回复...（可截图说明）" value={text} onChange={e => setText(e.target.value)} />
+          <label className="btn btn-secondary btn-sm" style={{ cursor: uploadingImg ? 'not-allowed' : 'pointer', opacity: uploadingImg ? 0.6 : 1 }}>
+            {uploadingImg ? '上传中...' : '📷 图片'}
+            <input type="file" accept="image/*" style={{ display: 'none' }} disabled={uploadingImg} onChange={handlePickImage} />
+          </label>
+          <button className="btn btn-primary btn-sm" disabled={posting || (!text.trim() && images.length === 0)} onClick={handlePost}>
+            {posting ? (aiReplying ? 'AI回复中...' : '发布中...') : '发布'}
+          </button>
+        </div>
+      </div>
+      {previewUrl && (
+        <div onClick={() => setPreviewUrl(null)}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
+          <img src={previewUrl} alt="留言图片" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8 }} onClick={e => e.stopPropagation()} />
         </div>
       )}
     </div>

@@ -20,6 +20,8 @@ const TYPE_LIST = [
   { key: 'chronic',         label: '慢性病筛查',     icon: 'medical-outline',       color: '#D97706', bg: '#FEF3E2' },
   { key: 'functional',      label: '功能医学检测',   icon: 'flask-outline',         color: '#7C3AED', bg: '#F2EEFF' },
   { key: 'gender_health',   label: '男性/女性健康筛查', icon: 'body-outline',       color: '#059669', bg: '#D1FAE5' },
+  // 居家监测设备产出的报告（动态血压/动态血糖/动态心电图/肺功能等），2026-07-17需求新增
+  { key: 'home_monitor',   label: '居家监测',       icon: 'watch-outline',         color: '#0891B2', bg: '#E0F7FA' },
   { key: 'other',           label: '其他常规筛查',   icon: 'document-outline',      color: '#64748B', bg: '#F1F5F9' },
 ];
 

@@ -200,6 +200,8 @@ const REPORT_L1_TYPES = [
   { key: 'chronic',        label: '慢性病筛查' },
   { key: 'functional',     label: '功能医学检测' },
   { key: 'gender_health',  label: '男性/女性健康筛查' },
+  // 居家监测设备产出的报告（动态血压/动态血糖/动态心电图/肺功能等），2026-07-17需求新增
+  { key: 'home_monitor',   label: '居家监测' },
   { key: 'other',          label: '其他常规筛查' },
 ]
 const PLAN_TYPE_LABEL = {
@@ -758,17 +760,25 @@ const ASCVD_LEVEL_COLOR = {
 function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [expandedIdx, setExpandedIdx] = useState(null) // 展开查看详情的记录下标（该年度内），null=全部收起只看摘要行
 
-  // 兼容旧数据：早期版本 ascvdRisk 是单个扁平对象，无 byYear，归入其评估年份（无年份则归当前年）
+  // 兼容旧数据：早期版本 ascvdRisk 是单个扁平对象（无byYear），或byYear下每年是单条扁平结果（无records数组）。
+  // 统一归一化成 { [year]: { records: [...] } }，2026-07-17改：支持同年内新增多条评估，不再互相覆盖
   const byYear = (() => {
     const raw = user.ascvdRisk || null
     if (!raw) return {}
-    if (raw.byYear) return raw.byYear
-    if (raw.level) {
+    let by = {}
+    if (raw.byYear) by = raw.byYear
+    else if (raw.level) {
       const y = raw.evaluatedAt ? String(new Date(raw.evaluatedAt).getFullYear()) : String(new Date().getFullYear())
-      return { [y]: raw }
+      by = { [y]: raw }
     }
-    return {}
+    const normalized = {}
+    Object.entries(by).forEach(([y, entry]) => {
+      if (!entry) return
+      normalized[y] = { records: Array.isArray(entry.records) ? entry.records : [entry] }
+    })
+    return normalized
   })()
 
   const nowY = String(new Date().getFullYear())
@@ -776,45 +786,48 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
   const [year, setYear] = useState(null)
   const curYear = (year && years.includes(year)) ? year : (years[0] || nowY)
-  const result = byYear[curYear] || null
+  // 该年度全部评估记录，按评估日期新→旧排序；result 兼容旧渲染逻辑，始终指向最新一条
+  const records = [...(byYear[curYear]?.records || [])].sort((a, b) => new Date(b.evaluatedAt || 0) - new Date(a.evaluatedAt || 0))
+  const result = records[0] || null
 
   // 从档案预填性别/年龄，其余体检值默认空
   const genderInit = user.gender === '女' ? 'female' : user.gender === '男' ? 'male' : 'male'
-  const blankForm = () => {
-    const inp = result?.inputs || {}
-    return {
-      gender: inp.gender || genderInit,
-      age: inp.age ?? (user.age || ''),
-      tc: inp.tc ?? '', ldl: inp.ldl ?? '', hdl: inp.hdl ?? '',
-      sbp: inp.sbp ?? '', dbp: inp.dbp ?? '', bmi: inp.bmi ?? '',
-      onHypertensionTreatment: !!inp.onHypertensionTreatment,
-      smoking: !!inp.smoking, diabetes: !!inp.diabetes, ckdStage34: !!inp.ckdStage34,
-    }
-  }
+  const todayStr = () => new Date().toISOString().slice(0, 10)
+  const blankForm = () => ({
+    gender: genderInit,
+    age: user.age || '',
+    tc: '', ldl: '', hdl: '',
+    sbp: '', dbp: '', bmi: '',
+    onHypertensionTreatment: false,
+    smoking: false, diabetes: false, ckdStage34: false,
+    evaluatedAt: todayStr(),
+  })
   const [form, setForm] = useState(blankForm)
 
+  // 新增评估：不再预填上一条的数值（新增≠修改上一条，体检参数应重新录入当次实际值）
   const openEdit = () => { setForm(blankForm()); setEditing(true) }
 
-  // 评估始终按系统当前日期自动归入当年，不允许手动指定年度（历史年度只读，只能查看不能改写）
   const handleSave = async () => {
     if (!form.age || !form.sbp || (!form.tc && !form.ldl)) {
       toast('请至少填写年龄、收缩压，以及总胆固醇或LDL-C'); return
     }
     setSaving(true)
     try {
-      await staffAPI.saveAscvdRisk(patientId, { ...form, year: nowY })
-      toast(`${nowY}年度 ASCVD风险评估已保存`)
+      const evalYear = String(new Date(form.evaluatedAt || todayStr()).getFullYear())
+      await staffAPI.saveAscvdRisk(patientId, { ...form, year: evalYear })
+      toast(`${evalYear}年度 ASCVD风险评估已保存`)
       setEditing(false)
-      setYear(nowY)
+      setYear(evalYear)
+      setExpandedIdx(0)
       onSaved()
     } catch (err) { toast(err.message || '保存失败') }
     finally { setSaving(false) }
   }
 
-  const handleClear = async () => {
-    if (!window.confirm(`确认清除 ${curYear} 年度的ASCVD评估？`)) return
-    try { await staffAPI.deleteAscvdRisk(patientId, curYear); onSaved() }
-    catch (err) { toast(err.message || '清除失败') }
+  const handleDeleteRecord = async (idx) => {
+    if (!window.confirm('确认删除这条评估记录？')) return
+    try { await staffAPI.deleteAscvdRisk(patientId, curYear, idx); onSaved() }
+    catch (err) { toast(err.message || '删除失败') }
   }
 
   const lv = result ? (ASCVD_LEVEL_COLOR[result.level] || ASCVD_LEVEL_COLOR.low) : null
@@ -848,15 +861,19 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
         )}
         {!editing && (
           <div style={{ display: 'flex', gap: 6 }}>
-            <button className="btn btn-secondary btn-sm" onClick={openEdit}>{byYear[nowY] ? '重新评估' : '＋ 录入评估'}</button>
-            {result && <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={handleClear}>清除</button>}
+            {/* 可能需要多次评估（如调理后复查），不再是"重新评估"覆盖旧结果，改成始终"新增评估" */}
+            <button className="btn btn-secondary btn-sm" onClick={openEdit}>＋ 新增评估</button>
           </div>
         )}
       </div>
       <div className="card-body">
         {editing ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ fontSize: 12, color: '#8AA89C' }}>评估将自动归入 <b style={{ color: '#1E6B50' }}>{nowY}</b> 年度</div>
+            <div>
+              <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>评估日期</label>
+              <input className="form-control" type="date" value={form.evaluatedAt}
+                onChange={e => setForm(f => ({ ...f, evaluatedAt: e.target.value }))} style={{ width: 180 }} />
+            </div>
             <div style={{ background: '#FAFAF8', border: '1px solid #F0EDE7', borderRadius: 8, padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {/* 2026-07-09修复金娟"界面看不到全局要键盘左右移动才能找到按键"：原固定 repeat(3, 230px)=690px 网格
                   在窄容器里会横向溢出，把靠右的"计算并保存"按钮挤出视口。改用 auto-fit 自适应，列数随容器宽度换行，
@@ -900,71 +917,85 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
               <button className="btn btn-primary btn-sm" onClick={handleSave} disabled={saving}>{saving ? '计算中...' : '计算并保存'}</button>
             </div>
           </div>
-        ) : result ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {/* 风险等级大卡 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, background: lv.bg, borderRadius: 10, padding: '14px 18px' }}>
-              <div style={{
-                width: 56, height: 56, borderRadius: '50%', flexShrink: 0,
-                background: lv.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 16, fontWeight: 800,
-              }}>{result.levelLabel}</div>
-              <div>
-                <div style={{ fontSize: 14, fontWeight: 700, color: lv.color }}>{result.description}</div>
-                {result.directHighRisk && (
-                  <div style={{ fontSize: 12, color: '#DC3545', marginTop: 4 }}>⚠ 直接判定高危：{result.directHighRisk}</div>
-                )}
-              </div>
-            </div>
-
-            {/* 危险因素 */}
-            {Array.isArray(result.riskFactors) && result.riskFactors.length > 0 && (
-              <div>
-                <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>危险因素</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {result.riskFactors.map((f, i) => (
-                    <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, background: '#F5F2EC', color: '#4A6558' }}>{f}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 建议 */}
-            {result.advice && (
-              <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 8, padding: '10px 14px', lineHeight: 1.6 }}>
-                💡 {result.advice}
-              </div>
-            )}
-
-            {/* 录入参数：网格化，替代原来一长串文字 */}
-            <div style={{ borderTop: '1px dashed #E0D9CE', paddingTop: 10 }}>
-              <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>录入参数</div>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 8 }}>
-                {[
-                  ['性别', result.inputs.gender === 'female' ? '女' : '男'],
-                  ['年龄', `${result.inputs.age}岁`],
-                  ['收缩压', `${result.inputs.sbp} mmHg`],
-                  ['舒张压', result.inputs.dbp ? `${result.inputs.dbp} mmHg` : '-'],
-                  ['TC', result.inputs.tc ?? '-'],
-                  ['LDL-C', result.inputs.ldl ?? '-'],
-                  ['HDL-C', result.inputs.hdl ?? '-'],
-                  ['BMI', result.inputs.bmi ?? '-'],
-                ].map(([k, v]) => (
-                  <div key={k} style={{ background: '#f9f7f3', borderRadius: 6, padding: '5px 8px', textAlign: 'center' }}>
-                    <div style={{ fontSize: 10, color: '#aaa' }}>{k}</div>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: '#1A2B24' }}>{v}</div>
+        ) : records.length > 0 ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {records.map((r, idx) => {
+              const rLv = ASCVD_LEVEL_COLOR[r.level] || ASCVD_LEVEL_COLOR.low
+              const isExpanded = expandedIdx === idx || (expandedIdx === null && idx === 0)
+              const dateLabel = r.evaluatedAt ? new Date(r.evaluatedAt).toLocaleDateString('zh-CN') : '-'
+              return (
+                <div key={idx} style={{ border: '1px solid #F0EDE7', borderRadius: 10, overflow: 'hidden' }}>
+                  {/* 摘要行：始终显示日期+等级，点击展开/收起完整详情，多条评估历史一目了然 */}
+                  <div onClick={() => setExpandedIdx(isExpanded ? -1 : idx)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', cursor: 'pointer', background: isExpanded ? rLv.bg : '#FAFAF8' }}>
+                    <span style={{
+                      width: 30, height: 30, borderRadius: '50%', flexShrink: 0, background: rLv.color, color: '#fff',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 800,
+                    }}>{r.levelLabel}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: rLv.color, flex: 1 }}>{r.description}</span>
+                    <span style={{ fontSize: 12, color: '#8AA89C' }}>{dateLabel}{r.evaluatedBy ? ` · ${r.evaluatedBy}` : ''}</span>
+                    <span style={{ fontSize: 12, color: '#1E6B50' }}>{isExpanded ? '收起 ▲' : '展开 ▼'}</span>
                   </div>
-                ))}
-              </div>
-              <div style={{ fontSize: 11, color: '#B0A99C', marginTop: 8 }}>
-                {result.inputs.smoking ? '吸烟 · ' : ''}{result.inputs.diabetes ? '糖尿病 · ' : ''}{result.inputs.ckdStage34 ? 'CKD 3~4期 · ' : ''}
-                {result.evaluatedBy ? `由${result.evaluatedBy}评估` : ''}{result.evaluatedAt ? ` · ${new Date(result.evaluatedAt).toLocaleDateString('zh-CN')}` : ''}
-              </div>
-            </div>
+                  {isExpanded && (
+                    <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {r.directHighRisk && (
+                        <div style={{ fontSize: 12, color: '#DC3545' }}>⚠ 直接判定高危：{r.directHighRisk}</div>
+                      )}
+                      {/* 危险因素 */}
+                      {Array.isArray(r.riskFactors) && r.riskFactors.length > 0 && (
+                        <div>
+                          <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 4 }}>危险因素</div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {r.riskFactors.map((f, i) => (
+                              <span key={i} style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, background: '#F5F2EC', color: '#4A6558' }}>{f}</span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                      {/* 建议 */}
+                      {r.advice && (
+                        <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 8, padding: '10px 14px', lineHeight: 1.6 }}>
+                          💡 {r.advice}
+                        </div>
+                      )}
+                      {/* 录入参数：网格化，替代原来一长串文字 */}
+                      <div style={{ borderTop: '1px dashed #E0D9CE', paddingTop: 10 }}>
+                        <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 6 }}>录入参数</div>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(90px, 1fr))', gap: 8 }}>
+                          {[
+                            ['性别', r.inputs.gender === 'female' ? '女' : '男'],
+                            ['年龄', `${r.inputs.age}岁`],
+                            ['收缩压', `${r.inputs.sbp} mmHg`],
+                            ['舒张压', r.inputs.dbp ? `${r.inputs.dbp} mmHg` : '-'],
+                            ['TC', r.inputs.tc ?? '-'],
+                            ['LDL-C', r.inputs.ldl ?? '-'],
+                            ['HDL-C', r.inputs.hdl ?? '-'],
+                            ['BMI', r.inputs.bmi ?? '-'],
+                          ].map(([k, v]) => (
+                            <div key={k} style={{ background: '#f9f7f3', borderRadius: 6, padding: '5px 8px', textAlign: 'center' }}>
+                              <div style={{ fontSize: 10, color: '#aaa' }}>{k}</div>
+                              <div style={{ fontSize: 12, fontWeight: 600, color: '#1A2B24' }}>{v}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{ fontSize: 11, color: '#B0A99C', marginTop: 8 }}>
+                          {r.inputs.smoking ? '吸烟 · ' : ''}{r.inputs.diabetes ? '糖尿病 · ' : ''}{r.inputs.ckdStage34 ? 'CKD 3~4期 · ' : ''}
+                          {r.evaluatedBy ? `由${r.evaluatedBy}评估` : ''}{dateLabel !== '-' ? ` · ${dateLabel}` : ''}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                        <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
+                          onClick={() => handleDeleteRecord(idx)}>删除这条记录</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         ) : (
           <div style={{ fontSize: 13, color: '#8AA89C', textAlign: 'center', padding: '20px 0' }}>
-            {years.length > 0 ? `${curYear} 年度尚未评估` : '尚未评估'}。点击「录入评估」，填写体检参数后系统将按中国指南自动分层。
+            {years.length > 0 ? `${curYear} 年度尚未评估` : '尚未评估'}。点击「新增评估」，填写体检参数后系统将按中国指南自动分层。
           </div>
         )}
       </div>
@@ -7532,7 +7563,7 @@ export default function PatientDetailPage() {
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               {(() => {
                 const r = showReportDetail
-                const REPORT_TYPE_LABEL = { annual:'年度体检报告', blood:'血液检查', bloodTest:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜检查', pathology:'病理', functional:'功能医学', genetic:'基因检测', other:'其他', tumor:'肿瘤筛查', cardiovascular:'心脑血管病筛查', chronic:'慢性病筛查', health_promote:'健康促进' }
+                const REPORT_TYPE_LABEL = { annual:'年度体检报告', blood:'血液检查', bloodTest:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜检查', pathology:'病理', functional:'功能医学', genetic:'基因检测', other:'其他', tumor:'肿瘤筛查', cardiovascular:'心脑血管病筛查', chronic:'慢性病筛查', health_promote:'健康促进', home_monitor:'居家监测' }
                 const typeLabel = REPORT_TYPE_LABEL[r.type] || r.type || '-'
                 const l1Node = r.screeningL1 ? screeningTree.find(n => String(n._id) === r.screeningL1) : null
                 const categoryLabel = l1Node ? [l1Node.label, r.screeningL2].filter(Boolean).join(' › ') : (r.type === 'annual' ? '年度体检报告' : null)

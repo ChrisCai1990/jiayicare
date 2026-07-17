@@ -69,6 +69,10 @@ export const staffAPI = {
   updatePlan:     (id, d)  => req(`/staff/plans/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   deletePlan:     (id)     => req(`/staff/plans/${id}`, { method: 'DELETE' }),
   pushPlan:       (id)     => req(`/staff/plans/${id}/push`, { method: 'PATCH' }),
+  // AI体检方案讨论区
+  addPlanDiscussion:      (id, content, images) => req(`/staff/plans/${id}/discussions`, { method: 'POST', body: JSON.stringify({ content, images }) }),
+  deletePlanDiscussion:   (id, index) => req(`/staff/plans/${id}/discussions/${index}`, { method: 'DELETE' }),
+  generatePlanDiscussionReply: (id) => req(`/staff/plans/${id}/discussions/ai-reply`, { method: 'POST' }),
   updatePlanItem: (planId, itemId, d) => req(`/staff/plans/${planId}/items/${itemId}`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   // Medical Reports
@@ -336,7 +340,7 @@ export const staffAPI = {
   generateAIRiskReply:     (id, year) => req(`/staff/patients/${id}/ai-risk-assessment/discussions/ai-reply?year=${year}`, { method: 'POST' }),
   // 10年ASCVD风险评估
   saveAscvdRisk:           (id, inputs) => req(`/staff/patients/${id}/ascvd-risk`, { method: 'POST', body: JSON.stringify(inputs) }),
-  deleteAscvdRisk:         (id, year) => req(`/staff/patients/${id}/ascvd-risk?year=${year}`, { method: 'DELETE' }),
+  deleteAscvdRisk:         (id, year, index) => req(`/staff/patients/${id}/ascvd-risk?year=${year}${index !== undefined ? `&index=${index}` : ''}`, { method: 'DELETE' }),
 
   // 场景九：AI 用药建议
   generateAIMedicationSuggest: (id) => req(`/staff/patients/${id}/ai-medication-suggest`, { method: 'POST' }),
