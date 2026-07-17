@@ -7,11 +7,17 @@
 ```bash
 cd miniprogram
 npm install
-npm run dev:weapp     # 等价于 taro build --type weapp --watch，监听文件变化增量编译
+npm run build:weapp   # 一次性构建，稳定可用
 ```
+> ⚠️ `npm run dev:weapp`（watch监听模式）有已知bug：webpack解析react-jsx-runtime内部路径报错导致进程崩溃退出，不要用。
+> 改完代码后手动重新跑一次 `npm run build:weapp`，再去开发者工具里点「编译」刷新，没有热更新。
+
 然后打开**微信开发者工具**（需自行下载安装：https://developers.weixin.qq.com/miniprogram/dev/devtools/download.html），
-选择「导入项目」，项目目录指向 `miniprogram/dist`，AppID 先用测试号或改 `project.config.json` 里的 `appid`。
-每次改代码后 `dist/` 会自动增量重新编译，开发者工具里点击「编译」即可看到最新效果。
+选择「导入项目」，项目目录指向 `miniprogram/dist`。
+
+> `dist/project.config.json` 是 Taro 构建时自动生成的，跟随源码目录 `miniprogram/project.config.json` 的
+> appid 同步，**不要手动编辑或复制覆盖 dist 下这个文件**——手动改过一次导致 `miniprogramRoot` 字段被搞错，
+> 开发者工具误判成小游戏项目报"未找到game.json"，删掉重新 `build:weapp` 才恢复。改 AppID 只改源码那份。
 
 ## 构建
 ```bash
@@ -22,8 +28,28 @@ npm run build:weapp   # 生产构建，产出 dist/
 详见根目录 `CLAUDE.md` 的"小程序端部署"一节。
 
 ## 微信小程序 AppID 配置
-占位符在 `miniprogram/project.config.json` 的 `appid` 字段（当前是 `wxYOUR_APPID_HERE`），
-去[微信公众平台](https://mp.weixin.qq.com)小程序管理后台的"开发管理→开发设置"里拿到真实 AppID 后替换。
+
+⚠️ **当前用的是测试号（2026-07-17起），不是正式小程序账号，正式上线前必须切回正式号。**
+
+| | AppID | 用途 |
+|---|---|---|
+| 当前生效（测试号） | `wxa5fd7a7eb7cde164` | 开发调试用，无需正式审核即可真机测试 |
+| 正式小程序（暂未接入） | `wx1631398eb9f9ed45` | 用户真实可用的小程序，走微信官方审核后上线用这个 |
+
+配置位置：
+- `miniprogram/project.config.json` 的 `appid` 字段（源码目录这份，**不要改`dist/`下的**，见上）
+- 服务器 `/var/www/jiayicare/backend/.env` 的 `WECHAT_MP_APPID` / `WECHAT_MP_SECRET`（当前也是测试号的值，正式号的AppSecret已备份在服务器`.env.bak`里，不进代码仓库）
+
+**接入正式账号步骤（后续待办）：**
+1. `miniprogram/project.config.json` 的 `appid` 改回 `wx1631398eb9f9ed45`
+2. 服务器 `.env` 的 `WECHAT_MP_APPID`/`WECHAT_MP_SECRET` 改回正式号的值
+3. `pm2 restart jiayicare-backend --update-env`
+4. 重新 `npm run build:weapp`，开发者工具里用正式号账号（确认开发者工具右上角登录的微信号是这个小程序的开发者/体验成员）重新真机调试验证登录
+5. 验证通过后在微信公众平台提交审核，通过后手动发布
+
+> 踩过的坑：测试号和正式号是完全不同的两个AppID，`wx.login()`拿到的code只在对应AppID下有效，
+> 如果小程序端配的AppID和服务器`.env`配的AppID不一致（哪怕都"看起来配置正确"），
+> `jscode2session`会报`errcode 40029 invalid code`，容易误判成code过期/网络问题，实际是AppID对不上。
 
 ## 登录方式：与 app/ 网页授权完全不同
 - **app/**（网页场景）：用户点击"微信登录"→ 跳转微信 OAuth 网页 → 拿到 `code` → 后端 `POST /auth/wechat` →
