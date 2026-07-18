@@ -1547,7 +1547,9 @@ const REPORT_TYPE_TO_L1_NAME = {
   chronic:        '慢性病筛查',
   functional:     '功能医学检测',
   gender_health:  '男性/女性健康筛查',
-  home_monitor:   '居家监测',
+  // 库里顶层节点实际名称是"居家监测+其他专项检查"，不是"居家监测"——2026-07-18排查发现，
+  // 此前这里的名字对不上，导致 home_monitor 类型报告永远查不到节点、screeningL1 被清空
+  home_monitor:   '居家监测+其他专项检查',
 };
 
 router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
