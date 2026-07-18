@@ -91,6 +91,7 @@ const medicalReportSchema = new mongoose.Schema({
   // 全部图片一次性传给模型合并识别。fileUrl仍保留、取fileUrls[0]做兼容，不破坏现有单图读取逻辑。
   fileUrls:    [{ type: String }],
   ossKey:      { type: String, default: '' },  // OSS 对象路径，删除时用于清理
+  ossKeys:     [{ type: String }],  // 多图上传时每张图对应的 OSS key，删除报告需逐个清理，不能只清 ossKey
   keyFindings: [{ type: String }],
   status: {
     type: String,

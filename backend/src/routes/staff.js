@@ -1537,6 +1537,19 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
 });
 
 // PATCH /api/staff/medical-reports/:id — 修改报告信息（审核通过前可用）
+// type(报告归类下拉,与前端 app/TYPE_LIST、staff/REPORT_L1_TYPES 保持一致) → 对应 ProjectCategory 顶层
+// 分类节点的 name。用于编辑报告归类时反查节点、同步写入 screeningL1，避免患者详情页分组展示时同一
+// 大类下"走screeningL1路径"和"只有type字段"的报告分裂成两个独立分组（2026-07-18排查确认的根因）。
+const REPORT_TYPE_TO_L1_NAME = {
+  general_exam:   '一般检查',
+  tumor:          '肿瘤筛查',
+  cardiovascular: '心脑血管病筛查',
+  chronic:        '慢性病筛查',
+  functional:     '功能医学检测',
+  gender_health:  '男性/女性健康筛查',
+  home_monitor:   '居家监测',
+};
+
 router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
@@ -1547,7 +1560,20 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
     }
     if (title !== undefined) report.title = title;
-    if (type !== undefined) report.type = type;
+    let typeChanged = false;
+    if (type !== undefined && type !== report.type) {
+      typeChanged = true;
+      report.type = type;
+      // 同步 screeningL1：按 type 对应的中文名反查顶层分类节点，找到就写入、找不到就清空（如 other 没有
+      // 对应节点），保证分组展示时这条报告和其他 screeningL1 已挂同一节点的报告能合并显示
+      const l1Name = REPORT_TYPE_TO_L1_NAME[type];
+      if (l1Name) {
+        const l1Node = await ProjectCategory.findOne({ parent: null, name: l1Name, status: 'active' }).select('_id').lean();
+        report.screeningL1 = l1Node ? String(l1Node._id) : '';
+      } else {
+        report.screeningL1 = '';
+      }
+    }
     if (hospital !== undefined) { report.hospital = hospital; report.institution = hospital; }
     if (date !== undefined) {
       report.date = date; report.checkDate = date;
@@ -1598,6 +1624,22 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // 跟前端"提交审核（写入专项筛查）"按钮的文案设计意图一致——只有审核通过后才应该出现在专项筛查。
     if (aiStatus === 'reviewed' && report.user) {
       await syncScreeningItems(report.user, report._id, report.reportItems);
+    }
+
+    // 归类改动后自动重新AI解析：改类目常意味着此前AI按错误类目提取的内容不准了（如从居家监测改成
+    // 肿瘤筛查，原本就没解析过；或从肿瘤筛查改成慢性病，原提取项对不上新类目），不能让医护端还得
+    // 另外点一次"重新解析"才生效。年度体检/居家监测/功能医学检测三类本身就不支持AI解析（见
+    // reports.js /parse-ai 同样的判断口径），此处跳过；已审核报告前面已经挡掉type变更，不会走到这里。
+    if (typeChanged && (report.fileUrl || report.content) && type !== 'annual' && type !== 'home_monitor') {
+      const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
+      const skipAi = await isFunctionalMedicineL1(report.screeningL1);
+      if (!skipAi && process.env.QWEN_API_KEY) {
+        await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
+        runReportParse(report._id).catch(err => {
+          console.error('[parse-ai] 归类变更后台重新解析异常', String(report._id), err.message);
+          MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' }).catch(() => {});
+        });
+      }
     }
 
     res.json({ success: true, data: report });
