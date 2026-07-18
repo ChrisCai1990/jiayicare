@@ -333,29 +333,6 @@ function formatGroupDateLabel(dateKey) {
   return `${m}月${d}日`;
 }
 
-// ── 指标卡片 ──────────────────────────────────────────────────────
-function MetricCard({ metric, onPress }) {
-  const st = STATUS_CFG[metric.status] || STATUS_CFG.normal;
-  return (
-    <TouchableOpacity style={styles.metricCard} activeOpacity={0.8} onPress={onPress}>
-      <View style={styles.metricTop}>
-        <View style={[styles.metricIconWrap, { backgroundColor: metric.color + '18' }]}>
-          <Ionicons name={metric.icon} size={15} color={metric.color} />
-        </View>
-        <Text style={styles.metricLabel}>{metric.label}</Text>
-      </View>
-      <View style={styles.metricValueRow}>
-        <Text style={styles.metricValue}>{metric.value}</Text>
-        <Text style={styles.metricUnit}>{metric.unit}</Text>
-      </View>
-      <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
-        <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
-      </View>
-      {metric.time ? <Text style={styles.metricTime}>{metric.time}</Text> : null}
-    </TouchableOpacity>
-  );
-}
-
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function RecordsScreen({ navigation }) {
@@ -652,29 +629,8 @@ export default function RecordsScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── 最新健康指标 ─────────────────────────────────────── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="stats-chart-outline" size={17} color={colors.primary} />
-              <Text style={styles.sectionTitle}>最新健康指标</Text>
-            </View>
-          </View>
-          <View style={styles.metricsGrid}>
-            {METRICS.map((m) => (
-              <MetricCard
-                key={m.key}
-                metric={m}
-                onPress={() => {
-                  const chartable = CHART_TYPES.find(t => t.key === m.key);
-                  if (chartable) switchChartType(m.key);
-                }}
-              />
-            ))}
-          </View>
-        </View>
-
-        {/* ── 趋势图 ───────────────────────────────────────────── */}
+        {/* ── 趋势图（含最新数值/状态，与此前"最新健康指标"卡片网格是同一份数据，
+              2026-07-18 去重后不再重复展示，指标切换chip本身即概览入口）──────── */}
         <View style={styles.section}>
           {/* 指标类型选择 */}
           <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartTypeScroll}
@@ -694,11 +650,25 @@ export default function RecordsScreen({ navigation }) {
           </ScrollView>
 
           <View style={styles.chartCard}>
-            {/* 图表标题 + 时间段 */}
+            {/* 图表标题 + 最新数值/状态 + 时间段 */}
             <View style={styles.chartHeader}>
               <View>
                 <Text style={styles.chartTitle}>{currentTypeCfg.label}趋势</Text>
-                <Text style={styles.chartSubtitle}>{currentTypeCfg.unit}</Text>
+                {(() => {
+                  const m = METRICS.find(x => x.key === chartType);
+                  if (!m) return <Text style={styles.chartSubtitle}>{currentTypeCfg.unit}</Text>;
+                  const st = STATUS_CFG[m.status] || STATUS_CFG.normal;
+                  return (
+                    <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6, marginTop: 2 }}>
+                      <Text style={styles.chartLatestValue}>{m.value}</Text>
+                      <Text style={styles.chartSubtitle}>{currentTypeCfg.unit}</Text>
+                      <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
+                        <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
+                      </View>
+                      {m.time && <Text style={styles.chartLatestTime}>{m.time}</Text>}
+                    </View>
+                  );
+                })()}
               </View>
               <View style={styles.periodRow}>
                 {PERIOD_TABS.map(p => (
@@ -1034,21 +1004,6 @@ const styles = StyleSheet.create({
   aiEntryTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary },
   aiEntryDesc: { fontSize: 12, color: colors.textMuted, marginTop: 2 },
 
-  // Metrics grid
-  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  metricCard: {
-    width: (W - spacing.md * 2 - spacing.sm) / 2,
-    backgroundColor: colors.white,
-    borderRadius: radius.md, padding: spacing.md,
-    borderWidth: 1, borderColor: colors.border,
-  },
-  metricTop: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
-  metricIconWrap: { width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
-  metricLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '500', flex: 1 },
-  metricValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3, marginBottom: 7 },
-  metricValue: { fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
-  metricUnit: { fontSize: 10, color: colors.textMuted },
-  metricTime: { fontSize: 10, color: colors.textDisabled, marginTop: 5 },
   statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full, alignSelf: 'flex-start' },
   statusText: { fontSize: 10, fontWeight: '700' },
 
@@ -1070,7 +1025,9 @@ const styles = StyleSheet.create({
   },
   chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.md },
   chartTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  chartSubtitle: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  chartSubtitle: { fontSize: 11, color: colors.textMuted },
+  chartLatestValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
+  chartLatestTime: { fontSize: 10, color: colors.textDisabled },
   periodRow: { flexDirection: 'row', backgroundColor: colors.background, borderRadius: radius.full, padding: 2 },
   periodBtn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.full },
   periodBtnActive: { backgroundColor: colors.primary },
