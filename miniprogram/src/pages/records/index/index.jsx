@@ -93,6 +93,19 @@ export default function RecordsIndexPage() {
           <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>+ 录入健康数据</Text>
         </View>
 
+        {/* 个人资料入口（2026-07-18 对齐app端健康档案页拆分：静态档案字段搬到独立页） */}
+        <View onClick={() => Taro.navigateTo({ url: '/pages/records/profile-archive/index' })} style={{
+          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
+          border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card,
+        }}>
+          <Text style={{ fontSize: '20px' }}>👤</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>个人资料</Text>
+            <Text style={{ fontSize: '11px', color: colors.textMuted }}>基本信息 · 基础健康档案 · 生活方式 · 年度复查</Text>
+          </View>
+          <Text style={{ fontSize: '14px', color: colors.textMuted }}>›</Text>
+        </View>
+
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
           <View style={{ flex: 1, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '12px', textAlign: 'center', boxShadow: shadow.card }}
             onClick={() => Taro.navigateTo({ url: '/pages/records/report/index' })}>
@@ -160,26 +173,55 @@ export default function RecordsIndexPage() {
             <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无记录，点击上方按钮开始录入</Text>
           </View>
         ) : (
-          filtered.map((r) => {
-            const meta = TYPE_META[r.type] || { label: r.label || r.type, icon: '📋', unit: r.unit || '' };
-            return (
-              <View key={r._id} style={{
-                display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
-                padding: `${spacing.md}px`, marginBottom: '8px', boxShadow: shadow.card,
-              }}>
-                <Text style={{ fontSize: '22px', marginRight: `${spacing.sm}px` }}>{meta.icon}</Text>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{r.label || meta.label}</Text>
-                  <Text style={{ fontSize: '11px', color: colors.textMuted }}>
-                    {r.recordedAt ? new Date(r.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''}
-                  </Text>
+          (() => {
+            // 按归属日期分组，同日多条折叠展示"共N次"，区分记录时间(recordedAt)和提交时间(createdAt)（2026-07-18 对齐app端）
+            const groups = [];
+            const groupMap = {};
+            filtered.forEach((r) => {
+              const d = r.recordedAt ? new Date(r.recordedAt) : null;
+              const dateKey = d ? `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` : '未知日期';
+              const dateLabel = d ? d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) : '未知日期';
+              if (!groupMap[dateKey]) {
+                groupMap[dateKey] = { dateKey, dateLabel, items: [] };
+                groups.push(groupMap[dateKey]);
+              }
+              groupMap[dateKey].items.push(r);
+            });
+            return groups.map((group) => (
+              <View key={group.dateKey} style={{ marginBottom: `${spacing.md}px` }}>
+                <View style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textSecondary }}>{group.dateLabel}</Text>
+                  {group.items.length > 1 && <Text style={{ fontSize: '11px', color: colors.textMuted }}>共{group.items.length}次</Text>}
                 </View>
-                <Text style={{ fontSize: '16px', fontWeight: 700, color: STATUS_COLOR[r.status] || colors.textPrimary }}>
-                  {r.value} {r.unit || meta.unit}
-                </Text>
+                {group.items.map((r) => {
+                  const meta = TYPE_META[r.type] || { label: r.label || r.type, icon: '📋', unit: r.unit || '' };
+                  const recordedTime = r.recordedAt ? new Date(r.recordedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+                  const isBackfilled = r.recordedAt && r.createdAt &&
+                    new Date(r.createdAt).toDateString() !== new Date(r.recordedAt).toDateString();
+                  const createdLabel = isBackfilled
+                    ? `提交于 ${new Date(r.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                    : '';
+                  return (
+                    <View key={r._id} style={{
+                      display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
+                      padding: `${spacing.md}px`, marginBottom: '8px', boxShadow: shadow.card,
+                    }}>
+                      <Text style={{ fontSize: '22px', marginRight: `${spacing.sm}px` }}>{meta.icon}</Text>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{r.label || meta.label}</Text>
+                        <Text style={{ fontSize: '11px', color: colors.textMuted }}>
+                          {recordedTime}{createdLabel ? ` · ${createdLabel}` : ''}
+                        </Text>
+                      </View>
+                      <Text style={{ fontSize: '16px', fontWeight: 700, color: STATUS_COLOR[r.status] || colors.textPrimary }}>
+                        {r.value} {r.unit || meta.unit}
+                      </Text>
+                    </View>
+                  );
+                })}
               </View>
-            );
-          })
+            ));
+          })()
         )}
       </View>
       <View style={{ height: '20px' }} />

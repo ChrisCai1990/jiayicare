@@ -47,21 +47,50 @@ function HealthSummaryView({ sections }) {
   const chronic = s.chronic_disease || {};
   const checkup = s.checkup_completeness || {};
 
+  // 疾病风险类板块（肿瘤/心脑血管/慢病/体检完整度/医疗问题）在前，生活方式收尾——对齐app端225057a改动的顺序
   return (
     <View>
-      <SectionCard icon="🌿" title="生活方式评估">
-        {(lifestyle.items || []).map((it, i) => (
-          <View key={i} style={{ marginBottom: `${spacing.sm}px`, paddingBottom: `${spacing.sm}px`, borderBottom: `1px solid ${colors.border}` }}>
-            <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '2px' }}>{it.dimension}</Text>
-            {!!it.finding && <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block' }}>{it.finding}</Text>}
-            {!!it.risk && <Text style={{ fontSize: '13px', color: colors.warning, display: 'block' }}>风险：{it.risk}</Text>}
-            {!!it.suggestion && <Text style={{ fontSize: '13px', color: colors.primary, display: 'block' }}>建议：{it.suggestion}</Text>}
-          </View>
-        ))}
-        {!!lifestyle.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{lifestyle.summary}</Text>}
+      <SectionCard icon="🎗️" title="肿瘤风险筛查分析">
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>已完成筛查</Text>
+        <ListLines items={tumor.completed} />
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>异常发现</Text>
+        <ListLines items={tumor.abnormal} color={colors.danger} />
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>未覆盖项目</Text>
+        <ListLines items={tumor.missing} color={colors.textMuted} />
+        {!!tumor.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{tumor.summary}</Text>}
       </SectionCard>
 
-      <SectionCard icon="🩺" title="重点关注医疗问题">
+      <SectionCard icon="❤️" title="心脑血管病风险分析">
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>高风险因素</Text>
+        <ListLines items={cardio.high} color={colors.danger} />
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>中风险因素</Text>
+        <ListLines items={cardio.medium} color={colors.warning} />
+        {!!cardio.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{cardio.summary}</Text>}
+      </SectionCard>
+
+      <SectionCard icon="📊" title="慢性病及其他健康指标分析">
+        {(chronic.items || []).length === 0 && <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无</Text>}
+        {(chronic.items || []).map((it, i) => {
+          const st = STATUS_META[it.status] || STATUS_META.normal;
+          return (
+            <View key={i} style={{ marginBottom: `${spacing.sm}px` }}>
+              <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{it.name}</Text>
+              <Text style={{ fontSize: '13px', color: st.color, display: 'block', marginTop: '2px' }}>{it.value}（{st.label}）</Text>
+              {!!it.note && <Text style={{ fontSize: '13px', color: colors.textMuted }}>{it.note}</Text>}
+            </View>
+          );
+        })}
+      </SectionCard>
+
+      <SectionCard icon="📋" title="体检全面性评估">
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>已覆盖</Text>
+        <ListLines items={checkup.covered} />
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>缺失项目</Text>
+        <ListLines items={checkup.missing} color={colors.warning} />
+        {!!checkup.suggestion && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{checkup.suggestion}</Text>}
+      </SectionCard>
+
+      <SectionCard icon="🏥" title="需优先解决的医疗问题">
         {(medPriority.items || []).length === 0 && <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无</Text>}
         {(medPriority.items || []).map((it, i) => {
           const u = URGENCY_META[it.urgency] || URGENCY_META.low;
@@ -79,44 +108,16 @@ function HealthSummaryView({ sections }) {
         })}
       </SectionCard>
 
-      <SectionCard icon="🎗️" title="肿瘤筛查评估">
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>已完成筛查</Text>
-        <ListLines items={tumor.completed} />
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>异常发现</Text>
-        <ListLines items={tumor.abnormal} color={colors.danger} />
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>未覆盖项目</Text>
-        <ListLines items={tumor.missing} color={colors.textMuted} />
-        {!!tumor.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{tumor.summary}</Text>}
-      </SectionCard>
-
-      <SectionCard icon="❤️" title="心脑血管风险">
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>高风险因素</Text>
-        <ListLines items={cardio.high} color={colors.danger} />
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>中风险因素</Text>
-        <ListLines items={cardio.medium} color={colors.warning} />
-        {!!cardio.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{cardio.summary}</Text>}
-      </SectionCard>
-
-      <SectionCard icon="📊" title="慢病指标">
-        {(chronic.items || []).length === 0 && <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无</Text>}
-        {(chronic.items || []).map((it, i) => {
-          const st = STATUS_META[it.status] || STATUS_META.normal;
-          return (
-            <View key={i} style={{ marginBottom: `${spacing.sm}px` }}>
-              <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{it.name}</Text>
-              <Text style={{ fontSize: '13px', color: st.color, display: 'block', marginTop: '2px' }}>{it.value}（{st.label}）</Text>
-              {!!it.note && <Text style={{ fontSize: '13px', color: colors.textMuted }}>{it.note}</Text>}
-            </View>
-          );
-        })}
-      </SectionCard>
-
-      <SectionCard icon="📋" title="体检完整度">
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>已覆盖</Text>
-        <ListLines items={checkup.covered} />
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>缺失项目</Text>
-        <ListLines items={checkup.missing} color={colors.warning} />
-        {!!checkup.suggestion && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{checkup.suggestion}</Text>}
+      <SectionCard icon="🌿" title="生活方式评估">
+        {(lifestyle.items || []).map((it, i) => (
+          <View key={i} style={{ marginBottom: `${spacing.sm}px`, paddingBottom: `${spacing.sm}px`, borderBottom: `1px solid ${colors.border}` }}>
+            <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '2px' }}>{it.dimension}</Text>
+            {!!it.finding && <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block' }}>{it.finding}</Text>}
+            {!!it.risk && <Text style={{ fontSize: '13px', color: colors.warning, display: 'block' }}>风险：{it.risk}</Text>}
+            {!!it.suggestion && <Text style={{ fontSize: '13px', color: colors.primary, display: 'block' }}>建议：{it.suggestion}</Text>}
+          </View>
+        ))}
+        {!!lifestyle.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{lifestyle.summary}</Text>}
       </SectionCard>
     </View>
   );

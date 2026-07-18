@@ -117,6 +117,7 @@ export const recordsAPI = {
   trend: (type) => request(`/records/trend/${type}`),
   create: (data) => request('/records', { method: 'POST', body: JSON.stringify(data) }),
   delete: (id) => request(`/records/${id}`, { method: 'DELETE' }),
+  todayStatus: () => request('/records/today-status'),
 };
 
 // ── Medications ───────────────────────────────────────────────────

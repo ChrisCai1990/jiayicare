@@ -508,6 +508,128 @@ function AIAnalysisCard({ onPress }) {
   );
 }
 
+// 将 base64 图片按角度（90的倍数）重绘旋转，返回新的 base64（Web Canvas 实现，仅支持图片，PDF 不处理）
+function rotateImageBase64(dataUrl, degrees) {
+  return new Promise((resolve, reject) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const rad = (degrees % 360) * Math.PI / 180;
+      const swap = degrees % 180 !== 0;
+      const canvas = document.createElement('canvas');
+      canvas.width = swap ? img.height : img.width;
+      canvas.height = swap ? img.width : img.height;
+      const ctx = canvas.getContext('2d');
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate(rad);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      resolve(canvas.toDataURL('image/jpeg', 0.92));
+    };
+    img.onerror = reject;
+    img.src = dataUrl;
+  });
+}
+
+// ── 多图预览 + 旋转 Modal ─────────────────────────────────────────
+// 上传后先在这里确认每张图的朝向（体检报告拍照经常是横的/倒的，AI解析前必须摆正），
+// 逐张旋转，确认后再进入 UploadConfigModal 填标题/医院/类型
+function ImageRotatePreviewModal({ pages, onConfirm, onCancel }) {
+  const [items, setItems] = useState(pages); // [{ name, mimeType, content, sizeStr }]
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [rotating, setRotating] = useState(false);
+
+  if (!items.length) return null;
+  const active = items[activeIndex];
+  const isImage = (active.mimeType || '').startsWith('image/');
+
+  const handleRotate = async () => {
+    if (!isImage || rotating) return;
+    setRotating(true);
+    try {
+      const rotated = await rotateImageBase64(active.content, 90);
+      setItems(prev => prev.map((it, i) => i === activeIndex ? { ...it, content: rotated } : it));
+    } catch {
+      // 旋转失败保留原图，不阻塞流程
+    } finally {
+      setRotating(false);
+    }
+  };
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onCancel}>
+      <View style={styles.previewOverlay}>
+        <View style={styles.previewCard}>
+          <View style={styles.previewTopBar}>
+            <View style={styles.previewTitleWrap}>
+              <Text style={styles.previewTitle}>确认图片方向（{activeIndex + 1}/{items.length}）</Text>
+            </View>
+            <TouchableOpacity onPress={onCancel} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+              <Ionicons name="close" size={22} color={colors.textSecondary} />
+            </TouchableOpacity>
+          </View>
+
+          <ScrollView style={styles.previewBody} contentContainerStyle={{ flexGrow: 1 }}>
+            {isImage ? (
+              <Image source={{ uri: active.content }} style={styles.previewImage} resizeMode="contain" />
+            ) : (
+              <View style={styles.previewNoContent}>
+                <Ionicons name="document-text" size={48} color={colors.primary} />
+                <Text style={styles.previewNoContentTitle}>{active.name}</Text>
+                <Text style={styles.previewNoContentDesc}>PDF 文件不支持旋转，直接进入下一步即可</Text>
+              </View>
+            )}
+          </ScrollView>
+
+          {isImage && (
+            <TouchableOpacity
+              style={[styles.uploadOptionBtn, { alignSelf: 'center', marginBottom: spacing.sm }]}
+              onPress={handleRotate}
+              disabled={rotating}
+            >
+              {rotating
+                ? <ActivityIndicator size="small" color={colors.primary} />
+                : <Ionicons name="reload-outline" size={16} color={colors.primary} />
+              }
+              <Text style={styles.uploadOptionText}>旋转90°</Text>
+            </TouchableOpacity>
+          )}
+
+          {items.length > 1 && (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
+              {items.map((it, i) => (
+                <TouchableOpacity
+                  key={i}
+                  onPress={() => setActiveIndex(i)}
+                  style={{
+                    marginRight: spacing.xs, borderRadius: radius.sm, overflow: 'hidden',
+                    borderWidth: 2, borderColor: i === activeIndex ? colors.primary : 'transparent',
+                  }}
+                >
+                  {(it.mimeType || '').startsWith('image/') ? (
+                    <Image source={{ uri: it.content }} style={{ width: 56, height: 56 }} resizeMode="cover" />
+                  ) : (
+                    <View style={{ width: 56, height: 56, backgroundColor: colors.borderLight, alignItems: 'center', justifyContent: 'center' }}>
+                      <Ionicons name="document-text-outline" size={22} color={colors.textMuted} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
+
+          <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+            <TouchableOpacity style={styles.configCancelBtn} onPress={onCancel}>
+              <Text style={styles.configCancelText}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.configConfirmBtn} onPress={() => onConfirm(items)}>
+              <Text style={styles.configConfirmText}>{items.length > 1 ? '确认，下一步' : '确认方向，下一步'}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 // ── 上传配置 Modal ────────────────────────────────────────────────
 function UploadConfigModal({ file, initialType, onConfirm, onCancel }) {
   const [title, setTitle]   = useState(file ? file.name.replace(/\.[^/.]+$/, '') : '');
@@ -805,9 +927,10 @@ export default function ReportUploadScreen({ navigation, route }) {
   const [toastError, setToastError] = useState(false);
   const [previewReport, setPreviewReport] = useState(null);
 
-  // Upload config modal state
-  const [pendingFile, setPendingFile] = useState(null);
-  const pendingFileData = useRef(null); // stores { content, mimeType, sizeStr }
+  // Upload flow state：先选图 → 预览旋转 → 填信息确认
+  const [pendingPages, setPendingPages] = useState(null);   // [{ name, content, mimeType, sizeStr }]，多图预览旋转阶段
+  const [pendingFile, setPendingFile] = useState(null);       // 旋转确认后进入填写信息阶段（沿用原 file 展示逻辑，取首张）
+  const pendingFileData = useRef(null); // stores { pages: [{ content, mimeType, sizeStr }], sizeStr }
 
   // Delete confirm modal state
   const [deleteTarget, setDeleteTarget] = useState(null); // reportId to delete
@@ -850,41 +973,54 @@ export default function ReportUploadScreen({ navigation, route }) {
 
   useEffect(() => { loadReports(); loadRequisitions(); }, [loadReports, loadRequisitions]);
 
-  // Step 1: Pick file → show config modal
+  // Step 1: Pick file(s) → show rotate/preview modal
   const handleUpload = () => {
     const input = document.createElement('input');
     input.type = 'file';
+    input.multiple = true; // 支持一次选择多张照片，作为同一份报告的多页一起提交
     // 支持常见图片格式（含手机 HEIC/webp）+ PDF；不写死扩展名，用通配放开各类图片
     input.accept = 'image/*,.pdf,.heic,.heif';
     input.onchange = async (e) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (file.size > 20 * 1024 * 1024) {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      const oversized = files.find(f => f.size > 20 * 1024 * 1024);
+      if (oversized) {
         showToast('文件大小不能超过 20MB', true);
         return;
       }
 
-      const sizeKB = file.size / 1024;
-      const sizeStr = sizeKB >= 1024
-        ? `${(sizeKB / 1024).toFixed(1)}MB`
-        : `${sizeKB.toFixed(0)}KB`;
-      const mimeType = file.type || '';
-      let content = '';
-      try {
-        content = await new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(reader.result);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-      } catch {}
-      pendingFileData.current = { content, mimeType, sizeStr };
-      setPendingFile(file);
+      const pages = [];
+      for (const file of files) {
+        const sizeKB = file.size / 1024;
+        const sizeStr = sizeKB >= 1024
+          ? `${(sizeKB / 1024).toFixed(1)}MB`
+          : `${sizeKB.toFixed(0)}KB`;
+        let content = '';
+        try {
+          content = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result);
+            reader.onerror = reject;
+            reader.readAsDataURL(file);
+          });
+        } catch {}
+        pages.push({ name: file.name, content, mimeType: file.type || '', sizeStr });
+      }
+      setPendingPages(pages);
     };
     input.click();
   };
 
-  // Step 2: User confirmed config → submit
+  // Step 2: User confirmed rotation/orientation → show config modal
+  const handleConfirmRotate = (rotatedPages) => {
+    setPendingPages(null);
+    const totalKB = rotatedPages.reduce((s, p) => s + (p.content?.length || 0) * 0.75 / 1024, 0);
+    const sizeStr = totalKB >= 1024 ? `${(totalKB / 1024).toFixed(1)}MB` : `${totalKB.toFixed(0)}KB`;
+    pendingFileData.current = { pages: rotatedPages, sizeStr };
+    setPendingFile({ name: rotatedPages.length > 1 ? `${rotatedPages[0].name} 等${rotatedPages.length}张` : rotatedPages[0].name });
+  };
+
+  // Step 3: User confirmed config → submit, then trigger AI re-parse
   const handleConfirmUpload = async ({ title, type, hospital }) => {
     const fd = pendingFileData.current;
     setPendingFile(null);
@@ -897,18 +1033,21 @@ export default function ReportUploadScreen({ navigation, route }) {
         type,
         hospital,
         date: new Date().toISOString().slice(0, 10),
-        pages: 1,
+        pages: fd.pages.length,
         fileSize: fd.sizeStr,
         keyFindings: [],
         note: '',
-        content: fd.content,
-        mimeType: fd.mimeType,
+        contents: fd.pages.map(p => p.content),
+        mimeType: fd.pages[0].mimeType,
       };
       const res = await reportsAPI.create(payload);
       if (res.success) {
         setReports(prev => [res.data, ...prev]);
         setTypeFilter(type);   // 自动切换到对应 tab
-        showToast('上传成功');
+        showToast('上传成功，正在AI解析…');
+        // 上传后立即触发AI解析（此前一直没有屏幕调用这个接口，报告只能停在"待解读"等人工处理）
+        const reportId = res.data._id || res.data.id;
+        reportsAPI.parseAI(reportId).catch(() => {});
       } else {
         showToast('上传失败，请重试', true);
       }
@@ -1142,6 +1281,14 @@ export default function ReportUploadScreen({ navigation, route }) {
 
       {previewReport && (
         <ReportPreviewModal report={previewReport} onClose={() => setPreviewReport(null)} />
+      )}
+
+      {pendingPages && (
+        <ImageRotatePreviewModal
+          pages={pendingPages}
+          onConfirm={handleConfirmRotate}
+          onCancel={() => setPendingPages(null)}
+        />
       )}
 
       {pendingFile && (

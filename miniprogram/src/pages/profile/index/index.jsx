@@ -11,6 +11,8 @@ const PACKAGE_LABELS = {
   young_state: '健康年轻态计划', health_reshape: '健康重塑计划',
 };
 
+const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
+
 function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
   const ic = iconColor || colors.primary;
   return (
@@ -70,13 +72,32 @@ export default function ProfilePage() {
     ? (user.memberType || PACKAGE_LABELS[user.servicePackage] || user.servicePackage || '标准会员')
     : '未开通';
 
+  // 健康管家团队（2026-07-18 从首页移入，与app端一致）
+  const careTeam = (() => {
+    if (user?.careTeam?.length > 0) {
+      return user.careTeam.map((m, i) => ({ name: m.name, role: m.role, bg: TEAM_COLORS[i % TEAM_COLORS.length] }));
+    }
+    return [
+      user?.doctor?.name ? { name: user.doctor.name, role: user.doctor.title || '家庭医师', bg: TEAM_COLORS[0] } : null,
+      user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家', bg: TEAM_COLORS[1] } : null,
+    ].filter(Boolean);
+  })();
+
   const nav = (url) => Taro.navigateTo({ url });
   const doLogout = () => { setShowLogout(false); logout(); Taro.reLaunch({ url: '/pages/auth/login/index' }); };
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       {/* Header */}
-      <View style={{ backgroundColor: '#1A2B24', padding: '8px 0 32px', textAlign: 'center' }}>
+      <View style={{ backgroundColor: '#1A2B24', padding: '8px 0 32px', textAlign: 'center', position: 'relative' }}>
+        {/* 头部编辑资料快捷入口（2026-07-19 对齐app端：顶部信息此前无编辑入口） */}
+        <View onClick={() => nav('/pages/profile/edit/index')} style={{
+          position: 'absolute', top: '8px', right: `${spacing.lg}px`,
+          width: '36px', height: '36px', borderRadius: '18px', backgroundColor: 'rgba(255,255,255,0.15)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Text style={{ fontSize: '15px', color: '#fff' }}>✏️</Text>
+        </View>
         <View style={{
           width: '76px', height: '76px', borderRadius: '38px', backgroundColor: 'rgba(255,255,255,0.15)',
           margin: '16px auto 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -142,16 +163,42 @@ export default function ProfilePage() {
         </View>
       )}
 
-      {/* 健康管理 */}
+      {/* 健康管理（"健康档案""体检报告"已移除，2026-07-18 去重：底部导航"健康档案"Tab已是完整入口） */}
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
         <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>健康管理</Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-          <MenuItem icon="❤️" iconColor="#DC3545" label="健康档案" value="查看全部" onClick={() => Taro.switchTab({ url: '/pages/records/index/index' })} />
-          <MenuItem icon="📋" iconColor="#1E6B50" label="健康方案" onClick={() => nav('/pages/services/plans/index')} />
-          <MenuItem icon="📄" iconColor="#0077B6" label="体检报告" onClick={() => nav('/pages/records/medical-reports/index')} />
-          <MenuItem icon="🌿" iconColor="#22A06B" label="营养素管理" onClick={() => nav('/pages/nutrition/index')} />
-          <MenuItem icon="💊" iconColor="#D97706" label="用药管理" onClick={() => nav('/pages/medication/index')} isLast />
+          <MenuItem icon="📋" iconColor="#7C3AED" label="健康方案" onClick={() => nav('/pages/services/plans/index')} />
+          <MenuItem icon="💊" iconColor="#D97706" label="用药管理" onClick={() => nav('/pages/medication/index')} />
+          <MenuItem icon="🌿" iconColor="#22A06B" label="营养素管理" onClick={() => nav('/pages/nutrition/index')} isLast />
         </View>
+      </View>
+
+      {/* 我的健康管家团队（2026-07-18 从首页移入） */}
+      <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
+        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>我的健康管家团队</Text>
+        {careTeam.length === 0 ? (
+          <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px` }}>
+            <Text style={{ fontSize: '20px' }}>👥</Text>
+            <Text style={{ flex: 1, fontSize: '12px', color: colors.textMuted, lineHeight: '18px' }}>健管团队待分配，完成服务包开通后即可配置</Text>
+          </View>
+        ) : (
+          <ScrollView scrollX style={{ whiteSpace: 'nowrap' }}>
+            <View style={{ display: 'inline-flex', gap: `${spacing.sm}px` }}>
+              {careTeam.map((member, i) => (
+                <View key={i} onClick={() => nav('/pages/chat/index')} style={{
+                  display: 'inline-flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#fff',
+                  borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, minWidth: '88px',
+                }}>
+                  <View style={{ width: '52px', height: '52px', borderRadius: '26px', backgroundColor: member.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
+                    <Text style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{member.name[0]}</Text>
+                  </View>
+                  <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary }}>{member.name}</Text>
+                  <Text style={{ fontSize: '10px', color: colors.textMuted }}>{member.role}</Text>
+                </View>
+              ))}
+            </View>
+          </ScrollView>
+        )}
       </View>
 
       {/* 家庭成员 */}

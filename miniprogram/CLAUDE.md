@@ -58,21 +58,26 @@ npm run build:weapp   # 生产构建，产出 dist/
 
 ## 页面路由清单（app.config.js 里的 pages，Taro 用真实文件路径而非路由名）
 
-> ⚠️ 2026-07-18 完成一轮大规模补齐（修复2个功能性bug + 补齐编辑资料/服务商城/续约 + 新增9个页面 +
-> 首页/健康档案/健康报告图表交互），下表已按补齐后的结果重写。历史遗留的"差距明细"章节已大部分清空或标注完成。
+> ⚠️ 2026-07-18 晚间第二轮对齐（用户明确要求"1:1复刻"，追平app端当天11:09-14:37的6次改动）：
+> 新增独立打卡页 pages/checkin/index、新增个人资料独立页 pages/records/profile-archive/index、
+> 健康档案页加个人资料入口+历史记录按日分组、首页打卡网格抽离为入口按钮+移除管家团队、
+> 我的页去重+加管家团队+头部编辑入口、AI健康分析板块顺序对齐、底部Tab结构对齐（随访移出Tab）。
+> 详见本文件末尾"2026-07-18第二轮1:1复刻"章节。早前 2026-07-18 白天的大规模补齐记录仍保留在下表。
 
 | 页面 | 文件 | 说明 | 实现程度 |
 |------|------|------|----------|
 | 登录 | pages/auth/login/index | 手机验证码登录 + 微信一键登录 + 演示登录 | ✅ 完整对齐 |
 | 引导建档 | pages/onboarding/index | 首次登录最小化建档 | ✅ 完整对齐 |
-| 首页（Tab） | pages/home/index | 问候卡+12项打卡+成长卡片+BMI色带+血压血糖迷你趋势图+管家团队+待办 | ✅ 核心交互完整对齐，图表为轻量div实现 |
-| 健康档案（Tab） | pages/records/index/index | 记录列表+分类筛选+AI健康分析入口+睡眠卡片+趋势图Tab | ✅ 核心交互完整对齐 |
+| 首页 | pages/home/index | 问候卡+成长卡片+BMI色带+血压血糖迷你趋势图+打卡入口按钮+待办 | ✅ 对齐app端瘦身后结构，图表为轻量div实现 |
+| 打卡 | pages/checkin/index | 必打卡/可选打卡区分+时段选择+症状自评+生理指标弹窗 | ✅ 新增，对齐 CheckinScreen |
+| 健康档案（Tab） | pages/records/index/index | 记录列表(按日分组)+分类筛选+个人资料入口+AI健康分析入口+睡眠卡片+趋势图Tab | ✅ 核心交互完整对齐 |
+| 个人资料 | pages/records/profile-archive/index | 基本信息+基础健康档案+医疗保障信息+生活方式+年度复查计划 | ✅ 新增，对齐 ProfileArchiveScreen |
 | 录入健康数据 | pages/records/add/index | 血压/血糖/心率/体重/睡眠/情绪/吸烟/饮酒 | ✅ 字段口径与 app/ 完全一致（已补吸烟/饮酒） |
 | 健康报告 | pages/records/report/index | 周期评分+图表化指标+任务完成率+亮点 | ✅ 核心交互完整对齐 |
-| 上传体检报告 | pages/records/upload/index | Taro.chooseImage+uploadFile | ✅ 核心链路对齐 |
+| 上传体检报告（Tab） | pages/records/upload/index | Taro.chooseImage+uploadFile | ✅ 核心链路对齐 |
 | AI健康助手 | pages/chat/index | 对话界面 | ✅ 已修复读取字段bug，功能正常 |
 | 用药管理 | pages/medication/index | 列表+打卡 | ⚠️ 无新增/停用表单（未在本轮范围内） |
-| 随访（Tab） | pages/tasks/index | 待办任务+随访计划合并列表 | ⚠️ 无分类Tab、无表单字段展示（未在本轮范围内） |
+| 随访 | pages/tasks/index | 待办任务+随访计划合并列表，已从Tab移出，靠首页待办卡片"全部"入口访问 | ⚠️ 无分类Tab、无表单字段展示（未在本轮范围内） |
 | 消息（Tab） | pages/messages/index | 固定角色分组会话列表+推送记录合并+AI置顶+产品购买弹窗 | ✅ 已重写对齐，SSE改为10秒轮询 |
 | 提醒设置 | pages/reminders/index | 列表+开关 | ⚠️ 无新增/分类（未在本轮范围内） |
 | 服务商城 | pages/services/mall/index | 分类Tab+会员Banner+多规格+优惠券+基金抵扣+支付方式 | ✅ 已补齐对齐 |
@@ -84,23 +89,22 @@ npm run build:weapp   # 生产构建，产出 dist/
 | 我的订单 | pages/orders/index | 订单列表+取消 | ✅ 核心链路对齐 |
 | 用户协议/隐私/免责 | pages/legal/index | 完整法律文本 | ✅ 完整对齐 |
 | 即将开放 | pages/common/coming-soon/index | 占位页 | ✅ 完整对齐 |
-| 我的（Tab） | pages/profile/index/index | 会员卡片+健康基金+完整菜单入口+家庭成员板块 | ✅ 已补齐对齐 |
+| 我的（Tab） | pages/profile/index/index | 会员卡片+健康基金+菜单入口(已去重)+管家团队+家庭成员板块+头部编辑入口 | ✅ 已补齐对齐 |
 | 营养素管理 | pages/nutrition/index | 进行中/已停用+打卡/停用/新增 | ✅ 新增，对齐 NutritionScreen |
 | 会员权益 | pages/profile/benefits/index | 健康基金+积分+专属权益+合作伙伴权益 | ✅ 新增，对齐 BenefitsScreen |
 | 家庭成员管理 | pages/profile/family/index | 搜索添加+邀请确认/拒绝+解除关联 | ✅ 新增，对齐 FamilyMembersScreen |
 | 问卷调查 | pages/questionnaire/index | 动态表单引擎(6种题型+跳题逻辑) | ✅ 新增，对齐 QuestionnaireScreen |
-| AI健康分析 | pages/records/ai-health/index | 健康分析+风险评估，审核状态展示 | ✅ 新增，对齐 AiHealthScreen |
+| AI健康分析 | pages/records/ai-health/index | 健康分析(板块顺序已对齐)+风险评估，审核状态展示 | ✅ 新增，对齐 AiHealthScreen |
 | 体检报告分类查看 | pages/records/medical-reports/index | 年份+分类分组，报告展开查看 | ✅ 新增，对齐 MedicalReportsScreen |
 | 专项筛查 | pages/records/screening/index | 5大类完整目录，勾选/上传 | ✅ 新增，对齐 SpecialScreeningScreen |
 | 健康方案 | pages/services/plans/index | 方案列表+任务详情+确认+完成 | ✅ 新增，对齐 ServicePlansScreen |
 | 公开报告分享页 | pages/records/public-report/index | 小程序场景适配（路由参数token+原生转发） | ✅ 新增，已按小程序场景重新设计 |
 
-底部 TabBar（微信原生 tabBar，配置在 `src/app.config.js`）：首页 / 健康档案 / 随访 / 消息 / 我的。
-**⚠️ 与app端仍不对等，本轮未改动，需用户决策**：app端底部Tab目前是 Home/Records/ReportUpload/Messages/Profile
-（Tasks已从Tab移除，改成Stack内独立页面），miniprogram仍保留Tasks作为Tab、没有独立的ReportUpload Tab——
-两端信息架构需要拉齐，具体以哪端为准待用户决定，改动 `src/app.config.js` 的 tabBar 配置是用户可见的产品
-决策，不属于技术修复范畴，本轮未擅自改动。
-图标当前是1x1占位PNG（`src/assets/tab/*.png`），上线前需替换真实设计稿导出的图标（建议81x81px，selected/unselected两套）。
+底部 TabBar（微信原生 tabBar，配置在 `src/app.config.js`）：首页 / 健康档案 / 上传报告 / 消息 / 我的。
+**2026-07-18 第二轮已对齐app端**：随访已从Tab移除（app端Tasks已改为Stack内独立页面，靠首页待办卡片
+"全部"链接进入），新增"上传报告"Tab，与app端 Home/Records/ReportUpload/Messages/Profile 结构一致。
+图标当前是1x1占位PNG（`src/assets/tab/*.png`，上传报告Tab复用了home图标占位），上线前需替换真实设计稿
+导出的图标（建议81x81px，selected/unselected两套）。
 
 ## 已修复的历史bug（原"已知功能性bug"章节，2026-07-18已修复）
 
@@ -133,9 +137,40 @@ npm run build:weapp   # 生产构建，产出 dist/
 - 随访（Tasks）页无分类Tab、无表单字段展示
 - 提醒设置页无新增/分类
 - 帮助与反馈页无历史反馈列表
-- 底部Tab结构与app端不对等（见上方TabBar说明），需用户决策
 - Tab 图标是占位 PNG，需要替换真实设计稿导出的图标
 - 未接入小程序订阅消息（wx.requestSubscribeMessage），提醒/随访提醒目前只能靠用户主动打开小程序查看
+
+## 2026-07-18 第二轮1:1复刻（用户明确要求，追平app端当天白天的6次改动）
+
+用户在完成第一轮补齐后明确要求"1:1复刻"，因此本轮不再评估优先级，直接照app端结构补齐全部差距。
+
+1. **打卡功能重构**：新增独立页 `pages/checkin/index.jsx`，完整对齐 app 端 `CheckinScreen.js`：
+   必打卡/可选打卡按 `user.chronicDiseases` 动态区分、运动打卡时段选择（现在/早上/上午/中午/下午/晚上）、
+   症状自评（8个常见症状+2个紧急症状"胸痛""呼吸困难"，选中紧急症状提交后弹窗提示联系医师）、
+   生理指标原地弹窗（血压/血糖/心率/体重/睡眠）、日期归属选择（今天/昨天/前天+日期选择器）。
+   接后端已有的 `GET /records/today-status` 接口（此前接口已存在但小程序api.js未封装，本轮补上
+   `recordsAPI.todayStatus()`）。首页原12项打卡网格+`QuickCheckinModal`已删除，改为跳转入口按钮。
+   顺带修复了首页 `markTaskDone` 里调用不存在的 `loadData()`（应为 `loadCore()`）的历史bug。
+2. **首页瘦身**：移除健康管家团队横向卡片（已移至"我的"页），移除内联打卡网格，保留成长卡片/BMI色带/
+   趋势图/待办任务；待办任务区块新增"全部"入口跳转 `pages/tasks/index`（因随访Tab移除后需要新入口）。
+3. **健康档案页拆分**：新增 `pages/records/profile-archive/index.jsx`，对齐 app 端
+   `ProfileArchiveScreen.js`：基本信息（只读，编辑跳编辑资料页）、基础健康档案10个字段、医疗保障信息
+   （只读）、生活方式（含编辑弹窗）、年度复查计划（接 `checkupAPI.get()`，该API小程序端已存在）。
+   健康档案主页顶部新增"个人资料"入口卡片；历史记录列表改为按日期分组，同日多条记录折叠显示
+   "共N次"，并区分 `recordedAt`（记录归属日期）与 `createdAt`（实际提交时间，仅当两者不同日才显示
+   "提交于..."，对应补录场景）。
+4. **我的页对齐**：菜单去重（移除"健康档案""体检报告"，与底部Tab重复）；新增"我的健康管家团队"
+   横向卡片区块（数据源 `user.careTeam`，兼容旧 `doctor`/`manager` 字段）；头部头像区新增编辑资料
+   快捷按钮（铅笔图标）。
+5. **AI健康分析板块顺序对齐**：`pages/records/ai-health/index.jsx` 的 `HealthSummaryView` 板块顺序
+   从"生活方式→医疗问题→肿瘤→心脑血管→慢病→体检完整度"改为"肿瘤风险筛查分析→心脑血管病风险分析→
+   慢性病及其他健康指标分析→体检全面性评估→需优先解决的医疗问题→生活方式评估"，6处标题文案同步对齐。
+6. **底部Tab结构对齐**：`app.config.js` tabBar 从 首页/健康档案/随访/消息/我的 改为
+   首页/健康档案/上传报告/消息/我的，"随访"移出Tab（新增 `pages/records/upload/index` 复用已有页面
+   作为Tab、`pages/tasks/index` 保留为普通页面，靠首页待办卡片"全部"链接访问）。图标资源复制了
+   home的占位png作为report Tab的占位图标（`assets/tab/report.png`/`report-active.png`）。
+
+本轮改动均已通过 `npm run build:weapp` 验证无报错。
 
 ## 主题变量（import { colors, spacing, radius, shadow } from '../../theme'）
 数值与 app/src/theme/index.js 完全一致，唯一差异：`shadow` 从 RN 的

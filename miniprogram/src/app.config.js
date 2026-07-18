@@ -9,6 +9,7 @@ export default defineAppConfig({
     'pages/profile/index/index',
 
     'pages/onboarding/index',
+    'pages/checkin/index',
     'pages/records/add/index',
     'pages/records/report/index',
     'pages/records/upload/index',
@@ -34,6 +35,7 @@ export default defineAppConfig({
     'pages/records/screening/index',
     'pages/services/plans/index',
     'pages/records/public-report/index',
+    'pages/records/profile-archive/index',
   ],
   window: {
     backgroundTextStyle: 'light',
@@ -47,6 +49,8 @@ export default defineAppConfig({
     selectedColor: '#1E6B50',
     backgroundColor: '#FFFFFF',
     borderStyle: 'black',
+    // 2026-07-18 对齐app端Tab结构：Home/Records/ReportUpload/Messages/Profile，
+    // "随访"已从Tab移除（app端Tasks已改为Stack内独立页，靠首页待办卡片"全部"链接进入）
     list: [
       {
         pagePath: 'pages/home/index',
@@ -61,10 +65,10 @@ export default defineAppConfig({
         selectedIconPath: 'assets/tab/records-active.png',
       },
       {
-        pagePath: 'pages/tasks/index',
-        text: '随访',
-        iconPath: 'assets/tab/tasks.png',
-        selectedIconPath: 'assets/tab/tasks-active.png',
+        pagePath: 'pages/records/upload/index',
+        text: '上传报告',
+        iconPath: 'assets/tab/report.png',
+        selectedIconPath: 'assets/tab/report-active.png',
       },
       {
         pagePath: 'pages/messages/index',
