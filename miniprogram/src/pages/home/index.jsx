@@ -179,15 +179,14 @@ export default function HomePage() {
   const [quickCheckinItem, setQuickCheckinItem] = useState(null);
   const [taskDetail, setTaskDetail] = useState(null);
 
-  const loadData = useCallback(async () => {
+  // 首屏关键数据：仪表盘/待办/随访/今日打卡状态，4个并发请求，尽快渲染出首页骨架
+  const loadCore = useCallback(async () => {
     try {
-      const [dashRes, tasksRes, followRes, todayRes, bpRes, bsRes] = await Promise.allSettled([
+      const [dashRes, tasksRes, followRes, todayRes] = await Promise.allSettled([
         userAPI.getDashboard(),
         tasksAPI.list(),
         followupTasksAPI.list(),
         recordsAPI.list({ days: 1, limit: 50 }),
-        recordsAPI.trend('bloodPressure'),
-        recordsAPI.trend('bloodSugar'),
       ]);
       if (dashRes.status === 'fulfilled' && dashRes.value?.success) setDashData(dashRes.value.data);
       if (tasksRes.status === 'fulfilled' && tasksRes.value?.success) {
@@ -201,6 +200,18 @@ export default function HomePage() {
         const sameDay = (d) => d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
         setTodayTypes(new Set(todayRes.value.data.filter((r) => r.recordedAt && sameDay(new Date(r.recordedAt))).map((r) => r.type)));
       }
+    } catch {}
+    setLoading(false);
+  }, []);
+
+  // 迷你趋势图数据：非首屏必需，首屏渲染完成后延迟加载，避免拖慢/阻塞小程序启动
+  // （曾因和上面4个请求一起在useDidShow里并发发起，真机上偶发"Error: timeout"启动超时）
+  const loadTrends = useCallback(async () => {
+    try {
+      const [bpRes, bsRes] = await Promise.allSettled([
+        recordsAPI.trend('bloodPressure'),
+        recordsAPI.trend('bloodSugar'),
+      ]);
       if (bpRes.status === 'fulfilled' && bpRes.value?.data) {
         setBpTrend(bpRes.value.data.slice(-7).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: r.extra?.sys || parseFloat(r.value) || 0 })));
       }
@@ -208,14 +219,18 @@ export default function HomePage() {
         setBsTrend(bsRes.value.data.slice(-7).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
       }
     } catch {}
-    setLoading(false);
   }, []);
 
-  useDidShow(() => { loadData(); });
-  usePullDownRefresh(() => { loadData().then(() => Taro.stopPullDownRefresh()); });
+  useDidShow(() => {
+    loadCore().then(() => { loadTrends(); });
+  });
+  usePullDownRefresh(() => { loadCore().then(() => { loadTrends(); Taro.stopPullDownRefresh(); }); });
 
-  // 首页额外调用 systemAPI.push()：触发后端系统消息推送(打卡提醒/复查提醒等)，fire-and-forget不阻塞首页渲染
-  useEffect(() => { systemAPI.push().catch(() => {}); }, []);
+  // systemAPI.push() 同理挪到首屏之后延迟触发，fire-and-forget，不参与启动阶段的并发请求
+  useEffect(() => {
+    const timer = setTimeout(() => { systemAPI.push().catch(() => {}); }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
 
   const user = { ...(dashData?.user || {}), ...(authUser || {}) };
   const hasData = dashData?.has_any_health_data ?? false;
