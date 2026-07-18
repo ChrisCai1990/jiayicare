@@ -29,27 +29,23 @@ npm run build:weapp   # 生产构建，产出 dist/
 
 ## 微信小程序 AppID 配置
 
-⚠️ **当前用的是测试号（2026-07-17起），不是正式小程序账号，正式上线前必须切回正式号。**
-
-| | AppID | 用途 |
-|---|---|---|
-| 当前生效（测试号） | `wxa5fd7a7eb7cde164` | 开发调试用，无需正式审核即可真机测试 |
-| 正式小程序（暂未接入） | `wx1631398eb9f9ed45` | 用户真实可用的小程序，走微信官方审核后上线用这个 |
+✅ **2026-07-18起改用正式号 `wx50062146332b1b20`**（用户新申请的账号，之前的测试号`wxa5fd7a7eb7cde164`和
+另一个未启用的正式号`wx1631398eb9f9ed45`都已停用，历史记录见下）。
 
 配置位置：
 - `miniprogram/project.config.json` 的 `appid` 字段（源码目录这份，**不要改`dist/`下的**，见上）
-- 服务器 `/var/www/jiayicare/backend/.env` 的 `WECHAT_MP_APPID` / `WECHAT_MP_SECRET`（当前也是测试号的值，正式号的AppSecret已备份在服务器`.env.bak`里，不进代码仓库）
+- 服务器 `/var/www/jiayicare/backend/.env` 的 `WECHAT_MP_APPID` / `WECHAT_MP_SECRET`（AppSecret不进代码仓库，旧配置备份在服务器`.env.bak`/`.env.bak2`）
 
-**接入正式账号步骤（后续待办）：**
-1. `miniprogram/project.config.json` 的 `appid` 改回 `wx1631398eb9f9ed45`
-2. 服务器 `.env` 的 `WECHAT_MP_APPID`/`WECHAT_MP_SECRET` 改回正式号的值
-3. `pm2 restart jiayicare-backend --update-env`
-4. 重新 `npm run build:weapp`，开发者工具里用正式号账号（确认开发者工具右上角登录的微信号是这个小程序的开发者/体验成员）重新真机调试验证登录
-5. 验证通过后在微信公众平台提交审核，通过后手动发布
+**正式号上线剩余步骤：**
+1. ~~切换project.config.json和服务器.env~~ 已完成（2026-07-18）
+2. 开发者工具里用**这个正式号绑定的微信开发者账号**（确认开发者工具右上角登录的微信号是`wx50062146332b1b20`的开发者/体验成员）重新真机调试验证登录
+3. 验证通过后在微信公众平台提交审核
+4. 审核通过后手动点击发布
 
 > 踩过的坑：测试号和正式号是完全不同的两个AppID，`wx.login()`拿到的code只在对应AppID下有效，
 > 如果小程序端配的AppID和服务器`.env`配的AppID不一致（哪怕都"看起来配置正确"），
 > `jscode2session`会报`errcode 40029 invalid code`，容易误判成code过期/网络问题，实际是AppID对不上。
+> 换AppID后一定要**同时**改两处（小程序端project.config.json + 服务器.env）并重启后端，缺一不可。
 
 ## 登录方式：与 app/ 网页授权完全不同
 - **app/**（网页场景）：用户点击"微信登录"→ 跳转微信 OAuth 网页 → 拿到 `code` → 后端 `POST /auth/wechat` →
