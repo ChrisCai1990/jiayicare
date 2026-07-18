@@ -24,7 +24,7 @@ export default function ChatPage() {
     setSending(true);
     try {
       const res = await chatAPI.send(next, { name: user?.name, age: user?.age, gender: user?.gender });
-      const reply = res?.data?.reply || res?.reply || '抱歉，我暂时无法回复，请稍后重试。';
+      const reply = res?.data?.content || res?.content || '抱歉，我暂时无法回复，请稍后重试。';
       setMessages((m) => [...m, { role: 'assistant', content: reply }]);
     } catch (err) {
       setMessages((m) => [...m, { role: 'assistant', content: `请求失败：${err.message || '网络异常'}` }]);
