@@ -3106,7 +3106,27 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     // 日常监测/季度评估按周期批量排期），不用等客户在app端确认才生成。
     const { syncAnnualPlanFollowUps } = require('../utils/annualPlanFollowUps');
     const followUpCount = await syncAnnualPlanFollowUps(plan).catch(() => 0);
-    res.json({ success: true, data: plan, followUpCount });
+    // 药物管理/营养素管理模块：同步生成定期配药/配营养素计划（RecurringSupplyPlan），
+    // 到期后由定时任务生成健管专员待办+客户端提醒（2026-07-19）
+    const { syncAnnualPlanSupplyPlans } = require('../utils/annualPlanSupplyPlans');
+    const supplyPlanResult = await syncAnnualPlanSupplyPlans(plan).catch(() => ({ created: 0, updated: 0, disabled: 0 }));
+    res.json({ success: true, data: plan, followUpCount, supplyPlanResult });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ── PATCH /api/staff/supply-plans/:id/confirm ─────────────────────
+// 健管专员确认某条定期配药/配营养素计划本轮已安排，nextDueDate滚到下一周期，等待下次到期再提醒
+router.patch('/supply-plans/:id/confirm', staffAuth, async (req, res) => {
+  try {
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    const { advanceToNextCycle } = require('../utils/recurringSupplyPlanScheduler');
+    const plan = await RecurringSupplyPlan.findById(req.params.id);
+    if (!plan) return res.status(404).json({ success: false, message: '计划不存在' });
+    advanceToNextCycle(plan);
+    await plan.save();
+    res.json({ success: true, data: plan });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -5237,6 +5257,7 @@ const TODO_REVIEW_ROLE = {
   followup_review:      'familyDoctor',
   bp_alert_review:      'familyDoctor',
   transfer_human:       'healthManager',
+  supply_plan_review:   'healthManager', // 定期配药/配营养素计划到期，健管专员确认安排
 };
 
 router.get('/ai-todos', staffAuth, async (req, res) => {
@@ -5417,6 +5438,25 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: `${s.name} ${s.dosage} ${s.frequency}${s.purpose ? ' · ' + s.purpose : ''}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${s.user?._id}?tab=medications`,
+        });
+      });
+    }
+
+    // ── 健管专员：定期配药/配营养素计划到期，确认安排 ──
+    if (can('supply_plan_review')) {
+      const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+      const supplyFilter = { aiStatus: 'pending', ...(myPatientIds ? { patientId: { $in: myPatientIds } } : {}) };
+      const duePlans = await RecurringSupplyPlan.find(supplyFilter)
+        .populate('patientId', 'name').sort({ nextDueDate: 1 }).limit(50).lean();
+      duePlans.forEach(p => {
+        const label = p.planType === 'medication' ? '配药' : '配营养素';
+        const createdAt = p.lastNotifiedAt || p.updatedAt || now;
+        todos.push({
+          id: 'supply_plan_' + p._id, type: 'supply_plan_review', label: `定期${label}待安排`, priority: 3,
+          patientName: p.patientId?.name || '未知', patientId: String(p.patientId?._id || ''),
+          summary: `${p.itemName}${p.dosage ? ' ' + p.dosage : ''} · ${p.frequency}${p.institution ? ' · ' + p.institution : ''}`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${p.patientId?._id}?tab=annual-plan`,
         });
       });
     }

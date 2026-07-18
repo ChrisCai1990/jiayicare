@@ -128,4 +128,7 @@ app.listen(PORT, () => {
   // 年度管理方案的"日常监测/季度评估"随访占位滚动窗口补生成，每天扫描一次
   // （此前一次性预生成未来365天导致单个客户堆积几百条占位，2026-07-13 改为滚动窗口）
   require('./utils/scheduledFollowUpWindowScheduler').startScheduledFollowUpWindowScheduler();
+
+  // 年度管理方案"药物管理/营养素管理"模块的定期配药/配营养素计划到期扫描，每天一次
+  require('./utils/recurringSupplyPlanScheduler').startRecurringSupplyPlanScheduler();
 });

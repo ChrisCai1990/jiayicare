@@ -221,6 +221,7 @@ export const staffAPI = {
   getAnnualHealthPlans: (year, patientName) => req(`/staff/annual-health-plans?` + qs({ year: year || '', patientName: patientName || '' })),
   getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
+  confirmSupplyPlan:    (planId) => req(`/staff/supply-plans/${planId}/confirm`, { method: 'PATCH' }),
   pushAnnualPlan:       (patientId, year, planType) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH' }),
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),

@@ -24,6 +24,7 @@ const TYPE_CONFIG = {
   followup_review:      { icon: '📅', label: '随访计划待审核', color: '#0077B6', priority: 3 },
   service_draft_review: { icon: '🤖', label: 'AI随访草稿待审核', color: '#7C3AED', priority: 3 },
   medical_assist_plan_review: { icon: '🚑', label: 'AI就医协助方案待审核', color: '#0077B6', priority: 2 },
+  supply_plan_review:  { icon: '📦', label: '定期配药/配营养素待安排', color: '#D97706', priority: 3 },
 }
 
 function formatTime(date) {
@@ -63,6 +64,14 @@ export default function AiTodosPanel() {
     e.stopPropagation()
     const logId = todo.id.replace(/^transferhuman_/, '')
     staffAPI.resolveChatTransfer(logId)
+      .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
+      .catch(() => {})
+  }
+
+  const resolveSupplyPlan = (e, todo) => {
+    e.stopPropagation()
+    const planId = todo.id.replace(/^supply_plan_/, '')
+    staffAPI.confirmSupplyPlan(planId)
       .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
       .catch(() => {})
   }
@@ -157,6 +166,11 @@ export default function AiTodosPanel() {
                     onClick={(e) => resolveTransfer(e, todo)}
                     style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
                   >标记已联系</button>
+                ) : todo.type === 'supply_plan_review' ? (
+                  <button
+                    onClick={(e) => resolveSupplyPlan(e, todo)}
+                    style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
+                  >标记已安排</button>
                 ) : (
                   <span style={{ fontSize: 14, color: '#C0B8AE' }}>›</span>
                 )}

@@ -19,7 +19,12 @@ const MODULES = [
   { key: 'vaccine',           name: '疫苗接种',     icon: '💉' },
   { key: 'lifestyle',         name: '生活方式',     icon: '🌿' },
   { key: 'checkup',           name: '体检方案',     icon: '🔬' },
+  { key: 'medication',       name: '药物管理',     icon: '💊' },
+  { key: 'supplement',       name: '营养素管理',   icon: '🧪' },
 ]
+
+// 定期配药/配营养素频率选项，与 backend/src/utils/annualPlanSupplyPlans.js 的 FREQUENCY_DAYS 保持一致
+const SUPPLY_FREQUENCY_OPTIONS = ['每周一次', '每两周一次', '每月一次', '每季度一次', '每半年一次', '每年一次']
 
 // ── 时间频率选项 ──────────────────────────────────────────────────────
 const TIME_OPTIONS = ['每月一次', '每季度一次', '每半年一次', '每年一次', '按需安排', '待定']
@@ -134,6 +139,9 @@ function ModulePanel({ module: mod, moduleData, onChange, patientId, nav }) {
           )}
           {mod.key === 'checkup' && (
             <CheckupFields data={data} set={set} nav={nav} patientId={patientId} />
+          )}
+          {(mod.key === 'medication' || mod.key === 'supplement') && (
+            <SupplyPlanFields data={data} set={set} planType={mod.key} />
           )}
         </div>
       )}
@@ -482,6 +490,59 @@ function CheckupFields({ data, set, nav, patientId }) {
       <FieldRow label="备注">
         <TextInput value={data.notes} onChange={v => set('notes', v)} placeholder="其他说明或特殊要求" multiline />
       </FieldRow>
+    </div>
+  )
+}
+
+// ── 药物管理 / 营养素管理模块（定期配药/配营养素，多条记录）────────────
+// 内容字段与用药管理(Medication)/营养素管理(Supplement)一致(名称/剂量/频次)，
+// 额外加"配置机构"，保存时后端会按频率自动生成定期配药/配营养素计划提醒
+// （到期后通知健管专员+客户端，见 backend/src/utils/annualPlanSupplyPlans.js）
+function SupplyPlanFields({ data, set, planType }) {
+  const records = Array.isArray(data.records) ? data.records : []
+  const isMedication = planType === 'medication'
+
+  const updateRecord = (idx, field, value) => {
+    const next = records.map((r, i) => i === idx ? { ...r, [field]: value } : r)
+    set('records', next)
+  }
+  const addRecord = () => set('records', [...records, { itemName: '', dosage: '', frequency: '', institution: '', notes: '' }])
+  const removeRecord = (idx) => set('records', records.filter((_, i) => i !== idx))
+
+  return (
+    <div style={{ paddingTop: 8 }}>
+      <div style={{ background: '#EFF6FF', borderRadius: 8, padding: '10px 14px', marginBottom: 12, fontSize: 13, color: '#0077B6' }}>
+        💡 保存后按填写的频率自动生成定期{isMedication ? '配药' : '配营养素'}提醒，到期会通知健管专员和客户
+      </div>
+      {records.map((rec, idx) => (
+        <div key={idx} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: 12, marginBottom: 10, position: 'relative' }}>
+          <button
+            onClick={() => removeRecord(idx)}
+            style={{ position: 'absolute', top: 8, right: 8, border: 'none', background: 'none', cursor: 'pointer', color: '#f87171', fontSize: 14 }}
+          >🗑</button>
+          <FieldRow label={isMedication ? '药物名称' : '营养素名称'} required>
+            <TextInput value={rec.itemName} onChange={v => updateRecord(idx, 'itemName', v)} placeholder={isMedication ? '如：氨氯地平' : '如：维生素D3'} />
+          </FieldRow>
+          <FieldRow label="剂量">
+            <TextInput value={rec.dosage} onChange={v => updateRecord(idx, 'dosage', v)} placeholder="如：5mg / 500mg" />
+          </FieldRow>
+          <FieldRow label="配药/配营养素频率" required>
+            <SelectInput value={rec.frequency} onChange={v => updateRecord(idx, 'frequency', v)} options={SUPPLY_FREQUENCY_OPTIONS} placeholder="请选择频率" />
+          </FieldRow>
+          <FieldRow label="配置机构">
+            <TextInput value={rec.institution} onChange={v => updateRecord(idx, 'institution', v)} placeholder="如：XX药房、XX医院、XX渠道" />
+          </FieldRow>
+          <FieldRow label="备注">
+            <TextInput value={rec.notes} onChange={v => updateRecord(idx, 'notes', v)} placeholder="其他说明" multiline />
+          </FieldRow>
+        </div>
+      ))}
+      <button
+        onClick={addRecord}
+        style={{ width: '100%', padding: '10px', border: '1.5px dashed #1E6B50', borderRadius: 8, background: 'none', color: '#1E6B50', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
+      >
+        + 添加{isMedication ? '药物' : '营养素'}
+      </button>
     </div>
   )
 }
