@@ -20,6 +20,12 @@ const RECORD_TYPES = [
   ] },
   { id: 'sleep', label: '睡眠', icon: '🌙', category: 'lifestyle', unit: '小时', fields: [] },
   { id: 'mood', label: '情绪', icon: '😊', category: 'lifestyle', unit: '分', fields: [] },
+  { id: 'smoking', label: '吸烟', icon: '🚬', category: 'lifestyle', unit: '支', fields: [
+    { key: 'value', label: '吸烟数量', unit: '支', placeholder: '如：5' },
+  ] },
+  { id: 'drinking', label: '饮酒', icon: '🍷', category: 'lifestyle', unit: 'ml', fields: [
+    { key: 'value', label: '饮酒量', unit: 'ml', placeholder: '如：100' },
+  ] },
 ];
 
 function calcSleepDuration(sleepTime, wakeTime) {
@@ -84,6 +90,8 @@ export default function AddRecordPage() {
       let status = 'normal';
       if (activeType.id === 'bloodSugar') status = num > 7 ? 'warning' : num < 3.9 ? 'low' : 'normal';
       else if (activeType.id === 'heartRate') status = num > 100 ? 'warning' : num < 60 ? 'low' : 'normal';
+      else if (activeType.id === 'smoking') status = num > 0 ? 'warning' : 'normal';
+      else if (activeType.id === 'drinking') status = num > 0 ? 'warning' : 'normal';
       payload = {
         type: activeType.id, category: activeType.category, label: activeType.label,
         unit: activeType.unit, value: String(v), status, note,

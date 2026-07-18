@@ -62,105 +62,93 @@ npm run build:weapp   # 生产构建，产出 dist/
 
 ## 页面路由清单（app.config.js 里的 pages，Taro 用真实文件路径而非路由名）
 
-> ⚠️ 2026-07-17 用专职agent做过一次逐页深度核对（不只看代码有没有，而是逐字段/逐交互点对比 app/ 真实源码），
-> 发现差距比早期"简化"描述严重得多，还挖出2个真实功能bug。下表已按核对结果重写，是当前最准确的版本。
+> ⚠️ 2026-07-18 完成一轮大规模补齐（修复2个功能性bug + 补齐编辑资料/服务商城/续约 + 新增9个页面 +
+> 首页/健康档案/健康报告图表交互），下表已按补齐后的结果重写。历史遗留的"差距明细"章节已大部分清空或标注完成。
 
 | 页面 | 文件 | 说明 | 实现程度 |
 |------|------|------|----------|
 | 登录 | pages/auth/login/index | 手机验证码登录 + 微信一键登录 + 演示登录 | ✅ 完整对齐 |
 | 引导建档 | pages/onboarding/index | 首次登录最小化建档 | ✅ 完整对齐 |
-| 首页（Tab） | pages/home/index | 问候卡+打卡+待办摘要 | ⚠️ 差距较大，见下方"首页" |
-| 健康档案（Tab） | pages/records/index/index | 记录列表+分类筛选 | ⚠️ 无趋势图、无AI健康分析入口 |
-| 录入健康数据 | pages/records/add/index | 血压/血糖/心率/体重/睡眠/情绪 | ✅ 字段口径与 app/ 完全一致 |
-| 健康报告 | pages/records/report/index | 周期评分摘要 | ⚠️ 无图表 |
+| 首页（Tab） | pages/home/index | 问候卡+12项打卡+成长卡片+BMI色带+血压血糖迷你趋势图+管家团队+待办 | ✅ 核心交互完整对齐，图表为轻量div实现 |
+| 健康档案（Tab） | pages/records/index/index | 记录列表+分类筛选+AI健康分析入口+睡眠卡片+趋势图Tab | ✅ 核心交互完整对齐 |
+| 录入健康数据 | pages/records/add/index | 血压/血糖/心率/体重/睡眠/情绪/吸烟/饮酒 | ✅ 字段口径与 app/ 完全一致（已补吸烟/饮酒） |
+| 健康报告 | pages/records/report/index | 周期评分+图表化指标+任务完成率+亮点 | ✅ 核心交互完整对齐 |
 | 上传体检报告 | pages/records/upload/index | Taro.chooseImage+uploadFile | ✅ 核心链路对齐 |
-| AI健康助手 | pages/chat/index | 对话界面 | 🐛 **有bug，见下方"已知功能性bug"** |
-| 用药管理 | pages/medication/index | 列表+打卡 | ⚠️ 无新增/停用表单 |
-| 随访（Tab） | pages/tasks/index | 待办任务+随访计划合并列表 | ⚠️ 无分类Tab、无表单字段展示 |
-| 消息（Tab） | pages/messages/index | 会话列表+单会话收发 | 🐛 **有bug，见下方"已知功能性bug"**，且差距很大见下方"消息页" |
-| 提醒设置 | pages/reminders/index | 列表+开关 | ⚠️ 无新增/分类 |
-| 服务商城 | pages/services/mall/index | 服务列表+预约下单 | ⚠️ 差距很大，见下方"服务商城/续约" |
-| 服务包续约 | pages/services/renewal/index | pkg_1y/6m/3m 三档购买 | ⚠️ 无优惠券/健康基金抵扣/支付方式选择（**之前误标"完整"，已订正**） |
-| 编辑资料 | pages/profile/edit/index | 姓名/性别/年龄/身高体重 5个基础字段 | ⚠️ 差距很大，见下方"编辑资料" |
+| AI健康助手 | pages/chat/index | 对话界面 | ✅ 已修复读取字段bug，功能正常 |
+| 用药管理 | pages/medication/index | 列表+打卡 | ⚠️ 无新增/停用表单（未在本轮范围内） |
+| 随访（Tab） | pages/tasks/index | 待办任务+随访计划合并列表 | ⚠️ 无分类Tab、无表单字段展示（未在本轮范围内） |
+| 消息（Tab） | pages/messages/index | 固定角色分组会话列表+推送记录合并+AI置顶+产品购买弹窗 | ✅ 已重写对齐，SSE改为10秒轮询 |
+| 提醒设置 | pages/reminders/index | 列表+开关 | ⚠️ 无新增/分类（未在本轮范围内） |
+| 服务商城 | pages/services/mall/index | 分类Tab+会员Banner+多规格+优惠券+基金抵扣+支付方式 | ✅ 已补齐对齐 |
+| 服务包续约 | pages/services/renewal/index | 三档套餐+确认弹窗(优惠券/基金/支付方式)+已有服务分支 | ✅ 已补齐对齐，价格已订正为与后端一致 |
+| 编辑资料 | pages/profile/edit/index | 完整健康档案字段（血型/过敏史/病史/用药/家族史/手术史/婚育史等） | ✅ 已补齐对齐 |
 | 账号安全 | pages/profile/security/index | 换绑手机号 | ✅ 完整对齐 |
-| 帮助与反馈 | pages/profile/feedback/index | 反馈表单 | ⚠️ 无历史反馈列表 |
+| 帮助与反馈 | pages/profile/feedback/index | 反馈表单 | ⚠️ 无历史反馈列表（未在本轮范围内） |
 | 消息通知设置 | pages/profile/notifications/index | 本地开关 | ✅ 完整对齐 |
 | 我的订单 | pages/orders/index | 订单列表+取消 | ✅ 核心链路对齐 |
 | 用户协议/隐私/免责 | pages/legal/index | 完整法律文本 | ✅ 完整对齐 |
 | 即将开放 | pages/common/coming-soon/index | 占位页 | ✅ 完整对齐 |
-| 我的（Tab） | pages/profile/index/index | 会员卡片+健康基金+菜单入口 | ⚠️ 菜单入口缺失较多，见下方"我的" |
+| 我的（Tab） | pages/profile/index/index | 会员卡片+健康基金+完整菜单入口+家庭成员板块 | ✅ 已补齐对齐 |
+| 营养素管理 | pages/nutrition/index | 进行中/已停用+打卡/停用/新增 | ✅ 新增，对齐 NutritionScreen |
+| 会员权益 | pages/profile/benefits/index | 健康基金+积分+专属权益+合作伙伴权益 | ✅ 新增，对齐 BenefitsScreen |
+| 家庭成员管理 | pages/profile/family/index | 搜索添加+邀请确认/拒绝+解除关联 | ✅ 新增，对齐 FamilyMembersScreen |
+| 问卷调查 | pages/questionnaire/index | 动态表单引擎(6种题型+跳题逻辑) | ✅ 新增，对齐 QuestionnaireScreen |
+| AI健康分析 | pages/records/ai-health/index | 健康分析+风险评估，审核状态展示 | ✅ 新增，对齐 AiHealthScreen |
+| 体检报告分类查看 | pages/records/medical-reports/index | 年份+分类分组，报告展开查看 | ✅ 新增，对齐 MedicalReportsScreen |
+| 专项筛查 | pages/records/screening/index | 5大类完整目录，勾选/上传 | ✅ 新增，对齐 SpecialScreeningScreen |
+| 健康方案 | pages/services/plans/index | 方案列表+任务详情+确认+完成 | ✅ 新增，对齐 ServicePlansScreen |
+| 公开报告分享页 | pages/records/public-report/index | 小程序场景适配（路由参数token+原生转发） | ✅ 新增，已按小程序场景重新设计 |
 
 底部 TabBar（微信原生 tabBar，配置在 `src/app.config.js`）：首页 / 健康档案 / 随访 / 消息 / 我的。
-**⚠️ 与app端已不对等**：app端底部Tab目前是 Home/Records/ReportUpload/Messages/Profile（Tasks已从Tab移除，
-改成Stack内独立页面），miniprogram仍保留Tasks作为Tab、没有独立的ReportUpload Tab——两端信息架构需要
-拉齐，具体以哪端为准待确认。
+**⚠️ 与app端仍不对等，本轮未改动，需用户决策**：app端底部Tab目前是 Home/Records/ReportUpload/Messages/Profile
+（Tasks已从Tab移除，改成Stack内独立页面），miniprogram仍保留Tasks作为Tab、没有独立的ReportUpload Tab——
+两端信息架构需要拉齐，具体以哪端为准待用户决定，改动 `src/app.config.js` 的 tabBar 配置是用户可见的产品
+决策，不属于技术修复范畴，本轮未擅自改动。
 图标当前是1x1占位PNG（`src/assets/tab/*.png`），上线前需替换真实设计稿导出的图标（建议81x81px，selected/unselected两套）。
 
-### 首页差距明细（app: `app/src/screens/home/HomeScreen.js` 1919行 → mini: `pages/home/index.jsx` 187行）
-缺失：血压/血糖迷你走势图、BMI色带、成长打卡卡片（连续天数+月历+趋势反馈）、任务详情弹窗、健康管家团队横向卡片、
-情绪圆点选分、生理指标"原地打卡弹窗"（app端可在首页直接填写提交不跳转，mini端点击打卡直接跳转到录入页）、
-饮食打卡的餐次选择+补录历史日期。打卡项从app的12项精简为9项（缺"吸烟""饮酒"）。
-API层：app额外调用 `recordsAPI.trend()`、`systemAPI.push()`，mini端未调用。
+## 已修复的历史bug（原"已知功能性bug"章节，2026-07-18已修复）
 
-### 编辑资料差距明细（app: `EditProfileScreen.js` → mini: `pages/profile/edit/index.jsx`）—— 差距最大的页面
-mini端仅5个字段（姓名/性别/年龄/身高/体重），POST时**完全没有`healthProfile`对象**，意味着用户在小程序编辑资料，
-以下字段永远写不进去：
-- 联系电话、配送地址、血型（ABO/RH）
-- 5个结构化数组字段：过敏史(allergies)、既往病史(medicalHistory)、用药记录(medications)、家族史(familyHistory)、手术史(surgeries)
-- 健康摘要文字字段：drugAllergy/foodAllergy/pastHistory/medicHistory/surgeryHistory（含只读的infectiousHistory）
-- 女性专属：月经史(menstrualHistory)；婚育史(maritalHistory)
-- 医疗保障信息只读展示区块
+1. **AI聊天读取后端返回字段错误**（已修复）：`pages/chat/index.jsx` 原读取 `res?.data?.reply`，
+   后端 `backend/src/routes/chat.js` 实际返回字段是 `data.content`，已改为读取 `res?.data?.content`，
+   与 app 端 ChatScreen.js 读法一致。验证方式：读取 backend/src/routes/chat.js 确认响应体结构，
+   并核对小程序端解构路径与之匹配。
+2. **消息角色分组和未读判断字段名不存在**（已修复）：原用 `m.fromRole || m.role || m.senderRole` /
+   `!m.read` 判断，后端 `Message` 模型真实字段是 `type`/`unread`，这些字段在真实数据里都不存在。
+   已按 app 端 `MessagesScreen.js` 的固定角色方案（`ROLE_DEFS`）完整重写，见下方"消息页"说明。
 
-> 根目录/app目录 CLAUDE.md 里"EditProfileScreen数组字段被注释掉"这条遗留问题**已过时**——app端该问题
-> 早已修复，`healthProfile`对象字段现已完整启用，两份旧文档的这条描述应视为无效。
+## 剩余简化项（本轮范围内已注明，非遗漏）
 
-### 服务商城/服务续约差距明细（app: `ServiceMallScreen.js` 877行 + `RenewalScreen.js` → mini对应页面）
-缺失：服务分类Tab筛选、会员权益Banner、星级评分、多图详情弹窗、**多规格选择**、**支付方式选择**（mini端服务续约硬编码微信支付）、
-**优惠券选择**（`servicesAPI.coupons()`两端api.js方法一致，mini端未调用）、**健康基金抵扣**、价格明细展示、
-"预约咨询"与"立即支付"两种下单模式区分。
-接口层没问题（`servicesAPI.order`签名两端一致），mini端只是调用时少传了后三个参数（paymentMethod/useHealthFund/couponId）——纯UI未做，接口现成能用。
+以下简化点已在对应文件顶部注释里写明原因，均为技术受限或合理场景适配，不是遗漏：
+- **消息会话详情**：小程序无 EventSource(SSE) 支持，用10秒轮询代替 app 端的实时推送
+- **首页/健康档案/健康报告图表**：用 `src/components/TrendChart.jsx`（纯div柱状条）代替 app 端的
+  SVG 图表，避免引入 canvas/echarts 图表库的额外构建风险；数据真实，只是视觉呈现更简单
+- **专项筛查上传**：用 `Taro.chooseImage` 只支持图片，app端web版用 `<input type=file>` 可选PDF；
+  小程序无通用文件选择器（`Taro.chooseMessageFile` 仅企业微信等特定客户端支持）
+- **AI健康分析**：未接语音播报（app端 `tts.speak`），小程序场景暂不需要
+- **健康方案页**：年度管理方案(annual_mgmt)模块字段中文标签映射（`FIELD_LABEL`/`MODULE_NAME`）只
+  覆盖了 app 端最常用的一批字段，未覆盖的字段会退化显示原始 key 而非中文标签，但数据本身不丢失
+- **公开报告分享页**：小程序场景做了合理重新设计——用路由参数 `token` 而非 URL query 传递分享凭证，
+  登录按钮用 `Taro.reLaunch` 而非 app 端的 `window.location.href`，新增 `onShareAppMessage` 支持
+  小程序原生转发（这是比 app 端生成公开链接更符合小程序生态的分享方式）
 
-### 消息页差距明细（app: `MessagesScreen.js` 1437行 → mini: `pages/messages/index.jsx` 119行）
-app端已重构为基于`careTeam`团队的固定角色分组（doctor/manager/nutritionist三个固定角色），并新增了
-push records合并展示（知识科普/健康方案/问卷/营养推荐/产品推送/系统通知）、SSE实时推送、产品推送购买弹窗、
-AI助手会话置顶、系统通知独立Modal。mini端仍是旧的"从消息里猜角色"逻辑，且这个逻辑本身有bug（见下）。
+## 未在本轮范围内的已知差距（供后续排期）
 
-### 我的（Profile）菜单差距明细
-"健康管理"分组app有5项，mini只有2项，缺失：健康方案(ServicePlans)、体检报告(MedicalReports)、营养素管理(Nutrition)。
-"我的服务"分组缺失"会员权益"(Benefits)。**整个"家庭成员"板块**（横向卡片+添加入口）完全没有。
-
-## App端有但miniprogram端完全没有对应页面的功能
-
-以下9个页面miniprogram的路由表里完全不存在。对应的API分组（`supplementsAPI`/`giftsAPI`/`partnerBenefitsAPI`/
-`pointsAPI`/`familyLinksAPI`/`questionnaireAPI`/`plansAPI`/`screeningAPI`/`shareAPI`）**已经存在于
-`miniprogram/src/services/api.js`**（整体复制app端api.js带过来的），接口现成能用，只是没有UI调用。
-
-| 功能 | app端文件 | 说明 |
-|------|-----------|------|
-| 营养素管理 | `nutrition/NutritionScreen.js`（482行） | 营养素/保健品记录，新增/打卡/停用，用`supplementsAPI` |
-| 会员权益 | `profile/BenefitsScreen.js`（545行） | 积分/礼品兑换/合作商户优惠 |
-| 家庭成员管理 | `profile/FamilyMembersScreen.js`（399行） | 添加/搜索/邀请/接受拒绝/移除 |
-| 问卷调查 | `questionnaire/QuestionnaireScreen.js`（1001行） | 动态表单问卷填写与提交 |
-| AI健康分析 | `records/AiHealthScreen.js`（510行） | AI健康摘要+风险评估生成/查看 |
-| 体检报告分类查看 | `records/MedicalReportsScreen.js`（357行） | 按分类查看已审核报告详情 |
-| 公开报告分享页 | `records/PublicReportScreen.js`（320行） | 无需登录的分享报告只读页（小程序场景分享机制不同，可能不完全适用） |
-| 专项筛查 | `records/SpecialScreeningScreen.js`（544行） | 专项体检项目选择/取消/上传 |
-| 健康方案 | `services/ServicePlansScreen.js`（852行） | 健管方案列表/确认/年度体检管理方案 |
-
-## 已知功能性bug（不是"简化"，是接错了，需要单独修复）
-
-1. **AI聊天永远拿不到真实回复**：`pages/chat/index.jsx` 读取 `res?.data?.reply`，但后端
-   `backend/src/routes/chat.js` 实际返回字段是 `data.content`（app端读的也是`res.data.content`，是对的）。
-   结果mini端每次都掉进前端硬编码的兜底文案"抱歉，我暂时无法回复，请稍后重试。"，聊天功能形同虚设。
-2. **消息角色分组和未读判断永远失真**：`pages/messages/index.jsx` 用
-   `m.fromRole || m.role || m.senderRole` 判断角色、`!m.read` 判断未读，但后端`Message`模型的真实字段
-   是`type`（不是fromRole/senderRole）和`unread`（不是read）——这三个角色字段在真实数据里都不存在，
-   角色分组永远得到undefined分组，未读红点数字不准确。
+- 用药管理页无新增/停用表单，只有列表+打卡
+- 随访（Tasks）页无分类Tab、无表单字段展示
+- 提醒设置页无新增/分类
+- 帮助与反馈页无历史反馈列表
+- 底部Tab结构与app端不对等（见上方TabBar说明），需用户决策
+- Tab 图标是占位 PNG，需要替换真实设计稿导出的图标
+- 未接入小程序订阅消息（wx.requestSubscribeMessage），提醒/随访提醒目前只能靠用户主动打开小程序查看
 
 ## 主题变量（import { colors, spacing, radius, shadow } from '../../theme'）
 数值与 app/src/theme/index.js 完全一致，唯一差异：`shadow` 从 RN 的
 `{shadowColor,shadowOffset,shadowOpacity,shadowRadius}` 对象转换成小程序 CSS 支持的
 `boxShadow` 字符串（如 `'0px 2px 8px rgba(26,43,36,0.06)'`），直接赋给 `style={{ boxShadow: shadow.card }}`。
+
+## 共享组件（src/components/）
+- `TrendChart.jsx`：轻量趋势图组件，纯div柱状条实现（不依赖canvas/echarts）。`mini` 模式用于卡片内
+  迷你走势图，完整模式带坐标轴标签用于趋势图Tab/健康报告指标图。
 
 ## API 调用方式（src/services/api.js）
 与 app/src/services/api.js 结构完全一致（同一组 API 分组/方法名/路径/参数），底层请求方法重写：
@@ -174,7 +162,7 @@ import { userAPI, recordsAPI, servicesAPI, ordersAPI } from '../../services/api'
 
 userAPI.getMe()
 recordsAPI.create(payload)
-servicesAPI.order(serviceId, note, paymentMethod)
+servicesAPI.order(serviceId, note, paymentMethod, useHealthFund, couponId)
 ordersAPI.list()
 ```
 
@@ -193,31 +181,14 @@ const { user, token, loading, login, logout, updateUser, isDemo } = useAuth();
 | weight | 体重 | value (kg) |
 | sleep | 睡眠 | value(时长h) / extra.sleepTime / extra.wakeTime |
 | mood | 情绪 | value (1-10分) |
-
-## 已知限制 / 待办
-
-**优先级高（功能性bug，用户可感知到"坏了"）：**
-- AI聊天读错字段永远拿不到真实回复（见上方"已知功能性bug"）
-- 消息页角色分组/未读判断字段名不存在，逻辑永远失真（见上方"已知功能性bug"）
-
-**优先级中（明确的功能缺口，见上方各页面差距明细）：**
-- 编辑资料缺整个健康档案数组字段结构，用户在小程序填的过敏史/病史/用药记录等实际存不进去
-- 服务商城/续约缺健康基金抵扣、优惠券、多规格、支付方式选择
-- 9个App端页面（营养素/会员权益/家庭成员/问卷/AI健康分析/体检报告分类/专项筛查/健康方案/公开分享页）完全没做，
-  对应API已就绪，只缺UI
-- 两端底部Tab结构不对等（app已移除Tasks Tab，mini还保留），需要确认最终以哪端为准
-
-**优先级低（体验/素材类）：**
-- Tab 图标是占位 PNG，需要替换真实素材
-- 首页/健康档案/健康报告页面没有移植 app/ 端的 SVG 图表，小程序端用文字+简单卡片替代；
-  如需图表可接入 `taro-echarts` 或小程序原生 `canvas`
-- 用药/提醒/反馈页面没有"新增"表单，只有列表+基础操作
-- 未接入小程序订阅消息（wx.requestSubscribeMessage），提醒/随访提醒目前只能靠用户主动打开小程序查看
+| smoking | 吸烟 | value (支) |
+| drinking | 饮酒 | value (ml) |
 
 ## 双端同步原则（2026-07-17 起）
 
 miniprogram/ 和 app/ 共用同一套后端和用户群体，**功能应尽量保持同步**，避免用户在两端体验不一致。
 - 之后改动 app/ 的用户端功能（新增字段、改交互、改API），如果miniprogram有对应页面，**要评估是否需要同步改**，
   至少要在这份文档里补一条待办，不能让两端悄悄分叉
-- 优先修复上面列的2个功能性bug，其次是"编辑资料"和"服务商城"这两个差距最大且涉及真实数据完整性的页面
-- 9个完全缺失的页面按需排期，不必须一次做完
+- 2026-07-18已完成一轮大规模补齐（详见上方页面路由清单），后续新增功能建议延续本轮的原则：
+  能真实接后端API就不用假数据占位，遇到小程序场景与网页/App场景机制性差异时，做合理的场景适配而不是
+  生搬硬套，并在代码注释+本文档里写清楚简化点和原因

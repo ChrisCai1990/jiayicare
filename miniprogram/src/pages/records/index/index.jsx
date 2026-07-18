@@ -1,8 +1,9 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { recordsAPI } from '../../../services/api';
+import TrendChart from '../../../components/TrendChart';
 
 const TYPE_META = {
   bloodPressure: { label: '血压', icon: '💗', unit: 'mmHg' },
@@ -19,6 +20,10 @@ export default function RecordsIndexPage() {
   const [records, setRecords] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
+  const [bpTrend, setBpTrend] = useState([]);
+  const [bsTrend, setBsTrend] = useState([]);
+  const [sleepTrend, setSleepTrend] = useState([]);
+  const [trendTab, setTrendTab] = useState('bp');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -31,7 +36,27 @@ export default function RecordsIndexPage() {
 
   useDidShow(() => { load(); });
 
+  useEffect(() => {
+    Promise.allSettled([
+      recordsAPI.trend('bloodPressure'),
+      recordsAPI.trend('bloodSugar'),
+      recordsAPI.trend('sleep'),
+    ]).then(([bp, bs, sl]) => {
+      if (bp.status === 'fulfilled' && bp.value?.data) {
+        setBpTrend(bp.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: r.extra?.sys || parseFloat(r.value) || 0 })));
+      }
+      if (bs.status === 'fulfilled' && bs.value?.data) {
+        setBsTrend(bs.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
+      }
+      if (sl.status === 'fulfilled' && sl.value?.data) {
+        setSleepTrend(sl.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
+      }
+    });
+  }, []);
+
   const filtered = filter === 'all' ? records : records.filter((r) => r.type === filter);
+  const latestSleep = records.find((r) => r.type === 'sleep');
+  const trendMap = { bp: { data: bpTrend, color: colors.danger, label: '血压 (mmHg)' }, bs: { data: bsTrend, color: colors.warning, label: '血糖 (mmol/L)' }, sleep: { data: sleepTrend, color: '#7C3AED', label: '睡眠 (小时)' } };
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -80,6 +105,51 @@ export default function RecordsIndexPage() {
             <Text style={{ fontSize: '12px', color: colors.textPrimary, marginTop: '4px' }}>体检报告</Text>
           </View>
         </View>
+
+        {/* AI健康分析入口卡片 */}
+        <View onClick={() => Taro.navigateTo({ url: '/pages/records/ai-health/index' })} style={{
+          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#1A2B24', borderRadius: `${radius.md}px`,
+          padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`,
+        }}>
+          <Text style={{ fontSize: '24px' }}>✨</Text>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: '14px', fontWeight: 700, color: '#fff', display: 'block' }}>AI健康分析 / 风险评估</Text>
+            <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>AI结合体检数据与健康档案自动生成解读</Text>
+          </View>
+          <Text style={{ color: '#fff', fontSize: '14px' }}>›</Text>
+        </View>
+
+        {/* 睡眠指标卡片 */}
+        {!!latestSleep && (
+          <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
+            <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>🌙 最近睡眠</Text>
+              <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>{latestSleep.value} 小时</Text>
+            </View>
+            {!!latestSleep.extra?.sleepTime && (
+              <Text style={{ fontSize: '11px', color: colors.textMuted }}>{latestSleep.extra.sleepTime} 入睡 · {latestSleep.extra.wakeTime} 醒来</Text>
+            )}
+          </View>
+        )}
+
+        {/* 趋势图 Tab：血压/血糖/睡眠 */}
+        {(bpTrend.length > 0 || bsTrend.length > 0 || sleepTrend.length > 0) && (
+          <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
+            <View style={{ display: 'flex', gap: '8px', marginBottom: `${spacing.sm}px` }}>
+              {[{ k: 'bp', l: '血压' }, { k: 'bs', l: '血糖' }, { k: 'sleep', l: '睡眠' }].map((t) => (
+                <View key={t.k} onClick={() => setTrendTab(t.k)} style={{
+                  padding: '5px 12px', borderRadius: `${radius.full}px`,
+                  backgroundColor: trendTab === t.k ? colors.primary : colors.background,
+                  border: `1px solid ${trendTab === t.k ? colors.primary : colors.border}`,
+                }}>
+                  <Text style={{ fontSize: '12px', color: trendTab === t.k ? '#fff' : colors.textSecondary, fontWeight: trendTab === t.k ? 700 : 400 }}>{t.l}</Text>
+                </View>
+              ))}
+            </View>
+            <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{trendMap[trendTab].label}</Text>
+            <TrendChart points={trendMap[trendTab].data} height={100} color={trendMap[trendTab].color} />
+          </View>
+        )}
       </View>
 
       <View style={{ padding: `0 ${spacing.lg}px` }}>

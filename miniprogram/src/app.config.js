@@ -24,6 +24,16 @@ export default defineAppConfig({
     'pages/orders/index',
     'pages/legal/index',
     'pages/common/coming-soon/index',
+
+    'pages/nutrition/index',
+    'pages/profile/benefits/index',
+    'pages/profile/family/index',
+    'pages/questionnaire/index',
+    'pages/records/ai-health/index',
+    'pages/records/medical-reports/index',
+    'pages/records/screening/index',
+    'pages/services/plans/index',
+    'pages/records/public-report/index',
   ],
   window: {
     backgroundTextStyle: 'light',
