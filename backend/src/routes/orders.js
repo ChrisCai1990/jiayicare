@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
 const Order = require('../models/Order');
+const FollowUp = require('../models/FollowUp');
 const { refundOrderPoints } = require('../utils/orderPoints');
 const router = express.Router();
 
@@ -38,6 +39,12 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     order.status = 'cancelled';
     await order.save();
     await refundOrderPoints(order); // 若下单时预记过消费积分，取消订单要退回
+    // 联动取消该订单生成的随访待办（sourceType='order'），此前只改订单状态，随访记录仍是 planned，
+    // 导致用户端"待办任务"和医护端工作台永久残留一条订单已取消却还在等安排的僵尸待办
+    await FollowUp.updateMany(
+      { sourceOrderId: order._id, status: { $nin: ['completed', 'cancelled'] } },
+      { $set: { status: 'cancelled', cancelReason: '订单已取消' } }
+    );
     res.json({ success: true, message: '订单已取消', data: order });
   } catch (err) {
     res.status(500).json({ success: false, message: '取消失败', error: err.message });
