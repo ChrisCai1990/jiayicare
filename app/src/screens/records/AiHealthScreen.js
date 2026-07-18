@@ -85,21 +85,52 @@ function HealthSummaryView({ sections }) {
   const chronic = s.chronic_disease || {};
   const checkup = s.checkup_completeness || {};
 
+  // 板块顺序与标题对齐医护端 staff/src/pages/PatientDetailPage.jsx（2026-07-18）：
+  // 疾病风险类板块（肿瘤/心脑血管/慢病/体检完整度/医疗问题）在前，生活方式收尾——
+  // 用户先看医护审核过的疾病结论，再看生活习惯依据，与医护实际审核口径一致。
   return (
     <View>
-      <SectionCard icon="🌿" title="生活方式评估">
-        {(lifestyle.items || []).map((it, i) => (
-          <View key={i} style={styles.lifestyleItem}>
-            <Text style={styles.lifestyleDim}>{it.dimension}</Text>
-            {!!it.finding && <Text style={styles.lineText}>{it.finding}</Text>}
-            {!!it.risk && <Text style={[styles.lineText, { color: colors.warning }]}>风险：{it.risk}</Text>}
-            {!!it.suggestion && <Text style={[styles.lineText, { color: colors.primary }]}>建议：{it.suggestion}</Text>}
-          </View>
-        ))}
-        {!!lifestyle.summary && <Text style={styles.summaryBox}>{lifestyle.summary}</Text>}
+      <SectionCard icon="🔬" title="肿瘤风险筛查分析">
+        <Text style={styles.subLabel}>已完成筛查</Text>
+        <ListLines items={tumor.completed} />
+        <Text style={[styles.subLabel, { marginTop: 8 }]}>异常发现</Text>
+        <ListLines items={tumor.abnormal} color={colors.danger} />
+        <Text style={[styles.subLabel, { marginTop: 8 }]}>未覆盖项目</Text>
+        <ListLines items={tumor.missing} color={colors.textMuted} />
+        {!!tumor.summary && <Text style={styles.summaryBox}>{tumor.summary}</Text>}
       </SectionCard>
 
-      <SectionCard icon="🩺" title="重点关注医疗问题">
+      <SectionCard icon="❤️" title="心脑血管病风险分析">
+        <Text style={styles.subLabel}>高风险因素</Text>
+        <ListLines items={cardio.high} color={colors.danger} />
+        <Text style={[styles.subLabel, { marginTop: 8 }]}>中风险因素</Text>
+        <ListLines items={cardio.medium} color={colors.warning} />
+        {!!cardio.summary && <Text style={styles.summaryBox}>{cardio.summary}</Text>}
+      </SectionCard>
+
+      <SectionCard icon="📊" title="慢性病及其他健康指标分析">
+        {(chronic.items || []).length === 0 && <Text style={styles.mutedText}>暂无</Text>}
+        {(chronic.items || []).map((it, i) => {
+          const st = STATUS_META[it.status] || STATUS_META.normal;
+          return (
+            <View key={i} style={styles.chronicRow}>
+              <Text style={styles.chronicName}>{it.name}</Text>
+              <Text style={[styles.chronicValue, { color: st.color }]}>{it.value}（{st.label}）</Text>
+              {!!it.note && <Text style={styles.mutedText}>{it.note}</Text>}
+            </View>
+          );
+        })}
+      </SectionCard>
+
+      <SectionCard icon="📋" title="体检全面性评估">
+        <Text style={styles.subLabel}>已覆盖</Text>
+        <ListLines items={checkup.covered} />
+        <Text style={[styles.subLabel, { marginTop: 8 }]}>缺失项目</Text>
+        <ListLines items={checkup.missing} color={colors.warning} />
+        {!!checkup.suggestion && <Text style={styles.summaryBox}>{checkup.suggestion}</Text>}
+      </SectionCard>
+
+      <SectionCard icon="🏥" title="需优先解决的医疗问题">
         {(medPriority.items || []).length === 0 && <Text style={styles.mutedText}>暂无</Text>}
         {(medPriority.items || []).map((it, i) => {
           const u = URGENCY_META[it.urgency] || URGENCY_META.low;
@@ -119,44 +150,16 @@ function HealthSummaryView({ sections }) {
         })}
       </SectionCard>
 
-      <SectionCard icon="🎗️" title="肿瘤筛查评估">
-        <Text style={styles.subLabel}>已完成筛查</Text>
-        <ListLines items={tumor.completed} />
-        <Text style={[styles.subLabel, { marginTop: 8 }]}>异常发现</Text>
-        <ListLines items={tumor.abnormal} color={colors.danger} />
-        <Text style={[styles.subLabel, { marginTop: 8 }]}>未覆盖项目</Text>
-        <ListLines items={tumor.missing} color={colors.textMuted} />
-        {!!tumor.summary && <Text style={styles.summaryBox}>{tumor.summary}</Text>}
-      </SectionCard>
-
-      <SectionCard icon="❤️" title="心脑血管风险">
-        <Text style={styles.subLabel}>高风险因素</Text>
-        <ListLines items={cardio.high} color={colors.danger} />
-        <Text style={[styles.subLabel, { marginTop: 8 }]}>中风险因素</Text>
-        <ListLines items={cardio.medium} color={colors.warning} />
-        {!!cardio.summary && <Text style={styles.summaryBox}>{cardio.summary}</Text>}
-      </SectionCard>
-
-      <SectionCard icon="📊" title="慢病指标">
-        {(chronic.items || []).length === 0 && <Text style={styles.mutedText}>暂无</Text>}
-        {(chronic.items || []).map((it, i) => {
-          const st = STATUS_META[it.status] || STATUS_META.normal;
-          return (
-            <View key={i} style={styles.chronicRow}>
-              <Text style={styles.chronicName}>{it.name}</Text>
-              <Text style={[styles.chronicValue, { color: st.color }]}>{it.value}（{st.label}）</Text>
-              {!!it.note && <Text style={styles.mutedText}>{it.note}</Text>}
-            </View>
-          );
-        })}
-      </SectionCard>
-
-      <SectionCard icon="📋" title="体检完整度">
-        <Text style={styles.subLabel}>已覆盖</Text>
-        <ListLines items={checkup.covered} />
-        <Text style={[styles.subLabel, { marginTop: 8 }]}>缺失项目</Text>
-        <ListLines items={checkup.missing} color={colors.warning} />
-        {!!checkup.suggestion && <Text style={styles.summaryBox}>{checkup.suggestion}</Text>}
+      <SectionCard icon="🌿" title="生活方式评估">
+        {(lifestyle.items || []).map((it, i) => (
+          <View key={i} style={styles.lifestyleItem}>
+            <Text style={styles.lifestyleDim}>{it.dimension}</Text>
+            {!!it.finding && <Text style={styles.lineText}>{it.finding}</Text>}
+            {!!it.risk && <Text style={[styles.lineText, { color: colors.warning }]}>风险：{it.risk}</Text>}
+            {!!it.suggestion && <Text style={[styles.lineText, { color: colors.primary }]}>建议：{it.suggestion}</Text>}
+          </View>
+        ))}
+        {!!lifestyle.summary && <Text style={styles.summaryBox}>{lifestyle.summary}</Text>}
       </SectionCard>
     </View>
   );
@@ -192,7 +195,6 @@ function RiskAssessmentView({ data }) {
           </View>
         );
       })}
-      <Text style={styles.disclaimerText}>本评估由 AI 结合规则引擎生成，仅供健康参考，不构成医疗诊断。</Text>
     </View>
   );
 }
@@ -306,6 +308,12 @@ export default function AiHealthScreen({ navigation }) {
             <Text style={[styles.tabBtnText, tab === t && styles.tabBtnTextActive]}>{t}</Text>
           </TouchableOpacity>
         ))}
+      </View>
+
+      {/* 免责声明常驻可见（不用滚到底部才看到），2026-07-18 优化 */}
+      <View style={styles.topDisclaimerChip}>
+        <Ionicons name="shield-checkmark-outline" size={13} color={colors.textMuted} />
+        <Text style={styles.topDisclaimerText}>AI生成，均经您的专属健康团队审核，仅供参考不替代诊断</Text>
       </View>
 
       {loading ? (
@@ -506,5 +514,10 @@ const styles = StyleSheet.create({
     fontSize: 12, color: colors.primary, backgroundColor: '#E8F5EF',
     borderRadius: radius.sm, padding: spacing.sm, marginTop: 6,
   },
-  disclaimerText: { fontSize: 11, color: colors.textMuted, textAlign: 'center', marginTop: spacing.sm, marginBottom: spacing.xl },
+  topDisclaimerChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    marginHorizontal: spacing.lg, marginTop: spacing.sm,
+    paddingHorizontal: spacing.sm, paddingVertical: 6,
+  },
+  topDisclaimerText: { fontSize: 11, color: colors.textMuted, flex: 1, lineHeight: 15 },
 });

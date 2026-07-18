@@ -5295,7 +5295,7 @@ export default function PatientDetailPage() {
                   )}
                 </AISectionCard>
 
-                {/* 板块三：心脑血管病风险分析 */}
+                {/* 板块二：心脑血管病风险分析 */}
                 <AISectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444">
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -5314,7 +5314,7 @@ export default function PatientDetailPage() {
                   )}
                 </AISectionCard>
 
-                {/* 板块四：慢性病及其他健康指标 */}
+                {/* 板块三：慢性病及其他健康指标 */}
                 <AISectionCard title="慢性病及其他健康指标分析" icon="📊" color="#0077B6">
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -5356,7 +5356,7 @@ export default function PatientDetailPage() {
                   )}
                 </AISectionCard>
 
-                {/* 板块五：体检全面性评估 */}
+                {/* 板块四：体检全面性评估 */}
                 <AISectionCard title="体检全面性评估" icon="📋" color="#1E6B50">
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

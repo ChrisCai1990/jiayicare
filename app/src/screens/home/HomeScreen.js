@@ -73,9 +73,6 @@ const REM_CAT_META = {
   substance:         { icon: 'warning-outline',       color: '#9D174D', bg: '#FCE7F3' },
 };
 
-// ── 固定颜色池 ───────────────────────────────────────────────────
-const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
-
 // ── 打卡项目定义 ─────────────────────────────────────────────────
 const CHECKIN_DEFS = {
   diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食打卡', allowMultiple: true },
@@ -479,10 +476,6 @@ export default function HomeScreen({ navigation }) {
   const [loading, setLoading]               = useState(true);
   const [refreshing, setRefreshing]         = useState(false);
   const [taskTab, setTaskTab]               = useState('全部');
-  const [moodScore, setMoodScore]           = useState(7);
-  const [moodNote, setMoodNote]             = useState(''); // 情绪波动原因备注，选分后可填写
-  const [moodPendingSubmit, setMoodPendingSubmit] = useState(false); // 已选分但未确认提交（等待用户可能补充备注）
-  const [moodSaving, setMoodSaving]         = useState(false);
   const [followupPlans, setFollowupPlans]   = useState([]);
   const [allTasks, setAllTasks]             = useState([]);
   const [todayRecordedTypes, setTodayRecordedTypes] = useState(new Set());
@@ -645,22 +638,27 @@ export default function HomeScreen({ navigation }) {
       :                              { label: '肥胖', bg: '#FDECEA', color: colors.danger })
     : { label: '待记录', bg: '#F5F5F5', color: colors.textMuted };
 
-  // ── 健康管家团队（优先使用后端返回的 careTeam，兼容旧 doctor/manager 字段）
-  const careTeam = (() => {
-    const BG_COLORS = TEAM_COLORS;
-    if (user?.careTeam?.length > 0) {
-      return user.careTeam.map((m, i) => ({ name: m.name, role: m.role, online: true, bg: BG_COLORS[i % BG_COLORS.length] }));
-    }
-    // 兼容旧格式
-    return [
-      user?.doctor?.name  ? { name: user.doctor.name,  role: user.doctor.title  || '家庭医师', online: true, bg: BG_COLORS[0] } : null,
-      user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家', online: true, bg: BG_COLORS[1] } : null,
-    ].filter(Boolean);
-  })();
+  // 健康管家团队展示已移至"我的"页（2026-07-18 首页瘦身），此处不再计算
   const hour  = new Date().getHours();
   const greeting   = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
   const statusEmoji = score >= 80 ? '✨' : score >= 60 ? '💪' : '🌱';
   const statusText  = score >= 80 ? '今天状态不错' : score >= 60 ? '继续保持' : '需要关注';
+
+  // 趋势状态文案：把评分/指标异常转成一句能直接照做的行动建议，而不是抽象的"需关注"
+  // 优先级：血压/血糖异常 > 评分下降趋势 > 评分平稳提示
+  const trendActionText = (() => {
+    if (bpStatusKey !== 'normal') return `血压${bpStatus.label}，建议今天测量并联系医师`;
+    if (bsStatusKey !== 'normal') return `血糖${bsStatus.label}，建议今天复测并联系医师`;
+    if (scoreHistory.length >= 2) {
+      const first = scoreHistory[0]?.score, last = scoreHistory[scoreHistory.length - 1]?.score;
+      if (first != null && last != null) {
+        if (last - first <= -3) return `近${scoreHistory.length}日评分下降，建议关注近期生活方式`;
+        if (last - first >= 3) return `近${scoreHistory.length}日评分上升，继续保持`;
+      }
+      return `近${scoreHistory.length}日趋势稳定`;
+    }
+    return null;
+  })();
 
   // 血压：优先 extra.sys/dia，否则解析 value 字符串
   const bpSys = bpRec?.extra?.sys ?? (bpRec?.value ? parseFloat(bpRec.value.split('/')[0]) : null);
@@ -690,10 +688,6 @@ export default function HomeScreen({ navigation }) {
     : sleepHours < 6  ? colors.danger : sleepHours <= 9 ? colors.success : '#D97706';
   const sleepBg         = sleepHours == null ? '#F5F5F5'
     : sleepHours < 6  ? '#FDECEA' : sleepHours <= 9 ? '#E8F5EF' : '#FEF3E2';
-
-  // 情绪标签
-  const moodLabel      = moodScore >= 8 ? '愉快' : moodScore >= 6 ? '良好' : '较差';
-  const moodLabelColor = moodScore >= 8 ? '#0077B6' : moodScore >= 6 ? colors.success : colors.warning;
 
   // ── 固定打卡项目（11项，始终显示）────────────────────────────────
   const dynamicCheckinItems = FIXED_CHECKIN_KEYS.map(k => CHECKIN_DEFS[k]).filter(Boolean);
@@ -787,10 +781,12 @@ export default function HomeScreen({ navigation }) {
               {scoreDisplay != null && scoreHistory.length >= 2 && (
                 <View style={styles.heroTrendLine}>
                   <ScoreTrendLine history={scoreHistory} />
-                  <Text style={styles.heroTrendLabel}>近{scoreHistory.length}日走势</Text>
                 </View>
               )}
             </View>
+            {trendActionText && (
+              <Text style={styles.heroTrendActionText}>{trendActionText}</Text>
+            )}
           </View>
 
           {/* 成长卡片（连续打卡）已下移到"今日健康打卡"板块顶部，与打卡网格合并为一个整体（2026-07-09） */}
@@ -1223,179 +1219,9 @@ export default function HomeScreen({ navigation }) {
             );
           })()}
 
-          {/* ── 健康指标区块 ──────────────────────────────────────── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>健康指标</Text>
-            <View style={styles.metricsGrid}>
-
-              {/* 血压 */}
-              <View style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>血压</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: bpStatus.bg }]}>
-                    <Text style={[styles.statusBadgeText, { color: bpStatus.color }]}>{bpStatus.label}</Text>
-                  </View>
-                </View>
-                <View style={styles.metricValueRow}>
-                  <Text style={styles.metricValue}>{bpVal}</Text>
-                  <Text style={styles.metricUnit}>mmHg</Text>
-                </View>
-                <BloodPressureChart data={bpTrend} onAdd={() => navigation.navigate('AddRecord')} />
-              </View>
-
-              {/* 血糖 */}
-              <View style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>血糖</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: bsStatus.bg }]}>
-                    <Text style={[styles.statusBadgeText, { color: bsStatus.color }]}>{bsStatus.label}</Text>
-                  </View>
-                </View>
-                <View style={styles.metricValueRow}>
-                  <Text style={styles.metricValue}>{bsVal}</Text>
-                  <Text style={styles.metricUnit}>mmol/L</Text>
-                </View>
-                <BloodSugarChart data={sugarTrend} onAdd={() => navigation.navigate('AddRecord')} />
-              </View>
-
-              {/* BMI */}
-              <View style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>BMI</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: bmiStatus.bg }]}>
-                    <Text style={[styles.statusBadgeText, { color: bmiStatus.color }]}>{bmiStatus.label}</Text>
-                  </View>
-                </View>
-                <View style={styles.metricValueRow}>
-                  <Text style={styles.metricValue}>{bmiVal ?? '--'}</Text>
-                  <Text style={styles.metricUnit}>kg/m²</Text>
-                </View>
-                {bmiVal ? <BmiBar value={parseFloat(bmiVal)} /> : (
-                  <TouchableOpacity style={styles.chartEmptyMini} onPress={() => navigation.navigate('EditProfile')} activeOpacity={0.7}>
-                    <Ionicons name="add-circle-outline" size={18} color={colors.primary} />
-                    <Text style={styles.chartEmptyMiniText}>完善身高体重</Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-
-              {/* 睡眠 */}
-              <View style={styles.metricCard}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>睡眠</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: sleepBg }]}>
-                    <Text style={[styles.statusBadgeText, { color: sleepLabelColor }]}>{sleepLabel}</Text>
-                  </View>
-                </View>
-                <View style={styles.sleepRow}>
-                  <Text style={styles.sleepRowLabel}>入睡时间</Text>
-                  <Text style={[styles.sleepRowValue, !sleepHours && { color: colors.textDisabled }]}>{sleepBedTime}</Text>
-                </View>
-                <View style={[styles.sleepRow, { borderTopWidth: 1, borderTopColor: colors.borderLight }]}>
-                  <Text style={styles.sleepRowLabel}>晨起时间</Text>
-                  <Text style={[styles.sleepRowValue, !sleepHours && { color: colors.textDisabled }]}>{sleepWakeTime}</Text>
-                </View>
-                <View style={[styles.sleepRow, { borderTopWidth: 1, borderTopColor: colors.borderLight, marginTop: 2 }]}>
-                  <Text style={styles.sleepRowLabel}>睡眠时长</Text>
-                  {sleepHours != null ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                      <Text style={[styles.sleepRowValue, { color: colors.primary, fontWeight: '700' }]}>
-                        {sleepHours} 小时
-                      </Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity onPress={() => navigation.navigate('AddRecord')} activeOpacity={0.7}>
-                      <Text style={[styles.sleepRowValue, { color: colors.primary, fontSize: 11 }]}>点击录入</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              {/* 情绪 */}
-              <View style={[styles.metricCard, styles.metricCardFull]}>
-                <View style={styles.metricHeader}>
-                  <Text style={styles.metricCardTitle}>情绪</Text>
-                  <View style={[styles.statusBadge, { backgroundColor: moodScore >= 6 ? '#E8F5EF' : '#FDECEA' }]}>
-                    <Text style={[styles.statusBadgeText, { color: moodLabelColor }]}>{moodLabel}</Text>
-                  </View>
-                </View>
-                <View style={styles.metricValueRow}>
-                  <Text style={styles.metricValue}>{moodScore}</Text>
-                  <Text style={styles.metricUnit}>分</Text>
-                </View>
-                {/* 圆点选分 */}
-                <View style={styles.moodDots}>
-                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                    <TouchableOpacity
-                      key={n}
-                      onPress={() => {
-                        setMoodScore(n);
-                        setMoodPendingSubmit(true);
-                      }}
-                      activeOpacity={0.7}
-                      style={[
-                        styles.moodDot,
-                        n === moodScore && styles.moodDotActive,
-                      ]}
-                    >
-                      <Text style={[
-                        styles.moodDotLabel,
-                        n === moodScore && styles.moodDotLabelActive,
-                      ]}>{n}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-                <Text style={styles.moodHint}>
-                  1分 · 情绪低落 &nbsp;&nbsp;&nbsp; 5分 · 一般 &nbsp;&nbsp;&nbsp; 10分 · 心情愉悦
-                </Text>
-                {moodPendingSubmit && (
-                  <View style={{ marginTop: 10 }}>
-                    <TextInput
-                      style={styles.checkinNoteInput}
-                      placeholder="备注（可选，如情绪波动原因）"
-                      placeholderTextColor={colors.textMuted}
-                      value={moodNote}
-                      onChangeText={setMoodNote}
-                      multiline
-                    />
-                    <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-                      <TouchableOpacity
-                        style={[styles.checkinModalBtn, { backgroundColor: colors.border }]}
-                        onPress={() => { setMoodPendingSubmit(false); setMoodNote(''); }}
-                        disabled={moodSaving}
-                      >
-                        <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={[styles.checkinModalBtn, { backgroundColor: colors.primary, flex: 2, opacity: moodSaving ? 0.6 : 1 }]}
-                        onPress={async () => {
-                          if (moodSaving) return;
-                          setMoodSaving(true);
-                          try {
-                            await recordsAPI.create({
-                              category: 'lifestyle', type: 'mood', label: '情绪',
-                              value: String(moodScore), unit: '分',
-                              status: moodScore >= 6 ? 'normal' : 'warning',
-                              note: moodNote || '',
-                            });
-                            setMoodPendingSubmit(false);
-                            setMoodNote('');
-                          } catch (err) {
-                            Alert.alert('保存失败', err.message || '网络异常，请重试');
-                          }
-                          setMoodSaving(false);
-                        }}
-                        disabled={moodSaving}
-                      >
-                        {moodSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
-                        <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{moodSaving ? '保存中...' : '记录'}</Text>
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                )}
-              </View>
-
-            </View>
-          </View>
+          {/* ── 健康指标区块已移除（2026-07-18 首页瘦身）──────────────
+              血压/血糖/BMI/睡眠/情绪不再在首页展示，用户可在"健康档案"页查看完整指标。
+              情绪打卡待第二批"打卡页重构"时并入打卡流程。 */}
 
           {/* ── 待办任务 ──────────────────────────────────────────── */}
           <View style={styles.section}>
@@ -1417,7 +1243,7 @@ export default function HomeScreen({ navigation }) {
                 </View>
               ) : (
                 <>
-                  {allPendingTaskItems.slice(0, 5).map((t, i, arr) => {
+                  {allPendingTaskItems.slice(0, 3).map((t, i, arr) => {
                     const isLast = i === arr.length - 1 && todayReminders.length === 0;
                     return <TaskItem key={t._id || t.id || i} task={t} isLast={isLast} onPress={setTaskDetailModal} />;
                   })}
@@ -1431,14 +1257,14 @@ export default function HomeScreen({ navigation }) {
                 </>
               )}
             </View>
-            {allPendingTaskItems.length > 5 && (
+            {allPendingTaskItems.length > 3 && (
               <TouchableOpacity
                 style={styles.reminderHint}
                 onPress={() => navigation.navigate('Tasks')}
                 activeOpacity={0.7}
               >
                 <Ionicons name="ellipsis-horizontal-circle-outline" size={12} color={colors.primary} />
-                <Text style={styles.reminderHintText}>还有 {allPendingTaskItems.length - 5} 项待办 · 查看全部</Text>
+                <Text style={styles.reminderHintText}>还有 {allPendingTaskItems.length - 3} 项待办 · 查看全部</Text>
                 <Ionicons name="chevron-forward" size={12} color={colors.primary} />
               </TouchableOpacity>
             )}
@@ -1455,38 +1281,7 @@ export default function HomeScreen({ navigation }) {
             )}
           </View>
 
-          {/* ── 我的健康管家团队 ──────────────────────────────────── */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>我的健康管家团队</Text>
-            {careTeam.length === 0 ? (
-              <View style={styles.teamEmpty}>
-                <Ionicons name="people-outline" size={24} color={colors.textMuted} />
-                <Text style={styles.teamEmptyText}>健管团队待分配，完成服务包开通后即可配置</Text>
-              </View>
-            ) : (
-              <ScrollView
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.teamScrollContent}
-              >
-                {careTeam.map((member, i) => (
-                  <TouchableOpacity
-                    key={i}
-                    style={styles.teamCard}
-                    activeOpacity={0.8}
-                    onPress={() => navigation.navigate('Chat')}
-                  >
-                    <View style={[styles.teamAvatar, { backgroundColor: member.bg }]}>
-                      <Text style={styles.teamAvatarText}>{member.name[0]}</Text>
-                      <View style={[styles.teamOnlineDot, { backgroundColor: member.online ? '#22A06B' : '#C0C0C0' }]} />
-                    </View>
-                    <Text style={styles.teamName}>{member.name}</Text>
-                    <Text style={styles.teamRole}>{member.role}</Text>
-                  </TouchableOpacity>
-                ))}
-              </ScrollView>
-            )}
-          </View>
+          {/* ── 我的健康管家团队已移至"我的"页（2026-07-18 首页瘦身）──── */}
 
 
         </View>
@@ -1648,6 +1443,7 @@ const styles = StyleSheet.create({
   },
   heroTrendLine: { marginLeft: 'auto', alignItems: 'center', gap: 3 },
   heroTrendLabel: { fontSize: 9, color: 'rgba(255,255,255,0.45)' },
+  heroTrendActionText: { fontSize: 12, color: 'rgba(255,255,255,0.85)', marginTop: spacing.sm, lineHeight: 17 },
 
   // 今日打卡
   checkinCard: {
@@ -1710,32 +1506,6 @@ const styles = StyleSheet.create({
   sectionMore: { flexDirection: 'row', alignItems: 'center', gap: 2, marginLeft: 'auto' },
   sectionMoreText: { fontSize: 13, color: colors.primary, fontWeight: '500' },
 
-  // 健康指标网格
-  metricsGrid: {
-    flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm,
-  },
-  metricCard: {
-    width: (SCREEN_WIDTH - spacing.lg * 2 - spacing.sm) / 2,
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1, borderColor: colors.borderLight,
-  },
-  metricCardFull: {
-    width: '100%',
-  },
-  metricHeader: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6,
-  },
-  metricCardTitle: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
-  statusBadge: {
-    paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full,
-  },
-  statusBadgeText: { fontSize: 10, fontWeight: '700' },
-  metricValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
-  metricValue: { fontSize: 20, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
-  metricUnit: { fontSize: 10, color: colors.textMuted, fontWeight: '500' },
-
   // 新用户引导卡
   onboardBanner: {
     marginBottom: spacing.md,
@@ -1769,64 +1539,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
   },
   chartEmptyMiniText: { fontSize: 11, color: colors.primary, fontWeight: '600' },
-
-  // 睡眠行
-  sleepRow: {
-    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
-    paddingVertical: 6,
-  },
-  sleepRowLabel: { fontSize: 11, color: colors.textSecondary },
-  sleepRowValue: { fontSize: 13, fontWeight: '600', color: colors.textPrimary },
-
-  // 情绪圆点
-  moodDots: {
-    flexDirection: 'row', flexWrap: 'nowrap', gap: 5, marginTop: 10, justifyContent: 'space-between',
-  },
-  moodDot: {
-    width: 24, height: 24, borderRadius: 12,
-    backgroundColor: colors.borderLight,
-    alignItems: 'center', justifyContent: 'center',
-    borderWidth: 1, borderColor: colors.border,
-  },
-  moodDotActive: {
-    backgroundColor: colors.primary, borderColor: colors.primary,
-  },
-  moodDotLabel: { fontSize: 10, color: colors.textMuted, fontWeight: '600' },
-  moodDotLabelActive: { color: colors.white },
-  moodHint: {
-    fontSize: 10, color: colors.textMuted, marginTop: 8, lineHeight: 14,
-  },
-
-
-  // 健康管家团队
-  teamEmpty: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md,
-    borderWidth: 1, borderColor: colors.borderLight,
-  },
-  teamEmptyText: { flex: 1, fontSize: 12, color: colors.textMuted, lineHeight: 18 },
-  teamScrollContent: { gap: spacing.sm, paddingVertical: 4 },
-  teamCard: {
-    alignItems: 'center',
-    backgroundColor: colors.white,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    borderWidth: 1, borderColor: colors.borderLight,
-    minWidth: 88,
-  },
-  teamAvatar: {
-    width: 52, height: 52, borderRadius: 26,
-    alignItems: 'center', justifyContent: 'center',
-    marginBottom: 8,
-  },
-  teamAvatarText: { fontSize: 20, fontWeight: '700', color: colors.white },
-  teamOnlineDot: {
-    position: 'absolute', bottom: 1, right: 1,
-    width: 12, height: 12, borderRadius: 6,
-    borderWidth: 2, borderColor: colors.white,
-  },
-  teamName: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
-  teamRole: { fontSize: 10, color: colors.textMuted, fontWeight: '500' },
 
   // 今日待办 Tab
   taskTabRow: { flexDirection: 'row', gap: 4 },

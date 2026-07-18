@@ -10,6 +10,8 @@ import { useAuth } from '../../context/AuthContext';
 import { ordersAPI, userAPI } from '../../services/api';
 import Avatar, { AvatarOnDark } from '../../components/Avatar';
 
+const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
+
 // ── 样式（必须在所有组件函数之前定义，防止 Railway 生产构建 TDZ）────
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
@@ -127,6 +129,36 @@ const styles = StyleSheet.create({
     alignItems: 'center', justifyContent: 'center', marginBottom: 6,
   },
   addFamilyLabel: { fontSize: 12, color: colors.primary, fontWeight: '500' },
+
+  // 健康管家团队
+  teamEmpty: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  teamEmptyText: { flex: 1, fontSize: 12, color: colors.textMuted, lineHeight: 18 },
+  teamScrollContent: { gap: spacing.sm, paddingVertical: 2 },
+  teamCard: {
+    alignItems: 'center',
+    backgroundColor: colors.white,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+    minWidth: 88,
+  },
+  teamAvatar: {
+    width: 52, height: 52, borderRadius: 26,
+    alignItems: 'center', justifyContent: 'center',
+    marginBottom: 8,
+  },
+  teamAvatarText: { fontSize: 20, fontWeight: '700', color: colors.white },
+  teamOnlineDot: {
+    position: 'absolute', bottom: 1, right: 1,
+    width: 12, height: 12, borderRadius: 6,
+    borderWidth: 2, borderColor: colors.white,
+  },
+  teamName: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 2 },
+  teamRole: { fontSize: 10, color: colors.textMuted, fontWeight: '500' },
 
   // 菜单
   menuCard: {
@@ -286,6 +318,18 @@ export default function ProfileScreen({ navigation }) {
   // 到期日格式化
   const expiryStr = hasService ? (user.serviceExpiry || '--') : '--';
 
+  // 健康管家团队（优先使用后端返回的 careTeam，兼容旧 doctor/manager 字段）——从首页移入（2026-07-18）
+  const careTeam = (() => {
+    const BG_COLORS = TEAM_COLORS;
+    if (user?.careTeam?.length > 0) {
+      return user.careTeam.map((m, i) => ({ name: m.name, role: m.role, online: true, bg: BG_COLORS[i % BG_COLORS.length] }));
+    }
+    return [
+      user?.doctor?.name  ? { name: user.doctor.name,  role: user.doctor.title  || '家庭医师', online: true, bg: BG_COLORS[0] } : null,
+      user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家', online: true, bg: BG_COLORS[1] } : null,
+    ].filter(Boolean);
+  })();
+
   useEffect(() => {
     // 待跟进订单数
     (async () => {
@@ -404,15 +448,47 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         {/* ── 健康管理 ─────────────────────────────────────────── */}
+        {/* 健康档案/体检报告已从本页移除（2026-07-18 去重）：底部导航"健康档案"Tab + "上传报告"Tab已是完整入口 */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>健康管理</Text>
           <View style={styles.menuCard}>
-            <MenuItem icon="heart-outline"         iconColor="#DC3545" label="健康档案" value="查看全部" onPress={() => navigation.navigate('Records')} />
             <MenuItem icon="clipboard-outline"     iconColor="#7C3AED" label="健康方案"              onPress={() => navigation.navigate('ServicePlans')} />
-            <MenuItem icon="document-text-outline" iconColor="#0077B6" label="体检报告" badge={undefined} onPress={() => navigation.navigate('MedicalReports')} />
             <MenuItem icon="medkit-outline"        iconColor="#D97706" label="用药管理"              onPress={() => navigation.navigate('Medication')} />
             <MenuItem icon="leaf-outline"          iconColor="#22A06B" label="营养素管理"            onPress={() => navigation.navigate('Nutrition')} isLast />
           </View>
+        </View>
+
+        {/* ── 我的健康管家团队（2026-07-18 从首页移入）──────────── */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>我的健康管家团队</Text>
+          {careTeam.length === 0 ? (
+            <View style={styles.teamEmpty}>
+              <Ionicons name="people-outline" size={24} color={colors.textMuted} />
+              <Text style={styles.teamEmptyText}>健管团队待分配，完成服务包开通后即可配置</Text>
+            </View>
+          ) : (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.teamScrollContent}
+            >
+              {careTeam.map((member, i) => (
+                <TouchableOpacity
+                  key={i}
+                  style={styles.teamCard}
+                  activeOpacity={0.8}
+                  onPress={() => navigation.navigate('Chat')}
+                >
+                  <View style={[styles.teamAvatar, { backgroundColor: member.bg }]}>
+                    <Text style={styles.teamAvatarText}>{member.name[0]}</Text>
+                    <View style={[styles.teamOnlineDot, { backgroundColor: member.online ? '#22A06B' : '#C0C0C0' }]} />
+                  </View>
+                  <Text style={styles.teamName}>{member.name}</Text>
+                  <Text style={styles.teamRole}>{member.role}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          )}
         </View>
 
         {/* ── 我的服务 ─────────────────────────────────────────── */}
