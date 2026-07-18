@@ -278,6 +278,9 @@ function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, s
         {collapsed ? (
           <span style={{ flex: 1, fontSize: 13, color: '#4A6558', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {q.text || <span style={{ color: '#ccc' }}>（未填写题目）</span>}
+            {q.genderOnly && (
+              <span style={{ marginLeft: 8, fontSize: 11, color: '#D97706' }}>（仅{q.genderOnly}性）</span>
+            )}
           </span>
         ) : (
           <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, marginLeft: 'auto' }}>
@@ -312,6 +315,14 @@ function QuestionCard({ q, i, total, allQuestions, onUpdate, onRemove, onMove, s
                 onChange={e => onUpdate({ required: e.target.checked })} />
               必填
             </label>
+            {/* 性别限定：月经史/生育史等女性专属题目需设为"仅女"，否则默认对所有性别可见且必填（2026-07-19 修复） */}
+            <select value={q.genderOnly || ''} onChange={e => onUpdate({ genderOnly: e.target.value })}
+              title="仅指定性别的用户会看到并需要填写此题；留空则所有性别都可见"
+              style={{ border: '1px solid #ddd', borderRadius: 4, padding: '3px 6px', fontSize: 12, background: '#fff', marginTop: 8 }}>
+              <option value="">不限性别</option>
+              <option value="男">仅男性</option>
+              <option value="女">仅女性</option>
+            </select>
             {scoringEnabled && (
               <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap', paddingTop: 8, color: '#2b6cb0' }}>
                 <input type="checkbox" checked={!!q.scoreEnabled}

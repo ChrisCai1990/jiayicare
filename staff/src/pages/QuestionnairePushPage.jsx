@@ -64,6 +64,9 @@ function PreviewModal({ questionnaire, onClose }) {
                     {q.required === false && (
                       <span style={{ fontSize: 11, color: '#8AA89C' }}>（选填）</span>
                     )}
+                    {q.genderOnly && (
+                      <span style={{ fontSize: 11, color: '#D97706' }}>（仅{q.genderOnly}性可见）</span>
+                    )}
                   </div>
                   {/* 题目内容 */}
                   <div style={{ padding: '10px 14px' }}>
