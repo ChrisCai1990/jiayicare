@@ -371,7 +371,7 @@ function UploadModal({ patients, onClose, onSaved }) {
   }
 
   return (
-    <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+    <div className="modal-overlay">
       <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
           <h3 className="modal-title">上传报告</h3>
