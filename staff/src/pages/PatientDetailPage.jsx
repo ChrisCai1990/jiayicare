@@ -5063,43 +5063,62 @@ export default function PatientDetailPage() {
                   <th>类型</th>
                   <th>数值 / 备注</th>
                   <th>图片</th>
-                  <th>记录时间</th>
+                  <th>归属时间</th>
+                  <th>提交时间</th>
                   <th>操作</th>
                 </tr>
               </thead>
               <tbody>
-                {recentRecords.map(r => {
-                  const imgUrl = r.imageUrl || r.extra?.imageUrl || ''
-                  return (
-                    <tr key={r._id}>
-                      <td><span className="badge badge-info">{RECORD_TYPE_LABEL[r.type] || r.type}</span></td>
-                      <td>
-                        {formatRecordValue(r)}
-                        {r.editedBy?.editedAt && (
-                          <div style={{ fontSize: 11, color: '#D97706', marginTop: 2 }}>
-                            {r.editedBy.staffName} 修正于 {new Date(r.editedBy.editedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}（原值 {r.editedBy.prevValue}）
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {imgUrl ? (
-                          <img
-                            src={imgUrl}
-                            alt="打卡图片"
-                            style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', border: '1px solid #E0D9CE' }}
-                            onClick={() => setPreviewImageUrl(imgUrl)}
-                          />
-                        ) : <span style={{ color: '#ccc', fontSize: 12 }}>—</span>}
-                      </td>
-                      <td style={{ color: '#8AA89C', fontSize: 13 }}>
-                        {new Date(r.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                      </td>
-                      <td>
-                        <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
-                      </td>
-                    </tr>
-                  )
-                })}
+                {groupRecordsByTypeAndDate(recentRecords).map(({ groupKey, groupLabel, count, records }) => (
+                  <React.Fragment key={groupKey}>
+                    {count > 1 && (
+                      <tr>
+                        <td colSpan={6} style={{ background: '#F2EDE3', fontSize: 12, fontWeight: 700, color: '#4A6558', padding: '6px 12px' }}>
+                          {groupLabel}（共{count}次）
+                        </td>
+                      </tr>
+                    )}
+                    {records.map(r => {
+                      const imgUrl = r.imageUrl || r.extra?.imageUrl || ''
+                      // 归属时间(recordedAt)与提交时间(createdAt)相差不大时，提交时间列显示"同上"避免冗余
+                      const recordedTime = r.recordedAt ? new Date(r.recordedAt) : null
+                      const createdTime = r.createdAt ? new Date(r.createdAt) : null
+                      const closeEnough = recordedTime && createdTime && Math.abs(createdTime - recordedTime) <= 5 * 60 * 1000
+                      return (
+                        <tr key={r._id}>
+                          <td><span className="badge badge-info">{RECORD_TYPE_LABEL[r.type] || r.type}</span></td>
+                          <td>
+                            {formatRecordValue(r)}
+                            {r.editedBy?.editedAt && (
+                              <div style={{ fontSize: 11, color: '#D97706', marginTop: 2 }}>
+                                {r.editedBy.staffName} 修正于 {new Date(r.editedBy.editedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}（原值 {r.editedBy.prevValue}）
+                              </div>
+                            )}
+                          </td>
+                          <td>
+                            {imgUrl ? (
+                              <img
+                                src={imgUrl}
+                                alt="打卡图片"
+                                style={{ width: 56, height: 56, objectFit: 'cover', borderRadius: 6, cursor: 'pointer', border: '1px solid #E0D9CE' }}
+                                onClick={() => setPreviewImageUrl(imgUrl)}
+                              />
+                            ) : <span style={{ color: '#ccc', fontSize: 12 }}>—</span>}
+                          </td>
+                          <td style={{ color: '#8AA89C', fontSize: 13 }}>
+                            {recordedTime ? recordedTime.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-'}
+                          </td>
+                          <td style={{ color: '#8AA89C', fontSize: 13 }}>
+                            {closeEnough ? '同上' : (createdTime ? createdTime.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '-')}
+                          </td>
+                          <td>
+                            <button className="btn btn-secondary btn-sm" onClick={() => startEditRecord(r)}>编辑</button>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </React.Fragment>
+                ))}
               </tbody>
             </table>
           ) : (
@@ -8567,6 +8586,27 @@ const RECORD_TYPE_LABEL = {
   diet: '饮食', exercise: '运动', water: '饮水',
   alcohol: '饮酒', bowel: '排便', smoking: '吸烟',
   symptom: '症状自评',
+}
+
+// 按"类型+归属日期"分组：同一天同类型的多次打卡（如运动打3次、饮食4餐）归到一起展示，
+// 而不是与其他类型混在同一条时间线里逐条散落（2026-07-18 反馈）
+function groupRecordsByTypeAndDate(records) {
+  const groups = []
+  const indexByKey = {}
+  records.forEach(r => {
+    const d = r.recordedAt ? new Date(r.recordedAt) : null
+    const dateKey = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '未知日期'
+    const groupKey = `${r.type}_${dateKey}`
+    if (indexByKey[groupKey] == null) {
+      indexByKey[groupKey] = groups.length
+      const label = RECORD_TYPE_LABEL[r.type] || r.type
+      groups.push({ groupKey, groupLabel: `${label} · ${dateKey}`, count: 0, records: [] })
+    }
+    const g = groups[indexByKey[groupKey]]
+    g.records.push(r)
+    g.count = g.records.length
+  })
+  return groups
 }
 
 // 编辑弹窗用：数值类型有单位，生活方式类是自由文本描述（如"跑步10分钟"），字段含义不同，编辑表单要分开呈现

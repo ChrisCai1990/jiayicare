@@ -305,6 +305,8 @@ function TrendChart({ data, data2, typeCfg, period }) {
 }
 
 // ── 历史记录条目 ──────────────────────────────────────────────────
+// 展示两个时间：归属时间(recordedAt，用户标注这次记录对应的时间点，补录时可能是过去)
+// 与提交时间(createdAt，实际打卡这个操作发生的时刻)，避免误以为两者是同一个时间（2026-07-18 反馈）
 function RecordRow({ record, typeCfg, isLast, onPress }) {
   const stMap = typeCfg.key === 'sleep' ? SLEEP_STATUS_CFG : STATUS_CFG;
   const st  = stMap[record.status] || stMap.normal;
@@ -312,6 +314,13 @@ function RecordRow({ record, typeCfg, isLast, onPress }) {
   const dt  = record.recordedAt
     ? new Date(record.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
     : '-';
+  // 归属时间与提交时间相差超过5分钟才额外展示"提交于"，避免即时打卡（两者几乎相同）时显示两遍冗余时间
+  const createdDt = record.createdAt ? new Date(record.createdAt) : null;
+  const recordedDt = record.recordedAt ? new Date(record.recordedAt) : null;
+  const showSubmittedAt = createdDt && recordedDt && Math.abs(createdDt - recordedDt) > 5 * 60 * 1000;
+  const submittedAtText = showSubmittedAt
+    ? createdDt.toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : null;
   return (
     <TouchableOpacity style={[styles.recordRow, !isLast && styles.recordRowBorder]} onPress={() => onPress?.(record)} activeOpacity={0.7}>
       <View style={styles.recordLeft}>
@@ -320,6 +329,7 @@ function RecordRow({ record, typeCfg, isLast, onPress }) {
       </View>
       <View style={{ flex: 1 }}>
         <Text style={styles.recordDate}>{dt}</Text>
+        {submittedAtText ? <Text style={styles.recordNote}>提交于 {submittedAtText}</Text> : null}
         {record.extra?.sleepTime && record.extra?.wakeTime
           ? <Text style={styles.recordNote}>{record.extra.sleepTime} 入睡 → {record.extra.wakeTime} 醒来</Text>
           : null
@@ -332,6 +342,34 @@ function RecordRow({ record, typeCfg, isLast, onPress }) {
       <Ionicons name="chevron-forward" size={16} color={colors.textMuted} style={{ marginLeft: 4 }} />
     </TouchableOpacity>
   );
+}
+
+// ── 按归属日期(recordedAt本地日期)分组，同一天的多次打卡归为一组展示 ──
+function groupRecordsByLocalDate(records) {
+  const groups = [];
+  const indexByDate = {};
+  records.forEach(rec => {
+    const d = rec.recordedAt ? new Date(rec.recordedAt) : null;
+    const dateKey = d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` : '未知日期';
+    if (indexByDate[dateKey] == null) {
+      indexByDate[dateKey] = groups.length;
+      groups.push({ dateKey, records: [] });
+    }
+    groups[indexByDate[dateKey]].records.push(rec);
+  });
+  return groups;
+}
+
+function formatGroupDateLabel(dateKey) {
+  if (dateKey === '未知日期') return dateKey;
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const date = new Date(y, m - 1, d);
+  const today = new Date();
+  const yesterday = new Date(); yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  if (sameDay(date, today)) return '今天';
+  if (sameDay(date, yesterday)) return '昨天';
+  return `${m}月${d}日`;
 }
 
 // ── 指标卡片 ──────────────────────────────────────────────────────
@@ -1223,14 +1261,24 @@ export default function RecordsScreen({ navigation }) {
                 </TouchableOpacity>
               </View>
             ) : (
-              historyData.map((rec, i) => (
-                <RecordRow
-                  key={rec._id || i}
-                  record={rec}
-                  typeCfg={currentTypeCfg}
-                  isLast={i === historyData.length - 1}
-                  onPress={openEditRecord}
-                />
+              groupRecordsByLocalDate(historyData).map((group, gi, groups) => (
+                <View key={group.dateKey}>
+                  <View style={styles.historyGroupHeader}>
+                    <Text style={styles.historyGroupHeaderText}>{formatGroupDateLabel(group.dateKey)}</Text>
+                    {group.records.length > 1 && (
+                      <Text style={styles.historyGroupHeaderCount}>共{group.records.length}次</Text>
+                    )}
+                  </View>
+                  {group.records.map((rec, i) => (
+                    <RecordRow
+                      key={rec._id || i}
+                      record={rec}
+                      typeCfg={currentTypeCfg}
+                      isLast={gi === groups.length - 1 && i === group.records.length - 1}
+                      onPress={openEditRecord}
+                    />
+                  ))}
+                </View>
               ))
             )}
           </View>
@@ -1514,6 +1562,13 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white, borderRadius: radius.md,
     borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
   },
+  historyGroupHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: 8,
+    backgroundColor: colors.background,
+  },
+  historyGroupHeaderText: { fontSize: 12, fontWeight: '700', color: colors.textSecondary },
+  historyGroupHeaderCount: { fontSize: 11, color: colors.primary, fontWeight: '600' },
   recordRow: {
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: spacing.md, paddingVertical: 12, gap: spacing.sm,
