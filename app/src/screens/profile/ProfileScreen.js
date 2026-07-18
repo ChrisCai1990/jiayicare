@@ -360,6 +360,10 @@ export default function ProfileScreen({ navigation }) {
 
         {/* ── Header ─────────────────────────────────────────── */}
         <View style={styles.header}>
+          {/* 顶部信息此前无编辑入口，用户容易以为改不了，加个直达编辑资料的按钮（2026-07-19） */}
+          <TouchableOpacity style={styles.settingBtn} onPress={() => navigation.navigate('EditProfile')}>
+            <Ionicons name="pencil-outline" size={16} color={colors.white} />
+          </TouchableOpacity>
           <View style={styles.headerContent}>
             <AvatarOnDark name={user?.name || '用'} size={76} />
             <Text style={styles.userName}>{user?.name || '用户'}</Text>
@@ -492,14 +496,13 @@ export default function ProfileScreen({ navigation }) {
         </View>
 
         {/* ── 我的服务 ─────────────────────────────────────────── */}
+        {/* "服务群组""评价服务"暂无开发计划，先隐藏占位入口，避免点进去只有提示文案（2026-07-19） */}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>我的服务</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
             <MenuItem icon="gift-outline"     iconColor="#D97706" label="会员权益"              onPress={() => navigation.navigate('Benefits')} />
-            <MenuItem icon="people-outline"  iconColor="#22A06B" label="服务群组"  value="即将开放" onPress={() => navigation.navigate('ComingSoon', { title: '服务群组', desc: '专属健康服务群即将开放，届时可与家庭医生、营养师、健康管理师实时交流。', icon: 'people-outline' })} />
-            <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} />
-            <MenuItem icon="star-outline"    iconColor="#F39C12" label="评价服务"               onPress={() => navigation.navigate('ComingSoon', { title: '评价服务', desc: '服务评价功能即将上线，帮助我们持续改善服务质量。', icon: 'star-outline' })} isLast />
+            <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} isLast />
           </View>
         </View>
 
