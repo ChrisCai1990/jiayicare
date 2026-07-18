@@ -159,6 +159,34 @@ router.get('/trend/:type', auth, async (req, res) => {
   }
 });
 
+// 今日（CST自然日）各类型打卡状态：用户端打卡页据此判断"是否已打卡"，替代此前的 localStorage 本地缓存，
+// 保证医护代录后用户端能实时看到当天状态（2026-07-18 打卡页重构）
+router.get('/today-status', auth, async (req, res) => {
+  try {
+    const CST_OFFSET = 8 * 60 * 60 * 1000;
+    const nowCST = new Date(Date.now() + CST_OFFSET);
+    const dateStr = nowCST.toISOString().split('T')[0];
+    const todayStart = new Date(dateStr + 'T00:00:00+08:00');
+    const todayEnd   = new Date(dateStr + 'T23:59:59.999+08:00');
+
+    const records = await HealthRecord.find({
+      user: req.user._id,
+      recordedAt: { $gte: todayStart, $lte: todayEnd },
+    }).sort({ recordedAt: -1 });
+
+    const doneTypes = {};
+    for (const r of records) {
+      if (!doneTypes[r.type]) {
+        doneTypes[r.type] = { note: r.note || '', hasImage: !!r.extra?.imageUrl };
+      }
+    }
+
+    res.json({ success: true, date: dateStr, doneTypes });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取今日打卡状态失败', error: err.message });
+  }
+});
+
 // 新增记录
 router.post('/', auth, async (req, res) => {
   try {

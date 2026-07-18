@@ -40,6 +40,7 @@ import LegalScreen from '../screens/legal/LegalScreen';
 import FamilyMembersScreen from '../screens/profile/FamilyMembersScreen';
 import SpecialScreeningScreen from '../screens/records/SpecialScreeningScreen';
 import MedicalReportsScreen from '../screens/records/MedicalReportsScreen';
+import CheckinScreen from '../screens/checkin/CheckinScreen';
 
 const Stack = createNativeStackNavigator();
 const Tab = createBottomTabNavigator();
@@ -176,6 +177,7 @@ export default function Navigation() {
             <Stack.Screen name="FamilyMembers" component={FamilyMembersScreen} />
             <Stack.Screen name="SpecialScreening" component={SpecialScreeningScreen} />
             <Stack.Screen name="MedicalReports" component={MedicalReportsScreen} />
+            <Stack.Screen name="Checkin" component={CheckinScreen} />
           </>
         )}
       </Stack.Navigator>

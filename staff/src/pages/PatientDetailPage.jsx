@@ -8566,6 +8566,7 @@ const RECORD_TYPE_LABEL = {
   weight: '体重', sleep: '睡眠', mood: '情绪',
   diet: '饮食', exercise: '运动', water: '饮水',
   alcohol: '饮酒', bowel: '排便', smoking: '吸烟',
+  symptom: '症状自评',
 }
 
 // 编辑弹窗用：数值类型有单位，生活方式类是自由文本描述（如"跑步10分钟"），字段含义不同，编辑表单要分开呈现

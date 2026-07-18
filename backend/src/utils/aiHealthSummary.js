@@ -86,7 +86,7 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   const coverageText = buildCoverageText(assessCancerCoverage(user, allReports));
 
   // 近30天打卡记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
-  const CHECKIN_LABEL = { weight: '体重(kg)', bloodPressure: '血压(mmHg)', bloodSugar: '血糖(mmol/L)', heartRate: '心率(次/分)', sleep: '睡眠(小时)', mood: '情绪(1-10分)', exercise: '运动', diet: '饮食', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒' };
+  const CHECKIN_LABEL = { weight: '体重(kg)', bloodPressure: '血压(mmHg)', bloodSugar: '血糖(mmol/L)', heartRate: '心率(次/分)', sleep: '睡眠(小时)', mood: '情绪(1-10分)', exercise: '运动', diet: '饮食', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒', symptom: '症状自评' };
   const NUMERIC_CHECKIN_TYPES = new Set(['weight', 'bloodSugar', 'heartRate', 'sleep', 'mood']);
   const checkinByType = {};
   recentCheckins.forEach(r => { (checkinByType[r.type] = checkinByType[r.type] || []).push(r); });

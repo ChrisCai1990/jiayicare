@@ -21,6 +21,13 @@ function calcStatus(type, value, extra) {
     if (v < 6) return 'warning';
     return 'normal';
   }
+  if (type === 'symptom') {
+    // 症状自评：选中胸痛/呼吸困难等需紧急处理的症状时标记为 danger，供医护端优先关注
+    const URGENT_SYMPTOMS = ['胸痛', '呼吸困难'];
+    const symptoms = Array.isArray(extra?.symptoms) ? extra.symptoms : [];
+    if (symptoms.some(s => URGENT_SYMPTOMS.includes(s))) return 'danger';
+    return 'normal';
+  }
   return 'normal';
 }
 

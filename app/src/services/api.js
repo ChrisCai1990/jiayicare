@@ -116,6 +116,7 @@ export const recordsAPI = {
     return request(`/records${q ? '?' + q : ''}`);
   },
   trend: (type) => request(`/records/trend/${type}`),
+  todayStatus: () => request('/records/today-status'),
   create: (data) => request('/records', { method: 'POST', body: JSON.stringify(data) }),
   update: (id, data) => request(`/records/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/records/${id}`, { method: 'DELETE' }),
