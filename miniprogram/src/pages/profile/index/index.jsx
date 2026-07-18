@@ -147,7 +147,28 @@ export default function ProfilePage() {
         <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>健康管理</Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
           <MenuItem icon="❤️" iconColor="#DC3545" label="健康档案" value="查看全部" onClick={() => Taro.switchTab({ url: '/pages/records/index/index' })} />
+          <MenuItem icon="📋" iconColor="#1E6B50" label="健康方案" onClick={() => nav('/pages/services/plans/index')} />
+          <MenuItem icon="📄" iconColor="#0077B6" label="体检报告" onClick={() => nav('/pages/records/medical-reports/index')} />
+          <MenuItem icon="🌿" iconColor="#22A06B" label="营养素管理" onClick={() => nav('/pages/nutrition/index')} />
           <MenuItem icon="💊" iconColor="#D97706" label="用药管理" onClick={() => nav('/pages/medication/index')} isLast />
+        </View>
+      </View>
+
+      {/* 家庭成员 */}
+      <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
+        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>家庭成员</Text>
+        <View onClick={() => nav('/pages/profile/family/index')} style={{
+          display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
+          border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, gap: `${spacing.sm}px`,
+        }}>
+          <View style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Text style={{ fontSize: '18px' }}>👨‍👩‍👧</Text>
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>家庭成员管理</Text>
+            <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>关联家人账号，共享健康基金与就医协助</Text>
+          </View>
+          <Text style={{ fontSize: '13px', color: colors.textMuted }}>›</Text>
         </View>
       </View>
 
@@ -156,7 +177,8 @@ export default function ProfilePage() {
         <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>我的服务</Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
           <MenuItem icon="🧾" iconColor={colors.primary} label="我的订单" badge={pendingOrders} onClick={() => nav('/pages/orders/index')} />
-          <MenuItem icon="🛒" iconColor="#D97706" label="服务商城" onClick={() => nav('/pages/services/mall/index')} isLast />
+          <MenuItem icon="🛒" iconColor="#D97706" label="服务商城" onClick={() => nav('/pages/services/mall/index')} />
+          <MenuItem icon="🎁" iconColor="#8e44ad" label="会员权益" onClick={() => nav('/pages/profile/benefits/index')} isLast />
         </View>
       </View>
 
