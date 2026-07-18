@@ -306,6 +306,17 @@ export default function HomeScreen({ navigation }) {
   const statusEmoji = score >= 80 ? '✨' : score >= 60 ? '💪' : '🌱';
   const statusText  = score >= 80 ? '今天状态不错' : score >= 60 ? '继续保持' : '需要关注';
 
+  // 血压/血糖状态：仅用于首页趋势文案判断（bpStatus/bsStatus），具体数值展示已移至健康档案页
+  const bpStatusKey = bpRec?.status || 'normal';
+  const bsStatusKey = bsSrc?.status || 'normal';
+
+  const bpStatus = bpStatusKey === 'normal' ? { label: '正常', bg: '#E8F5EF', color: colors.success }
+                 : bpStatusKey === 'low'    ? { label: '偏低', bg: '#EBF5FB', color: colors.info }
+                 :                            { label: '偏高', bg: '#FDECEA', color: colors.danger };
+  const bsStatus = bsStatusKey === 'normal' ? { label: '正常', bg: '#E8F5EF', color: colors.success }
+                 : bsStatusKey === 'low'    ? { label: '偏低', bg: '#EBF5FB', color: colors.info }
+                 :                            { label: '偏高', bg: '#FEF9E7', color: colors.warning };
+
   // 趋势状态文案：把评分/指标异常转成一句能直接照做的行动建议，而不是抽象的"需关注"
   // 优先级：血压/血糖异常 > 评分下降趋势 > 评分平稳提示
   const trendActionText = (() => {
@@ -321,17 +332,6 @@ export default function HomeScreen({ navigation }) {
     }
     return null;
   })();
-
-  // 血压/血糖状态：仅用于首页趋势文案判断（bpStatus/bsStatus），具体数值展示已移至健康档案页
-  const bpStatusKey = bpRec?.status || 'normal';
-  const bsStatusKey = bsSrc?.status || 'normal';
-
-  const bpStatus = bpStatusKey === 'normal' ? { label: '正常', bg: '#E8F5EF', color: colors.success }
-                 : bpStatusKey === 'low'    ? { label: '偏低', bg: '#EBF5FB', color: colors.info }
-                 :                            { label: '偏高', bg: '#FDECEA', color: colors.danger };
-  const bsStatus = bsStatusKey === 'normal' ? { label: '正常', bg: '#E8F5EF', color: colors.success }
-                 : bsStatusKey === 'low'    ? { label: '偏低', bg: '#EBF5FB', color: colors.info }
-                 :                            { label: '偏高', bg: '#FEF9E7', color: colors.warning };
 
   // 随访计划紧急程度：按实际日期与今天的差值动态算，不再写死"今天"
   // 逾期未随访=紧急，当天=今天，1-2天内=即将，更远=不特别标注（沿用即将样式）
