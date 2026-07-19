@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1200" viewBox="0 0 1200 1200">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F3D27A"/>
+      <stop offset="50%" stop-color="#C99A32"/>
+      <stop offset="100%" stop-color="#8B6420"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 金伊森 KING EASON Logo editable SVG concept -->
+  <g fill="none" stroke="url(#gold)" stroke-width="22">
+    <circle cx="600" cy="360" r="230"/>
+  </g>
+
+  <!-- K/E monogram concept -->
+  <text x="430" y="455" font-family="Georgia, serif" font-size="330" font-weight="bold" fill="url(#gold)">K</text>
+  <path d="M620 520 C700 470, 720 350, 830 300 C760 420, 820 500, 650 600"
+        fill="none" stroke="url(#gold)" stroke-width="35" stroke-linecap="round"/>
+  <circle cx="735" cy="315" r="18" fill="url(#gold)"/>
+
+  <!-- Chinese brand -->
+  <text x="600" y="820" text-anchor="middle"
+        font-family="Noto Serif SC, SimSun, serif"
+        font-size="150" letter-spacing="35"
+        fill="url(#gold)">金伊森</text>
+
+  <!-- English -->
+  <text x="600" y="950" text-anchor="middle"
+        font-family="Cinzel, Georgia, serif"
+        font-size="55" letter-spacing="18"
+        fill="#9A7328">KING EASON</text>
+
+  <!-- Slogan -->
+  <text x="600" y="1035" text-anchor="middle"
+        font-family="Noto Serif SC, SimSun, serif"
+        font-size="42" letter-spacing="8"
+        fill="#9A7328">与远见者 · 共守健康</text>
+</svg>
