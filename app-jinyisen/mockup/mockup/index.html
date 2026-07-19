@@ -1,0 +1,1500 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>嘉医管家 · UI Mockup</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #EDEAE4;
+    font-family: -apple-system, 'SF Pro Display', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+    min-height: 100vh;
+    padding: 40px 24px 60px;
+  }
+
+  h1.title {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #8A8A8A;
+    margin-bottom: 36px;
+  }
+
+  .screens-row {
+    display: flex;
+    gap: 24px;
+    justify-content: center;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+
+  .screen-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .screen-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #8A8A8A;
+  }
+
+  /* Phone frame */
+  .phone {
+    width: 375px;
+    height: 812px;
+    background: #FFFFFF;
+    border-radius: 44px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.18), 0 2px 8px rgba(0,0,0,0.08);
+    border: 1px solid rgba(0,0,0,0.06);
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Status bar */
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 14px 28px 0;
+    flex-shrink: 0;
+  }
+  .status-time { font-size: 15px; font-weight: 700; color: #1A2B24; }
+  .status-icons { display: flex; gap: 6px; align-items: center; }
+  .status-icons span { font-size: 12px; color: #1A2B24; }
+
+  /* Scrollable content */
+  .scroll-area {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: none;
+  }
+  .scroll-area::-webkit-scrollbar { display: none; }
+
+  /* Bottom tab bar */
+  .tab-bar {
+    display: flex;
+    border-top: 1px solid #EBEBEB;
+    background: #FFFFFF;
+    padding: 10px 0 24px;
+    flex-shrink: 0;
+  }
+  .tab-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    cursor: pointer;
+  }
+  .tab-icon { font-size: 22px; color: #C4CEC8; }
+  .tab-icon.active { color: #1E6B50; }
+  .tab-text { font-size: 10px; font-weight: 500; color: #C4CEC8; letter-spacing: 0.02em; }
+  .tab-text.active { color: #1E6B50; font-weight: 600; }
+
+  /* =========================================
+     HOME SCREEN
+  ========================================= */
+  .home-header {
+    padding: 20px 24px 0;
+  }
+  .home-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 28px;
+  }
+  .brand { font-size: 18px; font-weight: 800; color: #1A2B24; letter-spacing: -0.5px; }
+  .brand em { color: #1E6B50; font-style: normal; }
+  .avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    background: #1E6B50;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700; color: #fff;
+  }
+
+  /* Hero */
+  .home-hero {
+    margin: 0 24px 28px;
+    background: #1A2B24;
+    border-radius: 20px;
+    padding: 24px;
+    position: relative;
+    overflow: hidden;
+  }
+  .home-hero::after {
+    content: '';
+    position: absolute;
+    right: -20px; top: -30px;
+    width: 140px; height: 140px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+  }
+  .hero-greeting { font-size: 13px; color: rgba(255,255,255,0.5); font-weight: 500; margin-bottom: 4px; }
+  .hero-name { font-size: 20px; font-weight: 700; color: #fff; margin-bottom: 20px; letter-spacing: -0.3px; }
+  .hero-score-row { display: flex; align-items: flex-end; gap: 14px; }
+  .hero-score-num { font-size: 64px; font-weight: 800; color: #fff; line-height: 1; letter-spacing: -3px; }
+  .hero-score-meta {}
+  .hero-score-label { font-size: 12px; color: rgba(255,255,255,0.5); margin-bottom: 6px; }
+  .hero-score-trend {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(255,255,255,0.12);
+    border-radius: 100px;
+    padding: 3px 10px;
+    font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.9);
+  }
+
+  /* Section */
+  .section { padding: 0 24px; margin-bottom: 28px; }
+  .section-title {
+    font-size: 11px; font-weight: 700; color: #9AADA6;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+  .section-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 14px;
+  }
+  .section-more { font-size: 13px; color: #1E6B50; font-weight: 500; }
+
+  /* Quick services */
+  .quick-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+  }
+  .quick-item {
+    display: flex; flex-direction: column; align-items: center;
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    padding: 14px 6px;
+    gap: 8px;
+  }
+  .quick-icon {
+    width: 44px; height: 44px; border-radius: 13px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 20px;
+  }
+  .quick-label { font-size: 11px; font-weight: 600; color: #4A6558; text-align: center; line-height: 1.3; }
+
+  /* Task list */
+  .task-list {
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .task-item {
+    display: flex; align-items: center;
+    padding: 14px 16px;
+    gap: 12px;
+    border-bottom: 1px solid #F2F2F2;
+  }
+  .task-item:last-child { border-bottom: none; }
+  .task-dot {
+    width: 36px; height: 36px; border-radius: 11px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .task-body { flex: 1; }
+  .task-title-text { font-size: 14px; font-weight: 600; color: #1A2B24; margin-bottom: 2px; }
+  .task-meta-text { font-size: 11px; color: #9AADA6; }
+  .task-badge {
+    padding: 3px 10px; border-radius: 100px;
+    font-size: 10px; font-weight: 700;
+  }
+  .badge-high { background: #FDECEA; color: #DC3545; }
+  .badge-mid  { background: #E8F2EC; color: #1E6B50; }
+  .badge-low  { background: #F5F5F5; color: #9AADA6; }
+
+  /* More grid */
+  .more-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .more-item {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 16px 8px;
+    gap: 6px;
+    border-right: 1px solid #F2F2F2;
+    border-bottom: 1px solid #F2F2F2;
+  }
+  .more-item:nth-child(3n) { border-right: none; }
+  .more-item:nth-child(n+4) { border-bottom: none; }
+  .more-icon { font-size: 20px; }
+  .more-label { font-size: 11px; color: #6B7B74; font-weight: 500; }
+
+  /* =========================================
+     RECORDS SCREEN
+  ========================================= */
+  .page-header {
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #F0F0F0;
+  }
+  .page-title { font-size: 28px; font-weight: 800; color: #1A2B24; letter-spacing: -0.8px; margin-bottom: 2px; }
+  .page-subtitle { font-size: 12px; color: #9AADA6; }
+
+  /* Metric cards 2-col */
+  .metrics-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 20px 24px;
+  }
+  .metric-card {
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    padding: 16px;
+  }
+  .metric-top {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+  .metric-icon {
+    width: 28px; height: 28px; border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .metric-label { font-size: 12px; color: #9AADA6; font-weight: 500; }
+  .metric-value { font-size: 26px; font-weight: 800; color: #1A2B24; letter-spacing: -0.8px; line-height: 1; }
+  .metric-unit { font-size: 11px; color: #9AADA6; margin-top: 2px; margin-bottom: 8px; }
+  .metric-badge {
+    display: inline-block;
+    padding: 2px 10px; border-radius: 100px;
+    font-size: 11px; font-weight: 700;
+  }
+  .badge-normal { background: #E8F2EC; color: #1E6B50; }
+  .badge-warn   { background: #FEF3E2; color: #D97706; }
+  .badge-danger { background: #FDECEA; color: #DC3545; }
+
+  /* Chart section */
+  .chart-section {
+    margin: 0 24px 20px;
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    padding: 18px;
+  }
+  .chart-header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 16px;
+  }
+  .chart-title { font-size: 15px; font-weight: 700; color: #1A2B24; }
+  .tab-pills {
+    display: flex;
+    background: #F5F5F5;
+    border-radius: 100px;
+    padding: 2px;
+  }
+  .pill {
+    padding: 4px 12px;
+    border-radius: 100px;
+    font-size: 12px; font-weight: 600; color: #9AADA6;
+  }
+  .pill.active { background: #fff; color: #1A2B24; }
+
+  /* SVG bar chart placeholder */
+  .chart-bars {
+    display: flex; align-items: flex-end;
+    gap: 6px; height: 80px; margin-bottom: 8px;
+  }
+  .bar-col { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .bar {
+    width: 100%; border-radius: 6px 6px 0 0;
+  }
+  .bar-label { font-size: 9px; color: #C4CEC8; }
+
+  /* Add btn */
+  .add-btn {
+    margin: 0 24px 20px;
+    background: #1E6B50;
+    border-radius: 14px;
+    padding: 15px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px;
+    color: #fff; font-size: 15px; font-weight: 700;
+  }
+
+  /* =========================================
+     TASKS SCREEN
+  ========================================= */
+  .task-summary {
+    margin: 16px 24px;
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    display: flex;
+  }
+  .ts-item {
+    flex: 1; padding: 16px 0; text-align: center;
+    border-right: 1px solid #F2F2F2;
+  }
+  .ts-item:last-child { border-right: none; }
+  .ts-val { font-size: 24px; font-weight: 800; color: #1A2B24; letter-spacing: -0.5px; }
+  .ts-label { font-size: 10px; color: #9AADA6; margin-top: 2px; font-weight: 500; }
+
+  .filter-row {
+    display: flex; gap: 8px; padding: 0 24px; margin-bottom: 16px;
+  }
+  .filter-chip {
+    padding: 6px 14px;
+    border-radius: 100px;
+    font-size: 12px; font-weight: 600;
+    background: #fff;
+    border: 1.5px solid #EBEBEB;
+    color: #6B7B74;
+  }
+  .filter-chip.active {
+    background: #1E6B50;
+    border-color: #1E6B50;
+    color: #fff;
+  }
+
+  .tasks-list { padding: 0 24px; }
+  .full-task-card {
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    padding: 16px;
+    margin-bottom: 10px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .ftc-check {
+    width: 24px; height: 24px; border-radius: 50%;
+    border: 2px solid #DADADA; margin-top: 1px; flex-shrink: 0;
+  }
+  .ftc-check.done {
+    background: #1E6B50; border-color: #1E6B50;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; color: #fff;
+  }
+  .ftc-body { flex: 1; }
+  .ftc-title { font-size: 15px; font-weight: 600; color: #1A2B24; margin-bottom: 4px; }
+  .ftc-desc { font-size: 12px; color: #9AADA6; margin-bottom: 8px; }
+  .ftc-meta { display: flex; gap: 12px; }
+  .ftc-meta-item { display: flex; align-items: center; gap: 4px; font-size: 11px; color: #9AADA6; }
+  .ftc-type {
+    width: 36px; height: 36px; border-radius: 11px;
+    background: #E8F2EC;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px; flex-shrink: 0;
+  }
+  .pri-badge { padding: 3px 8px; border-radius: 100px; font-size: 10px; font-weight: 700; }
+
+  /* =========================================
+     MESSAGES SCREEN
+  ========================================= */
+  .ai-entry {
+    margin: 16px 24px;
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    padding: 16px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .ai-icon {
+    width: 48px; height: 48px; border-radius: 15px;
+    background: #1A2B24;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+  }
+  .ai-title { font-size: 15px; font-weight: 700; color: #1A2B24; }
+  .ai-sub { font-size: 12px; color: #9AADA6; margin-top: 2px; }
+  .ai-arrow {
+    margin-left: auto;
+    width: 30px; height: 30px; border-radius: 50%;
+    background: #F5F5F5;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; color: #6B7B74; flex-shrink: 0;
+  }
+
+  .msg-tabs {
+    display: flex; gap: 0;
+    border-bottom: 1px solid #EBEBEB;
+    padding: 0 24px;
+    margin-bottom: 4px;
+  }
+  .msg-tab {
+    padding: 10px 14px;
+    font-size: 14px; font-weight: 500; color: #9AADA6;
+    border-bottom: 2px solid transparent; margin-bottom: -1px;
+  }
+  .msg-tab.active { color: #1E6B50; font-weight: 700; border-bottom-color: #1E6B50; }
+
+  .msg-list {}
+  .msg-item {
+    display: flex; align-items: center;
+    padding: 14px 24px; gap: 14px;
+    border-bottom: 1px solid #F5F5F5;
+  }
+  .msg-avatar {
+    width: 46px; height: 46px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 700; color: #fff;
+    flex-shrink: 0; position: relative;
+  }
+  .msg-unread-dot {
+    position: absolute; top: 0; right: 0;
+    width: 12px; height: 12px; border-radius: 50%;
+    background: #DC3545; border: 2px solid #fff;
+  }
+  .msg-content { flex: 1; }
+  .msg-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 3px; }
+  .msg-sender { font-size: 14px; font-weight: 600; color: #1A2B24; }
+  .msg-time { font-size: 11px; color: #C4CEC8; }
+  .msg-preview { font-size: 13px; color: #9AADA6; line-height: 1.4; }
+  .msg-preview.unread { color: #4A6558; font-weight: 500; }
+  .msg-chevron { font-size: 14px; color: #C4CEC8; }
+
+  /* =========================================
+     PROFILE SCREEN
+  ========================================= */
+  .profile-hero {
+    background: #1A2B24;
+    padding: 28px 24px 48px;
+    position: relative;
+    overflow: hidden;
+    text-align: center;
+  }
+  .profile-hero::before {
+    content: '';
+    position: absolute; bottom: -40px; left: 50%; transform: translateX(-50%);
+    width: 200px; height: 80px; border-radius: 50%;
+    background: #fff;
+  }
+  .profile-settings {
+    position: absolute; top: 20px; right: 24px;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255,255,255,0.12);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .profile-avatar-big {
+    width: 80px; height: 80px; border-radius: 50%;
+    background: #1E6B50;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 30px; font-weight: 700; color: #fff;
+    margin: 0 auto 12px;
+    border: 3px solid rgba(255,255,255,0.2);
+  }
+  .profile-name { font-size: 22px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
+  .profile-sub { font-size: 13px; color: rgba(255,255,255,0.5); margin-top: 4px; }
+
+  /* Stats float card */
+  .profile-stats {
+    margin: 0 20px;
+    margin-top: -1px;
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #EBEBEB;
+    display: flex;
+    padding: 16px 0;
+    position: relative;
+    z-index: 2;
+  }
+  .ps-item {
+    flex: 1; text-align: center;
+    border-right: 1px solid #F2F2F2;
+  }
+  .ps-item:last-child { border-right: none; }
+  .ps-val { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; }
+  .ps-label { font-size: 11px; color: #9AADA6; margin-top: 2px; }
+
+  /* Service card */
+  .service-card {
+    margin: 16px 24px 0;
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    padding: 14px 16px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .svc-icon {
+    width: 40px; height: 40px; border-radius: 12px;
+    background: #E8F2EC;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; flex-shrink: 0;
+  }
+  .svc-info { flex: 1; }
+  .svc-name { font-size: 14px; font-weight: 600; color: #1A2B24; }
+  .svc-expiry { font-size: 11px; color: #9AADA6; margin-top: 2px; }
+  .svc-renew {
+    background: #1E6B50; color: #fff;
+    font-size: 12px; font-weight: 700;
+    padding: 6px 14px; border-radius: 100px;
+  }
+
+  /* Menu card */
+  .menu-section { padding: 20px 24px 0; }
+  .menu-section-title {
+    font-size: 11px; font-weight: 700; color: #9AADA6;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .menu-card {
+    background: #fff;
+    border: 1px solid #EBEBEB;
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .menu-row {
+    display: flex; align-items: center;
+    padding: 14px 16px; gap: 12px;
+    border-bottom: 1px solid #F2F2F2;
+  }
+  .menu-row:last-child { border-bottom: none; }
+  .menu-icon-wrap {
+    width: 34px; height: 34px; border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .menu-row-label { flex: 1; font-size: 14px; color: #1A2B24; font-weight: 500; }
+  .menu-row-right { display: flex; align-items: center; gap: 6px; }
+  .menu-row-val { font-size: 12px; color: #9AADA6; }
+  .menu-badge {
+    min-width: 18px; height: 18px; border-radius: 9px;
+    background: #DC3545; display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: #fff; padding: 0 4px;
+  }
+  .menu-chevron { font-size: 12px; color: #C4CEC8; }
+
+  /* Logout */
+  .logout-btn {
+    margin: 20px 24px;
+    background: #fff;
+    border: 1px solid rgba(220,53,69,0.25);
+    border-radius: 14px;
+    padding: 14px;
+    display: flex; align-items: center; justify-content: center;
+    gap: 8px;
+    color: #DC3545; font-size: 15px; font-weight: 600;
+  }
+
+  /* Family row */
+  .family-scroll {
+    display: flex; gap: 10px; padding: 0 24px; overflow-x: auto;
+    scrollbar-width: none; margin-bottom: 0;
+  }
+  .family-card {
+    display: flex; flex-direction: column; align-items: center;
+    background: #fff; border: 1px solid #EBEBEB;
+    border-radius: 14px; padding: 12px 14px; gap: 6px;
+    min-width: 72px;
+  }
+  .family-card.active { border-color: #1E6B50; background: #F0F9F5; }
+  .family-avatar {
+    width: 40px; height: 40px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; color: #fff;
+  }
+  .family-name { font-size: 12px; font-weight: 600; color: #1A2B24; }
+  .family-rel { font-size: 10px; color: #9AADA6; }
+
+  .spacer-bottom { height: 16px; }
+</style>
+</head>
+<body>
+
+<h1 class="title">嘉医管家 · UI Mockup · One Medical Style</h1>
+
+<div class="screens-row">
+
+  <!-- ══════════════════════════════════════
+       1. HOME
+  ══════════════════════════════════════ -->
+  <div class="screen-wrap">
+    <div class="screen-label">首页</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="status-time">9:41</span>
+        <div class="status-icons">
+          <span>●●●</span>
+          <span>WiFi</span>
+          <span>🔋</span>
+        </div>
+      </div>
+      <div class="scroll-area">
+        <!-- Top bar -->
+        <div class="home-header">
+          <div class="home-topbar">
+            <span class="brand">嘉医<em>健康</em></span>
+            <div class="avatar">李</div>
+          </div>
+        </div>
+
+        <!-- Hero card -->
+        <div class="home-hero">
+          <div class="hero-greeting">早上好</div>
+          <div class="hero-name">李明，今天状态不错 ✨</div>
+          <div class="hero-score-row">
+            <div class="hero-score-num">82</div>
+            <div class="hero-score-meta">
+              <div class="hero-score-label">健康评分 / 100</div>
+              <div class="hero-score-trend">↑ 较上月 +3 分</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick services -->
+        <div class="section">
+          <div class="section-title">快捷服务</div>
+          <div class="quick-grid">
+            <div class="quick-item">
+              <div class="quick-icon" style="background:#E8F2EC;">🩺</div>
+              <div class="quick-label">问诊<br>医生</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-icon" style="background:#E8F0FB;">📋</div>
+              <div class="quick-label">健康<br>档案</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-icon" style="background:#FDF0EB;">💊</div>
+              <div class="quick-label">用药<br>计划</div>
+            </div>
+            <div class="quick-item">
+              <div class="quick-icon" style="background:#F2EEFF;">🤖</div>
+              <div class="quick-label">AI<br>助手</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Today tasks -->
+        <div class="section">
+          <div class="section-header">
+            <div class="section-title" style="margin-bottom:0">今日待办</div>
+            <div class="section-more">全部 →</div>
+          </div>
+          <div class="task-list">
+            <div class="task-item">
+              <div class="task-dot" style="background:#FDECEA;">❤️</div>
+              <div class="task-body">
+                <div class="task-title-text">量血压并记录</div>
+                <div class="task-meta-text">王医生 · 今天 09:00</div>
+              </div>
+              <div class="task-badge badge-high">紧急</div>
+            </div>
+            <div class="task-item">
+              <div class="task-dot" style="background:#E8F0FB;">📞</div>
+              <div class="task-body">
+                <div class="task-title-text">电话随访</div>
+                <div class="task-meta-text">张健管师 · 今天 14:00</div>
+              </div>
+              <div class="task-badge badge-mid">今天</div>
+            </div>
+            <div class="task-item">
+              <div class="task-dot" style="background:#F2EEFF;">📝</div>
+              <div class="task-body">
+                <div class="task-title-text">完成月度健康问卷</div>
+                <div class="task-meta-text">系统 · 本周内</div>
+              </div>
+              <div class="task-badge badge-low">即将</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- More grid -->
+        <div class="section">
+          <div class="section-title">更多功能</div>
+          <div class="more-grid">
+            <div class="more-item">
+              <div class="more-icon">📄</div>
+              <div class="more-label">健康报告</div>
+            </div>
+            <div class="more-item">
+              <div class="more-icon">🔔</div>
+              <div class="more-label">提醒管理</div>
+            </div>
+            <div class="more-item">
+              <div class="more-icon">📋</div>
+              <div class="more-label">健康问卷</div>
+            </div>
+            <div class="more-item">
+              <div class="more-icon">🛒</div>
+              <div class="more-label">服务商城</div>
+            </div>
+            <div class="more-item">
+              <div class="more-icon">☁️</div>
+              <div class="more-label">上传报告</div>
+            </div>
+            <div class="more-item">
+              <div class="more-icon">➕</div>
+              <div class="more-label">记录数据</div>
+            </div>
+          </div>
+        </div>
+        <div class="spacer-bottom"></div>
+      </div>
+      <!-- Tab bar -->
+      <div class="tab-bar">
+        <div class="tab-item">
+          <div class="tab-icon active">⌂</div>
+          <div class="tab-text active">首页</div>
+        </div>
+        <div class="tab-item">
+          <div class="tab-icon">♡</div>
+          <div class="tab-text">健康</div>
+        </div>
+        <div class="tab-item">
+          <div class="tab-icon">☑</div>
+          <div class="tab-text">随访</div>
+        </div>
+        <div class="tab-item">
+          <div class="tab-icon">✉</div>
+          <div class="tab-text">消息</div>
+        </div>
+        <div class="tab-item">
+          <div class="tab-icon">◯</div>
+          <div class="tab-text">我的</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       2. RECORDS
+  ══════════════════════════════════════ -->
+  <div class="screen-wrap">
+    <div class="screen-label">健康档案</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="status-time">9:41</span>
+        <div class="status-icons"><span>🔋</span></div>
+      </div>
+      <div class="scroll-area">
+        <div class="page-header">
+          <div class="page-title">健康档案</div>
+          <div class="page-subtitle">最后同步：2026-05-17 · 李明</div>
+        </div>
+
+        <!-- Metrics grid -->
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="metric-top">
+              <div class="metric-icon" style="background:#FDECEA;">❤️</div>
+              <div class="metric-label">血压</div>
+            </div>
+            <div class="metric-value">118<span style="font-size:16px;letter-spacing:0">/76</span></div>
+            <div class="metric-unit">mmHg</div>
+            <div class="metric-badge badge-normal">正常</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-top">
+              <div class="metric-icon" style="background:#FEF3E2;">💧</div>
+              <div class="metric-label">空腹血糖</div>
+            </div>
+            <div class="metric-value">6.2</div>
+            <div class="metric-unit">mmol/L</div>
+            <div class="metric-badge badge-warn">偏高</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-top">
+              <div class="metric-icon" style="background:#E8F2EC;">⚖️</div>
+              <div class="metric-label">体重</div>
+            </div>
+            <div class="metric-value">72.5</div>
+            <div class="metric-unit">kg</div>
+            <div class="metric-badge badge-normal">正常</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-top">
+              <div class="metric-icon" style="background:#F2EEFF;">〰️</div>
+              <div class="metric-label">心率</div>
+            </div>
+            <div class="metric-value">76</div>
+            <div class="metric-unit">次/分</div>
+            <div class="metric-badge badge-normal">正常</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-top">
+              <div class="metric-icon" style="background:#FEF3E2;">🧪</div>
+              <div class="metric-label">总胆固醇</div>
+            </div>
+            <div class="metric-value">5.8</div>
+            <div class="metric-unit">mmol/L</div>
+            <div class="metric-badge badge-warn">偏高</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-top">
+              <div class="metric-icon" style="background:#E8F0FB;">🌙</div>
+              <div class="metric-label">睡眠时长</div>
+            </div>
+            <div class="metric-value">6.5</div>
+            <div class="metric-unit">小时</div>
+            <div class="metric-badge badge-danger">不足</div>
+          </div>
+        </div>
+
+        <!-- BP chart -->
+        <div class="chart-section">
+          <div class="chart-header">
+            <div class="chart-title">血压趋势</div>
+            <div class="tab-pills">
+              <div class="pill active">周</div>
+              <div class="pill">月</div>
+              <div class="pill">年</div>
+            </div>
+          </div>
+          <div class="chart-bars">
+            <div class="bar-col"><div class="bar" style="height:50%;background:#C8DDD6;"></div><div class="bar-label">一</div></div>
+            <div class="bar-col"><div class="bar" style="height:65%;background:#C8DDD6;"></div><div class="bar-label">二</div></div>
+            <div class="bar-col"><div class="bar" style="height:45%;background:#C8DDD6;"></div><div class="bar-label">三</div></div>
+            <div class="bar-col"><div class="bar" style="height:70%;background:#C8DDD6;"></div><div class="bar-label">四</div></div>
+            <div class="bar-col"><div class="bar" style="height:55%;background:#C8DDD6;"></div><div class="bar-label">五</div></div>
+            <div class="bar-col"><div class="bar" style="height:60%;background:#C8DDD6;"></div><div class="bar-label">六</div></div>
+            <div class="bar-col"><div class="bar" style="height:72%;background:#1E6B50;"></div><div class="bar-label">日</div></div>
+          </div>
+          <div style="display:flex;gap:16px;margin-top:4px;">
+            <div style="display:flex;align-items:center;gap:5px;">
+              <div style="width:8px;height:8px;border-radius:50%;background:#1E6B50;"></div>
+              <span style="font-size:11px;color:#9AADA6;">收缩压</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:5px;">
+              <div style="width:8px;height:8px;border-radius:50%;background:#DC3545;"></div>
+              <span style="font-size:11px;color:#9AADA6;">140 基准线</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="add-btn">＋ 添加健康记录</div>
+        <div class="spacer-bottom"></div>
+      </div>
+      <div class="tab-bar">
+        <div class="tab-item"><div class="tab-icon">⌂</div><div class="tab-text">首页</div></div>
+        <div class="tab-item"><div class="tab-icon active">♡</div><div class="tab-text active">健康</div></div>
+        <div class="tab-item"><div class="tab-icon">☑</div><div class="tab-text">随访</div></div>
+        <div class="tab-item"><div class="tab-icon">✉</div><div class="tab-text">消息</div></div>
+        <div class="tab-item"><div class="tab-icon">◯</div><div class="tab-text">我的</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       3. TASKS
+  ══════════════════════════════════════ -->
+  <div class="screen-wrap">
+    <div class="screen-label">随访任务</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="status-time">9:41</span>
+        <div class="status-icons"><span>🔋</span></div>
+      </div>
+      <div class="scroll-area">
+        <div class="page-header">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+              <div class="page-title">随访任务</div>
+              <div class="page-subtitle">跟进健康管理进度</div>
+            </div>
+            <div style="background:#E8F2EC;padding:5px 12px;border-radius:100px;margin-top:8px;display:flex;align-items:center;gap:5px;">
+              <span style="font-size:12px;">⏱</span>
+              <span style="font-size:12px;color:#1E6B50;font-weight:600;">2 项待办</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="task-summary">
+          <div class="ts-item">
+            <div class="ts-val">3</div>
+            <div class="ts-label">待完成</div>
+          </div>
+          <div class="ts-item">
+            <div class="ts-val" style="color:#1E6B50;">4</div>
+            <div class="ts-label">已完成</div>
+          </div>
+          <div class="ts-item">
+            <div class="ts-val" style="color:#DC3545;">1</div>
+            <div class="ts-label">高优先级</div>
+          </div>
+          <div class="ts-item">
+            <div class="ts-val" style="color:#1E6B50;">57%</div>
+            <div class="ts-label">完成率</div>
+          </div>
+        </div>
+
+        <!-- Filter -->
+        <div class="filter-row" style="margin-top:16px;">
+          <div class="filter-chip active">全部</div>
+          <div class="filter-chip">今日</div>
+          <div class="filter-chip">本周</div>
+          <div class="filter-chip">已完成</div>
+        </div>
+
+        <!-- Tasks -->
+        <div class="tasks-list">
+          <div class="full-task-card">
+            <div class="ftc-check"></div>
+            <div class="ftc-body">
+              <div class="ftc-title">量血压并记录</div>
+              <div class="ftc-desc">请在早晨起床后安静状态下测量</div>
+              <div class="ftc-meta">
+                <div class="ftc-meta-item">⏰ 今天 09:00</div>
+                <div class="ftc-meta-item">👤 王医生</div>
+              </div>
+            </div>
+            <div>
+              <div class="ftc-type">❤️</div>
+              <div class="pri-badge badge-high" style="margin-top:6px;font-size:10px;font-weight:700;text-align:center;">高</div>
+            </div>
+          </div>
+
+          <div class="full-task-card">
+            <div class="ftc-check"></div>
+            <div class="ftc-body">
+              <div class="ftc-title">电话随访确认</div>
+              <div class="ftc-desc">讨论上周血糖控制情况及饮食调整</div>
+              <div class="ftc-meta">
+                <div class="ftc-meta-item">⏰ 今天 14:00</div>
+                <div class="ftc-meta-item">👤 张健管师</div>
+              </div>
+            </div>
+            <div>
+              <div class="ftc-type">📞</div>
+              <div class="pri-badge badge-mid" style="margin-top:6px;font-size:10px;font-weight:700;text-align:center;">中</div>
+            </div>
+          </div>
+
+          <div class="full-task-card" style="opacity:0.6;">
+            <div class="ftc-check done">✓</div>
+            <div class="ftc-body">
+              <div class="ftc-title" style="text-decoration:line-through;color:#9AADA6;">月度健康问卷</div>
+              <div class="ftc-desc">评估生活方式与慢病管理情况</div>
+              <div class="ftc-meta">
+                <div class="ftc-meta-item">⏰ 昨天 完成</div>
+              </div>
+            </div>
+            <div class="ftc-type">📝</div>
+          </div>
+        </div>
+        <div class="spacer-bottom"></div>
+      </div>
+      <div class="tab-bar">
+        <div class="tab-item"><div class="tab-icon">⌂</div><div class="tab-text">首页</div></div>
+        <div class="tab-item"><div class="tab-icon">♡</div><div class="tab-text">健康</div></div>
+        <div class="tab-item"><div class="tab-icon active">☑</div><div class="tab-text active">随访</div></div>
+        <div class="tab-item"><div class="tab-icon">✉</div><div class="tab-text">消息</div></div>
+        <div class="tab-item"><div class="tab-icon">◯</div><div class="tab-text">我的</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       4. MESSAGES
+  ══════════════════════════════════════ -->
+  <div class="screen-wrap">
+    <div class="screen-label">消息中心</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="status-time">9:41</span>
+        <div class="status-icons"><span>🔋</span></div>
+      </div>
+      <div class="scroll-area">
+        <div class="page-header">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;">
+            <div>
+              <div class="page-title">消息中心</div>
+              <div class="page-subtitle">来自医生和健管师的通知</div>
+            </div>
+            <div style="background:#FEF3E2;padding:5px 12px;border-radius:100px;margin-top:8px;display:flex;align-items:center;gap:5px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#D97706;"></div>
+              <span style="font-size:12px;color:#D97706;font-weight:600;">3 条未读</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI entry -->
+        <div class="ai-entry">
+          <div class="ai-icon">🤖</div>
+          <div>
+            <div class="ai-title">AI 健康助手</div>
+            <div class="ai-sub">随时问我健康问题，24小时在线</div>
+          </div>
+          <div class="ai-arrow">›</div>
+        </div>
+
+        <!-- Tabs -->
+        <div class="msg-tabs">
+          <div class="msg-tab active">全部</div>
+          <div class="msg-tab">医生</div>
+          <div class="msg-tab">系统</div>
+          <div class="msg-tab">服务</div>
+        </div>
+
+        <!-- Messages -->
+        <div class="msg-list">
+          <div class="msg-item">
+            <div class="msg-avatar" style="background:#1E6B50;">
+              王
+              <div class="msg-unread-dot"></div>
+            </div>
+            <div class="msg-content">
+              <div class="msg-header-row">
+                <div class="msg-sender">王建国医生</div>
+                <div class="msg-time">10:24</div>
+              </div>
+              <div class="msg-preview unread">您的血压报告已查看，建议下周复查一次，注意低盐饮食...</div>
+            </div>
+            <div class="msg-chevron">›</div>
+          </div>
+          <div class="msg-item">
+            <div class="msg-avatar" style="background:#0077B6;">
+              张
+              <div class="msg-unread-dot"></div>
+            </div>
+            <div class="msg-content">
+              <div class="msg-header-row">
+                <div class="msg-sender">张丽 健管师</div>
+                <div class="msg-time">昨天</div>
+              </div>
+              <div class="msg-preview unread">本周随访计划已更新，请查收。另外您的血糖数据...</div>
+            </div>
+            <div class="msg-chevron">›</div>
+          </div>
+          <div class="msg-item">
+            <div class="msg-avatar" style="background:#D97706;">
+              系
+            </div>
+            <div class="msg-content">
+              <div class="msg-header-row">
+                <div class="msg-sender">系统通知</div>
+                <div class="msg-time">周一</div>
+              </div>
+              <div class="msg-preview">您的服务包将于 30 天后到期，点击续约享优惠...</div>
+            </div>
+            <div class="msg-chevron">›</div>
+          </div>
+          <div class="msg-item">
+            <div class="msg-avatar" style="background:#7C3AED;">
+              李
+            </div>
+            <div class="msg-content">
+              <div class="msg-header-row">
+                <div class="msg-sender">李华 营养师</div>
+                <div class="msg-time">上周</div>
+              </div>
+              <div class="msg-preview">根据您的体检报告，我为您制定了个性化的饮食计划...</div>
+            </div>
+            <div class="msg-chevron">›</div>
+          </div>
+        </div>
+        <div class="spacer-bottom"></div>
+      </div>
+      <div class="tab-bar">
+        <div class="tab-item"><div class="tab-icon">⌂</div><div class="tab-text">首页</div></div>
+        <div class="tab-item"><div class="tab-icon">♡</div><div class="tab-text">健康</div></div>
+        <div class="tab-item"><div class="tab-icon">☑</div><div class="tab-text">随访</div></div>
+        <div class="tab-item"><div class="tab-icon active">✉</div><div class="tab-text active">消息</div></div>
+        <div class="tab-item"><div class="tab-icon">◯</div><div class="tab-text">我的</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       5. PROFILE
+  ══════════════════════════════════════ -->
+  <div class="screen-wrap">
+    <div class="screen-label">个人中心</div>
+    <div class="phone">
+      <div class="status-bar" style="background:#1A2B24;">
+        <span class="status-time" style="color:#fff;">9:41</span>
+        <div class="status-icons"><span style="color:#fff;">🔋</span></div>
+      </div>
+      <div class="scroll-area">
+        <!-- Profile hero -->
+        <div class="profile-hero">
+          <div class="profile-settings">⚙️</div>
+          <div class="profile-avatar-big">李</div>
+          <div class="profile-name">李明</div>
+          <div class="profile-sub">45岁 · 男 · 138-0000-0001</div>
+        </div>
+
+        <!-- Float stats -->
+        <div class="profile-stats">
+          <div class="ps-item">
+            <div class="ps-val" style="color:#1E6B50;">82</div>
+            <div class="ps-label">健康评分</div>
+          </div>
+          <div class="ps-item">
+            <div class="ps-val" style="color:#1E6B50;">302</div>
+            <div class="ps-label">服务天数</div>
+          </div>
+          <div class="ps-item">
+            <div class="ps-val">23</div>
+            <div class="ps-label">本月记录</div>
+          </div>
+        </div>
+
+        <!-- Service card -->
+        <div class="service-card">
+          <div class="svc-icon">🛡️</div>
+          <div class="svc-info">
+            <div class="svc-name">健康管理年度服务包</div>
+            <div class="svc-expiry">到期 2027-03-15 · 剩余 302 天</div>
+          </div>
+          <div class="svc-renew">续约</div>
+        </div>
+
+        <!-- Family -->
+        <div class="menu-section" style="padding-bottom:10px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <div class="menu-section-title" style="margin-bottom:0;">家庭成员</div>
+            <div style="font-size:13px;color:#1E6B50;font-weight:500;">+ 添加</div>
+          </div>
+          <div class="family-scroll">
+            <div class="family-card active">
+              <div class="family-avatar" style="background:#1E6B50;">李</div>
+              <div class="family-name">李明</div>
+              <div class="family-rel">本人</div>
+            </div>
+            <div class="family-card">
+              <div class="family-avatar" style="background:#0077B6;">王</div>
+              <div class="family-name">王芳</div>
+              <div class="family-rel">配偶</div>
+            </div>
+            <div class="family-card">
+              <div class="family-avatar" style="background:#7C3AED;">李</div>
+              <div class="family-name">李爸爸</div>
+              <div class="family-rel">父亲</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Health management -->
+        <div class="menu-section">
+          <div class="menu-section-title">健康管理</div>
+          <div class="menu-card">
+            <div class="menu-row">
+              <div class="menu-icon-wrap" style="background:#FDECEA;">❤️</div>
+              <div class="menu-row-label">健康档案</div>
+              <div class="menu-row-right"><div class="menu-row-val">查看全部</div><div class="menu-chevron">›</div></div>
+            </div>
+            <div class="menu-row">
+              <div class="menu-icon-wrap" style="background:#E8F0FB;">📄</div>
+              <div class="menu-row-label">体检报告</div>
+              <div class="menu-row-right"><div class="menu-badge">3</div><div class="menu-chevron">›</div></div>
+            </div>
+            <div class="menu-row">
+              <div class="menu-icon-wrap" style="background:#FEF3E2;">💊</div>
+              <div class="menu-row-label">用药记录</div>
+              <div class="menu-row-right"><div class="menu-row-val">2种</div><div class="menu-chevron">›</div></div>
+            </div>
+            <div class="menu-row">
+              <div class="menu-icon-wrap" style="background:#E8F2EC;">🔔</div>
+              <div class="menu-row-label">提醒管理</div>
+              <div class="menu-row-right"><div class="menu-badge">4</div><div class="menu-chevron">›</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- My services -->
+        <div class="menu-section">
+          <div class="menu-section-title">我的服务</div>
+          <div class="menu-card">
+            <div class="menu-row">
+              <div class="menu-icon-wrap" style="background:#E8F2EC;">👥</div>
+              <div class="menu-row-label">服务群组</div>
+              <div class="menu-row-right"><div class="menu-row-val">已加入</div><div class="menu-chevron">›</div></div>
+            </div>
+            <div class="menu-row">
+              <div class="menu-icon-wrap" style="background:#F2EEFF;">📞</div>
+              <div class="menu-row-label">预约随访</div>
+              <div class="menu-row-right"><div class="menu-chevron">›</div></div>
+            </div>
+            <div class="menu-row">
+              <div class="menu-icon-wrap" style="background:#E8F2EC;">🛒</div>
+              <div class="menu-row-label">服务商城</div>
+              <div class="menu-row-right"><div class="menu-chevron">›</div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Logout -->
+        <div class="logout-btn">🚪 退出登录</div>
+        <div style="text-align:center;font-size:11px;color:#C4CEC8;margin-bottom:16px;">嘉医管家 v1.0.0</div>
+      </div>
+      <div class="tab-bar">
+        <div class="tab-item"><div class="tab-icon">⌂</div><div class="tab-text">首页</div></div>
+        <div class="tab-item"><div class="tab-icon">♡</div><div class="tab-text">健康</div></div>
+        <div class="tab-item"><div class="tab-icon">☑</div><div class="tab-text">随访</div></div>
+        <div class="tab-item"><div class="tab-icon">✉</div><div class="tab-text">消息</div></div>
+        <div class="tab-item"><div class="tab-icon active">◯</div><div class="tab-text active">我的</div></div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- ══════════════════════════════════════
+       6. MEDICATION
+  ══════════════════════════════════════ -->
+  <div class="screen-wrap">
+    <div class="screen-label">用药管理</div>
+    <div class="phone">
+      <div class="status-bar" style="background:#1E6B50;">
+        <span class="status-time" style="color:#fff;">9:41</span>
+        <div class="status-icons"><span style="color:#fff;">🔋</span></div>
+      </div>
+      <div class="scroll-area" style="background:#F2EDE3;">
+        <!-- Header -->
+        <div style="background:#1E6B50;padding:12px 20px 28px;position:relative;overflow:hidden;">
+          <div style="position:absolute;width:160px;height:160px;border-radius:80px;background:rgba(255,255,255,0.05);top:-60px;right:-40px;"></div>
+          <div style="display:flex;align-items:center;justify-content:space-between;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:32px;height:32px;border-radius:10px;background:rgba(255,255,255,0.15);display:flex;align-items:center;justify-content:center;font-size:16px;">←</div>
+              <div>
+                <div style="font-size:17px;font-weight:700;color:#fff;">用药管理</div>
+                <div style="font-size:11px;color:rgba(255,255,255,0.65);margin-top:1px;">2/3 种今日已服</div>
+              </div>
+            </div>
+            <div style="width:34px;height:34px;border-radius:17px;background:rgba(255,255,255,0.2);display:flex;align-items:center;justify-content:center;font-size:20px;color:#fff;">+</div>
+          </div>
+        </div>
+
+        <!-- Summary card -->
+        <div style="margin:-16px 16px 12px;background:#fff;border-radius:16px;padding:14px 16px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 16px rgba(0,0,0,0.08);">
+          <div>
+            <div style="font-size:15px;font-weight:700;color:#1A2B24;">今日服药进度</div>
+            <div style="font-size:12px;color:#8AA89C;margin-top:3px;">2/3 种药已服用</div>
+          </div>
+          <div style="width:52px;height:52px;border-radius:26px;background:rgba(30,107,80,0.08);display:flex;align-items:center;justify-content:center;">
+            <span style="font-size:16px;font-weight:800;color:#D97706;">67%</span>
+          </div>
+        </div>
+
+        <div style="padding:0 16px;font-size:13px;font-weight:700;color:#8AA89C;margin-bottom:8px;">我的用药计划</div>
+
+        <!-- Med card 1 - checked -->
+        <div style="margin:0 16px 8px;background:#fff;border-radius:14px;padding:14px;border-left:3px solid #22A06B;opacity:0.85;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <div style="width:38px;height:38px;border-radius:11px;background:rgba(34,160,107,0.1);display:flex;align-items:center;justify-content:center;font-size:18px;">💊</div>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#1A2B24;">苯磺酸氨氯地平片</div>
+                <div style="font-size:11px;color:#8AA89C;margin-top:2px;">5mg · 每日1次 · 早饭后</div>
+                <div style="font-size:11px;color:#1E6B50;margin-top:1px;">控制血压</div>
+              </div>
+            </div>
+            <div style="font-size:14px;color:#E0D9CE;">🗑</div>
+          </div>
+          <div style="border-top:1px solid #EDE8E0;padding-top:10px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <span style="font-size:10px;color:#8AA89C;width:32px;">依从性</span>
+              <div style="flex:1;height:4px;background:#EDE8E0;border-radius:2px;"><div style="width:92%;height:4px;border-radius:2px;background:#22A06B;"></div></div>
+              <span style="font-size:11px;font-weight:700;color:#22A06B;">92%</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#8AA89C;">📦 剩余12片</div>
+              <div style="display:flex;align-items:center;gap:4px;background:#22A06B;border-radius:100px;padding:4px 10px;">
+                <span style="font-size:12px;color:#fff;">✓ 今日已服</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Med card 2 - unchecked -->
+        <div style="margin:0 16px 8px;background:#fff;border-radius:14px;padding:14px;border-left:3px solid #1E6B50;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+          <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px;">
+            <div style="display:flex;align-items:flex-start;gap:10px;">
+              <div style="width:38px;height:38px;border-radius:11px;background:rgba(30,107,80,0.08);display:flex;align-items:center;justify-content:center;font-size:18px;">💊</div>
+              <div>
+                <div style="font-size:14px;font-weight:700;color:#1A2B24;">阿托伐他汀钙片</div>
+                <div style="font-size:11px;color:#8AA89C;margin-top:2px;">10mg · 每日1次 · 睡前</div>
+                <div style="font-size:11px;color:#1E6B50;margin-top:1px;">降低血脂</div>
+              </div>
+            </div>
+            <div style="font-size:14px;color:#E0D9CE;">🗑</div>
+          </div>
+          <div style="border-top:1px solid #EDE8E0;padding-top:10px;">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <span style="font-size:10px;color:#8AA89C;width:32px;">依从性</span>
+              <div style="flex:1;height:4px;background:#EDE8E0;border-radius:2px;"><div style="width:85%;height:4px;border-radius:2px;background:#D97706;"></div></div>
+              <span style="font-size:11px;font-weight:700;color:#D97706;">85%</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between;">
+              <div style="display:flex;align-items:center;gap:4px;font-size:11px;color:#D97706;">📦 剩余8片</div>
+              <div style="display:flex;align-items:center;gap:4px;border:1.5px solid #22A06B;border-radius:100px;padding:4px 10px;">
+                <span style="font-size:12px;color:#22A06B;">○ 标记服药</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Stats card -->
+        <div style="margin:8px 16px;background:#fff;border-radius:14px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+          <div style="font-size:13px;font-weight:700;color:#1A2B24;margin-bottom:12px;">本月依从性统计</div>
+          <div style="display:flex;justify-content:space-around;">
+            <div style="text-align:center;"><div style="font-size:17px;font-weight:800;color:#1E6B50;">63次</div><div style="font-size:10px;color:#8AA89C;margin-top:3px;">应服次数</div></div>
+            <div style="text-align:center;"><div style="font-size:17px;font-weight:800;color:#1E6B50;">55次</div><div style="font-size:10px;color:#8AA89C;margin-top:3px;">实际服药</div></div>
+            <div style="text-align:center;"><div style="font-size:17px;font-weight:800;color:#22A06B;">87%</div><div style="font-size:10px;color:#8AA89C;margin-top:3px;">平均依从性</div></div>
+          </div>
+        </div>
+
+        <!-- Add modal overlay hint -->
+        <div style="margin:8px 16px 20px;border-radius:14px;border:1.5px dashed #E0D9CE;padding:12px;text-align:center;">
+          <div style="font-size:12px;color:#8AA89C;">点击 <strong>+</strong> 可添加新用药计划<br><span style="font-size:11px;">长按药品卡片可删除</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════
+       7. REMINDERS
+  ══════════════════════════════════════ -->
+  <div class="screen-wrap">
+    <div class="screen-label">提醒管理</div>
+    <div class="phone">
+      <div class="status-bar">
+        <span class="status-time">9:41</span>
+        <div class="status-icons"><span>🔋</span></div>
+      </div>
+      <div class="scroll-area" style="background:#F2EDE3;">
+        <!-- Top bar -->
+        <div style="background:#fff;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #EDE8E0;">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <div style="width:34px;height:34px;border-radius:11px;background:#fff;border:1px solid #E0D9CE;display:flex;align-items:center;justify-content:center;">‹</div>
+            <span style="font-size:17px;font-weight:700;color:#1A2B24;">提醒管理</span>
+          </div>
+          <div style="width:34px;height:34px;border-radius:17px;background:#1E6B50;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;">+</div>
+        </div>
+
+        <!-- Summary row -->
+        <div style="display:flex;gap:8px;padding:12px 16px 0;">
+          <div style="flex:1;background:#fff;border-radius:12px;padding:10px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+            <div style="font-size:18px;color:#1E6B50;">🔔</div>
+            <div style="font-size:20px;font-weight:800;color:#1E6B50;">4</div>
+            <div style="font-size:10px;color:#8AA89C;">已启用</div>
+          </div>
+          <div style="flex:1;background:#fff;border-radius:12px;padding:10px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+            <div style="font-size:18px;color:#D97706;">⏰</div>
+            <div style="font-size:20px;font-weight:800;color:#D97706;">3</div>
+            <div style="font-size:10px;color:#8AA89C;">今日待完成</div>
+          </div>
+          <div style="flex:1;background:#fff;border-radius:12px;padding:10px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+            <div style="font-size:18px;color:#22A06B;">✅</div>
+            <div style="font-size:20px;font-weight:800;color:#22A06B;">2</div>
+            <div style="font-size:10px;color:#8AA89C;">已完成</div>
+          </div>
+        </div>
+
+        <!-- Timeline -->
+        <div style="margin:12px 16px;background:#fff;border-radius:14px;padding:14px;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+          <div style="font-size:14px;font-weight:700;color:#1A2B24;margin-bottom:12px;">今日提醒时间线</div>
+          <div style="display:flex;align-items:flex-start;margin-bottom:10px;">
+            <div style="width:40px;font-size:11px;font-weight:700;color:#8AA89C;padding-top:2px;">08:00</div>
+            <div style="width:20px;display:flex;flex-direction:column;align-items:center;">
+              <div style="width:18px;height:18px;border-radius:9px;background:#22A06B;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;">✓</div>
+              <div style="width:2px;flex:1;background:#E0D9CE;margin:2px 0;height:20px;"></div>
+            </div>
+            <div style="flex:1;padding-left:8px;opacity:0.5;">
+              <div style="font-size:12px;font-weight:600;color:#1A2B24;">服用降压药</div>
+              <div style="font-size:10px;color:#8AA89C;">5mg 苯磺酸氨氯地平</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:flex-start;margin-bottom:10px;">
+            <div style="width:40px;font-size:11px;font-weight:700;color:#1A2B24;padding-top:2px;">09:00</div>
+            <div style="width:20px;display:flex;flex-direction:column;align-items:center;">
+              <div style="width:18px;height:18px;border-radius:9px;background:#DC3545;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff;">!</div>
+              <div style="width:2px;flex:1;background:#E0D9CE;margin:2px 0;height:20px;"></div>
+            </div>
+            <div style="flex:1;padding-left:8px;">
+              <div style="font-size:12px;font-weight:600;color:#1A2B24;">量血压</div>
+              <div style="font-size:10px;color:#8AA89C;">记录收缩压/舒张压</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:flex-start;">
+            <div style="width:40px;font-size:11px;font-weight:700;color:#1A2B24;padding-top:2px;">21:00</div>
+            <div style="width:20px;display:flex;flex-direction:column;align-items:center;">
+              <div style="width:18px;height:18px;border-radius:9px;background:#1E6B50;"></div>
+            </div>
+            <div style="flex:1;padding-left:8px;">
+              <div style="font-size:12px;font-weight:600;color:#1A2B24;">服用他汀类药物</div>
+              <div style="font-size:10px;color:#8AA89C;">睡前服用</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Filter chips -->
+        <div style="display:flex;gap:8px;padding:0 16px 8px;overflow:hidden;">
+          <div style="padding:6px 14px;border-radius:100px;background:#1E6B50;font-size:12px;color:#fff;font-weight:600;white-space:nowrap;">全部</div>
+          <div style="padding:6px 14px;border-radius:100px;border:1.5px solid #E0D9CE;background:#fff;font-size:12px;color:#8AA89C;white-space:nowrap;">用药提醒</div>
+          <div style="padding:6px 14px;border-radius:100px;border:1.5px solid #E0D9CE;background:#fff;font-size:12px;color:#8AA89C;white-space:nowrap;">测量提醒</div>
+        </div>
+
+        <!-- Reminder card 1 -->
+        <div style="margin:0 16px 8px;background:#fff;border-radius:14px;padding:14px;border-left:3px solid #1E6B50;box-shadow:0 2px 8px rgba(0,0,0,0.05);">
+          <div style="display:flex;align-items:flex-start;">
+            <div style="width:42px;height:42px;border-radius:12px;background:rgba(30,107,80,0.08);display:flex;align-items:center;justify-content:center;font-size:20px;margin-right:10px;">💊</div>
+            <div style="flex:1;">
+              <div style="display:flex;align-items:center;justify-content:space-between;">
+                <div>
+                  <div style="font-size:13px;font-weight:700;color:#1A2B24;">服用降压药</div>
+                  <div style="font-size:11px;color:#8AA89C;margin-top:2px;">5mg 苯磺酸氨氯地平，早饭后</div>
+                </div>
+                <div style="width:42px;height:24px;background:#1E6B50;border-radius:12px;position:relative;">
+                  <div style="width:20px;height:20px;border-radius:10px;background:#fff;position:absolute;right:2px;top:2px;"></div>
+                </div>
+              </div>
+              <div style="display:flex;gap:12px;margin-top:8px;">
+                <div style="display:flex;align-items:center;gap:3px;font-size:11px;color:#8AA89C;">⏰ 08:00</div>
+                <div style="display:flex;align-items:center;gap:3px;font-size:11px;color:#1E6B50;font-weight:600;">每天</div>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:6px;">
+                <div style="font-size:11px;color:#8AA89C;">🔔 今天 08:00</div>
+                <div style="display:flex;align-items:center;gap:3px;background:rgba(217,119,6,0.1);padding:3px 8px;border-radius:100px;">
+                  <span style="font-size:11px;color:#D97706;font-weight:600;">🔥 连续 12 天</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Create modal preview -->
+        <div style="margin:8px 16px;background:#1A2B24;border-radius:14px;padding:12px;box-shadow:0 2px 8px rgba(0,0,0,0.1);">
+          <div style="font-size:12px;color:rgba(255,255,255,0.7);text-align:center;margin-bottom:8px;">✨ 新建提醒弹窗（点击 + 触发）</div>
+          <div style="background:rgba(255,255,255,0.08);border-radius:10px;padding:10px;">
+            <div style="font-size:11px;color:rgba(255,255,255,0.5);margin-bottom:4px;">标题</div>
+            <div style="font-size:13px;color:#fff;font-weight:600;">服用他汀类药物</div>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:6px;">
+            <div style="flex:1;background:rgba(255,255,255,0.08);border-radius:10px;padding:8px;text-align:center;">
+              <div style="font-size:10px;color:rgba(255,255,255,0.4);">类型</div>
+              <div style="font-size:11px;color:#5EC99B;margin-top:2px;">用药提醒</div>
+            </div>
+            <div style="flex:1;background:rgba(255,255,255,0.08);border-radius:10px;padding:8px;text-align:center;">
+              <div style="font-size:10px;color:rgba(255,255,255,0.4);">时间</div>
+              <div style="font-size:11px;color:#5EC99B;margin-top:2px;">21:00</div>
+            </div>
+            <div style="flex:1;background:rgba(255,255,255,0.08);border-radius:10px;padding:8px;text-align:center;">
+              <div style="font-size:10px;color:rgba(255,255,255,0.4);">重复</div>
+              <div style="font-size:11px;color:#5EC99B;margin-top:2px;">每天</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="height:20px;"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- end screens-row -->
+
+</body>
+</html>

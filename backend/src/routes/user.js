@@ -19,6 +19,7 @@ const Admin = require('../models/Admin');
 const User = require('../models/User');
 const UserChangeLog = require('../models/UserChangeLog');
 const HealthRecord = require('../models/HealthRecord');
+const DailyTeamInsight = require('../models/DailyTeamInsight');
 const Task = require('../models/Task');
 const Reminder = require('../models/Reminder');
 const SystemConfig = require('../models/SystemConfig');
@@ -353,6 +354,10 @@ router.get('/dashboard', auth, async (req, res) => {
       await User.findByIdAndUpdate(userId, { $set: { scoreHistory: newHistory } });
     }
 
+    // 健康团队今日动态：优先读夜间批量生成的现成结果；当天还没有（新用户/服务刚上线）时不阻塞首页，
+    // 前端按"暂无数据"兜底展示，等下次夜间批量任务补上
+    const teamInsight = await DailyTeamInsight.findOne({ user: userId, date: today }).lean();
+
     res.json({
       success: true,
       data: {
@@ -364,6 +369,14 @@ router.get('/dashboard', auth, async (req, res) => {
         has_any_health_data: hasAnyHealthData,
         bmi,               // 基于最新体重记录实时计算
         growth,            // 成长数据：连续打卡/累计打卡/本月日历/趋势亮点（增长杠杆②）
+        dailyTeamInsights: teamInsight ? {
+          doctor: teamInsight.doctor,
+          nutritionist: teamInsight.nutritionist,
+          healthManager: teamInsight.healthManager,
+          aiSummary: teamInsight.aiSummary,
+          todaySuggestion: teamInsight.todaySuggestion,
+          generatedAt: teamInsight.generatedAt,
+        } : null,
       },
     });
   } catch (err) {

@@ -1,0 +1,876 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, SafeAreaView, Modal, TextInput, ActivityIndicator, Image,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, shadow, gradient } from '../../theme';
+import { mockServices, mockServiceCategories } from '../../data/mockData';
+import { servicesAPI, mediaUrl } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+
+const PAY_METHOD_LABEL = { wechat: '微信支付', alipay: '支付宝' };
+
+function formatCouponLabel(c) {
+  const val = c.type === 'amount' ? `¥${c.value}抵用券` : `${c.value / 10}折优惠券`;
+  return c.title || val;
+}
+
+function StarRow({ rating }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+      {[1,2,3,4,5].map(i => (
+        <Ionicons key={i} name={i <= Math.round(rating) ? 'star' : 'star-outline'} size={11} color="#F39C12" />
+      ))}
+      <Text style={styles.ratingNum}>{rating}</Text>
+    </View>
+  );
+}
+
+// ── 图片全屏预览 ──────────────────────────────────────────────────
+function ImageViewer({ url, onClose }) {
+  if (!url) return null;
+  return (
+    <Modal visible transparent animationType="fade" onRequestClose={onClose}>
+      <TouchableOpacity style={styles.imgViewerOverlay} activeOpacity={1} onPress={onClose}>
+        <Image source={{ uri: mediaUrl(url) }} style={styles.imgViewerImg} resizeMode="contain" />
+        <View style={styles.imgViewerHint}>
+          <Ionicons name="close" size={18} color="#fff" />
+          <Text style={styles.imgViewerHintText}>点击任意处关闭</Text>
+        </View>
+      </TouchableOpacity>
+    </Modal>
+  );
+}
+
+// ── 服务详情弹窗（图文内容）───────────────────────────────────────
+function ServiceDetailModal({ item, onClose, onBuy, onPay }) {
+  const [previewImg, setPreviewImg] = useState(null);
+  if (!item) return null;
+  const hasContent = item.description || (item.images && item.images.length > 0);
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalCard, { paddingBottom: 0 }]}>
+          <View style={styles.modalHandle} />
+
+          {/* 标题行 */}
+          <View style={styles.modalServiceRow}>
+            <View style={[styles.modalServiceIcon, { backgroundColor: (item.iconColor || '#1E6B50') + '15' }]}>
+              <Ionicons name={item.icon || 'star-outline'} size={28} color={item.iconColor || '#1E6B50'} />
+            </View>
+            <View style={styles.modalServiceInfo}>
+              <Text style={styles.modalServiceName} numberOfLines={2}>{item.name}</Text>
+              <StarRow rating={item.rating || 5} />
+            </View>
+          </View>
+
+          {/* 图文内容区 */}
+          <ScrollView style={{ maxHeight: 420 }} showsVerticalScrollIndicator={false}>
+            {/* 图片：完整宽度纵向平铺，不裁切，点击看大图 */}
+            {item.images && item.images.length > 0 && (
+              <View style={{ marginBottom: spacing.md, gap: spacing.sm }}>
+                {item.images.map((url, i) => (
+                  <TouchableOpacity key={i} activeOpacity={0.9} onPress={() => setPreviewImg(url)}>
+                    <Image source={{ uri: mediaUrl(url) }} style={styles.detailImg} resizeMode="contain" />
+                  </TouchableOpacity>
+                ))}
+              </View>
+            )}
+
+            {/* 描述文字 */}
+            {item.description ? (
+              <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 22, marginBottom: spacing.md }}>
+                {item.description}
+              </Text>
+            ) : null}
+
+            {/* 特色功能 */}
+            {!hasContent && (
+              <View style={styles.modalFeatures}>
+                {(item.features || []).map((f, i) => (
+                  <View key={i} style={styles.modalFeatureChip}>
+                    <Ionicons name="checkmark" size={11} color={colors.primary} />
+                    <Text style={styles.modalFeatureText}>{f}</Text>
+                  </View>
+                ))}
+              </View>
+            )}
+
+            {/* 价格 */}
+            <View style={[styles.modalPriceRow, { marginBottom: spacing.lg }]}>
+              <Text style={styles.modalPriceLabel}>服务费用</Text>
+              <View style={styles.modalPriceRight}>
+                {item.price < item.originalPrice && <Text style={styles.modalOriginal}>¥{item.originalPrice}</Text>}
+                <Text style={styles.modalPrice}>¥{item.price}</Text>
+              </View>
+            </View>
+          </ScrollView>
+
+          {/* 底部按钮：先付费，付款后进入预约（付费为主流程） */}
+          <View style={[styles.modalBtns, { paddingVertical: spacing.lg }]}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
+              <Text style={styles.cancelBtnText}>返回</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.payBtn} onPress={onPay} activeOpacity={0.85}>
+              <Ionicons name="card-outline" size={16} color={colors.white} />
+              <Text style={styles.payBtnText}>立即购买 ¥{item.price}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+      <ImageViewer url={previewImg} onClose={() => setPreviewImg(null)} />
+    </Modal>
+  );
+}
+
+// ── 购买确认弹窗 ────────────────────────────────────────────────────
+// mode: 'consult' 预约咨询（走线索，健管师联系）| 'pay' 自主付费（选支付方式，生成待收款订单）
+function PurchaseModal({ item, mode = 'consult', onClose }) {
+  const { user } = useAuth();
+  const isPay = mode === 'pay';
+  const [note, setNote]           = useState('');
+  const [payMethod, setPayMethod] = useState('wechat');
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [errMsg, setErrMsg]       = useState('');
+  // 多规格：默认选第一个规格
+  const hasSpecs = !!(item?.servicePrices && item.servicePrices.length > 0);
+  const [specIdx, setSpecIdx] = useState(0);
+
+  // 健康基金抵扣 + 优惠券
+  const fundBalance = user?.healthFund?.total || 0;
+  const [useFund, setUseFund] = useState(false);
+  const [fundAmountInput, setFundAmountInput] = useState('');
+  const [coupons, setCoupons] = useState([]);
+  const [couponId, setCouponId] = useState(null);
+
+  useEffect(() => {
+    if (!isPay) return;
+    servicesAPI.coupons().then(res => {
+      if (res.success) setCoupons(res.data || []);
+    }).catch(() => {});
+  }, [isPay]);
+
+  if (!item) return null;
+
+  const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
+  const currentSpecLabel = hasSpecs ? item.servicePrices[specIdx]?.label : '';
+
+  const selectedCoupon = coupons.find(c => c._id === couponId) || null;
+  const couponDiscount = selectedCoupon
+    ? Math.min(
+        selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(currentPrice * (100 - selectedCoupon.value)) / 100,
+        currentPrice
+      )
+    : 0;
+  const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
+  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
+
+  const handleSubmit = async () => {
+    setSubmitting(true);
+    setErrMsg('');
+    try {
+      // 把选中的规格名一并写进备注，让健管师明确客户选了哪个规格
+      const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
+      // 付费模式带上支付方式，后端据此标记订单为线上支付并生成待收款任务
+      const res = await servicesAPI.order(
+        item.id, noteWithSpec, isPay ? payMethod : undefined,
+        isPay ? fundApplied : undefined, isPay ? couponId : undefined
+      );
+      if (res.success) {
+        setSubmitted(true);
+      } else {
+        setErrMsg(res.message || '提交失败，请重试');
+      }
+    } catch (e) {
+      setErrMsg(e.message || '网络错误，请检查连接后重试');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  if (submitted) {
+    return (
+      <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalCard}>
+            <View style={styles.successIconWrap}>
+              <Ionicons name="checkmark-circle" size={52} color={colors.success} />
+            </View>
+            <Text style={styles.successTitle}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
+            <Text style={styles.successDesc}>
+              {isPay
+                ? `已为您生成 ¥${finalPrice} 的订单${finalPrice > 0 ? `（${PAY_METHOD_LABEL[payMethod] || payMethod}）` : '（已用健康基金/优惠券全额抵扣）'}。完成付款后，健管师将与您联系预约具体服务时间，可在「我的订单」查看进度。`
+                : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
+            </Text>
+            <TouchableOpacity style={styles.successBtn} onPress={onClose} activeOpacity={0.85}>
+              <Text style={styles.successBtnText}>知道了</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <View style={styles.modalHandle} />
+
+          <View style={styles.modalServiceRow}>
+            <View style={[styles.modalServiceIcon, { backgroundColor: item.iconColor + '15' }]}>
+              <Ionicons name={item.icon} size={28} color={item.iconColor} />
+            </View>
+            <View style={styles.modalServiceInfo}>
+              <Text style={styles.modalServiceName} numberOfLines={2}>{item.name}</Text>
+              <StarRow rating={item.rating} />
+            </View>
+          </View>
+
+          {hasSpecs ? (
+            <View style={[styles.modalPriceRow, { flexDirection: 'column', alignItems: 'flex-start', gap: 8 }]}>
+              <Text style={styles.modalPriceLabel}>选择规格</Text>
+              {item.servicePrices.map((sp, i) => {
+                const active = i === specIdx;
+                return (
+                  <TouchableOpacity
+                    key={i}
+                    activeOpacity={0.85}
+                    onPress={() => setSpecIdx(i)}
+                    style={{
+                      flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%',
+                      paddingVertical: 10, paddingHorizontal: 12, borderRadius: radius.md,
+                      borderWidth: 1.5, borderColor: active ? colors.primary : colors.border,
+                      backgroundColor: active ? colors.primary + '0D' : colors.white,
+                    }}
+                  >
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                      <View style={{
+                        width: 18, height: 18, borderRadius: 9, borderWidth: 2,
+                        borderColor: active ? colors.primary : colors.border,
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        {active && <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.primary }} />}
+                      </View>
+                      <Text style={{ fontSize: 14, color: colors.textPrimary, fontWeight: active ? '700' : '500' }}>{sp.label}</Text>
+                    </View>
+                    <Text style={{ fontSize: 15, fontWeight: '700', color: colors.danger }}>¥{sp.price}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          ) : (
+            <View style={styles.modalPriceRow}>
+              <Text style={styles.modalPriceLabel}>服务费用</Text>
+              <View style={styles.modalPriceRight}>
+                {item.price < item.originalPrice && <Text style={styles.modalOriginal}>¥{item.originalPrice}</Text>}
+                <Text style={styles.modalPrice}>¥{item.price}</Text>
+              </View>
+            </View>
+          )}
+
+          <View style={styles.modalFeatures}>
+            {item.features.map((f, i) => (
+              <View key={i} style={styles.modalFeatureChip}>
+                <Ionicons name="checkmark" size={11} color={colors.primary} />
+                <Text style={styles.modalFeatureText}>{f}</Text>
+              </View>
+            ))}
+          </View>
+
+          {/* 支付方式（仅自主付费时展示） */}
+          {isPay && (
+            <>
+              <Text style={styles.noteLabel}>支付方式</Text>
+              <View style={styles.payMethodRow}>
+                {[{ key: 'wechat', label: '微信支付', icon: 'logo-wechat' }, { key: 'alipay', label: '支付宝', icon: 'wallet-outline' }].map(m => (
+                  <TouchableOpacity
+                    key={m.key}
+                    style={[styles.payMethodChip, payMethod === m.key && styles.payMethodChipActive]}
+                    onPress={() => setPayMethod(m.key)}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons
+                      name={m.icon}
+                      size={16}
+                      color={payMethod === m.key ? colors.primary : colors.textMuted}
+                    />
+                    <Text style={[styles.payMethodText, payMethod === m.key && styles.payMethodTextActive]}>{m.label}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {/* 优惠券（仅自主付费且有可用券时展示） */}
+          {isPay && coupons.length > 0 && (
+            <>
+              <Text style={styles.noteLabel}>优惠券</Text>
+              <View style={{ gap: 8, marginBottom: spacing.md }}>
+                <TouchableOpacity
+                  style={[styles.couponChip, !couponId && styles.couponChipActive]}
+                  onPress={() => setCouponId(null)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.couponChipText, !couponId && styles.couponChipTextActive]}>不使用优惠券</Text>
+                </TouchableOpacity>
+                {coupons.map(c => (
+                  <TouchableOpacity
+                    key={c._id}
+                    style={[styles.couponChip, couponId === c._id && styles.couponChipActive]}
+                    onPress={() => setCouponId(c._id)}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={[styles.couponChipText, couponId === c._id && styles.couponChipTextActive]}>
+                      {formatCouponLabel(c)}{c.minSpend > 0 ? `（满¥${c.minSpend}可用）` : ''}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </>
+          )}
+
+          {/* 健康基金抵扣（仅自主付费且有余额时展示） */}
+          {isPay && fundBalance > 0 && (
+            <>
+              <View style={styles.fundHeaderRow}>
+                <Text style={styles.noteLabel}>健康基金抵扣（余额 ¥{fundBalance.toFixed(2)}）</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    const next = !useFund;
+                    setUseFund(next);
+                    if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+                  }}
+                  style={[styles.fundToggle, useFund && styles.fundToggleActive]}
+                  activeOpacity={0.85}
+                >
+                  <Text style={[styles.fundToggleText, useFund && styles.fundToggleTextActive]}>{useFund ? '已启用' : '使用基金'}</Text>
+                </TouchableOpacity>
+              </View>
+              {useFund && (
+                <TextInput
+                  style={[styles.noteInput, { minHeight: 0, marginBottom: spacing.md }]}
+                  keyboardType="numeric"
+                  placeholder={`最多可抵扣 ¥${Math.min(fundBalance, priceAfterCoupon)}`}
+                  placeholderTextColor={colors.textMuted}
+                  value={fundAmountInput}
+                  onChangeText={setFundAmountInput}
+                />
+              )}
+            </>
+          )}
+
+          {/* 应付金额（有抵扣时展示明细） */}
+          {isPay && (couponDiscount > 0 || fundApplied > 0) && (
+            <View style={styles.summaryBox}>
+              <View style={styles.summaryRow}>
+                <Text style={styles.summaryLabel}>商品原价</Text>
+                <Text style={styles.summaryVal}>¥{currentPrice}</Text>
+              </View>
+              {couponDiscount > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>优惠券抵扣</Text>
+                  <Text style={[styles.summaryVal, { color: colors.danger }]}>-¥{couponDiscount}</Text>
+                </View>
+              )}
+              {fundApplied > 0 && (
+                <View style={styles.summaryRow}>
+                  <Text style={styles.summaryLabel}>健康基金抵扣</Text>
+                  <Text style={[styles.summaryVal, { color: colors.danger }]}>-¥{fundApplied}</Text>
+                </View>
+              )}
+              <View style={[styles.summaryRow, { borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 6, marginTop: 2 }]}>
+                <Text style={[styles.summaryLabel, { fontWeight: '700', color: colors.textPrimary }]}>应付金额</Text>
+                <Text style={styles.summaryFinal}>¥{finalPrice}</Text>
+              </View>
+            </View>
+          )}
+
+          <Text style={styles.noteLabel}>备注（可选）</Text>
+          <TextInput
+            style={styles.noteInput}
+            placeholder="如有特殊需求，请在此说明"
+            placeholderTextColor={colors.textMuted}
+            value={note}
+            onChangeText={setNote}
+            multiline
+            numberOfLines={3}
+          />
+
+          {!!errMsg && (
+            <Text style={styles.errText}>{errMsg}</Text>
+          )}
+
+          <View style={styles.hintRow}>
+            <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.hintText}>
+              {isPay
+                ? '提交后生成待收款订单，健管师将与您确认并完成收款，可在「我的订单」查看'
+                : '提交后，健管师将与您联系确认具体服务安排'}
+            </Text>
+          </View>
+
+          <View style={styles.modalBtns}>
+            <TouchableOpacity style={styles.cancelBtn} onPress={onClose} activeOpacity={0.8}>
+              <Text style={styles.cancelBtnText}>取消</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.submitBtn, submitting && { opacity: 0.6 }]}
+              onPress={handleSubmit}
+              activeOpacity={0.85}
+              disabled={submitting}
+            >
+              {submitting
+                ? <ActivityIndicator color={colors.white} />
+                : <Text style={styles.submitBtnText}>{isPay ? `确认支付 ¥${finalPrice}` : '提交预约'}</Text>
+              }
+            </TouchableOpacity>
+          </View>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function ServiceCard({ item, onDetail, onBuy, onPay }) {
+  const discount = Math.round((1 - item.price / item.originalPrice) * 10);
+  const hasDiscount = item.price < item.originalPrice;
+  return (
+    <TouchableOpacity style={styles.serviceCard} activeOpacity={0.85} onPress={() => onDetail(item)}>
+      {item.tag ? (
+        <View style={[styles.serviceTag, { backgroundColor: item.tagColor }]}>
+          <Text style={styles.serviceTagText}>{item.tag}</Text>
+        </View>
+      ) : null}
+      {/* 封面图：有图直接展示（不点开也能看到），无图退回图标 */}
+      {item.images && item.images.length > 0 && (
+        <Image source={{ uri: mediaUrl(item.images[0]) }} style={styles.serviceCover} resizeMode="contain" />
+      )}
+      <View style={styles.serviceCardTop}>
+        <View style={[styles.serviceIcon, { backgroundColor: item.iconColor + '15' }]}>
+          <Ionicons name={item.icon} size={26} color={item.iconColor} />
+        </View>
+        <View style={styles.serviceInfo}>
+          <Text style={styles.serviceName} numberOfLines={2}>{item.name}</Text>
+          <Text style={styles.serviceSubtitle} numberOfLines={2}>{item.subtitle}</Text>
+          <StarRow rating={item.rating} />
+          <Text style={styles.reviewCount}>{item.reviewCount}人已购</Text>
+        </View>
+      </View>
+
+      <View style={styles.featureRow}>
+        {item.features.map((f, i) => (
+          <View key={i} style={styles.featureChip}>
+            <Ionicons name="checkmark" size={10} color={colors.primary} />
+            <Text style={styles.featureText}>{f}</Text>
+          </View>
+        ))}
+      </View>
+
+      <View style={styles.serviceCardBottom}>
+        <View>
+          <View style={styles.priceRow}>
+            <Text style={styles.priceCurrency}>¥</Text>
+            <Text style={styles.priceVal}>{item.price}</Text>
+            {hasDiscount && <Text style={styles.priceOriginal}>¥{item.originalPrice}</Text>}
+            {hasDiscount && (
+              <View style={styles.discountBadge}>
+                <Text style={styles.discountText}>{discount}折</Text>
+              </View>
+            )}
+          </View>
+        </View>
+        <TouchableOpacity style={styles.buyBtn} onPress={() => onPay(item)} activeOpacity={0.85}>
+          <Text style={styles.buyBtnText}>立即购买</Text>
+        </TouchableOpacity>
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrders, onActivate }) {
+  // 已有服务包 → 显示会员权益
+  if (hasService) {
+    return (
+      <View style={styles.banner}>
+        <View style={styles.bannerContent}>
+          <Text style={styles.bannerTag}>专属会员权益</Text>
+          <Text style={styles.bannerTitle} numberOfLines={1}>{servicePackage || '年度服务包'}</Text>
+          <Text style={styles.bannerSub}>全场享 9 折 · 剩余 {daysLeft} 天</Text>
+          <TouchableOpacity style={styles.bannerBtn} onPress={onViewOrders}>
+            <Text style={styles.bannerBtnText}>查看我的订单</Text>
+            <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.bannerIllustration}>
+          <Ionicons name="shield-checkmark" size={60} color="rgba(255,255,255,0.3)" />
+        </View>
+      </View>
+    );
+  }
+
+  // 是会员但暂无服务包 → 不展示开通入口
+  if (isMember) return null;
+
+  // 未开通：展示服务包权益介绍 + 开通入口
+  return (
+    <View style={styles.activateBanner}>
+      <View style={styles.activateBannerLeft}>
+        <View style={styles.activateIconWrap}>
+          <Ionicons name="shield-checkmark-outline" size={28} color={colors.primary} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.activateTitle}>开通专属服务包</Text>
+          <View style={styles.activatePoints}>
+            {['专属家庭医生咨询', '健管师全程陪伴', '全年复查提醒', 'AI无限次咨询'].map((p, i) => (
+              <View key={i} style={styles.activatePoint}>
+                <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+                <Text style={styles.activatePointText}>{p}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+      <TouchableOpacity style={styles.activateBtn} onPress={onActivate} activeOpacity={0.85}>
+        <Text style={styles.activateBtnText}>立即开通</Text>
+        <Ionicons name="chevron-forward" size={14} color={colors.white} />
+      </TouchableOpacity>
+    </View>
+  );
+}
+
+export default function ServiceMallScreen({ navigation, route }) {
+  const { user } = useAuth();
+  const [activeCategory, setActiveCategory] = useState('全部');
+  const [detailService, setDetailService]   = useState(null);   // 详情弹窗
+  const [selectedService, setSelectedService] = useState(null); // 购买弹窗
+  const [purchaseMode, setPurchaseMode]     = useState('consult'); // consult 预约 | pay 付费
+  const openPurchase = (svc, mode) => { setPurchaseMode(mode); setSelectedService(svc); };
+  const [services, setServices]     = useState(mockServices);
+  const [categories, setCategories] = useState(mockServiceCategories);
+  const [loadingList, setLoadingList] = useState(true);
+
+  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
+  const isMember  = !!(user?.memberType) || hasService;
+  const expiry   = hasService ? new Date(user.serviceExpiry) : null;
+  const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
+
+  // 拉取服务目录
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await servicesAPI.list();
+        if (res.success && res.data?.services?.length > 0) {
+          setServices(res.data.services);
+          setCategories(res.data.categories || mockServiceCategories);
+        }
+      } catch {
+        // 网络失败时保留 mockServices
+      } finally {
+        setLoadingList(false);
+      }
+    })();
+  }, []);
+
+  const filtered = activeCategory === '全部'
+    ? services
+    : services.filter(s => s.category === activeCategory);
+
+  return (
+    <SafeAreaView style={styles.container}>
+      <View style={[styles.topBar, gradient.header]}>
+        <View style={styles.topBarDecor} />
+        <View style={styles.topBarRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={22} color={colors.white} />
+          </TouchableOpacity>
+          <View style={styles.topBarCenter}>
+            <Text style={styles.pageTitle}>服务商城</Text>
+            <Text style={styles.pageSubtitle}>专属健康服务，品质保障</Text>
+          </View>
+          <View style={{ width: 36 }} />
+        </View>
+      </View>
+
+      <ScrollView showsVerticalScrollIndicator={false}>
+        {/* Banner */}
+        <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.md }}>
+          <BannerCard
+            hasService={hasService}
+            isMember={isMember}
+            servicePackage={user?.servicePackage}
+            daysLeft={daysLeft}
+            onViewOrders={() => navigation.navigate('Orders')}
+            onActivate={() => navigation.navigate('Renewal')}
+          />
+        </View>
+
+        {/* Category Tabs */}
+        <View style={{ marginTop: spacing.md }}>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
+            {categories.map(cat => (
+              <TouchableOpacity
+                key={cat}
+                style={[styles.catChip, activeCategory === cat && styles.catChipActive]}
+                onPress={() => setActiveCategory(cat)}
+              >
+                <Text style={[styles.catChipText, activeCategory === cat && styles.catChipTextActive]}>{cat}</Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
+
+        {/* Services */}
+        <View style={{ marginHorizontal: spacing.lg, marginTop: spacing.sm, gap: spacing.sm, paddingBottom: spacing.xl * 2 }}>
+          {loadingList ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
+          ) : (
+            <>
+              <Text style={styles.resultCount}>共 {filtered.length} 个服务</Text>
+              {filtered.map(s => (
+                <ServiceCard
+                  key={s.id}
+                  item={s}
+                  onDetail={setDetailService}
+                  onBuy={(svc) => openPurchase(svc, 'consult')}
+                  onPay={(svc) => openPurchase(svc, 'pay')}
+                />
+              ))}
+            </>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Service Detail Modal */}
+      {detailService && (
+        <ServiceDetailModal
+          item={detailService}
+          onClose={() => setDetailService(null)}
+          onBuy={() => { openPurchase(detailService, 'consult'); setDetailService(null); }}
+          onPay={() => { openPurchase(detailService, 'pay'); setDetailService(null); }}
+        />
+      )}
+
+      {/* Purchase Modal */}
+      {selectedService && (
+        <PurchaseModal item={selectedService} mode={purchaseMode} onClose={() => setSelectedService(null)} />
+      )}
+    </SafeAreaView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+  topBar: {
+    paddingHorizontal: spacing.lg, paddingTop: spacing.sm, paddingBottom: spacing.lg,
+    backgroundColor: colors.primary, overflow: 'hidden', position: 'relative',
+  },
+  topBarDecor: {
+    position: 'absolute', width: 180, height: 180, borderRadius: 90,
+    backgroundColor: 'rgba(255,255,255,0.05)', top: -70, right: -50,
+  },
+  topBarRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topBarCenter: { flex: 1, alignItems: 'center' },
+  backBtn: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center' },
+  pageTitle: { fontSize: 18, fontWeight: '700', color: colors.white },
+  pageSubtitle: { fontSize: 11, color: 'rgba(255,255,255,0.65)', marginTop: 1 },
+  // 已开通会员 Banner
+  banner: {
+    backgroundColor: colors.primary, borderRadius: radius.xl,
+    padding: spacing.lg, flexDirection: 'row', overflow: 'hidden', minHeight: 110,
+  },
+  bannerContent: { flex: 1 },
+  bannerTag: { fontSize: 11, color: 'rgba(255,255,255,0.7)', backgroundColor: 'rgba(255,255,255,0.2)', alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full, marginBottom: spacing.xs },
+  bannerTitle: { fontSize: 18, fontWeight: '800', color: colors.white },
+  bannerSub: { fontSize: 12, color: 'rgba(255,255,255,0.65)', marginTop: 3, marginBottom: spacing.sm },
+  bannerBtn: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white, alignSelf: 'flex-start', paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full },
+  bannerBtnText: { fontSize: 12, color: colors.primary, fontWeight: '700' },
+  bannerIllustration: { position: 'absolute', right: -10, bottom: -10 },
+
+  // 未开通 — 服务包介绍 Banner
+  activateBanner: {
+    backgroundColor: colors.white, borderRadius: radius.xl,
+    borderWidth: 1.5, borderColor: colors.primary + '30',
+    padding: spacing.md, gap: spacing.md,
+  },
+  activateBannerLeft: { flexDirection: 'row', gap: spacing.md, alignItems: 'flex-start' },
+  activateIconWrap: {
+    width: 48, height: 48, borderRadius: 14,
+    backgroundColor: colors.primary + '12',
+    alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  activateTitle: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  activatePoints: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  activatePoint: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  activatePointText: { fontSize: 12, color: colors.textSecondary },
+  activateBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: colors.primary, borderRadius: radius.md,
+    paddingVertical: 12, gap: 4,
+  },
+  activateBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
+  catChip: {
+    paddingHorizontal: spacing.md, paddingVertical: 8,
+    borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  catChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  catChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+  catChipTextActive: { color: colors.white, fontWeight: '700' },
+  resultCount: { fontSize: 12, color: colors.textMuted, marginBottom: spacing.xs },
+  serviceCard: {
+    backgroundColor: colors.white, borderRadius: radius.xl, padding: spacing.md, ...shadow.sm,
+    position: 'relative', overflow: 'hidden',
+  },
+  serviceTag: {
+    position: 'absolute', top: 12, right: 12,
+    paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full,
+  },
+  serviceTagText: { fontSize: 11, color: colors.white, fontWeight: '700' },
+  serviceCardTop: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.sm },
+  serviceIcon: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  serviceInfo: { flex: 1 },
+  serviceName: { fontSize: 15, fontWeight: '700', color: colors.textPrimary, marginBottom: 4, paddingRight: 48 },
+  serviceSubtitle: { fontSize: 12, color: colors.textSecondary, lineHeight: 18, marginBottom: 6 },
+  ratingNum: { fontSize: 11, color: colors.warning, fontWeight: '700', marginLeft: 3 },
+  reviewCount: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  featureRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.sm },
+  featureChip: { flexDirection: 'row', alignItems: 'center', gap: 2, backgroundColor: colors.primary + '10', paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
+  featureText: { fontSize: 11, color: colors.primary },
+  serviceCardBottom: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderTopWidth: 1, borderTopColor: colors.border, paddingTop: spacing.sm },
+  priceRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3 },
+  priceCurrency: { fontSize: 13, fontWeight: '700', color: colors.danger },
+  priceVal: { fontSize: 24, fontWeight: '800', color: colors.danger },
+  priceOriginal: { fontSize: 12, color: colors.textMuted, textDecorationLine: 'line-through' },
+  discountBadge: { backgroundColor: colors.danger + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
+  discountText: { fontSize: 11, color: colors.danger, fontWeight: '700' },
+  buyBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.full },
+  buyBtnText: { fontSize: 14, color: colors.white, fontWeight: '700' },
+  consultBtnSm: {
+    paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.full,
+    borderWidth: 1.5, borderColor: colors.primary, backgroundColor: colors.white,
+  },
+  consultBtnSmText: { fontSize: 14, color: colors.primary, fontWeight: '700' },
+  // 列表卡片封面图
+  serviceCover: { width: '100%', height: 160, borderRadius: radius.md, marginBottom: spacing.sm, backgroundColor: colors.background },
+  // 详情弹窗完整图片
+  detailImg: { width: '100%', minHeight: 200, borderRadius: radius.md, backgroundColor: colors.background },
+  // 图片全屏预览
+  imgViewerOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', justifyContent: 'center', alignItems: 'center' },
+  imgViewerImg: { width: '100%', height: '80%' },
+  imgViewerHint: { position: 'absolute', bottom: 40, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  imgViewerHintText: { color: 'rgba(255,255,255,0.7)', fontSize: 13 },
+  // 详情弹窗双按钮：预约咨询 / 立即支付
+  consultBtn: {
+    flex: 1, flexDirection: 'row', gap: 5, paddingVertical: 14, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  consultBtnText: { fontSize: 15, color: colors.primary, fontWeight: '700' },
+  payBtn: {
+    flex: 1.4, flexDirection: 'row', gap: 5, paddingVertical: 14, borderRadius: radius.md,
+    backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center',
+  },
+  payBtnText: { fontSize: 15, color: colors.white, fontWeight: '700' },
+  // 支付方式选择
+  payMethodRow: { flexDirection: 'row', gap: spacing.sm, marginBottom: spacing.md },
+  payMethodChip: {
+    flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center',
+    paddingVertical: 12, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  payMethodChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + '0D' },
+  payMethodText: { fontSize: 14, color: colors.textMuted, fontWeight: '600' },
+  payMethodTextActive: { color: colors.primary, fontWeight: '700' },
+
+  // Modal
+  modalOverlay: {
+    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end',
+  },
+  modalCard: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.xl + 16,
+  },
+  modalHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.border,
+    alignSelf: 'center', marginTop: 12, marginBottom: spacing.lg,
+  },
+  modalServiceRow: { flexDirection: 'row', gap: spacing.md, marginBottom: spacing.lg },
+  modalServiceIcon: { width: 56, height: 56, borderRadius: 16, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  modalServiceInfo: { flex: 1, justifyContent: 'center', gap: 6 },
+  modalServiceName: { fontSize: 16, fontWeight: '700', color: colors.textPrimary },
+  modalPriceRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: colors.background, borderRadius: radius.md, padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  modalPriceLabel: { fontSize: 14, color: colors.textSecondary, fontWeight: '500' },
+  modalPriceRight: { flexDirection: 'row', alignItems: 'baseline', gap: 6 },
+  modalOriginal: { fontSize: 12, color: colors.textMuted, textDecorationLine: 'line-through' },
+  modalPrice: { fontSize: 22, fontWeight: '800', color: colors.danger },
+  modalFeatures: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.xs, marginBottom: spacing.md },
+  modalFeatureChip: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '10', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full },
+  modalFeatureText: { fontSize: 12, color: colors.primary, fontWeight: '500' },
+  noteLabel: { fontSize: 13, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.xs },
+  noteInput: {
+    backgroundColor: colors.background,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.md, fontSize: 14, color: colors.textPrimary,
+    minHeight: 80, textAlignVertical: 'top', marginBottom: spacing.sm,
+  },
+  errText: { fontSize: 13, color: colors.danger, marginBottom: spacing.sm, textAlign: 'center' },
+  hintRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 4, marginBottom: spacing.lg },
+  hintText: { flex: 1, fontSize: 11, color: colors.textMuted, lineHeight: 16 },
+  modalBtns: { flexDirection: 'row', gap: spacing.sm },
+  cancelBtn: {
+    flex: 1, paddingVertical: 14, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, alignItems: 'center',
+  },
+  cancelBtnText: { fontSize: 15, color: colors.textSecondary, fontWeight: '600' },
+  submitBtn: {
+    flex: 2, paddingVertical: 14, borderRadius: radius.md,
+    backgroundColor: colors.primary, alignItems: 'center',
+  },
+  submitBtnText: { fontSize: 15, color: colors.white, fontWeight: '700' },
+
+  // 优惠券选择
+  couponChip: {
+    paddingVertical: 10, paddingHorizontal: 12, borderRadius: radius.md,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  couponChipActive: { borderColor: colors.primary, backgroundColor: colors.primary + '0D' },
+  couponChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+  couponChipTextActive: { color: colors.primary, fontWeight: '700' },
+
+  // 健康基金抵扣
+  fundHeaderRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.xs },
+  fundToggle: {
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: radius.full,
+    borderWidth: 1.5, borderColor: colors.border, backgroundColor: colors.white,
+  },
+  fundToggleActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  fundToggleText: { fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  fundToggleTextActive: { color: colors.white },
+
+  // 价格明细
+  summaryBox: {
+    backgroundColor: colors.background, borderRadius: radius.md,
+    padding: spacing.md, marginBottom: spacing.md, gap: 4,
+  },
+  summaryRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  summaryLabel: { fontSize: 13, color: colors.textSecondary },
+  summaryVal: { fontSize: 13, color: colors.textPrimary, fontWeight: '600' },
+  summaryFinal: { fontSize: 18, color: colors.danger, fontWeight: '800' },
+
+  // Success state
+  successIconWrap: { alignItems: 'center', marginBottom: spacing.md, marginTop: spacing.md },
+  successTitle: { fontSize: 20, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginBottom: spacing.sm },
+  successDesc: { fontSize: 14, color: colors.textSecondary, textAlign: 'center', lineHeight: 22, marginBottom: spacing.xl },
+  successBtn: {
+    backgroundColor: colors.primary, borderRadius: radius.md,
+    paddingVertical: 14, alignItems: 'center', marginBottom: spacing.sm,
+  },
+  successBtnText: { fontSize: 16, color: colors.white, fontWeight: '700' },
+});

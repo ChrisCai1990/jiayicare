@@ -1,0 +1,847 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, SafeAreaView, Dimensions, Modal, TextInput,
+  RefreshControl, ActivityIndicator, KeyboardAvoidingView, Platform,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import Svg, { Polyline, Circle, Path, Line, Defs, LinearGradient, Stop } from 'react-native-svg';
+import { colors, spacing, radius, shadow } from '../../theme';
+import { mockBloodPressureData, mockBloodSugarData } from '../../data/mockData';
+import { recordsAPI, userAPI } from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
+
+const { width: W } = Dimensions.get('window');
+const CHART_INNER_W = W - spacing.lg * 2 - spacing.md * 2;
+
+// ── 指标类型配置 ──────────────────────────────────────────────────
+const CHART_TYPES = [
+  {
+    key: 'bloodPressure', label: '血压', unit: 'mmHg',
+    color: '#DC3545', icon: 'heart-outline',
+    refLines: [{ val: 140, color: '#DC3545', label: '收缩压上限' }, { val: 90, color: '#22A06B', label: '舒张压上限' }],
+    minY: 60, maxY: 180,
+    getVal: (r) => r.sys ?? r.extra?.sys ?? parseFloat(String(r.value).split('/')[0]) ?? 0,
+    getDisplay: (r) => r.sys && r.dia ? `${r.sys}/${r.dia}` : r.value ?? '-',
+    mockData: mockBloodPressureData,
+  },
+  {
+    key: 'bloodSugar', label: '血糖', unit: 'mmol/L',
+    color: '#D97706', icon: 'water-outline',
+    refLines: [{ val: 6.1, color: '#22A06B', label: '正常上限' }, { val: 3.9, color: '#0077B6', label: '低血糖线' }],
+    minY: 2, maxY: 12,
+    getVal: (r) => parseFloat(r.value ?? r.extra?.value ?? 0),
+    getDisplay: (r) => String(r.value ?? '-'),
+    mockData: mockBloodSugarData,
+  },
+  {
+    key: 'heartRate', label: '心率', unit: '次/分',
+    color: '#7C3AED', icon: 'pulse-outline',
+    refLines: [{ val: 100, color: '#DC3545', label: '偏快线' }, { val: 60, color: '#0077B6', label: '偏慢线' }],
+    minY: 40, maxY: 140,
+    getVal: (r) => parseFloat(r.value ?? 0),
+    getDisplay: (r) => String(r.value ?? '-'),
+    mockData: [],
+  },
+  {
+    key: 'weight', label: '体重', unit: 'kg',
+    color: '#1E6B50', icon: 'barbell-outline',
+    refLines: [],
+    minY: 40, maxY: 120,
+    getVal: (r) => parseFloat(r.value ?? 0),
+    getDisplay: (r) => String(r.value ?? '-'),
+    mockData: [],
+  },
+  {
+    key: 'sleep', label: '睡眠', unit: '小时',
+    color: '#7B68EE', icon: 'moon-outline',
+    refLines: [{ val: 9, color: '#22A06B', label: '建议上限' }, { val: 7, color: '#D97706', label: '建议下限' }],
+    minY: 0, maxY: 12,
+    getVal: (r) => parseFloat(r.value ?? 0),
+    getDisplay: (r) => r.value != null ? `${r.value}` : '-',
+    mockData: [],
+  },
+];
+
+// ── 个人档案字段 ──────────────────────────────────────────────────
+const PROFILE_FIELDS = [
+  { key: 'bloodTypeABO',  label: 'ABO 血型',  icon: 'water',              placeholder: 'A / B / O / AB' },
+  { key: 'bloodTypeRH',   label: 'RH 血型',   icon: 'water-outline',      placeholder: '阳性 / 阴性' },
+  { key: 'drugAllergy',   label: '药物过敏史', icon: 'medical',            placeholder: '如：青霉素类、无' },
+  { key: 'foodAllergy',   label: '食物过敏史', icon: 'restaurant-outline',  placeholder: '如：海鲜、无' },
+  { key: 'pastHistory',   label: '既往史',    icon: 'time-outline',        placeholder: '如：高血压 (2020年)' },
+  { key: 'medicHistory',  label: '用药史',    icon: 'medkit-outline',      placeholder: '如：氨氯地平' },
+  { key: 'familyHistory', label: '家族史',    icon: 'people-outline',      placeholder: '如：父亲：高血压' },
+  { key: 'surgeryHistory',label: '手术史',    icon: 'cut-outline',         placeholder: '如：无' },
+];
+
+const DEFAULT_PROFILE = {
+  bloodTypeABO:  'A',
+  bloodTypeRH:   '阳性',
+  drugAllergy:   '青霉素类',
+  foodAllergy:   '无',
+  pastHistory:   '高血压 (2020年)',
+  medicHistory:  '氨氯地平、他汀类',
+  familyHistory: '父亲：高血压、冠心病',
+  surgeryHistory:'无',
+};
+
+// ── localStorage 工具 ─────────────────────────────────────────────
+const PROFILE_KEY = 'jy_health_profile';
+const EMPTY_PROFILE = {
+  bloodTypeABO: '', bloodTypeRH: '', drugAllergy: '', foodAllergy: '',
+  pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '',
+};
+function loadProfileFromStorage() {
+  try { return JSON.parse(localStorage.getItem(PROFILE_KEY)) || null; }
+  catch { return null; }
+}
+function saveProfileToStorage(p) {
+  try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch {}
+}
+
+// ── 状态标签配置 ─────────────────────────────────────────────────
+const STATUS_CFG = {
+  normal:  { label: '正常', bg: '#E8F5EF', color: '#1E6B50' },
+  warning: { label: '偏高', bg: '#FEF3E2', color: '#D97706' },
+  danger:  { label: '偏高', bg: '#FDECEA', color: '#DC3545' },
+  low:     { label: '偏低', bg: '#EBF5FB', color: '#0077B6' },
+};
+
+// ── 工具：日期格式化 ──────────────────────────────────────────────
+function fmtDate(str, period) {
+  try {
+    const d = new Date(str);
+    if (period === '周') return `${d.getMonth() + 1}/${d.getDate()}`;
+    if (period === '月') return `${d.getDate()}日`;
+    return `${d.getMonth() + 1}月`;
+  } catch { return str; }
+}
+
+// ── 趋势图组件（折线图）────────────────────────────────────────────
+function TrendChart({ data, typeCfg, period }) {
+  if (!data || data.length === 0) {
+    return (
+      <View style={styles.chartEmpty}>
+        <Ionicons name="trending-up-outline" size={32} color={colors.textDisabled} />
+        <Text style={styles.chartEmptyText}>暂无数据</Text>
+      </View>
+    );
+  }
+
+  const CHART_H   = 120;
+  const Y_LABEL_W = 28;
+  const LINE_W    = CHART_INNER_W - Y_LABEL_W;
+  const { minY, maxY, refLines, color, getVal } = typeCfg;
+  const RANGE = maxY - minY;
+  const toY   = (v) => CHART_H - ((Math.min(Math.max(v, minY), maxY) - minY) / RANGE) * CHART_H;
+  const toX   = (i) => data.length === 1 ? LINE_W / 2 : (i / (data.length - 1)) * LINE_W;
+
+  // 计算每个数据点的坐标
+  const pts = data.map((d, i) => ({ x: toX(i), y: toY(getVal(d)) }));
+  const polylineStr = pts.map(p => `${p.x},${p.y}`).join(' ');
+
+  // 渐变填充路径（线下方区域）
+  const areaPath = pts.length > 1
+    ? `M ${pts[0].x},${CHART_H} ` +
+      pts.map(p => `L ${p.x},${p.y}`).join(' ') +
+      ` L ${pts[pts.length - 1].x},${CHART_H} Z`
+    : '';
+
+  // X 轴标签：数据少时全显，多时只显首/中/尾
+  const xLabelIndices = data.length <= 7
+    ? data.map((_, i) => i)
+    : [0, Math.floor((data.length - 1) / 2), data.length - 1];
+
+  return (
+    <View>
+      <View style={{ flexDirection: 'row' }}>
+        {/* 折线图 SVG */}
+        <Svg width={LINE_W} height={CHART_H}>
+          <Defs>
+            <LinearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
+              <Stop offset="0" stopColor={color} stopOpacity="0.22" />
+              <Stop offset="1" stopColor={color} stopOpacity="0.01" />
+            </LinearGradient>
+          </Defs>
+
+          {/* 参考虚线 */}
+          {refLines.map((ref, i) => (
+            <Line key={i}
+              x1={0} y1={toY(ref.val)} x2={LINE_W} y2={toY(ref.val)}
+              stroke={ref.color} strokeWidth={1} strokeDasharray="5,4"
+            />
+          ))}
+
+          {/* 面积填充 */}
+          {pts.length > 1 && <Path d={areaPath} fill="url(#lineGrad)" />}
+
+          {/* 折线 */}
+          {pts.length > 1 && (
+            <Polyline
+              points={polylineStr}
+              fill="none"
+              stroke={color}
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          )}
+
+          {/* 数据点圆点：最新一个用实心大圆突出显示 */}
+          {pts.map((p, i) => {
+            const isLast = i === pts.length - 1;
+            return (
+              <Circle key={i}
+                cx={p.x} cy={p.y}
+                r={isLast ? 4.5 : 3}
+                fill={isLast ? color : colors.white}
+                stroke={color}
+                strokeWidth={isLast ? 0 : 1.5}
+              />
+            );
+          })}
+        </Svg>
+
+        {/* Y 轴标签 */}
+        <View style={{ width: Y_LABEL_W, height: CHART_H, justifyContent: 'space-between', paddingLeft: 4 }}>
+          <Text style={styles.yLabel}>{maxY}</Text>
+          <Text style={styles.yLabel}>{Math.round((maxY + minY) / 2)}</Text>
+          <Text style={styles.yLabel}>{minY}</Text>
+        </View>
+      </View>
+
+      {/* X 轴标签 */}
+      <View style={{ width: LINE_W, height: 16, position: 'relative' }}>
+        {xLabelIndices.map((idx) => {
+          const x = toX(idx);
+          return (
+            <Text key={idx} style={[styles.xLabel, { position: 'absolute', left: x - 16, width: 32, textAlign: 'center' }]}>
+              {fmtDate(data[idx].recordedAt || data[idx].date, period)}
+            </Text>
+          );
+        })}
+      </View>
+
+      {/* 图例 */}
+      <View style={styles.legend}>
+        {refLines.map((ref, i) => (
+          <View key={i} style={styles.legendItem}>
+            <View style={[styles.legendLine, { backgroundColor: ref.color }]} />
+            <Text style={styles.legendText}>{ref.label} {ref.val}{typeCfg.unit}</Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
+// ── 历史记录条目 ──────────────────────────────────────────────────
+function RecordRow({ record, typeCfg, isLast }) {
+  const st  = STATUS_CFG[record.status] || STATUS_CFG.normal;
+  const val = typeCfg.getDisplay(record);
+  const dt  = record.recordedAt
+    ? new Date(record.recordedAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+    : '-';
+  return (
+    <View style={[styles.recordRow, !isLast && styles.recordRowBorder]}>
+      <View style={styles.recordLeft}>
+        <Text style={styles.recordVal}>{val}</Text>
+        <Text style={styles.recordUnit}>{typeCfg.unit}</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.recordDate}>{dt}</Text>
+        {record.extra?.sleepTime && record.extra?.wakeTime
+          ? <Text style={styles.recordNote}>{record.extra.sleepTime} 入睡 → {record.extra.wakeTime} 醒来</Text>
+          : record.note ? <Text style={styles.recordNote}>{record.note}</Text> : null
+        }
+      </View>
+      <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
+        <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
+      </View>
+    </View>
+  );
+}
+
+// ── 指标卡片 ──────────────────────────────────────────────────────
+function MetricCard({ metric, onPress }) {
+  const st = STATUS_CFG[metric.status] || STATUS_CFG.normal;
+  return (
+    <TouchableOpacity style={styles.metricCard} activeOpacity={0.8} onPress={onPress}>
+      <View style={styles.metricTop}>
+        <View style={[styles.metricIconWrap, { backgroundColor: metric.color + '18' }]}>
+          <Ionicons name={metric.icon} size={15} color={metric.color} />
+        </View>
+        <Text style={styles.metricLabel}>{metric.label}</Text>
+      </View>
+      <View style={styles.metricValueRow}>
+        <Text style={styles.metricValue}>{metric.value}</Text>
+        <Text style={styles.metricUnit}>{metric.unit}</Text>
+      </View>
+      <View style={[styles.statusBadge, { backgroundColor: st.bg }]}>
+        <Text style={[styles.statusText, { color: st.color }]}>{st.label}</Text>
+      </View>
+      {metric.time ? <Text style={styles.metricTime}>{metric.time}</Text> : null}
+    </TouchableOpacity>
+  );
+}
+
+// ── 编辑档案 Modal ────────────────────────────────────────────────
+function ProfileEditModal({ visible, profile, onSave, onClose }) {
+  const [draft, setDraft] = useState({ ...profile });
+
+  useEffect(() => {
+    if (visible) setDraft({ ...profile });
+  }, [visible, profile]);
+
+  const setField = (key, val) => setDraft(prev => ({ ...prev, [key]: val }));
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={styles.editOverlay}>
+          <View style={styles.editCard}>
+            <View style={styles.editHandle} />
+            <View style={styles.editHeader}>
+              <Text style={styles.editTitle}>编辑健康档案</Text>
+              <TouchableOpacity onPress={onClose} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
+                <Ionicons name="close" size={22} color={colors.textSecondary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView showsVerticalScrollIndicator={false} style={{ flex: 1 }}>
+              {PROFILE_FIELDS.map((field) => (
+                <View key={field.key} style={styles.editField}>
+                  <View style={styles.editFieldLabel}>
+                    <Ionicons name={field.icon} size={14} color={colors.primary} style={{ marginRight: 6 }} />
+                    <Text style={styles.editFieldLabelText}>{field.label}</Text>
+                  </View>
+                  <TextInput
+                    style={styles.editInput}
+                    value={draft[field.key] || ''}
+                    onChangeText={(v) => setField(field.key, v)}
+                    placeholder={field.placeholder}
+                    placeholderTextColor={colors.textDisabled}
+                  />
+                </View>
+              ))}
+              <View style={{ height: 20 }} />
+            </ScrollView>
+            <TouchableOpacity style={styles.saveBtn} onPress={() => onSave(draft)} activeOpacity={0.85}>
+              <Ionicons name="checkmark-circle" size={18} color={colors.white} />
+              <Text style={styles.saveBtnText}>保存档案</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+// ── 主页面 ────────────────────────────────────────────────────────
+export default function RecordsScreen({ navigation }) {
+  const { isDemo } = useAuth();
+  const [loading, setLoading]           = useState(true);
+  const [refreshing, setRefreshing]     = useState(false);
+  const [latestVitals, setLatestVitals] = useState(null);
+  const [latestRecords, setLatestRecords] = useState({}); // { type: [records] }
+
+  // 趋势图
+  const [chartType, setChartType]     = useState('bloodPressure');
+  const [chartPeriod, setChartPeriod] = useState('周');
+  const [chartData, setChartData]     = useState([]);
+  const [chartLoading, setChartLoading] = useState(false);
+
+  // 历史记录
+  const [historyData, setHistoryData] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  // 个人档案
+  const [profile, setProfile]         = useState(EMPTY_PROFILE);
+  const [editingProfile, setEditingProfile] = useState(false);
+
+  const currentTypeCfg = CHART_TYPES.find(t => t.key === chartType) || CHART_TYPES[0];
+  const PERIOD_TABS = ['周', '月', '年'];
+
+  // ── 加载档案：先读 localStorage，再从服务器合并 ─────────────────
+  useEffect(() => {
+    // Demo 用户无本地数据时展示示例档案，真实用户展示空白
+    const local = loadProfileFromStorage();
+    const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
+    setProfile(local || fallback);
+    // 从服务器拉取最新（优先服务器数据）
+    userAPI.getMe().then(res => {
+      const u = res?.data;
+      const serverProfile = u?.healthProfile || {};
+      // bloodTypeABO/RH 是 User 顶层字段
+      if (u?.bloodTypeABO) serverProfile.bloodTypeABO = u.bloodTypeABO;
+      if (u?.bloodTypeRH)  serverProfile.bloodTypeRH  = u.bloodTypeRH;
+      if (serverProfile && Object.values(serverProfile).some(v => v)) {
+        const merged = { ...(local || fallback), ...serverProfile };
+        setProfile(merged);
+        saveProfileToStorage(merged);
+      }
+    }).catch(() => {});
+  }, [isDemo]);
+
+  // ── 加载仪表板数据 ────────────────────────────────────────────────
+  const loadDashboard = useCallback(async () => {
+    try {
+      const res = await userAPI.getDashboard();
+      const vitals = res?.data?.latestVitals || res?.latestVitals;
+      if (vitals) setLatestVitals(vitals);
+    } catch {}
+  }, []);
+
+  // ── 加载趋势图数据 ────────────────────────────────────────────────
+  const loadChart = useCallback(async (type, period) => {
+    setChartLoading(true);
+    try {
+      const days = period === '周' ? 7 : period === '月' ? 30 : 365;
+      const res = await recordsAPI.list({ type, days, limit: 50 });
+      if (res?.success && res.data?.length > 0) {
+        // 按时间升序排列
+        const sorted = [...res.data].sort((a, b) => new Date(a.recordedAt) - new Date(b.recordedAt));
+        setChartData(sorted);
+      } else {
+        const cfg = CHART_TYPES.find(t => t.key === type);
+        setChartData(isDemo ? (cfg?.mockData || []) : []);
+      }
+    } catch {
+      const cfg = CHART_TYPES.find(t => t.key === type);
+      setChartData(isDemo ? (cfg?.mockData || []) : []);
+    } finally {
+      setChartLoading(false);
+    }
+  }, []);
+
+  // ── 加载历史记录 ──────────────────────────────────────────────────
+  const loadHistory = useCallback(async (type) => {
+    setHistoryLoading(true);
+    try {
+      const res = await recordsAPI.list({ type, limit: 15 });
+      if (res?.success && res.data?.length > 0) {
+        const sorted = [...res.data].sort((a, b) => new Date(b.recordedAt) - new Date(a.recordedAt));
+        setHistoryData(sorted);
+      } else {
+        setHistoryData([]);
+      }
+    } catch {
+      setHistoryData([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  // ── 初始加载 ──────────────────────────────────────────────────────
+  const loadAll = useCallback(async () => {
+    await Promise.allSettled([
+      loadDashboard(),
+      loadChart(chartType, chartPeriod),
+      loadHistory(chartType),
+    ]);
+    setLoading(false);
+    setRefreshing(false);
+  }, [loadDashboard, loadChart, loadHistory, chartType, chartPeriod]);
+
+  useEffect(() => { loadAll(); }, []);
+
+  // ── 切换图表类型 ──────────────────────────────────────────────────
+  const switchChartType = (type) => {
+    setChartType(type);
+    setChartData([]);
+    setHistoryData([]);
+    loadChart(type, chartPeriod);
+    loadHistory(type);
+  };
+
+  // ── 切换时间段 ────────────────────────────────────────────────────
+  const switchPeriod = (period) => {
+    setChartPeriod(period);
+    loadChart(chartType, period);
+  };
+
+  // ── 保存档案 ──────────────────────────────────────────────────────
+  const saveProfile = async (draft) => {
+    setProfile(draft);
+    saveProfileToStorage(draft);
+    setEditingProfile(false);
+    // 同步到服务器
+    try {
+      await userAPI.updateMe({ healthProfile: draft });
+    } catch {
+      // 网络失败时数据仍保存在 localStorage，下次进入时还在
+    }
+  };
+
+  // ── 构建 METRICS 数组（最新指标）────────────────────────────────
+  const bp = latestVitals?.bloodPressure;
+  const bs = latestVitals?.bloodSugar;
+  const hr = latestVitals?.heartRate;
+  const wt = latestVitals?.weight;
+  const sl = latestVitals?.sleep;
+
+  const METRICS = [
+    {
+      key: 'bloodPressure', label: '血压', unit: 'mmHg', icon: 'heart-outline', color: '#DC3545',
+      value: bp ? (bp.sys && bp.dia ? `${bp.sys}/${bp.dia}` : bp.value || '--') : '--',
+      status: bp?.status || 'normal',
+      time: bp?.recordedAt ? new Date(bp.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : null,
+    },
+    {
+      key: 'bloodSugar', label: '空腹血糖', unit: 'mmol/L', icon: 'water-outline', color: '#D97706',
+      value: bs?.value != null ? String(bs.value) : '--',
+      status: bs?.status || 'normal',
+      time: bs?.recordedAt ? new Date(bs.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : null,
+    },
+    {
+      key: 'heartRate', label: '心率', unit: '次/分', icon: 'pulse-outline', color: '#7C3AED',
+      value: hr?.value != null ? String(hr.value) : '--',
+      status: hr?.status || 'normal',
+      time: hr?.recordedAt ? new Date(hr.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : null,
+    },
+    {
+      key: 'weight', label: '体重', unit: 'kg', icon: 'barbell-outline', color: '#1E6B50',
+      value: wt?.value != null ? String(wt.value) : '--',
+      status: wt?.status || 'normal',
+      time: wt?.recordedAt ? new Date(wt.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : null,
+    },
+    {
+      key: 'sleep', label: '睡眠时长', unit: '小时', icon: 'moon-outline', color: '#7B68EE',
+      value: sl?.value != null ? String(sl.value) : '--',
+      status: sl?.status || 'normal',
+      time: sl?.extra?.sleepTime && sl?.extra?.wakeTime
+        ? `${sl.extra.sleepTime} 入睡`
+        : sl?.recordedAt ? new Date(sl.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : null,
+    },
+  ];
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View style={[styles.header, { borderBottomWidth: 1, borderBottomColor: colors.borderLight }]}>
+          <Text style={styles.pageTitle}>健康档案</Text>
+        </View>
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={styles.loadingText}>加载中…</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* ── Header ──────────────────────────────────────────────── */}
+      <View style={styles.header}>
+        <View>
+          <Text style={styles.pageTitle}>健康档案</Text>
+          <Text style={styles.syncInfo}>最后同步：{today}</Text>
+        </View>
+        <TouchableOpacity
+          style={styles.addRecordBtn}
+          onPress={() => navigation.navigate('AddRecord')}
+          activeOpacity={0.8}
+        >
+          <Ionicons name="add" size={18} color={colors.white} />
+          <Text style={styles.addRecordBtnText}>录入</Text>
+        </TouchableOpacity>
+      </View>
+
+      <ScrollView
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} tintColor={colors.primary} />
+        }
+      >
+        {/* ── 个人健康档案 ─────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="person-circle-outline" size={17} color={colors.primary} />
+              <Text style={styles.sectionTitle}>个人健康档案</Text>
+            </View>
+            <TouchableOpacity style={styles.editBtn} onPress={() => setEditingProfile(true)}>
+              <Ionicons name="pencil-outline" size={13} color={colors.primary} />
+              <Text style={styles.editBtnText}>编辑</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.profileCard}>
+            {PROFILE_FIELDS.map((field, i) => (
+              <View key={field.key} style={[styles.profileRow, i < PROFILE_FIELDS.length - 1 && styles.profileRowBorder]}>
+                <View style={styles.profileRowLeft}>
+                  <Ionicons name={field.icon} size={13} color={colors.primary} style={{ marginRight: 6 }} />
+                  <Text style={styles.profileRowLabel}>{field.label}</Text>
+                </View>
+                <Text style={styles.profileRowValue} numberOfLines={1}>{profile[field.key] || '未填写'}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* ── 最新健康指标 ─────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="stats-chart-outline" size={17} color={colors.primary} />
+              <Text style={styles.sectionTitle}>最新健康指标</Text>
+            </View>
+          </View>
+          <View style={styles.metricsGrid}>
+            {METRICS.map((m) => (
+              <MetricCard
+                key={m.key}
+                metric={m}
+                onPress={() => {
+                  const chartable = CHART_TYPES.find(t => t.key === m.key);
+                  if (chartable) switchChartType(m.key);
+                }}
+              />
+            ))}
+          </View>
+        </View>
+
+        {/* ── 趋势图 ───────────────────────────────────────────── */}
+        <View style={styles.section}>
+          {/* 指标类型选择 */}
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.chartTypeScroll}
+            contentContainerStyle={styles.chartTypeContent}>
+            {CHART_TYPES.map((t) => (
+              <TouchableOpacity
+                key={t.key}
+                style={[styles.chartTypeChip, chartType === t.key && { borderColor: t.color, backgroundColor: t.color + '12' }]}
+                onPress={() => switchChartType(t.key)}
+              >
+                <Ionicons name={t.icon} size={14} color={chartType === t.key ? t.color : colors.textMuted} />
+                <Text style={[styles.chartTypeText, chartType === t.key && { color: t.color, fontWeight: '700' }]}>
+                  {t.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+
+          <View style={styles.chartCard}>
+            {/* 图表标题 + 时间段 */}
+            <View style={styles.chartHeader}>
+              <View>
+                <Text style={styles.chartTitle}>{currentTypeCfg.label}趋势</Text>
+                <Text style={styles.chartSubtitle}>{currentTypeCfg.unit}</Text>
+              </View>
+              <View style={styles.periodRow}>
+                {PERIOD_TABS.map(p => (
+                  <TouchableOpacity
+                    key={p}
+                    style={[styles.periodBtn, chartPeriod === p && styles.periodBtnActive]}
+                    onPress={() => switchPeriod(p)}
+                  >
+                    <Text style={[styles.periodText, chartPeriod === p && styles.periodTextActive]}>{p}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+
+            {/* 图表区域 */}
+            {chartLoading
+              ? <View style={styles.chartEmpty}><ActivityIndicator color={colors.primary} /></View>
+              : <TrendChart data={chartData} typeCfg={currentTypeCfg} period={chartPeriod} />
+            }
+          </View>
+        </View>
+
+        {/* ── 历史记录列表 ─────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="list-outline" size={17} color={colors.primary} />
+              <Text style={styles.sectionTitle}>{currentTypeCfg.label}历史记录</Text>
+            </View>
+          </View>
+
+          <View style={styles.historyCard}>
+            {historyLoading ? (
+              <View style={styles.chartEmpty}><ActivityIndicator color={colors.primary} /></View>
+            ) : historyData.length === 0 ? (
+              <View style={styles.historyEmpty}>
+                <Ionicons name="document-outline" size={28} color={colors.textDisabled} />
+                <Text style={styles.historyEmptyText}>暂无{currentTypeCfg.label}记录</Text>
+                <TouchableOpacity style={styles.historyAddBtn} onPress={() => navigation.navigate('AddRecord')}>
+                  <Text style={styles.historyAddBtnText}>+ 立即录入</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              historyData.map((rec, i) => (
+                <RecordRow
+                  key={rec._id || i}
+                  record={rec}
+                  typeCfg={currentTypeCfg}
+                  isLast={i === historyData.length - 1}
+                />
+              ))
+            )}
+          </View>
+        </View>
+
+        <View style={{ height: spacing.xl * 2 }} />
+      </ScrollView>
+
+      {/* ── 编辑档案 Modal ──────────────────────────────────────── */}
+      <ProfileEditModal
+        visible={editingProfile}
+        profile={profile}
+        onSave={saveProfile}
+        onClose={() => setEditingProfile(false)}
+      />
+    </SafeAreaView>
+  );
+}
+
+// ── 样式 ──────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: spacing.sm },
+  loadingText: { color: colors.textMuted, fontSize: 14 },
+
+  // Header
+  header: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1, borderBottomColor: colors.borderLight,
+  },
+  pageTitle: { fontSize: 26, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
+  syncInfo: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  addRecordBtn: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.primary, borderRadius: radius.full,
+    paddingHorizontal: 14, paddingVertical: 7,
+  },
+  addRecordBtnText: { color: colors.white, fontSize: 13, fontWeight: '700' },
+
+  // Section
+  section: { paddingHorizontal: spacing.md, paddingTop: spacing.md },
+  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+
+  // Edit button
+  editBtn: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 4, paddingHorizontal: 8, borderRadius: radius.full, backgroundColor: colors.primary10 },
+  editBtnText: { fontSize: 12, color: colors.primary, fontWeight: '600' },
+
+  // Profile
+  profileCard: {
+    backgroundColor: colors.white, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  profileRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: spacing.md, paddingVertical: 10,
+  },
+  profileRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  profileRowLeft: { flexDirection: 'row', alignItems: 'center' },
+  profileRowLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+  profileRowValue: { fontSize: 13, color: colors.textPrimary, fontWeight: '600', maxWidth: '55%', textAlign: 'right' },
+
+  // Metrics grid
+  metricsGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  metricCard: {
+    width: (W - spacing.md * 2 - spacing.sm) / 2,
+    backgroundColor: colors.white,
+    borderRadius: radius.md, padding: spacing.md,
+    borderWidth: 1, borderColor: colors.border,
+  },
+  metricTop: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 6 },
+  metricIconWrap: { width: 24, height: 24, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  metricLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '500', flex: 1 },
+  metricValueRow: { flexDirection: 'row', alignItems: 'baseline', gap: 3, marginBottom: 7 },
+  metricValue: { fontSize: 22, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
+  metricUnit: { fontSize: 10, color: colors.textMuted },
+  metricTime: { fontSize: 10, color: colors.textDisabled, marginTop: 5 },
+  statusBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full, alignSelf: 'flex-start' },
+  statusText: { fontSize: 10, fontWeight: '700' },
+
+  // Chart type selector
+  chartTypeScroll: { marginBottom: spacing.sm },
+  chartTypeContent: { gap: spacing.xs, paddingVertical: 2 },
+  chartTypeChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  chartTypeText: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+
+  // Chart
+  chartCard: {
+    backgroundColor: colors.white, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, padding: spacing.md,
+  },
+  chartHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: spacing.md },
+  chartTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  chartSubtitle: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  periodRow: { flexDirection: 'row', backgroundColor: colors.background, borderRadius: radius.full, padding: 2 },
+  periodBtn: { paddingHorizontal: 12, paddingVertical: 5, borderRadius: radius.full },
+  periodBtnActive: { backgroundColor: colors.primary },
+  periodText: { fontSize: 12, color: colors.textMuted, fontWeight: '600' },
+  periodTextActive: { color: colors.white },
+  chartEmpty: { height: 100, alignItems: 'center', justifyContent: 'center', gap: 8 },
+  chartEmptyText: { fontSize: 13, color: colors.textMuted },
+
+  // Chart labels
+  yLabel: { fontSize: 9, color: colors.textMuted, textAlign: 'left' },
+  xLabel: { fontSize: 9, color: colors.textMuted, textAlign: 'center' },
+  legend: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md, marginTop: spacing.sm },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
+  legendLine: { width: 14, height: 2 },
+  legendText: { fontSize: 10, color: colors.textMuted },
+
+  // History
+  historyCard: {
+    backgroundColor: colors.white, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.border, overflow: 'hidden',
+  },
+  recordRow: {
+    flexDirection: 'row', alignItems: 'center',
+    paddingHorizontal: spacing.md, paddingVertical: 12, gap: spacing.sm,
+  },
+  recordRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  recordLeft: { flexDirection: 'row', alignItems: 'baseline', gap: 3, width: 90 },
+  recordVal: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
+  recordUnit: { fontSize: 10, color: colors.textMuted },
+  recordDate: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+  recordNote: { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  historyEmpty: { padding: spacing.xl, alignItems: 'center', gap: spacing.sm },
+  historyEmptyText: { fontSize: 13, color: colors.textMuted },
+  historyAddBtn: { marginTop: 4, paddingHorizontal: 16, paddingVertical: 8, backgroundColor: colors.primary10, borderRadius: radius.full },
+  historyAddBtnText: { fontSize: 13, color: colors.primary, fontWeight: '600' },
+
+  // Edit Modal
+  editOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  editCard: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    paddingHorizontal: spacing.lg, paddingBottom: spacing.xl,
+    maxHeight: '88%',
+  },
+  editHandle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.border, alignSelf: 'center', marginTop: 12, marginBottom: 16,
+  },
+  editHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.md },
+  editTitle: { fontSize: 17, fontWeight: '700', color: colors.textPrimary },
+  editField: { marginBottom: spacing.md },
+  editFieldLabel: { flexDirection: 'row', alignItems: 'center', marginBottom: 6 },
+  editFieldLabelText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary },
+  editInput: {
+    backgroundColor: colors.background, borderRadius: radius.sm,
+    borderWidth: 1.5, borderColor: colors.border,
+    paddingHorizontal: spacing.sm, paddingVertical: 10,
+    fontSize: 14, color: colors.textPrimary,
+  },
+  saveBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8,
+    backgroundColor: colors.primary, borderRadius: radius.md, paddingVertical: 14, marginTop: spacing.sm,
+  },
+  saveBtnText: { color: colors.white, fontSize: 16, fontWeight: '700' },
+});

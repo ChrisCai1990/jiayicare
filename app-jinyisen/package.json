@@ -1,0 +1,48 @@
+{
+  "name": "jiayicare",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web",
+    "export:web": "expo export --platform web --output-dir dist",
+    "test": "node --check tests/api/smoke.js",
+    "test:api": "node tests/api/smoke.js",
+    "test:e2e": "npx playwright test",
+    "test:e2e:prod": "node -e \"if(process.env.ALLOW_PRODUCTION_E2E!=='true')throw new Error('Set ALLOW_PRODUCTION_E2E=true to run production E2E')\" && cross-env BASE_URL=https://jiaycare.com npx playwright test",
+    "test:e2e:ui": "npx playwright test --ui",
+    "test:report": "npx playwright show-report tests/reports/html"
+  },
+  "dependencies": {
+    "@expo/metro-runtime": "^55.0.11",
+    "@expo/vector-icons": "^14.0.0",
+    "@react-navigation/bottom-tabs": "^6.6.1",
+    "@react-navigation/native": "^6.1.18",
+    "@react-navigation/native-stack": "^6.11.0",
+    "expo": "~54.0.33",
+    "expo-av": "~16.0.7",
+    "expo-document-picker": "~14.0.8",
+    "expo-file-system": "~19.0.23",
+    "expo-image-manipulator": "~14.0.8",
+    "expo-image-picker": "~17.0.11",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "react-native": "0.81.5",
+    "react-native-gesture-handler": "^2.31.2",
+    "react-native-gifted-charts": "^1.4.38",
+    "react-native-safe-area-context": "4.10.1",
+    "react-native-screens": "~4.4.0",
+    "react-native-svg": "15.8.0",
+    "react-native-web": "^0.21.2",
+    "scheduler": "^0.27.0"
+  },
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "cross-env": "^10.1.0",
+    "mongodb": "^7.2.0"
+  }
+}

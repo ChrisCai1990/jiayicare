@@ -1,0 +1,904 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  View, Text, ScrollView, TouchableOpacity,
+  StyleSheet, SafeAreaView, ActivityIndicator,
+  RefreshControl, Switch, Modal,
+} from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
+import { colors, spacing, radius, shadow } from '../../theme';
+import { tasksAPI, remindersAPI, followupTasksAPI } from '../../services/api';
+import { mockTasks } from '../../data/mockData';
+import { useAuth } from '../../context/AuthContext';
+import EmptyState from '../../components/EmptyState';
+
+// ── 优先级配置 ─────────────────────────────────────────────────────
+const PRIORITY_CONFIG = {
+  high:   { label: '高', color: colors.danger,    bg: '#FDEEEC' },
+  medium: { label: '中', color: colors.warning,   bg: '#FEF3E2' },
+  low:    { label: '低', color: colors.textMuted, bg: colors.border },
+};
+
+const TYPE_META = {
+  record:        { icon: 'clipboard-outline',       color: '#0077B6', bg: '#E3F2FB', label: '健康记录' },
+  followup:      { icon: 'call-outline',             color: '#1E6B50', bg: '#E8F5EF', label: '随访任务' },
+  questionnaire: { icon: 'document-text-outline',   color: '#7C3AED', bg: '#F2EEFF', label: '问卷' },
+  checkup:       { icon: 'flask-outline',            color: '#D97706', bg: '#FEF3E2', label: '体检' },
+  consultation:  { icon: 'chatbubbles-outline',      color: '#059669', bg: '#D1FAE5', label: '咨询' },
+};
+const DEFAULT_TYPE_META = { icon: 'clipboard-outline', color: colors.primary, bg: colors.primary + '12', label: '任务' };
+
+// ── 提醒类别配置 ──────────────────────────────────────────────────
+const CAT_META = {
+  followup_abnormal: { label: '异常复查', icon: 'alert-circle-outline', color: '#DC3545', bg: '#FDEEEC' },
+  medication:        { label: '用药',     icon: 'medical-outline',      color: '#0077B6', bg: '#EBF5FB' },
+  supplement:        { label: '营养素',   icon: 'leaf-outline',         color: '#22A06B', bg: '#E8F5EF' },
+  monitoring:        { label: '日常监测', icon: 'pulse-outline',        color: '#7C3AED', bg: '#F2EEFF' },
+  screening_annual:  { label: '年度筛查', icon: 'search-outline',       color: '#D97706', bg: '#FEF3E2' },
+  vaccination:       { label: '疫苗接种', icon: 'shield-outline',       color: '#059669', bg: '#D1FAE5' },
+  diet_checkin:      { label: '饮食记录', icon: 'nutrition-outline',    color: '#B45309', bg: '#FEF3C7' },
+  exercise_checkin:  { label: '运动记录', icon: 'fitness-outline',      color: '#0369A1', bg: '#E0F2FE' },
+  weight_checkin:    { label: '体重记录', icon: 'scale-outline',        color: '#1E6B50', bg: '#D1FAE5' },
+  sleep:             { label: '入睡提醒', icon: 'moon-outline',         color: '#4F46E5', bg: '#EEF2FF' },
+  substance:         { label: '烟酒提醒', icon: 'warning-outline',      color: '#9D174D', bg: '#FCE7F3' },
+};
+
+// ── 提醒时间描述 ──────────────────────────────────────────────────
+function scheduleText(r) {
+  if (r.scheduleType === 'once') {
+    if (!r.targetDate) return '单次';
+    const d = new Date(r.targetDate);
+    return `${d.getMonth() + 1}/${d.getDate()} 单次`;
+  }
+  const time = r.reminderTime || '08:00';
+  if (r.customEveryNDays) return `每${r.customEveryNDays}天 ${time}`;
+  if (!r.daysOfWeek || r.daysOfWeek.length === 0) return `每天 ${time}`;
+  const MAP = { Mon: '周一', Tue: '周二', Wed: '周三', Thu: '周四', Fri: '周五', Sat: '周六', Sun: '周日' };
+  return r.daysOfWeek.map(d => MAP[d] || d).join('、') + ` ${time}`;
+}
+
+const FILTER_TABS = ['全部', '今日', '本周', '本月'];
+const STATUS_FILTER_TABS = [
+  { key: 'active',    label: '未随访' },
+  { key: 'done',      label: '已随访' },
+  { key: 'cancelled', label: '已取消' },
+];
+
+// ── 样式 ──────────────────────────────────────────────────────────
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: colors.background },
+
+  header: {
+    flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
+    paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.md,
+    backgroundColor: colors.background,
+    borderBottomWidth: 1, borderBottomColor: colors.borderLight,
+  },
+  pageTitle:    { fontSize: 24, fontWeight: '800', color: colors.textPrimary, letterSpacing: -0.5 },
+  pageSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  pendingBadge: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    backgroundColor: colors.primary + '12', paddingHorizontal: 12, paddingVertical: 6,
+    borderRadius: radius.full, borderWidth: 1, borderColor: colors.primary + '30',
+  },
+  pendingBadgeText: { fontSize: 12, color: colors.primary, fontWeight: '600' },
+
+  summary: {
+    flexDirection: 'row', backgroundColor: colors.white,
+    marginHorizontal: spacing.md, marginTop: spacing.md,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg,
+  },
+  summaryItem:   { flex: 1, alignItems: 'center' },
+  summaryValue:  { fontSize: 22, fontWeight: '800' },
+  summaryLabel:  { fontSize: 11, color: colors.textMuted, marginTop: 2 },
+  summaryDivider:{ width: 1, backgroundColor: colors.border, marginVertical: 4 },
+
+  filterScroll: { paddingVertical: spacing.sm, maxHeight: 50, marginTop: spacing.sm },
+  filterChip: {
+    flexDirection: 'row', alignItems: 'center', gap: 4,
+    paddingHorizontal: spacing.md, paddingVertical: 6,
+    borderRadius: radius.full, borderWidth: 1.5, borderColor: colors.border,
+    backgroundColor: colors.white,
+  },
+  filterChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  filterText:       { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
+  filterTextActive: { color: colors.white, fontWeight: '600' },
+
+  list: { flex: 1, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+
+  // ── 任务卡片 ──
+  taskCard: {
+    flexDirection: 'row', backgroundColor: colors.white, borderRadius: radius.md,
+    padding: spacing.md, marginBottom: spacing.sm, alignItems: 'flex-start', ...shadow.sm,
+  },
+  taskCardCompleted: { opacity: 0.65 },
+  checkbox: {
+    width: 24, height: 24, borderRadius: 12,
+    borderWidth: 2, borderColor: colors.border,
+    alignItems: 'center', justifyContent: 'center',
+    marginRight: spacing.sm, marginTop: 2, flexShrink: 0,
+  },
+  checkboxChecked: { backgroundColor: colors.success, borderColor: colors.success },
+  checkboxCancelled: { backgroundColor: colors.border, borderColor: colors.border },
+  taskBody:  { flex: 1 },
+  taskRow:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 },
+  taskTitle: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: 4 },
+  taskTitleDone: { textDecorationLine: 'line-through', color: colors.textMuted },
+  priorityBadge: { paddingHorizontal: 8, paddingVertical: 2, borderRadius: radius.full },
+  priorityText:  { fontSize: 10, fontWeight: '700' },
+  taskDesc:  { fontSize: 12, color: colors.textSecondary, marginBottom: spacing.xs },
+  taskMeta:  { flexDirection: 'row', gap: spacing.md },
+  metaItem:  { flexDirection: 'row', alignItems: 'center', gap: 3 },
+  metaText:  { fontSize: 11, color: colors.textMuted },
+  typeIconWrap: {
+    width: 36, height: 36, borderRadius: 10,
+    alignItems: 'center', justifyContent: 'center', marginLeft: spacing.xs,
+  },
+
+  // ── 提醒卡片 ──
+  reminderCard: {
+    flexDirection: 'row', backgroundColor: colors.white, borderRadius: radius.md,
+    padding: spacing.md, marginBottom: spacing.sm, alignItems: 'center', ...shadow.sm,
+  },
+  reminderIcon:    { width: 44, height: 44, borderRadius: 13, alignItems: 'center', justifyContent: 'center', marginRight: spacing.sm, flexShrink: 0 },
+  reminderBody:    { flex: 1 },
+  reminderRow:     { flexDirection: 'row', alignItems: 'center', marginBottom: 3 },
+  reminderTitle:   { fontSize: 14, fontWeight: '600', color: colors.textPrimary, flex: 1, marginRight: 6 },
+  catBadge:        { paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.full, flexShrink: 0 },
+  catBadgeText:    { fontSize: 10, fontWeight: '700' },
+  reminderSchedule:{ fontSize: 12, color: colors.textMuted },
+  reminderDesc:    { fontSize: 11, color: colors.textSecondary, marginTop: 1 },
+
+  // ── 已完成区块 ──
+  completedSection: { marginTop: spacing.md },
+  completedHeader:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: spacing.xs, marginBottom: spacing.xs },
+  completedHeaderText: { fontSize: 12, fontWeight: '700', color: colors.textMuted, textTransform: 'uppercase', letterSpacing: 0.6 },
+
+  // ── Skeleton ──
+  loadingWrap:  { paddingTop: spacing.md },
+  skeletonCard: { flexDirection: 'row', alignItems: 'center', backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md, marginBottom: spacing.sm, ...shadow.sm },
+  skeletonCircle: { width: 40, height: 40, borderRadius: 20, backgroundColor: colors.border, marginRight: spacing.sm },
+  skeletonLines:  { flex: 1 },
+  skeletonLine:   { height: 12, borderRadius: 6, backgroundColor: colors.border },
+
+  // ── 任务详情弹窗 ──
+  overlay:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
+  modalCard: {
+    backgroundColor: colors.white,
+    borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg,
+    paddingBottom: 32, maxHeight: '80%',
+  },
+  handle: {
+    width: 36, height: 4, borderRadius: 2,
+    backgroundColor: colors.border, alignSelf: 'center', marginTop: 10, marginBottom: 4,
+  },
+  modalHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
+    paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
+    borderBottomWidth: 1, borderBottomColor: colors.border,
+  },
+  modalIconWrap:   { width: 44, height: 44, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  modalTitle:      { flex: 1, fontSize: 15, fontWeight: '700', color: colors.textPrimary },
+  modalPriorityBadge: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full },
+  modalPriorityText:  { fontSize: 11, fontWeight: '700' },
+
+  modalBody:         { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  modalSectionLabel: { fontSize: 11, color: colors.textMuted, fontWeight: '600', marginBottom: 6, marginTop: spacing.sm },
+  modalContent:      { fontSize: 13, color: colors.textSecondary, lineHeight: 20, backgroundColor: colors.background, borderRadius: radius.xs, padding: spacing.sm },
+  modalNoContent:    { fontSize: 13, color: colors.textMuted, fontStyle: 'italic' },
+
+  metaRow:   { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.xs },
+  metaChip:  { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.background, borderRadius: radius.xs, paddingHorizontal: spacing.sm, paddingVertical: 6 },
+  metaChipText: { fontSize: 12, color: colors.textSecondary },
+
+  modalFooter:    { flexDirection: 'row', gap: spacing.sm, paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  modalCloseBtn:  { flex: 1, paddingVertical: 11, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' },
+  modalCloseBtnText: { fontSize: 14, fontWeight: '600', color: colors.textSecondary },
+  modalCompleteBtn:  { flex: 2, paddingVertical: 11, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, backgroundColor: colors.success },
+  modalCompleteBtnText: { fontSize: 14, fontWeight: '700', color: colors.white },
+  modalDoneBtn:         { flex: 2, paddingVertical: 11, borderRadius: radius.md, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, backgroundColor: colors.success + '20' },
+  modalDoneBtnText:     { fontSize: 14, fontWeight: '700', color: colors.success },
+
+  // 随访完成确认弹窗
+  confirmOverlay:  { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', alignItems: 'center', justifyContent: 'center', padding: spacing.lg },
+  confirmCard:     { width: '100%', maxWidth: 360, backgroundColor: colors.white, borderRadius: radius.lg, padding: spacing.lg, alignItems: 'center' },
+  confirmIconWrap: { width: 56, height: 56, borderRadius: 28, backgroundColor: colors.primary + '15', alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
+  confirmTitle:    { fontSize: 16, fontWeight: '700', color: colors.textPrimary, textAlign: 'center', marginBottom: 6 },
+  confirmDesc:     { fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 19, marginBottom: spacing.md },
+  confirmBtnRow:   { flexDirection: 'row', gap: spacing.sm, width: '100%' },
+  confirmBtnGhost: { flex: 1, paddingVertical: 12, borderRadius: radius.md, borderWidth: 1.5, borderColor: colors.border, alignItems: 'center' },
+  confirmBtnGhostText: { fontSize: 13, fontWeight: '600', color: colors.textSecondary, textAlign: 'center' },
+  confirmBtnPrimary:   { flex: 1, paddingVertical: 12, borderRadius: radius.md, backgroundColor: colors.primary, alignItems: 'center' },
+  confirmBtnPrimaryText: { fontSize: 13, fontWeight: '700', color: colors.white, textAlign: 'center' },
+  confirmCancelBtn: { marginTop: spacing.sm, paddingVertical: 6 },
+  confirmCancelText: { fontSize: 13, color: colors.textMuted },
+});
+
+// ── 任务卡片 ─────────────────────────────────────────────────────
+// 随访类任务的处理进度：待确认（医护还没安排具体时间）/ 已安排（有负责人+日期，等待执行）/ 已完成
+const FOLLOWUP_STAGE = {
+  pending:     { label: '待确认', color: colors.textMuted, bg: colors.border },
+  in_progress: { label: '已安排', color: colors.info,       bg: '#E3F2FB' },
+  completed:   { label: '已完成', color: colors.success,    bg: '#D1FAE5' },
+};
+
+function TaskCard({ task, onToggle, onPress }) {
+  const pConf = PRIORITY_CONFIG[task.priority] || PRIORITY_CONFIG.low;
+  const tMeta = TYPE_META[task.type] || DEFAULT_TYPE_META;
+  const isCompleted = task.status === 'completed';
+  const isCancelled = task.status === 'cancelled';
+  const id = task._id || task.id;
+  // 随访任务有负责人+具体日期时视为"已安排"，即使 FollowUp.status 还是 planned（对应前端映射的 pending）
+  const followupStage = task.isFollowup
+    ? (isCompleted ? 'completed' : (task.assignee ? 'in_progress' : 'pending'))
+    : null;
+  const stageConf = followupStage ? FOLLOWUP_STAGE[followupStage] : null;
+  // 健管专员执行完成的记录，用户端不可撤销勾选（只读展示，避免误触改动医护的处理结果）
+  const checkboxLocked = task.isFollowup && isCompleted && task.completedBy === 'staff';
+
+  return (
+    <TouchableOpacity
+      style={[styles.taskCard, (isCompleted || isCancelled) && styles.taskCardCompleted]}
+      activeOpacity={0.8}
+      onPress={() => !task.isReminder && onPress && onPress(task)}
+    >
+      {/* 勾选框（点击仅切换状态） */}
+      <TouchableOpacity
+        style={[styles.checkbox, isCompleted && styles.checkboxChecked, isCancelled && styles.checkboxCancelled]}
+        onPress={(e) => { e.stopPropagation?.(); if (!checkboxLocked && !isCancelled) onToggle(id); }}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        {isCompleted && <Ionicons name="checkmark" size={14} color={colors.white} />}
+        {isCancelled && <Ionicons name="close" size={14} color={colors.textMuted} />}
+      </TouchableOpacity>
+
+      <View style={styles.taskBody}>
+        <View style={styles.taskRow}>
+          <Text style={[styles.taskTitle, isCompleted && styles.taskTitleDone]} numberOfLines={1}>
+            {task.title}
+          </Text>
+          {stageConf ? (
+            <View style={[styles.priorityBadge, { backgroundColor: stageConf.bg }]}>
+              <Text style={[styles.priorityText, { color: stageConf.color }]}>{stageConf.label}</Text>
+            </View>
+          ) : (
+            <View style={[styles.priorityBadge, { backgroundColor: pConf.bg }]}>
+              <Text style={[styles.priorityText, { color: pConf.color }]}>{pConf.label}</Text>
+            </View>
+          )}
+        </View>
+        {!!task.description && (
+          <Text style={styles.taskDesc} numberOfLines={1}>{task.description}</Text>
+        )}
+        <View style={styles.taskMeta}>
+          {!!task.dueDate && (
+            <View style={styles.metaItem}>
+              <Ionicons name="time-outline" size={12} color={colors.textMuted} />
+              <Text style={styles.metaText}>{task.dueDate}{task.dueTime ? ' ' + task.dueTime : ''}</Text>
+            </View>
+          )}
+          {!!task.assignee && (
+            <View style={styles.metaItem}>
+              <Ionicons name="person-outline" size={12} color={colors.textMuted} />
+              <Text style={styles.metaText}>{task.assignee}</Text>
+            </View>
+          )}
+          {task.isFollowup && isCompleted && (
+            <View style={styles.metaItem}>
+              <Ionicons name={task.completedBy === 'staff' ? 'medkit-outline' : 'checkmark-done-outline'} size={12} color={colors.textMuted} />
+              <Text style={styles.metaText}>{task.completedBy === 'staff' ? '专员随访完成' : '客户自主完成'}</Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      <View style={[styles.typeIconWrap, { backgroundColor: tMeta.bg }]}>
+        <Ionicons name={tMeta.icon} size={18} color={tMeta.color} />
+      </View>
+    </TouchableOpacity>
+  );
+}
+
+// ── 提醒卡片 ─────────────────────────────────────────────────────
+function ReminderCard({ reminder, onToggle }) {
+  const meta = CAT_META[reminder.category] || CAT_META.medication;
+  return (
+    <View style={styles.reminderCard}>
+      <View style={[styles.reminderIcon, { backgroundColor: meta.bg }]}>
+        <Ionicons name={meta.icon} size={22} color={meta.color} />
+      </View>
+      <View style={styles.reminderBody}>
+        <View style={styles.reminderRow}>
+          <Text style={styles.reminderTitle} numberOfLines={1}>{reminder.title}</Text>
+          <View style={[styles.catBadge, { backgroundColor: meta.bg }]}>
+            <Text style={[styles.catBadgeText, { color: meta.color }]}>{meta.label}</Text>
+          </View>
+        </View>
+        <Text style={styles.reminderSchedule}>{scheduleText(reminder)}</Text>
+        {!!reminder.description && (
+          <Text style={styles.reminderDesc} numberOfLines={1}>{reminder.description}</Text>
+        )}
+      </View>
+      <Switch
+        value={reminder.enabled}
+        onValueChange={() => onToggle(reminder._id)}
+        trackColor={{ false: colors.border, true: colors.primary + '50' }}
+        thumbColor={reminder.enabled ? colors.primary : colors.textMuted}
+        ios_backgroundColor={colors.border}
+        style={{ transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }] }}
+      />
+    </View>
+  );
+}
+
+// ── 主页面 ────────────────────────────────────────────────────────
+export default function TasksScreen({ navigation }) {
+  const { isDemo } = useAuth();
+  const [filter, setFilter]       = useState('全部');
+  const [tasks, setTasks]         = useState([]);
+  const [reminders, setReminders] = useState([]);
+  const [followupTasks, setFollowupTasks] = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // 任务详情弹窗
+  const [detailTask, setDetailTask] = useState(null);
+  const [completing, setCompleting] = useState(false);
+  // 状态筛选：全部 / planned+in_progress(未随访) / completed(已随访) / cancelled(已取消)，仅对随访类任务生效
+  const [statusFilter, setStatusFilter] = useState('active');
+  // 随访完成确认弹窗：{ id, isFromModal, alreadyInProgress }
+  const [confirmFollowup, setConfirmFollowup] = useState(null);
+
+  const loadData = useCallback(async () => {
+    try {
+      const [taskRes, remRes, fuRes] = await Promise.allSettled([
+        tasksAPI.list(),
+        remindersAPI.list(),
+        followupTasksAPI.list(),
+      ]);
+      if (taskRes.status === 'fulfilled' && taskRes.value?.success) {
+        // 服务预约/服务包开通类的历史Task记录（下单时生成，此前会与FollowUp重复展示且状态不同步）
+        // 已改为只用FollowUp展示，这里过滤掉旧数据，避免过渡期仍然重复出现
+        const ORDER_TASK_CATEGORIES = new Set(['服务预约', '服务包开通']);
+        setTasks(taskRes.value.data.filter(t => !ORDER_TASK_CATEGORIES.has(t.category)));
+      } else {
+        setTasks(isDemo ? mockTasks : []);
+      }
+      if (remRes.status === 'fulfilled' && remRes.value?.success) {
+        setReminders(remRes.value.data);
+      } else {
+        setReminders([]);
+      }
+      if (fuRes.status === 'fulfilled' && fuRes.value?.success) {
+        setFollowupTasks(fuRes.value.data || []);
+      }
+    } catch {
+      setTasks(isDemo ? mockTasks : []);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [isDemo]);
+
+  useEffect(() => { loadData(); }, [loadData]);
+  const onRefresh = () => { setRefreshing(true); loadData(); };
+
+  const toggleTask = async (id) => {
+    const current = tasks.find(t => (t._id || t.id) === id);
+    if (!current) return;
+    const nextStatus = current.status === 'completed' ? 'pending' : 'completed';
+    setTasks(prev => prev.map(t =>
+      (t._id || t.id) === id
+        ? { ...t, status: nextStatus, completedAt: nextStatus === 'completed' ? new Date().toISOString() : undefined }
+        : t
+    ));
+    try {
+      await tasksAPI.setStatus(id, nextStatus);
+    } catch {
+      setTasks(prev => prev.map(t => (t._id || t.id) === id ? { ...t, status: current.status } : t));
+    }
+  };
+
+  // 点击勾选框：用户自己标记完成的随访可以点击撤销；健管专员执行完成的记录用户不能改（只能查看），
+  // 未完成的随访点击需要先确认是否需要健管跟进，避免用户误点直接把随访标记完成、健管专员完全不知情
+  const toggleFollowup = (id) => {
+    const current = followupTasks.find(f => f._id === id);
+    if (!current) return;
+    if (current.status === 'completed' && current.completedBy === 'staff') return; // 医护执行完成的，用户端不可撤销
+    if (current.status === 'completed' || current.completedByUser) {
+      undoFollowupDone(id);
+      return;
+    }
+    setConfirmFollowup({ id, alreadyInProgress: current.status === 'in_progress' || !!current.assignedTo });
+  };
+
+  const undoFollowupDone = async (id) => {
+    const current = followupTasks.find(f => f._id === id);
+    if (!current) return;
+    setFollowupTasks(prev => prev.map(f =>
+      f._id === id ? { ...f, completedByUser: false, completedByUserAt: null, status: f.completedBy === 'user' ? 'planned' : f.status } : f
+    ));
+    try {
+      await followupTasksAPI.done(id, false);
+    } catch {
+      setFollowupTasks(prev => prev.map(f => f._id === id ? current : f));
+    }
+  };
+
+  // 确认弹窗选择后的实际提交：needFollowUp=true 表示用户仍需健管跟进（不算完成，转入随访中队列）；
+  // false 表示用户确认不需要跟进，直接闭环为已完成
+  const submitFollowupDone = async (needFollowUp) => {
+    const target = confirmFollowup;
+    if (!target) return;
+    const { id } = target;
+    const current = followupTasks.find(f => f._id === id);
+    setConfirmFollowup(null);
+    if (!current) return;
+
+    const optimistic = needFollowUp
+      ? { ...current, status: current.status === 'planned' ? 'in_progress' : current.status }
+      : { ...current, status: 'completed', completedBy: 'user', completedByUser: true, completedByUserAt: new Date().toISOString() };
+    setFollowupTasks(prev => prev.map(f => f._id === id ? optimistic : f));
+    if (target.isFromModal) {
+      setDetailTask(t => t ? { ...t, status: needFollowUp ? (t.status === 'pending' ? 'in_progress' : t.status) : 'completed', completedAt: needFollowUp ? t.completedAt : new Date().toISOString() } : t);
+    }
+    try {
+      await followupTasksAPI.done(id, true, needFollowUp);
+    } catch {
+      setFollowupTasks(prev => prev.map(f => f._id === id ? current : f));
+      if (target.isFromModal) setDetailTask(t => t ? { ...t, status: current.status === 'completed' ? 'completed' : 'pending' } : t);
+    }
+  };
+
+  const toggleReminder = async (id) => {
+    setReminders(prev => prev.map(r => r._id === id ? { ...r, enabled: !r.enabled } : r));
+    try {
+      await remindersAPI.toggle(id);
+    } catch {
+      setReminders(prev => prev.map(r => r._id === id ? { ...r, enabled: !r.enabled } : r));
+    }
+  };
+
+  // 从详情弹窗完成任务：随访类先弹确认框问是否需要健管跟进，普通任务直接完成
+  const handleCompleteFromModal = async () => {
+    if (!detailTask || detailTask.status === 'completed') return;
+    const id = detailTask._id || detailTask.id;
+    if (detailTask.isFollowup) {
+      const current = followupTasks.find(f => f._id === id);
+      setConfirmFollowup({ id, isFromModal: true, alreadyInProgress: current?.status === 'in_progress' || !!current?.assignedTo });
+      return;
+    }
+    setCompleting(true);
+    const prev = detailTask;
+    setDetailTask(t => ({ ...t, status: 'completed', completedAt: new Date().toISOString() }));
+    try {
+      setTasks(ts => ts.map(t => (t._id || t.id) === id ? { ...t, status: 'completed', completedAt: new Date().toISOString() } : t));
+      await tasksAPI.complete(id);
+    } catch {
+      setDetailTask(prev);
+      setTasks(ts => ts.map(t => (t._id || t.id) === id ? prev : t));
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  const reminderToItem = (r) => ({
+    _id: r._id, title: r.title, type: r.category || 'followup',
+    description: r.description || '', dueDate: r.targetDate ? new Date(r.targetDate).toISOString().slice(0, 10) : null,
+    dueTime: r.reminderTime || '', priority: r.category === 'followup_abnormal' ? 'high' : 'medium',
+    status: 'pending', assignee: '', isReminder: true,
+  });
+
+  const followupToItem = (f) => ({
+    _id: f._id,
+    title: f.theme || '随访计划',
+    type: 'followup',
+    description: f.content || '',
+    followupType: f.type || '',
+    checkInItems: f.checkInItems || [],
+    tags: f.tags || [],
+    nextFollowUpDate: f.nextFollowUpDate || null,
+    interviewMinutes: f.interviewMinutes || '',
+    dueDate: f.date ? new Date(f.date).toISOString().slice(0, 10) : null,
+    dueTime: '',
+    priority: 'medium',
+    status: f.status === 'completed' ? 'completed' : (f.status === 'in_progress' ? 'in_progress' : 'pending'),
+    completedBy: f.completedBy || null,
+    assignee: f.assignedTo?.name || f.staffId?.name || '',
+    isFollowup: true,
+  });
+
+  // 服务预约类待办（下单商城服务生成，sourceType='order'）一旦医护端安排了负责人，
+  // 用户就不用再关注了——不像"每日血压监测"这类持续性随访要留在待办里提醒用户配合，
+  // 服务预约只是"通知医护有新订单"，安排完即代表已经进入服务流程，应直接归入已完成
+  const isOrderHandled = f => f.sourceType === 'order' && !!(f.assignedTo?.name || f.staffId?.name);
+  // 三态互斥分组，与医护端"未随访/已随访/已取消"口径对齐：
+  const activeFollowups    = followupTasks.filter(f => !['completed', 'cancelled'].includes(f.status) && !f.completedByUser && !isOrderHandled(f));
+  const completedFollowups = followupTasks.filter(f => f.completedByUser || f.status === 'completed' || isOrderHandled(f));
+  const cancelledFollowups = followupTasks.filter(f => f.status === 'cancelled' && !f.completedByUser);
+
+  const allItems     = [
+    ...tasks.filter(t => t.status !== 'completed'),
+    ...reminders.filter(r => r.enabled).map(reminderToItem),
+    ...activeFollowups.map(followupToItem),
+  ];
+  const completedItems = [
+    ...tasks.filter(t => t.status === 'completed'),
+    ...completedFollowups.map(f => ({ ...followupToItem(f), status: 'completed', completedAt: f.completedByUserAt || f.completedAt || f.date })),
+  ];
+  const cancelledItems = cancelledFollowups.map(f => ({ ...followupToItem(f), status: 'cancelled' }));
+
+  const today    = new Date().toISOString().slice(0, 10);
+  const weekEnd  = new Date(Date.now() +  7 * 86400000).toISOString().slice(0, 10);
+  const monthEnd = new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10);
+
+  // 状态筛选：active=未随访(默认，即原有全部/今日/本周/本月的时间筛选对象)，done=已随访，cancelled=已取消
+  const baseList = statusFilter === 'done' ? completedItems : statusFilter === 'cancelled' ? cancelledItems : allItems;
+
+  const filteredTasks = (() => {
+    if (statusFilter !== 'active') return baseList; // 已随访/已取消不再叠加时间维度，直接展示全部
+    if (filter === '今日') return [...tasks.filter(t => t.status !== 'completed' && (!t.dueDate || t.dueDate <= today)), ...reminders.filter(r => r.enabled && r.isActiveToday).map(reminderToItem)];
+    if (filter === '本周') return baseList.filter(t => !t.dueDate || t.dueDate <= weekEnd);
+    if (filter === '本月') return baseList.filter(t => !t.dueDate || t.dueDate <= monthEnd);
+    return baseList;
+  })();
+
+  const pendingCount   = tasks.filter(t => t.status === 'pending').length;
+  const completedCount = completedItems.length;
+  const reminderCount  = reminders.filter(r => r.enabled && r.isActiveToday).length;
+
+  const detailPConf = PRIORITY_CONFIG[detailTask?.priority] || PRIORITY_CONFIG.low;
+  const detailTMeta = TYPE_META[detailTask?.type] || DEFAULT_TYPE_META;
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header */}
+      <View style={styles.header}>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+          {navigation?.canGoBack?.() && (
+            <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 4, marginLeft: -4 }}>
+              <Ionicons name="chevron-back" size={22} color={colors.textPrimary} />
+            </TouchableOpacity>
+          )}
+          <View>
+            <Text style={styles.pageTitle}>待办任务</Text>
+            <Text style={styles.pageSubtitle}>健康管理进度跟踪</Text>
+          </View>
+        </View>
+        {filteredTasks.length > 0 && (
+          <View style={styles.pendingBadge}>
+            <Ionicons name="time-outline" size={13} color={colors.primary} />
+            <Text style={styles.pendingBadgeText}>
+              {filteredTasks.length} 项{statusFilter === 'done' ? '已随访' : statusFilter === 'cancelled' ? '已取消' : '待办'}
+            </Text>
+          </View>
+        )}
+      </View>
+
+      {/* Summary */}
+      <View style={styles.summary}>
+        {[
+          { val: allItems.length,    label: '全部待办',  color: colors.textPrimary },
+          { val: reminderCount,      label: '今日提醒',  color: '#4F46E5' },
+          { val: completedCount,     label: '已完成',    color: colors.success },
+          { val: tasks.filter(t => t.priority === 'high' && t.status === 'pending').length, label: '高优先级', color: colors.danger },
+        ].map((item, i) => (
+          <React.Fragment key={i}>
+            {i > 0 && <View style={styles.summaryDivider} />}
+            <View style={styles.summaryItem}>
+              <Text style={[styles.summaryValue, { color: item.color }]}>{item.val}</Text>
+              <Text style={styles.summaryLabel}>{item.label}</Text>
+            </View>
+          </React.Fragment>
+        ))}
+      </View>
+
+      {/* Status filter tabs：未随访/已随访/已取消 */}
+      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.filterScroll, { paddingBottom: 0 }]} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
+        {STATUS_FILTER_TABS.map(tab => (
+          <TouchableOpacity key={tab.key} style={[styles.filterChip, statusFilter === tab.key && styles.filterChipActive]} onPress={() => setStatusFilter(tab.key)}>
+            <Text style={[styles.filterText, statusFilter === tab.key && styles.filterTextActive]}>
+              {tab.label}
+              {tab.key === 'done' ? ` (${completedItems.length})` : tab.key === 'cancelled' ? ` (${cancelledItems.length})` : ''}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Time filter tabs：仅"未随访"状态下才有意义（已随访/已取消不再按时间切分） */}
+      {statusFilter === 'active' && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroll} contentContainerStyle={{ gap: spacing.sm, paddingHorizontal: spacing.lg }}>
+          {FILTER_TABS.map(tab => (
+            <TouchableOpacity key={tab} style={[styles.filterChip, filter === tab && styles.filterChipActive]} onPress={() => setFilter(tab)}>
+              <Text style={[styles.filterText, filter === tab && styles.filterTextActive]}>{tab}</Text>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      )}
+
+      {/* List */}
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.list} refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />}>
+        {loading ? (
+          <View style={styles.loadingWrap}>
+            {[1, 2, 3].map(i => (
+              <View key={i} style={styles.skeletonCard}>
+                <View style={styles.skeletonCircle} />
+                <View style={styles.skeletonLines}>
+                  <View style={[styles.skeletonLine, { width: '70%' }]} />
+                  <View style={[styles.skeletonLine, { width: '45%', marginTop: 8 }]} />
+                </View>
+              </View>
+            ))}
+          </View>
+        ) : filteredTasks.length === 0 ? (
+          <EmptyState
+            icon={statusFilter === 'done' ? 'checkmark-done-circle-outline' : statusFilter === 'cancelled' ? 'close-circle-outline' : 'checkmark-circle-outline'}
+            title={statusFilter === 'done' ? '暂无已随访记录' : statusFilter === 'cancelled' ? '暂无已取消记录' : '暂无待办任务'}
+            subtitle={statusFilter === 'active' ? '您的健康管家会为您安排任务' : ''}
+            color={colors.primary}
+          />
+        ) : (
+          <>
+            {filteredTasks.map(task => (
+              task.isReminder
+                ? <ReminderCard key={task._id} reminder={reminders.find(r => r._id === task._id) || task} onToggle={toggleReminder} />
+                : <TaskCard key={task._id || task.id} task={task} onToggle={task.isFollowup ? toggleFollowup : toggleTask} onPress={setDetailTask} />
+            ))}
+          </>
+        )}
+        <View style={{ height: spacing.xl * 2 }} />
+      </ScrollView>
+
+      {/* ── 任务详情弹窗 ── */}
+      <Modal visible={!!detailTask} transparent animationType="slide" onRequestClose={() => setDetailTask(null)}>
+        <View style={styles.overlay}>
+          <TouchableOpacity style={{ flex: 1 }} activeOpacity={1} onPress={() => setDetailTask(null)} />
+          {detailTask && (
+            <View style={styles.modalCard}>
+              <View style={styles.handle} />
+
+              {/* 标题行 */}
+              <View style={styles.modalHeader}>
+                <View style={[styles.modalIconWrap, { backgroundColor: detailTMeta.bg }]}>
+                  <Ionicons name={detailTMeta.icon} size={22} color={detailTMeta.color} />
+                </View>
+                <Text style={styles.modalTitle} numberOfLines={2}>{detailTask.title}</Text>
+                <View style={[styles.modalPriorityBadge, { backgroundColor: detailPConf.bg }]}>
+                  <Text style={[styles.modalPriorityText, { color: detailPConf.color }]}>{detailPConf.label}优先</Text>
+                </View>
+              </View>
+
+              {/* 内容 */}
+              <ScrollView style={styles.modalBody} showsVerticalScrollIndicator={false}>
+                {/* 元信息行 */}
+                <View style={styles.metaRow}>
+                  <View style={styles.metaChip}>
+                    <Ionicons name="pricetag-outline" size={13} color={detailTMeta.color} />
+                    <Text style={styles.metaChipText}>{detailTMeta.label}</Text>
+                  </View>
+                  {!!detailTask.dueDate && (
+                    <View style={styles.metaChip}>
+                      <Ionicons name="calendar-outline" size={13} color={colors.textSecondary} />
+                      <Text style={styles.metaChipText}>{detailTask.dueDate}{detailTask.dueTime ? ' ' + detailTask.dueTime : ''}</Text>
+                    </View>
+                  )}
+                  {!!detailTask.assignee && (
+                    <View style={styles.metaChip}>
+                      <Ionicons name="person-outline" size={13} color={colors.textSecondary} />
+                      <Text style={styles.metaChipText}>{detailTask.assignee}</Text>
+                    </View>
+                  )}
+                </View>
+
+                {/* 异常复查专属详情 */}
+                {detailTask.abnormalReviewId && (() => {
+                  const ar = detailTask.abnormalReviewId;
+                  const SEVERITY = { mild: '轻度', moderate: '中度', severe: '重度' };
+                  return (
+                    <>
+                      {!!ar.reviewReason && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>复查原因</Text>
+                          <Text style={styles.modalContent}>{ar.reviewReason}</Text>
+                        </>
+                      )}
+                      {!!ar.reviewDate && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>建议复查时间</Text>
+                          <Text style={styles.modalContent}>{new Date(ar.reviewDate).toLocaleDateString('zh-CN')}</Text>
+                        </>
+                      )}
+                      {!!ar.reviewHospital && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>建议复查医院</Text>
+                          <Text style={styles.modalContent}>{ar.reviewHospital}</Text>
+                        </>
+                      )}
+                      {!!ar.reviewDepartment && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>开单科室 / 专家</Text>
+                          <Text style={styles.modalContent}>{ar.reviewDepartment}</Text>
+                        </>
+                      )}
+                      {ar.abnormalItems?.length > 0 && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>异常检查项目</Text>
+                          {ar.abnormalItems.map((item, idx) => (
+                            <View key={idx} style={{ paddingVertical: 6, paddingHorizontal: 12, backgroundColor: '#FFF5F5', borderRadius: 8, marginBottom: 6 }}>
+                              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                <Text style={{ color: '#DC3545', fontWeight: '600', fontSize: 14 }}>{item.name}</Text>
+                                {!!item.severity && <Text style={{ fontSize: 11, color: '#DC3545', backgroundColor: '#FDEEEC', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 }}>{SEVERITY[item.severity] || item.severity}</Text>}
+                              </View>
+                              {!!item.value && <Text style={{ color: '#4A6558', fontSize: 13, marginTop: 2 }}>检测值：{item.value}{!!item.reference ? `（参考范围：${item.reference}）` : ''}</Text>}
+                            </View>
+                          ))}
+                        </>
+                      )}
+                      {!!ar.notes && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>注意事项</Text>
+                          <Text style={styles.modalContent}>{ar.notes}</Text>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* 随访任务专属详情 */}
+                {detailTask.isFollowup && !detailTask.abnormalReviewId && (() => {
+                  const FOLLOWUP_TYPE = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他随访' };
+                  const CHECKIN_LABEL = { bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', weight: '体重', sleep: '睡眠', diet: '饮食', exercise: '运动', water: '饮水', alcohol: '饮酒', bowel: '排便', smoking: '吸烟', mood: '情绪' };
+                  return (
+                    <>
+                      {/* 基本信息行 */}
+                      <View style={[styles.metaRow, { flexWrap: 'wrap' }]}>
+                        {!!detailTask.followupType && (
+                          <View style={styles.metaChip}>
+                            <Ionicons name="call-outline" size={13} color={colors.primary} />
+                            <Text style={styles.metaChipText}>{FOLLOWUP_TYPE[detailTask.followupType] || detailTask.followupType}</Text>
+                          </View>
+                        )}
+                        {!!detailTask.assignee && (
+                          <View style={styles.metaChip}>
+                            <Ionicons name="person-circle-outline" size={13} color={colors.textSecondary} />
+                            <Text style={styles.metaChipText}>负责：{detailTask.assignee}</Text>
+                          </View>
+                        )}
+                        {!!detailTask.nextFollowUpDate && (
+                          <View style={styles.metaChip}>
+                            <Ionicons name="arrow-forward-circle-outline" size={13} color={colors.info} />
+                            <Text style={styles.metaChipText}>下次：{new Date(detailTask.nextFollowUpDate).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })}</Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* 随访内容 */}
+                      <Text style={styles.modalSectionLabel}>随访内容</Text>
+                      {detailTask.description
+                        ? <Text style={styles.modalContent}>{detailTask.description}</Text>
+                        : <Text style={styles.modalNoContent}>健管师会在随访时与您详细沟通，如有疑问可提前联系。</Text>
+                      }
+
+                      {/* 记录项目 */}
+                      {!!(detailTask.checkInItems?.length) && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>需要记录的项目</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {detailTask.checkInItems.map((item, i) => (
+                              <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.primary + '12', paddingHorizontal: 10, paddingVertical: 5, borderRadius: radius.full }}>
+                                <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: colors.primary }} />
+                                <Text style={{ fontSize: 12, color: colors.primary, fontWeight: '500' }}>{CHECKIN_LABEL[item] || item}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </>
+                      )}
+
+                      {/* 标签 */}
+                      {!!(detailTask.tags?.length) && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>重点关注</Text>
+                          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+                            {detailTask.tags.map((tag, i) => (
+                              <View key={i} style={{ backgroundColor: '#FEF3E2', paddingHorizontal: 10, paddingVertical: 4, borderRadius: radius.full }}>
+                                <Text style={{ fontSize: 12, color: '#D97706', fontWeight: '500' }}>{tag}</Text>
+                              </View>
+                            ))}
+                          </View>
+                        </>
+                      )}
+
+                      {/* 面谈纪要 */}
+                      {!!detailTask.interviewMinutes && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>上次随访纪要</Text>
+                          <Text style={styles.modalContent}>{detailTask.interviewMinutes}</Text>
+                        </>
+                      )}
+                    </>
+                  );
+                })()}
+
+                {/* 普通任务描述 */}
+                {!detailTask.abnormalReviewId && !detailTask.isFollowup && (
+                  <>
+                    <Text style={styles.modalSectionLabel}>任务描述</Text>
+                    {detailTask.description
+                      ? <Text style={styles.modalContent}>{detailTask.description}</Text>
+                      : <Text style={styles.modalNoContent}>暂无详细描述，请联系健康管理师了解详情。</Text>
+                    }
+                  </>
+                )}
+
+                {detailTask.completedAt && (
+                  <>
+                    <Text style={styles.modalSectionLabel}>完成时间</Text>
+                    <Text style={styles.modalContent}>
+                      {new Date(detailTask.completedAt).toLocaleString('zh-CN', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                    </Text>
+                  </>
+                )}
+                <View style={{ height: spacing.md }} />
+              </ScrollView>
+
+              {/* 按钮行 */}
+              <View style={styles.modalFooter}>
+                <TouchableOpacity style={styles.modalCloseBtn} onPress={() => setDetailTask(null)}>
+                  <Text style={styles.modalCloseBtnText}>关闭</Text>
+                </TouchableOpacity>
+                {detailTask.status !== 'completed' ? (
+                  <TouchableOpacity
+                    style={[styles.modalCompleteBtn, completing && { opacity: 0.6 }]}
+                    onPress={handleCompleteFromModal}
+                    disabled={completing}
+                  >
+                    {completing
+                      ? <ActivityIndicator size="small" color={colors.white} />
+                      : <Ionicons name="checkmark-circle-outline" size={16} color={colors.white} />
+                    }
+                    <Text style={styles.modalCompleteBtnText}>{completing ? '处理中…' : '标记已完成'}</Text>
+                  </TouchableOpacity>
+                ) : (
+                  <View style={styles.modalDoneBtn}>
+                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                    <Text style={styles.modalDoneBtnText}>已完成</Text>
+                  </View>
+                )}
+              </View>
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      {/* ── 随访完成确认弹窗：避免误点直接完成，健管专员完全不知情 ── */}
+      <Modal visible={!!confirmFollowup} transparent animationType="fade" onRequestClose={() => setConfirmFollowup(null)}>
+        <View style={styles.confirmOverlay}>
+          <View style={styles.confirmCard}>
+            <View style={styles.confirmIconWrap}>
+              <Ionicons name="help-circle" size={32} color={colors.primary} />
+            </View>
+            <Text style={styles.confirmTitle}>
+              {confirmFollowup?.alreadyInProgress ? '这件事是否已经处理完毕？' : '是否需要健管专员跟进此事？'}
+            </Text>
+            <Text style={styles.confirmDesc}>
+              {confirmFollowup?.alreadyInProgress
+                ? '如已处理完毕将直接标记完成；如仍需继续跟进，将保持当前处理进度。'
+                : '如不需要人工介入，将直接标记为已完成；如需要，健管专员会尽快联系您跟进。'}
+            </Text>
+            <View style={styles.confirmBtnRow}>
+              <TouchableOpacity style={styles.confirmBtnGhost} onPress={() => submitFollowupDone(true)}>
+                <Text style={styles.confirmBtnGhostText}>{confirmFollowup?.alreadyInProgress ? '仍需继续跟进' : '需要，请联系我'}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.confirmBtnPrimary} onPress={() => submitFollowupDone(false)}>
+                <Text style={styles.confirmBtnPrimaryText}>{confirmFollowup?.alreadyInProgress ? '是，已处理' : '不需要，标记完成'}</Text>
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity style={styles.confirmCancelBtn} onPress={() => setConfirmFollowup(null)}>
+              <Text style={styles.confirmCancelText}>取消</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
+  );
+}

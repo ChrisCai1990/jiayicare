@@ -12,3 +12,5 @@ test-results/
 __pycache__/
 *.py[cod]
 .claude/
+.mp-ci-keys/
+*.key
