@@ -6,6 +6,8 @@ dist/
 !.env.example
 .deploy_config
 *.log
+miniprogram/.mp-ci-keys/
+*.private.key
 .expo/
 playwright-report/
 test-results/
