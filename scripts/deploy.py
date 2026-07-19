@@ -87,7 +87,8 @@ def deploy(backend_only=False, clean=False):
 
         if not backend_only:
             for workspace, command, label in (
-                ("app", "npm run export:web", "构建用户端"),
+                ("app", "npm run export:web", "构建用户端（嘉医管家）"),
+                ("app-jinyisen", "npm run export:web", "构建用户端（金伊森）"),
                 ("admin", "npm run build", "构建管理端"),
                 ("staff", "npm run build", "构建医护端"),
             ):
@@ -113,7 +114,8 @@ def deploy(backend_only=False, clean=False):
             raise RuntimeError("健康检查失败")
 
         print("部署完成")
-        print("用户端：https://jiaycare.com")
+        print("用户端（嘉医管家）：https://jiaycare.com")
+        print("用户端（金伊森）：https://jinyisen.jiaycare.com")
         print("管理端：https://admin.jiaycare.com")
         print("医护端：https://staff.jiaycare.com")
     finally:
