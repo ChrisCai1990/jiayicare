@@ -4,6 +4,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI, mediaUrl } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 用 Taro.chooseImage + Taro.uploadFile 对接后端 POST /reports 接口
 export default function ReportUploadPage() {
@@ -66,7 +67,8 @@ export default function ReportUploadPage() {
         }}
         onClick={pickAndUpload}
       >
-        <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{uploading ? '上传中...' : '📷 拍照/选图上传体检报告'}</Text>
+        {!uploading && <Icon name="📷" size={16} color="#fff" />}
+        <Text style={{ color: '#fff', fontSize: '15px', fontWeight: 700 }}>{uploading ? '上传中...' : '拍照/选图上传体检报告'}</Text>
       </View>
 
       <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textMuted, marginBottom: `${spacing.sm}px`, display: 'block' }}>已上传报告</Text>

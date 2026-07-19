@@ -4,6 +4,7 @@ import Taro, { useRouter } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { shareAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/PublicReportScreen.js
 // 小程序场景适配：app端网页版通过URL query传token+window.location跳转登录，小程序没有这两个概念。
@@ -42,7 +43,10 @@ export default function PublicReportPage() {
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#fff', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, borderBottom: `1px solid ${colors.border}` }}>
-        <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>👁 健康报告分享 · 访客查看</Text>
+        <View style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+          <Icon name="👁" size={14} color={colors.primary} />
+          <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>健康报告分享 · 访客查看</Text>
+        </View>
         <View onClick={goToLogin} style={{ padding: '6px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }}>
           <Text style={{ fontSize: '13px', color: '#fff', fontWeight: 700 }}>登录/注册</Text>
         </View>
@@ -57,7 +61,7 @@ export default function PublicReportPage() {
       {!loading && !!error && (
         <View style={{ textAlign: 'center', padding: `${spacing.xl}px` }}>
           <View style={{ width: '80px', height: '80px', borderRadius: '40px', backgroundColor: colors.border, display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto ' + spacing.sm + 'px' }}>
-            <Text style={{ fontSize: '36px' }}>🔗</Text>
+            <Icon name="🔗" size={36} color={colors.textMuted} />
           </View>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>链接已失效</Text>
           <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>{error}</Text>
@@ -77,14 +81,20 @@ export default function PublicReportPage() {
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{data?.userName || '用户'} 的健康报告</Text>
               <Text style={{ fontSize: '11px', color: colors.textMuted }}>{expiryText}</Text>
             </View>
-            <Text style={{ fontSize: '11px', color: colors.primary, backgroundColor: colors.primary10, padding: '4px 8px', borderRadius: `${radius.full}px` }}>🛡 嘉医汇</Text>
+            <View style={{ display: 'flex', alignItems: 'center', gap: '3px', backgroundColor: colors.primary10, padding: '4px 8px', borderRadius: `${radius.full}px` }}>
+              <Icon name="🛡" size={11} color={colors.primary} />
+              <Text style={{ fontSize: '11px', color: colors.primary }}>嘉医汇</Text>
+            </View>
           </View>
 
           <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', backgroundColor: '#fff', margin: `0 ${spacing.lg}px`, borderRadius: `${radius.lg}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.sm }}>
             <View style={{ flex: 1, paddingRight: `${spacing.md}px` }}>
               <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{report.period}</Text>
               <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', margin: '4px 0' }}>{report.dateRange}</Text>
-              <Text style={{ fontSize: '12px', color: colors.textSecondary }}>☑ {report.taskCompletion?.completed}/{report.taskCompletion?.total} 任务完成（{report.taskCompletion?.rate}%）</Text>
+              <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Icon name="☑" size={12} color={colors.textSecondary} />
+                <Text style={{ fontSize: '12px', color: colors.textSecondary }}>{report.taskCompletion?.completed}/{report.taskCompletion?.total} 任务完成（{report.taskCompletion?.rate}%）</Text>
+              </View>
             </View>
             <View style={{
               width: '72px', height: '72px', borderRadius: '36px', border: `5px solid ${report.healthScore >= 80 ? colors.success : report.healthScore >= 60 ? colors.warning : colors.danger}`,
@@ -101,9 +111,10 @@ export default function PublicReportPage() {
               <View style={{ backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.md}px`, boxShadow: shadow.sm }}>
                 {report.highlights.map((h, i) => {
                   const icon = h.type === 'danger' ? '⚠️' : h.type === 'warning' ? '⚡' : '✅';
+                  const iconColor = h.type === 'danger' ? colors.danger : h.type === 'warning' ? colors.warning : colors.success;
                   return (
                     <View key={i} style={{ display: 'flex', gap: `${spacing.sm}px`, alignItems: 'flex-start', marginBottom: i < report.highlights.length - 1 ? `${spacing.sm}px` : 0 }}>
-                      <Text style={{ fontSize: '14px' }}>{icon}</Text>
+                      <Icon name={icon} size={14} color={iconColor} />
                       <Text style={{ flex: 1, fontSize: '13px', color: colors.textSecondary, lineHeight: '20px' }}>{h.text}</Text>
                     </View>
                   );
@@ -140,13 +151,13 @@ export default function PublicReportPage() {
 
           <View style={{ margin: `0 ${spacing.lg}px`, marginTop: `${spacing.md}px` }}>
             <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.sm }}>
-              <Text style={{ fontSize: '18px' }}>📋</Text>
+              <Icon name="📋" size={18} color={colors.primary} />
               <Text style={{ fontSize: '14px', color: colors.textSecondary }}>本期共记录 <Text style={{ fontSize: '16px', fontWeight: 800, color: colors.primary }}>{report.recordCount}</Text> 条健康数据</Text>
             </View>
           </View>
 
           <View style={{ margin: `${spacing.lg}px`, marginTop: `${spacing.xl}px`, backgroundColor: colors.primary10, borderRadius: `${radius.lg}px`, padding: `${spacing.xl}px`, textAlign: 'center', border: `1px solid ${colors.primary}30` }}>
-            <Text style={{ fontSize: '28px', display: 'block', marginBottom: '8px' }}>❤️</Text>
+            <View style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}><Icon name="❤️" size={28} color={colors.primary} /></View>
             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.xs}px` }}>管理您的健康数据</Text>
             <Text style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '20px', display: 'block', marginBottom: `${spacing.lg}px` }}>注册嘉医汇，获得专属医生随访与健康管理服务</Text>
             <View onClick={goToLogin} style={{ display: 'inline-block', padding: '12px 32px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }}>

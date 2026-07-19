@@ -158,7 +158,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
             ))
           ) : (
             <View style={{ textAlign: 'center', padding: `${spacing.lg}px 0` }}>
-              <Text style={{ fontSize: '32px', display: 'block', marginBottom: '6px' }}>📋</Text>
+              <View style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}><Icon name="📋" size={32} color={colors.textMuted} /></View>
               {(plan.description || plan.notes) ? (
                 <>
                   {!!plan.description && plan.description !== '个人专属健康管理方案' && (
