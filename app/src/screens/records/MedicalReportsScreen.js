@@ -204,7 +204,7 @@ export default function MedicalReportsScreen({ navigation }) {
         <View style={styles.emptyWrap}>
           <Ionicons name="document-text-outline" size={56} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>暂无体检报告</Text>
-          <Text style={styles.emptyDesc}>上传报告后，将按年度和类目自动归类展示</Text>
+          <Text style={styles.emptyDesc}>上传健康资料后，将按年度和类目自动归类展示</Text>
         </View>
       ) : searchResults ? (
         <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: spacing.lg }}>

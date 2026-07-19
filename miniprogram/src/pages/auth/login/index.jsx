@@ -102,8 +102,8 @@ export default function LoginPage() {
         }}>
           <Icon name="⚕️" size={32} color="#fff" />
         </View>
-        <Text style={{ fontSize: '28px', fontWeight: 800, color: '#fff', letterSpacing: '2px', display: 'block' }}>嘉医汇</Text>
-        <Text style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)', marginTop: '6px', display: 'block' }}>全生命周期健康管理</Text>
+        <Text style={{ fontSize: '28px', fontWeight: 800, color: '#fff', letterSpacing: '2px', display: 'block' }}>金伊森</Text>
+        <Text style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)', marginTop: '6px', display: 'block' }}>与远见者 · 共守健康</Text>
 
         <View style={{
           display: 'flex', background: 'rgba(255,255,255,0.06)', borderRadius: `${radius.md}px`,
@@ -182,7 +182,7 @@ export default function LoginPage() {
           }}>
             <Text style={{ fontSize: '15px', fontWeight: 700, color: '#0077B6', display: 'block', marginBottom: '6px' }}>该手机号暂未开通会员</Text>
             <Text style={{ fontSize: '13px', color: '#4A6558', display: 'block', marginBottom: '14px' }}>
-              嘉医汇为邀请制会员服务，如需加入请联系客服申请开通
+              金伊森为邀请制会员服务，如需加入请联系客服申请开通
             </Text>
             <Button
               style={{ backgroundColor: '#0077B6', color: '#fff', fontSize: '14px', borderRadius: `${radius.sm}px` }}

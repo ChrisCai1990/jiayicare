@@ -34,9 +34,9 @@ const TYPE_META = Object.fromEntries(
 );
 
 const STATUS_META = {
-  analyzed: { label: '已解读', color: colors.success, icon: 'checkmark-circle' },
+  analyzed: { label: '已处理', color: colors.success, icon: 'checkmark-circle' },
   normal:   { label: '正常',   color: colors.success, icon: 'checkmark-circle' },
-  pending:  { label: '待解读', color: colors.warning, icon: 'time'             },
+  pending:  { label: '待处理', color: colors.warning, icon: 'time'             },
   abnormal: { label: '异常',   color: colors.danger,  icon: 'alert-circle'     },
 };
 
@@ -93,6 +93,7 @@ const styles = StyleSheet.create({
   },
   uploadIconWrap: { width: 64, height: 64, borderRadius: 20, backgroundColor: colors.primary + '12', alignItems: 'center', justifyContent: 'center', marginBottom: spacing.sm },
   uploadTitle: { fontSize: 16, fontWeight: '700', color: colors.textPrimary, marginBottom: 4 },
+  uploadSubtitle: { fontSize: 12, color: colors.textSecondary, textAlign: 'center', lineHeight: 18, marginBottom: 8, paddingHorizontal: spacing.sm },
   uploadDesc: { fontSize: 12, color: colors.textMuted, textAlign: 'center', lineHeight: 18, marginBottom: spacing.md },
   uploadBtnRow: { flexDirection: 'row', gap: spacing.sm },
   uploadOptionBtn: {
@@ -297,7 +298,7 @@ function ConfirmDeleteModal({ visible, onConfirm, onCancel, loading }) {
 
 function UploadZone({ onPress, uploading, typeFilter }) {
   const tm = typeFilter && typeFilter !== 'all' ? TYPE_META[typeFilter] : null;
-  const title   = uploading ? '上传中…' : tm ? `上传${tm.label}报告` : '上传体检报告';
+  const title   = uploading ? '上传中…' : tm ? `上传${tm.label}资料` : '上传健康资料';
   const iconColor = tm?.color || colors.primary;
   const iconBg    = tm ? tm.bg : colors.primary + '12';
   return (
@@ -312,6 +313,9 @@ function UploadZone({ onPress, uploading, typeFilter }) {
         }
       </View>
       <Text style={[styles.uploadTitle, tm && { color: tm.color }]}>{title}</Text>
+      {!uploading && (
+        <Text style={styles.uploadSubtitle}>上传后将由AI初步分析，并由您的专属健康团队完成专业解读</Text>
+      )}
       <Text style={styles.uploadDesc}>支持 PDF、JPG、PNG 格式{'\n'}单文件最大 20MB</Text>
       {!uploading && (
         <View style={styles.uploadBtnRow}>
@@ -895,7 +899,7 @@ function TrendsTab({ reports, onPreview }) {
 
       {/* ── 按类型分组，每组一个可折叠块 ─── */}
       {groupedByType.length === 0 ? (
-        <TrendEmptyState text="暂无报告，上传报告后自动生成历年对比" />
+        <TrendEmptyState text="暂无资料，上传健康资料后自动生成历年对比" />
       ) : (
         <View style={{ gap: spacing.sm }}>
           {groupedByType.map(({ key, reports: reps }) => (
@@ -1056,7 +1060,7 @@ export default function ReportUploadScreen({ navigation, route }) {
 
   // Step 1: Pick file(s) → show rotate/preview modal
   const handleUpload = () => {
-    Alert.alert('上传报告', '请选择上传方式', [
+    Alert.alert('上传健康资料', '请选择上传方式', [
       { text: '拍照', onPress: pickFromCamera },
       { text: '从相册选择（可多选）', onPress: pickFromLibrary },
       { text: '选择文件（PDF）', onPress: pickDocument },
@@ -1151,7 +1155,7 @@ export default function ReportUploadScreen({ navigation, route }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>健康报告</Text>
+        <Text style={styles.pageTitle}>上传健康资料</Text>
         <View style={{ width: 32 }} />
       </View>
 
@@ -1277,9 +1281,9 @@ export default function ReportUploadScreen({ navigation, route }) {
         {/* Stats Row */}
         <View style={styles.statsRow}>
           {[
-            { label: '报告总数', value: reports.length,                                          icon: 'documents',       color: colors.primary  },
-            { label: '已解读',   value: reports.filter(r => r.status !== 'pending').length,      icon: 'checkmark-done',  color: colors.success  },
-            { label: '待解读',   value: reports.filter(r => r.status === 'pending').length,      icon: 'time',            color: colors.warning  },
+            { label: '资料总数', value: reports.length,                                          icon: 'documents',       color: colors.primary  },
+            { label: '已处理',   value: reports.filter(r => r.status !== 'pending').length,      icon: 'checkmark-done',  color: colors.success  },
+            { label: '待处理',   value: reports.filter(r => r.status === 'pending').length,      icon: 'time',            color: colors.warning  },
           ].map((s, i) => (
             <View key={i} style={styles.statCard}>
               <Ionicons name={s.icon} size={18} color={s.color} />

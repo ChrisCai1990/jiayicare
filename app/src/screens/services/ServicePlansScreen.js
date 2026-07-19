@@ -59,12 +59,12 @@ const DEMO_PLANS = [
   {
     _id: 'demo_1', type: 'annual_checkup', status: 'active',
     title: '年度体检方案',
-    description: '全面的年度健康筛查，涵盖基础体检、专项检查及报告解读，帮助您及早发现健康风险。',
+    description: '全面的年度健康筛查，涵盖基础体检、专项检查及专属健康团队解读，帮助您及早发现健康风险。',
     items: [
       { name: '年度综合体检套餐', status: 'pending', notes: '建议空腹进行，提前预约体检中心' },
       { name: '肿瘤标志物检测',   status: 'pending', notes: '含AFP、CEA、CA199等常见肿瘤标志物' },
       { name: '心脑血管专项评估', status: 'pending', notes: '含心电图、颈动脉超声等检查项目' },
-      { name: 'AI 体检报告解读', status: 'pending', notes: '体检完成后上传报告，AI自动解读并推送建议' },
+      { name: '健康团队专业解读', status: 'pending', notes: '体检完成后上传健康资料，AI初步分析并由专属健康团队推送建议' },
     ],
   },
   {

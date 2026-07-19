@@ -268,7 +268,7 @@ export default function ProfilePage() {
         >
           <Text style={{ fontSize: '15px', color: colors.danger, fontWeight: 600 }}>退出登录</Text>
         </View>
-        <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, marginTop: `${spacing.md}px` }}>嘉医管家 v1.0.0（小程序）</Text>
+        <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, marginTop: `${spacing.md}px` }}>金伊森 v1.0.0（小程序）</Text>
       </View>
 
       {showLogout && (

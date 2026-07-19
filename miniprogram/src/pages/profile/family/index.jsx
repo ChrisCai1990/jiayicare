@@ -55,7 +55,7 @@ function AddLinkModal({ onClose, onSaved }) {
         {!selected ? (
           <>
             <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, border: `1px solid ${colors.border}`, padding: `0 ${spacing.md}px`, marginBottom: `${spacing.sm}px`, height: '44px', boxSizing: 'border-box' }}>
-              <Text style={{ fontSize: '14px' }}>🔍</Text>
+              <Icon name="🔍" size={14} color={colors.textMuted} />
               <Input
                 style={{ flex: 1, fontSize: '14px', color: colors.textPrimary }}
                 value={keyword}
@@ -74,7 +74,7 @@ function AddLinkModal({ onClose, onSaved }) {
                   borderBottom: `1px solid ${colors.borderLight}`, opacity: u.alreadyLinked ? 0.4 : 1,
                 }}>
                   <View style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Text style={{ fontSize: '18px' }}>👤</Text>
+                    <Icon name="👤" size={18} color={colors.primary} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{u.name}</Text>
@@ -89,7 +89,7 @@ function AddLinkModal({ onClose, onSaved }) {
           <>
             <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#E8F5EF', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
               <View style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Text style={{ fontSize: '20px' }}>👤</Text>
+                <Icon name="👤" size={20} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{selected.name}</Text>
@@ -145,7 +145,7 @@ function LinkCard({ link, onDelete }) {
         {!!u.age && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{u.age} 岁</Text>}
         <Text style={{ fontSize: '11px', color: colors.success }}>已注册用户</Text>
       </View>
-      <Text onClick={onDelete} style={{ fontSize: '16px', color: colors.danger, padding: '8px' }}>🗑</Text>
+      <View onClick={onDelete} style={{ padding: '8px' }}><Icon name="🗑" size={16} color={colors.danger} /></View>
     </View>
   );
 }
@@ -245,7 +245,7 @@ export default function FamilyMembersPage() {
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : links.length === 0 && pendingInvites.length === 0 ? (
           <View style={{ textAlign: 'center', paddingTop: '60px' }}>
-            <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.sm}px` }}>👨‍👩‍👧</Text>
+            <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.sm}px` }}><Icon name="👪" size={40} color={colors.textMuted} /></View>
             <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>暂未关联家庭成员</Text>
             <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>点击右上角「+」搜索并关联家庭成员</Text>
             <View onClick={() => setShowAdd(true)} style={{ display: 'inline-block', backgroundColor: colors.primary, padding: '12px 32px', borderRadius: `${radius.full}px` }}>

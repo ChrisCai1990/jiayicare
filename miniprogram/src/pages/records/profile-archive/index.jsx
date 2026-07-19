@@ -236,7 +236,7 @@ export default function ProfileArchivePage() {
         <View style={{ marginBottom: `${spacing.md}px` }}>
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
             <View style={{ display: 'flex', alignItems: 'center' }}>
-              <Text style={{ fontSize: '15px', marginRight: '6px' }}>📅</Text>
+              <Icon name="📅" size={15} color={colors.info} style={{ marginRight: '6px' }} />
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{checkupPlan.title || '年度复查计划'}</Text>
             </View>
             <Text style={{ fontSize: '12px', color: colors.textMuted }}>
@@ -296,7 +296,7 @@ export default function ProfileArchivePage() {
             ))}
             <View style={{ marginBottom: `${spacing.md}px` }}>
               <View style={{ display: 'flex', alignItems: 'center', marginBottom: '6px' }}>
-                <Text style={{ fontSize: '14px', marginRight: '6px' }}>😊</Text>
+                <Icon name="😊" size={14} color="#F59E0B" style={{ marginRight: '6px' }} />
                 <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary }}>情绪</Text>
                 <Text style={{ fontSize: '10px', color: '#F59E0B', fontWeight: 600, backgroundColor: '#FEF3E2', borderRadius: `${radius.full}px`, padding: '1px 6px', marginLeft: '6px' }}>初始记录</Text>
               </View>

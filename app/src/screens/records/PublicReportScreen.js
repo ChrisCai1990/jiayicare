@@ -102,7 +102,7 @@ export default function PublicReportScreen({ route, navigation }) {
           <TouchableOpacity style={styles.gotoBtn} onPress={() => {
             if (typeof window !== 'undefined') window.location.href = window.location.origin;
           }}>
-            <Text style={styles.gotoBtnText}>前往嘉医汇</Text>
+            <Text style={styles.gotoBtnText}>前往金伊森</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -123,7 +123,7 @@ export default function PublicReportScreen({ route, navigation }) {
             </View>
             <View style={styles.sharerBadge}>
               <Ionicons name="shield-checkmark" size={12} color={colors.primary} />
-              <Text style={styles.sharerBadgeText}>嘉医汇</Text>
+              <Text style={styles.sharerBadgeText}>金伊森</Text>
             </View>
           </View>
 
@@ -192,7 +192,7 @@ export default function PublicReportScreen({ route, navigation }) {
           <View style={styles.ctaCard}>
             <Ionicons name="heart-outline" size={28} color={colors.primary} style={{ marginBottom: 8 }} />
             <Text style={styles.ctaTitle}>管理您的健康数据</Text>
-            <Text style={styles.ctaDesc}>注册嘉医汇，获得专属医生随访与健康管理服务</Text>
+            <Text style={styles.ctaDesc}>注册金伊森，获得专属医生随访与健康管理服务</Text>
             <TouchableOpacity style={styles.ctaBtn} onPress={() => {
               if (typeof window !== 'undefined') window.location.href = window.location.origin;
             }}>

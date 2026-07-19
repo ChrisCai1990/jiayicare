@@ -335,14 +335,17 @@ export default function QuestionnairePage() {
           )}
           {!loadingPending && pendingQs.length > 0 && (
             <>
-              <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700, display: 'block', marginBottom: `${spacing.sm}px` }}>🔔 待填问卷 ({pendingQs.length})</Text>
+              <View style={{ display: 'flex', alignItems: 'center', gap: '4px', marginBottom: `${spacing.sm}px` }}>
+                <Icon name="🔔" size={12} color={colors.primary} />
+                <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>待填问卷 ({pendingQs.length})</Text>
+              </View>
               {pendingQs.map((dq) => (
                 <View key={dq._id} onClick={() => { resetQuiz(); setSelectedDynamic(dq); setMode('dynamic'); }} style={{
                   display: 'flex', alignItems: 'center', gap: `${spacing.md}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
                   border: `1.5px solid ${colors.warning}60`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.sm,
                 }}>
                   <View style={{ width: '48px', height: '48px', borderRadius: `${radius.sm}px`, backgroundColor: colors.warning10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                    <Text style={{ fontSize: '22px' }}>📝</Text>
+                    <Icon name="📝" size={22} color={colors.warning} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{dq.title}</Text>
@@ -461,8 +464,9 @@ export default function QuestionnairePage() {
           <View style={{ height: '100px' }} />
         </ScrollView>
         <View style={{ padding: `${spacing.md}px ${spacing.lg}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
-          <View onClick={submitting ? undefined : submit} style={{ textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting ? 0.6 : 1 }}>
-            <Text style={{ fontSize: '16px', color: '#fff', fontWeight: 700 }}>{submitting ? '提交中...' : '📤 提交问卷'}</Text>
+          <View onClick={submitting ? undefined : submit} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting ? 0.6 : 1 }}>
+            {!submitting && <Icon name="📤" size={16} color="#fff" />}
+            <Text style={{ fontSize: '16px', color: '#fff', fontWeight: 700 }}>{submitting ? '提交中...' : '提交问卷'}</Text>
           </View>
         </View>
       </View>

@@ -357,7 +357,7 @@ export default function SpecialScreeningScreen({ navigation }) {
       {/* 说明 */}
       <View style={styles.tipBar}>
         <Ionicons name="information-circle-outline" size={14} color={colors.textMuted} />
-        <Text style={styles.tipText}>勾选检查项目并上传报告，系统将与您的健康档案关联。</Text>
+        <Text style={styles.tipText}>勾选检查项目并上传健康资料，系统将与您的健康档案关联。</Text>
       </View>
 
       <ScrollView

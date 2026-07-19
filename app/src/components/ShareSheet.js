@@ -165,7 +165,7 @@ export default function ShareSheet({ visible, onClose, report, period = 'week' }
 
     const text = buildReportText(report);
     const title = ch.id === 'wechat_moments'
-      ? `【嘉医汇】我的${report?.period || '健康报告'}，健康评分 ${report?.healthScore} 分`
+      ? `【金伊森】我的${report?.period || '健康报告'}，健康评分 ${report?.healthScore} 分`
       : `我的${report?.period || '健康报告'}`;
 
     const shareData = { title, text, url: shareUrl };
@@ -294,7 +294,7 @@ export default function ShareSheet({ visible, onClose, report, period = 'week' }
 function buildReportText(report) {
   if (!report) return '';
   return [
-    `【嘉医汇健康报告】${report.period || ''}`,
+    `【金伊森健康报告】${report.period || ''}`,
     `时间：${report.dateRange || ''}`,
     `健康评分：${report.healthScore} 分`,
     report.metrics?.length

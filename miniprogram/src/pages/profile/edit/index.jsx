@@ -332,7 +332,7 @@ export default function EditProfilePage() {
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, marginTop: `${spacing.sm}px`, padding: `${spacing.md}px` }}>
         <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
           <View style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: '#FEF3E2', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: '14px' }}>👪</Text>
+            <Icon name="👪" size={14} color="#D97706" />
           </View>
           <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>家族史</Text>
         </View>
@@ -349,7 +349,7 @@ export default function EditProfilePage() {
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, marginTop: `${spacing.sm}px`, padding: `${spacing.md}px` }}>
           <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
             <View style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: '#FDECEA', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: '14px' }}>🌹</Text>
+              <Icon name="🌹" size={14} color={colors.danger} />
             </View>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>月经史</Text>
           </View>

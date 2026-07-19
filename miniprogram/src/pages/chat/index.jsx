@@ -12,7 +12,7 @@ export default function ChatPage() {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: '您好，我是嘉医汇AI健康助手，有什么可以帮您的吗？' },
+    { role: 'assistant', content: '您好，我是金伊森AI健康助手，有什么可以帮您的吗？' },
   ]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);

@@ -204,7 +204,8 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
               </View>
             ) : (
               <View onClick={() => onConsult(plan)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px 0', borderRadius: `${radius.md}px`, border: `1.5px solid ${meta.color}60` }}>
-                <Text style={{ fontSize: '13px', fontWeight: 600, color: meta.color }}>💬 咨询健康管理师</Text>
+                <Icon name="💬" size={13} color={meta.color} />
+                <Text style={{ fontSize: '13px', fontWeight: 600, color: meta.color }}>咨询健康管理师</Text>
               </View>
             )}
           </View>
@@ -327,7 +328,7 @@ export default function ServicePlansPage() {
 
           {plans.length === 0 ? (
             <View style={{ textAlign: 'center', padding: `${spacing.xl}px 0` }}>
-              <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.sm}px` }}>📄</Text>
+              <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.sm}px` }}><Icon name="📄" size={40} color={colors.textMuted} /></View>
               <Text style={{ fontSize: '14px', color: colors.textMuted, display: 'block' }}>暂无健康方案</Text>
               <Text style={{ fontSize: '12px', color: colors.textMuted, lineHeight: '18px' }}>待医护团队为您制定并推送健康方案后将在此处显示</Text>
             </View>

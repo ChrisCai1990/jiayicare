@@ -144,7 +144,7 @@ export default function HealthReportPage() {
 
           {!!report.recordCount && (
             <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
-              <Text style={{ fontSize: '18px' }}>📋</Text>
+              <Icon name="📋" size={18} color={colors.primary} />
               <Text style={{ fontSize: '14px', color: colors.textSecondary }}>本期共记录 <Text style={{ fontSize: '16px', fontWeight: 800, color: colors.primary }}>{report.recordCount}</Text> 条健康数据</Text>
             </View>
           )}

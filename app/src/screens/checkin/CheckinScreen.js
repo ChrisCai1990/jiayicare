@@ -14,27 +14,25 @@ function toLocalDateStr(d) {
   return `${y}-${m}-${day}`;
 }
 
-// ── 打卡项目定义（从 HomeScreen 抽离，2026-07-18 打卡页重构）───────
+// ── 健康更新项目定义（原"打卡项目"，2026-07-19 改造为可折叠工具区）───────
 const CHECKIN_DEFS = {
-  diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     color: '#059669', measureType: null,            category: 'lifestyle', recordLabel: '饮食打卡', allowMultiple: true },
-  exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       color: '#0369A1', measureType: null,            category: 'lifestyle', recordLabel: '运动打卡', allowMultiple: true },
-  sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',          color: '#4F46E5', measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠打卡' },
-  weight:        { key: 'weight',        label: '体重', icon: 'scale-outline',         color: '#059669', measureType: 'weight',        category: 'vitals',    recordLabel: '体重打卡' },
-  bowel:         { key: 'bowel',         label: '排便', icon: 'leaf-outline',          color: '#92400E', measureType: null,            category: 'lifestyle', recordLabel: '排便打卡' },
-  water:         { key: 'water',         label: '饮水', icon: 'water-outline',         color: '#0EA5E9', measureType: null,            category: 'lifestyle', recordLabel: '饮水打卡' },
-  smoking:       { key: 'smoking',       label: '吸烟', icon: 'warning-outline',       color: '#6B7280', measureType: null,            category: 'lifestyle', recordLabel: '吸烟记录' },
-  alcohol:       { key: 'alcohol',       label: '饮酒', icon: 'wine-outline',          color: '#9D174D', measureType: null,            category: 'lifestyle', recordLabel: '饮酒记录' },
-  bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',         color: '#DC3545', measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压打卡', allowMultiple: true, chronicKeys: ['高血压'] },
-  heartRate:     { key: 'heartRate',     label: '心率', icon: 'heart-outline',         color: '#DC3545', measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率打卡' },
-  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',         color: '#F39C12', measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖打卡', allowMultiple: true, chronicKeys: ['糖尿病'] },
-  mood:          { key: 'mood',          label: '情绪', icon: 'happy-outline',         color: '#7C3AED', measureType: 'mood',          category: 'lifestyle', recordLabel: '情绪打卡' },
-  symptom:       { key: 'symptom',       label: '不适', icon: 'medkit-outline',        color: '#DC2626', measureType: 'symptom',       category: 'vitals',    recordLabel: '症状自评', optional: true },
+  diet:          { key: 'diet',          label: '饮食', icon: 'nutrition-outline',     measureType: null,            category: 'lifestyle', recordLabel: '饮食记录', allowMultiple: true },
+  exercise:      { key: 'exercise',      label: '运动', icon: 'fitness-outline',       measureType: null,            category: 'lifestyle', recordLabel: '运动记录', allowMultiple: true },
+  sleep:         { key: 'sleep',         label: '睡眠', icon: 'moon-outline',          measureType: 'sleep',         category: 'lifestyle', recordLabel: '睡眠记录' },
+  weight:        { key: 'weight',        label: '体重', icon: 'scale-outline',         measureType: 'weight',        category: 'vitals',    recordLabel: '体重记录' },
+  bowel:         { key: 'bowel',         label: '排便', icon: 'leaf-outline',          measureType: null,            category: 'lifestyle', recordLabel: '排便记录' },
+  water:         { key: 'water',         label: '饮水', icon: 'water-outline',         measureType: null,            category: 'lifestyle', recordLabel: '饮水记录' },
+  smoking:       { key: 'smoking',       label: '吸烟', icon: 'warning-outline',       measureType: null,            category: 'lifestyle', recordLabel: '吸烟记录' },
+  alcohol:       { key: 'alcohol',       label: '饮酒', icon: 'wine-outline',          measureType: null,            category: 'lifestyle', recordLabel: '饮酒记录' },
+  bloodPressure: { key: 'bloodPressure', label: '血压', icon: 'pulse-outline',         measureType: 'bloodPressure', category: 'vitals',    recordLabel: '血压记录', allowMultiple: true, chronicKeys: ['高血压'] },
+  heartRate:     { key: 'heartRate',     label: '心率', icon: 'heart-outline',         measureType: 'heartRate',     category: 'vitals',    recordLabel: '心率记录' },
+  bloodSugar:    { key: 'bloodSugar',    label: '血糖', icon: 'water-outline',         measureType: 'bloodSugar',    category: 'vitals',    recordLabel: '血糖记录', allowMultiple: true, chronicKeys: ['糖尿病'] },
+  mood:          { key: 'mood',          label: '情绪', icon: 'happy-outline',         measureType: 'mood',          category: 'lifestyle', recordLabel: '情绪记录' },
 };
 
-// 12项固定打卡 + 症状自评（症状自评始终可选，不受慢病标签影响）
 const FIXED_CHECKIN_KEYS = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar','mood'];
 
-// 生理指标打卡项的字段定义，与 AddRecordScreen 字段口径保持一致
+// 生理指标录入字段定义，与 AddRecordScreen 字段口径保持一致
 const MEASURE_FIELDS = {
   bloodPressure: [
     { key: 'sys', label: '收缩压', unit: 'mmHg', placeholder: '如：130', normal: '90-139' },
@@ -56,13 +54,7 @@ const MEASURE_FIELDS = {
 };
 const MEASURE_OPTIONS = { bloodSugar: ['空腹', '餐后2小时', '睡前', '随机'], bloodPressure: ['左臂', '右臂'] };
 
-// 常见症状多选项（症状自评专用）
-const SYMPTOM_OPTIONS = ['头晕', '乏力', '心悸', '腹泻', '恶心', '失眠', '关节疼痛', '皮疹'];
-// 需紧急处理的症状：选中后提示联系医师，不阻断提交
-const URGENT_SYMPTOMS = ['胸痛', '呼吸困难'];
-const ALL_SYMPTOM_OPTIONS = [...SYMPTOM_OPTIONS, ...URGENT_SYMPTOMS];
-
-// 运动打卡时段选项："现在"表示按当前时刻自动换算，用于即时打卡；其余为补录过去记录时手动选择
+// 运动记录时段选项
 const EXERCISE_TIME_SLOTS = ['早上', '上午', '中午', '下午', '晚上'];
 function deriveCurrentTimeSlot() {
   const h = new Date().getHours();
@@ -86,19 +78,66 @@ function calcSleepDuration(sleepTime, wakeTime) {
   return ((w - s) / 60).toFixed(1);
 }
 
+// ── 板块①「今日建议完成」：按慢病标签的简单规则映射清单，本轮不接AI，
+// 医护端后续可在此基础上加手工调整入口。默认清单保证任何用户都至少有基础项。
+const SUGGESTION_RULES = [
+  { chronicKey: '高血压', text: '测量一次血压', icon: 'pulse-outline' },
+  { chronicKey: '糖尿病', text: '记录一次血糖', icon: 'water-outline' },
+  { chronicKey: '冠心病', text: '记录一次心率', icon: 'heart-outline' },
+  { chronicKey: '高脂血症', text: '今天少吃油腻食物', icon: 'nutrition-outline' },
+];
+const DEFAULT_SUGGESTIONS = [
+  { text: '记录今天的饮食情况', icon: 'nutrition-outline' },
+  { text: '完成30分钟活动量', icon: 'fitness-outline' },
+  { text: '保证7-8小时睡眠', icon: 'moon-outline' },
+];
+
+function buildTodaySuggestions(chronicDiseases = []) {
+  const matched = SUGGESTION_RULES.filter(r => chronicDiseases.includes(r.chronicKey));
+  const list = matched.length > 0 ? matched : DEFAULT_SUGGESTIONS;
+  return list.map((s, i) => ({ id: `sug_${i}`, text: s.text, icon: s.icon }));
+}
+
+// ── 板块③「今日变化」配置 ──────────────────────────────────────────
+const MOOD_OPTIONS = [
+  { key: 'good',    emoji: '😊', label: '今天状态很好' },
+  { key: 'neutral', emoji: '😐', label: '没什么变化' },
+  { key: 'concern',  emoji: '😷', label: '有新的情况' },
+];
+const SYMPTOM_OPTIONS = ['头晕', '乏力', '心悸', '腹泻', '恶心', '失眠', '关节疼痛', '皮疹'];
+const URGENT_SYMPTOMS = ['胸痛', '呼吸困难'];
+const ALL_SYMPTOM_OPTIONS = [...SYMPTOM_OPTIONS, ...URGENT_SYMPTOMS];
+
 export default function CheckinScreen({ navigation }) {
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
-  const [doneTypes, setDoneTypes] = useState({}); // { type: { note, hasImage } }，来自后端今日打卡状态
+  const [doneTypes, setDoneTypes] = useState({}); // { type: { note, hasImage } }，来自后端今日记录状态
 
   const todayStr = toLocalDateStr(new Date());
   const [checkinDate, setCheckinDate] = useState(todayStr);
+
+  // 板块①：今日建议完成清单（本地勾选状态，不强制写库，只是给用户的行动清单）
+  const chronicDiseases = user?.chronicDiseases || [];
+  const [suggestions] = useState(() => buildTodaySuggestions(chronicDiseases));
+  const [suggestionDone, setSuggestionDone] = useState({});
+
+  // 板块②：健康更新——默认折叠
+  const [updateExpanded, setUpdateExpanded] = useState(false);
+
+  // 板块③：今日变化
+  const [selectedMood, setSelectedMood] = useState(null);
+  const [concernModal, setConcernModal] = useState(false);
+  const [selectedSymptoms, setSelectedSymptoms] = useState([]);
+  const [concernNote, setConcernNote] = useState('');
+  const [concernImage, setConcernImage] = useState(null);
+  const [concernSaving, setConcernSaving] = useState(false);
+  const [moodSubmitted, setMoodSubmitted] = useState(false);
 
   const [checkinModal, setCheckinModal] = useState(null);
   const [checkinNote, setCheckinNote] = useState('');
   const [checkinImage, setCheckinImage] = useState(null);
   const [checkinMealType, setCheckinMealType] = useState('');
-  const [checkinTimeSlot, setCheckinTimeSlot] = useState(''); // 运动打卡专用：时段（早上/上午/中午/下午/晚上），"现在"表示按当前时刻自动换算
+  const [checkinTimeSlot, setCheckinTimeSlot] = useState('');
   const [checkinSaving, setCheckinSaving] = useState(false);
 
   const [measureModal, setMeasureModal] = useState(null);
@@ -106,12 +145,6 @@ export default function CheckinScreen({ navigation }) {
   const [measureOption, setMeasureOption] = useState('');
   const [measureNote, setMeasureNote] = useState('');
   const [measureSaving, setMeasureSaving] = useState(false);
-
-  // 症状自评弹窗
-  const [symptomModal, setSymptomModal] = useState(false);
-  const [selectedSymptoms, setSelectedSymptoms] = useState([]);
-  const [symptomNote, setSymptomNote] = useState('');
-  const [symptomSaving, setSymptomSaving] = useState(false);
 
   const loadTodayStatus = useCallback(async () => {
     try {
@@ -123,25 +156,18 @@ export default function CheckinScreen({ navigation }) {
 
   useEffect(() => { loadTodayStatus(); }, [loadTodayStatus]);
 
-  // 根据用户慢病标签，决定血压/血糖是否为必打卡项；无对应慢病则归为可选，不做"未完成"提示
-  const chronicDiseases = user?.chronicDiseases || [];
   const isMandatory = (item) => {
-    if (item.optional) return false;
     if (!item.chronicKeys) return true;
     return item.chronicKeys.some(k => chronicDiseases.includes(k));
   };
-
   const mandatoryItems = FIXED_CHECKIN_KEYS.map(k => CHECKIN_DEFS[k]).filter(isMandatory);
   const optionalItems  = FIXED_CHECKIN_KEYS.map(k => CHECKIN_DEFS[k]).filter(item => !isMandatory(item));
-  const symptomItem = CHECKIN_DEFS.symptom;
 
   const isItemDone = (item) => !!doneTypes[item.key] || (item.measureType && !!doneTypes[item.measureType]);
-  const doneMandatoryCount = mandatoryItems.filter(isItemDone).length;
-  const allMandatoryDone = mandatoryItems.length > 0 && doneMandatoryCount === mandatoryItems.length;
 
   const openCheckinModal = (item) => {
     if (isItemDone(item) && !item.allowMultiple) {
-      Alert.alert('今日已打卡', '这一项今天已经打过卡了，明天再来吧～');
+      Alert.alert('今日已记录', '这一项今天已经记录过了，明天再来吧～');
       return;
     }
     if (item.measureType) {
@@ -153,7 +179,6 @@ export default function CheckinScreen({ navigation }) {
       setCheckinNote('');
       setCheckinImage(null);
       setCheckinMealType('');
-      // 打开即默认"现在"，即时打卡不用手动选时段；补录过去日期时用户会再手动改选
       setCheckinTimeSlot(item.key === 'exercise' ? '现在' : '');
       setCheckinSaving(false);
       setCheckinDate(todayStr);
@@ -229,7 +254,6 @@ export default function CheckinScreen({ navigation }) {
       return;
     }
     const isToday = checkinDate === todayStr;
-    // 运动打卡时段：选"现在"按当前时刻自动换算；未选时段的补录记录，不强制要求（时段是辅助信息，不阻断打卡）
     const resolvedTimeSlot = item.key === 'exercise'
       ? (checkinTimeSlot === '现在' ? deriveCurrentTimeSlot() : checkinTimeSlot)
       : '';
@@ -243,7 +267,7 @@ export default function CheckinScreen({ navigation }) {
         label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}`
           : slotPrefix ? `${item.recordLabel || item.label}·${resolvedTimeSlot}`
           : (item.recordLabel || item.label),
-        value: (mealPrefix + slotPrefix + checkinNote) || checkinMealType || resolvedTimeSlot || '已打卡',
+        value: (mealPrefix + slotPrefix + checkinNote) || checkinMealType || resolvedTimeSlot || '已记录',
         note: '',
         status: 'normal',
         imageUrl: checkinImage || '',
@@ -268,37 +292,65 @@ export default function CheckinScreen({ navigation }) {
     setSelectedSymptoms(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
   };
 
-  const saveSymptom = async () => {
-    if (symptomSaving) return;
-    if (selectedSymptoms.length === 0 && !symptomNote.trim()) {
-      Alert.alert('请选择或填写症状', '至少选择一项常见症状，或在下方描述具体不适');
+  const toggleSuggestion = (id) => {
+    setSuggestionDone(prev => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const selectMood = (key) => {
+    setSelectedMood(key);
+    if (key === 'concern') {
+      setConcernModal(true);
+    } else {
+      // 状态良好/没什么变化：直接记为今日情绪反馈，不需要额外表单
+      recordsAPI.create({
+        category: 'lifestyle',
+        type: 'mood',
+        label: '今日状态反馈',
+        value: MOOD_OPTIONS.find(m => m.key === key)?.label || '',
+        note: '',
+        status: 'normal',
+        recordedAt: new Date().toISOString(),
+      }).catch(() => {});
+      setMoodSubmitted(true);
+    }
+  };
+
+  const submitConcern = async () => {
+    if (concernSaving) return;
+    if (selectedSymptoms.length === 0 && !concernNote.trim()) {
+      Alert.alert('请选择或填写情况', '至少选择一项常见症状，或在下方描述具体情况');
       return;
     }
     const hasUrgent = selectedSymptoms.some(s => URGENT_SYMPTOMS.includes(s));
-    setSymptomSaving(true);
+    setConcernSaving(true);
     try {
       await recordsAPI.create({
         category: 'vitals',
         type: 'symptom',
-        label: '症状自评',
-        value: selectedSymptoms.join('、') || '其他不适',
-        note: symptomNote,
+        label: '今日变化反馈',
+        value: selectedSymptoms.join('、') || '其他情况',
+        note: concernNote,
         status: hasUrgent ? 'danger' : 'normal',
-        extra: { symptoms: selectedSymptoms },
+        imageUrl: concernImage || '',
+        extra: { symptoms: selectedSymptoms, ...(concernImage ? { imageUrl: concernImage } : {}) },
         recordedAt: new Date().toISOString(),
       });
     } catch (err) {
-      setSymptomSaving(false);
-      Alert.alert('保存失败', err.message || '网络异常，请重试');
+      setConcernSaving(false);
+      Alert.alert('提交失败', err.message || '网络异常，请重试');
       return;
     }
-    setSymptomSaving(false);
-    setSymptomModal(false);
+    setConcernSaving(false);
+    setConcernModal(false);
     setSelectedSymptoms([]);
-    setSymptomNote('');
+    setConcernNote('');
+    setConcernImage(null);
+    setMoodSubmitted(true);
     loadTodayStatus();
     if (hasUrgent) {
-      Alert.alert('建议尽快联系医师', '您选择的症状可能需要及时处理，建议立即联系您的家庭医生或健康管理师。');
+      Alert.alert('建议尽快联系医师', '您选择的情况可能需要及时处理，建议立即联系您的家庭医生或健康管理师。');
+    } else {
+      Alert.alert('已提交', '您的健康团队会尽快查看，感谢您的反馈');
     }
   };
 
@@ -308,24 +360,19 @@ export default function CheckinScreen({ navigation }) {
     return (
       <TouchableOpacity
         key={item.key}
-        style={[styles.checkinItem, isDone && { backgroundColor: item.color + '15', borderColor: item.color + '40' }]}
+        style={[styles.toolItem, isDone && styles.toolItemDone]}
         onPress={() => openCheckinModal(item)}
         activeOpacity={0.75}
       >
-        <View style={[styles.checkinIconWrap, { backgroundColor: isDone ? item.color + '20' : colors.border + '60' }]}>
-          <Ionicons name={isDone ? 'checkmark-circle' : item.icon} size={20}
-            color={isDone ? item.color : colors.textMuted} />
+        <View style={[styles.toolIconWrap, isDone && styles.toolIconWrapDone]}>
+          <Ionicons name={isDone ? 'checkmark-circle' : item.icon} size={16}
+            color={isDone ? colors.primary : colors.textMuted} />
         </View>
-        <Text style={[styles.checkinItemLabel, isDone && { color: item.color, fontWeight: '700' }]}>
+        <Text style={[styles.toolItemLabel, isDone && { color: colors.primary }]}>
           {item.label}
         </Text>
-        {item.measureType && !isDone && (
-          <View style={{ position: 'absolute', bottom: 4, right: 4 }}>
-            <Ionicons name="add-circle-outline" size={12} color={item.color} />
-          </View>
-        )}
         {hasNote && !item.measureType && (
-          <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: item.color, position: 'absolute', top: 6, right: 6 }} />
+          <View style={{ width: 5, height: 5, borderRadius: 3, backgroundColor: colors.primary, position: 'absolute', top: 6, right: 6 }} />
         )}
       </TouchableOpacity>
     );
@@ -337,7 +384,7 @@ export default function CheckinScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>今日健康打卡</Text>
+        <Text style={styles.pageTitle}>今日健康计划</Text>
         <View style={{ width: 30 }} />
       </View>
 
@@ -347,66 +394,186 @@ export default function CheckinScreen({ navigation }) {
         </View>
       ) : (
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} showsVerticalScrollIndicator={false}>
-          {/* 必打卡项 */}
+
+          {/* ── 板块① 今日建议完成 ──────────────────────────────────── */}
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>必打卡项</Text>
-              {mandatoryItems.length > 0 && (
-                <Text style={styles.sectionProgress}>{doneMandatoryCount}/{mandatoryItems.length}</Text>
-              )}
+            <Text style={styles.sectionTitle}>今日建议完成</Text>
+            <View style={styles.suggestionCard}>
+              {suggestions.map((s, i) => {
+                const done = !!suggestionDone[s.id];
+                return (
+                  <TouchableOpacity
+                    key={s.id}
+                    style={[styles.suggestionRow, i < suggestions.length - 1 && styles.suggestionRowBorder]}
+                    onPress={() => toggleSuggestion(s.id)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={[styles.suggestionCheck, done && styles.suggestionCheckDone]}>
+                      {done && <Ionicons name="checkmark" size={13} color={colors.background} />}
+                    </View>
+                    <Ionicons name={s.icon} size={16} color={colors.textMuted} style={{ marginRight: 8 }} />
+                    <Text style={[styles.suggestionText, done && styles.suggestionTextDone]}>{s.text}</Text>
+                  </TouchableOpacity>
+                );
+              })}
             </View>
-            <View style={styles.checkinGrid}>
-              {mandatoryItems.map(renderCheckinItem)}
-            </View>
-            {allMandatoryDone && (
-              <View style={styles.checkinAllDone}>
-                <Ionicons name="star" size={14} color="#F39C12" />
-                <Text style={styles.checkinAllDoneText}>今日核心指标已完成！保持健康好习惯 🎉</Text>
+          </View>
+
+          {/* ── 板块② 健康更新（可折叠，视觉收小，统一为工具区颜色）───────── */}
+          <View style={styles.section}>
+            <TouchableOpacity
+              style={styles.updateHeader}
+              onPress={() => setUpdateExpanded(v => !v)}
+              activeOpacity={0.7}
+            >
+              <View>
+                <Text style={styles.sectionTitle}>健康更新</Text>
+                <Text style={styles.updateSubtitle}>今天如果有变化，可以补充</Text>
+              </View>
+              <Ionicons name={updateExpanded ? 'chevron-up' : 'chevron-down'} size={18} color={colors.textMuted} />
+            </TouchableOpacity>
+
+            {updateExpanded && (
+              <View style={styles.updateBody}>
+                <View style={styles.toolGrid}>
+                  {[...mandatoryItems, ...optionalItems].map(renderCheckinItem)}
+                </View>
               </View>
             )}
           </View>
 
-          {/* 可选打卡项：不做则不提示"未完成"，避免打卡疲劳 */}
-          {optionalItems.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>可选打卡项</Text>
-              <View style={styles.checkinGrid}>
-                {optionalItems.map(renderCheckinItem)}
-              </View>
-            </View>
-          )}
-
-          {/* 今天有不适吗？—— 症状自评，2026-07-18 新增 */}
+          {/* ── 板块③ 今日变化 ──────────────────────────────────────── */}
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>今天有不适吗？</Text>
-            <TouchableOpacity
-              style={[styles.symptomEntry, doneTypes.symptom && styles.symptomEntryDone]}
-              onPress={() => setSymptomModal(true)}
-              activeOpacity={0.75}
-            >
-              <View style={[styles.checkinIconWrap, { backgroundColor: doneTypes.symptom ? symptomItem.color + '20' : colors.border + '60' }]}>
-                <Ionicons name={doneTypes.symptom ? 'checkmark-circle' : symptomItem.icon} size={20}
-                  color={doneTypes.symptom ? symptomItem.color : colors.textMuted} />
+            <Text style={styles.sectionTitle}>今日变化</Text>
+            <Text style={styles.updateSubtitle}>今天需要告诉健康团队什么？</Text>
+            <View style={styles.moodRow}>
+              {MOOD_OPTIONS.map(m => {
+                const active = selectedMood === m.key;
+                return (
+                  <TouchableOpacity
+                    key={m.key}
+                    style={[styles.moodItem, active && styles.moodItemActive]}
+                    onPress={() => selectMood(m.key)}
+                    activeOpacity={0.75}
+                  >
+                    <Text style={styles.moodEmoji}>{m.emoji}</Text>
+                    <Text style={[styles.moodLabel, active && styles.moodLabelActive]}>{m.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            {moodSubmitted && selectedMood !== 'concern' && (
+              <View style={styles.moodConfirm}>
+                <Ionicons name="checkmark-circle" size={14} color={colors.success} />
+                <Text style={styles.moodConfirmText}>已记录今日状态，感谢反馈</Text>
               </View>
-              <Text style={styles.symptomEntryText}>
-                {doneTypes.symptom ? '今天已记录不适情况' : '点击选择症状或描述不适（可选）'}
-              </Text>
-              <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
-            </TouchableOpacity>
+            )}
           </View>
+
         </ScrollView>
       )}
 
-      {/* 打卡记录弹窗（仅用于生活方式打卡项） */}
+      {/* 「有新的情况」弹窗：症状/照片/语音/文字 + 联系健康团队 */}
+      <Modal visible={concernModal} transparent animationType="slide" onRequestClose={() => setConcernModal(false)}>
+        <View style={styles.checkinModalOverlay}>
+          <View style={styles.checkinModalBox}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>有新的情况</Text>
+              <TouchableOpacity onPress={() => setConcernModal(false)}>
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </TouchableOpacity>
+            </View>
+
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>症状</Text>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+              {ALL_SYMPTOM_OPTIONS.map(s => {
+                const active = selectedSymptoms.includes(s);
+                const urgent = URGENT_SYMPTOMS.includes(s);
+                return (
+                  <TouchableOpacity key={s} onPress={() => toggleSymptom(s)}
+                    style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8,
+                      backgroundColor: active ? (urgent ? colors.danger : colors.primary) : colors.glass,
+                      borderWidth: 1, borderColor: active ? (urgent ? colors.danger : colors.primary) : colors.glassBorder }}>
+                    <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? colors.background : colors.textSecondary }}>{s}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 8 }}>照片（可选）</Text>
+            <TouchableOpacity
+              style={styles.checkinImageBtn}
+              onPress={() => {
+                if (Platform.OS === 'web') {
+                  const input = document.createElement('input');
+                  input.type = 'file'; input.accept = 'image/*';
+                  input.onchange = (e) => {
+                    const file = e.target.files[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setConcernImage(ev.target.result);
+                    reader.readAsDataURL(file);
+                  };
+                  input.click();
+                }
+              }}
+            >
+              {concernImage ? (
+                <Image source={{ uri: concernImage }} style={{ width: '100%', height: 120, borderRadius: 8 }} resizeMode="cover" />
+              ) : (
+                <View style={{ alignItems: 'center', gap: 6 }}>
+                  <Ionicons name="camera-outline" size={26} color={colors.textMuted} />
+                  <Text style={{ fontSize: 13, color: colors.textMuted }}>点击上传照片</Text>
+                </View>
+              )}
+            </TouchableOpacity>
+            {concernImage && (
+              <TouchableOpacity onPress={() => setConcernImage(null)} style={{ alignSelf: 'flex-end', marginTop: 4 }}>
+                <Text style={{ fontSize: 12, color: colors.danger }}>删除照片</Text>
+              </TouchableOpacity>
+            )}
+
+            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6, marginTop: 14 }}>语音 / 文字</Text>
+            <TouchableOpacity
+              style={[styles.checkinImageBtn, { minHeight: 48, flexDirection: 'row', justifyContent: 'center', gap: 6 }]}
+              onPress={() => Alert.alert('语音记录', '语音输入功能即将上线，目前可先用下方文字描述')}
+            >
+              <Ionicons name="mic-outline" size={18} color={colors.textMuted} />
+              <Text style={{ fontSize: 13, color: colors.textMuted }}>按住说话（即将上线）</Text>
+            </TouchableOpacity>
+            <TextInput
+              style={[styles.checkinNoteInput, { marginTop: 10 }]}
+              multiline
+              numberOfLines={3}
+              placeholder="用文字描述具体情况，如部位、持续时间等"
+              placeholderTextColor={colors.textMuted}
+              value={concernNote}
+              onChangeText={setConcernNote}
+            />
+
+            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
+              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.glass, borderWidth: 1, borderColor: colors.glassBorder }]} onPress={() => setConcernModal(false)} disabled={concernSaving}>
+                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.primary, flex: 2, opacity: concernSaving ? 0.6 : 1 }]} onPress={submitConcern} disabled={concernSaving}>
+                {concernSaving ? <ActivityIndicator size="small" color={colors.background} /> : <Ionicons name="send" size={16} color={colors.background} />}
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.background, marginLeft: 4 }}>{concernSaving ? '提交中...' : '联系健康团队'}</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* 健康更新记录弹窗（仅用于生活方式类项目） */}
       <Modal visible={!!checkinModal} transparent animationType="slide" onRequestClose={() => setCheckinModal(null)}>
         <View style={styles.checkinModalOverlay}>
           <View style={styles.checkinModalBox}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {checkinModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: checkinModal.color + '20', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name={checkinModal.icon} size={18} color={checkinModal.color} />
+                {checkinModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.primary10, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name={checkinModal.icon} size={18} color={colors.primary} />
                 </View>}
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{checkinModal?.label} 打卡</Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{checkinModal?.label}记录</Text>
               </View>
               <TouchableOpacity onPress={() => setCheckinModal(null)}>
                 <Ionicons name="close" size={22} color={colors.textMuted} />
@@ -426,9 +593,9 @@ export default function CheckinScreen({ navigation }) {
                 return (
                   <TouchableOpacity key={label} onPress={() => setCheckinDate(ds)}
                     style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8,
-                      backgroundColor: active ? colors.primary : colors.border + '50',
-                      borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
-                    <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.textSecondary }}>{label}</Text>
+                      backgroundColor: active ? colors.primary : colors.glass,
+                      borderWidth: 1, borderColor: active ? colors.primary : colors.glassBorder }}>
+                    <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? colors.background : colors.textSecondary }}>{label}</Text>
                   </TouchableOpacity>
                 );
               })}
@@ -450,9 +617,9 @@ export default function CheckinScreen({ navigation }) {
                     return (
                       <TouchableOpacity key={mt} onPress={() => setCheckinMealType(mt)}
                         style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8,
-                          backgroundColor: active ? checkinModal.color : colors.border + '50',
-                          borderWidth: 1, borderColor: active ? checkinModal.color : colors.border }}>
-                        <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.textSecondary }}>{mt}</Text>
+                          backgroundColor: active ? colors.primary : colors.glass,
+                          borderWidth: 1, borderColor: active ? colors.primary : colors.glassBorder }}>
+                        <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? colors.background : colors.textSecondary }}>{mt}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -469,9 +636,9 @@ export default function CheckinScreen({ navigation }) {
                     return (
                       <TouchableOpacity key={slot} onPress={() => setCheckinTimeSlot(slot)}
                         style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8,
-                          backgroundColor: active ? checkinModal.color : colors.border + '50',
-                          borderWidth: 1, borderColor: active ? checkinModal.color : colors.border }}>
-                        <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.textSecondary }}>{slot}</Text>
+                          backgroundColor: active ? colors.primary : colors.glass,
+                          borderWidth: 1, borderColor: active ? colors.primary : colors.glassBorder }}>
+                        <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? colors.background : colors.textSecondary }}>{slot}</Text>
                       </TouchableOpacity>
                     );
                   })}
@@ -522,28 +689,28 @@ export default function CheckinScreen({ navigation }) {
               </TouchableOpacity>
             )}
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setCheckinModal(null)} disabled={checkinSaving}>
+              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.glass, borderWidth: 1, borderColor: colors.glassBorder }]} onPress={() => setCheckinModal(null)} disabled={checkinSaving}>
                 <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: checkinModal?.color || colors.primary, flex: 2, opacity: checkinSaving ? 0.6 : 1 }]} onPress={saveCheckin} disabled={checkinSaving}>
-                {checkinSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{checkinSaving ? '保存中...' : '完成打卡'}</Text>
+              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.primary, flex: 2, opacity: checkinSaving ? 0.6 : 1 }]} onPress={saveCheckin} disabled={checkinSaving}>
+                {checkinSaving ? <ActivityIndicator size="small" color={colors.background} /> : <Ionicons name="checkmark" size={18} color={colors.background} />}
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.background, marginLeft: 4 }}>{checkinSaving ? '保存中...' : '完成记录'}</Text>
               </TouchableOpacity>
             </View>
           </View>
         </View>
       </Modal>
 
-      {/* 生理指标打卡弹窗（血压/体重/睡眠/心率/血糖），原地填写，独立提交 */}
+      {/* 生理指标记录弹窗（血压/体重/睡眠/心率/血糖），原地填写，独立提交 */}
       <Modal visible={!!measureModal} transparent animationType="slide" onRequestClose={() => setMeasureModal(null)}>
         <View style={styles.checkinModalOverlay}>
           <View style={styles.checkinModalBox}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                {measureModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: measureModal.color + '20', alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name={measureModal.icon} size={18} color={measureModal.color} />
+                {measureModal && <View style={{ width: 32, height: 32, borderRadius: 8, backgroundColor: colors.primary10, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name={measureModal.icon} size={18} color={colors.primary} />
                 </View>}
-                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{measureModal?.label} 打卡</Text>
+                <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>{measureModal?.label}记录</Text>
               </View>
               <TouchableOpacity onPress={() => setMeasureModal(null)}>
                 <Ionicons name="close" size={22} color={colors.textMuted} />
@@ -557,9 +724,9 @@ export default function CheckinScreen({ navigation }) {
                   return (
                     <TouchableOpacity key={opt} onPress={() => setMeasureOption(opt)}
                       style={{ paddingVertical: 6, paddingHorizontal: 14, borderRadius: 8,
-                        backgroundColor: active ? colors.primary : colors.border + '50',
-                        borderWidth: 1, borderColor: active ? colors.primary : colors.border }}>
-                      <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.textSecondary }}>{opt}</Text>
+                        backgroundColor: active ? colors.primary : colors.glass,
+                        borderWidth: 1, borderColor: active ? colors.primary : colors.glassBorder }}>
+                      <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? colors.background : colors.textSecondary }}>{opt}</Text>
                     </TouchableOpacity>
                   );
                 })}
@@ -585,7 +752,7 @@ export default function CheckinScreen({ navigation }) {
                 ))}
                 {measureValues.sleepTime && measureValues.wakeTime ? (
                   <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 8 }}>
-                    睡眠时长：<Text style={{ fontWeight: '700', color: '#7B68EE' }}>{calcSleepDuration(measureValues.sleepTime, measureValues.wakeTime)} 小时</Text>
+                    睡眠时长：<Text style={{ fontWeight: '700', color: colors.primary }}>{calcSleepDuration(measureValues.sleepTime, measureValues.wakeTime)} 小时</Text>
                   </Text>
                 ) : null}
               </View>
@@ -621,62 +788,12 @@ export default function CheckinScreen({ navigation }) {
             </View>
 
             <View style={{ flexDirection: 'row', gap: 10, marginTop: 8 }}>
-              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setMeasureModal(null)} disabled={measureSaving}>
+              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.glass, borderWidth: 1, borderColor: colors.glassBorder }]} onPress={() => setMeasureModal(null)} disabled={measureSaving}>
                 <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: measureModal?.color || colors.primary, flex: 2, opacity: measureSaving ? 0.6 : 1 }]} onPress={saveMeasureCheckin} disabled={measureSaving}>
-                {measureSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{measureSaving ? '保存中...' : '完成打卡'}</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      {/* 症状自评弹窗：多选常见症状 + 自由文本，2026-07-18 新增 */}
-      <Modal visible={symptomModal} transparent animationType="slide" onRequestClose={() => setSymptomModal(false)}>
-        <View style={styles.checkinModalOverlay}>
-          <View style={styles.checkinModalBox}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-              <Text style={{ fontSize: 16, fontWeight: '700', color: colors.textPrimary }}>今天有哪些不适？</Text>
-              <TouchableOpacity onPress={() => setSymptomModal(false)}>
-                <Ionicons name="close" size={22} color={colors.textMuted} />
-              </TouchableOpacity>
-            </View>
-
-            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
-              {ALL_SYMPTOM_OPTIONS.map(s => {
-                const active = selectedSymptoms.includes(s);
-                const urgent = URGENT_SYMPTOMS.includes(s);
-                return (
-                  <TouchableOpacity key={s} onPress={() => toggleSymptom(s)}
-                    style={{ paddingVertical: 8, paddingHorizontal: 14, borderRadius: 8,
-                      backgroundColor: active ? (urgent ? colors.danger : colors.primary) : colors.border + '50',
-                      borderWidth: 1, borderColor: active ? (urgent ? colors.danger : colors.primary) : colors.border }}>
-                    <Text style={{ fontSize: 13, fontWeight: active ? '700' : '500', color: active ? '#fff' : colors.textSecondary }}>{s}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <Text style={{ fontSize: 13, color: colors.textSecondary, marginBottom: 6 }}>其他描述（可选）</Text>
-            <TextInput
-              style={styles.checkinNoteInput}
-              multiline
-              numberOfLines={3}
-              placeholder="描述具体不适情况，如部位、持续时间等"
-              placeholderTextColor={colors.textMuted}
-              value={symptomNote}
-              onChangeText={setSymptomNote}
-            />
-
-            <View style={{ flexDirection: 'row', gap: 10, marginTop: 20 }}>
-              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.border }]} onPress={() => setSymptomModal(false)} disabled={symptomSaving}>
-                <Text style={{ fontSize: 15, fontWeight: '600', color: colors.textSecondary }}>取消</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.primary, flex: 2, opacity: symptomSaving ? 0.6 : 1 }]} onPress={saveSymptom} disabled={symptomSaving}>
-                {symptomSaving ? <ActivityIndicator size="small" color="#fff" /> : <Ionicons name="checkmark" size={18} color="#fff" />}
-                <Text style={{ fontSize: 15, fontWeight: '700', color: '#fff', marginLeft: 4 }}>{symptomSaving ? '保存中...' : '提交'}</Text>
+              <TouchableOpacity style={[styles.checkinModalBtn, { backgroundColor: colors.primary, flex: 2, opacity: measureSaving ? 0.6 : 1 }]} onPress={saveMeasureCheckin} disabled={measureSaving}>
+                {measureSaving ? <ActivityIndicator size="small" color={colors.background} /> : <Ionicons name="checkmark" size={18} color={colors.background} />}
+                <Text style={{ fontSize: 15, fontWeight: '700', color: colors.background, marginLeft: 4 }}>{measureSaving ? '保存中...' : '完成记录'}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -691,45 +808,66 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,
-    backgroundColor: colors.white, borderBottomWidth: 1, borderBottomColor: colors.border,
+    backgroundColor: colors.background, borderBottomWidth: 1, borderBottomColor: colors.divider,
   },
   backBtn: { padding: 4 },
   pageTitle: { fontSize: 18, fontWeight: '700', color: colors.textPrimary },
 
   section: { marginBottom: spacing.lg },
-  sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
-  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
-  sectionProgress: { fontSize: 13, fontWeight: '700', color: colors.primary },
+  sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
 
-  checkinGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  checkinItem: {
-    width: '30%', alignItems: 'center', paddingVertical: 10, paddingHorizontal: 4,
-    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    backgroundColor: colors.white, gap: 5,
+  // 板块①：今日建议完成
+  suggestionCard: {
+    backgroundColor: colors.glass, borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.glassBorder,
+    marginTop: spacing.sm, overflow: 'hidden',
   },
-  checkinIconWrap: { width: 36, height: 36, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  checkinItemLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
-  checkinAllDone: {
-    flexDirection: 'row', alignItems: 'center', gap: 5,
-    marginTop: spacing.sm, padding: spacing.sm,
-    backgroundColor: '#FEF9E7', borderRadius: radius.sm,
+  suggestionRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, paddingHorizontal: spacing.md },
+  suggestionRowBorder: { borderBottomWidth: 1, borderBottomColor: colors.divider },
+  suggestionCheck: {
+    width: 20, height: 20, borderRadius: 6, borderWidth: 1.5, borderColor: colors.glassBorder,
+    alignItems: 'center', justifyContent: 'center', marginRight: 10,
   },
-  checkinAllDoneText: { fontSize: 12, color: '#B7791F', fontWeight: '600' },
+  suggestionCheckDone: { backgroundColor: colors.primary, borderColor: colors.primary },
+  suggestionText: { flex: 1, fontSize: 14, color: colors.textPrimary },
+  suggestionTextDone: { color: colors.textMuted, textDecorationLine: 'line-through' },
 
-  symptomEntry: {
-    flexDirection: 'row', alignItems: 'center', gap: spacing.sm,
-    backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
-    padding: spacing.md,
+  // 板块②：健康更新（折叠工具区，颜色统一、视觉收小）
+  updateHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  updateSubtitle: { fontSize: 12, color: colors.textMuted, marginTop: 3 },
+  updateBody: { marginTop: spacing.sm },
+  toolGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  toolItem: {
+    flexDirection: 'row', alignItems: 'center', paddingVertical: 7, paddingHorizontal: 10,
+    borderRadius: radius.full, borderWidth: 1, borderColor: colors.glassBorder,
+    backgroundColor: colors.glass,
   },
-  symptomEntryDone: { backgroundColor: '#FDECEA' + '10', borderColor: colors.danger + '30' },
-  symptomEntryText: { flex: 1, fontSize: 13, color: colors.textSecondary },
+  toolItemDone: { borderColor: colors.primary },
+  toolIconWrap: { marginRight: 5 },
+  toolIconWrapDone: {},
+  toolItemLabel: { fontSize: 12, color: colors.textSecondary, fontWeight: '500' },
+
+  // 板块③：今日变化
+  moodRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md },
+  moodItem: {
+    flex: 1, alignItems: 'center', paddingVertical: 14,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.glassBorder,
+    backgroundColor: colors.glass, gap: 6,
+  },
+  moodItemActive: { borderColor: colors.primary, backgroundColor: colors.primary10 },
+  moodEmoji: { fontSize: 24 },
+  moodLabel: { fontSize: 11, color: colors.textSecondary, textAlign: 'center' },
+  moodLabelActive: { color: colors.primary, fontWeight: '600' },
+  moodConfirm: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: spacing.sm },
+  moodConfirmText: { fontSize: 12, color: colors.textMuted },
 
   checkinModalOverlay: {
-    flex: 1, backgroundColor: 'rgba(0,0,0,0.45)',
+    flex: 1, backgroundColor: colors.overlay,
     justifyContent: 'flex-end',
   },
   checkinModalBox: {
-    backgroundColor: colors.white, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    backgroundColor: colors.surface, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+    borderTopWidth: 1, borderColor: colors.glassBorder,
     padding: spacing.lg, paddingBottom: 36,
   },
   checkinNoteInput: {
@@ -738,7 +876,7 @@ const styles = StyleSheet.create({
     minHeight: 80, textAlignVertical: 'top', backgroundColor: colors.background,
   },
   checkinImageBtn: {
-    borderWidth: 1.5, borderColor: colors.border, borderRadius: radius.sm,
+    borderWidth: 1.5, borderColor: colors.glassBorder, borderRadius: radius.sm,
     borderStyle: 'dashed', minHeight: 80, alignItems: 'center', justifyContent: 'center',
     backgroundColor: colors.background, overflow: 'hidden',
   },

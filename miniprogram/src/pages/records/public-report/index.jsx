@@ -66,7 +66,7 @@ export default function PublicReportPage() {
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>链接已失效</Text>
           <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>{error}</Text>
           <View onClick={() => Taro.reLaunch({ url: '/pages/home/index' })} style={{ display: 'inline-block', padding: '11px 32px', backgroundColor: colors.primary, borderRadius: `${radius.full}px`, marginTop: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>前往嘉医汇</Text>
+            <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>前往金伊森</Text>
           </View>
         </View>
       )}
@@ -83,7 +83,7 @@ export default function PublicReportPage() {
             </View>
             <View style={{ display: 'flex', alignItems: 'center', gap: '3px', backgroundColor: colors.primary10, padding: '4px 8px', borderRadius: `${radius.full}px` }}>
               <Icon name="🛡" size={11} color={colors.primary} />
-              <Text style={{ fontSize: '11px', color: colors.primary }}>嘉医汇</Text>
+              <Text style={{ fontSize: '11px', color: colors.primary }}>金伊森</Text>
             </View>
           </View>
 
@@ -159,7 +159,7 @@ export default function PublicReportPage() {
           <View style={{ margin: `${spacing.lg}px`, marginTop: `${spacing.xl}px`, backgroundColor: colors.primary10, borderRadius: `${radius.lg}px`, padding: `${spacing.xl}px`, textAlign: 'center', border: `1px solid ${colors.primary}30` }}>
             <View style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}><Icon name="❤️" size={28} color={colors.primary} /></View>
             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.xs}px` }}>管理您的健康数据</Text>
-            <Text style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '20px', display: 'block', marginBottom: `${spacing.lg}px` }}>注册嘉医汇，获得专属医生随访与健康管理服务</Text>
+            <Text style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '20px', display: 'block', marginBottom: `${spacing.lg}px` }}>注册金伊森，获得专属医生随访与健康管理服务</Text>
             <View onClick={goToLogin} style={{ display: 'inline-block', padding: '12px 32px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }}>
               <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>立即体验 →</Text>
             </View>

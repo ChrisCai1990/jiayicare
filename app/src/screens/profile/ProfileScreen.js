@@ -534,7 +534,7 @@ export default function ProfileScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.versionText}>嘉医管家 v1.0.0</Text>
+        <Text style={styles.versionText}>金伊森 v1.0.0</Text>
         <View style={{ height: spacing.xl }} />
       </ScrollView>
 

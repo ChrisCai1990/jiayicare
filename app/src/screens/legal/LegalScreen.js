@@ -9,7 +9,7 @@ const CONTENT = {
     sections: [
       {
         heading: '1. 接受条款',
-        body: '欢迎使用嘉医汇（以下简称"本应用"），由杭州嘉静佑辰科技有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。',
+        body: '欢迎使用金伊森（以下简称"本应用"），由杭州嘉静佑辰科技有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。',
       },
       {
         heading: '2. 服务内容',
@@ -139,7 +139,7 @@ export default function LegalScreen({ navigation, route }) {
         </View>
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>嘉医汇 · 杭州嘉静佑辰科技有限公司</Text>
+          <Text style={styles.footerText}>金伊森 · 杭州嘉静佑辰科技有限公司</Text>
           <Text style={styles.footerText}>客服电话：17742039618</Text>
         </View>
         <View style={{ height: 40 }} />

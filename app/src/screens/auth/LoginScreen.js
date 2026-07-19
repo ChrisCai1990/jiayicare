@@ -107,10 +107,10 @@ export default function LoginScreen({ navigation }) {
         <View style={styles.logoBlock}>
           {/* 品牌标志 */}
           <View style={styles.logoMark}>
-            <Ionicons name="medical" size={28} color="#5EC99B" />
+            <Ionicons name="medical" size={28} color={colors.primary} />
           </View>
-          <Text style={styles.brandName}>嘉医汇</Text>
-          <Text style={styles.brandSlogan}>全生命周期健康管理</Text>
+          <Text style={styles.brandName}>金伊森</Text>
+          <Text style={styles.brandSlogan}>与远见者 · 共守健康</Text>
         </View>
 
         {/* 底部数据背书行 */}
@@ -197,11 +197,11 @@ export default function LoginScreen({ navigation }) {
           {notRegistered && (
             <View style={styles.notRegWrap}>
               <View style={styles.notRegIcon}>
-                <Ionicons name="person-add-outline" size={22} color="#0077B6" />
+                <Ionicons name="person-add-outline" size={22} color={colors.primary} />
               </View>
               <Text style={styles.notRegTitle}>该手机号暂未开通会员</Text>
               <Text style={styles.notRegDesc}>
-                嘉医汇为邀请制会员服务，如需加入请联系客服申请开通
+                金伊森为邀请制会员服务，如需加入请联系客服申请开通
               </Text>
               <TouchableOpacity
                 style={styles.notRegBtn}
@@ -282,7 +282,7 @@ export default function LoginScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#1A2B24' },
+  container: { flex: 1, backgroundColor: colors.background },
 
   // ── Hero 区域
   heroArea: {
@@ -290,43 +290,43 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
-    backgroundColor: '#1A2B24',
+    backgroundColor: colors.background,
     justifyContent: 'space-between',
     position: 'relative',
     overflow: 'hidden',
   },
   glowDot: {
     position: 'absolute', width: 260, height: 260, borderRadius: 130,
-    backgroundColor: 'rgba(30,107,80,0.18)',
+    backgroundColor: colors.primary20,
     top: -80, right: -80,
   },
   logoBlock: { alignItems: 'center', flex: 1, justifyContent: 'center' },
   logoMark: {
     width: 72, height: 72, borderRadius: 22,
-    backgroundColor: 'rgba(255,255,255,0.08)',
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.12)',
+    backgroundColor: colors.glass,
+    borderWidth: 1, borderColor: colors.glassBorder,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 14,
   },
   brandName: {
-    fontSize: 28, fontWeight: '800', color: '#FFFFFF',
-    letterSpacing: 2, marginBottom: 6,
+    fontSize: 28, fontWeight: '700', color: colors.textPrimary,
+    letterSpacing: 3, marginBottom: 8,
   },
-  brandSlogan: { fontSize: 13, color: 'rgba(255,255,255,0.45)', letterSpacing: 0.3 },
+  brandSlogan: { fontSize: 12, color: colors.textMuted, letterSpacing: 0.6 },
 
   // 数据背书行
   trustRow: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(255,255,255,0.06)',
+    backgroundColor: colors.glass,
     borderRadius: radius.md,
-    borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)',
-    paddingVertical: 12,
+    borderWidth: 1, borderColor: colors.glassBorder,
+    paddingVertical: 14,
     marginBottom: 4,
   },
   trustItem: { flex: 1, alignItems: 'center' },
-  trustNum: { fontSize: 17, fontWeight: '800', color: '#5EC99B', letterSpacing: -0.3 },
-  trustLabel: { fontSize: 10, color: 'rgba(255,255,255,0.4)', marginTop: 2, fontWeight: '500' },
-  trustDivider: { width: 1, backgroundColor: 'rgba(255,255,255,0.1)', marginVertical: 4 },
+  trustNum: { fontSize: 17, fontWeight: '700', color: colors.primary, letterSpacing: -0.3 },
+  trustLabel: { fontSize: 10, color: colors.textMuted, marginTop: 3, fontWeight: '500', letterSpacing: 0.3 },
+  trustDivider: { width: 1, backgroundColor: colors.divider, marginVertical: 4 },
 
   // ── 表单卡片
   formWrapper: { flex: 1 },
@@ -335,26 +335,28 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
+    borderTopWidth: 1,
+    borderColor: colors.glassBorder,
     paddingHorizontal: spacing.lg,
     paddingTop: 12,
   },
   pullHandle: {
     width: 36, height: 4, borderRadius: 2,
     backgroundColor: colors.border,
-    alignSelf: 'center', marginBottom: 20,
+    alignSelf: 'center', marginBottom: 24,
   },
   formTitle: {
-    fontSize: 22, fontWeight: '800', color: colors.textPrimary,
-    marginBottom: 4, letterSpacing: -0.4,
+    fontSize: 20, fontWeight: '600', color: colors.textPrimary,
+    marginBottom: 6, letterSpacing: 0.1,
   },
-  formSubtitle: { fontSize: 13, color: colors.textMuted, marginBottom: 24 },
+  formSubtitle: { fontSize: 12, color: colors.textMuted, marginBottom: 28 },
 
-  // 输入框
+  // 输入框（磨砂玻璃）
   field: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.glass,
     borderRadius: radius.md,
-    borderWidth: 1.5, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.glassBorder,
     marginBottom: spacing.sm + 4,
     minHeight: 54,
     paddingHorizontal: spacing.md,
@@ -370,7 +372,7 @@ const styles = StyleSheet.create({
   codeBtn: {
     paddingHorizontal: 12, paddingVertical: 7,
     borderRadius: radius.sm,
-    borderWidth: 1.5, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.border,
   },
   codeBtnActive: { borderColor: colors.primary, backgroundColor: colors.primary10 },
   codeBtnText: { fontSize: 12, fontWeight: '600', color: colors.textMuted },
@@ -380,17 +382,17 @@ const styles = StyleSheet.create({
   loginBtn: {
     height: 54, borderRadius: radius.md,
     alignItems: 'center', justifyContent: 'center',
-    backgroundColor: '#1A2B24',
+    backgroundColor: colors.primary,
     marginTop: 4, marginBottom: spacing.lg,
   },
   loginBtnDisabled: { opacity: 0.35 },
   errorWrap: {
     flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: colors.danger + '12', borderRadius: radius.sm,
+    backgroundColor: colors.danger10, borderRadius: radius.sm,
     paddingHorizontal: spacing.sm, paddingVertical: 8, marginBottom: spacing.sm,
   },
   errorText: { flex: 1, fontSize: 13, color: colors.danger },
-  loginBtnText: { color: colors.white, fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
+  loginBtnText: { color: colors.background, fontSize: 16, fontWeight: '700', letterSpacing: 0.5 },
 
   // 分隔线
   divRow: { flexDirection: 'row', alignItems: 'center', marginBottom: spacing.md },
@@ -401,9 +403,9 @@ const styles = StyleSheet.create({
   altRow: { flexDirection: 'row', gap: spacing.sm },
   altBtn: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
-    backgroundColor: colors.white,
+    backgroundColor: colors.glass,
     borderRadius: radius.md,
-    borderWidth: 1.5, borderColor: colors.border,
+    borderWidth: 1, borderColor: colors.glassBorder,
     paddingVertical: 13, gap: 7,
   },
   altBtnText: { fontSize: 14, fontWeight: '600', color: colors.textPrimary },
@@ -411,35 +413,35 @@ const styles = StyleSheet.create({
   agreement: { textAlign: 'center', fontSize: 11, color: colors.textMuted, marginTop: spacing.md },
   agreeLink: { color: colors.primary, fontWeight: '500' },
 
-  // 未开通会员卡片
+  // 未开通会员卡片（磨砂玻璃）
   notRegWrap: {
-    backgroundColor: '#EBF5FB',
+    backgroundColor: colors.glass,
     borderRadius: radius.md,
-    borderWidth: 1, borderColor: '#BEE3F8',
+    borderWidth: 1, borderColor: colors.glassBorder,
     padding: spacing.md,
     marginBottom: spacing.sm,
     alignItems: 'center',
   },
   notRegIcon: {
     width: 48, height: 48, borderRadius: 24,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.surfaceAlt,
     alignItems: 'center', justifyContent: 'center',
     marginBottom: 10,
-    borderWidth: 1, borderColor: '#BEE3F8',
+    borderWidth: 1, borderColor: colors.glassBorder,
   },
   notRegTitle: {
-    fontSize: 15, fontWeight: '700', color: '#0077B6', marginBottom: 6,
+    fontSize: 15, fontWeight: '700', color: colors.primary, marginBottom: 6,
   },
   notRegDesc: {
-    fontSize: 13, color: '#4A6558', textAlign: 'center', lineHeight: 20, marginBottom: 14,
+    fontSize: 13, color: colors.textSecondary, textAlign: 'center', lineHeight: 20, marginBottom: 14,
   },
   notRegBtn: {
     flexDirection: 'row', alignItems: 'center',
-    backgroundColor: '#0077B6',
+    backgroundColor: colors.primary,
     borderRadius: radius.sm,
     paddingHorizontal: 20, paddingVertical: 11,
     marginBottom: 10,
   },
-  notRegBtnText: { fontSize: 14, fontWeight: '700', color: '#FFFFFF' },
+  notRegBtnText: { fontSize: 14, fontWeight: '700', color: colors.background },
   notRegDismiss: { fontSize: 12, color: colors.textMuted, textDecorationLine: 'underline' },
 });

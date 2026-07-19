@@ -49,7 +49,7 @@ const Tab = createBottomTabNavigator();
 const TAB_CONFIG = [
   { name: 'Home',         label: '首页',    icon: 'home',         component: HomeScreen },
   { name: 'Records',      label: '健康档案', icon: 'heart',        component: RecordsScreen },
-  { name: 'ReportUpload', label: '上传报告', icon: 'cloud-upload', component: ReportUploadScreen },
+  { name: 'ReportUpload', label: '上传健康资料', icon: 'cloud-upload', component: ReportUploadScreen },
   { name: 'Messages',     label: '消息',    icon: 'chatbubble',   component: MessagesScreen },
   { name: 'Profile',      label: '我的',    icon: 'person',       component: ProfileScreen },
 ];

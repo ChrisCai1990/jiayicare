@@ -78,7 +78,7 @@ export default function NotificationSettingsScreen({ navigation }) {
       setBrowserStatus(result);
       if (result === 'granted') {
         // 发一条测试通知
-        new Notification('嘉医管家', {
+        new Notification('金伊森', {
           body: '浏览器通知已开启，健康异常及服务消息将及时推送到您的设备',
           icon: '/favicon.ico',
         });

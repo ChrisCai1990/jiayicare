@@ -313,7 +313,7 @@ export default function RenewalPage() {
           backgroundColor: isExpired ? '#FDECEA' : isExpiring ? '#FEF3E2' : '#E8F5EF',
           border: `1px solid ${(isExpired ? colors.danger : isExpiring ? colors.warning : colors.success)}30`,
         }}>
-          <Text style={{ fontSize: '18px' }}>{isExpired ? '⚠️' : isExpiring ? '⏰' : '🛡️'}</Text>
+          <Icon name={isExpired ? '⚠️' : isExpiring ? '⏰' : '🛡️'} size={18} color={isExpired ? colors.danger : isExpiring ? colors.warning : colors.success} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{user.servicePackage}</Text>
             <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '2px' }}>
@@ -333,7 +333,10 @@ export default function RenewalPage() {
           backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.primary}`,
           padding: `${spacing.md}px`, textAlign: 'center', marginBottom: `${spacing.md}px`,
         }}>
-          <Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 700 }}>💬 查看消息里的续约推送</Text>
+          <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+            <Icon name="💬" size={14} color={colors.primary} />
+            <Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 700 }}>查看消息里的续约推送</Text>
+          </View>
         </View>
 
         <View onClick={intentSending ? undefined : handleContactManager} style={{
@@ -358,7 +361,10 @@ export default function RenewalPage() {
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, marginBottom: `${spacing.xxl}px` }}>
         <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>专属权益</Text>
         {['专属健管师全程陪伴管理', '专属家庭医生咨询问诊', '无缝衔接：开通即激活，全部功能立即可用'].map((b, i) => (
-          <Text key={i} style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>🎁 {b}</Text>
+          <View key={i} style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '6px' }}>
+            <Icon name="🎁" size={12} color={colors.textSecondary} />
+            <Text style={{ fontSize: '12px', color: colors.textSecondary }}>{b}</Text>
+          </View>
         ))}
       </View>
       </View>

@@ -43,7 +43,7 @@ function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrde
     <View style={{ backgroundColor: '#fff', borderRadius: `${radius.xl}px`, border: `1.5px solid ${colors.primary}30`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
       <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
         <View style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Text style={{ fontSize: '22px' }}>🛡️</Text>
+          <Icon name="🛡️" size={22} color={colors.primary} />
         </View>
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>开通专属服务包</Text>
@@ -76,7 +76,7 @@ function ServiceCard({ item, onDetail, onPay }) {
       )}
       <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
         <View style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: (item.iconColor || colors.primary) + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Text style={{ fontSize: '22px' }}>🏪</Text>
+          <Icon name="🏪" size={22} color={item.iconColor || colors.primary} />
         </View>
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }} numberOfLines={2}>{item.name}</Text>
@@ -114,7 +114,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.lg}px` }}>
           <View style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Text style={{ fontSize: '26px' }}>🏪</Text>
+            <Icon name="🏪" size={26} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }} numberOfLines={2}>{item.name}</Text>
@@ -207,7 +207,7 @@ function PurchaseModal({ item, mode, onClose }) {
     return (
       <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
         <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', width: '100%', boxSizing: 'border-box', padding: `${spacing.lg}px`, textAlign: 'center' }}>
-          <Text style={{ fontSize: '44px', display: 'block', margin: '16px 0' }}>✅</Text>
+          <View style={{ display: 'flex', justifyContent: 'center', margin: '16px 0' }}><Icon name="✅" size={44} color={colors.success} /></View>
           <Text style={{ fontSize: '20px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
           <Text style={{ fontSize: '14px', color: colors.textSecondary, lineHeight: '22px', display: 'block', marginBottom: `${spacing.xl}px` }}>
             {isPay
@@ -229,7 +229,7 @@ function PurchaseModal({ item, mode, onClose }) {
         <ScrollView scrollY style={{ flex: 1 }}>
           <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
             <View style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Text style={{ fontSize: '26px' }}>🏪</Text>
+              <Icon name="🏪" size={26} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }} numberOfLines={2}>{item.name}</Text>

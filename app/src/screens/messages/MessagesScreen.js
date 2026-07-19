@@ -86,7 +86,7 @@ function MessageItem({ msg, onPress }) {
         {msg.action?.type === 'checkin' && (
           <View style={styles.inviteActionBtn}>
             <Ionicons name="add-circle" size={13} color={colors.white} />
-            <Text style={styles.inviteActionText}>去打卡</Text>
+            <Text style={styles.inviteActionText}>去查看</Text>
           </View>
         )}
       </View>

@@ -10,7 +10,7 @@ const CONTENT = {
   terms: {
     title: '用户协议',
     sections: [
-      { heading: '1. 接受条款', body: '欢迎使用嘉医汇（以下简称"本应用"），由杭州嘉静佑辰科技有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。' },
+      { heading: '1. 接受条款', body: '欢迎使用金伊森（以下简称"本应用"），由杭州嘉静佑辰科技有限公司运营。您在使用本应用前，请仔细阅读本用户协议。一旦您使用本应用，即表示您已阅读并同意遵守本协议的全部条款。' },
       { heading: '2. 服务内容', body: '本应用提供健康数据管理、用药提醒、随访任务、AI 健康咨询及医生/健管师沟通等功能。所有服务内容可能因地区、套餐类型不同而有所差异。' },
       { heading: '3. 用户注册与账号安全', body: '您需使用真实手机号注册账号。请妥善保管账号及验证码，不得转让或出借给他人使用。如发现账号被盗用，请立即联系客服。' },
       { heading: '4. 使用规范', body: '您不得利用本应用从事任何违法活动，不得上传虚假健康信息，不得干扰系统正常运行，不得侵犯他人合法权益。' },
@@ -79,7 +79,7 @@ export default function LegalPage() {
           padding: `${spacing.md}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
           border: `1px solid ${colors.borderLight}`, textAlign: 'center',
         }}>
-          <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>嘉医汇 · 杭州嘉静佑辰科技有限公司</Text>
+          <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>金伊森 · 杭州嘉静佑辰科技有限公司</Text>
           <Text style={{ fontSize: '12px', color: colors.textMuted }}>客服电话：17742039618</Text>
         </View>
       </View>
