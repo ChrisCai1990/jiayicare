@@ -2,9 +2,13 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, TextInput,
   StyleSheet, SafeAreaView, ActivityIndicator,
-  Modal, Image, Platform, Linking,
+  Modal, Image, Platform, Linking, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
+import * as DocumentPicker from 'expo-document-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
+import * as FileSystem from 'expo-file-system';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { reportsAPI, requisitionsAPI, plansAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -508,25 +512,16 @@ function AIAnalysisCard({ onPress }) {
   );
 }
 
-// 将 base64 图片按角度（90的倍数）重绘旋转，返回新的 base64（Web Canvas 实现，仅支持图片，PDF 不处理）
-function rotateImageBase64(dataUrl, degrees) {
-  return new Promise((resolve, reject) => {
-    const img = new window.Image();
-    img.onload = () => {
-      const rad = (degrees % 360) * Math.PI / 180;
-      const swap = degrees % 180 !== 0;
-      const canvas = document.createElement('canvas');
-      canvas.width = swap ? img.height : img.width;
-      canvas.height = swap ? img.width : img.height;
-      const ctx = canvas.getContext('2d');
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate(rad);
-      ctx.drawImage(img, -img.width / 2, -img.height / 2);
-      resolve(canvas.toDataURL('image/jpeg', 0.92));
-    };
-    img.onerror = reject;
-    img.src = dataUrl;
-  });
+// 将 base64 图片按角度（90的倍数）旋转，返回新的 base64 data URI（原生实现，仅支持图片，PDF 不处理）
+// 此前用 window.Image + Canvas 实现，在真机 App（非 Expo web 预览）里 document/window.Image 均不存在，
+// 一进旋转步骤就会崩溃——2026-07-18 排查"用户端多图上传不行"发现的根因之一，改用 expo-image-manipulator。
+async function rotateImageBase64(dataUrl, degrees) {
+  const result = await ImageManipulator.manipulateAsync(
+    dataUrl,
+    [{ rotate: degrees }],
+    { compress: 0.92, format: ImageManipulator.SaveFormat.JPEG, base64: true }
+  );
+  return `data:image/jpeg;base64,${result.base64}`;
 }
 
 // ── 多图预览 + 旋转 Modal ─────────────────────────────────────────
@@ -973,42 +968,100 @@ export default function ReportUploadScreen({ navigation, route }) {
 
   useEffect(() => { loadReports(); loadRequisitions(); }, [loadReports, loadRequisitions]);
 
+  const MAX_FILE_BYTES = 20 * 1024 * 1024;
+
+  const fileSizeStr = (bytes) => {
+    const kb = bytes / 1024;
+    return kb >= 1024 ? `${(kb / 1024).toFixed(1)}MB` : `${kb.toFixed(0)}KB`;
+  };
+
+  // 相册多选图片（作为同一份报告的多页）。expo-image-picker 直接支持 base64 输出，
+  // 不用再手动读文件，天然兼容真机
+  const pickFromLibrary = async () => {
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      showToast('未获得相册权限，请在系统设置中开启', true);
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      allowsMultipleSelection: true,
+      quality: 0.85,
+      base64: true,
+    });
+    if (result.canceled || !result.assets?.length) return;
+
+    const oversized = result.assets.find(a => (a.fileSize || 0) > MAX_FILE_BYTES);
+    if (oversized) {
+      showToast('文件大小不能超过 20MB', true);
+      return;
+    }
+    const pages = result.assets.map((a, i) => ({
+      name: a.fileName || `photo_${i + 1}.jpg`,
+      content: `data:${a.mimeType || 'image/jpeg'};base64,${a.base64}`,
+      mimeType: a.mimeType || 'image/jpeg',
+      sizeStr: fileSizeStr(a.fileSize || (a.base64.length * 0.75)),
+    }));
+    setPendingPages(pages);
+  };
+
+  // 拍照上传（单张，报告现场拍摄场景）
+  const pickFromCamera = async () => {
+    const perm = await ImagePicker.requestCameraPermissionsAsync();
+    if (!perm.granted) {
+      showToast('未获得相机权限，请在系统设置中开启', true);
+      return;
+    }
+    const result = await ImagePicker.launchCameraAsync({ quality: 0.85, base64: true });
+    if (result.canceled || !result.assets?.length) return;
+
+    const a = result.assets[0];
+    if ((a.fileSize || 0) > MAX_FILE_BYTES) {
+      showToast('文件大小不能超过 20MB', true);
+      return;
+    }
+    setPendingPages([{
+      name: a.fileName || 'photo.jpg',
+      content: `data:${a.mimeType || 'image/jpeg'};base64,${a.base64}`,
+      mimeType: a.mimeType || 'image/jpeg',
+      sizeStr: fileSizeStr(a.fileSize || (a.base64.length * 0.75)),
+    }]);
+  };
+
+  // 选择 PDF 等文件（医院电子报告常见格式），不支持多选+旋转预览，直接进下一步
+  const pickDocument = async () => {
+    const result = await DocumentPicker.getDocumentAsync({
+      type: ['application/pdf', 'image/*'],
+      multiple: true,
+      copyToCacheDirectory: true,
+    });
+    if (result.canceled || !result.assets?.length) return;
+
+    const oversized = result.assets.find(a => (a.size || 0) > MAX_FILE_BYTES);
+    if (oversized) {
+      showToast('文件大小不能超过 20MB', true);
+      return;
+    }
+    try {
+      const pages = await Promise.all(result.assets.map(async (a) => {
+        const base64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
+        const mimeType = a.mimeType || 'application/pdf';
+        return { name: a.name, content: `data:${mimeType};base64,${base64}`, mimeType, sizeStr: fileSizeStr(a.size || 0) };
+      }));
+      setPendingPages(pages);
+    } catch {
+      showToast('文件读取失败，请重试', true);
+    }
+  };
+
   // Step 1: Pick file(s) → show rotate/preview modal
   const handleUpload = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.multiple = true; // 支持一次选择多张照片，作为同一份报告的多页一起提交
-    // 支持常见图片格式（含手机 HEIC/webp）+ PDF；不写死扩展名，用通配放开各类图片
-    input.accept = 'image/*,.pdf,.heic,.heif';
-    input.onchange = async (e) => {
-      const files = Array.from(e.target.files || []);
-      if (!files.length) return;
-      const oversized = files.find(f => f.size > 20 * 1024 * 1024);
-      if (oversized) {
-        showToast('文件大小不能超过 20MB', true);
-        return;
-      }
-
-      const pages = [];
-      for (const file of files) {
-        const sizeKB = file.size / 1024;
-        const sizeStr = sizeKB >= 1024
-          ? `${(sizeKB / 1024).toFixed(1)}MB`
-          : `${sizeKB.toFixed(0)}KB`;
-        let content = '';
-        try {
-          content = await new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(reader.result);
-            reader.onerror = reject;
-            reader.readAsDataURL(file);
-          });
-        } catch {}
-        pages.push({ name: file.name, content, mimeType: file.type || '', sizeStr });
-      }
-      setPendingPages(pages);
-    };
-    input.click();
+    Alert.alert('上传报告', '请选择上传方式', [
+      { text: '拍照', onPress: pickFromCamera },
+      { text: '从相册选择（可多选）', onPress: pickFromLibrary },
+      { text: '选择文件（PDF）', onPress: pickDocument },
+      { text: '取消', style: 'cancel' },
+    ]);
   };
 
   // Step 2: User confirmed rotation/orientation → show config modal

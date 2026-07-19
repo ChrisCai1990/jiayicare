@@ -4,6 +4,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { messagesAPI, pushRecordsAPI, servicesAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // 完整对齐 app/src/screens/messages/MessagesScreen.js 的固定角色分组方案。
 // 简化点：
@@ -66,6 +68,7 @@ function fmtMsgTime(t) {
 }
 
 export default function MessagesPage() {
+  const { statusBarHeight } = useNavBar();
   const { user, isDemo } = useAuth();
   const careTeamKinds = new Set((user?.careTeam || []).map((m) => m.kind));
   const hasRole = (key) => {
@@ -146,7 +149,7 @@ export default function MessagesPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xl}px` }}>
-      <View style={{ display: 'flex', alignItems: 'center', padding: `${spacing.lg}px ${spacing.lg}px ${spacing.sm}px` }}>
+      <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.sm}px` }}>
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary }}>消息</Text>
         {totalUnread > 0 && (
           <View style={{ marginLeft: '8px', minWidth: '22px', height: '22px', borderRadius: '11px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 6px' }}>
@@ -171,7 +174,7 @@ export default function MessagesPage() {
                     position: 'relative', width: '46px', height: '46px', borderRadius: '12px', marginRight: `${spacing.sm}px`,
                     backgroundColor: unassigned ? colors.border : conv.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                   }}>
-                    <Text style={{ fontSize: '20px' }}>{conv.icon}</Text>
+                    <Icon name={conv.icon} size={20} color="#fff" />
                     {conv.unread > 0 && !unassigned && (
                       <View style={{ position: 'absolute', top: '-3px', right: '-3px', minWidth: '16px', height: '16px', borderRadius: '8px', backgroundColor: colors.danger, border: `1.5px solid ${colors.background}`, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 3px' }}>
                         <Text style={{ fontSize: '9px', color: '#fff', fontWeight: 700 }}>{conv.unread > 99 ? '99+' : conv.unread}</Text>
@@ -211,6 +214,7 @@ export default function MessagesPage() {
 }
 
 function NotifModal({ messages, tab, setTab, onClose, onPress }) {
+  const { statusBarHeight } = useNavBar();
   const filtered = messages.filter((m) => {
     if (tab === '系统') return m.type === 'system';
     if (tab === '推送') return PUSH_TYPES.has(m.type);
@@ -219,7 +223,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
 
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: colors.background, zIndex: 100, display: 'flex', flexDirection: 'column' }}>
-      <View style={{ display: 'flex', alignItems: 'center', padding: `${spacing.md}px ${spacing.lg}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+      <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px` , backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
         <Text onClick={onClose} style={{ fontSize: '14px', color: colors.primary, marginRight: '12px' }}>‹ 返回</Text>
         <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '40px' }}>系统通知</Text>
       </View>
@@ -243,7 +247,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
                 <View key={msg._id || i}>
                   <View onClick={() => onPress(msg)} style={{ display: 'flex', alignItems: 'flex-start', padding: `${spacing.md}px`, backgroundColor: msg.unread ? '#FAFFFE' : '#fff' }}>
                     <View style={{ position: 'relative', width: '42px', height: '42px', borderRadius: '10px', backgroundColor: conf.color + '30', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px`, flexShrink: 0 }}>
-                      <Text style={{ fontSize: '18px' }}>{conf.icon}</Text>
+                      <Icon name={conf.icon} size={18} color={conf.color} />
                       {msg.unread && <View style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '4px', backgroundColor: colors.danger, border: `1.5px solid #fff` }} />}
                     </View>
                     <View style={{ flex: 1 }}>
@@ -276,7 +280,7 @@ function MessageDetailModal({ msg, onClose }) {
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <View style={{ display: 'flex', alignItems: 'center', marginBottom: `${spacing.md}px` }}>
           <View style={{ width: '44px', height: '44px', borderRadius: '14px', backgroundColor: conf.color + '30', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '20px' }}>{conf.icon}</Text>
+            <Icon name={conf.icon} size={20} color={conf.color} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{msg.sender}</Text>
@@ -352,7 +356,9 @@ function ProductPushDetail({ msg, onClose }) {
     return (
       <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
         <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', width: '100%', boxSizing: 'border-box', padding: '40px 20px', textAlign: 'center' }}>
-          <Text style={{ fontSize: '40px', display: 'block', marginBottom: '16px' }}>✅</Text>
+          <View style={{ display: 'flex', justifyContent: 'center', marginBottom: '16px' }}>
+            <Icon name="✅" size={40} color={colors.primary} />
+          </View>
           <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>订单已提交</Text>
           <Text style={{ fontSize: '14px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>共 {checkedItems.length} 项，实付 ¥{finalPrice}</Text>
           <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: '32px' }}>健管师将尽快与您确认并安排后续服务</Text>
@@ -385,10 +391,10 @@ function ProductPushDetail({ msg, onClose }) {
                   border: `2px solid ${isChecked ? colors.primary : '#ccc'}`, backgroundColor: isChecked ? colors.primary : '#fff',
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
                 }}>
-                  {isChecked && <Text style={{ color: '#fff', fontSize: '12px' }}>✓</Text>}
+                  {isChecked && <Icon name="✓" size={12} color="#fff" />}
                 </View>
                 <View style={{ width: '40px', height: '40px', borderRadius: '10px', marginRight: `${spacing.sm}px`, flexShrink: 0, backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Text style={{ fontSize: '18px' }}>{p.icon || '🛍'}</Text>
+                  <Icon name={p.icon || '🛍'} size={18} color={colors.primary} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{p.name}</Text>
@@ -471,6 +477,7 @@ const ROLE_META = {
 };
 
 function ConversationThread({ role, onClose }) {
+  const { statusBarHeight } = useNavBar();
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
@@ -510,8 +517,8 @@ function ConversationThread({ role, onClose }) {
 
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: colors.background }}>
-      <View style={{ display: 'flex', alignItems: 'center', padding: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <Text onClick={onClose} style={{ fontSize: '15px', color: colors.textPrimary, marginRight: '12px' }}>‹</Text>
+      <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+        <View onClick={onClose} style={{ marginRight: '12px' }}><Icon name="‹" size={16} color={colors.textPrimary} /></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
           <Text style={{ fontSize: '11px', color: colors.success }}>● 在线</Text>
@@ -525,7 +532,7 @@ function ConversationThread({ role, onClose }) {
         ) : msgs.length === 0 ? (
           <View style={{ textAlign: 'center', padding: '60px 0' }}>
             <View style={{ width: '64px', height: '64px', borderRadius: '32px', backgroundColor: meta.color + '30', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 16px' }}>
-              <Text style={{ fontSize: '28px' }}>{meta.icon}</Text>
+              <Icon name={meta.icon} size={28} color={meta.color} />
             </View>
             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>{meta.label}</Text>
             <Text style={{ fontSize: '13px', color: colors.textMuted }}>发送消息，您的{meta.label}会在工作时间内回复您</Text>
@@ -570,7 +577,7 @@ function ConversationThread({ role, onClose }) {
           width: '40px', height: '40px', borderRadius: '20px', backgroundColor: (!input.trim() || sending) ? colors.border : colors.primary,
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
-          <Text style={{ color: '#fff', fontSize: '16px' }}>➤</Text>
+          <Icon name="➤" size={16} color="#fff" />
         </View>
       </View>
     </View>

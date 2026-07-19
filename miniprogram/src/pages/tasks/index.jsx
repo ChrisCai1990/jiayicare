@@ -3,9 +3,12 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { tasksAPI, followupTasksAPI } from '../../services/api';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // 简化实现：待办任务 + 随访计划合并列表，完整版含分类Tab/表单填写见 app/src/screens/tasks/TasksScreen.js
 export default function TasksPage() {
+  const { statusBarHeight } = useNavBar();
   const [tasks, setTasks] = useState([]);
   const [followups, setFollowups] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -34,9 +37,20 @@ export default function TasksPage() {
   const pendingFollowups = followups.filter((p) => !p.completedByUser && !['completed', 'cancelled'].includes(p.status));
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px` }}>
-      <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>随访与待办</Text>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>随访与待办</Text>
+        <View style={{ width: '28px' }} />
+      </View>
 
+      <View style={{ padding: `${spacing.lg}px` }}>
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
       ) : (pendingTasks.length === 0 && pendingFollowups.length === 0) ? (
@@ -80,6 +94,7 @@ export default function TasksPage() {
           ))}
         </>
       )}
+      </View>
     </View>
   );
 }

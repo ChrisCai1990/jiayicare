@@ -4,6 +4,8 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { userAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 完整对齐 app/src/screens/profile/EditProfileScreen.js 的健康档案字段结构。
 const GENDER_OPTIONS = ['男', '女', '未知'];
@@ -109,7 +111,7 @@ function ArraySection({ title, icon, color, bg, items, fields, displayFn, onChan
     <View style={{ padding: `${spacing.md}px` }}>
       <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
         <View style={{ width: '28px', height: '28px', borderRadius: '8px', backgroundColor: bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ fontSize: '14px' }}>{icon}</Text>
+          <Icon name={icon} size={14} color={color} />
         </View>
         <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, flex: 1 }}>{title}</Text>
         <View onClick={openNew} style={{ padding: '5px 10px', borderRadius: `${radius.full}px`, border: `1.5px solid ${color}` }}>
@@ -177,6 +179,7 @@ function SectionLabel({ children }) {
 }
 
 export default function EditProfilePage() {
+  const { statusBarHeight } = useNavBar();
   const { user, updateUser } = useAuth();
   const [name, setName] = useState(user?.name || '');
   const [gender, setGender] = useState(user?.gender || '未知');
@@ -256,7 +259,20 @@ export default function EditProfilePage() {
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>编辑资料</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
+      <View style={{ padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
       <SectionLabel>基本信息</SectionLabel>
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px` }}>
         <Field label="姓名" value={name} onInput={setName} placeholder="请输入姓名" />
@@ -407,6 +423,7 @@ export default function EditProfilePage() {
       >
         保存修改
       </Button>
+      </View>
     </View>
   );
 }

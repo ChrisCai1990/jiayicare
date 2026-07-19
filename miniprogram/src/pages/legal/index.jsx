@@ -1,7 +1,9 @@
 import React from 'react';
 import { View, Text } from '@tarojs/components';
-import { useRouter } from '@tarojs/taro';
+import Taro, { useRouter } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // 内容与 app/src/screens/legal/LegalScreen.js 完全一致（项目自有法律文本）
 const CONTENT = {
@@ -45,14 +47,25 @@ const CONTENT = {
 };
 
 export default function LegalPage() {
+  const { statusBarHeight } = useNavBar();
   const router = useRouter();
   const type = router.params?.type || 'terms';
   const doc = CONTENT[type] || CONTENT.terms;
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
-      <View style={{ backgroundColor: '#fff', padding: `${spacing.lg}px`, borderBottom: `1px solid ${colors.borderLight}` }}>
-        <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>{doc.title}</Text>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{doc.title}</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+      <View style={{ backgroundColor: '#fff', padding: `${spacing.md}px ${spacing.lg}px`, borderBottom: `1px solid ${colors.borderLight}` }}>
         <Text style={{ fontSize: '12px', color: colors.textMuted }}>更新日期：2026年1月1日</Text>
       </View>
       <View style={{ padding: `${spacing.lg}px` }}>

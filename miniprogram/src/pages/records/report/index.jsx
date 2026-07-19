@@ -1,13 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text } from '@tarojs/components';
+import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { userAPI, recordsAPI } from '../../../services/api';
 import TrendChart from '../../../components/TrendChart';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/HealthReportScreen.js 的核心信息：周期评分+指标趋势图化展示+任务完成率+亮点。
 const TREND_ICON = { down: '↓', up: '↑', stable: '–' };
 
 export default function HealthReportPage() {
+  const { statusBarHeight } = useNavBar();
   const [period, setPeriod] = useState('week');
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -41,7 +45,20 @@ export default function HealthReportPage() {
   const score = report?.healthScore ?? report?.score;
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>健康报告</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
+      <View style={{ padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
       <View style={{ display: 'flex', gap: '8px', marginBottom: `${spacing.lg}px` }}>
         {[{ k: 'week', l: '本周' }, { k: 'month', l: '本月' }].map((p) => (
           <View
@@ -140,6 +157,7 @@ export default function HealthReportPage() {
           ))}
         </>
       )}
+      </View>
     </View>
   );
 }

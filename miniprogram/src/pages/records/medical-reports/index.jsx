@@ -3,6 +3,8 @@ import { View, Text, Input, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/MedicalReportsScreen.js
 // 小程序场景适配：原件预览用 Taro.previewImage（图片）/ Taro.downloadFile+openDocument（其他文件），
@@ -97,8 +99,18 @@ function ReportCard({ report }) {
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{report.title}</Text>
           <View style={{ display: 'flex', gap: '8px', marginTop: '4px', flexWrap: 'wrap' }}>
-            {(report.checkDate || report.date) && <Text style={{ fontSize: '11px', color: colors.textMuted }}>📅 {report.checkDate || report.date}</Text>}
-            {(report.institution || report.hospital) && <Text style={{ fontSize: '11px', color: colors.textMuted }}>🏥 {report.institution || report.hospital}</Text>}
+            {(report.checkDate || report.date) && (
+              <View style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <Icon name="📅" size={11} color={colors.textMuted} />
+                <Text style={{ fontSize: '11px', color: colors.textMuted }}>{report.checkDate || report.date}</Text>
+              </View>
+            )}
+            {(report.institution || report.hospital) && (
+              <View style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                <Icon name="🏥" size={11} color={colors.textMuted} />
+                <Text style={{ fontSize: '11px', color: colors.textMuted }}>{report.institution || report.hospital}</Text>
+              </View>
+            )}
           </View>
         </View>
         <View style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -112,7 +124,8 @@ function ReportCard({ report }) {
         <View style={{ padding: `${spacing.sm}px ${spacing.md}px ${spacing.md}px`, borderTop: `1px solid ${colors.borderLight}` }}>
           {hasFile && (
             <View onClick={() => openOriginalFile(report)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', border: `1px solid ${colors.primary}`, borderRadius: `${radius.sm}px`, padding: '8px', marginBottom: `${spacing.sm}px` }}>
-              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>📎 查看原始报告文件</Text>
+              <Icon name="📎" size={13} color={colors.primary} />
+              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600 }}>查看原始报告文件</Text>
             </View>
           )}
           {hasAI && (
@@ -138,6 +151,7 @@ function ReportCard({ report }) {
 }
 
 export default function MedicalReportsPage() {
+  const { statusBarHeight } = useNavBar();
   const [years, setYears] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selYear, setSelYear] = useState(null);
@@ -162,11 +176,23 @@ export default function MedicalReportsPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xxl}px` }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>体检报告</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
       {years.length > 0 && (
         <View style={{ display: 'flex', alignItems: 'center', gap: '6px', margin: `${spacing.sm}px ${spacing.lg}px ${spacing.xs}px`, padding: '0 12px', height: '36px', borderRadius: `${radius.full}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxSizing: 'border-box' }}>
-          <Text style={{ fontSize: '13px' }}>🔍</Text>
+          <Icon name="🔍" size={13} color={colors.textMuted} />
           <Input style={{ flex: 1, fontSize: '13px', color: colors.textPrimary }} placeholder="搜索报告标题" value={searchKw} onInput={(e) => setSearchKw(e.detail.value)} />
-          {!!searchKw && <Text onClick={() => setSearchKw('')} style={{ fontSize: '13px', color: colors.textMuted }}>✕</Text>}
+          {!!searchKw && <View onClick={() => setSearchKw('')}><Icon name="✕" size={13} color={colors.textMuted} /></View>}
         </View>
       )}
 
@@ -174,7 +200,7 @@ export default function MedicalReportsPage() {
         <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '60px' }}>加载中...</Text>
       ) : years.length === 0 ? (
         <View style={{ textAlign: 'center', padding: `${spacing.xl}px` }}>
-          <Text style={{ fontSize: '48px', display: 'block', marginBottom: `${spacing.sm}px` }}>📄</Text>
+          <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.sm}px` }}><Icon name="📄" size={48} /></View>
           <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>暂无体检报告</Text>
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>上传报告后，将按年度和类目自动归类展示</Text>
         </View>
@@ -182,7 +208,7 @@ export default function MedicalReportsPage() {
         <View style={{ padding: `0 ${spacing.lg}px` }}>
           {searchResults.length === 0 ? (
             <View style={{ textAlign: 'center', padding: `${spacing.xl}px` }}>
-              <Text style={{ fontSize: '48px', display: 'block', marginBottom: `${spacing.sm}px` }}>🔍</Text>
+              <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.sm}px` }}><Icon name="🔍" size={48} /></View>
               <Text style={{ fontSize: '13px', color: colors.textMuted }}>没有匹配"{kw}"的报告</Text>
             </View>
           ) : searchResults.map((r) => <ReportCard key={r._id} report={r} />)}
@@ -207,7 +233,7 @@ export default function MedicalReportsPage() {
                 <View key={cat.key} style={{ marginBottom: `${spacing.lg}px` }}>
                   <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
                     <View style={{ width: '36px', height: '36px', borderRadius: `${radius.sm}px`, backgroundColor: meta.color + '30', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: '18px' }}>{meta.icon}</Text>
+                      <Icon name={meta.icon} size={18} color={meta.color} />
                     </View>
                     <Text style={{ fontSize: '14px', fontWeight: 700, color: meta.color, flex: 1 }}>{meta.label}</Text>
                     <Text style={{ fontSize: '12px', color: colors.textMuted }}>{cat.reports.length} 份</Text>

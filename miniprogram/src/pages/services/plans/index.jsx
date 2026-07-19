@@ -3,6 +3,8 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { plansAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/services/ServicePlansScreen.js（852行，全端最复杂页面之一）
 // 简化点：年度管理方案(annual_mgmt)的模块字段中文标签映射只做了最常用的一批（MODULE_NAME/FIELD_LABEL），
@@ -213,6 +215,7 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
 }
 
 export default function ServicePlansPage() {
+  const { statusBarHeight } = useNavBar();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState(null);
@@ -302,6 +305,18 @@ export default function ServicePlansPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xl}px` }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>健康方案</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '60px' }}>加载中...</Text>
       ) : (

@@ -4,9 +4,12 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
 import { userAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // 首次登录最小化建档：姓名+身份证号+联系电话，其余健康信息交给问卷库分批采集。
 export default function OnboardingPage() {
+  const { statusBarHeight } = useNavBar();
   const { updateUser } = useAuth();
   const [name, setName] = useState('');
   const [idType, setIdType] = useState('idCard');
@@ -42,12 +45,12 @@ export default function OnboardingPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, display: 'flex', flexDirection: 'column' }}>
-      <View style={{ backgroundColor: colors.surface, borderBottom: `1px solid ${colors.border}`, textAlign: 'center', padding: `${spacing.lg}px 0` }}>
+      <View style={{ backgroundColor: colors.surface, borderBottom: `1px solid ${colors.border}`, textAlign: 'center', padding: `${statusBarHeight + spacing.lg}px 0 ${spacing.lg}px` }}>
         <View style={{
           width: '56px', height: '56px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary10,
           margin: '0 auto 8px', display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Text style={{ fontSize: '28px' }}>👤</Text>
+          <Icon name="👤" size={28} color={colors.primary} />
         </View>
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>完善基础信息</Text>
         <Text style={{ fontSize: '13px', color: colors.textSecondary, marginTop: '4px', display: 'block' }}>用于建立您的专属健康档案</Text>

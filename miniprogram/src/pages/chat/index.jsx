@@ -4,9 +4,12 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
 import { chatAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // AI健康助手对话界面（简化版，接真实 /chat 接口）
 export default function ChatPage() {
+  const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [messages, setMessages] = useState([
     { role: 'assistant', content: '您好，我是嘉医汇AI健康助手，有什么可以帮您的吗？' },
@@ -35,6 +38,18 @@ export default function ChatPage() {
 
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`, flexShrink: 0,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康助手</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
       <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView="bottom-anchor">
         {messages.map((m, i) => (
           <View key={i} style={{

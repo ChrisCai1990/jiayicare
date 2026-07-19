@@ -3,6 +3,8 @@ import { View, Text, Input, Textarea } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { supplementsAPI } from '../../services/api';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // 对齐 app/src/screens/nutrition/NutritionScreen.js
 const FREQ_OPTIONS = ['每日1次', '每日2次', '每日3次', '隔日1次', '每周3次', '按需服用'];
@@ -20,7 +22,7 @@ function SupCard({ item, stopped, onCheckin, onStop }) {
     }}>
       <View style={{ display: 'flex', alignItems: 'flex-start', gap: `${spacing.sm}px` }}>
         <View style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: stopped ? '#F5F5F5' : '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Text style={{ fontSize: '18px' }}>🌿</Text>
+          <Icon name="🌿" size={18} color="#22A06B" />
         </View>
         <View style={{ flex: 1 }}>
           <View style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px', marginBottom: '3px' }}>
@@ -40,8 +42,9 @@ function SupCard({ item, stopped, onCheckin, onStop }) {
           <View onClick={() => onStop(itemId, item.name)} style={{ padding: '5px 10px', borderRadius: `${radius.full}px`, border: `1.5px solid ${colors.warning}` }}>
             <Text style={{ fontSize: '12px', color: colors.warning, fontWeight: 600 }}>标记停用</Text>
           </View>
-          <View onClick={() => !takenToday && onCheckin(itemId, item.name)} style={{ padding: '5px 10px', borderRadius: `${radius.full}px`, border: `1.5px solid ${takenToday ? '#059669' : '#22A06B'}`, backgroundColor: takenToday ? '#D1FAE5' : '#E8F5EF' }}>
-            <Text style={{ fontSize: '12px', color: takenToday ? '#059669' : '#22A06B', fontWeight: 600 }}>{takenToday ? '今日已服 ✓' : '今日已服'}</Text>
+          <View onClick={() => !takenToday && onCheckin(itemId, item.name)} style={{ display: 'flex', alignItems: 'center', gap: '4px', padding: '5px 10px', borderRadius: `${radius.full}px`, border: `1.5px solid ${takenToday ? '#059669' : '#22A06B'}`, backgroundColor: takenToday ? '#D1FAE5' : '#E8F5EF' }}>
+            <Text style={{ fontSize: '12px', color: takenToday ? '#059669' : '#22A06B', fontWeight: 600 }}>今日已服</Text>
+            {takenToday && <Icon name="✓" size={12} color="#059669" />}
           </View>
         </View>
       )}
@@ -50,6 +53,7 @@ function SupCard({ item, stopped, onCheckin, onStop }) {
 }
 
 export default function NutritionPage() {
+  const { statusBarHeight } = useNavBar();
   const [tab, setTab] = useState('active');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -105,8 +109,11 @@ export default function NutritionPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xxl}px` }}>
-      <View style={{ backgroundColor: '#22A06B', padding: `${spacing.lg}px`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <View>
+      <View style={{ backgroundColor: '#22A06B', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.lg}px`, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px', marginRight: '4px' }}>
+          <Icon name="‹" size={20} color="#fff" />
+        </View>
+        <View style={{ flex: 1 }}>
           <Text style={{ fontSize: '18px', fontWeight: 700, color: '#fff', display: 'block' }}>营养素管理</Text>
           <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.65)' }}>全生命周期营养补充记录</Text>
         </View>
@@ -160,7 +167,7 @@ export default function NutritionPage() {
           <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
             <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.lg}px` }}>
               <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>添加营养素记录</Text>
-              <Text onClick={() => setShowAdd(false)} style={{ fontSize: '18px', color: colors.textSecondary }}>✕</Text>
+              <View onClick={() => setShowAdd(false)}><Icon name="✕" size={18} color={colors.textSecondary} /></View>
             </View>
             {[
               { label: '营养素名称 *', key: 'name', placeholder: '如：维生素C、钙、蛋白粉' },

@@ -4,6 +4,8 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { servicesAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 const PAY_METHODS = [
   { key: 'wechat', label: '微信支付' },
@@ -383,6 +385,7 @@ function PurchaseModal({ item, mode, onClose }) {
 }
 
 export default function ServiceMallPage() {
+  const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('全部');
   const [detailService, setDetailService] = useState(null);
@@ -411,6 +414,18 @@ export default function ServiceMallPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>服务商城</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
         <BannerCard
           hasService={hasService}

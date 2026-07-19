@@ -4,6 +4,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { screeningAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/SpecialScreeningScreen.js
 // 简化点：app端web用<input type=file>选PDF/图片；小程序用 Taro.chooseImage 只支持图片
@@ -140,6 +142,7 @@ function fileToBase64(filePath) {
 }
 
 export default function SpecialScreeningPage() {
+  const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const gender = user?.gender || null;
   const [userItems, setUserItems] = useState({});
@@ -224,6 +227,18 @@ export default function SpecialScreeningPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xxl}px` }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>专项筛查</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
       <View style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: `10px ${spacing.md}px`, backgroundColor: '#F0F4F8' }}>
         <Text style={{ fontSize: '12px', color: colors.textMuted, lineHeight: '17px' }}>ℹ️ 勾选检查项目并上传报告，系统将与您的健康档案关联。</Text>
       </View>

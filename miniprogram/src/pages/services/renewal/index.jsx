@@ -4,6 +4,8 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { servicesAPI, messagesAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 服务包目录：与后端 backend/src/routes/services.js 的 PACKAGE_CATALOG 完全对齐
 const PACKAGES = [
@@ -209,6 +211,7 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
 }
 
 export default function RenewalPage() {
+  const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
   const [selected, setSelected] = useState(PACKAGES[0]);
@@ -241,9 +244,25 @@ export default function RenewalPage() {
     }
   };
 
+  const Header = ({ title }) => (
+    <View style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+      backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+    }}>
+      <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+        <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+      </View>
+      <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{title}</Text>
+      <View style={{ width: '28px' }} />
+    </View>
+  );
+
   if (success) {
     return (
-      <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px`, textAlign: 'center', boxSizing: 'border-box' }}>
+      <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+        <Header title="服务包续约" />
+        <View style={{ padding: `${spacing.lg}px`, textAlign: 'center', boxSizing: 'border-box' }}>
         <View style={{ width: '80px', height: '80px', borderRadius: '40px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '40px auto 16px' }}>
           <Text style={{ fontSize: '40px' }}>✅</Text>
         </View>
@@ -279,13 +298,16 @@ export default function RenewalPage() {
             <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>返回首页</Text>
           </View>
         </View>
+        </View>
       </View>
     );
   }
 
   if (hasService) {
     return (
-      <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
+      <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+        <Header title="服务包续约" />
+        <View style={{ padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
         <View style={{
           display: 'flex', alignItems: 'flex-start', gap: `${spacing.sm}px`, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`,
           backgroundColor: isExpired ? '#FDECEA' : isExpiring ? '#FEF3E2' : '#E8F5EF',
@@ -319,12 +341,15 @@ export default function RenewalPage() {
         }}>
           <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{intentSending ? '发送中...' : '联系健管师续约'}</Text>
         </View>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <Header title="服务包续约" />
+      <View style={{ padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, boxSizing: 'border-box' }}>
       <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>选择服务套餐</Text>
       {PACKAGES.map((pkg) => (
         <PackageCard key={pkg.id} pkg={pkg} selected={selected?.id === pkg.id} onSelect={setSelected} />
@@ -335,6 +360,7 @@ export default function RenewalPage() {
         {['专属健管师全程陪伴管理', '专属家庭医生咨询问诊', '无缝衔接：开通即激活，全部功能立即可用'].map((b, i) => (
           <Text key={i} style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>🎁 {b}</Text>
         ))}
+      </View>
       </View>
 
       <View style={{ position: 'fixed', bottom: 0, left: 0, right: 0, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}`, padding: `${spacing.md}px ${spacing.lg}px`, boxSizing: 'border-box', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: shadow.lg }}>

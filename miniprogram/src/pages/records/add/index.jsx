@@ -3,6 +3,8 @@ import { View, Text, Input, Button, Picker, Textarea } from '@tarojs/components'
 import Taro, { useRouter } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { recordsAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 const RECORD_TYPES = [
   { id: 'bloodPressure', label: '血压', icon: '💗', category: 'vitals', unit: 'mmHg', fields: [
@@ -40,6 +42,7 @@ function calcSleepDuration(sleepTime, wakeTime) {
 }
 
 export default function AddRecordPage() {
+  const { statusBarHeight } = useNavBar();
   const router = useRouter();
   const initialTypeId = router.params?.type;
   const [activeType, setActiveType] = useState(
@@ -109,7 +112,20 @@ export default function AddRecordPage() {
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px` }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>录入健康数据</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
+      <View style={{ padding: `${spacing.lg}px` }}>
       {/* 类型选择 */}
       <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: `${spacing.lg}px` }}>
         {RECORD_TYPES.map((t) => (
@@ -198,6 +214,7 @@ export default function AddRecordPage() {
       >
         保存记录
       </Button>
+      </View>
     </View>
   );
 }

@@ -39,9 +39,9 @@ export default defineAppConfig({
   ],
   window: {
     backgroundTextStyle: 'light',
-    navigationBarBackgroundColor: '#1E6B50',
-    navigationBarTitleText: '嘉医汇',
-    navigationBarTextStyle: 'white',
+    // 2026-07-19 对齐app端所有页面headerShown:false：隐藏微信原生导航栏，页面自绘标题栏。
+    // 胶囊按钮本身无法隐藏（微信平台限制），各页面用 src/hooks/useNavBar.js 计算安全区适配。
+    navigationStyle: 'custom',
     backgroundColor: '#F2EDE3',
   },
   tabBar: {

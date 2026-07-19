@@ -3,6 +3,8 @@ import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { ordersAPI } from '../../services/api';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 const STATUS_META = {
   pending: { label: '待处理', color: colors.warning },
@@ -12,6 +14,7 @@ const STATUS_META = {
 };
 
 export default function OrdersPage() {
+  const { statusBarHeight } = useNavBar();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -34,7 +37,20 @@ export default function OrdersPage() {
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px` }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>我的订单</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
+      <View style={{ padding: `${spacing.lg}px` }}>
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
       ) : list.length === 0 ? (
@@ -70,6 +86,7 @@ export default function OrdersPage() {
           );
         })
       )}
+      </View>
     </View>
   );
 }

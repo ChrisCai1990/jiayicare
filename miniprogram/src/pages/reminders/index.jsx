@@ -1,11 +1,14 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text, Switch } from '@tarojs/components';
-import { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { remindersAPI } from '../../services/api';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // 简化实现：提醒列表 + 开关切换，完整版含新增/分类见 app/src/screens/reminders/RemindersScreen.js
 export default function RemindersPage() {
+  const { statusBarHeight } = useNavBar();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -22,7 +25,20 @@ export default function RemindersPage() {
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px` }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>提醒设置</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
+      <View style={{ padding: `${spacing.lg}px` }}>
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
       ) : list.length === 0 ? (
@@ -43,6 +59,7 @@ export default function RemindersPage() {
           </View>
         ))
       )}
+      </View>
     </View>
   );
 }

@@ -3,11 +3,14 @@ import { View, Text, Textarea, Picker, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { feedbackAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 const TYPES = ['功能建议', '问题反馈', '内容纠错', '其他'];
 
 // 简化实现：意见反馈表单，完整版含历史反馈列表见 app/src/screens/profile/HelpFeedbackScreen.js
 export default function HelpFeedbackPage() {
+  const { statusBarHeight } = useNavBar();
   const [type, setType] = useState(TYPES[0]);
   const [content, setContent] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -29,7 +32,20 @@ export default function HelpFeedbackPage() {
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px` }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>帮助与反馈</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
+      <View style={{ padding: `${spacing.lg}px` }}>
       <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '8px' }}>反馈类型</Text>
       <Picker mode="selector" range={TYPES} value={TYPES.indexOf(type)} onChange={(e) => setType(TYPES[e.detail.value])}>
         <View style={{ border: `1.5px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: '10px 12px', backgroundColor: '#fff', marginBottom: `${spacing.md}px` }}>
@@ -55,6 +71,7 @@ export default function HelpFeedbackPage() {
 
       <View style={{ marginTop: `${spacing.lg}px`, textAlign: 'center' }}>
         <Text style={{ fontSize: '12px', color: colors.textMuted }}>客服电话：17742039618</Text>
+      </View>
       </View>
     </View>
   );

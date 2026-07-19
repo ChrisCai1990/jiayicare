@@ -13,7 +13,11 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "需要访问相册，以便上传体检报告照片",
+        "NSCameraUsageDescription": "需要使用相机，以便拍摄体检报告"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -21,12 +25,22 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": false,
-      "package": "com.jiayicare.app"
+      "package": "com.jiayicare.app",
+      "permissions": ["CAMERA", "READ_MEDIA_IMAGES"]
     },
     "web": {
       "favicon": "./assets/favicon.png",
       "bundler": "metro"
     },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "需要访问相册，以便上传体检报告照片",
+          "cameraPermission": "需要使用相机，以便拍摄体检报告"
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "87f6e7f1-8bbe-4969-8faf-1954318111a7"

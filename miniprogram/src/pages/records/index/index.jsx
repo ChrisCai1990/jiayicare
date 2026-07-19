@@ -4,6 +4,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { recordsAPI } from '../../../services/api';
 import TrendChart from '../../../components/TrendChart';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 const TYPE_META = {
   bloodPressure: { label: '血压', icon: '💗', unit: 'mmHg' },
@@ -17,6 +19,7 @@ const TYPE_META = {
 const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: colors.info };
 
 export default function RecordsIndexPage() {
+  const { statusBarHeight } = useNavBar();
   const [records, setRecords] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -60,7 +63,7 @@ export default function RecordsIndexPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
-      <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
+      <View style={{ padding: `${statusBarHeight + 12}px ${spacing.lg}px 0` }}>
         <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>健康档案</Text>
 
         <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}>
@@ -75,9 +78,14 @@ export default function RecordsIndexPage() {
                   border: `1px solid ${filter === k ? colors.primary : colors.border}`,
                 }}
               >
-                <Text style={{ fontSize: '12px', color: filter === k ? '#fff' : colors.textPrimary, fontWeight: 600 }}>
-                  {k === 'all' ? '全部' : `${TYPE_META[k].icon} ${TYPE_META[k].label}`}
-                </Text>
+                {k === 'all' ? (
+                  <Text style={{ fontSize: '12px', color: filter === k ? '#fff' : colors.textPrimary, fontWeight: 600 }}>全部</Text>
+                ) : (
+                  <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <Icon name={TYPE_META[k].icon} size={12} color={filter === k ? '#fff' : colors.textPrimary} />
+                    <Text style={{ fontSize: '12px', color: filter === k ? '#fff' : colors.textPrimary, fontWeight: 600 }}>{TYPE_META[k].label}</Text>
+                  </View>
+                )}
               </View>
             ))}
           </View>
@@ -98,7 +106,7 @@ export default function RecordsIndexPage() {
           display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
           border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card,
         }}>
-          <Text style={{ fontSize: '20px' }}>👤</Text>
+          <Icon name="👤" size={20} />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>个人资料</Text>
             <Text style={{ fontSize: '11px', color: colors.textMuted }}>基本信息 · 基础健康档案 · 生活方式 · 年度复查</Text>
@@ -109,12 +117,12 @@ export default function RecordsIndexPage() {
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
           <View style={{ flex: 1, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '12px', textAlign: 'center', boxShadow: shadow.card }}
             onClick={() => Taro.navigateTo({ url: '/pages/records/report/index' })}>
-            <Text style={{ fontSize: '20px', display: 'block' }}>📊</Text>
+            <View style={{ display: 'flex', justifyContent: 'center' }}><Icon name="📊" size={20} /></View>
             <Text style={{ fontSize: '12px', color: colors.textPrimary, marginTop: '4px' }}>健康报告</Text>
           </View>
           <View style={{ flex: 1, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '12px', textAlign: 'center', boxShadow: shadow.card }}
             onClick={() => Taro.navigateTo({ url: '/pages/records/upload/index' })}>
-            <Text style={{ fontSize: '20px', display: 'block' }}>📄</Text>
+            <View style={{ display: 'flex', justifyContent: 'center' }}><Icon name="📄" size={20} /></View>
             <Text style={{ fontSize: '12px', color: colors.textPrimary, marginTop: '4px' }}>体检报告</Text>
           </View>
         </View>
@@ -124,7 +132,7 @@ export default function RecordsIndexPage() {
           display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#1A2B24', borderRadius: `${radius.md}px`,
           padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`,
         }}>
-          <Text style={{ fontSize: '24px' }}>✨</Text>
+          <Icon name="✨" size={24} color="#fff" />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: '#fff', display: 'block' }}>AI健康分析 / 风险评估</Text>
             <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>AI结合体检数据与健康档案自动生成解读</Text>
@@ -136,7 +144,10 @@ export default function RecordsIndexPage() {
         {!!latestSleep && (
           <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>🌙 最近睡眠</Text>
+              <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                <Icon name="🌙" size={14} color={colors.textPrimary} />
+                <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>最近睡眠</Text>
+              </View>
               <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>{latestSleep.value} 小时</Text>
             </View>
             {!!latestSleep.extra?.sleepTime && (
@@ -206,7 +217,7 @@ export default function RecordsIndexPage() {
                       display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
                       padding: `${spacing.md}px`, marginBottom: '8px', boxShadow: shadow.card,
                     }}>
-                      <Text style={{ fontSize: '22px', marginRight: `${spacing.sm}px` }}>{meta.icon}</Text>
+                      <View style={{ marginRight: `${spacing.sm}px` }}><Icon name={meta.icon} size={22} /></View>
                       <View style={{ flex: 1 }}>
                         <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{r.label || meta.label}</Text>
                         <Text style={{ fontSize: '11px', color: colors.textMuted }}>

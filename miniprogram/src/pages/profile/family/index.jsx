@@ -3,6 +3,8 @@ import { View, Text, Input, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { familyLinksAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/profile/FamilyMembersScreen.js
 const RELATIONS = ['配偶', '父亲', '母亲', '子女', '兄弟', '姐妹', '祖父', '祖母', '其他'];
@@ -149,6 +151,7 @@ function LinkCard({ link, onDelete }) {
 }
 
 export default function FamilyMembersPage() {
+  const { statusBarHeight } = useNavBar();
   const [links, setLinks] = useState([]);
   const [pendingInvites, setPendingInvites] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -199,9 +202,12 @@ export default function FamilyMembersPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
-      <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${spacing.md}px ${spacing.lg}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+      <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary }}>家庭成员</Text>
-        <Text onClick={() => setShowAdd(true)} style={{ fontSize: '22px', color: colors.primary }}>+</Text>
+        <Text onClick={() => setShowAdd(true)} style={{ fontSize: '22px', color: colors.primary, padding: '4px' }}>+</Text>
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>

@@ -4,6 +4,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { useAuth } from '../../../context/AuthContext';
 import { userAPI, checkupAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/ProfileArchiveScreen.js（2026-07-18 健康档案页瘦身后拆出的独立页）
 const PROFILE_FIELDS = [
@@ -63,6 +65,7 @@ function SectionHeader({ icon, title, onEdit }) {
 }
 
 export default function ProfileArchivePage() {
+  const { statusBarHeight } = useNavBar();
   const { user, updateUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [checkupPlan, setCheckupPlan] = useState(null);
@@ -150,16 +153,35 @@ export default function ProfileArchivePage() {
     { label: '过敏史', icon: '⚠️', val: allergyVal },
   ];
 
+  const Header = () => (
+    <View style={{
+      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+      backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+    }}>
+      <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+        <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+      </View>
+      <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>个人资料</Text>
+      <View style={{ width: '28px' }} />
+    </View>
+  );
+
   if (loading) {
     return (
-      <View style={{ minHeight: '100vh', backgroundColor: colors.background, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中…</Text>
+      <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+        <Header />
+        <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '80px 0' }}>
+          <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中…</Text>
+        </View>
       </View>
     );
   }
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.md}px`, boxSizing: 'border-box' }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <Header />
+      <View style={{ padding: `${spacing.md}px`, boxSizing: 'border-box' }}>
       {/* 基本信息 */}
       <View style={{ marginBottom: `${spacing.md}px` }}>
         <SectionHeader icon="👤" title="基本信息" onEdit={() => Taro.navigateTo({ url: '/pages/profile/edit/index' })} />
@@ -248,6 +270,7 @@ export default function ProfileArchivePage() {
       )}
 
       <View style={{ height: '20px' }} />
+      </View>
 
       {/* 编辑生活方式弹窗 */}
       {editingLifestyle && (

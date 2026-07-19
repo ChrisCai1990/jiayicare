@@ -4,6 +4,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { recordsAPI } from '../../services/api';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // 对齐 app/src/screens/checkin/CheckinScreen.js（2026-07-18 打卡页重构）：
 // 必打卡/可选打卡区分（按慢病标签）、时段选择（运动）、症状自评（含紧急症状提示）、
@@ -85,6 +87,7 @@ function Chip({ label, active, color, onClick }) {
 }
 
 export default function CheckinPage() {
+  const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [doneTypes, setDoneTypes] = useState({});
@@ -291,22 +294,45 @@ export default function CheckinPage() {
     }
   };
 
+  // 像素级对齐app端CheckinScreen.js的renderCheckinItem：3列布局(width:30%)、独立icon方块(36x36/圆角10)
   const renderCheckinItem = (item) => {
     const isDone = isItemDone(item);
     return (
       <View key={item.key} onClick={() => openCheckinModal(item)} style={{
-        width: 'calc(25% - 8px)', alignItems: 'center', textAlign: 'center', padding: '10px 4px',
-        borderRadius: `${radius.md}px`, border: `1px solid ${isDone ? item.color + '40' : colors.border}`,
+        width: '30%', display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '10px 4px',
+        borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`,
         backgroundColor: isDone ? item.color + '15' : '#fff',
+        borderColor: isDone ? item.color + '40' : colors.border,
+        boxSizing: 'border-box', gap: '5px',
       }}>
-        <Text style={{ fontSize: '18px', display: 'block' }}>{isDone ? '✅' : item.icon}</Text>
-        <Text style={{ fontSize: '11px', color: isDone ? item.color : colors.textSecondary, fontWeight: isDone ? 700 : 500, marginTop: '2px' }}>{item.label}</Text>
+        <View style={{
+          width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backgroundColor: isDone ? item.color + '20' : colors.border + '60',
+        }}>
+          <Icon name={isDone ? '✅' : item.icon} size={18} color={isDone ? item.color : colors.textSecondary} />
+        </View>
+        <Text style={{ fontSize: '12px', color: isDone ? item.color : colors.textSecondary, fontWeight: isDone ? 700 : 500 }}>{item.label}</Text>
       </View>
     );
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px` }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      {/* 自绘标题栏：对齐app端CheckinScreen.js的topBar（返回按钮+居中标题），
+          navigationStyle:custom后需自己适配状态栏高度，避让胶囊按钮 */}
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>今日健康打卡</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
+      <View style={{ padding: `${spacing.lg}px` }}>
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
       ) : (
@@ -343,10 +369,15 @@ export default function CheckinPage() {
           <View style={{ marginBottom: `${spacing.lg}px` }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>今天有不适吗？</Text>
             <View onClick={() => setSymptomModal(true)} style={{
-              display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff',
-              borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px`,
+              display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: doneTypes.symptom ? '#FDECEA1A' : '#fff',
+              borderRadius: `${radius.md}px`, border: `1px solid ${doneTypes.symptom ? colors.danger + '4D' : colors.border}`, padding: `${spacing.md}px`,
             }}>
-              <Text style={{ fontSize: '18px' }}>{doneTypes.symptom ? '✅' : symptomItem.icon}</Text>
+              <View style={{
+                width: '36px', height: '36px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: doneTypes.symptom ? symptomItem.color + '20' : colors.border + '60',
+              }}>
+                <Icon name={doneTypes.symptom ? '✅' : symptomItem.icon} size={18} color={doneTypes.symptom ? symptomItem.color : colors.textSecondary} />
+              </View>
               <Text style={{ flex: 1, fontSize: '13px', color: colors.textSecondary }}>
                 {doneTypes.symptom ? '今天已记录不适情况' : '点击选择症状或描述不适（可选）'}
               </Text>
@@ -355,6 +386,7 @@ export default function CheckinPage() {
           </View>
         </>
       )}
+      </View>
 
       {/* 生活方式打卡弹窗 */}
       {checkinModal && (

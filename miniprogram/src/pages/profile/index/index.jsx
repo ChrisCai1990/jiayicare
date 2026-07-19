@@ -4,6 +4,8 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { useAuth } from '../../../context/AuthContext';
 import { ordersAPI, userAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 const PACKAGE_LABELS = {
   pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员',
@@ -25,8 +27,8 @@ function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
     >
       <View style={{
         width: '34px', height: '34px', borderRadius: '9px', backgroundColor: ic + '22',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px`, fontSize: '16px',
-      }}>{icon}</View>
+        display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px`,
+      }}><Icon name={icon} size={16} color={ic} /></View>
       <Text style={{ flex: 1, fontSize: '14px', color: colors.textPrimary, fontWeight: 500 }}>{label}</Text>
       <View style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
         {badge != null && badge > 0 && (
@@ -45,6 +47,7 @@ function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
 }
 
 export default function ProfilePage() {
+  const { statusBarHeight } = useNavBar();
   const { user, logout, updateUser } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
   const [pendingOrders, setPendingOrders] = useState(0);
@@ -88,15 +91,15 @@ export default function ProfilePage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
-      {/* Header */}
-      <View style={{ backgroundColor: '#1A2B24', padding: '8px 0 32px', textAlign: 'center', position: 'relative' }}>
+      {/* Header：paddingTop加状态栏高度，因navigationStyle:custom后需自己避让胶囊按钮区域 */}
+      <View style={{ backgroundColor: '#1A2B24', padding: `${statusBarHeight + 8}px 0 32px`, textAlign: 'center', position: 'relative' }}>
         {/* 头部编辑资料快捷入口（2026-07-19 对齐app端：顶部信息此前无编辑入口） */}
         <View onClick={() => nav('/pages/profile/edit/index')} style={{
-          position: 'absolute', top: '8px', right: `${spacing.lg}px`,
+          position: 'absolute', top: `${statusBarHeight + 8}px`, right: `${spacing.lg}px`,
           width: '36px', height: '36px', borderRadius: '18px', backgroundColor: 'rgba(255,255,255,0.15)',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Text style={{ fontSize: '15px', color: '#fff' }}>✏️</Text>
+          <Icon name="✏️" size={15} color="#fff" />
         </View>
         <View style={{
           width: '76px', height: '76px', borderRadius: '38px', backgroundColor: 'rgba(255,255,255,0.15)',
@@ -135,7 +138,10 @@ export default function ProfilePage() {
           display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderTop: `1px solid ${colors.borderLight}`,
           padding: '10px 16px', backgroundColor: '#FFFBF5',
         }}>
-          <Text style={{ fontSize: '12px', fontWeight: 600, color: '#D97706' }}>💰 健康基金</Text>
+          <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            <Icon name="💰" size={13} color="#D97706" />
+            <Text style={{ fontSize: '12px', fontWeight: 600, color: '#D97706' }}>健康基金</Text>
+          </View>
           <View style={{ textAlign: 'right' }}>
             <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>¥{fundTotal.toLocaleString()}</Text>
             <Text style={{ fontSize: '10px', color: colors.textMuted }}>自有 ¥{fundPersonal.toLocaleString()} · 企业 ¥{fundCorp.toLocaleString()}</Text>
@@ -150,7 +156,7 @@ export default function ProfilePage() {
             border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, gap: `${spacing.sm}px`,
           }}>
             <View style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <Text style={{ fontSize: '18px' }}>🛡️</Text>
+              <Icon name="🛡️" size={18} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
@@ -178,7 +184,7 @@ export default function ProfilePage() {
         <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>我的健康管家团队</Text>
         {careTeam.length === 0 ? (
           <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px` }}>
-            <Text style={{ fontSize: '20px' }}>👥</Text>
+            <Icon name="👥" size={20} color={colors.textMuted} />
             <Text style={{ flex: 1, fontSize: '12px', color: colors.textMuted, lineHeight: '18px' }}>健管团队待分配，完成服务包开通后即可配置</Text>
           </View>
         ) : (
@@ -209,7 +215,7 @@ export default function ProfilePage() {
           border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, gap: `${spacing.sm}px`,
         }}>
           <View style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ fontSize: '18px' }}>👨‍👩‍👧</Text>
+            <Icon name="👪" size={18} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>家庭成员管理</Text>

@@ -4,6 +4,8 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { questionnaireAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import useNavBar from '../../hooks/useNavBar';
+import Icon from '../../components/Icon';
 
 // 对齐 app/src/screens/questionnaire/QuestionnaireScreen.js（1001行，动态表单引擎）
 // 简化点：DropdownQuestion 用原生 Picker 代替 app 端的自绘下拉列表（交互等价，视觉不同）
@@ -190,6 +192,7 @@ function NumberQuestion({ q, answer, onAnswer }) {
 }
 
 export default function QuestionnairePage() {
+  const { statusBarHeight } = useNavBar();
   const { updateUser } = useAuth();
   const [mode, setMode] = useState('select');
   const [pendingQs, setPendingQs] = useState([]);
@@ -309,6 +312,17 @@ export default function QuestionnairePage() {
   if (mode === 'select') {
     return (
       <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xxl}px` }}>
+        <View style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+          backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+        }}>
+          <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+            <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+          </View>
+          <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>问卷调查</Text>
+          <View style={{ width: '28px' }} />
+        </View>
         <View style={{ padding: `${spacing.lg}px` }}>
           <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>完成问卷可帮助您的健管师更好地了解您的健康状况</Text>
           {loadingPending && <Text style={{ fontSize: '13px', color: colors.textMuted }}>检查待填问卷...</Text>}
@@ -349,7 +363,7 @@ export default function QuestionnairePage() {
   if (submitResult) {
     if (submitResult.dynamic) {
       return (
-        <View style={{ minHeight: '100vh', backgroundColor: colors.background, textAlign: 'center', padding: `${spacing.xl}px` }}>
+        <View style={{ minHeight: '100vh', backgroundColor: colors.background, textAlign: 'center', padding: `${statusBarHeight + spacing.xl}px ${spacing.xl}px ${spacing.xl}px` }}>
           <Text style={{ fontSize: '56px', display: 'block', margin: '20px 0' }}>✅</Text>
           <Text style={{ fontSize: '20px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>问卷提交成功！</Text>
           <Text style={{ fontSize: '14px', color: colors.textSecondary, display: 'block', marginBottom: `${spacing.lg}px` }}>{submitResult.message || '感谢您认真填写本次问卷。'}</Text>
@@ -372,7 +386,7 @@ export default function QuestionnairePage() {
       );
     }
     return (
-      <View style={{ minHeight: '100vh', backgroundColor: colors.background, textAlign: 'center', padding: `${spacing.xl}px` }}>
+      <View style={{ minHeight: '100vh', backgroundColor: colors.background, textAlign: 'center', padding: `${statusBarHeight + spacing.xl}px ${spacing.xl}px ${spacing.xl}px` }}>
         <Text style={{ fontSize: '56px', display: 'block', margin: '20px 0' }}>✅</Text>
         <Text style={{ fontSize: '20px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>问卷提交成功！</Text>
         <Text style={{ fontSize: '14px', color: colors.textSecondary, display: 'block', marginBottom: `${spacing.lg}px` }}>感谢您完成健康初评问卷，您的回答已保存至健康档案。</Text>
@@ -427,8 +441,8 @@ export default function QuestionnairePage() {
     const finalAns = buildFinalAnswers();
     return (
       <View style={{ minHeight: '100vh', backgroundColor: colors.background, display: 'flex', flexDirection: 'column' }}>
-        <View style={{ display: 'flex', alignItems: 'center', padding: `${spacing.md}px ${spacing.lg}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-          <Text onClick={() => setShowSummary(false)} style={{ fontSize: '15px', color: colors.textPrimary, marginRight: '12px' }}>‹</Text>
+        <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+          <Text onClick={() => setShowSummary(false)} style={{ fontSize: '20px', color: colors.textPrimary, marginRight: '12px', padding: '4px' }}>‹</Text>
           <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '20px' }}>确认提交</Text>
         </View>
         <ScrollView scrollY style={{ flex: 1, padding: `${spacing.lg}px` }}>
@@ -456,14 +470,14 @@ export default function QuestionnairePage() {
   }
 
   if (!q) {
-    return <View style={{ minHeight: '100vh', backgroundColor: colors.background, textAlign: 'center', padding: `${spacing.xl}px` }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>加载问卷...</Text></View>;
+    return <View style={{ minHeight: '100vh', backgroundColor: colors.background, textAlign: 'center', padding: `${statusBarHeight + spacing.xl}px ${spacing.xl}px ${spacing.xl}px` }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>加载问卷...</Text></View>;
   }
 
   // ── 答题页 ──
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, display: 'flex', flexDirection: 'column' }}>
-      <View style={{ display: 'flex', alignItems: 'center', padding: `${spacing.md}px ${spacing.lg}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <Text onClick={() => (hasPrev ? prev() : setMode('select'))} style={{ fontSize: '15px', color: colors.textPrimary, marginRight: '12px' }}>‹</Text>
+      <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+        <Text onClick={() => (hasPrev ? prev() : setMode('select'))} style={{ fontSize: '20px', color: colors.textPrimary, marginRight: '12px', padding: '4px' }}>‹</Text>
         <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center' }}>{pageTitle}</Text>
         <Text onClick={() => setMode('select')} style={{ fontSize: '13px', color: colors.textMuted }}>退出</Text>
       </View>

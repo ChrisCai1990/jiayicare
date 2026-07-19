@@ -3,6 +3,8 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { userAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/AiHealthScreen.js
 // 简化点：不接语音播报tts.speak（小程序场景暂不接入TTS）
@@ -19,7 +21,7 @@ function SectionCard({ icon, title, children }) {
   return (
     <View style={{ backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.sm }}>
       <View style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: `${spacing.sm}px` }}>
-        <Text style={{ fontSize: '16px' }}>{icon}</Text>
+        <Icon name={icon} size={16} />
         <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>{title}</Text>
       </View>
       {children}
@@ -155,6 +157,7 @@ function RiskAssessmentView({ data }) {
 }
 
 export default function AiHealthPage() {
+  const { statusBarHeight } = useNavBar();
   const [tab, setTab] = useState(TABS[0]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -219,6 +222,18 @@ export default function AiHealthPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康分析</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
       <View style={{ display: 'flex', margin: `${spacing.md}px ${spacing.lg}px`, backgroundColor: colors.border + '50', borderRadius: `${radius.md}px`, padding: '4px' }}>
         {TABS.map((t) => (
           <View key={t} onClick={() => setTab(t)} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: `${radius.sm}px`, backgroundColor: tab === t ? '#fff' : 'transparent', boxShadow: tab === t ? shadow.sm : 'none' }}>
@@ -258,17 +273,21 @@ export default function AiHealthPage() {
 
           {curLocked ? (
             <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
-              <Text style={{ fontSize: '13px', color: colors.textMuted, flex: 1 }}>🔒 结果已审核确认，如需更新请联系您的健康管理师</Text>
+              <Icon name="🔒" size={13} color={colors.textMuted} />
+              <Text style={{ fontSize: '13px', color: colors.textMuted, flex: 1 }}>结果已审核确认，如需更新请联系您的健康管理师</Text>
             </View>
           ) : (
             <View onClick={generating ? undefined : handleGenerate} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', backgroundColor: colors.primary, borderRadius: `${radius.full}px`, padding: '12px', marginBottom: `${spacing.md}px`, opacity: generating ? 0.6 : 1 }}>
-              <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{generating ? 'AI生成中...' : (curHasData ? '重新生成' : `✨ 生成${tab}`)}</Text>
+              {!generating && !curHasData && <Icon name="✨" size={14} color="#fff" />}
+              <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>{generating ? 'AI生成中...' : (curHasData ? '重新生成' : `生成${tab}`)}</Text>
             </View>
           )}
 
           {!curHasData && (
             <View style={{ textAlign: 'center', padding: `${spacing.xl}px 0` }}>
-              <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.md}px` }}>📊</Text>
+              <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.md}px` }}>
+                <Icon name="📊" size={40} />
+              </View>
               <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }}>暂无{tab}</Text>
               <Text style={{ fontSize: '13px', color: colors.textMuted, lineHeight: '20px' }}>点击上方按钮，AI将结合您的体检数据与健康档案自动生成{hasDoctor ? '，生成后由家庭医生团队审核' : ''}</Text>
             </View>
@@ -276,8 +295,9 @@ export default function AiHealthPage() {
 
           {curHasData && (
             <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.md}px` }}>
-              <View onClick={handleConsult} style={{ backgroundColor: colors.primary, borderRadius: `${radius.full}px`, padding: '10px 24px' }}>
-                <Text style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>💬 就此咨询AI</Text>
+              <View onClick={handleConsult} style={{ display: 'flex', alignItems: 'center', gap: '6px', backgroundColor: colors.primary, borderRadius: `${radius.full}px`, padding: '10px 24px' }}>
+                <Icon name="💬" size={13} color="#fff" />
+                <Text style={{ color: '#fff', fontSize: '13px', fontWeight: 600 }}>就此咨询AI</Text>
               </View>
             </View>
           )}

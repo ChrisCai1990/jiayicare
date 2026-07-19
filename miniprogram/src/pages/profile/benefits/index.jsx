@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, ScrollView, Image } from '@tarojs/components';
+import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { useAuth } from '../../../context/AuthContext';
 import { giftsAPI, partnerBenefitsAPI, pointsAPI } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/profile/BenefitsScreen.js
 const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
@@ -29,7 +32,7 @@ function GiftCard({ gift, onPress }) {
       border: `1px solid ${colors.border}`, boxShadow: shadow.sm, opacity: (isExpired || isUsed) ? 0.6 : 1,
     }}>
       <View style={{ width: '44px', height: '44px', borderRadius: '13px', backgroundColor: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-        <Text style={{ fontSize: '20px' }}>{icon}</Text>
+        <Icon name={icon} size={20} color={color} />
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '3px' }}>
@@ -57,7 +60,7 @@ function PartnerBenefitCard({ benefit, onPress }) {
         <Image src={benefit.images[0]} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '10px', backgroundColor: colors.background, flexShrink: 0 }} />
       ) : (
         <View style={{ width: '52px', height: '52px', borderRadius: '10px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Text style={{ fontSize: '22px' }}>🎁</Text>
+          <Icon name="🎁" size={22} color={colors.primary} />
         </View>
       )}
       <View style={{ flex: 1, minWidth: 0 }}>
@@ -69,6 +72,7 @@ function PartnerBenefitCard({ benefit, onPress }) {
 }
 
 export default function BenefitsPage() {
+  const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [tab, setTab] = useState('mine');
   const [gifts, setGifts] = useState([]);
@@ -121,6 +125,18 @@ export default function BenefitsPage() {
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xxl}px` }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>会员权益</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
       <View style={{ display: 'flex', margin: `${spacing.md}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: colors.border + '40', borderRadius: `${radius.full}px`, padding: '3px' }}>
         <View onClick={() => setTab('mine')} style={{ flex: 1, textAlign: 'center', padding: '8px 0', borderRadius: `${radius.full}px`, backgroundColor: tab === 'mine' ? '#fff' : 'transparent' }}>
           <Text style={{ fontSize: '13px', fontWeight: 600, color: tab === 'mine' ? colors.primary : colors.textMuted }}>我的专属权益</Text>
@@ -181,7 +197,9 @@ export default function BenefitsPage() {
               <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>有效权益</Text>
               {activeGifts.length === 0 ? (
                 <View style={{ textAlign: 'center', padding: '40px 20px' }}>
-                  <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.md}px` }}>🎁</Text>
+                  <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.md}px` }}>
+                    <Icon name="🎁" size={40} color={colors.textMuted} />
+                  </View>
                   <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>暂无有效权益</Text>
                   <Text style={{ fontSize: '13px', color: colors.textMuted, lineHeight: '20px' }}>您的健康管理团队赠送的服务权益和健康基金将在此显示</Text>
                 </View>
@@ -203,7 +221,9 @@ export default function BenefitsPage() {
             <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
           ) : groups.length === 0 ? (
             <View style={{ textAlign: 'center', padding: '40px 20px' }}>
-              <Text style={{ fontSize: '40px', display: 'block', marginBottom: `${spacing.md}px` }}>🏢</Text>
+              <View style={{ display: 'flex', justifyContent: 'center', marginBottom: `${spacing.md}px` }}>
+                <Icon name="🏢" size={40} color={colors.textMuted} />
+              </View>
               <Text style={{ fontSize: '16px', fontWeight: 600, color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>暂无合作伙伴权益</Text>
               <Text style={{ fontSize: '13px', color: colors.textMuted }}>您的会员等级下暂无可用的合作伙伴权益，敬请期待</Text>
             </View>
@@ -215,7 +235,7 @@ export default function BenefitsPage() {
                     <Image src={g.partner.logo} style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: colors.border }} />
                   ) : (
                     <View style={{ width: '36px', height: '36px', borderRadius: '10px', backgroundColor: colors.border, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <Text style={{ fontSize: '16px' }}>🏢</Text>
+                      <Icon name="🏢" size={16} color={colors.textSecondary} />
                     </View>
                   )}
                   <View>
@@ -238,7 +258,7 @@ export default function BenefitsPage() {
             <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '10px auto 4px' }} />
             <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, padding: `${spacing.md}px ${spacing.lg}px`, borderBottom: `1px solid ${colors.border}` }}>
               <View style={{ width: '44px', height: '44px', borderRadius: '13px', backgroundColor: dgBg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Text style={{ fontSize: '20px' }}>{dgIcon}</Text>
+                <Icon name={dgIcon} size={20} color={dgColor} />
               </View>
               <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>{dg.giftType === 'fund' ? `健康基金 ¥${dg.fundAmount}` : dg.serviceName || '服务权益'}</Text>
               <View style={{ padding: '4px 10px', borderRadius: `${radius.full}px`, backgroundColor: STATUS_BG[dgStatusKey] }}>

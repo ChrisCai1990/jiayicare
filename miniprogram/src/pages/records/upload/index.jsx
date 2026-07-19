@@ -3,9 +3,11 @@ import { View, Text, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI, mediaUrl } from '../../../services/api';
+import useNavBar from '../../../hooks/useNavBar';
 
 // 用 Taro.chooseImage + Taro.uploadFile 对接后端 POST /reports 接口
 export default function ReportUploadPage() {
+  const { statusBarHeight } = useNavBar();
   const [reports, setReports] = useState([]);
   const [uploading, setUploading] = useState(false);
 
@@ -56,7 +58,7 @@ export default function ReportUploadPage() {
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px` }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.lg}px` }}>
       <View
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',

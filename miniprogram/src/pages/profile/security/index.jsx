@@ -4,9 +4,12 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { userPhoneAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
+import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 换绑手机号（发验证码 + 提交），对齐 app/src/screens/profile/AccountSecurityScreen.js 的核心链路
 export default function AccountSecurityPage() {
+  const { statusBarHeight } = useNavBar();
   const { user, updateUser } = useAuth();
   const [newPhone, setNewPhone] = useState('');
   const [code, setCode] = useState('');
@@ -47,7 +50,20 @@ export default function AccountSecurityPage() {
   const boxStyle = { border: `1.5px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: '10px 12px', backgroundColor: '#fff', display: 'flex', alignItems: 'center' };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${spacing.lg}px` }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
+        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
+      }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>账号安全</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+
+      <View style={{ padding: `${spacing.lg}px` }}>
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px` }}>
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>当前手机号</Text>
         <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: '4px' }}>{user?.phone || '未绑定'}</Text>
@@ -77,6 +93,7 @@ export default function AccountSecurityPage() {
       >
         确认更换
       </Button>
+      </View>
     </View>
   );
 }

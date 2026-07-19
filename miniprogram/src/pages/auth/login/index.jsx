@@ -4,6 +4,7 @@ import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { authAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
+import Icon from '../../../components/Icon';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -99,7 +100,7 @@ export default function LoginPage() {
           width: 72, height: 72, borderRadius: 22, background: 'rgba(255,255,255,0.08)',
           margin: '0 auto', marginBottom: 14, display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
-          <Text style={{ fontSize: '32px' }}>⚕️</Text>
+          <Icon name="⚕️" size={32} color="#fff" />
         </View>
         <Text style={{ fontSize: '28px', fontWeight: 800, color: '#fff', letterSpacing: '2px', display: 'block' }}>嘉医汇</Text>
         <Text style={{ fontSize: '13px', color: 'rgba(255,255,255,0.45)', marginTop: '6px', display: 'block' }}>全生命周期健康管理</Text>
