@@ -24,7 +24,8 @@
     "dev:h5": "npm run build:h5 -- --watch",
     "dev:rn": "npm run build:rn -- --watch",
     "dev:qq": "npm run build:qq -- --watch",
-    "dev:jd": "npm run build:jd -- --watch"
+    "dev:jd": "npm run build:jd -- --watch",
+    "upload:ci": "node scripts/upload-ci.js"
   },
   "browserslist": [
     "last 3 versions",
@@ -51,7 +52,9 @@
     "@tarojs/webpack5-runner": "3.6.32",
     "babel-preset-taro": "3.6.32",
     "eslint-config-taro": "3.6.32",
+    "ionicons": "^7.4.0",
     "lucide-static": "^1.25.0",
+    "miniprogram-ci": "^2.1.31",
     "webpack": "5.78.0"
   }
 }

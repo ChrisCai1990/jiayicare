@@ -1,12 +1,15 @@
 import React, { useMemo } from 'react';
 import { Image } from '@tarojs/components';
+import ioniconsSvgs from './ionicons';
 import iconSvgs from './iconSvgs';
 import emojiIconMap from './iconMap';
 
-// 通用矢量图标组件：对齐app端Ionicons图标（小程序生态不支持字体图标库）。
-// 用 Lucide 开源图标集（风格与Ionicons接近），SVG源码内嵌为JS字符串常量，
+// 通用矢量图标组件：小程序生态不支持字体图标库，用 SVG 源码内嵌为JS字符串常量代替。
+// 2026-07-19起：优先用 ionicons.js（从官方 ionicons 包提取，与 app 端 @expo/vector-icons
+// 的 Ionicons 是同一套设计，同名同形，做到与 app 端完全同款）；iconSvgs.js（Lucide开源图标集）
+// 作为 ionicons.js 未覆盖到的图标名的补充兜底；emoji 字符做最后的迁移期兼容。
 // 运行时替换 stroke=currentColor 为实际颜色，编码成 data URI 传给 <image>。
-// name 可以传 lucide 图标名（如 "heart"），也可以直接传原 emoji 字符做迁移期兼容。
+// name 优先传 Ionicons 图标名（如 "medical-outline"，与app端 <Ionicons name="..."/> 完全一致）。
 // 小程序部分基础库对 data:image/svg+xml,<url-encoded> 支持不稳定，改用 base64 编码更可靠。
 // 不依赖运行时 btoa（小程序JSCore环境不保证提供），手写UTF-8安全的base64编码。
 function toBase64(str) {
@@ -28,13 +31,17 @@ function toBase64(str) {
 }
 
 export default function Icon({ name, size = 20, color = '#1A2B24', style }) {
-  const iconName = iconSvgs[name] ? name : emojiIconMap[name];
   const dataUri = useMemo(() => {
-    const svg = iconSvgs[iconName];
+    // 优先级：Ionicons（app端同款）> Lucide（旧图标库兜底）> emoji映射表（迁移期兼容）
+    let svg = ioniconsSvgs[name];
+    if (!svg) {
+      const lucideName = iconSvgs[name] ? name : emojiIconMap[name];
+      svg = iconSvgs[lucideName];
+    }
     if (!svg) return '';
     const colored = svg.replace(/currentColor/g, color);
     return `data:image/svg+xml;base64,${toBase64(colored)}`;
-  }, [iconName, color]);
+  }, [name, color]);
 
   if (!dataUri) return null;
 
