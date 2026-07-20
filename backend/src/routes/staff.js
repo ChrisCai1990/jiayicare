@@ -5182,9 +5182,12 @@ router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.
 // 去掉这个限制、直接返回该患者全部报告即可覆盖AI识别路径，不影响原有人工录入数据的展示。
 router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
   try {
+    // content 是 data URI（小文件预览，单条可达3MB），患者报告多时全量返回会导致接口
+    // 体积暴涨到几十MB、耗时超1分钟。前端已有兜底：handleOpenOCRReview 发现列表缺 content
+    // 时会调 staffAPI.getReport(id) 单独补拉，所以这里裁掉即可，不影响任何现有功能。
     const reports = await MedicalReport.find({
       user: req.params.id,
-    }).sort({ checkDate: -1, createdAt: -1 }).lean();
+    }).select('-content').sort({ checkDate: -1, createdAt: -1 }).lean();
     res.json({ success: true, data: reports });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
