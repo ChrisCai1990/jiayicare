@@ -2383,34 +2383,16 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   const hasContentMap = {};
   contentFlags.forEach(f => { hasContentMap[String(f._id)] = f.hasContent; });
 
-  // 显示层去重：同一 (checkDate, screeningL1) 下，"还没有文件的占位记录"合并进后续补文件的真实记录。
-  // 2026-07-13修复：原逻辑只要 key 相同就无条件合并，导致同一大类（如"功能医学检测"）同一天分别上传
-  // 的多份不同真实报告（screeningL2 未填、彼此靠标题区分）被误判成同一条筛查记录，除第一条外全部在
-  // 医护端列表消失（用户端走的是另一套不去重的接口，能看到全部）。收紧为：只有 primary 自己还没有
-  // fileUrl（即它是空壳占位，不是独立上传的真实报告）才允许后续同 key 记录合并进它；primary 已经带
-  // 真实文件后，后续同 key 记录视为独立报告，各自展示。
-  // 2026-07-20再修复：客户一次性传多份不同体检报告（如蒋梁锋7张不同报告图片），因图片走 content
-  // 字段存储（未落 OSS URL），全部 fileUrl 为空，被上面的"空壳占位"条件误判成同一条记录的多页，
-  // 6/7 份在列表里消失。收紧为：还要求两条记录创建时间相差 5 分钟内，才视为同一次上传操作的分页
-  // 占位，超出时间窗口的同 key 记录一律各自独立展示。
-  const MERGE_WINDOW_MS = 5 * 60 * 1000;
-  const keyMap = {};
-  const result = [];
-  for (const r of reports) {
-    const key = r.screeningL1 && r.checkDate ? `${r.checkDate}|${String(r.screeningL1)}` : null;
-    const primary = key ? keyMap[key] : null;
-    const withinWindow = primary && Math.abs(new Date(r.createdAt) - new Date(primary.createdAt)) <= MERGE_WINDOW_MS;
-    if (primary && !primary.fileUrl && withinWindow) {
-      if (r.fileUrl) { primary.fileUrl = r.fileUrl; primary.mimeType = r.mimeType; }
-      if ((r.reportItems?.length || 0) > (primary.reportItems?.length || 0)) primary.reportItems = r.reportItems;
-      if (!primary.hasContent && hasContentMap[String(r._id)]) primary.hasContent = true;
-    } else {
-      const obj = r.toObject();
-      obj.hasContent = !!hasContentMap[String(r._id)];
-      if (key && !primary) keyMap[key] = obj;
-      result.push(obj);
-    }
-  }
+  // 2026-07-20：曾有"同一 (checkDate, screeningL1) 下空壳占位合并进真实记录"的显示层去重逻辑
+  // （2026-07-13收紧过一次、同日又加过5分钟时间窗口），但"同一份报告拆成结论页/数据页两条占位"
+  // 和"一次性上传多份不同报告"这两种场景，在 fileUrl 皆为空、时间间隔皆在几分钟内的情况下完全无法
+  // 区分（蒋梁锋一次连续上传7份不同体检报告，被误合并成1条，6份在医护端列表消失）。停用该合并逻辑，
+  // 医护端与用户端一致，按记录数原样展示，不做任何跨记录合并。
+  const result = reports.map(r => {
+    const obj = r.toObject();
+    obj.hasContent = !!hasContentMap[String(r._id)];
+    return obj;
+  });
   result.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   // 同日参考文件：没有文件的录入记录，附上同一天有文件的报告作为审核参考
