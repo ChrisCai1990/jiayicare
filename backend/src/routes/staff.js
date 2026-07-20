@@ -2389,12 +2389,18 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   // 医护端列表消失（用户端走的是另一套不去重的接口，能看到全部）。收紧为：只有 primary 自己还没有
   // fileUrl（即它是空壳占位，不是独立上传的真实报告）才允许后续同 key 记录合并进它；primary 已经带
   // 真实文件后，后续同 key 记录视为独立报告，各自展示。
+  // 2026-07-20再修复：客户一次性传多份不同体检报告（如蒋梁锋7张不同报告图片），因图片走 content
+  // 字段存储（未落 OSS URL），全部 fileUrl 为空，被上面的"空壳占位"条件误判成同一条记录的多页，
+  // 6/7 份在列表里消失。收紧为：还要求两条记录创建时间相差 5 分钟内，才视为同一次上传操作的分页
+  // 占位，超出时间窗口的同 key 记录一律各自独立展示。
+  const MERGE_WINDOW_MS = 5 * 60 * 1000;
   const keyMap = {};
   const result = [];
   for (const r of reports) {
     const key = r.screeningL1 && r.checkDate ? `${r.checkDate}|${String(r.screeningL1)}` : null;
     const primary = key ? keyMap[key] : null;
-    if (primary && !primary.fileUrl) {
+    const withinWindow = primary && Math.abs(new Date(r.createdAt) - new Date(primary.createdAt)) <= MERGE_WINDOW_MS;
+    if (primary && !primary.fileUrl && withinWindow) {
       if (r.fileUrl) { primary.fileUrl = r.fileUrl; primary.mimeType = r.mimeType; }
       if ((r.reportItems?.length || 0) > (primary.reportItems?.length || 0)) primary.reportItems = r.reportItems;
       if (!primary.hasContent && hasContentMap[String(r._id)]) primary.hasContent = true;
