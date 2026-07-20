@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { pinyin } from 'pinyin-pro'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
-import { useCategories, StatusBadge } from './_ProjectPage'
+import { useCategories, StatusBadge, CategorySearchSelect } from './_ProjectPage'
 
 const DATA_TYPE_LABEL = { quantitative: '定量', qualitative: '定性', custom: '自定义' }
 const QUALITATIVE_PRESETS = ['阴性-', '弱阳性±', '阳性+', '多量++', '大量+++', '无-']
@@ -285,10 +285,7 @@ export default function LabTestItemPage() {
 
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">所属分类</label>
-                  <select className="form-input" value={form.categoryId} onChange={set('categoryId')}>
-                    <option value="">无</option>
-                    {cats.map(c => <option key={c._id} value={c._id}>{'　'.repeat(c.depth)}{c.name}</option>)}
-                  </select>
+                  <CategorySearchSelect cats={cats} value={form.categoryId} onChange={v => setForm(f => ({ ...f, categoryId: v }))} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, display: 'flex', alignItems: 'center', paddingTop: 28 }}>
                   <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 14 }}>
