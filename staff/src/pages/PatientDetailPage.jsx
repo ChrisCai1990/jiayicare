@@ -1120,7 +1120,9 @@ export default function PatientDetailPage() {
   const [expandedRecords, setExpandedRecords] = useState(() => new Set()) // 展开详情的记录 _id 集合，支持多条同时展开对比
   const [expandedExamKey, setExpandedExamKey] = useState(null) // 展开的检查医嘱子项 key
   const [editingScreeningId, setEditingScreeningId] = useState(null) // 编辑中的记录 _id
-  const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览
+  const [previewImageUrl, setPreviewImageUrl] = useState(null) // 灯箱预览：字符串=仅查看，{url,reportId}=可旋转保存
+  const [previewRotation, setPreviewRotation] = useState(0) // 灯箱当前旋转角度（0/90/180/270）
+  const [previewSaving, setPreviewSaving] = useState(false)
   const [editingRecord, setEditingRecord] = useState(null) // 正在修正的打卡记录（数据有疑问时医护端修改，留痕修改人）
   const [editRecordForm, setEditRecordForm] = useState({ value: '', sys: '', dia: '', note: '' })
   const [editRecordSaving, setEditRecordSaving] = useState(false)
@@ -6413,17 +6415,64 @@ export default function PatientDetailPage() {
         </>
       )}
 
-      {/* 报告图片灯箱 */}
-      {previewImageUrl && (
-        <div onClick={() => setPreviewImageUrl(null)}
-          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
-          <img src={previewImageUrl} alt="报告" style={{ maxWidth: '90vw', maxHeight: '90vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.4)' }} onClick={e => e.stopPropagation()} />
-          <button onClick={() => setPreviewImageUrl(null)}
-            style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            ✕
-          </button>
-        </div>
-      )}
+      {/* 报告图片灯箱：字符串=仅查看；{url,reportId}=支持旋转后保存（已审核报告不可改，不会传对象形式） */}
+      {previewImageUrl && (() => {
+        const isRotatable = typeof previewImageUrl === 'object'
+        const imgSrc = isRotatable ? previewImageUrl.url : previewImageUrl
+        const closePreview = () => { setPreviewImageUrl(null); setPreviewRotation(0) }
+        const rotate = () => setPreviewRotation(r => (r + 90) % 360)
+        const saveRotation = async () => {
+          if (previewRotation === 0) return closePreview()
+          setPreviewSaving(true)
+          try {
+            const img = new Image()
+            img.crossOrigin = 'anonymous'
+            await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = imgSrc })
+            const swap = previewRotation === 90 || previewRotation === 270
+            const canvas = document.createElement('canvas')
+            canvas.width = swap ? img.height : img.width
+            canvas.height = swap ? img.width : img.height
+            const ctx = canvas.getContext('2d')
+            ctx.translate(canvas.width / 2, canvas.height / 2)
+            ctx.rotate((previewRotation * Math.PI) / 180)
+            ctx.drawImage(img, -img.width / 2, -img.height / 2)
+            const mimeType = imgSrc.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
+            const dataUrl = canvas.toDataURL(mimeType, 0.92)
+            await staffAPI.updateReport(previewImageUrl.reportId, { content: dataUrl, mimeType })
+            const refreshed = await staffAPI.getReport(previewImageUrl.reportId)
+            setShowReportDetail(refreshed.data)
+            closePreview()
+          } catch (err) {
+            alert('旋转保存失败：' + (err.message || '未知错误'))
+          } finally {
+            setPreviewSaving(false)
+          }
+        }
+        return (
+          <div onClick={closePreview}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.75)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'zoom-out' }}>
+            <img src={imgSrc} alt="报告" style={{ maxWidth: '80vw', maxHeight: '80vh', borderRadius: 8, boxShadow: '0 8px 32px rgba(0,0,0,0.4)', transform: `rotate(${previewRotation}deg)`, transition: 'transform 0.2s' }} onClick={e => e.stopPropagation()} />
+            {isRotatable && (
+              <div onClick={e => e.stopPropagation()} style={{ position: 'absolute', bottom: 32, left: '50%', transform: 'translateX(-50%)', display: 'flex', gap: 10 }}>
+                <button onClick={rotate} disabled={previewSaving}
+                  style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer', borderRadius: 20, padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  ↻ 旋转
+                </button>
+                {previewRotation !== 0 && (
+                  <button onClick={saveRotation} disabled={previewSaving}
+                    style={{ background: '#22A06B', border: 'none', color: '#fff', fontSize: 14, cursor: previewSaving ? 'default' : 'pointer', borderRadius: 20, padding: '10px 18px', opacity: previewSaving ? 0.7 : 1 }}>
+                    {previewSaving ? '保存中…' : '保存旋转'}
+                  </button>
+                )}
+              </div>
+            )}
+            <button onClick={closePreview}
+              style={{ position: 'absolute', top: 20, right: 24, background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 24, cursor: 'pointer', borderRadius: '50%', width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              ✕
+            </button>
+          </div>
+        )
+      })()}
 
       {/* 打卡数据编辑弹窗：数据有疑问时医护端修正，修改人+时间+原值自动留痕 */}
       {editingRecord && (() => {
@@ -7723,6 +7772,7 @@ export default function PatientDetailPage() {
                   const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
                   const ext = isPdf ? '.pdf' : isImg ? (showReportDetail.mimeType === 'image/png' ? '.png' : '.jpg') : ''
                   const displayName = showReportDetail.title ? `${showReportDetail.title}${ext}` : (isPdf ? 'PDF 文件' : isImg ? '图片文件' : '附件')
+                  const canRotateSave = isImg && showReportDetail.audit_status !== 'audited'
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3' }}>
                       <span style={{ fontSize: 28, lineHeight: 1 }}>{isPdf ? '📄' : isImg ? '🖼️' : '📎'}</span>
@@ -7730,7 +7780,7 @@ export default function PatientDetailPage() {
                         <div style={{ fontWeight: 500, fontSize: 13, color: '#1A2B24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
                         {sizeKB && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}</div>}
                       </div>
-                      <button className="btn btn-primary btn-sm" onClick={() => isImg ? setPreviewImageUrl(src) : window.open(src, '_blank')}>查看</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => { setPreviewRotation(0); setPreviewImageUrl(canRotateSave ? { url: src, reportId: showReportDetail._id } : src) }}>查看</button>
                     </div>
                   )
                 })() : (
