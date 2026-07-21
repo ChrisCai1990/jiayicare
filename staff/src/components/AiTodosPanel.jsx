@@ -10,6 +10,7 @@ const TYPE_CONFIG = {
   archive_review:  { icon: '🗂️', label: '健康档案问卷待审核', color: '#0077B6', priority: 3 },
   summary_review:  { icon: '🩺', label: 'AI健康分析待审核', color: '#22A06B', priority: 2 },
   lifestyle_review:{ icon: '🌿', label: '生活方式评估待审核', color: '#16A34A', priority: 3 },
+  dietary_survey_review: { icon: '🥗', label: '膳食调查问卷待复核', color: '#16A34A', priority: 3 },
   trend_review:    { icon: '📈', label: 'AI趋势分析待审核', color: '#22A06B', priority: 3 },
   plan_review:     { icon: '📝', label: 'AI管理方案待审核', color: '#22A06B', priority: 3 },
   push_review:     { icon: '📣', label: '内容推送待审核', color: '#8e44ad', priority: 4 },

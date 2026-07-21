@@ -4031,6 +4031,17 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       const gateMsg = await checkReportAuditGate(req.params.id);
       if (gateMsg) return res.status(403).json({ success: false, needReportAudit: true, message: gateMsg });
     }
+    // 生活方式评估（nutrition维度）额外要求：该客户的膳食调查问卷必须已完成营养师复核
+    // （2026-07-21需求：先完成膳食调查问卷复核，才能生成生活方式评估，避免评估依据的数据没人看过）
+    if (scope === 'nutrition' || scope === 'all') {
+      const dietaryPending = await QuestionnaireResponse.exists({
+        user: req.params.id, questionnaire: new mongoose.Types.ObjectId(DIETARY_SURVEY_QUESTIONNAIRE_ID),
+        'nutritionistReview.status': { $ne: 'reviewed' },
+      });
+      if (dietaryPending) {
+        return res.status(403).json({ success: false, needDietaryReview: true, message: '请先复核该客户的膳食调查问卷后再生成生活方式评估' });
+      }
+    }
     const force = !!req.body.force;
     const year = String(req.body.year || new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
@@ -5353,6 +5364,10 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
 // 营养师：  生活方式评估 / 营养干预 / 营养素 / 教练消息
 // 健管专员：健康档案问卷 / 体检报告OCR / 检查开单 / 随访建议
 // 就医专员：就医协助记录
+// 膳食调查问卷固定ID（2026-07-21需求：这份问卷需要营养师额外复核，健管专员照常审核写入档案，
+// 两道审核独立并行不互相阻塞）。按ID而非标题识别，避免运营改了问卷标题导致识别失效。
+const DIETARY_SURVEY_QUESTIONNAIRE_ID = '6a49eab9fc1595013da70645';
+
 const TODO_REVIEW_ROLE = {
   report_parse:         'healthManager',
   report_review:        'healthManager',
@@ -5363,6 +5378,7 @@ const TODO_REVIEW_ROLE = {
   risk_review:          'familyDoctor',
   medication_review:    'familyDoctor',
   lifestyle_review:     'nutritionist',
+  dietary_survey_review:'nutritionist',
   supplement_review:    'nutritionist',
   nutrition_plan_review:'nutritionist',
   medical_assist_plan_review: 'medicalAssistant',
@@ -5471,6 +5487,27 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           summary: `${r.title} · 健管专员${r.audited_by || ''}已审核，待医生确认`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+        });
+      });
+    }
+
+    // ── 营养师：膳食调查问卷待复核（固定问卷ID，与健管专员审核写入档案是独立并行的两道确认）──
+    if (can('dietary_survey_review')) {
+      const dietaryFilter = {
+        questionnaire: new mongoose.Types.ObjectId(DIETARY_SURVEY_QUESTIONNAIRE_ID),
+        'nutritionistReview.status': { $ne: 'reviewed' },
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      };
+      const dietaryResponses = await QuestionnaireResponse.find(dietaryFilter)
+        .populate('user', 'name phone').sort({ submittedAt: -1 }).limit(50).lean();
+      dietaryResponses.forEach(r => {
+        const createdAt = r.submittedAt || r.createdAt;
+        todos.push({
+          id: 'dietary_' + r._id, type: 'dietary_survey_review', label: '膳食调查问卷待复核', priority: 3,
+          patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
+          summary: '客户已提交膳食调查问卷，待营养师复核',
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${r.user?._id}?tab=archive&responseId=${r._id}`,
         });
       });
     }
@@ -7003,7 +7040,12 @@ router.get('/patients/:id/questionnaire-responses', staffAuth, async (req, res) 
       .populate('questionnaire', 'title questions').sort({ submittedAt: -1 }).lean();
     const data = responses
       .filter(r => r.questionnaire && (r.questionnaire.questions || []).some(q => q.archiveField))
-      .map(r => ({ responseId: r._id, questionnaireId: r.questionnaire._id, title: r.questionnaire.title, submittedAt: r.submittedAt }));
+      .map(r => ({
+        responseId: r._id, questionnaireId: r.questionnaire._id, title: r.questionnaire.title, submittedAt: r.submittedAt,
+        // 前端据此判断是否为膳食调查问卷、要不要展示营养师复核按钮
+        isDietarySurvey: String(r.questionnaire._id) === DIETARY_SURVEY_QUESTIONNAIRE_ID,
+        nutritionistReview: r.nutritionistReview || null,
+      }));
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -7049,8 +7091,23 @@ router.post('/patients/:id/archive-draft/apply', staffAuth, async (req, res) => 
       $set[it.path] = it.value;
     }
     if (Object.keys($set).length === 0) return res.status(400).json({ success: false, message: '没有有效字段' });
+
+    // 2026-07-21新增：确认写入这个动作本身要留痕（谁、什么时候、写了什么），此前只落字段没记确认人。
+    // 来源问卷/答卷信息从当前草稿里读（写入后草稿会被清空，必须在清空前取）。
+    const userBefore = await User.findById(req.params.id).select('archiveDraft').lean();
+    const confirmEntry = {
+      confirmedBy: req.staff._id, confirmedByName: req.staff.name || req.staff.username || '',
+      confirmedAt: new Date(),
+      items: items.map(it => ({ path: it.path, value: it.value })),
+      sourceQuestionnaireId: userBefore?.archiveDraft?.questionnaireId || null,
+      sourceResponseId: userBefore?.archiveDraft?.responseId || null,
+    };
+
     $set.archiveDraft = null; // 写入后清空草稿
-    await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set });
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set, $push: { archiveConfirmLog: { $each: [confirmEntry], $slice: -50 } } }
+    );
     res.json({ success: true, message: `已写入 ${Object.keys($set).length - 1} 个档案字段` });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -7060,6 +7117,25 @@ router.post('/patients/:id/archive-draft/dismiss', staffAuth, async (req, res) =
   try {
     await User.collection.updateOne({ _id: new mongoose.Types.ObjectId(req.params.id) }, { $set: { archiveDraft: null } });
     res.json({ success: true });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/staff/patients/:id/questionnaire-responses/:rid/nutritionist-review — 营养师复核膳食调查问卷
+router.post('/patients/:id/questionnaire-responses/:rid/nutritionist-review', staffAuth, async (req, res) => {
+  try {
+    if (!['nutritionist', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅营养师可复核膳食调查问卷' });
+    }
+    const response = await QuestionnaireResponse.findOne({ _id: req.params.rid, user: req.params.id });
+    if (!response) return res.status(404).json({ success: false, message: '答卷不存在' });
+    if (String(response.questionnaire) !== DIETARY_SURVEY_QUESTIONNAIRE_ID) {
+      return res.status(400).json({ success: false, message: '仅膳食调查问卷需要营养师复核' });
+    }
+    response.nutritionistReview = {
+      status: 'reviewed', by: req.staff._id, byName: req.staff.name || req.staff.username || '', at: new Date(),
+    };
+    await response.save();
+    res.json({ success: true, data: response });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

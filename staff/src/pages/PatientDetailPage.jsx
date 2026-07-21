@@ -618,6 +618,40 @@ function ArchiveAutoLogPanel({ log }) {
   )
 }
 
+// 健管专员确认写入档案的留痕（archive-draft/apply 每次写入的操作人+时间+字段，只读展示）
+function ArchiveConfirmLogPanel({ log }) {
+  const [open, setOpen] = useState(false)
+  const entries = (log || []).slice().reverse() // 最新的在前
+  if (entries.length === 0) return null
+  return (
+    <div style={{ marginBottom: 12, border: '1px solid #E0D9CE', borderRadius: 8, background: '#FAFAF8' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 14px', cursor: 'pointer' }}
+        onClick={() => setOpen(v => !v)}>
+        <span style={{ fontSize: 13, color: '#4A6558' }}>📋 档案确认写入记录（{entries.length}次，健管专员人工审核确认）</span>
+        <span style={{ fontSize: 12, color: '#aaa' }}>{open ? '▲' : '▼'}</span>
+      </div>
+      {open && (
+        <div style={{ padding: '0 14px 12px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {entries.map((e, i) => (
+            <div key={i} style={{ borderTop: '1px solid #E3EFE9', paddingTop: 8 }}>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 4 }}>
+                {e.confirmedByName || '未知'} 确认 · {new Date(e.confirmedAt).toLocaleString('zh-CN')}
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                {(e.items || []).map((it, j) => (
+                  <span key={j} style={{ fontSize: 12, padding: '2px 8px', borderRadius: 99, background: '#fff', border: '1px solid #E0D9CE', color: '#4A6558' }}>
+                    {it.path}：{it.value}
+                  </span>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // 心理健康量表结果（Epworth/SCL90/SDS/SAS，问卷推送患者自填→自动计分写入，只读展示）
 const PSYCH_SCALE_META = {
   epworth: { name: 'Epworth 嗜睡量表' },
@@ -1243,6 +1277,16 @@ export default function PatientDetailPage() {
     setArchiveBusy(true)
     try { await staffAPI.dismissArchiveDraft(id); setArchiveDraftOpen(false); load() }
     catch (err) { toast(err.message || '操作失败') } finally { setArchiveBusy(false) }
+  }
+
+  const [dietaryReviewBusy, setDietaryReviewBusy] = useState(false)
+  const handleNutritionistReview = async (responseId) => {
+    setDietaryReviewBusy(true)
+    try {
+      await staffAPI.nutritionistReviewResponse(id, responseId)
+      toast('已复核确认')
+      staffAPI.getQuestionnaireResponses(id).then(r => setQResponses(r.data || [])).catch(() => {})
+    } catch (err) { toast(err.message || '复核失败') } finally { setDietaryReviewBusy(false) }
   }
 
   const load = async () => {
@@ -2360,8 +2404,26 @@ export default function PatientDetailPage() {
         return null
       })()}
 
+      {/* 膳食调查问卷：营养师复核（与健管专员审核写入档案是独立并行的两道确认，互不阻塞） */}
+      {qResponses.filter(r => r.isDietarySurvey && r.nutritionistReview?.status !== 'reviewed').map(r => (
+        <div key={r.responseId} style={{ marginBottom: 12, padding: '10px 16px', background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 18 }}>🥗</span>
+          <div style={{ flex: 1, minWidth: 180 }}>
+            <span style={{ color: '#166534', fontWeight: 600, fontSize: 14 }}>膳食调查问卷待营养师复核</span>
+            <span style={{ color: '#666', fontSize: 13, marginLeft: 10 }}>提交于 {new Date(r.submittedAt).toLocaleDateString('zh-CN')}</span>
+          </div>
+          {(staff?.role === 'nutritionist' || staff?.role === 'superadmin') && (
+            <button className="btn btn-primary btn-sm" disabled={dietaryReviewBusy} onClick={() => handleNutritionistReview(r.responseId)}>
+              {dietaryReviewBusy ? '提交中…' : '复核确认'}
+            </button>
+          )}
+        </div>
+      ))}
+
       {/* 问卷自动写入档案的历史记录（无冲突项，系统已直接写入，供家庭医生核查） */}
       <ArchiveAutoLogPanel log={user.archiveAutoLog} />
+      {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
+      <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
 
       {/* Tabs */}
       <div className="tabs" style={{ marginBottom: 20 }}>

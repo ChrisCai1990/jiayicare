@@ -64,6 +64,15 @@ const questionnaireResponseSchema = new mongoose.Schema({
   totalScore:    { type: Number, default: 0 }, // 自动计算总分
   factorScores:  { type: mongoose.Schema.Types.Mixed, default: {} }, // 按题目factor分组的均分（如SCL90十因子）
   submittedAt:   { type: Date, default: Date.now },
+  // 营养师复核（2026-07-21新增，目前仅"膳食调查问卷"这一份模板需要，靠questionnaireId固定识别，
+  // 不是通用机制）。与健管专员审核写入档案(archive-draft/apply)是两道独立并行的确认，互不阻塞：
+  // 健管专员该写档案照常写，营养师复核只是额外加一道确认记录，供追溯"营养师看过这份答卷"。
+  nutritionistReview: {
+    status: { type: String, enum: ['pending', 'reviewed'], default: 'pending' },
+    by:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    byName: { type: String, default: '' },
+    at:     { type: Date, default: null },
+  },
 }, { timestamps: true });
 
 const DynamicQuestionnaire = mongoose.model('DynamicQuestionnaire', questionnaireSchema);

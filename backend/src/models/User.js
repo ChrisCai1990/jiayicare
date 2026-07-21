@@ -178,6 +178,10 @@ const userSchema = new mongoose.Schema({
   // 问卷无冲突自动写入档案的留痕日志（最近20条，供家庭医生查看系统自动做了什么改动）
   // [{ questionnaireTitle, appliedAt, items: [{path,label,valueStr}] }]
   archiveAutoLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
+  // 健管专员人工审核档案草稿并写入(archive-draft/apply)的确认留痕（2026-07-21新增，此前该接口
+  // 只写字段本身，没记录"谁在什么时候确认写入的"）。[{ confirmedBy, confirmedByName, confirmedAt,
+  // items: [{path,value}], sourceQuestionnaireId, sourceResponseId }]
+  archiveConfirmLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 心理健康量表最新结果（问卷推送→患者填写→自动写入，无需审核）
   // { epworth: {totalScore,severity,filledAt,questionnaireId}, scl90: {totalScore,factorScores:{躯体化:2.1,...},filledAt,questionnaireId}, sds:{...}, sas:{...} }
   psychAssessments: { type: mongoose.Schema.Types.Mixed, default: {} },
