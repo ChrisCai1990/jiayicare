@@ -7946,8 +7946,14 @@ export default function PatientDetailPage() {
               </div>
             </div>
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
-              {/* 审核操作区：仅当报告待审核时展示 */}
-              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected' && (
+              {/* 审核操作区：仅当报告待审核时展示。2026-07-21修复：确认AI结果(aiStatus→reviewed)
+                  现在会自动把audit_status一并置为audited(见PATCH /medical-reports/:id)，这里的
+                  独立审核入口此前可以绕过AI结果确认、直接把audit_status设audited，导致家庭医生
+                  拿到的是未经健管核对过的AI原始提取数据。收紧：走过AI解析流程(aiStatus不是none)
+                  的报告必须先在"审核AI结果"弹窗确认，这里不再单独放行；居家监测/功能医学检测等
+                  本就不支持AI解析的报告(aiStatus一直是none)保留原有直接审核通道，否则永远无法审核。 */}
+              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
+                && showReportDetail.aiStatus === 'none' && (
                 <>
                   {showRejectInput ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -7982,6 +7988,12 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </>
+              )}
+              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
+                && showReportDetail.aiStatus !== 'none' && (
+                <div style={{ fontSize: 12, color: '#8AA89C', textAlign: 'center', padding: '4px 0' }}>
+                  请在"审核AI结果"里确认检验数据，确认后自动完成审核
+                </div>
               )}
               <button className="btn btn-secondary" onClick={() => { setShowReportDetail(null); setShowRejectInput(false); setRejectReason('') }}>关闭</button>
             </div>
@@ -9068,7 +9080,7 @@ function DoctorAuditModal({ patientId, report, pendingList, onClose, onAudited }
 
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+      <div className="modal" style={{ width: '100%', maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
         <div className="modal-header" style={{ flexShrink: 0 }}>
           <h3 className="modal-title">
             家庭医生审核 · {report.title}
@@ -9076,9 +9088,12 @@ function DoctorAuditModal({ patientId, report, pendingList, onClose, onAudited }
           </h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
-          {/* 左：原始报告预览 */}
-          <div style={{ width: '40%', borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }}>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0, minWidth: 0 }}>
+          {/* 左：原始报告预览。minWidth:0 是关键——flex子项默认 min-width:auto，图片的原始像素
+              宽度（体检报告拍照/扫描件常有几千像素）会撑大这个flex item乃至整个.modal(它只设了
+              maxWidth没设固定width)，导致弹窗收缩成图片原始尺寸、居中悬浮盖住右侧内容（2026-07-21
+              家庭医生审核时复现："图片位置不对，覆盖了数据，无法核对"）。 */}
+          <div style={{ width: '40%', minWidth: 0, borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }}>
             <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>
               原始报告 · {report.hospital || report.institution || '机构未知'} · {report.checkDate || report.date || ''}
             </div>
@@ -9086,13 +9101,13 @@ function DoctorAuditModal({ patientId, report, pendingList, onClose, onAudited }
               const s = u.startsWith('/') ? API_ORIGIN + u : u
               const isPdf = report.mimeType === 'application/pdf'
               return isPdf ? (
-                <iframe key={idx} src={s} title={`报告${idx + 1}`} style={{ width: '100%', height: '76vh', border: 'none', borderRadius: 6, background: '#fff', marginBottom: 8 }} />
+                <iframe key={idx} src={s} title={`报告${idx + 1}`} style={{ width: '100%', maxWidth: '100%', height: '76vh', border: 'none', borderRadius: 6, background: '#fff', marginBottom: 8 }} />
               ) : (
-                <img key={idx} src={s} alt={`报告${idx + 1}`} style={{ width: '100%', borderRadius: 6, marginBottom: 8 }} />
+                <img key={idx} src={s} alt={`报告${idx + 1}`} style={{ width: '100%', maxWidth: '100%', display: 'block', borderRadius: 6, marginBottom: 8 }} />
               )
             })}
             {!report.fileUrl && !report.fileUrls?.length && report.content && (
-              <img src={report.content} alt="报告" style={{ width: '100%', borderRadius: 6 }} />
+              <img src={report.content} alt="报告" style={{ width: '100%', maxWidth: '100%', display: 'block', borderRadius: 6 }} />
             )}
           </div>
           {/* 右：专项筛查记录（健管专员审核后的最终生效版本，医生可编辑） */}
