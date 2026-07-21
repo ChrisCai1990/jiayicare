@@ -9192,12 +9192,34 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     setForm(f => ({ ...f, l2Label, title: l2Label ? `${l2Label} 报告` : f.title }))
   }
 
-  const handleFile = (e) => {
+  const [metaDetecting, setMetaDetecting] = useState(false)
+  // 单文件自动识别时会先上传拿URL，缓存下来给 handleSubmit 复用，避免同一个文件传两次
+  const preUploadedRef = useRef(null) // { file, url, mimeType, fileSize }
+  const handleFile = async (e) => {
     const files = Array.from(e.target.files)
     if (!files.length) return
     setFileDatas(files.map(f => ({ file: f, mimeType: f.type, fileSize: f.size, name: f.name })))
     if (!form.title && files.length === 1) setForm(f => ({ ...f, title: files[0].name.replace(/\.[^.]+$/, '') }))
     setError('')
+    preUploadedRef.current = null
+
+    // 单份上传时，自动识别报告上印刷的机构名/日期回填表单，专员不用每次手动重复填写
+    // （2026-07-21需求：单份上传是主流场景，报告原文本来就印着这两项）；多文件一次选择时
+    // 语义不明确（可能是多页同一份报告，也可能是多份不同报告），不做自动识别，交回手动填写
+    if (files.length === 1 && (files[0].type.startsWith('image/') || files[0].type === 'application/pdf')) {
+      setMetaDetecting(true)
+      try {
+        const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
+        preUploadedRef.current = { file: files[0], url: uploaded.url, mimeType: uploaded.mimeType, fileSize: uploaded.fileSize }
+        const meta = await staffAPI.quickMetaFromReportFile(uploaded.url, uploaded.mimeType)
+        setForm(f => ({
+          ...f,
+          hospital: f.hospital || meta.data?.institution || '',
+          date: f.date || meta.data?.checkDate || '',
+        }))
+      } catch (err) { /* 识别失败静默忽略，专员仍可手动填写，不阻塞上传流程 */ }
+      finally { setMetaDetecting(false) }
+    }
   }
 
   const handleSubmit = async () => {
@@ -9237,11 +9259,20 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         for (let i = 0; i < total; i++) {
           const fd = fileDatas[i]
           const titleSuffix = total > 1 ? ` (${i + 1}/${total})` : ''
-          setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
-          const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(
-            fd.file,
-            (p) => setUploadProgress(Math.round(((i + p) / total) * 90))
-          )
+          // 单文件且已在选择时预上传过（用于自动识别机构/日期），直接复用那次的URL，
+          // 避免同一个文件重复上传一遍浪费流量和等待时间
+          const cached = (total === 1 && preUploadedRef.current?.file === fd.file) ? preUploadedRef.current : null
+          let url, mimeType, fileSize
+          if (cached) {
+            ({ url, mimeType, fileSize } = cached)
+            setUploadProgress(90)
+          } else {
+            setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
+            ;({ url, mimeType, fileSize } = await staffAPI.uploadReportFile(
+              fd.file,
+              (p) => setUploadProgress(Math.round(((i + p) / total) * 90))
+            ))
+          }
           await staffAPI.uploadReport({
             patientId,
             title: form.title + titleSuffix,
@@ -9316,11 +9347,11 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
 
           <div style={{ display: 'flex', gap: 10 }}>
             <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-              <label className="form-label">医院 / 机构</label>
-              <input className="form-input" value={form.hospital} onChange={e => setForm(f => ({ ...f, hospital: e.target.value }))} placeholder="如：协和医院" />
+              <label className="form-label">医院 / 机构 {metaDetecting && <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>识别中…</span>}</label>
+              <input className="form-input" value={form.hospital} onChange={e => setForm(f => ({ ...f, hospital: e.target.value }))} placeholder={metaDetecting ? '正在自动识别...' : '如：协和医院'} />
             </div>
             <div className="form-group" style={{ marginBottom: 0, flex: 1 }}>
-              <label className="form-label">报告日期</label>
+              <label className="form-label">报告日期 {metaDetecting && <span style={{ fontSize: 11, color: '#8AA89C', fontWeight: 400 }}>识别中…</span>}</label>
               <input className="form-input" type="date" value={form.date} onChange={e => setForm(f => ({ ...f, date: e.target.value }))} />
             </div>
           </div>

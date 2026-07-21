@@ -84,6 +84,8 @@ export const staffAPI = {
   doctorAuditReport: (patientId, reportId, data) => req(`/staff/patients/${patientId}/reports/${reportId}/doctor-audit`, { method: 'POST', body: JSON.stringify(data) }),
   // 膳食调查问卷营养师复核
   nutritionistReviewResponse: (patientId, responseId) => req(`/staff/patients/${patientId}/questionnaire-responses/${responseId}/nutritionist-review`, { method: 'POST' }),
+  // 上传报告后自动识别机构/日期回填表单
+  quickMetaFromReportFile: (url, mimeType) => req('/staff/upload/quick-meta', { method: 'POST', body: JSON.stringify({ url, mimeType }) }),
   uploadReportFile: (file, onProgress) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}/staff/upload/report-file`)

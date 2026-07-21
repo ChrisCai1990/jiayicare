@@ -1821,6 +1821,47 @@ router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), (
   res.json({ success: true, data: { url, mimeType: req.file.mimetype, fileSize: req.file.size } });
 });
 
+// 只提取"检查机构"+"检查日期"两个字段的精简prompt，供上传报告时自动回填表单用——
+// 不做完整体检项目提取，控制耗时和AI调用成本（2026-07-21需求：单份上传时医院/日期
+// 报告原文本来就印着，不该让专员每次手动重复填写）
+const QUICK_META_PROMPT = `请只从这张体检报告图片里提取"检查机构名称"和"检查日期"两项信息，不要提取任何其他内容。
+规则：
+- institution：机构全称必须与报告原文印刷文字逐字一致，不得翻译、音译、编造。找不到就留空字符串。只有报告原文确实印刷的是英文机构名（境外机构报告）时才保留英文，中文报告严禁输出英文或中英混杂机构名。
+- checkDate：格式 YYYY-MM-DD，取报告上印刷的检查/采样/报告日期，找不到就留空字符串。
+仅输出JSON，不要任何额外文字：{"institution":"","checkDate":""}`;
+
+// POST /api/staff/upload/quick-meta — 上传报告后，自动识别机构名+日期回填表单（不做完整体检解析）
+router.post('/upload/quick-meta', staffAuth, async (req, res) => {
+  try {
+    const { url, mimeType } = req.body;
+    if (!url) return res.status(400).json({ success: false, message: '缺少文件地址' });
+    if (!process.env.QWEN_API_KEY) return res.json({ success: true, data: { institution: '', checkDate: '' } });
+
+    const { parseImage } = require('../utils/ai');
+    const { renderSinglePage } = require('../utils/pdf');
+    const marker = '/uploads/';
+    const i = url.indexOf(marker);
+    const rel = i >= 0 ? url.slice(i + marker.length) : url.split('/').pop();
+    const fpath = path.join(UPLOADS_DIR, rel);
+    if (!fs.existsSync(fpath)) return res.status(404).json({ success: false, message: '文件不存在' });
+
+    let text;
+    if (mimeType === 'application/pdf') {
+      const buf = fs.readFileSync(fpath);
+      const img = await renderSinglePage(buf, 1, 96); // 机构/日期通常在首页页眉，只转第一页足够
+      if (!img) return res.json({ success: true, data: { institution: '', checkDate: '' } });
+      text = await parseImage(img, QUICK_META_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 200 });
+    } else {
+      text = await parseImage(`${req.protocol}://${req.get('host')}${url}`, QUICK_META_PROMPT, { isUrl: true, model: 'qwen-vl-plus', maxTokens: 200 });
+    }
+    const parsed = safeParseJSON(text) || {};
+    res.json({ success: true, data: { institution: sanitizeInstitution(parsed.institution) || '', checkDate: parsed.checkDate || '' } });
+  } catch (err) {
+    // 识别失败不影响上传本身，前端静默回退到手动填写
+    res.json({ success: true, data: { institution: '', checkDate: '' } });
+  }
+});
+
 // ── 随访表单库 ────────────────────────────────────────────
 // GET /api/staff/followup-forms — 获取启用的随访表单列表（供创建随访时选用）
 router.get('/followup-forms', staffAuth, async (req, res) => {
