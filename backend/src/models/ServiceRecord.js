@@ -29,6 +29,15 @@ const serviceRecordSchema = new mongoose.Schema({
   result:  { type: String, default: '' },   // 结果/评估/建议
   nextDate:{ type: Date, default: null },   // 下次计划时间
   diseaseName: { type: String, default: '' }, // 专病名称（type=disease_mgmt时用于分组，如"巧克力囊肿""肺结节"）
+  // 附件（就医病历/检查单等图片或PDF，2026-07-21新增，专病管理/医院就医场景为主，字段通用）
+  attachments: [{
+    url:        { type: String, default: '' },
+    name:       { type: String, default: '' },
+    mimeType:   { type: String, default: '' },
+    fileSize:   { type: String, default: '' },
+    uploadedAt: { type: Date, default: Date.now },
+    _id: false,
+  }],
 
   // 就医协助专属
   medicalEscort: {

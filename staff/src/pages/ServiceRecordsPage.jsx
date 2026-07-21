@@ -567,6 +567,23 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
 
   const [aiDrafting, setAiDrafting] = useState(false)  // 场景七：AI生成服务记录草稿
 
+  // 附件（就医病历/检查单等，2026-07-21新增，专病管理/医院就医场景为主）
+  const [attachments, setAttachments] = useState([])
+  const [attachUploading, setAttachUploading] = useState(false)
+  const handleAttachFile = async (e) => {
+    const files = Array.from(e.target.files || [])
+    e.target.value = ''
+    if (!files.length) return
+    setAttachUploading(true)
+    try {
+      for (const f of files) {
+        const res = await staffAPI.uploadReportFile(f, () => {})
+        setAttachments(prev => [...prev, { url: res.url, name: f.name, mimeType: res.mimeType, fileSize: String(res.fileSize || '') }])
+      }
+    } catch (err) { setError(err.message || '附件上传失败') }
+    finally { setAttachUploading(false) }
+  }
+
   const setExtra = (k, v) => setExtras(prev => ({ ...prev, [k]: v }))
 
   const buildContent = () => {
@@ -645,11 +662,36 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
         result: extras.result || '',
         diseaseName: type === 'disease_mgmt' ? diseaseName : '',
         medicalEscort: { hospital: extras.hospital || '', department: extras.department || '', doctor: extras.doctor || '' },
+        attachments,
       })
       onSaved()
     } catch (err) { setError(err.message) }
     finally { setSaving(false) }
   }
+
+  // 附件上传区（就医病历/检查单等图片或PDF），仅专病管理/医院就医场景展示
+  const renderAttachments = () => (
+    <div className="form-group" style={{ marginBottom: 10 }}>
+      <label className="form-label" style={{ fontSize: 12 }}>附件 <span style={{ color: '#8AA89C', fontWeight: 400 }}>（就医病历/检查单，图片或PDF，可多选）</span></label>
+      <input type="file" accept="image/*,.pdf" multiple style={{ display: 'none' }} id="sr-attach-input" onChange={handleAttachFile} />
+      <div style={{ marginTop: 4 }}>
+        <label htmlFor="sr-attach-input" style={{ cursor: 'pointer', padding: '6px 14px', borderRadius: 8, border: '1px solid #E0D9CE', background: '#fff', fontSize: 13, color: '#4A6558', display: 'inline-block' }}>
+          {attachUploading ? '上传中…' : '+ 选择文件'}
+        </label>
+        {attachments.length > 0 && (
+          <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {attachments.map((a, i) => (
+              <span key={i} style={{ fontSize: 12, color: '#1E6B50', display: 'flex', alignItems: 'center', gap: 6 }}>
+                {a.mimeType === 'application/pdf' ? '📄' : '🖼'} {a.name}
+                <button onClick={() => setAttachments(prev => prev.filter((_, j) => j !== i))}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC3545', fontSize: 12, padding: 0 }}>✕</button>
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 
   const renderFields = () => {
     if (type === 'disease_mgmt') return (
@@ -666,6 +708,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
               : <input className="form-input" value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} />}
           </div>
         ))}
+        {renderAttachments()}
       </>
     )
     if (type === 'nutrition') return NUTRITION_FIELDS.map(f => (
@@ -676,14 +719,19 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
           : <input className="form-input" placeholder={f.placeholder || ''} value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} />}
       </div>
     ))
-    if (type === 'medical_visit') return MEDICAL_VISIT_FIELDS.map(f => (
-      <div key={f.key} className="form-group" style={{ marginBottom: 10 }}>
-        <label className="form-label" style={{ fontSize: 12 }}>{f.label}</label>
-        {f.type === 'textarea'
-          ? <textarea className="form-input" rows={2} placeholder={f.placeholder || ''} value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} style={{ resize: 'vertical' }} />
-          : <input className="form-input" value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} />}
-      </div>
-    ))
+    if (type === 'medical_visit') return (
+      <>
+        {MEDICAL_VISIT_FIELDS.map(f => (
+          <div key={f.key} className="form-group" style={{ marginBottom: 10 }}>
+            <label className="form-label" style={{ fontSize: 12 }}>{f.label}</label>
+            {f.type === 'textarea'
+              ? <textarea className="form-input" rows={2} placeholder={f.placeholder || ''} value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} style={{ resize: 'vertical' }} />
+              : <input className="form-input" value={extras[f.key] || ''} onChange={e => setExtra(f.key, e.target.value)} />}
+          </div>
+        ))}
+        {renderAttachments()}
+      </>
+    )
     if (type === 'routine') return (
       <>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 12 }}>

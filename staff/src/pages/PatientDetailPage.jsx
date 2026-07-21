@@ -8453,12 +8453,28 @@ export default function PatientDetailPage() {
         const SRDetailModal = () => {
           const [mode, setMode] = React.useState('view') // view | edit | supplement
           const [editForm, setEditForm] = React.useState({ title: showSRDetail.title || '', content: showSRDetail.content || '', result: showSRDetail.result || '', nextDate: showSRDetail.nextDate ? new Date(showSRDetail.nextDate).toISOString().slice(0,10) : '', diseaseName: showSRDetail.diseaseName || '' })
+          const [editAttachments, setEditAttachments] = React.useState(showSRDetail.attachments || [])
+          const [attachUploading, setAttachUploading] = React.useState(false)
           const [suppContent, setSuppContent] = React.useState('')
           const [suppDate, setSuppDate] = React.useState(new Date().toISOString().slice(0,10))
           const [saving, setSaving] = React.useState(false)
           const [editingSuppId, setEditingSuppId] = React.useState(null)
           const [editSuppContent, setEditSuppContent] = React.useState('')
           const [editSuppDate, setEditSuppDate] = React.useState('')
+
+          const handleEditAttachFile = async (e) => {
+            const files = Array.from(e.target.files || [])
+            e.target.value = ''
+            if (!files.length) return
+            setAttachUploading(true)
+            try {
+              for (const f of files) {
+                const res = await staffAPI.uploadReportFile(f, () => {})
+                setEditAttachments(prev => [...prev, { url: res.url, name: f.name, mimeType: res.mimeType, fileSize: String(res.fileSize || '') }])
+              }
+            } catch (err) { toast(err.message || '附件上传失败') }
+            finally { setAttachUploading(false) }
+          }
 
           const handleDeleteSupp = async (suppId) => {
             if (!window.confirm('确定删除这条补充记录？')) return
@@ -8483,7 +8499,7 @@ export default function PatientDetailPage() {
           const handleEdit = async () => {
             setSaving(true)
             try {
-              await staffAPI.updateServiceRecord(showSRDetail._id, { title: editForm.title, content: editForm.content, result: editForm.result, nextDate: editForm.nextDate || null, diseaseName: editForm.diseaseName })
+              await staffAPI.updateServiceRecord(showSRDetail._id, { title: editForm.title, content: editForm.content, result: editForm.result, nextDate: editForm.nextDate || null, diseaseName: editForm.diseaseName, attachments: editAttachments })
               toast('记录已更新'); setShowSRDetail(null); loadServiceRecords()
             } catch (err) { toast(err.message || '保存失败') }
             finally { setSaving(false) }
@@ -8529,6 +8545,21 @@ export default function PatientDetailPage() {
                         <div style={{ marginTop: 8, padding: 12, background: '#EFF6FF', borderRadius: 8, fontSize: 13, lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                           <div style={{ fontSize: 11, color: '#0077B6', marginBottom: 4, fontWeight: 600 }}>结果/建议</div>
                           {showSRDetail.result}
+                        </div>
+                      )}
+                      {(showSRDetail.attachments || []).length > 0 && (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 6 }}>附件（{showSRDetail.attachments.length}）</div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            {showSRDetail.attachments.map((a, i) => {
+                              const s = a.url.startsWith('/') ? API_ORIGIN + a.url : a.url
+                              return (
+                                <a key={i} href={s} target="_blank" rel="noreferrer" style={{ fontSize: 13, color: '#1E6B50', display: 'flex', alignItems: 'center', gap: 6, textDecoration: 'none' }}>
+                                  {a.mimeType === 'application/pdf' ? '📄' : '🖼'} {a.name}
+                                </a>
+                              )
+                            })}
+                          </div>
                         </div>
                       )}
                       {(showSRDetail.supplements || []).length > 0 && (
@@ -8579,6 +8610,26 @@ export default function PatientDetailPage() {
                       <div><label className="form-label">详细内容</label><textarea className="form-input" rows={4} value={editForm.content} onChange={e => setEditForm(f => ({ ...f, content: e.target.value }))} /></div>
                       <div><label className="form-label">结果/建议</label><textarea className="form-input" rows={3} value={editForm.result} onChange={e => setEditForm(f => ({ ...f, result: e.target.value }))} /></div>
                       <div><label className="form-label">下次计划日期</label><input className="form-input" type="date" value={editForm.nextDate} onChange={e => setEditForm(f => ({ ...f, nextDate: e.target.value }))} /></div>
+                      {(showSRDetail.type === 'disease_mgmt' || showSRDetail.type === 'medical_visit') && (
+                        <div>
+                          <label className="form-label">附件 <span style={{ color: '#8AA89C', fontWeight: 400, fontSize: 12 }}>（就医病历/检查单，图片或PDF）</span></label>
+                          <input type="file" accept="image/*,.pdf" multiple style={{ display: 'none' }} id="sr-edit-attach-input" onChange={handleEditAttachFile} />
+                          <label htmlFor="sr-edit-attach-input" style={{ cursor: 'pointer', padding: '6px 14px', borderRadius: 8, border: '1px solid #E0D9CE', background: '#fff', fontSize: 13, color: '#4A6558', display: 'inline-block' }}>
+                            {attachUploading ? '上传中…' : '+ 添加附件'}
+                          </label>
+                          {editAttachments.length > 0 && (
+                            <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                              {editAttachments.map((a, i) => (
+                                <span key={i} style={{ fontSize: 12, color: '#1E6B50', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  {a.mimeType === 'application/pdf' ? '📄' : '🖼'} {a.name}
+                                  <button onClick={() => setEditAttachments(prev => prev.filter((_, j) => j !== i))}
+                                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC3545', fontSize: 12, padding: 0 }}>✕</button>
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </div>
                   )}
                   {mode === 'supplement' && (
