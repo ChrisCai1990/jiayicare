@@ -1676,6 +1676,13 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.audit_status = 'audited';
     report.audited_by = req.staff.name;
     report.audited_at = new Date();
+    // 健管专员审核通过这一刻的 reportItems 存一份只读快照，供家庭医生后续编辑后仍可溯源
+    // "最初健管专员审核的是什么"；家庭医生双审是新功能，只在首次审核通过时补快照，不覆盖已有的
+    report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
+      ? report.staffAuditSnapshot
+      : { reportItems: report.reportItems, snapshotAt: new Date() };
+    // 归类/内容被驳回重审后再次通过，说明报告变了，家庭医生此前的审核已经过时，需要重新走一遍
+    report.familyDoctorAudit = { status: 'pending', by: null, byName: '', at: null, editLog: [] };
     // 如果关联方案项目，自动完成
     if (report.planId && report.planItemId) {
       const plan = await HealthPlan.findById(report.planId);
@@ -1720,6 +1727,60 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   }
   await report.save();
   res.json({ success: true, data: report });
+});
+
+// GET /api/staff/patients/:id/reports/pending-doctor-audit — 该客户所有"健管专员已审核、
+// 家庭医生还未审核"的报告列表。家庭医生做AI健康解析/风险评估前必须先清空这个列表（强制前置）。
+router.get('/patients/:id/reports/pending-doctor-audit', staffAuth, async (req, res) => {
+  try {
+    const reports = await MedicalReport.find({
+      user: req.params.id,
+      audit_status: 'audited',
+      'familyDoctorAudit.status': { $ne: 'audited' },
+    }).select('title screeningL1 screeningL2 checkDate hospital institution audited_by audited_at').sort({ checkDate: -1 }).lean();
+    res.json({ success: true, data: reports, count: reports.length });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// POST /api/staff/patients/:id/reports/:rid/doctor-audit — 家庭医生审核确认，可选携带
+// reportItems 编辑（编辑后直接覆盖为最终生效版本，逐字段生成 editLog 留痕）
+router.post('/patients/:id/reports/:rid/doctor-audit', staffAuth, async (req, res) => {
+  try {
+    const { reportItems } = req.body;
+    const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id });
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (report.audit_status !== 'audited') {
+      return res.status(400).json({ success: false, message: '该报告尚未通过健管专员审核，不能进行医生审核' });
+    }
+
+    const editLog = [];
+    if (Array.isArray(reportItems)) {
+      const before = report.reportItems || [];
+      const DIFF_FIELDS = ['value', 'unit', 'referenceRange', 'status', 'findings', 'diagnosis', 'conclusion'];
+      reportItems.forEach((newItem, idx) => {
+        const oldItem = before[idx];
+        if (!oldItem) return;
+        DIFF_FIELDS.forEach(field => {
+          const oldVal = oldItem[field] == null ? '' : String(oldItem[field]);
+          const newVal = newItem[field] == null ? '' : String(newItem[field]);
+          if (oldVal !== newVal) {
+            editLog.push({ itemIndex: idx, itemName: newItem.name || oldItem.name || '', field, oldValue: oldVal, newValue: newVal, at: new Date() });
+          }
+        });
+      });
+      report.reportItems = reportItems; // 编辑后的版本直接作为后续 AI 分析的最终数据源
+    }
+
+    report.familyDoctorAudit = {
+      status: 'audited',
+      by: req.staff._id,
+      byName: req.staff.name || req.staff.username || '',
+      at: new Date(),
+      editLog: [...(report.familyDoctorAudit?.editLog || []), ...editLog],
+    };
+    await report.save();
+    res.json({ success: true, data: report });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // ── 图片上传 ─────────────────────────────────────────────
@@ -3961,6 +4022,16 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (!canGen) {
       return res.status(403).json({ success: false, message: '您没有生成该AI健康分析的权限，仅可查看' });
     }
+    // 双审强制前置：家庭医生生成AI健康分析前，必须先审核确认该客户所有健管专员已审核的报告
+    // （2026-07-21需求），营养师维度的生活方式评估同样依赖报告数据，一并拦截
+    if (scope === 'doctor' || scope === 'nutrition' || scope === 'all') {
+      const pendingCount = await MedicalReport.countDocuments({
+        user: req.params.id, audit_status: 'audited', 'familyDoctorAudit.status': { $ne: 'audited' },
+      });
+      if (pendingCount > 0) {
+        return res.status(403).json({ success: false, needReportAudit: true, pendingCount, message: `请先审核确认 ${pendingCount} 份体检报告后再生成AI健康分析` });
+      }
+    }
     const force = !!req.body.force;
     const year = String(req.body.year || new Date().getFullYear());
     const existing = user.aiHealthSummary || {};
@@ -4379,6 +4450,13 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
     // 风险评估仅家庭医师/超管可生成，健管专员等只能查看（与前端按钮隐藏一致，后端兜底防越权直调接口）
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
       return res.status(403).json({ success: false, message: '仅家庭医师可生成风险评估' });
+    }
+    // 双审强制前置：家庭医生生成风险评估前，必须先审核确认该客户所有健管专员已审核的报告
+    const pendingCount = await MedicalReport.countDocuments({
+      user: req.params.id, audit_status: 'audited', 'familyDoctorAudit.status': { $ne: 'audited' },
+    });
+    if (pendingCount > 0) {
+      return res.status(403).json({ success: false, needReportAudit: true, pendingCount, message: `请先审核确认 ${pendingCount} 份体检报告后再生成风险评估` });
     }
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data');

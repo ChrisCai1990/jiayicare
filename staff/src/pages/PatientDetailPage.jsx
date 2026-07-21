@@ -1088,6 +1088,12 @@ export default function PatientDetailPage() {
   const [medForm, setMedForm] = useState({})
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
+  // 家庭医生双审：该客户"健管专员已审、医生未审"的报告列表，AI健康解析/风险评估生成前强制拦截
+  const [pendingDoctorAuditReports, setPendingDoctorAuditReports] = useState([])
+  const [showDoctorAuditModal, setShowDoctorAuditModal] = useState(null) // 打开的报告对象
+  const loadPendingDoctorAudit = () => {
+    staffAPI.getPendingDoctorAuditReports(id).then(r => setPendingDoctorAuditReports(r.data || [])).catch(() => {})
+  }
   // 专项筛查三层目录（动态加载）
   const [screeningTree, setScreeningTree] = useState([])
   // 专项筛查 L1/L2 横向 tab 激活状态
@@ -1501,6 +1507,11 @@ export default function PatientDetailPage() {
       if (reports.length === 0) loadReports()
     }
     else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
+    else if (tab === 'ai') {
+      // 家庭医生审核依赖 reports（要展示报告原文对照），同上按需补加载
+      if (reports.length === 0) loadReports()
+      loadPendingDoctorAudit()
+    }
   }, [tab])
 
   const buildEditForm = (u) => ({
@@ -1802,6 +1813,9 @@ export default function PatientDetailPage() {
         if (window.confirm(`${err.message}${err.approvedBy ? `（审核人：${err.approvedBy}）` : ''}\n是否确认重新生成${label}？`)) {
           return handleGenerateAISummary(year, scope, true)
         }
+      } else if (err.needReportAudit) {
+        loadPendingDoctorAudit()
+        toast(err.message || '请先审核确认体检报告')
       } else {
         toast(err.message || 'AI生成失败')
       }
@@ -1817,6 +1831,17 @@ export default function PatientDetailPage() {
       loadReports()
     } catch (err) { toast(err.message || 'AI解析失败') }
     finally { setParsingReportId(null) }
+  }
+
+  // 家庭医生审核弹窗打开：列表接口 select('-content') 裁掉了原图内容，按需补拉完整报告
+  // （与 handleOpenOCRReview 同一处理方式），否则走 content(base64) 存储的报告左侧看不到原图
+  const handleOpenDoctorAudit = (r) => {
+    setShowDoctorAuditModal(r)
+    if (!r.content && !r.fileUrl && !(r.fileUrls && r.fileUrls.length)) {
+      staffAPI.getReport(r._id).then(res => {
+        if (res.data) setShowDoctorAuditModal(prev => (prev && prev._id === r._id) ? { ...prev, content: res.data.content } : prev)
+      }).catch(() => {})
+    }
   }
 
   const handleOpenOCRReview = (r) => {
@@ -1946,7 +1971,10 @@ export default function PatientDetailPage() {
       setRiskYear(y)
       toast(`${y}年度 AI风险评估已生成`)
       load()
-    } catch (err) { toast(err.message || 'AI生成失败') }
+    } catch (err) {
+      if (err.needReportAudit) { loadPendingDoctorAudit(); toast(err.message || '请先审核确认体检报告') }
+      else toast(err.message || 'AI生成失败')
+    }
     finally { setRiskGenerating(false) }
   }
   const handleApproveRisk = async (year) => {
@@ -5186,6 +5214,18 @@ export default function PatientDetailPage() {
         return (
           <div>
             <AiRuleHint scene="health_analysis" />
+            {/* 双审强制前置：家庭医生生成AI健康分析/风险评估前必须先审核确认所有健管专员已审报告 */}
+            {pendingDoctorAuditReports.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8 }}>
+                <span style={{ fontSize: 18 }}>⚠️</span>
+                <div style={{ flex: 1, fontSize: 13, color: '#92400E' }}>
+                  还有 <b>{pendingDoctorAuditReports.length}</b> 份体检报告尚未审核确认，审核通过前无法生成AI健康分析/风险评估
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={() => handleOpenDoctorAudit(pendingDoctorAuditReports[0])}>
+                  去审核
+                </button>
+              </div>
+            )}
             {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>📅 年度</span>
@@ -6654,6 +6694,17 @@ export default function PatientDetailPage() {
                                   : r.aiStatus === 'processing' ? '解析中'
                                   : '待审核'}
                               </span>
+                              {r.audit_status === 'audited' && r.familyDoctorAudit?.status !== 'audited' && (
+                                <div>
+                                  <span style={{ fontSize: 11, color: '#D97706', cursor: 'pointer', textDecoration: 'underline' }}
+                                    onClick={() => { loadPendingDoctorAudit(); handleOpenDoctorAudit(r) }}>
+                                    待医生审核
+                                  </span>
+                                </div>
+                              )}
+                              {r.familyDoctorAudit?.status === 'audited' && (
+                                <div style={{ fontSize: 11, color: '#16A34A' }}>✓ 医生已审</div>
+                              )}
                             </td>
                             <td>
                               <span style={{ fontSize: 12, fontWeight: 600, color: AI_COLOR[r.aiStatus] || '#ccc' }}>
@@ -8548,6 +8599,23 @@ export default function PatientDetailPage() {
         />
       )}
 
+      {showDoctorAuditModal && (
+        <DoctorAuditModal
+          patientId={id}
+          report={showDoctorAuditModal}
+          pendingList={pendingDoctorAuditReports.length ? pendingDoctorAuditReports : [showDoctorAuditModal]}
+          onClose={() => setShowDoctorAuditModal(null)}
+          onAudited={() => {
+            // 审核完一份，自动跳到下一份（连续审核体验），全部审核完才关闭弹窗
+            const remaining = pendingDoctorAuditReports.filter(r => r._id !== showDoctorAuditModal._id)
+            setPendingDoctorAuditReports(remaining)
+            if (remaining[0]) handleOpenDoctorAudit(remaining[0])
+            else setShowDoctorAuditModal(null)
+            loadReports()
+          }}
+        />
+      )}
+
       {/* 新建开单弹窗 */}
       {showReqModal && (
         <RequisitionModal
@@ -8853,6 +8921,123 @@ function SendMessageModal({ patientId, patientName, onClose }) {
             style={{ padding: '8px 16px', borderRadius: 10, background: '#1E6B50', color: '#fff', border: 'none', cursor: 'pointer', fontWeight: 600, fontSize: 14, opacity: (sending || !input.trim()) ? 0.5 : 1 }}
           >
             {sending ? '…' : '发送'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── 家庭医生双审：审核体检报告弹窗 ───────────────────────────
+// 左侧原始报告图片/PDF对照，右侧展示健管专员审核后的专项筛查记录（当前最终生效版本，即
+// report.reportItems——如果之前已被医生编辑过，这里看到的就是医生编辑后的版本），医生可编辑，
+// 保存时后端逐字段生成 editLog 留痕，健管专员原始版本在 report.staffAuditSnapshot 单独只读保留。
+function DoctorAuditModal({ patientId, report, pendingList, onClose, onAudited }) {
+  const toast = useToast()
+  const [items, setItems] = useState(() => (report.reportItems || []).map(it => ({ ...it })))
+  const [saving, setSaving] = useState(false)
+  const [showSnapshot, setShowSnapshot] = useState(false)
+
+  const updItem = (idx, field, val) => setItems(arr => arr.map((it, i) => i === idx ? { ...it, [field]: val } : it))
+
+  const handleAudit = async () => {
+    setSaving(true)
+    try {
+      await staffAPI.doctorAuditReport(patientId, report._id, { reportItems: items })
+      toast('已审核确认')
+      onAudited()
+    } catch (err) { toast(err.message || '审核失败') }
+    finally { setSaving(false) }
+  }
+
+  const snapshot = report.staffAuditSnapshot?.reportItems || null
+  const myIdx = pendingList.findIndex(r => r._id === report._id)
+
+  return (
+    <div className="modal-overlay">
+      <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="modal-header" style={{ flexShrink: 0 }}>
+          <h3 className="modal-title">
+            家庭医生审核 · {report.title}
+            {pendingList.length > 1 && <span style={{ fontSize: 12, color: '#8AA89C', fontWeight: 400, marginLeft: 8 }}>（{myIdx + 1}/{pendingList.length}）</span>}
+          </h3>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
+          {/* 左：原始报告预览 */}
+          <div style={{ width: '40%', borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }}>
+            <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>
+              原始报告 · {report.hospital || report.institution || '机构未知'} · {report.checkDate || report.date || ''}
+            </div>
+            {(report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : [])).map((u, idx) => {
+              const s = u.startsWith('/') ? API_ORIGIN + u : u
+              const isPdf = report.mimeType === 'application/pdf'
+              return isPdf ? (
+                <iframe key={idx} src={s} title={`报告${idx + 1}`} style={{ width: '100%', height: '76vh', border: 'none', borderRadius: 6, background: '#fff', marginBottom: 8 }} />
+              ) : (
+                <img key={idx} src={s} alt={`报告${idx + 1}`} style={{ width: '100%', borderRadius: 6, marginBottom: 8 }} />
+              )
+            })}
+            {!report.fileUrl && !report.fileUrls?.length && report.content && (
+              <img src={report.content} alt="报告" style={{ width: '100%', borderRadius: 6 }} />
+            )}
+          </div>
+          {/* 右：专项筛查记录（健管专员审核后的最终生效版本，医生可编辑） */}
+          <div className="modal-body" style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+              <div style={{ fontSize: 12, color: '#4A6558' }}>
+                健管专员审核：{report.audited_by || '-'} · {report.audited_at ? new Date(report.audited_at).toLocaleString('zh-CN') : '-'}
+              </div>
+              {snapshot && (
+                <button className="btn btn-ghost btn-sm" style={{ fontSize: 11 }} onClick={() => setShowSnapshot(s => !s)}>
+                  {showSnapshot ? '收起原始记录' : '查看健管专员原始记录'}
+                </button>
+              )}
+            </div>
+            {showSnapshot && snapshot && (
+              <div style={{ background: '#F6F9F7', border: '1px solid #E0D9CE', borderRadius: 6, padding: 8, marginBottom: 10, fontSize: 11, color: '#4A6558' }}>
+                {snapshot.map((it, i) => (
+                  <div key={i} style={{ padding: '3px 0', borderBottom: i < snapshot.length - 1 ? '1px solid #f0ece4' : 'none' }}>
+                    {it.name}：{it.value || it.diagnosis || it.conclusion || '-'} {it.unit || ''}
+                  </div>
+                ))}
+              </div>
+            )}
+            <table className="table" style={{ marginBottom: 0 }}>
+              <thead><tr><th>项目</th><th>数值/结论</th><th>单位</th><th>参考范围</th><th>状态</th></tr></thead>
+              <tbody>
+                {items.length === 0 && (
+                  <tr><td colSpan={5} style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>无检验数值项</td></tr>
+                )}
+                {items.map((it, idx) => (
+                  <tr key={idx}>
+                    <td style={{ fontSize: 12 }}>{it.name}</td>
+                    <td>
+                      <input className="form-input" style={{ padding: '3px 6px', fontSize: 12 }}
+                        value={it.itemType === 'imaging' ? (it.diagnosis || it.conclusion || '') : (it.value || '')}
+                        onChange={e => updItem(idx, it.itemType === 'imaging' ? 'diagnosis' : 'value', e.target.value)} />
+                    </td>
+                    <td style={{ fontSize: 12, color: '#8AA89C' }}>{it.unit || '-'}</td>
+                    <td style={{ fontSize: 12, color: '#8AA89C' }}>{it.referenceRange || '-'}</td>
+                    <td>
+                      <select className="form-input" style={{ padding: '3px 4px', fontSize: 12 }}
+                        value={it.status || 'unknown'} onChange={e => updItem(idx, 'status', e.target.value)}>
+                        <option value="normal">正常</option>
+                        <option value="abnormal">异常</option>
+                        <option value="attention">注意</option>
+                        <option value="unknown">未知</option>
+                      </select>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="modal-footer" style={{ flexShrink: 0 }}>
+          <button className="btn btn-secondary" onClick={onClose}>稍后再审</button>
+          <button className="btn btn-primary" onClick={handleAudit} disabled={saving}>
+            {saving ? '提交中...' : '审核确认'}
           </button>
         </div>
       </div>

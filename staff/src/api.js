@@ -79,6 +79,9 @@ export const staffAPI = {
   getReports:    (p = {}) => req('/staff/medical-reports?' + qs(p)),
   getReport:     (id)     => req(`/staff/medical-reports/${id}`),
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
+  // 家庭医生双审
+  getPendingDoctorAuditReports: (patientId) => req(`/staff/patients/${patientId}/reports/pending-doctor-audit`),
+  doctorAuditReport: (patientId, reportId, data) => req(`/staff/patients/${patientId}/reports/${reportId}/doctor-audit`, { method: 'POST', body: JSON.stringify(data) }),
   uploadReportFile: (file, onProgress) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}/staff/upload/report-file`)

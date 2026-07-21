@@ -102,7 +102,7 @@ const medicalReportSchema = new mongoose.Schema({
   // 文件预览内容（data URI，仅小文件 < 3MB 存储，用于前端预览）
   content: { type: String, default: '' },
   mimeType:{ type: String, default: '' },
-  // 审核状态（由管理员设置）
+  // 审核状态（由管理员设置，健管专员这一道审核）
   audit_status: {
     type: String,
     enum: ['unaudited', 'audited', 'rejected'],
@@ -111,6 +111,34 @@ const medicalReportSchema = new mongoose.Schema({
   audited_by:   { type: String, default: '' },
   audited_at:   { type: Date,   default: null },
   reject_reason:{ type: String, default: '' },
+
+  // ── 家庭医生双审（第二道，2026-07-21新增）───────────────────────────
+  // 家庭医生在做AI健康解析/风险评估前，必须先审核确认该客户所有健管专员已审核的报告。
+  // 与 audit_status/audited_by/audited_at（健管专员那道）完全独立，互不覆盖。
+  // 家庭医生审核时可编辑 reportItems（专项筛查记录），编辑后的 reportItems 直接作为后续
+  // AI分析的数据源（即 reportItems 本体只保留"当前最终生效版本"），健管专员审核时的原始版本
+  // 单独存进 staffAuditSnapshot 只读快照供溯源，不随后续编辑变化。
+  familyDoctorAudit: {
+    status: { type: String, enum: ['pending', 'audited'], default: 'pending' },
+    by:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    byName: { type: String, default: '' },
+    at:     { type: Date, default: null },
+    // 家庭医生审核时若编辑了 reportItems，逐字段记录改动，供溯源"XX字段由医生于XX时间修改，原值：XX"
+    editLog: [{
+      itemIndex: Number,   // reportItems 数组下标
+      itemName:  String,   // 该条项目名称（冗余存一份，方便展示不必反查）
+      field:     String,   // 改动的字段名（如 value/status/conclusion）
+      oldValue:  String,
+      newValue:  String,
+      at:        Date,
+    }],
+  },
+  // 健管专员审核通过那一刻的 reportItems 快照，家庭医生首次审核时如果还没有快照会自动补一份。
+  // 只读，不随后续家庭医生编辑变化，用于对比溯源"最初健管专员审核的是什么"。
+  staffAuditSnapshot: {
+    reportItems: { type: mongoose.Schema.Types.Mixed, default: null },
+    snapshotAt:  { type: Date, default: null },
+  },
   // 医护端：上传人 & 关联方案项目
   uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   planItemId:       { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
