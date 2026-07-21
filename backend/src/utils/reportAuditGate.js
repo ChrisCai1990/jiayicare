@@ -13,10 +13,18 @@ async function checkReportAuditGate(userId) {
   const total = await MedicalReport.countDocuments({ user: userId });
   if (total === 0) return '请先上传体检报告后再生成AI健康分析/风险评估';
 
-  const pending = await MedicalReport.countDocuments({
-    user: userId, audit_status: 'audited', 'familyDoctorAudit.status': { $ne: 'audited' },
+  // 2026-07-21 石道蓉真机测试发现的漏洞：她全部报告 audit_status 都是 'unaudited'（健管专员
+  // 从未审核过），此前只查 audit_status:'audited' 却 familyDoctorAudit 未审的"半成品"状态，
+  // 完全没查"健管自己都没审"这种更原始的状态——两条校验都查不到符合条件的记录，直接放行。
+  // 现在改成：只要不是"健管已审+医生已审"的完整状态，一律拦截，不区分卡在哪一步。
+  const notFullyAudited = await MedicalReport.countDocuments({
+    user: userId,
+    $or: [
+      { audit_status: { $ne: 'audited' } },                    // 健管专员还没审
+      { 'familyDoctorAudit.status': { $ne: 'audited' } },       // 健管已审，但医生还没审
+    ],
   });
-  if (pending > 0) return `请先由家庭医生审核确认 ${pending} 份体检报告后再生成`;
+  if (notFullyAudited > 0) return `还有 ${notFullyAudited} 份体检报告未完成审核（含健管专员未审核的），请先完成审核后再生成`;
 
   return null;
 }
