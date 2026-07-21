@@ -1186,6 +1186,7 @@ export default function PatientDetailPage() {
   const [ocrClassifyOpen, setOcrClassifyOpen] = useState({})    // {[rowIndex]: bool}
   const [ocrClassifyDropUp, setOcrClassifyDropUp] = useState({}) // {[rowIndex]: bool} 归类下拉框展开方向，按实测可用空间动态判断
   const ocrClassifyWrapRefs = useRef({})                        // {[rowIndex]: {current: HTMLElement}}
+  const ocrModalBodyRef = useRef(null)                          // 归类下拉框的真实裁切边界是这个 overflow:auto 的表格滚动容器，不是浏览器视口
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
   // 管理信息下拉选项（服务包/会员来源），一次性加载
@@ -7914,18 +7915,21 @@ export default function PatientDetailPage() {
             ? allClassifyOpts.filter(o => o.label.toLowerCase().includes(q) || o.groupLabel.toLowerCase().includes(q))
             : allClassifyOpts
           const displayText = it.screeningKey ? (allClassifyOpts.find(o => o.value === it.screeningKey)?.label || it.screeningKey) : ''
-          // 2026-07-21修复：之前写死 bottom:100%(只往上弹)，表格中上部的行往上弹出时
-          // 上方空间不够，反而被 modal 顶部/header 裁切——和当初"往下弹被表格底部裁切"是同一类问题的镜像。
-          // 改成打开时用 getBoundingClientRect 判断该行上下实际可用空间，动态选展开方向。
+          // 2026-07-21修复(第二版)：第一版用 window.innerHeight 判断可用空间，但下拉框真正的裁切边界
+          // 是表格所在的 modal-body(overflow:auto 滚动容器)，不是浏览器视口——modal 顶部本身离视口
+          // 顶部可能还有一截空白，靠视口空间判断会误判"上方空间充足"，实际早被 modal-body 顶部裁切。
+          // 改成用 ocrModalBodyRef(滚动容器)的边界计算该行上下实际可用空间。
           if (!ocrClassifyWrapRefs.current[i]) ocrClassifyWrapRefs.current[i] = { current: null }
           const wrapRef = ocrClassifyWrapRefs.current[i]
           const dropUp = ocrClassifyDropUp[i] !== false
           const handleFocus = () => {
             const el = wrapRef.current
-            if (el) {
+            const container = ocrModalBodyRef.current
+            if (el && container) {
               const r = el.getBoundingClientRect()
-              const spaceAbove = r.top
-              const spaceBelow = window.innerHeight - r.bottom
+              const c = container.getBoundingClientRect()
+              const spaceAbove = r.top - c.top
+              const spaceBelow = c.bottom - r.bottom
               setOcrClassifyDropUp(p => ({ ...p, [i]: spaceAbove >= 160 || spaceAbove >= spaceBelow }))
             }
             setOcrClassifyOpen(p => ({ ...p, [i]: true }))
@@ -8023,7 +8027,7 @@ export default function PatientDetailPage() {
                     </div>
                   )
                 })()}
-              <div className="modal-body" style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
+              <div className="modal-body" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
                 {(() => {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
                   // 按类型分区：检验数值（lab/data/未标）走表格；影像/检查描述（imaging）走文本卡片
