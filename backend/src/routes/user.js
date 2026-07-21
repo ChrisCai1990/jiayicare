@@ -1333,6 +1333,12 @@ router.post('/ai-health-summary', auth, async (req, res) => {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
 
+    // 双审强制前置：有家庭医生的客户，必须先由家医审核确认所有体检报告才能生成（2026-07-21新增，
+    // 此前只在 staff.js 医护端生成入口拦截，客户自助生成这条路完全没走这道校验，是遗漏的漏洞）
+    const { checkReportAuditGate } = require('../utils/reportAuditGate');
+    const gateMsg = await checkReportAuditGate(req.user._id);
+    if (gateMsg) return res.status(403).json({ success: false, code: 'REPORT_AUDIT_PENDING', message: gateMsg });
+
     // 已被审核的版本，客户端不能再重新生成覆盖。关键：审核是分部分的（家医审5维度写doctorApprovedAt、
     // 营养师审生活方式写nutritionApprovedAt），而客户端生成是【整份覆盖】——只要任一部分已审，重新生成就会
     // 抹掉那部分的审核成果并产出与已审结果不同的内容。所以按部分判断：任一部分已审即拦截（不能只看顶层approvedAt，
@@ -1418,6 +1424,11 @@ router.post('/ai-risk-assessment', auth, async (req, res) => {
     const user = await User.findById(req.user._id)
       .select('name gender age chronicDiseases healthProfile labValues lifestyle assignedFamilyDoctor aiRiskAssessment');
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+
+    // 双审强制前置：有家庭医生的客户，必须先由家医审核确认所有体检报告才能生成
+    const { checkReportAuditGate } = require('../utils/reportAuditGate');
+    const gateMsg = await checkReportAuditGate(req.user._id);
+    if (gateMsg) return res.status(403).json({ success: false, code: 'REPORT_AUDIT_PENDING', message: gateMsg });
 
     const year = String(new Date().getFullYear());
     const byYear = riskByYearUser(user.aiRiskAssessment);

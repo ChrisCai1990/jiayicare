@@ -4023,14 +4023,13 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       return res.status(403).json({ success: false, message: '您没有生成该AI健康分析的权限，仅可查看' });
     }
     // 双审强制前置：家庭医生生成AI健康分析前，必须先审核确认该客户所有健管专员已审核的报告
-    // （2026-07-21需求），营养师维度的生活方式评估同样依赖报告数据，一并拦截
+    // （2026-07-21需求），营养师维度的生活方式评估同样依赖报告数据，一并拦截。与 user.js 客户
+    // 自助生成入口共用同一个 checkReportAuditGate，避免两处判断口径分裂（曾出现user.js完全
+    // 没做这层校验的漏洞）。
     if (scope === 'doctor' || scope === 'nutrition' || scope === 'all') {
-      const pendingCount = await MedicalReport.countDocuments({
-        user: req.params.id, audit_status: 'audited', 'familyDoctorAudit.status': { $ne: 'audited' },
-      });
-      if (pendingCount > 0) {
-        return res.status(403).json({ success: false, needReportAudit: true, pendingCount, message: `请先审核确认 ${pendingCount} 份体检报告后再生成AI健康分析` });
-      }
+      const { checkReportAuditGate } = require('../utils/reportAuditGate');
+      const gateMsg = await checkReportAuditGate(req.params.id);
+      if (gateMsg) return res.status(403).json({ success: false, needReportAudit: true, message: gateMsg });
     }
     const force = !!req.body.force;
     const year = String(req.body.year || new Date().getFullYear());
@@ -4452,11 +4451,10 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
       return res.status(403).json({ success: false, message: '仅家庭医师可生成风险评估' });
     }
     // 双审强制前置：家庭医生生成风险评估前，必须先审核确认该客户所有健管专员已审核的报告
-    const pendingCount = await MedicalReport.countDocuments({
-      user: req.params.id, audit_status: 'audited', 'familyDoctorAudit.status': { $ne: 'audited' },
-    });
-    if (pendingCount > 0) {
-      return res.status(403).json({ success: false, needReportAudit: true, pendingCount, message: `请先审核确认 ${pendingCount} 份体检报告后再生成风险评估` });
+    {
+      const { checkReportAuditGate } = require('../utils/reportAuditGate');
+      const gateMsg = await checkReportAuditGate(req.params.id);
+      if (gateMsg) return res.status(403).json({ success: false, needReportAudit: true, message: gateMsg });
     }
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data');
@@ -5358,6 +5356,7 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
 const TODO_REVIEW_ROLE = {
   report_parse:         'healthManager',
   report_review:        'healthManager',
+  report_familydoctor_review: 'familyDoctor', // 家庭医生双审：健管已审、医生未审的体检报告
   archive_review:       'healthManager',
   checkup_plan_review:  'healthManager',
   summary_review:       'familyDoctor',
@@ -5450,6 +5449,26 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           id: 'report_' + r._id, type: 'report_review', label: '体检报告待审核', priority: 2,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
           summary: r.aiSummary ? r.aiSummary.slice(0, 60) : `${r.title} · AI解析完成`,
+          createdAt, overdue: (now - new Date(createdAt)) > DAY,
+          link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
+        });
+      });
+    }
+
+    // ── 家庭医生：体检报告双审（健管已审、医生未审）──
+    if (can('report_familydoctor_review')) {
+      const fdFilter = {
+        audit_status: 'audited', 'familyDoctorAudit.status': { $ne: 'audited' },
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      };
+      const fdReports = await MedicalReport.find(fdFilter)
+        .populate('user', 'name phone').sort({ audited_at: -1 }).limit(50).lean();
+      fdReports.forEach(r => {
+        const createdAt = r.audited_at || r.updatedAt || r.createdAt;
+        todos.push({
+          id: 'fdaudit_' + r._id, type: 'report_familydoctor_review', label: '体检报告待医生审核', priority: 2,
+          patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
+          summary: `${r.title} · 健管专员${r.audited_by || ''}已审核，待医生确认`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
         });
