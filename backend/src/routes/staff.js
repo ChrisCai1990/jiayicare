@@ -1589,15 +1589,24 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     }
     if (note !== undefined) report.note = note;
     // AI 审核字段
+    // 2026-07-21合并两步健管审核：audit_status 和 aiStatus 是历史上先后独立引入的两套字段
+    // （audit_status先有、aiStatus后加，从未真正整合），此前健管专员要先在"审核AI结果"弹窗
+    // 确认一遍（aiStatus→reviewed），再单独打开"查看"弹窗点一次审核通过（audit_status→audited）
+    // 才会进入家庭医生双审队列，两步实质做的是同一件"我确认这份报告没问题"的事。现在合并：
+    // 确认AI结果即视为健管专员审核通过，不必再多点一次。但"驳回后重新提交"场景例外——那是
+    // 已经被专员明确打回过一次的报告，重新提交应仍需人工再看一遍，不能自动直接判定通过。
+    let autoAuditPending = false;
     if (aiStatus !== undefined) {
+      const wasRejected = report.audit_status === 'rejected';
       report.aiStatus = aiStatus; report.reviewedAt = new Date(); report.reviewedByStaff = req.staff._id;
       // 驳回后重新编辑AI结果并提交，此前只更新了aiStatus，audit_status一直停留在rejected，
       // 界面又把审核按钮组隐藏，导致再也无法审核（2026-07-17反馈）。重新提交视为"撤回驳回，
       // 回到待审核"，不能直接跳到已审核——还是要走一遍人工审核。
-      if (aiStatus === 'reviewed' && report.audit_status === 'rejected') {
+      if (aiStatus === 'reviewed' && wasRejected) {
         report.audit_status = 'unaudited';
         report.reject_reason = '';
       }
+      autoAuditPending = aiStatus === 'reviewed' && !wasRejected && report.audit_status !== 'audited';
     }
     if (screeningCategory !== undefined) report.screeningCategory = screeningCategory;
     if (reportYear !== undefined) report.reportYear = reportYear;
@@ -1610,6 +1619,15 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       });
+    }
+    if (autoAuditPending) {
+      report.audit_status = 'audited';
+      report.audited_by = req.staff.name;
+      report.audited_at = new Date();
+      report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
+        ? report.staffAuditSnapshot
+        : { reportItems: report.reportItems, snapshotAt: new Date() };
+      report.familyDoctorAudit = { status: 'pending', by: null, byName: '', at: null, editLog: [] };
     }
     if (aiSummary !== undefined) report.aiSummary = aiSummary;
     // 补传/替换文件

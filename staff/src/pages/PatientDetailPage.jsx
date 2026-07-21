@@ -1914,7 +1914,7 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'reviewed' })
-      toast('审核通过，数据已写入专项筛查')
+      toast('审核通过，数据已写入专项筛查，已进入待家庭医生审核')
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '保存失败') }
