@@ -6625,6 +6625,9 @@ export default function PatientDetailPage() {
                   const l1Idx = l1Node ? screeningTree.findIndex(n => String(n._id) === key) : -1
                   const color = l1Idx >= 0 ? L1_COLORS[l1Idx % L1_COLORS.length] : '#8AA89C'
                   const isFunctionalMedicineGroup = /功能检测|功能医学/.test(l1Label)
+                  // 居家监测设备导出报告格式五花八门，AI识别易出错（曾出现机构名幻觉），
+                  // 2026-07-21需求明确不走AI自动解析，与功能医学检测同一处理方式
+                  const isHomeMonitorGroup = /居家监测/.test(l1Label)
                   return (
                   <div key={key} style={{ marginBottom: 16, borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
                     <div style={{ padding: '8px 16px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -6663,6 +6666,8 @@ export default function PatientDetailPage() {
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {isFunctionalMedicineGroup ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
+                              ) : isHomeMonitorGroup ? (
+                                <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
                               ) : r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
                                   disabled={parsingReportId === r._id}
@@ -8878,7 +8883,10 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
     setForm(f => ({
       ...f, l1Id,
       l2Label: '',
-      title: isAnn ? (f.title || '年度体检报告') : '',
+      // 之前无条件清空 title，如果专员先选文件(自动填了文件名做标题)、再点分类按钮，
+      // 标题会被静默清空且无提示，点上传时才报错"请填写报告标题"——已有标题（不论是
+      // 手填还是文件名自动填的）就保留，只在真的还没标题时才按类型给默认值。
+      title: isAnn ? (f.title || '年度体检报告') : f.title,
     }))
   }
 

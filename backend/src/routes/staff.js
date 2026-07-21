@@ -5686,6 +5686,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则G：findings/diagnosis/conclusion 字段只填报告原文，不加解释或分析。
 规则H：诊断结论性短语本身不是检查项目，禁止单独作为一条 name 提取。如"左肾上腺稍增粗""慢性浅表性胃炎""窦性心动过缓""血脂异常""饮酒史""内痔"这类词，只是某个检查项目（如腹部超声/胃镜/心电图/血脂化验/既往史问诊）的诊断结论或病史条目，必须整句放进对应检查项目的 diagnosis/findings 字段里，不能单独拆出来生成新的 name/条目。判断标准：如果这段文字没有具体的测量数值/检查所见描述，只是一个诊断名词或病史陈述，就不能作为独立项目。
 规则I：diagnosis/conclusion 严禁把报告原文的中文自行替换/翻译成英文。部分检查（如宫颈液基细胞学/TCT病理）国内报告的诊断结论原文其实是中文（如"未见上皮内病变或恶性病变"），但AI可能凭自己知道的TBS分类法英文术语把它替换成英文短语（如"Negative for intraepithelial lesion or malignancy"）——这是幻觉错误，违反规则零。报告上印的是什么文字就原样提取什么文字，不能用自己知道的专业术语替换原文，无论中译英还是英译中都不允许。只有报告原文确实印刷的是英文（少数境外机构报告）时，才翻译成中文标准表述填入。此规则只管diagnosis/conclusion这类结论性文字，name/value/unit和findings里的英文缩写指标代号（如DOB/CRP/IgG等）仍按原文提取。
+规则J：institution（检查机构名称）必须与报告原文印刷的机构全称逐字一致，禁止翻译、音译、编造或添加任何后缀。报告是中文的，institution 必须原样输出中文机构名，绝对不允许自己生成"XX Hospital""XX LLC"这类英文或中英混杂的机构名——这是严重幻觉错误，曾出现把"邵逸夫医院"错误识别成"逸天医院 LLC""那速大医院 LLC"等多种编造变体。institution 只能从报告页眉/页脚/公章/抬头等位置原文抄录，找不到就留空字符串，绝不能靠猜测或联想生成。只有报告原文确实印刷的是英文机构名（境外体检机构报告）时，才原样保留英文。
 
 【提取规则（按检查类型）】
 
@@ -5994,6 +5995,23 @@ function dropDepartmentSummaryEcho(items) {
 // 内容要么是纯科普说明文字（"小的结石不出现症状时可不处理..."，跟报告详细报告单里的具体检查所见完全重复，
 // 该患者的真实所见已经体现在归类正确的详细报告单条目里，如"双肾输尿管膀胱彩超"），要么内容极简空洞
 // （只有"未见异常"四个字，没有对应任何具体检查项目）。matchStatus必为unclassified作安全网，
+// AI识别机构名(institution)兜底过滤：2026-07-21发现同一用户多份中文报告被AI幻觉识别成
+// "逸天医院 LLC""那速大医院 LLC"等编造的中英混杂机构名（真实机构其实是"邵逸夫医院"）。
+// prompt层已加规则J约束，这里再加一道写入层兜底——命中明显异常格式就不采信AI值，宁可留空
+// 也不能把幻觉出的假机构名展示给医护/客户。判断标准：中文报告里出现公司后缀词，或中英文混杂
+// 到不像是真实机构全称（真实境外机构报告本身就是纯英文，不会中英混杂）。
+function isSuspiciousInstitution(name) {
+  const s = str(name);
+  if (!s) return false;
+  if (/\b(LLC|Inc\.?|Ltd\.?|Corp\.?|Co\.,?\s*Ltd)\b/i.test(s)) return true;
+  const hasHan = /[一-龥]/.test(s);
+  const hasLatin = /[A-Za-z]{3,}/.test(s);
+  return hasHan && hasLatin; // 中文机构名不应混入连续英文单词
+}
+function sanitizeInstitution(name) {
+  return isSuspiciousInstitution(name) ? '' : (name || '');
+}
+
 // 真实检查项目一定有具体名称且能归类，泛称+无实质内容的组合才会漏网到这里。
 const GENERIC_LABEL_NAMES = new Set(['彩超', '小结', '汇总', '总结', '检查结果', '异常结果', 'B超']);
 function isGenericLabelEcho(it) {
@@ -6517,7 +6535,7 @@ async function runReportParse(reportId) {
               );
             }
             if (p.summary) summaries.push(p.summary);
-            if (!institution && p.institution) institution = p.institution;
+            if (!institution && p.institution && !isSuspiciousInstitution(p.institution)) institution = p.institution;
             if (!checkDate && p.checkDate) checkDate = p.checkDate;
           }
         },
@@ -6702,7 +6720,7 @@ async function runReportParse(reportId) {
       reportItems: classifiedImg,
       aiSummary:   imgSummary,
       aiStatus:    'pending',
-      institution: parsed?.institution || report.institution,
+      institution: sanitizeInstitution(parsed?.institution) || report.institution,
       checkDate:   parsed?.checkDate   || report.checkDate,
     });
     console.log(`[parse-ai] 图片完成 ${reportId} 提取${parsed?.items?.length || 0}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
@@ -6729,6 +6747,14 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
 
     if (!hasFile) {
       return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
+    }
+    // 居家监测设备导出报告（动态血压/动态血糖等）格式五花八门、AI识别容易出错（曾出现机构名/数值
+    // 幻觉），2026-07-21需求明确要求这类报告不走AI自动解析，完全人工录入。年度体检报告内容庞杂
+    // 也一直不支持自动解析（见归类变更处 type!=='annual' 同一口径，此前本接口漏了这两类判断）。
+    if (report.type === 'home_monitor' || report.type === 'annual') {
+      await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
+      const label = report.type === 'home_monitor' ? '居家监测报告' : '年度体检报告';
+      return res.json({ success: true, message: `${label}不支持AI自动解析，请人工录入`, skipAi: true });
     }
     const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
     if (await isFunctionalMedicineL1(report.screeningL1)) {
