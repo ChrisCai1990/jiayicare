@@ -1184,6 +1184,8 @@ export default function PatientDetailPage() {
   const [ocrSaving, setOcrSaving] = useState(false)
   const [ocrClassifySearch, setOcrClassifySearch] = useState({}) // {[rowIndex]: searchText}
   const [ocrClassifyOpen, setOcrClassifyOpen] = useState({})    // {[rowIndex]: bool}
+  const [ocrClassifyDropUp, setOcrClassifyDropUp] = useState({}) // {[rowIndex]: bool} 归类下拉框展开方向，按实测可用空间动态判断
+  const ocrClassifyWrapRefs = useRef({})                        // {[rowIndex]: {current: HTMLElement}}
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
   // 管理信息下拉选项（服务包/会员来源），一次性加载
@@ -7912,14 +7914,31 @@ export default function PatientDetailPage() {
             ? allClassifyOpts.filter(o => o.label.toLowerCase().includes(q) || o.groupLabel.toLowerCase().includes(q))
             : allClassifyOpts
           const displayText = it.screeningKey ? (allClassifyOpts.find(o => o.value === it.screeningKey)?.label || it.screeningKey) : ''
+          // 2026-07-21修复：之前写死 bottom:100%(只往上弹)，表格中上部的行往上弹出时
+          // 上方空间不够，反而被 modal 顶部/header 裁切——和当初"往下弹被表格底部裁切"是同一类问题的镜像。
+          // 改成打开时用 getBoundingClientRect 判断该行上下实际可用空间，动态选展开方向。
+          if (!ocrClassifyWrapRefs.current[i]) ocrClassifyWrapRefs.current[i] = { current: null }
+          const wrapRef = ocrClassifyWrapRefs.current[i]
+          const dropUp = ocrClassifyDropUp[i] !== false
+          const handleFocus = () => {
+            const el = wrapRef.current
+            if (el) {
+              const r = el.getBoundingClientRect()
+              const spaceAbove = r.top
+              const spaceBelow = window.innerHeight - r.bottom
+              setOcrClassifyDropUp(p => ({ ...p, [i]: spaceAbove >= 160 || spaceAbove >= spaceBelow }))
+            }
+            setOcrClassifyOpen(p => ({ ...p, [i]: true }))
+            setOcrClassifySearch(p => ({ ...p, [i]: '' }))
+          }
           return (
-            <div style={{ position: 'relative', width: '100%' }}>
+            <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
               <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${it.screeningKey ? '#A7F3D0' : '#FCD34D'}`, borderRadius: 4, background: it.screeningKey ? '#F0FDF4' : '#FFFBEB', overflow: 'hidden' }}>
                 <input
                   style={{ flex: 1, padding: '3px 4px', fontSize: 11, border: 'none', background: 'transparent', outline: 'none', color: it.screeningKey ? '#1E6B50' : '#D97706', minWidth: 0 }}
                   placeholder="⚠ 待归类（可搜索）"
                   value={ocrClassifySearch[i] !== undefined ? ocrClassifySearch[i] : displayText}
-                  onFocus={() => { setOcrClassifyOpen(p => ({ ...p, [i]: true })); setOcrClassifySearch(p => ({ ...p, [i]: '' })) }}
+                  onFocus={handleFocus}
                   onBlur={() => setTimeout(() => { setOcrClassifyOpen(p => ({ ...p, [i]: false })); setOcrClassifySearch(p => { const n = { ...p }; delete n[i]; return n }) }, 180)}
                   onChange={e => setOcrClassifySearch(p => ({ ...p, [i]: e.target.value }))}
                 />
@@ -7928,11 +7947,9 @@ export default function PatientDetailPage() {
                 )}
               </div>
               {isOpen && (
-                // 2026-07-02修复：审核弹窗表格外层容器(modal-body)是 overflow:auto 的滚动区域，
-                // 新增/手动添加的项目通常排在表格最下面一行，这个下拉列表若继续往下(top:100%)弹出，
-                // 会被外层滚动容器的边界裁切掉——不是数据搜不到，是下拉框被截断看不全/点不到。
-                // 用 CSS 的 bottom:100% 改成向上弹出，这样即使在表格最底部也能完整展开。
-                <div style={{ position: 'absolute', bottom: '100%', left: 0, right: 0, zIndex: 1000, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 4, boxShadow: '0 -4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto', marginBottom: 2 }}>
+                // 表格外层容器(modal-body)是 overflow:auto 的滚动区域，下拉列表无论往上或往下弹，
+                // 只要固定方向就可能被 modal 边界裁切。dropUp 由 handleFocus 里实测的上下可用空间决定。
+                <div style={{ position: 'absolute', ...(dropUp ? { bottom: '100%', marginBottom: 2 } : { top: '100%', marginTop: 2 }), left: 0, right: 0, zIndex: 1000, background: '#fff', border: '1px solid #E0D9CE', borderRadius: 4, boxShadow: dropUp ? '0 -4px 16px rgba(0,0,0,0.12)' : '0 4px 16px rgba(0,0,0,0.12)', maxHeight: 220, overflowY: 'auto' }}>
                   <div onMouseDown={() => setClassify(i, '')} style={{ padding: '5px 8px', fontSize: 11, color: '#D97706', cursor: 'pointer', borderBottom: '1px solid #f5f2ec' }}>⚠ 清除归类</div>
                   {filtered.length === 0 && <div style={{ padding: '8px', fontSize: 11, color: '#aaa', textAlign: 'center' }}>无匹配结果</div>}
                   {filtered.map(o => (
