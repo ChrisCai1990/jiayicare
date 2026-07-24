@@ -1694,7 +1694,7 @@ export default function PatientDetailPage() {
     const lightMissed = meals.filter(m => d[`${m}Detail`] === '少吃')
     if (severelyMissed.length >= 1 || lightMissed.length >= 2) flags.push('每日摄入能量不足/节食')
     // 外卖/外食频率高：应酬≥3次/周，或三餐中≥2餐为外卖/饭店
-    const eatOutMeals = meals.filter(m => d[`${m}Detail`] === '外卖' || d[`${m}Detail`] === '饭店或外卖')
+    const eatOutMeals = meals.filter(m => d[`${m}Detail`] === '外卖' || d[`${m}Detail`] === '饭店' || d[`${m}Detail`] === '饭店或外卖')
     const highEntertainment = d.entertainment === '3-5次/周' || d.entertainment === '6-7次/周'
     if (eatOutMeals.length >= 2 || highEntertainment) flags.push('外卖/外食频率高（每周≥5次）')
     // 饮水不足
@@ -1720,6 +1720,49 @@ export default function PatientDetailPage() {
     // 心理压力
     if (d.psychStress && d.psychStress !== '正常') flags.push('存在心理压力或情绪问题')
     return [...new Set(flags)]
+  }
+
+  // 从膳食调查问卷细分字段提炼"基本生活记录"8项简述（供综合概述展示，可被医护手动覆盖）
+  const deriveBasicLifestyle = (d) => {
+    const mealLabel = { 居家: '居家', 饭店: '饭店', 外卖: '外卖', 在校: '在校', '饭店或外卖': '外食', 少吃: '少吃', 不吃: '不吃' }
+    const meals = [['breakfastDetail', '早'], ['lunchDetail', '午'], ['dinnerDetail', '晚']]
+    const mealParts = meals.filter(([k]) => d[k]).map(([k, prefix]) => `${prefix}${mealLabel[d[k]] || d[k]}`)
+    const badHabits = (d.badDietHabits || []).filter(h => h !== '无不良饮食习惯')
+    const dietParts = [...mealParts]
+    if (badHabits.length > 0) dietParts.push(badHabits.join('、'))
+    if (d.dietaryRestrictions === '有' && d.dietaryRestrictionsDesc) dietParts.push(`忌${d.dietaryRestrictionsDesc}`)
+    const diet = dietParts.join('，')
+
+    const exParts = []
+    if (d.exerciseType) exParts.push(d.exerciseType)
+    if (d.exerciseFrequency && d.exerciseFrequency !== '无') exParts.push(d.exerciseFrequency)
+    if (d.exerciseDuration) exParts.push(`每次${d.exerciseDuration}分钟`)
+    const exercise = exParts.join('，')
+
+    const sleepParts = []
+    if (d.sleepTime || d.wakeTime) sleepParts.push(`${d.sleepTime || '?'}入睡，${d.wakeTime || '?'}起床`)
+    if (d.scheduleRegularity) sleepParts.push(d.scheduleRegularity)
+    const sleep = sleepParts.join('，')
+
+    const water = d.dailyWater || ''
+    const smoking = d.smokingStatus || ''
+
+    const alcoholParts = []
+    if (d.drinkingFrequency) alcoholParts.push(d.drinkingFrequency)
+    const drinkTypes = (d.drinkingType || []).filter(t => t !== '其它')
+    if ((d.drinkingType || []).includes('其它') && d.drinkingTypeOtherDesc) drinkTypes.push(d.drinkingTypeOtherDesc)
+    if (drinkTypes.length > 0) alcoholParts.push(drinkTypes.join('、'))
+    if (d.drinkingAmount) alcoholParts.push(d.drinkingAmount)
+    const alcohol = alcoholParts.join('，')
+
+    const bowelParts = []
+    if (d.bowelRegularity) bowelParts.push(d.bowelRegularity)
+    if (d.bowelShape) bowelParts.push(d.bowelShape)
+    const bowel = bowelParts.join('，')
+
+    const mood = (d.psychStress && d.psychStress !== '正常') ? d.psychStress : (d.psychStress === '正常' ? '情绪稳定' : '')
+
+    return { diet, exercise, sleep, water, smoking, alcohol, bowel, mood }
   }
 
   // 生活方式：活动标签页
@@ -3363,7 +3406,7 @@ export default function PatientDetailPage() {
                     <div style={secTitle}>三餐与加餐</div>
                     <div style={row2}>
                       <LsText label="早餐时间" value={ld.breakfastTime} editing={editingLifestyle} placeholder="如 07:30" onChange={v => setLd({ breakfastTime: v })} />
-                      <LsRadio label="早餐就餐方式" value={ld.breakfastDetail} editing={editingLifestyle} options={['居家', '外卖', '少吃', '不吃']} onChange={v => setLd({ breakfastDetail: v })} />
+                      <LsRadio label="早餐就餐方式" value={ld.breakfastDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '少吃', '不吃']} onChange={v => setLd({ breakfastDetail: v })} />
                       <LsText label="早餐品类描述" value={ld.breakfastDesc} editing={editingLifestyle} placeholder="如 粥、鸡蛋、包子" onChange={v => setLd({ breakfastDesc: v })} />
                       <div>
                         <LsRadio label="上午加餐" value={ld.morningSnack} editing={editingLifestyle} options={['是', '否']} onChange={v => setLd({ morningSnack: v })} />
@@ -3374,7 +3417,7 @@ export default function PatientDetailPage() {
                     </div>
                     <div style={row2}>
                       <LsText label="午餐时间" value={ld.lunchTime} editing={editingLifestyle} placeholder="如 12:00" onChange={v => setLd({ lunchTime: v })} />
-                      <LsRadio label="午餐就餐方式" value={ld.lunchDetail} editing={editingLifestyle} options={['居家', '饭店或外卖', '少吃', '不吃']} onChange={v => setLd({ lunchDetail: v })} />
+                      <LsRadio label="午餐就餐方式" value={ld.lunchDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '少吃', '不吃']} onChange={v => setLd({ lunchDetail: v })} />
                       <LsText label="午餐品类描述" value={ld.lunchDesc} editing={editingLifestyle} placeholder="如 米饭、炒菜、汤" onChange={v => setLd({ lunchDesc: v })} />
                       <div>
                         <LsRadio label="下午加餐" value={ld.afternoonSnack} editing={editingLifestyle} options={['是', '否']} onChange={v => setLd({ afternoonSnack: v })} />
@@ -3385,7 +3428,7 @@ export default function PatientDetailPage() {
                     </div>
                     <div style={row2}>
                       <LsText label="晚餐时间" value={ld.dinnerTime} editing={editingLifestyle} placeholder="如 18:30" onChange={v => setLd({ dinnerTime: v })} />
-                      <LsRadio label="晚餐就餐方式" value={ld.dinnerDetail} editing={editingLifestyle} options={['居家', '饭店或外卖', '少吃', '不吃']} onChange={v => setLd({ dinnerDetail: v })} />
+                      <LsRadio label="晚餐就餐方式" value={ld.dinnerDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '少吃', '不吃']} onChange={v => setLd({ dinnerDetail: v })} />
                       <LsText label="晚餐品类描述" value={ld.dinnerDesc} editing={editingLifestyle} placeholder="如 蔬菜、豆腐、汤" onChange={v => setLd({ dinnerDesc: v })} />
                       <div>
                         <LsRadio label="晚间加餐" value={ld.eveningSnack} editing={editingLifestyle} options={['是', '否']} onChange={v => setLd({ eveningSnack: v })} />
@@ -3397,19 +3440,22 @@ export default function PatientDetailPage() {
 
                     <div style={secTitle}>食物摄入量</div>
                     <div style={row3}>
-                      <LsRadio label="每日主食摄入量" value={ld.dailyStaple} editing={editingLifestyle} options={['250克以内', '250-400克', '400克以上', '几乎不吃']} onChange={v => setLd({ dailyStaple: v })} />
+                      <LsRadio label="每日主食摄入量" value={ld.dailyStaple} editing={editingLifestyle} options={['约250克', '100-200克', '250-400克', '400克以上', '几乎不吃']} onChange={v => setLd({ dailyStaple: v })} />
                       <LsRadio label="每日蔬菜摄入量" value={ld.dailyVegetables} editing={editingLifestyle} options={['500克及以上', '300-500克', '300克以内', '几乎不吃']} onChange={v => setLd({ dailyVegetables: v })} />
-                      <LsRadio label="每日荤菜摄入量" value={ld.dailyMeat} editing={editingLifestyle} options={['80克以内', '80-150克', '150克及以上', '几乎不吃']} onChange={v => setLd({ dailyMeat: v })} />
+                      <LsRadio label="每日荤菜摄入量" value={ld.dailyMeat} editing={editingLifestyle} options={['80克以内', '80-150克', '150-200克', '200-250克', '250克以上', '几乎不吃']} onChange={v => setLd({ dailyMeat: v })} />
                     </div>
                     <div style={row2}>
-                      <LsRadio label="吃水果频次" value={ld.fruitFrequency} editing={editingLifestyle} options={['3天/周及以上', '每天吃', '几乎不吃']} onChange={v => setLd({ fruitFrequency: v })} />
+                      <LsRadio label="吃水果频次" value={ld.fruitFrequency} editing={editingLifestyle} options={['1-2天/周', '3天/周及以上', '每天吃', '几乎不吃']} onChange={v => setLd({ fruitFrequency: v })} />
                       <LsRadio label="水果摄入量" value={ld.fruitAmount} editing={editingLifestyle} options={['200克以内', '200-350克', '350克以上']} onChange={v => setLd({ fruitAmount: v })} />
-                      <LsRadio label="鸡蛋摄入频次" value={ld.eggFrequency} editing={editingLifestyle} options={['1-3天/周', '3-5天/周', '每天都吃']} onChange={v => setLd({ eggFrequency: v })} />
+                      <LsRadio label="鸡蛋摄入频次" value={ld.eggFrequency} editing={editingLifestyle} options={['1-3天/周', '3-5天/周', '每天都吃', '不吃']} onChange={v => setLd({ eggFrequency: v })} />
                       <LsRadio label="鸡蛋摄入量" value={ld.eggAmount} editing={editingLifestyle} options={['1个', '2-3个', '4个以上']} onChange={v => setLd({ eggAmount: v })} />
                       <LsRadio label="奶制品摄入量" value={ld.dairyAmount} editing={editingLifestyle} options={['＜300毫升/天', '300-500毫升/天', '＞500毫升', '几乎不喝']} onChange={v => setLd({ dairyAmount: v })} />
                     </div>
+                    <div style={{ marginBottom: 12 }}>
+                      <LsText label="奶制品备注" value={ld.dairyRemark} editing={editingLifestyle} placeholder="如：乳糖不耐受、只喝无乳糖牛奶" onChange={v => setLd({ dairyRemark: v })} />
+                    </div>
                     <div style={row2}>
-                      <LsRadio label="坚果摄入频次" value={ld.nutFrequency} editing={editingLifestyle} options={['一周2-3天', '每天吃', '几乎不吃']} onChange={v => setLd({ nutFrequency: v })} />
+                      <LsRadio label="坚果摄入频次" value={ld.nutFrequency} editing={editingLifestyle} options={['一周2-3天', '一周3-5天', '每天吃', '几乎不吃']} onChange={v => setLd({ nutFrequency: v })} />
                       <LsRadio label="坚果摄入量" value={ld.nutAmount} editing={editingLifestyle} options={['10克', '20-30克', '50克以上']} onChange={v => setLd({ nutAmount: v })} />
                       <LsRadio label="粗杂粮摄入频次" value={ld.grainFrequency} editing={editingLifestyle} options={['每天吃', '1-2天/周', '3天/周及以上', '几乎不吃']} onChange={v => setLd({ grainFrequency: v })} />
                       <LsRadio label="粗杂粮摄入量" value={ld.grainAmount} editing={editingLifestyle} options={['50-100克', '100-200克', '200-250克', '300克以上']} onChange={v => setLd({ grainAmount: v })} />
@@ -3456,17 +3502,23 @@ export default function PatientDetailPage() {
                   <div>
                     <div style={{ marginBottom: 12 }}>
                       <LsRadio label="吸烟情况" value={ld.smokingStatus} editing={editingLifestyle}
-                        options={['＜10支/日', '10-20支/日', '20-30支/日', '30支以上/日', '不吸烟', '戒烟']}
+                        options={['＜10支/日', '10-20支/日', '20-30支/日', '30支以上/日', '不吸烟', '吸二手烟', '戒烟']}
                         onChange={v => setLd({ smokingStatus: v })} />
                     </div>
                     <div style={row2}>
                       <LsRadio label="饮酒频率" value={ld.drinkingFrequency} editing={editingLifestyle}
-                        options={['＜1天/周', '1-3天/周', '3天/周及以上', '每天喝', '不喝酒']}
+                        options={['＜1天/周', '1-3天/周', '3天/周及以上', '每天喝', '几乎不喝酒']}
                         onChange={v => setLd({ drinkingFrequency: v })} />
                       <LsCheckbox label="饮酒类型" value={ld.drinkingType || []} editing={editingLifestyle}
-                        options={['红酒', '白酒', '啤酒', '其它']}
+                        options={['红酒', '白酒', '啤酒', '洋酒', '其它']}
                         onChange={v => setLd({ drinkingType: v })} />
                     </div>
+                    {(ld.drinkingType || []).includes('其它') && (
+                      <div style={{ marginBottom: 12 }}>
+                        <LsText label="饮酒类型-其它说明" value={ld.drinkingTypeOtherDesc} editing={editingLifestyle}
+                          placeholder="请说明具体酒类" onChange={v => setLd({ drinkingTypeOtherDesc: v })} />
+                      </div>
+                    )}
                     <div style={{ marginTop: 12 }}>
                       <LsText label="饮酒量" value={ld.drinkingAmount} editing={editingLifestyle}
                         placeholder="如：每次100ml、每次2两" onChange={v => setLd({ drinkingAmount: v })} />
@@ -3490,8 +3542,14 @@ export default function PatientDetailPage() {
                         options={['无', '海鲜', '坚果', '奶制品', '蛋类', '芒果', '其它']}
                         onChange={v => setLd({ foodAllergens: v })} />
                     </div>
+                    {(ld.foodAllergens || []).includes('其它') && (
+                      <div style={{ marginBottom: 12 }}>
+                        <LsText label="食物过敏源-其它说明" value={ld.foodAllergensOtherDesc} editing={editingLifestyle}
+                          placeholder="请说明具体过敏源" onChange={v => setLd({ foodAllergensOtherDesc: v })} />
+                      </div>
+                    )}
                     <div style={row2}>
-                      <LsRadio label="麸质过敏" value={ld.glutenAllergy} editing={editingLifestyle} options={['是', '否', '不详']} onChange={v => setLd({ glutenAllergy: v })} />
+                      <LsRadio label="麸质过敏" value={ld.glutenAllergy} editing={editingLifestyle} options={['是', '否', '不清楚']} onChange={v => setLd({ glutenAllergy: v })} />
                       <LsRadio label="每日饮水量" value={ld.dailyWater} editing={editingLifestyle}
                         options={['1500毫升内', '1500-1700毫升', '1800-2000毫升', '2500毫升', '3000毫升以上']}
                         onChange={v => setLd({ dailyWater: v })} />
@@ -3515,34 +3573,44 @@ export default function PatientDetailPage() {
                 {lifestyleTab === 'summary' && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
 
-                    {/* 基本生活记录（新增会员时填写的简要描述） */}
+                    {/* 基本生活记录（由膳食调查问卷自动提取，医护可手动覆盖） */}
                     <div>
-                      <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginBottom: 10 }}>基本生活记录</div>
+                      <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginBottom: 6 }}>基本生活记录</div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>
+                        系统根据膳食调查问卷自动提取，留空的字段手动填写后将覆盖自动结果。
+                      </div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px 20px' }}>
-                        {[
-                          { key: 'diet',     label: '饮食习惯',       placeholder: '如：清淡为主' },
-                          { key: 'exercise', label: '运动习惯',       placeholder: '如：每周跑步3次' },
-                          { key: 'sleep',    label: '睡眠习惯',       placeholder: '如：23:00入睡，7小时' },
-                          { key: 'water',    label: '饮水情况',       placeholder: '如：每日2000ml' },
-                          { key: 'smoking',  label: '吸烟情况',       placeholder: '如：不吸烟' },
-                          { key: 'alcohol',  label: '饮酒情况',       placeholder: '如：偶尔饮酒' },
-                          { key: 'bowel',    label: '排便情况',       placeholder: '如：每日1次，成形' },
-                          { key: 'mood',     label: '情绪状态',       placeholder: '如：情绪稳定，偶有焦虑' },
-                        ].map(({ key, label, placeholder }) => (
-                          <div key={key} className="form-group" style={{ marginBottom: 0 }}>
-                            <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}</label>
-                            {editingLifestyle ? (
-                              <input className="form-input" placeholder={placeholder}
-                                value={lifestyleForm.lifestyle?.[key] || ''}
-                                onChange={e => setLifestyleForm(f => ({ ...f, lifestyle: { ...f.lifestyle, [key]: e.target.value } }))}
-                                style={{ fontSize: 13 }} />
-                            ) : (
-                              <div style={{ fontSize: 13, color: lifestyleForm.lifestyle?.[key] ? '#1A2B24' : '#bbb', padding: '6px 0', borderBottom: '1px solid #f0ede8' }}>
-                                {lifestyleForm.lifestyle?.[key] || '未填写'}
+                        {(() => {
+                          const derived = deriveBasicLifestyle(ld)
+                          return [
+                            { key: 'diet',     label: '饮食习惯',       placeholder: '如：清淡为主' },
+                            { key: 'exercise', label: '运动习惯',       placeholder: '如：每周跑步3次' },
+                            { key: 'sleep',    label: '睡眠习惯',       placeholder: '如：23:00入睡，7小时' },
+                            { key: 'water',    label: '饮水情况',       placeholder: '如：每日2000ml' },
+                            { key: 'smoking',  label: '吸烟情况',       placeholder: '如：不吸烟' },
+                            { key: 'alcohol',  label: '饮酒情况',       placeholder: '如：偶尔饮酒' },
+                            { key: 'bowel',    label: '排便情况',       placeholder: '如：每日1次，成形' },
+                            { key: 'mood',     label: '情绪状态',       placeholder: '如：情绪稳定，偶有焦虑' },
+                          ].map(({ key, label, placeholder }) => {
+                            const override = lifestyleForm.lifestyle?.[key] || ''
+                            const displayVal = override || derived[key] || ''
+                            return (
+                              <div key={key} className="form-group" style={{ marginBottom: 0 }}>
+                                <label style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}</label>
+                                {editingLifestyle ? (
+                                  <input className="form-input" placeholder={derived[key] || placeholder}
+                                    value={override}
+                                    onChange={e => setLifestyleForm(f => ({ ...f, lifestyle: { ...f.lifestyle, [key]: e.target.value } }))}
+                                    style={{ fontSize: 13 }} />
+                                ) : (
+                                  <div style={{ fontSize: 13, color: displayVal ? '#1A2B24' : '#bbb', padding: '6px 0', borderBottom: '1px solid #f0ede8' }}>
+                                    {displayVal || '未填写'}
+                                  </div>
+                                )}
                               </div>
-                            )}
-                          </div>
-                        ))}
+                            )
+                          })
+                        })()}
                       </div>
                     </div>
 

@@ -270,7 +270,7 @@ export default function ProfileArchiveScreen({ navigation }) {
             {(() => {
               const d = lifestyleData || {};
               const dietParts = [];
-              const mealMap = { 居家: '居家', 外卖: '外卖', '饭店或外卖': '外食', 少吃: '少吃', 不吃: '不吃' };
+              const mealMap = { 居家: '居家', 饭店: '饭店', 外卖: '外卖', 在校: '在校', '饭店或外卖': '外食', 少吃: '少吃', 不吃: '不吃' };
               if (d.breakfastDetail) dietParts.push(`早${mealMap[d.breakfastDetail] || d.breakfastDetail}`);
               if (d.lunchDetail) dietParts.push(`午${mealMap[d.lunchDetail] || d.lunchDetail}`);
               if (d.dinnerDetail) dietParts.push(`晚${mealMap[d.dinnerDetail] || d.dinnerDetail}`);
