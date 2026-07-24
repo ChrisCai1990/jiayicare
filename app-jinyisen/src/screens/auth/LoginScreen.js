@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity,
   StyleSheet, SafeAreaView, KeyboardAvoidingView,
-  Platform, ActivityIndicator, Dimensions,
+  Platform, ActivityIndicator, Dimensions, ScrollView,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -136,7 +136,12 @@ export default function LoginScreen({ navigation }) {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
         style={styles.formWrapper}
       >
-        <View style={styles.formCard}>
+        <ScrollView
+          style={styles.formCard}
+          contentContainerStyle={styles.formCardContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
           {/* 顶部圆角拉手 */}
           <View style={styles.pullHandle} />
 
@@ -275,7 +280,7 @@ export default function LoginScreen({ navigation }) {
             {' '}及{' '}
             <Text style={styles.agreeLink} onPress={() => navigation.navigate('Legal', { type: 'privacy' })}>《隐私政策》</Text>
           </Text>
-        </View>
+        </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -337,8 +342,11 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 28,
     borderTopWidth: 1,
     borderColor: colors.glassBorder,
+  },
+  formCardContent: {
     paddingHorizontal: spacing.lg,
     paddingTop: 12,
+    paddingBottom: spacing.xl,
   },
   pullHandle: {
     width: 36, height: 4, borderRadius: 2,
