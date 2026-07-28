@@ -5368,17 +5368,25 @@ export default function PatientDetailPage() {
             <AiRuleHint scene="health_analysis" />
             {/* 前置要求：家庭医生生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
-            {pendingDoctorAuditReports.length > 0 && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8 }}>
-                <span style={{ fontSize: 18 }}>⚠️</span>
-                <div style={{ flex: 1, fontSize: 13, color: '#92400E' }}>
-                  健管专员已审核 <b>{pendingDoctorAuditReports.length}</b> 份新体检报告，请逐份查看后确认，才能生成AI健康分析/风险评估
+            {pendingDoctorAuditReports.length > 0 && (() => {
+              // 文案显示"待查看"数量而非总数：此前写死显示 pendingDoctorAuditReports.length（总数），
+              // 哪怕已经逐份点开查看了60/61份，这行提示文字也纹丝不动还是显示"61"，容易让人误以为
+              // 一份都没处理、之前的查看进度没生效。改为显示还剩几份未查看，全部查看完文案自动收尾。
+              const unviewedCount = pendingDoctorAuditReports.filter(r => !r.familyDoctorViewedAt).length
+              return (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8 }}>
+                  <span style={{ fontSize: 18 }}>⚠️</span>
+                  <div style={{ flex: 1, fontSize: 13, color: '#92400E' }}>
+                    {unviewedCount > 0
+                      ? <>健管专员已审核 <b>{pendingDoctorAuditReports.length}</b> 份新体检报告，还有 <b>{unviewedCount}</b> 份未查看，请查看后确认，才能生成AI健康分析/风险评估</>
+                      : <>已查看完全部 <b>{pendingDoctorAuditReports.length}</b> 份新体检报告，请点击确认完成</>}
+                  </div>
+                  <button className="btn btn-primary btn-sm" onClick={() => setShowArchiveReviewModal(true)}>
+                    {unviewedCount > 0 ? '去查看' : '去确认'}
+                  </button>
                 </div>
-                <button className="btn btn-primary btn-sm" onClick={() => setShowArchiveReviewModal(true)}>
-                  去查看
-                </button>
-              </div>
-            )}
+              )
+            })()}
             {/* 年度选择：下拉 select，✓=已审核 ●=已生成待审核 */}
             <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
               <span style={{ fontSize: 12, color: '#8AA89C', whiteSpace: 'nowrap' }}>📅 年度</span>
