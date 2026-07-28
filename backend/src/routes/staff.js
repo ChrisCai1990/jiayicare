@@ -1811,8 +1811,13 @@ router.post('/patients/:id/archive-review', staffAuth, checkPermission('patients
     // 下次判断时 healthProfileUpdatedAt 仍晚于快照，造成"刚确认又立刻重新出现待办"。
     const snapshotAt = new Date();
 
+    // 2026-07-29修复真实生产bug：User.collection.updateOne 是原生MongoDB driver，绕过Mongoose
+    // 类型转换——req.params.id 是字符串，不会自动转成ObjectId，导致查询条件 {_id: "字符串"}
+    // 永远匹配不到真实存的 ObjectId 记录。updateOne 会返回成功(matchedCount=0也不报错)，
+    // 但实际什么都没更新，是"返回200成功但数据库完全没变化"的根因（本仓库staff.js第701行
+    // 注释已明确记录过这个坑，这处疏忽未遵守）。
     await User.collection.updateOne(
-      { _id: req.params.id },
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
       { $set: {
         archiveReviewStatus: 'reviewed',
         archiveReviewedAt: snapshotAt,
