@@ -91,6 +91,7 @@ export default function TeamPage() {
                 <th style={{ textAlign: 'center' }}>管理会员</th>
                 <th style={{ textAlign: 'center' }}>随访次数</th>
                 <th style={{ textAlign: 'center' }}>方案数量</th>
+                <th style={{ textAlign: 'center' }}>档案查看进度</th>
                 <th style={{ textAlign: 'center' }}>工作量指数</th>
               </tr>
             </thead>
@@ -117,6 +118,15 @@ export default function TeamPage() {
                     <td style={{ textAlign: 'center', fontWeight: 600, color: '#0077B6' }}>{m.patientCount}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600, color: '#22A06B' }}>{m.followupCount}</td>
                     <td style={{ textAlign: 'center', fontWeight: 600, color: '#D97706' }}>{m.planCount}</td>
+                    <td style={{ textAlign: 'center' }}>
+                      {m.archiveReviewStats ? (
+                        <span style={{ fontSize: 13, fontWeight: 600, color: m.archiveReviewStats.pendingCount > 0 ? '#DC3545' : '#22A06B' }}>
+                          {m.archiveReviewStats.reviewedCount}/{m.archiveReviewStats.totalPatients} 已查看
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 12, color: '#ccc' }}>-</span>
+                      )}
+                    </td>
                     <td style={{ textAlign: 'center' }}>
                       <WorkloadBar value={workload} max={Math.max(...filtered.map(x => (x.patientCount||0)*2+(x.followupCount||0)+(x.planCount||0)*3), 1)} />
                     </td>

@@ -1627,7 +1627,6 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
         ? report.staffAuditSnapshot
         : { reportItems: report.reportItems, snapshotAt: new Date() };
-      report.familyDoctorAudit = { status: 'pending', by: null, byName: '', at: null, editLog: [] };
     }
     if (aiSummary !== undefined) report.aiSummary = aiSummary;
     // 补传/替换文件
@@ -1699,8 +1698,6 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
       ? report.staffAuditSnapshot
       : { reportItems: report.reportItems, snapshotAt: new Date() };
-    // 归类/内容被驳回重审后再次通过，说明报告变了，家庭医生此前的审核已经过时，需要重新走一遍
-    report.familyDoctorAudit = { status: 'pending', by: null, byName: '', at: null, editLog: [] };
     // 如果关联方案项目，自动完成
     if (report.planId && report.planItemId) {
       const plan = await HealthPlan.findById(report.planId);
@@ -1747,57 +1744,63 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   res.json({ success: true, data: report });
 });
 
-// GET /api/staff/patients/:id/reports/pending-doctor-audit — 该客户所有"健管专员已审核、
-// 家庭医生还未审核"的报告列表。家庭医生做AI健康解析/风险评估前必须先清空这个列表（强制前置）。
+// GET /api/staff/patients/:id/reports/pending-doctor-audit — 该客户所有"健管专员已审核，
+// 但晚于家庭医生上次查看确认健康档案"的报告列表，用于家庭医生待办页面提示"有新审核完的体检
+// 数据，需要查看确认健康档案"。2026-07-28改造：家庭医生不再逐份审核报告数据本身（那是健管
+// 专员audit_status的职责），这里只做"是否有新数据需要提醒查看"的判断，实际动作走
+// POST /patients/:id/archive-review。
 router.get('/patients/:id/reports/pending-doctor-audit', staffAuth, async (req, res) => {
   try {
-    const reports = await MedicalReport.find({
-      user: req.params.id,
-      audit_status: 'audited',
-      'familyDoctorAudit.status': { $ne: 'audited' },
-    }).select('title screeningL1 screeningL2 checkDate hospital institution audited_by audited_at').sort({ checkDate: -1 }).lean();
+    const user = await User.findById(req.params.id).select('archiveReviewStatus archiveReviewSnapshotAt');
+    const filter = { user: req.params.id, audit_status: 'audited' };
+    if (user?.archiveReviewStatus === 'reviewed' && user.archiveReviewSnapshotAt) {
+      filter.createdAt = { $gt: user.archiveReviewSnapshotAt };
+    }
+    const reports = await MedicalReport.find(filter)
+      .select('title screeningL1 screeningL2 checkDate hospital institution audited_by audited_at').sort({ checkDate: -1 }).lean();
     res.json({ success: true, data: reports, count: reports.length });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST /api/staff/patients/:id/reports/:rid/doctor-audit — 家庭医生审核确认，可选携带
-// reportItems 编辑（编辑后直接覆盖为最终生效版本，逐字段生成 editLog 留痕）
-router.post('/patients/:id/reports/:rid/doctor-audit', staffAuth, async (req, res) => {
+// GET /api/staff/patients/:id/screening-yearly-summary?year=2026 — 专项筛查年度小结（肿瘤/
+// 心脑血管病/慢性病及其他三大类），供医护端查看AI健康分析时对照核查
+router.get('/patients/:id/screening-yearly-summary', staffAuth, async (req, res) => {
   try {
-    const { reportItems } = req.body;
-    const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id });
-    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    if (report.audit_status !== 'audited') {
-      return res.status(400).json({ success: false, message: '该报告尚未通过健管专员审核，不能进行医生审核' });
-    }
+    const { buildScreeningYearlySummary } = require('../utils/screeningYearlySummary');
+    const year = req.query.year || new Date().getFullYear();
+    const data = await buildScreeningYearlySummary(req.params.id, year);
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
 
-    const editLog = [];
-    if (Array.isArray(reportItems)) {
-      const before = report.reportItems || [];
-      const DIFF_FIELDS = ['value', 'unit', 'referenceRange', 'status', 'findings', 'diagnosis', 'conclusion'];
-      reportItems.forEach((newItem, idx) => {
-        const oldItem = before[idx];
-        if (!oldItem) return;
-        DIFF_FIELDS.forEach(field => {
-          const oldVal = oldItem[field] == null ? '' : String(oldItem[field]);
-          const newVal = newItem[field] == null ? '' : String(newItem[field]);
-          if (oldVal !== newVal) {
-            editLog.push({ itemIndex: idx, itemName: newItem.name || oldItem.name || '', field, oldValue: oldVal, newValue: newVal, at: new Date() });
-          }
-        });
-      });
-      report.reportItems = reportItems; // 编辑后的版本直接作为后续 AI 分析的最终数据源
+// POST /api/staff/patients/:id/archive-review — 家庭医生确认已查看该客户新增的健康档案/体检
+// 报告。这是客户维度的增量确认（不是逐份审核报告数据，也不是"全部推倒重来"）——已经看过、
+// 确认过的历史内容永久算数，点这个接口只是把"上次确认"的时间点往前推进，之后只需要再看
+// 这次确认之后新增的部分（见 reportAuditGate.js hasUnreviewedNewContent）。
+router.post('/patients/:id/archive-review', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
+  try {
+    if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
+      return res.status(403).json({ success: false, message: '仅家庭医生可确认查看健康档案' });
     }
+    const user = await User.findById(req.params.id).select('assignedFamilyDoctor');
+    if (!user) return res.status(404).json({ success: false, message: '客户不存在' });
 
-    report.familyDoctorAudit = {
-      status: 'audited',
-      by: req.staff._id,
-      byName: req.staff.name || req.staff.username || '',
-      at: new Date(),
-      editLog: [...(report.familyDoctorAudit?.editLog || []), ...editLog],
-    };
-    await report.save();
-    res.json({ success: true, data: report });
+    // 快照取"确认动作发生的当前时刻"，而不是最新报告时间——触发原因可能是健康档案字段变动
+    // （没有新报告，或报告比档案变动更早），若只取报告时间会导致档案变动这部分没被覆盖，
+    // 下次判断时 healthProfileUpdatedAt 仍晚于快照，造成"刚确认又立刻重新出现待办"。
+    const snapshotAt = new Date();
+
+    await User.collection.updateOne(
+      { _id: req.params.id },
+      { $set: {
+        archiveReviewStatus: 'reviewed',
+        archiveReviewedAt: snapshotAt,
+        archiveReviewedBy: req.staff._id,
+        archiveReviewedByName: req.staff.name || req.staff.username || '',
+        archiveReviewSnapshotAt: snapshotAt,
+      } }
+    );
+    res.json({ success: true, message: '已确认查看健康档案' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -2428,6 +2431,7 @@ router.get('/team', staffAuth, checkPermission('team', 'view'), async (req, res)
   const filter = req.staff.role === 'superadmin' ? { role: { $in: STAFF_ROLES } } : { role: { $in: STAFF_ROLES }, department: req.staff.department };
   const members = await Admin.find(filter).select('name role title department avatar createdAt').sort({ role: 1, name: 1 });
   // 为每个成员统计数据
+  const { hasUnreviewedNewContent } = require('../utils/reportAuditGate');
   const statsArr = await Promise.all(members.map(async m => {
     const myFilter = m.role === 'familyDoctor'
       ? { assignedFamilyDoctor: m._id }
@@ -2437,7 +2441,16 @@ router.get('/team', staffAuth, checkPermission('team', 'view'), async (req, res)
       FollowUp.countDocuments({ staffId: m._id }),
       HealthPlan.countDocuments({ staffId: m._id }),
     ]);
-    return { _id: m._id, name: m.name, role: m.role, roleLabel: ROLE_LABEL[m.role] || m.role, title: m.title, department: m.department, patientCount, followupCount, planCount };
+    // 家庭医生专属：名下患者"健康档案已查看确认"完成情况（增量制，已确认过的历史内容不重复计入待办），
+    // 供团队负责人判断是否真的看过资料而非敷衍点击（2026-07-28新增）
+    let archiveReviewStats = null;
+    if (m.role === 'familyDoctor') {
+      const myPatients = await User.find(myFilter)
+        .select('archiveReviewStatus archiveReviewSnapshotAt healthProfileUpdatedAt').lean();
+      const pendingCount = myPatients.filter(hasUnreviewedNewContent).length;
+      archiveReviewStats = { totalPatients: myPatients.length, reviewedCount: myPatients.length - pendingCount, pendingCount };
+    }
+    return { _id: m._id, name: m.name, role: m.role, roleLabel: ROLE_LABEL[m.role] || m.role, title: m.title, department: m.department, patientCount, followupCount, planCount, archiveReviewStats };
   }));
   res.json({ success: true, data: { members: statsArr, total: statsArr.length } });
 });
@@ -5531,24 +5544,51 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 家庭医生：体检报告双审（健管已审、医生未审）──
+    // ── 家庭医生：健康档案待查看确认（2026-07-28改造）──
+    // 不再逐份审核报告数据，而是"该客户有健管已审的新报告/健康档案更新，家庭医生需要看一眼
+    // 新增部分并确认"，按客户聚合成一条待办（而不是每份报告各一条）。这是增量确认机制：已经
+    // 确认过的历史报告不会被重复统计，只统计上次确认之后新增的部分，点开后走
+    // archive-review 确认接口（确认后快照往前推进，不需要把历史资料重新翻一遍）。
     if (can('report_familydoctor_review')) {
-      const fdFilter = {
-        audit_status: 'audited', 'familyDoctorAudit.status': { $ne: 'audited' },
-        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
-      };
-      const fdReports = await MedicalReport.find(fdFilter)
-        .populate('user', 'name phone').sort({ audited_at: -1 }).limit(50).lean();
-      fdReports.forEach(r => {
-        const createdAt = r.audited_at || r.updatedAt || r.createdAt;
-        todos.push({
-          id: 'fdaudit_' + r._id, type: 'report_familydoctor_review', label: '体检报告待医生审核', priority: 2,
-          patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: `${r.title} · 健管专员${r.audited_by || ''}已审核，待医生确认`,
-          createdAt, overdue: (now - new Date(createdAt)) > DAY,
-          link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
-        });
-      });
+      const fdUserFilter = { assignedFamilyDoctor: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
+      const candidates = await User.find(fdUserFilter)
+        .select('name archiveReviewStatus archiveReviewSnapshotAt healthProfileUpdatedAt').lean();
+      if (candidates.length) {
+        const { hasUnreviewedNewContent } = require('../utils/reportAuditGate');
+        const pendingUsers = candidates.filter(hasUnreviewedNewContent);
+        if (pendingUsers.length) {
+          const pendingIds = pendingUsers.map(u => u._id);
+          // 只统计"上次确认之后新增"的报告数，历史已确认过的报告不重复计入（增量原则）
+          const newReportCounts = await MedicalReport.aggregate([
+            { $match: { user: { $in: pendingIds }, audit_status: 'audited' } },
+            { $group: { _id: '$user', reports: { $push: { createdAt: '$createdAt', audited_at: '$audited_at' } } } },
+          ]);
+          const userMap = new Map(pendingUsers.map(u => [String(u._id), u]));
+          const countMap = new Map(newReportCounts.map(c => {
+            const u = userMap.get(String(c._id));
+            const snapshotAt = u?.archiveReviewSnapshotAt ? new Date(u.archiveReviewSnapshotAt).getTime() : 0;
+            const newReports = c.reports.filter(r => new Date(r.createdAt).getTime() > snapshotAt);
+            const latestAt = newReports.length
+              ? new Date(Math.max(...newReports.map(r => new Date(r.audited_at || r.createdAt).getTime())))
+              : (u?.healthProfileUpdatedAt || null);
+            return [String(c._id), { count: newReports.length, latestAt }];
+          }));
+          pendingUsers.forEach(u => {
+            const info = countMap.get(String(u._id));
+            const createdAt = info?.latestAt || u.healthProfileUpdatedAt || new Date();
+            const summary = info && info.count > 0
+              ? `健管专员新审核${info.count}份体检报告，家庭医生需查看确认`
+              : '健康档案有更新，家庭医生需查看确认';
+            todos.push({
+              id: 'archivereview_' + u._id, type: 'report_familydoctor_review', label: '健康档案待查看确认', priority: 2,
+              patientName: u.name || '未知', patientId: String(u._id),
+              summary,
+              createdAt, overdue: (now - new Date(createdAt)) > DAY,
+              link: `/patients/${u._id}?tab=archive`,
+            });
+          });
+        }
+      }
     }
 
     // ── 营养师：膳食调查问卷待复核（固定问卷ID，与健管专员审核写入档案是独立并行的两道确认）──

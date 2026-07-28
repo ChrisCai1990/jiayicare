@@ -79,9 +79,9 @@ export const staffAPI = {
   getReports:    (p = {}) => req('/staff/medical-reports?' + qs(p)),
   getReport:     (id)     => req(`/staff/medical-reports/${id}`),
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
-  // 家庭医生双审
+  // 家庭医生健康档案查看确认（2026-07-28改造，不再逐份审核报告数据本身）
   getPendingDoctorAuditReports: (patientId) => req(`/staff/patients/${patientId}/reports/pending-doctor-audit`),
-  doctorAuditReport: (patientId, reportId, data) => req(`/staff/patients/${patientId}/reports/${reportId}/doctor-audit`, { method: 'POST', body: JSON.stringify(data) }),
+  confirmArchiveReview: (patientId) => req(`/staff/patients/${patientId}/archive-review`, { method: 'POST' }),
   // 膳食调查问卷营养师复核
   nutritionistReviewResponse: (patientId, responseId) => req(`/staff/patients/${patientId}/questionnaire-responses/${responseId}/nutritionist-review`, { method: 'POST' }),
   // 上传报告后自动识别机构/日期回填表单

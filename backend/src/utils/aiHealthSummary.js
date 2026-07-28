@@ -343,6 +343,14 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
     };
   }
 
+  // 数据溯源：AI文本结论核实起来要反复跳转查原始档案，很麻烦。这里不是让AI自己编造溯源标识
+  // （AI可能编造或对错号，指错地方比没有链接更误导人），而是后端用规则去 allReports 的
+  // reportItems 里按名称模糊匹配——匹配到就补充 sourceReportId/sourceItemIndex 供前端渲染成
+  // 可点击链接，匹配不到就是纯文本，不冒充精确定位。
+  if (!parseFailed) {
+    attachSourceLinks(sections, allReports);
+  }
+
   // 生活方式评估解析出的是空壳（items为空且summary为空）也视为失败，不能悄悄写入数据库
   // 让上层显示"已生成"却实际没内容——2026-07-07 赵菲盈反馈的"提示已生成但看不到"即此场景
   if (wantLifestyle) {
@@ -360,6 +368,50 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
     return { sections: { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] }, failed: parseFailed };
   }
   return { sections, failed: parseFailed };
+}
+
+// 把 allReports 展平成 {name, reportId, itemIndex} 的扁平索引，供按名称模糊匹配
+function buildReportItemIndex(allReports) {
+  const index = [];
+  allReports.forEach(r => {
+    (r.reportItems || []).forEach((item, itemIndex) => {
+      if (item && item.name) index.push({ name: String(item.name), reportId: String(r._id), itemIndex });
+    });
+  });
+  return index;
+}
+
+// 简单包含匹配（互相包含即视为同一项，如"总胆固醇"能匹配"总胆固醇(TC)"）。只做确定性字符串
+// 匹配，不引入模糊相似度算法——宁可匹配不上显示纯文本，也不要匹配错导致点进去看的是无关数据。
+function findSourceMatch(name, index) {
+  if (!name) return null;
+  const n = String(name).trim();
+  if (!n) return null;
+  const hit = index.find(it => it.name.includes(n) || n.includes(it.name));
+  return hit ? { sourceReportId: hit.reportId, sourceItemIndex: hit.itemIndex } : null;
+}
+
+// 遍历 medical_priority.items 和 chronic_disease.items（这两个板块的每条结论都带 name 字段，
+// 最适合按名称核对到具体检查项），就地补充溯源字段
+function attachSourceLinks(sections, allReports) {
+  const index = buildReportItemIndex(allReports);
+  if (!index.length) return;
+
+  const mp = sections.medical_priority;
+  if (mp && Array.isArray(mp.items)) {
+    mp.items.forEach(item => {
+      const match = findSourceMatch(item.name, index);
+      if (match) Object.assign(item, match);
+    });
+  }
+
+  const cd = sections.chronic_disease;
+  if (cd && Array.isArray(cd.items)) {
+    cd.items.forEach(item => {
+      const match = findSourceMatch(item.name, index);
+      if (match) Object.assign(item, match);
+    });
+  }
 }
 
 module.exports = { generateHealthSummarySections, DOCTOR_KEYS, LIFESTYLE_KEY };

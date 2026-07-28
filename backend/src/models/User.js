@@ -240,10 +240,19 @@ const userSchema = new mongoose.Schema({
     status:    { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
   }],
 
-  // ── 档案审核（3.1）──────────────────────────────────────────────────
+  // ── 家庭医生健康档案已查看确认 ──────────────────────────────────────
+  // 家庭医生在生成/查看AI健康分析、AI风险评估前，必须先看过患者的原始体检资料。这是客户维度
+  // 的一次性确认动作（不是逐份审核报告数据本身，那是健管专员 MedicalReport.audit_status 的职责）。
+  // archiveReviewSnapshotAt 记录确认时该客户最新一份报告的时间，之后如有更新的报告或健康档案
+  // 变动晚于这个时间，视为"已查看"状态失效，需要家庭医生重新查看确认（见 reportAuditGate.js）。
   archiveReviewStatus: { type: String, enum: ['pending', 'reviewed'], default: 'pending' },
   archiveReviewedAt:   { type: Date, default: null },
   archiveReviewedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  archiveReviewedByName: { type: String, default: '' },
+  archiveReviewSnapshotAt: { type: Date, default: null },
+  // PUT /user/me 走原生driver不会自动维护Mongoose的updatedAt，健康档案更新需要单独打点，
+  // 供家庭医生"已查看确认"失效判断使用（对比这个时间和 archiveReviewSnapshotAt）
+  healthProfileUpdatedAt: { type: Date, default: null },
 
   // ── 身体成分（4.2）──────────────────────────────────────────────────
   bodyComposition: { type: mongoose.Schema.Types.Mixed, default: {} },

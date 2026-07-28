@@ -76,7 +76,7 @@ function ListLines({ items, color }) {
   );
 }
 
-function HealthSummaryView({ sections }) {
+function HealthSummaryView({ sections, navigation }) {
   const s = sections || {};
   const lifestyle = s.lifestyle_assessment || {};
   const medPriority = s.medical_priority || {};
@@ -112,12 +112,17 @@ function HealthSummaryView({ sections }) {
         {(chronic.items || []).length === 0 && <Text style={styles.mutedText}>暂无</Text>}
         {(chronic.items || []).map((it, i) => {
           const st = STATUS_META[it.status] || STATUS_META.normal;
+          const Wrapper = it.sourceReportId ? TouchableOpacity : View;
           return (
-            <View key={i} style={styles.chronicRow}>
-              <Text style={styles.chronicName}>{it.name}</Text>
+            <Wrapper key={i} style={styles.chronicRow}
+              {...(it.sourceReportId ? { activeOpacity: 0.7, onPress: () => navigation.navigate('MedicalReports', { highlightReportId: it.sourceReportId, highlightItemIndex: it.sourceItemIndex }) } : {})}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                <Text style={styles.chronicName}>{it.name}</Text>
+                {!!it.sourceReportId && <Ionicons name="link-outline" size={12} color={colors.primary} />}
+              </View>
               <Text style={[styles.chronicValue, { color: st.color }]}>{it.value}（{st.label}）</Text>
               {!!it.note && <Text style={styles.mutedText}>{it.note}</Text>}
-            </View>
+            </Wrapper>
           );
         })}
       </SectionCard>
@@ -137,7 +142,15 @@ function HealthSummaryView({ sections }) {
           return (
             <View key={i} style={styles.priorityItem}>
               <View style={styles.priorityHeader}>
-                <Text style={styles.priorityName}>{it.name}</Text>
+                {it.sourceReportId ? (
+                  <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }} activeOpacity={0.7}
+                    onPress={() => navigation.navigate('MedicalReports', { highlightReportId: it.sourceReportId, highlightItemIndex: it.sourceItemIndex })}>
+                    <Text style={[styles.priorityName, { color: colors.primary, textDecorationLine: 'underline' }]}>{it.name}</Text>
+                    <Ionicons name="link-outline" size={12} color={colors.primary} />
+                  </TouchableOpacity>
+                ) : (
+                  <Text style={styles.priorityName}>{it.name}</Text>
+                )}
                 <View style={[styles.badge, { backgroundColor: u.bg }]}>
                   <Text style={[styles.badgeText, { color: u.color }]}>{u.label}</Text>
                 </View>
@@ -212,6 +225,10 @@ export default function AiHealthScreen({ navigation }) {
   const [reviewStatus, setReviewStatus] = useState({ doctorApproved: false, nutritionApproved: false, hasLifestyle: false, isSelfService: false });
   const [message, setMessage] = useState('');
   const [speaking, setSpeaking] = useState(false);
+  // 专项筛查年度小结：核查AI健康分析结论时的对照面板，默认收起，展开才拉取（不阻塞主流程加载）
+  const [yearlySummaryOpen, setYearlySummaryOpen] = useState(false);
+  const [yearlySummary, setYearlySummary] = useState(null);
+  const [yearlySummaryLoading, setYearlySummaryLoading] = useState(false);
 
   const loadAll = useCallback(async () => {
     setLoading(true);
@@ -274,6 +291,20 @@ export default function AiHealthScreen({ navigation }) {
       setMessage(err.message || '播放失败');
     } finally {
       setSpeaking(false);
+    }
+  };
+
+  const toggleYearlySummary = async () => {
+    const next = !yearlySummaryOpen;
+    setYearlySummaryOpen(next);
+    if (next && !yearlySummary) {
+      setYearlySummaryLoading(true);
+      try {
+        const year = summaryData?.latestYear || new Date().getFullYear();
+        const res = await userAPI.getScreeningYearlySummary(year);
+        if (res.success) setYearlySummary(res.data);
+      } catch {}
+      finally { setYearlySummaryLoading(false); }
     }
   };
 
@@ -406,7 +437,38 @@ export default function AiHealthScreen({ navigation }) {
             </View>
           )}
 
-          {curHasData && tab === TABS[0] && <HealthSummaryView sections={summaryData.sections} />}
+          {curHasData && tab === TABS[0] && (
+            <View style={styles.yearlySummaryCard}>
+              <TouchableOpacity style={styles.yearlySummaryHeader} onPress={toggleYearlySummary} activeOpacity={0.8}>
+                <Ionicons name="stats-chart-outline" size={16} color={colors.primary} />
+                <Text style={styles.yearlySummaryTitle}>专项筛查年度小结（核查对照）</Text>
+                <Ionicons name={yearlySummaryOpen ? 'chevron-up' : 'chevron-down'} size={16} color={colors.textMuted} />
+              </TouchableOpacity>
+              {yearlySummaryOpen && (
+                yearlySummaryLoading ? (
+                  <ActivityIndicator size="small" color={colors.primary} style={{ marginVertical: spacing.sm }} />
+                ) : (
+                  <View style={{ marginTop: spacing.xs }}>
+                    {(yearlySummary || []).map(cat => (
+                      <View key={cat.key} style={styles.yearlySummaryRow}>
+                        <Text style={styles.yearlySummaryLabel}>{cat.label}</Text>
+                        {cat.available ? (
+                          <Text style={styles.yearlySummaryValue}>
+                            已检查 {cat.checkedCount} 项{cat.abnormalCount > 0 ? `，异常 ${cat.abnormalCount} 项：${cat.abnormalItems.join('、')}` : ''}
+                          </Text>
+                        ) : (
+                          <Text style={[styles.yearlySummaryValue, { color: colors.textMuted }]}>暂无该类目数据</Text>
+                        )}
+                      </View>
+                    ))}
+                    {!yearlySummary?.length && <Text style={styles.mutedText}>暂无年度数据</Text>}
+                  </View>
+                )
+              )}
+            </View>
+          )}
+
+          {curHasData && tab === TABS[0] && <HealthSummaryView sections={summaryData.sections} navigation={navigation} />}
           {curHasData && tab === TABS[1] && <RiskAssessmentView data={riskData} />}
         </ScrollView>
       )}
@@ -416,6 +478,15 @@ export default function AiHealthScreen({ navigation }) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.background },
+  yearlySummaryCard: {
+    backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.sm,
+    marginBottom: spacing.md, borderWidth: 1, borderColor: colors.border, ...shadow.xs,
+  },
+  yearlySummaryHeader: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  yearlySummaryTitle: { flex: 1, fontSize: 13, fontWeight: '600', color: colors.textPrimary },
+  yearlySummaryRow: { paddingVertical: 5, borderBottomWidth: 1, borderBottomColor: colors.borderLight },
+  yearlySummaryLabel: { fontSize: 12, fontWeight: '600', color: colors.textSecondary, marginBottom: 2 },
+  yearlySummaryValue: { fontSize: 12, color: colors.textPrimary, lineHeight: 17 },
   topBar: {
     flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center',
     paddingHorizontal: spacing.lg, paddingVertical: spacing.md,

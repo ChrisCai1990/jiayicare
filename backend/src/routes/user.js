@@ -182,6 +182,9 @@ router.put('/me', auth, async (req, res) => {
       }
     }
 
+    // 健康档案有更新时，家庭医生此前的"已查看确认"视为失效，需重新查看（见 reportAuditGate.js）
+    updateData.healthProfileUpdatedAt = new Date();
+
     // 直接用原生 MongoDB driver，完全绕过 Mongoose schema 类型转换
     await User.collection.updateOne(
       { _id: req.user._id },
@@ -1292,6 +1295,19 @@ router.delete('/family-links/:linkId', auth, async (req, res) => {
 //   不计入 staff.js getAiTodos 的家庭医生待审核队列，避免误入人工审核工作流）
 const { generateHealthSummarySections } = require('../utils/aiHealthSummary');
 const { generateRiskAssessment } = require('../utils/aiRiskAssessment');
+const { buildScreeningYearlySummary } = require('../utils/screeningYearlySummary');
+
+// GET /api/user/screening-yearly-summary?year=2026 — 专项筛查年度小结（肿瘤/心脑血管病/慢性病
+// 及其他三大类，与AI健康分析板块对应），供查看AI健康分析时对照核查
+router.get('/screening-yearly-summary', auth, async (req, res) => {
+  try {
+    const year = req.query.year || new Date().getFullYear();
+    const data = await buildScreeningYearlySummary(req.user._id, year);
+    res.json({ success: true, data });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 // GET /api/user/ai-health-summary — 查看AI健康汇总分析（有家医时草稿也可见，附带审核状态）
 router.get('/ai-health-summary', auth, async (req, res) => {

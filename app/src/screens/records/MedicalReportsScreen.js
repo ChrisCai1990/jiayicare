@@ -54,14 +54,15 @@ const CATEGORY_META = {
 const ITEM_STATUS_COLOR = { normal: colors.success, abnormal: colors.danger, attention: colors.warning, unknown: colors.textMuted };
 const ITEM_STATUS_LABEL = { normal: '正常', abnormal: '异常', attention: '关注', unknown: '未知' };
 
-function ReportItemRow({ item }) {
+function ReportItemRow({ item, highlighted }) {
   const statusColor = ITEM_STATUS_COLOR[item.status] || colors.textMuted;
+  const rowStyle = highlighted ? [styles.itemRow, styles.itemRowHighlighted] : styles.itemRow;
   // 检查项目（影像/内镜/CT/MRI 等）：完整展示 检查部位/检查所见/诊断意见
   const isImaging = item.itemType === 'imaging' || (!item.value && (item.findings || item.diagnosis));
   if (isImaging) {
     const findings = item.findings || item.value || '';
     return (
-      <View style={[styles.itemRow, { flexDirection: 'column', alignItems: 'stretch' }]}>
+      <View style={[...(Array.isArray(rowStyle) ? rowStyle : [rowStyle]), { flexDirection: 'column', alignItems: 'stretch' }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Text style={styles.itemName}>{item.name}</Text>
           {item.bodyPart ? <Text style={styles.itemRef}>· {item.bodyPart}</Text> : null}
@@ -72,7 +73,7 @@ function ReportItemRow({ item }) {
     );
   }
   return (
-    <View style={styles.itemRow}>
+    <View style={rowStyle}>
       <View style={{ flex: 1 }}>
         <Text style={styles.itemName}>{item.name}</Text>
         {item.referenceRange ? <Text style={styles.itemRef}>参考范围：{item.referenceRange}</Text> : null}
@@ -85,14 +86,14 @@ function ReportItemRow({ item }) {
   );
 }
 
-function ReportCard({ report, onPreview }) {
-  const [expanded, setExpanded] = useState(false);
+function ReportCard({ report, onPreview, autoExpand, highlightItemIndex }) {
+  const [expanded, setExpanded] = useState(!!autoExpand);
   const hasItems = report.reportItems?.length > 0;
   const hasAI = !!report.aiSummary;
   const hasFile = !!(report.fileUrl || report.fileUrls?.length || report.hasContent);
 
   return (
-    <View style={styles.reportCard}>
+    <View style={[styles.reportCard, autoExpand && styles.reportCardHighlighted]}>
       <TouchableOpacity style={styles.reportCardHeader} onPress={() => setExpanded(e => !e)} activeOpacity={0.8}>
         <View style={{ flex: 1 }}>
           <Text style={styles.reportTitle}>{report.title}</Text>
@@ -129,7 +130,7 @@ function ReportCard({ report, onPreview }) {
           {hasItems ? (
             <View>
               <Text style={styles.itemsSectionLabel}>检查项目（{report.reportItems.length} 项）</Text>
-              {report.reportItems.map((item, i) => <ReportItemRow key={i} item={item} />)}
+              {report.reportItems.map((item, i) => <ReportItemRow key={i} item={item} highlighted={highlightItemIndex === i} />)}
             </View>
           ) : (
             <View style={styles.noItemsWrap}>
@@ -142,7 +143,11 @@ function ReportCard({ report, onPreview }) {
   );
 }
 
-export default function MedicalReportsScreen({ navigation }) {
+export default function MedicalReportsScreen({ navigation, route }) {
+  // 溯源跳转：AI健康分析结论若能核对到具体报告项，会带 highlightReportId(+highlightItemIndex)
+  // 跳转过来，进页面后自动定位到对应年份、展开那份报告、高亮那一行检查项，不用手动来回翻找。
+  const highlightReportId = route?.params?.highlightReportId;
+  const highlightItemIndex = route?.params?.highlightItemIndex;
   const [years, setYears]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [selYear, setSelYear]   = useState(null);
@@ -154,10 +159,14 @@ export default function MedicalReportsScreen({ navigation }) {
     try {
       const res = await reportsAPI.byCategory();
       setYears(res.data || []);
+      if (highlightReportId) {
+        const hitYear = (res.data || []).find(y => y.categories.some(cat => cat.reports.some(r => r._id === highlightReportId)));
+        if (hitYear) { setSelYear(hitYear.year); return; }
+      }
       if (res.data?.length > 0) setSelYear(res.data[0].year);
     } catch {}
     finally { setLoading(false); }
-  }, []);
+  }, [highlightReportId]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -246,7 +255,9 @@ export default function MedicalReportsScreen({ navigation }) {
                   </View>
 
                   {cat.reports.map(r => (
-                    <ReportCard key={r._id} report={r} onPreview={setPreviewUri} />
+                    <ReportCard key={r._id} report={r} onPreview={setPreviewUri}
+                      autoExpand={r._id === highlightReportId}
+                      highlightItemIndex={r._id === highlightReportId ? highlightItemIndex : undefined} />
                   ))}
                 </View>
               );
@@ -307,6 +318,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white, borderRadius: radius.md, marginBottom: spacing.sm,
     ...shadow.xs, overflow: 'hidden',
   },
+  reportCardHighlighted: { borderWidth: 1.5, borderColor: colors.primary },
   reportCardHeader: {
     flexDirection: 'row', alignItems: 'flex-start', padding: spacing.md, gap: spacing.sm,
   },
@@ -337,6 +349,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: colors.borderLight,
   },
+  itemRowHighlighted: { backgroundColor: colors.primary + '10', borderRadius: radius.sm, paddingHorizontal: 6 },
   itemName:  { fontSize: 13, color: colors.textPrimary, fontWeight: '500' },
   itemRef:   { fontSize: 11, color: colors.textMuted, marginTop: 1 },
   itemValue: { fontSize: 13, fontWeight: '700' },
