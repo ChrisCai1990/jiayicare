@@ -64,8 +64,11 @@ function ReportItemRow({ item, highlighted }) {
     return (
       <View style={[...(Array.isArray(rowStyle) ? rowStyle : [rowStyle]), { flexDirection: 'column', alignItems: 'stretch' }]}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={styles.itemName}>{item.name}</Text>
+          <Text style={[styles.itemName, item.status === 'abnormal' && { color: statusColor }]}>{item.name}</Text>
           {item.bodyPart ? <Text style={styles.itemRef}>· {item.bodyPart}</Text> : null}
+          {(item.status === 'abnormal' || item.status === 'attention') && (
+            <Text style={[styles.itemStatus, { color: statusColor }]}>{ITEM_STATUS_LABEL[item.status]}</Text>
+          )}
         </View>
         {findings ? <Text style={[styles.itemRef, { marginTop: 2 }]}>检查所见：{findings}</Text> : null}
         {item.diagnosis ? <Text style={[styles.itemRef, { marginTop: 2, color: statusColor }]}>诊断意见：{item.diagnosis}</Text> : null}

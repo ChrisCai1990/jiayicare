@@ -1125,16 +1125,30 @@ export default function PatientDetailPage() {
   // 家庭医生健康档案查看确认（2026-07-28改造）：不再逐份审核报告数据，改为客户维度的
   // "确认已查看健康档案"，AI健康解析/风险评估生成前强制要求此确认处于有效状态（未过期）。
   // pendingDoctorAuditReports 仍保留为"有哪些新审核完的报告需要提醒"的展示用途。
+  //
+  // 2026-07-28补充修复：最初"确认已查看"是个孤立按钮，点一下就直接标记完成，家庭医生完全
+  // 可以不看任何内容就点掉，是假确认。改为强制交互：先弹出待查看报告清单，要求逐份点开
+  // （复用 openReportDetail 已有的报告详情弹窗），全部点开过之后"确认已查看"才从禁用变可点。
   const [pendingDoctorAuditReports, setPendingDoctorAuditReports] = useState([])
   const [archiveReviewSaving, setArchiveReviewSaving] = useState(false)
+  const [showArchiveReviewModal, setShowArchiveReviewModal] = useState(false)
+  const [archiveReviewViewedIds, setArchiveReviewViewedIds] = useState(() => new Set())
   const loadPendingDoctorAudit = () => {
-    staffAPI.getPendingDoctorAuditReports(id).then(r => setPendingDoctorAuditReports(r.data || [])).catch(() => {})
+    staffAPI.getPendingDoctorAuditReports(id).then(r => {
+      setPendingDoctorAuditReports(r.data || [])
+      setArchiveReviewViewedIds(new Set()) // 新一批待查看报告，清空已查看记录重新开始
+    }).catch(() => {})
   }
+  const markArchiveReviewViewed = (reportId) => {
+    setArchiveReviewViewedIds(prev => new Set(prev).add(reportId))
+  }
+  const allArchiveReviewViewed = pendingDoctorAuditReports.length > 0
+    && pendingDoctorAuditReports.every(r => archiveReviewViewedIds.has(r._id))
   const handleConfirmArchiveReview = () => {
-    if (archiveReviewSaving) return
+    if (archiveReviewSaving || !allArchiveReviewViewed) return
     setArchiveReviewSaving(true)
     staffAPI.confirmArchiveReview(id)
-      .then(() => { toast('已确认查看健康档案'); loadPendingDoctorAudit(); load() })
+      .then(() => { toast('已确认查看健康档案'); setShowArchiveReviewModal(false); loadPendingDoctorAudit(); load() })
       .catch(err => toast(err.message || '操作失败'))
       .finally(() => setArchiveReviewSaving(false))
   }
@@ -5349,10 +5363,10 @@ export default function PatientDetailPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', marginBottom: 14, background: '#FFFBEB', border: '1px solid #FCD34D', borderRadius: 8 }}>
                 <span style={{ fontSize: 18 }}>⚠️</span>
                 <div style={{ flex: 1, fontSize: 13, color: '#92400E' }}>
-                  健管专员已审核 <b>{pendingDoctorAuditReports.length}</b> 份新体检报告，请先查看确认健康档案，才能生成AI健康分析/风险评估
+                  健管专员已审核 <b>{pendingDoctorAuditReports.length}</b> 份新体检报告，请逐份查看后确认，才能生成AI健康分析/风险评估
                 </div>
-                <button className="btn btn-primary btn-sm" disabled={archiveReviewSaving} onClick={handleConfirmArchiveReview}>
-                  {archiveReviewSaving ? '确认中…' : '确认已查看'}
+                <button className="btn btn-primary btn-sm" onClick={() => setShowArchiveReviewModal(true)}>
+                  去查看
                 </button>
               </div>
             )}
@@ -7792,6 +7806,53 @@ export default function PatientDetailPage() {
                 } catch (err) { toast(err.message) }
                 finally { setEditingReportSaving(false) }
               }}>{editingReportSaving ? '保存中…' : '保存'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 家庭医生健康档案查看确认弹窗：列出待查看的新增报告，逐份点开（复用下方报告详情弹窗）
+          才会记入"已查看"，全部点开过后"确认已查看"按钮才可点击，防止不看内容就假确认 */}
+      {showArchiveReviewModal && (
+        <div className="modal-overlay" onClick={() => setShowArchiveReviewModal(false)}>
+          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">查看新增体检报告</h3>
+              <button className="modal-close" onClick={() => setShowArchiveReviewModal(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>
+                请逐份点开查看，全部查看过后才能确认（{archiveReviewViewedIds.size}/{pendingDoctorAuditReports.length}）
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {pendingDoctorAuditReports.map(r => {
+                  const viewed = archiveReviewViewedIds.has(r._id)
+                  return (
+                    <div key={r._id}
+                      onClick={() => { markArchiveReviewViewed(r._id); openReportDetail(r) }}
+                      style={{
+                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                        padding: '10px 12px', borderRadius: 8, cursor: 'pointer',
+                        border: `1px solid ${viewed ? '#CDEBDD' : '#E0D9CE'}`,
+                        background: viewed ? '#F3FAF6' : '#fafaf8',
+                      }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, color: '#1A2B24' }}>{r.title}</div>
+                        <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>{r.checkDate || ''} {r.hospital || r.institution || ''}</div>
+                      </div>
+                      <span style={{ fontSize: 12, color: viewed ? '#22A06B' : '#D97706', fontWeight: 600 }}>
+                        {viewed ? '✓ 已查看' : '点击查看'}
+                      </span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setShowArchiveReviewModal(false)}>稍后再看</button>
+              <button className="btn btn-primary" disabled={!allArchiveReviewViewed || archiveReviewSaving} onClick={handleConfirmArchiveReview}>
+                {archiveReviewSaving ? '确认中…' : allArchiveReviewViewed ? '确认已查看' : `还有${pendingDoctorAuditReports.length - archiveReviewViewedIds.size}份未查看`}
+              </button>
             </div>
           </div>
         </div>
