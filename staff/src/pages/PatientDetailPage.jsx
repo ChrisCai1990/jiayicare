@@ -1499,6 +1499,13 @@ export default function PatientDetailPage() {
       .catch(() => { /* 保持列表数据，下方会显示加载失败提示 */ })
       .finally(() => setReportDetailLoading(false))
 
+    // 家庭医生打开报告详情，联动标记"已解读"（2026-07-28新增）：此前用户端报告列表的
+    // "待解读/已解读"状态字段(status)从未被任何动作驱动过，一直卡死在默认值"待解读"，
+    // 跟审核状态毫无关联。改为家庭医生查看过这份报告后自动置为已解读，不需要额外操作。
+    if (staff?.role === 'familyDoctor' || staff?.role === 'superadmin') {
+      staffAPI.markReportFamilyDoctorViewed(r._id).catch(() => {})
+    }
+
     // 背景异步：拉专项筛查匹配数据（不阻塞弹窗）
     const reportTitle = r.title || ''
     const reportDate  = r.checkDate || r.date || ''

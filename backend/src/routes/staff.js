@@ -1770,10 +1770,15 @@ router.patch('/medical-reports/:id/family-doctor-view', staffAuth, async (req, r
     if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
       return res.status(403).json({ success: false, message: '仅家庭医生可标记查看' });
     }
-    await MedicalReport.updateOne(
-      { _id: req.params.id },
-      { $set: { familyDoctorViewedAt: new Date(), familyDoctorViewedBy: req.staff._id } }
-    );
+    const update = { familyDoctorViewedAt: new Date(), familyDoctorViewedBy: req.staff._id };
+    // 联动用户端"待解读/已解读"状态：此前 status 字段从未被任何动作驱动过，一直卡死在默认值
+    // 'pending'（待解读）。这里家庭医生查看即联动置为已解读，但只在当前仍是初始"待解读"状态时
+    // 才覆盖——如果已经是 normal/abnormal 这类真实临床结果状态，不应该被这次查看动作覆盖掉。
+    const report = await MedicalReport.findById(req.params.id).select('status');
+    if (report && report.status === 'pending') {
+      update.status = 'analyzed';
+    }
+    await MedicalReport.updateOne({ _id: req.params.id }, { $set: update });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -4157,24 +4162,35 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         return res.status(403).json({ success: false, needDietaryReview: true, message: '请先复核该客户的膳食调查问卷后再生成生活方式评估' });
       }
     }
-    const force = !!req.body.force;
-    const year = String(req.body.year || new Date().getFullYear());
+    // 2026-07-28改造：从"同一年度覆盖式生成"改为"历史记录制"（参照ascvdRisk的records数组模式）。
+    // 每次生成都新增一条record，不再覆盖旧记录，支持一年内多次（如季度）评估回溯查看。
+    // 顶层 sections/generatedAt/approvedAt 等字段继续保留，作为"最新一条record"的镜像，
+    // 兼容 ai-annual-plan、用户端展示、AI聊天助手上下文等只关心"最新结果"的下游功能，
+    // 它们不需要感知历史记录的存在，读到的永远是最新一条。
+    const evaluatedAt = req.body.evaluatedAt ? new Date(req.body.evaluatedAt) : new Date();
+    const period = req.body.period || null; // 可选季度标记，如 'Q1'/'Q2'/'Q3'/'Q4'，纯展示用途
+    const year = String(req.body.year || evaluatedAt.getFullYear());
     const existing = user.aiHealthSummary || {};
     const byYear = { ...(existing.byYear || {}) };
-    // 旧数据迁移：有顶层 sections 但无 byYear，先归档到其原年份（默认2026）
+    // 旧数据迁移：有顶层 sections 但无 byYear，先归档到其原年份（默认2026），归档为该年度首条record
     if (existing.sections && Object.keys(byYear).length === 0) {
       const oy = String(existing.generatedAt ? new Date(existing.generatedAt).getFullYear() : 2026);
-      byYear[oy] = { sections: existing.sections, generatedAt: existing.generatedAt || null, approvedAt: existing.approvedAt || null, approvedBy: existing.approvedBy || null };
+      byYear[oy] = { records: [{ sections: existing.sections, generatedAt: existing.generatedAt || null, approvedAt: existing.approvedAt || null, approvedBy: existing.approvedBy || null }] };
     }
-    const prevEntry = byYear[year] || {};
+    const yearEntry = byYear[year] || {};
+    // 兼容更早期的"年度内单一entry"结构：没有records数组时，把已有entry当作历史第一条包装进去
+    const prevRecords = Array.isArray(yearEntry.records) ? yearEntry.records : (yearEntry.sections ? [yearEntry] : []);
+    const prevEntry = prevRecords[0] || {}; // 最新一条（数组按新到旧排序，见下方sort）
 
     // 对方维度已审核时需二次确认，未带 force 标志直接拒绝，前端据此弹确认框
+    // （历史记录制下这个提示语义调整为"最新一条记录已审核"，新生成会追加一条全新记录，
+    // 已审核的那条历史记录本身不会被清空或修改，只是不再是"最新"）
     if (!force) {
       if ((scope === 'doctor' || scope === 'all') && prevEntry.doctorApprovedAt) {
-        return res.status(409).json({ success: false, needConfirm: true, message: '5维度分析已由家庭医师审核通过，重新生成将清除该审核状态', approvedBy: prevEntry.doctorApprovedBy });
+        return res.status(409).json({ success: false, needConfirm: true, message: '最新一条5维度分析已由家庭医师审核通过，新增评估记录将不再是已审核状态', approvedBy: prevEntry.doctorApprovedBy });
       }
       if ((scope === 'nutrition' || scope === 'all') && prevEntry.nutritionApprovedAt) {
-        return res.status(409).json({ success: false, needConfirm: true, message: '生活方式评估已由营养师审核通过，重新生成将清除该审核状态', approvedBy: prevEntry.nutritionApprovedBy });
+        return res.status(409).json({ success: false, needConfirm: true, message: '最新一条生活方式评估已由营养师审核通过，新增评估记录将不再是已审核状态', approvedBy: prevEntry.nutritionApprovedBy });
       }
     }
 
@@ -4185,7 +4201,8 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       return res.status(500).json({ success: false, message: 'AI生成失败或返回内容为空，请重试' });
     }
 
-    // 合并：只替换本次 scope 涉及的板块，另一方板块沿用旧值，互不覆盖
+    // 合并：只替换本次 scope 涉及的板块，另一方板块沿用上一条记录的值（新记录不是空白重来，
+    // 未涉及的维度延续上一条已有内容，只有本次实际生成的维度才是全新内容）
     const mergedSections = { ...(prevEntry.sections || {}) };
     if (scope === 'all') {
       Object.assign(mergedSections, genResult);
@@ -4195,19 +4212,25 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       if (genResult[LIFESTYLE_KEY] !== undefined) mergedSections[LIFESTYLE_KEY] = genResult[LIFESTYLE_KEY];
     }
 
-    const entry = { ...prevEntry, sections: mergedSections, generatedAt: new Date() };
-    // 清空审核状态：只清本次实际重新生成一方的审核字段，未涉及的一方保留
-    if (scope === 'doctor' || scope === 'all') { entry.doctorApprovedAt = null; entry.doctorApprovedBy = null; }
-    if (scope === 'nutrition' || scope === 'all') { entry.nutritionApprovedAt = null; entry.nutritionApprovedBy = null; }
-    entry.approvedAt = (entry.doctorApprovedAt && entry.nutritionApprovedAt) ? entry.approvedAt : null;
-    if (!entry.approvedAt) entry.approvedBy = null;
+    // 新增一条记录（不是修改prevEntry），审核状态从零开始——这是一份全新的评估，需要重新审核
+    const newRecord = {
+      sections: mergedSections, generatedAt: new Date(), evaluatedAt, period,
+      approvedAt: null, approvedBy: null,
+      doctorApprovedAt: null, doctorApprovedBy: null,
+      nutritionApprovedAt: null, nutritionApprovedBy: null,
+      discussions: [],
+    };
+    const records = [newRecord, ...prevRecords];
+    records.sort((a, b) => new Date(b.evaluatedAt || b.generatedAt || 0) - new Date(a.evaluatedAt || a.generatedAt || 0));
+    byYear[year] = { records };
 
-    byYear[year] = entry;
+    // 顶层镜像最新一条record，供下游功能（ai-annual-plan/用户端展示/AI聊天助手等）无感知读取
+    const latestRecord = records[0];
     const summary = {
-      sections: mergedSections, generatedAt: entry.generatedAt,
-      approvedAt: entry.approvedAt || null, approvedBy: entry.approvedBy || null,
-      doctorApprovedAt: entry.doctorApprovedAt || null, doctorApprovedBy: entry.doctorApprovedBy || null,
-      nutritionApprovedAt: entry.nutritionApprovedAt || null, nutritionApprovedBy: entry.nutritionApprovedBy || null,
+      sections: latestRecord.sections, generatedAt: latestRecord.generatedAt,
+      approvedAt: latestRecord.approvedAt || null, approvedBy: latestRecord.approvedBy || null,
+      doctorApprovedAt: latestRecord.doctorApprovedAt || null, doctorApprovedBy: latestRecord.doctorApprovedBy || null,
+      nutritionApprovedAt: latestRecord.nutritionApprovedAt || null, nutritionApprovedBy: latestRecord.nutritionApprovedBy || null,
       byYear, latestYear: year,
     };
 
@@ -4225,7 +4248,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 // PATCH /api/staff/patients/:id/ai-health-summary
 router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
-    const { sections, sectionNotes, action, scope, year } = req.body;
+    const { sections, sectionNotes, action, scope, year, recordIndex } = req.body;
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
     const current = user.aiHealthSummary || {};
@@ -4233,7 +4256,16 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const byYear = { ...(updated.byYear || {}) };
     // 编辑/审核针对具体年度（默认顶层年度或当前年）
     const y = String(year || updated.latestYear || (updated.generatedAt ? new Date(updated.generatedAt).getFullYear() : new Date().getFullYear()));
-    const entry = { ...(byYear[y] || {}) };
+    const yearEntry = byYear[y] || {};
+    // 兼容旧结构（无records数组），历史数据只有一条记录时包装成数组
+    const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
+    // recordIndex 不传默认操作最新一条（index 0，数组已按时间新到旧排序）——绝大多数审核场景
+    // 都是审核"最新生成的这一条"，只有回看历史记录时才需要显式指定要审核哪一条
+    const idx = Number.isInteger(recordIndex) ? recordIndex : 0;
+    if (idx < 0 || idx >= records.length) {
+      return res.status(400).json({ success: false, message: '记录不存在' });
+    }
+    const entry = { ...records[idx] };
     if (sections !== undefined) entry.sections = sections;
     if (sectionNotes !== undefined) entry.sectionNotes = sectionNotes;
     // 审核：按角色维度拆分（家庭医师审5维 / 营养师审生活方式评估）
@@ -4255,22 +4287,25 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         entry.approvedAt = now; entry.approvedBy = req.staff.name;
       }
     }
-    byYear[y] = entry;
+    records[idx] = entry;
+    byYear[y] = { records };
     updated.byYear = byYear;
-    // 同步顶层指向被编辑年度（兼容 ai-annual-plan 读取 ais.sections）
-    if (sections !== undefined) updated.sections = sections;
-    if (sectionNotes !== undefined) updated.sectionNotes = sectionNotes;
-    if (action === 'approve') {
-      updated.doctorApprovedAt = entry.doctorApprovedAt; updated.doctorApprovedBy = entry.doctorApprovedBy;
-      updated.nutritionApprovedAt = entry.nutritionApprovedAt; updated.nutritionApprovedBy = entry.nutritionApprovedBy;
-      if (entry.approvedAt) { updated.approvedAt = entry.approvedAt; updated.approvedBy = entry.approvedBy; }
+    // 只有编辑/审核"最新一条"（idx===0）时才更新顶层镜像；编辑历史旧记录不影响下游读取的"最新结果"
+    if (idx === 0) {
+      if (sections !== undefined) updated.sections = sections;
+      if (sectionNotes !== undefined) updated.sectionNotes = sectionNotes;
+      if (action === 'approve') {
+        updated.doctorApprovedAt = entry.doctorApprovedAt; updated.doctorApprovedBy = entry.doctorApprovedBy;
+        updated.nutritionApprovedAt = entry.nutritionApprovedAt; updated.nutritionApprovedBy = entry.nutritionApprovedBy;
+        if (entry.approvedAt) { updated.approvedAt = entry.approvedAt; updated.approvedBy = entry.approvedBy; }
+      }
     }
     updated.latestYear = y;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
       { $set: { aiHealthSummary: updated } }
     );
-    res.json({ success: true, data: updated });
+    res.json({ success: true, data: updated, record: entry, recordIndex: idx });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -4287,7 +4322,12 @@ router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req
     const current = user.aiHealthSummary || {};
     const byYear = { ...(current.byYear || {}) };
     const y = String(year || current.latestYear || new Date().getFullYear());
-    const entry = { ...(byYear[y] || {}) };
+    const yearEntry = byYear[y] || {};
+    const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
+    // 讨论区绑定到具体某条记录（每次新生成评估都是全新的讨论区），不传recordIndex默认最新一条
+    const idx = Number.isInteger(req.body.recordIndex) ? req.body.recordIndex : 0;
+    if (idx < 0 || idx >= records.length) return res.status(400).json({ success: false, message: '记录不存在' });
+    const entry = { ...records[idx] };
     const discussions = Array.isArray(entry.discussions) ? [...entry.discussions] : [];
     discussions.push({
       staffId: req.staff._id,
@@ -4298,10 +4338,11 @@ router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req
       createdAt: new Date(),
     });
     entry.discussions = discussions;
-    byYear[y] = entry;
+    records[idx] = entry;
+    byYear[y] = { records };
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { [`aiHealthSummary.byYear.${y}.discussions`]: discussions } }
+      { $set: { [`aiHealthSummary.byYear.${y}`]: { records } } }
     );
     res.json({ success: true, data: discussions });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -4310,22 +4351,30 @@ router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req
 // DELETE /api/staff/patients/:id/ai-health-summary/discussions/:index — 撤回自己发的一条留言（仅本人或超管）
 router.delete('/patients/:id/ai-health-summary/discussions/:index', staffAuth, async (req, res) => {
   try {
-    const { year } = req.query;
+    const { year, recordIndex } = req.query;
     const idx = Number(req.params.index);
     const user = await User.findById(req.params.id).select('aiHealthSummary');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
     const current = user.aiHealthSummary || {};
-    const byYear = current.byYear || {};
+    const byYear = { ...(current.byYear || {}) };
     const y = String(year || current.latestYear || new Date().getFullYear());
-    const discussions = Array.isArray(byYear[y]?.discussions) ? [...byYear[y].discussions] : [];
+    const yearEntry = byYear[y] || {};
+    const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
+    const rIdx = recordIndex !== undefined ? Number(recordIndex) : 0;
+    if (rIdx < 0 || rIdx >= records.length) return res.status(400).json({ success: false, message: '记录不存在' });
+    const entry = { ...records[rIdx] };
+    const discussions = Array.isArray(entry.discussions) ? [...entry.discussions] : [];
     const target = discussions[idx];
     if (!target) return res.status(404).json({ success: false, message: '留言不存在' });
     const isOwner = String(target.staffId) === String(req.staff._id);
     if (!isOwner && req.staff.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅本人或超管可删除该留言' });
     discussions.splice(idx, 1);
+    entry.discussions = discussions;
+    records[rIdx] = entry;
+    byYear[y] = { records };
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { [`aiHealthSummary.byYear.${y}.discussions`]: discussions } }
+      { $set: { [`aiHealthSummary.byYear.${y}`]: { records } } }
     );
     res.json({ success: true, data: discussions });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -4335,13 +4384,17 @@ router.delete('/patients/:id/ai-health-summary/discussions/:index', staffAuth, a
 // 回应仅作为讨论区里的一条AI留言展示，不自动改写主报告sections，团队看完认为需要更新仍需手动编辑
 router.post('/patients/:id/ai-health-summary/discussions/ai-reply', staffAuth, async (req, res) => {
   try {
-    const { year } = req.body;
+    const { year, recordIndex } = req.body;
     const user = await User.findById(req.params.id).select('name gender age aiHealthSummary');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
     const current = user.aiHealthSummary || {};
-    const byYear = current.byYear || {};
+    const byYear = { ...(current.byYear || {}) };
     const y = String(year || current.latestYear || new Date().getFullYear());
-    const entry = byYear[y] || {};
+    const yearEntry = byYear[y] || {};
+    const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
+    const idx = Number.isInteger(recordIndex) ? recordIndex : 0;
+    if (idx < 0 || idx >= records.length) return res.status(400).json({ success: false, message: '记录不存在' });
+    const entry = { ...records[idx] };
     const discussions = Array.isArray(entry.discussions) ? entry.discussions : [];
     if (discussions.length === 0) return res.status(400).json({ success: false, message: '暂无讨论留言，无法生成AI回应' });
 
@@ -4369,9 +4422,12 @@ ${discussionText}
       isAI: true,
     };
     const updatedDiscussions = [...discussions, reply];
+    entry.discussions = updatedDiscussions;
+    records[idx] = entry;
+    byYear[y] = { records };
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $set: { [`aiHealthSummary.byYear.${y}.discussions`]: updatedDiscussions } }
+      { $set: { [`aiHealthSummary.byYear.${y}`]: { records } } }
     );
     res.json({ success: true, data: updatedDiscussions });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -5686,13 +5742,16 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         let byYear = root.byYear || {};
         if (Object.keys(byYear).length === 0 && root.sections) {
           const oy = String(root.generatedAt ? new Date(root.generatedAt).getFullYear() : 2026);
-          byYear = { [oy]: { sections: root.sections, generatedAt: root.generatedAt, approvedAt: root.approvedAt } };
+          byYear = { [oy]: { records: [{ sections: root.sections, generatedAt: root.generatedAt, approvedAt: root.approvedAt }] } };
         }
         // 取最近一个已生成年度
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
         const y = years[0];
         if (!y) return;
-        const e = byYear[y] || {};
+        const yearEntry = byYear[y] || {};
+        // 历史记录制：待办只关心该年度最新一条记录（records[0]，数组已按时间新到旧排序）
+        const records = Array.isArray(yearEntry.records) ? yearEntry.records : (yearEntry.sections ? [yearEntry] : []);
+        const e = records[0] || {};
         if (!e.sections) return;
         const createdAt = e.generatedAt || now;
         const overdue = (now - new Date(createdAt)) > DAY;
