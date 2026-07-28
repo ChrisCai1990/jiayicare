@@ -1135,17 +1135,13 @@ export default function PatientDetailPage() {
   const [archiveReviewViewedIds, setArchiveReviewViewedIds] = useState(() => new Set())
   const loadPendingDoctorAudit = () => {
     staffAPI.getPendingDoctorAuditReports(id).then(r => {
-      const nextReports = r.data || []
-      // 只有当报告清单真的变了（比如新增了报告）才清空已查看进度；否则同一批报告重复拉取
-      // （切Tab/关弹窗都会触发这个函数）不能把用户刚点开查看过的记录清零，那样会导致
-      // "点开报告、退出、再进来又变成未查看"——已查看进度凭空丢失的bug
-      setPendingDoctorAuditReports(prev => {
-        const prevIds = new Set(prev.map(x => x._id))
-        const nextIds = new Set(nextReports.map(x => x._id))
-        const sameSet = prevIds.size === nextIds.size && [...prevIds].every(x => nextIds.has(x))
-        if (!sameSet) setArchiveReviewViewedIds(new Set())
-        return nextReports
-      })
+      setPendingDoctorAuditReports(r.data || [])
+      // 已查看进度(archiveReviewViewedIds)永久累加、不做任何清零：这里最初写过"报告清单一变就
+      // 整体清空"的逻辑，本意是"新一批数据重新开始"，但生产环境里健管专员随时可能新审核通过
+      // 报告，哪怕只多了一份，也会让清单"变化"从而触发误清空，把用户刚查看过的全部进度清零
+      // ——这才是"点开报告、退出、重新打开又变回未查看"的真正根因。改为：只要某份报告的id
+      // 曾经被点开查看过，就永久保留"已查看"状态，不随清单刷新而失效；只有真正的新增报告
+      // （id从未出现在 archiveReviewViewedIds 里）才会显示"待查看"。
     }).catch(() => {})
   }
   const markArchiveReviewViewed = (reportId) => {
@@ -1520,6 +1516,9 @@ export default function PatientDetailPage() {
       .catch(() => {})
   }
   useEffect(() => { load() }, [id])
+  // 切换到不同患者时，上一个患者的"健康档案已查看"进度不能带过来，否则会误判成这个新患者
+  // 也已经查看过某些报告（组件是同一实例复用，id变了但state不会自动清零）
+  useEffect(() => { setArchiveReviewViewedIds(new Set()); setPendingDoctorAuditReports([]) }, [id])
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
   }, [])
