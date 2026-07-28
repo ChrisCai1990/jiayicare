@@ -68,9 +68,10 @@ router.post('/:id/parse-ai', auth, async (req, res) => {
       return res.status(400).json({ success: false, message: '报告无文件内容，无法解析' });
     }
 
-    // 居家监测（血压/血糖/心电等设备读数照片）格式不固定，AI提取意义不大；年度体检报告更适合整份
-    // 存档查阅而非拆成单项；功能医学检测项目非标准化，AI提取不准；三者均跳过自动解析，直接进人工审核队列
-    if (report.type === 'home_monitor' || report.type === 'annual' || report.type === 'functional') {
+    // 居家监测（血压/血糖/心电等设备读数照片）格式不固定，AI提取意义不大；功能医学检测项目
+    // 非标准化，AI提取不准；两者跳过自动解析，直接进人工审核队列。年度体检报告此前也在此列，
+    // 2026-07-28随提取规则改造（改为按原文逐项提取，不再依赖固定分类模板）一并解除限制。
+    if (report.type === 'home_monitor' || report.type === 'functional') {
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '该类型报告不支持AI自动解析，已加入待人工审核队列' });
     }
