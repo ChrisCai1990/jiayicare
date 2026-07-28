@@ -113,8 +113,8 @@ router.post('/', auth, async (req, res) => {
   // 超出范围直接返回
   if (intent === 'out_of_scope') {
     const reply = '您的问题涉及专业诊疗范畴，AI助手无法提供此类建议。请联系您的家庭医生或拨打急救电话。本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
-    await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: reply });
-    return res.json({ success: true, data: { content: reply, intent } });
+    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: reply });
+    return res.json({ success: true, data: { content: reply, intent, logId: log._id } });
   }
 
   // 数据查询类：附上健康数据
@@ -142,11 +142,18 @@ router.post('/', auth, async (req, res) => {
     dataContext,
   ].join('');
 
-  // 格式化历史消息（最近10条）
+  // 格式化历史消息：最近10条，且只取24小时内的（避免几天前的话题被当作当前场景误关联）。
+  // 每条历史消息前标注日期，让模型自己判断是否与当前问题相关，而不是靠"条数"这种和时间无关的截断。
+  const HISTORY_WINDOW_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
   const chatMessages = messages
     .filter(m => m.role === 'user' || m.role === 'assistant')
+    .filter(m => !m.time || now - new Date(m.time).getTime() <= HISTORY_WINDOW_MS)
     .slice(-10)
-    .map(m => ({ role: m.role, content: String(m.content) }));
+    .map(m => {
+      const dateTag = m.time ? `[${new Date(m.time).toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' })}] ` : '';
+      return { role: m.role, content: dateTag + String(m.content) };
+    });
 
   if (!chatMessages.length || chatMessages[chatMessages.length - 1].role !== 'user') {
     return res.status(400).json({ success: false, message: '消息格式错误' });
@@ -156,10 +163,10 @@ router.post('/', auth, async (req, res) => {
     const replyText = await chat(chatMessages, { systemPrompt, maxTokens: 600 });
     const durationMs = Date.now() - t0;
 
-    // 异步记录日志，不阻塞响应
-    ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, durationMs }).catch(() => {});
+    // 需要拿到 _id 返回给前端才能支持"当场撤回"（撤回按 logId 定位 ChatLog 记录）
+    const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, durationMs });
 
-    res.json({ success: true, data: { content: replyText, intent } });
+    res.json({ success: true, data: { content: replyText, intent, logId: log._id } });
   } catch (err) {
     console.error('Chat error:', err.message);
     res.status(500).json({ success: false, message: `AI响应失败，请稍后重试。（${err.message}）` });
@@ -218,11 +225,33 @@ router.get('/logs/:userId', auth, async (req, res) => {
     return res.status(403).json({ success: false, message: '无权访问' });
   }
   try {
-    const logs = await ChatLog.find({ user: req.params.userId })
+    const logs = await ChatLog.find({ user: req.params.userId, recalled: { $ne: true } })
       .sort({ createdAt: -1 })
       .limit(50)
       .lean();
     res.json({ success: true, data: logs });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// PATCH /api/chat/logs/:id/recall — 撤回一轮问答（仅本人，2分钟内可撤回）
+const RECALL_WINDOW_MS = 2 * 60 * 1000;
+router.patch('/logs/:id/recall', auth, async (req, res) => {
+  try {
+    const log = await ChatLog.findById(req.params.id);
+    if (!log) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (log.user.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ success: false, message: '无权操作' });
+    }
+    if (log.recalled) return res.json({ success: true, message: '已撤回' });
+    if (Date.now() - log.createdAt.getTime() > RECALL_WINDOW_MS) {
+      return res.status(400).json({ success: false, message: '超过2分钟，无法撤回' });
+    }
+    log.recalled = true;
+    log.recalledAt = new Date();
+    await log.save();
+    res.json({ success: true, message: '已撤回' });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

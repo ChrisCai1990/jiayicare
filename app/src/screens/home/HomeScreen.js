@@ -379,8 +379,8 @@ export default function HomeScreen({ navigation }) {
         {/* ── 顶部 Logo 栏 ──────────────────────────────────────── */}
         <View style={styles.topBar}>
           <View>
-            <Text style={styles.logo}>嘉医汇</Text>
-            <Text style={styles.logoSub}>私人家庭医生，全生命周期健康管理</Text>
+            <Text style={styles.logo}>嘉医汇 | 嘉医管家</Text>
+            <Text style={styles.logoSub}>健康有人管 · 生活更安心</Text>
           </View>
           <TouchableOpacity
             style={styles.avatarChip}

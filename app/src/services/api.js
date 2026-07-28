@@ -200,6 +200,7 @@ export const chatAPI = {
       body: JSON.stringify({ lastMessage }),
     }),
   getLogs: (userId) => request(`/chat/logs/${userId}`),
+  recall: (logId) => request(`/chat/logs/${logId}/recall`, { method: 'PATCH' }),
 };
 
 // ── Questionnaire ─────────────────────────────────────────────────

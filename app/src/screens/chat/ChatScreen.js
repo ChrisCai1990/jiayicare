@@ -23,12 +23,32 @@ const TRANSFER_MSG = '您好，我需要联系专员咨询。';
 
 const DISCLAIMER = '本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
 
+// 日期分隔条：同一天只显示一次，跨天时插入（类似微信"7月28日"）
+function DateDivider({ label }) {
+  return (
+    <View style={styles.dateDivider}>
+      <Text style={styles.dateDividerText}>{label}</Text>
+    </View>
+  );
+}
+
+function formatDateLabel(d) {
+  const date = new Date(d);
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  if (sameDay(date, today)) return '今天';
+  if (sameDay(date, yesterday)) return '昨天';
+  return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
+}
+
 function MessageBubble({ msg, speaking, onSpeak, onRecall }) {
   const isUser = msg.role === 'user';
   // 只有AI回复且有实际文字内容时才提供语音播报
   const canSpeak = !isUser && !!(msg.content || '').trim();
-  // 撤回仅对本轮会话里用户自己发的消息开放：历史记录(id以h-开头)已进入AI已读的上下文，撤回也无法让AI忘记，容易造成误解
-  const canRecall = isUser && typeof msg.id === 'number';
+  // 撤回：本人发送的消息，2分钟内可撤回（与后端 RECALL_WINDOW_MS 保持一致）；历史记录需有真实 logId 才能定位到后端记录
+  const canRecall = isUser && !!msg.rawTime && !msg.recalling
+    && (Date.now() - new Date(msg.rawTime).getTime() <= 2 * 60 * 1000);
   return (
     <View style={[styles.msgRow, isUser && styles.msgRowUser]}>
       {!isUser && (
@@ -80,7 +100,7 @@ export default function ChatScreen({ navigation, route }) {
       id: 1, role: 'ai',
       content: greeting || '您好，我是小嘉，您的AI健康助手。可以帮您解答健康科普问题、解读指标数据、用药提醒，也能咨询服务套餐和就医流程。请问有什么可以帮您？',
       roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
-      time: '刚刚',
+      time: '刚刚', rawTime: new Date().toISOString(),
     },
   ]);
   const [input, setInput] = useState(initialPrompt || '');
@@ -101,9 +121,9 @@ export default function ChatScreen({ navigation, route }) {
     chatAPI.getLogs(user._id).then(res => {
       if (!res.success || !Array.isArray(res.data) || res.data.length === 0) return;
       const historyMsgs = [...res.data].reverse().flatMap(log => ([
-        { id: `h-${log._id}-u`, role: 'user', content: log.userMessage, time: fmtTime(log.createdAt) },
+        { id: `h-${log._id}-u`, logId: log._id, role: 'user', content: log.userMessage, time: fmtTime(log.createdAt), rawTime: log.createdAt },
         // aiReply 为空的历史记录（如转人工场景）不渲染成空气泡
-        log.aiReply ? { id: `h-${log._id}-a`, role: 'assistant', content: log.aiReply, roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label, time: fmtTime(log.createdAt) } : null,
+        log.aiReply ? { id: `h-${log._id}-a`, logId: log._id, role: 'assistant', content: log.aiReply, roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label, time: fmtTime(log.createdAt), rawTime: log.createdAt } : null,
       ].filter(Boolean)));
       setMessages(prev => [prev[0], ...historyMsgs]);
     }).catch(() => {}).finally(() => setHistoryLoaded(true));
@@ -136,22 +156,25 @@ export default function ChatScreen({ navigation, route }) {
     if (!msg || isLoading) return;
     setInput('');
 
-    const userMsg = { id: Date.now(), role: 'user', content: msg, time: now() };
+    const nowIso = new Date().toISOString();
+    const userMsg = { id: Date.now(), role: 'user', content: msg, time: now(), rawTime: nowIso };
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
-    // Build message history for API (user + assistant only, last 10)
+    // Build message history for API (user + assistant only, last 10)。
+    // 带上 rawTime 让后端按24小时窗口过滤+标注日期，避免跨天话题被误关联。
     const history = [...messages, userMsg]
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .map(m => ({
         role: m.role === 'user' ? 'user' : 'assistant',
         content: m.content,
+        time: m.rawTime,
       }))
       .slice(-10);
 
     // Ensure last message is from user
     if (history.length === 0 || history[history.length - 1].role !== 'user') {
-      history.push({ role: 'user', content: msg });
+      history.push({ role: 'user', content: msg, time: nowIso });
     }
 
     try {
@@ -159,19 +182,25 @@ export default function ChatScreen({ navigation, route }) {
       const replyContent = res.success
         ? res.data.content
         : (res.message || 'AI暂时无法回复，请稍后再试。');
+      const logId = res.success ? res.data.logId : null;
+
+      // 一轮问答共用同一个 logId：拿到后端返回的 logId 才回填到刚才发的用户消息上，使其变为可撤回
+      if (logId) {
+        setMessages(prev => prev.map(m => (m.id === userMsg.id ? { ...m, logId } : m)));
+      }
 
       setMessages(prev => [...prev, {
-        id: Date.now() + 1, role: 'assistant',
+        id: Date.now() + 1, logId, role: 'assistant',
         content: replyContent,
         roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
-        time: now(),
+        time: now(), rawTime: new Date().toISOString(),
       }]);
     } catch (err) {
       setMessages(prev => [...prev, {
         id: Date.now() + 1, role: 'assistant',
         content: err.message || '网络异常，请检查连接后重试。',
         roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
-        time: now(),
+        time: now(), rawTime: new Date().toISOString(),
       }]);
     } finally {
       setIsLoading(false);
@@ -182,14 +211,21 @@ export default function ChatScreen({ navigation, route }) {
     setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages, isLoading]);
 
-  // 撤回一条自己发的消息：消息内容可能有误需要改问，撤回后连带其后紧跟的AI回复一起移除（回复是针对该问题的，留着无意义）
-  const recallMessage = (msg) => {
+  // 撤回一条自己发的消息：消息内容可能有误需要改问，撤回后连带其后紧跟的AI回复一起移除（回复是针对该问题的，留着无意义）。
+  // 真撤回：调用后端接口把该轮 ChatLog 标记为 recalled，历史查询会过滤掉，AI后续上下文也不会再取到。
+  const recallMessage = async (msg) => {
+    if (!msg.logId) return; // 本轮会话内尚未落库的消息（还没拿到 logId）暂不支持撤回，避免撤了个不存在的记录
+    try {
+      await chatAPI.recall(msg.logId);
+    } catch {
+      return; // 撤回失败（超时/超过2分钟窗口）不移除本地消息，保持界面与后端一致
+    }
     setMessages(prev => {
       const idx = prev.findIndex(m => m.id === msg.id);
       if (idx === -1) return prev;
       const next = [...prev];
       next.splice(idx, 1);
-      if (next[idx] && next[idx].role === 'assistant') next.splice(idx, 1);
+      if (next[idx] && next[idx].role === 'assistant' && next[idx].logId === msg.logId) next.splice(idx, 1);
       return next;
     });
   };
@@ -243,15 +279,22 @@ export default function ChatScreen({ navigation, route }) {
           style={styles.msgList}
           contentContainerStyle={{ padding: spacing.lg }}
         >
-          {messages.map(msg => (
-            <MessageBubble
-              key={msg.id}
-              msg={msg}
-              speaking={speakingId === msg.id}
-              onSpeak={handleSpeak}
-              onRecall={recallMessage}
-            />
-          ))}
+          {messages.map((msg, i) => {
+            const prevMsg = messages[i - 1];
+            const showDivider = msg.rawTime && (!prevMsg?.rawTime
+              || new Date(msg.rawTime).toDateString() !== new Date(prevMsg.rawTime).toDateString());
+            return (
+              <React.Fragment key={msg.id}>
+                {showDivider && <DateDivider label={formatDateLabel(msg.rawTime)} />}
+                <MessageBubble
+                  msg={msg}
+                  speaking={speakingId === msg.id}
+                  onSpeak={handleSpeak}
+                  onRecall={recallMessage}
+                />
+              </React.Fragment>
+            );
+          })}
 
           {isLoading && (
             <View style={styles.msgRow}>
@@ -323,6 +366,11 @@ const styles = StyleSheet.create({
   onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
   onlineText: { fontSize: 11, color: colors.success, fontWeight: '500' },
   msgList: { flex: 1 },
+  dateDivider: { alignItems: 'center', marginVertical: spacing.sm },
+  dateDividerText: {
+    fontSize: 11, color: colors.textMuted, backgroundColor: colors.border + '80',
+    paddingHorizontal: 10, paddingVertical: 3, borderRadius: radius.full,
+  },
   msgRow: { flexDirection: 'row', marginBottom: spacing.md, alignItems: 'flex-end' },
   msgRowUser: { flexDirection: 'row-reverse' },
   msgAvatar: {

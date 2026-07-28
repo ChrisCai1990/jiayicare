@@ -10,6 +10,8 @@ const chatLogSchema = new mongoose.Schema({
   resolved:   { type: Boolean, default: false }, // 转人工待办是否已被医护端处理（联系患者后标记）
   tokens:     { type: Number, default: 0 },
   durationMs: { type: Number, default: 0 },
+  recalled:   { type: Boolean, default: false },
+  recalledAt: { type: Date, default: null },
 }, { timestamps: true });
 
 chatLogSchema.index({ user: 1, createdAt: -1 });
