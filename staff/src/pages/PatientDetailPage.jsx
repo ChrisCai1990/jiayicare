@@ -1129,26 +1129,27 @@ export default function PatientDetailPage() {
   // 2026-07-28补充修复：最初"确认已查看"是个孤立按钮，点一下就直接标记完成，家庭医生完全
   // 可以不看任何内容就点掉，是假确认。改为强制交互：先弹出待查看报告清单，要求逐份点开
   // （复用 openReportDetail 已有的报告详情弹窗），全部点开过之后"确认已查看"才从禁用变可点。
+  //
+  // 2026-07-28再修复：单份报告的"已查看"最初只存在前端本地state（archiveReviewViewedIds），
+  // 没有写后端，导致中途退出（没点最后的"确认已查看"整体按钮）后重新进入，刚查看过的报告
+  // 又变回"待查看"——用户已经真实看过内容，却被要求重新看一遍。改为后端持久化：点开单份
+  // 报告时调用 familyDoctorViewReport 写入 MedicalReport.familyDoctorViewedAt，"是否已查看"
+  // 直接读这个字段判断，不再依赖任何前端本地state。
   const [pendingDoctorAuditReports, setPendingDoctorAuditReports] = useState([])
   const [archiveReviewSaving, setArchiveReviewSaving] = useState(false)
   const [showArchiveReviewModal, setShowArchiveReviewModal] = useState(false)
-  const [archiveReviewViewedIds, setArchiveReviewViewedIds] = useState(() => new Set())
   const loadPendingDoctorAudit = () => {
     staffAPI.getPendingDoctorAuditReports(id).then(r => {
       setPendingDoctorAuditReports(r.data || [])
-      // 已查看进度(archiveReviewViewedIds)永久累加、不做任何清零：这里最初写过"报告清单一变就
-      // 整体清空"的逻辑，本意是"新一批数据重新开始"，但生产环境里健管专员随时可能新审核通过
-      // 报告，哪怕只多了一份，也会让清单"变化"从而触发误清空，把用户刚查看过的全部进度清零
-      // ——这才是"点开报告、退出、重新打开又变回未查看"的真正根因。改为：只要某份报告的id
-      // 曾经被点开查看过，就永久保留"已查看"状态，不随清单刷新而失效；只有真正的新增报告
-      // （id从未出现在 archiveReviewViewedIds 里）才会显示"待查看"。
     }).catch(() => {})
   }
   const markArchiveReviewViewed = (reportId) => {
-    setArchiveReviewViewedIds(prev => new Set(prev).add(reportId))
+    // 立即持久化到后端，同时乐观更新本地列表，避免等接口返回才刷新体验卡顿
+    staffAPI.markReportFamilyDoctorViewed(reportId).catch(() => {})
+    setPendingDoctorAuditReports(prev => prev.map(r => r._id === reportId ? { ...r, familyDoctorViewedAt: new Date().toISOString() } : r))
   }
   const allArchiveReviewViewed = pendingDoctorAuditReports.length > 0
-    && pendingDoctorAuditReports.every(r => archiveReviewViewedIds.has(r._id))
+    && pendingDoctorAuditReports.every(r => !!r.familyDoctorViewedAt)
   const handleConfirmArchiveReview = () => {
     if (archiveReviewSaving || !allArchiveReviewViewed) return
     setArchiveReviewSaving(true)
@@ -1518,7 +1519,7 @@ export default function PatientDetailPage() {
   useEffect(() => { load() }, [id])
   // 切换到不同患者时，上一个患者的"健康档案已查看"进度不能带过来，否则会误判成这个新患者
   // 也已经查看过某些报告（组件是同一实例复用，id变了但state不会自动清零）
-  useEffect(() => { setArchiveReviewViewedIds(new Set()); setPendingDoctorAuditReports([]) }, [id])
+  useEffect(() => { setPendingDoctorAuditReports([]) }, [id])
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {})
   }, [])
@@ -7830,11 +7831,11 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>
-                请逐份点开查看，全部查看过后才能确认（{archiveReviewViewedIds.size}/{pendingDoctorAuditReports.length}）
+                请逐份点开查看，全部查看过后才能确认（{pendingDoctorAuditReports.filter(r => !!r.familyDoctorViewedAt).length}/{pendingDoctorAuditReports.length}）
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {pendingDoctorAuditReports.map(r => {
-                  const viewed = archiveReviewViewedIds.has(r._id)
+                  const viewed = !!r.familyDoctorViewedAt
                   return (
                     <div key={r._id}
                       onClick={() => { markArchiveReviewViewed(r._id); openReportDetail(r) }}
@@ -7859,7 +7860,7 @@ export default function PatientDetailPage() {
             <div className="modal-footer" style={{ flexShrink: 0 }}>
               <button className="btn btn-secondary" onClick={() => setShowArchiveReviewModal(false)}>稍后再看</button>
               <button className="btn btn-primary" disabled={!allArchiveReviewViewed || archiveReviewSaving} onClick={handleConfirmArchiveReview}>
-                {archiveReviewSaving ? '确认中…' : allArchiveReviewViewed ? '确认已查看' : `还有${pendingDoctorAuditReports.length - archiveReviewViewedIds.size}份未查看`}
+                {archiveReviewSaving ? '确认中…' : allArchiveReviewViewed ? '确认已查看' : `还有${pendingDoctorAuditReports.filter(r => !r.familyDoctorViewedAt).length}份未查看`}
               </button>
             </div>
           </div>

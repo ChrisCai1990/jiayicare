@@ -112,6 +112,12 @@ const medicalReportSchema = new mongoose.Schema({
   audited_at:   { type: Date,   default: null },
   reject_reason:{ type: String, default: '' },
 
+  // 家庭医生单份查看留痕（2026-07-28新增）：家庭医生在"待查看新增报告"清单里点开某份报告，
+  // 立即持久化这份报告"已被查看"，不依赖最后一次性点击的"确认已查看"整体动作——否则中途退出
+  // 没走到最后确认，下次进来这份报告又会显示"待查看"，用户已经看过的内容却要求重新看一遍。
+  familyDoctorViewedAt: { type: Date, default: null },
+  familyDoctorViewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+
   // ── 家庭医生双审（第二道，2026-07-21新增）───────────────────────────
   // 家庭医生在做AI健康解析/风险评估前，必须先审核确认该客户所有健管专员已审核的报告。
   // 与 audit_status/audited_by/audited_at（健管专员那道）完全独立，互不覆盖。

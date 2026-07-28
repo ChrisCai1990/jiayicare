@@ -82,6 +82,7 @@ export const staffAPI = {
   // 家庭医生健康档案查看确认（2026-07-28改造，不再逐份审核报告数据本身）
   getPendingDoctorAuditReports: (patientId) => req(`/staff/patients/${patientId}/reports/pending-doctor-audit`),
   confirmArchiveReview: (patientId) => req(`/staff/patients/${patientId}/archive-review`, { method: 'POST' }),
+  markReportFamilyDoctorViewed: (reportId) => req(`/staff/medical-reports/${reportId}/family-doctor-view`, { method: 'PATCH' }),
   // 膳食调查问卷营养师复核
   nutritionistReviewResponse: (patientId, responseId) => req(`/staff/patients/${patientId}/questionnaire-responses/${responseId}/nutritionist-review`, { method: 'POST' }),
   // 上传报告后自动识别机构/日期回填表单

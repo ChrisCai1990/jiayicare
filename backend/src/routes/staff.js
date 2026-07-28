@@ -1757,8 +1757,23 @@ router.get('/patients/:id/reports/pending-doctor-audit', staffAuth, async (req, 
       filter.createdAt = { $gt: user.archiveReviewSnapshotAt };
     }
     const reports = await MedicalReport.find(filter)
-      .select('title screeningL1 screeningL2 checkDate hospital institution audited_by audited_at').sort({ checkDate: -1 }).lean();
+      .select('title screeningL1 screeningL2 checkDate hospital institution audited_by audited_at familyDoctorViewedAt').sort({ checkDate: -1 }).lean();
     res.json({ success: true, data: reports, count: reports.length });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// PATCH /api/staff/medical-reports/:id/family-doctor-view — 家庭医生点开单份报告查看时调用，
+// 立即持久化"已查看"，不依赖最后一次性的"确认已查看"整体动作，避免中途退出后进度丢失
+router.patch('/medical-reports/:id/family-doctor-view', staffAuth, async (req, res) => {
+  try {
+    if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
+      return res.status(403).json({ success: false, message: '仅家庭医生可标记查看' });
+    }
+    await MedicalReport.updateOne(
+      { _id: req.params.id },
+      { $set: { familyDoctorViewedAt: new Date(), familyDoctorViewedBy: req.staff._id } }
+    );
+    res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
