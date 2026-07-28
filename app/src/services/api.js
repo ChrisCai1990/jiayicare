@@ -160,6 +160,7 @@ export const messagesAPI = {
   markAllRead: ()            => request('/messages/read-all', { method: 'PATCH' }),
   send:        (to, content) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content }) }),
   getThread:   (role)        => request(`/messages/thread/${role}`),
+  recall:      (id)          => request(`/messages/${id}/recall`, { method: 'PATCH' }),
 };
 
 // ── Push Records (医护端推送) ─────────────────────────────────────

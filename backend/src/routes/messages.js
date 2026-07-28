@@ -7,7 +7,7 @@ const router = express.Router();
 // 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
   const [msgCount, pushCount] = await Promise.all([
-    Message.countDocuments({ user: req.user._id, unread: true }),
+    Message.countDocuments({ user: req.user._id, unread: true, recalled: { $ne: true } }),
     PushRecord.countDocuments({ patientId: req.user._id, readAt: null }),
   ]);
   res.json({ success: true, count: msgCount + pushCount });
@@ -16,10 +16,10 @@ router.get('/unread-count', auth, async (req, res) => {
 // 获取消息列表
 router.get('/', auth, async (req, res) => {
   const { type } = req.query;
-  const query = { user: req.user._id };
+  const query = { user: req.user._id, recalled: { $ne: true } };
   if (type) query.type = type;
   const messages = await Message.find(query).sort({ createdAt: -1 }).limit(50);
-  const unreadCount = await Message.countDocuments({ user: req.user._id, unread: true });
+  const unreadCount = await Message.countDocuments({ user: req.user._id, unread: true, recalled: { $ne: true } });
   res.json({ success: true, data: messages, unreadCount });
 });
 
@@ -29,10 +29,33 @@ router.get('/thread/:role', auth, async (req, res) => {
   const VALID = ['doctor', 'nutritionist', 'manager'];
   if (!VALID.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
-  const messages = await Message.find({ conversationId }).sort({ createdAt: 1 }).limit(100);
+  const messages = await Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: 1 }).limit(100);
   // 标记所有未读为已读
   await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
   res.json({ success: true, data: messages, conversationId });
+});
+
+// 撤回一条消息（仅本人发送的消息，2分钟内可撤回，与AI助手频道 chat.js 的撤回规则一致）
+const RECALL_WINDOW_MS = 2 * 60 * 1000;
+router.patch('/:id/recall', auth, async (req, res) => {
+  try {
+    const msg = await Message.findById(req.params.id);
+    if (!msg) return res.status(404).json({ success: false, message: '消息不存在' });
+    if (msg.user.toString() !== req.user._id.toString() || msg.type !== 'user') {
+      return res.status(403).json({ success: false, message: '只能撤回自己发送的消息' });
+    }
+    if (msg.recalled) return res.json({ success: true, message: '已撤回' });
+    if (Date.now() - msg.createdAt.getTime() > RECALL_WINDOW_MS) {
+      return res.status(400).json({ success: false, message: '超过2分钟，无法撤回' });
+    }
+    msg.recalled = true;
+    msg.recalledAt = new Date();
+    await msg.save();
+    if (msg.conversationId) ssePublish(msg.conversationId, { type: 'recall', messageId: String(msg._id) });
+    res.json({ success: true, message: '已撤回' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
 });
 
 // 标记已读

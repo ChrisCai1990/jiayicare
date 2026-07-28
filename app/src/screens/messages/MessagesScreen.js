@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
   StyleSheet, SafeAreaView, RefreshControl, Modal,
-  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Image,
+  TextInput, KeyboardAvoidingView, Platform, ActivityIndicator, Image, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
@@ -956,6 +956,17 @@ const ROLE_META = {
   nutritionist: { label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
 };
 
+// 聊天内日期分隔条文案：今天/昨天/具体日期，与 ChatScreen.js/AiHealthScreen.js 保持一致
+function formatDateDividerLabel(d) {
+  const date = new Date(d);
+  const today = new Date();
+  const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+  const sameDay = (a, b) => a.toDateString() === b.toDateString();
+  if (sameDay(date, today)) return '今天';
+  if (sameDay(date, yesterday)) return '昨天';
+  return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' });
+}
+
 function ConversationThreadModal({ role, onClose }) {
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -996,6 +1007,9 @@ function ConversationThreadModal({ role, onClose }) {
                 return [...prev, data];
               });
               setTimeout(() => scrollRef.current?.scrollToEnd?.({ animated: true }), 100);
+            } else if (type === 'recall') {
+              // 对方（或自己在另一台设备）撤回了一条消息，实时从当前列表移除
+              setMsgs(prev => prev.filter(m => m._id !== data.messageId));
             }
           } catch {}
         };
@@ -1036,6 +1050,15 @@ function ConversationThreadModal({ role, onClose }) {
 
   const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
 
+  const recallMessage = async (m) => {
+    try {
+      await messagesAPI.recall(m._id);
+      setMsgs(prev => prev.filter(item => item._id !== m._id));
+    } catch (err) {
+      Alert.alert('撤回失败', err.message || '可能已超过2分钟');
+    }
+  };
+
   return (
     <Modal visible animationType="slide" transparent={false} onRequestClose={onClose}>
       <SafeAreaView style={{ flex: 1, backgroundColor: colors.background }}>
@@ -1074,14 +1097,23 @@ function ConversationThreadModal({ role, onClose }) {
                   发送消息，您的{meta.label}{'\n'}会在工作时间内回复您
                 </Text>
               </View>
-            ) : msgs.map((m, i) => {
+            ) : msgs.filter(m => !m.recalled).map((m, i, arr) => {
               const isMine = m.type === 'user';
               const fmtT = new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
-              // 时间戳：与上条消息间隔 > 5 分钟才显示
-              const showTime = i === 0 || (new Date(m.createdAt) - new Date(msgs[i-1].createdAt)) > 300000;
+              // 时间戳：与上条消息间隔 > 5 分钟才显示；跨天时额外插入日期分隔（今天/昨天/具体日期），
+              // 避免多天历史消息只看时:分混在一起分不清是哪天说的
+              const prevMsg = arr[i - 1];
+              const showTime = i === 0 || (new Date(m.createdAt) - new Date(prevMsg.createdAt)) > 300000;
+              const showDateDivider = i === 0 || new Date(m.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString();
+              const canRecall = isMine && (Date.now() - new Date(m.createdAt).getTime() <= 2 * 60 * 1000);
               return (
                 <View key={m._id}>
-                  {showTime && (
+                  {showDateDivider && (
+                    <View style={{ alignItems: 'center', marginVertical: spacing.sm }}>
+                      <Text style={[threadStyles.timestamp, { fontWeight: '600' }]}>{formatDateDividerLabel(m.createdAt)}</Text>
+                    </View>
+                  )}
+                  {showTime && !showDateDivider && (
                     <Text style={threadStyles.timestamp}>{fmtT}</Text>
                   )}
                   <View style={[threadStyles.msgRow, isMine && threadStyles.msgRowUser]}>
@@ -1090,7 +1122,16 @@ function ConversationThreadModal({ role, onClose }) {
                         <Ionicons name={meta.icon} size={16} color={meta.color} />
                       </View>
                     )}
-                    <View style={[threadStyles.bubble, isMine ? threadStyles.bubbleUser : threadStyles.bubbleAI]}>
+                    <TouchableOpacity
+                      activeOpacity={canRecall ? 0.7 : 1}
+                      onLongPress={canRecall ? () => {
+                        Alert.alert('撤回消息', '确定要撤回这条消息吗？', [
+                          { text: '取消', style: 'cancel' },
+                          { text: '撤回', style: 'destructive', onPress: () => recallMessage(m) },
+                        ]);
+                      } : undefined}
+                      style={[threadStyles.bubble, isMine ? threadStyles.bubbleUser : threadStyles.bubbleAI]}
+                    >
                       {!isMine && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
                           <Text style={[threadStyles.bubbleName, { color: meta.color, marginBottom: 0 }]}>{m.sender || meta.label}</Text>
@@ -1102,7 +1143,10 @@ function ConversationThreadModal({ role, onClose }) {
                         </View>
                       )}
                       <Text style={[threadStyles.bubbleText, isMine && threadStyles.bubbleTextUser]}>{m.content}</Text>
-                    </View>
+                      {canRecall && (
+                        <Text style={[threadStyles.timestamp, { marginTop: 2, textAlign: 'right', color: isMine ? 'rgba(255,255,255,0.6)' : colors.textMuted }]}>长按撤回</Text>
+                      )}
+                    </TouchableOpacity>
                   </View>
                 </View>
               );

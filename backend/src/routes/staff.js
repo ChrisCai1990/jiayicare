@@ -3942,13 +3942,39 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
       return res.status(403).json({ success: false, message: '无权查看该频道的对话' });
     }
     const conversationId = `${req.params.userId}_${role}`;
-    const messages = await Message.find({ conversationId }).sort({ createdAt: 1 }).limit(100);
+    const messages = await Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: 1 }).limit(100);
     // 标记该会话所有用户消息为医护已读
     await Message.updateMany(
       { conversationId, type: 'user', staffReadAt: null },
       { staffReadAt: new Date() }
     );
     res.json({ success: true, data: messages, conversationId });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── 医护端撤回自己发送的回复（2分钟内，与用户端 messages.js 撤回规则一致）────────────
+// PATCH /api/staff/user-messages/:messageId/recall
+const MESSAGE_RECALL_WINDOW_MS = 2 * 60 * 1000;
+router.patch('/user-messages/:messageId/recall', staffAuth, async (req, res) => {
+  try {
+    const msg = await Message.findById(req.params.messageId);
+    if (!msg) return res.status(404).json({ success: false, message: '消息不存在' });
+    if (msg.type === 'user') {
+      return res.status(403).json({ success: false, message: '不能撤回用户发送的消息' });
+    }
+    const channelRole = msg.type;
+    if (!assertRoleMatchesChannel(req.staff.role, channelRole)) {
+      return res.status(403).json({ success: false, message: '无权撤回该频道的消息' });
+    }
+    if (msg.recalled) return res.json({ success: true, message: '已撤回' });
+    if (Date.now() - msg.createdAt.getTime() > MESSAGE_RECALL_WINDOW_MS) {
+      return res.status(400).json({ success: false, message: '超过2分钟，无法撤回' });
+    }
+    msg.recalled = true;
+    msg.recalledAt = new Date();
+    await msg.save();
+    if (msg.conversationId) ssePublish(msg.conversationId, { type: 'recall', messageId: String(msg._id) });
+    res.json({ success: true, message: '已撤回' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

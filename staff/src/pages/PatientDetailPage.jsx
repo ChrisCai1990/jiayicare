@@ -1135,8 +1135,17 @@ export default function PatientDetailPage() {
   const [archiveReviewViewedIds, setArchiveReviewViewedIds] = useState(() => new Set())
   const loadPendingDoctorAudit = () => {
     staffAPI.getPendingDoctorAuditReports(id).then(r => {
-      setPendingDoctorAuditReports(r.data || [])
-      setArchiveReviewViewedIds(new Set()) // 新一批待查看报告，清空已查看记录重新开始
+      const nextReports = r.data || []
+      // 只有当报告清单真的变了（比如新增了报告）才清空已查看进度；否则同一批报告重复拉取
+      // （切Tab/关弹窗都会触发这个函数）不能把用户刚点开查看过的记录清零，那样会导致
+      // "点开报告、退出、再进来又变成未查看"——已查看进度凭空丢失的bug
+      setPendingDoctorAuditReports(prev => {
+        const prevIds = new Set(prev.map(x => x._id))
+        const nextIds = new Set(nextReports.map(x => x._id))
+        const sameSet = prevIds.size === nextIds.size && [...prevIds].every(x => nextIds.has(x))
+        if (!sameSet) setArchiveReviewViewedIds(new Set())
+        return nextReports
+      })
     }).catch(() => {})
   }
   const markArchiveReviewViewed = (reportId) => {
@@ -7815,12 +7824,12 @@ export default function PatientDetailPage() {
           才会记入"已查看"，全部点开过后"确认已查看"按钮才可点击，防止不看内容就假确认 */}
       {showArchiveReviewModal && (
         <div className="modal-overlay" onClick={() => setShowArchiveReviewModal(false)}>
-          <div className="modal" style={{ maxWidth: 480 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
+          <div className="modal" style={{ maxWidth: 480, maxHeight: '85vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header" style={{ flexShrink: 0 }}>
               <h3 className="modal-title">查看新增体检报告</h3>
               <button className="modal-close" onClick={() => setShowArchiveReviewModal(false)}>✕</button>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 10 }}>
                 请逐份点开查看，全部查看过后才能确认（{archiveReviewViewedIds.size}/{pendingDoctorAuditReports.length}）
               </div>
@@ -7848,7 +7857,7 @@ export default function PatientDetailPage() {
                 })}
               </div>
             </div>
-            <div className="modal-footer">
+            <div className="modal-footer" style={{ flexShrink: 0 }}>
               <button className="btn btn-secondary" onClick={() => setShowArchiveReviewModal(false)}>稍后再看</button>
               <button className="btn btn-primary" disabled={!allArchiveReviewViewed || archiveReviewSaving} onClick={handleConfirmArchiveReview}>
                 {archiveReviewSaving ? '确认中…' : allArchiveReviewViewed ? '确认已查看' : `还有${pendingDoctorAuditReports.length - archiveReviewViewedIds.size}份未查看`}
@@ -9010,6 +9019,7 @@ function formatRecordValue(r) {
 // ── 聊天对话弹窗 ──────────────────────────────────────────────
 function SendMessageModal({ patientId, patientName, onClose }) {
   const { staff } = useStaff()
+  const toast = useToast()
   const [msgs, setMsgs] = useState([])
   const [loading, setLoading] = useState(true)
   const [input, setInput] = useState('')
@@ -9072,6 +9082,23 @@ function SendMessageModal({ patientId, patientName, onClose }) {
   const handleKey = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() } }
 
   const fmtTime = (t) => new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  const fmtDateDivider = (t) => {
+    const date = new Date(t), today = new Date(), yesterday = new Date(today)
+    yesterday.setDate(today.getDate() - 1)
+    const sameDay = (a, b) => a.toDateString() === b.toDateString()
+    if (sameDay(date, today)) return '今天'
+    if (sameDay(date, yesterday)) return '昨天'
+    return date.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' })
+  }
+  const recallMessage = async (m) => {
+    if (!window.confirm('确定要撤回这条消息吗？')) return
+    try {
+      await staffAPI.recallChatMessage(m._id)
+      setMsgs(prev => prev.filter(item => item._id !== m._id))
+    } catch (err) {
+      toast(err.message || '撤回失败，可能已超过2分钟')
+    }
+  }
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -9088,13 +9115,18 @@ function SendMessageModal({ patientId, patientName, onClose }) {
             <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>加载中…</div>
           ) : msgs.length === 0 ? (
             <div style={{ textAlign: 'center', color: '#8AA89C', padding: 40 }}>暂无消息，发送第一条吧</div>
-          ) : msgs.map((m, i) => {
+          ) : msgs.filter(m => !m.recalled).map((m, i, arr) => {
             const isStaff = m.type !== 'user' && m.type !== 'system'
-            const showTime = i === 0 || (new Date(m.createdAt) - new Date(msgs[i-1].createdAt)) > 300000
+            const prevMsg = arr[i - 1]
+            const showTime = i === 0 || (new Date(m.createdAt) - new Date(prevMsg.createdAt)) > 300000
+            const showDateDivider = i === 0 || new Date(m.createdAt).toDateString() !== new Date(prevMsg.createdAt).toDateString()
+            // 撤回：仅限医护自己发的消息（isStaff），2分钟内可撤回，与用户端 messages.js 规则一致
+            const canRecall = isStaff && (Date.now() - new Date(m.createdAt).getTime() <= 2 * 60 * 1000)
             if (m.type === 'system') {
               return (
                 <div key={m._id}>
-                  {showTime && <div style={{ textAlign: 'center', fontSize: 11, color: '#8AA89C', margin: '4px 0' }}>{fmtTime(m.createdAt)}</div>}
+                  {showDateDivider && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#8AA89C', margin: '8px 0 4px' }}>{fmtDateDivider(m.createdAt)}</div>}
+                  {showTime && !showDateDivider && <div style={{ textAlign: 'center', fontSize: 11, color: '#8AA89C', margin: '4px 0' }}>{fmtTime(m.createdAt)}</div>}
                   <div style={{
                     background: '#FFF8E6', border: '1px solid #F3E0A8', borderRadius: 10,
                     padding: '10px 13px', fontSize: 12.5, lineHeight: 1.6, color: '#7A5C00', whiteSpace: 'pre-wrap',
@@ -9107,7 +9139,8 @@ function SendMessageModal({ patientId, patientName, onClose }) {
             }
             return (
               <div key={m._id}>
-                {showTime && <div style={{ textAlign: 'center', fontSize: 11, color: '#8AA89C', margin: '4px 0' }}>{fmtTime(m.createdAt)}</div>}
+                {showDateDivider && <div style={{ textAlign: 'center', fontSize: 11, fontWeight: 600, color: '#8AA89C', margin: '8px 0 4px' }}>{fmtDateDivider(m.createdAt)}</div>}
+                {showTime && !showDateDivider && <div style={{ textAlign: 'center', fontSize: 11, color: '#8AA89C', margin: '4px 0' }}>{fmtTime(m.createdAt)}</div>}
                 <div style={{ display: 'flex', justifyContent: isStaff ? 'flex-end' : 'flex-start', gap: 8 }}>
                   {!isStaff && (
                     <div style={{ width: 32, height: 32, borderRadius: 16, background: '#1E6B50', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, fontWeight: 700, flexShrink: 0 }}>
@@ -9122,8 +9155,17 @@ function SendMessageModal({ patientId, patientName, onClose }) {
                       color: isStaff ? '#fff' : '#1A2B24',
                       fontSize: 14, lineHeight: 1.5,
                       boxShadow: '0 1px 3px rgba(0,0,0,0.06)',
+                      position: 'relative',
                     }}>
                       {m.content}
+                      {canRecall && (
+                        <span
+                          onClick={() => recallMessage(m)}
+                          style={{ display: 'block', marginTop: 4, fontSize: 10, textAlign: 'right', color: 'rgba(255,255,255,0.7)', cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          撤回
+                        </span>
+                      )}
                     </div>
                   </div>
                 </div>
