@@ -122,7 +122,7 @@ def deploy(backend_only=False, clean=False, github_source=False):
 
         code, output = remote(
             f"cd {REPO_DIR} && test \"$(git rev-parse HEAD)\" = \"{revision}\" "
-            f"&& git status --porcelain",
+            f"&& git status --porcelain --untracked-files=no",
             timeout=15,
             label=f"确认服务器 commit：{revision}",
         )
