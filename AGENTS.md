@@ -1,3 +1,93 @@
+# Codex / Claude Code 双端统一项目记忆
+
+> 同步日期：2026-07-29
+> 来源：根目录及各子项目 `CLAUDE.md`、已跟踪的 `.claude/launch.json`。本节是两端共享的稳定记忆；更详细的历史与页面清单仍查阅对应 `CLAUDE.md`。
+
+## 记忆维护规则
+
+- 本项目长期同时使用 Codex 与 Claude Code；`AGENTS.md` 与 `CLAUDE.md` 都必须保留。Claude Code 也必须读取本节，禁止把这里视为 Codex 私有配置。
+- 新的跨项目约定、部署变化、关键业务流程和已确认遗留问题，应同步维护到两边入口文件。
+- 子项目细节以该子项目 `CLAUDE.md` 和当前代码为准；发现文档冲突时，以当前代码、根目录最新说明和实际验证结果为准，并修正文档。
+- 不删除 `.claude/`、Claude 历史说明或 Codex 协作说明，除非用户明确授权。
+- 密钥、密码、服务器凭据只放环境变量或本机未跟踪配置，不写入仓库。
+- 所有核心开发、测试和部署命令必须能在 Windows PowerShell 下从仓库根目录执行。
+- 核心流程只能依赖仓库脚本、标准命令和环境变量；不得依赖 Codex/Claude 任一端的私有记忆、私有插件或机器绝对路径。
+- 新机器迁移时只允许重新安装通用运行时并注入未跟踪凭据，不应重新设计启动、测试或部署流程。
+
+## 当前系统边界与本地端口
+
+本仓库有 5 个应用端，共用一个 Node.js 后端和 MongoDB：
+
+| 模块 | 技术栈 | 本地入口/方式 |
+|---|---|---|
+| `backend/` | Node.js + Express + Mongoose | API `http://localhost:3000` |
+| `admin/` | React + Vite | 项目配置默认 `http://localhost:5175`；旧 `.claude` 启动配置记为 5173，修改端口时同时检查 CORS |
+| `staff/` | React + Vite | `http://localhost:5174` |
+| `app/` | React Native + Expo | Web 调试 `http://localhost:8081` |
+| `miniprogram/` | Taro 3.6.32 + React 18 | 无独立 HTTP 端口；构建 `miniprogram/dist/` 后用微信开发者工具 |
+| MongoDB | MongoDB | `mongodb://127.0.0.1:27017/jiayicare` |
+
+- `admin`、`staff`、`app`、`miniprogram` 共用 `backend` API。
+- 本地前端必须使用后端 CORS 白名单内的 `localhost` 地址；不要混用 `127.0.0.1` 页面来源。
+- `app/.claude/launch.json` 里的 `node server.js` 已过时；当前后端入口是 `backend/src/index.js`。
+
+## 当前关键业务流程
+
+- 体检报告实行“只上传、不自动识别”：
+  `用户上传 → 健管首页 report_parse 待办 → 专门触发 AI 解析 → 待审核 → 审核通过 → 用户端可见`。
+- 未解析显示“待解析”，解析中显示“解析中”，不得提前显示“待审核”。
+- 药物/营养素审核：
+  健管专员/就医专员手动新增为 `pending`；药物由家庭医生审核，营养素由营养师审核；本人及超管录入直接生效。
+- AI 健康分析和风险评估仅家庭医生可生成，健管人员只能查看；前端隐藏与后端鉴权都必须保留。
+- `PUT /user/me` 对 Mixed 数组字段使用原生 driver：
+  `User.collection.updateOne(...)` 后重新查询；不要改回 `findByIdAndUpdate`。
+- 弹窗内错误必须显示在弹窗内部；不要依赖可能被弹窗遮住的 toast。
+
+## App 与小程序同步原则
+
+- `app/` 与 `miniprogram/` 面向同一用户群体，新增字段、交互或 API 时必须评估双端同步，不能静默分叉。
+- 能接真实 API 时不用假数据占位；平台机制不同则做合理适配，并在代码注释和文档中说明。
+- 微信网页授权与小程序登录不可混用：
+  - App/网页：`POST /auth/wechat`，字段 `User.wechatOpenid`。
+  - 小程序：`POST /auth/wechat-mp`，字段 `User.wechatMpOpenid`，环境变量 `WECHAT_MP_APPID/WECHAT_MP_SECRET`。
+- 小程序正式 AppID 记录为 `wx50062146332b1b20`；AppID 变更必须同时更新源码 `miniprogram/project.config.json` 与服务器环境变量。
+- 小程序禁止手改 `miniprogram/dist/project.config.json`；只改源码配置后重新构建。
+- `npm run dev:weapp` 的 watch 模式有已知 `react-jsx-runtime` 崩溃问题；使用 `npm run build:weapp` 后在微信开发者工具中重新编译。
+- 小程序不是网页，不能部署到 Nginx；构建后需微信开发者工具上传、公众平台提审并人工发布。
+
+## 部署约定
+
+- 提交、认证、部署和失败处理的完整标准流程见 `docs/DEVELOPMENT_WORKFLOW.md`；Codex 与 Claude Code 均必须遵循。
+- 生产环境：阿里云 ECS `121.40.156.39`，SSH `root@121.40.156.39`。
+- 线上入口：
+  - App：`https://jiaycare.com`
+  - Admin：`https://admin.jiaycare.com`
+  - Staff：`https://staff.jiaycare.com`
+  - API：`https://jiaycare.com/api`
+- 主部署路径由本地 `python scripts/deploy.py` 发起，默认通过 SFTP 上传当前 commit 的 Git bundle；阿里云不连接 GitHub：
+  - 全量：`python scripts/deploy.py --push`
+  - 仅后端：`python scripts/deploy.py --push --backend`
+- `--push` 只接受已提交且干净的 `master`；脚本不会自动暂存或提交。
+- `--github-source` 仅为备用模式，只有确认阿里云到 GitHub 网络正常时才使用。
+- 服务器前端目录：`/var/www/jiayicare/{app,admin,staff}/dist`；PM2 后端进程：`jiayicare-backend`。
+- 部署后至少验证 API 健康检查，并分别确认 App、Admin、Staff 静态站点可访问。
+
+## 测试账号约定
+
+- 用户端演示：`13800138000` / 验证码 `123456`。
+- 管理与医护测试账号：`superadmin`、`jy_super`、`jy_hm`、`jy_fd`、`jy_ns`、`jy_ma`、`jy_hp`、`jy_tcm`、`jy_rb`。
+- 仓库不得保存账号密码。非生产环境通过 `BOOTSTRAP_ADMIN_PASSWORD`、`SEED_DEMO_ACCOUNTS=true` 和 `DEMO_ACCOUNT_PASSWORD` 初始化；已存在账号不会被自动重置。
+
+## 已知遗留
+
+- 聊天模块重构暂缓，消息撤回搁置。
+- AI 审核权限仍需覆盖药物、营养素、检查开单、就医协助等剩余 `aiStatus` 写入链路。
+- 小程序仍有简化项：用药新增/停用、随访分类和表单、提醒新增/分类、反馈历史、订阅消息。
+- 小程序 Tab 图标仍是占位 PNG，上线前需替换正式设计资源。
+- OSS 试用记录约于 2026-10-12 到期，临近日期需要复核续费或迁移方案。
+
+---
+
 # 当前进度（每次切换账号时更新）
 
 > 更新时间：2026-07-12

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Deploy JiayiCare from the current master branch.
+"""Deploy JiayiCare from the current local master commit.
 
 Required local environment:
   JIAYICARE_SSH_PASSWORD or JIAYICARE_SSH_KEY_PATH
 
 The script never stages or commits files. With --push it only pushes an already
-clean local master branch, then deploys the exact origin/master revision.
+clean local master branch. By default it uploads that exact commit to Aliyun as
+a Git bundle, so the server does not need to connect to GitHub.
 """
 
 import argparse
@@ -13,6 +14,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 from ssh_config import HOST, connect
@@ -28,24 +30,30 @@ def run_git(*args, check=True):
     )
 
 
-def push_clean_master():
+def require_clean_master():
     status = run_git("status", "--porcelain")
     if status.stdout.strip():
-        raise RuntimeError("工作区有未提交改动；请先人工审阅并提交，再使用 --push。")
+        raise RuntimeError("工作区有未提交改动；请先人工审阅并提交。")
 
     branch = run_git("branch", "--show-current").stdout.strip()
     if branch != "master":
         raise RuntimeError(f"部署仅允许 master 分支，当前分支为 {branch!r}。")
 
+
+def push_clean_master():
+    require_clean_master()
     result = run_git("push", "origin", "master", check=False)
     if result.returncode != 0:
         raise RuntimeError(result.stderr.strip() or "git push 失败")
     print("GitHub push 完成")
 
 
-def deploy(backend_only=False, clean=False):
+def deploy(backend_only=False, clean=False, github_source=False):
+    require_clean_master()
+    revision = run_git("rev-parse", "HEAD").stdout.strip()
     print(f"连接服务器 {HOST}...")
     ssh = connect()
+    remote_bundle = None
 
     def remote(command, timeout=300, label=None):
         if label:
@@ -66,13 +74,60 @@ def deploy(backend_only=False, clean=False):
 
     try:
         remote(f"rm -f {REPO_DIR}/.git/index.lock", timeout=5)
-        code, _ = remote(
-            f"cd {REPO_DIR} && git fetch origin master && git reset --hard origin/master",
-            timeout=60,
-            label="同步 origin/master",
-        )
+
+        if github_source:
+            code, _ = remote(
+                f"cd {REPO_DIR} && git fetch origin master && git reset --hard origin/master",
+                timeout=60,
+                label="服务器从 GitHub 同步 origin/master（备用模式）",
+            )
+        else:
+            with tempfile.NamedTemporaryFile(
+                prefix=f"jiayicare-{revision[:12]}-", suffix=".bundle", delete=False
+            ) as bundle_file:
+                local_bundle = bundle_file.name
+            try:
+                result = subprocess.run(
+                    ["git", "bundle", "create", local_bundle, "HEAD"],
+                    cwd=LOCAL_DIR,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                if result.returncode:
+                    raise RuntimeError(result.stderr.strip() or "创建本地 Git bundle 失败")
+
+                remote_bundle = f"/tmp/jiayicare-{revision}.bundle"
+                print(f"上传本地 commit {revision} 到服务器...")
+                sftp = ssh.open_sftp()
+                try:
+                    sftp.put(local_bundle, remote_bundle)
+                finally:
+                    sftp.close()
+            finally:
+                try:
+                    os.unlink(local_bundle)
+                except OSError:
+                    pass
+
+            code, _ = remote(
+                f"cd {REPO_DIR} && git fetch {remote_bundle} HEAD "
+                f"&& git reset --hard {revision}",
+                timeout=60,
+                label="从本地 Git bundle 同步服务器代码",
+            )
+
         if code:
             raise RuntimeError("服务器代码同步失败")
+
+        code, output = remote(
+            f"cd {REPO_DIR} && test \"$(git rev-parse HEAD)\" = \"{revision}\" "
+            f"&& git status --porcelain",
+            timeout=15,
+            label=f"确认服务器 commit：{revision}",
+        )
+        if code or output.strip():
+            raise RuntimeError("服务器 commit 或工作区状态校验失败")
 
         if clean:
             remote(f"rm -rf {REPO_DIR}/node_modules", timeout=60, label="清理 node_modules")
@@ -119,6 +174,11 @@ def deploy(backend_only=False, clean=False):
         print("管理端：https://admin.jiaycare.com")
         print("医护端：https://staff.jiaycare.com")
     finally:
+        if remote_bundle:
+            try:
+                ssh.exec_command(f"rm -f {remote_bundle}", timeout=10)
+            except Exception:
+                pass
         ssh.close()
 
 
@@ -130,12 +190,21 @@ def main():
     parser.add_argument("--push", action="store_true", help="推送干净的 master 后部署")
     parser.add_argument("--backend", action="store_true", help="只安装依赖并重启后端")
     parser.add_argument("--clean", action="store_true", help="先清理服务器 node_modules")
+    parser.add_argument(
+        "--github-source",
+        action="store_true",
+        help="备用：让服务器从 GitHub 拉取；默认由本地上传 Git bundle",
+    )
     args = parser.parse_args()
 
     try:
         if args.push:
             push_clean_master()
-        deploy(backend_only=args.backend, clean=args.clean)
+        deploy(
+            backend_only=args.backend,
+            clean=args.clean,
+            github_source=args.github_source,
+        )
     except (RuntimeError, OSError) as exc:
         print(f"部署失败：{exc}", file=sys.stderr)
         raise SystemExit(1) from exc

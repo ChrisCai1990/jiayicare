@@ -1,3 +1,17 @@
+# 双端共享记忆入口
+
+Claude Code 开始处理本项目时，必须先读取根目录 `AGENTS.md` 顶部的
+“Codex / Claude Code 双端统一项目记忆”。该节是两端共享的稳定事实来源，包含系统边界、
+本地端口、关键业务流程、App/小程序同步规则、部署约定和遗留问题。
+
+- 不得把 `AGENTS.md` 视为 Codex 私有文件。
+- 核心流程只能依赖仓库脚本、标准命令和环境变量，不得依赖任一 AI 工具的私有能力或机器绝对路径。
+- 更新跨项目约定、部署方式或关键业务流程时，应同步更新 `AGENTS.md` 的共享记忆和本文件相关历史说明。
+- 密钥和服务器凭据仍只通过未跟踪环境变量提供。
+- Git 提交、GitHub 推送、阿里云部署和失败处理统一遵循 `docs/DEVELOPMENT_WORKFLOW.md`。
+
+---
+
 # 当前进度（每次切换账号时更新）
 
 > 更新时间：2026-07-12
@@ -102,10 +116,11 @@ npm run build:miniprogram   # 等价于 cd miniprogram && npm run build:weapp，
 ```
 本地开发
   → git push origin master
-    → [备份] GitHub Webhook → 9000端口 → deploy.sh（不可靠，不依赖）
     → [主路径] python scripts/deploy.py
+        → 本地创建当前 HEAD 的 Git bundle
+        → 本地通过 SFTP 直接上传阿里云（服务器不连接 GitHub）
+        → 服务器从 bundle reset 到同一 commit 并校验
         → 使用本机环境变量或 SSH 密钥连接服务器
-        → git fetch + git reset --hard origin/master
         → npm ci --legacy-peer-deps
         → 构建 app + admin + staff
         → pm2 restart jiayicare-backend
