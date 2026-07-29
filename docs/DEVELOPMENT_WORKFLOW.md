@@ -138,6 +138,10 @@ git commit -m "<type>: <简明说明>"
 python scripts/deploy.py --push
 ```
 
+部署脚本会根据所有已跟踪的 `package.json` 和 `package-lock.json` 计算依赖指纹。
+锁文件未变化且服务器 `node_modules` 存在时自动跳过 `npm ci`；锁文件变化或使用
+`--clean` 时会重新安装依赖。服务器本地的 `uploads/` 和其他未跟踪运维文件会保留。
+
 该命令只允许：
 
 - 当前分支为 `master`

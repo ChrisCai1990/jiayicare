@@ -10,6 +10,7 @@ a Git bundle, so the server does not need to connect to GitHub.
 """
 
 import argparse
+import hashlib
 import os
 import re
 import subprocess
@@ -28,6 +29,18 @@ def run_git(*args, check=True):
     return subprocess.run(
         ["git", *args], cwd=LOCAL_DIR, capture_output=True, text=True, check=check
     )
+
+
+def dependency_fingerprint():
+    """Hash tracked npm manifests without reading or exposing secrets."""
+    tree = run_git("ls-tree", "-r", "HEAD").stdout.splitlines()
+    manifests = []
+    for line in tree:
+        _, path = line.split("\t", 1)
+        if os.path.basename(path) in {"package.json", "package-lock.json"}:
+            manifests.append(line)
+    payload = "\n".join(sorted(manifests)).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
 
 
 def require_clean_master():
@@ -51,6 +64,7 @@ def push_clean_master():
 def deploy(backend_only=False, clean=False, github_source=False):
     require_clean_master()
     revision = run_git("rev-parse", "HEAD").stdout.strip()
+    dependency_hash = dependency_fingerprint()
     print(f"连接服务器 {HOST}...")
     ssh = connect()
     remote_bundle = None
@@ -132,13 +146,24 @@ def deploy(backend_only=False, clean=False, github_source=False):
         if clean:
             remote(f"rm -rf {REPO_DIR}/node_modules", timeout=60, label="清理 node_modules")
 
+        marker = f"{REPO_DIR}/.deploy-dependency-fingerprint"
         code, _ = remote(
-            f"cd {REPO_DIR} && npm ci --legacy-peer-deps",
-            timeout=600,
-            label="安装锁定依赖",
+            f"cd {REPO_DIR} && test -d node_modules "
+            f"&& test \"$(cat {marker} 2>/dev/null)\" = \"{dependency_hash}\"",
+            timeout=15,
+            label="检查依赖缓存",
         )
         if code:
-            raise RuntimeError("依赖安装失败")
+            code, _ = remote(
+                f"cd {REPO_DIR} && npm ci --legacy-peer-deps "
+                f"&& printf '%s' '{dependency_hash}' > {marker}",
+                timeout=600,
+                label="锁文件已变化，安装锁定依赖",
+            )
+            if code:
+                raise RuntimeError("依赖安装失败")
+        else:
+            print("依赖锁文件未变化，跳过 npm ci")
 
         if not backend_only:
             for workspace, command, label in (
