@@ -61,7 +61,9 @@ const MODULE_DEFS_BY_TYPE = {
         { key: 'hospital', label: '就诊医院', type: 'text' },
         { key: 'department', label: '就诊科室', type: 'text' },
         { key: 'expert', label: '建议专家', type: 'text' },
-        { key: 'visitDate', label: '就诊时间', type: 'date' },
+        { key: 'visitDate', label: '服务日期', type: 'date' },
+        { key: 'serviceTime', label: '具体时间', type: 'text', placeholder: '如：09:30 或 上午' },
+        { key: 'staffId', label: '就医专员', type: 'staff-select' },
       ],
     },
     logistics: {
@@ -89,6 +91,67 @@ const MODULE_DEFS_BY_TYPE = {
 const TITLE_BY_TYPE = { nutrition: '营养干预方案', medical_assist: '就医协助方案' }
 const AI_GENERATE_LABEL_BY_TYPE = { nutrition: 'AI营养方案', medical_assist: 'AI就医协助方案' }
 
+function medicalAssistModuleData(content = {}) {
+  const existing = content.moduleData || {}
+  const taskRecords = existing.tasks?.records?.length
+    ? existing.tasks.records
+    : String(content.tasks || '')
+        .split(/\r?\n/)
+        .map(task => task.replace(/^\s*\d+[.、]\s*/, '').trim())
+        .filter(Boolean)
+        .map(task => ({ task, staff: content.staffId || '', notes: '' }))
+
+  return {
+    ...existing,
+    visit: {
+      ...(existing.visit || {}),
+      hospital: existing.visit?.hospital || content.hospital || '',
+      department: existing.visit?.department || content.department || '',
+      expert: existing.visit?.expert || content.expert || '',
+      visitDate: existing.visit?.visitDate || content.serviceDate || '',
+      serviceTime: existing.visit?.serviceTime || content.serviceTime || '',
+      staffId: existing.visit?.staffId || content.staffId || '',
+    },
+    logistics: {
+      ...(existing.logistics || {}),
+      hotel: existing.logistics?.hotel || content.hotel || '',
+      transport: existing.logistics?.transport || content.transport || '',
+    },
+    tasks: {
+      ...(existing.tasks || {}),
+      records: taskRecords,
+    },
+    notes: {
+      ...(existing.notes || {}),
+      content: existing.notes?.content || content.notes || '',
+    },
+  }
+}
+
+function contentFromModules(plan, moduleData, goal) {
+  const content = { ...(plan.content || {}), moduleData, goal }
+  if (plan.type !== 'medical_assist') return content
+
+  const visit = moduleData.visit || {}
+  const logistics = moduleData.logistics || {}
+  const records = moduleData.tasks?.records || []
+  const selectedAssistantId = visit.staffId || content.staffId || records.find(r => r.staff)?.staff || ''
+
+  return {
+    ...content,
+    hospital: visit.hospital || '',
+    department: visit.department || '',
+    expert: visit.expert || '',
+    serviceDate: visit.visitDate || '',
+    serviceTime: visit.serviceTime || content.serviceTime || '',
+    staffId: selectedAssistantId,
+    hotel: logistics.hotel || '',
+    transport: logistics.transport || '',
+    tasks: records.map(r => r.task).filter(Boolean).join('\n'),
+    notes: moduleData.notes?.content || '',
+  }
+}
+
 export default function PlanModulesPage() {
   const { id } = useParams()
   const nav = useNavigate()
@@ -115,7 +178,7 @@ export default function PlanModulesPage() {
         const p = res.data
         setPlan(p)
         const c = p.content || {}
-        setModuleData(c.moduleData || {})
+        setModuleData(p.type === 'medical_assist' ? medicalAssistModuleData(c) : (c.moduleData || {}))
         setGoal(c.goal || p.description || '')
         setDirty(false)
       })
@@ -145,7 +208,9 @@ export default function PlanModulesPage() {
   const handleSave = async () => {
     setSaving(true)
     try {
-      await staffAPI.updatePlan(id, { content: { ...(plan.content || {}), moduleData, goal }, description: goal })
+      const content = contentFromModules(plan, moduleData, goal)
+      await staffAPI.updatePlan(id, { content, description: goal })
+      setPlan(p => ({ ...p, content, description: goal }))
       toast('方案已保存')
       setDirty(false)
     } catch (err) {
@@ -199,6 +264,16 @@ export default function PlanModulesPage() {
             </span>
           )}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
+          {canEdit && (
+            <button
+              onClick={handlePush}
+              disabled={pushing || dirty}
+              title={dirty ? '请先保存更改，再推送给客户' : ''}
+              style={{ background: '#0077B6', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, opacity: (pushing || dirty) ? 0.5 : 1 }}
+            >
+              {pushing ? '推送中...' : plan.pushedAt ? '重新推送' : '推送给客户'}
+            </button>
+          )}
         </div>
       </div>
 

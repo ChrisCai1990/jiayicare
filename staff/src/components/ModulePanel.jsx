@@ -58,9 +58,9 @@ export function FieldInput({ field, value, onChange }) {
       />
     )
   }
-  if (field.type === 'date') {
+  if (field.type === 'date' || field.type === 'time') {
     return (
-      <input type="date" value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle} />
+      <input type={field.type} value={value || ''} onChange={e => onChange(e.target.value)} style={inputStyle} />
     )
   }
   if (field.type === 'yesno') {
