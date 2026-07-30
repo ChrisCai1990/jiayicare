@@ -70,6 +70,13 @@ JiayiCare-mono/
 
 ## 部署命令
 
+### 本机认证与部署历史（2026-07-30补充）
+
+- 本项目此前已经多次成功部署到阿里云，生产环境及 `scripts/deploy.py` 主部署链路均为既有可用配置；新会话里认证环境变量为空，不代表项目从未部署或服务器尚未配置。
+- SSH 密码、私钥内容和具体密钥材料不得写入仓库记忆。遇到 `JIAYICARE_SSH_PASSWORD` / `JIAYICARE_SSH_KEY_PATH` 未设置时，应先检查既有本机安全配置、终端会话环境或由用户重新注入认证，再继续部署。
+- 不得自行猜测私钥路径、创建新凭据或要求把密码写入项目文件；认证恢复后仍使用 `python scripts/deploy.py --push`（或代码已推送时使用 `python scripts/deploy.py`）。
+- 2026-07-30 本批优化提交为 `7d75f99`，已推送 `origin/master`；当时因当前 Codex 进程未继承 SSH 认证变量，阿里云部署未在该次操作中完成。继续工作时先核对线上 commit，再决定仅部署该提交还是已有后续版本。
+
 ### 标准部署（改了前端或全部改了）
 ```bash
 python scripts/deploy.py --push
