@@ -2,14 +2,21 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
+const CLIENT_BRANDS = [
+  { value: 'jiayiguanjia', label: '嘉医管家' },
+  { value: 'jinyisen', label: '金伊森' },
+]
+const brandLabel = value => CLIENT_BRANDS.find(item => item.value === value)?.label || '未设置'
+
 // ─── 共用：简单列表管理组件（标签/来源） ─────────────────────────
-function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn }) {
+function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false }) {
   const toast = useToast()
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
   const [name, setName] = useState('')
+  const [clientBrand, setClientBrand] = useState('jiayiguanjia')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -19,15 +26,16 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setEditId(null); setName(''); setError(''); setShowModal(true) }
-  const openEdit = item => { setEditId(item._id); setName(item.name); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setError(''); setShowModal(true) }
+  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setError(''); setShowModal(true) }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
     setSaving(true); setError('')
     try {
-      if (editId) { await updateFn(editId, { name }); toast('已更新') }
-      else { await createFn({ name }); toast('已创建') }
+      const payload = withClientBrand ? { name, clientBrand } : { name }
+      if (editId) { await updateFn(editId, payload); toast('已更新') }
+      else { await createFn(payload); toast('已创建') }
       setShowModal(false); load()
     } catch (e) { setError(e.message || '操作失败') }
     finally { setSaving(false) }
@@ -54,7 +62,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              {['名称', '状态', '操作'].map(h => (
+              {(withClientBrand ? ['名称', '客户归属', '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
               ))}
             </tr>
@@ -63,14 +71,15 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
             {list.map(item => (
               <tr key={item._id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                 <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.name}</td>
+                {withClientBrand && <td style={{ padding: '10px 14px' }}>{brandLabel(item.clientBrand)}</td>}
                 <td style={{ padding: '10px 14px' }}>
-                  <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: item.status === 'active' ? '#E8F5EF' : '#FEF2F2', color: item.status === 'active' ? '#1E6B50' : '#DC2626' }}>
-                    {item.status === 'active' ? '启用' : '停用'}
+                  <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: (item.active ?? item.status === 'active') ? '#E8F5EF' : '#FEF2F2', color: (item.active ?? item.status === 'active') ? '#1E6B50' : '#DC2626' }}>
+                    {(item.active ?? item.status === 'active') ? '启用' : '停用'}
                   </span>
                 </td>
                 <td style={{ padding: '10px 14px' }}>
                   <button className="btn btn-secondary btn-sm" onClick={() => openEdit(item)} style={{ marginRight: 6 }}>编辑</button>
-                  <button className="btn btn-secondary btn-sm" onClick={() => handleToggle(item)} style={{ marginRight: 6 }}>{item.status === 'active' ? '停用' : '启用'}</button>
+                  <button className="btn btn-secondary btn-sm" onClick={() => handleToggle(item)} style={{ marginRight: 6 }}>{(item.active ?? item.status === 'active') ? '停用' : '启用'}</button>
                   <button className="btn btn-danger btn-sm" onClick={() => handleDelete(item)}>删除</button>
                 </td>
               </tr>
@@ -92,6 +101,14 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                 <label className="form-label">名称 *</label>
                 <input className="form-input" value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSave()} autoFocus />
               </div>
+              {withClientBrand && (
+                <div className="form-group">
+                  <label className="form-label">客户归属 *</label>
+                  <select className="form-input" value={clientBrand} onChange={e => setClientBrand(e.target.value)}>
+                    {CLIENT_BRANDS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                  </select>
+                </div>
+              )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" onClick={() => setShowModal(false)}>取消</button>
@@ -112,7 +129,7 @@ function MemberTypeTab() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
-  const [form, setForm] = useState({ name: '', parent: '', sortOrder: 0 })
+  const [form, setForm] = useState({ name: '', parent: '', sortOrder: 0, clientBrand: 'jiayiguanjia' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -131,10 +148,11 @@ function MemberTypeTab() {
   useEffect(() => { load() }, [])
 
   const openCreate = (parentId = '') => {
-    setEditId(null); setForm({ name: '', parent: parentId, sortOrder: 0 }); setError(''); setShowModal(true)
+    const parent = flatList.find(item => item._id === parentId)
+    setEditId(null); setForm({ name: '', parent: parentId, sortOrder: 0, clientBrand: parent?.clientBrand || 'jiayiguanjia' }); setError(''); setShowModal(true)
   }
   const openEdit = item => {
-    setEditId(item._id); setForm({ name: item.name, parent: item.parent || '', sortOrder: item.sortOrder || 0 }); setError(''); setShowModal(true)
+    setEditId(item._id); setForm({ name: item.name, parent: item.parent || '', sortOrder: item.sortOrder || 0, clientBrand: item.clientBrand || 'jiayiguanjia' }); setError(''); setShowModal(true)
   }
 
   const handleSave = async () => {
@@ -166,6 +184,9 @@ function MemberTypeTab() {
           </span>
         </td>
         <td style={{ padding: '10px 14px' }}>
+          {brandLabel(n.clientBrand)}
+        </td>
+        <td style={{ padding: '10px 14px' }}>
           <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: n.active ? '#E8F5EF' : '#FEF2F2', color: n.active ? '#1E6B50' : '#DC2626' }}>
             {n.active ? '启用' : '停用'}
           </span>
@@ -193,7 +214,7 @@ function MemberTypeTab() {
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              {['类型名称', '状态', '操作'].map(h => (
+              {['类型名称', '客户归属', '状态', '操作'].map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
               ))}
             </tr>
@@ -216,10 +237,17 @@ function MemberTypeTab() {
                 <input className="form-input" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} autoFocus />
               </div>
               <div className="form-group">
+                <label className="form-label">客户归属 *</label>
+                <select className="form-input" value={form.clientBrand}
+                  onChange={e => setForm(f => ({ ...f, clientBrand: e.target.value, parent: '' }))}>
+                  {CLIENT_BRANDS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
                 <label className="form-label">父级类型</label>
                 <select className="form-input" value={form.parent} onChange={e => setForm(f => ({ ...f, parent: e.target.value }))}>
                   <option value="">无（顶级）</option>
-                  {flatList.filter(n => n._id !== editId).map(n => (
+                  {flatList.filter(n => n._id !== editId && (n.clientBrand || 'jiayiguanjia') === form.clientBrand).map(n => (
                     <option key={n._id} value={n._id}>{'　'.repeat(n.depth)}{n.name}</option>
                   ))}
                 </select>
@@ -241,7 +269,7 @@ function MemberTypeTab() {
 }
 
 // ─── 主页面（3个 Tab） ─────────────────────────────────────────
-const TABS = ['会员标签', '会员来源', '会员类型']
+const TABS = ['会员标签', '会员来源', '会员类型', '服务包']
 
 export default function MemberSettingsPage() {
   const [tab, setTab] = useState(0)
@@ -291,6 +319,18 @@ export default function MemberSettingsPage() {
           />
         )}
         {tab === 2 && <MemberTypeTab />}
+        {tab === 3 && (
+          <SimpleListTab
+            title="服务包"
+            desc="按客户归属维护医护端可选的服务包"
+            fetchFn={adminAPI.servicePackages}
+            createFn={adminAPI.createServicePackage}
+            updateFn={adminAPI.updateServicePackage}
+            toggleFn={adminAPI.toggleServicePackage}
+            deleteFn={adminAPI.deleteServicePackage}
+            withClientBrand
+          />
+        )}
       </div>
     </div>
   )

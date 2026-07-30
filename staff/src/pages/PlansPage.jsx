@@ -560,23 +560,29 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const [loadingTpls, setLoadingTpls] = useState(true)
   const [tplError, setTplError] = useState('')
   const [selectedTpl, setSelectedTpl] = useState(null)
+  const [medicalAssistants, setMedicalAssistants] = useState([])
 
   // 模板内容字段（与管理端完全一致）
   const [form, setForm] = useState({
     name: '', hospital: '', department: '', expert: '',
-    staffName: '', datetime: '', transport: '', tasks: '', hotel: '', notes: '',
+    staffId: '', staffName: '', serviceDate: '', serviceTime: '', transport: '', tasks: '', hotel: '', notes: '',
   })
   const set = (k, v) => setForm(prev => ({ ...prev, [k]: v }))
 
   const [patientId, setPatientId] = useState('')
-  const [year, setYear] = useState(new Date().getFullYear())
   const [description, setDescription] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
-    staffAPI.getPlanTemplates('medical_assist')
-      .then(res => setTemplates(res.data || []))
+    Promise.all([
+      staffAPI.getPlanTemplates('medical_assist'),
+      staffAPI.getStaffList({ role: 'medicalAssistant' }),
+    ])
+      .then(([tplRes, staffRes]) => {
+        setTemplates(tplRes.data || [])
+        setMedicalAssistants(staffRes.data || [])
+      })
       .catch(err => setTplError(err.message || '加载失败'))
       .finally(() => setLoadingTpls(false))
   }, [])
@@ -589,8 +595,10 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
       hospital:  c.hospital  || '',
       department:c.department|| '',
       expert:    c.expert    || '',
+      staffId:   c.staffId || '',
       staffName: c.staffName || '',
-      datetime:  c.datetime  || '',
+      serviceDate: c.serviceDate || (c.datetime && /^\d{4}-\d{2}-\d{2}/.test(c.datetime) ? c.datetime.slice(0, 10) : ''),
+      serviceTime: c.serviceTime || (c.datetime && !/^\d{4}-\d{2}-\d{2}$/.test(c.datetime) ? c.datetime.replace(/^\d{4}-\d{2}-\d{2}\s*/, '') : ''),
       transport: c.transport || '',
       tasks:     c.tasks     || '',
       hotel:     c.hotel     || '',
@@ -603,6 +611,7 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
   const handleSubmit = async () => {
     if (!patientId) { setError('请搜索并选择会员'); return }
     if (!form.name.trim()) { setError('请填写方案名称'); return }
+    if (!form.serviceDate) { setError('请选择服务日期'); return }
     setError(''); setSaving(true)
     try {
       // items 从内容字段派生
@@ -612,7 +621,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
         const exp  = form.expert     ? `（${form.expert}）`    : ''
         items.push({ name: `就诊：${form.hospital}${dept}${exp}`, category: '就医协助' })
       }
-      if (form.datetime)  items.push({ name: `就医时间：${form.datetime}`,   category: '就医协助' })
+      items.push({ name: `服务日期：${form.serviceDate}`, category: '就医协助' })
+      if (form.serviceTime) items.push({ name: `具体时间：${form.serviceTime}`, category: '就医协助' })
       if (form.staffName) items.push({ name: `服务专员：${form.staffName}`, category: '就医协助' })
       if (form.transport) items.push({ name: `交通接送：${form.transport}`, category: '就医协助' })
       if (form.tasks) form.tasks.split('\n').filter(t => t.trim()).forEach(t =>
@@ -623,8 +633,8 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
 
       await staffAPI.createPlan({
         patientId, type: 'medical_assist', title: form.name,
-        description, year, items,
-        content: { ...form },
+        description, year: Number(form.serviceDate.slice(0, 4)), items,
+        content: { ...form, datetime: [form.serviceDate, form.serviceTime].filter(Boolean).join(' ') },
       })
       onSaved()
     } catch (err) { setError(err.message) }
@@ -718,8 +728,28 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
             {renderField('医院',     'hospital',   0, '医院名称')}
             {renderField('科室',     'department', 0, '科室名称')}
             {renderField('专家',     'expert',     0, '专家姓名（可选）')}
-            {renderField('就医专员', 'staffName',  0, '专员姓名（可选）')}
-            {renderField('服务时间', 'datetime',   0, '日期和时间段')}
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">就医专员</label>
+              <select
+                className="form-input"
+                value={form.staffId || ''}
+                onChange={e => {
+                  const selected = medicalAssistants.find(s => String(s._id) === e.target.value)
+                  setForm(prev => ({ ...prev, staffId: e.target.value, staffName: selected?.name || '' }))
+                }}
+              >
+                <option value="">请选择就医专员</option>
+                {medicalAssistants.map(s => (
+                  <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>
+                ))}
+              </select>
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label className="form-label">服务日期 *</label>
+              <input className="form-input" type="date" value={form.serviceDate}
+                onChange={e => set('serviceDate', e.target.value)} />
+            </div>
+            {renderField('具体时间安排', 'serviceTime', 0, '如：09:30，或 09:00-11:30')}
             {renderField('交通接送', 'transport',  0, '是否专车、集合地点')}
           </div>
 
@@ -727,12 +757,6 @@ function MedicalAssistPlanModal({ onClose, onSaved }) {
           {renderField('具体服务事项', 'tasks', 3, '如：代取报告、陪同检查，每行一项')}
           {renderField('酒店安排',     'hotel', 2, '是否需要住宿及酒店信息')}
           {renderField('备注',         'notes', 2, '其他注意事项')}
-
-          {/* 方案年度 */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">方案年度</label>
-            <input className="form-input" type="number" value={year} onChange={e => setYear(Number(e.target.value))} />
-          </div>
 
           {/* 方案说明 */}
           <div className="form-group" style={{ marginBottom: 0 }}>

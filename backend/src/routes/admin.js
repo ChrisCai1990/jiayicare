@@ -286,6 +286,12 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
     return res.status(400).json({ success: false, message: '状态值无效' });
   }
 
+  const currentOrder = await Order.findById(req.params.id);
+  if (!currentOrder) return res.status(404).json({ success: false, message: '订单不存在' });
+  if (status === 'completed' && (currentOrder.totalUnits || 1) > (currentOrder.usedUnits || 0)) {
+    return res.status(400).json({ success: false, message: '多次服务不能直接完成，请逐次核销' });
+  }
+
   const update = { status };
   if (status === 'scheduled' && scheduledAt) update.scheduledAt = new Date(scheduledAt);
   if (status === 'completed') update.completedAt = new Date();
@@ -357,32 +363,48 @@ router.patch('/orders/:id/verify', adminAuth, async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.paymentStatus !== 'paid') return res.status(400).json({ success: false, message: '订单未支付，无法核销' });
-  if (order.verifiedAt) return res.status(400).json({ success: false, message: '该订单已核销，请勿重复操作' });
+  if (order.status === 'completed') return res.status(400).json({ success: false, message: '该订单已全部核销，请勿重复操作' });
   if (!verifyCode || verifyCode.toUpperCase() !== order.verifyCode) {
     return res.status(400).json({ success: false, message: '核销码不正确' });
   }
 
+  const totalUnits = Math.max(1, Number(order.totalUnits) || 1);
+  const usedUnits = Math.max(Number(order.usedUnits) || 0, order.redemptions?.length || 0);
+  if (usedUnits >= totalUnits) return res.status(400).json({ success: false, message: '该服务已无剩余次数' });
+  const sequence = usedUnits + 1;
+  order.redemptions.push({
+    sequence,
+    redeemedAt: new Date(),
+    redeemedBy: req.admin._id,
+    note: String(req.body.note || '').trim(),
+  });
+  order.usedUnits = sequence;
   order.verifiedAt = new Date();
   order.verifiedBy = req.admin._id;
-  order.status = 'completed';
-  order.completedAt = new Date();
+  order.status = sequence >= totalUnits ? 'completed' : 'scheduled';
+  order.completedAt = order.status === 'completed' ? new Date() : null;
   await order.save();
 
-  // 核销后触发绩效自动结算——若订单未设置转介绍人/服务人归属(referrerId/fulfillerId)，
+  // 全部次数核销完毕后再按整单触发绩效结算；中间核销只保留服务过程。
   // settleOrderCommission 会静默跳过不生成任何记录，容易让人以为"核销成功=绩效自动生成"，
   // 2026-07-07 用户反馈需要提醒：核销时明确告知是否真的生成了绩效，避免遗漏归属导致漏发绩效却无人察觉
   const { settleOrderCommission } = require('../utils/commissionSettlement');
-  const { created } = await settleOrderCommission(order);
+  const { created } = order.status === 'completed'
+    ? await settleOrderCommission(order)
+    : { created: [] };
   const noAttribution = !order.referrerId && !order.fulfillerId;
+  const progress = `已使用${sequence}/${totalUnits}次，剩余${totalUnits - sequence}次`;
 
   res.json({
     success: true,
     data: order,
-    message: created.length
-      ? `核销成功，已生成${created.length}条待结算绩效`
+    message: order.status !== 'completed'
+      ? `核销成功，${progress}`
+      : created.length
+      ? `核销成功，${progress}，已生成${created.length}条待结算绩效`
       : noAttribution
-        ? '核销成功，但该订单未设置转介绍人/服务人归属，未生成任何绩效记录——如需生成绩效，请先设置归属后联系超管重新触发结算'
-        : '核销成功，但该订单归属人对应的绩效规则未配置或规则为"不分佣"，未生成绩效记录',
+        ? `核销成功，${progress}，但该订单未设置转介绍人/服务人归属，未生成任何绩效记录`
+        : `核销成功，${progress}，但该订单归属人对应的绩效规则未配置或规则为"不分佣"，未生成绩效记录`,
   });
 });
 
@@ -1513,18 +1535,18 @@ router.get('/plan-templates', adminAuth, async (req, res) => {
 
 // POST /api/admin/plan-templates
 router.post('/plan-templates', adminAuth, async (req, res) => {
-  const { type, name, status, content } = req.body;
+  const { type, name, status, content, clientBrand } = req.body;
   if (!type || !name) return res.status(400).json({ success: false, message: '类型和名称不能为空' });
-  const tpl = await PlanTemplate.create({ type, name, status: status || 'active', content: content || {} });
+  const tpl = await PlanTemplate.create({ type, name, status: status || 'active', clientBrand: clientBrand || content?.clientBrand || '', content: content || {} });
   res.json({ success: true, data: tpl, message: '模板创建成功' });
 });
 
 // PUT /api/admin/plan-templates/:id
 router.put('/plan-templates/:id', adminAuth, async (req, res) => {
-  const { name, status, content } = req.body;
+  const { name, status, content, clientBrand } = req.body;
   const tpl = await PlanTemplate.findByIdAndUpdate(
     req.params.id,
-    { name, status, content },
+    { name, status, clientBrand: clientBrand || content?.clientBrand || '', content },
     { new: true }
   );
   if (!tpl) return res.status(404).json({ success: false, message: '模板不存在' });
@@ -1535,7 +1557,7 @@ router.put('/plan-templates/:id', adminAuth, async (req, res) => {
 router.post('/plan-templates/:id/copy', adminAuth, async (req, res) => {
   const src = await PlanTemplate.findById(req.params.id);
   if (!src) return res.status(404).json({ success: false, message: '模板不存在' });
-  const copy = await PlanTemplate.create({ type: src.type, name: src.name + '（副本）', status: 'inactive', content: src.content });
+  const copy = await PlanTemplate.create({ type: src.type, name: src.name + '（副本）', status: 'inactive', clientBrand: src.clientBrand || '', content: src.content });
   res.json({ success: true, data: copy, message: '模板已复制' });
 });
 

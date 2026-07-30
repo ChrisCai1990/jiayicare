@@ -396,6 +396,16 @@ function findSourceMatch(name, index) {
 function attachSourceLinks(sections, allReports) {
   const index = buildReportItemIndex(allReports);
   if (!index.length) return;
+  const idsFor = (categories) => [...new Set(allReports
+    .filter(report => categories.includes(report.screeningCategory)
+      || (report.reportItems || []).some(item => categories.includes(item.screeningCategory)))
+    .map(report => String(report._id)))];
+  if (sections.tumor_risk) sections.tumor_risk.sourceReportIds = idsFor(['tumor']);
+  if (sections.cardiovascular_risk) sections.cardiovascular_risk.sourceReportIds = idsFor(['cardiovascular', 'brain_vessel']);
+  if (sections.chronic_disease) sections.chronic_disease.sourceReportIds = idsFor(['chronic', 'functional', 'other_routine', 'health_promote', 'other']);
+  const allIds = [...new Set(allReports.map(report => String(report._id)))];
+  if (sections.checkup_completeness) sections.checkup_completeness.sourceReportIds = allIds;
+  if (sections.medical_priority) sections.medical_priority.sourceReportIds = allIds;
 
   const mp = sections.medical_priority;
   if (mp && Array.isArray(mp.items)) {

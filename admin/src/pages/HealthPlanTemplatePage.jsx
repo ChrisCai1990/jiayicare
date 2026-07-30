@@ -21,7 +21,7 @@ const defaultContent = {
     addons: [],     // [{ type:'lab'|'exam', id, name, reason }]
   },
   health_management: {
-    planType: '',
+    clientBrand: '',
     planName: '',
     planDesc: '',
     followUpPlans: [],
@@ -269,13 +269,11 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   if (type === 'health_management') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
       <div className="form-group">
-        <label className="form-label">方案类型 *</label>
-        <select className="form-input" value={content.planType || ''} onChange={e => set('planType', e.target.value)}>
-          <option value="">请选择方案类型</option>
-          <option value="health_reshape">健康重塑方案</option>
-          <option value="young_state">健康年轻态方案</option>
-          <option value="chronic_stable">慢病维稳方案</option>
-          <option value="health_prevention">健康预防方案</option>
+        <label className="form-label">客户归属 *</label>
+        <select className="form-input" value={content.clientBrand || ''} onChange={e => set('clientBrand', e.target.value)}>
+          <option value="">请选择客户归属</option>
+          <option value="jiayiguanjia">嘉医管家</option>
+          <option value="jinyisen">金伊森</option>
         </select>
       </div>
       <div className="form-group">
@@ -397,9 +395,9 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
     setLoading(true)
     try {
       if (isEdit) {
-        await adminAPI.updatePlanTemplate(template._id, { name, status, content })
+        await adminAPI.updatePlanTemplate(template._id, { name, status, clientBrand: content.clientBrand || '', content })
       } else {
-        await adminAPI.createPlanTemplate({ type: planType, name, status, content })
+        await adminAPI.createPlanTemplate({ type: planType, name, status, clientBrand: content.clientBrand || '', content })
       }
       toast(`✅ 模板${isEdit ? '更新' : '创建'}成功`)
       onSaved()

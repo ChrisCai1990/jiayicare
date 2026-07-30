@@ -49,7 +49,8 @@ export const staffAPI = {
   createPatient:      (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
   updatePatient:      (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   recalculateScore:   (id)     => req(`/staff/patients/${id}/recalculate-score`, { method: 'POST' }),
-  serviceOptions:     ()       => req('/staff/service-options'),        // 服务包下拉选项（admin商城服务）
+  serviceOptions:     (clientBrand = '') => req('/staff/service-options?' + qs({ clientBrand })),
+  memberTypeOptions:  (clientBrand = '') => req('/staff/member-type-options?' + qs({ clientBrand })),
   memberSourceOptions:()       => req('/staff/member-source-options'),  // 会员来源下拉选项（admin配置）
   searchRegistered:   (q)      => req('/staff/patients/search-registered?q=' + encodeURIComponent(q || '')),
   assignPatient:      (data)   => req('/staff/patients/assign', { method: 'POST', body: JSON.stringify(data) }),
@@ -126,6 +127,10 @@ export const staffAPI = {
   parseReportAI: (id)     => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST' }),
   reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST' }),
   getScreeningCatalog: () => req('/staff/screening-catalog'),
+  getScreeningYearSummaries: (id) => req(`/staff/patients/${id}/screening-year-summaries`),
+  saveScreeningYearSummary: (id, year, sections) => req(`/staff/patients/${id}/screening-year-summaries/${year}`, { method: 'PUT', body: JSON.stringify({ sections }) }),
+  generateScreeningYearSummary: (id, year) => req(`/staff/patients/${id}/screening-year-summaries/${year}/generate`, { method: 'POST' }),
+  approveScreeningYearSummary: (id, year) => req(`/staff/patients/${id}/screening-year-summaries/${year}/approve`, { method: 'PATCH' }),
 
   // Upload
   uploadImage: (file) => {
@@ -235,6 +240,7 @@ export const staffAPI = {
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),
   startOrder:           (orderId, data)   => req(`/staff/orders/${orderId}/start`, { method: 'PATCH', body: JSON.stringify(data) }),
+  redeemOrder:          (orderId, note)   => req(`/staff/orders/${orderId}/redeem`, { method: 'POST', body: JSON.stringify({ note }) }),
   setOrderFulfiller:    (orderId, fulfillerId) => req(`/staff/orders/${orderId}/fulfiller`, { method: 'PATCH', body: JSON.stringify({ fulfillerId }) }),
 
   // Abnormal Reviews
@@ -286,6 +292,7 @@ export const staffAPI = {
   createPatientHealthRecord: (id, data) => req(`/staff/patients/${id}/health-records`, { method: 'POST', body: JSON.stringify(data) }),
   updatePatientHealthRecord: (patientId, recordId, data) => req(`/staff/patients/${patientId}/health-records/${recordId}`, { method: 'PUT', body: JSON.stringify(data) }),
   resolveHealthRecordAlert: (id) => req(`/staff/health-records/${id}/resolve-alert`, { method: 'PATCH' }),
+  resolveSymptom: (id, data) => req(`/staff/health-records/${id}/resolve-symptom`, { method: 'PATCH', body: JSON.stringify(data) }),
   resolveChatTransfer: (id) => req(`/staff/chat-transfers/${id}/resolve`, { method: 'PATCH' }),
 
   // 家庭成员关联（需求18）

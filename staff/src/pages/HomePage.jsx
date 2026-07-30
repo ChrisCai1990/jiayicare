@@ -38,7 +38,9 @@ export default function HomePage() {
       .catch(() => {})
 
     // 服务预约类待办（用户下单商城服务后生成）容易被淹没在普通随访任务列表里，单独摘出来醒目提醒
-    staffAPI.getFollowUps({ status: 'planned', sourceType: 'order', limit: 20 })
+    // 个人工作台只显示明确指派给本人（或本人创建且尚未另行指派）的预约。
+    // 家庭医生可在患者详情中查看名下患者全量记录，但未扭转给本人的任务不能进入个人待办。
+    staffAPI.getFollowUps({ status: 'planned', sourceType: 'order', scope: 'assigned', limit: 20 })
       .then(r => setPendingOrders(r.data?.followUps || []))
       .catch(() => {})
 

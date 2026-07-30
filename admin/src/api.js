@@ -248,11 +248,16 @@ export const adminAPI = {
   deleteMemberSource: (id)       => req(`/member-sources/${id}`, { method: 'DELETE' }),
 
   // 会员类型（树形）
-  memberTypesTree:       ()         => req('/member-types-tree'),
+  memberTypesTree:       (clientBrand = '') => req('/member-types-tree?' + new URLSearchParams({ clientBrand })),
   createMemberTypeTree:  (data)     => req('/member-types-tree', { method: 'POST', body: JSON.stringify(data) }),
   updateMemberTypeTree:  (id, data) => req(`/member-types-tree/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   toggleMemberTypeTree:  (id)       => req(`/member-types-tree/${id}/toggle`, { method: 'PATCH' }),
   deleteMemberTypeTree:  (id)       => req(`/member-types-tree/${id}`, { method: 'DELETE' }),
+  servicePackages:       ()         => req('/service-packages'),
+  createServicePackage:  (data)     => req('/service-packages', { method: 'POST', body: JSON.stringify(data) }),
+  updateServicePackage:  (id, data) => req(`/service-packages/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  toggleServicePackage:  (id)       => req(`/service-packages/${id}/toggle`, { method: 'PATCH' }),
+  deleteServicePackage:  (id)       => req(`/service-packages/${id}`, { method: 'DELETE' }),
 
   // ── 项目设置 ────────────────────────────────────────────────
 

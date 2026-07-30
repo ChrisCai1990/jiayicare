@@ -13,6 +13,25 @@ const healthRecordSchema = new mongoose.Schema({
   status:   { type: String, enum: ['normal', 'warning', 'danger'], default: 'normal' },
   note:     { type: String, default: '' },
   recordedAt: { type: Date, default: Date.now },
+  // 录入来源留痕。用户打卡为 customer；医护发现并代录为 staff。
+  recordedBy: {
+    source:    { type: String, enum: ['customer', 'staff', 'system'], default: 'customer' },
+    staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    staffName: { type: String, default: '' },
+    staffRole: { type: String, default: '' },
+  },
+  // “今日健康状态/不适主诉”处理闭环。仅 type=symptom 时使用。
+  symptomWorkflow: {
+    status: {
+      type: String,
+      enum: ['pending_doctor', 'manager_followup', 'referred', 'resolved', null],
+      default: null,
+    },
+    decisionNote: { type: String, default: '' },
+    decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    decidedByName: { type: String, default: '' },
+    decidedAt: { type: Date, default: null },
+  },
   // 关联报告（如从报告中提取的指标数据，删除报告时级联删除）
   reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
   // AI监测异常升级（试点：血压），danger级自动进入家庭医生待审核队列，处理后置为resolved

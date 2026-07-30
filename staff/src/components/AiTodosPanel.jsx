@@ -18,6 +18,7 @@ const TYPE_CONFIG = {
   supplement_review:  { icon: '🧪', label: '营养素待审核', color: '#16A34A', priority: 3 },
   risk_review:        { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   bp_alert_review:    { icon: '🩸', label: '血压监测异常', color: '#DC3545', priority: 1 },
+  symptom_review:     { icon: '🩺', label: '不适主诉待处理', color: '#DC3545', priority: 1 },
   risk_alert:      { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   transfer_human:       { icon: '🔔', label: 'AI对话转人工', color: '#DC3545', priority: 1 },
   draft_review:         { icon: '✏️', label: 'AI文案待审核', color: '#4A6558', priority: 4 },
@@ -74,6 +75,17 @@ export default function AiTodosPanel() {
     e.stopPropagation()
     const planId = todo.id.replace(/^supply_plan_/, '')
     staffAPI.confirmSupplyPlan(planId)
+      .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
+      .catch(() => {})
+  }
+
+  const resolveSymptom = (e, todo, status) => {
+    e.stopPropagation()
+    const labels = { manager_followup: '交由健管专员跟进', referred: '需要转介', resolved: '已处理，无需继续跟进' }
+    const decisionNote = window.prompt(`处理方式：${labels[status]}\n请填写处理说明（可留空）：`) ?? null
+    if (decisionNote === null) return
+    const recordId = todo.id.replace(/^symptom_/, '')
+    staffAPI.resolveSymptom(recordId, { status, decisionNote })
       .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
       .catch(() => {})
   }
@@ -158,7 +170,16 @@ export default function AiTodosPanel() {
               {/* 时间 + 箭头 / 操作 */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: '#8AA89C' }}>{formatTime(todo.createdAt)}</span>
-                {todo.type === 'bp_alert_review' ? (
+                {todo.type === 'symptom_review' ? (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={e => resolveSymptom(e, todo, 'manager_followup')}
+                      style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>健管跟进</button>
+                    <button onClick={e => resolveSymptom(e, todo, 'referred')}
+                      style={{ fontSize: 11, color: '#D97706', background: 'none', border: '1px solid #D97706', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>转介</button>
+                    <button onClick={e => resolveSymptom(e, todo, 'resolved')}
+                      style={{ fontSize: 11, color: '#8AA89C', background: 'none', border: '1px solid #8AA89C', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>已处理</button>
+                  </div>
+                ) : todo.type === 'bp_alert_review' ? (
                   <button
                     onClick={(e) => resolveAlert(e, todo)}
                     style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}

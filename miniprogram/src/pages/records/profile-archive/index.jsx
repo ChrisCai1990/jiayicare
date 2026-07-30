@@ -31,6 +31,22 @@ const LIFESTYLE_FIELDS = [
   { key: 'bowel',    label: '排便', icon: '💩', placeholder: '如：1次/日，成形，无特殊' },
 ];
 
+function formatFamilyHistory(value, note = '') {
+  if (typeof note === 'string' && note.trim()) return note.trim();
+  if (!Array.isArray(value)) return typeof value === 'string' ? value : '';
+
+  return value
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (!item || typeof item !== 'object') return '';
+      const relative = item.relative || item.relation || item.member || '';
+      const disease = item.disease || item.condition || item.diagnosis || '';
+      return [relative && `${relative}：`, disease].filter(Boolean).join('');
+    })
+    .filter(Boolean)
+    .join('、');
+}
+
 function Row({ icon, label, value, isLast }) {
   return (
     <View style={{
@@ -102,7 +118,7 @@ export default function ProfileArchivePage() {
     foodAllergy: hp.foodAllergy || '',
     pastHistory: hp.pastHistory || '',
     medicHistory: hp.medicHistory || '',
-    familyHistory: hp.familyHistoryNote || (Array.isArray(hp.familyHistory) ? hp.familyHistory.join('、') : hp.familyHistory) || '',
+    familyHistory: formatFamilyHistory(hp.familyHistory, hp.familyHistoryNote),
     surgeryHistory: hp.surgeryHistory || '',
     infectiousHistory: user?.infectiousHistory || hp.infectiousHistory || '',
     maritalHistory: hp.maritalHistory || hp.reproductiveHistory || '',

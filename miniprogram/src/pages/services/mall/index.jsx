@@ -193,7 +193,7 @@ function PurchaseModal({ item, mode, onClose }) {
     setSubmitting(true); setErrMsg('');
     try {
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
-      const res = await servicesAPI.order(item.id, noteWithSpec, isPay ? payMethod : undefined, isPay ? fundApplied : undefined, isPay ? couponId : undefined);
+      const res = await servicesAPI.order(item.id, noteWithSpec, isPay ? payMethod : undefined, isPay ? fundApplied : undefined, isPay ? couponId : undefined, currentSpecLabel || undefined);
       if (res.success) setSubmitted(true);
       else setErrMsg(res.message || '提交失败，请重试');
     } catch (e) {

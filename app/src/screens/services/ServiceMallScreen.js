@@ -177,7 +177,8 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
       // 付费模式带上支付方式，后端据此标记订单为线上支付并生成待收款任务
       const res = await servicesAPI.order(
         item.id, noteWithSpec, isPay ? payMethod : undefined,
-        isPay ? fundApplied : undefined, isPay ? couponId : undefined
+        isPay ? fundApplied : undefined, isPay ? couponId : undefined,
+        currentSpecLabel || undefined
       );
       if (res.success) {
         setSubmitted(true);

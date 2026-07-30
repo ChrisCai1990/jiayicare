@@ -217,6 +217,8 @@ router.post('/', auth, async (req, res) => {
       note: note || '',
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
       aiAlertStatus,
+      recordedBy: { source: 'customer' },
+      symptomWorkflow: type === 'symptom' ? { status: 'pending_doctor' } : undefined,
     });
 
     // 打卡后自动同步随访计划状态：找今日（CST UTC+8）含该 checkIn 类型的随访，更新为 completed

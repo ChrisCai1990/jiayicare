@@ -186,9 +186,21 @@ router.get('/me', staffAuth, async (req, res) => {
 // 2026-07-10 金娟：服务包=admin商城产品里「年度健康计划」分类下的产品（健康预防/维稳/重塑/年轻态/更年期/轻享等）
 router.get('/service-options', staffAuth, async (req, res) => {
   try {
-    const Product = require('../models/Product');
-    const products = await Product.find({ category: '年度健康计划' }).sort({ sortOrder: 1, createdAt: 1 }).select('name');
-    res.json({ success: true, data: products });
+    const ServicePackage = require('../models/ServicePackage');
+    const filter = { active: true };
+    if (req.query.clientBrand) filter.clientBrand = req.query.clientBrand;
+    const packages = await ServicePackage.find(filter).sort({ sortOrder: 1, createdAt: 1 }).select('name clientBrand');
+    res.json({ success: true, data: packages });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.get('/member-type-options', staffAuth, async (req, res) => {
+  try {
+    const MemberType = require('../models/MemberType');
+    const filter = { active: true };
+    if (req.query.clientBrand) filter.clientBrand = req.query.clientBrand;
+    const types = await MemberType.find(filter).sort({ sortOrder: 1, createdAt: 1 }).select('name clientBrand parent');
+    res.json({ success: true, data: types });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -651,9 +663,11 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  const existingPatient = await User.findById(req.params.id).select('lifestyle lifestyle_data').lean();
+  if (!existingPatient) return res.status(404).json({ success: false, message: '患者不存在' });
   const allowed = [
-    'name', 'gender', 'age', 'height', 'weight', 'preferredTitle',
-    'birthDate', 'memberType', 'belief',
+    'name', 'phone', 'gender', 'age', 'height', 'weight', 'preferredTitle',
+    'birthDate', 'memberType', 'clientBrand', 'belief',
     'chronicDiseases', 'patientType', 'source', 'remark', 'basicRemark', 'preferences',
     'idNumber', 'idType', 'workplace', 'occupation', 'maritalStatus',
     'ethnicity', 'address', 'contactPhone', 'contactPhone2', 'contactName', 'contactPhone3', 'deliveryAddress',
@@ -673,6 +687,48 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   allowed.forEach(k => {
     if (req.body[k] !== undefined) updateData[k] = req.body[k];
   });
+
+  if (req.body.clientBrand !== undefined) {
+    const clientBrand = req.body.clientBrand;
+    if (!['jiayiguanjia', 'jinyisen', ''].includes(clientBrand)) {
+      return res.status(400).json({ success: false, message: '客户归属无效' });
+    }
+    if (req.body.memberType) {
+      const MemberType = require('../models/MemberType');
+      const validType = await MemberType.exists({ name: req.body.memberType, clientBrand, active: true });
+      if (!validType) return res.status(400).json({ success: false, message: '会员类型与客户归属不匹配' });
+    }
+    if (req.body.servicePackage) {
+      const ServicePackage = require('../models/ServicePackage');
+      const validPackage = await ServicePackage.exists({ name: req.body.servicePackage, clientBrand, active: true });
+      if (!validPackage) return res.status(400).json({ success: false, message: '服务包与客户归属不匹配' });
+    }
+  }
+
+  // 医护端“联系电话”与用户登录手机号统一为 User.phone。
+  // 兼容旧医护端仍提交 contactPhone：只要本次包含任一字段，就同步更新两者，避免详情与编辑再次分叉。
+  if (req.body.phone !== undefined || req.body.contactPhone !== undefined) {
+    const normalizedPhone = String(
+      req.body.phone !== undefined ? req.body.phone : req.body.contactPhone
+    ).trim();
+    if (normalizedPhone && !/^1\d{10}$/.test(normalizedPhone)) {
+      return res.status(400).json({ success: false, message: '请输入正确的11位手机号码' });
+    }
+    if (normalizedPhone) {
+      const duplicate = await User.exists({
+        _id: { $ne: new mongoose.Types.ObjectId(req.params.id) },
+        phone: normalizedPhone,
+      });
+      if (duplicate) {
+        return res.status(409).json({ success: false, message: '该手机号码已被其他会员使用' });
+      }
+      updateData.phone = normalizedPhone;
+      updateData.contactPhone = normalizedPhone;
+    } else {
+      updateData.phone = null;
+      updateData.contactPhone = '';
+    }
+  }
 
   // 身份证号/出生日期变更时，若本次请求未显式传 age，则自动核算年龄写回
   if (req.body.age === undefined && (updateData.idNumber !== undefined || updateData.birthDate !== undefined)) {
@@ -715,15 +771,29 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   });
 
   // 生活方式嵌套字段（逐个展开，避免覆盖其他字段）
+  const lifestyleChanges = {};
   if (req.body.lifestyle && typeof req.body.lifestyle === 'object') {
     ['diet', 'exercise', 'sleep', 'water', 'alcohol', 'smoking', 'bowel', 'mood'].forEach(k => {
-      if (req.body.lifestyle[k] !== undefined) updateData[`lifestyle.${k}`] = req.body.lifestyle[k];
+      if (req.body.lifestyle[k] === undefined) return;
+      const from = String(existingPatient.lifestyle?.[k] || '');
+      const to = String(req.body.lifestyle[k] || '').trim();
+      updateData[`lifestyle.${k}`] = to;
+      if (from !== to) lifestyleChanges[k] = { from, to };
     });
   }
 
   // 生活方式详细结构化数据（膳食调查表融合）
   if (req.body.lifestyle_data !== undefined) {
     updateData['lifestyle_data'] = req.body.lifestyle_data;
+    const before = existingPatient.lifestyle_data || {};
+    const after = req.body.lifestyle_data || {};
+    const detailChanges = {};
+    new Set([...Object.keys(before), ...Object.keys(after)]).forEach(k => {
+      if (JSON.stringify(before[k] ?? '') !== JSON.stringify(after[k] ?? '')) {
+        detailChanges[k] = { from: before[k] ?? '', to: after[k] ?? '' };
+      }
+    });
+    if (Object.keys(detailChanges).length) lifestyleChanges.lifestyle_data = detailChanges;
   }
 
   // 健康档案字段（字符串 + 数组）
@@ -741,6 +811,16 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
 
   // 新增体检指标记录时推入历史
   const pushOps = {};
+  if (Object.keys(lifestyleChanges).length) {
+    pushOps.lifestyleHistory = {
+      changes: lifestyleChanges,
+      source: 'staff',
+      recordedById: req.staff._id,
+      recordedByName: req.staff.name || req.staff.username || '',
+      recordedByRole: req.staff.role || '',
+      recordedAt: new Date(),
+    };
+  }
   if (req.body.labValues !== undefined && req.body._addLabHistory) {
     const entry = { ...req.body.labValues, recordedAt: new Date() };
     pushOps['labHistory'] = entry;
@@ -827,7 +907,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 // ── GET /api/staff/followups ──────────────────────────────────────
 // 我的随访列表（含计划中、已完成；数据权限：创建人或被分配人）
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
-  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '' } = req.query;
+  const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '' } = req.query;
 
   // 如果按患者姓名搜索，先查出匹配的用户ID
   let patientFilter = {};
@@ -841,7 +921,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   // 用于把控质量，但不代表随访归属改到家庭医生名下——执行人仍是 assignedTo 那个人。
   let ownerFilter;
   const visibleStaffIds = await getVisibleStaffIds(req.staff);
-  if (req.staff.role === 'familyDoctor') {
+  if (req.staff.role === 'familyDoctor' && scope !== 'assigned') {
     const myPatients = await User.find({ assignedFamilyDoctor: { $in: visibleStaffIds } }).select('_id');
     const myPatientIds = myPatients.map(p => p._id);
     ownerFilter = { $or: [{ assignedTo: { $in: visibleStaffIds } }, { assignedTo: null, staffId: { $in: visibleStaffIds } }, { patientId: { $in: myPatientIds } }] };
@@ -1087,7 +1167,8 @@ router.get('/reports', staffAuth, async (req, res) => {
 // 获取同部门医护人员列表（用于患者分配下拉）
 router.get('/staff-list', staffAuth, async (req, res) => {
   const { role = '', roles = '' } = req.query;
-  const filter = {};
+  // 下拉仅提供 Admin 员工设置中处于启用状态的员工；兼容历史未写 staffStatus 的账号。
+  const filter = { staffStatus: { $in: ['active', null] } };
   if (role) filter.role = role;
   else if (roles) filter.role = { $in: roles.split(',').map(r => r.trim()).filter(Boolean) };
   const list = await Admin.find(filter).select('name role title department').sort({ name: 1 });
@@ -1237,16 +1318,20 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   // 就医协助本身就是要立刻跟进安排的服务，2026-07-13 需求：推送方案后自动建立随访计划，
   // 审核通过后客户端能收到待随访任务）；如果方案有关联订单，随访完成后据此可联动订单/消费记录状态
   if (plan.type === 'medical_assist') {
+    const selectedAssistantId = plan.content?.staffId || plan.staffId;
+    const serviceDate = plan.content?.serviceDate
+      ? new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`)
+      : new Date();
     await FollowUp.create({
       patientId: plan.patientId,
       staffId: plan.staffId,
-      date: new Date(),
+      date: serviceDate,
       theme: `就医协助方案随访 · ${plan.title || ''}`,
       content: plan.description || '',
       status: 'planned',
       sourceHealthPlanId: plan._id,
       sourceType: 'health_plan',
-      assignedTo: plan.staffId,
+      assignedTo: selectedAssistantId,
     }).catch(() => {});
     // 方案推送=本次服务预约已正式处理完毕，把下单时生成、指派给健康规划师/就医专员的原始订单待办标记完成，
     // 否则该待办会一直挂在"待处理服务预约"/"待随访任务"里，即使专员已经走完生成方案→推送的完整流程
@@ -1269,10 +1354,10 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
       c.tasks && `安排：${c.tasks}`,
     ].filter(Boolean).join('\n');
     await ServiceRecord.create({
-      staffId: plan.staffId,
+      staffId: selectedAssistantId,
       patientId: plan.patientId,
       type: 'medical_visit',
-      date: new Date(),
+      date: serviceDate,
       title: plan.title || '就医协助方案',
       content: contentLines,
       result: '',
@@ -1552,6 +1637,15 @@ const REPORT_TYPE_TO_L1_NAME = {
   home_monitor:   '居家监测+其他专项检查',
 };
 
+function applyAuditedInstitution(report) {
+  const canonical = sanitizeInstitution(report.hospital || report.institution || '');
+  report.hospital = canonical;
+  report.institution = canonical;
+  if (canonical && Array.isArray(report.reportItems)) {
+    report.reportItems.forEach(item => { item.institution = canonical; });
+  }
+}
+
 router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
@@ -1621,6 +1715,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       });
     }
     if (autoAuditPending) {
+      applyAuditedInstitution(report);
       report.audit_status = 'audited';
       report.audited_by = req.staff.name;
       report.audited_at = new Date();
@@ -1691,6 +1786,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
   const report = await MedicalReport.findById(req.params.id);
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
   if (action === 'approve') {
+    applyAuditedInstitution(report);
     report.audit_status = 'audited';
     report.audited_by = req.staff.name;
     report.audited_at = new Date();
@@ -1826,6 +1922,17 @@ router.post('/patients/:id/archive-review', staffAuth, checkPermission('patients
         archiveReviewSnapshotAt: snapshotAt,
       } }
     );
+    // “确认已查看健康档案”即家庭医生完成本轮确认；同步关闭用户端报告的“待解读”状态。
+    // 单份点开接口也会即时同步，这里批量兜底兼容在该联动规则上线前已经确认过的历史报告。
+    await MedicalReport.updateMany(
+      {
+        user: new mongoose.Types.ObjectId(req.params.id),
+        audit_status: 'audited',
+        status: 'pending',
+        createdAt: { $lte: snapshotAt },
+      },
+      { $set: { status: 'analyzed' } },
+    );
     res.json({ success: true, message: '已确认查看健康档案' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -1923,9 +2030,15 @@ router.get('/followup-forms', staffAuth, async (req, res) => {
 // GET /api/staff/plan-templates?type= — 健康方案模板列表（新建方案时选用）
 router.get('/plan-templates', staffAuth, async (req, res) => {
   try {
-    const { type } = req.query;
+    const { type, patientId } = req.query;
     const filter = { status: 'active' };
     if (type) filter.type = type;
+    if (patientId) {
+      const patient = await User.findById(patientId).select('clientBrand');
+      if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+      if (!patient.clientBrand) return res.json({ success: true, data: [] });
+      filter.clientBrand = patient.clientBrand;
+    }
     const templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
     res.json({ success: true, data: templates });
   } catch (err) {
@@ -3302,7 +3415,9 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     // 到期后由定时任务生成健管专员待办+客户端提醒（2026-07-19）
     const { syncAnnualPlanSupplyPlans } = require('../utils/annualPlanSupplyPlans');
     const supplyPlanResult = await syncAnnualPlanSupplyPlans(plan).catch(() => ({ created: 0, updated: 0, disabled: 0 }));
-    res.json({ success: true, data: plan, followUpCount, supplyPlanResult });
+    const { syncAnnualPlanTreatments } = require('../utils/annualPlanTreatmentSync');
+    const treatmentSyncResult = await syncAnnualPlanTreatments(plan);
+    res.json({ success: true, data: plan, followUpCount, supplyPlanResult, treatmentSyncResult });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -3368,7 +3483,8 @@ router.get('/patients/:id/orders', staffAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .limit(30)
       .populate('referrerId', 'name role')
-      .populate('fulfillerId', 'name role');
+      .populate('fulfillerId', 'name role')
+      .populate('redemptions.redeemedBy', 'name role');
     res.json({ success: true, data: orders });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -3397,20 +3513,196 @@ router.patch('/orders/:id/fulfiller', staffAuth, async (req, res) => {
 });
 
 // ── PATCH /api/staff/orders/:id/start ────────────────────────────
-// 医护端启动服务（pending → scheduled）或标记完成（scheduled → completed）
+// 医护端仅启动服务。完成状态由核销次数自动决定，禁止绕过核销直接完成。
 router.patch('/orders/:id/start', staffAuth, async (req, res) => {
   try {
     const { action = 'schedule', scheduledAt, note } = req.body;
-    const STATUS_MAP = { schedule: 'scheduled', complete: 'completed' };
-    const newStatus = STATUS_MAP[action] || 'scheduled';
+    if (action === 'complete') {
+      return res.status(400).json({ success: false, message: '请通过“核销一次”记录服务，全部次数核销后订单会自动完成' });
+    }
+    const newStatus = 'scheduled';
     const update = { status: newStatus, handledBy: req.staff._id };
     if (scheduledAt) update.scheduledAt = new Date(scheduledAt);
-    if (newStatus === 'completed') update.completedAt = new Date();
     if (note) update.note = note;
     const order = await Order.findByIdAndUpdate(req.params.id, update, { new: true })
       .populate('user', 'name phone');
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
-    res.json({ success: true, data: order, message: newStatus === 'completed' ? '服务已完成' : '服务已安排' });
+    res.json({ success: true, data: order, message: '服务已安排' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+router.get('/patients/:id/screening-year-summaries', staffAuth, async (req, res) => {
+  try {
+    const ScreeningYearSummary = require('../models/ScreeningYearSummary');
+    const list = await ScreeningYearSummary.find({ user: req.params.id }).sort({ year: -1 }).lean();
+    res.json({ success: true, data: list });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/patients/:id/screening-year-summaries/:year', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅家庭医生可新增或编辑年度专项筛查小结' });
+    }
+    const ScreeningYearSummary = require('../models/ScreeningYearSummary');
+    const summary = await ScreeningYearSummary.findOneAndUpdate(
+      { user: req.params.id, year: Number(req.params.year) },
+      {
+        sections: req.body.sections || {},
+        status: 'draft',
+        generatedByAI: false,
+        createdBy: req.staff._id,
+        createdByName: req.staff.name || '',
+        approvedBy: null,
+        approvedByName: '',
+        approvedAt: null,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, data: summary });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅家庭医生可生成年度专项筛查小结' });
+    }
+    const year = Number(req.params.year);
+    const reports = await MedicalReport.find({
+      user: req.params.id,
+      audit_status: 'audited',
+      $or: [{ reportYear: year }, { checkDate: new RegExp(`^${year}-`) }],
+    }).select('_id title checkDate hospital institution screeningCategory reportItems aiSummary').lean();
+    if (!reports.length) return res.status(400).json({ success: false, message: `${year}年度没有已审核报告，无法生成小结` });
+
+    const CATEGORY_MAP = {
+      tumor_risk: ['tumor'],
+      cardiovascular_risk: ['cardiovascular', 'brain_vessel'],
+      chronic_disease: ['chronic', 'functional', 'other_routine', 'health_promote', 'other'],
+    };
+    const input = {};
+    Object.entries(CATEGORY_MAP).forEach(([key, categories]) => {
+      const matched = reports.filter(report =>
+        categories.includes(report.screeningCategory)
+        || (report.reportItems || []).some(item => categories.includes(item.screeningCategory))
+      );
+      input[key] = matched.map(report => ({
+        reportId: String(report._id),
+        title: report.title,
+        date: report.checkDate,
+        institution: report.hospital || report.institution || '',
+        conclusions: (report.reportItems || []).map(item => ({
+          name: item.name,
+          value: item.value,
+          status: item.status,
+          conclusion: item.conclusion || item.diagnosis || item.findings || '',
+        })),
+      }));
+    });
+
+    const { chat } = require('../utils/ai');
+    const raw = await chat([{ role: 'user', content: `根据以下${year}年度已审核检查资料，分别形成简洁、客观的年度健康小结。不得补造资料；没有数据要明确写“本年度暂无相关已审核资料”。只输出JSON：{"tumor_risk":"...","cardiovascular_risk":"...","chronic_disease":"..."}。\n${JSON.stringify(input)}` }], { maxTokens: 1800 });
+    let parsed;
+    try {
+      parsed = JSON.parse(String(raw).replace(/^```json\s*|```$/g, '').trim());
+    } catch {
+      return res.status(502).json({ success: false, message: 'AI年度小结返回格式异常，请重试' });
+    }
+    const sections = {};
+    Object.keys(CATEGORY_MAP).forEach(key => {
+      sections[key] = {
+        summary: String(parsed[key] || ''),
+        sourceReportIds: input[key].map(item => item.reportId),
+      };
+    });
+    const ScreeningYearSummary = require('../models/ScreeningYearSummary');
+    const summary = await ScreeningYearSummary.findOneAndUpdate(
+      { user: req.params.id, year },
+      {
+        sections,
+        status: 'draft',
+        generatedByAI: true,
+        createdBy: req.staff._id,
+        createdByName: req.staff.name || '',
+        approvedBy: null,
+        approvedByName: '',
+        approvedAt: null,
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
+    res.json({ success: true, data: summary });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.patch('/patients/:id/screening-year-summaries/:year/approve', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅家庭医生可审核年度专项筛查小结' });
+    }
+    const ScreeningYearSummary = require('../models/ScreeningYearSummary');
+    const summary = await ScreeningYearSummary.findOneAndUpdate(
+      { user: req.params.id, year: Number(req.params.year) },
+      {
+        status: 'approved',
+        approvedBy: req.staff._id,
+        approvedByName: req.staff.name || '',
+        approvedAt: new Date(),
+      },
+      { new: true }
+    );
+    if (!summary) return res.status(404).json({ success: false, message: '年度小结不存在' });
+    res.json({ success: true, data: summary });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// ── POST /api/staff/orders/:id/redeem ───────────────────────────
+// 每次服务单独核销并保留人员、时间和备注；最后一次核销后订单才完成。
+router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
+  try {
+    const order = await Order.findById(req.params.id);
+    if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+    if (['cancelled', 'completed'].includes(order.status)) {
+      return res.status(400).json({ success: false, message: order.status === 'completed' ? '该服务已全部核销' : '已取消订单不能核销' });
+    }
+
+    const totalUnits = Math.max(1, Number(order.totalUnits) || 1);
+    const usedUnits = Math.max(Number(order.usedUnits) || 0, order.redemptions?.length || 0);
+    if (usedUnits >= totalUnits) return res.status(400).json({ success: false, message: '该服务已无剩余次数' });
+
+    const sequence = usedUnits + 1;
+    order.redemptions.push({
+      sequence,
+      redeemedAt: new Date(),
+      redeemedBy: req.staff._id,
+      note: String(req.body.note || '').trim(),
+    });
+    order.usedUnits = sequence;
+    order.status = sequence >= totalUnits ? 'completed' : 'scheduled';
+    if (order.status === 'completed') order.completedAt = new Date();
+    await order.save();
+
+    // 服务全部完成时，关闭下单产生的用户/医护共用待办；分次服务尚有余额时继续保留。
+    if (order.status === 'completed') {
+      await FollowUp.updateMany(
+        { sourceType: 'order', sourceOrderId: order._id, status: { $nin: ['completed', 'cancelled'] } },
+        { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff' } },
+      );
+    }
+
+    const populated = await Order.findById(order._id)
+      .populate('referrerId', 'name role')
+      .populate('fulfillerId', 'name role')
+      .populate('redemptions.redeemedBy', 'name role');
+    res.json({
+      success: true,
+      data: populated,
+      message: order.status === 'completed'
+        ? `第${sequence}次核销成功，服务已全部完成`
+        : `第${sequence}次核销成功，剩余${totalUnits - sequence}次`,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -3465,12 +3757,12 @@ router.get('/patients/:id/medications', staffAuth, async (req, res) => {
 
 router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
-    const { name, brandName, dosage, method, frequency, timing, startDate, endDate, purpose, note } = req.body;
+    const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note } = req.body;
     if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
     // 健管专员/就医专员手动新增的药物需家庭医师审核后才生效；家医/超管等本人录入直接生效（不必自审）
     const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
     const med = await Medication.create({
-      user: req.params.id, name, brandName: brandName || '', dosage, method: method || '口服',
+      user: req.params.id, name, brandName: brandName || '', specification: specification || '', dosage, method: method || '口服',
       frequency, timing: timing || '', startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
       createdByName: req.staff.name || '',
@@ -3488,7 +3780,23 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
     if (req.staff.role !== 'superadmin' && String(med.staffId) !== String(req.staff._id)) {
       return res.status(403).json({ success: false, message: '仅记录创建人可修改' });
     }
-    Object.assign(med, req.body);
+    if (med.stopped) return res.status(400).json({ success: false, message: '已停用记录为历史记录，不支持修改或恢复；如需重新使用请新增记录' });
+    if (req.body.stopped === false) return res.status(400).json({ success: false, message: '已停用记录不支持恢复' });
+    if (req.body.stopped === true) {
+      const stopReason = String(req.body.stopReason || '').trim();
+      if (!stopReason) return res.status(400).json({ success: false, message: '停用原因不能为空' });
+      Object.assign(med, {
+        stopped: true,
+        stopDate: req.body.stopDate || new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        stopReason,
+        stopMode: 'manual',
+        stoppedBy: req.staff._id,
+        stoppedByName: req.staff.name || '',
+      });
+    } else {
+      const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note', 'aiStatus'];
+      allowed.forEach(key => { if (req.body[key] !== undefined) med[key] = req.body[key]; });
+    }
     await med.save();
     res.json({ success: true, data: med });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -3520,12 +3828,12 @@ router.get('/patients/:id/supplements', staffAuth, async (req, res) => {
 
 router.post('/patients/:id/supplements', staffAuth, async (req, res) => {
   try {
-    const { name, brand, dosage, method, frequency, startDate, endDate, purpose, note } = req.body;
+    const { name, brand, specification, dosage, method, frequency, startDate, endDate, purpose, note } = req.body;
     if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '名称、剂量、频次不能为空' });
     // 健管专员/就医专员手动新增的营养素需营养师审核后才生效；营养师/超管等本人录入直接生效（不必自审）
     const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
     const sup = await Supplement.create({
-      user: req.params.id, name, brand: brand || '', dosage, method: method || '随餐',
+      user: req.params.id, name, brand: brand || '', specification: specification || '', dosage, method: method || '随餐',
       frequency, startDate: startDate || '', endDate: endDate || '',
       purpose: purpose || '', note: note || '', createdByStaff: true, staffId: req.staff._id,
       createdByName: req.staff.name || '',
@@ -3546,7 +3854,23 @@ router.patch('/patients/:id/supplements/:supId', staffAuth, async (req, res) => 
     if (!isApproveReview && req.staff.role !== 'superadmin' && String(sup.staffId) !== String(req.staff._id)) {
       return res.status(403).json({ success: false, message: '仅记录创建人可修改' });
     }
-    Object.assign(sup, req.body);
+    if (sup.stopped) return res.status(400).json({ success: false, message: '已停用记录为历史记录，不支持修改或恢复；如需重新补充请新增记录' });
+    if (req.body.stopped === false) return res.status(400).json({ success: false, message: '已停用记录不支持恢复' });
+    if (req.body.stopped === true) {
+      const stopReason = String(req.body.stopReason || '').trim();
+      if (!stopReason) return res.status(400).json({ success: false, message: '停用原因不能为空' });
+      Object.assign(sup, {
+        stopped: true,
+        stopDate: req.body.stopDate || new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        stopReason,
+        stopMode: 'manual',
+        stoppedBy: req.staff._id,
+        stoppedByName: req.staff.name || '',
+      });
+    } else {
+      const allowed = ['name', 'brand', 'specification', 'dosage', 'method', 'frequency', 'startDate', 'endDate', 'purpose', 'note', 'aiStatus'];
+      allowed.forEach(key => { if (req.body[key] !== undefined) sup[key] = req.body[key]; });
+    }
     if (isApproveReview) { sup.reviewedByName = req.staff.name || ''; sup.reviewedAt = new Date(); }
     await sup.save();
     res.json({ success: true, data: sup });
@@ -3718,6 +4042,7 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
       bowel:         { category: 'lifestyle',  label: '排便',  unit: '' },
       smoking:       { category: 'lifestyle',  label: '吸烟',  unit: '' },
       alcohol:       { category: 'lifestyle',  label: '饮酒',  unit: '' },
+      symptom:       { category: 'vitals',     label: '今日健康状态', unit: '' },
     };
     if (!TYPE_META[type]) {
       return res.status(400).json({ success: false, message: '无效的数据类型' });
@@ -3733,12 +4058,64 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
       value:    String(value),
       extra:    extra || {},
       note:     note || '',
+      recordedBy: {
+        source: 'staff',
+        staffId: req.staff._id,
+        staffName: req.staff.name || req.staff.username || '',
+        staffRole: req.staff.role || '',
+      },
+      symptomWorkflow: type === 'symptom' ? { status: 'pending_doctor' } : undefined,
     };
     if (recordedAt) {
       const d = new Date(recordedAt);
       if (!isNaN(d.getTime())) recRecord.recordedAt = d;
     }
     const record = await HealthRecord.create(recRecord);
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 家庭医生处理不适主诉：确认转介、交由健管专员跟进，或记录已处理。
+router.patch('/health-records/:id/resolve-symptom', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅家庭医生可处理不适主诉' });
+    }
+    const status = req.body.status;
+    if (!['manager_followup', 'referred', 'resolved'].includes(status)) {
+      return res.status(400).json({ success: false, message: '请选择有效的处理方式' });
+    }
+    const record = await HealthRecord.findOneAndUpdate(
+      { _id: req.params.id, type: 'symptom', 'symptomWorkflow.status': 'pending_doctor' },
+      { $set: {
+        'symptomWorkflow.status': status,
+        'symptomWorkflow.decisionNote': String(req.body.decisionNote || '').trim(),
+        'symptomWorkflow.decidedBy': req.staff._id,
+        'symptomWorkflow.decidedByName': req.staff.name || req.staff.username || '',
+        'symptomWorkflow.decidedAt': new Date(),
+      } },
+      { new: true },
+    );
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在或已处理' });
+    if (status === 'manager_followup') {
+      const patient = await User.findById(record.user).select('assignedHealthManager').lean();
+      if (patient?.assignedHealthManager) {
+        const exists = await FollowUp.exists({ sourceType: 'symptom', sourceId: record._id, status: { $in: ['planned', 'in_progress'] } });
+        if (!exists) {
+          await FollowUp.create({
+            patientId: record.user,
+            staffId: req.staff._id,
+            assignedTo: patient.assignedHealthManager,
+            date: new Date(),
+            type: 'routine',
+            status: 'planned',
+            theme: `跟进不适主诉：${record.value}`,
+            sourceType: 'symptom',
+            sourceId: record._id,
+          });
+        }
+      }
+    }
     res.json({ success: true, data: record });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -3838,7 +4215,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
 
     // 全部打卡类型（与用户端一致）
     const ALL_CHECKIN_TYPES = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
-    const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒' };
+    const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒', symptom:'今日健康状态' };
 
     // 管辖患者（团队负责人/组长可见范围扩展到下属及团队成员名下患者）
     const patientFilter = {};
@@ -3864,7 +4241,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const records = await HealthRecord.find({
       user: { $in: patientIds },
       recordedAt: { $gte: start, $lte: end },
-    }).select('user type value unit recordedAt imageUrl extra note').sort({ recordedAt: -1 }).lean();
+    }).select('user type value unit recordedAt imageUrl extra note recordedBy symptomWorkflow status').sort({ recordedAt: -1 }).lean();
 
     // 按患者分组：同一类型当天可能打卡多次（如血压测3次），全部保留，不只取最新一条
     const byPatient = {};
@@ -3890,7 +4267,9 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
           doneItems: doneTypes.flatMap(t => data.types[t].map(r => ({
             type: t, label: TYPE_LABEL[t] || t,
             value: r.value, unit: r.unit || '', recordedAt: r.recordedAt,
-            extra: r.extra || null, note: r.note || '',
+            extra: r.extra || null, note: r.note || '', status: r.status,
+            recordedBy: r.recordedBy || { source: 'customer' },
+            symptomWorkflow: r.symptomWorkflow || null,
           }))),
           missingItems: missingTypes.map(t => ({ type: t, label: TYPE_LABEL[t] || t })),
         };
@@ -4138,6 +4517,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
 
     const scope = req.body.scope || 'all';
+    const force = req.body.force === true;
     // 生成权限按维度分流：5维分析(doctor)限家庭医师、生活方式(nutrition)限营养师、all限超管；
     // 健管专员等其他角色只能查看不能生成（后端兜底，防越权直调接口）
     const role = req.staff.role;
@@ -5560,6 +5940,7 @@ const TODO_REVIEW_ROLE = {
   medical_assist_plan_review: 'medicalAssistant',
   followup_review:      'familyDoctor',
   bp_alert_review:      'familyDoctor',
+  symptom_review:       'familyDoctor',
   transfer_human:       'healthManager',
   supply_plan_review:   'healthManager', // 定期配药/配营养素计划到期，健管专员确认安排
 };
@@ -5692,6 +6073,31 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           });
         }
       }
+    }
+
+    // ── 家庭医生：客户不适主诉待判断（转介 / 健管跟进 / 已处理）──
+    if (can('symptom_review')) {
+      const symptomFilter = {
+        type: 'symptom',
+        'symptomWorkflow.status': 'pending_doctor',
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      };
+      const symptomRecords = await HealthRecord.find(symptomFilter)
+        .populate('user', 'name phone').sort({ recordedAt: -1 }).limit(50).lean();
+      symptomRecords.forEach(r => {
+        todos.push({
+          id: 'symptom_' + r._id,
+          type: 'symptom_review',
+          label: '不适主诉待处理',
+          priority: r.status === 'danger' ? 1 : 2,
+          patientName: r.user?.name || '未知',
+          patientId: String(r.user?._id || ''),
+          summary: [r.value, r.note].filter(Boolean).join(' · ').slice(0, 100),
+          createdAt: r.recordedAt || r.createdAt,
+          overdue: (now - new Date(r.recordedAt || r.createdAt)) > DAY,
+          link: `/patients/${r.user?._id}?tab=records&healthRecordId=${r._id}`,
+        });
+      });
     }
 
     // ── 营养师：膳食调查问卷待复核（固定问卷ID，与健管专员审核写入档案是独立并行的两道确认）──

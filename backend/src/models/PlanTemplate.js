@@ -8,6 +8,12 @@ const planTemplateSchema = new mongoose.Schema({
     enum: ['annual_checkup', 'health_management', 'nutrition', 'medical_assist', 'rehab', 'tcm', 'psychology'],
   },
   name:    { type: String, required: true },
+  clientBrand: {
+    type: String,
+    enum: ['jiayiguanjia', 'jinyisen', ''],
+    default: '',
+    index: true,
+  },
   status:  { type: String, enum: ['active', 'inactive'], default: 'active' },
   content: { type: mongoose.Schema.Types.Mixed, default: {} },
 }, { timestamps: true });

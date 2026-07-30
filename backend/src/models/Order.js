@@ -5,7 +5,17 @@ const orderSchema = new mongoose.Schema({
   tenantId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键，创建时从 user.tenantId 冗余存一份）
   serviceId:   { type: String, required: true },
   serviceName: { type: String, required: true },
-  servicePrice:{ type: Number },
+  servicePrice:{ type: Number }, // 订单总价（历史单次服务订单也等于单次价）
+  specificationLabel: { type: String, default: '' }, // 下单时规格快照
+  unitPrice:    { type: Number, default: 0 },
+  totalUnits:   { type: Number, default: 1, min: 1 },
+  usedUnits:    { type: Number, default: 0, min: 0 },
+  redemptions: [{
+    sequence:   { type: Number, required: true },
+    redeemedAt:{ type: Date, default: Date.now },
+    redeemedBy:{ type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
+    note:       { type: String, default: '' },
+  }],
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
   orderType:   { type: String, enum: ['service', 'package', 'product'], default: 'service' },

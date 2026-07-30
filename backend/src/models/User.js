@@ -15,6 +15,12 @@ const userSchema = new mongoose.Schema({
   avatar:   { type: String },
   healthScore: { type: Number, default: 0 },
   servicePackage: { type: String, default: '' },
+  clientBrand: {
+    type: String,
+    enum: ['jiayiguanjia', 'jinyisen', ''],
+    default: '',
+    index: true,
+  },
   serviceExpiry:  { type: String, default: '' },
   doctor:  {
     name:  { type: String, default: '' },
@@ -75,7 +81,7 @@ const userSchema = new mongoose.Schema({
   hasHomeMonitor:      { type: String, default: '' }, // 是否配备居家检测设备
   hasMedicineCabinet:  { type: String, default: '' }, // 是否配备居家小药箱
   // 联系信息（#34）
-  contactPhone:    { type: String, default: '' },  // 联系电话（与登录手机号独立）
+  contactPhone:    { type: String, default: '' },  // 历史兼容镜像；医护端联系电话统一读写 phone
   deliveryAddress: { type: String, default: '' },  // 配送地址（快递用）
   // 患者类型（成人/儿童）
   patientCategory: { type: String, enum: ['adult', 'child'], default: 'adult' },
@@ -173,6 +179,9 @@ const userSchema = new mongoose.Schema({
   },
   // 生活方式详细结构化数据（膳食调查表融合后新字段）
   lifestyle_data: { type: mongoose.Schema.Types.Mixed, default: {} },
+  // 生活方式变更历史：每条只保存本次发生变化的字段，保留录入人和时间，避免覆盖后无法追溯。
+  // changes: { diet: { from, to }, exercise: { from, to }, ... }
+  lifestyleHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 问卷自动导入健康档案的待审核草稿（{generatedAt,questionnaireId,responseId,status,items[]}）
   archiveDraft: { type: mongoose.Schema.Types.Mixed, default: null },
   // 问卷无冲突自动写入档案的留痕日志（最近20条，供家庭医生查看系统自动做了什么改动）

@@ -5,6 +5,7 @@ const medicationSchema = new mongoose.Schema({
   // 基础信息
   name:         { type: String, required: true },   // 化学名/通用名（必填）
   brandName:    { type: String, default: '' },       // 商品名（可选）
+  specification:{ type: String, default: '' },       // 规格（如 5mg*30片/盒）
   dosage:       { type: String, required: true },    // 剂量（如 5mg）
   method:       { type: String, default: '口服' },   // 使用方法：口服/外用/注射/含服/吸入
   frequency:    { type: String, required: true },    // 使用频次
@@ -15,7 +16,10 @@ const medicationSchema = new mongoose.Schema({
   purpose:      { type: String, default: '' },       // 用药目的/说明
   stopped:      { type: Boolean, default: false },   // 是否已停用
   stopDate:     { type: String, default: '' },       // 停用日期
-  stopReason:   { type: String, default: '' },       // 停用原因（可选）
+  stopReason:   { type: String, default: '' },       // 停用原因
+  stopMode:     { type: String, enum: ['manual', 'automatic', 'plan_adjustment', ''], default: '' },
+  stoppedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  stoppedByName:{ type: String, default: '' },
   note:         { type: String, default: '' },
   active:       { type: Boolean, default: true },
   // 医护端录入标识
@@ -27,6 +31,9 @@ const medicationSchema = new mongoose.Schema({
   aiGeneratedBy: { type: String, default: '' },
   reviewedByName: { type: String, default: '' },   // 审核人姓名（家庭医师）
   reviewedAt:     { type: Date, default: null },   // 审核时间
+  sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', ''], default: 'manual' },
+  sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
+  sourceRecordKey: { type: String, default: '' },
   // 今日打卡记录
   checkIns: [{
     date:   { type: String }, // YYYY-MM-DD
@@ -36,5 +43,6 @@ const medicationSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 medicationSchema.index({ user: 1, active: 1 });
+medicationSchema.index({ sourceAnnualPlanId: 1, sourceRecordKey: 1, stopped: 1 });
 
 module.exports = mongoose.model('Medication', medicationSchema);

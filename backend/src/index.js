@@ -134,4 +134,5 @@ app.listen(PORT, () => {
 
   // 年度管理方案"药物管理/营养素管理"模块的定期配药/配营养素计划到期扫描，每天一次
   require('./utils/recurringSupplyPlanScheduler').startRecurringSupplyPlanScheduler();
+  require('./utils/medicationLifecycleScheduler').startMedicationLifecycleScheduler();
 });

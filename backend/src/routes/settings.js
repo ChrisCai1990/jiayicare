@@ -10,6 +10,7 @@ const Team           = require('../models/Team');
 const MemberTag      = require('../models/MemberTag');
 const MemberSource   = require('../models/MemberSource');
 const MemberType     = require('../models/MemberType');
+const ServicePackage = require('../models/ServicePackage');
 const Disease        = require('../models/Disease');
 const ProjectCategory = require('../models/ProjectCategory');
 const LabTestItem    = require('../models/LabTestItem');
@@ -355,7 +356,8 @@ router.delete('/member-sources/:id', adminAuth, async (req, res) => {
 
 // ── 会员类型（树形，复用 MemberType model，补充 parent 字段） ──
 router.get('/member-types-tree', adminAuth, async (req, res) => {
-  const all = await MemberType.find().sort({ sortOrder: 1, createdAt: 1 }).lean();
+  const filter = req.query.clientBrand ? { clientBrand: req.query.clientBrand } : {};
+  const all = await MemberType.find(filter).sort({ clientBrand: 1, sortOrder: 1, createdAt: 1 }).lean();
   // 构建树
   const map = {};
   all.forEach(t => { map[t._id] = { ...t, children: [] }; });
@@ -371,21 +373,39 @@ router.get('/member-types-tree', adminAuth, async (req, res) => {
 });
 
 router.post('/member-types-tree', adminAuth, async (req, res) => {
-  const { name, parent, sortOrder } = req.body;
+  const { name, parent, sortOrder, clientBrand } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '类型名称不能为空' });
-  const existing = await MemberType.findOne({ name });
+  if (!['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
+    return res.status(400).json({ success: false, message: '请选择客户归属' });
+  }
+  const existing = await MemberType.findOne({ name, clientBrand });
   if (existing) return res.status(400).json({ success: false, message: '类型名称已存在' });
-  const mt = await MemberType.create({ name, parent: parent || null, sortOrder: sortOrder || 0 });
+  if (parent) {
+    const parentType = await MemberType.findById(parent);
+    if (!parentType || parentType.clientBrand !== clientBrand) {
+      return res.status(400).json({ success: false, message: '父级类型与客户归属不一致' });
+    }
+  }
+  const mt = await MemberType.create({ name, clientBrand, parent: parent || null, sortOrder: sortOrder || 0 });
   res.json({ success: true, data: mt, message: '会员类型已创建' });
 });
 
 router.put('/member-types-tree/:id', adminAuth, async (req, res) => {
-  const { name, parent, sortOrder } = req.body;
+  const { name, parent, sortOrder, clientBrand } = req.body;
+  if (!['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
+    return res.status(400).json({ success: false, message: '请选择客户归属' });
+  }
   if (name) {
-    const dup = await MemberType.findOne({ name, _id: { $ne: req.params.id } });
+    const dup = await MemberType.findOne({ name, clientBrand, _id: { $ne: req.params.id } });
     if (dup) return res.status(400).json({ success: false, message: '类型名称已存在' });
   }
-  const mt = await MemberType.findByIdAndUpdate(req.params.id, { name, parent: parent || null, sortOrder }, { new: true });
+  if (parent) {
+    const parentType = await MemberType.findById(parent);
+    if (!parentType || parentType.clientBrand !== clientBrand) {
+      return res.status(400).json({ success: false, message: '父级类型与客户归属不一致' });
+    }
+  }
+  const mt = await MemberType.findByIdAndUpdate(req.params.id, { name, clientBrand, parent: parent || null, sortOrder }, { new: true });
   if (!mt) return res.status(404).json({ success: false, message: '类型不存在' });
   res.json({ success: true, data: mt, message: '会员类型已更新' });
 });
@@ -403,6 +423,48 @@ router.delete('/member-types-tree/:id', adminAuth, async (req, res) => {
   if (hasChildren) return res.status(400).json({ success: false, message: '该类型下有子类目，请先删除子类目' });
   await MemberType.findByIdAndDelete(req.params.id);
   res.json({ success: true, message: '类型已删除' });
+});
+
+router.get('/service-packages', adminAuth, async (req, res) => {
+  const filter = req.query.clientBrand ? { clientBrand: req.query.clientBrand } : {};
+  const list = await ServicePackage.find(filter).sort({ clientBrand: 1, sortOrder: 1, createdAt: 1 });
+  res.json({ success: true, data: list });
+});
+
+router.post('/service-packages', adminAuth, async (req, res) => {
+  const { name, clientBrand, sortOrder } = req.body;
+  if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
+    return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
+  }
+  const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0 });
+  res.json({ success: true, data: item });
+});
+
+router.put('/service-packages/:id', adminAuth, async (req, res) => {
+  const { name, clientBrand, sortOrder } = req.body;
+  if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
+    return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
+  }
+  const item = await ServicePackage.findByIdAndUpdate(
+    req.params.id,
+    { name: name.trim(), clientBrand, sortOrder: sortOrder || 0 },
+    { new: true, runValidators: true }
+  );
+  if (!item) return res.status(404).json({ success: false, message: '服务包不存在' });
+  res.json({ success: true, data: item });
+});
+
+router.patch('/service-packages/:id/toggle', adminAuth, async (req, res) => {
+  const item = await ServicePackage.findById(req.params.id);
+  if (!item) return res.status(404).json({ success: false, message: '服务包不存在' });
+  item.active = !item.active;
+  await item.save();
+  res.json({ success: true, data: item });
+});
+
+router.delete('/service-packages/:id', adminAuth, async (req, res) => {
+  await ServicePackage.findByIdAndDelete(req.params.id);
+  res.json({ success: true });
 });
 
 // ═══════════════════════════════════════════════════════════════

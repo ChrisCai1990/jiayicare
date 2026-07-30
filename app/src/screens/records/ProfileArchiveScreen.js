@@ -5,6 +5,7 @@ import {
   RefreshControl, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Polyline, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { colors, spacing, radius } from '../../theme';
 import { userAPI, checkupAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -41,12 +42,78 @@ const EMPTY_PROFILE = {
   pastHistory: '', medicHistory: '', familyHistory: '', surgeryHistory: '', infectiousHistory: '', maritalHistory: '',
   menstrualHistory: '', reproductiveHistory: '',
 };
+
+function formatFamilyHistory(value, note = '') {
+  if (typeof note === 'string' && note.trim()) return note.trim();
+  if (!Array.isArray(value)) return typeof value === 'string' ? value : '';
+
+  return value
+    .map((item) => {
+      if (typeof item === 'string') return item.trim();
+      if (!item || typeof item !== 'object') return '';
+      const relative = item.relative || item.relation || item.member || '';
+      const disease = item.disease || item.condition || item.diagnosis || '';
+      return [relative && `${relative}：`, disease].filter(Boolean).join('');
+    })
+    .filter(Boolean)
+    .join('、');
+}
+
 function loadProfileFromStorage() {
   try { return JSON.parse(localStorage.getItem(PROFILE_KEY)) || null; }
   catch { return null; }
 }
 function saveProfileToStorage(p) {
   try { localStorage.setItem(PROFILE_KEY, JSON.stringify(p)); } catch {}
+}
+
+const LIFESTYLE_LABELS = {
+  diet: '饮食', exercise: '运动', sleep: '睡眠', water: '饮水',
+  alcohol: '饮酒', smoking: '吸烟', bowel: '排便', mood: '情绪',
+};
+
+function BodyCompositionChart({ history, current }) {
+  const rows = [...(history || []), ...(Object.keys(current || {}).length ? [current] : [])]
+    .filter(r => r && (r.skelMuscle !== undefined || r.bodyFatRate !== undefined || r.visceralFat !== undefined))
+    .slice(-8);
+  const series = [
+    { key: 'skelMuscle', label: '骨骼肌(kg)', color: '#1E6B50' },
+    { key: 'bodyFatRate', label: '体脂率(%)', color: '#D97706' },
+    { key: 'visceralFat', label: '内脏脂肪', color: '#7C3AED' },
+  ];
+  if (!rows.length) return <Text style={styles.emptyHint}>暂无身体成分数据</Text>;
+  const values = rows.flatMap(r => series.map(s => Number(r[s.key])).filter(Number.isFinite));
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = Math.max(max - min, 1);
+  const width = 320; const height = 150; const pad = 24;
+  const point = (v, i) => {
+    const x = rows.length === 1 ? width / 2 : pad + i * ((width - pad * 2) / (rows.length - 1));
+    const y = height - pad - ((Number(v) - min) / range) * (height - pad * 2);
+    return { x, y };
+  };
+  return (
+    <View>
+      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
+        {[0, 1, 2].map(i => <Line key={i} x1={pad} y1={pad + i * 50} x2={width - pad} y2={pad + i * 50} stroke="#E8E5DF" strokeWidth="1" />)}
+        {series.map(s => {
+          const valid = rows.map((r, i) => ({ value: Number(r[s.key]), i })).filter(p => Number.isFinite(p.value));
+          const points = valid.map(p => { const xy = point(p.value, p.i); return `${xy.x},${xy.y}`; }).join(' ');
+          return (
+            <React.Fragment key={s.key}>
+              {valid.length > 1 && <Polyline points={points} fill="none" stroke={s.color} strokeWidth="2.5" />}
+              {valid.map(p => { const xy = point(p.value, p.i); return <Circle key={p.i} cx={xy.x} cy={xy.y} r="3.5" fill={s.color} />; })}
+            </React.Fragment>
+          );
+        })}
+        <SvgText x={pad} y={height - 4} fontSize="9" fill="#8AA89C">较早</SvgText>
+        <SvgText x={width - pad - 20} y={height - 4} fontSize="9" fill="#8AA89C">最近</SvgText>
+      </Svg>
+      <View style={styles.chartLegend}>
+        {series.map(s => <View key={s.key} style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: s.color }]} /><Text style={styles.legendText}>{s.label}</Text></View>)}
+      </View>
+    </View>
+  );
 }
 
 export default function ProfileArchiveScreen({ navigation }) {
@@ -62,6 +129,13 @@ export default function ProfileArchiveScreen({ navigation }) {
   const [lifestyleData, setLifestyleData] = useState({});
   const [editingLifestyle, setEditingLifestyle] = useState(false);
   const [lifestyleDraft, setLifestyleDraft] = useState({});
+  const [lifestyleHistory, setLifestyleHistory] = useState([]);
+  const [bodyComposition, setBodyComposition] = useState({});
+  const [bodyCompHistory, setBodyCompHistory] = useState([]);
+  const [expanded, setExpanded] = useState({
+    basic: true, archive: true, insurance: true, lifestyle: true, body: true, checkup: true,
+  });
+  const toggleSection = key => setExpanded(p => ({ ...p, [key]: !p[key] }));
 
   // ── 加载档案：先读 localStorage，再从服务器合并 ─────────────────
   useEffect(() => {
@@ -80,14 +154,17 @@ export default function ProfileArchiveScreen({ navigation }) {
       const data = meRes.value?.data;
       if (data?.lifestyle) setLifestyle(data.lifestyle);
       if (data?.lifestyle_data) setLifestyleData(data.lifestyle_data);
+      setLifestyleHistory(data?.lifestyleHistory || []);
+      setBodyComposition(data?.bodyComposition || {});
+      setBodyCompHistory(data?.bodyCompHistory || []);
       if (data?.healthProfile && Object.values(data.healthProfile).some(v => v)) {
         const local = loadProfileFromStorage();
         const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
         const merged = { ...(local || fallback), ...data.healthProfile };
-        const fhEmpty = !merged.familyHistory || (Array.isArray(merged.familyHistory) && merged.familyHistory.length === 0);
-        if (fhEmpty && data.healthProfile.familyHistoryNote) {
-          merged.familyHistory = data.healthProfile.familyHistoryNote;
-        }
+        merged.familyHistory = formatFamilyHistory(
+          data.healthProfile.familyHistory,
+          data.healthProfile.familyHistoryNote,
+        );
         if (data.bloodTypeABO) merged.bloodTypeABO = data.bloodTypeABO;
         if (data.bloodTypeRH)  merged.bloodTypeRH  = data.bloodTypeRH;
         // infectiousHistory 是顶层字段，staff 端写入，需从 user 根级读取
@@ -125,10 +202,11 @@ export default function ProfileArchiveScreen({ navigation }) {
   }, [navigation, loadArchive]);
 
   const saveLifestyle = async () => {
-    setLifestyle(lifestyleDraft);
-    setEditingLifestyle(false);
     try {
       await userAPI.updateMe({ lifestyle: lifestyleDraft });
+      setLifestyle(lifestyleDraft);
+      setEditingLifestyle(false);
+      await loadArchive();
     } catch {}
   };
 
@@ -169,16 +247,17 @@ export default function ProfileArchiveScreen({ navigation }) {
         {/* ── 基本信息 ──────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
+            <TouchableOpacity style={styles.sectionTitleRow} onPress={() => toggleSection('basic')}>
               <Ionicons name="person-outline" size={17} color={colors.primary} />
               <Text style={styles.sectionTitle}>基本信息</Text>
-            </View>
+              <Ionicons name={expanded.basic ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textMuted} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate('EditProfile')}>
               <Ionicons name="pencil-outline" size={13} color={colors.primary} />
               <Text style={styles.editBtnText}>编辑</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.profileCard}>
+          {expanded.basic && <View style={styles.profileCard}>
             {[
               { label: '姓名',   value: authUser?.name,                               icon: 'person-outline' },
               { label: '性别',   value: authUser?.gender,                             icon: 'male-female-outline' },
@@ -199,22 +278,23 @@ export default function ProfileArchiveScreen({ navigation }) {
                 </Text>
               </View>
             ))}
-          </View>
+          </View>}
         </View>
 
         {/* ── 基础健康档案 ─────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
+            <TouchableOpacity style={styles.sectionTitleRow} onPress={() => toggleSection('archive')}>
               <Ionicons name="person-circle-outline" size={17} color={colors.primary} />
               <Text style={styles.sectionTitle}>基础健康档案</Text>
-            </View>
+              <Ionicons name={expanded.archive ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textMuted} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.editBtn} onPress={() => navigation.navigate('EditProfile')}>
               <Ionicons name="pencil-outline" size={13} color={colors.primary} />
               <Text style={styles.editBtnText}>编辑</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.profileCard}>
+          {expanded.archive && <View style={styles.profileCard}>
             {PROFILE_FIELDS.map((field, i) => (
               <View key={field.key} style={[styles.profileRow, i < PROFILE_FIELDS.length - 1 && styles.profileRowBorder]}>
                 <View style={styles.profileRowLeft}>
@@ -224,19 +304,20 @@ export default function ProfileArchiveScreen({ navigation }) {
                 <Text style={styles.profileRowValue} numberOfLines={1}>{profile[field.key] || '未填写'}</Text>
               </View>
             ))}
-          </View>
+          </View>}
         </View>
 
         {/* ── 医疗保障信息（只读）────────────────────────────────── */}
         {(medInsurance.basic_insurance || medInsurance.commercial_medical || medInsurance.critical_illness) ? (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
+              <TouchableOpacity style={styles.sectionTitleRow} onPress={() => toggleSection('insurance')}>
                 <Ionicons name="shield-checkmark-outline" size={17} color="#0077B6" />
                 <Text style={styles.sectionTitle}>医疗保障信息</Text>
-              </View>
+                <Ionicons name={expanded.insurance ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textMuted} />
+              </TouchableOpacity>
             </View>
-            <View style={styles.profileCard}>
+            {expanded.insurance && <View style={styles.profileCard}>
               {[
                 { label: '基础医疗保障', value: medInsurance.basic_insurance },
                 { label: '商业医疗险', value: medInsurance.commercial_medical },
@@ -250,23 +331,24 @@ export default function ProfileArchiveScreen({ navigation }) {
                   <Text style={styles.profileRowValue}>{row.value}</Text>
                 </View>
               ))}
-            </View>
+            </View>}
           </View>
         ) : null}
 
         {/* ── 生活方式 ─────────────────────────────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
+            <TouchableOpacity style={styles.sectionTitleRow} onPress={() => toggleSection('lifestyle')}>
               <Ionicons name="sunny-outline" size={17} color="#D97706" />
               <Text style={styles.sectionTitle}>生活方式</Text>
-            </View>
+              <Ionicons name={expanded.lifestyle ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textMuted} />
+            </TouchableOpacity>
             <TouchableOpacity style={styles.editBtn} onPress={() => { setLifestyleDraft(lifestyle); setEditingLifestyle(true); }}>
-              <Ionicons name="pencil-outline" size={13} color={colors.primary} />
-              <Text style={styles.editBtnText}>编辑</Text>
+              <Ionicons name="add-outline" size={13} color={colors.primary} />
+              <Text style={styles.editBtnText}>新增</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.profileCard}>
+          {expanded.lifestyle && <><View style={styles.profileCard}>
             {(() => {
               const d = lifestyleData || {};
               const dietParts = [];
@@ -320,26 +402,65 @@ export default function ProfileArchiveScreen({ navigation }) {
               ));
             })()}
           </View>
+          {(lifestyleHistory || []).length > 0 && (
+            <View style={styles.historyCard}>
+              <Text style={styles.historyTitle}>变化记录</Text>
+              {[...lifestyleHistory].reverse().map((entry, index) => (
+                <View key={entry._id || index} style={styles.historyEntry}>
+                  <Text style={styles.historyMeta}>
+                    {entry.recordedByName || '客户本人'} · {entry.recordedAt ? new Date(entry.recordedAt).toLocaleString('zh-CN') : ''}
+                  </Text>
+                  {Object.entries(entry.changes || {}).filter(([key]) => key !== 'lifestyle_data').map(([key, change]) => (
+                    <Text key={key} style={styles.historyChange}>
+                      {LIFESTYLE_LABELS[key] || key}：{change?.from || '未填写'} → {change?.to || '未填写'}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </View>
+          )}</>}
+        </View>
+
+        {/* ── 身体成分趋势 ─────────────────────────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <TouchableOpacity style={styles.sectionTitleRow} onPress={() => toggleSection('body')}>
+              <Ionicons name="analytics-outline" size={17} color="#7C3AED" />
+              <Text style={styles.sectionTitle}>身体成分</Text>
+              <Ionicons name={expanded.body ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+          {expanded.body && (
+            <View style={styles.chartCard}>
+              <BodyCompositionChart history={bodyCompHistory} current={bodyComposition} />
+              {Object.keys(bodyComposition || {}).length > 0 && (
+                <Text style={styles.chartDate}>
+                  最近测量：{bodyComposition.measuredAt || (bodyComposition.recordedAt ? new Date(bodyComposition.recordedAt).toLocaleDateString('zh-CN') : '未标注日期')}
+                </Text>
+              )}
+            </View>
+          )}
         </View>
 
         {/* ── 年度复查计划 ─────────────────────────────────────── */}
         {checkupPlan && checkupPlan.items?.length > 0 && (
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
-              <View style={styles.sectionTitleRow}>
+              <TouchableOpacity style={styles.sectionTitleRow} onPress={() => toggleSection('checkup')}>
                 <Ionicons name="calendar-outline" size={17} color={colors.info} />
                 <Text style={styles.sectionTitle}>{checkupPlan.title || '年度复查计划'}</Text>
-              </View>
+                <Ionicons name={expanded.checkup ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textMuted} />
+              </TouchableOpacity>
               <Text style={{ fontSize: 12, color: colors.textMuted }}>
                 {checkupPlan.items.filter(it => it.status === 'done').length}/{checkupPlan.items.length} 已完成
               </Text>
             </View>
-            {checkupPlan.note ? (
+            {expanded.checkup && checkupPlan.note ? (
               <Text style={{ fontSize: 12, color: colors.textSecondary, marginBottom: spacing.sm, marginHorizontal: spacing.sm }}>
                 {checkupPlan.note}
               </Text>
             ) : null}
-            <View style={styles.profileCard}>
+            {expanded.checkup && <View style={styles.profileCard}>
               {checkupPlan.items.map((item, i, arr) => {
                 const isDone    = item.status === 'done';
                 const isOverdue = item.status === 'overdue';
@@ -362,7 +483,7 @@ export default function ProfileArchiveScreen({ navigation }) {
                   </View>
                 );
               })}
-            </View>
+            </View>}
           </View>
         )}
 
@@ -376,7 +497,7 @@ export default function ProfileArchiveScreen({ navigation }) {
             <View style={styles.editCard}>
               <View style={styles.editHandle} />
               <View style={styles.editHeader}>
-                <Text style={styles.editTitle}>编辑生活方式</Text>
+                <Text style={styles.editTitle}>新增生活方式变化</Text>
                 <TouchableOpacity onPress={() => setEditingLifestyle(false)} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
                   <Ionicons name="close" size={22} color={colors.textSecondary} />
                 </TouchableOpacity>
@@ -422,7 +543,7 @@ export default function ProfileArchiveScreen({ navigation }) {
               </ScrollView>
               <TouchableOpacity style={styles.saveBtn} onPress={saveLifestyle} activeOpacity={0.85}>
                 <Ionicons name="checkmark-circle" size={18} color={colors.white} />
-                <Text style={styles.saveBtnText}>保存生活方式</Text>
+                <Text style={styles.saveBtnText}>保存变化记录</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -466,6 +587,18 @@ const styles = StyleSheet.create({
   profileRowLeft: { flexDirection: 'row', alignItems: 'center' },
   profileRowLabel: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
   profileRowValue: { fontSize: 13, color: colors.textPrimary, fontWeight: '600', maxWidth: '55%', textAlign: 'right' },
+  historyCard: { marginTop: 8, padding: spacing.md, backgroundColor: '#FFFDF8', borderRadius: radius.md, borderWidth: 1, borderColor: '#E8DDCA' },
+  historyTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: 8 },
+  historyEntry: { borderLeftWidth: 2, borderLeftColor: colors.primary, paddingLeft: 10, marginBottom: 10 },
+  historyMeta: { fontSize: 11, color: colors.textMuted, marginBottom: 4 },
+  historyChange: { fontSize: 12, lineHeight: 19, color: colors.textSecondary },
+  chartCard: { backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.sm },
+  chartLegend: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginTop: 2 },
+  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  legendDot: { width: 8, height: 8, borderRadius: 4 },
+  legendText: { fontSize: 10, color: colors.textSecondary },
+  chartDate: { marginTop: 8, textAlign: 'center', fontSize: 11, color: colors.textMuted },
+  emptyHint: { paddingVertical: 24, textAlign: 'center', fontSize: 13, color: colors.textMuted },
 
   editOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'flex-end' },
   editCard: {

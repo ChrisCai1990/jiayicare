@@ -7,6 +7,7 @@ const TYPE_COLOR = {
   heartRate: '#7C3AED', sleep: '#4F46E5', diet: '#B45309',
   exercise: '#0369A1', water: '#0EA5E9', bowel: '#92400E',
   smoking: '#6B7280', alcohol: '#9D174D', mood: '#059669',
+  symptom: '#DC3545',
 }
 
 export default function DailyCheckinPage() {
@@ -16,6 +17,9 @@ export default function DailyCheckinPage() {
   const [loading, setLoading] = useState(true)
   const [dateFilter, setDateFilter] = useState('')
   const [nameFilter, setNameFilter] = useState('')
+  const [statusModal, setStatusModal] = useState(null)
+  const [statusText, setStatusText] = useState('')
+  const [statusSaving, setStatusSaving] = useState(false)
 
   const todayStr = new Date().toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 
@@ -40,6 +44,24 @@ export default function DailyCheckinPage() {
   const fmtTime = t => {
     if (!t) return '-'
     return new Date(t).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  }
+
+  const saveHealthStatus = async () => {
+    if (!statusModal || !statusText.trim()) return
+    setStatusSaving(true)
+    try {
+      await staffAPI.createPatientHealthRecord(statusModal.patientId, {
+        type: 'symptom',
+        value: statusText.trim(),
+        note: '健管专员审核打卡时记录',
+        recordedAt: dateFilter || new Date().toISOString(),
+      })
+      setStatusModal(null)
+      setStatusText('')
+      await load()
+    } finally {
+      setStatusSaving(false)
+    }
   }
 
   return (
@@ -107,11 +129,15 @@ export default function DailyCheckinPage() {
                     onClick={e => { e.stopPropagation(); nav(`/patients/${r.patientId}?tab=records`) }}>
                     查看档案
                   </button>
+                  <button className="btn btn-primary btn-sm"
+                    onClick={e => { e.stopPropagation(); setStatusModal(r); setStatusText('') }}>
+                    ＋ 记录健康问题
+                  </button>
                 </div>
 
                 {/* 已打卡 */}
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: r.missingItems.length ? 8 : 0 }}>
-                  {r.doneItems.map((item, idx) => (
+                  {r.doneItems.filter(item => item.type !== 'symptom').map((item, idx) => (
                     <span key={`${item.type}-${item.recordedAt || idx}`} style={{
                       padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500,
                       background: (TYPE_COLOR[item.type] || '#1E6B50') + '18',
@@ -139,9 +165,52 @@ export default function DailyCheckinPage() {
                     ))}
                   </div>
                 )}
+
+                {/* 今日健康状态：客户自报或医护审核发现的问题，独立于普通打卡项展示 */}
+                <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #F0EDE8' }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#1A2B24', marginBottom: 6 }}>今日健康状态</div>
+                  {r.doneItems.filter(item => item.type === 'symptom').length === 0 ? (
+                    <div style={{ fontSize: 12, color: '#8AA89C' }}>未记录不适主诉</div>
+                  ) : r.doneItems.filter(item => item.type === 'symptom').map((item, idx) => (
+                    <div key={item.recordedAt || idx} style={{ padding: '7px 10px', background: '#FFF5F5', borderRadius: 8, marginBottom: 5 }}>
+                      <div style={{ fontSize: 13, color: '#991B1B' }}>{item.value}{item.note ? `；${item.note}` : ''}</div>
+                      <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>
+                        {item.recordedBy?.source === 'staff' ? (item.recordedBy.staffName || '医护人员') : '客户打卡'}
+                        {' · '}{new Date(item.recordedAt).toLocaleString('zh-CN')}
+                        {' · '}{item.symptomWorkflow?.status === 'pending_doctor' ? '待家庭医生处理' : '已处理'}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {statusModal && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setStatusModal(null)}>
+          <div className="modal" style={{ maxWidth: 480 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">记录今日健康状态 · {statusModal.patientName}</h3>
+              <button className="modal-close" onClick={() => setStatusModal(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              <label className="form-label">发现的健康问题 / 不适主诉 *</label>
+              <textarea className="form-input" rows={4} value={statusText}
+                onChange={e => setStatusText(e.target.value)}
+                placeholder="请描述症状、部位、持续时间及审核中发现的问题" />
+              <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>
+                保存后将记录录入人员和时间，并进入该客户家庭医生的待办任务。
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setStatusModal(null)}>取消</button>
+              <button className="btn btn-primary" disabled={statusSaving || !statusText.trim()} onClick={saveHealthStatus}>
+                {statusSaving ? '保存中...' : '保存并提交家庭医生'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

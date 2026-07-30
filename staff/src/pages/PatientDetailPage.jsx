@@ -10,10 +10,11 @@ const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alc
 // ── 停用确认弹窗：停用会改变客户实际用药/营养素方案，需先勾选"已与客户沟通确认"才能提交 ──
 function ConfirmStopModal({ title, itemName, onClose, onConfirm }) {
   const [checked, setChecked] = useState(false)
+  const [reason, setReason] = useState('')
   const [submitting, setSubmitting] = useState(false)
   const handleConfirm = async () => {
     setSubmitting(true)
-    try { await onConfirm() } finally { setSubmitting(false) }
+    try { await onConfirm(reason.trim()) } finally { setSubmitting(false) }
   }
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -30,10 +31,16 @@ function ConfirmStopModal({ title, itemName, onClose, onConfirm }) {
             <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
             已与客户沟通并确认停用
           </label>
+          <div className="form-group" style={{ marginTop: 14, marginBottom: 0 }}>
+            <label className="form-label">停用原因 *</label>
+            <textarea className="form-input" rows={3} value={reason}
+              onChange={e => setReason(e.target.value)}
+              placeholder="请填写停用原因，保存后作为历史记录保留" />
+          </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn" style={{ background: '#D97706', color: '#fff' }} disabled={!checked || submitting} onClick={handleConfirm}>
+          <button className="btn" style={{ background: '#D97706', color: '#fff' }} disabled={!checked || !reason.trim() || submitting} onClick={handleConfirm}>
             {submitting ? '停用中...' : '确认停用'}
           </button>
         </div>
@@ -1057,6 +1064,7 @@ export default function PatientDetailPage() {
   const [expandedReportYears, setExpandedReportYears] = useState({})
   const [reportSearchKw, setReportSearchKw] = useState('')
   const [patientOrders, setPatientOrders] = useState([])
+  const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
   const [showReqModal, setShowReqModal] = useState(false)
   const [showReferralModal, setShowReferralModal] = useState(false)
@@ -1168,6 +1176,10 @@ export default function PatientDetailPage() {
   const [screeningReports, setScreeningReports] = useState([])
   const [showScreeningForm, setShowScreeningForm] = useState(false)
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
+  const [screeningYearSummaries, setScreeningYearSummaries] = useState([])
+  const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
+  const [screeningSummaryBusy, setScreeningSummaryBusy] = useState(false)
+  const [editingScreeningSummary, setEditingScreeningSummary] = useState(null)
   const [screeningFiles, setScreeningFiles] = useState([])
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
@@ -1200,6 +1212,7 @@ export default function PatientDetailPage() {
   const [healthRecords, setHealthRecords] = useState([])
   // 管理信息下拉选项：服务包(admin商城服务) + 会员来源(admin配置)，替代手工录入（2026-07-10 金娟）
   const [serviceOptions, setServiceOptions] = useState([])
+  const [memberTypeOptions, setMemberTypeOptions] = useState([])
   const [memberSourceOptions, setMemberSourceOptions] = useState([])
   // 趋势图
   const [trendRecords, setTrendRecords] = useState(null) // null=未加载，[]+=已加载
@@ -1259,8 +1272,16 @@ export default function PatientDetailPage() {
   const ocrModalBodyRef = useRef(null)                          // 归类下拉框的真实裁切边界是这个 overflow:auto 的表格滚动容器，不是浏览器视口
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
-  // 管理信息下拉选项（服务包/会员来源），一次性加载
-  useEffect(() => { staffAPI.serviceOptions().then(r => setServiceOptions(r.data || [])).catch(() => {}) }, [])
+  // 客户归属决定会员类型和服务包选项，两者均读取 admin 会员设置。
+  useEffect(() => {
+    if (!editForm.clientBrand) {
+      setServiceOptions([])
+      setMemberTypeOptions([])
+      return
+    }
+    staffAPI.serviceOptions(editForm.clientBrand).then(r => setServiceOptions(r.data || [])).catch(() => setServiceOptions([]))
+    staffAPI.memberTypeOptions(editForm.clientBrand).then(r => setMemberTypeOptions(r.data || [])).catch(() => setMemberTypeOptions([]))
+  }, [editForm.clientBrand])
   useEffect(() => { staffAPI.memberSourceOptions().then(r => setMemberSourceOptions(r.data || [])).catch(() => {}) }, [])
 
   // 问卷 → 健康档案 自动导入审核
@@ -1472,16 +1493,18 @@ export default function PatientDetailPage() {
   }
   const loadScreening = async () => {
     try {
-      const [sr, hr, scr, tree] = await Promise.allSettled([
+      const [sr, hr, scr, tree, summaries] = await Promise.allSettled([
         staffAPI.getPatientScreening(id),
         staffAPI.getPatientHealthRecords(id, { limit: 30 }),
         staffAPI.getScreeningReports(id),
         staffAPI.getScreeningTree(),
+        staffAPI.getScreeningYearSummaries(id),
       ])
       if (sr.status === 'fulfilled') setScreeningItems(sr.value.data || [])
       if (hr.status === 'fulfilled') setHealthRecords(hr.value.data || [])
       if (scr.status === 'fulfilled') setScreeningReports(scr.value.data || [])
       if (tree.status === 'fulfilled') setScreeningTree(tree.value.data || [])
+      if (summaries.status === 'fulfilled') setScreeningYearSummaries(summaries.value.data || [])
     } catch {}
   }
 
@@ -1522,6 +1545,11 @@ export default function PatientDetailPage() {
         setReportScreeningData(matched)
       })
       .catch(() => {})
+  }
+
+  const openAIAnalysisSource = (sourceReportId) => {
+    if (!sourceReportId) return
+    openReportDetail({ _id: sourceReportId, title: '原始体检报告' })
   }
   useEffect(() => { load() }, [id])
   // 切换到不同患者时，上一个患者的"健康档案已查看"进度不能带过来，否则会误判成这个新患者
@@ -1600,6 +1628,7 @@ export default function PatientDetailPage() {
 
   const buildEditForm = (u) => ({
     chronicDiseases: u.chronicDiseases || [],
+    clientBrand: u.clientBrand || '',
     memberType: u.memberType || '',
     patientType: u.patientType || '',
     source: u.source || '',
@@ -1636,7 +1665,8 @@ export default function PatientDetailPage() {
     height: u.height || '',
     weight: u.weight || '',
     address: u.address || '',
-    contactPhone: u.contactPhone || '',
+    // 登录手机号与联系电话已合并；旧数据仅有 contactPhone 时作为兼容回填显示。
+    phone: u.phone || u.contactPhone || '',
     contactName: u.contactName || '',
     contactPhone2: u.contactPhone2 || '',
     deliveryAddress: u.deliveryAddress || '',
@@ -1647,6 +1677,11 @@ export default function PatientDetailPage() {
 
   const handleSaveBasicInfo = async () => {
     try {
+      const phone = String(basicInfoForm.phone || '').trim()
+      if (phone && !/^1\d{10}$/.test(phone)) {
+        toast('请输入正确的11位手机号码')
+        return
+      }
       await staffAPI.updatePatient(id, basicInfoForm)
       toast('基本信息已保存')
       setEditingBasicInfo(false)
@@ -2571,7 +2606,7 @@ export default function PatientDetailPage() {
                     { key: 'height', label: '身高(cm)', type: 'number' },
                     { key: 'weight', label: '体重(kg)', type: 'number' },
                     { key: 'address', label: '联系地址' },
-                    { key: 'contactPhone', label: '联系电话' },
+                    { key: 'phone', label: '联系电话（登录手机号）', type: 'tel' },
                     { key: 'contactName', label: '紧急联系人' },
                     { key: 'contactPhone2', label: '紧急联系电话' },
                     { key: 'deliveryAddress', label: '快递配送地址' },
@@ -2758,17 +2793,6 @@ export default function PatientDetailPage() {
               {editing ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                   {/* 紧急联系人/紧急联系电话/快递配送地址已统一归到「基本信息」卡（与问卷自动填档字段口径一致，2026-07-11） */}
-                  <div className="form-group" style={{ marginBottom: 0 }}>
-                    <label className="form-label">会员类型</label>
-                    <select className="form-input" value={editForm.memberType || ''}
-                      onChange={e => setEditForm(f => ({ ...f, memberType: e.target.value }))}>
-                      <option value="">-- 未设置 --</option>
-                      <option value="优享">优享</option>
-                      <option value="悦享">悦享</option>
-                      <option value="尊享">尊享</option>
-                      <option value="卓越">卓越</option>
-                    </select>
-                  </div>
                   {[
                     { label: '健康规划师',field: 'assignedHealthPlanner',    role: 'healthPlanner' },
                     { label: '家庭医师',  field: 'assignedFamilyDoctor',     role: 'familyDoctor' },
@@ -2792,11 +2816,39 @@ export default function PatientDetailPage() {
                     </div>
                   ))}
                   <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">客户归属</label>
+                    <select className="form-input" value={editForm.clientBrand || ''}
+                      onChange={e => setEditForm(f => ({
+                        ...f,
+                        clientBrand: e.target.value,
+                        memberType: '',
+                        servicePackage: '',
+                      }))}>
+                      <option value="">-- 未设置 --</option>
+                      <option value="jiayiguanjia">嘉医管家</option>
+                      <option value="jinyisen">金伊森</option>
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
+                    <label className="form-label">会员类型</label>
+                    <select className="form-input" value={editForm.memberType || ''}
+                      disabled={!editForm.clientBrand}
+                      onChange={e => setEditForm(f => ({ ...f, memberType: e.target.value }))}>
+                      <option value="">{editForm.clientBrand ? '-- 未设置 --' : '请先选择客户归属'}</option>
+                      {memberTypeOptions.map(item => (
+                        <option key={item._id} value={item.name}>{item.name}</option>
+                      ))}
+                      {editForm.memberType && !memberTypeOptions.some(item => item.name === editForm.memberType) && (
+                        <option value={editForm.memberType}>{editForm.memberType}（历史值）</option>
+                      )}
+                    </select>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 0 }}>
                     <label className="form-label">服务包</label>
-                    {/* 从 admin 商城服务列表选，不再手工录（2026-07-10 金娟）；兼容历史手工值：不在选项内也保留可见 */}
                     <select className="form-input" value={editForm.servicePackage}
+                      disabled={!editForm.clientBrand}
                       onChange={e => setEditForm(f => ({ ...f, servicePackage: e.target.value }))}>
-                      <option value="">请选择服务包</option>
+                      <option value="">{editForm.clientBrand ? '请选择服务包' : '请先选择客户归属'}</option>
                       {serviceOptions.map(s => (
                         <option key={s._id} value={s.name}>{s.name}</option>
                       ))}
@@ -2838,7 +2890,6 @@ export default function PatientDetailPage() {
               ) : (
                 <>
                   {/* 紧急联系人/紧急联系电话/快递配送地址已移至「基本信息」卡（2026-07-11） */}
-                  <InfoRow label="会员类型" value={user.memberType || '-'} />
                   <InfoRow label="健康规划师" value={user.assignedHealthPlanner?.name    || '-'} />
                   <InfoRow label="家庭医师"   value={user.assignedFamilyDoctor?.name     || '-'} />
                   <InfoRow label="营养师"     value={user.assignedNutritionist?.name     || '-'} />
@@ -2848,6 +2899,8 @@ export default function PatientDetailPage() {
                   {user.assignedPsychologist     && <InfoRow label="心理咨询师" value={user.assignedPsychologist?.name    || '-'} />}
                   {user.assignedRehabSpecialist  && <InfoRow label="运动复健师" value={user.assignedRehabSpecialist?.name || '-'} />}
                   {user.assignedMedicalAssistant && <InfoRow label="就医专员"   value={user.assignedMedicalAssistant?.name|| '-'} />}
+                  <InfoRow label="客户归属" value={user.clientBrand === 'jiayiguanjia' ? '嘉医管家' : user.clientBrand === 'jinyisen' ? '金伊森' : '-'} />
+                  <InfoRow label="会员类型" value={user.memberType || '-'} />
                   <InfoRow label="正式客户" value={
                     <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ color: user.isRegisteredClient ? '#22A06B' : '#aaa', fontWeight: 600 }}>
@@ -4043,6 +4096,92 @@ export default function PatientDetailPage() {
                   }}>+ 录入筛查结果</button>
                 </div>
               </div>
+              {(() => {
+                const current = screeningYearSummaries.find(item => Number(item.year) === Number(screeningSummaryYear))
+                const sections = editingScreeningSummary || current?.sections || {}
+                const canManage = ['familyDoctor', 'superadmin'].includes(staff?.role)
+                const categories = [
+                  ['tumor_risk', '肿瘤筛查小结'],
+                  ['cardiovascular_risk', '心脑血管病筛查小结'],
+                  ['chronic_disease', '慢性病及其他小结'],
+                ]
+                const years = [...new Set([
+                  new Date().getFullYear(),
+                  ...screeningYearSummaries.map(item => Number(item.year)),
+                  ...screeningReports.map(item => Number(item.reportYear || String(item.checkDate || '').slice(0, 4))).filter(Boolean),
+                ])].sort((a, b) => b - a)
+                return (
+                  <div style={{ margin: '0 16px 14px', padding: 14, border: '1px solid #D9E9E1', borderRadius: 10, background: '#F8FCFA' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+                      <strong style={{ color: '#1E6B50' }}>年度专项筛查小结</strong>
+                      <select className="form-input" style={{ width: 120 }} value={screeningSummaryYear}
+                        onChange={e => { setScreeningSummaryYear(Number(e.target.value)); setEditingScreeningSummary(null) }}>
+                        {years.map(year => <option key={year} value={year}>{year}年度</option>)}
+                      </select>
+                      {current && <span style={{ fontSize: 12, color: current.status === 'approved' ? '#16A34A' : '#D97706' }}>
+                        {current.status === 'approved' ? `✓ 家庭医生已审核${current.approvedByName ? ' · ' + current.approvedByName : ''}` : '待家庭医生审核'}
+                      </span>}
+                      {canManage && <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                        <button className="btn btn-secondary btn-sm" disabled={screeningSummaryBusy} onClick={async () => {
+                          setScreeningSummaryBusy(true)
+                          try {
+                            await staffAPI.generateScreeningYearSummary(id, screeningSummaryYear)
+                            await loadScreening()
+                            toast('AI年度专项筛查小结已生成，待家庭医生审核')
+                          } catch (error) { toast(error.message || '生成失败') }
+                          finally { setScreeningSummaryBusy(false) }
+                        }}>{screeningSummaryBusy ? '生成中…' : '✨ AI自动小结'}</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() => setEditingScreeningSummary(JSON.parse(JSON.stringify(current?.sections || {
+                          tumor_risk: { summary: '', sourceReportIds: [] },
+                          cardiovascular_risk: { summary: '', sourceReportIds: [] },
+                          chronic_disease: { summary: '', sourceReportIds: [] },
+                        })))}>新增/编辑</button>
+                        {current && current.status !== 'approved' && <button className="btn btn-primary btn-sm" onClick={async () => {
+                          try { await staffAPI.approveScreeningYearSummary(id, screeningSummaryYear); await loadScreening(); toast('年度小结已审核') }
+                          catch (error) { toast(error.message || '审核失败') }
+                        }}>审核通过</button>}
+                      </div>}
+                    </div>
+                    {!current && !editingScreeningSummary ? (
+                      <div style={{ color: '#8AA89C', fontSize: 13 }}>该年度尚无小结，可由家庭医生新增或使用 AI 自动生成。</div>
+                    ) : (
+                      <div style={{ display: 'grid', gap: 10 }}>
+                        {categories.map(([key, label]) => (
+                          <div key={key} style={{ background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid #EEF2EF' }}>
+                            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 5 }}>{label}</div>
+                            {editingScreeningSummary ? (
+                              <textarea className="form-input" rows={3} value={sections[key]?.summary || ''}
+                                onChange={e => setEditingScreeningSummary(prev => ({
+                                  ...prev,
+                                  [key]: { ...(prev[key] || {}), summary: e.target.value },
+                                }))} />
+                            ) : <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>{sections[key]?.summary || '暂无相关资料'}</div>}
+                            {!editingScreeningSummary && (sections[key]?.sourceReportIds || []).length > 0 && (
+                              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
+                                {sections[key].sourceReportIds.map((reportId, index) => (
+                                  <button key={reportId} className="btn btn-secondary btn-sm"
+                                    onClick={() => openAIAnalysisSource(reportId)}>🔗 依据报告{index + 1}</button>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                        {editingScreeningSummary && <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setEditingScreeningSummary(null)}>取消</button>
+                          <button className="btn btn-primary btn-sm" onClick={async () => {
+                            try {
+                              await staffAPI.saveScreeningYearSummary(id, screeningSummaryYear, editingScreeningSummary)
+                              setEditingScreeningSummary(null)
+                              await loadScreening()
+                              toast('年度小结已保存，待家庭医生审核')
+                            } catch (error) { toast(error.message || '保存失败') }
+                          }}>保存小结</button>
+                        </div>}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
               {(() => {
                 // 2026-07-02：体检方案里已开具但客户还未做/未上传报告的检验检查项目，在这里做一条轻量提示——
                 // 不把方案项目直接并入下面的三层筛查树渲染（那块逻辑已经很复杂，硬塞进去容易出连锁问题），
@@ -5375,7 +5514,7 @@ export default function PatientDetailPage() {
             <AiRuleHint scene="health_analysis" />
             {/* 前置要求：家庭医生生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
-            {pendingDoctorAuditReports.length > 0 && (() => {
+            {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.length > 0 && (() => {
               // 文案显示"待查看"数量而非总数：此前写死显示 pendingDoctorAuditReports.length（总数），
               // 哪怕已经逐份点开查看了60/61份，这行提示文字也纹丝不动还是显示"61"，容易让人误以为
               // 一份都没处理、之前的查看进度没生效。改为显示还剩几份未查看，全部查看完文案自动收尾。
@@ -5507,6 +5646,29 @@ export default function PatientDetailPage() {
               </div>
             ) : (
               <>
+                {(() => {
+                  const sourceIds = [...new Set([
+                    ...(sec.tumor_risk?.sourceReportIds || []),
+                    ...(sec.cardiovascular_risk?.sourceReportIds || []),
+                    ...(sec.chronic_disease?.sourceReportIds || []),
+                    ...(sec.checkup_completeness?.sourceReportIds || []),
+                    ...(sec.medical_priority?.sourceReportIds || []),
+                    ...(sec.chronic_disease?.items || []).map(item => item.sourceReportId).filter(Boolean),
+                    ...(sec.medical_priority?.items || []).map(item => item.sourceReportId).filter(Boolean),
+                  ])]
+                  if (!sourceIds.length) return null
+                  return (
+                    <div className="card" style={{ marginBottom: 12, padding: '10px 14px', background: '#F0F7FF', border: '1px solid #BFDBFE' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8', marginBottom: 6 }}>🔗 本次分析依据</div>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        {sourceIds.map((reportId, index) => (
+                          <button key={reportId} className="btn btn-secondary btn-sm"
+                            onClick={() => openAIAnalysisSource(reportId)}>查看原始报告 {index + 1}</button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })()}
                 {/* 板块一：肿瘤风险筛查分析 */}
                 <AISectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED">
                   {docEditing ? (
@@ -5580,6 +5742,10 @@ export default function PatientDetailPage() {
                               <span style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{item.name}</span>
                               {item.value && <span style={{ fontSize: 13, color: '#4A6558' }}> · {item.value}</span>}
                               {item.note && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{item.note}</div>}
+                              {item.sourceReportId && (
+                                <button className="btn btn-secondary btn-sm" style={{ marginTop: 5 }}
+                                  onClick={() => openAIAnalysisSource(item.sourceReportId)}>🔗 查看分析依据</button>
+                              )}
                             </div>
                           </div>
                         ))}
@@ -5650,6 +5816,10 @@ export default function PatientDetailPage() {
                               {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
                               {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>临床意义：{item.meaning}</div>}
                               {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
+                              {item.sourceReportId && (
+                                <button className="btn btn-secondary btn-sm" style={{ marginTop: 6 }}
+                                  onClick={() => openAIAnalysisSource(item.sourceReportId)}>🔗 查看原始报告</button>
+                              )}
                             </div>
                           )
                         })}
@@ -5958,7 +6128,7 @@ export default function PatientDetailPage() {
                 </button>
               )}
               <button className="btn btn-primary btn-sm"
-                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
+                onClick={() => { if (medSubTab === 'med') { setMedForm({ name:'', brandName:'', specification:'', dosage:'', method:'口服', frequency:'每日1次', timing:'', startDate:'', endDate:'', purpose:'', note:'' }); setEditingMed(null); setShowMedModal(true) } else { setSupForm({ name:'', brand:'', specification:'', dosage:'', method:'随餐', frequency:'每日1次', startDate:'', endDate:'', purpose:'', note:'' }); setEditingSup(null); setEditingSupAiApprove(false); setShowSupModal(true) } }}>
                 ＋ 新增{medSubTab === 'med' ? '药物' : '营养素'}
               </button>
             </div>
@@ -5992,7 +6162,7 @@ export default function PatientDetailPage() {
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button className="btn btn-sm" style={{ background: '#0077B6', color: '#fff' }} onClick={() => reviewMedication(m._id, 'approve')}>通过</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => {
-                                setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
+                                setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
                                 setEditingMed(m._id); setShowMedModal(true)
                               }}>编辑</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
@@ -6017,15 +6187,17 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无用药记录</div>
               ) : (
                 <table className="table">
-                  <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>药品名称（化学名）</th><th>商品名</th><th>规格</th><th>剂量</th><th>用法/频次</th><th>服用目的</th><th>停用原因</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
                     {activeMeds.map(m => (
                       <tr key={m._id}>
                         <td style={{ fontWeight: 600 }}>{m.name}</td>
                         <td style={{ color: '#666' }}>{m.brandName || '-'}</td>
+                        <td>{m.specification || '-'}</td>
                         <td>{m.dosage}</td>
                         <td style={{ fontSize: 12 }}>{m.method} · {m.frequency}{m.timing ? ` · ${m.timing}` : ''}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{m.purpose || m.note || '-'}</td>
+                        <td style={{ fontSize: 12, color: m.stopped ? '#8A5A44' : '#aaa' }}>{m.stopReason || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.endDate ? ` → ${m.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
                           {m.createdByName ? <div>录入：{m.createdByName}</div> : null}
@@ -6039,24 +6211,14 @@ export default function PatientDetailPage() {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn btn-secondary btn-sm" onClick={() => {
-                              setMedForm({ name: m.name, brandName: m.brandName || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
+                            {!m.stopped && <button className="btn btn-secondary btn-sm" onClick={() => {
+                              setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
                               setEditingMed(m._id); setShowMedModal(true)
-                            }}>编辑</button>
-                            {m.stopped
-                            ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
-                                onClick={async () => {
-                                  if (!window.confirm('确认恢复用药？')) return
-                                  try { await staffAPI.updatePatientMedication(id, m._id, { stopped: false, endDate: '' }); loadMedications() }
-                                  catch (err) { toast(err.message || '操作失败') }
-                                }}>
-                                恢复用药
-                              </button>
-                            : <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
+                            }}>编辑</button>}
+                            {!m.stopped && <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                 onClick={() => setStoppingMed(m)}>
                                 停用
-                              </button>
-                          }
+                              </button>}
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
                               onClick={async () => {
                                 if (!window.confirm(`确认删除「${m.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停药请用"停用"。`)) return
@@ -6107,7 +6269,7 @@ export default function PatientDetailPage() {
                             <div style={{ display: 'flex', gap: 6 }}>
                               <button className="btn btn-sm" style={{ background: '#16A34A', color: '#fff' }} onClick={() => reviewAISupplement(s._id, 'approve')}>采纳</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => {
-                                setSupForm({ name: s.name, brand: s.brand || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
+                                setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
                                 setEditingSup(s._id); setEditingSupAiApprove(true); setShowSupModal(true)
                               }}>编辑后采纳</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }} onClick={() => reviewAISupplement(s._id, 'reject')}>拒绝</button>
@@ -6132,15 +6294,17 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无营养素记录</div>
               ) : (
                 <table className="table">
-                  <thead><tr><th>营养素名称</th><th>品牌</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>营养素名称</th><th>品牌</th><th>规格</th><th>剂量</th><th>用法/频次</th><th>补充目的</th><th>停用原因</th><th>开始日期</th><th>录入/审核</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
                     {activeSups.map(s => (
                       <tr key={s._id}>
                         <td style={{ fontWeight: 600 }}>{s.name}</td>
                         <td style={{ color: '#666' }}>{s.brand || '-'}</td>
+                        <td>{s.specification || '-'}</td>
                         <td>{s.dosage}</td>
                         <td style={{ fontSize: 12 }}>{s.method} · {s.frequency}</td>
                         <td style={{ fontSize: 12, color: '#4A6558' }}>{s.purpose || s.note || '-'}</td>
+                        <td style={{ fontSize: 12, color: s.stopped ? '#8A5A44' : '#aaa' }}>{s.stopReason || '-'}</td>
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{s.startDate || '-'}{s.endDate ? ` → ${s.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
                           {s.createdByName ? <div>录入：{s.createdByName}</div> : null}
@@ -6154,24 +6318,14 @@ export default function PatientDetailPage() {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn btn-secondary btn-sm" onClick={() => {
-                              setSupForm({ name: s.name, brand: s.brand || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
+                            {!s.stopped && <button className="btn btn-secondary btn-sm" onClick={() => {
+                              setSupForm({ name: s.name, brand: s.brand || '', specification: s.specification || '', dosage: s.dosage, method: s.method || '随餐', frequency: s.frequency, startDate: s.startDate || '', endDate: s.endDate || '', purpose: s.purpose || '', note: s.note || '' })
                               setEditingSup(s._id); setEditingSupAiApprove(false); setShowSupModal(true)
-                            }}>编辑</button>
-                            {s.stopped
-                              ? <button className="btn btn-sm" style={{ background: '#e8f5ef', color: '#1E6B50', border: '1px solid #1E6B50' }}
-                                  onClick={async () => {
-                                    if (!window.confirm('确认恢复补充？')) return
-                                    try { await staffAPI.updatePatientSupplement(id, s._id, { stopped: false }); loadSupplements() }
-                                    catch (err) { toast(err.message || '操作失败') }
-                                  }}>
-                                  恢复补充
-                                </button>
-                              : <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
+                            }}>编辑</button>}
+                            {!s.stopped && <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                   onClick={() => setStoppingSup(s)}>
                                   停用
-                                </button>
-                            }
+                                </button>}
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
                               onClick={async () => {
                                 if (!window.confirm(`确认删除「${s.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停用请用"停用"。`)) return
@@ -6204,6 +6358,7 @@ export default function PatientDetailPage() {
                   {[
                     { k: 'name', label: '药品化学名 *', full: false, placeholder: '如：苯磺酸氨氯地平' },
                     { k: 'brandName', label: '商品名', full: false, placeholder: '如：络活喜' },
+                    { k: 'specification', label: '规格', full: false, placeholder: '如：5mg×30片/盒' },
                     { k: 'dosage', label: '剂量 *', full: false, placeholder: '如：5mg' },
                     { k: 'method', label: '用药方式', full: false, placeholder: '如：口服' },
                     { k: 'frequency', label: '频次 *', full: false, placeholder: '如：每日1次' },
@@ -6251,6 +6406,7 @@ export default function PatientDetailPage() {
                   {[
                     { k: 'name', label: '营养素名称 *', full: false, placeholder: '如：维生素C' },
                     { k: 'brand', label: '品牌', full: false, placeholder: '如：汤臣倍健' },
+                    { k: 'specification', label: '规格', full: false, placeholder: '如：60粒/瓶' },
                     { k: 'dosage', label: '剂量 *', full: false, placeholder: '如：500mg' },
                     { k: 'method', label: '使用方式', full: false, placeholder: '如：随餐' },
                     { k: 'frequency', label: '频次 *', full: false, placeholder: '如：每日1次' },
@@ -6290,9 +6446,9 @@ export default function PatientDetailPage() {
               title="停用用药"
               itemName={stoppingMed.name}
               onClose={() => setStoppingMed(null)}
-              onConfirm={async () => {
+              onConfirm={async (stopReason) => {
                 try {
-                  await staffAPI.updatePatientMedication(id, stoppingMed._id, { stopped: true })
+                  await staffAPI.updatePatientMedication(id, stoppingMed._id, { stopped: true, stopReason })
                   setStoppingMed(null); loadMedications()
                 } catch (err) { toast(err.message || '停用失败') }
               }}
@@ -6303,9 +6459,9 @@ export default function PatientDetailPage() {
               title="停用营养素"
               itemName={stoppingSup.name}
               onClose={() => setStoppingSup(null)}
-              onConfirm={async () => {
+              onConfirm={async (stopReason) => {
                 try {
-                  await staffAPI.updatePatientSupplement(id, stoppingSup._id, { stopped: true })
+                  await staffAPI.updatePatientSupplement(id, stoppingSup._id, { stopped: true, stopReason })
                   setStoppingSup(null); loadSupplements()
                 } catch (err) { toast(err.message || '停用失败') }
               }}
@@ -7224,7 +7380,7 @@ export default function PatientDetailPage() {
                 <div style={{ padding: 32, textAlign: 'center', color: '#aaa' }}>暂无购买记录</div>
               ) : (
                 <table className="table">
-                  <thead><tr><th>产品名称</th><th>金额</th><th>下单时间</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
+                  <thead><tr><th>产品名称</th><th>金额</th><th>服务次数</th><th>下单时间</th><th>归属</th><th>状态</th><th>操作</th></tr></thead>
                   <tbody>
                     {patientOrders.map(order => {
                       // 谁推送谁获推广费(referrerId=推送时自动关联)，谁服务谁获服务费(fulfillerId)——
@@ -7232,9 +7388,20 @@ export default function PatientDetailPage() {
                       const canAssignFulfiller = staff?.role === 'superadmin' || String(order.referrerId?._id) === String(staff?._id)
                       return (
                       <tr key={order._id}>
-                        <td style={{ fontWeight: 500 }}>{order.serviceName || order.serviceId}</td>
+                        <td style={{ fontWeight: 500 }}>
+                          <div>{order.serviceName || order.serviceId}</div>
+                          {order.specificationLabel && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>{order.specificationLabel}</div>}
+                        </td>
                         <td style={{ color: '#D97706', fontWeight: 600 }}>
                           {order.servicePrice != null ? `¥${order.servicePrice}` : '-'}
+                        </td>
+                        <td style={{ fontSize: 13 }}>
+                          <div style={{ fontWeight: 600, color: '#1E6B50' }}>
+                            已使用 {order.usedUnits || 0}/{order.totalUnits || 1} 次
+                          </div>
+                          <div style={{ fontSize: 12, color: '#8AA89C' }}>
+                            剩余 {Math.max(0, (order.totalUnits || 1) - (order.usedUnits || 0))} 次
+                          </div>
                         </td>
                         <td style={{ fontSize: 13, color: '#8AA89C' }}>{new Date(order.createdAt).toLocaleDateString('zh-CN')}</td>
                         <td style={{ fontSize: 12 }}>
@@ -7264,14 +7431,19 @@ export default function PatientDetailPage() {
                               } catch (err) { toast(err.message || '操作失败') }
                             }}>启动服务</button>
                           )}
-                          {order.status === 'scheduled' && (
-                            <button className="btn btn-sm" style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
+                          {order.status === 'scheduled' && (order.usedUnits || 0) < (order.totalUnits || 1) && (
+                            <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
+                              style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
+                              const note = window.prompt(`确认核销第 ${(order.usedUnits || 0) + 1}/${order.totalUnits || 1} 次服务。\n可填写本次服务备注（可留空）：`, '')
+                              if (note === null) return
+                              setRedeemingOrderId(order._id)
                               try {
-                                await staffAPI.startOrder(order._id, { action: 'complete' })
-                                setPatientOrders(prev => prev.map(o => o._id === order._id ? { ...o, status: 'completed' } : o))
-                                toast('服务已完成')
+                                const res = await staffAPI.redeemOrder(order._id, note)
+                                setPatientOrders(prev => prev.map(o => o._id === order._id ? res.data : o))
+                                toast(res.message || '核销成功')
                               } catch (err) { toast(err.message || '操作失败') }
-                            }}>标记完成</button>
+                              finally { setRedeemingOrderId(null) }
+                            }}>{redeemingOrderId === order._id ? '核销中…' : '核销1次'}</button>
                           )}
                         </td>
                       </tr>

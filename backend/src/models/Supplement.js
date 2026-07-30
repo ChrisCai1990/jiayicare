@@ -5,6 +5,7 @@ const supplementSchema = new mongoose.Schema({
   // 基础信息
   name:       { type: String, required: true },   // 营养素名称（如维生素C、钙、蛋白粉）
   brand:      { type: String, default: '' },       // 品牌（可选）
+  specification:{ type: String, default: '' },     // 规格（如 60粒/瓶）
   dosage:     { type: String, required: true },    // 剂量（如 500mg）
   method:     { type: String, default: '随餐' },   // 使用方法：随餐/空腹/冲服/睡前
   frequency:  { type: String, required: true },    // 使用频次（如每日1次、每周3次）
@@ -16,6 +17,10 @@ const supplementSchema = new mongoose.Schema({
   // 停用信息
   stopped:    { type: Boolean, default: false },   // 是否已停用
   stopDate:   { type: String, default: '' },       // 停用日期
+  stopReason: { type: String, default: '' },
+  stopMode:   { type: String, enum: ['manual', 'automatic', 'plan_adjustment', ''], default: '' },
+  stoppedBy:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  stoppedByName:{ type: String, default: '' },
   note:       { type: String, default: '' },
   // 医护端录入标识
   createdByStaff: { type: Boolean, default: false },
@@ -26,8 +31,12 @@ const supplementSchema = new mongoose.Schema({
   aiGeneratedBy: { type: String, default: '' },
   reviewedByName: { type: String, default: '' },   // 审核人姓名（营养师）
   reviewedAt:     { type: Date, default: null },   // 审核时间
+  sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', ''], default: 'manual' },
+  sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
+  sourceRecordKey: { type: String, default: '' },
 }, { timestamps: true });
 
 supplementSchema.index({ user: 1, stopped: 1 });
+supplementSchema.index({ sourceAnnualPlanId: 1, sourceRecordKey: 1, stopped: 1 });
 
 module.exports = mongoose.model('Supplement', supplementSchema);

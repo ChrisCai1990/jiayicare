@@ -144,7 +144,7 @@ const PACKAGE_CATALOG = [
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
-  const { serviceId, note, paymentMethod, useHealthFund, couponId } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod, useHealthFund, couponId } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -153,8 +153,20 @@ router.post('/order', auth, async (req, res) => {
   let service = null;
   const product = await Product.findById(serviceId).catch(() => null);
   if (product) {
-    const firstPrice = product.servicePrices?.[0];
-    service = { id: product._id.toString(), name: product.name, price: firstPrice ? firstPrice.price : product.originalPrice, icon: 'storefront-outline' };
+    const prices = product.servicePrices || [];
+    const selectedPrice = specificationLabel
+      ? prices.find(item => item.label === specificationLabel)
+      : prices[0];
+    if (specificationLabel && !selectedPrice) {
+      return res.status(400).json({ success: false, message: '所选服务规格已调整，请刷新后重新选择' });
+    }
+    service = {
+      id: product._id.toString(),
+      name: product.name,
+      price: selectedPrice ? selectedPrice.price : product.originalPrice,
+      specificationLabel: selectedPrice?.label || '',
+      icon: 'storefront-outline',
+    };
   }
   if (!service) {
     const dbSvc = await Service.findOne({ serviceId });
@@ -166,6 +178,9 @@ router.post('/order', auth, async (req, res) => {
   }
 
   const isPkg     = !!PACKAGE_CATALOG.find(p => p.id === serviceId);
+  const unitsMatch = String(service.specificationLabel || '').match(/(\d+)\s*次/);
+  const totalUnits = unitsMatch ? Math.max(1, Number(unitsMatch[1])) : 1;
+  const unitPrice = Math.round((service.price / totalUnits) * 100) / 100;
 
   // ── 健康基金 + 优惠券抵扣（下单即扣，实时校验余额/券状态）──────────
   let coupon = null;
@@ -224,15 +239,27 @@ router.post('/order', auth, async (req, res) => {
     }
   }
 
+  // 商城产品只进入客户的健康规划师。每位正式客户都应配置规划师；缺失时阻止下单，
+  // 避免订单被自动派给家庭医生或落入无人负责的通用池。
+  const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner');
+  if (!patientForStaff?.assignedHealthPlanner) {
+    return res.status(409).json({ success: false, message: '您的健康规划师尚未配置，请联系客服完善后再提交预约' });
+  }
+  const followUpStaffId = patientForStaff.assignedHealthPlanner;
+
   const order = await Order.create({
     user:         req.user._id,
     serviceId:    service.id,
     serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
     servicePrice: service.price,
+    specificationLabel: service.specificationLabel || '',
+    unitPrice,
+    totalUnits,
+    usedUnits: 0,
     serviceIcon:  service.icon || 'shield-checkmark',
     note:         orderNote,
     status:       'pending',
-    orderType:    isPkg ? 'package' : 'service',
+    orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
     referrerId,
     servicePerformers,
     paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paymentMethod || ''),
@@ -242,28 +269,18 @@ router.post('/order', auth, async (req, res) => {
   // 下单后需要人工跟进的待办：只生成 FollowUp（医护端"待随访任务"面板的数据源，也是用户端展示的唯一数据源），
   // 不再同时创建 Task——此前两套模型无关联字段，导致同一次预约在用户端出现两条重复卡片，
   // 且医护端处理完 FollowUp 后 Task 状态永远不变，用户看不出到底有没有被处理。
-  // staffId 优先归到该患者名下的健康规划师（客户经理，负责商城订单的接单/分派执行人，2026-07-13 新增角色）；
-  // 没分配规划师（老客户尚未补分配）则退回健管专员，再退回家庭医生，都没有（全新客户）则兜底给 superadmin，避免漏单
-  const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner assignedHealthManager assignedFamilyDoctor');
-  let followUpStaffId = patientForStaff?.assignedHealthPlanner || patientForStaff?.assignedHealthManager || patientForStaff?.assignedFamilyDoctor || null;
-  if (!followUpStaffId) {
-    const superadmin = await Admin.findOne({ role: 'superadmin' }).select('_id');
-    followUpStaffId = superadmin?._id || null;
-  }
-
   const pendingTasks = [];
-  if (followUpStaffId) {
-    pendingTasks.push(FollowUp.create({
-      staffId:   followUpStaffId,
-      patientId: req.user._id,
-      type:      'other',
-      status:    'planned',
-      theme:     isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
-      content:   orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排'),
-      sourceType: 'order',
-      sourceOrderId: order._id,
-    }));
-  }
+  pendingTasks.push(FollowUp.create({
+    staffId:   followUpStaffId,
+    assignedTo: followUpStaffId,
+    patientId: req.user._id,
+    type:      'other',
+    status:    'planned',
+    theme:     isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
+    content:   orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排'),
+    sourceType: 'order',
+    sourceOrderId: order._id,
+  }));
   // 健康基金实时扣减（与订单绑定，note 记录用于哪笔订单）
   if (fundUsed > 0) {
     pendingTasks.push(User.collection.updateOne(

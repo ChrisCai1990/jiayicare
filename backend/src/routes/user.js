@@ -119,7 +119,7 @@ router.put('/me', auth, async (req, res) => {
   try {
     const { name, age, gender, height, weight, servicePackage, serviceExpiry,
             contactPhone, deliveryAddress, healthProfile,
-            bloodTypeABO, bloodTypeRH } = req.body;
+            bloodTypeABO, bloodTypeRH, lifestyle } = req.body;
 
     const updateData = {};
     if (name !== undefined)           updateData.name = name;
@@ -135,6 +135,31 @@ router.put('/me', auth, async (req, res) => {
     // 血型独立字段（用户端直接传入 ABO/RH）
     if (bloodTypeABO !== undefined) updateData.bloodTypeABO = bloodTypeABO;
     if (bloodTypeRH  !== undefined) updateData.bloodTypeRH  = bloodTypeRH;
+
+    // 用户新增一条生活方式记录时，只写入实际发生变化的字段，并保留前后值与录入时间。
+    // 当前值仍同步到 lifestyle，历史记录用于展示客户变化过程。
+    let lifestyleHistoryEntry = null;
+    if (lifestyle && typeof lifestyle === 'object' && !Array.isArray(lifestyle)) {
+      const allowed = ['diet', 'exercise', 'sleep', 'water', 'alcohol', 'smoking', 'bowel', 'mood'];
+      const changes = {};
+      for (const key of allowed) {
+        if (lifestyle[key] === undefined) continue;
+        const from = String(req.user.lifestyle?.[key] || '');
+        const to = String(lifestyle[key] || '').trim();
+        if (from === to) continue;
+        updateData[`lifestyle.${key}`] = to;
+        changes[key] = { from, to };
+      }
+      if (Object.keys(changes).length) {
+        lifestyleHistoryEntry = {
+          changes,
+          source: 'customer',
+          recordedByName: req.user.name || '客户本人',
+          recordedByRole: 'customer',
+          recordedAt: new Date(),
+        };
+      }
+    }
 
     if (healthProfile !== undefined) {
       const hp = healthProfile;
@@ -186,10 +211,11 @@ router.put('/me', auth, async (req, res) => {
     updateData.healthProfileUpdatedAt = new Date();
 
     // 直接用原生 MongoDB driver，完全绕过 Mongoose schema 类型转换
-    await User.collection.updateOne(
-      { _id: req.user._id },
-      { $set: updateData }
-    );
+    const updateOps = { $set: updateData };
+    if (lifestyleHistoryEntry) {
+      updateOps.$push = { lifestyleHistory: { $each: [lifestyleHistoryEntry], $slice: -100 } };
+    }
+    await User.collection.updateOne({ _id: req.user._id }, updateOps);
 
     // 异步写变更日志（不阻塞主响应）
     if (changeLogs.length > 0) {
