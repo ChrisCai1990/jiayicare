@@ -123,7 +123,16 @@ export default function PlanModulesPage() {
       .finally(() => setLoading(false))
   }, [id])
 
-  const canEdit = plan && ['nutritionist', 'medicalAssistant', 'superadmin'].includes(staff?.role)
+  const creatorId = plan?.staffId?._id || plan?.staffId
+  const selectedAssistantId = plan?.content?.staffId
+  const canEdit = !!plan && (
+    staff?.role === 'superadmin'
+    || String(creatorId || '') === String(staff?._id || '')
+    || (plan.type === 'nutrition' && staff?.role === 'nutritionist')
+    || (plan.type === 'medical_assist' && (
+      String(selectedAssistantId || '') === String(staff?._id || '')
+    ))
+  )
 
   const handleModuleChange = useCallback((moduleKey, fieldKey, value) => {
     setModuleData(prev => ({

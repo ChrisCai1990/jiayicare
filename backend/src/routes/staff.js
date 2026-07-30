@@ -1262,6 +1262,10 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
 // 2026-07-07 用户明确规则：家庭医生生成的方案营养师不能删改，反之亦然，按患者角色分工而非单纯创建人
 const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' };
 function checkPlanTypeRole(plan, staffRole) {
+  // 就医协助由家庭医生制定医疗安排、就医专员负责执行；两种角色都需要编辑权限。
+  if (plan.type === 'medical_assist') {
+    return staffRole === 'superadmin' || staffRole === 'familyDoctor' || staffRole === 'medicalAssistant';
+  }
   const requiredRole = PLAN_TYPE_OWNER_ROLE[plan.type];
   if (!requiredRole) return true; // 未限定角色的类型（如医嘱/心理咨询方案）不受此限制
   return staffRole === 'superadmin' || staffRole === requiredRole;
@@ -1286,12 +1290,15 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   if (!checkPlanTypeRole(plan, req.staff.role)) {
-    return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（家庭医生/营养师）修改' });
+    return res.status(403).json({ success: false, message: '该类型方案仅限对应负责角色修改' });
   }
   if (!(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
   }
-  if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
+  const isSelectedMedicalAssistant = plan.type === 'medical_assist'
+    && plan.content?.staffId
+    && String(plan.content.staffId) === String(req.staff._id);
+  if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id) && !isSelectedMedicalAssistant) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
   }
   const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
