@@ -1122,10 +1122,33 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
 router.get('/reports', staffAuth, async (req, res) => {
   const staff = req.staff;
   const visibleStaffIds = staff.role === 'superadmin' ? null : await getVisibleStaffIds(staff);
-  const myFilter = staff.role === 'superadmin' ? {} :
-    staff.role === 'familyDoctor'
-      ? { assignedFamilyDoctor: { $in: visibleStaffIds } }
-      : { assignedHealthManager: { $in: visibleStaffIds } };
+  const roleAssignmentField = {
+    familyDoctor: 'assignedFamilyDoctor',
+    nutritionist: 'assignedNutritionist',
+    specialist: 'assignedSpecialist',
+    tcmDoctor: 'assignedTcmDoctor',
+    psychologist: 'assignedPsychologist',
+    rehabSpecialist: 'assignedRehabSpecialist',
+    medicalAssistant: 'assignedMedicalAssistant',
+    healthPlanner: 'assignedHealthPlanner',
+    healthManager: 'assignedHealthManager',
+  };
+  const assignmentField = roleAssignmentField[staff.role] || 'assignedHealthManager';
+  const myFilter = staff.role === 'superadmin'
+    ? {}
+    : { [assignmentField]: { $in: visibleStaffIds } };
+
+  // 随访列表以 assignedTo（实际执行人）为归属；首页统计必须使用同一口径。
+  // 仅旧数据没有 assignedTo 时，才退回 staffId（创建人），避免就医协助由家庭医生创建、
+  // 就医专员执行时，专员列表能看到但首页统计仍为 0。
+  const followUpOwnerFilter = staff.role === 'superadmin'
+    ? {}
+    : {
+        $or: [
+          { assignedTo: { $in: visibleStaffIds } },
+          { assignedTo: null, staffId: { $in: visibleStaffIds } },
+        ],
+      };
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
@@ -1137,9 +1160,9 @@ router.get('/reports', staffAuth, async (req, res) => {
 
   const [totalPatients, todayFollowUps, monthFollowUps, plannedFollowUps] = await Promise.all([
     User.countDocuments(myFilter),
-    FollowUp.countDocuments({ staffId: staff._id, date: { $gte: today, $lt: tomorrow } }),
-    FollowUp.countDocuments({ staffId: staff._id, date: { $gte: monthStart, $lt: monthEnd } }),
-    FollowUp.countDocuments({ staffId: staff._id, status: 'planned' }),
+    FollowUp.countDocuments({ ...followUpOwnerFilter, date: { $gte: today, $lt: tomorrow } }),
+    FollowUp.countDocuments({ ...followUpOwnerFilter, date: { $gte: monthStart, $lt: monthEnd } }),
+    FollowUp.countDocuments({ ...followUpOwnerFilter, status: 'planned' }),
   ]);
 
   // 慢病分布
