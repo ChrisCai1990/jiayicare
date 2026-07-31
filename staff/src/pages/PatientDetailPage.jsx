@@ -8119,8 +8119,9 @@ export default function PatientDetailPage() {
                         <span style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{s.screeningL3 || s.title || '检查项目'}</span>
                         <span style={{ fontSize: 12, color: '#8AA89C' }}>{s.checkDate || '-'}</span>
                       </div>
-                      {/* 化验/检验结果 */}
-                      {s.reportItems?.length > 0 && (
+                      {/* 化验/检验结果：仅数值型项目按表格展示。影像检查的结果保存在
+                          findings/diagnosis/conclusion，不能只读 value，否则家庭医生看到空白结果。 */}
+                      {s.reportItems?.some(item => item.itemType !== 'imaging' && !(item.findings || item.diagnosis || item.conclusion)) && (
                         <div style={{ marginBottom: 8 }}>
                           <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 4 }}>检验结果</div>
                           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
@@ -8133,13 +8134,13 @@ export default function PatientDetailPage() {
                               </tr>
                             </thead>
                             <tbody>
-                              {s.reportItems.map((item, i) => (
+                              {s.reportItems.filter(item => item.itemType !== 'imaging' && !(item.findings || item.diagnosis || item.conclusion)).map((item, i) => (
                                 <tr key={i} style={{ borderBottom: '1px solid #f0ede8' }}>
                                   <td style={{ padding: '3px 8px', color: '#1A2B24' }}>{item.name}</td>
                                   <td style={{ padding: '3px 8px', textAlign: 'right', color: item.status === 'abnormal' ? '#DC3545' : item.status === 'attention' ? '#D97706' : '#1A2B24', fontWeight: item.status === 'abnormal' ? 600 : 400 }}>
-                                    {item.value}{item.unit ? ` ${item.unit}` : ''}
+                                    {item.value || '-'}{item.unit ? ` ${item.unit}` : ''}
                                   </td>
-                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: '#aaa', fontSize: 11 }}>{item.reference || '-'}</td>
+                                  <td style={{ padding: '3px 8px', textAlign: 'right', color: '#aaa', fontSize: 11 }}>{item.referenceRange || item.reference || '-'}</td>
                                   <td style={{ padding: '3px 8px', textAlign: 'center' }}>
                                     {item.status === 'abnormal' && <span style={{ fontSize: 11, color: '#DC3545', fontWeight: 600 }}>↑↓异常</span>}
                                     {item.status === 'attention' && <span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>注意</span>}
@@ -8149,6 +8150,42 @@ export default function PatientDetailPage() {
                               ))}
                             </tbody>
                           </table>
+                        </div>
+                      )}
+                      {/* 超声、CT、TCT、内镜等检查项目：完整展示健管专员审核确认的所见与结论。 */}
+                      {s.reportItems?.some(item => item.itemType === 'imaging' || item.findings || item.diagnosis || item.conclusion) && (
+                        <div style={{ marginBottom: 8 }}>
+                          <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 6 }}>检查项目及结果</div>
+                          {s.reportItems
+                            .filter(item => item.itemType === 'imaging' || item.findings || item.diagnosis || item.conclusion)
+                            .map((item, i) => (
+                              <div key={i} style={{ padding: '9px 10px', marginBottom: 7, background: '#fff', border: '1px solid #e8f0ec', borderRadius: 6 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 5 }}>
+                                  <span style={{ fontSize: 12, fontWeight: 600, color: '#1A2B24' }}>{item.name || '检查项目'}</span>
+                                  <span style={{
+                                    flexShrink: 0, fontSize: 11, fontWeight: 600,
+                                    color: item.status === 'abnormal' ? '#DC3545' : item.status === 'attention' ? '#D97706' : '#22A06B',
+                                  }}>
+                                    {item.status === 'abnormal' ? '异常' : item.status === 'attention' ? '注意' : item.status === 'normal' ? '正常' : '待确认'}
+                                  </span>
+                                </div>
+                                {(item.findings || item.value) && (
+                                  <div style={{ fontSize: 12, lineHeight: 1.65, color: '#33443d', whiteSpace: 'pre-wrap', marginTop: 3 }}>
+                                    <span style={{ color: '#8AA89C' }}>检查所见：</span>{item.findings || `${item.value}${item.unit ? ` ${item.unit}` : ''}`}
+                                  </div>
+                                )}
+                                {item.diagnosis && (
+                                  <div style={{ fontSize: 12, lineHeight: 1.65, color: '#1A2B24', whiteSpace: 'pre-wrap', marginTop: 3 }}>
+                                    <span style={{ color: '#8AA89C' }}>诊断意见：</span>{item.diagnosis}
+                                  </div>
+                                )}
+                                {item.conclusion && item.conclusion !== item.diagnosis && (
+                                  <div style={{ fontSize: 12, lineHeight: 1.65, color: '#1E6B50', whiteSpace: 'pre-wrap', marginTop: 3 }}>
+                                    <span style={{ color: '#8AA89C' }}>主要结论：</span>{item.conclusion}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
                         </div>
                       )}
                       {/* 影像/功能检查 */}
