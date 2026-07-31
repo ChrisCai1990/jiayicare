@@ -35,6 +35,7 @@ const Message      = require('../models/Message');
 const FollowUp         = require('../models/FollowUp');
 const ExamRequisition  = require('../models/ExamRequisition');
 const AnnualPlan       = require('../models/AnnualPlan');
+const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 
@@ -839,8 +840,13 @@ router.get('/followup-tasks', auth, async (req, res) => {
       .sort({ date: 1 })
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
+      .populate('sourceHealthPlanId', 'title description content type')
       .populate({ path: 'followUpSchemeId', populate: { path: 'formId' } });
-    res.json({ success: true, data: followups });
+    const data = followups.map(followUp => ({
+      ...followUp.toObject(),
+      taskRequirements: followUpTaskRequirements(followUp),
+    }));
+    res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取随访任务失败', error: err.message });
   }

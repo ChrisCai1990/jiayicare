@@ -10,6 +10,7 @@ const multer = require('multer');
 const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
+const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
 const tenantMatchStage = () => {
   const tenantId = getCurrentTenantId();
@@ -898,10 +899,20 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
       .limit(Number(limit))
       .populate('staffId', 'name role title')
       .populate('assignedTo', 'name role title')
+      .populate('sourceHealthPlanId', 'title description content type')
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount status paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
-  res.json({ success: true, data: { followUps, total } });
+  res.json({
+    success: true,
+    data: {
+      followUps: followUps.map(followUp => ({
+        ...followUp.toObject(),
+        taskRequirements: followUpTaskRequirements(followUp),
+      })),
+      total,
+    },
+  });
 });
 
 // ── GET /api/staff/followups ──────────────────────────────────────
@@ -969,6 +980,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   lastRecords.forEach(r => { lastRecordMap[String(r._id)] = r.lastAt; });
   const followUpsWithRecord = followUps.map(f => ({
     ...f.toObject(),
+    taskRequirements: followUpTaskRequirements(f),
     patientLastRecord: f.patientId ? (lastRecordMap[String(f.patientId._id)] || null) : null,
   }));
 

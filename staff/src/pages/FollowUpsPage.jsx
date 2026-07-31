@@ -26,6 +26,7 @@ const TYPE_OPTIONS = [
 ]
 
 function getMedicalAssistRequirements(item) {
+  if (item?.taskRequirements) return item.taskRequirements
   const plan = item?.sourceHealthPlanId
   if (!plan || plan.type !== 'medical_assist') return item?.plannedContent || ''
   const c = plan.content || {}
