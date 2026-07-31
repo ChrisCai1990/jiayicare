@@ -500,6 +500,9 @@ export default function TasksScreen({ navigation }) {
     tags: f.tags || [],
     nextFollowUpDate: f.nextFollowUpDate || null,
     interviewMinutes: f.interviewMinutes || '',
+    executionResult: f.executedContent || (f.status === 'completed' ? f.content : '') || '',
+    executedType: f.executedType || f.type || '',
+    completedAt: f.completedAt || null,
     dueDate: f.date ? new Date(f.date).toISOString().slice(0, 10) : null,
     dueTime: '',
     priority: 'medium',
@@ -779,6 +782,18 @@ export default function TasksScreen({ navigation }) {
                         ? <Text style={styles.modalContent}>{detailTask.description}</Text>
                         : <Text style={styles.modalNoContent}>健管师会在随访时与您详细沟通，如有疑问可提前联系。</Text>
                       }
+
+                      {!!detailTask.executionResult && detailTask.status === 'completed' && (
+                        <>
+                          <Text style={styles.modalSectionLabel}>服务完成结果</Text>
+                          <Text style={styles.modalContent}>{detailTask.executionResult}</Text>
+                          {!!detailTask.completedAt && (
+                            <Text style={[styles.modalSectionLabel, { marginTop: 8 }]}>
+                              完成时间：{new Date(detailTask.completedAt).toLocaleString('zh-CN')}
+                            </Text>
+                          )}
+                        </>
+                      )}
 
                       {/* 打卡项目 */}
                       {!!(detailTask.checkInItems?.length) && (

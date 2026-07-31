@@ -8,7 +8,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImageManipulator from 'expo-image-manipulator';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { reportsAPI, requisitionsAPI, plansAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -317,7 +317,10 @@ function UploadZone({ onPress, uploading, typeFilter }) {
         <View style={styles.uploadBtnRow}>
           <TouchableOpacity
             style={[styles.uploadOptionBtn, tm && { borderColor: tm.color + '60', backgroundColor: tm.bg }]}
-            onPress={onPress}
+            onPress={event => {
+              event.stopPropagation?.();
+              onPress();
+            }}
           >
             <Ionicons name="document-outline" size={16} color={iconColor} />
             <Text style={[styles.uploadOptionText, tm && { color: tm.color }]}>选择文件</Text>
@@ -1030,27 +1033,41 @@ export default function ReportUploadScreen({ navigation, route }) {
 
   // 选择 PDF 等文件（医院电子报告常见格式），不支持多选+旋转预览，直接进下一步
   const pickDocument = async () => {
-    const result = await DocumentPicker.getDocumentAsync({
-      type: ['application/pdf', 'image/*'],
-      multiple: true,
-      copyToCacheDirectory: true,
-    });
-    if (result.canceled || !result.assets?.length) return;
-
-    const oversized = result.assets.find(a => (a.size || 0) > MAX_FILE_BYTES);
-    if (oversized) {
-      showToast('文件大小不能超过 20MB', true);
-      return;
-    }
     try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['application/pdf', 'image/*'],
+        multiple: true,
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      const oversized = result.assets.find(a => (a.size || 0) > MAX_FILE_BYTES);
+      if (oversized) {
+        showToast('文件大小不能超过 20MB', true);
+        return;
+      }
+
       const pages = await Promise.all(result.assets.map(async (a) => {
-        const base64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
         const mimeType = a.mimeType || 'application/pdf';
-        return { name: a.name, content: `data:${mimeType};base64,${base64}`, mimeType, sizeStr: fileSizeStr(a.size || 0) };
+        let content;
+        if (Platform.OS === 'web') {
+          // Browser assets use blob URLs, which expo-file-system cannot read.
+          const file = a.file || await fetch(a.uri).then(response => response.blob());
+          content = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error || new Error('文件读取失败'));
+            reader.readAsDataURL(file);
+          });
+        } else {
+          const base64 = await FileSystem.readAsStringAsync(a.uri, { encoding: FileSystem.EncodingType.Base64 });
+          content = `data:${mimeType};base64,${base64}`;
+        }
+        return { name: a.name, content, mimeType, sizeStr: fileSizeStr(a.size || 0) };
       }));
       setPendingPages(pages);
-    } catch {
-      showToast('文件读取失败，请重试', true);
+    } catch (error) {
+      showToast(error?.message ? `文件读取失败：${error.message}` : '文件读取失败，请重试', true);
     }
   };
 
