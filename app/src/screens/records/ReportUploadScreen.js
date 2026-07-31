@@ -978,13 +978,80 @@ export default function ReportUploadScreen({ navigation, route }) {
     return kb >= 1024 ? `${(kb / 1024).toFixed(1)}MB` : `${kb.toFixed(0)}KB`;
   };
 
+  const webFileToPage = async (file) => {
+    const content = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error || new Error('文件读取失败'));
+      reader.readAsDataURL(file);
+    });
+    return {
+      name: file.name,
+      content,
+      mimeType: file.type || 'application/octet-stream',
+      sizeStr: fileSizeStr(file.size || 0),
+    };
+  };
+
+  // Expo DocumentPicker 在部分 Android/微信内置浏览器中会把 multiple 退化为单选。
+  // 网页端直接创建原生文件输入框，确保 DOM 上真实存在 multiple 属性。
+  const pickWebFiles = (accept) => new Promise((resolve, reject) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = accept;
+    input.multiple = true;
+    input.setAttribute('multiple', 'multiple');
+    input.style.position = 'fixed';
+    input.style.left = '-9999px';
+
+    const cleanup = () => {
+      input.onchange = null;
+      input.onerror = null;
+      input.remove();
+    };
+    input.onchange = async () => {
+      try {
+        const files = Array.from(input.files || []);
+        cleanup();
+        if (!files.length) {
+          resolve([]);
+          return;
+        }
+        if (files.length > 20) {
+          reject(new Error('一次最多选择20张图片'));
+          return;
+        }
+        const oversized = files.find(file => file.size > MAX_FILE_BYTES);
+        if (oversized) {
+          reject(new Error(`${oversized.name} 超过20MB`));
+          return;
+        }
+        resolve(await Promise.all(files.map(webFileToPage)));
+      } catch (error) {
+        cleanup();
+        reject(error);
+      }
+    };
+    input.onerror = () => {
+      cleanup();
+      reject(new Error('无法打开文件选择器'));
+    };
+    document.body.appendChild(input);
+    input.click();
+  });
+
   // 相册多选图片（作为同一份报告的多页）。expo-image-picker 直接支持 base64 输出，
   // 不用再手动读文件，天然兼容真机
   const pickFromLibrary = async () => {
     // 手机网页端使用浏览器原生 multiple 文件选择器，expo-image-picker 在部分
     // Android 浏览器/WebView 中会忽略 allowsMultipleSelection，只返回第一张。
     if (Platform.OS === 'web') {
-      await pickDocument();
+      try {
+        const pages = await pickWebFiles('image/*');
+        if (pages.length) setPendingPages(pages);
+      } catch (error) {
+        showToast(error?.message || '图片读取失败，请重试', true);
+      }
       return;
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -1052,6 +1119,11 @@ export default function ReportUploadScreen({ navigation, route }) {
   // 选择 PDF 等文件（医院电子报告常见格式），不支持多选+旋转预览，直接进下一步
   const pickDocument = async () => {
     try {
+      if (Platform.OS === 'web') {
+        const pages = await pickWebFiles('application/pdf,image/*');
+        if (pages.length) setPendingPages(pages);
+        return;
+      }
       const result = await DocumentPicker.getDocumentAsync({
         type: ['application/pdf', 'image/*'],
         multiple: true,
