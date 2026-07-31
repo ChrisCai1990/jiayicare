@@ -197,12 +197,47 @@ router.get('/service-options', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+const MEMBER_TYPE_BRAND_ROOTS = {
+  jiayiguanjia: '嘉医管家',
+  jinyisen: '金伊森',
+};
+
+async function getMemberTypeOptionsByBrand(clientBrand) {
+  const MemberType = require('../models/MemberType');
+  const all = await MemberType.find({ active: true })
+    .sort({ sortOrder: 1, createdAt: 1 })
+    .select('name clientBrand parent')
+    .lean();
+  const byId = new Map(all.map(item => [String(item._id), item]));
+
+  const inferredBrand = item => {
+    if (item.clientBrand) return item.clientBrand;
+    let current = item;
+    const visited = new Set();
+    while (current && !visited.has(String(current._id))) {
+      visited.add(String(current._id));
+      const rootBrand = Object.entries(MEMBER_TYPE_BRAND_ROOTS)
+        .find(([, rootName]) => current.name === rootName)?.[0];
+      if (rootBrand) return rootBrand;
+      current = current.parent ? byId.get(String(current.parent)) : null;
+    }
+    return '';
+  };
+
+  return all
+    .filter(item => inferredBrand(item) === clientBrand)
+    // “嘉医管家/金伊森”只是归属类目，医护端应选择其下面的会员类型。
+    .filter(item => item.name !== MEMBER_TYPE_BRAND_ROOTS[clientBrand])
+    .map(item => ({ ...item, clientBrand }));
+}
+
 router.get('/member-type-options', staffAuth, async (req, res) => {
   try {
-    const MemberType = require('../models/MemberType');
-    const filter = { active: true };
-    if (req.query.clientBrand) filter.clientBrand = req.query.clientBrand;
-    const types = await MemberType.find(filter).sort({ sortOrder: 1, createdAt: 1 }).select('name clientBrand parent');
+    const clientBrand = String(req.query.clientBrand || '');
+    if (!Object.keys(MEMBER_TYPE_BRAND_ROOTS).includes(clientBrand)) {
+      return res.json({ success: true, data: [] });
+    }
+    const types = await getMemberTypeOptionsByBrand(clientBrand);
     res.json({ success: true, data: types });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -697,8 +732,8 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
       return res.status(400).json({ success: false, message: '客户归属无效' });
     }
     if (req.body.memberType) {
-      const MemberType = require('../models/MemberType');
-      const validType = await MemberType.exists({ name: req.body.memberType, clientBrand, active: true });
+      const availableTypes = await getMemberTypeOptionsByBrand(clientBrand);
+      const validType = availableTypes.some(item => item.name === req.body.memberType);
       if (!validType) return res.status(400).json({ success: false, message: '会员类型与客户归属不匹配' });
     }
     if (req.body.servicePackage) {
