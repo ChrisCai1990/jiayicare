@@ -18,6 +18,8 @@ const screeningYearSummarySchema = new mongoose.Schema({
   approvedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   approvedByName: { type: String, default: '' },
   approvedAt: { type: Date, default: null },
+  // 同一年度允许多次形成小结。顶层字段继续镜像最新一条，兼容既有读取逻辑。
+  records: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { timestamps: true });
 
 screeningYearSummarySchema.index({ user: 1, year: 1 }, { unique: true });

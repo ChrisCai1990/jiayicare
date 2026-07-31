@@ -428,7 +428,7 @@ function AIArrEdit({ value, placeholder, onChange }) {
 }
 
 // AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯团队内部留言，AI不参与回复
-function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefresh, onPreviewImage }) {
+function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, staff, onRefresh, onPreviewImage, title = 'AI分析讨论' }) {
   const toast = useToast()
   const [text, setText] = useState('')
   const [images, setImages] = useState([]) // 已上传图片URL，如"AI认为某检查没做，实际做了"可截图说明
@@ -453,7 +453,7 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
     if (!text.trim() && images.length === 0) return
     setPosting(true)
     try {
-      await staffAPI.addAIHealthSummaryDiscussion(patientId, text.trim(), year, images)
+      await staffAPI.addAIHealthSummaryDiscussion(patientId, text.trim(), year, images, recordIndex)
       setText('')
       setImages([])
       onRefresh()
@@ -461,7 +461,7 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
     // 发布成功后自动让AI接话，形成对话式讨论，无需再手动点按钮
     setAiReplying(true)
     try {
-      await staffAPI.generateAIHealthSummaryReply(patientId, year)
+      await staffAPI.generateAIHealthSummaryReply(patientId, year, recordIndex)
       onRefresh()
     } catch (err) { toast(err.message || 'AI回应失败') }
     finally { setPosting(false); setAiReplying(false) }
@@ -470,7 +470,7 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
   const handleDelete = async (idx) => {
     if (!window.confirm('确认删除这条留言？')) return
     try {
-      await staffAPI.deleteAIHealthSummaryDiscussion(patientId, idx, year)
+      await staffAPI.deleteAIHealthSummaryDiscussion(patientId, idx, year, recordIndex)
       toast('已删除')
       onRefresh()
     } catch (err) { toast(err.message || '删除失败') }
@@ -479,7 +479,7 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
   const handleAiReply = async () => {
     setAiReplying(true)
     try {
-      await staffAPI.generateAIHealthSummaryReply(patientId, year)
+      await staffAPI.generateAIHealthSummaryReply(patientId, year, recordIndex)
       toast('AI已回应')
       onRefresh()
     } catch (err) { toast(err.message || 'AI回应失败') }
@@ -490,7 +490,7 @@ function AISummaryDiscussionPanel({ patientId, year, discussions, staff, onRefre
     <div className="card" style={{ marginBottom: 14 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
         <span style={{ fontSize: 17 }}>💬</span>
-        <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>团队讨论</span>
+        <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{title}</span>
         <span style={{ fontSize: 12, color: '#8AA89C' }}>{list.length} 条留言</span>
       </div>
       <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1185,6 +1185,8 @@ export default function PatientDetailPage() {
   const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
   const [screeningSummaryBusy, setScreeningSummaryBusy] = useState(false)
   const [editingScreeningSummary, setEditingScreeningSummary] = useState(null)
+  const [screeningSummaryRecordIndex, setScreeningSummaryRecordIndex] = useState(0)
+  const [screeningSummaryEditMode, setScreeningSummaryEditMode] = useState('new')
   const [screeningFiles, setScreeningFiles] = useState([])
   const [screeningSaving, setScreeningSaving] = useState(false)
   const [screeningSearchQ, setScreeningSearchQ] = useState('')
@@ -1254,6 +1256,7 @@ export default function PatientDetailPage() {
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
+  const [aiSourceGroup, setAiSourceGroup] = useState(null) // { title, ids }
   // 场景八：AI风险评估
   const [riskYear, setRiskYear] = useState(null)             // 当前查看的AI风险评估年度
   const [riskGenerating, setRiskGenerating] = useState(false)
@@ -2113,6 +2116,18 @@ export default function PatientDetailPage() {
       toast(`${label}已审核通过`)
       load()
     } catch (err) { toast(err.message || '操作失败') }
+  }
+
+  const handleDeleteAISummaryRecord = async (scope, year, recordIndex, generatedAt) => {
+    const label = scope === 'nutrition' ? '生活方式分析' : '5维分析'
+    const time = generatedAt ? new Date(generatedAt).toLocaleString('zh-CN') : ''
+    if (!window.confirm(`确认删除${time ? ` ${time} 生成的` : '本次'}${label}？\n删除后不可恢复，但不会影响另一类分析记录。`)) return
+    try {
+      await staffAPI.deleteAIHealthSummaryRecord(id, year, recordIndex, scope)
+      setAiRecordIndex(v => ({ ...v, [scope]: 0 }))
+      toast('本次评估已删除')
+      load()
+    } catch (err) { toast(err.message || '删除失败') }
   }
 
   // 场景八：AI风险评估
@@ -4110,7 +4125,11 @@ export default function PatientDetailPage() {
               </div>
               {(() => {
                 const current = screeningYearSummaries.find(item => Number(item.year) === Number(screeningSummaryYear))
-                const sections = editingScreeningSummary || current?.sections || {}
+                const summaryRecords = current
+                  ? (Array.isArray(current.records) && current.records.length ? current.records : [current])
+                  : []
+                const currentRecord = summaryRecords[screeningSummaryRecordIndex] || summaryRecords[0]
+                const sections = editingScreeningSummary || currentRecord?.sections || {}
                 const canManage = ['familyDoctor', 'superadmin'].includes(staff?.role)
                 const categories = [
                   ['tumor_risk', '肿瘤筛查小结'],
@@ -4130,8 +4149,14 @@ export default function PatientDetailPage() {
                         onChange={e => { setScreeningSummaryYear(Number(e.target.value)); setEditingScreeningSummary(null) }}>
                         {years.map(year => <option key={year} value={year}>{year}年度</option>)}
                       </select>
-                      {current && <span style={{ fontSize: 12, color: current.status === 'approved' ? '#16A34A' : '#D97706' }}>
-                        {current.status === 'approved' ? `✓ 家庭医生已审核${current.approvedByName ? ' · ' + current.approvedByName : ''}` : '待家庭医生审核'}
+                      {summaryRecords.length > 0 && <select className="form-input" style={{ width: 250 }} value={currentRecord ? screeningSummaryRecordIndex : 0}
+                        onChange={e => { setScreeningSummaryRecordIndex(Number(e.target.value)); setEditingScreeningSummary(null) }}>
+                        {summaryRecords.map((record, index) => (
+                          <option key={index} value={index}>第{summaryRecords.length - index}次 · {record.createdAt ? new Date(record.createdAt).toLocaleString('zh-CN') : '历史小结'} · {record.status === 'approved' ? '已审核' : '待审核'}</option>
+                        ))}
+                      </select>}
+                      {currentRecord && <span style={{ fontSize: 12, color: currentRecord.status === 'approved' ? '#16A34A' : '#D97706' }}>
+                        {currentRecord.status === 'approved' ? `✓ 家庭医生已审核${currentRecord.approvedByName ? ' · ' + currentRecord.approvedByName : ''}` : '待家庭医生审核'}
                       </span>}
                       {canManage && <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                         <button className="btn btn-secondary btn-sm" disabled={screeningSummaryBusy} onClick={async () => {
@@ -4143,18 +4168,25 @@ export default function PatientDetailPage() {
                           } catch (error) { toast(error.message || '生成失败') }
                           finally { setScreeningSummaryBusy(false) }
                         }}>{screeningSummaryBusy ? '生成中…' : '✨ AI自动小结'}</button>
-                        <button className="btn btn-secondary btn-sm" onClick={() => setEditingScreeningSummary(JSON.parse(JSON.stringify(current?.sections || {
+                        <button className="btn btn-primary btn-sm" onClick={() => {
+                          setScreeningSummaryEditMode('new')
+                          setEditingScreeningSummary({
                           tumor_risk: { summary: '', sourceReportIds: [] },
                           cardiovascular_risk: { summary: '', sourceReportIds: [] },
                           chronic_disease: { summary: '', sourceReportIds: [] },
-                        })))}>新增/编辑</button>
-                        {current && current.status !== 'approved' && <button className="btn btn-primary btn-sm" onClick={async () => {
-                          try { await staffAPI.approveScreeningYearSummary(id, screeningSummaryYear); await loadScreening(); toast('年度小结已审核') }
+                        })
+                        }}>＋ 新增小结</button>
+                        {currentRecord && <button className="btn btn-secondary btn-sm" onClick={() => {
+                          setScreeningSummaryEditMode('edit')
+                          setEditingScreeningSummary(JSON.parse(JSON.stringify(currentRecord.sections || {})))
+                        }}>编辑当前小结</button>}
+                        {currentRecord && currentRecord.status !== 'approved' && <button className="btn btn-primary btn-sm" onClick={async () => {
+                          try { await staffAPI.approveScreeningYearSummary(id, screeningSummaryYear, screeningSummaryRecordIndex); await loadScreening(); toast('年度小结已审核') }
                           catch (error) { toast(error.message || '审核失败') }
                         }}>审核通过</button>}
                       </div>}
                     </div>
-                    {!current && !editingScreeningSummary ? (
+                    {!currentRecord && !editingScreeningSummary ? (
                       <div style={{ color: '#8AA89C', fontSize: 13 }}>该年度尚无小结，可由家庭医生新增或使用 AI 自动生成。</div>
                     ) : (
                       <div style={{ display: 'grid', gap: 10 }}>
@@ -4170,10 +4202,14 @@ export default function PatientDetailPage() {
                             ) : <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>{sections[key]?.summary || '暂无相关资料'}</div>}
                             {!editingScreeningSummary && (sections[key]?.sourceReportIds || []).length > 0 && (
                               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
-                                {sections[key].sourceReportIds.map((reportId, index) => (
+                                {sections[key].sourceReportIds.map(reportId => {
+                                  const report = screeningReports.find(item => String(item._id) === String(reportId))
+                                  const reportName = [report?.screeningL2 || report?.title || '原始资料', report?.hospital || report?.institution, String(report?.checkDate || report?.date || '').slice(0, 10)].filter(Boolean).join(' · ')
+                                  return (
                                   <button key={reportId} className="btn btn-secondary btn-sm"
-                                    onClick={() => openAIAnalysisSource(reportId)}>🔗 依据报告{index + 1}</button>
-                                ))}
+                                    onClick={() => openAIAnalysisSource(reportId)}>🔗 查看原始材料：{reportName}</button>
+                                  )
+                                })}
                               </div>
                             )}
                           </div>
@@ -4182,10 +4218,11 @@ export default function PatientDetailPage() {
                           <button className="btn btn-secondary btn-sm" onClick={() => setEditingScreeningSummary(null)}>取消</button>
                           <button className="btn btn-primary btn-sm" onClick={async () => {
                             try {
-                              await staffAPI.saveScreeningYearSummary(id, screeningSummaryYear, editingScreeningSummary)
+                              await staffAPI.saveScreeningYearSummary(id, screeningSummaryYear, editingScreeningSummary, screeningSummaryEditMode, screeningSummaryRecordIndex)
                               setEditingScreeningSummary(null)
+                              setScreeningSummaryRecordIndex(0)
                               await loadScreening()
-                              toast('年度小结已保存，待家庭医生审核')
+                              toast(screeningSummaryEditMode === 'new' ? '已新增一次年度小结，待家庭医生审核' : '当前年度小结已修改，待家庭医生审核')
                             } catch (error) { toast(error.message || '保存失败') }
                           }}>保存小结</button>
                         </div>}
@@ -5617,12 +5654,43 @@ export default function PatientDetailPage() {
                       <div style={{ marginTop: 6, fontSize: 11, color: '#8AA89C' }}>
                         生成时间：{group.current.generatedAt ? new Date(group.current.generatedAt).toLocaleString('zh-CN') : '—'}
                       </div>
+                      {(staff?.role === 'superadmin'
+                        || (group.key === 'doctor' && staff?.role === 'familyDoctor')
+                        || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
+                        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                          <button className="btn btn-primary btn-sm" disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
+                            onClick={() => {
+                              const approved = group.key === 'doctor'
+                                ? !!(doctorRecords[0]?.doctorApprovedAt || doctorRecords[0]?.approvedAt)
+                                : !!(nutritionRecords[0]?.nutritionApprovedAt || nutritionRecords[0]?.approvedAt)
+                              if (approved && !window.confirm('最新一次评估已经审核。新增评估不会覆盖旧记录，确定继续？')) return
+                              handleGenerateAISummary(curYear, group.key, approved)
+                            }}>
+                            ＋ 新增{group.key === 'doctor' ? '5维分析' : '生活方式分析'}
+                          </button>
+                          <button className="btn btn-sm" style={{ color: '#DC3545', borderColor: '#FCA5A5', background: '#FFF5F5' }}
+                            onClick={() => handleDeleteAISummaryRecord(group.key, curYear, group.current._recordIndex, group.current.generatedAt)}>
+                            删除本次评估
+                          </button>
+                        </div>
+                      )}
                     </>
                   ) : (
-                    <div style={{ fontSize: 12, color: '#8AA89C' }}>
-                      {group.key === 'nutrition' && !latestDoctorApproved
-                        ? '等待家庭医生完成并审核本年度5维分析'
-                        : '本年度尚未生成，可点击下方生成按钮新增评估'}
+                    <div>
+                      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>
+                        {group.key === 'nutrition' && !latestDoctorApproved
+                          ? '等待家庭医生完成并审核本年度5维分析'
+                          : '本年度尚未生成'}
+                      </div>
+                      {(staff?.role === 'superadmin'
+                        || (group.key === 'doctor' && staff?.role === 'familyDoctor')
+                        || (group.key === 'nutrition' && staff?.role === 'nutritionist')) && (
+                        <button className="btn btn-primary btn-sm"
+                          disabled={aiSummaryLoading || (group.key === 'nutrition' && !latestDoctorApproved)}
+                          onClick={() => handleGenerateAISummary(curYear, group.key, false)}>
+                          ＋ 新增{group.key === 'doctor' ? '5维分析' : '生活方式分析'}
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -5775,12 +5843,10 @@ export default function PatientDetailPage() {
                         {groups.map(([label, ids]) => (
                           <div key={label}>
                             <div style={{ fontSize: 12, color: '#1D4ED8', fontWeight: 700, marginBottom: 5 }}>{label}</div>
-                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                              {ids.map(reportId => (
-                                <button key={reportId} className="btn btn-secondary btn-sm"
-                                  onClick={() => openAIAnalysisSource(reportId)}>{reportLabel(reportId)}</button>
-                              ))}
-                            </div>
+                            <button className="btn btn-secondary btn-sm"
+                              onClick={() => setAiSourceGroup({ title: label, ids, reportLabel })}>
+                              查看原始材料（{ids.length}份）
+                            </button>
                           </div>
                         ))}
                       </div>
@@ -5992,7 +6058,12 @@ export default function PatientDetailPage() {
                 </AISectionCard>}
 
                 {/* AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯留言，AI不参与回复 */}
-                {aiAnalysisView === 'doctor' && <AISummaryDiscussionPanel patientId={id} year={curYear} discussions={ais.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} />}
+                {aiAnalysisView === 'doctor' && <AISummaryDiscussionPanel patientId={id} year={curYear}
+                  recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []}
+                  staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="5维分析 · AI讨论" />}
+                {aiAnalysisView === 'nutrition' && <AISummaryDiscussionPanel patientId={id} year={curYear}
+                  recordIndex={nutritionRecord._recordIndex} discussions={nutritionRecord.discussions || []}
+                  staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="生活方式分析 · AI讨论" />}
               </>
             )}
           </div>
@@ -6904,6 +6975,27 @@ export default function PatientDetailPage() {
           })()}
         </div>
         </>
+      )}
+
+      {aiSourceGroup && (
+        <div className="modal-overlay" onClick={() => setAiSourceGroup(null)}>
+          <div className="modal" style={{ maxWidth: 720, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3 className="modal-title">{aiSourceGroup.title} · 原始材料</h3>
+              <button className="modal-close" onClick={() => setAiSourceGroup(null)}>✕</button>
+            </div>
+            <div className="modal-body" style={{ overflowY: 'auto' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {aiSourceGroup.ids.map(reportId => (
+                  <button key={reportId} className="btn btn-secondary" style={{ textAlign: 'left', justifyContent: 'flex-start' }}
+                    onClick={() => openAIAnalysisSource(reportId)}>
+                    🔗 {aiSourceGroup.reportLabel(reportId)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* 报告图片灯箱：字符串=仅查看；{url,reportId}=支持旋转后保存（已审核报告不可改，不会传对象形式） */}

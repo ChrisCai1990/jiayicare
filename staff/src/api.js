@@ -128,9 +128,9 @@ export const staffAPI = {
   reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST' }),
   getScreeningCatalog: () => req('/staff/screening-catalog'),
   getScreeningYearSummaries: (id) => req(`/staff/patients/${id}/screening-year-summaries`),
-  saveScreeningYearSummary: (id, year, sections) => req(`/staff/patients/${id}/screening-year-summaries/${year}`, { method: 'PUT', body: JSON.stringify({ sections }) }),
+  saveScreeningYearSummary: (id, year, sections, mode = 'new', recordIndex) => req(`/staff/patients/${id}/screening-year-summaries/${year}`, { method: 'PUT', body: JSON.stringify({ sections, mode, recordIndex }) }),
   generateScreeningYearSummary: (id, year) => req(`/staff/patients/${id}/screening-year-summaries/${year}/generate`, { method: 'POST' }),
-  approveScreeningYearSummary: (id, year) => req(`/staff/patients/${id}/screening-year-summaries/${year}/approve`, { method: 'PATCH' }),
+  approveScreeningYearSummary: (id, year, recordIndex = 0) => req(`/staff/patients/${id}/screening-year-summaries/${year}/approve`, { method: 'PATCH', body: JSON.stringify({ recordIndex }) }),
 
   // Upload
   uploadImage: (file) => {
@@ -340,9 +340,10 @@ export const staffAPI = {
   // 4.4 AI健康汇总 / 4.5 AI管理方案生成
   generateAIHealthSummary: (id, year, scope, force) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force }) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
-  addAIHealthSummaryDiscussion:    (id, content, year, images) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year, images }) }),
-  deleteAIHealthSummaryDiscussion: (id, index, year) => req(`/staff/patients/${id}/ai-health-summary/discussions/${index}?year=${year || ''}`, { method: 'DELETE' }),
-  generateAIHealthSummaryReply:    (id, year) => req(`/staff/patients/${id}/ai-health-summary/discussions/ai-reply`, { method: 'POST', body: JSON.stringify({ year }) }),
+  deleteAIHealthSummaryRecord:     (id, year, recordIndex, scope) => req(`/staff/patients/${id}/ai-health-summary/records/${recordIndex}?year=${year}&scope=${scope}`, { method: 'DELETE' }),
+  addAIHealthSummaryDiscussion:    (id, content, year, images, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year, images, recordIndex }) }),
+  deleteAIHealthSummaryDiscussion: (id, index, year, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions/${index}?year=${year || ''}&recordIndex=${recordIndex ?? ''}`, { method: 'DELETE' }),
+  generateAIHealthSummaryReply:    (id, year, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions/ai-reply`, { method: 'POST', body: JSON.stringify({ year, recordIndex }) }),
   generateAIAnnualPlan:    (id, planType, notes) => req(`/staff/patients/${id}/ai-annual-plan`,    { method: 'POST', body: JSON.stringify({ planType, notes }) }),
 
   // 场景七：AI 辅助生成文案草稿（kind: followup | service_record | plan_desc）

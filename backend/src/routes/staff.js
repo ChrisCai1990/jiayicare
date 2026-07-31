@@ -3675,20 +3675,26 @@ router.put('/patients/:id/screening-year-summaries/:year', staffAuth, async (req
       return res.status(403).json({ success: false, message: '仅家庭医生可新增或编辑年度专项筛查小结' });
     }
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');
-    const summary = await ScreeningYearSummary.findOneAndUpdate(
-      { user: req.params.id, year: Number(req.params.year) },
-      {
-        sections: req.body.sections || {},
-        status: 'draft',
-        generatedByAI: false,
-        createdBy: req.staff._id,
-        createdByName: req.staff.name || '',
-        approvedBy: null,
-        approvedByName: '',
-        approvedAt: null,
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    let summary = await ScreeningYearSummary.findOne({ user: req.params.id, year: Number(req.params.year) });
+    if (!summary) summary = new ScreeningYearSummary({ user: req.params.id, year: Number(req.params.year) });
+    const records = Array.isArray(summary.records) && summary.records.length
+      ? [...summary.records]
+      : (summary.sections && Object.values(summary.sections).some(v => v?.summary)
+        ? [{ sections: summary.sections, status: summary.status, generatedByAI: summary.generatedByAI, createdBy: summary.createdBy, createdByName: summary.createdByName, createdAt: summary.createdAt, approvedBy: summary.approvedBy, approvedByName: summary.approvedByName, approvedAt: summary.approvedAt }]
+        : []);
+    const record = {
+      sections: req.body.sections || {}, status: 'draft', generatedByAI: false,
+      createdBy: req.staff._id, createdByName: req.staff.name || '', createdAt: new Date(),
+      approvedBy: null, approvedByName: '', approvedAt: null,
+    };
+    if (req.body.mode === 'edit' && Number.isInteger(req.body.recordIndex) && records[req.body.recordIndex]) {
+      records[req.body.recordIndex] = { ...records[req.body.recordIndex], ...record, createdAt: records[req.body.recordIndex].createdAt || new Date() };
+    } else {
+      records.unshift(record);
+    }
+    summary.records = records;
+    Object.assign(summary, records[0]);
+    await summary.save();
     res.json({ success: true, data: summary });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -3702,25 +3708,29 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     const reports = await MedicalReport.find({
       user: req.params.id,
       audit_status: 'audited',
-      $or: [{ reportYear: year }, { checkDate: new RegExp(`^${year}-`) }],
-    }).select('_id title checkDate hospital institution screeningCategory reportItems aiSummary').lean();
+      $or: [{ reportYear: year }, { checkDate: new RegExp(`^${year}[-/]`) }, { date: new RegExp(`^${year}[-/]`) }],
+    }).select('_id title checkDate date hospital institution screeningCategory screeningL1 screeningL2 reportItems aiSummary').lean();
     if (!reports.length) return res.status(400).json({ success: false, message: `${year}年度没有已审核报告，无法生成小结` });
 
     const CATEGORY_MAP = {
-      tumor_risk: ['tumor'],
-      cardiovascular_risk: ['cardiovascular', 'brain_vessel'],
-      chronic_disease: ['chronic', 'functional', 'other_routine', 'health_promote', 'other'],
+      tumor_risk: { keys: ['tumor'], words: ['肿瘤', '癌', '肿瘤标志物'] },
+      cardiovascular_risk: { keys: ['cardiovascular', 'brain_vessel'], words: ['心脑', '心血管', '脑血管', '血压', '血脂', '心电'] },
+      chronic_disease: { keys: ['chronic', 'functional', 'other_routine', 'health_promote'], words: ['慢性', '糖尿病', '肝', '肾', '甲状腺', '功能医学', '常规'] },
     };
     const input = {};
-    Object.entries(CATEGORY_MAP).forEach(([key, categories]) => {
-      const matched = reports.filter(report =>
-        categories.includes(report.screeningCategory)
-        || (report.reportItems || []).some(item => categories.includes(item.screeningCategory))
-      );
+    Object.entries(CATEGORY_MAP).forEach(([key, rule]) => {
+      const matched = reports.filter(report => {
+        const text = [report.title, report.screeningL1, report.screeningL2,
+          ...(report.reportItems || []).flatMap(item => [item.name, item.screeningParent, item.conclusion, item.diagnosis])
+        ].filter(Boolean).join(' ');
+        return rule.keys.includes(report.screeningCategory)
+          || (report.reportItems || []).some(item => rule.keys.includes(item.screeningCategory))
+          || rule.words.some(word => text.includes(word));
+      });
       input[key] = matched.map(report => ({
         reportId: String(report._id),
         title: report.title,
-        date: report.checkDate,
+        date: report.checkDate || report.date,
         institution: report.hospital || report.institution || '',
         conclusions: (report.reportItems || []).map(item => ({
           name: item.name,
@@ -3747,20 +3757,22 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       };
     });
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');
-    const summary = await ScreeningYearSummary.findOneAndUpdate(
-      { user: req.params.id, year },
-      {
-        sections,
-        status: 'draft',
-        generatedByAI: true,
-        createdBy: req.staff._id,
-        createdByName: req.staff.name || '',
-        approvedBy: null,
-        approvedByName: '',
-        approvedAt: null,
-      },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
-    );
+    let summary = await ScreeningYearSummary.findOne({ user: req.params.id, year });
+    if (!summary) summary = new ScreeningYearSummary({ user: req.params.id, year });
+    const records = Array.isArray(summary.records) && summary.records.length
+      ? [...summary.records]
+      : (summary.sections && Object.values(summary.sections).some(v => v?.summary)
+        ? [{ sections: summary.sections, status: summary.status, generatedByAI: summary.generatedByAI, createdBy: summary.createdBy, createdByName: summary.createdByName, createdAt: summary.createdAt, approvedBy: summary.approvedBy, approvedByName: summary.approvedByName, approvedAt: summary.approvedAt }]
+        : []);
+    const record = {
+      sections, status: 'draft', generatedByAI: true,
+      createdBy: req.staff._id, createdByName: req.staff.name || '', createdAt: new Date(),
+      approvedBy: null, approvedByName: '', approvedAt: null,
+    };
+    records.unshift(record);
+    summary.records = records;
+    Object.assign(summary, record);
+    await summary.save();
     res.json({ success: true, data: summary });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -3771,17 +3783,18 @@ router.patch('/patients/:id/screening-year-summaries/:year/approve', staffAuth, 
       return res.status(403).json({ success: false, message: '仅家庭医生可审核年度专项筛查小结' });
     }
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');
-    const summary = await ScreeningYearSummary.findOneAndUpdate(
-      { user: req.params.id, year: Number(req.params.year) },
-      {
-        status: 'approved',
-        approvedBy: req.staff._id,
-        approvedByName: req.staff.name || '',
-        approvedAt: new Date(),
-      },
-      { new: true }
-    );
+    const summary = await ScreeningYearSummary.findOne({ user: req.params.id, year: Number(req.params.year) });
     if (!summary) return res.status(404).json({ success: false, message: '年度小结不存在' });
+    const records = Array.isArray(summary.records) && summary.records.length ? [...summary.records] : [];
+    const idx = Number.isInteger(req.body.recordIndex) ? req.body.recordIndex : 0;
+    if (!records[idx]) return res.status(404).json({ success: false, message: '该次年度小结不存在' });
+    records[idx] = {
+      ...records[idx], status: 'approved', approvedBy: req.staff._id,
+      approvedByName: req.staff.name || '', approvedAt: new Date(),
+    };
+    summary.records = records;
+    if (idx === 0) Object.assign(summary, records[0]);
+    await summary.save();
     res.json({ success: true, data: summary });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -4879,6 +4892,71 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       { $set: { aiHealthSummary: updated } }
     );
     res.json({ success: true, data: updated, record: entry, recordIndex: idx });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// DELETE /api/staff/patients/:id/ai-health-summary/records/:recordIndex
+// 删除某一次误生成评估；家庭医生只能删5维，营养师只能删生活方式，删除一方不影响另一方。
+router.delete('/patients/:id/ai-health-summary/records/:recordIndex', staffAuth, async (req, res) => {
+  try {
+    const { year, scope } = req.query;
+    if (!['doctor', 'nutrition'].includes(scope)) {
+      return res.status(400).json({ success: false, message: '评估类型不正确' });
+    }
+    const allowed = req.staff.role === 'superadmin'
+      || (scope === 'doctor' && req.staff.role === 'familyDoctor')
+      || (scope === 'nutrition' && req.staff.role === 'nutritionist');
+    if (!allowed) return res.status(403).json({ success: false, message: '无权删除该评估记录' });
+
+    const user = await User.findById(req.params.id).select('aiHealthSummary');
+    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    const current = user.aiHealthSummary || {};
+    const byYear = { ...(current.byYear || {}) };
+    const y = String(year || current.latestYear || new Date().getFullYear());
+    const yearEntry = byYear[y] || {};
+    const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
+    const idx = Number(req.params.recordIndex);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= records.length) {
+      return res.status(400).json({ success: false, message: '评估记录不存在' });
+    }
+    const target = records[idx];
+    const targetScope = target.scope || (target.sections?.[LIFESTYLE_KEY] && !DOCTOR_KEYS.some(k => target.sections?.[k]) ? 'nutrition' : 'doctor');
+    if (targetScope !== scope && target.scope !== 'all') {
+      return res.status(400).json({ success: false, message: '评估类型与记录不匹配' });
+    }
+    records.splice(idx, 1);
+
+    if (records.length) byYear[y] = { ...records[0], records };
+    else delete byYear[y];
+    const allYears = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
+    const latestYear = allYears[0] || null;
+    const latestRecords = latestYear
+      ? (Array.isArray(byYear[latestYear].records) ? byYear[latestYear].records : [byYear[latestYear]])
+      : [];
+    const latestDoctor = latestRecords.find(r => r.scope === 'doctor' || r.scope === 'all' || (!r.scope && DOCTOR_KEYS.some(k => r.sections?.[k]))) || {};
+    const latestNutrition = latestRecords.find(r => r.scope === 'nutrition' || r.scope === 'all' || (!r.scope && r.sections?.[LIFESTYLE_KEY])) || {};
+    const updated = {
+      ...current,
+      byYear,
+      latestYear,
+      sections: { ...(latestDoctor.sections || {}), ...(latestNutrition.sections || {}) },
+      generatedAt: latestRecords[0]?.generatedAt || null,
+      doctorApprovedAt: latestDoctor.doctorApprovedAt || latestDoctor.approvedAt || null,
+      doctorApprovedBy: latestDoctor.doctorApprovedBy || latestDoctor.approvedBy || null,
+      nutritionApprovedAt: latestNutrition.nutritionApprovedAt || latestNutrition.approvedAt || null,
+      nutritionApprovedBy: latestNutrition.nutritionApprovedBy || latestNutrition.approvedBy || null,
+    };
+    updated.approvedAt = updated.doctorApprovedAt && updated.nutritionApprovedAt
+      ? [updated.doctorApprovedAt, updated.nutritionApprovedAt].sort((a, b) => new Date(b) - new Date(a))[0]
+      : null;
+    updated.approvedBy = updated.approvedAt
+      ? [updated.doctorApprovedBy, updated.nutritionApprovedBy].filter(Boolean).join('、')
+      : null;
+    await User.collection.updateOne(
+      { _id: new mongoose.Types.ObjectId(req.params.id) },
+      { $set: { aiHealthSummary: updated } }
+    );
+    res.json({ success: true, data: updated });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
