@@ -953,6 +953,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
       .limit(Number(limit))
       .populate('patientId', 'name phone gender age chronicDiseases')
       .populate('assignedTo', 'name role')
+      .populate('sourceHealthPlanId', 'title description content type')
       .populate('sourceOrderId', 'serviceName servicePrice paidAmount status paymentStatus paymentMethod createdAt'),
     FollowUp.countDocuments(filter),
   ]);
@@ -1044,6 +1045,8 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     return res.status(400).json({ success: false, message: '该随访已结束，不能再修改负责人' });
   }
 
+  const previousStatus = followUp.status;
+  const previousContent = followUp.content;
   const isSuper = req.staff.role === 'superadmin';
   const isOwner = isSuper || String(followUp.staffId) === String(req.staff._id);
   // 计划层字段（何时、谁负责、要不要做）只有创建人（或超管）能改；执行人只能填写执行结果，
@@ -1063,6 +1066,16 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
       }
     }
   });
+  // 计划要求与执行结果分开保存。兼容旧记录：首次执行前先固化原计划内容。
+  if (!followUp.plannedContent && previousStatus !== 'completed') {
+    followUp.plannedContent = previousContent || '';
+  }
+  if (req.body.content !== undefined && ['completed', 'in_progress'].includes(req.body.status || followUp.status)) {
+    followUp.executedContent = req.body.content;
+  }
+  if (req.body.type !== undefined && ['completed', 'in_progress'].includes(req.body.status || followUp.status)) {
+    followUp.executedType = req.body.type;
+  }
   // 完成时记录完成时间（供用户端「已完成」展示）；非完成态则清空
   if (followUp.status === 'completed') {
     if (!followUp.completedAt) followUp.completedAt = new Date();
@@ -1073,6 +1086,51 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
     followUp.completedBy = null;
   }
   await followUp.save();
+
+  // 就医协助任务完成后，将实际执行结果写回会员的“服务记录－医院就医”。
+  if (followUp.status === 'completed' && followUp.sourceHealthPlanId) {
+    const sourcePlan = await HealthPlan.findOne({
+      _id: followUp.sourceHealthPlanId,
+      type: 'medical_assist',
+    }).lean();
+    if (sourcePlan) {
+      const c = sourcePlan.content || {};
+      const requirements = [
+        c.hospital && `医院：${c.hospital}`,
+        c.department && `科室：${c.department}`,
+        c.expert && `医生：${c.expert}`,
+        (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
+        sourcePlan.description && `代诊目的：${sourcePlan.description}`,
+        c.tasks && `代诊要求：${c.tasks}`,
+        c.transport && `交通安排：${c.transport}`,
+        c.hotel && `住宿安排：${c.hotel}`,
+        c.notes && `注意事项：${c.notes}`,
+      ].filter(Boolean).join('\n');
+      if (requirements && followUp.plannedContent !== requirements) {
+        followUp.plannedContent = requirements;
+        await followUp.save();
+      }
+      await ServiceRecord.findOneAndUpdate(
+        { sourceHealthPlanId: sourcePlan._id, type: 'medical_visit' },
+        {
+          $set: {
+            staffId: req.staff._id,
+            patientId: followUp.patientId,
+            date: followUp.date || followUp.completedAt || new Date(),
+            title: sourcePlan.title || '就医协助方案',
+            content: requirements,
+            result: followUp.executedContent || followUp.content || '',
+            medicalEscort: {
+              hospital: c.hospital || '',
+              department: c.department || '',
+              doctor: c.expert || '',
+            },
+          },
+        },
+        { upsert: true, new: true, setDefaultsOnInsert: true }
+      );
+    }
+  }
   res.json({ success: true, data: followUp });
 });
 
@@ -1357,10 +1415,22 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   // 就医协助本身就是要立刻跟进安排的服务，2026-07-13 需求：推送方案后自动建立随访计划，
   // 审核通过后客户端能收到待随访任务）；如果方案有关联订单，随访完成后据此可联动订单/消费记录状态
   if (plan.type === 'medical_assist') {
+    const c = plan.content || {};
     const selectedAssistantId = plan.content?.staffId || plan.staffId;
     const serviceDate = plan.content?.serviceDate
       ? new Date(`${plan.content.serviceDate}T${/^\d{2}:\d{2}/.test(plan.content?.serviceTime || '') ? plan.content.serviceTime.slice(0, 5) : '09:00'}:00+08:00`)
       : new Date();
+    const requirements = [
+      c.hospital && `医院：${c.hospital}`,
+      c.department && `科室：${c.department}`,
+      c.expert && `医生：${c.expert}`,
+      (c.serviceDate || c.serviceTime) && `服务时间：${[c.serviceDate, c.serviceTime].filter(Boolean).join(' ')}`,
+      plan.description && `代诊目的：${plan.description}`,
+      c.tasks && `代诊要求：${c.tasks}`,
+      c.transport && `交通安排：${c.transport}`,
+      c.hotel && `住宿安排：${c.hotel}`,
+      c.notes && `注意事项：${c.notes}`,
+    ].filter(Boolean).join('\n');
     // 同一方案重复推送时更新原随访，不重复生成多条任务。
     await FollowUp.findOneAndUpdate(
       { sourceHealthPlanId: plan._id, sourceType: 'health_plan' },
@@ -1371,6 +1441,7 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
           date: serviceDate,
           theme: `就医协助方案随访 · ${plan.title || ''}`,
           content: plan.description || '',
+          plannedContent: requirements,
           status: 'planned',
           assignedTo: selectedAssistantId,
         },
@@ -1389,25 +1460,21 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     // 同步在"服务记录·医院就医"留一笔底稿：把方案里已确定的医院/科室/专家/安排先记下来，
     // result（就医结果）留空，等专员实际陪诊/代诊完成后回来补录——与详情页新增的"补录信息"入口配套
     // （2026-07-13 需求：方案要能自动在服务记录里记上一笔，等就医完毕可以补录信息）
-    const c = plan.content || {};
-    const contentLines = [
-      c.hospital && `医院：${c.hospital}`,
-      c.department && `科室：${c.department}`,
-      c.expert && `医生：${c.expert}`,
-      plan.description && `就医原因：${plan.description}`,
-      c.tasks && `安排：${c.tasks}`,
-    ].filter(Boolean).join('\n');
-    await ServiceRecord.create({
-      staffId: selectedAssistantId,
-      patientId: plan.patientId,
-      type: 'medical_visit',
-      date: serviceDate,
-      title: plan.title || '就医协助方案',
-      content: contentLines,
-      result: '',
-      medicalEscort: { hospital: c.hospital || '', department: c.department || '', doctor: c.expert || '' },
-      sourceHealthPlanId: plan._id,
-    }).catch(() => {});
+    await ServiceRecord.findOneAndUpdate(
+      { sourceHealthPlanId: plan._id, type: 'medical_visit' },
+      {
+        $set: {
+          staffId: selectedAssistantId,
+          patientId: plan.patientId,
+          date: serviceDate,
+          title: plan.title || '就医协助方案',
+          content: requirements,
+          medicalEscort: { hospital: c.hospital || '', department: c.department || '', doctor: c.expert || '' },
+        },
+        $setOnInsert: { result: '' },
+      },
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    );
   }
   res.json({ success: true, data: plan });
 });

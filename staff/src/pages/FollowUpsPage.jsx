@@ -25,6 +25,28 @@ const TYPE_OPTIONS = [
   { v: 'other',  l: '其他' },
 ]
 
+function getMedicalAssistRequirements(item) {
+  const plan = item?.sourceHealthPlanId
+  if (!plan || plan.type !== 'medical_assist') return item?.plannedContent || ''
+  const c = plan.content || {}
+  const visit = c.moduleData?.visit || {}
+  const logistics = c.moduleData?.logistics || {}
+  const taskRecords = c.moduleData?.tasks?.records || []
+  const tasks = c.tasks || taskRecords.map(r => r.task).filter(Boolean).join('\n')
+  return [
+    (c.hospital || visit.hospital) && `医院：${c.hospital || visit.hospital}`,
+    (c.department || visit.department) && `科室：${c.department || visit.department}`,
+    (c.expert || visit.expert) && `医生：${c.expert || visit.expert}`,
+    (c.serviceDate || visit.visitDate || c.serviceTime || visit.serviceTime)
+      && `服务时间：${[c.serviceDate || visit.visitDate, c.serviceTime || visit.serviceTime].filter(Boolean).join(' ')}`,
+    plan.description && `代诊目的：${plan.description}`,
+    tasks && `代诊要求：${tasks}`,
+    (c.transport || logistics.transport) && `交通安排：${c.transport || logistics.transport}`,
+    (c.hotel || logistics.hotel) && `住宿安排：${c.hotel || logistics.hotel}`,
+    (c.notes || c.moduleData?.notes?.content) && `注意事项：${c.notes || c.moduleData?.notes?.content}`,
+  ].filter(Boolean).join('\n')
+}
+
 function DetailModal({ item, onClose }) {
   if (!item) return null
   const FOLLOWUP_TYPE = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他随访' }
@@ -54,6 +76,7 @@ function DetailModal({ item, onClose }) {
           <Row label="状态" value={STATUS_MAP[item.status] || item.status} />
           {item.checkInItems?.length > 0 && <Row label="打卡项目" value={item.checkInItems.map(k => CHECKIN_LABEL[k] || k).join('、')} />}
           <Row label="计划内容" value={item.content} />
+          <Row label="本次代诊要求" value={getMedicalAssistRequirements(item)} />
           {item.status === 'completed' && (
             <>
               <div style={{ margin: '12px 0 6px', fontSize: 12, color: '#1E6B50', fontWeight: 700, borderTop: '2px solid #E8F5EF', paddingTop: 12 }}>随访结果</div>
@@ -412,6 +435,14 @@ export default function FollowUpsPage() {
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {getMedicalAssistRequirements(execItem) && (
+                <div style={{ background: '#EFF8F4', border: '1px solid #B2D8C7', borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>本次代诊要求</div>
+                  <div style={{ fontSize: 13, color: '#1A2B24', whiteSpace: 'pre-line', lineHeight: 1.7 }}>
+                    {getMedicalAssistRequirements(execItem)}
+                  </div>
+                </div>
+              )}
               {/* 只读信息 */}
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8 }}>

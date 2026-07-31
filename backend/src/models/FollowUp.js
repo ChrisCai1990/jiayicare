@@ -15,6 +15,9 @@ const followUpSchema = new mongoose.Schema({
     default: 'completed',
   },
   content:      { type: String, default: '' },  // 随访内容记录
+  plannedContent:  { type: String, default: '' }, // 下发时的任务要求，执行后仍保留
+  executedContent: { type: String, default: '' }, // 实际随访/服务执行结果
+  executedType:    { type: String, enum: ['phone', 'wechat', 'visit', 'video', 'other', ''], default: '' },
   theme:        { type: String, default: '' },  // 随访主题
   followUpSchemeId: { type: mongoose.Schema.Types.ObjectId, ref: 'FollowUpPlan', default: null },
   formData:     { type: mongoose.Schema.Types.Mixed, default: null },
