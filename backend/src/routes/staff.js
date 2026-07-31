@@ -3713,32 +3713,38 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     if (!reports.length) return res.status(400).json({ success: false, message: `${year}年度没有已审核报告，无法生成小结` });
 
     const CATEGORY_MAP = {
-      tumor_risk: { keys: ['tumor'], words: ['肿瘤', '癌', '肿瘤标志物'] },
+      tumor_risk: { keys: ['tumor'], words: ['肿瘤', '癌', '肿瘤标志物', 'NSE', 'PSA', 'AFP', 'CEA', 'CA19', 'CA125', 'CA15', 'CA72', 'CYFRA', 'SCC', 'HE4', 'ProGRP'] },
       cardiovascular_risk: { keys: ['cardiovascular', 'brain_vessel'], words: ['心脑', '心血管', '脑血管', '血压', '血脂', '心电'] },
       chronic_disease: { keys: ['chronic', 'functional', 'other_routine', 'health_promote'], words: ['慢性', '糖尿病', '肝', '肾', '甲状腺', '功能医学', '常规'] },
     };
     const input = {};
     Object.entries(CATEGORY_MAP).forEach(([key, rule]) => {
-      const matched = reports.filter(report => {
-        const text = [report.title, report.screeningL1, report.screeningL2,
-          ...(report.reportItems || []).flatMap(item => [item.name, item.screeningParent, item.conclusion, item.diagnosis])
-        ].filter(Boolean).join(' ');
-        return rule.keys.includes(report.screeningCategory)
-          || (report.reportItems || []).some(item => rule.keys.includes(item.screeningCategory))
-          || rule.words.some(word => text.includes(word));
-      });
-      input[key] = matched.map(report => ({
-        reportId: String(report._id),
-        title: report.title,
-        date: report.checkDate || report.date,
-        institution: report.hospital || report.institution || '',
-        conclusions: (report.reportItems || []).map(item => ({
-          name: item.name,
-          value: item.value,
-          status: item.status,
-          conclusion: item.conclusion || item.diagnosis || item.findings || '',
-        })),
-      }));
+      input[key] = reports.map(report => {
+        const reportCategoryMatched = rule.keys.includes(report.screeningCategory);
+        const relevantItems = (report.reportItems || []).filter(item => {
+          const itemText = [item.name, item.orderName, item.screeningParent, item.screeningL1, item.screeningL2]
+            .filter(Boolean).join(' ');
+          return rule.keys.includes(item.screeningCategory)
+            || rule.words.some(word => itemText.includes(word));
+        });
+        // 组合检验单必须按具体项目归类。例如“NSE+同型半胱氨酸+血脂七项”中，
+        // 肿瘤小结只能读取 NSE，不能把同一张报告里的血脂/Hcy 一并作为肿瘤依据。
+        if (!relevantItems.length && !reportCategoryMatched) return null;
+        const selectedItems = relevantItems.length ? relevantItems : (report.reportItems || []);
+        return {
+          reportId: String(report._id),
+          title: report.title,
+          date: report.checkDate || report.date,
+          institution: report.hospital || report.institution || '',
+          sourceItemNames: selectedItems.map(item => item.name).filter(Boolean),
+          conclusions: selectedItems.map(item => ({
+            name: item.name,
+            value: item.value,
+            status: item.status,
+            conclusion: item.conclusion || item.diagnosis || item.findings || '',
+          })),
+        };
+      }).filter(Boolean);
     });
 
     const { chat } = require('../utils/ai');
@@ -3754,6 +3760,10 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       sections[key] = {
         summary: String(parsed[key] || ''),
         sourceReportIds: input[key].map(item => item.reportId),
+        sourceMaterials: input[key].map(item => ({
+          reportId: item.reportId,
+          itemNames: item.sourceItemNames,
+        })),
       };
     });
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');

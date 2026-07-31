@@ -1195,6 +1195,7 @@ export default function PatientDetailPage() {
   const [screeningForm, setScreeningForm] = useState({ title: '', screeningCategory: '', screeningL1: '', screeningL2: '', screeningL3: '', screeningL3Items: [], checkDate: '', hospital: '', note: '', reportItems: [], examOrderItems: [], funcTestItems: [], examDescription: '', examConclusion: '', linkedItemType: null })
   const [screeningYearSummaries, setScreeningYearSummaries] = useState([])
   const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
+  const [screeningSummaryExpanded, setScreeningSummaryExpanded] = useState(true)
   const [screeningSummaryBusy, setScreeningSummaryBusy] = useState(false)
   const [editingScreeningSummary, setEditingScreeningSummary] = useState(null)
   const [screeningSummaryRecordIndex, setScreeningSummaryRecordIndex] = useState(0)
@@ -4170,6 +4171,11 @@ export default function PatientDetailPage() {
                       {currentRecord && <span style={{ fontSize: 12, color: currentRecord.status === 'approved' ? '#16A34A' : '#D97706' }}>
                         {currentRecord.status === 'approved' ? `✓ 家庭医生已审核${currentRecord.approvedByName ? ' · ' + currentRecord.approvedByName : ''}` : '待家庭医生审核'}
                       </span>}
+                      <button className="btn btn-secondary btn-sm"
+                        aria-expanded={screeningSummaryExpanded}
+                        onClick={() => setScreeningSummaryExpanded(value => !value)}>
+                        {screeningSummaryExpanded ? '收起小结 ▲' : '展开小结 ▼'}
+                      </button>
                       {canManage && <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                         <button className="btn btn-secondary btn-sm" disabled={screeningSummaryBusy} onClick={async () => {
                           setScreeningSummaryBusy(true)
@@ -4209,7 +4215,7 @@ export default function PatientDetailPage() {
                         }}>审核通过</button>}
                       </div>}
                     </div>
-                    {!currentRecord && !editingScreeningSummary ? (
+                    {screeningSummaryExpanded && (!currentRecord && !editingScreeningSummary ? (
                       <div style={{ color: '#8AA89C', fontSize: 13 }}>该年度尚无小结，可由家庭医生新增或使用 AI 自动生成。</div>
                     ) : (
                       <div style={{ display: 'grid', gap: 10 }}>
@@ -4227,7 +4233,20 @@ export default function PatientDetailPage() {
                               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
                                 {sections[key].sourceReportIds.map(reportId => {
                                   const report = screeningReports.find(item => String(item._id) === String(reportId))
-                                  const reportName = [report?.screeningL2 || report?.title || '原始资料', report?.hospital || report?.institution, String(report?.checkDate || report?.date || '').slice(0, 10)].filter(Boolean).join(' · ')
+                                  const material = (sections[key]?.sourceMaterials || []).find(item => String(item.reportId) === String(reportId))
+                                  const categoryWords = key === 'tumor_risk'
+                                    ? ['肿瘤', '癌', 'NSE', 'PSA', 'AFP', 'CEA', 'CA19', 'CA125', 'CA15', 'CA72', 'CYFRA', 'SCC', 'HE4', 'ProGRP']
+                                    : key === 'cardiovascular_risk'
+                                      ? ['心脑', '心血管', '脑血管', '血压', '血脂', '胆固醇', '甘油三酯', '脂蛋白', '同型半胱氨酸', 'Hcy', '心电']
+                                      : ['慢性', '糖尿病', '血糖', '肝', '肾', '甲状腺', '功能医学', '常规']
+                                  const derivedItemNames = (report?.reportItems || [])
+                                    .map(item => item.name || '')
+                                    .filter(name => categoryWords.some(word => name.includes(word)))
+                                  const relevantNames = [...new Set([...(material?.itemNames || []), ...derivedItemNames].filter(Boolean))]
+                                  const sourceLabel = relevantNames.length
+                                    ? relevantNames.join('、')
+                                    : (report?.screeningL2 || report?.title || '原始资料')
+                                  const reportName = [sourceLabel, report?.hospital || report?.institution, String(report?.checkDate || report?.date || '').slice(0, 10)].filter(Boolean).join(' · ')
                                   return (
                                   <button key={reportId} className="btn btn-secondary btn-sm"
                                     onClick={() => openAIAnalysisSource(reportId)}>🔗 查看原始材料：{reportName}</button>
@@ -4250,7 +4269,7 @@ export default function PatientDetailPage() {
                           }}>保存小结</button>
                         </div>}
                       </div>
-                    )}
+                    ))}
                   </div>
                 )
               })()}
