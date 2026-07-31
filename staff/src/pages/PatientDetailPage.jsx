@@ -2096,9 +2096,11 @@ export default function PatientDetailPage() {
 
   // 按角色维度审核 AI 汇总分析（scope: 'doctor'=5维 / 'nutrition'=生活方式评估）
   const handleApproveSummaryScope = async (scope, year) => {
+    const label = scope === 'nutrition' ? '生活方式评估' : '5维度分析'
+    if (!window.confirm(`请确认您已完整查看并核对本次${label}内容。\n审核通过后将作为正式分析结果展示，是否继续？`)) return
     try {
       await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope, ...(year ? { year } : {}) })
-      toast(scope === 'nutrition' ? '生活方式评估已审核通过' : '5维度分析已审核通过')
+      toast(`${label}已审核通过`)
       load()
     } catch (err) { toast(err.message || '操作失败') }
   }
@@ -5474,7 +5476,11 @@ export default function PatientDetailPage() {
         const yearOpts = [...new Set([...years, String(nowY)])].sort((a, b) => Number(b) - Number(a))
         // 当前查看的年度：允许查看尚未生成的当前年度（此时显示空状态+生成按钮）
         const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : (years[0] || String(nowY))
-        const ais = byYear[curYear] || {}
+        const rawYearEntry = byYear[curYear] || {}
+        // 后端按“同年度多次评估”保存为 records（新到旧）；页面默认展示最新一条。
+        // 兼容旧数据仍直接存 sections 的结构，避免生成/审核成功后页面误显示为空。
+        const latestRecord = Array.isArray(rawYearEntry.records) ? (rawYearEntry.records[0] || {}) : rawYearEntry
+        const ais = { ...rawYearEntry, ...latestRecord }
         // 编辑模式用 aiSummaryForm.sections，查看模式用当前年度 ais.sections
         const sec = editingAISummary ? (aiSummaryForm.sections || {}) : (ais.sections || {})
         const docEditing = editingAISummary === 'doctor'
@@ -5541,7 +5547,9 @@ export default function PatientDetailPage() {
                   background: '#E8F5EF', color: '#1E6B50', fontWeight: 700, cursor: 'pointer', outline: 'none' }}>
                 {yearOpts.map(y => {
                   const generated = !!byYear[y]
-                  const approved = !!byYear[y]?.approvedAt
+                  const yearEntry = byYear[y] || {}
+                  const latest = Array.isArray(yearEntry.records) ? (yearEntry.records[0] || {}) : yearEntry
+                  const approved = !!(latest.doctorApprovedAt || latest.approvedAt)
                   return (
                     <option key={y} value={y}>
                       {y}年度{approved ? ' ✓' : (generated ? ' ●' : '')}
@@ -5618,21 +5626,31 @@ export default function PatientDetailPage() {
               {!editingAISummary && (roleScope === 'doctor') && (
                 <button className="btn btn-sm" disabled={aiSummaryLoading}
                   style={docApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => { if (docApproved && !window.confirm('5维度分析已审核确认，重新生成将覆盖已审核内容并需重新审核，确定继续？')) return; handleGenerateAISummary(curYear, 'doctor') }}>
+                  onClick={() => {
+                    if (docApproved && !window.confirm('最新一条5维度分析已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
+                    handleGenerateAISummary(curYear, 'doctor', docApproved)
+                  }}>
                   {aiSummaryLoading ? '生成中…' : (docApproved ? '已审核·重新生成5维度' : (hasData ? '重新生成5维度分析' : '生成5维度分析'))}
                 </button>
               )}
               {!editingAISummary && (roleScope === 'nutrition') && (
                 <button className="btn btn-sm" disabled={aiSummaryLoading}
                   style={nutApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => { if (nutApproved && !window.confirm('生活方式评估已审核确认，重新生成将覆盖已审核内容并需重新审核，确定继续？')) return; handleGenerateAISummary(curYear, 'nutrition') }}>
+                  onClick={() => {
+                    if (nutApproved && !window.confirm('最新一条生活方式评估已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
+                    handleGenerateAISummary(curYear, 'nutrition', nutApproved)
+                  }}>
                   {aiSummaryLoading ? '生成中…' : (nutApproved ? '已审核·重新生成生活方式' : (hasData ? '重新生成生活方式评估' : '生成生活方式评估'))}
                 </button>
               )}
               {!editingAISummary && (roleScope === 'all') && (
                 <button className="btn btn-sm" disabled={aiSummaryLoading}
                   style={(docApproved || nutApproved) ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
-                  onClick={() => { if ((docApproved || nutApproved) && !window.confirm('本年度分析已有部分审核确认，重新生成将覆盖已审核内容并需重新审核，确定继续？')) return; handleGenerateAISummary(curYear, 'all') }}>
+                  onClick={() => {
+                    const approved = docApproved || nutApproved
+                    if (approved && !window.confirm('本年度最新分析已有审核结果。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
+                    handleGenerateAISummary(curYear, 'all', approved)
+                  }}>
                   {aiSummaryLoading ? '生成中…' : ((docApproved || nutApproved) ? '已审核·重新生成' : (hasData ? `重新生成${curYear}年度` : `生成${curYear}年度`))}
                 </button>
               )}

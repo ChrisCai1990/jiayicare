@@ -4735,7 +4735,9 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     };
     const records = [newRecord, ...prevRecords];
     records.sort((a, b) => new Date(b.evaluatedAt || b.generatedAt || 0) - new Date(a.evaluatedAt || a.generatedAt || 0));
-    byYear[year] = { records };
+    // 同时保留最新记录镜像，兼容尚未升级到 records 结构的各端读取逻辑。
+    // records 是权威历史数据；镜像只用于展示兼容。
+    byYear[year] = { ...records[0], records };
 
     // 顶层镜像最新一条record，供下游功能（ai-annual-plan/用户端展示/AI聊天助手等）无感知读取
     const latestRecord = records[0];
@@ -4787,6 +4789,20 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       const now = new Date();
       const sc = scope || 'all';
       const isSuper = req.staff.role === 'superadmin';
+      const sectionData = entry.sections || {};
+      const hasDoctorContent = DOCTOR_KEYS.some(key => {
+        const value = sectionData[key];
+        return value && typeof value === 'object' && Object.keys(value).length > 0;
+      });
+      const lifestyle = sectionData[LIFESTYLE_KEY];
+      const hasNutritionContent = !!(lifestyle && typeof lifestyle === 'object'
+        && (Object.keys(lifestyle).length > 0));
+      if ((sc === 'doctor' || sc === 'all') && !hasDoctorContent) {
+        return res.status(400).json({ success: false, message: '5维度分析内容为空，不能审核通过，请先重新生成' });
+      }
+      if ((sc === 'nutrition' || sc === 'all') && !hasNutritionContent) {
+        return res.status(400).json({ success: false, message: '生活方式评估内容为空，不能审核通过，请先重新生成' });
+      }
       if ((sc === 'doctor' || sc === 'all')) {
         if (!isSuper && req.staff.role !== 'familyDoctor') return res.status(403).json({ success: false, message: '仅家庭医生可审核该维度' });
         entry.doctorApprovedAt = now; entry.doctorApprovedBy = req.staff.name;
@@ -4801,7 +4817,8 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       }
     }
     records[idx] = entry;
-    byYear[y] = { records };
+    // 保存最新记录镜像，兼容旧版页面；历史仍完整保存在 records 中。
+    byYear[y] = { ...records[0], records };
     updated.byYear = byYear;
     // 只有编辑/审核"最新一条"（idx===0）时才更新顶层镜像；编辑历史旧记录不影响下游读取的"最新结果"
     if (idx === 0) {
