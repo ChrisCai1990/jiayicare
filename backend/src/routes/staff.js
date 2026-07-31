@@ -3799,6 +3799,33 @@ router.patch('/patients/:id/screening-year-summaries/:year/approve', staffAuth, 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.delete('/patients/:id/screening-year-summaries/:year', staffAuth, async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅家庭医生可删除年度专项筛查小结' });
+    }
+    const ScreeningYearSummary = require('../models/ScreeningYearSummary');
+    const summary = await ScreeningYearSummary.findOne({ user: req.params.id, year: Number(req.params.year) });
+    if (!summary) return res.status(404).json({ success: false, message: '年度小结不存在' });
+    const records = Array.isArray(summary.records) && summary.records.length
+      ? [...summary.records]
+      : [{ sections: summary.sections, status: summary.status, generatedByAI: summary.generatedByAI, createdAt: summary.createdAt, approvedByName: summary.approvedByName, approvedAt: summary.approvedAt }];
+    const idx = Number(req.query.recordIndex || 0);
+    if (!Number.isInteger(idx) || idx < 0 || idx >= records.length) {
+      return res.status(404).json({ success: false, message: '该次小结不存在' });
+    }
+    records.splice(idx, 1);
+    if (!records.length) {
+      await summary.deleteOne();
+      return res.json({ success: true, data: null });
+    }
+    summary.records = records;
+    Object.assign(summary, records[0]);
+    await summary.save();
+    res.json({ success: true, data: summary });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── POST /api/staff/orders/:id/redeem ───────────────────────────
 // 每次服务单独核销并保留人员、时间和备注；最后一次核销后订单才完成。
 router.post('/orders/:id/redeem', staffAuth, async (req, res) => {

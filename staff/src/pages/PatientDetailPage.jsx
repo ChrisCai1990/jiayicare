@@ -427,6 +427,18 @@ function AIArrEdit({ value, placeholder, onChange }) {
   )
 }
 
+function AISectionSourceButton({ title, ids, onOpen }) {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return <div style={{ fontSize: 12, color: '#B0B8B3', marginBottom: 10 }}>暂无可关联的原始材料</div>
+  }
+  return (
+    <button type="button" className="btn btn-secondary btn-sm" style={{ marginBottom: 10 }}
+      onClick={() => onOpen(title, ids)}>
+      🔗 查看原始材料（{ids.length}份）
+    </button>
+  )
+}
+
 // AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯团队内部留言，AI不参与回复
 function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, staff, onRefresh, onPreviewImage, title = 'AI分析讨论' }) {
   const toast = useToast()
@@ -4180,6 +4192,17 @@ export default function PatientDetailPage() {
                           setScreeningSummaryEditMode('edit')
                           setEditingScreeningSummary(JSON.parse(JSON.stringify(currentRecord.sections || {})))
                         }}>编辑当前小结</button>}
+                        {currentRecord && <button className="btn btn-sm" style={{ color: '#DC3545', borderColor: '#FCA5A5', background: '#FFF5F5' }} onClick={async () => {
+                          const time = currentRecord.createdAt ? new Date(currentRecord.createdAt).toLocaleString('zh-CN') : ''
+                          if (!window.confirm(`确认删除${time ? ` ${time} 的` : '当前'}专项筛查小结？删除后不可恢复。`)) return
+                          try {
+                            await staffAPI.deleteScreeningYearSummary(id, screeningSummaryYear, screeningSummaryRecordIndex)
+                            setScreeningSummaryRecordIndex(0)
+                            setEditingScreeningSummary(null)
+                            await loadScreening()
+                            toast('当前专项筛查小结已删除')
+                          } catch (error) { toast(error.message || '删除失败') }
+                        }}>删除当前小结</button>}
                         {currentRecord && currentRecord.status !== 'approved' && <button className="btn btn-primary btn-sm" onClick={async () => {
                           try { await staffAPI.approveScreeningYearSummary(id, screeningSummaryYear, screeningSummaryRecordIndex); await loadScreening(); toast('年度小结已审核') }
                           catch (error) { toast(error.message || '审核失败') }
@@ -5552,6 +5575,38 @@ export default function PatientDetailPage() {
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
         const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
         const inStyle = { width: '100%', padding: '5px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: 'inherit', background: '#FAFAF8' }
+        const reportLabel = reportId => {
+          const report = screeningReports.find(r => String(r._id) === String(reportId))
+          if (!report) return '原始报告'
+          return [report.screeningL2 || report.title || '检查报告', report.hospital || report.institution || '', String(report.checkDate || report.date || '').slice(0, 10)]
+            .filter(Boolean).join(' · ')
+        }
+        const SOURCE_RULES = {
+          tumor_risk: { keys: ['tumor'], words: ['肿瘤', '癌', '肿瘤标志物'] },
+          cardiovascular_risk: { keys: ['cardiovascular', 'brain_vessel'], words: ['心脑', '心血管', '脑血管', '血压', '血脂', '心电'] },
+          chronic_disease: { keys: ['chronic', 'functional', 'other_routine', 'health_promote'], words: ['慢性', '糖尿病', '肝', '肾', '甲状腺', '功能医学', '常规'] },
+          checkup_completeness: { keys: [], words: [] },
+          medical_priority: { keys: [], words: [] },
+        }
+        const sourceIdsFor = sectionKey => {
+          const section = sec[sectionKey] || {}
+          const saved = [
+            ...(section.sourceReportIds || []),
+            ...(section.items || []).map(item => item.sourceReportId).filter(Boolean),
+          ]
+          if (saved.length) return [...new Set(saved.map(String))]
+          const rule = SOURCE_RULES[sectionKey]
+          if (!rule) return []
+          const matched = screeningReports.filter(report => {
+            if (!rule.keys.length && !rule.words.length) return true
+            const text = [report.title, report.screeningL1, report.screeningL2,
+              ...(report.reportItems || []).flatMap(item => [item.name, item.conclusion, item.diagnosis])
+            ].filter(Boolean).join(' ')
+            return rule.keys.includes(report.screeningCategory) || rule.words.some(word => text.includes(word))
+          })
+          return [...new Set(matched.map(report => String(report._id)))]
+        }
+        const openSectionSources = (title, ids) => setAiSourceGroup({ title, ids, reportLabel })
 
         // 更新编辑中的 sections 字段
         const updSec = (secKey, field, val) => setAiSummaryForm(f => ({
@@ -5855,6 +5910,7 @@ export default function PatientDetailPage() {
                 })()}
                 {/* 板块一：肿瘤风险筛查分析 */}
                 <AISectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED">
+                  <AISectionSourceButton title="肿瘤风险筛查分析" ids={sourceIdsFor('tumor_risk')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
@@ -5875,6 +5931,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块二：心脑血管病风险分析 */}
                 <AISectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444">
+                  <AISectionSourceButton title="心脑血管病风险分析" ids={sourceIdsFor('cardiovascular_risk')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['high','🔴 高风险因素（每行一条）'],['medium','🟡 中风险因素（每行一条）']].map(([f,lbl]) => (
@@ -5894,6 +5951,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块三：慢性病及其他健康指标 */}
                 <AISectionCard title="慢性病及其他健康指标分析" icon="📊" color="#0077B6">
+                  <AISectionSourceButton title="慢性病及其他健康指标分析" ids={sourceIdsFor('chronic_disease')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.chronic_disease?.items || []).map((item, i) => (
@@ -5940,6 +5998,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块四：体检全面性评估 */}
                 <AISectionCard title="体检全面性评估" icon="📋" color="#1E6B50">
+                  <AISectionSourceButton title="体检全面性评估" ids={sourceIdsFor('checkup_completeness')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['covered','✅ 已覆盖项目（每行一条）'],['missing','❌ 缺失重要项目（每行一条）']].map(([f,lbl]) => (
@@ -5959,6 +6018,7 @@ export default function PatientDetailPage() {
 
                 {/* 板块五：需优先解决的医疗问题 */}
                 <AISectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626">
+                  <AISectionSourceButton title="需优先解决的医疗问题" ids={sourceIdsFor('medical_priority')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.medical_priority?.items || []).map((item, i) => (
