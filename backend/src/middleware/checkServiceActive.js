@@ -15,6 +15,8 @@ function isServiceExpired(user) {
 
 // { method, prefix } — prefix 匹配 req.originalUrl 以 /api 开头的路径前缀（含method匹配）
 const WHITELIST = [
+  // 首次建档是进入系统前的基础身份步骤，不能被服务到期锁住，否则会形成无法完成建档的死循环。
+  { method: 'POST', prefix: '/api/user/onboarding' },
   // 健康档案查看（只读）
   { method: 'GET', prefix: '/api/user/me' },
   { method: 'GET', prefix: '/api/user/dashboard' },

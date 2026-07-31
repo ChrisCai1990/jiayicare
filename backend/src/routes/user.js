@@ -239,6 +239,21 @@ router.post('/onboarding', auth, async (req, res) => {
     const { name, idNumber, idType, contactPhone } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
+    const normalizedContactPhone = contactPhone.trim();
+
+    // 联系电话若已经对应另一份正式手机号档案，不能仅凭未验证的表单输入自动合并身份。
+    // 明确提示客户重新走该手机号验证码登录，既避免重复档案，也避免越权绑定他人档案。
+    const phoneOwner = await User.findOne({
+      phone: normalizedContactPhone,
+      _id: { $ne: req.user._id },
+    }).select('_id');
+    if (phoneOwner) {
+      return res.status(409).json({
+        success: false,
+        code: 'PHONE_PROFILE_EXISTS',
+        message: '该手机号已有健康档案，请退出当前页面后使用该手机号验证码重新登录。',
+      });
+    }
 
     // 护照号格式各国不一，不做身份证格式校验也不做性别/生日自动解析；仅身份证号走原有解析逻辑
     const isPassport = idType === 'passport';
@@ -248,7 +263,7 @@ router.post('/onboarding', auth, async (req, res) => {
 
     const updateData = {
       name: name.trim(),
-      contactPhone: contactPhone.trim(),
+      contactPhone: normalizedContactPhone,
       onboardingCompleted: true,
       onboardingCompletedAt: new Date(),
     };
