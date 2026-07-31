@@ -50,6 +50,7 @@ export default function ProfilePage() {
     setPwSaving(true)
     try {
       await staffAPI.changePassword({ oldPassword: pwForm.oldPassword, newPassword: pwForm.newPassword })
+      login({ ...staff, mustChangePassword: false })
       toast('密码已修改，下次登录请使用新密码')
       setPwForm({ oldPassword: '', newPassword: '', confirm: '' })
     } catch (err) { setPwError(err.message) }

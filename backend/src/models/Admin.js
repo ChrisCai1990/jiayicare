@@ -4,6 +4,9 @@ const bcrypt = require('bcryptjs');
 const adminSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
+  // Admin 创建账号或重置密码后置为 true；员工本人修改成功后清除。
+  // 默认 false 兼容现有存量账号，不在上线时突然强制所有老员工改密。
+  mustChangePassword: { type: Boolean, default: false },
   name:     { type: String, required: true },
   // 原管理员角色保留；新增医护端一线角色
   role: {

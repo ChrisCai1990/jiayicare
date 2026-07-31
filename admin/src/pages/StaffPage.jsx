@@ -217,8 +217,8 @@ export default function StaffPage() {
                   </div>
                 )}
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
-                  <label className="form-label">{editId ? '密码（留空则不修改）' : '密码 *'}</label>
-                  <input className="form-input" type="password" placeholder={editId ? '输入新密码' : '至少6位'} value={form.password} onChange={set('password')} />
+                  <label className="form-label">{editId ? '重置密码（留空则不修改）' : '初始密码 *'}</label>
+                  <input className="form-input" type="password" placeholder={editId ? '输入后员工下次登录必须修改' : '至少6位；首次登录必须修改'} value={form.password} onChange={set('password')} />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
                   <label className="form-label">角色 *</label>

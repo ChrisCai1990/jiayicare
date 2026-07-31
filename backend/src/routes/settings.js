@@ -200,6 +200,7 @@ router.post('/employees', adminAuth, async (req, res) => {
     teamId: teamId || null,
     personalPerformanceRule: personalPerformanceRule || undefined,
     staffStatus: 'active',
+    mustChangePassword: true,
   });
   if (mentorOfTeamId) await Team.findByIdAndUpdate(mentorOfTeamId, { mentorId: emp._id });
   res.json({ success: true, data: { _id: emp._id, name: emp.name, username: emp.username }, message: '员工账号已创建' });
@@ -228,7 +229,10 @@ router.put('/employees/:id', adminAuth, async (req, res) => {
   if (customRoleId !== undefined) emp.customRoleId = customRoleId || null;
   if (teamId !== undefined) emp.teamId = teamId || null;
   if (personalPerformanceRule !== undefined) emp.personalPerformanceRule = personalPerformanceRule;
-  if (password) emp.password = password;
+  if (password) {
+    emp.password = password;
+    emp.mustChangePassword = true;
+  }
   await emp.save();
   // mentorOfTeamId：该员工被设为哪个团队的导师（先清除其原有导师身份，再按提交值设置新团队）
   if (mentorOfTeamId !== undefined) {
@@ -260,8 +264,9 @@ router.patch('/employees/:id/reset-password', adminAuth, async (req, res) => {
   const emp = await Admin.findById(req.params.id);
   if (!emp) return res.status(404).json({ success: false, message: '员工不存在' });
   emp.password = password;
+  emp.mustChangePassword = true;
   await emp.save();
-  res.json({ success: true, message: '密码已重置' });
+  res.json({ success: true, message: '密码已重置，员工下次登录时必须修改密码' });
 });
 
 router.delete('/employees/:id', adminAuth, async (req, res) => {

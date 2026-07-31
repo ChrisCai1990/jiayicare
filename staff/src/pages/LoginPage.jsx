@@ -23,7 +23,7 @@ export default function LoginPage() {
       const res = await staffAPI.login(username.trim(), password)
       setToken(res.data.token)
       login(res.data.staff)
-      nav('/home', { replace: true })
+      nav(res.data.staff.mustChangePassword ? '/change-password' : '/home', { replace: true })
     } catch (err) {
       setError(err.message || '登录失败，请检查手机号码和密码')
     } finally {

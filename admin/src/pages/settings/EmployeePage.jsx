@@ -179,7 +179,7 @@ export default function EmployeePage() {
     if (!newPwd || newPwd.length < 6) { toast('密码不能少于6位'); return }
     try {
       await adminAPI.resetEmpPassword(resetTargetId, newPwd)
-      toast('密码已重置'); setShowResetModal(false)
+      toast('密码已重置，员工下次登录时必须修改'); setShowResetModal(false)
     } catch (e) { toast(e.message) }
   }
 
@@ -303,8 +303,8 @@ export default function EmployeePage() {
                   </div>
                 )}
                 <div className="form-group" style={{ marginBottom: 0, gridColumn: 'span 2' }}>
-                  <label className="form-label">{editId ? '密码（留空则不修改）' : '密码 *'}</label>
-                  <input className="form-input" type="password" value={form.password} onChange={set('password')} placeholder="至少6位" autoComplete="new-password" />
+                  <label className="form-label">{editId ? '重置密码（留空则不修改）' : '初始密码 *'}</label>
+                  <input className="form-input" type="password" value={form.password} onChange={set('password')} placeholder="至少6位；员工登录后必须修改" autoComplete="new-password" />
                 </div>
                 <div className="form-group" style={{ marginBottom: 0 }}>
                   <label className="form-label">系统角色 *</label>
@@ -380,8 +380,9 @@ export default function EmployeePage() {
             </div>
             <div className="modal-body">
               <div className="form-group">
-                <label className="form-label">新密码（至少6位）</label>
+                <label className="form-label">新的初始密码（至少6位）</label>
                 <input className="form-input" type="password" value={newPwd} onChange={e => setNewPwd(e.target.value)} />
+                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 6 }}>重置后，员工下次登录医护端时必须设置自己的新密码。</div>
               </div>
             </div>
             <div className="modal-footer">

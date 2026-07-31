@@ -154,6 +154,7 @@ router.post('/login', async (req, res) => {
         department: admin.department,
         avatar: admin.avatar,
         phone: admin.phone || '',
+        mustChangePassword: !!admin.mustChangePassword,
         customRoleName: admin.customRoleId?.name || null,
         customPermissions: admin.customRoleId?.permissions || null,
       },
@@ -177,6 +178,7 @@ router.get('/me', staffAuth, async (req, res) => {
       avatar: s.avatar,
       region: s.region,
       phone: s.phone || '',
+      mustChangePassword: !!s.mustChangePassword,
       customRoleName: s.customRoleId?.name || null,
       customPermissions: s.customRoleId?.permissions || null,
     },
@@ -2586,12 +2588,15 @@ router.put('/me', staffAuth, async (req, res) => {
 router.put('/me/password', staffAuth, async (req, res) => {
   const { oldPassword, newPassword } = req.body;
   if (!oldPassword || !newPassword) return res.status(400).json({ success: false, message: '请填写原密码和新密码' });
+  if (newPassword.length < 6) return res.status(400).json({ success: false, message: '新密码不能少于6位' });
+  if (oldPassword === newPassword) return res.status(400).json({ success: false, message: '新密码不能与原密码相同' });
   const admin = await Admin.findById(req.staff._id);
   const ok = await admin.comparePassword(oldPassword);
   if (!ok) return res.status(400).json({ success: false, message: '原密码错误' });
   admin.password = newPassword;
+  admin.mustChangePassword = false;
   await admin.save();
-  res.json({ success: true, message: '密码已修改' });
+  res.json({ success: true, message: '密码已修改', data: { mustChangePassword: false } });
 });
 
 // ── 产品推送 ───────────────────────────────────────────────

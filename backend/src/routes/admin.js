@@ -802,7 +802,7 @@ router.post('/staff', adminAuth, async (req, res) => {
     username = `${phone}_${Math.random().toString(36).slice(2, 6)}`;
   }
 
-  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '', phone, teamId: teamId || null });
+  const staff = await Admin.create({ username, password, name, role, title: title || '', department: department || '', region: region || '', phone, teamId: teamId || null, mustChangePassword: true });
   res.json({ success: true, data: { _id: staff._id, username: staff.username, name: staff.name, role: staff.role } });
 });
 
@@ -830,7 +830,10 @@ router.put('/staff/:id', adminAuth, async (req, res) => {
     if (dup) return res.status(400).json({ success: false, message: '该手机号已被其他员工使用' });
   }
   staff.set(update);
-  if (password) staff.password = password; // triggers bcrypt pre-save
+  if (password) {
+    staff.password = password; // triggers bcrypt pre-save
+    staff.mustChangePassword = true;
+  }
   await staff.save();
 
   // 在员工侧直接设/解除"团队负责人(导师)"：mentorOfTeamId 有值则把该团队 mentor 设为此员工；

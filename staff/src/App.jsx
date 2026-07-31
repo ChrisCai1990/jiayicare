@@ -40,6 +40,7 @@ import AnnualPlanPage from './pages/AnnualPlanPage'
 import AnnualMgmtPlanPage from './pages/AnnualMgmtPlanPage'
 import PlanModulesPage from './pages/PlanModulesPage'
 import DailyCheckinPage from './pages/DailyCheckinPage'
+import ForcePasswordChangePage from './pages/ForcePasswordChangePage'
 
 // ── Auth Context ──────────────────────────────────────────────────
 const AuthCtx = createContext(null)
@@ -134,6 +135,13 @@ function RequireAuth({ children }) {
   return children
 }
 
+// Admin 新建/重置员工密码后，只允许访问强制改密页；改密成功后才进入工作台。
+function RequirePasswordChanged({ children }) {
+  const { staff } = useStaff()
+  if (staff?.mustChangePassword) return <Navigate to="/change-password" replace />
+  return children
+}
+
 // 模块级权限守卫：无权限的模块即使直接敲 URL 也跳回工作台，
 // 不再是"菜单藏了但路由能进"。moduleKey 从当前 pathname 前缀匹配 ROUTE_MODULE。
 function RequireModule({ children }) {
@@ -154,7 +162,8 @@ export default function App() {
         <ToastProvider>
           <Routes>
             <Route path="/login" element={<LoginPage />} />
-            <Route path="/" element={<RequireAuth><RequireModule><Layout /></RequireModule></RequireAuth>}>
+            <Route path="/change-password" element={<RequireAuth><ForcePasswordChangePage /></RequireAuth>} />
+            <Route path="/" element={<RequireAuth><RequirePasswordChanged><RequireModule><Layout /></RequireModule></RequirePasswordChanged></RequireAuth>}>
               <Route index element={<Navigate to="/home" replace />} />
               <Route path="home" element={<HomePage />} />
               <Route path="patients" element={<PatientsPage />} />
