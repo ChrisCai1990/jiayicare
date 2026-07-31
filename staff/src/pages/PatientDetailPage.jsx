@@ -7683,6 +7683,14 @@ export default function PatientDetailPage() {
               <button className="modal-close" onClick={() => setExecItem(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              {execItem.taskRequirements && (
+                <div style={{ background: '#EFF8F4', border: '1px solid #B2D8C7', borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50', marginBottom: 8 }}>具体代办事项</div>
+                  <div style={{ fontSize: 13, color: '#1A2B24', whiteSpace: 'pre-line', lineHeight: 1.7 }}>
+                    {execItem.taskRequirements}
+                  </div>
+                </div>
+              )}
               <div style={{ background: '#f9f7f3', borderRadius: 8, padding: 12, display: 'grid', gap: 6 }}>
                 <div style={{ display: 'flex', gap: 8 }}>
                   <span style={{ fontSize: 12, color: '#8AA89C', minWidth: 70 }}>计划日期：</span>
