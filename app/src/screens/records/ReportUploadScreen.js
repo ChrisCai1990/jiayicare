@@ -981,6 +981,12 @@ export default function ReportUploadScreen({ navigation, route }) {
   // 相册多选图片（作为同一份报告的多页）。expo-image-picker 直接支持 base64 输出，
   // 不用再手动读文件，天然兼容真机
   const pickFromLibrary = async () => {
+    // 手机网页端使用浏览器原生 multiple 文件选择器，expo-image-picker 在部分
+    // Android 浏览器/WebView 中会忽略 allowsMultipleSelection，只返回第一张。
+    if (Platform.OS === 'web') {
+      await pickDocument();
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       showToast('未获得相册权限，请在系统设置中开启', true);
@@ -989,6 +995,8 @@ export default function ReportUploadScreen({ navigation, route }) {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ImagePicker.MediaTypeOptions.Images,
       allowsMultipleSelection: true,
+      selectionLimit: 20,
+      orderedSelection: true,
       quality: 0.85,
       base64: true,
     });
@@ -999,13 +1007,23 @@ export default function ReportUploadScreen({ navigation, route }) {
       showToast('文件大小不能超过 20MB', true);
       return;
     }
-    const pages = result.assets.map((a, i) => ({
-      name: a.fileName || `photo_${i + 1}.jpg`,
-      content: `data:${a.mimeType || 'image/jpeg'};base64,${a.base64}`,
-      mimeType: a.mimeType || 'image/jpeg',
-      sizeStr: fileSizeStr(a.fileSize || (a.base64.length * 0.75)),
-    }));
-    setPendingPages(pages);
+    try {
+      const pages = await Promise.all(result.assets.map(async (a, i) => {
+        const mimeType = a.mimeType || 'image/jpeg';
+        const base64 = a.base64 || await FileSystem.readAsStringAsync(a.uri, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        return {
+          name: a.fileName || `photo_${i + 1}.jpg`,
+          content: `data:${mimeType};base64,${base64}`,
+          mimeType,
+          sizeStr: fileSizeStr(a.fileSize || (base64.length * 0.75)),
+        };
+      }));
+      setPendingPages(pages);
+    } catch (error) {
+      showToast(error?.message ? `图片读取失败：${error.message}` : '图片读取失败，请重试', true);
+    }
   };
 
   // 拍照上传（单张，报告现场拍摄场景）
@@ -1075,8 +1093,8 @@ export default function ReportUploadScreen({ navigation, route }) {
   const handleUpload = () => {
     Alert.alert('上传报告', '请选择上传方式', [
       { text: '拍照', onPress: pickFromCamera },
-      { text: '从相册选择（可多选）', onPress: pickFromLibrary },
-      { text: '选择文件（PDF）', onPress: pickDocument },
+      { text: '从相册选择（最多20张）', onPress: pickFromLibrary },
+      { text: '选择文件（PDF/图片，可多选）', onPress: pickDocument },
       { text: '取消', style: 'cancel' },
     ]);
   };
