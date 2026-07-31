@@ -4693,7 +4693,27 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const yearEntry = byYear[year] || {};
     // 兼容更早期的"年度内单一entry"结构：没有records数组时，把已有entry当作历史第一条包装进去
     const prevRecords = Array.isArray(yearEntry.records) ? yearEntry.records : (yearEntry.sections ? [yearEntry] : []);
-    const prevEntry = prevRecords[0] || {}; // 最新一条（数组按新到旧排序，见下方sort）
+    const hasDoctorSections = r => DOCTOR_KEYS.some(k => r?.sections?.[k]);
+    const hasNutritionSection = r => !!r?.sections?.[LIFESTYLE_KEY];
+    // 新记录带 scope；旧记录没有 scope 时按实际包含的板块兼容识别。
+    const prevDoctorEntry = prevRecords.find(r => (r.scope === 'doctor' || r.scope === 'all' || !r.scope) && hasDoctorSections(r)) || {};
+    const prevNutritionEntry = prevRecords.find(r => (r.scope === 'nutrition' || r.scope === 'all' || !r.scope) && hasNutritionSection(r)) || {};
+    const prevEntry = {
+      sections: { ...(prevDoctorEntry.sections || {}), ...(prevNutritionEntry.sections || {}) },
+      doctorApprovedAt: prevDoctorEntry.doctorApprovedAt || prevDoctorEntry.approvedAt || null,
+      doctorApprovedBy: prevDoctorEntry.doctorApprovedBy || prevDoctorEntry.approvedBy || null,
+      nutritionApprovedAt: prevNutritionEntry.nutritionApprovedAt || prevNutritionEntry.approvedAt || null,
+      nutritionApprovedBy: prevNutritionEntry.nutritionApprovedBy || prevNutritionEntry.approvedBy || null,
+    };
+
+    // 业务顺序：家庭医生完成并审核5维分析后，营养师才能生成生活方式评估。
+    if ((scope === 'nutrition' || scope === 'all') && !prevEntry.doctorApprovedAt && scope !== 'all') {
+      return res.status(409).json({
+        success: false,
+        needDoctorAnalysis: true,
+        message: '请先由家庭医生生成并审核本年度5维分析，再生成生活方式评估',
+      });
+    }
 
     // 对方维度已审核时需二次确认，未带 force 标志直接拒绝，前端据此弹确认框
     // （历史记录制下这个提示语义调整为"最新一条记录已审核"，新生成会追加一条全新记录，
@@ -4725,12 +4745,15 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       if (genResult[LIFESTYLE_KEY] !== undefined) mergedSections[LIFESTYLE_KEY] = genResult[LIFESTYLE_KEY];
     }
 
-    // 新增一条记录（不是修改prevEntry），审核状态从零开始——这是一份全新的评估，需要重新审核
+    // 新增一条独立记录。只清空本次生成维度的审核状态，另一方最新审核状态保持不变，
+    // 从而做到家庭医生/营养师任一方重新评估都不影响对方。
     const newRecord = {
-      sections: mergedSections, generatedAt: new Date(), evaluatedAt, period,
+      scope, sections: mergedSections, generatedAt: new Date(), evaluatedAt, period,
       approvedAt: null, approvedBy: null,
-      doctorApprovedAt: null, doctorApprovedBy: null,
-      nutritionApprovedAt: null, nutritionApprovedBy: null,
+      doctorApprovedAt: scope === 'nutrition' ? prevEntry.doctorApprovedAt : null,
+      doctorApprovedBy: scope === 'nutrition' ? prevEntry.doctorApprovedBy : null,
+      nutritionApprovedAt: scope === 'doctor' ? prevEntry.nutritionApprovedAt : null,
+      nutritionApprovedBy: scope === 'doctor' ? prevEntry.nutritionApprovedBy : null,
       discussions: [],
     };
     const records = [newRecord, ...prevRecords];
@@ -4740,7 +4763,16 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     byYear[year] = { ...records[0], records };
 
     // 顶层镜像最新一条record，供下游功能（ai-annual-plan/用户端展示/AI聊天助手等）无感知读取
-    const latestRecord = records[0];
+    const latestDoctor = records.find(r => (r.scope === 'doctor' || r.scope === 'all' || !r.scope) && hasDoctorSections(r)) || {};
+    const latestNutrition = records.find(r => (r.scope === 'nutrition' || r.scope === 'all' || !r.scope) && hasNutritionSection(r)) || {};
+    const latestRecord = {
+      sections: { ...(latestDoctor.sections || {}), ...(latestNutrition.sections || {}) },
+      generatedAt: records[0]?.generatedAt || new Date(),
+      doctorApprovedAt: latestDoctor.doctorApprovedAt || latestDoctor.approvedAt || null,
+      doctorApprovedBy: latestDoctor.doctorApprovedBy || latestDoctor.approvedBy || null,
+      nutritionApprovedAt: latestNutrition.nutritionApprovedAt || latestNutrition.approvedAt || null,
+      nutritionApprovedBy: latestNutrition.nutritionApprovedBy || latestNutrition.approvedBy || null,
+    };
     const summary = {
       sections: latestRecord.sections, generatedAt: latestRecord.generatedAt,
       approvedAt: latestRecord.approvedAt || null, approvedBy: latestRecord.approvedBy || null,
@@ -4776,7 +4808,11 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
     // recordIndex 不传默认操作最新一条（index 0，数组已按时间新到旧排序）——绝大多数审核场景
     // 都是审核"最新生成的这一条"，只有回看历史记录时才需要显式指定要审核哪一条
-    const idx = Number.isInteger(recordIndex) ? recordIndex : 0;
+    const sc = scope || 'all';
+    const defaultIdx = sc === 'nutrition'
+      ? records.findIndex(r => r.scope === 'nutrition' || r.scope === 'all' || (!r.scope && r.sections?.[LIFESTYLE_KEY]))
+      : records.findIndex(r => r.scope === 'doctor' || r.scope === 'all' || (!r.scope && DOCTOR_KEYS.some(k => r.sections?.[k])));
+    const idx = Number.isInteger(recordIndex) ? recordIndex : Math.max(defaultIdx, 0);
     if (idx < 0 || idx >= records.length) {
       return res.status(400).json({ success: false, message: '记录不存在' });
     }
@@ -4787,7 +4823,6 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // scope: 'doctor' | 'nutrition' | 'all'（缺省=all，兼容旧前端）
     if (action === 'approve') {
       const now = new Date();
-      const sc = scope || 'all';
       const isSuper = req.staff.role === 'superadmin';
       const sectionData = entry.sections || {};
       const hasDoctorContent = DOCTOR_KEYS.some(key => {
@@ -4820,15 +4855,23 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 保存最新记录镜像，兼容旧版页面；历史仍完整保存在 records 中。
     byYear[y] = { ...records[0], records };
     updated.byYear = byYear;
-    // 只有编辑/审核"最新一条"（idx===0）时才更新顶层镜像；编辑历史旧记录不影响下游读取的"最新结果"
-    if (idx === 0) {
-      if (sections !== undefined) updated.sections = sections;
-      if (sectionNotes !== undefined) updated.sectionNotes = sectionNotes;
-      if (action === 'approve') {
-        updated.doctorApprovedAt = entry.doctorApprovedAt; updated.doctorApprovedBy = entry.doctorApprovedBy;
-        updated.nutritionApprovedAt = entry.nutritionApprovedAt; updated.nutritionApprovedBy = entry.nutritionApprovedBy;
-        if (entry.approvedAt) { updated.approvedAt = entry.approvedAt; updated.approvedBy = entry.approvedBy; }
-      }
+    // 顶层镜像始终由两条独立链各自的“最新一条”合成，审核营养师记录（它可能不是全局 index 0）
+    // 也能立即同步到用户端与其他下游，同时不会改动家庭医生链。
+    const latestDoctor = records.find(r => r.scope === 'doctor' || r.scope === 'all' || (!r.scope && DOCTOR_KEYS.some(k => r.sections?.[k]))) || {};
+    const latestNutrition = records.find(r => r.scope === 'nutrition' || r.scope === 'all' || (!r.scope && r.sections?.[LIFESTYLE_KEY])) || {};
+    updated.sections = { ...(latestDoctor.sections || {}), ...(latestNutrition.sections || {}) };
+    updated.generatedAt = records[0]?.generatedAt || updated.generatedAt;
+    updated.doctorApprovedAt = latestDoctor.doctorApprovedAt || latestDoctor.approvedAt || null;
+    updated.doctorApprovedBy = latestDoctor.doctorApprovedBy || latestDoctor.approvedBy || null;
+    updated.nutritionApprovedAt = latestNutrition.nutritionApprovedAt || latestNutrition.approvedAt || null;
+    updated.nutritionApprovedBy = latestNutrition.nutritionApprovedBy || latestNutrition.approvedBy || null;
+    if (updated.doctorApprovedAt && updated.nutritionApprovedAt) {
+      updated.approvedAt = [updated.doctorApprovedAt, updated.nutritionApprovedAt]
+        .sort((a, b) => new Date(b) - new Date(a))[0];
+      updated.approvedBy = [updated.doctorApprovedBy, updated.nutritionApprovedBy].filter(Boolean).join('、');
+    } else {
+      updated.approvedAt = null;
+      updated.approvedBy = null;
     }
     updated.latestYear = y;
     await User.collection.updateOne(

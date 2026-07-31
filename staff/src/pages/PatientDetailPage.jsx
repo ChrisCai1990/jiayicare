@@ -403,14 +403,19 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
 
 // AI健康分析的卡片与数组编辑框：必须定义在组件外（模块级），否则每次输入重渲染会重建组件导致输入框失焦
 function AISectionCard({ title, icon, color, children }) {
+  const [expanded, setExpanded] = useState(true)
   return (
     <div className="card" style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
+      <button type="button" onClick={() => setExpanded(v => !v)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px',
+          border: 'none', borderBottom: expanded ? '1px solid #F0EDE7' : 'none', background: 'transparent',
+          textAlign: 'left', cursor: 'pointer' }}>
         <span style={{ fontSize: 17 }}>{icon}</span>
         <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{title}</span>
         <span style={{ width: 9, height: 9, borderRadius: '50%', background: color, flexShrink: 0 }} />
-      </div>
-      <div style={{ padding: '12px 20px' }}>{children}</div>
+        <span style={{ color: '#8AA89C', fontSize: 13 }}>{expanded ? '收起 ▲' : '展开 ▼'}</span>
+      </button>
+      {expanded && <div style={{ padding: '12px 20px' }}>{children}</div>}
     </div>
   )
 }
@@ -1247,6 +1252,8 @@ export default function PatientDetailPage() {
   const [editingAISummary, setEditingAISummary] = useState(false)
   const [aiSummaryForm, setAiSummaryForm] = useState({})
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
+  const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
+  const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
   // 场景八：AI风险评估
   const [riskYear, setRiskYear] = useState(null)             // 当前查看的AI风险评估年度
   const [riskGenerating, setRiskGenerating] = useState(false)
@@ -1978,6 +1985,8 @@ export default function PatientDetailPage() {
       } else if (err.needReportAudit) {
         loadPendingDoctorAudit()
         toast(err.message || '请先审核确认体检报告')
+      } else if (err.needDoctorAnalysis) {
+        toast(err.message || '请先完成并审核5维分析')
       } else {
         toast(err.message || 'AI生成失败')
       }
@@ -2085,6 +2094,7 @@ export default function PatientDetailPage() {
       const payload = {
         sections: cleanSections(aiSummaryForm.sections),
         ...(aiYear ? { year: aiYear } : {}),
+        ...(editingAISummary ? { scope: editingAISummary, recordIndex: aiRecordIndex[editingAISummary] } : {}),
         ...(approve ? { action: 'approve' } : {}),
       }
       await staffAPI.updateAIHealthSummary(id, payload)
@@ -2095,11 +2105,11 @@ export default function PatientDetailPage() {
   }
 
   // 按角色维度审核 AI 汇总分析（scope: 'doctor'=5维 / 'nutrition'=生活方式评估）
-  const handleApproveSummaryScope = async (scope, year) => {
+  const handleApproveSummaryScope = async (scope, year, recordIndex) => {
     const label = scope === 'nutrition' ? '生活方式评估' : '5维度分析'
     if (!window.confirm(`请确认您已完整查看并核对本次${label}内容。\n审核通过后将作为正式分析结果展示，是否继续？`)) return
     try {
-      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope, ...(year ? { year } : {}) })
+      await staffAPI.updateAIHealthSummary(id, { action: 'approve', scope, recordIndex, ...(year ? { year } : {}) })
       toast(`${label}已审核通过`)
       load()
     } catch (err) { toast(err.message || '操作失败') }
@@ -5477,15 +5487,30 @@ export default function PatientDetailPage() {
         // 当前查看的年度：允许查看尚未生成的当前年度（此时显示空状态+生成按钮）
         const curYear = (aiYear && yearOpts.includes(aiYear)) ? aiYear : (years[0] || String(nowY))
         const rawYearEntry = byYear[curYear] || {}
-        // 后端按“同年度多次评估”保存为 records（新到旧）；页面默认展示最新一条。
-        // 兼容旧数据仍直接存 sections 的结构，避免生成/审核成功后页面误显示为空。
-        const latestRecord = Array.isArray(rawYearEntry.records) ? (rawYearEntry.records[0] || {}) : rawYearEntry
-        const ais = { ...rawYearEntry, ...latestRecord }
+        const records = (Array.isArray(rawYearEntry.records) ? rawYearEntry.records : (rawYearEntry.sections ? [rawYearEntry] : []))
+          .map((record, index) => ({ ...record, _recordIndex: index }))
+        const doctorRecords = records.filter(r => r.scope === 'doctor' || r.scope === 'all' || (!r.scope && ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'].some(k => r.sections?.[k])))
+        const nutritionRecords = records.filter(r => r.scope === 'nutrition' || r.scope === 'all' || (!r.scope && r.sections?.lifestyle_assessment))
+        const doctorRecord = doctorRecords.find(r => r._recordIndex === aiRecordIndex.doctor) || doctorRecords[0] || {}
+        const nutritionRecord = nutritionRecords.find(r => r._recordIndex === aiRecordIndex.nutrition) || nutritionRecords[0] || {}
+        const latestDoctorApproved = !!(doctorRecords[0]?.doctorApprovedAt || doctorRecords[0]?.approvedAt)
+        // 两条链独立选择历史记录，展示层再组合，任何一方重新评估都不会改变另一方当前结果。
+        const ais = {
+          sections: { ...(doctorRecord.sections || {}), ...(nutritionRecord.sections || {}) },
+          doctorApprovedAt: doctorRecord.doctorApprovedAt || doctorRecord.approvedAt,
+          doctorApprovedBy: doctorRecord.doctorApprovedBy || doctorRecord.approvedBy,
+          nutritionApprovedAt: nutritionRecord.nutritionApprovedAt || nutritionRecord.approvedAt,
+          nutritionApprovedBy: nutritionRecord.nutritionApprovedBy || nutritionRecord.approvedBy,
+          discussions: doctorRecord.discussions || [],
+        }
         // 编辑模式用 aiSummaryForm.sections，查看模式用当前年度 ais.sections
         const sec = editingAISummary ? (aiSummaryForm.sections || {}) : (ais.sections || {})
         const docEditing = editingAISummary === 'doctor'
         const nutEditing = editingAISummary === 'nutrition'
-        const hasData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.chronic_disease || ais.sections?.lifestyle_assessment)
+        const hasDoctorData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.cardiovascular_risk || ais.sections?.chronic_disease || ais.sections?.checkup_completeness)
+        const hasLifestyle = !!(ais.sections?.lifestyle_assessment?.summary || (ais.sections?.lifestyle_assessment?.items || []).length)
+        const hasData = hasDoctorData || hasLifestyle
+        const activeHasData = aiAnalysisView === 'doctor' ? hasDoctorData : hasLifestyle
 
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
         const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
@@ -5558,6 +5583,51 @@ export default function PatientDetailPage() {
                 })}
               </select>
             </div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>
+                家庭医生 · 5维分析
+              </button>
+              <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>
+                营养师 · 生活方式分析
+              </button>
+            </div>
+            {/* 同一年度分成两条独立评估链，各自显示生成时间与历史版本。 */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginBottom: 14 }}>
+              {[
+                { key: 'doctor', title: '家庭医生 · 5维分析', records: doctorRecords, current: doctorRecord, color: '#1E6B50' },
+                { key: 'nutrition', title: '营养师 · 生活方式分析', records: nutritionRecords, current: nutritionRecord, color: '#16A34A' },
+              ].filter(group => group.key === aiAnalysisView).map(group => (
+                <div key={group.key} className="card" style={{ padding: '12px 14px', borderTop: `3px solid ${group.color}` }}>
+                  <div style={{ fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>{group.title}</div>
+                  {group.records.length ? (
+                    <>
+                      <select className="form-input" value={group.current._recordIndex ?? group.records[0]._recordIndex}
+                        onChange={e => setAiRecordIndex(v => ({ ...v, [group.key]: Number(e.target.value) }))}
+                        style={{ fontSize: 12, padding: '6px 8px' }}>
+                        {group.records.map((r, i) => {
+                          const approved = group.key === 'doctor'
+                            ? !!(r.doctorApprovedAt || r.approvedAt)
+                            : !!(r.nutritionApprovedAt || r.approvedAt)
+                          const time = r.generatedAt ? new Date(r.generatedAt).toLocaleString('zh-CN') : '历史记录'
+                          return <option key={r._recordIndex} value={r._recordIndex}>第{group.records.length - i}次 · {time}{approved ? ' · 已审核' : ' · 待审核'}</option>
+                        })}
+                      </select>
+                      <div style={{ marginTop: 6, fontSize: 11, color: '#8AA89C' }}>
+                        生成时间：{group.current.generatedAt ? new Date(group.current.generatedAt).toLocaleString('zh-CN') : '—'}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ fontSize: 12, color: '#8AA89C' }}>
+                      {group.key === 'nutrition' && !latestDoctorApproved
+                        ? '等待家庭医生完成并审核本年度5维分析'
+                        : '本年度尚未生成，可点击下方生成按钮新增评估'}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
             {/* 操作栏 */}
             {(() => {
               // 按角色拆分审核（家庭医师审5维 / 营养师审生活方式评估；超管两者皆可）
@@ -5567,51 +5637,53 @@ export default function PatientDetailPage() {
               const docApproved = !!(ais.doctorApprovedAt || ais.approvedAt)
               const nutApproved = !!(ais.nutritionApprovedAt || ais.approvedAt)
               const hasLifestyle = (ais.sections?.lifestyle_assessment?.items || []).length > 0 || !!ais.sections?.lifestyle_assessment?.summary
-              const canDoc = hasData && !docApproved && (roleScope === 'doctor' || roleScope === 'all')
-              const canNut = hasData && hasLifestyle && !nutApproved && (roleScope === 'nutrition' || roleScope === 'all')
+              const canDoc = hasDoctorData && !docApproved && (roleScope === 'doctor' || roleScope === 'all')
+              const canNut = hasLifestyle && !nutApproved && (roleScope === 'nutrition' || roleScope === 'all')
               return (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
               {/* 双维度审核状态 */}
               {hasData && (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 200 }}>
-                  <span style={{ fontSize: 12, color: docApproved ? '#22A06B' : '#8AA89C' }}>
+                  {aiAnalysisView === 'doctor' && <span style={{ fontSize: 12, color: docApproved ? '#22A06B' : '#8AA89C' }}>
                     {docApproved
                       ? `✓ 5维度分析 已审核${ais.doctorApprovedBy ? '·' + ais.doctorApprovedBy : ''}（家庭医师）`
                       : '○ 5维度分析 待家庭医师审核'}
-                  </span>
-                  <span style={{ fontSize: 12, color: nutApproved ? '#16A34A' : '#8AA89C' }}>
+                  </span>}
+                  {aiAnalysisView === 'nutrition' && <span style={{ fontSize: 12, color: nutApproved ? '#16A34A' : '#8AA89C' }}>
                     {!hasLifestyle ? '— 生活方式评估（暂无内容）'
                       : nutApproved
                         ? `✓ 生活方式评估 已审核${ais.nutritionApprovedBy ? '·' + ais.nutritionApprovedBy : ''}（营养师）`
                         : '○ 生活方式评估 待营养师审核'}
-                  </span>
+                  </span>}
                 </div>
               )}
               {!hasData && (
                 <div style={{ fontSize: 12, color: '#8AA89C', flex: 1, minWidth: 180 }}>{curYear}年度尚未生成</div>
               )}
               {/* 角色化审核按钮（仅查看模式） */}
-              {!editingAISummary && canDoc && (
-                <button className="btn btn-primary btn-sm" onClick={() => handleApproveSummaryScope('doctor', curYear)}>
+              {!editingAISummary && aiAnalysisView === 'doctor' && canDoc && (
+                <button className="btn btn-primary btn-sm" onClick={() => handleApproveSummaryScope('doctor', curYear, doctorRecord._recordIndex)}>
                   审核5维度通过
                 </button>
               )}
-              {!editingAISummary && canNut && (
-                <button className="btn btn-primary btn-sm" style={{ background: '#16A34A', borderColor: '#16A34A' }} onClick={() => handleApproveSummaryScope('nutrition', curYear)}>
+              {!editingAISummary && aiAnalysisView === 'nutrition' && canNut && (
+                <button className="btn btn-primary btn-sm" style={{ background: '#16A34A', borderColor: '#16A34A' }} onClick={() => handleApproveSummaryScope('nutrition', curYear, nutritionRecord._recordIndex)}>
                   审核生活方式评估通过
                 </button>
               )}
-              {!editingAISummary && hasData && (roleScope === 'doctor' || roleScope === 'all') && (
+              {!editingAISummary && aiAnalysisView === 'doctor' && hasDoctorData && (roleScope === 'doctor' || roleScope === 'all') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
                   setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) })
                   setAiYear(curYear)
+                  setAiRecordIndex(v => ({ ...v, doctor: doctorRecord._recordIndex || 0 }))
                   setEditingAISummary('doctor')
                 }}>编辑5维分析</button>
               )}
-              {!editingAISummary && hasData && (roleScope === 'nutrition' || roleScope === 'all') && (
+              {!editingAISummary && aiAnalysisView === 'nutrition' && hasLifestyle && (roleScope === 'nutrition' || roleScope === 'all') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => {
                   setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) })
                   setAiYear(curYear)
+                  setAiRecordIndex(v => ({ ...v, nutrition: nutritionRecord._recordIndex || 0 }))
                   setEditingAISummary('nutrition')
                 }}>编辑生活方式评估</button>
               )}
@@ -5623,68 +5695,96 @@ export default function PatientDetailPage() {
               )}
               {/* 生成按钮按角色拆分：家医只生成5维度，营养师只生成生活方式评估，超管两者都能触发（走 all，一次生成全部）
                   已审核的部分，生成按钮变灰并提示，点击需二次确认，防止误点覆盖已审核内容（2026-07-10 金娟：家医端要提示已审核防误点） */}
-              {!editingAISummary && (roleScope === 'doctor') && (
+              {!editingAISummary && aiAnalysisView === 'doctor' && (roleScope === 'doctor') && (
                 <button className="btn btn-sm" disabled={aiSummaryLoading}
                   style={docApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
                   onClick={() => {
                     if (docApproved && !window.confirm('最新一条5维度分析已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
                     handleGenerateAISummary(curYear, 'doctor', docApproved)
                   }}>
-                  {aiSummaryLoading ? '生成中…' : (docApproved ? '已审核·重新生成5维度' : (hasData ? '重新生成5维度分析' : '生成5维度分析'))}
+                  {aiSummaryLoading ? '生成中…' : (docApproved ? '新增5维分析' : (hasDoctorData ? '重新生成5维度分析' : '生成5维度分析'))}
                 </button>
               )}
-              {!editingAISummary && (roleScope === 'nutrition') && (
-                <button className="btn btn-sm" disabled={aiSummaryLoading}
+              {!editingAISummary && aiAnalysisView === 'nutrition' && (roleScope === 'nutrition') && (
+                <button className="btn btn-sm" disabled={aiSummaryLoading || !latestDoctorApproved}
+                  title={!latestDoctorApproved ? '请先由家庭医生完成并审核本年度5维分析' : ''}
                   style={nutApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
                   onClick={() => {
                     if (nutApproved && !window.confirm('最新一条生活方式评估已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
                     handleGenerateAISummary(curYear, 'nutrition', nutApproved)
                   }}>
-                  {aiSummaryLoading ? '生成中…' : (nutApproved ? '已审核·重新生成生活方式' : (hasData ? '重新生成生活方式评估' : '生成生活方式评估'))}
+                  {aiSummaryLoading ? '生成中…' : (!latestDoctorApproved ? '等待5维分析审核' : (nutApproved ? '新增生活方式评估' : (hasLifestyle ? '重新生成生活方式评估' : '生成生活方式评估')))}
                 </button>
               )}
               {!editingAISummary && (roleScope === 'all') && (
-                <button className="btn btn-sm" disabled={aiSummaryLoading}
-                  style={(docApproved || nutApproved) ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
+                <button className="btn btn-sm" disabled={aiSummaryLoading || (aiAnalysisView === 'nutrition' && !latestDoctorApproved)}
+                  style={(aiAnalysisView === 'doctor' ? docApproved : nutApproved) ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
                   onClick={() => {
-                    const approved = docApproved || nutApproved
-                    if (approved && !window.confirm('本年度最新分析已有审核结果。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
-                    handleGenerateAISummary(curYear, 'all', approved)
+                    const approved = aiAnalysisView === 'doctor' ? docApproved : nutApproved
+                    const label = aiAnalysisView === 'doctor' ? '5维分析' : '生活方式分析'
+                    if (approved && !window.confirm(`本年度最新${label}已有审核结果。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？`)) return
+                    handleGenerateAISummary(curYear, aiAnalysisView, approved)
                   }}>
-                  {aiSummaryLoading ? '生成中…' : ((docApproved || nutApproved) ? '已审核·重新生成' : (hasData ? `重新生成${curYear}年度` : `生成${curYear}年度`))}
+                  {aiSummaryLoading ? '生成中…' : `新增${aiAnalysisView === 'doctor' ? '5维分析' : '生活方式分析'}`}
                 </button>
               )}
             </div>
               )
             })()}
 
-            {!hasData ? (
+            {!activeHasData ? (
               <div className="card" style={{ textAlign: 'center', padding: 40, color: '#8AA89C', fontSize: 14 }}>
-                {curYear}年度尚未生成。点击右上角「生成{curYear}年度」，将立足最近一次体检数据，结合历年体检指标、专项筛查报告、健康档案与生活方式，自动生成该年度综合健康分析。
+                {aiAnalysisView === 'doctor'
+                  ? `${curYear}年度5维分析尚未生成，请由家庭医生新增评估。`
+                  : (!latestDoctorApproved
+                    ? `请先由家庭医生完成并审核${curYear}年度5维分析。`
+                    : `${curYear}年度生活方式分析尚未生成，请由营养师新增评估。`)}
               </div>
             ) : (
               <>
+                {aiAnalysisView === 'doctor' && hasDoctorData && (
+                  <div style={{ margin: '6px 0 12px', padding: '10px 14px', borderRadius: 8, background: '#E8F5EF', color: '#1E6B50', fontWeight: 800 }}>
+                    家庭医生 · 5维健康分析
+                  </div>
+                )}
+                {aiAnalysisView === 'doctor' && hasDoctorData && <>
                 {(() => {
-                  const sourceIds = [...new Set([
-                    ...(sec.tumor_risk?.sourceReportIds || []),
-                    ...(sec.cardiovascular_risk?.sourceReportIds || []),
-                    ...(sec.chronic_disease?.sourceReportIds || []),
-                    ...(sec.checkup_completeness?.sourceReportIds || []),
-                    ...(sec.medical_priority?.sourceReportIds || []),
-                    ...(sec.chronic_disease?.items || []).map(item => item.sourceReportId).filter(Boolean),
-                    ...(sec.medical_priority?.items || []).map(item => item.sourceReportId).filter(Boolean),
-                  ])]
-                  if (!sourceIds.length) return null
+                  const groups = [
+                    ['肿瘤风险筛查', sec.tumor_risk?.sourceReportIds || []],
+                    ['心脑血管风险', sec.cardiovascular_risk?.sourceReportIds || []],
+                    ['慢性病及其他指标', sec.chronic_disease?.sourceReportIds || []],
+                    ['体检全面性', sec.checkup_completeness?.sourceReportIds || []],
+                    ['优先医疗问题', sec.medical_priority?.sourceReportIds || []],
+                  ].map(([label, ids]) => [label, [...new Set(ids)]])
+                    .filter(([, ids]) => ids.length)
+                  if (!groups.length) return null
+                  const reportLabel = reportId => {
+                    const report = screeningReports.find(r => String(r._id) === String(reportId))
+                    if (!report) return '原始报告'
+                    const title = report.screeningL2 || report.title || '检查报告'
+                    const date = String(report.checkDate || report.date || '').slice(0, 10)
+                    const hospital = report.hospital || report.institution || ''
+                    return [title, hospital, date].filter(Boolean).join(' · ')
+                  }
                   return (
-                    <div className="card" style={{ marginBottom: 12, padding: '10px 14px', background: '#F0F7FF', border: '1px solid #BFDBFE' }}>
-                      <div style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8', marginBottom: 6 }}>🔗 本次分析依据</div>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                        {sourceIds.map((reportId, index) => (
-                          <button key={reportId} className="btn btn-secondary btn-sm"
-                            onClick={() => openAIAnalysisSource(reportId)}>查看原始报告 {index + 1}</button>
+                    <details className="card" style={{ marginBottom: 12, padding: '10px 14px', background: '#F0F7FF', border: '1px solid #BFDBFE' }}>
+                      <summary style={{ fontSize: 12, fontWeight: 700, color: '#1D4ED8', cursor: 'pointer' }}>
+                        🔗 本次5维分析依据（按分析板块对应，点击展开）
+                      </summary>
+                      <div style={{ marginTop: 10, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {groups.map(([label, ids]) => (
+                          <div key={label}>
+                            <div style={{ fontSize: 12, color: '#1D4ED8', fontWeight: 700, marginBottom: 5 }}>{label}</div>
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {ids.map(reportId => (
+                                <button key={reportId} className="btn btn-secondary btn-sm"
+                                  onClick={() => openAIAnalysisSource(reportId)}>{reportLabel(reportId)}</button>
+                              ))}
+                            </div>
+                          </div>
                         ))}
                       </div>
-                    </div>
+                    </details>
                   )
                 })()}
                 {/* 板块一：肿瘤风险筛查分析 */}
@@ -5845,9 +5945,15 @@ export default function PatientDetailPage() {
                     )
                   )}
                 </AISectionCard>
+                </>}
 
                 {/* 板块六：生活方式评估（结合最近一次体检 + 膳食调查综合概述） */}
-                <AISectionCard title="生活方式评估" icon="🌿" color="#16A34A">
+                {aiAnalysisView === 'nutrition' && hasLifestyle && (
+                  <div style={{ margin: '20px 0 12px', padding: '10px 14px', borderRadius: 8, background: '#F0FDF4', color: '#16A34A', fontWeight: 800 }}>
+                    营养师 · 生活方式分析
+                  </div>
+                )}
+                {aiAnalysisView === 'nutrition' && hasLifestyle && <AISectionCard title="生活方式评估" icon="🌿" color="#16A34A">
                   {nutEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.lifestyle_assessment?.items || []).map((item, i) => (
@@ -5883,10 +5989,10 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   )}
-                </AISectionCard>
+                </AISectionCard>}
 
                 {/* AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯留言，AI不参与回复 */}
-                <AISummaryDiscussionPanel patientId={id} year={curYear} discussions={ais.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} />
+                {aiAnalysisView === 'doctor' && <AISummaryDiscussionPanel patientId={id} year={curYear} discussions={ais.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} />}
               </>
             )}
           </div>
