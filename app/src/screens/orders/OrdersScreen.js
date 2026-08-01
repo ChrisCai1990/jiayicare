@@ -61,6 +61,10 @@ function ConfirmModal({ visible, title, message, onConfirm, onCancel, confirmTex
 function OrderCard({ order, onCancel }) {
   const st = STATUS_CONFIG[order.status] || STATUS_CONFIG.pending;
   const canCancel = order.status === 'pending' || order.status === 'scheduled';
+  const totalUnits = Math.max(1, Number(order.totalUnits) || 1);
+  const usedUnits = Math.min(totalUnits, Math.max(0, Number(order.usedUnits) || 0));
+  const remainingUnits = Math.max(0, totalUnits - usedUnits);
+  const usagePercent = Math.round((usedUnits / totalUnits) * 100);
 
   return (
     <View style={styles.orderCard}>
@@ -87,6 +91,31 @@ function OrderCard({ order, onCancel }) {
       </View>
 
       {/* 备注 */}
+      {(totalUnits > 1 || (order.serviceItemsSnapshot || []).length > 0) && (
+        <View style={styles.usageCard}>
+          <View style={styles.usageHeader}>
+            <Text style={styles.usageTitle}>服务使用进度</Text>
+            <Text style={styles.usageSummary}>已使用 {usedUnits} 次 · 剩余 {remainingUnits} 次</Text>
+          </View>
+          <View style={styles.usageTrack}>
+            <View style={[styles.usageFill, { width: `${usagePercent}%` }]} />
+          </View>
+          <View style={styles.usageNumbers}>
+            <Text style={styles.usageNumberText}>已使用 {usedUnits}</Text>
+            <Text style={styles.usageTotalText}>共 {totalUnits} 次</Text>
+            <Text style={styles.usageRemainingText}>剩余 {remainingUnits}</Text>
+          </View>
+          {(order.serviceItemsSnapshot || []).map(item => {
+            const itemTotal = Math.max(1, Number(item.units) || 1);
+            const itemUsed = Math.min(itemTotal, Math.max(0, Number(item.usedUnits) || 0));
+            return <View key={item.key || item.name} style={styles.subItemRow}>
+              <Text style={styles.subItemName}>{item.name}</Text>
+              <Text style={styles.subItemCount}>已用 {itemUsed} · 剩余 {itemTotal - itemUsed} · 共 {itemTotal} 次</Text>
+            </View>;
+          })}
+        </View>
+      )}
+
       {!!order.note && (
         <View style={styles.noteWrap}>
           <Ionicons name="chatbox-outline" size={12} color={colors.textMuted} />
@@ -389,6 +418,24 @@ const styles = StyleSheet.create({
   serviceInfo: { flex: 1 },
   serviceName: { fontSize: 15, fontWeight: '600', color: colors.textPrimary, lineHeight: 20 },
   servicePrice: { fontSize: 14, fontWeight: '700', color: colors.danger, marginTop: 4 },
+
+  usageCard: {
+    backgroundColor: '#F3FAF7', borderRadius: radius.md,
+    borderWidth: 1, borderColor: colors.primary + '25',
+    padding: spacing.sm, marginBottom: spacing.sm,
+  },
+  usageHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 },
+  usageTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  usageSummary: { fontSize: 12, fontWeight: '600', color: colors.primary },
+  usageTrack: { height: 7, borderRadius: 4, backgroundColor: colors.borderLight, overflow: 'hidden' },
+  usageFill: { height: '100%', borderRadius: 4, backgroundColor: colors.primary },
+  usageNumbers: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 6 },
+  usageNumberText: { fontSize: 11, color: colors.primary, fontWeight: '600' },
+  usageTotalText: { fontSize: 11, color: colors.textMuted },
+  usageRemainingText: { fontSize: 11, color: colors.warning, fontWeight: '700' },
+  subItemRow: { flexDirection: 'row', justifyContent: 'space-between', gap: 8, paddingTop: 7, marginTop: 7, borderTopWidth: 1, borderTopColor: colors.borderLight },
+  subItemName: { flex: 1, fontSize: 12, color: colors.textSecondary, fontWeight: '600' },
+  subItemCount: { fontSize: 11, color: colors.textMuted },
 
   noteWrap: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 5,
