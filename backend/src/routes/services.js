@@ -165,6 +165,7 @@ router.post('/order', auth, async (req, res) => {
       name: product.name,
       price: selectedPrice ? selectedPrice.price : product.originalPrice,
       specificationLabel: selectedPrice?.label || '',
+      category: product.category || '',
       icon: 'storefront-outline',
     };
   }
@@ -208,12 +209,12 @@ router.post('/order', auth, async (req, res) => {
   const priceAfterCoupon = Math.max(0, Math.round((service.price - couponDiscount) * 100) / 100);
 
   let fundUsed = 0;
+  let fundEnterprise = null;
   if (useHealthFund > 0) {
-    const balance = req.user.healthFundBalance || 0;
-    if (useHealthFund > balance) {
-      return res.status(400).json({ success: false, message: '健康基金余额不足' });
-    }
-    fundUsed = Math.min(useHealthFund, priceAfterCoupon);
+    try {
+      const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '' });
+      fundUsed = checked.allowed; fundEnterprise = checked.enterprise;
+    } catch (err) { return res.status(400).json({ success:false, message:err.message }); }
   }
 
   const paidAmount = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
@@ -291,12 +292,7 @@ router.post('/order', auth, async (req, res) => {
     sourceOrderId: order._id,
   }));
   // 健康基金实时扣减（与订单绑定，note 记录用于哪笔订单）
-  if (fundUsed > 0) {
-    pendingTasks.push(User.collection.updateOne(
-      { _id: req.user._id },
-      { $inc: { healthFundBalance: -fundUsed } }
-    ));
-  }
+  if (fundUsed > 0) pendingTasks.push(require('../utils/healthFundPayment').deductHealthFund({ user:req.user, enterprise:fundEnterprise, order, amount:fundUsed }));
   // 优惠券标记已用
   if (coupon) {
     coupon.status = 'used';

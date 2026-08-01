@@ -15,6 +15,15 @@ const enterpriseSchema = new mongoose.Schema({
   packageType:     { type: String, default: '' },   // 采购的服务包类型，如 pkg_1y
   status:          { type: String, enum: ['active', 'expired', 'suspended'], default: 'active' },
   note:            { type: String, default: '' },
+  // 企业赠送健康基金在客户支付时的抵扣规则。
+  healthFundPaymentRule: {
+    enabled: { type: Boolean, default: false },
+    deductionType: { type: String, enum: ['unlimited', 'percentage', 'fixedAmount'], default: 'unlimited' },
+    deductionValue: { type: Number, default: 0, min: 0 },
+    minOrderAmount: { type: Number, default: 0, min: 0 },
+    eligibleCategories: [{ type: String }],
+    note: { type: String, default: '' },
+  },
 
   // ── HR看板财务数据（超管后台手工录入，按年度记录）──────────────────
   // 一个企业跨年度可能有多份数据，用 byYear 存：{ '2026': { ...一年的各项 } }

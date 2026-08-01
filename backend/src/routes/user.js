@@ -31,6 +31,7 @@ const PointsLog    = require('../models/PointsLog');
 const HealthPlan   = require('../models/HealthPlan');
 const PushRecord   = require('../models/PushRecord');
 const Order        = require('../models/Order');
+const Product      = require('../models/Product');
 const Coupon       = require('../models/Coupon');
 const Message      = require('../models/Message');
 const FollowUp         = require('../models/FollowUp');
@@ -997,10 +998,15 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     const priceAfterCoupon = Math.max(0, Math.round((totalPrice - couponDiscount) * 100) / 100);
 
     let fundUsed = 0;
+    let fundEnterprise = null;
     if (useHealthFund > 0) {
-      const balance = req.user.healthFundBalance || 0;
-      if (useHealthFund > balance) return res.status(400).json({ success: false, message: '健康基金余额不足' });
-      fundUsed = Math.min(useHealthFund, priceAfterCoupon);
+      try {
+        const productDocs = await Product.find({ _id:{ $in:toPay.map(p=>p.productId).filter(id=>require('mongoose').Types.ObjectId.isValid(id)) } }).select('category');
+        const categories = [...new Set(productDocs.map(p=>p.category).filter(Boolean))];
+        const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:categories.length === 1 ? categories[0] : '' });
+        if (checked.enterprise?.healthFundPaymentRule?.eligibleCategories?.length && categories.some(c=>!checked.enterprise.healthFundPaymentRule.eligibleCategories.includes(c))) throw new Error('所选服务中含有不支持企业健康基金抵扣的分类');
+        fundUsed=checked.allowed; fundEnterprise=checked.enterprise;
+      } catch(err) { return res.status(400).json({success:false,message:err.message}); }
     }
     const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
     const totalDiscount = couponDiscount + fundUsed;
@@ -1048,9 +1054,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
 
     const followUps = [];
     if (!record.readAt) followUps.push(PushRecord.updateOne({ _id: record._id }, { readAt: new Date() }));
-    if (fundUsed > 0) {
-      followUps.push(User.collection.updateOne({ _id: req.user._id }, { $inc: { healthFundBalance: -fundUsed } }));
-    }
+    if (fundUsed > 0) followUps.push(require('../utils/healthFundPayment').deductHealthFund({ user:req.user, enterprise:fundEnterprise, order:orders[0], amount:fundUsed }));
     if (coupon) {
       coupon.status = 'used';
       coupon.usedAt = new Date();

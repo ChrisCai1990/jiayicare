@@ -15,6 +15,7 @@ function safeFileSrc(url) {
 const EMPTY_ENTERPRISE = {
   name: '', creditCode: '', contactName: '', contactPhone: '', contactEmail: '',
   contractStartAt: '', contractEndAt: '', seatsTotal: 0, packageType: '', status: 'active', note: '',
+  healthFundPaymentRule: { enabled:false, deductionType:'unlimited', deductionValue:0, minOrderAmount:0, eligibleCategories:[], note:'' },
 }
 
 // ── 企业信息表单 Modal ─────────────────────────────────────────────
@@ -28,6 +29,7 @@ function EnterpriseModal({ enterprise, onClose, onSaved }) {
   } : EMPTY_ENTERPRISE)
   const [loading, setLoading] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const setFundRule = (k, v) => setForm(f => ({ ...f, healthFundPaymentRule:{ ...EMPTY_ENTERPRISE.healthFundPaymentRule, ...(f.healthFundPaymentRule || {}), [k]:v } }))
 
   const save = async () => {
     if (!form.name) { toast('❌ 企业名称为必填项'); return }
@@ -94,6 +96,12 @@ function EnterpriseModal({ enterprise, onClose, onSaved }) {
             <label className="form-label">备注</label>
             <textarea className="form-input" rows={3} value={form.note} onChange={e => set('note', e.target.value)} />
           </div>
+          <div style={{gridColumn:'1/-1',borderTop:'1px solid #e5e7eb',paddingTop:12,fontWeight:700,color:'#1E6B50'}}>企业健康基金支付抵扣规则</div>
+          <label style={{gridColumn:'1/-1',display:'flex',gap:8,alignItems:'center'}}><input type="checkbox" checked={!!form.healthFundPaymentRule?.enabled} onChange={e=>setFundRule('enabled',e.target.checked)}/>启用企业赠送健康基金支付抵扣</label>
+          <div className="form-group"><label className="form-label">抵扣方式</label><select className="form-input" value={form.healthFundPaymentRule?.deductionType || 'unlimited'} onChange={e=>setFundRule('deductionType',e.target.value)}><option value="unlimited">余额内不限额</option><option value="percentage">按订单比例上限</option><option value="fixedAmount">每单固定金额上限</option></select></div>
+          <div className="form-group"><label className="form-label">比例（%）/金额（元）</label><input className="form-input" type="number" min="0" value={form.healthFundPaymentRule?.deductionValue || 0} onChange={e=>setFundRule('deductionValue',Number(e.target.value)||0)}/></div>
+          <div className="form-group"><label className="form-label">最低订单金额</label><input className="form-input" type="number" min="0" value={form.healthFundPaymentRule?.minOrderAmount || 0} onChange={e=>setFundRule('minOrderAmount',Number(e.target.value)||0)}/></div>
+          <div className="form-group"><label className="form-label">适用产品分类（逗号分隔，留空为全部）</label><input className="form-input" value={(form.healthFundPaymentRule?.eligibleCategories || []).join(',')} onChange={e=>setFundRule('eligibleCategories',e.target.value.split(',').map(v=>v.trim()).filter(Boolean))}/></div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>取消</button>

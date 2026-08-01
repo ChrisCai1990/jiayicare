@@ -1427,23 +1427,23 @@ router.get('/enterprises', adminAuth, async (req, res) => {
 
 // POST /api/admin/enterprises
 router.post('/enterprises', adminAuth, async (req, res) => {
-  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note } = req.body;
+  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note, healthFundPaymentRule } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '企业名称为必填项' });
   const enterprise = await Enterprise.create({
     name, creditCode: creditCode || '', contactName: contactName || '', contactPhone: contactPhone || '',
     contactEmail: contactEmail || '', logo: logo || '', contractStartAt: contractStartAt || null,
     contractEndAt: contractEndAt || null, seatsTotal: seatsTotal ?? 0, packageType: packageType || '',
-    status: status || 'active', note: note || '',
+    status: status || 'active', note: note || '', healthFundPaymentRule: healthFundPaymentRule || undefined,
   });
   res.json({ success: true, data: enterprise, message: '企业客户创建成功' });
 });
 
 // PUT /api/admin/enterprises/:id
 router.put('/enterprises/:id', adminAuth, async (req, res) => {
-  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note } = req.body;
+  const { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note, healthFundPaymentRule } = req.body;
   const enterprise = await Enterprise.findByIdAndUpdate(
     req.params.id,
-    { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note },
+    { name, creditCode, contactName, contactPhone, contactEmail, logo, contractStartAt, contractEndAt, seatsTotal, packageType, status, note, healthFundPaymentRule },
     { new: true }
   );
   if (!enterprise) return res.status(404).json({ success: false, message: '企业不存在' });

@@ -3040,10 +3040,15 @@ router.post('/patients/:id/gift', staffAuth, async (req, res) => {
   });
   // 如果赠送健康基金，更新患者 healthFund 余额
   if (giftType === 'fund' && fundAmount > 0) {
-    await User.collection.updateOne(
+    const updated = await User.findOneAndUpdate(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
-      { $inc: { healthFundBalance: fundAmount } }
+      { $inc: { healthFundBalance: fundAmount } },
+      { new: true },
     );
+    await require('../models/HealthFundTransaction').create({
+      userId:req.params.id, enterpriseId:updated?.enterpriseId || null, type:'grant', source:fundType || 'enterprise',
+      amount:Number(fundAmount), balanceAfter:updated?.healthFundBalance || 0, operatorId:req.staff._id, remark:remark || '健康基金赠送',
+    });
   }
   res.json({ success: true, data: gift });
 });
