@@ -488,7 +488,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     birthDate, idNumber, idType, maritalStatus, ethnicity, belief, memberType,
     chronicDiseases, patientType, source, remark,
     workplace, occupation,
-    address, contactPhone, contactPhone2, contactName, contactPhone3, deliveryAddress,
+    address, contactPhone2, contactName, contactPhone3, deliveryAddress,
     bloodTypeABO, bloodTypeRH,
     drugAllergy, foodAllergy,
     traumaHistory, transfusionHistory, poisoningHistory, infectiousHistory, vaccinationHistory, otherDiseaseHistory,
@@ -506,9 +506,13 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     initialBloodPressure, initialHeartRate, initialWeight, initialSleepHours, initialMoodScore,
   } = req.body;
 
-  // 手机号非必填（配偶共用手机号、未成年子女无手机号等场景）；填了则仍需唯一
-  if (phone) {
-    const existing = await User.findOne({ phone });
+  // 手机号非必填；填写后即作为唯一的用户端登录账号，并同步旧联系电话镜像。
+  const normalizedCreatePhone = String(phone || '').trim();
+  if (normalizedCreatePhone && !/^1[3-9]\d{9}$/.test(normalizedCreatePhone)) {
+    return res.status(400).json({ success: false, message: '请输入正确的11位手机号码' });
+  }
+  if (normalizedCreatePhone) {
+    const existing = await User.findOne({ phone: normalizedCreatePhone });
     if (existing) return res.status(400).json({ success: false, message: '该手机号已存在' });
   }
 
@@ -553,7 +557,8 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     workplace: workplace || '',
     occupation: occupation || '',
     address: address || '',
-    contactPhone: contactPhone || '',
+    // 手机号是唯一联系号码和用户端登录账号；contactPhone 仅保留为兼容镜像。
+    contactPhone: normalizedCreatePhone,
     contactPhone2: contactPhone2 || '',
     contactName: contactName || '',
     contactPhone3: contactPhone3 || '',
@@ -619,7 +624,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
   }
 
   // phone 字段留空时不写入（sparse unique 索引要求：字段缺失才不冲突，空字符串仍会冲突）
-  if (phone) createData.phone = phone;
+  if (normalizedCreatePhone) createData.phone = normalizedCreatePhone;
 
   const user = await User.create(createData);
 
@@ -703,7 +708,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
-  const existingPatient = await User.findById(req.params.id).select('lifestyle lifestyle_data').lean();
+  const existingPatient = await User.findById(req.params.id).select('phone contactPhone lifestyle lifestyle_data').lean();
   if (!existingPatient) return res.status(404).json({ success: false, message: '患者不存在' });
   const allowed = [
     'name', 'phone', 'gender', 'age', 'height', 'weight', 'preferredTitle',
@@ -751,7 +756,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     const normalizedPhone = String(
       req.body.phone !== undefined ? req.body.phone : req.body.contactPhone
     ).trim();
-    if (normalizedPhone && !/^1\d{10}$/.test(normalizedPhone)) {
+    if (normalizedPhone && !/^1[3-9]\d{9}$/.test(normalizedPhone)) {
       return res.status(400).json({ success: false, message: '请输入正确的11位手机号码' });
     }
     if (normalizedPhone) {
@@ -765,7 +770,10 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
       updateData.phone = normalizedPhone;
       updateData.contactPhone = normalizedPhone;
     } else {
-      updateData.phone = null;
+      delete updateData.phone;
+      if (existingPatient.phone) {
+        return res.status(400).json({ success: false, message: '已有登录手机号不可清空，如号码错误请直接改为正确号码' });
+      }
       updateData.contactPhone = '';
     }
   }
@@ -851,6 +859,17 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
 
   // 新增体检指标记录时推入历史
   const pushOps = {};
+  const oldPhone = String(existingPatient.phone || existingPatient.contactPhone || '').trim();
+  const newPhone = String(updateData.phone ?? oldPhone).trim();
+  if ((req.body.phone !== undefined || req.body.contactPhone !== undefined) && oldPhone !== newPhone) {
+    pushOps.phoneChangeHistory = {
+      from: oldPhone,
+      to: newPhone,
+      changedBy: req.staff._id,
+      changedByName: req.staff.name || req.staff.username || '',
+      changedAt: new Date(),
+    };
+  }
   if (Object.keys(lifestyleChanges).length) {
     pushOps.lifestyleHistory = {
       changes: lifestyleChanges,

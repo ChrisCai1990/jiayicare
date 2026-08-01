@@ -2620,6 +2620,7 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {[
                     { key: 'name', label: '姓名' },
+                    { key: 'phone', label: '手机号码（用户端登录账号）', type: 'tel' },
                   ].map(({ key, label, type }) => (
                     <div key={key} className="form-group" style={{ marginBottom: 0 }}>
                       <label style={{ fontSize: 12, color: '#8AA89C' }}>{label}</label>
@@ -2646,7 +2647,6 @@ export default function PatientDetailPage() {
                     { key: 'height', label: '身高(cm)', type: 'number' },
                     { key: 'weight', label: '体重(kg)', type: 'number' },
                     { key: 'address', label: '联系地址' },
-                    { key: 'phone', label: '联系电话（登录手机号）', type: 'tel' },
                     { key: 'contactName', label: '紧急联系人' },
                     { key: 'contactPhone2', label: '紧急联系电话' },
                     { key: 'deliveryAddress', label: '快递配送地址' },
@@ -2773,7 +2773,7 @@ export default function PatientDetailPage() {
                     if (user.gender === '女') return `${surname ? surname + '女士' : (user.name || '您')}（自动）`
                     return `${user.name || '您'}（自动）`
                   })()} />
-                  <InfoRow label="手机号" value={user.phone} />
+                  <InfoRow label="手机号码（用户端登录账号）" value={user.phone || user.contactPhone || '-'} />
                   <InfoRow label="性别" value={user.gender} />
                   <InfoRow label="年龄" value={age} />
                   <InfoRow label="身高" value={user.height ? `${user.height} cm` : '-'} />
@@ -2781,7 +2781,6 @@ export default function PatientDetailPage() {
                   {bmi && <InfoRow label="BMI" value={bmi} />}
                   <InfoRow label={user.idType === 'passport' ? '护照' : '身份证'} value={user.idNumber || '-'} />
                   <InfoRow label="联系地址" value={user.address || '-'} />
-                  <InfoRow label="联系电话" value={user.contactPhone || '-'} />
                   <InfoRow label="紧急联系人" value={user.contactName || '-'} />
                   <InfoRow label="紧急联系电话" value={user.contactPhone2 || '-'} />
                   <InfoRow label="快递配送地址" value={user.deliveryAddress || '-'} />

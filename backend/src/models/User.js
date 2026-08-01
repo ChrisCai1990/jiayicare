@@ -95,6 +95,13 @@ const userSchema = new mongoose.Schema({
   hasMedicineCabinet:  { type: String, default: '' }, // 是否配备居家小药箱
   // 联系信息（#34）
   contactPhone:    { type: String, default: '' },  // 历史兼容镜像；医护端联系电话统一读写 phone
+  phoneChangeHistory: [{
+    from: { type: String, default: '' },
+    to: { type: String, default: '' },
+    changedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },
+    changedByName: { type: String, default: '' },
+    changedAt: { type: Date, default: Date.now },
+  }],
   deliveryAddress: { type: String, default: '' },  // 配送地址（快递用）
   // 患者类型（成人/儿童）
   patientCategory: { type: String, enum: ['adult', 'child'], default: 'adult' },

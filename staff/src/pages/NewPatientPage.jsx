@@ -78,7 +78,7 @@ export default function NewPatientPage() {
     // 身份
     idType: 'idCard', idNumber: '', maritalStatus: '', ethnicity: '', belief: '', memberType: '',
     // 联系
-    address: '', contactPhone: '', contactPhone2: '', contactName: '', contactPhone3: '',
+    address: '', contactPhone2: '', contactName: '', contactPhone3: '',
     deliveryAddress: '',
     // 职业与教育
     workplace: '', occupation: '', education: '', hasAnnualCheckup: '',
@@ -287,7 +287,10 @@ export default function NewPatientPage() {
           <Section title="基本信息">
             <Grid>
               <F label="姓名 *" span={2}><input className="form-input" placeholder="真实姓名" value={form.name} onChange={set('name')} required /></F>
-              <F label="手机号" span={2}><input className="form-input" placeholder={isChild ? '监护人手机号（作为登录账号，可留空）' : '手机号（登录账号，可留空）'} value={form.phone} onChange={set('phone')} /></F>
+              <F label="手机号码（用户端登录账号）" span={2}>
+                <input className="form-input" type="tel" maxLength={11} placeholder={isChild ? '监护人手机号（可留空）' : '11位手机号（可留空）'} value={form.phone} onChange={set('phone')} />
+                <div style={{ color: '#8AA89C', fontSize: 12, marginTop: 4 }}>保存后仍可在会员基本资料中修改；号码不可与其他会员重复。</div>
+              </F>
               <F label="性别"><select className="form-input" value={form.gender} onChange={set('gender')}><option value="未知">未知</option><option value="男">男</option><option value="女">女</option></select></F>
               <F label="出生日期">
                 <input className="form-input" type="date" value={form.birthDate}
@@ -365,7 +368,6 @@ export default function NewPatientPage() {
           {/* 联系信息 */}
           <Section title="联系信息">
             <Grid>
-              <F label="联系电话" span={2}><input className="form-input" placeholder="与登录手机号可不同" value={form.contactPhone} onChange={set('contactPhone')} /></F>
               <F label="联系地址" span={2}><input className="form-input" value={form.address} onChange={set('address')} /></F>
               <F label="紧急联系人"><input className="form-input" placeholder="紧急联系人姓名" value={form.contactName} onChange={set('contactName')} /></F>
               <F label="紧急联系人电话"><input className="form-input" value={form.contactPhone2} onChange={set('contactPhone2')} /></F>
