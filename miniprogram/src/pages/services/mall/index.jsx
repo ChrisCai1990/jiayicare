@@ -62,6 +62,8 @@ function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrde
 }
 
 function ServiceCard({ item, onDetail, onPay }) {
+  const windowWidth = Taro.getWindowInfo ? Taro.getWindowInfo().windowWidth : Taro.getSystemInfoSync().windowWidth;
+  const isWide = windowWidth >= 768;
   const hasDiscount = item.price < item.originalPrice;
   const discount = hasDiscount ? Math.round((1 - item.price / item.originalPrice) * 10) : 0;
   return (
@@ -71,9 +73,11 @@ function ServiceCard({ item, onDetail, onPay }) {
           <Text style={{ fontSize: '11px', color: '#fff', fontWeight: 700 }}>{item.tag}</Text>
         </View>
       )}
-      {item.images && item.images.length > 0 && (
-        <Image src={item.images[0]} mode="aspectFit" style={{ width: '100%', height: '260px', borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px`, backgroundColor: colors.background }} />
-      )}
+      <View style={{ display: 'flex', flexDirection: isWide ? 'row' : 'column', gap: `${spacing.md}px`, alignItems: 'stretch' }}>
+        {item.images && item.images.length > 0 && (
+          <Image src={item.images[0]} mode="aspectFit" style={{ width: isWide ? '56%' : '100%', height: isWide ? '390px' : '260px', flexShrink: 0, borderRadius: `${radius.md}px`, backgroundColor: colors.background }} />
+        )}
+        <View style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
       <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
         <View style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: (item.iconColor || colors.primary) + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
           <Text style={{ fontSize: '22px' }}>🏪</Text>
@@ -101,6 +105,8 @@ function ServiceCard({ item, onDetail, onPay }) {
         </View>
         <View onClick={(e) => { e.stopPropagation && e.stopPropagation(); onPay(item); }} style={{ backgroundColor: colors.primary, padding: '10px 18px', borderRadius: `${radius.full}px` }}>
           <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>立即购买</Text>
+        </View>
+          </View>
         </View>
       </View>
     </View>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity,
-  StyleSheet, SafeAreaView, Modal, TextInput, ActivityIndicator, Image,
+  StyleSheet, SafeAreaView, Modal, TextInput, ActivityIndicator, Image, useWindowDimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow, gradient } from '../../theme';
@@ -437,6 +437,8 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
 }
 
 function ServiceCard({ item, onDetail, onBuy, onPay }) {
+  const { width } = useWindowDimensions();
+  const isWide = width >= 768;
   const discount = Math.round((1 - item.price / item.originalPrice) * 10);
   const hasDiscount = item.price < item.originalPrice;
   return (
@@ -447,9 +449,11 @@ function ServiceCard({ item, onDetail, onBuy, onPay }) {
         </View>
       ) : null}
       {/* 封面图：有图直接展示（不点开也能看到），无图退回图标 */}
-      {item.images && item.images.length > 0 && (
-        <Image source={{ uri: mediaUrl(item.images[0]) }} style={styles.serviceCover} resizeMode="contain" />
-      )}
+      <View style={[styles.serviceCardLayout, isWide && styles.serviceCardLayoutWide]}>
+        {item.images && item.images.length > 0 && (
+          <Image source={{ uri: mediaUrl(item.images[0]) }} style={[styles.serviceCover, isWide && styles.serviceCoverWide]} resizeMode="contain" />
+        )}
+        <View style={styles.serviceCardContent}>
       <View style={styles.serviceCardTop}>
         <View style={[styles.serviceIcon, { backgroundColor: item.iconColor + '15' }]}>
           <Ionicons name={item.icon} size={26} color={item.iconColor} />
@@ -484,9 +488,11 @@ function ServiceCard({ item, onDetail, onBuy, onPay }) {
             )}
           </View>
         </View>
-        <TouchableOpacity style={styles.buyBtn} onPress={() => onPay(item)} activeOpacity={0.85}>
+        <TouchableOpacity style={[styles.buyBtn, isWide && styles.buyBtnWide]} onPress={() => onPay(item)} activeOpacity={0.85}>
           <Text style={styles.buyBtnText}>立即购买</Text>
         </TouchableOpacity>
+          </View>
+        </View>
       </View>
     </TouchableOpacity>
   );
@@ -727,6 +733,9 @@ const styles = StyleSheet.create({
     backgroundColor: colors.white, borderRadius: radius.xl, padding: spacing.md, ...shadow.sm,
     position: 'relative', overflow: 'hidden',
   },
+  serviceCardLayout: { gap: spacing.md },
+  serviceCardLayoutWide: { flexDirection: 'row', alignItems: 'stretch' },
+  serviceCardContent: { flex: 1, minWidth: 0, justifyContent: 'space-between' },
   serviceTag: {
     position: 'absolute', top: 12, right: 12,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: radius.full,
@@ -750,6 +759,7 @@ const styles = StyleSheet.create({
   discountBadge: { backgroundColor: colors.danger + '15', paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.full },
   discountText: { fontSize: 11, color: colors.danger, fontWeight: '700' },
   buyBtn: { backgroundColor: colors.primary, paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.full },
+  buyBtnWide: { paddingHorizontal: spacing.xl, paddingVertical: 12 },
   buyBtnText: { fontSize: 14, color: colors.white, fontWeight: '700' },
   consultBtnSm: {
     paddingHorizontal: spacing.md, paddingVertical: 10, borderRadius: radius.full,
@@ -759,8 +769,9 @@ const styles = StyleSheet.create({
   // 列表卡片封面图
   serviceCover: {
     width: '100%', height: 260, borderRadius: radius.md,
-    marginBottom: spacing.md, backgroundColor: colors.background,
+    backgroundColor: colors.background,
   },
+  serviceCoverWide: { width: '56%', height: 390, flexShrink: 0 },
   // 详情弹窗完整图片
   detailImg: { width: '100%', minHeight: 200, borderRadius: radius.md, backgroundColor: colors.background },
   // 图片全屏预览
