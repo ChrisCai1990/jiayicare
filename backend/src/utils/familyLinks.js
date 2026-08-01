@@ -54,6 +54,7 @@ async function synchronizeFamilyGroup(seedUserIds, { maxMembers = 50 } = {}) {
 
   const members = [...users.values()];
   let addedLinks = 0;
+  const writes = [];
   for (const user of members) {
     const selfId = String(user._id);
     const existing = new Set((user.familyLinks || []).map(link => String(link.linkedUser)));
@@ -64,8 +65,18 @@ async function synchronizeFamilyGroup(seedUserIds, { maxMembers = 50 } = {}) {
       existing.add(otherId);
       addedLinks++;
     }
+    if (user.isModified('familyLinks')) {
+      // 只写 familyLinks，不调用 user.save()。历史会员档案可能含旧枚举值，
+      // 整文档 save 会让无关的血型等字段阻断家庭关系同步。
+      writes.push({
+        updateOne: {
+          filter: { _id: user._id },
+          update: { $set: { familyLinks: user.familyLinks } },
+        },
+      });
+    }
   }
-  await Promise.all(members.filter(user => user.isModified('familyLinks')).map(user => user.save()));
+  if (writes.length) await User.bulkWrite(writes, { ordered: false });
   return { memberCount: members.length, addedLinks };
 }
 

@@ -4412,13 +4412,17 @@ router.post('/patients/:id/family-links', staffAuth, async (req, res) => {
     }
     // A → B
     if (!userA.familyLinks.find(l => String(l.linkedUser) === String(linkedUserId))) {
-      userA.familyLinks.push({ linkedUser: linkedUserId, relation: relation || '' });
-      await userA.save();
+      await User.updateOne(
+        { _id: userA._id, 'familyLinks.linkedUser': { $ne: userB._id } },
+        { $push: { familyLinks: { linkedUser: userB._id, relation: relation || '' } } },
+      );
     }
     // B → A（双向关联，使用反向称谓）
     if (!userB.familyLinks.find(l => String(l.linkedUser) === String(req.params.id))) {
-      userB.familyLinks.push({ linkedUser: req.params.id, relation: reverseFamilyRelation(relation) });
-      await userB.save();
+      await User.updateOne(
+        { _id: userB._id, 'familyLinks.linkedUser': { $ne: userA._id } },
+        { $push: { familyLinks: { linkedUser: userA._id, relation: reverseFamilyRelation(relation) } } },
+      );
     }
     const syncResult = await synchronizeFamilyGroup([userA._id, userB._id]);
     res.json({
@@ -4439,13 +4443,12 @@ router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) 
     const link = userA.familyLinks.id(req.params.linkId);
     if (!link) return res.status(404).json({ success: false, message: '关联不存在' });
     const linkedUserId = link.linkedUser;
-    link.deleteOne();
-    await userA.save();
+    await User.updateOne({ _id: userA._id }, { $pull: { familyLinks: { _id: link._id } } });
     // 反向移除
     const userB = await User.findById(linkedUserId);
     if (userB) {
       const reverse = userB.familyLinks.find(l => String(l.linkedUser) === String(req.params.id));
-      if (reverse) { reverse.deleteOne(); await userB.save(); }
+      if (reverse) await User.updateOne({ _id: userB._id }, { $pull: { familyLinks: { _id: reverse._id } } });
     }
     res.json({ success: true, message: '已移除' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
