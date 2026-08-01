@@ -19,25 +19,22 @@ export default function ReportUploadPage() {
 
   const pickAndUpload = async () => {
     try {
-      const res = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const filePath = res.tempFilePaths[0];
+      const res = await Taro.chooseImage({ count: 9, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const filePaths = res.tempFilePaths || [];
+      if (!filePaths.length) return;
       setUploading(true);
-      try {
-        // 优先走专用上传接口；若后端未提供 /reports/upload，退回 base64 方式走 /reports 创建
-        const uploadRes = await reportsAPI.uploadFile(filePath);
-        if (uploadRes?.success) {
-          Taro.showToast({ title: '上传成功，等待AI解析', icon: 'success' });
-          load();
-          return;
-        }
-      } catch {}
-      // 兜底：读取为 base64 走 create
       const fs = Taro.getFileSystemManager();
-      const base64 = fs.readFileSync(filePath, 'base64');
+      const contents = filePaths.map((filePath) => {
+        const base64 = fs.readFileSync(filePath, 'base64');
+        const extension = (filePath.split('.').pop() || 'jpg').toLowerCase();
+        const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
+        return `data:${mimeType};base64,${base64}`;
+      });
       const createRes = await reportsAPI.create({
         title: `体检报告 ${new Date().toLocaleDateString('zh-CN')}`,
         category: '',
-        content: `data:image/jpeg;base64,${base64}`,
+        contents,
+        pages: contents.length,
       });
       if (createRes.success) {
         Taro.showToast({ title: '上传成功，等待AI解析', icon: 'success' });
