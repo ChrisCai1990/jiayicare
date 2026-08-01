@@ -2,6 +2,7 @@
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { usePermission } from '../App'
+import Pagination from '../components/Pagination'
 
 const DISEASE_TAGS = ['高血压', '糖尿病', '高血脂', '冠心病', '慢阻肺', '骨质疏松']
 const TYPE_LABEL = { regular: '普通', vip: 'VIP', trial: '试用', '': '全部' }
@@ -261,13 +262,7 @@ export default function PatientsPage() {
 
       {/* 分页 */}
       {total > limit && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20 }}>
-          <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
-          <span style={{ lineHeight: '32px', color: '#666', fontSize: 14 }}>
-            第 {page} / {Math.ceil(total / limit)} 页
-          </span>
-          <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>下一页</button>
-        </div>
+        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
       )}
 
       {/* 分配已有会员弹窗 */}

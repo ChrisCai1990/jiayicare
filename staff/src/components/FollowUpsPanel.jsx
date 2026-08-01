@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
+import Pagination from './Pagination'
 
 const PAGE_SIZE = 5
 
@@ -136,19 +137,7 @@ export default function FollowUpsPanel() {
           )
         })}
         {items.length > PAGE_SIZE && (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, paddingTop: 10 }}>
-            <button
-              onClick={() => setPage(p => Math.max(0, p - 1))}
-              disabled={curPage === 0}
-              style={{ border: 'none', background: 'none', color: curPage === 0 ? '#C0B8AE' : '#1E6B50', cursor: curPage === 0 ? 'default' : 'pointer', fontSize: 13 }}
-            >‹ 上一页</button>
-            <span style={{ fontSize: 12, color: '#8AA89C' }}>{curPage + 1} / {pageCount}</span>
-            <button
-              onClick={() => setPage(p => Math.min(pageCount - 1, p + 1))}
-              disabled={curPage === pageCount - 1}
-              style={{ border: 'none', background: 'none', color: curPage === pageCount - 1 ? '#C0B8AE' : '#1E6B50', cursor: curPage === pageCount - 1 ? 'default' : 'pointer', fontSize: 13 }}
-            >下一页 ›</button>
-          </div>
+          <Pagination compact page={curPage + 1} totalPages={pageCount} onChange={next => setPage(next - 1)} />
         )}
       </div>
     </div>

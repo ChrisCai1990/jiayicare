@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
+import Pagination from '../components/Pagination'
 
 const STATUS_LABEL = { pending:'待确认', confirmed:'已确认', paid:'已结算', cancelled:'已取消' }
 const STATUS_COLOR = { pending:'#D97706', confirmed:'#0077B6', paid:'#22A06B', cancelled:'#aaa' }
@@ -118,11 +119,7 @@ export default function CommissionPage() {
       </div>
 
       {total > limit && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20 }}>
-          <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
-          <span style={{ lineHeight: '32px', fontSize: 14, color: '#666' }}>第 {page} / {Math.ceil(total / limit)} 页</span>
-          <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>下一页</button>
-        </div>
+        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
       )}
     </div>
   )

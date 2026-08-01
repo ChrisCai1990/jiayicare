@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, usePermission } from '../App'
+import Pagination from '../components/Pagination'
 
 const REPORT_TYPE = { annual:'年度体检', blood:'血液检查', ultrasound:'超声检查', radiology:'放射检查', mri:'磁共振', ecg:'心电图', endoscopy:'内镜', pathology:'病理', other:'其他' }
 const AUDIT_STATUS = { unaudited:'待审核', audited:'已审核', rejected:'已驳回' }
@@ -140,11 +141,7 @@ export default function ReportsPage() {
 
       {/* 分页 */}
       {total > limit && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20 }}>
-          <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
-          <span style={{ lineHeight: '32px', fontSize: 14, color: '#666' }}>第 {page} / {Math.ceil(total / limit)} 页</span>
-          <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>下一页</button>
-        </div>
+        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
       )}
 
       {/* 上传弹窗 */}

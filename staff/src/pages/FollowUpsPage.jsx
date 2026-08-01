@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast, useStaff, can } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
+import Pagination from '../components/Pagination'
 
 const TYPE_MAP   = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const STATUS_MAP = { planned: '待随访', in_progress: '随访中', missed: '随访中', completed: '已随访', cancelled: '已取消' }
@@ -407,13 +408,7 @@ export default function FollowUpsPage() {
 
       {/* 分页 */}
       {total > limit && (
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 20 }}>
-          <button className="btn btn-secondary btn-sm" disabled={page <= 1} onClick={() => setPage(p => p - 1)}>上一页</button>
-          <span style={{ lineHeight: '32px', color: '#666', fontSize: 14 }}>
-            第 {page} / {Math.ceil(total / limit)} 页
-          </span>
-          <button className="btn btn-secondary btn-sm" disabled={page >= Math.ceil(total / limit)} onClick={() => setPage(p => p + 1)}>下一页</button>
-        </div>
+        <Pagination page={page} totalPages={Math.ceil(total / limit)} onChange={setPage} />
       )}
 
       {/* 随访详情弹窗 */}
