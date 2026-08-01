@@ -1163,6 +1163,10 @@ export default function ReportUploadScreen({ navigation, route }) {
 
   // Step 1: Pick file(s) → show rotate/preview modal
   const handleUpload = () => {
+    if (Platform.OS === 'web') {
+      pickFromLibrary();
+      return;
+    }
     Alert.alert('上传报告', '请选择上传方式', [
       { text: '拍照', onPress: pickFromCamera },
       { text: '从相册选择（最多20张）', onPress: pickFromLibrary },
