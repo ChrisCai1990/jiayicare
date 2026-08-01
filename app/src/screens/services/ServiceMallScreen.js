@@ -757,7 +757,10 @@ const styles = StyleSheet.create({
   },
   consultBtnSmText: { fontSize: 14, color: colors.primary, fontWeight: '700' },
   // 列表卡片封面图
-  serviceCover: { width: '100%', height: 160, borderRadius: radius.md, marginBottom: spacing.sm, backgroundColor: colors.background },
+  serviceCover: {
+    width: '100%', height: 260, borderRadius: radius.md,
+    marginBottom: spacing.md, backgroundColor: colors.background,
+  },
   // 详情弹窗完整图片
   detailImg: { width: '100%', minHeight: 200, borderRadius: radius.md, backgroundColor: colors.background },
   // 图片全屏预览

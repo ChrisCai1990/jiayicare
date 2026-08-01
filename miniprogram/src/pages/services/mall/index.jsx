@@ -72,7 +72,7 @@ function ServiceCard({ item, onDetail, onPay }) {
         </View>
       )}
       {item.images && item.images.length > 0 && (
-        <Image src={item.images[0]} mode="aspectFill" style={{ width: '100%', height: '160px', borderRadius: `${radius.md}px`, marginBottom: `${spacing.sm}px`, backgroundColor: colors.background }} />
+        <Image src={item.images[0]} mode="aspectFit" style={{ width: '100%', height: '260px', borderRadius: `${radius.md}px`, marginBottom: `${spacing.md}px`, backgroundColor: colors.background }} />
       )}
       <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.sm}px` }}>
         <View style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: (item.iconColor || colors.primary) + '20', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
