@@ -7685,6 +7685,7 @@ export default function PatientDetailPage() {
                           <div style={{ fontSize: 12, color: '#8AA89C' }}>
                             剩余 {Math.max(0, (order.totalUnits || 1) - (order.usedUnits || 0))} 次
                           </div>
+                          {(order.serviceItemsSnapshot || []).map(item => <div key={item.key} style={{fontSize:12,color:'#4A6558',marginTop:2}}>{item.name}：{item.usedUnits || 0}/{item.units}次</div>)}
                         </td>
                         <td style={{ fontSize: 13, color: '#8AA89C' }}>{new Date(order.createdAt).toLocaleDateString('zh-CN')}</td>
                         <td style={{ fontSize: 12 }}>
@@ -7714,7 +7715,7 @@ export default function PatientDetailPage() {
                               } catch (err) { toast(err.message || '操作失败') }
                             }}>启动服务</button>
                           )}
-                          {order.status === 'scheduled' && (order.usedUnits || 0) < (order.totalUnits || 1) && (
+                          {order.status === 'scheduled' && (order.usedUnits || 0) < (order.totalUnits || 1) && !(order.serviceItemsSnapshot || []).length && (
                             <button className="btn btn-sm" disabled={redeemingOrderId === order._id}
                               style={{ background: '#22A06B', color: '#fff', border: 'none' }} onClick={async () => {
                               const note = window.prompt(`确认核销第 ${(order.usedUnits || 0) + 1}/${order.totalUnits || 1} 次服务。\n可填写本次服务备注（可留空）：`, '')
@@ -7728,6 +7729,15 @@ export default function PatientDetailPage() {
                               finally { setRedeemingOrderId(null) }
                             }}>{redeemingOrderId === order._id ? '核销中…' : '核销1次'}</button>
                           )}
+                          {order.status === 'scheduled' && (order.serviceItemsSnapshot || []).filter(item => (item.usedUnits || 0) < item.units).map(item => (
+                            <button key={item.key} className="btn btn-sm" disabled={redeemingOrderId === order._id}
+                              style={{background:'#22A06B',color:'#fff',border:'none',margin:'2px'}} onClick={async()=>{
+                                const note=window.prompt(`确认核销“${item.name}”第 ${(item.usedUnits||0)+1}/${item.units} 次。\n可填写备注（可留空）：`,'')
+                                if(note===null)return
+                                setRedeemingOrderId(order._id)
+                                try{const res=await staffAPI.redeemOrder(order._id,note,item.key);setPatientOrders(prev=>prev.map(o=>o._id===order._id?res.data:o));toast(res.message||'核销成功')}catch(err){toast(err.message||'操作失败')}finally{setRedeemingOrderId(null)}
+                              }}>核销：{item.name}</button>
+                          ))}
                         </td>
                       </tr>
                       )

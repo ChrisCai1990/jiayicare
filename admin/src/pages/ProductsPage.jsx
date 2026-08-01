@@ -21,6 +21,7 @@ const EMPTY_FORM = {
   images: [], servicePrices: [],
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
+  serviceItems: [],
 }
 
 // ── 转介绍绩效规则（各机构自行设定，引流人/服务人各自比例或固定金额） ──
@@ -142,6 +143,27 @@ function ServicePerformerRolesForm({ roles, staffList, onChange }) {
       )}
     </div>
   )
+}
+
+function ServiceItemsForm({ items, staffList, onChange }) {
+  const list = items || []
+  const add = () => onChange([...list, { key: `item_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: '', units: 1, performers: [] }])
+  const update = (i, patch) => onChange(list.map((item, idx) => idx === i ? { ...item, ...patch } : item))
+  return <div style={{ marginTop: 18, borderTop: '1px solid #e0d9ce', paddingTop: 16 }}>
+    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+      <label className="form-label">组合服务子项目（按子项目逐次核销）</label>
+      <button type="button" className="btn btn-sm btn-ghost" onClick={add}>+ 添加子项目</button>
+    </div>
+    <div style={{fontSize:12,color:'#888',marginBottom:10}}>每个子项目可独立设置次数、岗位和结算方式；固定金额及比例均按每次核销计算。</div>
+    {list.map((item, i) => <div key={item.key || i} style={{border:'1px solid #e0d9ce',borderRadius:8,padding:12,marginBottom:12}}>
+      <div style={{display:'grid',gridTemplateColumns:'2fr 1fr auto',gap:8,alignItems:'center'}}>
+        <input className="form-input" value={item.name || ''} placeholder="子项目名称" onChange={e=>update(i,{name:e.target.value})}/>
+        <input className="form-input" type="number" min="1" value={item.units || 1} onChange={e=>update(i,{units:Math.max(1,parseInt(e.target.value)||1)})}/>
+        <button type="button" onClick={()=>onChange(list.filter((_,idx)=>idx!==i))} style={{color:'#c0392b',background:'none',border:'none',cursor:'pointer'}}>删除</button>
+      </div>
+      <ServicePerformerRolesForm roles={item.performers || []} staffList={staffList} onChange={v=>update(i,{performers:v})}/>
+    </div>)}
+  </div>
 }
 
 // ── 自定义价格列表 ──────────────────────────────────────────────
@@ -304,7 +326,11 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price) })),
       performanceRule: product.performanceRule || { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
       servicePerformerRoles: (product.servicePerformerRoles || []).map(r => ({
-        role: r.role, rate: r.rate || 0, defaultStaffId: r.defaultStaffId ? String(r.defaultStaffId) : '',
+        role: r.role, ruleType: r.ruleType || 'percentage', rate: r.rate || 0, amount: r.amount || 0, defaultStaffId: r.defaultStaffId ? String(r.defaultStaffId) : '',
+      })),
+      serviceItems: (product.serviceItems || []).map(item => ({
+        key: item.key, name: item.name, units: item.units || 1,
+        performers: (item.performers || []).map(r => ({ role:r.role, ruleType:r.ruleType || 'percentage', rate:r.rate || 0, amount:r.amount || 0, defaultStaffId:r.defaultStaffId ? String(r.defaultStaffId) : '' })),
       })),
     }
   })
@@ -348,9 +374,15 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           .filter(r => r.role)
           .map(r => ({
             role: r.role,
+            ruleType: r.ruleType || 'percentage',
             rate: parseFloat(r.rate) || 0,
+            amount: parseFloat(r.amount) || 0,
             defaultStaffId: r.defaultStaffId || null,
           })),
+        serviceItems: (form.serviceItems || []).filter(item => item.name?.trim()).map(item => ({
+          key: item.key || `item_${Date.now()}`, name: item.name.trim(), units: Math.max(1, parseInt(item.units) || 1),
+          performers: (item.performers || []).filter(r=>r.role).map(r=>({ role:r.role, ruleType:r.ruleType || 'percentage', rate:parseFloat(r.rate)||0, amount:parseFloat(r.amount)||0, defaultStaffId:r.defaultStaffId||null })),
+        })),
       }
       if (isEdit) {
         await adminAPI.updateProduct(product._id, payload)
@@ -479,6 +511,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                 staffList={staffList}
                 onChange={v => set('servicePerformerRoles', v)}
               />
+              <ServiceItemsForm items={form.serviceItems} staffList={staffList} onChange={v => set('serviceItems', v)} />
             </div>
           )}
 

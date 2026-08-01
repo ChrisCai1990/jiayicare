@@ -3929,16 +3929,31 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
     if (usedUnits >= totalUnits) return res.status(400).json({ success: false, message: '该服务已无剩余次数' });
 
     const sequence = usedUnits + 1;
+    let serviceItem = null;
+    if (order.serviceItemsSnapshot?.length) {
+      serviceItem = order.serviceItemsSnapshot.find(i => i.key === req.body.serviceItemKey);
+      if (!serviceItem) return res.status(400).json({ success: false, message: '请选择本次核销的服务子项目' });
+      if ((serviceItem.usedUnits || 0) >= serviceItem.units) return res.status(400).json({ success: false, message: '该子项目已全部核销' });
+      serviceItem.usedUnits = (serviceItem.usedUnits || 0) + 1;
+    }
     order.redemptions.push({
       sequence,
       redeemedAt: new Date(),
       redeemedBy: req.staff._id,
       note: String(req.body.note || '').trim(),
+      serviceItemKey: serviceItem?.key || '',
+      serviceItemName: serviceItem?.name || '',
     });
     order.usedUnits = sequence;
     order.status = sequence >= totalUnits ? 'completed' : 'scheduled';
     if (order.status === 'completed') order.completedAt = new Date();
     await order.save();
+
+    const redemption = order.redemptions[order.redemptions.length - 1];
+    const { settleRedemptionCommission, settleOrderCommission } = require('../utils/commissionSettlement');
+    const { created } = serviceItem
+      ? await settleRedemptionCommission(order, redemption)
+      : (order.status === 'completed' ? await settleOrderCommission(order) : { created: [] });
 
     // 服务全部完成时，关闭下单产生的用户/医护共用待办；分次服务尚有余额时继续保留。
     if (order.status === 'completed') {
@@ -3956,8 +3971,8 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
       success: true,
       data: populated,
       message: order.status === 'completed'
-        ? `第${sequence}次核销成功，服务已全部完成`
-        : `第${sequence}次核销成功，剩余${totalUnits - sequence}次`,
+        ? `第${sequence}次核销成功，服务已全部完成${created.length ? `，生成${created.length}条绩效` : ''}`
+        : `第${sequence}次核销成功，剩余${totalUnits - sequence}次${created.length ? `，生成${created.length}条绩效` : ''}`,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });

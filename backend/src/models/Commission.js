@@ -23,10 +23,18 @@ const commissionSchema = new mongoose.Schema({
   // 产品信息摘要
   productName: { type: String, default: '' },
   productType: { type: String, default: '' }, // 'service_package' | 'service' | 'product'
+  redemptionSequence: { type: Number, default: null },
+  serviceItemKey: { type: String, default: '' },
+  serviceItemName: { type: String, default: '' },
+  calculationType: { type: String, enum: ['', 'percentage', 'fixedAmount'], default: '' },
 }, { timestamps: true });
 
 commissionSchema.index({ staffId: 1, createdAt: -1 });
 commissionSchema.index({ referralCode: 1 });
+commissionSchema.index(
+  { orderId: 1, redemptionSequence: 1, serviceItemKey: 1, staffId: 1, role: 1 },
+  { unique: true, partialFilterExpression: { redemptionSequence: { $type: 'number' } } },
+);
 
 commissionSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 

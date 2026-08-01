@@ -20,8 +20,8 @@ async function settleOrderCommission(order) {
   if (order.orderType === 'product' || mongoose.Types.ObjectId.isValid(order.serviceId)) {
     const product = await Product.findById(order.serviceId).catch(() => null);
     if (product) {
-      productRule = product.performanceRule;
-      performerRoles = product.servicePerformerRoles || [];
+      productRule = order.performanceRuleSnapshot || product.performanceRule;
+      performerRoles = order.servicePerformerRolesSnapshot?.length ? order.servicePerformerRolesSnapshot : (product.servicePerformerRoles || []);
     }
   }
   if (!productRule) {
@@ -94,4 +94,38 @@ async function settleOrderCommission(order) {
   return { created };
 }
 
-module.exports = { settleOrderCommission };
+// 组合服务按每次子项目核销即时结算。百分比以订单单次均摊实付额为基数；固定金额按每次核销计。
+async function settleRedemptionCommission(order, redemption) {
+  if (!order || !redemption?.serviceItemKey || !order.serviceItemsSnapshot?.length) return { created: [] };
+  const item = order.serviceItemsSnapshot.find(i => i.key === redemption.serviceItemKey);
+  if (!item) return { created: [] };
+  const base = Math.round(((order.paidAmount || order.servicePrice || 0) / Math.max(1, order.totalUnits || 1)) * 100) / 100;
+  const performerMap = {};
+  (order.servicePerformers || []).forEach(sp => { if (sp.role && sp.staffId) performerMap[sp.role] = sp.staffId; });
+  const created = [];
+  for (const rule of item.performers || []) {
+    const staffId = performerMap[rule.role] || rule.defaultStaffId;
+    const ruleType = rule.ruleType || 'percentage';
+    if (!staffId || ruleType === 'none') continue;
+    const rate = ruleType === 'percentage' ? (Number(rule.rate) || 0) / 100 : 0;
+    const amount = ruleType === 'fixedAmount'
+      ? Number(rule.amount) || 0
+      : Math.round(base * rate * 100) / 100;
+    if (amount <= 0) continue;
+    try {
+      created.push(await Commission.create({
+        staffId, role: 'fulfiller', tenantId: order.tenantId, patientId: order.user, orderId: order._id,
+        orderAmount: base, commissionRate: rate, commissionAmount: amount, status: 'pending',
+        productName: order.serviceName, productType: order.orderType,
+        redemptionSequence: redemption.sequence, serviceItemKey: item.key, serviceItemName: item.name,
+        calculationType: ruleType,
+      }));
+    } catch (err) {
+      if (err?.code !== 11000) throw err;
+    }
+  }
+  if (created.length) { order.commissionStatus = 'pending'; await order.save(); }
+  return { created };
+}
+
+module.exports = { settleOrderCommission, settleRedemptionCommission };

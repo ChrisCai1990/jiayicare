@@ -440,11 +440,20 @@ router.patch('/orders/:id/verify', adminAuth, async (req, res) => {
   const usedUnits = Math.max(Number(order.usedUnits) || 0, order.redemptions?.length || 0);
   if (usedUnits >= totalUnits) return res.status(400).json({ success: false, message: '该服务已无剩余次数' });
   const sequence = usedUnits + 1;
+  let serviceItem = null;
+  if (order.serviceItemsSnapshot?.length) {
+    serviceItem = order.serviceItemsSnapshot.find(i => i.key === req.body.serviceItemKey);
+    if (!serviceItem) return res.status(400).json({ success: false, message: '请选择本次核销的服务子项目' });
+    if ((serviceItem.usedUnits || 0) >= serviceItem.units) return res.status(400).json({ success: false, message: '该子项目已全部核销' });
+    serviceItem.usedUnits = (serviceItem.usedUnits || 0) + 1;
+  }
   order.redemptions.push({
     sequence,
     redeemedAt: new Date(),
     redeemedBy: req.admin._id,
     note: String(req.body.note || '').trim(),
+    serviceItemKey: serviceItem?.key || '',
+    serviceItemName: serviceItem?.name || '',
   });
   order.usedUnits = sequence;
   order.verifiedAt = new Date();
@@ -456,10 +465,11 @@ router.patch('/orders/:id/verify', adminAuth, async (req, res) => {
   // 全部次数核销完毕后再按整单触发绩效结算；中间核销只保留服务过程。
   // settleOrderCommission 会静默跳过不生成任何记录，容易让人以为"核销成功=绩效自动生成"，
   // 2026-07-07 用户反馈需要提醒：核销时明确告知是否真的生成了绩效，避免遗漏归属导致漏发绩效却无人察觉
-  const { settleOrderCommission } = require('../utils/commissionSettlement');
-  const { created } = order.status === 'completed'
-    ? await settleOrderCommission(order)
-    : { created: [] };
+  const redemption = order.redemptions[order.redemptions.length - 1];
+  const { settleOrderCommission, settleRedemptionCommission } = require('../utils/commissionSettlement');
+  const { created } = serviceItem
+    ? await settleRedemptionCommission(order, redemption)
+    : (order.status === 'completed' ? await settleOrderCommission(order) : { created: [] });
   const noAttribution = !order.referrerId && !order.fulfillerId;
   const progress = `已使用${sequence}/${totalUnits}次，剩余${totalUnits - sequence}次`;
 
@@ -1238,7 +1248,7 @@ router.get('/products', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems } = req.body;
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
   }
@@ -1249,16 +1259,17 @@ router.post('/products', adminAuth, async (req, res) => {
     description: description || '', stock: stock ?? 0, status: status || 'off',
     performanceRule: performanceRule || undefined,
     servicePerformerRoles: servicePerformerRoles || [],
+    serviceItems: serviceItems || [],
   });
   res.json({ success: true, data: product, message: '产品创建成功' });
 });
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems } = req.body;
   const product = await Product.findByIdAndUpdate(
     req.params.id,
-    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [] },
+    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [] },
     { new: true }
   );
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });

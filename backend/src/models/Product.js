@@ -20,6 +20,13 @@ const productSchema = new mongoose.Schema({
   // 多服务岗位绩效：一个产品由多个岗位协同提供服务，每岗位各自的绩效比例（占实付价%）。
   // 具体是哪个人由推送/核销时按岗位指定。为空数组时退回 performanceRule 单服务人逻辑。
   servicePerformerRoles: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
+  // 组合服务包：每个子项目独立配置次数和逐次核销绩效。
+  serviceItems: [{
+    key: { type: String, required: true },
+    name: { type: String, required: true },
+    units: { type: Number, default: 1, min: 1 },
+    performers: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
+  }],
 }, { timestamps: true });
 
 productSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

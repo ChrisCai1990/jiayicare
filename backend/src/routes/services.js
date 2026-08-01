@@ -179,7 +179,10 @@ router.post('/order', auth, async (req, res) => {
 
   const isPkg     = !!PACKAGE_CATALOG.find(p => p.id === serviceId);
   const unitsMatch = String(service.specificationLabel || '').match(/(\d+)\s*次/);
-  const totalUnits = unitsMatch ? Math.max(1, Number(unitsMatch[1])) : 1;
+  const productServiceItems = (product?.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
+  const totalUnits = productServiceItems.length
+    ? productServiceItems.reduce((sum, item) => sum + Math.max(1, Number(item.units) || 1), 0)
+    : (unitsMatch ? Math.max(1, Number(unitsMatch[1])) : 1);
   const unitPrice = Math.round((service.price / totalUnits) * 100) / 100;
 
   // ── 健康基金 + 优惠券抵扣（下单即扣，实时校验余额/券状态）──────────
@@ -262,6 +265,12 @@ router.post('/order', auth, async (req, res) => {
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
     referrerId,
     servicePerformers,
+    serviceItemsSnapshot: productServiceItems.map(item => ({
+      key: item.key, name: item.name, units: item.units, usedUnits: 0,
+      performers: (item.performers || []).map(p => p.toObject ? p.toObject() : p),
+    })),
+    performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
+    servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
     paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paymentMethod || ''),
     paidAmount,
   });

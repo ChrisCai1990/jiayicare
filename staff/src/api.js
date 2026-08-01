@@ -241,7 +241,7 @@ export const staffAPI = {
   // 订单管理
   getPatientOrders:     (patientId)       => req(`/staff/patients/${patientId}/orders`),
   startOrder:           (orderId, data)   => req(`/staff/orders/${orderId}/start`, { method: 'PATCH', body: JSON.stringify(data) }),
-  redeemOrder:          (orderId, note)   => req(`/staff/orders/${orderId}/redeem`, { method: 'POST', body: JSON.stringify({ note }) }),
+  redeemOrder:          (orderId, note, serviceItemKey = '')   => req(`/staff/orders/${orderId}/redeem`, { method: 'POST', body: JSON.stringify({ note, serviceItemKey }) }),
   setOrderFulfiller:    (orderId, fulfillerId) => req(`/staff/orders/${orderId}/fulfiller`, { method: 'PATCH', body: JSON.stringify({ fulfillerId }) }),
 
   // Abnormal Reviews
