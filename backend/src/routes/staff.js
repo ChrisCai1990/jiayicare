@@ -776,11 +776,17 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
       return res.status(400).json({ success: false, message: '请输入正确的11位手机号码' });
     }
     if (normalizedPhone) {
-      const duplicate = await User.exists({
+      const duplicate = await User.findOne({
         _id: { $ne: new mongoose.Types.ObjectId(req.params.id) },
         phone: normalizedPhone,
-      });
-      if (duplicate) {
+      }).select('_id phone isDeleted archivedPhone');
+      if (duplicate?.isDeleted) {
+        // 兼容上线前已进入回收站、但仍占用手机号的旧数据：首次正确档案保存时自动释放。
+        await User.updateOne(
+          { _id: duplicate._id, isDeleted: true, phone: normalizedPhone },
+          { $set: { archivedPhone: duplicate.archivedPhone || normalizedPhone }, $unset: { phone: 1, contactPhone: 1 } },
+        );
+      } else if (duplicate) {
         return res.status(409).json({ success: false, message: '该手机号码已被其他会员使用' });
       }
       updateData.phone = normalizedPhone;

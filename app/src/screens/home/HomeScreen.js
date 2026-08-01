@@ -8,7 +8,7 @@ import Svg, { Polyline, Circle } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { userAPI, systemAPI, followupTasksAPI, tasksAPI } from '../../services/api';
+import { userAPI, systemAPI, followupTasksAPI, tasksAPI, servicesAPI } from '../../services/api';
 import AnimatedNumber from '../../components/AnimatedNumber';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期，国内时区凌晨0-8点时
@@ -221,6 +221,7 @@ export default function HomeScreen({ navigation }) {
   const [taskTab, setTaskTab]               = useState('全部');
   const [followupPlans, setFollowupPlans]   = useState([]);
   const [allTasks, setAllTasks]             = useState([]);
+  const [popularServices, setPopularServices] = useState([]);
   // 打卡相关状态/弹窗已抽离到 CheckinScreen.js（2026-07-18 打卡页重构）
   const todayStr = toLocalDateStr(new Date());
   // 任务详情弹窗
@@ -230,11 +231,12 @@ export default function HomeScreen({ navigation }) {
 
   const loadData = useCallback(async () => {
     try {
-      const [dashRes, followupRes, tasksRes] =
+      const [dashRes, followupRes, tasksRes, servicesRes] =
         await Promise.allSettled([
           userAPI.getDashboard(),
           followupTasksAPI.list(),
           tasksAPI.list(),
+          servicesAPI.list(),
         ]);
 
       if (dashRes.status === 'fulfilled' && dashRes.value?.success) {
@@ -248,6 +250,9 @@ export default function HomeScreen({ navigation }) {
       }
       if (tasksRes.status === 'fulfilled' && tasksRes.value?.success) {
         setAllTasks((tasksRes.value.data || []).filter(t => t.status === 'pending'));
+      }
+      if (servicesRes.status === 'fulfilled' && servicesRes.value?.success) {
+        setPopularServices((servicesRes.value.data?.services || []).slice(0, 4));
       }
     } catch {}
     finally { setLoading(false); setRefreshing(false); }
@@ -428,6 +433,37 @@ export default function HomeScreen({ navigation }) {
             {trendActionText && (
               <Text style={styles.heroTrendActionText}>{trendActionText}</Text>
             )}
+          </View>
+
+          {/* ── 大众服务商城：Admin 上架商品按排序取前4项 ───────── */}
+          <View style={{ marginBottom: spacing.lg }}>
+            <View style={styles.sectionHeader}>
+              <View>
+                <Text style={styles.sectionTitle}>常用健康服务</Text>
+                <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>咨询、检查、调理服务便捷选购</Text>
+              </View>
+              <TouchableOpacity style={styles.sectionMore} onPress={() => navigation.navigate('ServiceMall')}>
+                <Text style={styles.sectionMoreText}>全部商城</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.primary} />
+              </TouchableOpacity>
+            </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 10, paddingVertical: 2 }}>
+              {popularServices.map(item => (
+                <TouchableOpacity key={item.id} onPress={() => navigation.navigate('ServiceMall')} activeOpacity={0.85}
+                  style={{ width: 156, backgroundColor: colors.white, borderRadius: radius.md, padding: 14, borderWidth: 1, borderColor: colors.border }}>
+                  <View style={{ width: 34, height: 34, borderRadius: 10, backgroundColor: colors.primary10, alignItems: 'center', justifyContent: 'center', marginBottom: 9 }}>
+                    <Ionicons name="medkit-outline" size={18} color={colors.primary} />
+                  </View>
+                  <Text numberOfLines={2} style={{ fontSize: 14, lineHeight: 20, fontWeight: '700', color: colors.textPrimary, minHeight: 40 }}>{item.name}</Text>
+                  <Text style={{ fontSize: 15, fontWeight: '800', color: '#D97706', marginTop: 7 }}>¥{item.price ?? '咨询'}</Text>
+                  <Text style={{ fontSize: 11, color: colors.primary, marginTop: 6 }}>查看服务 ›</Text>
+                </TouchableOpacity>
+              ))}
+              <TouchableOpacity onPress={() => navigation.navigate('ServiceMall')} style={{ width: 110, minHeight: 150, borderRadius: radius.md, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+                <Ionicons name="storefront-outline" size={25} color="#fff" />
+                <Text style={{ color: '#fff', fontSize: 13, fontWeight: '700', marginTop: 8 }}>查看全部服务</Text>
+              </TouchableOpacity>
+            </ScrollView>
           </View>
 
           {/* ── 完成今日打卡（2026-07-18 打卡页重构）─────────────────

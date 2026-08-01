@@ -9,7 +9,7 @@ const CLIENT_BRANDS = [
 const brandLabel = value => CLIENT_BRANDS.find(item => item.value === value)?.label || '未设置'
 
 // ─── 共用：简单列表管理组件（标签/来源） ─────────────────────────
-function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false }) {
+function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false, withEntitlements = false }) {
   const toast = useToast()
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
@@ -17,6 +17,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [editId, setEditId] = useState(null)
   const [name, setName] = useState('')
   const [clientBrand, setClientBrand] = useState('jiayiguanjia')
+  const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, aiRiskAssessment: false })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -26,14 +27,14 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setError(''); setShowModal(true) }
-  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, aiRiskAssessment: false }); setError(''); setShowModal(true) }
+  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, aiRiskAssessment: !!item.entitlements?.aiRiskAssessment }); setError(''); setShowModal(true) }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
     setSaving(true); setError('')
     try {
-      const payload = withClientBrand ? { name, clientBrand } : { name }
+      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}) } : { name }
       if (editId) { await updateFn(editId, payload); toast('已更新') }
       else { await createFn(payload); toast('已创建') }
       setShowModal(false); load()
@@ -62,7 +63,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              {(withClientBrand ? ['名称', '客户归属', '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
+              {(withClientBrand ? ['名称', '客户归属', ...(withEntitlements ? ['AI权益'] : []), '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
               ))}
             </tr>
@@ -72,6 +73,9 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
               <tr key={item._id} style={{ borderBottom: '1px solid #F3F4F6' }}>
                 <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.name}</td>
                 {withClientBrand && <td style={{ padding: '10px 14px' }}>{brandLabel(item.clientBrand)}</td>}
+                {withEntitlements && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
+                  {[item.entitlements?.aiHealthAnalysis && 'AI健康分析', item.entitlements?.aiRiskAssessment && '风险评估'].filter(Boolean).join('、') || '无'}
+                </td>}
                 <td style={{ padding: '10px 14px' }}>
                   <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: (item.active ?? item.status === 'active') ? '#E8F5EF' : '#FEF2F2', color: (item.active ?? item.status === 'active') ? '#1E6B50' : '#DC2626' }}>
                     {(item.active ?? item.status === 'active') ? '启用' : '停用'}
@@ -107,6 +111,17 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                   <select className="form-input" value={clientBrand} onChange={e => setClientBrand(e.target.value)}>
                     {CLIENT_BRANDS.map(item => <option key={item.value} value={item.value}>{item.label}</option>)}
                   </select>
+                </div>
+              )}
+              {withEntitlements && (
+                <div className="form-group">
+                  <label className="form-label">年度会员专属权益</label>
+                  {[['aiHealthAnalysis', 'AI健康分析'], ['aiRiskAssessment', 'AI风险评估']].map(([key, label]) => (
+                    <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!entitlements[key]} onChange={e => setEntitlements(v => ({ ...v, [key]: e.target.checked }))} />
+                      <span>{label}</span>
+                    </label>
+                  ))}
                 </div>
               )}
             </div>
@@ -329,6 +344,7 @@ export default function MemberSettingsPage() {
             toggleFn={adminAPI.toggleServicePackage}
             deleteFn={adminAPI.deleteServicePackage}
             withClientBrand
+            withEntitlements
           />
         )}
       </div>

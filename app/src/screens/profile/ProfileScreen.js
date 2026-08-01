@@ -501,8 +501,7 @@ export default function ProfileScreen({ navigation }) {
           <Text style={styles.sectionTitle}>我的服务</Text>
           <View style={styles.menuCard}>
             <MenuItem icon="receipt-outline"  iconColor={colors.primary} label="我的订单"  badge={pendingOrders > 0 ? pendingOrders : undefined} onPress={() => navigation.navigate('Orders')} />
-            <MenuItem icon="gift-outline"     iconColor="#D97706" label="会员权益"              onPress={() => navigation.navigate('Benefits')} />
-            <MenuItem icon="cart-outline"    iconColor="#D97706" label="服务商城"               onPress={() => navigation.navigate('ServiceMall')} isLast />
+            <MenuItem icon="gift-outline"     iconColor="#D97706" label="会员权益"              onPress={() => navigation.navigate('Benefits')} isLast />
           </View>
         </View>
 

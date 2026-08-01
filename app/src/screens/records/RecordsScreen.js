@@ -336,7 +336,7 @@ function formatGroupDateLabel(dateKey) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function RecordsScreen({ navigation }) {
-  const { isDemo } = useAuth();
+  const { isDemo, user } = useAuth();
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [latestVitals, setLatestVitals] = useState(null);
@@ -603,13 +603,22 @@ export default function RecordsScreen({ navigation }) {
       >
         {/* ── AI健康分析 入口 ──────────────────────────────────── */}
         <View style={styles.section}>
-          <TouchableOpacity style={styles.aiEntryCard} onPress={() => navigation.navigate('AiHealth')}>
+          <TouchableOpacity style={styles.aiEntryCard} onPress={() => {
+            if (!user?.aiEntitlements?.aiHealthAnalysis && !user?.aiEntitlements?.aiRiskAssessment) {
+              Alert.alert('年度会员专属', 'AI健康分析和风险评估仅向健康预防计划、健康护航计划客户开放。您可以前往商城了解年度服务。', [
+                { text: '取消', style: 'cancel' },
+                { text: '查看商城', onPress: () => navigation.navigate('ServiceMall') },
+              ]);
+              return;
+            }
+            navigation.navigate('AiHealth');
+          }}>
             <View style={styles.aiEntryIcon}>
               <Ionicons name="sparkles" size={20} color={colors.white} />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.aiEntryTitle}>AI健康分析</Text>
-              <Text style={styles.aiEntryDesc}>AI健康分析 · 风险评估</Text>
+              <Text style={styles.aiEntryDesc}>{user?.aiEntitlements?.aiHealthAnalysis || user?.aiEntitlements?.aiRiskAssessment ? 'AI健康分析 · 风险评估' : '年度会员专属 · 查看权益'}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>

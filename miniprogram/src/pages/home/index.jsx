@@ -3,7 +3,7 @@ import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow, usePullDownRefresh } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { userAPI, tasksAPI, followupTasksAPI, systemAPI } from '../../services/api';
+import { userAPI, tasksAPI, followupTasksAPI, systemAPI, servicesAPI } from '../../services/api';
 import TrendChart from '../../components/TrendChart';
 import Icon from '../../components/Icon';
 import useNavBar from '../../hooks/useNavBar';
@@ -176,16 +176,18 @@ export default function HomePage() {
   const [followups, setFollowups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [taskDetail, setTaskDetail] = useState(null);
+  const [popularServices, setPopularServices] = useState([]);
 
   // 首屏关键数据：仪表盘/待办/随访，3个并发请求，尽快渲染出首页骨架
   // 今日打卡状态已随打卡网格一起抽离到独立页 pages/checkin/index（2026-07-18 打卡页重构对齐）
   // BMI色带/血压血糖迷你走势图已删除：app端首页瘦身后不再展示这两块，2026-07-19对齐删除
   const loadCore = useCallback(async () => {
     try {
-      const [dashRes, tasksRes, followRes] = await Promise.allSettled([
+      const [dashRes, tasksRes, followRes, servicesRes] = await Promise.allSettled([
         userAPI.getDashboard(),
         tasksAPI.list(),
         followupTasksAPI.list(),
+        servicesAPI.list(),
       ]);
       if (dashRes.status === 'fulfilled' && dashRes.value?.success) setDashData(dashRes.value.data);
       if (tasksRes.status === 'fulfilled' && tasksRes.value?.success) {
@@ -193,6 +195,9 @@ export default function HomePage() {
       }
       if (followRes.status === 'fulfilled' && followRes.value?.success) {
         setFollowups((followRes.value.data || []).filter((p) => !p.completedByUser && !['completed', 'cancelled'].includes(p.status)));
+      }
+      if (servicesRes.status === 'fulfilled' && servicesRes.value?.success) {
+        setPopularServices((servicesRes.value.data?.services || []).slice(0, 4));
       }
     } catch {}
     setLoading(false);
@@ -382,6 +387,33 @@ export default function HomePage() {
             )}
           </View>
         )}
+
+        {/* 大众服务商城：首页直接展示 Admin 排序靠前的常用服务 */}
+        <View style={{ marginBottom: `${spacing.lg}px` }}>
+          <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
+            <View>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>常用健康服务</Text>
+              <Text style={{ fontSize: '10px', color: colors.textMuted }}>咨询、检查、调理服务便捷选购</Text>
+            </View>
+            <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>全部商城 ›</Text></View>
+          </View>
+          <ScrollView scrollX enhanced showScrollbar={false} style={{ width: '100%' }}>
+            <View style={{ display: 'flex', gap: '10px', paddingBottom: '2px' }}>
+              {popularServices.map((item) => (
+                <View key={item.id} onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '142px', flexShrink: 0, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '13px', border: `1px solid ${colors.border}` }}>
+                  <Icon name="🩺" size={20} color={colors.primary} />
+                  <Text style={{ fontSize: '13px', lineHeight: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: '7px', minHeight: '36px' }}>{item.name}</Text>
+                  <Text style={{ fontSize: '14px', fontWeight: 800, color: '#D97706', display: 'block', marginTop: '6px' }}>¥{item.price ?? '咨询'}</Text>
+                  <Text style={{ fontSize: '10px', color: colors.primary, display: 'block', marginTop: '4px' }}>查看服务 ›</Text>
+                </View>
+              ))}
+              <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '104px', flexShrink: 0, minHeight: '132px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="🛒" size={24} color="#fff" />
+                <Text style={{ color: '#fff', fontSize: '12px', fontWeight: 700, marginTop: '7px' }}>查看全部服务</Text>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
 
         {/* 完成今日打卡（2026-07-18 打卡页重构对齐）：原内联打卡网格已抽离到独立页 pages/checkin/index，
             首页只保留入口按钮，健康管家团队卡片已移至"我的"页 */}

@@ -26,6 +26,7 @@ const SystemConfig = require('../models/SystemConfig');
 const ShareToken = require('../models/ShareToken');
 const CheckupPlan = require('../models/CheckupPlan');
 const GiftRecord   = require('../models/GiftRecord');
+const ServicePackage = require('../models/ServicePackage');
 const PointsLog    = require('../models/PointsLog');
 const HealthPlan   = require('../models/HealthPlan');
 const PushRecord   = require('../models/PushRecord');
@@ -52,6 +53,28 @@ const SERVICE_PACKAGE_LABELS = {
   pkg_6m:            '半年服务包',
   pkg_3m:            '季度服务包',
 };
+
+// 服务包权益以 Admin 配置为准；兼容尚未保存新权益字段的既有年度计划。
+async function getAiEntitlements(user) {
+  const none = { aiHealthAnalysis: false, aiRiskAssessment: false };
+  if (!user?.servicePackage || !user?.serviceExpiry) return none;
+  const expiry = new Date(`${user.serviceExpiry}T23:59:59`);
+  if (!Number.isNaN(expiry.getTime()) && expiry < new Date()) return none;
+  const names = [user.servicePackage, SERVICE_PACKAGE_LABELS[user.servicePackage]].filter(Boolean);
+  const pkg = await ServicePackage.findOne({ clientBrand: user.clientBrand || 'jiayiguanjia', name: { $in: names }, active: true }).lean();
+  const legacyAnnual = names.some(name => /健康预防|健康护航/.test(name));
+  return {
+    aiHealthAnalysis: !!pkg?.entitlements?.aiHealthAnalysis || legacyAnnual,
+    aiRiskAssessment: !!pkg?.entitlements?.aiRiskAssessment || legacyAnnual,
+  };
+}
+
+async function requireAiEntitlement(user, key, res) {
+  const entitlements = await getAiEntitlements(user);
+  if (entitlements[key]) return true;
+  res.status(403).json({ success: false, code: 'ANNUAL_MEMBER_ONLY', message: '该功能仅向健康预防计划和健康护航计划客户开放' });
+  return false;
+}
 
 // 获取当前用户信息（含健康基金汇总 + 责任团队真实数据）
 router.get('/me', auth, async (req, res) => {
@@ -95,6 +118,7 @@ router.get('/me', auth, async (req, res) => {
     };
 
     const userData = req.user.toObject();
+    userData.aiEntitlements = await getAiEntitlements(req.user);
     // 覆盖 doctor / manager 字段为真实分配数据
     const fdInfo = toStaffInfo(req.user.assignedFamilyDoctor, '家庭医师');
     const nsInfo = toStaffInfo(req.user.assignedNutritionist, '营养师');
@@ -1402,6 +1426,7 @@ router.post('/ai-health-summary', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+    if (!await requireAiEntitlement(user, 'aiHealthAnalysis', res)) return;
 
     // 双审强制前置：有家庭医生的客户，必须先由家医审核确认所有体检报告才能生成（2026-07-21新增，
     // 此前只在 staff.js 医护端生成入口拦截，客户自助生成这条路完全没走这道校验，是遗漏的漏洞）
@@ -1492,8 +1517,9 @@ router.get('/ai-risk-assessment', auth, async (req, res) => {
 router.post('/ai-risk-assessment', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
-      .select('name gender age chronicDiseases healthProfile labValues lifestyle assignedFamilyDoctor aiRiskAssessment');
+      .select('name gender age chronicDiseases healthProfile labValues lifestyle assignedFamilyDoctor aiRiskAssessment servicePackage serviceExpiry clientBrand');
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+    if (!await requireAiEntitlement(user, 'aiRiskAssessment', res)) return;
 
     // 双审强制前置：有家庭医生的客户，必须先由家医审核确认所有体检报告才能生成
     const { checkReportAuditGate } = require('../utils/reportAuditGate');

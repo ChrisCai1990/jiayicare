@@ -585,9 +585,11 @@ export default function ServiceMallScreen({ navigation, route }) {
       <View style={[styles.topBar, gradient.header]}>
         <View style={styles.topBarDecor} />
         <View style={styles.topBarRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={22} color={colors.white} />
-          </TouchableOpacity>
+          {route?.name === 'MallTab' ? <View style={{ width: 36 }} /> : (
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={22} color={colors.white} />
+            </TouchableOpacity>
+          )}
           <View style={styles.topBarCenter}>
             <Text style={styles.pageTitle}>服务商城</Text>
             <Text style={styles.pageSubtitle}>专属健康服务，品质保障</Text>

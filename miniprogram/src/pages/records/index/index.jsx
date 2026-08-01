@@ -6,6 +6,7 @@ import { recordsAPI } from '../../../services/api';
 import TrendChart from '../../../components/TrendChart';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { useAuth } from '../../../context/AuthContext';
 
 const TYPE_META = {
   bloodPressure: { label: '血压', icon: '💗', unit: 'mmHg' },
@@ -20,6 +21,7 @@ const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: col
 
 export default function RecordsIndexPage() {
   const { statusBarHeight } = useNavBar();
+  const { user } = useAuth();
   const [records, setRecords] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -128,14 +130,25 @@ export default function RecordsIndexPage() {
         </View>
 
         {/* AI健康分析入口卡片 */}
-        <View onClick={() => Taro.navigateTo({ url: '/pages/records/ai-health/index' })} style={{
+        <View onClick={() => {
+          if (!user?.aiEntitlements?.aiHealthAnalysis && !user?.aiEntitlements?.aiRiskAssessment) {
+            Taro.showModal({
+              title: '年度会员专属',
+              content: 'AI健康分析和风险评估仅向健康预防计划、健康护航计划客户开放。',
+              confirmText: '查看商城',
+              success: res => { if (res.confirm) Taro.navigateTo({ url: '/pages/services/mall/index' }); },
+            });
+            return;
+          }
+          Taro.navigateTo({ url: '/pages/records/ai-health/index' });
+        }} style={{
           display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#1A2B24', borderRadius: `${radius.md}px`,
           padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`,
         }}>
           <Icon name="✨" size={24} color="#fff" />
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: '#fff', display: 'block' }}>AI健康分析 / 风险评估</Text>
-            <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>AI结合体检数据与健康档案自动生成解读</Text>
+            <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>{user?.aiEntitlements?.aiHealthAnalysis || user?.aiEntitlements?.aiRiskAssessment ? 'AI结合体检数据与健康档案自动生成解读' : '年度会员专属 · 查看权益'}</Text>
           </View>
           <Text style={{ color: '#fff', fontSize: '14px' }}>›</Text>
         </View>

@@ -10,6 +10,10 @@ const servicePackageSchema = new mongoose.Schema({
   },
   active: { type: Boolean, default: true },
   sortOrder: { type: Number, default: 0 },
+  entitlements: {
+    aiHealthAnalysis: { type: Boolean, default: false },
+    aiRiskAssessment: { type: Boolean, default: false },
+  },
 }, { timestamps: true });
 
 servicePackageSchema.index({ clientBrand: 1, name: 1 }, { unique: true });

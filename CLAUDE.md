@@ -279,6 +279,11 @@ PATCH           /api/admin/plan-templates/:id/toggle     切换启用状态
 
 ## 关键设计决策（避免重复踩坑）
 
+### 嘉医管家大众商城与AI权益
+- 首页展示 Admin 已上架、按 `sortOrder` 靠前的常用服务，商城作为底部主导航；上传报告入口保留在健康档案。
+- AI健康分析与AI风险评估通过 `ServicePackage.entitlements` 配置，并由后端生成接口强制校验；健康预防计划、健康护航计划默认具备权益，其他单项服务客户不可生成。
+- 会员软删除时将原手机号保存为 `archivedPhone`，并释放 `phone/contactPhone`；恢复前必须检查原手机号是否已被有效档案占用。
+
 ### PUT /user/me 用原生 driver
 直接用 findByIdAndUpdate 对 Mixed 数组字段会报 Cast 错误。
 ```js

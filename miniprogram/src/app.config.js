@@ -65,8 +65,8 @@ export default defineAppConfig({
         selectedIconPath: 'assets/tab/records-active.png',
       },
       {
-        pagePath: 'pages/records/upload/index',
-        text: '上传报告',
+        pagePath: 'pages/services/mall/index',
+        text: '商城',
         iconPath: 'assets/tab/report.png',
         selectedIconPath: 'assets/tab/report-active.png',
       },

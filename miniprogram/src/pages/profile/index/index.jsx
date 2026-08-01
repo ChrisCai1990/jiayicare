@@ -230,7 +230,6 @@ export default function ProfilePage() {
         <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>我的服务</Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
           <MenuItem icon="🧾" iconColor={colors.primary} label="我的订单" badge={pendingOrders} onClick={() => nav('/pages/orders/index')} />
-          <MenuItem icon="🛒" iconColor="#D97706" label="服务商城" onClick={() => nav('/pages/services/mall/index')} />
           <MenuItem icon="🎁" iconColor="#8e44ad" label="会员权益" onClick={() => nav('/pages/profile/benefits/index')} isLast />
         </View>
       </View>

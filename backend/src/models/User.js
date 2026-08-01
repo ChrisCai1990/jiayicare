@@ -43,6 +43,7 @@ const userSchema = new mongoose.Schema({
   deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   deletedByName: { type: String, default: '' },
   deleteReason: { type: String, default: '' },
+  archivedPhone: { type: String, default: '' }, // 软删除前手机号，仅供审计/恢复；删除后释放唯一登录手机号
   deletionAudit: [{
     action: { type: String, enum: ['delete', 'restore'] },
     admin: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },

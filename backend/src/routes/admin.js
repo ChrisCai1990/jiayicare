@@ -242,7 +242,8 @@ router.delete('/patients/:id', adminAuth, async (req, res) => {
   if (reason.length < 4) return res.status(400).json({ success: false, message: '删除原因至少填写4个字' });
   const impact = await getPatientDeleteImpact(user._id);
   await User.findByIdAndUpdate(user._id, {
-    $set: { isDeleted: true, deletedAt: new Date(), deletedBy: req.admin._id, deletedByName: req.admin.name || req.admin.username || '', deleteReason: reason },
+    $set: { isDeleted: true, archivedPhone: user.phone || '', deletedAt: new Date(), deletedBy: req.admin._id, deletedByName: req.admin.name || req.admin.username || '', deleteReason: reason },
+    $unset: { phone: 1, contactPhone: 1 },
     $push: { deletionAudit: { action: 'delete', admin: req.admin._id, adminName: req.admin.name || req.admin.username || '', reason, at: new Date() } },
   });
   res.json({ success: true, message: '会员已移入回收站，关联业务数据均已保留', data: impact });
@@ -250,10 +251,17 @@ router.delete('/patients/:id', adminAuth, async (req, res) => {
 
 router.patch('/patients/:id/restore', adminAuth, async (req, res) => {
   if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可恢复会员' });
+  const deletedUser = await User.findOne({ _id: req.params.id, isDeleted: true }).select('archivedPhone phone');
+  if (!deletedUser) return res.status(404).json({ success: false, message: '回收站中不存在该会员' });
+  const restorePhone = deletedUser.archivedPhone || deletedUser.phone || '';
+  if (restorePhone) {
+    const occupied = await User.exists({ _id: { $ne: deletedUser._id }, phone: restorePhone, isDeleted: { $ne: true } });
+    if (occupied) return res.status(409).json({ success: false, message: '原手机号已用于其他有效档案，不能直接恢复；请先处理手机号归属' });
+  }
   const user = await User.findOneAndUpdate(
     { _id: req.params.id, isDeleted: true },
     {
-      $set: { isDeleted: false, deletedAt: null, deletedBy: null, deletedByName: '', deleteReason: '' },
+      $set: { isDeleted: false, ...(restorePhone ? { phone: restorePhone, contactPhone: restorePhone } : {}), deletedAt: null, deletedBy: null, deletedByName: '', deleteReason: '' },
       $push: { deletionAudit: { action: 'restore', admin: req.admin._id, adminName: req.admin.name || req.admin.username || '', at: new Date() } },
     },
     { new: true },
