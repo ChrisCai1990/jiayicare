@@ -157,6 +157,7 @@ export default function Navigation() {
             <Stack.Screen name="Main" component={MainTabs} />
             <Stack.Screen name="AddRecord" component={AddRecordScreen} />
             <Stack.Screen name="HealthReport" component={HealthReportScreen} />
+            <Stack.Screen name="ReportUpload" component={ReportUploadScreen} />
             <Stack.Screen name="AiHealth" component={AiHealthScreen} />
             <Stack.Screen name="Tasks" component={TasksScreen} />
             <Stack.Screen name="Chat" component={ChatScreen} />

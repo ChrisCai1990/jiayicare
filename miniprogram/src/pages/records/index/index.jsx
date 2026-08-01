@@ -104,6 +104,27 @@ export default function RecordsIndexPage() {
         </View>
 
         {/* 个人资料入口（2026-07-18 对齐app端健康档案页拆分：静态档案字段搬到独立页） */}
+        <View
+          onClick={() => Taro.navigateTo({ url: '/pages/records/upload/index' })}
+          style={{
+            display: 'flex', alignItems: 'center', gap: `${spacing.md}px`,
+            backgroundColor: colors.primary, borderRadius: `${radius.lg}px`,
+            padding: `${spacing.lg}px ${spacing.md}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.card,
+          }}
+        >
+          <View style={{ width: '48px', height: '48px', borderRadius: '15px', backgroundColor: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <Icon name="📤" size={24} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: '16px', fontWeight: 800, color: '#fff', display: 'block', marginBottom: '4px' }}>上传体检/检查报告</Text>
+            <Text style={{ fontSize: '11px', lineHeight: '17px', color: 'rgba(255,255,255,0.76)' }}>支持相册选图和拍照，上传后自动解析归档</Text>
+          </View>
+          <Text style={{ color: '#fff', fontSize: '18px' }}>›</Text>
+        </View>
+        <View onClick={() => Taro.navigateTo({ url: '/pages/records/medical-reports/index' })} style={{ textAlign: 'center', padding: '9px 0', marginBottom: `${spacing.md}px` }}>
+          <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.primary }}>📄 查看已上传报告</Text>
+        </View>
+
         <View onClick={() => Taro.navigateTo({ url: '/pages/records/profile-archive/index' })} style={{
           display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
           border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card,

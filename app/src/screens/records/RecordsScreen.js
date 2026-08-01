@@ -601,6 +601,27 @@ export default function RecordsScreen({ navigation }) {
           <RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); loadAll(); }} tintColor={colors.primary} />
         }
       >
+        <View style={styles.section}>
+          <TouchableOpacity
+            style={styles.reportUploadEntry}
+            activeOpacity={0.85}
+            onPress={() => navigation.navigate('ReportUpload')}
+          >
+            <View style={styles.reportUploadIcon}>
+              <Ionicons name="cloud-upload-outline" size={24} color={colors.white} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.reportUploadTitle}>上传体检/检查报告</Text>
+              <Text style={styles.reportUploadDesc}>支持相册多选、拍照及 PDF，上传后自动解析归档</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={20} color={colors.white} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.reportManageLink} onPress={() => navigation.navigate('MedicalReports')}>
+            <Ionicons name="documents-outline" size={16} color={colors.primary} />
+            <Text style={styles.reportManageText}>查看已上传报告</Text>
+          </TouchableOpacity>
+        </View>
+
         {/* ── AI健康分析 入口 ──────────────────────────────────── */}
         <View style={styles.section}>
           <TouchableOpacity style={styles.aiEntryCard} onPress={() => {
@@ -1001,6 +1022,23 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
 
   // AI健康分析入口卡片
+  reportUploadEntry: {
+    flexDirection: 'row', alignItems: 'center', gap: spacing.md,
+    backgroundColor: colors.primary, borderRadius: radius.lg,
+    paddingHorizontal: spacing.md, paddingVertical: spacing.lg, ...shadow.sm,
+  },
+  reportUploadIcon: {
+    width: 48, height: 48, borderRadius: 15,
+    backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center',
+  },
+  reportUploadTitle: { fontSize: 16, fontWeight: '800', color: colors.white, marginBottom: 4 },
+  reportUploadDesc: { fontSize: 11, lineHeight: 17, color: 'rgba(255,255,255,0.76)' },
+  reportManageLink: {
+    marginTop: spacing.sm, flexDirection: 'row', alignItems: 'center', justifyContent: 'center',
+    gap: 6, paddingVertical: 9,
+  },
+  reportManageText: { fontSize: 13, fontWeight: '600', color: colors.primary },
+
   aiEntryCard: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: colors.white, borderRadius: radius.md, padding: spacing.md,
