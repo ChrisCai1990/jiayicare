@@ -1141,9 +1141,9 @@ router.get('/family-links', auth, async (req, res) => {
     // 兼容旧数据：首次查看时自动补齐同一已确认家庭网络中的成员关系。
     await synchronizeFamilyGroup([req.user._id]);
     const u = await User.findById(req.user._id)
-      .populate('familyLinks.linkedUser', 'name phone gender birthDate')
+      .populate('familyLinks.linkedUser', 'name phone gender birthDate isDeleted')
       .select('familyLinks');
-    const links = (u?.familyLinks || []).map(l => ({
+    const links = (u?.familyLinks || []).filter(l => l.linkedUser && !l.linkedUser.isDeleted).map(l => ({
       _id: l._id,
       relation: l.relation,
       createdAt: l.createdAt,
@@ -1175,6 +1175,7 @@ router.get('/family-links/search', auth, async (req, res) => {
         { name:  { $regex: q, $options: 'i' } },
       ],
     };
+    query.isDeleted = { $ne: true };
     const users = await User.find(query).select('name phone gender birthDate').limit(10);
     const alreadyLinked = new Set(
       (await User.findById(req.user._id).select('familyLinks')).familyLinks.map(l => String(l.linkedUser))

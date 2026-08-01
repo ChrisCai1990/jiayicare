@@ -126,6 +126,7 @@ router.post('/login', async (req, res) => {
   // 查找用户（新手机号自动创建账号）
   const isDemo = phone === '13800138000';
   let user = await User.findOne({ phone });
+  if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
   const isNew = !user; // 修复：在创建前判断，而非硬编码 false
 
   if (isNew) {
@@ -177,6 +178,7 @@ router.post('/wechat', async (req, res) => {
 
     // 3. 查找或创建用户（以 openid 为唯一键）
     let user = await User.findOne({ wechatOpenid: openid });
+    if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
     const isNew = !user;
     if (!user) {
       user = await User.create({
@@ -230,6 +232,7 @@ router.post('/wechat-mp', async (req, res) => {
 
     // 查找或创建用户（以 wechatMpOpenid 为唯一键）
     let user = await User.findOne({ wechatMpOpenid: openid });
+    if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
     const isNew = !user;
     if (!user) {
       user = await User.create({

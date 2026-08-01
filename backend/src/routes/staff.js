@@ -325,7 +325,7 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
     }
   }
 
-  const filter = { ...assignFilter };
+  const filter = { ...assignFilter, isDeleted: { $ne: true } };
   if (search) {
     const searchOr = [
       { name: { $regex: search, $options: 'i' } },
@@ -437,6 +437,7 @@ router.get('/patients/search-registered', staffAuth, async (req, res) => {
   const q = (req.query.q || '').trim();
   if (!q) return res.json({ success: true, data: [] });
   const filter = {
+    isDeleted: { $ne: true },
     $or: [
       { name: { $regex: q, $options: 'i' } },
       { phone: { $regex: q, $options: 'i' } },
@@ -663,7 +664,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .populate('assignedRehabSpecialist', 'name title role')
     .populate('assignedMedicalAssistant', 'name title role')
     .populate('assignedHealthPlanner', 'name title role');
-  if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+  if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
 
   // 权限校验：非超管只能查看分配给自己（或下属、团队成员）的患者
   if (req.staff.role !== 'superadmin') {
@@ -4371,9 +4372,9 @@ router.get('/patients/:id/family-links', staffAuth, async (req, res) => {
     // 兼容旧数据：打开家庭信息时自动把既有的星形关系补齐成同一家庭互相关联。
     await synchronizeFamilyGroup([req.params.id]);
     const user = await User.findById(req.params.id)
-      .populate('familyLinks.linkedUser', 'name phone gender birthDate');
+      .populate('familyLinks.linkedUser', 'name phone gender birthDate isDeleted');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
-    res.json({ success: true, data: user.familyLinks || [] });
+    res.json({ success: true, data: (user.familyLinks || []).filter(l => l.linkedUser && !l.linkedUser.isDeleted) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

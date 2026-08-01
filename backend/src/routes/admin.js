@@ -138,16 +138,17 @@ router.post('/login', async (req, res) => {
 
 // ── GET /api/admin/dashboard ──────────────────────────────────────
 router.get('/dashboard', adminAuth, async (req, res) => {
+  const activeUserFilter = { isDeleted: { $ne: true } };
   const [totalPatients, pendingOrders, unreadMessages, recentPatients] = await Promise.all([
-    User.countDocuments(),
+    User.countDocuments(activeUserFilter),
     Order.countDocuments({ status: 'pending' }),
     Message.countDocuments({ type: 'user', unread: true }), // 用户发出的未读留言
-    User.find().sort({ createdAt: -1 }).limit(5).select('name phone servicePackage healthScore createdAt'),
+    User.find(activeUserFilter).sort({ createdAt: -1 }).limit(5).select('name phone servicePackage healthScore createdAt'),
   ]);
 
   // 近7天新增患者
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-  const newPatients = await User.countDocuments({ createdAt: { $gt: sevenDaysAgo } });
+  const newPatients = await User.countDocuments({ ...activeUserFilter, createdAt: { $gt: sevenDaysAgo } });
 
   res.json({
     success: true,
@@ -157,8 +158,10 @@ router.get('/dashboard', adminAuth, async (req, res) => {
 
 // ── GET /api/admin/patients ───────────────────────────────────────
 router.get('/patients', adminAuth, async (req, res) => {
-  const { q = '', page = 1, limit = 20, hasService } = req.query;
-  const filter = {};
+  const { q = '', page = 1, limit = 20, hasService, deleted = 'active' } = req.query;
+  const filter = deleted === 'only' && req.admin.role === 'superadmin'
+    ? { isDeleted: true }
+    : { isDeleted: { $ne: true } };
   if (q) {
     filter.$or = [
       { name: { $regex: q, $options: 'i' } },
@@ -174,7 +177,7 @@ router.get('/patients', adminAuth, async (req, res) => {
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit))
-      .select('name phone age gender healthScore servicePackage serviceExpiry onboardingCompleted createdAt'),
+      .select('name phone age gender healthScore servicePackage serviceExpiry onboardingCompleted createdAt isDeleted deletedAt deleteReason'),
     User.countDocuments(filter),
   ]);
 
@@ -200,6 +203,63 @@ router.get('/patients/:id', adminAuth, async (req, res) => {
   }
 
   res.json({ success: true, data: { user, latestVitals, records, tasks, messages, orders } });
+});
+
+async function getPatientDeleteImpact(userId) {
+  const [healthRecords, tasks, messages, orders, reports, followUpPlans, commissions] = await Promise.all([
+    HealthRecord.countDocuments({ user: userId }),
+    Task.countDocuments({ user: userId }),
+    Message.countDocuments({ user: userId }),
+    Order.countDocuments({ user: userId }),
+    MedicalReport.countDocuments({ user: userId }),
+    FollowUpPlan.countDocuments({ patientId: userId }),
+    Commission.countDocuments({ patientId: userId }),
+  ]);
+  const counts = { healthRecords, tasks, messages, orders, reports, followUpPlans, commissions };
+  return { counts, total: Object.values(counts).reduce((sum, n) => sum + n, 0) };
+}
+
+// 删除前预检：只允许超级管理员查看，前端据此展示数据影响而不是直接弹一句“确定吗”。
+router.get('/patients/:id/delete-impact', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可删除会员' });
+  const user = await User.findById(req.params.id).select('name phone isDeleted deletedAt deleteReason');
+  if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+  const impact = await getPatientDeleteImpact(user._id);
+  res.json({ success: true, data: { user, ...impact } });
+});
+
+// 可恢复软删除：不物理清除任何健康/订单/服务数据，避免误删和审计链断裂。
+router.delete('/patients/:id', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可删除会员' });
+  const user = await User.findById(req.params.id).select('name phone isDeleted');
+  if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+  if (user.isDeleted) return res.status(409).json({ success: false, message: '该会员已在回收站中' });
+  const confirmation = String(req.body.confirmation || '').trim();
+  const reason = String(req.body.reason || '').trim();
+  if (!confirmation || ![String(user.name || '').trim(), String(user.phone || '').trim()].includes(confirmation)) {
+    return res.status(400).json({ success: false, message: '请输入完整会员姓名或手机号进行确认' });
+  }
+  if (reason.length < 4) return res.status(400).json({ success: false, message: '删除原因至少填写4个字' });
+  const impact = await getPatientDeleteImpact(user._id);
+  await User.findByIdAndUpdate(user._id, {
+    $set: { isDeleted: true, deletedAt: new Date(), deletedBy: req.admin._id, deletedByName: req.admin.name || req.admin.username || '', deleteReason: reason },
+    $push: { deletionAudit: { action: 'delete', admin: req.admin._id, adminName: req.admin.name || req.admin.username || '', reason, at: new Date() } },
+  });
+  res.json({ success: true, message: '会员已移入回收站，关联业务数据均已保留', data: impact });
+});
+
+router.patch('/patients/:id/restore', adminAuth, async (req, res) => {
+  if (req.admin.role !== 'superadmin') return res.status(403).json({ success: false, message: '仅超级管理员可恢复会员' });
+  const user = await User.findOneAndUpdate(
+    { _id: req.params.id, isDeleted: true },
+    {
+      $set: { isDeleted: false, deletedAt: null, deletedBy: null, deletedByName: '', deleteReason: '' },
+      $push: { deletionAudit: { action: 'restore', admin: req.admin._id, adminName: req.admin.name || req.admin.username || '', at: new Date() } },
+    },
+    { new: true },
+  ).select('name phone');
+  if (!user) return res.status(404).json({ success: false, message: '回收站中不存在该会员' });
+  res.json({ success: true, message: '会员已恢复', data: user });
 });
 
 // ── POST /api/admin/patients/:id/message ─────────────────────────

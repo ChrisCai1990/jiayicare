@@ -133,15 +133,58 @@ function CreateTaskModal({ userId, onClose, onCreated }) {
   )
 }
 
+function DeletePatientModal({ user, onClose, onDeleted }) {
+  const toast = useToast()
+  const [impact, setImpact] = useState(null)
+  const [reason, setReason] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [loading, setLoading] = useState(false)
+  useEffect(() => {
+    adminAPI.patientDeleteImpact(user._id).then(r => setImpact(r.data?.counts || {}))
+      .catch(e => toast('删除预览失败：' + e.message))
+  }, [user._id])
+  const confirmed = [user.name, user.phone].filter(Boolean).includes(confirmation.trim())
+  const labels = { healthRecords: '健康档案', tasks: '任务', messages: '消息', orders: '订单', reports: '报告', followUpPlans: '随访计划', commissions: '佣金记录' }
+  const submit = async () => {
+    if (!confirmed || reason.trim().length < 4) return
+    setLoading(true)
+    try {
+      await adminAPI.deletePatient(user._id, { confirmation: confirmation.trim(), reason: reason.trim() })
+      toast('会员已移入回收站，关联资料均已保留')
+      onDeleted()
+    } catch (e) { toast('删除失败：' + e.message) }
+    finally { setLoading(false) }
+  }
+  return <div className="modal-overlay" onClick={onClose}>
+    <div className="modal" onClick={e => e.stopPropagation()}>
+      <div className="modal-header"><div className="modal-title">移入会员回收站</div><button className="modal-close" onClick={onClose}>×</button></div>
+      <div className="modal-body">
+        <div style={{ padding: 14, borderRadius: 10, background: '#fff5f5', color: '#b42318', marginBottom: 16 }}>
+          该操作不会物理删除健康档案、报告、订单和服务记录。会员将无法登录，并从普通会员列表隐藏，可由超级管理员恢复。
+        </div>
+        <div style={{ marginBottom: 16 }}><strong>{user.name || '未填写姓名'}</strong>　{user.phone}</div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
+          {Object.entries(labels).map(([k, label]) => <div key={k} style={{ padding: 8, background: '#f7f8fa', borderRadius: 8 }}>{label}：{impact ? (impact[k] || 0) : '...'}</div>)}
+        </div>
+        <div className="form-group"><label className="form-label">删除原因（至少4个字）*</label><textarea className="form-input" rows={3} value={reason} onChange={e => setReason(e.target.value)} /></div>
+        <div className="form-group"><label className="form-label">输入会员姓名或手机号确认 *</label><input className="form-input" value={confirmation} onChange={e => setConfirmation(e.target.value)} placeholder={user.name || user.phone} /></div>
+      </div>
+      <div className="modal-footer"><button className="btn btn-ghost" onClick={onClose}>取消</button><button className="btn" style={{ background: '#d92d20', color: '#fff' }} disabled={loading || !confirmed || reason.trim().length < 4} onClick={submit}>{loading ? '处理中...' : '确认移入回收站'}</button></div>
+    </div>
+  </div>
+}
+
 export default function PatientDetailPage() {
   const { id } = useParams()
   const nav = useNavigate()
   const toast = useToast()
+  const { admin } = useAdmin()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState('overview')
   const [showMsg, setShowMsg] = useState(false)
   const [showTask, setShowTask] = useState(false)
+  const [showDelete, setShowDelete] = useState(false)
 
   // 复查计划状态
   const [checkupPlan, setCheckupPlan] = useState(null)
@@ -214,6 +257,7 @@ export default function PatientDetailPage() {
             </div>
             <button className="btn btn-outline" onClick={() => setShowMsg(true)}>💬 发消息</button>
             <button className="btn btn-primary" onClick={() => setShowTask(true)}>✅ 创建任务</button>
+            {admin?.role === 'superadmin' && <button className="btn" style={{ background: '#fff1f0', color: '#d92d20', border: '1px solid #fda29b' }} onClick={() => setShowDelete(true)}>删除会员</button>}
           </div>
         </div>
       </div>
@@ -522,6 +566,7 @@ export default function PatientDetailPage() {
       {/* Modals */}
       {showMsg  && <SendMessageModal userId={id} onClose={() => setShowMsg(false)} onSent={load} />}
       {showTask && <CreateTaskModal  userId={id} onClose={() => setShowTask(false)} onCreated={load} />}
+      {showDelete && <DeletePatientModal user={user} onClose={() => setShowDelete(false)} onDeleted={() => nav('/patients')} />}
     </>
   )
 }

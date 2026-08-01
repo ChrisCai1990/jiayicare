@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { adminAPI } from '../api'
+import { useAdmin, useToast } from '../App'
 
 const PAGE_SIZE = 20
 
@@ -11,11 +12,14 @@ function ScoreBadge({ score }) {
 
 export default function PatientsPage() {
   const nav = useNavigate()
+  const { admin } = useAdmin()
+  const toast = useToast()
   const [patients, setPatients] = useState([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [q, setQ] = useState('')
   const [hasService, setHasService] = useState('')
+  const [deleted, setDeleted] = useState('active')
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async (p = page) => {
@@ -24,14 +28,15 @@ export default function PatientsPage() {
       const params = { page: p, limit: PAGE_SIZE }
       if (q.trim()) params.q = q.trim()
       if (hasService) params.hasService = hasService
+      params.deleted = deleted
       const res = await adminAPI.patients(params)
       setPatients(res.data)
       setTotal(res.total)
     } catch {}
     finally { setLoading(false) }
-  }, [q, hasService, page])
+  }, [q, hasService, deleted, page])
 
-  useEffect(() => { load(1); setPage(1) }, [q, hasService])
+  useEffect(() => { load(1); setPage(1) }, [q, hasService, deleted])
   useEffect(() => { load(page) }, [page])
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
@@ -59,6 +64,9 @@ export default function PatientsPage() {
             <option value="true">已开通服务</option>
             <option value="false">未开通服务</option>
           </select>
+          {admin?.role === 'superadmin' && <select className="filter-select" value={deleted} onChange={e => setDeleted(e.target.value)}>
+            <option value="active">正常会员</option><option value="only">会员回收站</option>
+          </select>}
         </div>
 
         {loading ? (
@@ -104,9 +112,8 @@ export default function PatientsPage() {
                       {new Date(p.createdAt).toLocaleDateString('zh-CN')}
                     </td>
                     <td>
-                      <button className="btn btn-outline btn-sm" onClick={e => { e.stopPropagation(); nav(`/patients/${p._id}`) }}>
-                        详情
-                      </button>
+                      {p.isDeleted ? <button className="btn btn-outline btn-sm" onClick={async e => { e.stopPropagation(); try { await adminAPI.restorePatient(p._id); toast('会员已恢复'); load(page) } catch (err) { toast('恢复失败：' + err.message) } }}>恢复</button>
+                        : <button className="btn btn-outline btn-sm" onClick={e => { e.stopPropagation(); nav(`/patients/${p._id}`) }}>详情</button>}
                     </td>
                   </tr>
                 ))}
