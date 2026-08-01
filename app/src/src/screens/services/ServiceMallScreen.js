@@ -196,7 +196,7 @@ function BannerCard({ hasService, servicePackage, daysLeft, onViewOrders, onActi
         <View style={styles.bannerContent}>
           <Text style={styles.bannerTag}>专属会员权益</Text>
           <Text style={styles.bannerTitle} numberOfLines={1}>{servicePackage || '年度服务包'}</Text>
-          <Text style={styles.bannerSub}>全场享 9 折 · 剩余 {daysLeft} 天</Text>
+          <Text style={styles.bannerSub}>专属健康服务 · 剩余 {daysLeft} 天</Text>
           <TouchableOpacity style={styles.bannerBtn} onPress={onViewOrders}>
             <Text style={styles.bannerBtnText}>查看我的订单</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.primary} />
@@ -219,7 +219,7 @@ function BannerCard({ hasService, servicePackage, daysLeft, onViewOrders, onActi
         <View style={{ flex: 1 }}>
           <Text style={styles.activateTitle}>开通专属服务包</Text>
           <View style={styles.activatePoints}>
-            {['专属医生随访', '健管师全程陪伴', '全场服务折扣', 'AI 无限次咨询'].map((p, i) => (
+            {['专属医生随访', '健管师全程陪伴', '健康服务管理', 'AI 无限次咨询'].map((p, i) => (
               <View key={i} style={styles.activatePoint}>
                 <Ionicons name="checkmark-circle" size={12} color={colors.success} />
                 <Text style={styles.activatePointText}>{p}</Text>

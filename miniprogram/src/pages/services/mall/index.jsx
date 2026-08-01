@@ -31,7 +31,7 @@ function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrde
       <View style={{ backgroundColor: colors.primary, borderRadius: `${radius.xl}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px` }}>
         <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', backgroundColor: 'rgba(255,255,255,0.2)', padding: '3px 8px', borderRadius: `${radius.full}px`, display: 'inline-block', marginBottom: '6px' }}>专属会员权益</Text>
         <Text style={{ fontSize: '18px', fontWeight: 800, color: '#fff', display: 'block' }}>{servicePackage || '年度服务包'}</Text>
-        <Text style={{ fontSize: '12px', color: 'rgba(255,255,255,0.65)', display: 'block', margin: '3px 0 10px' }}>全场享 9 折 · 剩余 {daysLeft} 天</Text>
+        <Text style={{ fontSize: '12px', color: 'rgba(255,255,255,0.65)', display: 'block', margin: '3px 0 10px' }}>专属健康服务 · 剩余 {daysLeft} 天</Text>
         <View onClick={onViewOrders} style={{ display: 'inline-block', backgroundColor: '#fff', padding: '6px 12px', borderRadius: `${radius.full}px` }}>
           <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>查看我的订单 ›</Text>
         </View>

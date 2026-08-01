@@ -82,7 +82,9 @@ const SERVICE_PERFORMER_ROLES = [
 // 见 Admin.personalPerformanceRule）。比例制为主：rate 为占产品实付价的百分比。
 const servicePerformerRoleSchema = {
   role: { type: String, enum: SERVICE_PERFORMER_ROLES, required: true },
+  ruleType: { type: String, enum: ['none', 'percentage', 'fixedAmount'], default: 'percentage' },
   rate: { type: Number, default: 0 }, // 该岗位绩效比例（%，占产品实付价）
+  amount: { type: Number, default: 0 }, // 该岗位固定绩效金额（元）
   // 可选：产品维度预设的默认服务人（推送时可改）。不设则推送/核销时再指定具体人。
   defaultStaffId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
 };

@@ -18,7 +18,7 @@ const PACKAGES = [
     originalPrice: 5000,
     tag: '最超值',
     tagColor: '#DC3545',
-    features: ['专属健管师全年陪伴', '专属家庭医生咨询6次', '就医协助服务9折优惠', 'AI助手无限次使用'],
+    features: ['专属健管师全年陪伴', '专属家庭医生咨询6次', '就医协助服务', 'AI助手无限次使用'],
     highlight: true,
   },
   {

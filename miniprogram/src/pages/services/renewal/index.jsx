@@ -12,7 +12,7 @@ const PACKAGES = [
   {
     id: 'pkg_1y', name: '年度服务包', duration: '12 个月', price: 3650, originalPrice: 5000,
     tag: '最超值', tagColor: '#DC3545', highlight: true,
-    features: ['专属健管师全年陪伴', '专属家庭医生咨询6次', '就医协助服务9折优惠', 'AI助手无限次使用'],
+    features: ['专属健管师全年陪伴', '专属家庭医生咨询6次', '就医协助服务', 'AI助手无限次使用'],
   },
   {
     id: 'pkg_6m', name: '半年服务包', duration: '6 个月', price: 1980, originalPrice: 2800,

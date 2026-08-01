@@ -506,7 +506,7 @@ function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrde
         <View style={styles.bannerContent}>
           <Text style={styles.bannerTag}>专属会员权益</Text>
           <Text style={styles.bannerTitle} numberOfLines={1}>{servicePackage || '年度服务包'}</Text>
-          <Text style={styles.bannerSub}>全场享 9 折 · 剩余 {daysLeft} 天</Text>
+          <Text style={styles.bannerSub}>专属健康服务 · 剩余 {daysLeft} 天</Text>
           <TouchableOpacity style={styles.bannerBtn} onPress={onViewOrders}>
             <Text style={styles.bannerBtnText}>查看我的订单</Text>
             <Ionicons name="chevron-forward" size={14} color={colors.primary} />

@@ -73,8 +73,12 @@ async function settleOrderCommission(order) {
     for (const pr of performerRoles) {
       const staffId = orderPerformerMap[pr.role] || pr.defaultStaffId;
       if (!staffId) continue; // 该岗位没落实到具体人，跳过不生成
-      const rate = (parseFloat(pr.rate) || 0) / 100;
-      const amount = Math.round(base * rate * 100) / 100;
+      const ruleType = pr.ruleType || 'percentage';
+      if (ruleType === 'none') continue;
+      const rate = ruleType === 'percentage' ? (parseFloat(pr.rate) || 0) / 100 : 0;
+      const amount = ruleType === 'fixedAmount'
+        ? Math.min(parseFloat(pr.amount) || 0, base)
+        : Math.round(base * rate * 100) / 100;
       await createCommission(staffId, 'fulfiller', rate, amount);
     }
   } else if (order.fulfillerId) {

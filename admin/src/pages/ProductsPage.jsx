@@ -90,10 +90,10 @@ const ROLE_LABEL_MAP = Object.fromEntries(PERFORMER_ROLE_OPTIONS.map(o => [o.val
 
 function ServicePerformerRolesForm({ roles, staffList, onChange }) {
   const list = roles || []
-  const add = () => onChange([...list, { role: 'familyDoctor', rate: 0, defaultStaffId: '' }])
+  const add = () => onChange([...list, { role: 'familyDoctor', ruleType: 'percentage', rate: 0, amount: 0, defaultStaffId: '' }])
   const remove = (i) => onChange(list.filter((_, idx) => idx !== i))
   const update = (i, field, val) => onChange(list.map((r, idx) => idx === i ? { ...r, [field]: val } : r))
-  const totalRate = list.reduce((s, r) => s + (parseFloat(r.rate) || 0), 0)
+  const totalRate = list.reduce((s, r) => s + ((r.ruleType || 'percentage') === 'percentage' ? (parseFloat(r.rate) || 0) : 0), 0)
 
   return (
     <div style={{ marginTop: 20, borderTop: '1px dashed #e0d9ce', paddingTop: 16 }}>
@@ -106,15 +106,28 @@ function ServicePerformerRolesForm({ roles, staffList, onChange }) {
       </div>
       {list.length === 0 && <div style={{ fontSize: 12, color: '#bbb', padding: '8px 0' }}>未配置。留空则按上方「引流人/服务人」单服务人规则结算。</div>}
       {list.map((r, i) => (
-        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.2fr 0.8fr 1.4fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+        <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.1fr 1fr 0.9fr 1.4fr auto', gap: 8, marginBottom: 8, alignItems: 'center' }}>
           <select className="form-input" value={r.role} onChange={e => update(i, 'role', e.target.value)}>
             {PERFORMER_ROLE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <input className="form-input" type="number" min="0" max="100" value={r.rate}
-              onChange={e => update(i, 'rate', parseFloat(e.target.value) || 0)} placeholder="0" />
-            <span style={{ fontSize: 12, color: '#888' }}>%</span>
-          </div>
+          <select className="form-input" value={r.ruleType || 'percentage'} onChange={e => update(i, 'ruleType', e.target.value)}>
+            <option value="none">不结算</option>
+            <option value="percentage">按比例</option>
+            <option value="fixedAmount">固定金额</option>
+          </select>
+          {(r.ruleType || 'percentage') === 'percentage' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <input className="form-input" type="number" min="0" max="100" value={r.rate}
+                onChange={e => update(i, 'rate', parseFloat(e.target.value) || 0)} placeholder="0" />
+              <span style={{ fontSize: 12, color: '#888' }}>%</span>
+            </div>
+          ) : r.ruleType === 'fixedAmount' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ fontSize: 12, color: '#888' }}>¥</span>
+              <input className="form-input" type="number" min="0" value={r.amount || 0}
+                onChange={e => update(i, 'amount', parseFloat(e.target.value) || 0)} placeholder="0.00" />
+            </div>
+          ) : <div />}
           <select className="form-input" value={r.defaultStaffId || ''} onChange={e => update(i, 'defaultStaffId', e.target.value)}>
             <option value="">默认服务人（可选）</option>
             {staffList.filter(s => s.role === r.role).map(s => <option key={s._id} value={s._id}>{s.name}</option>)}
