@@ -36,6 +36,7 @@ const FollowUp         = require('../models/FollowUp');
 const ExamRequisition  = require('../models/ExamRequisition');
 const AnnualPlan       = require('../models/AnnualPlan');
 const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
+const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 const { isActiveToday } = require('./reminders');
 const router = express.Router();
 
@@ -1137,6 +1138,8 @@ router.delete('/family/:index', auth, async (req, res) => {
 // GET /api/user/family-links — 获取已关联的家庭成员
 router.get('/family-links', auth, async (req, res) => {
   try {
+    // 兼容旧数据：首次查看时自动补齐同一已确认家庭网络中的成员关系。
+    await synchronizeFamilyGroup([req.user._id]);
     const u = await User.findById(req.user._id)
       .populate('familyLinks.linkedUser', 'name phone gender birthDate')
       .select('familyLinks');
@@ -1276,13 +1279,8 @@ router.patch('/family-links/invites/:inviteId/accept', auth, async (req, res) =>
     invite.status = 'accepted';
     // A 邀请时填的 relation 语义是"B 是 A 的 X"（如 A 选"父亲"表示 B 是 A 的父亲）。
     // 接受方 B 可在 accept 时传 relation 覆盖"A 是 B 的什么"；未传则按亲属关系自动推导反向称谓。
-    const REVERSE_RELATION = {
-      '配偶': '配偶', '兄弟': '兄弟姐妹', '姐妹': '兄弟姐妹',
-      '父亲': '子女', '母亲': '子女', '子女': '父母',
-      '祖父': '孙辈', '祖母': '孙辈',
-    };
     const bRelationToA = invite.relation || '';                       // A 视角：B 是 A 的什么
-    const aRelationToB = (req.body.relation || REVERSE_RELATION[invite.relation] || '').trim(); // B 视角：A 是 B 的什么
+    const aRelationToB = (req.body.relation || reverseFamilyRelation(invite.relation) || '').trim(); // B 视角：A 是 B 的什么
     // 双向建立关联
     if (!userA.familyLinks.find(l => String(l.linkedUser) === String(req.user._id))) {
       userA.familyLinks.push({ linkedUser: req.user._id, relation: bRelationToA });
@@ -1291,7 +1289,8 @@ router.patch('/family-links/invites/:inviteId/accept', auth, async (req, res) =>
       userB.familyLinks.push({ linkedUser: invite.fromUser, relation: aRelationToB });
     }
     await Promise.all([userA.save(), userB.save()]);
-    res.json({ success: true, message: '已接受邀请，家庭成员关联成功' });
+    const syncResult = await synchronizeFamilyGroup([userA._id, userB._id]);
+    res.json({ success: true, message: '已接受邀请，家庭成员关联成功', data: syncResult });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

@@ -11,6 +11,7 @@ const { calculateHealthScore } = require('../utils/healthScore');
 const { parseIdCard, calcAgeFromBirthDate } = require('../utils/idCard');
 const { getCurrentTenantId, BYPASS } = require('../utils/tenantScope');
 const { followUpTaskRequirements } = require('../utils/medicalAssistRequirements');
+const { reverseFamilyRelation, synchronizeFamilyGroup } = require('../utils/familyLinks');
 // 聚合管道($aggregate)不会被 tenantScopePlugin 的 query 中间件自动拦截，需要在 $match 里手动拼入 tenantId
 const tenantMatchStage = () => {
   const tenantId = getCurrentTenantId();
@@ -4367,6 +4368,8 @@ router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (re
 // GET /api/staff/patients/:id/family-links
 router.get('/patients/:id/family-links', staffAuth, async (req, res) => {
   try {
+    // 兼容旧数据：打开家庭信息时自动把既有的星形关系补齐成同一家庭互相关联。
+    await synchronizeFamilyGroup([req.params.id]);
     const user = await User.findById(req.params.id)
       .populate('familyLinks.linkedUser', 'name phone gender birthDate');
     if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
@@ -4384,17 +4387,27 @@ router.post('/patients/:id/family-links', staffAuth, async (req, res) => {
       User.findById(linkedUserId),
     ]);
     if (!userA || !userB) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (String(userA._id) === String(userB._id)) {
+      return res.status(400).json({ success: false, message: '不能关联自己' });
+    }
     // A → B
     if (!userA.familyLinks.find(l => String(l.linkedUser) === String(linkedUserId))) {
       userA.familyLinks.push({ linkedUser: linkedUserId, relation: relation || '' });
       await userA.save();
     }
-    // B → A（双向关联）
+    // B → A（双向关联，使用反向称谓）
     if (!userB.familyLinks.find(l => String(l.linkedUser) === String(req.params.id))) {
-      userB.familyLinks.push({ linkedUser: req.params.id, relation: relation || '' });
+      userB.familyLinks.push({ linkedUser: req.params.id, relation: reverseFamilyRelation(relation) });
       await userB.save();
     }
-    res.json({ success: true, message: '已添加家庭成员关联' });
+    const syncResult = await synchronizeFamilyGroup([userA._id, userB._id]);
+    res.json({
+      success: true,
+      message: syncResult.addedLinks > 0
+        ? `已添加关联，并自动同步同一家庭的${syncResult.memberCount}位成员`
+        : '已添加家庭成员关联',
+      data: syncResult,
+    });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
