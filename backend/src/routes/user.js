@@ -69,11 +69,17 @@ router.get('/me', auth, async (req, res) => {
     };
 
     // 查询已分配的责任人员信息（实时 populate）
-    const staffIds = [
-      req.user.assignedFamilyDoctor,
-      req.user.assignedNutritionist,
-      req.user.assignedHealthManager,
-    ].filter(Boolean);
+    // 健康规划师与就医专员是服务协调岗位，不混入“家庭医生团队”。
+    const careTeamAssignments = [
+      { id: req.user.assignedFamilyDoctor,    kind: 'familyDoctor',     label: '家庭医师' },
+      { id: req.user.assignedNutritionist,    kind: 'nutritionist',     label: '营养师' },
+      { id: req.user.assignedHealthManager,   kind: 'healthManager',    label: '健管专员' },
+      { id: req.user.assignedSpecialist,      kind: 'specialist',       label: '专科医师' },
+      { id: req.user.assignedTcmDoctor,       kind: 'tcmDoctor',        label: '中医师' },
+      { id: req.user.assignedPsychologist,    kind: 'psychologist',     label: '心理咨询师' },
+      { id: req.user.assignedRehabSpecialist, kind: 'rehabSpecialist', label: '运动复健师' },
+    ];
+    const staffIds = [...new Set(careTeamAssignments.map(item => item.id).filter(Boolean).map(String))];
 
     const staffMap = {};
     if (staffIds.length > 0) {
@@ -97,13 +103,14 @@ router.get('/me', auth, async (req, res) => {
     if (fdInfo) userData.doctor = { name: fdInfo.name, title: fdInfo.title };
     if (hmInfo) userData.manager = { name: hmInfo.name, title: hmInfo.title };
 
-    // 附加完整团队字段（供 app 展示营养师）
+    // 附加完整家庭医生团队字段（供两个用户端统一展示）
     // kind 为固定岗位类型，用于判断"是否配备某岗位"；role 为具体职称，仅用于展示
-    userData.careTeam = [
-      fdInfo ? { name: fdInfo.name, role: fdInfo.title || '家庭医师', kind: 'familyDoctor' }  : null,
-      nsInfo ? { name: nsInfo.name, role: nsInfo.title || '营养师',   kind: 'nutritionist' }  : null,
-      hmInfo ? { name: hmInfo.name, role: hmInfo.title || '健管专员', kind: 'healthManager' } : null,
-    ].filter(Boolean);
+    userData.careTeam = careTeamAssignments.map(({ id, kind, label }) => {
+      if (!id) return null;
+      const member = staffMap[String(id)];
+      if (!member) return null;
+      return { name: member.name, role: member.title || label, kind };
+    }).filter(Boolean);
 
     // 服务包名称映射（英文代码→中文）
     if (userData.servicePackage && SERVICE_PACKAGE_LABELS[userData.servicePackage]) {

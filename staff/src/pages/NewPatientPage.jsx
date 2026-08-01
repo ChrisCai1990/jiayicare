@@ -5,7 +5,6 @@ import { useToast } from '../App'
 
 const DISEASE_TAGS = ['高血压', '糖尿病', '高血脂', '高尿酸', '脂肪肝', '睡眠呼吸暂停', '冠心病', '慢性肾病', '慢阻肺', '骨质疏松', '痛风', '甲状腺疾病']
 const SOURCE_OPTIONS = ['主动咨询', '健康讲座', '员工福利', '家属推荐', '医院转诊', '线上推广', '其他']
-const MEMBER_TYPE_OPTIONS = ['优享', '悦享', '尊享', '卓越']
 
 // 中国56个民族
 const ETHNICITY_LIST = [
@@ -64,6 +63,8 @@ export default function NewPatientPage() {
   const toast = useToast()
   const [saving, setSaving] = useState(false)
   const [staffList, setStaffList] = useState([])
+  const [memberTypeOptions, setMemberTypeOptions] = useState([])
+  const [serviceOptions, setServiceOptions] = useState([])
   const [selectedDiseases, setSelectedDiseases] = useState([])
   const [patientCategory, setPatientCategory] = useState('adult')
   const [idError, setIdError] = useState('')
@@ -76,7 +77,7 @@ export default function NewPatientPage() {
     name: '', phone: '', gender: '未知', birthDate: '', age: '',
     height: '', weight: '',
     // 身份
-    idType: 'idCard', idNumber: '', maritalStatus: '', ethnicity: '', belief: '', memberType: '',
+    idType: 'idCard', idNumber: '', maritalStatus: '', ethnicity: '', belief: '', clientBrand: '', memberType: '',
     // 联系
     address: '', contactPhone2: '', contactName: '', contactPhone3: '',
     deliveryAddress: '',
@@ -125,6 +126,15 @@ export default function NewPatientPage() {
   })
 
   useEffect(() => { staffAPI.getStaffList().then(r => setStaffList(r.data)).catch(() => {}) }, [])
+  useEffect(() => {
+    if (!form.clientBrand) {
+      setMemberTypeOptions([])
+      setServiceOptions([])
+      return
+    }
+    staffAPI.memberTypeOptions(form.clientBrand).then(r => setMemberTypeOptions(r.data || [])).catch(() => setMemberTypeOptions([]))
+    staffAPI.serviceOptions(form.clientBrand).then(r => setServiceOptions(r.data || [])).catch(() => setServiceOptions([]))
+  }, [form.clientBrand])
 
   const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
   const setChild = k => e => setForm(f => ({ ...f, childProfile: { ...f.childProfile, [k]: e.target.value } }))
@@ -635,19 +645,23 @@ export default function NewPatientPage() {
               <F label="心理咨询师" span={2}><select className="form-input" value={form.assignedPsychologist} onChange={set('assignedPsychologist')}><option value="">-- 未分配 --</option>{psychologists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="运动复健师" span={2}><select className="form-input" value={form.assignedRehabSpecialist} onChange={set('assignedRehabSpecialist')}><option value="">-- 未分配 --</option>{rehabSpecialists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="就医专员" span={2}><select className="form-input" value={form.assignedMedicalAssistant} onChange={set('assignedMedicalAssistant')}><option value="">-- 未分配 --</option>{medicalAssistants.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
-              <F label="会员类型" span={2}>
-                <select className="form-input" value={form.memberType} onChange={set('memberType')}>
+              <F label="客户归属" span={2}>
+                <select className="form-input" value={form.clientBrand} onChange={e => setForm(f => ({ ...f, clientBrand: e.target.value, memberType: '', servicePackage: '' }))}>
                   <option value="">-- 未设置 --</option>
-                  {MEMBER_TYPE_OPTIONS.map(t => <option key={t} value={t}>{t}</option>)}
+                  <option value="jiayiguanjia">嘉医管家</option>
+                  <option value="jinyisen">金伊森</option>
+                </select>
+              </F>
+              <F label="会员类型" span={2}>
+                <select className="form-input" value={form.memberType} onChange={set('memberType')} disabled={!form.clientBrand}>
+                  <option value="">{form.clientBrand ? '-- 未设置 --' : '请先选择客户归属'}</option>
+                  {memberTypeOptions.map(t => <option key={t._id || t.name} value={t.name}>{t.name}</option>)}
                 </select>
               </F>
               <F label="服务包类型" span={2}>
-                <select className="form-input" value={form.servicePackage} onChange={set('servicePackage')}>
-                  <option value="">-- 未设置 --</option>
-                  <option value="health_prevention">健康预防计划</option>
-                  <option value="chronic_stable">慢病维稳计划</option>
-                  <option value="young_state">健康年轻态计划</option>
-                  <option value="health_reshape">健康重塑计划</option>
+                <select className="form-input" value={form.servicePackage} onChange={set('servicePackage')} disabled={!form.clientBrand}>
+                  <option value="">{form.clientBrand ? '-- 未设置 --' : '请先选择客户归属'}</option>
+                  {serviceOptions.map(p => <option key={p._id || p.name} value={p.name}>{p.name}</option>)}
                 </select>
               </F>
               <F label="服务开始日期"><input className="form-input" type="date" value={form.serviceStartDate} onChange={set('serviceStartDate')} /></F>

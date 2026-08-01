@@ -485,7 +485,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
   const staff = req.staff;
   const {
     name, phone, gender, age, height, weight,
-    birthDate, idNumber, idType, maritalStatus, ethnicity, belief, memberType,
+    birthDate, idNumber, idType, maritalStatus, ethnicity, belief, memberType, clientBrand,
     chronicDiseases, patientType, source, remark,
     workplace, occupation,
     address, contactPhone2, contactName, contactPhone3, deliveryAddress,
@@ -514,6 +514,21 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
   if (normalizedCreatePhone) {
     const existing = await User.findOne({ phone: normalizedCreatePhone });
     if (existing) return res.status(400).json({ success: false, message: '该手机号已存在' });
+  }
+  if (clientBrand && !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
+    return res.status(400).json({ success: false, message: '客户归属无效' });
+  }
+  if (clientBrand && memberType) {
+    const availableTypes = await getMemberTypeOptionsByBrand(clientBrand);
+    if (!availableTypes.some(item => item.name === memberType)) {
+      return res.status(400).json({ success: false, message: '会员类型与客户归属不匹配' });
+    }
+  }
+  if (clientBrand && servicePackage) {
+    const validPackage = await ServicePackage.exists({ name: servicePackage, clientBrand, active: true });
+    if (!validPackage) {
+      return res.status(400).json({ success: false, message: '服务包与客户归属不匹配' });
+    }
   }
 
   // 根据身份证号/出生日期自动核算年龄（未显式传 age 时）
@@ -549,6 +564,7 @@ router.post('/patients', staffAuth, checkPermission('patients', 'create'), async
     maritalStatus: maritalStatus || '',
     ethnicity: ethnicity || '',
     belief: belief || '',
+    clientBrand: clientBrand || '',
     memberType: memberType || '',
     chronicDiseases: chronicDiseases || [],
     patientType: patientType || '',

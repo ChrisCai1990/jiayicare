@@ -2424,6 +2424,9 @@ export default function PatientDetailPage() {
             <h1 className="page-title" style={{ marginBottom: 2 }}>
               {user.name}
               {user.patientType === 'vip' && <span className="badge badge-warning" style={{ marginLeft: 8 }}>VIP</span>}
+              <span className="badge" style={{ marginLeft: 8, background: user.clientBrand === 'jinyisen' ? '#EAF2FF' : '#E8F5EF', color: user.clientBrand === 'jinyisen' ? '#2459A9' : '#1E6B50' }}>
+                {user.clientBrand === 'jiayiguanjia' ? '嘉医管家' : user.clientBrand === 'jinyisen' ? '金伊森' : '归属未设置'}
+              </span>
             </h1>
             <p className="page-subtitle">{user.phone} · {user.gender} · {age}</p>
           </div>
@@ -2940,20 +2943,6 @@ export default function PatientDetailPage() {
                   {user.assignedMedicalAssistant && <InfoRow label="就医专员"   value={user.assignedMedicalAssistant?.name|| '-'} />}
                   <InfoRow label="客户归属" value={user.clientBrand === 'jiayiguanjia' ? '嘉医管家' : user.clientBrand === 'jinyisen' ? '金伊森' : '-'} />
                   <InfoRow label="会员类型" value={user.memberType || '-'} />
-                  <InfoRow label="正式客户" value={
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ color: user.isRegisteredClient ? '#22A06B' : '#aaa', fontWeight: 600 }}>
-                        {user.isRegisteredClient ? '✓ 是（隐藏365入口）' : '否'}
-                      </span>
-                      <button className="btn btn-secondary btn-sm" onClick={async () => {
-                        try {
-                          await staffAPI.updatePatient(user._id, { isRegisteredClient: !user.isRegisteredClient })
-                          toast(`已${!user.isRegisteredClient ? '标记为正式客户' : '取消正式客户标记'}`)
-                          load()
-                        } catch (e) { toast(e.message) }
-                      }}>切换</button>
-                    </span>
-                  } />
                   <InfoRow label="会员来源" value={user.source || '-'} />
                   <InfoRow label="服务包" value={getServicePackageLabel(user.servicePackage)} />
                   <InfoRow label="服务开始" value={user.serviceStartDate || '-'} />
