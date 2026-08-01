@@ -389,7 +389,7 @@ export default function HomePage() {
         )}
 
         {/* 大众服务商城：首页直接展示 Admin 排序靠前的常用服务 */}
-        <View style={{ marginBottom: `${spacing.lg}px` }}>
+        <View style={{ marginBottom: `${spacing.lg}px`, order: 3 }}>
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
             <View>
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>常用健康服务</Text>

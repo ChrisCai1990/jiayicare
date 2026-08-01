@@ -436,7 +436,7 @@ export default function HomeScreen({ navigation }) {
           </View>
 
           {/* ── 大众服务商城：Admin 上架商品按排序取前4项 ───────── */}
-          <View style={{ marginBottom: spacing.lg }}>
+          <View style={{ marginBottom: spacing.lg, order: 3 }}>
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>常用健康服务</Text>
