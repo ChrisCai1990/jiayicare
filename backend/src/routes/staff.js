@@ -6763,6 +6763,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则A：跳过患者基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
 规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
 规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
+规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。汇总、小结页=summary，封面/患者信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
 规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
 规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
 规则E：相似项目名称不可混淆，如"碳13"≠"碳14"，"空腹血糖"≠"餐后血糖"。
@@ -6898,6 +6899,9 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 {
   "institution": "体检机构名称",
   "checkDate": "YYYY-MM-DD",
+  "pageType": "detail | summary | cover | catalog | advice | unknown",
+  "pageTitle": "本页原始标题，找不到则留空",
+  "skipPage": false,
   "items": [
     {
       "name": "项目名称",
@@ -6920,6 +6924,28 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 function safeParseJSON(text) {
   try { return JSON.parse(String(text).trim().replace(/^```json\n?|\n?```$/g, '')); }
   catch { return null; }
+}
+
+const SKIPPED_REPORT_PAGE_TYPES = new Set(['summary', 'cover', 'catalog', 'advice', 'education']);
+function shouldSkipParsedReportPage(parsed) {
+  if (!parsed || typeof parsed !== 'object') return false;
+  if (parsed.skipPage === true || SKIPPED_REPORT_PAGE_TYPES.has(str(parsed.pageType).toLowerCase())) return true;
+  const title = str(parsed.pageTitle).replace(/\s+/g, '');
+  return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
+}
+
+function tagReportPageItems(items, pageNum) {
+  return (items || [])
+    .filter(it => it?.name && str(it.name).trim())
+    .map((it, index) => ({ ...it, _page: pageNum, _order: index }));
+}
+
+function sortReportItemsBySource(items) {
+  return (items || []).sort((a, b) => ((a._page || 0) - (b._page || 0)) || ((a._order || 0) - (b._order || 0)));
+}
+
+function stripReportSourceOrder(items) {
+  return (items || []).map(({ _page, _order, ...rest }) => rest);
 }
 
 const PATIENT_INFO_NAMES = new Set([
@@ -7195,6 +7221,7 @@ function splitEndoscopyPathology(items) {
     result.push(rest);
     result.push({
       ...rest,
+      _order: Number(rest._order || 0) + 0.001,
       name: isGastro ? '胃镜病理' : '肠镜病理',
       value: '', unit: '', referenceRange: '', status: 'unknown', orderName: '', bodyPart: '',
       findings: pf,
@@ -7222,7 +7249,10 @@ function mergeEntSubparts(items) {
   const mergedFindings = [...new Set(pieces.filter(Boolean))].join('；') || '未见明显异常';
   const removeSet = new Set([...mains, ...subparts]);
   const result = list.filter(it => !removeSet.has(it));
+  const sourceAnchor = sortReportItemsBySource([...mains, ...subparts])[0] || {};
   result.push({
+    _page: sourceAnchor._page,
+    _order: sourceAnchor._order,
     name: '耳鼻喉', itemType: 'imaging', value: '', unit: '', referenceRange: '', status: 'unknown',
     orderName: '', bodyPart: '', findings: mergedFindings,
     diagnosis: mains.find(it => str(it.diagnosis))?.diagnosis || '未见明显异常',
@@ -7621,10 +7651,12 @@ async function runReportParse(reportId) {
             if (!p) continue;
             okPages++;
             const pageNum = batchIndex * BATCH_SIZE + i + 1;
+            if (shouldSkipParsedReportPage(p)) {
+              console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
+              continue;
+            }
             if (Array.isArray(p.items)) {
-              allItems = allItems.concat(
-                p.items.filter(it => it.name && String(it.name).trim()).map(it => ({ ...it, _page: pageNum }))
-              );
+              allItems = allItems.concat(tagReportPageItems(p.items, pageNum));
             }
             if (p.summary) summaries.push(p.summary);
             if (!institution && p.institution && !isSuspiciousInstitution(p.institution)) institution = p.institution;
@@ -7644,8 +7676,8 @@ async function runReportParse(reportId) {
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到条数明显少于标题声明数量的检验单：${underOrders.filter(o => allItems.some(it => it._page === pageNum && it.orderName === o.orderName)).map(o => `"${o.orderName}"（标题写${o.expected}项，之前只提取到${o.actual}项）`).join('、')}。请重新逐行核对该检验单在图片中的每一行，确保每一个子项都单独输出一条，不得合并、省略或遗漏任何一行，即使多行结果完全相同（如都是阴性）也要逐条列出。`;
             const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
             const p = safeParseJSON(text);
-            if (!p || !Array.isArray(p.items)) continue;
-            const retryItems = p.items.filter(it => it.name && String(it.name).trim()).map(it => ({ ...it, _page: pageNum }));
+            if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
+            const retryItems = tagReportPageItems(p.items, pageNum);
             // 按检验单标题替换：只替换这一页里、这次重试确实提取到更多条数的那些检验单，其余保留原结果，避免"重试反而更差"
             const retryByOrder = new Map();
             retryItems.forEach(it => {
@@ -7684,8 +7716,8 @@ async function runReportParse(reportId) {
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页的血常规/血细胞分析检验单曾漏提了部分子项（缺少：${missingGroups.join('、')}）。请重新逐行核对该检验单在图片中的每一行，血常规通常有白细胞、中性粒细胞、淋巴细胞、单核细胞、嗜酸性粒细胞、嗜碱性粒细胞、红细胞、血红蛋白、血小板等约20项子指标（含绝对值和百分比两种），必须逐条全部输出，不得省略或遗漏任何一行。`;
             const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
             const p = safeParseJSON(text);
-            if (!p || !Array.isArray(p.items)) continue;
-            const retryItems = p.items.filter(it => it.name && String(it.name).trim()).map(it => ({ ...it, _page: pageNum }));
+            if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
+            const retryItems = tagReportPageItems(p.items, pageNum);
             const retryCbcItems = retryItems.filter(it => CBC_NAME_PATTERN.test(str(it.name)));
             const oldCbcCountOnPage = allItems.filter(it => it._page === pageNum && CBC_NAME_PATTERN.test(str(it.name))).length;
             if (retryCbcItems.length > oldCbcCountOnPage) {
@@ -7712,8 +7744,8 @@ async function runReportParse(reportId) {
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。`;
           const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
           const p = safeParseJSON(text);
-          if (!p || !Array.isArray(p.items)) continue;
-          const retryItems = p.items.filter(it => it.name && String(it.name).trim()).map(it => ({ ...it, _page: pageNum }));
+          if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
+          const retryItems = tagReportPageItems(p.items, pageNum);
           const afterMaxOrgans = Math.max(...retryItems.filter(it => isUltrasoundItem(it))
             .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
           if (afterMaxOrgans > 0 && afterMaxOrgans < beforeMaxOrgans) {
@@ -7740,8 +7772,8 @@ async function runReportParse(reportId) {
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到"${emptyNames.join('、')}"项目但检查所见/诊断意见内容为空，请重新核对该项目在图片中的具体内容，完整填写findings和diagnosis字段，不要留空。`;
           const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
           const p = safeParseJSON(text);
-          if (!p || !Array.isArray(p.items)) continue;
-          const retryItems = p.items.filter(it => it.name && String(it.name).trim()).map(it => ({ ...it, _page: pageNum }));
+          if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
+          const retryItems = tagReportPageItems(p.items, pageNum);
           let improvedNames = [];
           emptyNames.forEach(n => {
             const retryMatch = retryItems.find(it => str(it.name).startsWith(n) && (str(it.findings) || str(it.diagnosis)));
@@ -7763,8 +7795,7 @@ async function runReportParse(reportId) {
       // 用 .concat() 拼到 allItems 末尾，导致这些条目脱离了报告原文的页码顺序、被甩到审核列表最后面，
       // 跟同页其他体格检查项目（如内科/外科/眼科）在报告原文里连续排列的顺序对不上，审核时容易漏看。
       // 这里按页码做一次稳定排序（sort 保证同页内原有相对顺序不变），让最终顺序重新贴近报告原文顺序。
-      allItems.sort((a, b) => (a._page || 0) - (b._page || 0));
-      allItems = allItems.map(({ _page, ...rest }) => rest); // 内部字段，落库前去掉
+      sortReportItemsBySource(allItems);
 
       // 2026-07-03修复：splitEndoscopyPathology 挪到 cleanupExtractedItems 去重之前执行——
       // 多页报告里，胃镜/肠镜的"检查所见"页和"病理报告"页常常canonicalize成同一个名字(如都叫"胃镜检查")，
@@ -7772,7 +7803,7 @@ async function runReportParse(reportId) {
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
       const filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems)))))))));
-      const classified = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))));
+      const classified = stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -7793,29 +7824,47 @@ async function runReportParse(reportId) {
       return;
     }
 
-    // 图片：统一取文件 buffer 转 base64（兼容 content / OSS / 本地路径）。fileUrls 存在多张图片时
-    // （一份报告被拍成多张照片，如"结论页"+"数据页"），一次性把全部图片传给AI合并识别成一份结果。
+    // 图片：按上传顺序逐张识别。禁止把多张图一次性交给模型后让模型自行重排，
+    // 否则不同版式报告容易被重新按 lab/imaging 分类，破坏原报告从前到后的顺序。
     const bufs = report.fileUrls && report.fileUrls.length ? await fetchReportBuffers(report, UPLOADS_DIR) : [await fetchReportBuffer(report, UPLOADS_DIR)];
-    let text, parsed;
-    try {
-      const imgSources = bufs.map(b => b.toString('base64'));
-      text = await parseImage(imgSources.length > 1 ? imgSources : imgSources[0], REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096 });
-      parsed = safeParseJSON(text);
-    } catch (e) {
-      console.log(`[parse-ai] 图片解析异常 ${reportId}: ${e.message}`);
+    let imageItems = [];
+    const imageSummaries = [];
+    let imageInstitution = report.institution;
+    let imageCheckDate = report.checkDate;
+    let imageOkCount = 0;
+    let lastRawText = '';
+    for (let imageIndex = 0; imageIndex < bufs.length; imageIndex++) {
+      try {
+        lastRawText = await parseImage(bufs[imageIndex].toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096 });
+        const parsedPage = safeParseJSON(lastRawText);
+        if (!parsedPage) continue;
+        imageOkCount++;
+        if (shouldSkipParsedReportPage(parsedPage)) {
+          console.log(`[parse-ai] 图片${imageIndex + 1}判定为${str(parsedPage.pageType) || '非明细页'}，程序层跳过全部条目`);
+          continue;
+        }
+        imageItems = imageItems.concat(tagReportPageItems(parsedPage.items, imageIndex + 1));
+        if (parsedPage.summary) imageSummaries.push(parsedPage.summary);
+        if (!imageInstitution && parsedPage.institution && !isSuspiciousInstitution(parsedPage.institution)) imageInstitution = parsedPage.institution;
+        if (!imageCheckDate && parsedPage.checkDate) imageCheckDate = parsedPage.checkDate;
+      } catch (e) {
+        console.log(`[parse-ai] 图片${imageIndex + 1}解析异常 ${reportId}: ${e.message}`);
+      }
     }
-    const classifiedImg = dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(parsed?.items || [])))))))))))))));
-    const imgSummary = parsed
-      ? (parsed.summary || '')
-      : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${text ? '\n原始返回(前200字): ' + String(text).slice(0, 200) : ''}`;
+    sortReportItemsBySource(imageItems);
+    const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(imageItems)))))))));
+    const classifiedImg = stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems))))))));
+    const imgSummary = imageOkCount
+      ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
+      : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
     await MedicalReport.findByIdAndUpdate(reportId, {
       reportItems: classifiedImg,
       aiSummary:   imgSummary,
       aiStatus:    'pending',
-      institution: sanitizeInstitution(parsed?.institution) || report.institution,
-      checkDate:   parsed?.checkDate   || report.checkDate,
+      institution: sanitizeInstitution(imageInstitution) || report.institution,
+      checkDate:   imageCheckDate || report.checkDate,
     });
-    console.log(`[parse-ai] 图片完成 ${reportId} 提取${parsed?.items?.length || 0}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
+    console.log(`[parse-ai] 图片完成 ${reportId} 共${bufs.length}张 成功${imageOkCount}张 提取${imageItems.length}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
     await MedicalReport.findByIdAndUpdate(reportId, {
