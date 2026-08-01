@@ -1,6 +1,7 @@
 const { chat } = require('./ai');
 const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings, extractExamFindings } = require('./labFromScreening');
 const { assessCancerCoverage, buildCoverageText } = require('./cancerScreeningCoverage');
+const { buildEvidenceCatalog, auditMedicalJson } = require('./aiFactGuard');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -59,10 +60,11 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   Object.keys(reportsByYear).sort((a, b) => b - a).forEach(year => {
     reportSummaryLines.push(`▶ ${year}年：`);
     reportsByYear[year].forEach(r => {
+      const evidenceId = `RPT-${String(allReports.findIndex(item => String(item._id) === String(r._id)) + 1).padStart(3, '0')}`;
       const conclusion = r.examConclusion ? r.examConclusion.slice(0, 150) : (r.note ? r.note.slice(0, 100) : '未记录结论');
       const abnormal = (r.reportItems || []).filter(i => i.status === 'abnormal').map(i => i.name).join('、');
       const dateStr = (r.checkDate || r.date || '').slice(0, 10);
-      reportSummaryLines.push(`  - ${r.screeningL2 || r.title}（${dateStr}）：${conclusion}${abnormal ? '；异常项：' + abnormal : ''}`);
+      reportSummaryLines.push(`  - [${evidenceId}] ${r.screeningL2 || r.title}（${dateStr}）：${conclusion}${abnormal ? '；异常项：' + abnormal : ''}`);
       (r.reportItems || []).filter(i => i.itemType === 'imaging' && (i.findings || i.diagnosis)).forEach(img => {
         const f = (img.findings || '').slice(0, 200);
         const d = (img.diagnosis || '').slice(0, 100);
@@ -171,7 +173,19 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
       ? '你是一位经验丰富的家庭医师，请根据以下患者完整健康档案，仅针对医疗5个维度（优先医疗问题/肿瘤风险/心脑血管风险/慢病管理/体检完整性）生成结构化分析。'
       : '你是一位经验丰富的家庭医师，请根据以下患者完整健康档案生成结构化综合健康分析报告。';
 
+  const evidenceCatalog = buildEvidenceCatalog(user, allReports, [
+    `规则计算的肿瘤筛查覆盖度：${coverageText}`,
+    `最近一次关键指标：${labSummary}`,
+    `专科检查异常：${examFindingsText}`,
+  ]);
+
   const prompt = `${roleIntro}问题分析必须身心结合，不能只谈躯体指标而忽略心理健康量表数据，反之亦然——如果心理评估分数偏高但躯体指标正常，仍需在情绪维度和风险清单中明确指出；如果慢病/躯体症状可能与情绪压力互为因果，也需在分析中点明关联。建议内容如涉及需要医生跟进，一律使用"家庭医生"这一称呼，不要用"主治医生"（本平台提供的是家庭医生服务）。
+
+【医疗事实铁律——优先级高于其他要求】
+①只能使用下方资料明确存在的患者事实。输入未记载时写“资料未提供/不足以判断”，禁止补全或猜测。
+②严禁相近概念替换：冠心病、冠脉支架、心肌梗死不等于脑梗死/脑卒中；颈动脉斑块不等于脑卒中；肥胖、血脂异常等风险因素不等于已确诊心脑血管病。
+③每条结论先在证据目录中找到依据；无依据的诊断和病史不得输出。资料冲突时写“资料冲突，待人工确认”。
+④逐份、逐项核对报告，不得只挑少数重要指标；输出前自检是否遗漏已有检查、是否新增不存在的疾病、是否混淆疾病名称。
 
 【心理量表铁律——必须严格遵守】①SCL90各因子分必须严格按系统标注的正常/异常判定来解读：因子分＜2一律属正常范围，即使某因子（如精神病性1.2）在数值上略高于其他因子，只要＜2就是正常，绝不能描述为"升高/偏高/异常"。②心理量表（SCL90/SAS/SDS/嗜睡）的因子和结论只能写进"情绪/心理"相关分析，严禁把精神病性、偏执等心理因子塞进 cardiovascular_risk（心脑血管）、tumor_risk（肿瘤）等躯体维度——这些心理因子与躯体疾病风险无直接因果关系。③只有当系统明确标注某因子为异常时，才可在情绪维度提示。
 
@@ -227,6 +241,9 @@ ${geneticText}
 
 【肿瘤筛查覆盖度（系统按男女高发肿瘤规则判定，✓已覆盖/△部分/✗未筛查）】
 ${coverageText}
+
+【带编号证据目录（结论必须以此为事实边界）】
+${evidenceCatalog}
 
 ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessment ? `\n【营养师已评估的生活方式内容（供参考，本次不需要重新生成这部分，仅作为你判断5维度分析时的背景信息）】\n${JSON.stringify(existingSections.lifestyle_assessment)}\n` : ''}${existingSections && scope === 'nutrition' && DOCTOR_KEYS.some(k => existingSections[k]) ? `\n【家庭医师已生成的5维度分析（供参考，本次请结合这些医疗判断来评估生活方式，本次不需要重新生成这部分）】\n${JSON.stringify(Object.fromEntries(DOCTOR_KEYS.map(k => [k, existingSections[k]]).filter(([, v]) => v)))}\n` : ''}
 请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容${!wantDoctor || !wantLifestyle ? '（本次只需输出下方列出的板块，不要输出其他板块）' : ''}：
@@ -314,7 +331,7 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
   // 2026-07-07：nutrition(生活方式评估)原定1200仍偏低——5个维度(饮食/运动/睡眠/烟酒/情绪)每个都要
   // 输出finding+risk+suggestion三段文字，实测JSON在1700字符左右就被截断报错，1200token撑不住完整输出
   const maxTokens = scope === 'all' ? 4000 : (scope === 'doctor' ? 3200 : 2000);
-  const text = await chat([{ role: 'user', content: prompt }], { maxTokens });
+  const text = await chat([{ role: 'user', content: prompt }], { maxTokens, temperature: 0.05, jsonMode: true });
 
   let sections = null;
   let parseFailed = false;
@@ -341,6 +358,12 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
       chronic_disease: { items: [] },
       checkup_completeness: { covered: [], missing: [], suggestion: '' },
     };
+  }
+
+  // 第二轮仅做事实审计：删除无证据结论、纠正相近病名混淆，并补回明确遗漏的检查。
+  if (!parseFailed && wantDoctor) {
+    const audited = await auditMedicalJson({ sections }, evidenceCatalog, { maxTokens });
+    if (audited?.sections) sections = { ...sections, ...audited.sections };
   }
 
   // 数据溯源：AI文本结论核实起来要反复跳转查原始档案，很麻烦。这里不是让AI自己编造溯源标识

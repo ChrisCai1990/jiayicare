@@ -47,7 +47,7 @@ function httpPost(url, headers, body, timeoutMs = 45000) {
 }
 
 // 通用文本对话
-async function chat(messages, { systemPrompt, maxTokens = 2000, provider } = {}) {
+async function chat(messages, { systemPrompt, maxTokens = 2000, provider, temperature = 0.1, jsonMode = false } = {}) {
   const p = provider || selectProvider();
   if (!p) throw new Error('未配置 AI API Key（QWEN_API_KEY 或 DEEPSEEK_API_KEY）');
 
@@ -57,7 +57,13 @@ async function chat(messages, { systemPrompt, maxTokens = 2000, provider } = {})
   const result = await httpPost(
     `${getBase(p)}/chat/completions`,
     { Authorization: `Bearer ${getKey(p)}` },
-    { model, messages: msgs, max_tokens: maxTokens }
+    {
+      model,
+      messages: msgs,
+      max_tokens: maxTokens,
+      temperature,
+      ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
+    }
   );
 
   if (result.error) throw new Error(result.error.message);

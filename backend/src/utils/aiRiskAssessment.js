@@ -1,6 +1,7 @@
 const { chat } = require('./ai');
 
 const RISK_LEVELS = ['low', 'medium', 'high', 'critical']; // 低 / 中 / 高 / 危急值
+const { buildEvidenceCatalog, auditMedicalJson } = require('./aiFactGuard');
 
 function ruleEngineSignals(lv = {}) {
   const num = (v) => (v === undefined || v === null || v === '' ? null : Number(v));
@@ -8,6 +9,7 @@ function ruleEngineSignals(lv = {}) {
   const sbp = num(lv.sbp), dbp = num(lv.dbp), fpg = num(lv.fpg), hba1c = num(lv.hba1c);
   const ldl = num(lv.ldl), tc = num(lv.tc), tg = num(lv.tg), hdl = num(lv.hdl);
   const hcy = num(lv.hcy), ua = num(lv.ua), cr = num(lv.cr || lv.scr), egfr = num(lv.egfr), bun = num(lv.bun);
+  const bmi = num(lv.bmi), waist = num(lv.waist);
   // 心血管
   if (sbp >= 180 || dbp >= 110) sig.cardiovascular.push(`血压危急 ${sbp}/${dbp} mmHg`);
   else if (sbp >= 140 || dbp >= 90) sig.cardiovascular.push(`血压偏高 ${sbp}/${dbp} mmHg`);
@@ -16,6 +18,9 @@ function ruleEngineSignals(lv = {}) {
   if (tg >= 2.3) sig.cardiovascular.push(`甘油三酯偏高 ${tg} mmol/L`);
   if (hdl !== null && hdl < 1.0) sig.cardiovascular.push(`HDL-C 偏低 ${hdl} mmol/L`);
   if (hcy >= 15) sig.cardiovascular.push(`同型半胱氨酸偏高 ${hcy} μmol/L`);
+  if (bmi >= 28) sig.cardiovascular.push(`肥胖 BMI ${bmi.toFixed(1)} kg/m²`);
+  else if (bmi >= 24) sig.cardiovascular.push(`超重 BMI ${bmi.toFixed(1)} kg/m²`);
+  if (waist !== null && waist >= (lv.gender === '女' ? 85 : 90)) sig.cardiovascular.push(`中心性肥胖 腰围 ${waist} cm`);
   // 糖尿病
   if (fpg >= 11.1 || hba1c >= 9) sig.diabetes.push(`血糖危急（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
   else if (fpg >= 7.0 || hba1c >= 6.5) sig.diabetes.push(`已达糖尿病诊断阈值（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
@@ -97,10 +102,19 @@ async function generateRiskAssessment(user) {
   // 【体检关键指标】+ 规则引擎信号：从专项筛查报告 reportItems 派生真实数值（与医护端「体检关键指标」卡片同源），
   // 而非读几乎为空的 user.labValues（2026-07-10 根因修复："AI提取数据没一次对的"）。
   // 2026-07-11：严格限定最近一年，避免过时体检数据污染当前风险判断（近一年无数据则回退最近一次，见selectRecentReports）。
-  const reports = await selectRecentReports(MedicalReport, user._id, 'title screeningL2 checkDate date reportYear reportItems', 60);
+  const reports = await selectRecentReports(MedicalReport, user._id, 'title screeningL2 checkDate date reportYear reportItems examConclusion note createdAt', 60);
   const { latest: derivedLab } = deriveLabFromReports(reports);
   // 派生真实值优先，user.labValues 仅作补充兜底（万一某指标报告没有但医护手动录了）
-  const lv = { ...(user.labValues || {}), ...latestToLabValues(derivedLab) };
+  const heightM = Number(user.height) > 0 ? Number(user.height) / 100 : null;
+  const weight = Number(derivedLab?.weight?.value || user.weight || 0) || null;
+  const computedBmi = heightM && weight ? weight / (heightM * heightM) : null;
+  const lv = {
+    ...(user.labValues || {}),
+    ...latestToLabValues(derivedLab),
+    gender: user.gender,
+    bmi: computedBmi || user.bodyComposition?.bmi || user.labValues?.bmi,
+    waist: user.labValues?.waist || user.bodyComposition?.waist,
+  };
   const signals = ruleEngineSignals(lv);
   const { markerAndFindingLines, geneticLines } = await tumorSignalsFromReports(user._id);
   if (markerAndFindingLines.length) signals.tumor = markerAndFindingLines;
@@ -118,6 +132,10 @@ async function generateRiskAssessment(user) {
   ].filter(Boolean).join('；') || '暂无生活方式记录';
 
   const geneticText = geneticLines.length ? geneticLines.join('\n') : '暂无基因检测报告';
+  const evidenceCatalog = buildEvidenceCatalog(user, reports, [
+    ...Object.entries(signals).flatMap(([dimension, items]) => items.map(item => `规则引擎[${dimension}]：${item}`)),
+    computedBmi ? `身高体重确定性计算：BMI=${computedBmi.toFixed(1)}kg/m²` : '',
+  ]);
 
   // 近30天打卡记录：与体检报告互补，体现更实时的血压/血糖/体重波动，可能影响心血管/糖尿病风险的即时判断（2026-07-11）
   const HealthRecord = require('../models/HealthRecord');
@@ -137,6 +155,8 @@ async function generateRiskAssessment(user) {
 
   const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。建议内容如涉及需要医生跟进，一律使用"家庭医生"这一称呼，不要用"主治医生"（本平台提供的是家庭医生服务）。
 
+【医疗事实铁律】只能使用证据目录明确支持的事实；无记录写“资料未提供/不足以判断”。冠心病、冠脉支架、心肌梗死不等于脑梗死或脑卒中；颈动脉斑块不等于脑卒中；风险因素不等于确诊疾病。禁止自行补全病史。规则引擎信号必须逐条纳入对应维度，不得遗漏或改写成其他疾病。输出前核对四个维度是否完整、每个因素是否有证据、是否误造病史。
+
 【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
 【个人生活习惯】${lifestyleLines}
 【体检关键指标（近一年）】${labLines}
@@ -146,6 +166,8 @@ ${sigText}
 ${geneticText}
 【近30天打卡记录（血压/血糖/体重/心率日常自测，体现比体检报告更实时的波动）】
 ${checkinText}
+【带编号证据目录（所有患者事实以此为边界）】
+${evidenceCatalog}
 
 心血管和糖尿病风险维度请特别关注【近30天打卡记录】：如果打卡显示血压/血糖近期持续偏高或波动明显，即使体检报告是达标的，也应在相应维度提示"近期自测数据显示XX有上升趋势，建议复查"，不能仅依赖可能已经过时的体检报告下结论。
 肿瘤风险维度请结合上方"tumor"信号（近一年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、个人生活习惯（吸烟/饮酒/饮食是肺癌/肝癌/胃肠癌的强相关因素）、既往史、家族史、基因检测报告（如有明确高风险位点/基因，应显著提高风险等级）综合判断；信号为空不代表零风险，需结合年龄、性别、生活习惯、家族史等基础风险因素给出合理评估，不要机械地判为low。
@@ -161,18 +183,23 @@ ${checkinText}
   "overallSummary": "整体风险综述（50-100字）"
 }`;
 
-  const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500 });
+  const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1500, temperature: 0.05, jsonMode: true });
   let raw = {};
   try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
+  raw = await auditMedicalJson(raw, evidenceCatalog, { maxTokens: 1800 });
 
-  let dimensions = Array.isArray(raw.dimensions) ? raw.dimensions : [];
-  dimensions = dimensions.map(d => ({
-    key: d.key, label: d.label || d.key,
+  const labels = { cardiovascular: '心血管疾病风险', diabetes: '糖尿病风险', tumor: '肿瘤风险', kidney: '慢性肾病风险' };
+  const rawByKey = Object.fromEntries((Array.isArray(raw.dimensions) ? raw.dimensions : []).map(d => [d.key, d]));
+  let dimensions = Object.keys(labels).map(key => {
+    const d = rawByKey[key] || {};
+    const deterministicFactors = signals[key] || [];
+    return {
+    key, label: d.label || labels[key],
     level: RISK_LEVELS.includes(d.level) ? d.level : 'low',
     score: Number(d.score) || 0,
-    factors: Array.isArray(d.factors) ? d.factors : [],
+    factors: [...new Set([...(Array.isArray(d.factors) ? d.factors : []), ...deterministicFactors])],
     advice: d.advice || '',
-  }));
+  }; });
   const overallLevel = dimensions.reduce((max, d) =>
     RISK_LEVELS.indexOf(d.level) > RISK_LEVELS.indexOf(max) ? d.level : max, 'low');
 
