@@ -6971,8 +6971,11 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 
 14. 人体成分分析（InBody/BCA-2A等体成分测量仪报告）
     → 只提取以下三项，其他体成分指标一律不输出：骨骼肌（或骨骼肌量）、体脂率、内脏脂肪（等级/指数/面积按原文名称）。
-    → 三项必须各自输出为一条独立记录：itemType="data"；name按上述标准名；value只抄实测值；unit抄报告单位；
+    → 明确禁止输出体重、BMI、去脂体重、体脂肪量、肌肉量等非目标项目；尤其禁止把“体重”改名或替代为“骨骼肌”。
+    → 必须先按项目名称定位表格中的同一行，再横向读取该行的实测值、单位和参考范围，严禁读取相邻行或相邻列的数据。
+    → 三项必须各自输出为一条独立记录：itemType="data"；name只能使用标准名“骨骼肌”“体脂率”“内脏脂肪”；value只抄实测值；unit抄报告单位；
       referenceRange只抄该项目在本次报告中明确印刷的参考范围，没有则留空，严禁按常识或性别自行推算。
+    → 单位必须自查：骨骼肌通常为kg，体脂率必须为%（或百分比），内脏脂肪按原文单位/等级；任何标成“体脂率”却配kg的数据都是串行错误，禁止输出。
     → 如果报告只出现其中一项或两项，只输出实际出现的项目；看不清的数值不要猜测。
     → 检测日期优先使用报告中的人体成分测量日期，并写入checkDate；不得使用打印日期替代明确的测量日期。
 
@@ -7408,6 +7411,80 @@ function cleanupUltrasoundOverlap(items) {
 // 后面一大堆清洗规则都要对这些字段调用 .trim()，统一用这个helper兜底转成字符串，避免 "xxx.trim is not a function" 崩溃
 const str = (v) => String(v == null ? '' : v).trim();
 
+const BODY_COMPOSITION_RETRY_PROMPT = REPORT_PARSE_PROMPT + `\n\n【人体成分专项复核】本页上一次发生了项目与数值/单位串行，或三项目标缺失。请重新查看原图，只输出报告中明确印刷的“骨骼肌”“体脂率”“内脏脂肪”三项。必须逐行以左侧项目名称为锚点，横向读取同一行的实测值、单位、参考范围；体重、BMI、体脂肪量、去脂体重、肌肉量等全部忽略。体脂率的单位只能是%或百分比，kg绝不属于体脂率；不得把体重替代成骨骼肌。看不清或原文不存在的项目直接省略，绝不猜测。`;
+
+function bodyCompositionKind(name) {
+  const n = str(name).replace(/\s+/g, '');
+  if (/骨骼肌(?:量|质量)?|skeletalmuscle/i.test(n)) return 'skelMuscle';
+  if (/体脂(?:肪)?率|百分比体脂|^PBF$/i.test(n)) return 'bodyFatRate';
+  if (/内脏脂肪(?:等级|指数|面积)?|^VFA$/i.test(n)) return 'visceralFat';
+  return '';
+}
+
+function isBodyCompositionContext(items) {
+  const list = items || [];
+  const targetKinds = new Set(list.map(it => bodyCompositionKind(it.name)).filter(Boolean));
+  const text = list.map(it => `${str(it.name)} ${str(it.orderName)} ${str(it.bodyPart)}`).join(' ');
+  return /人体成分|身体成分|InBody|BCA-?2A/i.test(text) || targetKinds.size >= 2;
+}
+
+function validBodyCompositionItem(item) {
+  const kind = bodyCompositionKind(item?.name);
+  if (!kind || !str(item?.value)) return false;
+  const unit = str(item.unit).replace(/％/g, '%').toLowerCase();
+  if (kind === 'bodyFatRate') return unit === '%' || /百分比/.test(unit);
+  if (kind === 'skelMuscle') return !unit || /^kg|千克|公斤$/i.test(unit);
+  return true;
+}
+
+function bodyCompositionQuality(items) {
+  const kinds = new Set((items || []).filter(validBodyCompositionItem).map(it => bodyCompositionKind(it.name)));
+  return kinds.size;
+}
+
+function needsBodyCompositionRetry(items) {
+  if (!isBodyCompositionContext(items)) return false;
+  const list = items || [];
+  const kinds = new Set(list.filter(validBodyCompositionItem).map(it => bodyCompositionKind(it.name)));
+  const hasInvalidTarget = list.some(it => bodyCompositionKind(it.name) && !validBodyCompositionItem(it));
+  const hasForbiddenWeight = list.some(it => /^(体重|BMI|身体质量指数)$/i.test(str(it.name)));
+  return kinds.size < 3 || hasInvalidTarget || hasForbiddenWeight;
+}
+
+function sanitizeBodyCompositionPage(items) {
+  const list = items || [];
+  if (!isBodyCompositionContext(list)) return list;
+  const forbidden = /^(体重|BMI|身体质量指数|体脂肪量|去脂体重|肌肉量)$/i;
+  const seen = new Set();
+  return list.filter(it => {
+    const kind = bodyCompositionKind(it.name);
+    if (!kind) return !forbidden.test(str(it.name));
+    if (!validBodyCompositionItem(it) || seen.has(kind)) return false;
+    seen.add(kind);
+    it.name = kind === 'skelMuscle' ? '骨骼肌' : kind === 'bodyFatRate' ? '体脂率' : '内脏脂肪';
+    it.itemType = 'data';
+    if (kind === 'bodyFatRate') it.unit = '%';
+    return true;
+  });
+}
+
+function sanitizeBodyCompositionItems(items) {
+  const list = items || [];
+  const pages = new Map();
+  list.forEach(it => {
+    const page = it._page || 0;
+    if (!pages.has(page)) pages.set(page, []);
+    pages.get(page).push(it);
+  });
+  return [...pages.values()].flatMap(sanitizeBodyCompositionPage);
+}
+
+function mergeBodyCompositionRetry(originalItems, retryItems) {
+  const ancillary = /^(体重|BMI|身体质量指数|体脂肪量|去脂体重|肌肉量)$/i;
+  const retained = (originalItems || []).filter(it => !bodyCompositionKind(it.name) && !ancillary.test(str(it.name)));
+  return retained.concat(sanitizeBodyCompositionPage(retryItems || []));
+}
+
 // 清理AI提取时常见的两类"影子行"（2026-07-01金娟反馈：肿瘤六项男/血细胞分析/血脂七项 被当成具体项目名重复提取）：
 // 规则1：某条目的 name 跟批次里其他≥2条目共享的 orderName 完全同名（说明这条其实是把套餐标题误当成了单独项目吐出来），丢弃
 // 规则2：同一 orderName 组内，value/unit/referenceRange 完全相同的重复行只保留第一条
@@ -7621,7 +7698,7 @@ async function syncBodyCompositionFromReport(report) {
     sourceReportId: String(report._id),
   };
   for (const def of aliases) {
-    const item = report.reportItems.find(it => def.pattern.test(String(it.name || '')));
+    const item = report.reportItems.find(it => def.pattern.test(String(it.name || '')) && validBodyCompositionItem(it));
     if (!item || String(item.value ?? '').trim() === '') continue;
     entry[def.key] = String(item.value).trim();
     entry[def.referenceKey] = String(item.referenceRange || '').trim();
@@ -7909,6 +7986,33 @@ async function runReportParse(reportId) {
         }
       }
 
+      const bodyCompRetryPages = [...new Set(allItems.map(it => it._page).filter(pageNum => {
+        return pageNum && needsBodyCompositionRetry(allItems.filter(row => row._page === pageNum));
+      }))];
+      for (const pageNum of bodyCompRetryPages) {
+        try {
+          const oldPageItems = allItems.filter(it => it._page === pageNum);
+          const img = await renderSinglePage(pdfBuf, pageNum, DPI);
+          if (!img) continue;
+          const text = await parseImage(img, BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: VL_MODEL, maxTokens: 2048 });
+          const p = safeParseJSON(text);
+          if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
+          const retryItems = tagReportPageItems(p.items, pageNum);
+          const oldQuality = bodyCompositionQuality(oldPageItems);
+          const newQuality = bodyCompositionQuality(retryItems);
+          if (newQuality > oldQuality || (newQuality === 3 && !needsBodyCompositionRetry(retryItems))) {
+            allItems = allItems.filter(it => it._page !== pageNum).concat(mergeBodyCompositionRetry(oldPageItems, retryItems));
+            console.log(`[parse-ai] 页${pageNum}人体成分专项重试生效：有效指标 ${oldQuality}→${newQuality}`);
+          } else {
+            console.log(`[parse-ai] 页${pageNum}人体成分专项重试未改善，进入程序过滤`);
+          }
+        } catch (e) {
+          console.log(`[parse-ai] 页${pageNum}人体成分专项重试异常: ${e.message}`);
+        }
+      }
+
+      allItems = sanitizeBodyCompositionItems(allItems);
+
       // 2026-07-02修复：各类单页重试(数量核对/超声拆分/空内容补全)命中后都是把条目从原位置摘掉、
       // 用 .concat() 拼到 allItems 末尾，导致这些条目脱离了报告原文的页码顺序、被甩到审核列表最后面，
       // 跟同页其他体格检查项目（如内科/外科/眼科）在报告原文里连续排列的顺序对不上，审核时容易漏看。
@@ -7961,7 +8065,25 @@ async function runReportParse(reportId) {
           console.log(`[parse-ai] 图片${imageIndex + 1}判定为${str(parsedPage.pageType) || '非明细页'}，程序层跳过全部条目`);
           continue;
         }
-        imageItems = imageItems.concat(tagReportPageItems(parsedPage.items, imageIndex + 1));
+        let pageItems = tagReportPageItems(parsedPage.items, imageIndex + 1);
+        if (needsBodyCompositionRetry(pageItems)) {
+          try {
+            const retryText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 2048 });
+            const retryPage = safeParseJSON(retryText);
+            if (retryPage && !shouldSkipParsedReportPage(retryPage) && Array.isArray(retryPage.items)) {
+              const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
+              const oldQuality = bodyCompositionQuality(pageItems);
+              const newQuality = bodyCompositionQuality(retryItems);
+              if (newQuality > oldQuality || (newQuality === 3 && !needsBodyCompositionRetry(retryItems))) {
+                pageItems = mergeBodyCompositionRetry(pageItems, retryItems);
+                console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项重试生效：有效指标 ${oldQuality}→${newQuality}`);
+              }
+            }
+          } catch (e) {
+            console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项重试异常: ${e.message}`);
+          }
+        }
+        imageItems = imageItems.concat(sanitizeBodyCompositionPage(pageItems));
         if (parsedPage.summary) imageSummaries.push(parsedPage.summary);
         if (!imageInstitution && parsedPage.institution && !isSuspiciousInstitution(parsedPage.institution)) imageInstitution = parsedPage.institution;
         if (!imageCheckDate && parsedPage.checkDate) imageCheckDate = parsedPage.checkDate;
@@ -7969,6 +8091,7 @@ async function runReportParse(reportId) {
         console.log(`[parse-ai] 图片${imageIndex + 1}解析异常 ${reportId}: ${e.message}`);
       }
     }
+    imageItems = sanitizeBodyCompositionItems(imageItems);
     sortReportItemsBySource(imageItems);
     const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(imageItems)))))))));
     const classifiedImg = stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems))))))));
