@@ -324,7 +324,7 @@ export default function RenewalScreen({ navigation }) {
             {[
               { step: '01', label: '健管师电话联系您', desc: '确认套餐信息' },
               { step: '02', label: '完成支付', desc: '微信 / 支付宝 / 银行转账' },
-              { step: '03', label: '服务正式激活', desc: '享受全部专属权益' },
+              { step: '03', label: '服务正式激活', desc: '服务内容正式生效' },
             ].map((s) => (
               <View key={s.step} style={styles.stepRow}>
                 <View style={styles.stepNum}>
@@ -443,21 +443,6 @@ export default function RenewalScreen({ navigation }) {
           ))}
         </View>
 
-        {/* 权益说明 */}
-        <View style={styles.benefitCard}>
-          <Text style={styles.benefitTitle}>专属权益</Text>
-          {[
-            '专属健管师全程陪伴管理',
-            '专属家庭医生咨询问诊',
-            '无缝衔接：开通即激活，全部功能立即可用',
-          ].map((b, i) => (
-            <View key={i} style={styles.benefitRow}>
-              <Ionicons name="gift-outline" size={14} color={colors.primary} />
-              <Text style={styles.benefitText}>{b}</Text>
-            </View>
-          ))}
-        </View>
-
       </ScrollView>
 
       {/* 底部按钮 */}
@@ -539,15 +524,6 @@ const styles = StyleSheet.create({
   pkgFeatures: { gap: 6 },
   featureRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   featureText: { fontSize: 12, color: colors.textSecondary },
-
-  // 权益说明
-  benefitCard: {
-    backgroundColor: colors.white, borderRadius: radius.md,
-    borderWidth: 1, borderColor: colors.border, padding: spacing.md,
-  },
-  benefitTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary, marginBottom: spacing.sm },
-  benefitRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6, marginBottom: 6 },
-  benefitText: { flex: 1, fontSize: 12, color: colors.textSecondary, lineHeight: 18 },
 
   // 底部栏
   bottomBar: {

@@ -183,6 +183,41 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
   );
 }
 
+const BODY_COMP_METRICS = [
+  { key: 'skelMuscle', referenceKey: 'skelMuscleReference', label: '骨骼肌（kg）', color: '#1E6B50' },
+  { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', label: '体脂率（%）', color: '#D97706' },
+  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪', color: '#7C3AED' },
+]
+
+function BodyCompositionTrendCharts({ history = [] }) {
+  const parseRange = value => {
+    const nums = String(value || '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) || []
+    return nums.length >= 2 ? { low: nums[0], high: nums[1] } : {}
+  }
+  const rows = [...history].sort((a, b) => String(a?.measuredAt || a?.recordedAt || '').localeCompare(String(b?.measuredAt || b?.recordedAt || '')))
+  const available = BODY_COMP_METRICS.map(metric => {
+    const data = rows.map(row => ({
+      y: Number.parseFloat(row?.[metric.key]),
+      x: String(row?.measuredAt || row?.recordedAt || '').slice(0, 10),
+      ref: row?.[metric.referenceKey] || '',
+      institution: row?.institution || '',
+    })).filter(point => Number.isFinite(point.y))
+    const latestWithRange = [...rows].reverse().find(row => row?.[metric.referenceKey])
+    return { metric, data, range: parseRange(latestWithRange?.[metric.referenceKey]) }
+  }).filter(item => item.data.length >= 2)
+  if (!available.length) return null
+  return (
+    <div style={{ marginTop: 14, borderTop: '1px solid #f0ece4', paddingTop: 12 }}>
+      <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>趋势曲线（按测量日期）</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
+        {available.map(({ metric, data, range }) => (
+          <MiniTrendChart key={metric.key} data={data} color={metric.color} label={metric.label} refLow={range.low} refHigh={range.high} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 const TYPE_MAP = { phone: '电话', wechat: '微信', visit: '上门', video: '视频', other: '其他' }
 const SERVICE_PACKAGE_LABELS = {
   health_prevention: '健康预防计划', chronic_stable: '慢病维稳计划',
@@ -2409,6 +2444,10 @@ export default function PatientDetailPage() {
   const bmi = user.height && user.weight
     ? (user.weight / Math.pow(user.height / 100, 2)).toFixed(1)
     : null
+  const latestBodyCompHistory = [...(user.bodyCompHistory || [])]
+    .sort((a, b) => String(a?.measuredAt || a?.recordedAt || '').localeCompare(String(b?.measuredAt || b?.recordedAt || '')))
+    .at(-1) || {}
+  const displayBodyComposition = { ...(user.bodyComposition || {}), ...latestBodyCompHistory }
 
   return (
     // 2026-07-09 金娟反复反馈"界面看不到全局，要键盘左右移动才能找到按键"：患者详情页内某些
@@ -5237,12 +5276,12 @@ export default function PatientDetailPage() {
               </div>
             ) : (
               <div>
-                {user.bodyComposition && (user.bodyComposition.skelMuscle || user.bodyComposition.visceralFat || user.bodyComposition.bodyFatRate) ? (
+                {(displayBodyComposition.skelMuscle || displayBodyComposition.visceralFat || displayBodyComposition.bodyFatRate) ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px 16px' }}>
                     {[
-                      ['骨骼肌量', user.bodyComposition.skelMuscle, 'kg', user.bodyComposition.skelMuscleReference],
-                      ['内脏脂肪', user.bodyComposition.visceralFat, '', user.bodyComposition.visceralFatReference],
-                      ['体脂率', user.bodyComposition.bodyFatRate, '%', user.bodyComposition.bodyFatRateReference],
+                      ['骨骼肌量', displayBodyComposition.skelMuscle, 'kg', displayBodyComposition.skelMuscleReference],
+                      ['内脏脂肪', displayBodyComposition.visceralFat, '', displayBodyComposition.visceralFatReference],
+                      ['体脂率', displayBodyComposition.bodyFatRate, '%', displayBodyComposition.bodyFatRateReference],
                     ].filter(([,v]) => v != null && v !== '').map(([label, val, unit, reference]) => (
                       <div key={label} style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8, borderLeft: '3px solid #1E6B50' }}>
                         <div style={{ fontSize: 11, color: '#8AA89C' }}>{label}</div>
@@ -5250,13 +5289,14 @@ export default function PatientDetailPage() {
                         <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>参考范围：{reference || '未录入'}</div>
                       </div>
                     ))}
-                    {user.bodyComposition.measuredAt && (
-                      <div style={{ fontSize: 12, color: '#aaa', gridColumn: 'span 3', marginTop: 4 }}>测量日期：{user.bodyComposition.measuredAt}</div>
+                    {displayBodyComposition.measuredAt && (
+                      <div style={{ fontSize: 12, color: '#aaa', gridColumn: 'span 3', marginTop: 4 }}>测量日期：{displayBodyComposition.measuredAt}</div>
                     )}
                   </div>
                 ) : (
                   <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>暂无身体成分数据，点击「编辑」录入</div>
                 )}
+                <BodyCompositionTrendCharts history={user.bodyCompHistory || []} />
                 {/* 历史记录 */}
                 {!editingBodyComp && (user.bodyCompHistory || []).length > 0 && (
                   <div style={{ marginTop: 12, borderTop: '1px solid #f0ece4', paddingTop: 10 }}>

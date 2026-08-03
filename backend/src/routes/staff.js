@@ -1943,6 +1943,11 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       await syncScreeningItems(report.user, report._id, report.reportItems);
       if (report.audit_status === 'audited') await syncBodyCompositionFromReport(report);
     }
+    // 已审核报告后续若由医护修正提取项/归类并再次保存，也要用同一来源报告ID覆盖身体成分历史。
+    // 此前只在“首次审核通过”瞬间同步，导致先审核、后补做人体成分归类时数据永远进不了健康档案。
+    if (reportItems !== undefined && report.audit_status === 'audited' && report.user && aiStatus !== 'reviewed') {
+      await syncBodyCompositionFromReport(report);
+    }
 
     // 归类改动后自动重新AI解析：改类目常意味着此前AI按错误类目提取的内容不准了（如从居家监测改成
     // 肿瘤筛查，原本就没解析过；或从肿瘤筛查改成慢性病，原提取项对不上新类目），不能让医护端还得
