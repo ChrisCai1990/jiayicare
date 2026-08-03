@@ -9,7 +9,7 @@ const CLIENT_BRANDS = [
 const brandLabel = value => CLIENT_BRANDS.find(item => item.value === value)?.label || '未设置'
 
 // ─── 共用：简单列表管理组件（标签/来源） ─────────────────────────
-function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false, withEntitlements = false }) {
+function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, deleteFn, withClientBrand = false, withEntitlements = false, withActivation = false }) {
   const toast = useToast()
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
@@ -18,6 +18,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   const [name, setName] = useState('')
   const [clientBrand, setClientBrand] = useState('jiayiguanjia')
   const [entitlements, setEntitlements] = useState({ aiHealthAnalysis: false, aiRiskAssessment: false })
+  const [activation, setActivation] = useState({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
 
@@ -27,14 +28,16 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
   }
   useEffect(() => { load() }, [])
 
-  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, aiRiskAssessment: false }); setError(''); setShowModal(true) }
-  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, aiRiskAssessment: !!item.entitlements?.aiRiskAssessment }); setError(''); setShowModal(true) }
+  const openCreate = () => { setEditId(null); setName(''); setClientBrand('jiayiguanjia'); setEntitlements({ aiHealthAnalysis: false, aiRiskAssessment: false }); setActivation({ enabled: false, durationMonths: 12, price: 0, originalPrice: 0, featuresText: '', tag: '', highlight: false }); setError(''); setShowModal(true) }
+  const openEdit = item => { setEditId(item._id); setName(item.name); setClientBrand(item.clientBrand || 'jiayiguanjia'); setEntitlements({ aiHealthAnalysis: !!item.entitlements?.aiHealthAnalysis, aiRiskAssessment: !!item.entitlements?.aiRiskAssessment }); setActivation({ enabled: !!item.activation?.enabled, durationMonths: item.activation?.durationMonths || 12, price: item.activation?.price || 0, originalPrice: item.activation?.originalPrice || 0, featuresText: (item.activation?.features || []).join('\n'), tag: item.activation?.tag || '', highlight: !!item.activation?.highlight }); setError(''); setShowModal(true) }
 
   const handleSave = async () => {
     if (!name.trim()) { setError('名称不能为空'); return }
     setSaving(true); setError('')
     try {
-      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}) } : { name }
+      const activationPayload = { ...activation, features: activation.featuresText.split(/\r?\n/).map(v => v.trim()).filter(Boolean) }
+      delete activationPayload.featuresText
+      const payload = withClientBrand ? { name, clientBrand, ...(withEntitlements ? { entitlements } : {}), ...(withActivation ? { activation: activationPayload } : {}) } : { name }
       if (editId) { await updateFn(editId, payload); toast('已更新') }
       else { await createFn(payload); toast('已创建') }
       setShowModal(false); load()
@@ -63,7 +66,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: '#f8fafc' }}>
-              {(withClientBrand ? ['名称', '客户归属', ...(withEntitlements ? ['AI权益'] : []), '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
+              {(withClientBrand ? ['名称', '客户归属', ...(withEntitlements ? ['AI权益'] : []), ...(withActivation ? ['用户开通'] : []), '状态', '操作'] : ['名称', '状态', '操作']).map(h => (
                 <th key={h} style={{ textAlign: 'left', padding: '8px 14px', fontSize: 12, fontWeight: 600, color: '#6B7280', borderBottom: '1px solid #E5E7EB' }}>{h}</th>
               ))}
             </tr>
@@ -75,6 +78,9 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                 {withClientBrand && <td style={{ padding: '10px 14px' }}>{brandLabel(item.clientBrand)}</td>}
                 {withEntitlements && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
                   {[item.entitlements?.aiHealthAnalysis && 'AI健康分析', item.entitlements?.aiRiskAssessment && '风险评估'].filter(Boolean).join('、') || '无'}
+                </td>}
+                {withActivation && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
+                  {item.activation?.enabled ? `${item.activation.durationMonths || '-'}个月 / ¥${item.activation.price || 0}` : '不展示'}
                 </td>}
                 <td style={{ padding: '10px 14px' }}>
                   <span style={{ padding: '2px 8px', borderRadius: 99, fontSize: 11, fontWeight: 600, background: (item.active ?? item.status === 'active') ? '#E8F5EF' : '#FEF2F2', color: (item.active ?? item.status === 'active') ? '#1E6B50' : '#DC2626' }}>
@@ -94,7 +100,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
 
       {showModal && (
         <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) setShowModal(false) }}>
-          <div className="modal" style={{ maxWidth: 360 }}>
+          <div className="modal" style={{ maxWidth: withActivation ? 620 : 360 }}>
             <div className="modal-header">
               <h3 className="modal-title">{editId ? '编辑' : '新增'}{title}</h3>
               <button className="modal-close" onClick={() => setShowModal(false)}>✕</button>
@@ -122,6 +128,25 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                       <span>{label}</span>
                     </label>
                   ))}
+                </div>
+              )}
+              {withActivation && (
+                <div className="form-group" style={{ borderTop: '1px solid #E5E7EB', paddingTop: 14 }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={activation.enabled} onChange={e => setActivation(v => ({ ...v, enabled: e.target.checked }))} />
+                    <span className="form-label" style={{ margin: 0 }}>允许新客户在用户端开通</span>
+                  </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 12 }}>
+                    <input className="form-input" type="number" min="1" placeholder="服务月数" value={activation.durationMonths} onChange={e => setActivation(v => ({ ...v, durationMonths: Number(e.target.value) }))} />
+                    <input className="form-input" type="number" min="0" placeholder="售价" value={activation.price} onChange={e => setActivation(v => ({ ...v, price: Number(e.target.value) }))} />
+                    <input className="form-input" type="number" min="0" placeholder="划线价（可选）" value={activation.originalPrice} onChange={e => setActivation(v => ({ ...v, originalPrice: Number(e.target.value) }))} />
+                    <input className="form-input" placeholder="标签（如 推荐）" value={activation.tag} onChange={e => setActivation(v => ({ ...v, tag: e.target.value }))} />
+                  </div>
+                  <textarea className="form-input" rows="4" style={{ marginTop: 10 }} placeholder="权益说明，每行一项" value={activation.featuresText} onChange={e => setActivation(v => ({ ...v, featuresText: e.target.value }))} />
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+                    <input type="checkbox" checked={activation.highlight} onChange={e => setActivation(v => ({ ...v, highlight: e.target.checked }))} />
+                    <span>重点展示</span>
+                  </label>
                 </div>
               )}
             </div>
@@ -345,6 +370,7 @@ export default function MemberSettingsPage() {
             deleteFn={adminAPI.deleteServicePackage}
             withClientBrand
             withEntitlements
+            withActivation
           />
         )}
       </div>

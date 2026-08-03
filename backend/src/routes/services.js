@@ -9,6 +9,7 @@ const User    = require('../models/User');
 const Coupon  = require('../models/Coupon');
 const FollowUp = require('../models/FollowUp');
 const Admin   = require('../models/Admin');
+const ServicePackage = require('../models/ServicePackage');
 const { awardOrderPoints } = require('../utils/orderPoints');
 
 // ── 静态兜底（DB 为空时使用 / 订单查找用）────────────────────────
@@ -133,6 +134,23 @@ router.get('/coupons', auth, async (req, res) => {
   res.json({ success: true, data: coupons });
 });
 
+// 新客户可自主开通的服务包，展示内容完全由 Admin 维护。
+router.get('/packages', auth, async (req, res) => {
+  const user = await User.findById(req.user._id).select('clientBrand').lean();
+  const clientBrand = user?.clientBrand || 'jiayiguanjia';
+  const list = await ServicePackage.find({ clientBrand, active: true, 'activation.enabled': true })
+    .sort({ 'activation.highlight': -1, sortOrder: 1, createdAt: 1 }).lean();
+  res.json({ success: true, data: list.map(item => ({
+    id: String(item._id), name: item.name,
+    durationMonths: item.activation?.durationMonths || 12,
+    duration: `${item.activation?.durationMonths || 12} 个月`,
+    price: Number(item.activation?.price || 0),
+    originalPrice: Number(item.activation?.originalPrice || item.activation?.price || 0),
+    features: item.activation?.features || [], tag: item.activation?.tag || '',
+    highlight: !!item.activation?.highlight,
+  })) });
+});
+
 // ── 服务包目录（首次开通 & 续费使用）────────────────────────────
 const PACKAGE_CATALOG = [
   { id: 'pkg_1y', name: '年度服务包', duration: '12 个月', price: 3650, originalPrice: 5000, icon: 'shield-checkmark', category: '服务包' },
@@ -149,8 +167,9 @@ router.post('/order', auth, async (req, res) => {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
 
-  // 先从 Product 集合查（管理员维护的商城产品），再查 Service，最后回退静态目录
+  // 先从 Product / Admin 服务包查，再查 Service，最后兼容旧版静态 ID
   let service = null;
+  let servicePackage = null;
   const product = await Product.findById(serviceId).catch(() => null);
   if (product) {
     const prices = product.servicePrices || [];
@@ -169,6 +188,20 @@ router.post('/order', auth, async (req, res) => {
       icon: 'storefront-outline',
     };
   }
+  if (!service && mongoose.isValidObjectId(serviceId)) {
+    servicePackage = await ServicePackage.findOne({
+      _id: serviceId,
+      clientBrand: req.user.clientBrand || 'jiayiguanjia',
+      active: true,
+      'activation.enabled': true,
+    }).lean();
+    if (servicePackage) {
+      const a = servicePackage.activation || {};
+      service = { id: String(servicePackage._id), name: servicePackage.name, price: Number(a.price || 0),
+        originalPrice: Number(a.originalPrice || a.price || 0), duration: `${a.durationMonths || 12} 个月`,
+        category: '服务包', icon: 'shield-checkmark' };
+    }
+  }
   if (!service) {
     const dbSvc = await Service.findOne({ serviceId });
     if (dbSvc) service = { id: dbSvc.serviceId, name: dbSvc.name, price: dbSvc.price, icon: dbSvc.icon || 'star-outline' };
@@ -178,7 +211,7 @@ router.post('/order', auth, async (req, res) => {
     return res.status(404).json({ success: false, message: '服务项目不存在' });
   }
 
-  const isPkg     = !!PACKAGE_CATALOG.find(p => p.id === serviceId);
+  const isPkg = !!servicePackage || !!PACKAGE_CATALOG.find(p => p.id === serviceId);
   const unitsMatch = String(service.specificationLabel || '').match(/(\d+)\s*次/);
   const productServiceItems = (product?.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
   const totalUnits = productServiceItems.length

@@ -1941,6 +1941,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // 跟前端"提交审核（写入专项筛查）"按钮的文案设计意图一致——只有审核通过后才应该出现在专项筛查。
     if (aiStatus === 'reviewed' && report.user) {
       await syncScreeningItems(report.user, report._id, report.reportItems);
+      if (report.audit_status === 'audited') await syncBodyCompositionFromReport(report);
     }
 
     // 归类改动后自动重新AI解析：改类目常意味着此前AI按错误类目提取的内容不准了（如从居家监测改成
@@ -2041,6 +2042,7 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.reject_reason = rejectReason || '';
   }
   await report.save();
+  if (action === 'approve') await syncBodyCompositionFromReport(report);
   res.json({ success: true, data: report });
 });
 
@@ -4740,12 +4742,15 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
 // PATCH /api/staff/patients/:id/body-composition
 router.patch('/patients/:id/body-composition', staffAuth, async (req, res) => {
   try {
-    const { skelMuscle, visceralFat, bodyFatRate, measuredAt } = req.body;
+    const { skelMuscle, visceralFat, bodyFatRate, measuredAt, skelMuscleReference, visceralFatReference, bodyFatRateReference } = req.body;
     const bc = {};
     if (skelMuscle  !== undefined) bc.skelMuscle  = skelMuscle;
     if (visceralFat !== undefined) bc.visceralFat = visceralFat;
     if (bodyFatRate !== undefined) bc.bodyFatRate  = bodyFatRate;
     if (measuredAt  !== undefined) bc.measuredAt   = measuredAt;
+    if (skelMuscleReference !== undefined) bc.skelMuscleReference = skelMuscleReference;
+    if (visceralFatReference !== undefined) bc.visceralFatReference = visceralFatReference;
+    if (bodyFatRateReference !== undefined) bc.bodyFatRateReference = bodyFatRateReference;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
       { $set: { bodyComposition: bc } }
@@ -4763,12 +4768,15 @@ router.patch('/patients/:id/body-composition-history/:index', staffAuth, async (
     const idx = parseInt(req.params.index);
     const history = user.bodyCompHistory || [];
     if (idx < 0 || idx >= history.length) return res.status(400).json({ success: false, message: '索引越界' });
-    const { skelMuscle, visceralFat, bodyFatRate, measuredAt } = req.body;
+    const { skelMuscle, visceralFat, bodyFatRate, measuredAt, skelMuscleReference, visceralFatReference, bodyFatRateReference } = req.body;
     const entry = { ...history[idx] };
     if (skelMuscle  !== undefined) entry.skelMuscle  = skelMuscle;
     if (visceralFat !== undefined) entry.visceralFat = visceralFat;
     if (bodyFatRate !== undefined) entry.bodyFatRate  = bodyFatRate;
     if (measuredAt  !== undefined) entry.measuredAt   = measuredAt;
+    if (skelMuscleReference !== undefined) entry.skelMuscleReference = skelMuscleReference;
+    if (visceralFatReference !== undefined) entry.visceralFatReference = visceralFatReference;
+    if (bodyFatRateReference !== undefined) entry.bodyFatRateReference = bodyFatRateReference;
     await User.collection.updateOne(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
       { $set: { [`bodyCompHistory.${idx}`]: entry } }
@@ -6962,15 +6970,11 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
     → name统一为"睡眠呼吸监测"或"动态血压监测"（或报告实际印刷标题），不要与其他检查混淆
 
 14. 人体成分分析（InBody/BCA-2A等体成分测量仪报告）
-    → 【重要】不要按检验子项逐条拆分提取（体脂率/肌肉量/水分/骨质/蛋白质/细胞内外液/水肿系数/
-      基础代谢等仪器指标五花八门，型号不同措辞差异很大，逐条归类始终对不上号）。
-      统一按检查项目整体提取一条：itemType="imaging"，name="人体成分分析"
-    → findings = 报告里所有测量数值和指标，逐行原文抄写在一起（如"体脂率28.5% 肌肉量25.3kg
-      水分35.2L 基础代谢1420kcal..."），完整保留，不遗漏任何一项数值
-    → diagnosis/conclusion = 报告的综合评估/结论原文（如有）
-    → 这类报告页面顶部常同时印有"健康评分"（一个0-100的综合评分数字）和"体重"（kg数值），
-      两者不再单独提取为独立条目，直接归入这条"人体成分分析"记录的 findings 里一并抄写
-      （按各自标签文字原样记录，如"健康评分：85 体重：62.3kg"），跟其他测量数值一起完整保留。
+    → 只提取以下三项，其他体成分指标一律不输出：骨骼肌（或骨骼肌量）、体脂率、内脏脂肪（等级/指数/面积按原文名称）。
+    → 三项必须各自输出为一条独立记录：itemType="data"；name按上述标准名；value只抄实测值；unit抄报告单位；
+      referenceRange只抄该项目在本次报告中明确印刷的参考范围，没有则留空，严禁按常识或性别自行推算。
+    → 如果报告只出现其中一项或两项，只输出实际出现的项目；看不清的数值不要猜测。
+    → 检测日期优先使用报告中的人体成分测量日期，并写入checkDate；不得使用打印日期替代明确的测量日期。
 
 【输出格式】
 仅输出 JSON，不要任何额外文字：
@@ -7600,6 +7604,42 @@ async function syncScreeningItems(userId, reportId, items) {
   } catch (err) {
     console.error('[screening-sync] 失败', String(reportId), err.message);
   }
+}
+
+// 将已审核报告中的三项身体成分写入统一历史。参考范围只保存报告原文，不做医学推断。
+async function syncBodyCompositionFromReport(report) {
+  if (!report?.user || !Array.isArray(report.reportItems)) return;
+  const aliases = [
+    { key: 'skelMuscle', referenceKey: 'skelMuscleReference', pattern: /骨骼肌(?:量)?|skeletal\s*muscle/i },
+    { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', pattern: /体脂(?:肪)?率|\bPBF\b/i },
+    { key: 'visceralFat', referenceKey: 'visceralFatReference', pattern: /内脏脂肪(?:等级|指数|面积)?|\bVFA\b/i },
+  ];
+  const entry = {
+    measuredAt: report.checkDate || report.date || '',
+    recordedAt: report.audited_at || new Date(),
+    source: 'medical_report',
+    sourceReportId: String(report._id),
+  };
+  for (const def of aliases) {
+    const item = report.reportItems.find(it => def.pattern.test(String(it.name || '')));
+    if (!item || String(item.value ?? '').trim() === '') continue;
+    entry[def.key] = String(item.value).trim();
+    entry[def.referenceKey] = String(item.referenceRange || '').trim();
+  }
+  if (!aliases.some(def => entry[def.key] !== undefined)) return;
+
+  const user = await User.findById(report.user).select('bodyComposition bodyCompHistory').lean();
+  if (!user) return;
+  const history = [...(user.bodyCompHistory || [])];
+  const existingIndex = history.findIndex(row => String(row?.sourceReportId || '') === String(report._id));
+  if (existingIndex >= 0) history[existingIndex] = entry;
+  else history.push(entry);
+  history.sort((a, b) => String(a.measuredAt || a.recordedAt || '').localeCompare(String(b.measuredAt || b.recordedAt || '')));
+  const latest = history[history.length - 1] || entry;
+  await User.collection.updateOne(
+    { _id: new mongoose.Types.ObjectId(String(report.user)) },
+    { $set: { bodyCompHistory: history, bodyComposition: latest } }
+  );
 }
 
 // 从检验单标题解析出"应有条数"，如"抗核抗体谱15项"→15，"肝功能八项"→8，中文数字/阿拉伯数字都支持

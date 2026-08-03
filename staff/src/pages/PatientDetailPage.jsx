@@ -5217,14 +5217,16 @@ export default function PatientDetailPage() {
             {editingBodyComp ? (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px 20px' }}>
                 {[
-                  { label: '骨骼肌量', field: 'skelMuscle', unit: 'kg', placeholder: '如 28.5' },
-                  { label: '内脏脂肪等级/指数', field: 'visceralFat', unit: '', placeholder: '如 9级 或 指数110' },
-                  { label: '体脂率', field: 'bodyFatRate', unit: '%', placeholder: '如 25.3' },
-                ].map(({ label, field, unit, placeholder }) => (
+                  { label: '骨骼肌量', field: 'skelMuscle', referenceField: 'skelMuscleReference', unit: 'kg', placeholder: '如 28.5' },
+                  { label: '内脏脂肪等级/指数', field: 'visceralFat', referenceField: 'visceralFatReference', unit: '', placeholder: '如 9级 或 指数110' },
+                  { label: '体脂率', field: 'bodyFatRate', referenceField: 'bodyFatRateReference', unit: '%', placeholder: '如 25.3' },
+                ].map(({ label, field, referenceField, unit, placeholder }) => (
                   <div key={field}>
                     <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}{unit ? ` (${unit})` : ''}</span>
                     <input className="form-control" value={bodyCompForm[field] || ''} placeholder={placeholder}
                       onChange={e => setBodyCompForm(f => ({ ...f, [field]: e.target.value }))} style={{ fontSize: 13 }} />
+                    <input className="form-control" value={bodyCompForm[referenceField] || ''} placeholder="报告参考范围（无则留空）"
+                      onChange={e => setBodyCompForm(f => ({ ...f, [referenceField]: e.target.value }))} style={{ fontSize: 12, marginTop: 6 }} />
                   </div>
                 ))}
                 <div>
@@ -5238,13 +5240,14 @@ export default function PatientDetailPage() {
                 {user.bodyComposition && (user.bodyComposition.skelMuscle || user.bodyComposition.visceralFat || user.bodyComposition.bodyFatRate) ? (
                   <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px 16px' }}>
                     {[
-                      ['骨骼肌量', user.bodyComposition.skelMuscle, 'kg'],
-                      ['内脏脂肪', user.bodyComposition.visceralFat, ''],
-                      ['体脂率', user.bodyComposition.bodyFatRate, '%'],
-                    ].filter(([,v]) => v != null && v !== '').map(([label, val, unit]) => (
+                      ['骨骼肌量', user.bodyComposition.skelMuscle, 'kg', user.bodyComposition.skelMuscleReference],
+                      ['内脏脂肪', user.bodyComposition.visceralFat, '', user.bodyComposition.visceralFatReference],
+                      ['体脂率', user.bodyComposition.bodyFatRate, '%', user.bodyComposition.bodyFatRateReference],
+                    ].filter(([,v]) => v != null && v !== '').map(([label, val, unit, reference]) => (
                       <div key={label} style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8, borderLeft: '3px solid #1E6B50' }}>
                         <div style={{ fontSize: 11, color: '#8AA89C' }}>{label}</div>
                         <div style={{ fontSize: 14, fontWeight: 600 }}>{val}{unit && <span style={{ fontSize: 11, fontWeight: 400 }}> {unit}</span>}</div>
+                        <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>参考范围：{reference || '未录入'}</div>
                       </div>
                     ))}
                     {user.bodyComposition.measuredAt && (

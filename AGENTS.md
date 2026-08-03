@@ -379,3 +379,8 @@ pkg_1y（年度¥2980）/ pkg_6m（半年¥1680）/ pkg_3m（季度¥980）
 - **EditProfileScreen 数组字段被注释掉**（allergies/medicalHistory/medications/familyHistory/surgeries）
   - 位置：`app/src/screens/profile/EditProfileScreen.js` handleSave 的 healthProfile 里
   - 恢复方式：直接取消注释那5个字段即可（当前 User.js 已是 Mixed 数组类型，阿里云部署版本支持）
+
+## 2026-08 身体成分与服务包规则
+
+- 身体成分统一只管理骨骼肌、体脂率、内脏脂肪三项；每项保存实测值、报告原始参考范围和检测时间。已审核体检报告中的这三项自动同步到身体成分历史，来源报告 ID 用于幂等覆盖；参考范围不得由系统猜测。
+- 新客户自主开通的服务包以 Admin「会员设置 → 服务包」为唯一配置源；名称、客户归属、期限、售价、划线价、权益、标签和是否在用户端展示均从该处读取，App 不得写死套餐。

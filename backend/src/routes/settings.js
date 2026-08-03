@@ -437,22 +437,22 @@ router.get('/service-packages', adminAuth, async (req, res) => {
 });
 
 router.post('/service-packages', adminAuth, async (req, res) => {
-  const { name, clientBrand, sortOrder, entitlements } = req.body;
+  const { name, clientBrand, sortOrder, entitlements, activation } = req.body;
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
-  const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {} });
+  const item = await ServicePackage.create({ name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {} });
   res.json({ success: true, data: item });
 });
 
 router.put('/service-packages/:id', adminAuth, async (req, res) => {
-  const { name, clientBrand, sortOrder, entitlements } = req.body;
+  const { name, clientBrand, sortOrder, entitlements, activation } = req.body;
   if (!name?.trim() || !['jiayiguanjia', 'jinyisen'].includes(clientBrand)) {
     return res.status(400).json({ success: false, message: '请填写名称并选择客户归属' });
   }
   const item = await ServicePackage.findByIdAndUpdate(
     req.params.id,
-    { name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {} },
+    { name: name.trim(), clientBrand, sortOrder: sortOrder || 0, entitlements: entitlements || {}, activation: activation || {} },
     { new: true, runValidators: true }
   );
   if (!item) return res.status(404).json({ success: false, message: '服务包不存在' });

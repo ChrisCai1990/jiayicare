@@ -8,45 +8,8 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { servicesAPI, messagesAPI } from '../../services/api';
 
-// ── 服务套餐配置（仅无服务的新用户自主开通用；已有服务的续约走健管师推送+消息页支付，不用这套）──
-const PACKAGES = [
-  {
-    id: 'pkg_1y',
-    name: '年度服务包',
-    duration: '12 个月',
-    price: 3650,
-    originalPrice: 5000,
-    tag: '最超值',
-    tagColor: '#DC3545',
-    features: ['专属健管师全年陪伴', '专属家庭医生咨询6次', '就医协助服务', 'AI助手无限次使用'],
-    highlight: true,
-  },
-  {
-    id: 'pkg_6m',
-    name: '半年服务包',
-    duration: '6 个月',
-    price: 1980,
-    originalPrice: 2800,
-    tag: '推荐',
-    tagColor: '#1E6B50',
-    features: ['专属健管师半年陪伴', '专属家庭医生咨询3次', '就医协助服务95折', 'AI助手无限次使用'],
-    highlight: false,
-  },
-  {
-    id: 'pkg_3m',
-    name: '季度服务包',
-    duration: '3 个月',
-    price: 1080,
-    originalPrice: 1480,
-    tag: '',
-    tagColor: '',
-    features: ['专属健管师季度陪伴', '专属家庭医生咨询1次', 'AI助手无限次使用'],
-    highlight: false,
-  },
-];
-
 function PackageCard({ pkg, selected, onSelect }) {
-  const discount = (pkg.price / pkg.originalPrice * 10).toFixed(1);
+  const discount = pkg.originalPrice > pkg.price ? (pkg.price / pkg.originalPrice * 10).toFixed(1) : null;
   return (
     <TouchableOpacity
       style={[styles.pkgCard, selected && styles.pkgCardSelected, pkg.highlight && styles.pkgCardHighlight]}
@@ -54,7 +17,7 @@ function PackageCard({ pkg, selected, onSelect }) {
       activeOpacity={0.85}
     >
       {!!pkg.tag && (
-        <View style={[styles.pkgTag, { backgroundColor: pkg.tagColor }]}>
+        <View style={[styles.pkgTag, { backgroundColor: colors.primary }]}>
           <Text style={styles.pkgTagText}>{pkg.tag}</Text>
         </View>
       )}
@@ -72,14 +35,14 @@ function PackageCard({ pkg, selected, onSelect }) {
       <View style={styles.pkgPriceRow}>
         <Text style={[styles.pkgCurrency, pkg.highlight && { color: colors.white }]}>¥</Text>
         <Text style={[styles.pkgPrice, pkg.highlight && { color: colors.white }]}>{pkg.price}</Text>
-        <Text style={[styles.pkgOriginal, pkg.highlight && { color: 'rgba(255,255,255,0.5)' }]}>¥{pkg.originalPrice}</Text>
-        <View style={[styles.discountBadge, { backgroundColor: pkg.highlight ? 'rgba(255,255,255,0.2)' : colors.danger + '15' }]}>
+        {pkg.originalPrice > pkg.price && <Text style={[styles.pkgOriginal, pkg.highlight && { color: 'rgba(255,255,255,0.5)' }]}>¥{pkg.originalPrice}</Text>}
+        {!!discount && <View style={[styles.discountBadge, { backgroundColor: pkg.highlight ? 'rgba(255,255,255,0.2)' : colors.danger + '15' }]}>
           <Text style={[styles.discountText, { color: pkg.highlight ? colors.white : colors.danger }]}>{discount}折</Text>
-        </View>
+        </View>}
       </View>
 
       <View style={styles.pkgFeatures}>
-        {pkg.features.map((f, i) => (
+        {(pkg.features || []).map((f, i) => (
           <View key={i} style={styles.featureRow}>
             <Ionicons name="checkmark-circle" size={13} color={pkg.highlight ? 'rgba(255,255,255,0.8)' : colors.success} />
             <Text style={[styles.featureText, pkg.highlight && { color: 'rgba(255,255,255,0.85)' }]}>{f}</Text>
@@ -289,11 +252,25 @@ function ConfirmModal({ pkg, visible, onClose, onSuccess, isRenewal }) {
 export default function RenewalScreen({ navigation }) {
   const { user } = useAuth();
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
-  const [selected, setSelected]   = useState(PACKAGES[0]);
+  const [packages, setPackages] = useState([]);
+  const [packagesLoading, setPackagesLoading] = useState(true);
+  const [packagesError, setPackagesError] = useState('');
+  const [selected, setSelected] = useState(null);
   const [confirming, setConfirming] = useState(false);
   const [success, setSuccess]     = useState(false);
   const [orderNo, setOrderNo]     = useState('');
   const [intentSending, setIntentSending] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    servicesAPI.packages().then(res => {
+      if (!alive) return;
+      const rows = res.data || [];
+      setPackages(rows);
+      setSelected(rows[0] || null);
+    }).catch(e => alive && setPackagesError(e.message || '服务包加载失败')).finally(() => alive && setPackagesLoading(false));
+    return () => { alive = false; };
+  }, []);
 
   const handleContactManager = async () => {
     setIntentSending(true);
@@ -453,7 +430,10 @@ export default function RenewalScreen({ navigation }) {
         {/* 标准服务包开通 */}
         <View>
           <Text style={styles.sectionTitle}>选择服务套餐</Text>
-          {PACKAGES.map(pkg => (
+          {packagesLoading && <ActivityIndicator color={colors.primary} style={{ marginVertical: spacing.xl }} />}
+          {!packagesLoading && !!packagesError && <Text style={styles.emptyText}>{packagesError}</Text>}
+          {!packagesLoading && !packagesError && packages.length === 0 && <Text style={styles.emptyText}>暂无可开通服务包，请联系健康规划师</Text>}
+          {packages.map(pkg => (
             <PackageCard
               key={pkg.id}
               pkg={pkg}
@@ -486,7 +466,7 @@ export default function RenewalScreen({ navigation }) {
           <Text style={styles.bottomPrice}>¥{selected?.price}</Text>
           <Text style={styles.bottomDuration}>{selected?.name} · {selected?.duration}</Text>
         </View>
-        <TouchableOpacity style={styles.renewBtn} onPress={() => setConfirming(true)} activeOpacity={0.85}>
+        <TouchableOpacity style={[styles.renewBtn, !selected && { opacity: 0.5 }]} onPress={() => selected && setConfirming(true)} disabled={!selected} activeOpacity={0.85}>
           <Text style={styles.renewBtnText}>立即开通</Text>
         </TouchableOpacity>
       </View>
@@ -504,6 +484,7 @@ export default function RenewalScreen({ navigation }) {
 }
 
 const styles = StyleSheet.create({
+  emptyText: { color: colors.textMuted, fontSize: 13, textAlign: 'center', paddingVertical: spacing.xl },
   container: { flex: 1, backgroundColor: colors.background },
   topBar: {
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
