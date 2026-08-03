@@ -893,7 +893,12 @@ router.get('/followup-tasks', auth, async (req, res) => {
     const data = followups.map(followUp => ({
       ...followUp.toObject(),
       taskRequirements: followUpTaskRequirements(followUp),
-    }));
+    })).sort((a, b) => {
+      const aActiveSymptom = a.sourceType === 'symptom' && !['completed', 'cancelled'].includes(a.status);
+      const bActiveSymptom = b.sourceType === 'symptom' && !['completed', 'cancelled'].includes(b.status);
+      if (aActiveSymptom !== bActiveSymptom) return Number(bActiveSymptom) - Number(aActiveSymptom);
+      return new Date(a.date || 0) - new Date(b.date || 0);
+    });
     res.json({ success: true, data });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取随访任务失败', error: err.message });

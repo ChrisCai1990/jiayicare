@@ -351,24 +351,27 @@ export default function HomeScreen({ navigation }) {
   // ── 合并待办：Task 表任务 + 随访计划（作为任务展示）─────────────
   // 已完成/已取消的随访（不管是用户自己标记完成，还是医护端执行随访后置为completed）都不再展示为待办，
   // 首页与"全部待办"页面（TasksScreen.js）保持同一口径，避免此前"医护端已完成但首页仍显示待办"的不一致。
-  const allPendingTaskItems = [
-    ...allTasks,
-    ...followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => ({
+  const activeFollowupTaskItems = followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => ({
       _id: plan._id,
       type: 'followup',
-      title: plan.theme || '随访计划',
-      description: plan.content,
-      assignee: plan.staffId?.name || '医护团队',
+      title: plan.sourceType === 'symptom' ? '不适主诉待家庭医生处理' : (plan.theme || '随访计划'),
+      description: plan.taskRequirements || plan.plannedContent || plan.content,
+      assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
       dueDate: plan.date
         ? new Date(plan.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
         : '',
       dueTime: '',
-      priority: urgencyByDate(plan.date),
+      priority: plan.sourceType === 'symptom' ? 'high' : urgencyByDate(plan.date),
+      sourceType: plan.sourceType,
       followupType: plan.type,
       checkInItems: plan.checkInItems,
       formFields: plan.followUpSchemeId?.formId?.fields || [],
       formData: plan.formData || {},
-    })),
+    }));
+  const allPendingTaskItems = [
+    ...activeFollowupTaskItems.filter(item => item.sourceType === 'symptom'),
+    ...allTasks,
+    ...activeFollowupTaskItems.filter(item => item.sourceType !== 'symptom'),
   ];
 
   if (loading) {

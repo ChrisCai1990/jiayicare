@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useStaff } from '../App'
 import AiTodosPanel from '../components/AiTodosPanel'
+import SymptomTodosPanel from '../components/SymptomTodosPanel'
 import FollowUpsPanel from '../components/FollowUpsPanel'
 
 const DISEASE_COLOR = {
@@ -171,6 +172,7 @@ export default function HomePage() {
       </div>
 
       {/* AI 待审核任务面板 */}
+      <SymptomTodosPanel />
       <AiTodosPanel />
 
       {/* 待随访任务面板 */}

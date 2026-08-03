@@ -34,7 +34,9 @@ export default function TasksPage() {
   };
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending');
-  const pendingFollowups = followups.filter((p) => !p.completedByUser && !['completed', 'cancelled'].includes(p.status));
+  const pendingFollowups = followups
+    .filter((p) => !p.completedByUser && !['completed', 'cancelled'].includes(p.status))
+    .sort((a, b) => Number(b.sourceType === 'symptom') - Number(a.sourceType === 'symptom'));
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -80,7 +82,7 @@ export default function TasksPage() {
             }}>
               <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{p.theme || '随访计划'}</Text>
+                  <Text style={{ fontSize: '14px', fontWeight: 700, color: p.sourceType === 'symptom' ? colors.danger : colors.textPrimary, display: 'block' }}>{p.sourceType === 'symptom' ? '不适主诉待家庭医生处理' : (p.theme || '随访计划')}</Text>
                   <Text style={{ fontSize: '12px', color: colors.textMuted }}>
                     {p.staffId?.name || '医护团队'} · {p.date ? new Date(p.date).toLocaleDateString('zh-CN') : ''}
                   </Text>

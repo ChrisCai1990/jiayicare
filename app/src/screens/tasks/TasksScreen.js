@@ -491,7 +491,7 @@ export default function TasksScreen({ navigation }) {
 
   const followupToItem = (f) => ({
     _id: f._id,
-    title: f.theme || '随访计划',
+    title: f.sourceType === 'symptom' ? '不适主诉待家庭医生处理' : (f.theme || '随访计划'),
     type: 'followup',
     description: f.taskRequirements || f.plannedContent || f.content || '',
     taskRequirements: f.taskRequirements || f.plannedContent || '',
@@ -505,7 +505,8 @@ export default function TasksScreen({ navigation }) {
     completedAt: f.completedAt || null,
     dueDate: f.date ? new Date(f.date).toISOString().slice(0, 10) : null,
     dueTime: '',
-    priority: 'medium',
+    priority: f.sourceType === 'symptom' ? 'high' : 'medium',
+    sourceType: f.sourceType || '',
     status: f.status === 'completed' ? 'completed' : (f.status === 'in_progress' ? 'in_progress' : 'pending'),
     completedBy: f.completedBy || null,
     assignee: f.assignedTo?.name || f.staffId?.name || '',
@@ -521,10 +522,13 @@ export default function TasksScreen({ navigation }) {
   const completedFollowups = followupTasks.filter(f => f.completedByUser || f.status === 'completed' || isOrderHandled(f));
   const cancelledFollowups = followupTasks.filter(f => f.status === 'cancelled' && !f.completedByUser);
 
+  const symptomFollowupItems = activeFollowups.filter(f => f.sourceType === 'symptom').map(followupToItem);
+  const otherFollowupItems = activeFollowups.filter(f => f.sourceType !== 'symptom').map(followupToItem);
   const allItems     = [
+    ...symptomFollowupItems,
     ...tasks.filter(t => t.status !== 'completed'),
     ...reminders.filter(r => r.enabled).map(reminderToItem),
-    ...activeFollowups.map(followupToItem),
+    ...otherFollowupItems,
   ];
   const completedItems = [
     ...tasks.filter(t => t.status === 'completed'),

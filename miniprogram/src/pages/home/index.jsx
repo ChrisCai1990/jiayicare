@@ -251,22 +251,25 @@ export default function HomePage() {
 
   const todayReminders = dashData?.todayReminders || [];
   // 合并待办：Task表任务 + 随访计划（对齐app端allPendingTaskItems，同一口径过滤已完成/取消）
-  const allPendingTaskItems = [
-    ...tasks,
-    ...followups.map((plan) => ({
+  const followupTaskItems = followups.map((plan) => ({
       _id: plan._id,
       type: 'followup',
-      title: plan.theme || '随访计划',
-      description: plan.content,
-      assignee: plan.staffId?.name || '医护团队',
+      title: plan.sourceType === 'symptom' ? '不适主诉待家庭医生处理' : (plan.theme || '随访计划'),
+      description: plan.taskRequirements || plan.plannedContent || plan.content,
+      assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
       dueDate: plan.date ? new Date(plan.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '',
       dueTime: '',
-      priority: urgencyByDate(plan.date),
+      priority: plan.sourceType === 'symptom' ? 'high' : urgencyByDate(plan.date),
+      sourceType: plan.sourceType,
       followupType: plan.type,
       checkInItems: plan.checkInItems,
       formFields: plan.followUpSchemeId?.formId?.fields || [],
       formData: plan.formData || {},
-    })),
+    }));
+  const allPendingTaskItems = [
+    ...followupTaskItems.filter((item) => item.sourceType === 'symptom'),
+    ...tasks,
+    ...followupTaskItems.filter((item) => item.sourceType !== 'symptom'),
   ];
 
   const markTaskDone = async () => {
