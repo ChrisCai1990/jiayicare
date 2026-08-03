@@ -9036,26 +9036,11 @@ export default function PatientDetailPage() {
               <div className="modal-body" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
                 {(() => {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
-                  // 按类型分区：检验数值（lab/data/未标）走表格；影像/检查描述（imaging）走文本卡片
+                  // 后端已经按报告页码和页内位置保存顺序；审核层只按该顺序展示，不再按类型重排。
                   const indexed = ocrEditItems.map((it, i) => ({ it, i }))
                   // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
                   const isImaging = (it) => it.itemType === 'imaging' || (it.value || '').length > 40
-                  // 身高/体重/BMI/脉搏/血压/腰围这几个基础生命体征，原始报告常常拆在不同页面/检查单里
-                  // （如血压来自血管硬度检测报告单、体重来自InBody体成分分析报告单），提取时按原文页码
-                  // 顺序排列会被拆得很散，审核时不容易一眼核对。这里只做展示层排序：把命中的项目挪到
-                  // 检验/数值表格最前面，其余项目保持原有相对顺序不变（sort是稳定排序），不改变实际存储数据。
-                  // 2026-07-03修复：改成精确匹配（不再用 startsWith 前缀匹配）——"体重控制""标准体重"是
-                  // InBody体成分分析给出的参考/目标值，不是实测读数，只有做过体成分分析的人才会有，之前
-                  // 用前缀匹配"体重"误把这两项也拽进了基础生命体征区，跟真实的身高/体重/BMI/脉搏/血压
-                  // 混在一起，反而增加了审核时的混淆，不是每个人都会做人体成分分析，不该混进核心生命体征组。
-                  const VITALS_PRIORITY = ['身高', '体重', 'BMI', '体重指数(BMI)', '脉搏', '血压', '腰围']
-                  const vitalsRank = (name) => {
-                    const n = String(name || '')
-                    const idx = VITALS_PRIORITY.indexOf(n)
-                    return idx === -1 ? Infinity : idx
-                  }
                   const labRows = indexed.filter(({ it }) => !isImaging(it))
-                    .sort((a, b) => vitalsRank(a.it.name) - vitalsRank(b.it.name))
                   const imgRows = indexed.filter(({ it }) => isImaging(it))
                   const abn = labRows.map(x => x.it).filter(it => it.status === 'abnormal' || it.status === 'attention')
                   const abnN = abn.filter(it => it.status === 'abnormal').length
@@ -9092,6 +9077,47 @@ export default function PatientDetailPage() {
                       )}
 
 
+                      {/* 严格按 reportItems 原序渲染，检验和检查不再拆区 */}
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>报告原序（{indexed.length} 项）</div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增检验项</button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
+                        {indexed.map(({ it, i }) => {
+                          const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
+                          return (
+                            <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isImaging(it) ? '#fafaf8' : '#fff' }}>
+                              <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
+                                第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.orderName ? ` · ${it.orderName}` : ''}
+                              </div>
+                              <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
+                                <input style={{ ...inp, fontWeight: 600, flex: 2 }} value={it.name || ''} placeholder="项目名称" onChange={e => updItem(i, { name: e.target.value })} />
+                                {isImaging(it) ? (
+                                  <input style={{ ...inp, width: 110 }} value={it.bodyPart || ''} placeholder="检查部位" onChange={e => updItem(i, { bodyPart: e.target.value })} />
+                                ) : <>
+                                  <input style={{ ...inp, flex: 1, color: sc }} value={it.value || ''} placeholder="数值" onChange={e => updItem(i, { value: e.target.value })} />
+                                  <input style={{ ...inp, width: 70 }} value={it.unit || ''} placeholder="单位" onChange={e => updItem(i, { unit: e.target.value })} />
+                                  <input style={{ ...inp, flex: 1 }} value={it.referenceRange || ''} placeholder="参考范围" onChange={e => updItem(i, { referenceRange: e.target.value })} />
+                                </>}
+                                <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>{STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}</select>
+                                <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
+                              </div>
+                              {isImaging(it) && <>
+                                <textarea style={{ ...inp, minHeight: 58, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.findings || ''} placeholder="检查所见（完整原文）" onChange={e => updItem(i, { findings: e.target.value })} />
+                                <textarea style={{ ...inp, minHeight: 42, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.diagnosis || ''} placeholder="诊断意见" onChange={e => updItem(i, { diagnosis: e.target.value })} />
+                                <input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD', marginBottom: 6 }} value={it.conclusion || ''} placeholder="主要结论" onChange={e => updItem(i, { conclusion: e.target.value })} />
+                              </>}
+                              {classifyCell(it, i)}
+                            </div>
+                          )
+                        })}
+                      </div>
+
+                      {/* 旧的类型分区保留代码但不再展示 */}
+                      <div style={{ display: 'none' }}>
                       {/* 区一：检验 / 数值指标 → 表格 */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '0 0 6px' }}>
                         <span style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>检验 / 数值指标（{labRows.length}）</span>
@@ -9184,6 +9210,7 @@ export default function PatientDetailPage() {
                           </div>
                         </>
                       )}
+                      </div>
                       <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
                         提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。已自动归类项提交后将写入专项筛查，其余体检指标保留在报告中供查阅。
                       </div>
