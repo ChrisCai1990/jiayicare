@@ -136,7 +136,7 @@ export default function DailyCheckinPage() {
                 </div>
 
                 {/* 已打卡 */}
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: r.missingItems.length ? 8 : 0 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                   {r.doneItems.filter(item => item.type !== 'symptom').map((item, idx) => (
                     <span key={`${item.type}-${item.recordedAt || idx}`} style={{
                       padding: '3px 10px', borderRadius: 20, fontSize: 12, fontWeight: 500,
@@ -150,21 +150,6 @@ export default function DailyCheckinPage() {
                     </span>
                   ))}
                 </div>
-
-                {/* 未打卡 */}
-                {r.missingItems.length > 0 && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                    <span style={{ fontSize: 11, color: '#aaa', flexShrink: 0 }}>未完成：</span>
-                    {r.missingItems.map(item => (
-                      <span key={item.type} style={{
-                        padding: '2px 8px', borderRadius: 20, fontSize: 11,
-                        background: '#f5f2ec', color: '#aaa', border: '1px solid #E0D9CE',
-                      }}>
-                        {item.label}
-                      </span>
-                    ))}
-                  </div>
-                )}
 
                 {/* 今日健康状态：客户自报或医护审核发现的问题，独立于普通打卡项展示 */}
                 <div style={{ marginTop: 12, paddingTop: 10, borderTop: '1px solid #F0EDE8' }}>

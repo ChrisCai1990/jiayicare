@@ -1554,7 +1554,8 @@ export default function PatientDetailPage() {
     try {
       const [sr, hr, scr, tree, summaries] = await Promise.allSettled([
         staffAPI.getPatientScreening(id),
-        staffAPI.getPatientHealthRecords(id, { limit: 30 }),
+        // 今日健康状态必须在会员档案长期可追溯，不能被最近30条普通打卡挤出列表。
+        staffAPI.getPatientHealthRecords(id, { type: 'symptom', limit: 100 }),
         staffAPI.getScreeningReports(id),
         staffAPI.getScreeningTree(),
         staffAPI.getScreeningYearSummaries(id),
@@ -5363,6 +5364,64 @@ export default function PatientDetailPage() {
                     })}
                   </div>
                 )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 客户打卡中的“今天有不适吗”必须直接进入健康档案，避免只在工作台待办里短暂出现。 */}
+        <div className="card" style={{ marginBottom: 16 }}>
+          <div className="card-header">
+            <div>
+              <div className="card-title">今日健康状态 / 不适主诉</div>
+              <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>来自客户每日打卡或医护人员补充记录</div>
+            </div>
+          </div>
+          <div style={{ padding: '12px 20px' }}>
+            {healthRecords.length === 0 ? (
+              <div style={{ color: '#8AA89C', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>暂无不适主诉记录</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {healthRecords.map(record => {
+                  const workflow = record.symptomWorkflow || {}
+                  const workflowLabel = {
+                    pending_doctor: '待家庭医生判断',
+                    manager_followup: '健管专员跟进',
+                    referred: '已转介',
+                    resolved: '已处理',
+                  }[workflow.status] || '待处理'
+                  const pending = workflow.status === 'pending_doctor'
+                  const source = record.recordedBy?.source === 'staff'
+                    ? (record.recordedBy.staffName || '医护人员录入')
+                    : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'
+                  return (
+                    <div key={record._id} style={{
+                      padding: '11px 13px', borderRadius: 10,
+                      background: pending ? '#FFF5F5' : '#F7FAF8',
+                      borderLeft: `4px solid ${pending ? '#DC3545' : '#1E6B50'}`,
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                        <div style={{ color: pending ? '#991B1B' : '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
+                          {record.value || record.note || '未填写具体内容'}
+                        </div>
+                        <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
+                          color: pending ? '#B42318' : '#1E6B50', background: pending ? '#FEE4E2' : '#E8F5EE' }}>
+                          {workflowLabel}
+                        </span>
+                      </div>
+                      {record.note && record.note !== record.value && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>{record.note}</div>}
+                      <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>
+                        {new Date(record.recordedAt).toLocaleString('zh-CN')} · {source}
+                        {workflow.decidedByName ? ` · 处理人：${workflow.decidedByName}` : ''}
+                      </div>
+                      {workflow.decisionNote && (
+                        <div style={{ marginTop: 7, paddingTop: 7, borderTop: '1px solid #E7ECE9', fontSize: 12, color: '#4A6558' }}>
+                          处理意见：{workflow.decisionNote}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             )}
           </div>

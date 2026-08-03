@@ -256,11 +256,6 @@ export default function HomePage() {
                     <span style={{ fontSize: 12, color: '#22A06B', background: '#22A06B18', padding: '2px 8px', borderRadius: 99 }}>
                       已打 {r.doneItems.length} 项
                     </span>
-                    {r.missingItems.length > 0 && (
-                      <span style={{ fontSize: 12, color: '#D97706', background: '#D9780618', padding: '2px 8px', borderRadius: 99 }}>
-                        未完成 {r.missingItems.length} 项
-                      </span>
-                    )}
                   </div>
                 </div>
               ))}
