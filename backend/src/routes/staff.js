@@ -7701,6 +7701,8 @@ async function syncBodyCompositionFromReport(report) {
     recordedAt: report.audited_at || new Date(),
     source: 'medical_report',
     sourceReportId: String(report._id),
+    institution: report.institution || report.hospital || '',
+    sourceTitle: report.title || report.reportName || '',
   };
   for (const def of aliases) {
     const item = report.reportItems.find(it => def.pattern.test(String(it.name || '')) && validBodyCompositionItem(it));

@@ -5,7 +5,6 @@ import {
   RefreshControl, ActivityIndicator, KeyboardAvoidingView, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Polyline, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { colors, spacing, radius } from '../../theme';
 import { userAPI, checkupAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -72,53 +71,6 @@ const LIFESTYLE_LABELS = {
   alcohol: '饮酒', smoking: '吸烟', bowel: '排便', mood: '情绪',
 };
 
-function BodyCompositionMetricChart({ history, current, metric }) {
-  const rows = [...(history || []), ...(Object.keys(current || {}).length ? [current] : [])]
-    .filter(r => r && r[metric.key] !== undefined && r[metric.key] !== '')
-    .slice(-8);
-  if (!rows.length) return null;
-  const values = rows.map(r => Number(String(r[metric.key]).match(/-?\d+(?:\.\d+)?/)?.[0])).filter(Number.isFinite);
-  if (!values.length) return null;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const range = Math.max(max - min, 1);
-  const width = 320; const height = 150; const pad = 24;
-  const point = (v, i) => {
-    const x = rows.length === 1 ? width / 2 : pad + i * ((width - pad * 2) / (rows.length - 1));
-    const y = height - pad - ((Number(v) - min) / range) * (height - pad * 2);
-    return { x, y };
-  };
-  const valid = rows.map((r, i) => ({ value: Number(String(r[metric.key]).match(/-?\d+(?:\.\d+)?/)?.[0]), i })).filter(p => Number.isFinite(p.value));
-  const points = valid.map(p => { const xy = point(p.value, p.i); return `${xy.x},${xy.y}`; }).join(' ');
-  const latest = rows[rows.length - 1];
-  const date = latest.measuredAt || (latest.recordedAt ? new Date(latest.recordedAt).toLocaleDateString('zh-CN') : '未标注');
-  return (
-    <View style={styles.metricChartCard}>
-      <View style={styles.metricHeader}>
-        <Text style={styles.metricTitle}>{metric.label}</Text>
-        <Text style={[styles.metricValue, { color: metric.color }]}>{latest[metric.key]}{metric.unit}</Text>
-      </View>
-      <Svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`}>
-        {[0, 1, 2].map(i => <Line key={i} x1={pad} y1={pad + i * 50} x2={width - pad} y2={pad + i * 50} stroke="#E8E5DF" strokeWidth="1" />)}
-        {valid.length > 1 && <Polyline points={points} fill="none" stroke={metric.color} strokeWidth="2.5" />}
-        {valid.map(p => { const xy = point(p.value, p.i); return <Circle key={p.i} cx={xy.x} cy={xy.y} r="3.5" fill={metric.color} />; })}
-        <SvgText x={pad} y={height - 4} fontSize="9" fill="#8AA89C">较早</SvgText>
-        <SvgText x={width - pad - 20} y={height - 4} fontSize="9" fill="#8AA89C">最近</SvgText>
-      </Svg>
-      <View style={styles.metricMeta}>
-        <Text style={styles.metricMetaText}>参考范围：{latest[metric.referenceKey] || '未录入'}</Text>
-        <Text style={styles.metricMetaText}>检测时间：{date}</Text>
-      </View>
-    </View>
-  );
-}
-
-const BODY_COMPOSITION_METRICS = [
-  { key: 'skelMuscle', referenceKey: 'skelMuscleReference', label: '骨骼肌', unit: ' kg', color: '#1E6B50' },
-  { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', label: '体脂率', unit: '%', color: '#D97706' },
-  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪', unit: '', color: '#7C3AED' },
-];
-
 export default function ProfileArchiveScreen({ navigation }) {
   const { user: authUser, isDemo } = useAuth();
   const [loading, setLoading] = useState(true);
@@ -133,8 +85,6 @@ export default function ProfileArchiveScreen({ navigation }) {
   const [editingLifestyle, setEditingLifestyle] = useState(false);
   const [lifestyleDraft, setLifestyleDraft] = useState({});
   const [lifestyleHistory, setLifestyleHistory] = useState([]);
-  const [bodyComposition, setBodyComposition] = useState({});
-  const [bodyCompHistory, setBodyCompHistory] = useState([]);
   const [expanded, setExpanded] = useState({
     basic: true, archive: true, insurance: true, lifestyle: true, body: true, checkup: true,
   });
@@ -158,8 +108,6 @@ export default function ProfileArchiveScreen({ navigation }) {
       if (data?.lifestyle) setLifestyle(data.lifestyle);
       if (data?.lifestyle_data) setLifestyleData(data.lifestyle_data);
       setLifestyleHistory(data?.lifestyleHistory || []);
-      setBodyComposition(data?.bodyComposition || {});
-      setBodyCompHistory(data?.bodyCompHistory || []);
       if (data?.healthProfile && Object.values(data.healthProfile).some(v => v)) {
         const local = loadProfileFromStorage();
         const fallback = isDemo ? DEFAULT_PROFILE : EMPTY_PROFILE;
@@ -424,25 +372,6 @@ export default function ProfileArchiveScreen({ navigation }) {
           )}</>}
         </View>
 
-        {/* ── 身体成分趋势 ─────────────────────────────────────── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <TouchableOpacity style={styles.sectionTitleRow} onPress={() => toggleSection('body')}>
-              <Ionicons name="analytics-outline" size={17} color="#7C3AED" />
-              <Text style={styles.sectionTitle}>身体成分</Text>
-              <Ionicons name={expanded.body ? 'chevron-up' : 'chevron-down'} size={15} color={colors.textMuted} />
-            </TouchableOpacity>
-          </View>
-          {expanded.body && (
-            <View style={styles.chartCard}>
-              {BODY_COMPOSITION_METRICS.map(metric => (
-                <BodyCompositionMetricChart key={metric.key} history={bodyCompHistory} current={bodyComposition} metric={metric} />
-              ))}
-              {!BODY_COMPOSITION_METRICS.some(metric => bodyCompHistory?.some(row => row?.[metric.key] !== undefined) || bodyComposition?.[metric.key] !== undefined) && <Text style={styles.emptyHint}>暂无身体成分数据</Text>}
-            </View>
-          )}
-        </View>
-
         {/* ── 年度复查计划 ─────────────────────────────────────── */}
         {checkupPlan && checkupPlan.items?.length > 0 && (
           <View style={styles.section}>
@@ -594,12 +523,6 @@ const styles = StyleSheet.create({
   historyMeta: { fontSize: 11, color: colors.textMuted, marginBottom: 4 },
   historyChange: { fontSize: 12, lineHeight: 19, color: colors.textSecondary },
   chartCard: { backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.sm },
-  metricChartCard: { padding: spacing.sm, borderRadius: radius.sm, backgroundColor: '#FAF9F6', marginBottom: spacing.sm },
-  metricHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: spacing.xs },
-  metricTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
-  metricValue: { fontSize: 17, fontWeight: '800' },
-  metricMeta: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 6, paddingHorizontal: spacing.xs },
-  metricMetaText: { fontSize: 11, color: colors.textSecondary },
   chartLegend: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 12, marginTop: 2 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   legendDot: { width: 8, height: 8, borderRadius: 4 },

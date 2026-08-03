@@ -10,6 +10,7 @@ import { colors, spacing, radius, shadow } from '../../theme';
 import { mockBloodPressureData, mockBloodSugarData } from '../../data/mockData';
 import { recordsAPI, userAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
+import BodyCompositionCharts from './BodyCompositionCharts';
 
 const { width: W } = Dimensions.get('window');
 const CHART_INNER_W = W - spacing.lg * 2 - spacing.md * 2;
@@ -76,6 +77,15 @@ const CHART_TYPES = [
     getDisplay: (r) => r.value != null ? `${r.value}` : '-',
     mockData: [],
   },
+];
+
+const DAILY_CHECKIN_TYPES = [
+  { key: 'diet', label: '饮食', icon: 'nutrition-outline', color: '#059669' },
+  { key: 'exercise', label: '运动', icon: 'fitness-outline', color: '#0369A1' },
+  { key: 'bowel', label: '排便', icon: 'leaf-outline', color: '#92400E' },
+  { key: 'smoking', label: '吸烟', icon: 'warning-outline', color: '#6B7280' },
+  { key: 'alcohol', label: '饮酒', icon: 'wine-outline', color: '#9D174D' },
+  { key: 'mood', label: '情绪', icon: 'happy-outline', color: '#7C3AED' },
 ];
 
 // 个人档案字段/生活方式/医疗保障/年度复查计划已抽离到 ProfileArchiveScreen.js（2026-07-18 健康档案页瘦身）
@@ -374,6 +384,10 @@ export default function RecordsScreen({ navigation }) {
   const [editValues, setEditValues] = useState({});
   const [editNote, setEditNote] = useState('');
   const [editSaving, setEditSaving] = useState(false);
+  const [bodyComposition, setBodyComposition] = useState({});
+  const [bodyCompHistory, setBodyCompHistory] = useState([]);
+  const [dailyCheckins, setDailyCheckins] = useState({});
+  const [symptomHistory, setSymptomHistory] = useState([]);
 
   // 个人档案/生活方式/医疗保障/年度复查计划已抽离到 ProfileArchiveScreen.js（2026-07-18 健康档案页瘦身）
 
@@ -385,6 +399,25 @@ export default function RecordsScreen({ navigation }) {
     const dashRes = await userAPI.getDashboard().catch(() => null);
     const vitals = dashRes?.data?.latestVitals || dashRes?.latestVitals;
     if (vitals) setLatestVitals(vitals);
+  }, []);
+
+  const loadArchiveData = useCallback(async () => {
+    const [meRes, ...recordResults] = await Promise.all([
+      userAPI.getMe().catch(() => null),
+      ...[...DAILY_CHECKIN_TYPES.map(item => item.key), 'symptom'].map(type => (
+        recordsAPI.list({ type, days: 30, limit: 30 }).catch(() => null)
+      )),
+    ]);
+    const me = meRes?.data || meRes;
+    setBodyComposition(me?.bodyComposition || {});
+    setBodyCompHistory(me?.bodyCompHistory || []);
+    const nextCheckins = {};
+    DAILY_CHECKIN_TYPES.forEach((item, index) => {
+      const result = recordResults[index];
+      nextCheckins[item.key] = result?.data || [];
+    });
+    setDailyCheckins(nextCheckins);
+    setSymptomHistory(recordResults[DAILY_CHECKIN_TYPES.length]?.data || []);
   }, []);
 
   // ── 加载趋势图数据 ────────────────────────────────────────────────
@@ -496,10 +529,11 @@ export default function RecordsScreen({ navigation }) {
       loadDashboard(),
       loadChart(chartType, chartPeriod),
       loadHistory(chartType),
+      loadArchiveData(),
     ]);
     setLoading(false);
     setRefreshing(false);
-  }, [loadDashboard, loadChart, loadHistory, chartType, chartPeriod]);
+  }, [loadDashboard, loadChart, loadHistory, loadArchiveData, chartType, chartPeriod]);
 
   useEffect(() => { loadAll(); }, []);
 
@@ -507,9 +541,10 @@ export default function RecordsScreen({ navigation }) {
   useEffect(() => {
     const unsub = navigation.addListener('focus', () => {
       loadDashboard();
+      loadArchiveData();
     });
     return unsub;
-  }, [navigation, loadDashboard]);
+  }, [navigation, loadDashboard, loadArchiveData]);
 
   // ── 切换图表类型 ──────────────────────────────────────────────────
   const switchChartType = (type) => {
@@ -915,6 +950,84 @@ export default function RecordsScreen({ navigation }) {
           </View>
         </View>
 
+        {/* ── 日常生活打卡：文字类数据按最近记录展示，不绘制无意义曲线 ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="calendar-outline" size={17} color={colors.primary} />
+              <Text style={styles.sectionTitle}>日常生活打卡</Text>
+            </View>
+            <Text style={styles.sectionHint}>近30天</Text>
+          </View>
+          <View style={styles.dailyGrid}>
+            {DAILY_CHECKIN_TYPES.map(item => {
+              const records = [...(dailyCheckins[item.key] || [])]
+                .sort((a, b) => String(b.recordedAt || '').localeCompare(String(a.recordedAt || '')));
+              const latest = records[0];
+              const latestDate = latest?.recordedAt ? String(latest.recordedAt).slice(0, 10) : '';
+              return (
+                <View key={item.key} style={styles.dailyCard}>
+                  <View style={[styles.dailyIcon, { backgroundColor: `${item.color}16` }]}>
+                    <Ionicons name={item.icon} size={17} color={item.color} />
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={styles.dailyTitleRow}>
+                      <Text style={styles.dailyTitle}>{item.label}</Text>
+                      {!!records.length && <Text style={styles.dailyCount}>{records.length}次</Text>}
+                    </View>
+                    <Text style={[styles.dailyValue, !latest && styles.dailyEmpty]} numberOfLines={2}>
+                      {latest?.value || latest?.note || '近30天暂无记录'}
+                    </Text>
+                    {!!latestDate && <Text style={styles.dailyDate}>最近：{latestDate}</Text>}
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        </View>
+
+        {/* ── 今日健康状态：来自“今天有不适吗” ────────────────── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="medkit-outline" size={17} color="#DC2626" />
+              <Text style={styles.sectionTitle}>今日健康状态</Text>
+            </View>
+          </View>
+          {(() => {
+            const symptoms = [...symptomHistory].sort((a, b) => String(b.recordedAt || '').localeCompare(String(a.recordedAt || '')));
+            const latest = symptoms[0];
+            const latestDate = latest?.recordedAt ? String(latest.recordedAt).slice(0, 10) : '';
+            const isToday = latestDate === today;
+            return (
+              <View style={[styles.healthStatusCard, isToday && styles.healthStatusAlert]}>
+                <View style={[styles.healthStatusIcon, { backgroundColor: isToday ? '#FDECEA' : '#E8F5EF' }]}>
+                  <Ionicons name={isToday ? 'alert-circle' : 'checkmark-circle'} size={22} color={isToday ? '#DC2626' : '#1E6B50'} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[styles.healthStatusTitle, isToday && { color: '#B91C1C' }]}>
+                    {isToday ? '今天已记录不适' : '今天暂未记录不适'}
+                  </Text>
+                  <Text style={styles.healthStatusText}>{isToday ? (latest.value || latest.note || '已提交不适情况') : '如有不适，请在今日健康打卡中及时记录。'}</Text>
+                  {isToday && <Text style={styles.healthStatusMeta}>提交时间：{String(latest.recordedAt).replace('T', ' ').slice(0, 16)} · 来源：客户打卡</Text>}
+                </View>
+              </View>
+            );
+          })()}
+        </View>
+
+        {/* ── 身体成分置于持续健康数据末尾，使用与医护端相同历史 ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="analytics-outline" size={17} color="#7C3AED" />
+              <Text style={styles.sectionTitle}>身体成分</Text>
+            </View>
+            <Text style={styles.sectionHint}>按检测日期</Text>
+          </View>
+          <BodyCompositionCharts history={bodyCompHistory} current={bodyComposition} />
+        </View>
+
         <View style={{ height: spacing.xl * 2 }} />
       </ScrollView>
 
@@ -1020,6 +1133,30 @@ const styles = StyleSheet.create({
   sectionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
   sectionTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   sectionTitle: { fontSize: 14, fontWeight: '700', color: colors.textPrimary },
+  sectionHint: { fontSize: 11, color: colors.textMuted },
+
+  dailyGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
+  dailyCard: {
+    width: '48%', minWidth: 150, flexGrow: 1, flexDirection: 'row', alignItems: 'flex-start', gap: 9,
+    backgroundColor: colors.white, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    padding: spacing.sm,
+  },
+  dailyIcon: { width: 34, height: 34, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  dailyTitleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 5 },
+  dailyTitle: { fontSize: 13, fontWeight: '700', color: colors.textPrimary },
+  dailyCount: { fontSize: 9, fontWeight: '700', color: colors.primary, backgroundColor: colors.primary10, paddingHorizontal: 5, paddingVertical: 1, borderRadius: radius.full },
+  dailyValue: { fontSize: 11, lineHeight: 16, color: colors.textSecondary, marginTop: 4 },
+  dailyEmpty: { color: colors.textMuted },
+  dailyDate: { fontSize: 9.5, color: colors.textMuted, marginTop: 4 },
+  healthStatusCard: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, padding: spacing.md,
+    borderRadius: radius.md, backgroundColor: '#F6FBF8', borderWidth: 1, borderColor: '#CDE8DA',
+  },
+  healthStatusAlert: { backgroundColor: '#FFF7F7', borderColor: '#F2C8C8' },
+  healthStatusIcon: { width: 40, height: 40, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  healthStatusTitle: { fontSize: 14, fontWeight: '800', color: colors.textPrimary },
+  healthStatusText: { fontSize: 12, lineHeight: 18, color: colors.textSecondary, marginTop: 3 },
+  healthStatusMeta: { fontSize: 10, color: colors.textMuted, marginTop: 6 },
 
   // AI健康分析入口卡片
   reportUploadEntry: {

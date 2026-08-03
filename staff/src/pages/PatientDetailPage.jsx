@@ -152,13 +152,13 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
         {highY != null && (
           <>
             <line x1={PAD} y1={highY} x2={W - PAD} y2={highY} stroke="#DC354550" strokeWidth="1.5" strokeDasharray="4,3" />
-            <text x={PAD + 2} y={Math.max(highY - 2, 10)} textAnchor="start" fontSize="8" fill="#DC3545AA">上限</text>
+            <text x={PAD + 2} y={Math.max(highY - 2, 10)} textAnchor="start" fontSize="8" fill="#DC3545AA">上限 {refHigh}</text>
           </>
         )}
         {lowY != null && (
           <>
             <line x1={PAD} y1={lowY} x2={W - PAD} y2={lowY} stroke="#0077B650" strokeWidth="1.5" strokeDasharray="4,3" />
-            <text x={PAD + 2} y={Math.min(lowY + 9, H - 2)} textAnchor="start" fontSize="8" fill="#0077B6AA">下限</text>
+            <text x={PAD + 2} y={Math.min(lowY + 9, H - 2)} textAnchor="start" fontSize="8" fill="#0077B6AA">下限 {refLow}</text>
           </>
         )}
         <polyline fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" points={pts} />
@@ -191,7 +191,8 @@ const BODY_COMP_METRICS = [
 
 function BodyCompositionTrendCharts({ history = [] }) {
   const parseRange = value => {
-    const nums = String(value || '').match(/-?\d+(?:\.\d+)?/g)?.map(Number) || []
+    // 参考范围常写成 [33.8-38.5]；这里的“-”是区间分隔符，不是第二个数的负号。
+    const nums = String(value || '').match(/\d+(?:\.\d+)?/g)?.map(Number) || []
     return nums.length >= 2 ? { low: nums[0], high: nums[1] } : {}
   }
   const rows = [...history].sort((a, b) => String(a?.measuredAt || a?.recordedAt || '').localeCompare(String(b?.measuredAt || b?.recordedAt || '')))
