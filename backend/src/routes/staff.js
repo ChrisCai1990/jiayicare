@@ -7416,7 +7416,14 @@ function cleanupUltrasoundOverlap(items) {
 // 后面一大堆清洗规则都要对这些字段调用 .trim()，统一用这个helper兜底转成字符串，避免 "xxx.trim is not a function" 崩溃
 const str = (v) => String(v == null ? '' : v).trim();
 
-const BODY_COMPOSITION_RETRY_PROMPT = REPORT_PARSE_PROMPT + `\n\n【人体成分专项复核】本页上一次发生了项目与数值/单位串行，或三项目标缺失。请重新查看原图，只输出报告中明确印刷的“骨骼肌”“体脂率”“内脏脂肪”三项。必须逐行以左侧项目名称为锚点，横向读取同一行的实测值、单位、参考范围；体重、BMI、体脂肪量、去脂体重、肌肉量等全部忽略。体脂率的单位只能是%或百分比，kg绝不属于体脂率；不得把体重替代成骨骼肌。看不清或原文不存在的项目直接省略，绝不猜测。`;
+const BODY_COMPOSITION_RETRY_PROMPT = REPORT_PARSE_PROMPT + `\n\n【人体成分专项复核（必须重新看原图，不得沿用上次答案）】
+本页只允许输出报告中明确印刷的以下三项：骨骼肌量/SMM、体脂率/PBF、内脏脂肪。每项必须先在原图中找到项目名称，再沿同一行读取实测值、单位和该行自己的参考范围。
+1. “体脂率/PBF/Body Fat Percentage（%）”与“体脂肪量/脂肪量/Body Fat Mass（kg）”是两个不同项目。严禁把脂肪量的数值或参考范围写成体脂率；即使数值看起来合理也不允许。
+2. “骨骼肌量/SMM/Skeletal Muscle Mass”与“肌肉量/去脂体重”是不同项目。严禁相互替代，也严禁借用相邻项目的参考范围。
+3. referenceRange 只有在原图对该项目明确印刷或明确连线标注时才填写；没有、看不清或无法确认归属时必须留空，禁止按常识、性别或相邻行推算。
+4. 每个 item 除原字段外必须增加 sourceRow，逐字抄写包含“原始项目名称 + 实测值 + 单位 + 参考范围”的整行原文；若原图中无法抄出能证明对应关系的整行，就不要输出该项目。
+5. name仍统一输出“骨骼肌”“体脂率”“内脏脂肪”；体脂率单位只能是%，骨骼肌单位只能是kg。体重、BMI、体脂肪量、脂肪量、去脂体重、肌肉量全部忽略。
+输出前逐项核对 sourceRow：其中必须真实出现该项目的原始名称和本次 value；referenceRange 非空时，其上下限也必须出现在 sourceRow 中。`;
 
 function bodyCompositionKind(name) {
   const n = str(name).replace(/\s+/g, '');
@@ -7442,6 +7449,32 @@ function validBodyCompositionItem(item) {
   return true;
 }
 
+function bodyCompositionEvidenceValid(item) {
+  if (!validBodyCompositionItem(item)) return false;
+  const kind = bodyCompositionKind(item.name);
+  const source = str(item.sourceRow || item.sourceEvidence || item.rawRow);
+  if (!source) return false;
+  const compact = source.replace(/[\s，,：:；;（）()\[\]【】]/g, '').replace(/％/g, '%').toLowerCase();
+  const labelOk = kind === 'skelMuscle'
+    ? /骨骼肌(?:量|质量)?|smm|skeletalmusclemass/i.test(compact)
+    : kind === 'bodyFatRate'
+      ? /体脂(?:肪)?率|百分比体脂|pbf|bodyfatpercentage/i.test(compact)
+      : /内脏脂肪(?:等级|指数|面积)?|vfa|visceralfat/i.test(compact);
+  if (!labelOk) return false;
+  // “体脂肪量/脂肪量”即使数值碰巧合理，也不能作为体脂率的证据。
+  if (kind === 'bodyFatRate' && /(?:体脂肪量|脂肪量|bodyfatmass)/i.test(compact)
+    && !/(?:体脂(?:肪)?率|百分比体脂|pbf|bodyfatpercentage)/i.test(compact)) return false;
+  const valueToken = str(item.value).replace(/\s+/g, '').replace(/％/g, '%').toLowerCase();
+  if (valueToken && !compact.includes(valueToken)) return false;
+  const rangeNumbers = str(item.referenceRange).match(/-?\d+(?:\.\d+)?/g) || [];
+  if (rangeNumbers.length && !rangeNumbers.every(n => compact.includes(n.toLowerCase()))) return false;
+  return true;
+}
+
+function bodyCompositionEvidenceQuality(items) {
+  return new Set((items || []).filter(bodyCompositionEvidenceValid).map(it => bodyCompositionKind(it.name))).size;
+}
+
 function bodyCompositionQuality(items) {
   const kinds = new Set((items || []).filter(validBodyCompositionItem).map(it => bodyCompositionKind(it.name)));
   return kinds.size;
@@ -7450,9 +7483,10 @@ function bodyCompositionQuality(items) {
 function needsBodyCompositionRetry(items) {
   if (!isBodyCompositionContext(items)) return false;
   const list = items || [];
-  const kinds = new Set(list.filter(validBodyCompositionItem).map(it => bodyCompositionKind(it.name)));
+  const kinds = new Set(list.filter(bodyCompositionEvidenceValid).map(it => bodyCompositionKind(it.name)));
   const hasInvalidTarget = list.some(it => bodyCompositionKind(it.name) && !validBodyCompositionItem(it));
   const hasForbiddenWeight = list.some(it => /^(体重|BMI|身体质量指数)$/i.test(str(it.name)));
+  // 常规首轮没有 sourceRow，人体成分页必须进入专项复核，避免仅凭模型改写后的名称/单位放行。
   return kinds.size < 3 || hasInvalidTarget || hasForbiddenWeight;
 }
 
@@ -7487,7 +7521,8 @@ function sanitizeBodyCompositionItems(items) {
 function mergeBodyCompositionRetry(originalItems, retryItems) {
   const ancillary = /^(体重|BMI|身体质量指数|体脂肪量|去脂体重|肌肉量)$/i;
   const retained = (originalItems || []).filter(it => !bodyCompositionKind(it.name) && !ancillary.test(str(it.name)));
-  return retained.concat(sanitizeBodyCompositionPage(retryItems || []));
+  // 专项复核只接纳能够由原始整行反证的项目。宁可缺项交人工补录，也不把邻行数据写入档案。
+  return retained.concat(sanitizeBodyCompositionPage((retryItems || []).filter(bodyCompositionEvidenceValid)));
 }
 
 // 清理AI提取时常见的两类"影子行"（2026-07-01金娟反馈：肿瘤六项男/血细胞分析/血脂七项 被当成具体项目名重复提取）：
@@ -8006,12 +8041,13 @@ async function runReportParse(reportId) {
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
           const oldQuality = bodyCompositionQuality(oldPageItems);
-          const newQuality = bodyCompositionQuality(retryItems);
-          if (newQuality > oldQuality || (newQuality === 3 && !needsBodyCompositionRetry(retryItems))) {
+          const newQuality = bodyCompositionEvidenceQuality(retryItems);
+          if (newQuality > 0) {
             allItems = allItems.filter(it => it._page !== pageNum).concat(mergeBodyCompositionRetry(oldPageItems, retryItems));
-            console.log(`[parse-ai] 页${pageNum}人体成分专项重试生效：有效指标 ${oldQuality}→${newQuality}`);
+            console.log(`[parse-ai] 页${pageNum}人体成分专项复核生效：原始行证据通过 ${newQuality} 项（原首轮有效 ${oldQuality} 项）`);
           } else {
-            console.log(`[parse-ai] 页${pageNum}人体成分专项重试未改善，进入程序过滤`);
+            allItems = allItems.filter(it => it._page !== pageNum).concat(mergeBodyCompositionRetry(oldPageItems, []));
+            console.log(`[parse-ai] 页${pageNum}人体成分专项复核无可信原始行，已移除不确定指标`);
           }
         } catch (e) {
           console.log(`[parse-ai] 页${pageNum}人体成分专项重试异常: ${e.message}`);
@@ -8080,10 +8116,13 @@ async function runReportParse(reportId) {
             if (retryPage && !shouldSkipParsedReportPage(retryPage) && Array.isArray(retryPage.items)) {
               const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
               const oldQuality = bodyCompositionQuality(pageItems);
-              const newQuality = bodyCompositionQuality(retryItems);
-              if (newQuality > oldQuality || (newQuality === 3 && !needsBodyCompositionRetry(retryItems))) {
+              const newQuality = bodyCompositionEvidenceQuality(retryItems);
+              if (newQuality > 0) {
                 pageItems = mergeBodyCompositionRetry(pageItems, retryItems);
-                console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项重试生效：有效指标 ${oldQuality}→${newQuality}`);
+                console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项复核生效：原始行证据通过 ${newQuality} 项（原首轮有效 ${oldQuality} 项）`);
+              } else {
+                pageItems = mergeBodyCompositionRetry(pageItems, []);
+                console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项复核无可信原始行，已移除不确定指标`);
               }
             }
           } catch (e) {
