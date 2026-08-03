@@ -20,6 +20,7 @@ const TYPE_CONFIG = {
   risk_review:        { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   bp_alert_review:    { icon: '🩸', label: '血压监测异常', color: '#DC3545', priority: 1 },
   symptom_review:     { icon: '🩺', label: '不适主诉待处理', color: '#DC3545', priority: 1 },
+  symptom_verify:     { icon: '☎️', label: '不适主诉待核实', color: '#D97706', priority: 1 },
   risk_alert:      { icon: '⚠️', label: '风险预警待处理', color: '#DC3545', priority: 1 },
   transfer_human:       { icon: '🔔', label: 'AI对话转人工', color: '#DC3545', priority: 1 },
   draft_review:         { icon: '✏️', label: 'AI文案待审核', color: '#4A6558', priority: 4 },
@@ -171,7 +172,10 @@ export default function AiTodosPanel() {
               {/* 时间 + 箭头 / 操作 */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
                 <span style={{ fontSize: 11, color: '#8AA89C' }}>{formatTime(todo.createdAt)}</span>
-                {todo.type === 'symptom_review' ? (
+                {todo.type === 'symptom_verify' ? (
+                  <button onClick={e => { e.stopPropagation(); nav(todo.link) }}
+                    style={{ fontSize: 11, color: '#D97706', background: 'none', border: '1px solid #D97706', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>待处理</button>
+                ) : todo.type === 'symptom_review' ? (
                   <div style={{ display: 'flex', gap: 4 }}>
                     <button onClick={e => resolveSymptom(e, todo, 'manager_followup')}
                       style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>健管跟进</button>

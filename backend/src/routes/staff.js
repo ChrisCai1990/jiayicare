@@ -1179,6 +1179,20 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
   }
   await followUp.save();
 
+  // 不适主诉也可能从“随访任务”入口完成；同步关闭审核，避免医生工作台残留同一待办。
+  if (followUp.sourceType === 'symptom' && followUp.sourceId && followUp.status === 'completed') {
+    await HealthRecord.updateOne(
+      { _id: followUp.sourceId, type: 'symptom', 'symptomWorkflow.status': 'pending_doctor' },
+      { $set: {
+        'symptomWorkflow.status': 'resolved',
+        'symptomWorkflow.decisionNote': followUp.executedContent || followUp.content || '',
+        'symptomWorkflow.decidedBy': req.staff._id,
+        'symptomWorkflow.decidedByName': req.staff.name || req.staff.username || '',
+        'symptomWorkflow.decidedAt': new Date(),
+      } },
+    );
+  }
+
   // 就医协助任务完成后，将实际执行结果写回会员的“服务记录－医院就医”。
   if (followUp.status === 'completed' && followUp.sourceHealthPlanId) {
     const sourcePlan = await HealthPlan.findOne({
@@ -4347,13 +4361,72 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
         staffName: req.staff.name || req.staff.username || '',
         staffRole: req.staff.role || '',
       },
-      symptomWorkflow: type === 'symptom' ? { status: 'pending_doctor' } : undefined,
+      symptomWorkflow: type === 'symptom' ? { status: 'pending_manager' } : undefined,
     };
     if (recordedAt) {
       const d = new Date(recordedAt);
       if (!isNaN(d.getTime())) recRecord.recordedAt = d;
     }
     const record = await HealthRecord.create(recRecord);
+    res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 健管专员核实客户自报不适：允许修正误录内容，再确认转家庭医生；误报可直接关闭。
+router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅健管专员可核实不适主诉' });
+    }
+    const action = req.body.action;
+    if (!['refer_doctor', 'dismiss'].includes(action)) {
+      return res.status(400).json({ success: false, message: '请选择转家庭医生或确认为误录' });
+    }
+    const record = await HealthRecord.findOne({
+      _id: req.params.id,
+      type: 'symptom',
+      'symptomWorkflow.status': { $in: ['pending_manager', 'pending_doctor'] },
+      'symptomWorkflow.verifiedAt': null,
+    });
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在或已核实' });
+
+    const nextValue = String(req.body.value ?? record.value).trim();
+    if (!nextValue) return res.status(400).json({ success: false, message: '不适内容不能为空' });
+    record.value = nextValue;
+    if (req.body.note !== undefined) record.note = String(req.body.note || '').trim();
+    record.symptomWorkflow.status = action === 'refer_doctor' ? 'pending_doctor' : 'dismissed';
+    record.symptomWorkflow.decisionNote = String(req.body.decisionNote || '').trim();
+    record.symptomWorkflow.verifiedBy = req.staff._id;
+    record.symptomWorkflow.verifiedByName = req.staff.name || req.staff.username || '';
+    record.symptomWorkflow.verifiedAt = new Date();
+    await record.save();
+
+    if (action === 'refer_doctor') {
+      const patient = await User.findById(record.user).select('assignedFamilyDoctor').lean();
+      if (!patient?.assignedFamilyDoctor) {
+        record.symptomWorkflow.status = 'pending_manager';
+        record.symptomWorkflow.verifiedBy = null;
+        record.symptomWorkflow.verifiedByName = '';
+        record.symptomWorkflow.verifiedAt = null;
+        await record.save();
+        return res.status(400).json({ success: false, message: '该客户尚未分配家庭医生，请先完成分配' });
+      }
+      const exists = await FollowUp.exists({ sourceType: 'symptom', sourceId: record._id, status: { $in: ['planned', 'in_progress'] } });
+      if (!exists) {
+        await FollowUp.create({
+          patientId: record.user,
+          staffId: req.staff._id,
+          assignedTo: patient.assignedFamilyDoctor,
+          date: new Date(),
+          type: 'other',
+          status: 'planned',
+          theme: `家庭医生处理不适主诉：${record.value}`,
+          plannedContent: [record.value, record.note].filter(Boolean).join('；'),
+          sourceType: 'symptom',
+          sourceId: record._id,
+        });
+      }
+    }
     res.json({ success: true, data: record });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -4380,6 +4453,11 @@ router.patch('/health-records/:id/resolve-symptom', staffAuth, async (req, res) 
       { new: true },
     );
     if (!record) return res.status(404).json({ success: false, message: '记录不存在或已处理' });
+    // 家庭医生完成判断后，关闭此前同时展示在医生工作台和用户端的同源待办。
+    await FollowUp.updateMany(
+      { sourceType: 'symptom', sourceId: record._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
+      { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', executedContent: String(req.body.decisionNote || '').trim() } },
+    );
     if (status === 'manager_followup') {
       const patient = await User.findById(record.user).select('assignedHealthManager').lean();
       if (patient?.assignedHealthManager) {
@@ -4563,7 +4641,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
           patientPhone: patient.phone || '-',
           latestRecordAt: data.latestAt,
           doneItems: doneTypes.flatMap(t => data.types[t].map(r => ({
-            type: t, label: TYPE_LABEL[t] || t,
+            _id: String(r._id), type: t, label: TYPE_LABEL[t] || t,
             value: r.value, unit: r.unit || '', recordedAt: r.recordedAt,
             extra: r.extra || null, note: r.note || '', status: r.status,
             recordedBy: r.recordedBy || { source: 'customer' },
@@ -6370,6 +6448,7 @@ const TODO_REVIEW_ROLE = {
   followup_review:      'familyDoctor',
   bp_alert_review:      'familyDoctor',
   symptom_review:       'familyDoctor',
+  symptom_verify:       'healthManager',
   transfer_human:       'healthManager',
   supply_plan_review:   'healthManager', // 定期配药/配营养素计划到期，健管专员确认安排
 };
@@ -6504,11 +6583,34 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       }
     }
 
+    // ── 健管专员：客户不适主诉待核实（可编辑后转家庭医生）──
+    if (can('symptom_verify')) {
+      const records = await HealthRecord.find({
+        type: 'symptom',
+        'symptomWorkflow.status': { $in: ['pending_manager', 'pending_doctor'] },
+        'symptomWorkflow.verifiedAt': null,
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      }).populate('user', 'name phone').sort({ recordedAt: -1 }).limit(50).lean();
+      records.forEach(r => todos.push({
+        id: 'symptom_verify_' + r._id,
+        type: 'symptom_verify',
+        label: '不适主诉待核实',
+        priority: 1,
+        patientName: r.user?.name || '未知',
+        patientId: String(r.user?._id || ''),
+        summary: [r.value, r.note].filter(Boolean).join(' · ').slice(0, 100),
+        createdAt: r.recordedAt || r.createdAt,
+        overdue: (now - new Date(r.recordedAt || r.createdAt)) > DAY,
+        link: `/daily-checkin?healthRecordId=${r._id}`,
+      }));
+    }
+
     // ── 家庭医生：客户不适主诉待判断（转介 / 健管跟进 / 已处理）──
     if (can('symptom_review')) {
       const symptomFilter = {
         type: 'symptom',
         'symptomWorkflow.status': 'pending_doctor',
+        'symptomWorkflow.verifiedAt': { $ne: null },
         ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
       };
       const symptomRecords = await HealthRecord.find(symptomFilter)

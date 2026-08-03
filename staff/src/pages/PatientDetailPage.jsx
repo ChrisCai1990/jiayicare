@@ -5385,12 +5385,13 @@ export default function PatientDetailPage() {
                 {healthRecords.map(record => {
                   const workflow = record.symptomWorkflow || {}
                   const workflowLabel = {
+                    pending_manager: '待健管专员核实',
                     pending_doctor: '待家庭医生判断',
                     manager_followup: '健管专员跟进',
                     referred: '已转介',
                     resolved: '已处理',
                   }[workflow.status] || '待处理'
-                  const pending = workflow.status === 'pending_doctor'
+                  const pending = ['pending_manager', 'pending_doctor'].includes(workflow.status)
                   const source = record.recordedBy?.source === 'staff'
                     ? (record.recordedBy.staffName || '医护人员录入')
                     : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'

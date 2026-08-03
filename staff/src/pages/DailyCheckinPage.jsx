@@ -20,6 +20,11 @@ export default function DailyCheckinPage() {
   const [statusModal, setStatusModal] = useState(null)
   const [statusText, setStatusText] = useState('')
   const [statusSaving, setStatusSaving] = useState(false)
+  const [symptomReview, setSymptomReview] = useState(null)
+  const [symptomValue, setSymptomValue] = useState('')
+  const [symptomNote, setSymptomNote] = useState('')
+  const [symptomDecision, setSymptomDecision] = useState('')
+  const [symptomSaving, setSymptomSaving] = useState(false)
 
   const todayStr = new Date().toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 
@@ -61,6 +66,32 @@ export default function DailyCheckinPage() {
       await load()
     } finally {
       setStatusSaving(false)
+    }
+  }
+
+  const openSymptomReview = (record, patient) => {
+    setSymptomReview({ ...record, patientName: patient.patientName })
+    setSymptomValue(record.value || '')
+    setSymptomNote(record.note || '')
+    setSymptomDecision('')
+  }
+
+  const verifySymptom = async action => {
+    if (!symptomReview || !symptomValue.trim()) return
+    setSymptomSaving(true)
+    try {
+      await staffAPI.verifySymptom(symptomReview._id, {
+        action,
+        value: symptomValue.trim(),
+        note: symptomNote.trim(),
+        decisionNote: symptomDecision.trim(),
+      })
+      setSymptomReview(null)
+      await load()
+    } catch (err) {
+      window.alert(err.message || '处理失败，请稍后重试')
+    } finally {
+      setSymptomSaving(false)
     }
   }
 
@@ -164,6 +195,12 @@ export default function DailyCheckinPage() {
                         {' · '}{new Date(item.recordedAt).toLocaleString('zh-CN')}
                         {' · '}{item.symptomWorkflow?.status === 'pending_doctor' ? '待家庭医生处理' : '已处理'}
                       </div>
+                      {(['pending_manager', 'pending_doctor'].includes(item.symptomWorkflow?.status)) && !item.symptomWorkflow?.verifiedAt && (
+                        <button className="btn btn-primary btn-sm" style={{ marginTop: 7 }}
+                          onClick={e => { e.stopPropagation(); openSymptomReview(item, r) }}>
+                          待处理：核实并编辑
+                        </button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -193,6 +230,39 @@ export default function DailyCheckinPage() {
               <button className="btn btn-secondary" onClick={() => setStatusModal(null)}>取消</button>
               <button className="btn btn-primary" disabled={statusSaving || !statusText.trim()} onClick={saveHealthStatus}>
                 {statusSaving ? '保存中...' : '保存并提交家庭医生'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {symptomReview && (
+        <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setSymptomReview(null)}>
+          <div className="modal" style={{ maxWidth: 520 }}>
+            <div className="modal-header">
+              <h3 className="modal-title">核实今日不适 · {symptomReview.patientName}</h3>
+              <button className="modal-close" onClick={() => setSymptomReview(null)}>×</button>
+            </div>
+            <div className="modal-body">
+              <label className="form-label">核实后的不适内容 *</label>
+              <textarea className="form-input" rows={3} value={symptomValue}
+                onChange={e => setSymptomValue(e.target.value)} />
+              <label className="form-label" style={{ marginTop: 12 }}>补充说明</label>
+              <textarea className="form-input" rows={2} value={symptomNote}
+                onChange={e => setSymptomNote(e.target.value)} placeholder="部位、持续时间、程度等" />
+              <label className="form-label" style={{ marginTop: 12 }}>核实意见</label>
+              <textarea className="form-input" rows={2} value={symptomDecision}
+                onChange={e => setSymptomDecision(e.target.value)} placeholder="记录与客户核实的结果" />
+              <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>
+                确认转交后，将同时出现在家庭医生工作台和用户端待办；家庭医生处理完成后，用户端待办自动结束。
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" disabled={symptomSaving}
+                onClick={() => verifySymptom('dismiss')}>确认为误录</button>
+              <button className="btn btn-primary" disabled={symptomSaving || !symptomValue.trim()}
+                onClick={() => verifySymptom('refer_doctor')}>
+                {symptomSaving ? '提交中...' : '确认并转家庭医生'}
               </button>
             </div>
           </div>

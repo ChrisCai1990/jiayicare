@@ -24,13 +24,16 @@ const healthRecordSchema = new mongoose.Schema({
   symptomWorkflow: {
     status: {
       type: String,
-      enum: ['pending_doctor', 'manager_followup', 'referred', 'resolved', null],
+      enum: ['pending_manager', 'pending_doctor', 'manager_followup', 'referred', 'resolved', 'dismissed', null],
       default: null,
     },
     decisionNote: { type: String, default: '' },
     decidedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
     decidedByName: { type: String, default: '' },
     decidedAt: { type: Date, default: null },
+    verifiedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    verifiedByName: { type: String, default: '' },
+    verifiedAt: { type: Date, default: null },
   },
   // 关联报告（如从报告中提取的指标数据，删除报告时级联删除）
   reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },

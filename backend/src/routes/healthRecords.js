@@ -218,7 +218,8 @@ router.post('/', auth, async (req, res) => {
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
       aiAlertStatus,
       recordedBy: { source: 'customer' },
-      symptomWorkflow: type === 'symptom' ? { status: 'pending_doctor' } : undefined,
+      // 客户自报不适先进入健管专员核实队列，不能未经确认直接交给家庭医生。
+      symptomWorkflow: type === 'symptom' ? { status: 'pending_manager' } : undefined,
     });
 
     // 打卡后自动同步随访计划状态：找今日（CST UTC+8）含该 checkIn 类型的随访，更新为 completed
