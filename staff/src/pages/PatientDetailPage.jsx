@@ -9103,6 +9103,18 @@ export default function PatientDetailPage() {
                                   <input style={{ ...inp, flex: 1 }} value={it.referenceRange || ''} placeholder="参考范围" onChange={e => updItem(i, { referenceRange: e.target.value })} />
                                 </>}
                                 <select style={{ ...inp, width: 80, color: sc, fontWeight: 600 }} value={it.status || 'unknown'} onChange={e => updItem(i, { status: e.target.value })}>{STATUS_OPTS.map(s => <option key={s.v} value={s.v}>{s.label}</option>)}</select>
+                                {!isImaging(it) && (
+                                  <button
+                                    title={`在“${it.name || '当前检验项目'}”下方新增一项`}
+                                    onClick={() => setOcrEditItems(arr => [
+                                      ...arr.slice(0, i + 1),
+                                      { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: it.itemType === 'data' ? 'data' : 'lab', orderName: it.orderName || '' },
+                                      ...arr.slice(i + 1),
+                                    ])}
+                                    style={{ whiteSpace: 'nowrap', padding: '4px 7px', border: '1px solid #C4B5FD', borderRadius: 4, background: '#F3EFFB', color: '#7C3AED', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
+                                    下方新增
+                                  </button>
+                                )}
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>
                               {isImaging(it) && <>
