@@ -1266,6 +1266,9 @@ export default function PatientDetailPage() {
   const [editRecordSaving, setEditRecordSaving] = useState(false)
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
+  const [editingSymptom, setEditingSymptom] = useState(null)
+  const [symptomForm, setSymptomForm] = useState({ value: '', note: '', decisionNote: '' })
+  const [symptomActionSaving, setSymptomActionSaving] = useState(false)
   // 管理信息下拉选项：服务包(admin商城服务) + 会员来源(admin配置)，替代手工录入（2026-07-10 金娟）
   const [serviceOptions, setServiceOptions] = useState([])
   const [memberTypeOptions, setMemberTypeOptions] = useState([])
@@ -1605,6 +1608,62 @@ export default function PatientDetailPage() {
         setReportScreeningData(matched)
       })
       .catch(() => {})
+  }
+
+  const openSymptomEditor = record => {
+    setEditingSymptom(record)
+    setSymptomForm({
+      value: record.value || '',
+      note: record.note || '',
+      decisionNote: record.symptomWorkflow?.decisionNote || '',
+    })
+  }
+
+  const submitSymptomVerification = async action => {
+    if (!editingSymptom || !symptomForm.value.trim() || symptomActionSaving) return
+    setSymptomActionSaving(true)
+    try {
+      await staffAPI.verifySymptom(editingSymptom._id, { action, ...symptomForm })
+      toast(action === 'save' ? '审核修改已保存' : action === 'dismiss' ? '已确认为误录' : '已转交家庭医生')
+      setEditingSymptom(null)
+      await loadScreening()
+    } catch (err) {
+      toast(err.message || '操作失败')
+    } finally {
+      setSymptomActionSaving(false)
+    }
+  }
+
+  const referSymptomToDoctor = record => {
+    openSymptomEditor(record)
+  }
+
+  const handleDoctorSymptom = async record => {
+    const decisionNote = window.prompt('请填写家庭医生处理意见：', record.symptomWorkflow?.decisionNote || '')
+    if (decisionNote === null) return
+    try {
+      await staffAPI.resolveSymptom(record._id, { status: 'resolved', decisionNote })
+      toast('已完成处理，用户端待办已同步结束')
+      await loadScreening()
+      loadFollowUps()
+    } catch (err) {
+      toast(err.message || '处理失败')
+    }
+  }
+
+  const deleteSymptomRecord = async record => {
+    const reason = window.prompt('请输入删除原因（例如：测试记录、客户误点）：', '')
+    if (reason === null) return
+    if (!reason.trim()) { toast('删除原因不能为空'); return }
+    if (!window.confirm(`确认删除这条不适记录？\n\n${record.value || ''}\n\n删除后将从用户端、医护端及待办中移除。`)) return
+    try {
+      await staffAPI.deleteSymptom(record._id, reason.trim())
+      toast('记录已删除，同源待办已取消')
+      await loadScreening()
+      loadFollowUps()
+    } catch (err) {
+      toast(err.message || '删除失败')
+    }
   }
 
   const openAIAnalysisSource = (sourceReportId) => {
@@ -5390,6 +5449,7 @@ export default function PatientDetailPage() {
                     manager_followup: '健管专员跟进',
                     referred: '已转介',
                     resolved: '已处理',
+                    dismissed: '已确认为误录',
                   }[workflow.status] || '待处理'
                   const pending = ['pending_manager', 'pending_doctor'].includes(workflow.status)
                   const source = record.recordedBy?.source === 'staff'
@@ -5405,10 +5465,28 @@ export default function PatientDetailPage() {
                         <div style={{ color: pending ? '#991B1B' : '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 600 }}>
                           {record.value || record.note || '未填写具体内容'}
                         </div>
-                        <span style={{ flexShrink: 0, fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
-                          color: pending ? '#B42318' : '#1E6B50', background: pending ? '#FEE4E2' : '#E8F5EE' }}>
-                          {workflowLabel}
-                        </span>
+                        <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                          <span style={{ fontSize: 11, fontWeight: 600, padding: '3px 9px', borderRadius: 20,
+                            color: pending ? '#B42318' : '#1E6B50', background: pending ? '#FEE4E2' : '#E8F5EE' }}>
+                            {workflowLabel}
+                          </span>
+                          {['healthManager', 'superadmin'].includes(staff?.role)
+                            && ['pending_manager', 'pending_doctor'].includes(workflow.status)
+                            && !workflow.verifiedAt && (
+                            <>
+                              <button className="btn btn-secondary btn-sm" onClick={() => openSymptomEditor(record)}>编辑审核</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => referSymptomToDoctor(record)}>待处理：转家庭医生</button>
+                            </>
+                          )}
+                          {['familyDoctor', 'superadmin'].includes(staff?.role)
+                            && workflow.status === 'pending_doctor' && !!workflow.verifiedAt && (
+                            <button className="btn btn-primary btn-sm" onClick={() => handleDoctorSymptom(record)}>处理</button>
+                          )}
+                          {['healthManager', 'superadmin'].includes(staff?.role) && (
+                            <button className="btn btn-sm" style={{ color: '#B42318', background: '#FFF', border: '1px solid #FDA29B' }}
+                              onClick={() => deleteSymptomRecord(record)}>删除</button>
+                          )}
+                        </div>
                       </div>
                       {record.note && record.note !== record.value && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>{record.note}</div>}
                       <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>
@@ -5427,6 +5505,40 @@ export default function PatientDetailPage() {
             )}
           </div>
         </div>
+
+        {editingSymptom && (
+          <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setEditingSymptom(null)}>
+            <div className="modal" style={{ maxWidth: 520 }}>
+              <div className="modal-header">
+                <h3 className="modal-title">编辑并审核不适主诉</h3>
+                <button className="modal-close" onClick={() => setEditingSymptom(null)}>×</button>
+              </div>
+              <div className="modal-body">
+                <label className="form-label">核实后的不适内容 *</label>
+                <textarea className="form-input" rows={3} value={symptomForm.value}
+                  onChange={e => setSymptomForm(f => ({ ...f, value: e.target.value }))} />
+                <label className="form-label" style={{ marginTop: 12 }}>补充说明</label>
+                <textarea className="form-input" rows={2} value={symptomForm.note}
+                  onChange={e => setSymptomForm(f => ({ ...f, note: e.target.value }))}
+                  placeholder="部位、持续时间、严重程度等" />
+                <label className="form-label" style={{ marginTop: 12 }}>审核意见</label>
+                <textarea className="form-input" rows={2} value={symptomForm.decisionNote}
+                  onChange={e => setSymptomForm(f => ({ ...f, decisionNote: e.target.value }))}
+                  placeholder="填写与客户核实后的结果" />
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" disabled={symptomActionSaving}
+                  onClick={() => submitSymptomVerification('dismiss')}>确认为误录</button>
+                <button className="btn btn-secondary" disabled={symptomActionSaving || !symptomForm.value.trim()}
+                  onClick={() => submitSymptomVerification('save')}>保存审核修改</button>
+                <button className="btn btn-primary" disabled={symptomActionSaving || !symptomForm.value.trim()}
+                  onClick={() => submitSymptomVerification('refer_doctor')}>
+                  {symptomActionSaving ? '提交中...' : '确认并转家庭医生'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── 慢病分级 ── */}
         {user.chronicDiseases?.length > 0 && (

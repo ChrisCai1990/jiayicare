@@ -4379,8 +4379,8 @@ router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) =
       return res.status(403).json({ success: false, message: '仅健管专员可核实不适主诉' });
     }
     const action = req.body.action;
-    if (!['refer_doctor', 'dismiss'].includes(action)) {
-      return res.status(400).json({ success: false, message: '请选择转家庭医生或确认为误录' });
+    if (!['save', 'refer_doctor', 'dismiss'].includes(action)) {
+      return res.status(400).json({ success: false, message: '请选择保存审核、转家庭医生或确认为误录' });
     }
     const record = await HealthRecord.findOne({
       _id: req.params.id,
@@ -4390,10 +4390,24 @@ router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) =
     });
     if (!record) return res.status(404).json({ success: false, message: '记录不存在或已核实' });
 
+    const previousValue = record.value;
     const nextValue = String(req.body.value ?? record.value).trim();
     if (!nextValue) return res.status(400).json({ success: false, message: '不适内容不能为空' });
     record.value = nextValue;
     if (req.body.note !== undefined) record.note = String(req.body.note || '').trim();
+    if (action === 'save') {
+      // 保存本次核实修改但暂不流转，仍留在健管专员待办中，之后再决定是否转家庭医生。
+      record.symptomWorkflow.status = 'pending_manager';
+      record.symptomWorkflow.decisionNote = String(req.body.decisionNote || '').trim();
+      record.editedBy = {
+        staffId: req.staff._id,
+        staffName: req.staff.name || req.staff.username || '',
+        editedAt: new Date(),
+        prevValue: previousValue,
+      };
+      await record.save();
+      return res.json({ success: true, data: record, message: '审核修改已保存' });
+    }
     record.symptomWorkflow.status = action === 'refer_doctor' ? 'pending_doctor' : 'dismissed';
     record.symptomWorkflow.decisionNote = String(req.body.decisionNote || '').trim();
     record.symptomWorkflow.verifiedBy = req.staff._id;
@@ -4428,6 +4442,29 @@ router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) =
       }
     }
     res.json({ success: true, data: record });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 健管专员作废误点/测试不适记录。软删除并关闭同源待办，保留完整审计信息。
+router.delete('/health-records/:id/symptom', staffAuth, async (req, res) => {
+  try {
+    if (!['healthManager', 'superadmin'].includes(req.staff.role)) {
+      return res.status(403).json({ success: false, message: '仅健管专员可删除不适记录' });
+    }
+    const reason = String(req.body.reason || '').trim();
+    if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
+    const record = await HealthRecord.findOne({ _id: req.params.id, type: 'symptom' });
+    if (!record) return res.status(404).json({ success: false, message: '记录不存在或已删除' });
+    record.deletedAt = new Date();
+    record.deletedBy = req.staff._id;
+    record.deletedByName = req.staff.name || req.staff.username || '';
+    record.deleteReason = reason;
+    await record.save();
+    await FollowUp.updateMany(
+      { sourceType: 'symptom', sourceId: record._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
+      { $set: { status: 'cancelled', cancelReason: `不适记录已删除：${reason}` } },
+    );
+    res.json({ success: true, message: '记录已删除' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

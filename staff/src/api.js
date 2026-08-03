@@ -295,6 +295,7 @@ export const staffAPI = {
   resolveHealthRecordAlert: (id) => req(`/staff/health-records/${id}/resolve-alert`, { method: 'PATCH' }),
   resolveSymptom: (id, data) => req(`/staff/health-records/${id}/resolve-symptom`, { method: 'PATCH', body: JSON.stringify(data) }),
   verifySymptom: (id, data) => req(`/staff/health-records/${id}/verify-symptom`, { method: 'PATCH', body: JSON.stringify(data) }),
+  deleteSymptom: (id, reason) => req(`/staff/health-records/${id}/symptom`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   resolveChatTransfer: (id) => req(`/staff/chat-transfers/${id}/resolve`, { method: 'PATCH' }),
 
   // 家庭成员关联（需求18）

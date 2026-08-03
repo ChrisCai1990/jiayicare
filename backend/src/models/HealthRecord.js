@@ -13,6 +13,11 @@ const healthRecordSchema = new mongoose.Schema({
   status:   { type: String, enum: ['normal', 'warning', 'danger'], default: 'normal' },
   note:     { type: String, default: '' },
   recordedAt: { type: Date, default: Date.now },
+  // 医疗数据采用可追溯软删除：正常查询自动排除，保留删除人、时间和原因供审计。
+  deletedAt: { type: Date, default: null },
+  deletedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  deletedByName: { type: String, default: '' },
+  deleteReason: { type: String, default: '' },
   // 录入来源留痕。用户打卡为 customer；医护发现并代录为 staff。
   recordedBy: {
     source:    { type: String, enum: ['customer', 'staff', 'system'], default: 'customer' },
@@ -51,6 +56,19 @@ const healthRecordSchema = new mongoose.Schema({
 // 索引：按用户+时间查询
 healthRecordSchema.index({ user: 1, recordedAt: -1 });
 healthRecordSchema.index({ user: 1, type: 1, recordedAt: -1 });
+
+healthRecordSchema.pre(/^find/, function excludeSoftDeleted(next) {
+  if (!Object.prototype.hasOwnProperty.call(this.getQuery(), 'deletedAt')) this.where({ deletedAt: null });
+  next();
+});
+healthRecordSchema.pre('countDocuments', function excludeSoftDeletedFromCount(next) {
+  if (!Object.prototype.hasOwnProperty.call(this.getQuery(), 'deletedAt')) this.where({ deletedAt: null });
+  next();
+});
+healthRecordSchema.pre('aggregate', function excludeSoftDeletedFromAggregate(next) {
+  this.pipeline().unshift({ $match: { deletedAt: null } });
+  next();
+});
 
 healthRecordSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
 
