@@ -7,6 +7,59 @@ import AiRuleHint from '../components/AiRuleHint'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
+function HealthPortraitOverview({ user }) {
+  const profile = user.healthProfile || {}
+  const groups = [
+    { label: '慢病与重点问题', color: '#DC3545', items: user.chronicDiseases || [] },
+    { label: '近期症状', color: '#D97706', items: profile.recentSymptoms || [] },
+    { label: '过敏风险', color: '#7C3AED', items: [profile.drugAllergy, profile.foodAllergy].filter(Boolean) },
+    { label: '既往及手术史', color: '#0369A1', items: [profile.pastHistory, profile.surgeryHistory].filter(Boolean) },
+  ].map(group => ({ ...group, items: group.items.filter(item => item && item !== '无') }))
+  const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
+
+  return (
+    <div className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
+      <div className="card-header">
+        <div>
+          <div className="card-title">人物健康画像</div>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>把客户已有健康问题集中标注，便于医护团队快速了解重点</div>
+        </div>
+        <span style={{ padding: '5px 11px', borderRadius: 99, background: issueCount ? '#FFF1F0' : '#E8F5EE', color: issueCount ? '#B42318' : '#1E6B50', fontSize: 12, fontWeight: 700 }}>
+          {issueCount ? `${issueCount} 项需关注` : '暂未记录健康问题'}
+        </span>
+      </div>
+      <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'minmax(210px, .7fr) minmax(320px, 1.3fr)', gap: 28, alignItems: 'center' }}>
+        <div style={{ minHeight: 360, borderRadius: 18, background: 'linear-gradient(180deg,#F1F8F4 0%,#FBFDFC 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+          <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 150, height: 310 }}>
+            <div style={{ position: 'absolute', top: 0, left: 48, width: 54, height: 54, borderRadius: '50%', background: '#B8D8C9' }} />
+            <div style={{ position: 'absolute', top: 61, left: 34, width: 82, height: 132, borderRadius: '38px 38px 24px 24px', background: '#8FC2AA' }} />
+            <div style={{ position: 'absolute', top: 72, left: 9, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(8deg)', transformOrigin: 'top' }} />
+            <div style={{ position: 'absolute', top: 72, right: 9, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-8deg)', transformOrigin: 'top' }} />
+            <div style={{ position: 'absolute', top: 183, left: 40, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(2deg)', transformOrigin: 'top' }} />
+            <div style={{ position: 'absolute', top: 183, right: 40, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-2deg)', transformOrigin: 'top' }} />
+            {issueCount > 0 && <>
+              <span style={{ position: 'absolute', top: 76, left: 61, width: 28, height: 28, borderRadius: '50%', background: '#DC3545', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 800, boxShadow: '0 3px 10px #DC354566' }}>!</span>
+              <span style={{ position: 'absolute', top: 138, left: 61, width: 28, height: 28, borderRadius: '50%', background: '#D97706', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 800, boxShadow: '0 3px 10px #D9770666' }}>!</span>
+            </>}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gap: 12 }}>
+          {groups.map(group => (
+            <div key={group.label} style={{ padding: '13px 15px', border: '1px solid #E5ECE8', borderLeft: `4px solid ${group.color}`, borderRadius: 10, background: '#fff' }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>{group.label}</div>
+              <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                {group.items.length ? group.items.map((item, index) => (
+                  <span key={`${item}-${index}`} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600 }}>{item}</span>
+                )) : <span style={{ color: '#A0AEA7', fontSize: 12 }}>暂无记录</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── 停止记录确认弹窗：只记录客户已停止使用的事实，不作停药或停用建议 ──
 function ConfirmStopModal({ title, itemName, onClose, onConfirm }) {
   const [checked, setChecked] = useState(false)
@@ -1109,6 +1162,7 @@ export default function PatientDetailPage() {
   const [loading, setLoading] = useState(true)
   const initialTab = new URLSearchParams(location.search).get('tab') || 'info'
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
+  const archiveSectionsRef = useRef(null)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
@@ -1267,6 +1321,31 @@ export default function PatientDetailPage() {
   const [editRecordSaving, setEditRecordSaving] = useState(false)
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
+
+  useEffect(() => {
+    if (tab !== 'records' || !archiveSectionsRef.current) return
+    archiveSectionsRef.current.querySelectorAll('.card').forEach(card => {
+      const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
+      if (header) {
+        header.dataset.archiveToggle = 'true'
+        header.title = '点击收起或展开此板块'
+      }
+    })
+  }, [tab, data, healthRecords])
+
+  const handleArchiveSectionClick = (event) => {
+    if (event.target.closest('button, a, input, select, textarea, label')) return
+    const header = event.target.closest('.card-header[data-archive-toggle="true"]')
+    if (!header || !archiveSectionsRef.current?.contains(header)) return
+    header.parentElement?.classList.toggle('archive-collapsed')
+  }
+
+  const setAllArchiveSections = (collapsed) => {
+    archiveSectionsRef.current?.querySelectorAll('.card').forEach(card => {
+      const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
+      if (header) card.classList.toggle('archive-collapsed', collapsed)
+    })
+  }
   const [editingSymptom, setEditingSymptom] = useState(null)
   const [symptomForm, setSymptomForm] = useState({ value: '', note: '', decisionNote: '' })
   const [symptomActionSaving, setSymptomActionSaving] = useState(false)
@@ -1559,7 +1638,7 @@ export default function PatientDetailPage() {
       const [sr, hr, scr, tree, summaries] = await Promise.allSettled([
         staffAPI.getPatientScreening(id),
         // 今日健康状态必须在会员档案长期可追溯，不能被最近30条普通打卡挤出列表。
-        staffAPI.getPatientHealthRecords(id, { type: 'symptom', limit: 100 }),
+        staffAPI.getPatientHealthRecords(id, { type: 'symptom', days: 365, limit: 500 }),
         staffAPI.getScreeningReports(id),
         staffAPI.getScreeningTree(),
         staffAPI.getScreeningYearSummaries(id),
@@ -1728,6 +1807,7 @@ export default function PatientDetailPage() {
     else if (tab === 'serviceRecords') loadServiceRecords()
     else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
+    else if (tab === 'portrait') loadScreening()
     else if (tab === 'records') {
       loadScreening()
       // 专项筛查页面的"待完成方案项目"提示条需要 plans 数据，但 plans 平时只在"方案"Tab才加载，这里按需补一次
@@ -2681,6 +2761,7 @@ export default function PatientDetailPage() {
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
+          { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药及营养补充信息' },
           { key: 'ai',            label: 'AI健康信息整理' },
           { key: 'ai-risk',       label: '健康关注提示' },
@@ -3234,7 +3315,12 @@ export default function PatientDetailPage() {
 
       {/* ── Records Tab ── */}
       {tab === 'records' && (
-        <>
+        <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
+        <style>{`.health-archive-sections>.archive-toolbar+.card,.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
+        <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
+          <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(true) }}>全部收起</button>
+          <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(false) }}>全部展开</button>
+        </div>
         {/* 档案是问卷答案自动导入的，冲突提醒已在页面顶部单独展示（见"问卷自动填档"横幅）；
             一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
@@ -5431,7 +5517,8 @@ export default function PatientDetailPage() {
           </div>
         </div>
 
-        {/* 客户打卡中的“今天有不适吗”必须直接进入健康档案，避免只在工作台待办里短暂出现。 */}
+        {false && <>
+        {/* 不适主诉已迁移到独立的“健康画像”Tab，保留原实现片段便于历史逻辑核对。 */}
         <div className="card" style={{ marginBottom: 16 }}>
           <div className="card-header">
             <div>
@@ -5542,6 +5629,8 @@ export default function PatientDetailPage() {
             </div>
           </div>
         )}
+
+        </>}
 
         {/* ── 慢病分级 ── */}
         {user.chronicDiseases?.length > 0 && (
@@ -5754,7 +5843,7 @@ export default function PatientDetailPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无健康打卡记录</div>
           )}
         </div>
-        </>
+        </div>
       )}
 
       {/* ── AI Tab ── */}
@@ -7397,6 +7486,79 @@ export default function PatientDetailPage() {
           </div>
         )
       })()}
+
+      {/* ── Health Portrait Tab ── */}
+      {tab === 'portrait' && (
+        <>
+          <HealthPortraitOverview user={user} />
+          <div className="card" style={{ marginBottom: 16 }}>
+            <div className="card-header">
+              <div>
+                <div className="card-title">今日健康状态 / 不适主诉</div>
+                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>近一年不适、医护处置方案及后续记录集中展示</div>
+              </div>
+              <span style={{ fontSize: 12, color: '#4A6558' }}>共 {healthRecords.length} 条</span>
+            </div>
+            <div style={{ padding: '14px 20px' }}>
+              {healthRecords.length === 0 ? (
+                <div style={{ color: '#8AA89C', fontSize: 14, textAlign: 'center', padding: '20px 0' }}>近一年暂无不适主诉记录</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {healthRecords.map((record, index) => {
+                    const workflow = record.symptomWorkflow || {}
+                    const workflowLabel = { pending_manager: '待健管专员核实', pending_doctor: '待健康顾问判断', manager_followup: '健管专员跟进', referred: '已转介', resolved: '已处理', dismissed: '已确认为误录' }[workflow.status] || '待处理'
+                    const pending = ['pending_manager', 'pending_doctor'].includes(workflow.status)
+                    const source = record.recordedBy?.source === 'staff' ? (record.recordedBy.staffName || '医护人员录入') : record.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'
+                    const year = new Date(record.recordedAt).getFullYear()
+                    const previousYear = index > 0 ? new Date(healthRecords[index - 1].recordedAt).getFullYear() : null
+                    return <React.Fragment key={record._id}>
+                      {year !== previousYear && <div style={{ fontSize: 13, fontWeight: 800, color: '#1E6B50', padding: '6px 2px 2px' }}>{year} 年</div>}
+                      <div style={{ padding: '13px 15px', borderRadius: 11, background: pending ? '#FFF7F6' : '#F7FAF8', borderLeft: `4px solid ${pending ? '#DC3545' : '#1E6B50'}` }}>
+                        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+                          <div style={{ minWidth: 0, flex: 1 }}>
+                            <div style={{ color: '#1A2B24', fontSize: 14, lineHeight: 1.6, fontWeight: 700 }}>{record.value || record.note || '未填写具体内容'}</div>
+                            {record.note && record.note !== record.value && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>{record.note}</div>}
+                            <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>{new Date(record.recordedAt).toLocaleString('zh-CN')} · {source}{workflow.decidedByName ? ` · 处理人：${workflow.decidedByName}` : ''}</div>
+                            <div style={{ marginTop: 9, padding: '9px 11px', background: '#fff', border: '1px solid #E5ECE8', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>
+                              <b style={{ color: '#1A2B24' }}>对应解决方案：</b>{workflow.decisionNote || (pending ? '等待医护团队核实并制定方案' : '暂无补充处置说明')}
+                            </div>
+                          </div>
+                          <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 360 }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, color: pending ? '#B42318' : '#1E6B50', background: pending ? '#FEE4E2' : '#E8F5EE' }}>{workflowLabel}</span>
+                            {['healthManager', 'superadmin'].includes(staff?.role) && ['pending_manager', 'pending_doctor'].includes(workflow.status) && !workflow.verifiedAt && <>
+                              <button className="btn btn-secondary btn-sm" onClick={() => openSymptomEditor(record)}>编辑审核</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => referSymptomToDoctor(record)}>转健康顾问</button>
+                            </>}
+                            {['familyDoctor', 'superadmin'].includes(staff?.role) && workflow.status === 'pending_doctor' && !!workflow.verifiedAt && <button className="btn btn-primary btn-sm" onClick={() => handleDoctorSymptom(record)}>处理</button>}
+                            {['healthManager', 'superadmin'].includes(staff?.role) && <button className="btn btn-sm" style={{ color: '#B42318', background: '#FFF', border: '1px solid #FDA29B' }} onClick={() => deleteSymptomRecord(record)}>删除</button>}
+                          </div>
+                        </div>
+                      </div>
+                    </React.Fragment>
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+          {editingSymptom && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setEditingSymptom(null)}>
+              <div className="modal" style={{ maxWidth: 520 }}>
+                <div className="modal-header"><h3 className="modal-title">编辑并审核不适主诉</h3><button className="modal-close" onClick={() => setEditingSymptom(null)}>×</button></div>
+                <div className="modal-body">
+                  <label className="form-label">核实后的不适内容 *</label><textarea className="form-input" rows={3} value={symptomForm.value} onChange={e => setSymptomForm(f => ({ ...f, value: e.target.value }))} />
+                  <label className="form-label" style={{ marginTop: 12 }}>补充说明</label><textarea className="form-input" rows={2} value={symptomForm.note} onChange={e => setSymptomForm(f => ({ ...f, note: e.target.value }))} placeholder="部位、持续时间、严重程度等" />
+                  <label className="form-label" style={{ marginTop: 12 }}>审核意见 / 解决方案</label><textarea className="form-input" rows={2} value={symptomForm.decisionNote} onChange={e => setSymptomForm(f => ({ ...f, decisionNote: e.target.value }))} placeholder="填写核实结果、解决方案及后续安排" />
+                </div>
+                <div className="modal-footer">
+                  <button className="btn btn-secondary" disabled={symptomActionSaving} onClick={() => submitSymptomVerification('dismiss')}>确认为误录</button>
+                  <button className="btn btn-secondary" disabled={symptomActionSaving || !symptomForm.value.trim()} onClick={() => submitSymptomVerification('save')}>保存审核修改</button>
+                  <button className="btn btn-primary" disabled={symptomActionSaving || !symptomForm.value.trim()} onClick={() => submitSymptomVerification('refer_doctor')}>{symptomActionSaving ? '提交中...' : '确认并转健康顾问'}</button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
 
       {/* ── Reports Tab ── */}
       {tab === 'reports' && (() => {
