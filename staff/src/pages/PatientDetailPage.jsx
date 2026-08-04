@@ -117,15 +117,19 @@ function HealthPortraitOverview({ user, reports = [] }) {
   ].map(group => ({ ...group, items: group.items.filter(isSubstantiveIssue) }))
   const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
   const bodyRegionRules = [
-    { key: 'head', label: '头面部', pattern: /眼|视力|屈光|耳|听力|鼻|咽|脑/, top: 35 },
-    { key: 'neck', label: '颈部', pattern: /甲状腺|颈动脉|颈部/, top: 83 },
-    { key: 'chest', label: '胸部', pattern: /乳腺|乳房|心脏|心电|冠心|肺|胸/, top: 125 },
-    { key: 'abdomen', label: '腹部', pattern: /肝|胆|胰|脾|肾|胃|肠|肌酐|尿素|尿酸/, top: 169 },
-    { key: 'pelvis', label: '盆腔', pattern: /子宫|附件|卵巢|宫颈|前列腺|膀胱|盆腔|痔疮|肛门/, top: 211 },
-    { key: 'limbs', label: '骨骼四肢', pattern: /骨|关节|肌肉|四肢|膝|腰椎|颈椎/, top: 267 },
+    { key: 'head', label: '头面部', pattern: /眼|视力|屈光|耳|听力|鼻|咽|脑/, top: 17, femaleOffset: 4 },
+    { key: 'neck', label: '颈部', pattern: /甲状腺|颈动脉|颈部/, top: 27, femaleOffset: 2 },
+    { key: 'chest', label: '胸部', pattern: /乳腺|乳房|心脏|心电|冠心|肺|胸/, top: 38 },
+    { key: 'abdomen', label: '腹部', pattern: /肝|胆|胰|脾|肾|胃|肠|肌酐|尿素|尿酸/, top: 49 },
+    { key: 'pelvis', label: '盆腔', pattern: /子宫|附件|卵巢|宫颈|前列腺|膀胱|盆腔|痔疮|肛门/, top: 59 },
+    { key: 'limbs', label: '骨骼四肢', pattern: /骨|关节|肌肉|四肢|膝|腰椎|颈椎/, top: 76 },
   ]
   const allPortraitIssues = groups.flatMap(group => group.items)
   const bodyMarkers = bodyRegionRules.filter(rule => allPortraitIssues.some(issue => rule.pattern.test(issue)))
+  const markerNumbersForIssue = (issue) => bodyMarkers.reduce((numbers, marker, index) => {
+    if (marker.pattern.test(issue)) numbers.push({ number: index + 1, color: index % 2 ? '#D97706' : '#DC3545' })
+    return numbers
+  }, [])
   const genderText = String(user.gender || '')
   const isFemalePortrait = /女|female/i.test(genderText)
   const isMalePortrait = /男|male/i.test(genderText)
@@ -145,8 +149,8 @@ function HealthPortraitOverview({ user, reports = [] }) {
       <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 24, alignItems: 'center' }}>
         <div style={{ minWidth: 0, minHeight: 390, borderRadius: 20, backgroundImage: `url(${isFemalePortrait ? femalePortraitPhoto : malePortraitPhoto})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
           <span style={{ position: 'absolute', top: 12, right: 14, padding: '3px 8px', borderRadius: 99, background: '#E3F1EA', color: '#527566', fontSize: 10, fontWeight: 700 }}>{portraitGenderLabel}</span>
-          <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 280, height: 330 }}>
-            <svg viewBox="0 0 280 330" width="280" height="330" aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+          <div aria-label="人物健康画像示意" style={{ position: 'absolute', inset: 0 }}>
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
               <defs>
                 <linearGradient id="portraitGarment" x1="0" y1="0" x2="1" y2="1">
                   <stop offset="0" stopColor="#A8D2C1" />
@@ -209,12 +213,14 @@ function HealthPortraitOverview({ user, reports = [] }) {
               </g>
               {bodyMarkers.map((marker, index) => {
                 const leftSide = index % 2 === 0
-                return <path key={`line-${marker.key}`} d={`M${leftSide ? 112 : 168} ${marker.top + 12} H${leftSide ? 92 : 188}`} fill="none" stroke={index % 2 ? '#D97706' : '#DC3545'} strokeWidth="1.5" strokeDasharray="3 3" opacity=".65" />
+                const markerTop = marker.top + (isFemalePortrait ? marker.femaleOffset || 0 : 0)
+                return <path key={`line-${marker.key}`} d={`M${leftSide ? 37 : 54} ${markerTop} H${leftSide ? 46 : 63}`} fill="none" stroke={index % 2 ? '#D97706' : '#DC3545'} strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" opacity=".7" />
               })}
             </svg>
             {bodyMarkers.map((marker, index) => {
               const leftSide = index % 2 === 0
-              return <span key={marker.key} title={allPortraitIssues.filter(issue => marker.pattern.test(issue)).join('；')} style={{ position: 'absolute', top: marker.top, left: leftSide ? 0 : 188, width: 92, display: 'inline-flex', flexDirection: leftSide ? 'row' : 'row-reverse', alignItems: 'center', justifyContent: 'flex-end', gap: 5, zIndex: 2, whiteSpace: 'nowrap' }}>
+              const markerTop = marker.top + (isFemalePortrait ? marker.femaleOffset || 0 : 0)
+              return <span key={marker.key} title={allPortraitIssues.filter(issue => marker.pattern.test(issue)).join('；')} style={{ position: 'absolute', top: `${markerTop}%`, left: leftSide ? '9%' : '63%', width: '28%', transform: 'translateY(-50%)', display: 'inline-flex', flexDirection: leftSide ? 'row' : 'row-reverse', alignItems: 'center', justifyContent: 'flex-start', gap: 5, zIndex: 2, whiteSpace: 'nowrap' }}>
                 <span style={{ width: 24, height: 24, flex: '0 0 24px', borderRadius: '50%', background: index % 2 ? '#D97706' : '#DC3545', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 800, boxShadow: `0 3px 9px ${index % 2 ? '#D9770666' : '#DC354566'}` }}>{index + 1}</span>
                 <span style={{ padding: '3px 7px', border: '1px solid #E5ECE8', borderRadius: 7, background: 'rgba(255,255,255,.96)', color: '#31473D', fontSize: 10, fontWeight: 700, boxShadow: '0 2px 7px rgba(30,60,45,.10)' }}>{marker.label}</span>
               </span>
@@ -227,9 +233,13 @@ function HealthPortraitOverview({ user, reports = [] }) {
               <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>{group.label}</div>
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                 {group.items.length ? <>
-                  {group.items.slice(0, 8).map((item, index) => (
-                    <span key={`${item}-${index}`} title={item} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600, lineHeight: 1.5, maxWidth: '100%', overflowWrap: 'anywhere' }}>{item}</span>
-                  ))}
+                  {group.items.slice(0, 8).map((item, index) => {
+                    const markerNumbers = markerNumbersForIssue(item)
+                    return <span key={`${item}-${index}`} title={item} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600, lineHeight: 1.5, maxWidth: '100%', overflowWrap: 'anywhere', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                      {markerNumbers.map(marker => <span key={marker.number} style={{ width: 17, height: 17, flex: '0 0 17px', borderRadius: '50%', background: marker.color, color: '#fff', display: 'inline-grid', placeItems: 'center', fontSize: 9, fontWeight: 800 }}>{marker.number}</span>)}
+                      <span>{item}</span>
+                    </span>
+                  })}
                   {group.items.length > 8 && <span style={{ padding: '4px 9px', borderRadius: 7, background: '#F3F5F4', color: '#66756E', fontSize: 12 }}>另有 {group.items.length - 8} 项，详见体检报告</span>}
                 </> : <span style={{ color: '#A0AEA7', fontSize: 12 }}>{group.emptyText || '暂无记录'}</span>}
               </div>
