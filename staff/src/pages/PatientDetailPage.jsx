@@ -184,9 +184,10 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
 }
 
 const BODY_COMP_METRICS = [
+  { key: 'weight', referenceKey: 'weightReference', label: '体成分体重（kg）', color: '#2563EB' },
   { key: 'skelMuscle', referenceKey: 'skelMuscleReference', label: '骨骼肌（kg）', color: '#1E6B50' },
   { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', label: '体脂率（%）', color: '#D97706' },
-  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪', color: '#7C3AED' },
+  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪（级）', color: '#7C3AED' },
 ]
 
 function BodyCompositionTrendCharts({ history = [] }) {
@@ -5313,10 +5314,11 @@ export default function PatientDetailPage() {
           </div>
           <div style={{ padding: '12px 20px' }}>
             {editingBodyComp ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '10px 20px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px 20px' }}>
                 {[
+                  { label: '体成分体重', field: 'weight', referenceField: 'weightReference', unit: 'kg', placeholder: '如 56.2' },
                   { label: '骨骼肌量', field: 'skelMuscle', referenceField: 'skelMuscleReference', unit: 'kg', placeholder: '如 28.5' },
-                  { label: '内脏脂肪等级/指数', field: 'visceralFat', referenceField: 'visceralFatReference', unit: '', placeholder: '如 9级 或 指数110' },
+                  { label: '内脏脂肪', field: 'visceralFat', referenceField: 'visceralFatReference', unit: '级', placeholder: '如 9' },
                   { label: '体脂率', field: 'bodyFatRate', referenceField: 'bodyFatRateReference', unit: '%', placeholder: '如 25.3' },
                 ].map(({ label, field, referenceField, unit, placeholder }) => (
                   <div key={field}>
@@ -5335,11 +5337,12 @@ export default function PatientDetailPage() {
               </div>
             ) : (
               <div>
-                {(displayBodyComposition.skelMuscle || displayBodyComposition.visceralFat || displayBodyComposition.bodyFatRate) ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '6px 16px' }}>
+                {(displayBodyComposition.weight || displayBodyComposition.skelMuscle || displayBodyComposition.visceralFat || displayBodyComposition.bodyFatRate) ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px 16px' }}>
                     {[
+                      ['体成分体重', displayBodyComposition.weight, 'kg', displayBodyComposition.weightReference],
                       ['骨骼肌量', displayBodyComposition.skelMuscle, 'kg', displayBodyComposition.skelMuscleReference],
-                      ['内脏脂肪', displayBodyComposition.visceralFat, '', displayBodyComposition.visceralFatReference],
+                      ['内脏脂肪', displayBodyComposition.visceralFat, '级', displayBodyComposition.visceralFatReference],
                       ['体脂率', displayBodyComposition.bodyFatRate, '%', displayBodyComposition.bodyFatRateReference],
                     ].filter(([,v]) => v != null && v !== '').map(([label, val, unit, reference]) => (
                       <div key={label} style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8, borderLeft: '3px solid #1E6B50' }}>
@@ -5367,10 +5370,11 @@ export default function PatientDetailPage() {
                         <div key={i} style={{ fontSize: 12, color: '#4A6558', padding: '6px 0', borderBottom: '1px solid #f9f7f3' }}>
                           {isEditingThis ? (
                             <div>
-                              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6, marginBottom: 6 }}>
+                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 6 }}>
                                 {[
+                                  { label: '体成分体重(kg)', field: 'weight' },
                                   { label: '骨骼肌量(kg)', field: 'skelMuscle' },
-                                  { label: '内脏脂肪', field: 'visceralFat' },
+                                  { label: '内脏脂肪(级)', field: 'visceralFat' },
                                   { label: '体脂率(%)', field: 'bodyFatRate' },
                                 ].map(({ label, field }) => (
                                   <div key={field}>
@@ -5400,8 +5404,9 @@ export default function PatientDetailPage() {
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                               <span style={{ color: '#aaa', minWidth: 90 }}>{h.measuredAt || (h.recordedAt ? new Date(h.recordedAt).toLocaleDateString('zh-CN') : '-')}</span>
+                              {h.weight && <span>体成分体重: {h.weight}kg</span>}
                               {h.skelMuscle && <span>骨骼肌: {h.skelMuscle}kg</span>}
-                              {h.visceralFat && <span>内脏脂肪: {h.visceralFat}</span>}
+                              {h.visceralFat && <span>内脏脂肪: {h.visceralFat}级</span>}
                               {h.bodyFatRate && <span>体脂率: {h.bodyFatRate}%</span>}
                               <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                                 <button style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}

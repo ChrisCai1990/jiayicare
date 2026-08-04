@@ -7128,12 +7128,14 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
     → name统一为"睡眠呼吸监测"或"动态血压监测"（或报告实际印刷标题），不要与其他检查混淆
 
 14. 人体成分分析（InBody/BCA-2A等体成分测量仪报告）
-    → 只提取以下三项，其他体成分指标一律不输出：骨骼肌（或骨骼肌量）、体脂率、内脏脂肪（等级/指数/面积按原文名称）。
-    → 明确禁止输出体重、BMI、去脂体重、体脂肪量、肌肉量等非目标项目；尤其禁止把“体重”改名或替代为“骨骼肌”。
-    → 必须先按项目名称定位表格中的同一行，再横向读取该行的实测值、单位和参考范围，严禁读取相邻行或相邻列的数据。
-    → 三项必须各自输出为一条独立记录：itemType="data"；name只能使用标准名“骨骼肌”“体脂率”“内脏脂肪”；value只抄实测值；unit抄报告单位；
-      referenceRange只抄该项目在本次报告中明确印刷的参考范围，没有则留空，严禁按常识或性别自行推算。
-    → 单位必须自查：骨骼肌通常为kg，体脂率必须为%（或百分比），内脏脂肪按原文单位/等级；任何标成“体脂率”却配kg的数据都是串行错误，禁止输出。
+    → 只提取以下四项，其他体成分指标一律不输出：体重、体脂率、骨骼肌、内脏脂肪。
+    → 体重从“体成分构成/Body composition analysis”表格的“体重”同行读取实测值、kg单位和标准范围；sourceSection必须标记为“人体成分分析”，使其与一般检查体重分开保存，不得覆盖或替代一般检查体重。
+    → 体脂率从“身体参数/Body parameters analysis”柱状图的“体脂率”柱读取：柱体主要数值为实测值，柱旁上下两个界限值组成个人参考范围。严禁误取页面上方圆环区域的脂肪量百分比。
+    → 骨骼肌从“身体参数/Body parameters analysis”柱状图的“骨骼肌”柱读取：柱体主要数值为实测值，柱旁上下两个界限值组成个人参考范围。“骨骼肌”与“肌肉量”是不同项目，严禁相互替代。
+    → 内脏脂肪从独立的“内脏脂肪”指标卡读取实测值及卡片内“标准范围”；unit统一输出“级”。严禁从腰臀脂肪比、节段脂肪量或其他柱状图推测。
+    → 四项必须各自输出为一条独立记录：itemType="data"；name只能使用标准名“体重”“体脂率”“骨骼肌”“内脏脂肪”；value只抄实测值；
+      referenceRange只抄该项目在本次报告中明确印刷或明确连线标注的个人参考范围，没有、看不清或无法确认归属时留空，严禁按常识、性别或其他样本推算。
+    → 单位必须自查：体重和骨骼肌为kg，体脂率为%，内脏脂肪为级；任何单位与项目不匹配的数据都是串行错误，禁止输出。
     → 如果报告只出现其中一项或两项，只输出实际出现的项目；看不清的数值不要猜测。
     → 检测日期优先使用报告中的人体成分测量日期，并写入checkDate；不得使用打印日期替代明确的测量日期。
 
@@ -7598,16 +7600,19 @@ function cleanupUltrasoundOverlap(items) {
 const str = (v) => String(v == null ? '' : v).trim();
 
 const BODY_COMPOSITION_RETRY_PROMPT = REPORT_PARSE_PROMPT + `\n\n【人体成分专项复核（必须重新看原图，不得沿用上次答案）】
-本页只允许输出报告中明确印刷的以下三项：骨骼肌量/SMM、体脂率/PBF、内脏脂肪。每项必须先在原图中找到项目名称，再沿同一行读取实测值、单位和该行自己的参考范围。
+本页只允许输出报告中明确印刷的以下四项：体重、体脂率/PBF、骨骼肌/SMM、内脏脂肪。必须按各自版面区域读取实测值、单位和本人的参考范围。
+0. 体重只从“体成分构成/Body composition analysis”表格的“体重”同行读取，sourceSection="人体成分分析"；不得使用页眉体重，也不得覆盖一般检查体重。
 1. “体脂率/PBF/Body Fat Percentage（%）”与“体脂肪量/脂肪量/Body Fat Mass（kg）”是两个不同项目。严禁把脂肪量的数值或参考范围写成体脂率；即使数值看起来合理也不允许。
 2. “骨骼肌量/SMM/Skeletal Muscle Mass”与“肌肉量/去脂体重”是不同项目。严禁相互替代，也严禁借用相邻项目的参考范围。
 3. referenceRange 只有在原图对该项目明确印刷或明确连线标注时才填写；没有、看不清或无法确认归属时必须留空，禁止按常识、性别或相邻行推算。
-4. 每个 item 除原字段外必须增加 sourceRow，逐字抄写包含“原始项目名称 + 实测值 + 单位 + 参考范围”的整行原文；若原图中无法抄出能证明对应关系的整行，就不要输出该项目。
-5. name仍统一输出“骨骼肌”“体脂率”“内脏脂肪”；体脂率单位只能是%，骨骼肌单位只能是kg。体重、BMI、体脂肪量、脂肪量、去脂体重、肌肉量全部忽略。
+4. 每个 item 除原字段外必须增加 sourceRow：表格项目逐字抄写同行原文；柱状图项目按“项目名 实测值 下限 上限”抄写同一柱附近文字；指标卡按“项目名 实测值 标准范围”抄写卡片文字。若原图中无法给出能证明对应关系的局部原文，就不要输出该项目。
+5. name统一输出“体重”“体脂率”“骨骼肌”“内脏脂肪”；体重和骨骼肌单位只能是kg，体脂率单位只能是%，内脏脂肪单位统一为“级”。BMI、体脂肪量、脂肪量、去脂体重、肌肉量全部忽略。
+6. 体脂率与骨骼肌的referenceRange读取各自柱状图旁的上下两个界限值；内脏脂肪读取独立指标卡内的标准范围。不得跨区域借值。
 输出前逐项核对 sourceRow：其中必须真实出现该项目的原始名称和本次 value；referenceRange 非空时，其上下限也必须出现在 sourceRow 中。`;
 
 function bodyCompositionKind(name) {
   const n = str(name).replace(/\s+/g, '');
+  if (/^(?:体重|weight)$/i.test(n)) return 'weight';
   if (/骨骼肌(?:量|质量)?|skeletalmuscle/i.test(n)) return 'skelMuscle';
   if (/体脂(?:肪)?率|百分比体脂|^PBF$/i.test(n)) return 'bodyFatRate';
   if (/内脏脂肪(?:等级|指数|面积)?|^VFA$/i.test(n)) return 'visceralFat';
@@ -7621,10 +7626,18 @@ function isBodyCompositionContext(items) {
   return /人体成分|身体成分|InBody|BCA-?2A/i.test(text) || targetKinds.size >= 2;
 }
 
+function isBodyCompositionPage(parsedPage, items, reportType = '') {
+  if (reportType === 'body_comp') return true;
+  const pageText = `${str(parsedPage?.pageTitle)} ${str(parsedPage?.pageType)} ${str(parsedPage?.summary)}`;
+  return /人体成分|身体成分|体成分构成|body\s*composition|inbody|bca-?2a/i.test(pageText)
+    || isBodyCompositionContext(items);
+}
+
 function validBodyCompositionItem(item) {
   const kind = bodyCompositionKind(item?.name);
   if (!kind || !str(item?.value)) return false;
   const unit = str(item.unit).replace(/％/g, '%').toLowerCase();
+  if (kind === 'weight') return /^kg|千克|公斤$/i.test(unit);
   if (kind === 'bodyFatRate') return unit === '%' || /百分比/.test(unit);
   if (kind === 'skelMuscle') return !unit || /^kg|千克|公斤$/i.test(unit);
   return true;
@@ -7636,7 +7649,9 @@ function bodyCompositionEvidenceValid(item) {
   const source = str(item.sourceRow || item.sourceEvidence || item.rawRow);
   if (!source) return false;
   const compact = source.replace(/[\s，,：:；;（）()\[\]【】]/g, '').replace(/％/g, '%').toLowerCase();
-  const labelOk = kind === 'skelMuscle'
+  const labelOk = kind === 'weight'
+    ? /体重|weight/i.test(compact)
+    : kind === 'skelMuscle'
     ? /骨骼肌(?:量|质量)?|smm|skeletalmusclemass/i.test(compact)
     : kind === 'bodyFatRate'
       ? /体脂(?:肪)?率|百分比体脂|pbf|bodyfatpercentage/i.test(compact)
@@ -7661,29 +7676,52 @@ function bodyCompositionQuality(items) {
   return kinds.size;
 }
 
-function needsBodyCompositionRetry(items) {
-  if (!isBodyCompositionContext(items)) return false;
+function needsBodyCompositionRetry(items, force = false) {
+  if (!force && !isBodyCompositionContext(items)) return false;
   const list = items || [];
   const kinds = new Set(list.filter(bodyCompositionEvidenceValid).map(it => bodyCompositionKind(it.name)));
   const hasInvalidTarget = list.some(it => bodyCompositionKind(it.name) && !validBodyCompositionItem(it));
-  const hasForbiddenWeight = list.some(it => /^(体重|BMI|身体质量指数)$/i.test(str(it.name)));
   // 常规首轮没有 sourceRow，人体成分页必须进入专项复核，避免仅凭模型改写后的名称/单位放行。
-  return kinds.size < 3 || hasInvalidTarget || hasForbiddenWeight;
+  return kinds.size < 4 || hasInvalidTarget;
+}
+
+function calculatedBodyCompositionStatus(value, referenceRange) {
+  const measured = Number(str(value).match(/-?\d+(?:\.\d+)?/)?.[0]);
+  if (!Number.isFinite(measured)) return 'unknown';
+  const reference = str(referenceRange).replace(/[～~—–至]/g, '-');
+  const bounds = reference.match(/\d+(?:\.\d+)?/g)?.map(Number) || [];
+  if (bounds.length >= 2) {
+    const [low, high] = bounds;
+    return measured >= low && measured <= high ? 'normal' : 'abnormal';
+  }
+  if (bounds.length === 1) {
+    const limit = bounds[0];
+    if (/^(?:<|＜)/.test(reference)) return measured < limit ? 'normal' : 'abnormal';
+    if (/^(?:≤|<=)/.test(reference)) return measured <= limit ? 'normal' : 'abnormal';
+    if (/^(?:>|＞)/.test(reference)) return measured > limit ? 'normal' : 'abnormal';
+    if (/^(?:≥|>=)/.test(reference)) return measured >= limit ? 'normal' : 'abnormal';
+  }
+  return 'unknown';
 }
 
 function sanitizeBodyCompositionPage(items) {
   const list = items || [];
   if (!isBodyCompositionContext(list)) return list;
-  const forbidden = /^(体重|BMI|身体质量指数|体脂肪量|去脂体重|肌肉量)$/i;
+  const forbidden = /^(BMI|身体质量指数|体脂肪量|去脂体重|肌肉量)$/i;
   const seen = new Set();
   return list.filter(it => {
     const kind = bodyCompositionKind(it.name);
     if (!kind) return !forbidden.test(str(it.name));
     if (!validBodyCompositionItem(it) || seen.has(kind)) return false;
     seen.add(kind);
-    it.name = kind === 'skelMuscle' ? '骨骼肌' : kind === 'bodyFatRate' ? '体脂率' : '内脏脂肪';
+    it.name = kind === 'weight' ? '体重' : kind === 'skelMuscle' ? '骨骼肌' : kind === 'bodyFatRate' ? '体脂率' : '内脏脂肪';
     it.itemType = 'data';
+    it.sourceSection = '人体成分分析';
+    if (kind === 'weight' || kind === 'skelMuscle') it.unit = 'kg';
     if (kind === 'bodyFatRate') it.unit = '%';
+    if (kind === 'visceralFat') it.unit = '级';
+    const calculatedStatus = calculatedBodyCompositionStatus(it.value, it.referenceRange);
+    if (calculatedStatus !== 'unknown') it.status = calculatedStatus;
     return true;
   });
 }
@@ -7700,7 +7738,7 @@ function sanitizeBodyCompositionItems(items) {
 }
 
 function mergeBodyCompositionRetry(originalItems, retryItems) {
-  const ancillary = /^(体重|BMI|身体质量指数|体脂肪量|去脂体重|肌肉量)$/i;
+  const ancillary = /^(BMI|身体质量指数|体脂肪量|去脂体重|肌肉量)$/i;
   const retained = (originalItems || []).filter(it => !bodyCompositionKind(it.name) && !ancillary.test(str(it.name)));
   // 专项复核只接纳能够由原始整行反证的项目。宁可缺项交人工补录，也不把邻行数据写入档案。
   return retained.concat(sanitizeBodyCompositionPage((retryItems || []).filter(bodyCompositionEvidenceValid)));
@@ -7904,10 +7942,11 @@ async function syncScreeningItems(userId, reportId, items) {
   }
 }
 
-// 将已审核报告中的三项身体成分写入统一历史。参考范围只保存报告原文，不做医学推断。
+// 将已审核报告中的四项身体成分写入统一历史。体成分体重保存在身体成分对象内，不覆盖一般检查体重。
 async function syncBodyCompositionFromReport(report) {
   if (!report?.user || !Array.isArray(report.reportItems)) return;
   const aliases = [
+    { key: 'weight', referenceKey: 'weightReference', pattern: /^体重$|^weight$/i },
     { key: 'skelMuscle', referenceKey: 'skelMuscleReference', pattern: /骨骼肌(?:量)?|skeletal\s*muscle/i },
     { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', pattern: /体脂(?:肪)?率|\bPBF\b/i },
     { key: 'visceralFat', referenceKey: 'visceralFatReference', pattern: /内脏脂肪(?:等级|指数|面积)?|\bVFA\b/i },
@@ -7921,7 +7960,9 @@ async function syncBodyCompositionFromReport(report) {
     sourceTitle: report.title || report.reportName || '',
   };
   for (const def of aliases) {
-    const item = report.reportItems.find(it => def.pattern.test(String(it.name || '')) && validBodyCompositionItem(it));
+    const item = report.reportItems.find(it => def.pattern.test(String(it.name || ''))
+      && (def.key !== 'weight' || /人体成分|身体成分|body\s*composition/i.test(String(it.sourceSection || '')))
+      && validBodyCompositionItem(it));
     if (!item || String(item.value ?? '').trim() === '') continue;
     entry[def.key] = String(item.value).trim();
     entry[def.referenceKey] = String(item.referenceRange || '').trim();
@@ -8038,6 +8079,7 @@ async function runReportParse(reportId) {
       let checkDate = report.checkDate;
       let totalPageCount = 0;
       let okPages = 0;
+      const bodyCompCandidatePages = new Set();
 
       // onBatch：每批图片转出后立即识别，识别完就释放这批图片内存
       await pdfBufferToImages(pdfBuf, {
@@ -8054,7 +8096,8 @@ async function runReportParse(reportId) {
               const i = cursor++;
               for (let attempt = 0; attempt < 2; attempt++) {
                 try {
-                  const text = await parseImage(batchImages[i], REPORT_PARSE_PROMPT, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
+                  const firstPassPrompt = report.type === 'body_comp' ? BODY_COMPOSITION_RETRY_PROMPT : REPORT_PARSE_PROMPT;
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -8069,12 +8112,14 @@ async function runReportParse(reportId) {
             if (!p) continue;
             okPages++;
             const pageNum = batchIndex * BATCH_SIZE + i + 1;
-            if (shouldSkipParsedReportPage(p)) {
+            const firstPassItems = tagReportPageItems(p.items, pageNum);
+            if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
+            if (shouldSkipParsedReportPage(p) && report.type !== 'body_comp') {
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
             }
             if (Array.isArray(p.items)) {
-              allItems = allItems.concat(tagReportPageItems(p.items, pageNum));
+              allItems = allItems.concat(firstPassItems);
             }
             if (p.summary) summaries.push(p.summary);
             if (!institution && p.institution && !isSuspiciousInstitution(p.institution)) institution = p.institution;
@@ -8218,9 +8263,9 @@ async function runReportParse(reportId) {
         }
       }
 
-      const bodyCompRetryPages = [...new Set(allItems.map(it => it._page).filter(pageNum => {
+      const bodyCompRetryPages = [...new Set([...bodyCompCandidatePages, ...allItems.map(it => it._page).filter(pageNum => {
         return pageNum && needsBodyCompositionRetry(allItems.filter(row => row._page === pageNum));
-      }))];
+      })])];
       for (const pageNum of bodyCompRetryPages) {
         try {
           const oldPageItems = allItems.filter(it => it._page === pageNum);
@@ -8290,16 +8335,18 @@ async function runReportParse(reportId) {
     let lastRawText = '';
     for (let imageIndex = 0; imageIndex < bufs.length; imageIndex++) {
       try {
-        lastRawText = await parseImage(bufs[imageIndex].toString('base64'), REPORT_PARSE_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096 });
+        const firstPassPrompt = report.type === 'body_comp' ? BODY_COMPOSITION_RETRY_PROMPT : REPORT_PARSE_PROMPT;
+        lastRawText = await parseImage(bufs[imageIndex].toString('base64'), firstPassPrompt, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096 });
         const parsedPage = safeParseJSON(lastRawText);
         if (!parsedPage) continue;
         imageOkCount++;
-        if (shouldSkipParsedReportPage(parsedPage)) {
+        if (shouldSkipParsedReportPage(parsedPage) && report.type !== 'body_comp') {
           console.log(`[parse-ai] 图片${imageIndex + 1}判定为${str(parsedPage.pageType) || '非明细页'}，程序层跳过全部条目`);
           continue;
         }
         let pageItems = tagReportPageItems(parsedPage.items, imageIndex + 1);
-        if (needsBodyCompositionRetry(pageItems)) {
+        const isBodyCompPage = isBodyCompositionPage(parsedPage, pageItems, report.type);
+        if (isBodyCompPage && needsBodyCompositionRetry(pageItems, true)) {
           try {
             const retryText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 2048 });
             const retryPage = safeParseJSON(retryText);

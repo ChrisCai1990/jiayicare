@@ -270,7 +270,7 @@ const NODES = [
   { id: 'chronic|人体成分测量分析|体脂肪量', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '体脂肪量', itemType: 'lab', gender: null,
     aliases: ['脂肪量', '体脂肪', 'Body Fat Mass', '脂肪重量'] },
   { id: 'chronic|人体成分测量分析|骨骼肌量', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '骨骼肌量', itemType: 'lab', gender: null,
-    aliases: ['肌肉量', '骨骼肌', 'SMM', 'Skeletal Muscle Mass', '肌肉重量'] },
+    aliases: ['骨骼肌', 'SMM', 'Skeletal Muscle Mass'] },
   { id: 'chronic|人体成分测量分析|内脏脂肪面积', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '内脏脂肪面积', itemType: 'lab', gender: null,
     aliases: ['内脏脂肪', 'VFA', '腹部脂肪面积', '内脏脂肪等级', '内脏脂肪指数'] },
   { id: 'chronic|人体成分测量分析|基础代谢率', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '基础代谢率', itemType: 'lab', gender: null,

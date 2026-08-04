@@ -4,9 +4,10 @@ import Svg, { Polyline, Circle, Line, Text as SvgText } from 'react-native-svg';
 import { colors, spacing, radius } from '../../theme';
 
 export const BODY_COMPOSITION_METRICS = [
+  { key: 'weight', referenceKey: 'weightReference', label: '体成分体重', unit: ' kg', color: '#2563EB' },
   { key: 'skelMuscle', referenceKey: 'skelMuscleReference', label: '骨骼肌', unit: ' kg', color: '#1E6B50' },
   { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', label: '体脂率', unit: '%', color: '#D97706' },
-  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪', unit: '', color: '#7C3AED' },
+  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪', unit: ' 级', color: '#7C3AED' },
 ];
 
 const numberOf = value => Number(String(value ?? '').match(/-?\d+(?:\.\d+)?/)?.[0]);
