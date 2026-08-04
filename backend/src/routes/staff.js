@@ -7740,8 +7740,16 @@ function sanitizeBodyCompositionItems(items) {
 function mergeBodyCompositionRetry(originalItems, retryItems) {
   const ancillary = /^(BMI|身体质量指数|体脂肪量|去脂体重|肌肉量)$/i;
   const retained = (originalItems || []).filter(it => !bodyCompositionKind(it.name) && !ancillary.test(str(it.name)));
-  // 专项复核只接纳能够由原始整行反证的项目。宁可缺项交人工补录，也不把邻行数据写入档案。
-  return retained.concat(sanitizeBodyCompositionPage((retryItems || []).filter(bodyCompositionEvidenceValid)));
+  const evidenceBacked = (retryItems || []).filter(bodyCompositionEvidenceValid);
+  // 柱状图没有传统“整行”。模型正确读取局部数值但未复述sourceRow时，保留专项结果进入人工待审，
+  // 不能因为证据文本格式不符就清空整页。仍由validBodyCompositionItem拦截项目/单位错配。
+  const validRetry = (retryItems || []).filter(validBodyCompositionItem);
+  const selected = evidenceBacked.length
+    ? evidenceBacked
+    : validRetry.length
+      ? validRetry
+      : (originalItems || []).filter(validBodyCompositionItem);
+  return retained.concat(sanitizeBodyCompositionPage(selected));
 }
 
 // 清理AI提取时常见的两类"影子行"（2026-07-01金娟反馈：肿瘤六项男/血细胞分析/血脂七项 被当成具体项目名重复提取）：
@@ -8277,12 +8285,14 @@ async function runReportParse(reportId) {
           const retryItems = tagReportPageItems(p.items, pageNum);
           const oldQuality = bodyCompositionQuality(oldPageItems);
           const newQuality = bodyCompositionEvidenceQuality(retryItems);
-          if (newQuality > 0) {
-            allItems = allItems.filter(it => it._page !== pageNum).concat(mergeBodyCompositionRetry(oldPageItems, retryItems));
-            console.log(`[parse-ai] 页${pageNum}人体成分专项复核生效：原始行证据通过 ${newQuality} 项（原首轮有效 ${oldQuality} 项）`);
+          const mergedPageItems = mergeBodyCompositionRetry(oldPageItems, retryItems);
+          const acceptedQuality = bodyCompositionQuality(mergedPageItems);
+          if (acceptedQuality > 0) {
+            allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPageItems);
+            console.log(`[parse-ai] 页${pageNum}人体成分专项复核生效：接受 ${acceptedQuality} 项，其中原始证据通过 ${newQuality} 项（原首轮有效 ${oldQuality} 项）`);
           } else {
-            allItems = allItems.filter(it => it._page !== pageNum).concat(mergeBodyCompositionRetry(oldPageItems, []));
-            console.log(`[parse-ai] 页${pageNum}人体成分专项复核无可信原始行，已移除不确定指标`);
+            allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPageItems);
+            console.log(`[parse-ai] 页${pageNum}人体成分专项复核无有效项目，已移除不确定指标`);
           }
         } catch (e) {
           console.log(`[parse-ai] 页${pageNum}人体成分专项重试异常: ${e.message}`);
@@ -8354,12 +8364,14 @@ async function runReportParse(reportId) {
               const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
               const oldQuality = bodyCompositionQuality(pageItems);
               const newQuality = bodyCompositionEvidenceQuality(retryItems);
-              if (newQuality > 0) {
-                pageItems = mergeBodyCompositionRetry(pageItems, retryItems);
-                console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项复核生效：原始行证据通过 ${newQuality} 项（原首轮有效 ${oldQuality} 项）`);
+              const mergedPageItems = mergeBodyCompositionRetry(pageItems, retryItems);
+              const acceptedQuality = bodyCompositionQuality(mergedPageItems);
+              if (acceptedQuality > 0) {
+                pageItems = mergedPageItems;
+                console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项复核生效：接受 ${acceptedQuality} 项，其中原始证据通过 ${newQuality} 项（原首轮有效 ${oldQuality} 项）`);
               } else {
-                pageItems = mergeBodyCompositionRetry(pageItems, []);
-                console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项复核无可信原始行，已移除不确定指标`);
+                pageItems = mergedPageItems;
+                console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项复核无有效项目，已移除不确定指标`);
               }
             }
           } catch (e) {
