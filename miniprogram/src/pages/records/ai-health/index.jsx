@@ -13,8 +13,8 @@ const TABS = ['健康信息整理', '健康关注提示'];
 const URGENCY_META = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } };
 const STATUS_META = { abnormal: { label: '异常', color: '#DC2626' }, mild_abnormal: { label: '轻度异常', color: '#D97706' }, normal: { label: '正常', color: '#16A34A' } };
 const RISK_LEVEL_META = {
-  low: { label: '低风险', bg: '#F0FDF4', color: '#16A34A' }, medium: { label: '中风险', bg: '#FEF9EC', color: '#D97706' },
-  high: { label: '高风险', bg: '#FEF2F2', color: '#DC2626' }, critical: { label: '危急值', bg: '#FEE2E2', color: '#B91C1C' },
+  low: { label: '一般关注', bg: '#F0FDF4', color: '#16A34A' }, medium: { label: '持续关注', bg: '#FEF9EC', color: '#D97706' },
+  high: { label: '重点关注', bg: '#FEF2F2', color: '#DC2626' }, critical: { label: '建议尽快咨询医疗机构', bg: '#FEE2E2', color: '#B91C1C' },
 };
 
 function SectionCard({ icon, title, children }) {

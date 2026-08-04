@@ -47,10 +47,10 @@ const STATUS_META = {
   normal:        { label: '正常',   color: '#16A34A' },
 };
 const RISK_LEVEL_META = {
-  low:      { label: '低风险', bg: '#F0FDF4', color: '#16A34A', dot: '#22C55E' },
-  medium:   { label: '中风险', bg: '#FEF9EC', color: '#D97706', dot: '#F59E0B' },
-  high:     { label: '高风险', bg: '#FEF2F2', color: '#DC2626', dot: '#EF4444' },
-  critical: { label: '危急值', bg: '#FEE2E2', color: '#B91C1C', dot: '#B91C1C' },
+  low:      { label: '一般关注', bg: '#F0FDF4', color: '#16A34A', dot: '#22C55E' },
+  medium:   { label: '持续关注', bg: '#FEF9EC', color: '#D97706', dot: '#F59E0B' },
+  high:     { label: '重点关注', bg: '#FEF2F2', color: '#DC2626', dot: '#EF4444' },
+  critical: { label: '建议尽快咨询医疗机构', bg: '#FEE2E2', color: '#B91C1C', dot: '#B91C1C' },
 };
 
 function SectionCard({ icon, title, children }) {
