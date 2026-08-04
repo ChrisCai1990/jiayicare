@@ -55,12 +55,20 @@ const SERVICE_PACKAGE_LABELS = {
   pkg_3m:            '季度服务包',
 };
 
-// AI 健康信息权益：有效年度会员始终开放；非年度会员即使旧配置残留也不开放。
+// AI 健康信息权益：有效年度会员始终开放；同时配有健康顾问和健管专员的
+// 历史客户也视为年度会员，避免旧数据未写 servicePackage 时被误拦截。
 async function getAiEntitlements(user) {
   const none = { aiHealthAnalysis: false, aiRiskAssessment: false };
-  if (!user?.servicePackage || !user?.serviceExpiry) return none;
-  const expiry = new Date(`${user.serviceExpiry}T23:59:59`);
-  if (!Number.isNaN(expiry.getTime()) && expiry < new Date()) return none;
+  if (!user) return none;
+  const hasAnnualTeam = Boolean(user.assignedFamilyDoctor && user.assignedHealthManager);
+  if (user.serviceExpiry) {
+    const expiry = new Date(`${user.serviceExpiry}T23:59:59`);
+    if (!Number.isNaN(expiry.getTime()) && expiry < new Date()) return none;
+  }
+  if (hasAnnualTeam) {
+    return { aiHealthAnalysis: true, aiRiskAssessment: true };
+  }
+  if (!user.servicePackage || !user.serviceExpiry) return none;
   const names = [user.servicePackage, SERVICE_PACKAGE_LABELS[user.servicePackage]].filter(Boolean);
   const pkg = await ServicePackage.findOne({ clientBrand: user.clientBrand || 'jiayiguanjia', name: { $in: names }, active: true }).lean();
   const isAnnualMember = user.servicePackage === 'pkg_1y'
