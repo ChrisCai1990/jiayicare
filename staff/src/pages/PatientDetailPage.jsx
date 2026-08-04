@@ -143,9 +143,9 @@ function HealthPortraitOverview({ user, reports = [] }) {
         </span>
       </div>
       <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 24, alignItems: 'center' }}>
-        <div style={{ minWidth: 0, minHeight: 390, borderRadius: 20, border: '1px solid #DED4CB', background: 'radial-gradient(circle at 50% 36%,#D7CCC3 0%,#BEB1A6 62%,#AA9D92 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ minWidth: 0, minHeight: 390, borderRadius: 20, backgroundImage: `url(${isFemalePortrait ? femalePortraitPhoto : malePortraitPhoto})`, backgroundSize: 'cover', backgroundPosition: 'center', backgroundRepeat: 'no-repeat', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
           <span style={{ position: 'absolute', top: 12, right: 14, padding: '3px 8px', borderRadius: 99, background: '#E3F1EA', color: '#527566', fontSize: 10, fontWeight: 700 }}>{portraitGenderLabel}</span>
-          <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 280, height: 330, backgroundImage: `url(${isFemalePortrait ? femalePortraitPhoto : malePortraitPhoto})`, backgroundSize: 'contain', backgroundPosition: 'center', backgroundRepeat: 'no-repeat' }}>
+          <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 280, height: 330 }}>
             <svg viewBox="0 0 280 330" width="280" height="330" aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
               <defs>
                 <linearGradient id="portraitGarment" x1="0" y1="0" x2="1" y2="1">
