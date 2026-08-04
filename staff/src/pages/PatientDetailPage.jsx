@@ -87,12 +87,12 @@ function HealthPortraitOverview({ user, reports = [] }) {
   ].map(group => ({ ...group, items: group.items.filter(isSubstantiveIssue) }))
   const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
   const bodyRegionRules = [
-    { key: 'head', label: '头面部', pattern: /眼|视力|屈光|耳|听力|鼻|咽|脑/, top: 18, left: 82 },
-    { key: 'neck', label: '颈部', pattern: /甲状腺|颈动脉|颈部/, top: 56, left: 18 },
-    { key: 'chest', label: '胸部', pattern: /乳腺|乳房|心脏|心电|冠心|肺|胸/, top: 91, left: 91 },
-    { key: 'abdomen', label: '腹部', pattern: /肝|胆|胰|脾|肾|胃|肠|肌酐|尿素|尿酸/, top: 139, left: 14 },
-    { key: 'pelvis', label: '盆腔', pattern: /子宫|附件|卵巢|宫颈|前列腺|膀胱|盆腔|痔疮|肛门/, top: 177, left: 84 },
-    { key: 'limbs', label: '骨骼四肢', pattern: /骨|关节|肌肉|四肢|膝|腰椎|颈椎/, top: 226, left: 10 },
+    { key: 'head', label: '头面部', pattern: /眼|视力|屈光|耳|听力|鼻|咽|脑/, top: 17 },
+    { key: 'neck', label: '颈部', pattern: /甲状腺|颈动脉|颈部/, top: 55 },
+    { key: 'chest', label: '胸部', pattern: /乳腺|乳房|心脏|心电|冠心|肺|胸/, top: 91 },
+    { key: 'abdomen', label: '腹部', pattern: /肝|胆|胰|脾|肾|胃|肠|肌酐|尿素|尿酸/, top: 137 },
+    { key: 'pelvis', label: '盆腔', pattern: /子宫|附件|卵巢|宫颈|前列腺|膀胱|盆腔|痔疮|肛门/, top: 174 },
+    { key: 'limbs', label: '骨骼四肢', pattern: /骨|关节|肌肉|四肢|膝|腰椎|颈椎/, top: 225 },
   ]
   const allPortraitIssues = groups.flatMap(group => group.items)
   const bodyMarkers = bodyRegionRules.filter(rule => allPortraitIssues.some(issue => rule.pattern.test(issue)))
@@ -116,15 +116,14 @@ function HealthPortraitOverview({ user, reports = [] }) {
         <div style={{ minHeight: 360, borderRadius: 18, background: 'linear-gradient(180deg,#F1F8F4 0%,#FBFDFC 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
           <span style={{ position: 'absolute', top: 12, right: 14, padding: '3px 8px', borderRadius: 99, background: '#E3F1EA', color: '#527566', fontSize: 10, fontWeight: 700 }}>{portraitGenderLabel}</span>
           <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 190, height: 310 }}>
-            {isFemalePortrait && <div style={{ position: 'absolute', top: -5, left: 43, width: 64, height: 69, borderRadius: '34px 34px 22px 22px', background: '#79AA93' }} />}
             <div style={{ position: 'absolute', top: 0, left: 48, width: 54, height: 54, borderRadius: '50%', background: '#B8D8C9' }} />
             <div style={{ position: 'absolute', top: 61, left: isMalePortrait ? 30 : isFemalePortrait ? 38 : 34, width: isMalePortrait ? 90 : isFemalePortrait ? 74 : 82, height: 132, borderRadius: isMalePortrait ? '26px 26px 20px 20px' : '38px 38px 28px 28px', background: '#8FC2AA' }} />
             <div style={{ position: 'absolute', top: 72, left: 9, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(8deg)', transformOrigin: 'top' }} />
-            <div style={{ position: 'absolute', top: 72, right: 9, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-8deg)', transformOrigin: 'top' }} />
+            <div style={{ position: 'absolute', top: 72, left: 116, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-8deg)', transformOrigin: 'top' }} />
             <div style={{ position: 'absolute', top: 183, left: 40, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(2deg)', transformOrigin: 'top' }} />
-            <div style={{ position: 'absolute', top: 183, right: 40, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-2deg)', transformOrigin: 'top' }} />
+            <div style={{ position: 'absolute', top: 183, left: 81, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-2deg)', transformOrigin: 'top' }} />
             {bodyMarkers.map((marker, index) => (
-              <span key={marker.key} title={allPortraitIssues.filter(issue => marker.pattern.test(issue)).join('；')} style={{ position: 'absolute', top: marker.top, left: marker.left, display: 'inline-flex', alignItems: 'center', gap: 5, zIndex: 2, whiteSpace: 'nowrap' }}>
+              <span key={marker.key} title={allPortraitIssues.filter(issue => marker.pattern.test(issue)).join('；')} style={{ position: 'absolute', top: marker.top, left: 63, display: 'inline-flex', alignItems: 'center', gap: 5, zIndex: 2, whiteSpace: 'nowrap' }}>
                 <span style={{ width: 24, height: 24, borderRadius: '50%', background: index % 2 ? '#D97706' : '#DC3545', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 800, boxShadow: `0 3px 9px ${index % 2 ? '#D9770666' : '#DC354566'}` }}>{index + 1}</span>
                 <span style={{ padding: '2px 6px', borderRadius: 6, background: 'rgba(255,255,255,.92)', color: '#31473D', fontSize: 10, fontWeight: 700, boxShadow: '0 1px 4px rgba(30,60,45,.12)' }}>{marker.label}</span>
               </span>
