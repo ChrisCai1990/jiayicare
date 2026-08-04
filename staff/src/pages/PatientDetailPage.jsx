@@ -59,11 +59,21 @@ function HealthPortraitOverview({ user, reports = [] }) {
       .replace(/(?:正常心电图|阴性|NILM|标准型)/gi, '')
     return /异常|增生|囊肿|囊性|肌瘤|结节|团块|肿块|斑块|息肉|痔疮|脂肪肝|钙化|积液|占位|错构瘤|屈光不正|回声不均|回声欠均匀|偏高|偏低|升高|降低|下降|狭窄|减退|缺损|阳性/.test(signalText)
   }
+  const conciseAbnormalConclusion = (value) => {
+    const text = String(value || '').replace(/^小结\s*[：:]\s*/, '').trim()
+    const bracketFinding = text.match(/^【([^】]+)】/)
+    if (bracketFinding) return bracketFinding[1]
+    const findingsOnly = text.split(/\n+/).map(line => line
+      .replace(/[，,；;。]?\s*(?:建议|请到|可多吃|应注意|需要注意|注意事项)[\s\S]*$/, '')
+      .trim()
+    ).filter(Boolean).join('；')
+    return findingsOnly.length > 60 ? `${findingsOnly.slice(0, 60)}…` : findingsOnly
+  }
   const latestReportIssues = (latestBatch?.reports || []).flatMap(report => report.reportItems || [])
     .filter(item => ['abnormal', 'attention'].includes(item.status) || hasLegacyAbnormalConclusion(item))
     .map(item => {
       const result = item.conclusion || item.diagnosis || item.value || item.findings || ''
-      const conciseResult = result.length > 80 ? `${result.slice(0, 80)}…` : result
+      const conciseResult = conciseAbnormalConclusion(result)
       return [item.name || item.bodyPart, conciseResult].filter(Boolean).join('：')
     })
     .filter(isSubstantiveIssue)
@@ -76,6 +86,20 @@ function HealthPortraitOverview({ user, reports = [] }) {
     { label: '过敏风险', color: '#7C3AED', items: [profile.drugAllergy, profile.foodAllergy].filter(Boolean), emptyText: '暂无明确过敏记录' },
   ].map(group => ({ ...group, items: group.items.filter(isSubstantiveIssue) }))
   const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
+  const bodyRegionRules = [
+    { key: 'head', label: '头面部', pattern: /眼|视力|屈光|耳|听力|鼻|咽|脑/, top: 18, left: 82 },
+    { key: 'neck', label: '颈部', pattern: /甲状腺|颈动脉|颈部/, top: 56, left: 18 },
+    { key: 'chest', label: '胸部', pattern: /乳腺|乳房|心脏|心电|冠心|肺|胸/, top: 91, left: 91 },
+    { key: 'abdomen', label: '腹部', pattern: /肝|胆|胰|脾|肾|胃|肠|肌酐|尿素|尿酸/, top: 139, left: 14 },
+    { key: 'pelvis', label: '盆腔', pattern: /子宫|附件|卵巢|宫颈|前列腺|膀胱|盆腔|痔疮|肛门/, top: 177, left: 84 },
+    { key: 'limbs', label: '骨骼四肢', pattern: /骨|关节|肌肉|四肢|膝|腰椎|颈椎/, top: 226, left: 10 },
+  ]
+  const allPortraitIssues = groups.flatMap(group => group.items)
+  const bodyMarkers = bodyRegionRules.filter(rule => allPortraitIssues.some(issue => rule.pattern.test(issue)))
+  const genderText = String(user.gender || '')
+  const isFemalePortrait = /女|female/i.test(genderText)
+  const isMalePortrait = /男|male/i.test(genderText)
+  const portraitGenderLabel = isFemalePortrait ? '女性画像' : isMalePortrait ? '男性画像' : '通用画像'
 
   return (
     <div className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
@@ -90,17 +114,21 @@ function HealthPortraitOverview({ user, reports = [] }) {
       </div>
       <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'minmax(210px, .7fr) minmax(320px, 1.3fr)', gap: 28, alignItems: 'center' }}>
         <div style={{ minHeight: 360, borderRadius: 18, background: 'linear-gradient(180deg,#F1F8F4 0%,#FBFDFC 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
-          <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 150, height: 310 }}>
+          <span style={{ position: 'absolute', top: 12, right: 14, padding: '3px 8px', borderRadius: 99, background: '#E3F1EA', color: '#527566', fontSize: 10, fontWeight: 700 }}>{portraitGenderLabel}</span>
+          <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 190, height: 310 }}>
+            {isFemalePortrait && <div style={{ position: 'absolute', top: -5, left: 43, width: 64, height: 69, borderRadius: '34px 34px 22px 22px', background: '#79AA93' }} />}
             <div style={{ position: 'absolute', top: 0, left: 48, width: 54, height: 54, borderRadius: '50%', background: '#B8D8C9' }} />
-            <div style={{ position: 'absolute', top: 61, left: 34, width: 82, height: 132, borderRadius: '38px 38px 24px 24px', background: '#8FC2AA' }} />
+            <div style={{ position: 'absolute', top: 61, left: isMalePortrait ? 30 : isFemalePortrait ? 38 : 34, width: isMalePortrait ? 90 : isFemalePortrait ? 74 : 82, height: 132, borderRadius: isMalePortrait ? '26px 26px 20px 20px' : '38px 38px 28px 28px', background: '#8FC2AA' }} />
             <div style={{ position: 'absolute', top: 72, left: 9, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(8deg)', transformOrigin: 'top' }} />
             <div style={{ position: 'absolute', top: 72, right: 9, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-8deg)', transformOrigin: 'top' }} />
             <div style={{ position: 'absolute', top: 183, left: 40, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(2deg)', transformOrigin: 'top' }} />
             <div style={{ position: 'absolute', top: 183, right: 40, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-2deg)', transformOrigin: 'top' }} />
-            {issueCount > 0 && <>
-              <span style={{ position: 'absolute', top: 76, left: 61, width: 28, height: 28, borderRadius: '50%', background: '#DC3545', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 800, boxShadow: '0 3px 10px #DC354566' }}>!</span>
-              <span style={{ position: 'absolute', top: 138, left: 61, width: 28, height: 28, borderRadius: '50%', background: '#D97706', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 13, fontWeight: 800, boxShadow: '0 3px 10px #D9770666' }}>!</span>
-            </>}
+            {bodyMarkers.map((marker, index) => (
+              <span key={marker.key} title={allPortraitIssues.filter(issue => marker.pattern.test(issue)).join('；')} style={{ position: 'absolute', top: marker.top, left: marker.left, display: 'inline-flex', alignItems: 'center', gap: 5, zIndex: 2, whiteSpace: 'nowrap' }}>
+                <span style={{ width: 24, height: 24, borderRadius: '50%', background: index % 2 ? '#D97706' : '#DC3545', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 800, boxShadow: `0 3px 9px ${index % 2 ? '#D9770666' : '#DC354566'}` }}>{index + 1}</span>
+                <span style={{ padding: '2px 6px', borderRadius: 6, background: 'rgba(255,255,255,.92)', color: '#31473D', fontSize: 10, fontWeight: 700, boxShadow: '0 1px 4px rgba(30,60,45,.12)' }}>{marker.label}</span>
+              </span>
+            ))}
           </div>
         </div>
         <div style={{ display: 'grid', gap: 12 }}>
@@ -108,9 +136,12 @@ function HealthPortraitOverview({ user, reports = [] }) {
             <div key={group.label} style={{ padding: '13px 15px', border: '1px solid #E5ECE8', borderLeft: `4px solid ${group.color}`, borderRadius: 10, background: '#fff' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>{group.label}</div>
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-                {group.items.length ? group.items.map((item, index) => (
-                  <span key={`${item}-${index}`} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600 }}>{item}</span>
-                )) : <span style={{ color: '#A0AEA7', fontSize: 12 }}>{group.emptyText || '暂无记录'}</span>}
+                {group.items.length ? <>
+                  {group.items.slice(0, 8).map((item, index) => (
+                    <span key={`${item}-${index}`} title={item} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600, lineHeight: 1.5, maxWidth: '100%' }}>{item}</span>
+                  ))}
+                  {group.items.length > 8 && <span style={{ padding: '4px 9px', borderRadius: 7, background: '#F3F5F4', color: '#66756E', fontSize: 12 }}>另有 {group.items.length - 8} 项，详见体检报告</span>}
+                </> : <span style={{ color: '#A0AEA7', fontSize: 12 }}>{group.emptyText || '暂无记录'}</span>}
               </div>
             </div>
           ))}
