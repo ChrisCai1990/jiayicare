@@ -18,12 +18,23 @@ function HealthPortraitOverview({ user, reports = [] }) {
     if (/^无.{0,12}(史|过敏|异常)$/.test(text)) return false
     return true
   }
-  const auditedReports = reports.filter(report => report.audit_status === 'audited' || report.aiStatus === 'reviewed')
-  const latestReport = [...auditedReports].sort((a, b) => {
+  // 健康画像里的体检结论必须来自年度/全面体检。单项化验、超声、影像等即使日期更新，
+  // 也不能冒充“最近一次体检”，否则会把局部结果误解为客户整体健康状况。
+  const comprehensiveReports = reports.filter(report =>
+    report.type === 'annual' && (report.audit_status === 'audited' || report.aiStatus === 'reviewed')
+  )
+  const latestComprehensiveReport = [...comprehensiveReports].sort((a, b) => {
     const dateA = new Date(a.checkDate || a.date || a.createdAt || 0).getTime()
     const dateB = new Date(b.checkDate || b.date || b.createdAt || 0).getTime()
     return dateB - dateA
   })[0]
+  const latestComprehensiveDate = latestComprehensiveReport
+    ? new Date(latestComprehensiveReport.checkDate || latestComprehensiveReport.date || latestComprehensiveReport.createdAt || 0)
+    : null
+  const hasRecentComprehensiveReport = latestComprehensiveDate
+    && !Number.isNaN(latestComprehensiveDate.getTime())
+    && Date.now() - latestComprehensiveDate.getTime() <= 365 * 24 * 60 * 60 * 1000
+  const latestReport = hasRecentComprehensiveReport ? latestComprehensiveReport : null
   const latestReportIssues = (latestReport?.reportItems || [])
     .filter(item => ['abnormal', 'attention'].includes(item.status))
     .map(item => {
@@ -34,9 +45,9 @@ function HealthPortraitOverview({ user, reports = [] }) {
   const latestReportDate = latestReport?.checkDate || latestReport?.date || (latestReport?.createdAt ? new Date(latestReport.createdAt).toLocaleDateString('zh-CN') : '')
 
   const groups = [
-    { label: '慢病与重点问题', color: '#DC3545', items: user.chronicDiseases || [] },
-    { label: `最新体检异常${latestReportDate ? ` · ${latestReportDate}` : ''}`, color: '#D97706', items: latestReportIssues },
-    { label: '过敏风险', color: '#7C3AED', items: [profile.drugAllergy, profile.foodAllergy].filter(Boolean) },
+    { label: '慢病与重点问题', color: '#DC3545', items: user.chronicDiseases || [], emptyText: '暂无记录' },
+    { label: `最近一次全面体检异常${latestReportDate ? ` · ${latestReportDate}` : ''}`, color: '#D97706', items: latestReportIssues, emptyText: latestReport ? '该次全面体检未记录异常' : '缺乏近1年的全面体检数据' },
+    { label: '过敏风险', color: '#7C3AED', items: [profile.drugAllergy, profile.foodAllergy].filter(Boolean), emptyText: '暂无明确过敏记录' },
   ].map(group => ({ ...group, items: group.items.filter(isSubstantiveIssue) }))
   const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
 
@@ -45,7 +56,7 @@ function HealthPortraitOverview({ user, reports = [] }) {
       <div className="card-header">
         <div>
           <div className="card-title">人物健康画像</div>
-          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>把客户已有健康问题集中标注，便于医护团队快速了解重点</div>
+          <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>把客户已有健康问题集中标注，便于健康管理人员快速了解重点</div>
         </div>
         <span style={{ padding: '5px 11px', borderRadius: 99, background: issueCount ? '#FFF1F0' : '#E8F5EE', color: issueCount ? '#B42318' : '#1E6B50', fontSize: 12, fontWeight: 700 }}>
           {issueCount ? `${issueCount} 项需关注` : '暂未记录健康问题'}
@@ -73,7 +84,7 @@ function HealthPortraitOverview({ user, reports = [] }) {
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                 {group.items.length ? group.items.map((item, index) => (
                   <span key={`${item}-${index}`} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600 }}>{item}</span>
-                )) : <span style={{ color: '#A0AEA7', fontSize: 12 }}>暂无记录</span>}
+                )) : <span style={{ color: '#A0AEA7', fontSize: 12 }}>{group.emptyText || '暂无记录'}</span>}
               </div>
             </div>
           ))}
@@ -7629,7 +7640,7 @@ export default function PatientDetailPage() {
             <div className="card-header">
               <div>
                 <div className="card-title">今日健康状态 / 不适主诉</div>
-                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>近一年不适、医护处置方案及后续记录集中展示</div>
+                <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>近一年不适、处理方案及后续记录集中展示</div>
               </div>
               <span style={{ fontSize: 12, color: '#4A6558' }}>共 {healthRecords.length} 条</span>
             </div>
@@ -7654,7 +7665,7 @@ export default function PatientDetailPage() {
                             {record.note && record.note !== record.value && <div style={{ fontSize: 12, color: '#4A6558', marginTop: 4 }}>{record.note}</div>}
                             <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>{new Date(record.recordedAt).toLocaleString('zh-CN')} · {source}{workflow.decidedByName ? ` · 处理人：${workflow.decidedByName}` : ''}</div>
                             <div style={{ marginTop: 9, padding: '9px 11px', background: '#fff', border: '1px solid #E5ECE8', borderRadius: 8, fontSize: 12, color: '#4A6558' }}>
-                              <b style={{ color: '#1A2B24' }}>对应解决方案：</b>{workflow.decisionNote || (pending ? '等待医护团队核实并制定方案' : '暂无补充处置说明')}
+                              <b style={{ color: '#1A2B24' }}>对应解决方案：</b>{workflow.decisionNote || (pending ? '等待健康管理人员核实并制定方案' : '暂无补充处置说明')}
                             </div>
                           </div>
                           <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', maxWidth: 360 }}>
