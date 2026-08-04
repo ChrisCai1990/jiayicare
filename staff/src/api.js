@@ -152,11 +152,6 @@ export const staffAPI = {
   // 健康方案模板（新建方案时选用）
   getPlanTemplates: (type) => req('/staff/plan-templates' + (type ? '?type=' + type : '')),
 
-  // 检查开单
-  getPatientRequisitions: (patientId)     => req(`/staff/patients/${patientId}/requisitions`),
-  createRequisition:      (data)          => req('/staff/requisitions', { method: 'POST', body: JSON.stringify(data) }),
-  cancelRequisition:      (id)            => req(`/staff/requisitions/${id}/cancel`, { method: 'PATCH' }),
-  getRequisitionItems:    (q = '')        => req(`/staff/requisition-items?q=${encodeURIComponent(q)}`),
 
   // Questionnaires push
   getQuestionnaires:          ()         => req('/staff/questionnaires'),
@@ -383,7 +378,6 @@ export const staffAPI = {
   // 场景五：AI 个性化内容推荐
   generateAIContentRecommend:   (id) => req(`/staff/patients/${id}/ai-content-recommend`, { method: 'POST' }),
   // 场景11：AI开单建议（从管理方案异常复查生成，返回建议，不创建记录）
-  generateAIExamSuggest: (id) => req(`/staff/patients/${id}/ai-exam-requisition-suggest`, { method: 'POST' }),
   // 场景8：AI营养干预方案（营养师审核）——2026-07-13起必须先选定 templateId 模板，AI只在模板骨架基础上具体化
   generateAINutritionPlan: (id, templateId, goal) => req(`/staff/patients/${id}/ai-nutrition-plan`, { method: 'POST', body: JSON.stringify({ templateId, goal }) }),
   // 场景6：AI年度体检方案（健管专员审核）——2026-07-13起必须先选定 templateId 套餐模板，标准项目原样锁定，AI只在加项库里做选择

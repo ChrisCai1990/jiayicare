@@ -51,7 +51,7 @@ async function generateDailyTeamInsight(userId, dateStr) {
   }
 
   const prompt = `你是"金伊森"健康管理团队的助手，需要基于会员${user.name}昨日（${dateStr}）的健康打卡数据，
-以健康顾问、营养师、健康管理师、AI健康分析四个视角分别给出简短反馈，供会员今天打开App时查看。
+以健康顾问、营养师、健康管理师、AI健康信息整理四个视角分别给出简短反馈，供会员今天打开App时查看。
 
 【会员慢病标签】${user.chronicDiseases?.join('、') || '无'}
 【昨日打卡数据】
@@ -63,7 +63,7 @@ ${dataText}
 - doctor（健康顾问）：关注是否有医疗风险信号，没有则说明"暂无新的医疗风险"
 - nutritionist（营养师）：基于饮食/血糖等数据给出次日饮食建议
 - healthManager（健康管理师）：基于整体完成度说明跟进内容或待更新项
-- aiSummary（AI健康分析）：一句话总结昨日数据反映出的身体状态变化
+- aiSummary（AI健康信息整理）：一句话客观概述昨日记录变化，不作疾病诊断、概率判断或诊疗建议
 - todaySuggestion（今日建议）：一条具体可执行的行动建议（如具体时间/具体动作）
 
 请严格按以下JSON格式输出（仅JSON，不要其他文字），每项20-40字：

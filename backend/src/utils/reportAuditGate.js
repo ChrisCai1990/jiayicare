@@ -23,7 +23,7 @@ async function checkReportAuditGate(userId) {
   if (!user || !user.assignedFamilyDoctor) return null; // 无健康顾问的客户不受此拦截，维持原有逻辑
 
   const total = await MedicalReport.countDocuments({ user: userId });
-  if (total === 0) return '请先上传体检报告后再生成AI健康分析/风险评估';
+  if (total === 0) return '请先上传体检报告后再生成AI健康信息整理/健康关注提示';
 
   const notStaffAudited = await MedicalReport.countDocuments({ user: userId, audit_status: { $ne: 'audited' } });
   if (notStaffAudited > 0) return `还有 ${notStaffAudited} 份体检报告健管专员未审核，请先完成审核后再生成`;

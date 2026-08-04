@@ -296,7 +296,7 @@ function MedicalTreatmentFields({ data, set, nav, patientId }) {
       <FieldRow label="就诊科室">
         <TextInput value={data.department} onChange={v => set('department', v)} placeholder="如：心内科、内分泌科" />
       </FieldRow>
-      <FieldRow label="主治医生">
+      <FieldRow label="健康顾问">
         <TextInput value={data.doctor} onChange={v => set('doctor', v)} placeholder="医生姓名" />
       </FieldRow>
       <FieldRow label="就医原因">

@@ -31,7 +31,7 @@ function buildHealthInsightContext(user) {
   if (latestEntry?.sections) {
     const s = latestEntry.sections;
     if (s.medical_priority?.items?.length) {
-      lines.push(`【AI健康分析·${latestYear}年度·重点医疗问题】` + s.medical_priority.items.map(i => `${i.name}（${i.urgency}）：${i.action || ''}`).join('；'));
+      lines.push(`【AI健康信息整理·${latestYear}年度·重点关注信息】` + s.medical_priority.items.map(i => `${i.name}（${i.urgency}）：${i.action || ''}`).join('；'));
     }
     if (s.lifestyle_assessment?.summary) {
       lines.push(`【生活方式评估】${s.lifestyle_assessment.summary}`);
@@ -39,7 +39,7 @@ function buildHealthInsightContext(user) {
   }
   const risk = user.aiRiskAssessment || {};
   if (risk.overallSummary) {
-    lines.push(`【AI风险评估】整体风险等级：${risk.overallLevel || '未知'}；${risk.overallSummary}`);
+    lines.push(`【健康关注提示】整体关注程度：${risk.overallLevel || '未知'}；${risk.overallSummary}`);
   }
   return lines.length ? `\n会员健康管理资料摘要（仅用于梳理服务需求，不得据此诊断或治疗）：\n${lines.join('\n')}` : '';
 }

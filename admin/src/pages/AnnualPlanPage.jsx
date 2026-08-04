@@ -112,7 +112,7 @@ function MedicalTreatmentFields({ data, set }) {
       <FieldRow label="就医频率"><SelectInput value={data.time} onChange={v => set('time', v)} options={TIME_OPTIONS} placeholder="请选择频率" /></FieldRow>
       <FieldRow label="就诊医院"><SelectInput value={data.hospital} onChange={v => set('hospital', v)} options={HOSPITAL_OPTIONS} placeholder="请选择医院" /></FieldRow>
       <FieldRow label="就诊科室"><TextInput value={data.department} onChange={v => set('department', v)} placeholder="如：心内科、内分泌科" /></FieldRow>
-      <FieldRow label="主治医生"><TextInput value={data.doctor} onChange={v => set('doctor', v)} placeholder="医生姓名" /></FieldRow>
+      <FieldRow label="健康顾问"><TextInput value={data.doctor} onChange={v => set('doctor', v)} placeholder="健康顾问姓名" /></FieldRow>
       <FieldRow label="就医原因"><TextInput value={data.reason} onChange={v => set('reason', v)} placeholder="主要诊疗需求或问题" multiline /></FieldRow>
       <FieldRow label="协调专员"><TextInput value={data.coordinator} onChange={v => set('coordinator', v)} placeholder="负责协调的健管专员姓名" /></FieldRow>
       <FieldRow label="备注"><TextInput value={data.notes} onChange={v => set('notes', v)} placeholder="其他说明" multiline /></FieldRow>

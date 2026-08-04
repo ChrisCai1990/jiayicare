@@ -167,7 +167,7 @@ export default function ProfileScreen({ navigation }) {
                 </View>
                 <View>
                   <Text style={styles.noServiceTitle}>开通专属服务包</Text>
-                  <Text style={styles.noServiceSub}>获得医生随访、健管服务与专属权益</Text>
+                  <Text style={styles.noServiceSub}>获得健康顾问跟进、健管服务与专属权益</Text>
                 </View>
               </View>
               <View style={styles.noServiceBtn}>

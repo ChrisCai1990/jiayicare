@@ -949,7 +949,7 @@ function NutritionPlanModal({ onClose, onSaved }) {
           </div>
           {/* 全宽 textarea */}
           {[
-            { k: 'nutritionSupplements', l: '营养素补充建议', p: '营养素名称、剂量、用法', rows: 3 },
+            { k: 'nutritionSupplements', l: '现有营养补充信息（仅记录）', p: '仅记录客户已在使用的产品及信息来源，不生成推荐或剂量建议', rows: 3 },
             { k: 'exerciseSuggestion',   l: '运动建议',       p: '运动类型、频率、时长、强度', rows: 3 },
             { k: 'allowedFoods',         l: '推荐食物',       p: '逗号分隔', rows: 2 },
             { k: 'forbiddenFoods',       l: '禁忌食物',       p: '逗号分隔', rows: 2 },

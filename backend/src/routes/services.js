@@ -27,7 +27,7 @@ const SERVICE_CATALOG = [
   {
     id: 'S2', category: '专家咨询',
     name: '健康管理需求梳理服务',
-    subtitle: '主任医师一对一，报告解读+用药建议',
+    subtitle: '健康顾问一对一，协助整理报告信息与就医事项',
     price: 299, originalPrice: 499,
     rating: 4.8, reviewCount: 512,
     tag: '限时折扣', tagColor: '#F39C12',

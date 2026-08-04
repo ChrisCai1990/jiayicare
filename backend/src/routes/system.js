@@ -42,7 +42,7 @@ router.post('/push', auth, async (req, res) => {
       if (sys >= 140) {
         await maybeCreate(
           '血压异常提醒',
-          `您最近一次血压记录收缩压为 ${sys} mmHg，已超出正常范围（≥140 mmHg）。建议及时联系主治医师，避免剧烈活动，并按医嘱服药。`
+          `您最近一次血压记录收缩压为 ${sys} mmHg，已超出常用参考范围（≥140 mmHg）。本提示不作诊断或用药建议，请携带记录咨询为您诊疗的医疗机构或执业医师。`
         );
       } else if (sys >= 130) {
         await maybeCreate(
@@ -95,7 +95,7 @@ router.post('/push', auth, async (req, res) => {
       if (daysLeft > 0 && daysLeft <= 14) {
         await maybeCreate(
           '服务包即将到期',
-          `您的"${req.user.servicePackage || '健康服务包'}"将在 ${daysLeft} 天后到期，到期后将无法享受专属医生随访和健管服务。请前往"我的"页面及时续费。`
+          `您的"${req.user.servicePackage || '健康服务包'}"将在 ${daysLeft} 天后到期，到期后将无法享受健康顾问跟进和健康管理服务。请前往"我的"页面查看服务信息。`
         );
       }
     }

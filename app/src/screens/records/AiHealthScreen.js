@@ -9,7 +9,7 @@ import { userAPI } from '../../services/api';
 import tts from '../../utils/tts';
 import AiRuleHint from '../../components/AiRuleHint';
 
-const TABS = ['AI健康分析', 'AI风险评估'];
+const TABS = ['健康信息整理', '健康关注提示'];
 
 // 把AI健康分析结果拼接成一段可朗读的摘要文本
 function buildSummarySpeech(sections) {
@@ -90,7 +90,7 @@ function HealthSummaryView({ sections, navigation }) {
   // 用户先看医护审核过的疾病结论，再看生活习惯依据，与医护实际审核口径一致。
   return (
     <View>
-      <SectionCard icon="🔬" title="肿瘤风险筛查分析">
+      <SectionCard icon="🔬" title="肿瘤筛查信息整理">
         <Text style={styles.subLabel}>已完成筛查</Text>
         <ListLines items={tumor.completed} />
         <Text style={[styles.subLabel, { marginTop: 8 }]}>异常发现</Text>
@@ -100,15 +100,15 @@ function HealthSummaryView({ sections, navigation }) {
         {!!tumor.summary && <Text style={styles.summaryBox}>{tumor.summary}</Text>}
       </SectionCard>
 
-      <SectionCard icon="❤️" title="心脑血管病风险分析">
-        <Text style={styles.subLabel}>高风险因素</Text>
+      <SectionCard icon="❤️" title="心脑血管相关信息整理">
+        <Text style={styles.subLabel}>重点关注信息</Text>
         <ListLines items={cardio.high} color={colors.danger} />
-        <Text style={[styles.subLabel, { marginTop: 8 }]}>中风险因素</Text>
+        <Text style={[styles.subLabel, { marginTop: 8 }]}>持续关注信息</Text>
         <ListLines items={cardio.medium} color={colors.warning} />
         {!!cardio.summary && <Text style={styles.summaryBox}>{cardio.summary}</Text>}
       </SectionCard>
 
-      <SectionCard icon="📊" title="慢性病及其他健康指标分析">
+      <SectionCard icon="📊" title="慢病及其他健康信息整理">
         {(chronic.items || []).length === 0 && <Text style={styles.mutedText}>暂无</Text>}
         {(chronic.items || []).map((it, i) => {
           const st = STATUS_META[it.status] || STATUS_META.normal;
@@ -127,7 +127,7 @@ function HealthSummaryView({ sections, navigation }) {
         })}
       </SectionCard>
 
-      <SectionCard icon="📋" title="体检全面性评估">
+      <SectionCard icon="📋" title="体检资料覆盖情况">
         <Text style={styles.subLabel}>已覆盖</Text>
         <ListLines items={checkup.covered} />
         <Text style={[styles.subLabel, { marginTop: 8 }]}>缺失项目</Text>
@@ -135,7 +135,7 @@ function HealthSummaryView({ sections, navigation }) {
         {!!checkup.suggestion && <Text style={styles.summaryBox}>{checkup.suggestion}</Text>}
       </SectionCard>
 
-      <SectionCard icon="🏥" title="需优先解决的医疗问题">
+      <SectionCard icon="🏥" title="需优先关注的信息">
         {(medPriority.items || []).length === 0 && <Text style={styles.mutedText}>暂无</Text>}
         {(medPriority.items || []).map((it, i) => {
           const u = URGENCY_META[it.urgency] || URGENCY_META.low;
@@ -325,7 +325,7 @@ export default function AiHealthScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
-        <Text style={styles.pageTitle}>AI健康分析</Text>
+        <Text style={styles.pageTitle}>AI健康信息整理与趋势分析</Text>
         <View style={{ width: 30 }} />
       </View>
 

@@ -148,7 +148,7 @@ export default function PublicReportPage() {
           <View style={{ margin: `${spacing.lg}px`, marginTop: `${spacing.xl}px`, backgroundColor: colors.primary10, borderRadius: `${radius.lg}px`, padding: `${spacing.xl}px`, textAlign: 'center', border: `1px solid ${colors.primary}30` }}>
             <Text style={{ fontSize: '28px', display: 'block', marginBottom: '8px' }}>❤️</Text>
             <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.xs}px` }}>管理您的健康数据</Text>
-            <Text style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '20px', display: 'block', marginBottom: `${spacing.lg}px` }}>注册嘉医汇，获得专属医生随访与健康管理服务</Text>
+            <Text style={{ fontSize: '13px', color: colors.textSecondary, lineHeight: '20px', display: 'block', marginBottom: `${spacing.lg}px` }}>注册嘉医汇，获得健康顾问跟进与健康管理服务</Text>
             <View onClick={goToLogin} style={{ display: 'inline-block', padding: '12px 32px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }}>
               <Text style={{ fontSize: '14px', color: '#fff', fontWeight: 700 }}>立即体验 →</Text>
             </View>

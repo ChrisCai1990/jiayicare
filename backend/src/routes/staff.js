@@ -2914,6 +2914,8 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
 // ── 检查开单（ExamRequisition） ───────────────────────────
 // GET /api/staff/patients/:id/requisitions
 router.get('/patients/:id/requisitions', staffAuth, async (req, res) => {
+  return res.status(410).json({ success: false, message: '检查开单功能已停用。本平台仅提供非医疗健康管理服务。' });
+  /* istanbul ignore next -- 历史数据保留但不再通过产品接口提供 */
   try {
     const reqs = await ExamRequisition.find({ patientId: req.params.id })
       .sort({ createdAt: -1 })
@@ -2954,6 +2956,8 @@ router.post('/requisitions', staffAuth, async (req, res) => {
 
 // PATCH /api/staff/requisitions/:id/cancel — 取消开单
 router.patch('/requisitions/:id/cancel', staffAuth, async (req, res) => {
+  return res.status(410).json({ success: false, message: '检查开单功能已停用。' });
+  /* istanbul ignore next -- 历史实现不再可达 */
   try {
     const r = await ExamRequisition.findById(req.params.id);
     if (!r) return res.status(404).json({ success: false, message: '开单不存在' });
@@ -2969,6 +2973,8 @@ router.patch('/requisitions/:id/cancel', staffAuth, async (req, res) => {
 // 2026-07-02：补充功能医学检测这一类，此前体检方案设计/开单只能选检验医嘱和检查医嘱，
 // 跟 admin 后台"功能医学检测"页面配置好的项目完全不通，这里补齐第三类，跟前两类同构处理。
 router.get('/requisition-items', staffAuth, async (req, res) => {
+  return res.status(410).json({ success: false, message: '检查开单功能已停用。' });
+  /* istanbul ignore next -- 方案项目关联使用独立的子项目接口 */
   try {
     const { q = '' } = req.query;
     const filter = q ? { name: { $regex: q, $options: 'i' } } : {};
@@ -4007,7 +4013,8 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
   }
 });
 
-// 健管专员/就医专员手动新增药物、营养素时需上级审核（药物→健康顾问，营养素→营养师）。
+// 健管专员/就医专员录入客户现有用药、营养补充信息后需核对（用药→健康顾问，营养补充→营养师）。
+// 核对只确认记录与客户提供的处方、医嘱、包装或陈述一致，不构成处方、推荐或剂量调整。
 // 其余角色（家医/营养师本人、超管等）录入直接生效，避免自己审自己。
 const NEEDS_REVIEW_ROLES = ['healthManager', 'medicalAssistant'];
 
@@ -4016,7 +4023,7 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
   try {
     const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
     if (!med) return res.status(404).json({ success: false, message: '记录不存在' });
-    if (med.aiStatus !== 'pending') return res.status(400).json({ success: false, message: '该记录无需审核' });
+    if (med.aiStatus !== 'pending') return res.status(400).json({ success: false, message: '该记录无需核对' });
     const { action } = req.body; // 'approve' | 'reject' | 'withdraw'
     const isDoctor = ['familyDoctor', 'superadmin'].includes(req.staff.role);
     const isCreator = String(med.staffId) === String(req.staff._id);
@@ -4029,7 +4036,7 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
       return res.json({ success: true, message: '已撤回' });
     }
 
-    if (!isDoctor) return res.status(403).json({ success: false, message: '仅健康顾问可审核药物' });
+    if (!isDoctor) return res.status(403).json({ success: false, message: '仅健康顾问可核对用药信息' });
     if (action === 'reject') {
       await med.deleteOne();
       return res.json({ success: true, message: '已驳回并删除' });
@@ -4038,7 +4045,7 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
     med.reviewedByName = req.staff.name || '';
     med.reviewedAt = new Date();
     await med.save();
-    res.json({ success: true, data: med, message: '审核通过，药物已生效' });
+    res.json({ success: true, data: med, message: '用药信息已核对并归档' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -4058,7 +4065,7 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
     const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note } = req.body;
     if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
-    // 健管专员/就医专员手动新增的药物需健康顾问审核后才生效；家医/超管等本人录入直接生效（不必自审）
+    // 健管专员/就医专员录入的客户现有用药信息需健康顾问核对后归档；不代表平台开药或调整用药。
     const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
     const med = await Medication.create({
       user: req.params.id, name, brandName: brandName || '', specification: specification || '', dosage, method: method || '口服',
@@ -4946,7 +4953,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       || (scope === 'doctor' && role === 'familyDoctor')
       || (scope === 'nutrition' && role === 'nutritionist');
     if (!canGen) {
-      return res.status(403).json({ success: false, message: '您没有生成该AI健康分析的权限，仅可查看' });
+      return res.status(403).json({ success: false, message: '您没有生成该AI健康信息整理的权限，仅可查看' });
     }
     // 双审强制前置：健康顾问生成AI健康分析前，必须先审核确认该客户所有健管专员已审核的报告
     // （2026-07-21需求），营养师维度的生活方式评估同样依赖报告数据，一并拦截。与 user.js 客户
@@ -5377,7 +5384,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const ais = user.aiHealthSummary;
     if (!ais || !ais.sections) {
-      return res.status(400).json({ success: false, message: '请先生成AI健康分析报告' });
+      return res.status(400).json({ success: false, message: '请先生成AI健康信息整理报告' });
     }
 
     // 各方案类型包含的板块（与前端 AnnualMgmtPlanPage 的 PLAN_TYPE_MODULES 保持一致）
@@ -5795,6 +5802,8 @@ router.patch('/patients/:id/medications/:mid/ai-review', staffAuth, async (req, 
 // ── 场景十：AI 营养素建议（营养师）──────────────────────────────────────
 // POST /api/staff/patients/:id/ai-supplement-suggest
 router.post('/patients/:id/ai-supplement-suggest', staffAuth, async (req, res) => {
+  return res.status(410).json({ success: false, message: 'AI营养素推荐功能已停用。营养补充信息仅按客户提供的产品标签、专业机构建议或本人陈述记录。' });
+  /* istanbul ignore next -- 历史实现保留用于追溯，不再可达 */
   try {
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases lifestyle lifestyle_data labValues');
@@ -5859,7 +5868,7 @@ router.post('/patients/:id/ai-supplement-suggest', staffAuth, async (req, res) =
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// PATCH /api/staff/patients/:id/supplements/:sid/ai-review — 审核AI营养素建议
+// PATCH /api/staff/patients/:id/supplements/:sid/ai-review — 处理停用前遗留的AI营养素草稿
 // action: approve/reject 仅限营养师或超管（审核权限）；withdraw 仅限生成人本人（撤回自己误点生成的待审核建议）
 router.patch('/patients/:id/supplements/:sid/ai-review', staffAuth, async (req, res) => {
   try {
@@ -6739,7 +6748,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         // 健康顾问审 5 维（整体未通过 && 医师维度未通过；自助生成的免审核，不进队列）
         if (can('summary_review') && e.source !== 'self_service' && !e.approvedAt && !e.doctorApprovedAt) {
           todos.push({
-            id: 'summary_' + u._id, type: 'summary_review', label: 'AI健康分析待审核（5维度）', priority: 2,
+            id: 'summary_' + u._id, type: 'summary_review', label: 'AI健康信息整理待核对（5维度）', priority: 2,
             patientName: u.name || '未知', patientId: String(u._id),
             summary: `${y}年度 · 肿瘤/心脑血管/慢病/体检全面性/优先医疗问题`,
             createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
@@ -6752,7 +6761,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           todos.push({
             id: 'lifestyle_' + u._id, type: 'lifestyle_review', label: '生活方式评估待审核', priority: 3,
             patientName: u.name || '未知', patientId: String(u._id),
-            summary: `${y}年度 · AI健康分析「生活方式评估」维度`,
+            summary: `${y}年度 · AI健康信息整理「生活方式信息」维度`,
             createdAt, overdue, link: `/patients/${u._id}?tab=ai&aiYear=${y}`,
           });
         }
@@ -6767,7 +6776,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       pendingMeds.forEach(m => {
         const createdAt = m.createdAt || new Date();
         todos.push({
-          id: 'medication_' + m._id, type: 'medication_review', label: '药物待审核', priority: 2,
+          id: 'medication_' + m._id, type: 'medication_review', label: '用药信息待核对', priority: 2,
           patientName: m.user?.name || '未知', patientId: String(m.user?._id || ''),
           summary: `${m.name} ${m.dosage} ${m.frequency}${m.purpose ? ' · ' + m.purpose : ''}`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
@@ -6931,7 +6940,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       const draftFilter = { aiStatus: 'pending' };
       if (!isSuper) draftFilter.type = roleTypeMap[role];
       if (myPatientIds) draftFilter.patientId = { $in: myPatientIds };
-      const draftLabel = { routine: '日常随访', doctor_followup: '医生随访', nutrition: '营养干预' };
+      const draftLabel = { routine: '日常随访', doctor_followup: '健康顾问跟进', nutrition: '营养干预' };
       const pendingDrafts = await ServiceRecord.find(draftFilter)
         .populate('patientId', 'name').sort({ aiGeneratedAt: -1 }).limit(50).lean();
       pendingDrafts.forEach(r => {
@@ -8755,7 +8764,6 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
       { name: '午餐方案', category: '营养干预', notes: lunch },
       { name: '晚餐方案', category: '营养干预', notes: dinner },
       ...(snack ? [{ name: '加餐方案', category: '营养干预', notes: snack }] : []),
-      ...(tc.nutritionSupplements ? [{ name: '营养素补充建议', category: '营养干预', notes: tc.nutritionSupplements }] : []),
       ...(tc.exerciseSuggestion ? [{ name: '运动建议', category: '运动康复', notes: tc.exerciseSuggestion }] : []),
     ].map(i => ({ ...i, status: 'pending' }));
 
@@ -8768,7 +8776,7 @@ ${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制
       snack: { content: snack },
       principle: { dietPrinciple: tc.dietPrinciple || '', cookingMethod: tc.cookingMethod || '', mealOrder: tc.mealOrder || '', dailyWater: tc.dailyWater || '' },
       forbidden: { allowedFoods: tc.allowedFoods || '', forbiddenFoods: tc.forbiddenFoods || '' },
-      supplement: { content: tc.nutritionSupplements || '' },
+      supplement: { content: '' },
       exercise: { content: tc.exerciseSuggestion || '' },
     };
 
@@ -9081,7 +9089,7 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
     const addonPool = tplContent.addons || [];
 
     const riskYears = Object.keys(riskByYear(user.aiRiskAssessment)).sort((a, b) => Number(b) - Number(a));
-    const riskSummary = (riskYears.length ? riskByYear(user.aiRiskAssessment)[riskYears[0]]?.overallSummary : null) || '未进行AI风险评估';
+    const riskSummary = (riskYears.length ? riskByYear(user.aiRiskAssessment)[riskYears[0]]?.overallSummary : null) || '暂无健康关注提示';
 
     // 加项库为空时无需调用AI，标准项目直接落地即可
     let chosenAddonIds = [];

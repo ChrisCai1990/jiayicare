@@ -192,7 +192,7 @@ export default function PublicReportScreen({ route, navigation }) {
           <View style={styles.ctaCard}>
             <Ionicons name="heart-outline" size={28} color={colors.primary} style={{ marginBottom: 8 }} />
             <Text style={styles.ctaTitle}>管理您的健康数据</Text>
-            <Text style={styles.ctaDesc}>注册嘉医汇，获得专属医生随访与健康管理服务</Text>
+            <Text style={styles.ctaDesc}>注册嘉医汇，获得健康顾问跟进与健康管理服务</Text>
             <TouchableOpacity style={styles.ctaBtn} onPress={() => {
               if (typeof window !== 'undefined') window.location.href = window.location.origin;
             }}>

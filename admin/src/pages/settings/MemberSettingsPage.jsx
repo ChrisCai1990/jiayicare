@@ -77,7 +77,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
                 <td style={{ padding: '10px 14px', fontWeight: 500 }}>{item.name}</td>
                 {withClientBrand && <td style={{ padding: '10px 14px' }}>{brandLabel(item.clientBrand)}</td>}
                 {withEntitlements && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
-                  {[item.entitlements?.aiHealthAnalysis && 'AI健康分析', item.entitlements?.aiRiskAssessment && '风险评估'].filter(Boolean).join('、') || '无'}
+                  {[item.entitlements?.aiHealthAnalysis && 'AI健康信息整理', item.entitlements?.aiRiskAssessment && '健康关注提示'].filter(Boolean).join('、') || '无'}
                 </td>}
                 {withActivation && <td style={{ padding: '10px 14px', fontSize: 12, color: '#4B5563' }}>
                   {item.activation?.enabled ? `${item.activation.durationMonths || '-'}个月 / ¥${item.activation.price || 0}` : '不展示'}
@@ -122,7 +122,7 @@ function SimpleListTab({ title, desc, fetchFn, createFn, updateFn, toggleFn, del
               {withEntitlements && (
                 <div className="form-group">
                   <label className="form-label">年度会员专属权益</label>
-                  {[['aiHealthAnalysis', 'AI健康分析'], ['aiRiskAssessment', 'AI风险评估']].map(([key, label]) => (
+                  {[['aiHealthAnalysis', 'AI健康信息整理'], ['aiRiskAssessment', '健康关注提示']].map(([key, label]) => (
                     <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
                       <input type="checkbox" checked={!!entitlements[key]} onChange={e => setEntitlements(v => ({ ...v, [key]: e.target.checked }))} />
                       <span>{label}</span>

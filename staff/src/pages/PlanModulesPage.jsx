@@ -46,8 +46,8 @@ const MODULE_DEFS_BY_TYPE = {
       ],
     },
     supplement: {
-      name: '营养素补充', icon: '💊',
-      fields: [{ key: 'content', label: '补充建议', type: 'textarea', placeholder: '营养素名称、剂量、用法' }],
+      name: '营养补充信息', icon: '💊',
+      fields: [{ key: 'content', label: '现有补充记录', type: 'textarea', placeholder: '仅记录客户已使用信息及来源，不填写推荐或剂量调整建议' }],
     },
     exercise: {
       name: '运动建议', icon: '🏃',
@@ -89,7 +89,7 @@ const MODULE_DEFS_BY_TYPE = {
 }
 
 const TITLE_BY_TYPE = { nutrition: '营养干预方案', medical_assist: '就医协助方案' }
-const AI_GENERATE_LABEL_BY_TYPE = { nutrition: 'AI营养方案', medical_assist: 'AI就医协助方案' }
+const AI_GENERATE_LABEL_BY_TYPE = { nutrition: 'AI膳食信息草稿', medical_assist: 'AI就医协助方案' }
 
 function medicalAssistModuleData(content = {}) {
   const existing = content.moduleData || {}

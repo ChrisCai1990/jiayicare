@@ -11,7 +11,7 @@ function ruleEngineSignals(lv = {}) {
   const hcy = num(lv.hcy), ua = num(lv.ua), cr = num(lv.cr || lv.scr), egfr = num(lv.egfr), bun = num(lv.bun);
   const bmi = num(lv.bmi), waist = num(lv.waist);
   // 心血管
-  if (sbp >= 180 || dbp >= 110) sig.cardiovascular.push(`血压危急 ${sbp}/${dbp} mmHg`);
+  if (sbp >= 180 || dbp >= 110) sig.cardiovascular.push(`血压数值明显偏高 ${sbp}/${dbp} mmHg，请尽快携带记录咨询医疗机构`);
   else if (sbp >= 140 || dbp >= 90) sig.cardiovascular.push(`血压偏高 ${sbp}/${dbp} mmHg`);
   if (ldl >= 4.1) sig.cardiovascular.push(`LDL-C 偏高 ${ldl} mmol/L`);
   if (tc >= 6.2) sig.cardiovascular.push(`总胆固醇偏高 ${tc} mmol/L`);
@@ -22,9 +22,9 @@ function ruleEngineSignals(lv = {}) {
   else if (bmi >= 24) sig.cardiovascular.push(`超重 BMI ${bmi.toFixed(1)} kg/m²`);
   if (waist !== null && waist >= (lv.gender === '女' ? 85 : 90)) sig.cardiovascular.push(`中心性肥胖 腰围 ${waist} cm`);
   // 糖尿病
-  if (fpg >= 11.1 || hba1c >= 9) sig.diabetes.push(`血糖危急（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
-  else if (fpg >= 7.0 || hba1c >= 6.5) sig.diabetes.push(`已达糖尿病诊断阈值（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
-  else if (fpg >= 6.1 || hba1c >= 5.7) sig.diabetes.push(`糖代谢受损（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
+  if (fpg >= 11.1 || hba1c >= 9) sig.diabetes.push(`血糖相关数值明显偏高（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%），请尽快携带原报告咨询医疗机构`);
+  else if (fpg >= 7.0 || hba1c >= 6.5) sig.diabetes.push(`血糖相关数值超出常用参考范围（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%），不作为疾病诊断`);
+  else if (fpg >= 6.1 || hba1c >= 5.7) sig.diabetes.push(`血糖相关数值需要关注（空腹${fpg ?? '-'}、糖化${hba1c ?? '-'}%）`);
   // 肾脏
   if (egfr !== null && egfr < 60) sig.kidney.push(`eGFR 偏低 ${egfr}`);
   if (cr !== null && cr > 104) sig.kidney.push(`肌酐偏高 ${cr} μmol/L`);
@@ -94,7 +94,7 @@ async function tumorSignalsFromReports(userId) {
   return { markerAndFindingLines: lines, geneticLines };
 }
 
-// 生成AI风险评估：供医护端接口和用户端自助接口共用
+// 生成健康关注提示：内部沿用既有数据结构，输出仅作信息整理，不作疾病风险诊断
 async function generateRiskAssessment(user) {
   const MedicalReport = require('../models/MedicalReport');
   const { deriveLabFromReports, buildLatestLabText, latestToLabValues } = require('./labFromScreening');
@@ -153,7 +153,7 @@ async function generateRiskAssessment(user) {
     return `${label}：近30天共${recs.length}次打卡，最早${fmt(first)}→最近${fmt(last)}`;
   }).join('\n') || '近30天暂无相关打卡记录';
 
-  const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。建议内容如涉及需要医生跟进，一律使用"健康顾问"这一称呼，不要用"主治医生"（本平台提供的是健康顾问服务）。
+  const prompt = `你是健康信息整理助手。请基于已有报告原文和规则信号，对以下4类信息给出关注程度，帮助用户核对资料和决定是否携带原始报告咨询正规医疗机构。不得作疾病诊断、患病概率判断、治疗建议、检查开单、处方、药品或营养素推荐，也不得建议停换药或调整剂量。
 
 【医疗事实铁律】只能使用证据目录明确支持的事实；无记录写“资料未提供/不足以判断”。冠心病、冠脉支架、心肌梗死不等于脑梗死或脑卒中；颈动脉斑块不等于脑卒中；风险因素不等于确诊疾病。禁止自行补全病史。规则引擎信号必须逐条纳入对应维度，不得遗漏或改写成其他疾病。输出前核对四个维度是否完整、每个因素是否有证据、是否误造病史。
 
@@ -172,13 +172,13 @@ ${evidenceCatalog}
 心血管和糖尿病风险维度请特别关注【近30天打卡记录】：如果打卡显示血压/血糖近期持续偏高或波动明显，即使体检报告是达标的，也应在相应维度提示"近期自测数据显示XX有上升趋势，建议复查"，不能仅依赖可能已经过时的体检报告下结论。
 肿瘤风险维度请结合上方"tumor"信号（近一年专项筛查报告中的标志物异常、内镜/影像癌前病变或结节记录）、个人生活习惯（吸烟/饮酒/饮食是肺癌/肝癌/胃肠癌的强相关因素）、既往史、家族史、基因检测报告（如有明确高风险位点/基因，应显著提高风险等级）综合判断；信号为空不代表零风险，需结合年龄、性别、生活习惯、家族史等基础风险因素给出合理评估，不要机械地判为low。
 
-请严格按以下JSON输出（level 取值：low/medium/high/critical，分别代表低/中/高/危急值；score 0-100）：
+请严格按以下JSON输出。level 仅表示信息关注程度：low=一般关注、medium=持续关注、high=重点关注、critical=建议尽快携带原始资料咨询医疗机构；score 仅用于界面排序，不代表疾病概率：
 {
   "dimensions": [
-    { "key": "cardiovascular", "label": "心血管疾病风险", "level": "low", "score": 20, "factors": ["关键风险因素"], "advice": "针对性建议（30-60字）" },
-    { "key": "diabetes", "label": "糖尿病风险", "level": "low", "score": 15, "factors": [], "advice": "" },
-    { "key": "tumor", "label": "肿瘤风险", "level": "low", "score": 10, "factors": [], "advice": "" },
-    { "key": "kidney", "label": "慢性肾病风险", "level": "low", "score": 10, "factors": [], "advice": "" }
+    { "key": "cardiovascular", "label": "心血管相关信息", "level": "low", "score": 20, "factors": ["需要关注的原始指标或记录"], "advice": "仅给出资料核对、日常记录或携带原报告咨询医疗机构的提示（30-60字）" },
+    { "key": "diabetes", "label": "血糖相关信息", "level": "low", "score": 15, "factors": [], "advice": "" },
+    { "key": "tumor", "label": "肿瘤筛查相关信息", "level": "low", "score": 10, "factors": [], "advice": "" },
+    { "key": "kidney", "label": "肾功能相关信息", "level": "low", "score": 10, "factors": [], "advice": "" }
   ],
   "overallSummary": "整体风险综述（50-100字）"
 }`;
@@ -188,7 +188,7 @@ ${evidenceCatalog}
   try { const m = text.trim().match(/\{[\s\S]*\}/); if (m) raw = JSON.parse(m[0]); } catch {}
   raw = await auditMedicalJson(raw, evidenceCatalog, { maxTokens: 1800 });
 
-  const labels = { cardiovascular: '心血管疾病风险', diabetes: '糖尿病风险', tumor: '肿瘤风险', kidney: '慢性肾病风险' };
+  const labels = { cardiovascular: '心血管相关信息', diabetes: '血糖相关信息', tumor: '肿瘤筛查相关信息', kidney: '肾功能相关信息' };
   const rawByKey = Object.fromEntries((Array.isArray(raw.dimensions) ? raw.dimensions : []).map(d => [d.key, d]));
   let dimensions = Object.keys(labels).map(key => {
     const d = rawByKey[key] || {};

@@ -7,7 +7,7 @@ import AiRuleHint from '../components/AiRuleHint'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
-// ── 停用确认弹窗：停用会改变客户实际用药/营养素方案，需先勾选"已与客户沟通确认"才能提交 ──
+// ── 停止记录确认弹窗：只记录客户已停止使用的事实，不作停药或停用建议 ──
 function ConfirmStopModal({ title, itemName, onClose, onConfirm }) {
   const [checked, setChecked] = useState(false)
   const [reason, setReason] = useState('')
@@ -25,23 +25,23 @@ function ConfirmStopModal({ title, itemName, onClose, onConfirm }) {
         </div>
         <div className="modal-body">
           <div style={{ fontSize: 14, color: '#1A2B24', marginBottom: 10 }}>
-            确认停用「{itemName}」？停用会改变客户当前的用药/营养素方案。
+            确认将「{itemName}」标记为客户已停止使用？本操作仅更新信息记录，不构成停药或停止补充建议。
           </div>
           <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: '#4A6558', cursor: 'pointer' }}>
             <input type="checkbox" checked={checked} onChange={e => setChecked(e.target.checked)} />
-            已与客户沟通并确认停用
+            已根据客户陈述、处方/医嘱或其他来源确认该信息
           </label>
           <div className="form-group" style={{ marginTop: 14, marginBottom: 0 }}>
-            <label className="form-label">停用原因 *</label>
+            <label className="form-label">信息来源及停止原因 *</label>
             <textarea className="form-input" rows={3} value={reason}
               onChange={e => setReason(e.target.value)}
-              placeholder="请填写停用原因，保存后作为历史记录保留" />
+              placeholder="如：客户反馈已按开方医师医嘱停用；保存后作为历史信息保留" />
           </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
           <button className="btn" style={{ background: '#D97706', color: '#fff' }} disabled={!checked || !reason.trim() || submitting} onClick={handleConfirm}>
-            {submitting ? '停用中...' : '确认停用'}
+            {submitting ? '保存中...' : '确认更新记录'}
           </button>
         </div>
       </div>
@@ -256,7 +256,7 @@ const PLAN_TYPE_LABEL = {
 const PLAN_STATUS_COLOR = { draft:'#aaa', active:'#22A06B', completed:'#0077B6' }
 const PLAN_STATUS_LABEL = { draft:'草稿', active:'进行中', completed:'已完成' }
 const SR_TYPE_LABEL = {
-  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', routine:'日常随访', doctor_followup:'医生随访',
+  nutrition:'营养干预', disease_mgmt:'专病管理', medical_visit:'医院就医', routine:'日常随访', doctor_followup:'健康顾问跟进',
   medical_escort:'就医协助', psychology:'心理咨询', rehab:'运动复健', tcm:'中医评估', specialist:'专科会诊',
 }
 const SR_CATEGORY = {
@@ -264,9 +264,9 @@ const SR_CATEGORY = {
   disease_mgmt:  '专病管理', specialist: '专病管理', psychology: '专病管理', rehab: '专病管理', tcm: '专病管理',
   medical_visit: '医院就医', medical_escort: '医院就医',
   routine:       '日常随访',
-  doctor_followup: '医生随访',
+  doctor_followup: '健康顾问跟进',
 }
-const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7', '医生随访':'#0088CC' }
+const SR_CATEGORY_COLOR = { '营养干预':'#22A06B', '专病管理':'#0077B6', '医院就医':'#D97706', '日常随访':'#8A4AC7', '健康顾问跟进':'#0088CC' }
 
 // ── 开单弹窗 ─────────────────────────────────────────────
 function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', prefillNotes = '', prefillSuggestions = [] }) {
@@ -1309,7 +1309,7 @@ export default function PatientDetailPage() {
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
   const [aiSourceGroup, setAiSourceGroup] = useState(null) // { title, ids }
-  // 场景八：AI风险评估
+  // 场景八：健康关注提示（内部沿用既有风险数据结构）
   const [riskYear, setRiskYear] = useState(null)             // 当前查看的AI风险评估年度
   const [riskGenerating, setRiskGenerating] = useState(false)
   const [riskApproving, setRiskApproving] = useState(false)
@@ -2089,7 +2089,7 @@ export default function PatientDetailPage() {
       load()
     } catch (err) {
       if (err.needConfirm) {
-        const label = scope === 'nutrition' ? '生活方式评估' : (scope === 'doctor' ? '5维度分析' : 'AI健康分析')
+        const label = scope === 'nutrition' ? '生活方式信息整理' : (scope === 'doctor' ? '5维健康信息整理' : 'AI健康信息整理')
         if (window.confirm(`${err.message}${err.approvedBy ? `（审核人：${err.approvedBy}）` : ''}\n是否确认重新生成${label}？`)) {
           return handleGenerateAISummary(year, scope, true)
         }
@@ -2255,7 +2255,7 @@ export default function PatientDetailPage() {
     try {
       await staffAPI.generateAIRisk(id, y)
       setRiskYear(y)
-      toast(`${y}年度 AI风险评估已生成`)
+      toast(`${y}年度健康关注提示已生成`)
       load()
     } catch (err) {
       if (err.needReportAudit) { loadPendingDoctorAudit(); toast(err.message || '请先审核确认体检报告') }
@@ -2267,7 +2267,7 @@ export default function PatientDetailPage() {
     setRiskApproving(true)
     try {
       await staffAPI.updateAIRisk(id, { action: 'approve', year })
-      toast('风险评估已审核确认')
+      toast('健康关注提示已核对确认')
       load()
     } catch (err) { toast(err.message || '操作失败') }
     finally { setRiskApproving(false) }
@@ -2294,7 +2294,7 @@ export default function PatientDetailPage() {
         advice: d.advice || '',
       }))
       await staffAPI.updateAIRisk(id, { dimensions, overallSummary: riskForm.overallSummary, year })
-      toast('风险评估已保存')
+      toast('健康关注提示已保存')
       setEditingRisk(false); setRiskForm(null)
       load()
     } catch (err) { toast(err.message || '保存失败') }
@@ -2399,11 +2399,11 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '操作失败') }
   }
 
-  // 药物审核（健康顾问）：approve=通过生效 / reject=驳回删除
+  // 用药信息核对（健康顾问）：只核对录入内容与客户提供资料是否一致，不作处方或用药决策
   const reviewMedication = async (medId, action) => {
     try {
       await staffAPI.reviewPatientMedication(id, medId, action)
-      toast(action === 'approve' ? '审核通过，药物已生效' : action === 'withdraw' ? '已撤回' : '已驳回')
+      toast(action === 'approve' ? '用药信息已核对并归档' : action === 'withdraw' ? '已撤回' : '已退回订正')
       loadMedications()
     } catch (err) { toast(err.message || '操作失败') }
   }
@@ -2680,9 +2680,9 @@ export default function PatientDetailPage() {
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
-          { key: 'medications',   label: '药物及营养素' },
-          { key: 'ai',            label: 'AI健康分析' },
-          { key: 'ai-risk',       label: 'AI风险评估' },
+          { key: 'medications',   label: '用药及营养补充信息' },
+          { key: 'ai',            label: 'AI健康信息整理' },
+          { key: 'ai-risk',       label: '健康关注提示' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
           { key: 'serviceRecords', label: '服务记录' },
@@ -5868,7 +5868,7 @@ export default function PatientDetailPage() {
                   <span style={{ fontSize: 18 }}>⚠️</span>
                   <div style={{ flex: 1, fontSize: 13, color: '#92400E' }}>
                     {unviewedCount > 0
-                      ? <>健管专员已审核 <b>{pendingDoctorAuditReports.length}</b> 份新体检报告，还有 <b>{unviewedCount}</b> 份未查看，请查看后确认，才能生成AI健康分析/风险评估</>
+                      ? <>健管专员已审核 <b>{pendingDoctorAuditReports.length}</b> 份新体检报告，还有 <b>{unviewedCount}</b> 份未查看，请查看后确认，才能生成健康信息整理与关注提示</>
                       : <>已查看完全部 <b>{pendingDoctorAuditReports.length}</b> 份新体检报告，请点击确认完成</>}
                   </div>
                   <button className="btn btn-primary btn-sm" onClick={() => setShowArchiveReviewModal(true)}>
@@ -6088,7 +6088,7 @@ export default function PatientDetailPage() {
               <>
                 {aiAnalysisView === 'doctor' && hasDoctorData && (
                   <div style={{ margin: '6px 0 12px', padding: '10px 14px', borderRadius: 8, background: '#E8F5EF', color: '#1E6B50', fontWeight: 800 }}>
-                    健康顾问 · 5维健康分析
+                    健康顾问 · 5维健康信息整理
                   </div>
                 )}
                 {aiAnalysisView === 'doctor' && hasDoctorData && <>
@@ -6155,7 +6155,7 @@ export default function PatientDetailPage() {
                   <AISectionSourceButton title="心脑血管病风险分析" ids={sourceIdsFor('cardiovascular_risk')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {[['high','🔴 高风险因素（每行一条）'],['medium','🟡 中风险因素（每行一条）']].map(([f,lbl]) => (
+                      {[['high','🔴 重点关注信息（每行一条）'],['medium','🟡 持续关注信息（每行一条）']].map(([f,lbl]) => (
                         <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.cardiovascular_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('cardiovascular_risk', f, e.target.value)} /></div>
                       ))}
                       <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>综合评估</div>
@@ -6163,8 +6163,8 @@ export default function PatientDetailPage() {
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {(sec.cardiovascular_risk?.high || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>🔴 高风险因素</span>{sec.cardiovascular_risk.high.map((h, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{h}</div>)}</div>}
-                      {(sec.cardiovascular_risk?.medium || []).length > 0 && <div><span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>🟡 中风险因素</span>{sec.cardiovascular_risk.medium.map((m, i) => <div key={i} style={{ fontSize: 13, color: '#D97706', marginTop: 3 }}>{m}</div>)}</div>}
+                      {(sec.cardiovascular_risk?.high || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>🔴 重点关注信息</span>{sec.cardiovascular_risk.high.map((h, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{h}</div>)}</div>}
+                      {(sec.cardiovascular_risk?.medium || []).length > 0 && <div><span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>🟡 持续关注信息</span>{sec.cardiovascular_risk.medium.map((m, i) => <div key={i} style={{ fontSize: 13, color: '#D97706', marginTop: 3 }}>{m}</div>)}</div>}
                       {sec.cardiovascular_risk?.summary && <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.cardiovascular_risk.summary}</div>}
                     </div>
                   )}
@@ -6254,7 +6254,7 @@ export default function PatientDetailPage() {
                             <button onClick={() => delItem('medical_priority', i)} style={{ fontSize: 11, color: '#DC3545', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px', flexShrink: 0 }}>删除</button>
                           </div>
                           <input style={{ ...inStyle, marginBottom: 4 }} value={item.current || ''} placeholder="当前数值描述" onChange={e => updItem('medical_priority', i, 'current', e.target.value)} />
-                          <textarea style={{ ...inStyle, resize: 'vertical', marginBottom: 4 }} rows={2} value={item.meaning || ''} placeholder="临床意义" onChange={e => updItem('medical_priority', i, 'meaning', e.target.value)} />
+                          <textarea style={{ ...inStyle, resize: 'vertical', marginBottom: 4 }} rows={2} value={item.meaning || ''} placeholder="原报告信息说明" onChange={e => updItem('medical_priority', i, 'meaning', e.target.value)} />
                           <div style={{ display: 'flex', gap: 6 }}>
                             <input style={{ ...inStyle, flex: 2 }} value={item.action || ''} placeholder="建议行动" onChange={e => updItem('medical_priority', i, 'action', e.target.value)} />
                             <input style={{ ...inStyle, flex: 1 }} value={item.department || ''} placeholder="建议科室" onChange={e => updItem('medical_priority', i, 'department', e.target.value)} />
@@ -6279,7 +6279,7 @@ export default function PatientDetailPage() {
                                 {item.department && <span style={{ fontSize: 12, color: '#8AA89C', marginLeft: 'auto' }}>→ {item.department}</span>}
                               </div>
                               {item.current && <div style={{ fontSize: 12, color: '#4A6558', marginBottom: 4 }}>当前：{item.current}</div>}
-                              {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>临床意义：{item.meaning}</div>}
+                              {item.meaning && <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>信息说明：{item.meaning}</div>}
                               {item.action && <div style={{ fontSize: 12, color: '#1E6B50', fontWeight: 500 }}>建议：{item.action}</div>}
                               {item.sourceReportId && (
                                 <button className="btn btn-secondary btn-sm" style={{ marginTop: 6 }}
@@ -6351,7 +6351,7 @@ export default function PatientDetailPage() {
         )
       })()}
 
-      {/* ── AI风险评估 Tab（场景八）── */}
+      {/* ── 健康关注提示 Tab（场景八）── */}
       {tab === 'ai-risk' && (() => {
         const byYear = riskByYearFE(user.aiRiskAssessment)
         const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a))
@@ -6363,10 +6363,10 @@ export default function PatientDetailPage() {
         const dims = Array.isArray(ra.dimensions) ? ra.dimensions : []
         const hasData = dims.length > 0
         const LV = {
-          low:      { label: '低风险',  bg: '#F0FDF4', color: '#16A34A', dot: '#22C55E' },
-          medium:   { label: '中风险',  bg: '#FEF9EC', color: '#D97706', dot: '#F59E0B' },
-          high:     { label: '高风险',  bg: '#FEF2F2', color: '#DC2626', dot: '#EF4444' },
-          critical: { label: '危急值',  bg: '#FEE2E2', color: '#B91C1C', dot: '#B91C1C' },
+          low:      { label: '一般关注',  bg: '#F0FDF4', color: '#16A34A', dot: '#22C55E' },
+          medium:   { label: '持续关注',  bg: '#FEF9EC', color: '#D97706', dot: '#F59E0B' },
+          high:     { label: '重点关注',  bg: '#FEF2F2', color: '#DC2626', dot: '#EF4444' },
+          critical: { label: '建议尽快咨询医疗机构',  bg: '#FEE2E2', color: '#B91C1C', dot: '#B91C1C' },
         }
         const lvOf = (k) => LV[k] || LV.low
         const overall = lvOf(ra.overallLevel)
@@ -6395,7 +6395,7 @@ export default function PatientDetailPage() {
                 </div>
               ) : (
                 <div style={{ fontSize: 12, color: '#8AA89C', flex: 1 }}>
-                  {hasData ? `生成时间：${new Date(ra.generatedAt).toLocaleString('zh-CN')}${ra.alerted ? ' · ⚠ 高风险待审核预警' : ''}` : '尚未生成'}
+                  {hasData ? `生成时间：${new Date(ra.generatedAt).toLocaleString('zh-CN')}${ra.alerted ? ' · ⚠ 重点关注信息待核对' : ''}` : '尚未生成'}
                 </div>
               )}
               {hasData && !editingRisk && (
@@ -6406,10 +6406,10 @@ export default function PatientDetailPage() {
                   {riskApproving ? '处理中...' : '审核确认'}
                 </button>
               )}
-              {/* AI风险评估仅健康顾问/超管可生成，健管专员等其他角色只能查看 */}
+              {/* 健康关注提示仅健康顾问/超管可生成，其他角色只能查看 */}
               {!editingRisk && (staff?.role === 'familyDoctor' || staff?.role === 'superadmin') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => handleGenerateRisk(curYear)} disabled={riskGenerating}>
-                  {riskGenerating ? 'AI评估中...' : hasData ? '重新评估' : '✨ AI生成风险评估'}
+                  {riskGenerating ? 'AI整理中...' : hasData ? '重新整理' : '✨ 生成健康关注提示'}
                 </button>
               )}
               {editingRisk && (
@@ -6424,7 +6424,7 @@ export default function PatientDetailPage() {
 
             {!hasData && (
               <div className="card" style={{ padding: 32, textAlign: 'center', color: '#8AA89C', fontSize: 14 }}>
-                {curYear} 年度暂无风险评估。点击右上角「AI生成风险评估」，系统将结合规则引擎与AI对心血管、糖尿病、肿瘤、慢性肾病四个维度进行风险分级。
+                {curYear} 年度暂无健康关注提示。点击右上角生成后，系统仅整理心血管、血糖、肿瘤筛查和肾功能相关资料并标注关注程度，不作疾病诊断或患病概率判断。
               </div>
             )}
 
@@ -6432,11 +6432,11 @@ export default function PatientDetailPage() {
             {hasData && editingRisk && riskForm && (
               <>
                 <div className="card" style={{ marginBottom: 14, padding: '14px 20px' }}>
-                  <label className="form-label">整体评估概述</label>
+                  <label className="form-label">整体信息概述</label>
                   <textarea className="form-input" rows={2} value={riskForm.overallSummary}
                     onChange={e => setRiskForm(f => ({ ...f, overallSummary: e.target.value }))}
-                    placeholder="整体风险概述..." />
-                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>整体风险等级会根据各维度中的最高等级自动重算。</div>
+                    placeholder="整体关注信息概述..." />
+                  <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 6 }}>整体关注程度会根据各维度中的最高等级自动重算，不代表疾病概率。</div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                   {riskForm.dimensions.map((d, i) => (
@@ -6591,16 +6591,16 @@ export default function PatientDetailPage() {
         <div>
           {/* 子 tab 切换 */}
           <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-            {[{ key: 'med', label: '💊 药物管理' }, { key: 'sup', label: '🥗 营养素管理' }].map(t => (
+            {[{ key: 'med', label: '💊 用药信息管理' }, { key: 'sup', label: '🥗 营养补充信息管理' }].map(t => (
               <button key={t.key}
                 className={`btn btn-sm ${medSubTab === t.key ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => setMedSubTab(t.key)}>{t.label}</button>
             ))}
             <div style={{ display: 'flex', gap: 8, marginLeft: 'auto' }}>
-              {medSubTab === 'sup' && (
+              {false && medSubTab === 'sup' && (
                 <button className="btn btn-secondary btn-sm" disabled={aiSupGenerating}
                   onClick={generateAISupplement}>
-                  {aiSupGenerating ? 'AI生成中…' : '✨ AI营养素建议'}
+                  {aiSupGenerating ? 'AI生成中…' : '✨ AI营养素建议（已停用）'}
                 </button>
               )}
               <button className="btn btn-primary btn-sm"
@@ -6620,7 +6620,7 @@ export default function PatientDetailPage() {
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
                 <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 16 }}>💊</span>
-                  <span className="card-title" style={{ color: '#0077B6' }}>药物待审核·需健康顾问确认</span>
+                  <span className="card-title" style={{ color: '#0077B6' }}>用药信息待核对·需健康顾问确认资料一致性</span>
                   <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
                 </div>
                 <table className="table" style={{ marginBottom: 0 }}>
@@ -6636,21 +6636,21 @@ export default function PatientDetailPage() {
                         <td>
                           {canApproveMed ? (
                             <div style={{ display: 'flex', gap: 6 }}>
-                              <button className="btn btn-sm" style={{ background: '#0077B6', color: '#fff' }} onClick={() => reviewMedication(m._id, 'approve')}>通过</button>
+                              <button className="btn btn-sm" style={{ background: '#0077B6', color: '#fff' }} onClick={() => reviewMedication(m._id, 'approve')}>确认一致</button>
                               <button className="btn btn-secondary btn-sm" onClick={() => {
                                 setMedForm({ name: m.name, brandName: m.brandName || '', specification: m.specification || '', dosage: m.dosage, method: m.method || '口服', frequency: m.frequency, timing: m.timing || '', startDate: m.startDate || '', endDate: m.endDate || '', purpose: m.purpose || '', note: m.note || '' })
                                 setEditingMed(m._id); setShowMedModal(true)
                               }}>编辑</button>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                                onClick={() => { if (window.confirm('确认驳回并删除这条待审核药物？')) reviewMedication(m._id, 'reject') }}>驳回</button>
+                                onClick={() => { if (window.confirm('确认退回并删除这条待核对记录？')) reviewMedication(m._id, 'reject') }}>退回订正</button>
                             </div>
                           ) : (staff?._id && String(m.staffId) === String(staff._id)) ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问审核</span>
+                              <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问核对信息</span>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
-                                onClick={() => { if (window.confirm('确认撤回这条你提交的待审核药物？')) reviewMedication(m._id, 'withdraw') }}>撤回</button>
+                                onClick={() => { if (window.confirm('确认撤回这条你提交的待核对记录？')) reviewMedication(m._id, 'withdraw') }}>撤回</button>
                             </div>
-                          ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问审核</span>}
+                          ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问核对信息</span>}
                         </td>
                       </tr>
                     ))}
@@ -6677,7 +6677,7 @@ export default function PatientDetailPage() {
                         <td style={{ fontSize: 12, color: '#8AA89C' }}>{m.startDate || '-'}{m.endDate ? ` → ${m.endDate}` : ''}</td>
                         <td style={{ fontSize: 11, color: '#8AA89C' }}>
                           {m.createdByName ? <div>录入：{m.createdByName}</div> : null}
-                          {m.reviewedByName ? <div>审核：{m.reviewedByName}</div> : null}
+                          {m.reviewedByName ? <div>核对：{m.reviewedByName}</div> : null}
                           {!m.createdByName && !m.reviewedByName ? '-' : null}
                         </td>
                         <td>
@@ -6693,11 +6693,11 @@ export default function PatientDetailPage() {
                             }}>编辑</button>}
                             {!m.stopped && <button className="btn btn-sm" style={{ background: '#fff8e1', color: '#D97706', border: '1px solid #D97706' }}
                                 onClick={() => setStoppingMed(m)}>
-                                停用
+                                标记已停止使用
                               </button>}
                             <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
                               onClick={async () => {
-                                if (!window.confirm(`确认删除「${m.name}」？此操作不可恢复，仅用于订正录入错误；如客户实际已停药请用"停用"。`)) return
+                                if (!window.confirm(`确认删除「${m.name}」？此操作不可恢复，仅用于订正录入错误；如客户已按医嘱停用，请使用“标记已停止使用”。`)) return
                                 try { await staffAPI.deletePatientMedication(id, m._id); loadMedications() }
                                 catch (err) { toast(err.message || '删除失败') }
                               }}>
@@ -6725,7 +6725,7 @@ export default function PatientDetailPage() {
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #16A34A' }}>
                 <div className="card-header" style={{ background: '#F0FDF4', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 16 }}>🧪</span>
-                  <span className="card-title" style={{ color: '#16A34A' }}>营养素待审核·需营养师确认</span>
+                  <span className="card-title" style={{ color: '#16A34A' }}>营养补充信息待核对·需营养师确认资料一致性</span>
                   <span style={{ background: '#16A34A15', color: '#16A34A', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingSups.length}</span>
                 </div>
                 <table className="table" style={{ marginBottom: 0 }}>
@@ -6875,7 +6875,7 @@ export default function PatientDetailPage() {
             <div className="modal-overlay">
               <div className="modal" style={{ maxWidth: 560 }}>
                 <div className="modal-header">
-                  <h3 className="modal-title">{editingSupAiApprove ? '编辑AI营养素建议后采纳' : editingSup ? '编辑营养素' : '新增营养素'}</h3>
+                  <h3 className="modal-title">{editingSupAiApprove ? '核对遗留营养补充信息' : editingSup ? '编辑营养补充记录' : '新增营养补充记录'}</h3>
                   <button className="modal-close" onClick={() => { setShowSupModal(false); setEditingSupAiApprove(false) }}>✕</button>
                 </div>
                 <div className="modal-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -7588,7 +7588,7 @@ export default function PatientDetailPage() {
 
       {/* ── Service Records Tab ── */}
       {tab === 'serviceRecords' && (() => {
-        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访', '医生随访']
+        const CATS = ['营养干预', '专病管理', '医院就医', '日常随访', '健康顾问跟进']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         serviceRecords.forEach(r => {
@@ -7758,7 +7758,7 @@ export default function PatientDetailPage() {
       })()}
 
       {/* ── Requisitions Tab ── */}
-      {tab === 'requisitions' && (
+      {false && (
         <div className="card">
           <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div className="card-title">检查开单</div>
@@ -9332,7 +9332,7 @@ export default function PatientDetailPage() {
             <div className="modal-overlay">
               <div className="modal" style={{ maxWidth: 520 }}>
                 <div className="modal-header">
-                  <h3 className="modal-title">审核AI生成的{isDoctorDraft ? '医生随访' : '随访'}记录</h3>
+                  <h3 className="modal-title">核对AI生成的{isDoctorDraft ? '健康顾问跟进' : '随访'}记录</h3>
                   <button className="modal-close" onClick={() => setReviewingDraft(null)}>×</button>
                 </div>
                 <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -9639,7 +9639,7 @@ export default function PatientDetailPage() {
 
 
       {/* 新建开单弹窗 */}
-      {showReqModal && (
+      {false && showReqModal && (
         <RequisitionModal
           patientId={id}
           prefillTitle={reqPrefill?.title || ''}

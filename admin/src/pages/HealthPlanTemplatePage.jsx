@@ -318,7 +318,7 @@ function PlanContentForm({ type, initialContent, contentRef }) {
       <FieldRow label="烹饪方式" fieldKey="cookingMethod" placeholder="推荐：蒸煮炖；避免：油炸" half content={content} set={set} />
       <FieldRow label="进餐顺序" fieldKey="mealOrder" placeholder="如：汤→蔬菜→肉→主食" half content={content} set={set} />
       <FieldRow label="膳食总原则" fieldKey="dietPrinciple" placeholder="如：低盐低脂、高纤维" half content={content} set={set} />
-      <FieldRow label="营养素补充建议" fieldKey="nutritionSupplements" rows={3} placeholder="营养素名称、剂量、用法" content={content} set={set} />
+      <FieldRow label="现有营养补充信息（仅记录）" fieldKey="nutritionSupplements" rows={3} placeholder="记录客户已使用产品及信息来源；不得填写推荐、治疗用途或剂量调整建议" content={content} set={set} />
       <FieldRow label="运动建议" fieldKey="exerciseSuggestion" rows={3} placeholder="运动类型、频率、时长、强度" content={content} set={set} />
       <FieldRow label="推荐食物" fieldKey="allowedFoods" rows={2} placeholder="逗号分隔" content={content} set={set} />
       <FieldRow label="禁忌食物" fieldKey="forbiddenFoods" rows={2} placeholder="逗号分隔" content={content} set={set} />

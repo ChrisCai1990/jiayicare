@@ -282,11 +282,6 @@ export const followupTasksAPI = {
   submitForm: (id, formData) => request(`/user/followup-tasks/${id}/form`, { method: 'POST', body: JSON.stringify({ formData }) }),
 };
 
-// ── Exam Requisitions / 检查开单 ──────────────────────────────────
-export const requisitionsAPI = {
-  list: () => request('/user/requisitions'),
-};
-
 // ── Screening / 专项筛查 ──────────────────────────────────────────
 export const screeningAPI = {
   list:     ()                      => request('/screening'),

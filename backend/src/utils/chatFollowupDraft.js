@@ -5,7 +5,7 @@ const ServiceRecord = require('../models/ServiceRecord');
 // 聊天角色 → 生成草稿的服务记录类型 / 角色展示名 / 记录标签
 const CHAT_DRAFT_ROLE_MAP = {
   manager:      { recordType: 'routine',         label: '健管专员', recordLabel: '日常随访' },
-  doctor:       { recordType: 'doctor_followup',  label: '健康顾问', recordLabel: '医生随访' },
+  doctor:       { recordType: 'doctor_followup',  label: '健康顾问', recordLabel: '健康顾问跟进' },
   nutritionist: { recordType: 'nutrition',        label: '营养师',   recordLabel: '营养干预' },
 };
 
@@ -37,7 +37,7 @@ async function generateChatFollowupDraft({ patientId, role = 'manager', range = 
   const chatText = messages.map(m => `${m.type === 'user' ? '会员' : label}：${m.content}`).join('\n');
   const isDoctor = roleCfg === 'doctor';
   const prompt = isDoctor
-    ? `你是协助健康顾问整理沟通记录的助手。以下是健康顾问与会员${user.name}在${days === 1 ? '当日' : days + '天内'}的聊天记录，请提炼成一条"医生随访"记录草稿，内容仅基于聊天记录中双方实际交流的信息总结，不要凭空添加或推测聊天记录之外的诊断、用药建议或医疗判断。此草稿最终会交由医生本人审核修改后才正式生效。若聊天记录与健康管理无实质关联，content中如实说明"本次沟通无实质随访内容"。
+    ? `你是协助健康顾问整理沟通记录的助手。以下是健康顾问与会员${user.name}在${days === 1 ? '当日' : days + '天内'}的聊天记录，请提炼成一条"健康顾问跟进"记录草稿，内容仅基于聊天记录中双方实际交流的信息总结，不要凭空添加或推测聊天记录之外的诊断、用药建议或医疗判断。此草稿最终会交由健康顾问本人核对修改后才正式归档。若聊天记录与健康管理无实质关联，content中如实说明"本次沟通无实质随访内容"。
 
 【聊天记录】
 ${chatText}

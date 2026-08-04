@@ -150,12 +150,12 @@ export default function RecordsIndexPage() {
           </View>
         </View>
 
-        {/* AI健康分析入口卡片 */}
+        {/* 健康信息整理入口卡片 */}
         <View onClick={() => {
           if (!user?.aiEntitlements?.aiHealthAnalysis && !user?.aiEntitlements?.aiRiskAssessment) {
             Taro.showModal({
               title: '年度会员专属',
-              content: 'AI健康分析和风险评估仅向健康预防计划、健康护航计划客户开放。',
+              content: 'AI健康信息整理与趋势分析、健康关注提示仅向健康预防计划、健康护航计划客户开放。相关内容仅作信息整理，不构成诊断或治疗建议。',
               confirmText: '查看商城',
               success: res => { if (res.confirm) Taro.navigateTo({ url: '/pages/services/mall/index' }); },
             });
@@ -168,7 +168,7 @@ export default function RecordsIndexPage() {
         }}>
           <Icon name="✨" size={24} color="#fff" />
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: '14px', fontWeight: 700, color: '#fff', display: 'block' }}>AI健康分析 / 风险评估</Text>
+            <Text style={{ fontSize: '14px', fontWeight: 700, color: '#fff', display: 'block' }}>健康信息整理 / 关注提示</Text>
             <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>{user?.aiEntitlements?.aiHealthAnalysis || user?.aiEntitlements?.aiRiskAssessment ? 'AI结合体检数据与健康档案自动生成解读' : '年度会员专属 · 查看权益'}</Text>
           </View>
           <Text style={{ color: '#fff', fontSize: '14px' }}>›</Text>

@@ -821,7 +821,7 @@ function DraftReviewModal({ draft, onClose, onDone }) {
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal" style={{ maxWidth: 520 }}>
         <div className="modal-header">
-          <h3 className="modal-title">审核AI生成的{isDoctorDraft ? '医生随访' : '随访'}记录</h3>
+          <h3 className="modal-title">核对AI生成的{isDoctorDraft ? '健康顾问跟进' : '随访'}记录</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>

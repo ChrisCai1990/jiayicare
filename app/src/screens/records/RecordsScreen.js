@@ -657,11 +657,11 @@ export default function RecordsScreen({ navigation }) {
           </TouchableOpacity>
         </View>
 
-        {/* ── AI健康分析 入口 ──────────────────────────────────── */}
+        {/* ── AI健康信息整理入口 ───────────────────────────────── */}
         <View style={styles.section}>
           <TouchableOpacity style={styles.aiEntryCard} onPress={() => {
             if (!user?.aiEntitlements?.aiHealthAnalysis && !user?.aiEntitlements?.aiRiskAssessment) {
-              Alert.alert('年度会员专属', 'AI健康分析和风险评估仅向健康预防计划、健康护航计划客户开放。您可以前往商城了解年度服务。', [
+              Alert.alert('年度会员专属', 'AI健康信息整理与趋势分析、健康关注提示仅向健康预防计划、健康护航计划客户开放。相关内容仅作信息整理，不构成诊断或治疗建议。', [
                 { text: '取消', style: 'cancel' },
                 { text: '查看商城', onPress: () => navigation.navigate('ServiceMall') },
               ]);
@@ -673,8 +673,8 @@ export default function RecordsScreen({ navigation }) {
               <Ionicons name="sparkles" size={20} color={colors.white} />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.aiEntryTitle}>AI健康分析</Text>
-              <Text style={styles.aiEntryDesc}>{user?.aiEntitlements?.aiHealthAnalysis || user?.aiEntitlements?.aiRiskAssessment ? 'AI健康分析 · 风险评估' : '年度会员专属 · 查看权益'}</Text>
+              <Text style={styles.aiEntryTitle}>AI健康信息整理</Text>
+              <Text style={styles.aiEntryDesc}>{user?.aiEntitlements?.aiHealthAnalysis || user?.aiEntitlements?.aiRiskAssessment ? '趋势分析 · 健康关注提示' : '年度会员专属 · 查看权益'}</Text>
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </TouchableOpacity>

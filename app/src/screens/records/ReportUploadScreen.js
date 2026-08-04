@@ -506,7 +506,7 @@ function AIAnalysisCard({ onPress }) {
           <Ionicons name="sparkles" size={20} color={colors.white} />
         </View>
         <View>
-          <Text style={styles.aiTitle}>AI 健康分析</Text>
+          <Text style={styles.aiTitle}>AI 健康信息整理</Text>
           <Text style={styles.aiDesc}>结合您的体检报告与健康档案，生成综合分析</Text>
         </View>
       </View>

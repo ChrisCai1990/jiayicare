@@ -18,7 +18,7 @@ const PACKAGES = [
     originalPrice: 3980,
     tag: '最超值',
     tagColor: '#DC3545',
-    features: ['专属健管师全年陪伴', '每月 1 次医生随访', '全场服务 9 折优惠', 'AI 助手无限次使用', '紧急健康咨询绿色通道'],
+    features: ['专属健管师全年陪伴', '每月 1 次健康顾问跟进', '全场服务 9 折优惠', 'AI健康规划', '健康事项响应通道'],
     highlight: true,
   },
   {
@@ -29,7 +29,7 @@ const PACKAGES = [
     originalPrice: 1980,
     tag: '推荐',
     tagColor: '#1E6B50',
-    features: ['专属健管师半年陪伴', '每两月 1 次医生随访', '全场服务 95 折优惠', 'AI 助手无限次使用'],
+    features: ['专属健管师半年陪伴', '每两月 1 次健康顾问跟进', '全场服务 95 折优惠', 'AI健康规划'],
     highlight: false,
   },
   {
@@ -40,7 +40,7 @@ const PACKAGES = [
     originalPrice: 1180,
     tag: '',
     tagColor: '',
-    features: ['专属健管师季度陪伴', '1 次医生随访', 'AI 助手无限次使用'],
+    features: ['专属健管师季度陪伴', '1 次健康顾问跟进', 'AI健康规划'],
     highlight: false,
   },
 ];

@@ -8,7 +8,7 @@ import Icon from '../../../components/Icon';
 
 // 对齐 app/src/screens/records/AiHealthScreen.js
 // 简化点：不接语音播报tts.speak（小程序场景暂不接入TTS）
-const TABS = ['AI健康分析', 'AI风险评估'];
+const TABS = ['健康信息整理', '健康关注提示'];
 
 const URGENCY_META = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } };
 const STATUS_META = { abnormal: { label: '异常', color: '#DC2626' }, mild_abnormal: { label: '轻度异常', color: '#D97706' }, normal: { label: '正常', color: '#16A34A' } };
@@ -52,7 +52,7 @@ function HealthSummaryView({ sections }) {
   // 疾病风险类板块（肿瘤/心脑血管/慢病/体检完整度/医疗问题）在前，生活方式收尾——对齐app端225057a改动的顺序
   return (
     <View>
-      <SectionCard icon="🎗️" title="肿瘤风险筛查分析">
+      <SectionCard icon="🎗️" title="肿瘤筛查信息整理">
         <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>已完成筛查</Text>
         <ListLines items={tumor.completed} />
         <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>异常发现</Text>
@@ -62,15 +62,15 @@ function HealthSummaryView({ sections }) {
         {!!tumor.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{tumor.summary}</Text>}
       </SectionCard>
 
-      <SectionCard icon="❤️" title="心脑血管病风险分析">
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>高风险因素</Text>
+      <SectionCard icon="❤️" title="心脑血管相关信息整理">
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>重点关注信息</Text>
         <ListLines items={cardio.high} color={colors.danger} />
-        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>中风险因素</Text>
+        <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>持续关注信息</Text>
         <ListLines items={cardio.medium} color={colors.warning} />
         {!!cardio.summary && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{cardio.summary}</Text>}
       </SectionCard>
 
-      <SectionCard icon="📊" title="慢性病及其他健康指标分析">
+      <SectionCard icon="📊" title="慢病及其他健康信息整理">
         {(chronic.items || []).length === 0 && <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无</Text>}
         {(chronic.items || []).map((it, i) => {
           const st = STATUS_META[it.status] || STATUS_META.normal;
@@ -84,7 +84,7 @@ function HealthSummaryView({ sections }) {
         })}
       </SectionCard>
 
-      <SectionCard icon="📋" title="体检全面性评估">
+      <SectionCard icon="📋" title="体检资料覆盖情况">
         <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted }}>已覆盖</Text>
         <ListLines items={checkup.covered} />
         <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textMuted, display: 'block', marginTop: '8px' }}>缺失项目</Text>
@@ -92,7 +92,7 @@ function HealthSummaryView({ sections }) {
         {!!checkup.suggestion && <Text style={{ fontSize: '13px', color: colors.textPrimary, backgroundColor: colors.background, borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, display: 'block', marginTop: `${spacing.sm}px` }}>{checkup.suggestion}</Text>}
       </SectionCard>
 
-      <SectionCard icon="🏥" title="需优先解决的医疗问题">
+      <SectionCard icon="🏥" title="需优先关注的信息">
         {(medPriority.items || []).length === 0 && <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无</Text>}
         {(medPriority.items || []).map((it, i) => {
           const u = URGENCY_META[it.urgency] || URGENCY_META.low;
@@ -151,7 +151,7 @@ function RiskAssessmentView({ data }) {
           </View>
         );
       })}
-      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block', margin: `${spacing.sm}px 0 ${spacing.xl}px` }}>本评估由 AI 结合规则引擎生成，仅供健康参考，不构成医疗诊断。</Text>
+      <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block', margin: `${spacing.sm}px 0 ${spacing.xl}px` }}>本页面由 AI 整理既有健康资料并展示趋势和关注事项，仅供信息参考，不构成医疗诊断、治疗、处方或用药建议。</Text>
     </View>
   );
 }
@@ -230,7 +230,7 @@ export default function AiHealthPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康分析</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康信息整理与趋势分析</Text>
         <View style={{ width: '28px' }} />
       </View>
 

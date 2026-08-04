@@ -272,10 +272,6 @@ export const followupTasksAPI = {
   submitForm: (id, formData) => request(`/user/followup-tasks/${id}/form`, { method: 'POST', body: JSON.stringify({ formData }) }),
 };
 
-export const requisitionsAPI = {
-  list: () => request('/user/requisitions'),
-};
-
 export const screeningAPI = {
   list: () => request('/screening'),
   select: (data) => request('/screening', { method: 'POST', body: JSON.stringify(data) }),
