@@ -18,35 +18,49 @@ function HealthPortraitOverview({ user, reports = [] }) {
     if (/^无.{0,12}(史|过敏|异常)$/.test(text)) return false
     return true
   }
-  // 健康画像里的体检结论必须来自年度/全面体检。单项化验、超声、影像等即使日期更新，
-  // 也不能冒充“最近一次体检”，否则会把局部结果误解为客户整体健康状况。
-  const comprehensiveReports = reports.filter(report =>
-    report.type === 'annual' && (report.audit_status === 'audited' || report.aiStatus === 'reviewed')
-  )
-  const latestComprehensiveReport = [...comprehensiveReports].sort((a, b) => {
-    const dateA = new Date(a.checkDate || a.date || a.createdAt || 0).getTime()
-    const dateB = new Date(b.checkDate || b.date || b.createdAt || 0).getTime()
-    return dateB - dateA
-  })[0]
-  const latestComprehensiveDate = latestComprehensiveReport
-    ? new Date(latestComprehensiveReport.checkDate || latestComprehensiveReport.date || latestComprehensiveReport.createdAt || 0)
+  // 全面体检按“同一检查日期批次”归集。历史上为提高解析准确率，会把同一份年度报告
+  // 拆成多张单项截图分别保存；因此不能再要求某一条记录本身必须是 annual。
+  const isExplicitComprehensiveReport = (report) => {
+    const title = String(report.title || '').trim()
+    return report.type === 'annual' || /年度.{0,6}体检报告|全面体检|健康体检报告/.test(title)
+  }
+  const auditedReports = reports.filter(report => report.audit_status === 'audited' || report.aiStatus === 'reviewed')
+  const batchesByDate = auditedReports.reduce((map, report) => {
+    const dateKey = report.checkDate || report.date || (isExplicitComprehensiveReport(report) ? String(report.reportYear || '') : '')
+    if (!dateKey) return map
+    if (!map[dateKey]) map[dateKey] = { dateKey, reports: [] }
+    map[dateKey].reports.push(report)
+    return map
+  }, {})
+  const comprehensiveBatches = Object.values(batchesByDate).filter(batch => {
+    const items = batch.reports.flatMap(report => report.reportItems || [])
+    const titles = new Set(batch.reports.map(report => String(report.title || '').trim()).filter(Boolean))
+    const domains = new Set(items.flatMap(item => [item.screeningParent, item.screeningCategory, item.orderName, item.sourceSection]).filter(Boolean))
+    const hasExplicitMarker = batch.reports.some(isExplicitComprehensiveReport)
+    const hasBroadCoverage = items.length >= 8 && (domains.size >= 3 || (batch.reports.length >= 3 && titles.size >= 3))
+    return hasExplicitMarker || hasBroadCoverage
+  })
+  const latestComprehensiveBatch = comprehensiveBatches.sort((a, b) => new Date(b.dateKey) - new Date(a.dateKey))[0]
+  const latestComprehensiveDate = latestComprehensiveBatch
+    ? new Date(latestComprehensiveBatch.dateKey)
     : null
   const hasRecentComprehensiveReport = latestComprehensiveDate
     && !Number.isNaN(latestComprehensiveDate.getTime())
     && Date.now() - latestComprehensiveDate.getTime() <= 365 * 24 * 60 * 60 * 1000
-  const latestReport = hasRecentComprehensiveReport ? latestComprehensiveReport : null
-  const latestReportIssues = (latestReport?.reportItems || [])
+  const latestBatch = hasRecentComprehensiveReport ? latestComprehensiveBatch : null
+  const latestReportIssues = (latestBatch?.reports || []).flatMap(report => report.reportItems || [])
     .filter(item => ['abnormal', 'attention'].includes(item.status))
     .map(item => {
       const result = item.conclusion || item.diagnosis || item.value || item.findings || ''
       return [item.name || item.bodyPart, result].filter(Boolean).join('：')
     })
     .filter(isSubstantiveIssue)
-  const latestReportDate = latestReport?.checkDate || latestReport?.date || (latestReport?.createdAt ? new Date(latestReport.createdAt).toLocaleDateString('zh-CN') : '')
+    .filter((item, index, all) => all.indexOf(item) === index)
+  const latestReportDate = latestBatch?.dateKey || ''
 
   const groups = [
     { label: '慢病与重点问题', color: '#DC3545', items: user.chronicDiseases || [], emptyText: '暂无记录' },
-    { label: `最近一次全面体检异常${latestReportDate ? ` · ${latestReportDate}` : ''}`, color: '#D97706', items: latestReportIssues, emptyText: latestReport ? '该次全面体检未记录异常' : '缺乏近1年的全面体检数据' },
+    { label: `最近一次全面体检异常${latestReportDate ? ` · ${latestReportDate}` : ''}`, color: '#D97706', items: latestReportIssues, emptyText: latestBatch ? '该次全面体检未记录异常' : '缺乏近1年的全面体检数据' },
     { label: '过敏风险', color: '#7C3AED', items: [profile.drugAllergy, profile.foodAllergy].filter(Boolean), emptyText: '暂无明确过敏记录' },
   ].map(group => ({ ...group, items: group.items.filter(isSubstantiveIssue) }))
   const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
