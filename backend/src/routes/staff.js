@@ -7604,6 +7604,7 @@ const BODY_COMPOSITION_RETRY_PROMPT = REPORT_PARSE_PROMPT + `\n\n【人体成分
 0. 体重只从“体成分构成/Body composition analysis”表格的“体重”同行读取，sourceSection="人体成分分析"；不得使用页眉体重，也不得覆盖一般检查体重。
 1. “体脂率/PBF/Body Fat Percentage（%）”与“体脂肪量/脂肪量/Body Fat Mass（kg）”是两个不同项目。严禁把脂肪量的数值或参考范围写成体脂率；即使数值看起来合理也不允许。
 2. “骨骼肌量/SMM/Skeletal Muscle Mass”与“肌肉量/去脂体重”是不同项目。严禁相互替代，也严禁借用相邻项目的参考范围。
+2.1 本版页面的“身体参数”区从左到右通常为 BMI、体脂率、水分、骨骼肌、基础代谢。体脂率只能读取“体脂率”柱正上方实测值及该柱两侧/上下标注的界限，禁止读取左侧BMI柱的18.5等界限；骨骼肌只能读取“骨骼肌”柱正上方实测值及该柱自己的界限，禁止读取页面上方“体成分构成”表格里的“肌肉量”。
 3. referenceRange 只有在原图对该项目明确印刷或明确连线标注时才填写；没有、看不清或无法确认归属时必须留空，禁止按常识、性别或相邻行推算。
 4. 每个 item 除原字段外必须增加 sourceRow：表格项目逐字抄写同行原文；柱状图项目按“项目名 实测值 下限 上限”抄写同一柱附近文字；指标卡按“项目名 实测值 标准范围”抄写卡片文字。若原图中无法给出能证明对应关系的局部原文，就不要输出该项目。
 5. name统一输出“体重”“体脂率”“骨骼肌”“内脏脂肪”；体重和骨骼肌单位只能是kg，体脂率单位只能是%，内脏脂肪单位统一为“级”。BMI、体脂肪量、脂肪量、去脂体重、肌肉量全部忽略。
@@ -7704,6 +7705,12 @@ function calculatedBodyCompositionStatus(value, referenceRange) {
   return 'unknown';
 }
 
+function normalizeBodyCompositionReference(referenceRange) {
+  const reference = str(referenceRange);
+  const bounds = reference.match(/\d+(?:\.\d+)?/g) || [];
+  return bounds.length >= 2 ? `[${bounds[0]}-${bounds[1]}]` : reference;
+}
+
 function sanitizeBodyCompositionPage(items) {
   const list = items || [];
   if (!isBodyCompositionContext(list)) return list;
@@ -7717,6 +7724,7 @@ function sanitizeBodyCompositionPage(items) {
     it.name = kind === 'weight' ? '体重' : kind === 'skelMuscle' ? '骨骼肌' : kind === 'bodyFatRate' ? '体脂率' : '内脏脂肪';
     it.itemType = 'data';
     it.sourceSection = '人体成分分析';
+    it.referenceRange = normalizeBodyCompositionReference(it.referenceRange);
     if (kind === 'weight' || kind === 'skelMuscle') it.unit = 'kg';
     if (kind === 'bodyFatRate') it.unit = '%';
     if (kind === 'visceralFat') it.unit = '级';
@@ -7735,6 +7743,30 @@ function sanitizeBodyCompositionItems(items) {
     pages.get(page).push(it);
   });
   return [...pages.values()].flatMap(sanitizeBodyCompositionPage);
+}
+
+const BODY_COMPOSITION_SCREENING_KEYS = {
+  weight: 'chronic|人体成分测量分析|体重（体成分）',
+  skelMuscle: 'chronic|人体成分测量分析|骨骼肌量',
+  bodyFatRate: 'chronic|人体成分测量分析|体脂率',
+  visceralFat: 'chronic|人体成分测量分析|内脏脂肪面积',
+};
+
+function forceBodyCompositionClassification(items) {
+  return (items || []).map(item => {
+    const kind = /人体成分|身体成分/.test(str(item.sourceSection)) ? bodyCompositionKind(item.name) : '';
+    if (!kind) return item;
+    const screeningKey = BODY_COMPOSITION_SCREENING_KEYS[kind];
+    return {
+      ...item,
+      screeningKeys: [screeningKey],
+      screeningKey,
+      screeningCategory: 'chronic',
+      screeningParent: '人体成分测量分析',
+      matchStatus: 'matched',
+      matchConfidence: 1,
+    };
+  });
 }
 
 function mergeBodyCompositionRetry(originalItems, retryItems) {
@@ -8105,7 +8137,8 @@ async function runReportParse(reportId) {
               for (let attempt = 0; attempt < 2; attempt++) {
                 try {
                   const firstPassPrompt = report.type === 'body_comp' ? BODY_COMPOSITION_RETRY_PROMPT : REPORT_PARSE_PROMPT;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
+                  const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -8279,7 +8312,7 @@ async function runReportParse(reportId) {
           const oldPageItems = allItems.filter(it => it._page === pageNum);
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
-          const text = await parseImage(img, BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: VL_MODEL, maxTokens: 2048 });
+          const text = await parseImage(img, BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
@@ -8313,7 +8346,7 @@ async function runReportParse(reportId) {
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
       const filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems))))))))));
-      const classified = stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))))));
+      const classified = forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -8346,7 +8379,8 @@ async function runReportParse(reportId) {
     for (let imageIndex = 0; imageIndex < bufs.length; imageIndex++) {
       try {
         const firstPassPrompt = report.type === 'body_comp' ? BODY_COMPOSITION_RETRY_PROMPT : REPORT_PARSE_PROMPT;
-        lastRawText = await parseImage(bufs[imageIndex].toString('base64'), firstPassPrompt, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 4096 });
+        const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : 'qwen-vl-plus';
+        lastRawText = await parseImage(bufs[imageIndex].toString('base64'), firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
         const parsedPage = safeParseJSON(lastRawText);
         if (!parsedPage) continue;
         imageOkCount++;
@@ -8358,7 +8392,7 @@ async function runReportParse(reportId) {
         const isBodyCompPage = isBodyCompositionPage(parsedPage, pageItems, report.type);
         if (isBodyCompPage && needsBodyCompositionRetry(pageItems, true)) {
           try {
-            const retryText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 2048 });
+            const retryText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
             const retryPage = safeParseJSON(retryText);
             if (retryPage && !shouldSkipParsedReportPage(retryPage) && Array.isArray(retryPage.items)) {
               const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
@@ -8389,7 +8423,7 @@ async function runReportParse(reportId) {
     imageItems = sanitizeBodyCompositionItems(imageItems);
     sortReportItemsBySource(imageItems);
     const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(imageItems))))))))));
-    const classifiedImg = stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems))))))));
+    const classifiedImg = forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;

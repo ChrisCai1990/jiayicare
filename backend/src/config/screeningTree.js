@@ -265,6 +265,8 @@ const NODES = [
   { id: 'chronic|人体成分测量分析|人体成分分析', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '人体成分分析', itemType: 'imaging', gender: null,
     aliases: ['人体成分测量', 'InBody检测', 'InBody', '体成分分析', '人体成分检测', '生物电阻抗分析', 'BIA'] },
   // 人体成分测量参数（lab型，每项单独一条）
+  { id: 'chronic|人体成分测量分析|体重（体成分）', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '体重（体成分）', itemType: 'lab', gender: null,
+    aliases: ['体成分体重', 'Body Composition Weight'] },
   { id: 'chronic|人体成分测量分析|体脂率', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '体脂率', itemType: 'lab', gender: null,
     aliases: ['体脂肪率', 'PBF', '脂肪百分比', '体脂百分比', 'Body Fat%'] },
   { id: 'chronic|人体成分测量分析|体脂肪量', category: 'chronic', categoryKey: 'chronic', parent: '人体成分测量分析', label: '体脂肪量', itemType: 'lab', gender: null,
