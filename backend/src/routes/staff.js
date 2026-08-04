@@ -893,9 +893,17 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
     };
   }
   if (Object.keys(lifestyleChanges).length) {
+    const changeMeta = req.body._lifestyleChangeMeta && typeof req.body._lifestyleChangeMeta === 'object'
+      ? req.body._lifestyleChangeMeta
+      : {};
+    const effectiveAt = /^\d{4}-\d{2}-\d{2}$/.test(String(changeMeta.effectiveAt || ''))
+      ? new Date(`${changeMeta.effectiveAt}T00:00:00.000Z`)
+      : new Date();
     pushOps.lifestyleHistory = {
       changes: lifestyleChanges,
       source: 'staff',
+      effectiveAt,
+      healthStatusChange: String(changeMeta.healthStatusChange || '').trim().slice(0, 1000),
       recordedById: req.staff._id,
       recordedByName: req.staff.name || req.staff.username || '',
       recordedByRole: req.staff.role || '',

@@ -7,14 +7,37 @@ import AiRuleHint from '../components/AiRuleHint'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
-function HealthPortraitOverview({ user }) {
+function HealthPortraitOverview({ user, reports = [] }) {
   const profile = user.healthProfile || {}
+  // 健康画像只呈现可明确识别的健康问题。问卷中的“有/无/以上均无”等选项值
+  // 缺少具体医学信息，直接展示会被误解为新的健康问题。
+  const isSubstantiveIssue = (value) => {
+    const text = String(value || '').trim()
+    if (!text) return false
+    if (['无', '没有', '否', '有', '是', '以上均无', '均无', '无异常', '未见异常'].includes(text)) return false
+    if (/^无.{0,12}(史|过敏|异常)$/.test(text)) return false
+    return true
+  }
+  const auditedReports = reports.filter(report => report.audit_status === 'audited' || report.aiStatus === 'reviewed')
+  const latestReport = [...auditedReports].sort((a, b) => {
+    const dateA = new Date(a.checkDate || a.date || a.createdAt || 0).getTime()
+    const dateB = new Date(b.checkDate || b.date || b.createdAt || 0).getTime()
+    return dateB - dateA
+  })[0]
+  const latestReportIssues = (latestReport?.reportItems || [])
+    .filter(item => ['abnormal', 'attention'].includes(item.status))
+    .map(item => {
+      const result = item.conclusion || item.diagnosis || item.value || item.findings || ''
+      return [item.name || item.bodyPart, result].filter(Boolean).join('：')
+    })
+    .filter(isSubstantiveIssue)
+  const latestReportDate = latestReport?.checkDate || latestReport?.date || (latestReport?.createdAt ? new Date(latestReport.createdAt).toLocaleDateString('zh-CN') : '')
+
   const groups = [
     { label: '慢病与重点问题', color: '#DC3545', items: user.chronicDiseases || [] },
-    { label: '近期症状', color: '#D97706', items: profile.recentSymptoms || [] },
+    { label: `最新体检异常${latestReportDate ? ` · ${latestReportDate}` : ''}`, color: '#D97706', items: latestReportIssues },
     { label: '过敏风险', color: '#7C3AED', items: [profile.drugAllergy, profile.foodAllergy].filter(Boolean) },
-    { label: '既往及手术史', color: '#0369A1', items: [profile.pastHistory, profile.surgeryHistory].filter(Boolean) },
-  ].map(group => ({ ...group, items: group.items.filter(item => item && item !== '无') }))
+  ].map(group => ({ ...group, items: group.items.filter(isSubstantiveIssue) }))
   const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
 
   return (
@@ -1203,6 +1226,9 @@ export default function PatientDetailPage() {
   const [editingReportSaving, setEditingReportSaving] = useState(false)
   const [editingHealth, setEditingHealth] = useState(false)
   const [editingLifestyle, setEditingLifestyle] = useState(false)
+  const [showLifestyleChangeModal, setShowLifestyleChangeModal] = useState(false)
+  const [lifestyleChangeSaving, setLifestyleChangeSaving] = useState(false)
+  const [lifestyleChangeForm, setLifestyleChangeForm] = useState({ changes: {}, effectiveAt: new Date().toISOString().slice(0, 10), healthStatusChange: '' })
   const [editingInsurance, setEditingInsurance] = useState(false)
   const [healthForm, setHealthForm] = useState({})
   const [lifestyleForm, setLifestyleForm] = useState({})
@@ -1807,7 +1833,10 @@ export default function PatientDetailPage() {
     else if (tab === 'serviceRecords') loadServiceRecords()
     else if (tab === 'referrals') loadPatientReferrals()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
-    else if (tab === 'portrait') loadScreening()
+    else if (tab === 'portrait') {
+      loadScreening()
+      if (reports.length === 0) loadReports()
+    }
     else if (tab === 'records') {
       loadScreening()
       // 专项筛查页面的"待完成方案项目"提示条需要 plans 数据，但 plans 平时只在"方案"Tab才加载，这里按需补一次
@@ -2305,6 +2334,27 @@ export default function PatientDetailPage() {
       toast(`${label}已审核通过`)
       load()
     } catch (err) { toast(err.message || '操作失败') }
+  }
+
+  const handleAddLifestyleChange = async () => {
+    const changes = Object.fromEntries(Object.entries(lifestyleChangeForm.changes || {}).filter(([, value]) => String(value || '').trim()))
+    if (Object.keys(changes).length === 0) return toast('请至少填写一项发生变化的生活习惯')
+    try {
+      setLifestyleChangeSaving(true)
+      await staffAPI.updatePatient(id, {
+        lifestyle: changes,
+        _lifestyleChangeMeta: {
+          effectiveAt: lifestyleChangeForm.effectiveAt,
+          healthStatusChange: lifestyleChangeForm.healthStatusChange.trim(),
+        },
+      })
+      await staffAPI.recalculateScore(id)
+      toast('生活方式变化已新增，并保留历史记录')
+      setShowLifestyleChangeModal(false)
+      setLifestyleChangeForm({ changes: {}, effectiveAt: new Date().toISOString().slice(0, 10), healthStatusChange: '' })
+      load()
+    } catch (err) { toast(err.message || '新增失败') }
+    finally { setLifestyleChangeSaving(false) }
   }
 
   const handleDeleteAISummaryRecord = async (scope, year, recordIndex, generatedAt) => {
@@ -3674,7 +3724,10 @@ export default function PatientDetailPage() {
               <div className="card-header">
                 <div className="card-title">生活方式（膳食调查）</div>
                 {!editingLifestyle
-                  ? <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑</button>
+                  ? <div style={{ display: 'flex', gap: 8 }}>
+                      <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
+                      <button className="btn btn-secondary btn-sm" onClick={() => { setLifestyleTab('diet'); setEditingLifestyle(true) }}>编辑当前档案</button>
+                    </div>
                   : <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={handleSaveLifestyle}>保存</button>
                       <button className="btn btn-secondary btn-sm" onClick={() => { setEditingLifestyle(false); setLifestyleForm(buildLifestyleForm(user)) }}>取消</button>
@@ -3950,6 +4003,87 @@ export default function PatientDetailPage() {
 
                   </div>
                 )}
+              </div>
+            </div>
+          )
+        })()}
+
+        {/* 生活方式变化历史：每次只展示本次真正改变的字段，并关联同期健康状况变化。 */}
+        {(() => {
+          const labels = { diet: '饮食习惯', exercise: '运动习惯', sleep: '睡眠习惯', water: '饮水情况', alcohol: '饮酒情况', smoking: '吸烟情况', bowel: '排便情况', mood: '情绪状态' }
+          const entries = [...(user.lifestyleHistory || [])].sort((a, b) => new Date(b.effectiveAt || b.recordedAt) - new Date(a.effectiveAt || a.recordedAt))
+          if (!entries.length) return null
+          return (
+            <div className="card" style={{ marginBottom: 20 }}>
+              <div className="card-header">
+                <div>
+                  <div className="card-title">生活方式变化记录</div>
+                  <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>按时间追踪生活习惯改变及同期健康状况变化</div>
+                </div>
+                <span style={{ fontSize: 12, color: '#4A6558' }}>共 {entries.length} 次</span>
+              </div>
+              <div style={{ padding: '14px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {entries.map((entry, index) => {
+                  const occurredAt = new Date(entry.effectiveAt || entry.recordedAt)
+                  const older = entries[index + 1]
+                  const olderAt = older ? new Date(older.effectiveAt || older.recordedAt) : null
+                  const days = olderAt ? Math.max(0, Math.round((occurredAt - olderAt) / 86400000)) : null
+                  const basicChanges = Object.entries(entry.changes || {}).filter(([key]) => key !== 'lifestyle_data')
+                  const detailChanges = Object.entries(entry.changes?.lifestyle_data || {})
+                  return (
+                    <div key={entry._id || `${entry.recordedAt}-${index}`} style={{ borderLeft: '4px solid #1E6B50', background: '#F7FAF8', borderRadius: 10, padding: '13px 15px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 9 }}>
+                        <div style={{ fontWeight: 700, color: '#1A2B24', fontSize: 14 }}>{occurredAt.toLocaleDateString('zh-CN')}</div>
+                        <div style={{ fontSize: 11, color: '#8AA89C' }}>{days !== null ? `距上次变化 ${days} 天 · ` : ''}{entry.recordedByName || '医护人员'}记录</div>
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        {basicChanges.map(([key, change]) => (
+                          <div key={key} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 10, fontSize: 12 }}>
+                            <b style={{ color: '#1E6B50' }}>{labels[key] || key}</b>
+                            <span style={{ color: '#4A6558' }}><span style={{ color: '#98A59F', textDecoration: change.from ? 'line-through' : 'none' }}>{change.from || '未记录'}</span><span style={{ margin: '0 7px', color: '#A0AEA7' }}>→</span><span style={{ color: '#1A2B24', fontWeight: 600 }}>{change.to || '清空'}</span></span>
+                          </div>
+                        ))}
+                        {detailChanges.map(([key, change]) => (
+                          <div key={key} style={{ display: 'grid', gridTemplateColumns: '90px 1fr', gap: 10, fontSize: 12 }}>
+                            <b style={{ color: '#1E6B50' }}>{key}</b>
+                            <span style={{ color: '#4A6558' }}>{Array.isArray(change.to) ? change.to.join('、') : String(change.to || '清空')}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {entry.healthStatusChange && <div style={{ marginTop: 10, padding: '9px 11px', background: '#fff', border: '1px solid #DDE8E2', borderRadius: 8, fontSize: 12, color: '#4A6558' }}><b style={{ color: '#1A2B24' }}>同期健康状况变化：</b>{entry.healthStatusChange}</div>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+
+        {showLifestyleChangeModal && (() => {
+          const fields = [
+            ['diet', '饮食习惯'], ['exercise', '运动习惯'], ['sleep', '睡眠习惯'], ['water', '饮水情况'],
+            ['smoking', '吸烟情况'], ['alcohol', '饮酒情况'], ['bowel', '排便情况'], ['mood', '情绪状态'],
+          ]
+          return (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setShowLifestyleChangeModal(false)}>
+              <div className="modal" style={{ maxWidth: 680 }}>
+                <div className="modal-header"><h3 className="modal-title">新增生活方式变化</h3><button className="modal-close" onClick={() => setShowLifestyleChangeModal(false)}>×</button></div>
+                <div className="modal-body">
+                  <div style={{ padding: '9px 11px', background: '#F0FAF6', color: '#1E6B50', borderRadius: 8, fontSize: 12, marginBottom: 14 }}>只填写本次发生改变的项目；未填写的项目保持原记录不变。</div>
+                  <label className="form-label">变化发生日期</label>
+                  <input className="form-input" type="date" value={lifestyleChangeForm.effectiveAt} onChange={e => setLifestyleChangeForm(f => ({ ...f, effectiveAt: e.target.value }))} style={{ maxWidth: 220, marginBottom: 14 }} />
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 18px' }}>
+                    {fields.map(([key, label]) => (
+                      <div key={key}>
+                        <label className="form-label">{label}</label>
+                        <input className="form-input" value={lifestyleChangeForm.changes[key] || ''} placeholder={`当前：${user.lifestyle?.[key] || '未记录'}`} onChange={e => setLifestyleChangeForm(f => ({ ...f, changes: { ...f.changes, [key]: e.target.value } }))} />
+                      </div>
+                    ))}
+                  </div>
+                  <label className="form-label" style={{ marginTop: 16 }}>同期健康状况有哪些变化</label>
+                  <textarea className="form-input" rows={3} value={lifestyleChangeForm.healthStatusChange} placeholder="如：连续调整饮食两个月后体重下降3kg，空腹血糖较前稳定" onChange={e => setLifestyleChangeForm(f => ({ ...f, healthStatusChange: e.target.value }))} />
+                </div>
+                <div className="modal-footer"><button className="btn btn-secondary" onClick={() => setShowLifestyleChangeModal(false)} disabled={lifestyleChangeSaving}>取消</button><button className="btn btn-primary" onClick={handleAddLifestyleChange} disabled={lifestyleChangeSaving}>{lifestyleChangeSaving ? '保存中...' : '保存变化记录'}</button></div>
               </div>
             </div>
           )
@@ -7490,7 +7624,7 @@ export default function PatientDetailPage() {
       {/* ── Health Portrait Tab ── */}
       {tab === 'portrait' && (
         <>
-          <HealthPortraitOverview user={user} />
+          <HealthPortraitOverview user={user} reports={reports} />
           <div className="card" style={{ marginBottom: 16 }}>
             <div className="card-header">
               <div>
