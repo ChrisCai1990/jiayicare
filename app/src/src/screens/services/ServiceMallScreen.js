@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow, gradient } from '../../theme';
-import { mockServices, mockServiceCategories } from '../../data/mockData';
 import { servicesAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -240,8 +239,8 @@ export default function ServiceMallScreen({ navigation, route }) {
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('全部');
   const [selectedService, setSelectedService] = useState(null);
-  const [services, setServices]     = useState(mockServices);
-  const [categories, setCategories] = useState(mockServiceCategories);
+  const [services, setServices]     = useState([]);
+  const [categories, setCategories] = useState(['全部']);
   const [loadingList, setLoadingList] = useState(true);
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
@@ -253,12 +252,12 @@ export default function ServiceMallScreen({ navigation, route }) {
     (async () => {
       try {
         const res = await servicesAPI.list();
-        if (res.success && res.data?.services?.length > 0) {
-          setServices(res.data.services);
-          setCategories(res.data.categories || mockServiceCategories);
-        }
+        if (!res.success) throw new Error(res.message || '服务加载失败');
+        setServices(res.data?.services || []);
+        setCategories(res.data?.categories || ['全部']);
       } catch {
-        // 网络失败时保留 mockServices
+        setServices([]);
+        setCategories(['全部']);
       } finally {
         setLoadingList(false);
       }

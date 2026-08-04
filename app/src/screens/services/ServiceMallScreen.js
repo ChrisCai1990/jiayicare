@@ -5,7 +5,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow, gradient } from '../../theme';
-import { mockServices, mockServiceCategories } from '../../data/mockData';
 import { servicesAPI, mediaUrl } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 
@@ -556,9 +555,10 @@ export default function ServiceMallScreen({ navigation, route }) {
   const [selectedService, setSelectedService] = useState(null); // 购买弹窗
   const [purchaseMode, setPurchaseMode]     = useState('consult'); // consult 预约 | pay 付费
   const openPurchase = (svc, mode) => { setPurchaseMode(mode); setSelectedService(svc); };
-  const [services, setServices]     = useState(mockServices);
-  const [categories, setCategories] = useState(mockServiceCategories);
+  const [services, setServices]     = useState([]);
+  const [categories, setCategories] = useState(['全部']);
   const [loadingList, setLoadingList] = useState(true);
+  const [listError, setListError] = useState('');
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
   const isMember  = !!(user?.memberType) || hasService;
@@ -570,12 +570,13 @@ export default function ServiceMallScreen({ navigation, route }) {
     (async () => {
       try {
         const res = await servicesAPI.list();
-        if (res.success && res.data?.services?.length > 0) {
-          setServices(res.data.services);
-          setCategories(res.data.categories || mockServiceCategories);
-        }
+        if (!res.success) throw new Error(res.message || '服务加载失败');
+        setServices(res.data?.services || []);
+        setCategories(res.data?.categories || ['全部']);
       } catch {
-        // 网络失败时保留 mockServices
+        setServices([]);
+        setCategories(['全部']);
+        setListError('服务加载失败，请稍后重试');
       } finally {
         setLoadingList(false);
       }
@@ -638,7 +639,8 @@ export default function ServiceMallScreen({ navigation, route }) {
             <ActivityIndicator color={colors.primary} style={{ marginTop: 40 }} />
           ) : (
             <>
-              <Text style={styles.resultCount}>共 {filtered.length} 个服务</Text>
+              <Text style={styles.resultCount}>{listError || `共 ${filtered.length} 个服务`}</Text>
+              {!listError && filtered.length === 0 && <Text style={styles.resultCount}>暂无可购买服务</Text>}
               {filtered.map(s => (
                 <ServiceCard
                   key={s.id}

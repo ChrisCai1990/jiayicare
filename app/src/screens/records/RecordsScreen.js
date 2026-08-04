@@ -346,7 +346,7 @@ function formatGroupDateLabel(dateKey) {
 
 // ── 主页面 ────────────────────────────────────────────────────────
 export default function RecordsScreen({ navigation }) {
-  const { isDemo, user } = useAuth();
+  const { isDemo, user, updateUser } = useAuth();
   const [loading, setLoading]           = useState(true);
   const [refreshing, setRefreshing]     = useState(false);
   const [latestVitals, setLatestVitals] = useState(null);
@@ -409,6 +409,7 @@ export default function RecordsScreen({ navigation }) {
       )),
     ]);
     const me = meRes?.data || meRes;
+    if (me?._id) updateUser(me);
     setBodyComposition(me?.bodyComposition || {});
     setBodyCompHistory(me?.bodyCompHistory || []);
     const nextCheckins = {};
@@ -418,7 +419,7 @@ export default function RecordsScreen({ navigation }) {
     });
     setDailyCheckins(nextCheckins);
     setSymptomHistory(recordResults[DAILY_CHECKIN_TYPES.length]?.data || []);
-  }, []);
+  }, [updateUser]);
 
   // ── 加载趋势图数据 ────────────────────────────────────────────────
   const loadChart = useCallback(async (type, period) => {

@@ -55,7 +55,7 @@ const SERVICE_PACKAGE_LABELS = {
   pkg_3m:            '季度服务包',
 };
 
-// 服务包权益以 Admin 配置为准；兼容尚未保存新权益字段的既有年度计划。
+// AI 健康信息权益：有效年度会员始终开放；非年度会员即使旧配置残留也不开放。
 async function getAiEntitlements(user) {
   const none = { aiHealthAnalysis: false, aiRiskAssessment: false };
   if (!user?.servicePackage || !user?.serviceExpiry) return none;
@@ -63,17 +63,19 @@ async function getAiEntitlements(user) {
   if (!Number.isNaN(expiry.getTime()) && expiry < new Date()) return none;
   const names = [user.servicePackage, SERVICE_PACKAGE_LABELS[user.servicePackage]].filter(Boolean);
   const pkg = await ServicePackage.findOne({ clientBrand: user.clientBrand || 'jiayiguanjia', name: { $in: names }, active: true }).lean();
-  const legacyAnnual = names.some(name => /健康预防|健康护航/.test(name));
+  const isAnnualMember = user.servicePackage === 'pkg_1y'
+    || names.some(name => /年度|全年|12\s*个月|健康预防|健康护航/.test(String(name)))
+    || Number(pkg?.activation?.durationMonths || 0) >= 12;
   return {
-    aiHealthAnalysis: !!pkg?.entitlements?.aiHealthAnalysis || legacyAnnual,
-    aiRiskAssessment: !!pkg?.entitlements?.aiRiskAssessment || legacyAnnual,
+    aiHealthAnalysis: isAnnualMember,
+    aiRiskAssessment: isAnnualMember,
   };
 }
 
 async function requireAiEntitlement(user, key, res) {
   const entitlements = await getAiEntitlements(user);
   if (entitlements[key]) return true;
-  res.status(403).json({ success: false, code: 'ANNUAL_MEMBER_ONLY', message: '该功能仅向健康预防计划和健康护航计划客户开放' });
+  res.status(403).json({ success: false, code: 'ANNUAL_MEMBER_ONLY', message: '该功能仅向有效期内的年度会员开放' });
   return false;
 }
 

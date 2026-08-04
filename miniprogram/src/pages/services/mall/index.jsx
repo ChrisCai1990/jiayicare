@@ -408,6 +408,7 @@ export default function ServiceMallPage() {
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState(['全部']);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState('');
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
   const isMember = !!user?.memberType || hasService;
@@ -416,11 +417,14 @@ export default function ServiceMallPage() {
 
   useEffect(() => {
     servicesAPI.list().then((res) => {
-      if (res.success && res.data?.services?.length > 0) {
-        setServices(res.data.services);
-        setCategories(res.data.categories || ['全部']);
-      }
-    }).catch(() => {}).finally(() => setLoading(false));
+      if (!res.success) throw new Error(res.message || '服务加载失败');
+      setServices(res.data?.services || []);
+      setCategories(res.data?.categories || ['全部']);
+    }).catch(() => {
+      setServices([]);
+      setCategories(['全部']);
+      setListError('服务加载失败，请稍后重试');
+    }).finally(() => setLoading(false));
   }, []);
 
   const openPurchase = (svc, mode) => { setPurchaseMode(mode); setSelectedService(svc); };
@@ -468,7 +472,8 @@ export default function ServiceMallPage() {
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : (
           <>
-            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.xs}px` }}>共 {filtered.length} 个服务</Text>
+            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.xs}px` }}>{listError || `共 ${filtered.length} 个服务`}</Text>
+            {!listError && filtered.length === 0 && <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无可购买服务</Text>}
             {filtered.map((s) => (
               <ServiceCard key={s.id} item={s} onDetail={setDetailService} onPay={(svc) => openPurchase(svc, 'pay')} />
             ))}

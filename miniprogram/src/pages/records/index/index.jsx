@@ -2,7 +2,7 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { recordsAPI } from '../../../services/api';
+import { recordsAPI, userAPI } from '../../../services/api';
 import TrendChart from '../../../components/TrendChart';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
@@ -21,7 +21,7 @@ const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: col
 
 export default function RecordsIndexPage() {
   const { statusBarHeight } = useNavBar();
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [records, setRecords] = useState([]);
   const [filter, setFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -39,7 +39,12 @@ export default function RecordsIndexPage() {
     setLoading(false);
   }, []);
 
-  useDidShow(() => { load(); });
+  useDidShow(() => {
+    load();
+    userAPI.getMe().then((res) => {
+      if (res?.success && res.data) updateUser(res.data);
+    }).catch(() => {});
+  });
 
   useEffect(() => {
     Promise.allSettled([
