@@ -115,12 +115,12 @@ function HealthPortraitOverview({ user, reports = [] }) {
   ].map(group => ({ ...group, items: group.items.filter(isSubstantiveIssue) }))
   const issueCount = groups.reduce((sum, group) => sum + group.items.length, 0)
   const bodyRegionRules = [
-    { key: 'head', label: '头面部', pattern: /眼|视力|屈光|耳|听力|鼻|咽|脑/, top: 17 },
-    { key: 'neck', label: '颈部', pattern: /甲状腺|颈动脉|颈部/, top: 55 },
-    { key: 'chest', label: '胸部', pattern: /乳腺|乳房|心脏|心电|冠心|肺|胸/, top: 91 },
-    { key: 'abdomen', label: '腹部', pattern: /肝|胆|胰|脾|肾|胃|肠|肌酐|尿素|尿酸/, top: 137 },
-    { key: 'pelvis', label: '盆腔', pattern: /子宫|附件|卵巢|宫颈|前列腺|膀胱|盆腔|痔疮|肛门/, top: 174 },
-    { key: 'limbs', label: '骨骼四肢', pattern: /骨|关节|肌肉|四肢|膝|腰椎|颈椎/, top: 225 },
+    { key: 'head', label: '头面部', pattern: /眼|视力|屈光|耳|听力|鼻|咽|脑/, top: 35 },
+    { key: 'neck', label: '颈部', pattern: /甲状腺|颈动脉|颈部/, top: 83 },
+    { key: 'chest', label: '胸部', pattern: /乳腺|乳房|心脏|心电|冠心|肺|胸/, top: 125 },
+    { key: 'abdomen', label: '腹部', pattern: /肝|胆|胰|脾|肾|胃|肠|肌酐|尿素|尿酸/, top: 169 },
+    { key: 'pelvis', label: '盆腔', pattern: /子宫|附件|卵巢|宫颈|前列腺|膀胱|盆腔|痔疮|肛门/, top: 211 },
+    { key: 'limbs', label: '骨骼四肢', pattern: /骨|关节|肌肉|四肢|膝|腰椎|颈椎/, top: 267 },
   ]
   const allPortraitIssues = groups.flatMap(group => group.items)
   const bodyMarkers = bodyRegionRules.filter(rule => allPortraitIssues.some(issue => rule.pattern.test(issue)))
@@ -140,50 +140,66 @@ function HealthPortraitOverview({ user, reports = [] }) {
           {issueCount ? `${issueCount} 项需关注` : '暂未记录健康问题'}
         </span>
       </div>
-      <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'minmax(210px, .7fr) minmax(320px, 1.3fr)', gap: 28, alignItems: 'center' }}>
-        <div style={{ minHeight: 360, borderRadius: 18, background: 'linear-gradient(180deg,#F1F8F4 0%,#FBFDFC 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+      <div style={{ padding: 20, display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 340px), 1fr))', gap: 24, alignItems: 'center' }}>
+        <div style={{ minWidth: 0, minHeight: 390, borderRadius: 20, border: '1px solid #E8EFEA', background: 'radial-gradient(circle at 50% 34%,#FFFFFF 0%,#F4F9F6 58%,#EDF5F1 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative', overflow: 'hidden' }}>
           <span style={{ position: 'absolute', top: 12, right: 14, padding: '3px 8px', borderRadius: 99, background: '#E3F1EA', color: '#527566', fontSize: 10, fontWeight: 700 }}>{portraitGenderLabel}</span>
-          <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 190, height: 310 }}>
-            <svg viewBox="0 0 190 310" width="190" height="310" aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+          <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 280, height: 330 }}>
+            <svg viewBox="0 0 280 330" width="280" height="330" aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
               <defs>
-                <linearGradient id="portraitSilhouette" x1="0" y1="0" x2="0.85" y2="1">
-                  <stop offset="0" stopColor="#BBDDD0" />
-                  <stop offset="1" stopColor="#82B9A2" />
+                <linearGradient id="portraitGarment" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stopColor="#A8D2C1" />
+                  <stop offset="1" stopColor="#6EA78F" />
+                </linearGradient>
+                <linearGradient id="portraitSkin" x1="0" y1="0" x2="1" y2="1">
+                  <stop offset="0" stopColor="#F1D7C4" />
+                  <stop offset="1" stopColor="#DDB99F" />
                 </linearGradient>
                 <filter id="portraitShadow" x="-30%" y="-20%" width="160%" height="160%">
-                  <feDropShadow dx="0" dy="6" stdDeviation="7" floodColor="#517D6A" floodOpacity=".14" />
+                  <feDropShadow dx="0" dy="7" stdDeviation="8" floodColor="#365A4B" floodOpacity=".16" />
                 </filter>
               </defs>
-              <g filter="url(#portraitShadow)" fill="url(#portraitSilhouette)">
-                <circle cx="75" cy="29" r="27" />
-                <rect x="66" y="52" width="18" height="17" rx="8" />
+              <g filter="url(#portraitShadow)">
+                {isFemalePortrait && <path d="M112 49 Q108 12 140 9 Q172 12 168 49 Q164 65 153 70 H127 Q116 65 112 49Z" fill="#3E5D51" />}
+                {!isFemalePortrait && <path d="M115 31 Q121 8 143 9 Q163 10 166 28 Q151 20 116 33Z" fill="#3E5D51" />}
+                <ellipse cx="140" cy="40" rx="23" ry="29" fill="url(#portraitSkin)" />
+                <path d="M130 43 Q140 49 150 43" fill="none" stroke="#A77E69" strokeWidth="1.2" strokeLinecap="round" opacity=".45" />
+                <circle cx="132" cy="37" r="1.4" fill="#52665E" opacity=".7" /><circle cx="148" cy="37" r="1.4" fill="#52665E" opacity=".7" />
+                <path d="M133 55 Q140 59 147 55" fill="none" stroke="#B27A72" strokeWidth="1.2" strokeLinecap="round" />
+                <path d="M131 64 L130 78 H150 L149 64" fill="url(#portraitSkin)" />
                 {isFemalePortrait ? (
-                  <path d="M49 72 Q75 57 101 72 Q109 110 103 151 L115 194 H88 L91 299 Q91 307 82 307 H72 Q65 307 65 299 L62 194 H35 L47 151 Q41 111 49 72Z" />
+                  <path d="M112 78 Q140 68 168 78 Q174 112 167 156 L181 210 Q158 221 140 221 Q122 221 99 210 L113 156 Q106 112 112 78Z" fill="url(#portraitGarment)" />
                 ) : (
-                  <path d="M39 72 Q75 57 111 72 L103 180 Q101 194 88 194 L91 299 Q91 307 82 307 H72 Q65 307 65 299 L62 194 H55 Q42 194 40 180Z" />
+                  <path d="M102 80 Q140 67 178 80 L168 211 H112Z" fill="url(#portraitGarment)" />
                 )}
-                <path d="M45 77 Q28 80 25 99 L11 188 Q9 201 20 205 Q32 209 36 196 L52 105Z" />
-                <path d="M105 77 Q122 80 125 99 L139 188 Q141 201 130 205 Q118 209 114 196 L98 105Z" />
-                <path d="M62 190 L62 299 Q62 308 52 308 H46 Q37 308 38 298 L42 188Z" />
+                <path d="M108 83 Q91 88 88 106 L76 190 Q74 207 86 211 Q99 214 103 197 L116 107Z" fill="url(#portraitSkin)" />
+                <path d="M172 83 Q189 88 192 106 L204 190 Q206 207 194 211 Q181 214 177 197 L164 107Z" fill="url(#portraitSkin)" />
+                <path d="M111 207 Q125 202 139 210 L136 318 H116 Q109 317 110 308Z" fill="#6F9788" />
+                <path d="M141 210 Q155 202 169 207 L170 308 Q171 317 164 318 H144Z" fill="#5F8979" />
+                {!isFemalePortrait && <path d="M126 77 L140 94 L154 77" fill="#F8FBF9" opacity=".9" />}
+                {isFemalePortrait && <path d="M128 77 Q140 91 152 77" fill="none" stroke="#F4FBF7" strokeWidth="3" opacity=".8" />}
               </g>
-              <path d="M75 72 V188" stroke="#FFFFFF" strokeOpacity=".2" strokeWidth="1" strokeDasharray="3 6" />
+              {bodyMarkers.map((marker, index) => {
+                const leftSide = index % 2 === 0
+                return <path key={`line-${marker.key}`} d={`M${leftSide ? 112 : 168} ${marker.top + 12} H${leftSide ? 92 : 188}`} fill="none" stroke={index % 2 ? '#D97706' : '#DC3545'} strokeWidth="1.5" strokeDasharray="3 3" opacity=".65" />
+              })}
             </svg>
-            {bodyMarkers.map((marker, index) => (
-              <span key={marker.key} title={allPortraitIssues.filter(issue => marker.pattern.test(issue)).join('；')} style={{ position: 'absolute', top: marker.top, left: 63, display: 'inline-flex', alignItems: 'center', gap: 5, zIndex: 2, whiteSpace: 'nowrap' }}>
-                <span style={{ width: 24, height: 24, borderRadius: '50%', background: index % 2 ? '#D97706' : '#DC3545', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 800, boxShadow: `0 3px 9px ${index % 2 ? '#D9770666' : '#DC354566'}` }}>{index + 1}</span>
-                <span style={{ padding: '2px 6px', borderRadius: 6, background: 'rgba(255,255,255,.92)', color: '#31473D', fontSize: 10, fontWeight: 700, boxShadow: '0 1px 4px rgba(30,60,45,.12)' }}>{marker.label}</span>
+            {bodyMarkers.map((marker, index) => {
+              const leftSide = index % 2 === 0
+              return <span key={marker.key} title={allPortraitIssues.filter(issue => marker.pattern.test(issue)).join('；')} style={{ position: 'absolute', top: marker.top, left: leftSide ? 0 : 188, width: 92, display: 'inline-flex', flexDirection: leftSide ? 'row' : 'row-reverse', alignItems: 'center', justifyContent: 'flex-end', gap: 5, zIndex: 2, whiteSpace: 'nowrap' }}>
+                <span style={{ width: 24, height: 24, flex: '0 0 24px', borderRadius: '50%', background: index % 2 ? '#D97706' : '#DC3545', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 800, boxShadow: `0 3px 9px ${index % 2 ? '#D9770666' : '#DC354566'}` }}>{index + 1}</span>
+                <span style={{ padding: '3px 7px', border: '1px solid #E5ECE8', borderRadius: 7, background: 'rgba(255,255,255,.96)', color: '#31473D', fontSize: 10, fontWeight: 700, boxShadow: '0 2px 7px rgba(30,60,45,.10)' }}>{marker.label}</span>
               </span>
-            ))}
+            })}
           </div>
         </div>
-        <div style={{ display: 'grid', gap: 12 }}>
+        <div style={{ minWidth: 0, display: 'grid', gap: 12 }}>
           {groups.map(group => (
             <div key={group.label} style={{ padding: '13px 15px', border: '1px solid #E5ECE8', borderLeft: `4px solid ${group.color}`, borderRadius: 10, background: '#fff' }}>
               <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>{group.label}</div>
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                 {group.items.length ? <>
                   {group.items.slice(0, 8).map((item, index) => (
-                    <span key={`${item}-${index}`} title={item} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600, lineHeight: 1.5, maxWidth: '100%' }}>{item}</span>
+                    <span key={`${item}-${index}`} title={item} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600, lineHeight: 1.5, maxWidth: '100%', overflowWrap: 'anywhere' }}>{item}</span>
                   ))}
                   {group.items.length > 8 && <span style={{ padding: '4px 9px', borderRadius: 7, background: '#F3F5F4', color: '#66756E', fontSize: 12 }}>另有 {group.items.length - 8} 项，详见体检报告</span>}
                 </> : <span style={{ color: '#A0AEA7', fontSize: 12 }}>{group.emptyText || '暂无记录'}</span>}
