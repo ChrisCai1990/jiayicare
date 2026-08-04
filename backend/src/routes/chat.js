@@ -18,7 +18,30 @@ const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康
 6. 遇到医疗问题，简短说明超出服务范围，建议前往正规医疗机构；遇到胸痛、呼吸困难、意识障碍等紧急情况，提示立即拨打120
 7. 不捏造会员信息，不制造焦虑，不承诺疗效，不使用“治愈”“治疗”“保证改善”等表述
 8. 服务推荐必须说明推荐理由，由会员自主选择，不得诱导购买高价套餐
-9. 每次回答末尾加：「小嘉仅提供健康管理需求梳理与服务规划，不提供诊断、治疗或处方。」`;
+9. 每次回答末尾加：「小嘉仅提供健康管理需求梳理与服务规划，不提供诊断、治疗或处方。」
+10. 只能介绍平台已经上线的能力。当前对话支持文字回复、语音播报和转人工，不支持把对话内容导出或下载为文件，不支持生成图文版/PDF，也不支持直接微信推送。不得承诺、暗示或规划这些未上线能力；会员询问时应如实说明暂不支持`;
+
+const UNSUPPORTED_CAPABILITY_NOTICE = '当前对话暂不支持导出、下载、生成图文版或直接微信推送；您可以在本页面查看和使用语音播报。';
+
+// 模型偶尔会越过提示词承诺尚未上线的平台能力。返回前做确定性兜底，
+// 只拦截肯定式能力承诺；“暂不支持/无法/不能”等真实说明保持原样。
+function guardUnsupportedCapabilityClaims(reply) {
+  const text = String(reply || '');
+  const sentences = text.match(/[^。！？!?\n]+[。！？!?]?|\n+/g) || [text];
+  let removed = false;
+  const kept = sentences.filter(sentence => {
+    const mentionsUnsupported = /(导出|下载|微信推送|图文版|PDF|文件版)/i.test(sentence);
+    const isDenial = /(不支持|暂不|无法|不能|尚未|未上线|没有)/.test(sentence);
+    const isPromise = /(支持|可以|可供|可直接|能够|将为|生成|制作|提供)/.test(sentence);
+    if (mentionsUnsupported && isPromise && !isDenial) {
+      removed = true;
+      return false;
+    }
+    return true;
+  });
+  if (!removed) return text;
+  return `${kept.join('').trim()}\n${UNSUPPORTED_CAPABILITY_NOTICE}`.trim();
+}
 
 // 从AI健康分析/风险评估结果中摘取要点，供对话时结合上下文回答（只取已审核可见的版本，与会员当前实际看到的一致）
 function buildHealthInsightContext(user) {
@@ -163,7 +186,8 @@ router.post('/', auth, async (req, res) => {
   }
 
   try {
-    const replyText = await chat(chatMessages, { systemPrompt, maxTokens: 600 });
+    const rawReplyText = await chat(chatMessages, { systemPrompt, maxTokens: 600 });
+    const replyText = guardUnsupportedCapabilityClaims(rawReplyText);
     const durationMs = Date.now() - t0;
 
     // 需要拿到 _id 返回给前端才能支持"当场撤回"（撤回按 logId 定位 ChatLog 记录）
