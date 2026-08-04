@@ -48,11 +48,23 @@ function HealthPortraitOverview({ user, reports = [] }) {
     && !Number.isNaN(latestComprehensiveDate.getTime())
     && Date.now() - latestComprehensiveDate.getTime() <= 365 * 24 * 60 * 60 * 1000
   const latestBatch = hasRecentComprehensiveReport ? latestComprehensiveBatch : null
+  const hasLegacyAbnormalConclusion = (item) => {
+    if (item.status !== 'unknown') return false
+    const text = String(item.conclusion || item.diagnosis || '').trim()
+    if (!text) return false
+    // 旧报告常有结论文字但 status 未回填。先移除明确的正常/阴性语句，再判断是否仍含异常发现，
+    // 避免“未见上皮内病变”“正常心电图”等被“病变/心电图”关键词误判。
+    const signalText = text
+      .replace(/未见[^。；\n]*(?:异常|病变)/g, '')
+      .replace(/(?:正常心电图|阴性|NILM|标准型)/gi, '')
+    return /异常|增生|囊肿|囊性|肌瘤|结节|团块|肿块|斑块|息肉|痔疮|脂肪肝|钙化|积液|占位|错构瘤|屈光不正|回声不均|回声欠均匀|偏高|偏低|升高|降低|下降|狭窄|减退|缺损|阳性/.test(signalText)
+  }
   const latestReportIssues = (latestBatch?.reports || []).flatMap(report => report.reportItems || [])
-    .filter(item => ['abnormal', 'attention'].includes(item.status))
+    .filter(item => ['abnormal', 'attention'].includes(item.status) || hasLegacyAbnormalConclusion(item))
     .map(item => {
       const result = item.conclusion || item.diagnosis || item.value || item.findings || ''
-      return [item.name || item.bodyPart, result].filter(Boolean).join('：')
+      const conciseResult = result.length > 80 ? `${result.slice(0, 80)}…` : result
+      return [item.name || item.bodyPart, conciseResult].filter(Boolean).join('：')
     })
     .filter(isSubstantiveIssue)
     .filter((item, index, all) => all.indexOf(item) === index)
