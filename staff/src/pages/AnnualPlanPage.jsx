@@ -568,7 +568,7 @@ export default function AnnualPlanPage() {
     staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
   }, [])
 
-  // 加载患者信息和方案
+  // 加载会员信息和方案
   useEffect(() => {
     const loadAll = async () => {
       setLoading(true)

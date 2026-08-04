@@ -7,7 +7,7 @@ import { StaffListContext, ModulePanel } from '../components/ModulePanel'
 // 营养干预方案 / 就医协助方案的板块化编辑页（2026-07-13新增）。
 // 之前这两类方案AI生成后只是扁平items+零散content字段，跟年度管理方案的"选模板→板块折叠面板→
 // AI填充→保存/推送"完全不是一套呈现，用户要求三者体验统一。复用 AnnualMgmtPlanPage 抽出的
-// ModulePanel 组件，但不需要"4类型选择"和"按年份"——这两类方案本身就是单一类型、一个患者可以
+// ModulePanel 组件，但不需要"4类型选择"和"按年份"——这两类方案本身就是单一类型、一个会员可以
 // 有多条独立记录（不像年度管理方案一年一份的强约束），所以用 HealthPlan._id 直接定位，比年度
 // 管理方案的交互更简单。
 

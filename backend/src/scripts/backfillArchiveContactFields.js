@@ -69,7 +69,7 @@ async function main() {
     return;
   }
 
-  // 按患者+问卷分组，只取最新一份答卷
+  // 按会员+问卷分组，只取最新一份答卷
   const responses = await QuestionnaireResponse.find({
     questionnaire: { $in: [...qnFieldMap.keys()].map(id => new mongoose.Types.ObjectId(id)) },
   }).sort({ submittedAt: -1 }).lean();
@@ -79,7 +79,7 @@ async function main() {
     const key = `${r.user}_${r.questionnaire}`;
     if (!latestByPatientQn.has(key)) latestByPatientQn.set(key, r);
   }
-  console.log(`[backfill] 待检查答卷（患者+问卷去重后）: ${latestByPatientQn.size} 份`);
+  console.log(`[backfill] 待检查答卷（会员+问卷去重后）: ${latestByPatientQn.size} 份`);
 
   let checkedUsers = 0, updatedUsers = 0, updatedFields = 0;
   const touchedUserIds = new Set();

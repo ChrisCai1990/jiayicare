@@ -2,7 +2,7 @@ const mongoose = require('mongoose');
 
 const followUpSchema = new mongoose.Schema({
   staffId:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true }, // 随访人
-  patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true }, // 患者
+  patientId: { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true }, // 会员
   date:      { type: Date, default: Date.now },
   type: {
     type: String,
@@ -55,7 +55,7 @@ const followUpSchema = new mongoose.Schema({
   sourceId: { type: mongoose.Schema.Types.ObjectId, default: null }, // 通用来源ID；symptom 时关联 HealthRecord
   sourceOrderId: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', default: null }, // sourceType='order'时关联的订单，供详情弹窗展示订单号/金额/支付方式
   aiStatus:   { type: String, enum: ['pending', 'approved', null], default: null },
-  // 待审核归属角色：为空时按固定规则由家庭医生审核（年度管理方案）；health_plan来源按方案类型区分（营养方案→营养师，体检方案→家庭医生）
+  // 待审核归属角色：为空时按固定规则由健康顾问审核（年度管理方案）；health_plan来源按方案类型区分（营养方案→营养师，体检方案→健康顾问）
   reviewRole: { type: String, enum: ['familyDoctor', 'nutritionist', null], default: null },
 }, { timestamps: true });
 

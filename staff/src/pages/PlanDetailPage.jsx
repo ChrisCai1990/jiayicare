@@ -12,7 +12,7 @@ const PLAN_AI_SCENE = {
 }
 
 // 部分方案类型只归特定角色编辑（跟后端 PLAN_TYPE_OWNER_ROLE 对齐）：
-// 年度体检/年度管理方案只有家庭医生，营养干预方案只有营养师
+// 年度体检/年度管理方案只有健康顾问，营养干预方案只有营养师
 const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', annual_mgmt: 'familyDoctor', nutrition: 'nutritionist' }
 function canEditPlanType(planType, staffRole) {
   const requiredRole = PLAN_TYPE_OWNER_ROLE[planType]
@@ -398,7 +398,7 @@ export default function PlanDetailPage() {
         <div style={{ display: 'flex', gap: 8 }}>
           {!canEdit && (
             <span style={{ fontSize: 12, color: '#8AA89C', alignSelf: 'center' }}>
-              {TYPE_LABEL[plan.type]}仅{plan.type === 'nutrition' ? '营养师' : '家庭医生'}可编辑，你当前只能查看
+              {TYPE_LABEL[plan.type]}仅{plan.type === 'nutrition' ? '营养师' : '健康顾问'}可编辑，你当前只能查看
             </span>
           )}
           {canEdit && plan.content?.aiStatus === 'pending' && (
@@ -433,7 +433,7 @@ export default function PlanDetailPage() {
       {PLAN_AI_SCENE[plan.type] && <AiRuleHint scene={PLAN_AI_SCENE[plan.type]} />}
 
       {/* 标准动作（模板SOP，只读）——直接来自模板原始骨架，不经AI改写，跟下方"本次个性化安排"分开陈列，
-          避免模板标准动作和AI针对该患者的个性化内容混在一起分不清（2026-07-13反馈"模版就是为了标准化"） */}
+          避免模板标准动作和AI针对该会员的个性化内容混在一起分不清（2026-07-13反馈"模版就是为了标准化"） */}
       {plan.type === 'medical_assist' && plan.content?.templateSnapshot && (
         <div className="card" style={{ marginBottom: 20, borderColor: assistMeta?.color, borderWidth: 1.5 }}>
           <div className="card-header" style={{ background: assistMeta?.bg }}>
@@ -483,7 +483,7 @@ export default function PlanDetailPage() {
                   <>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginBottom: 10, paddingTop: 4, borderTop: '1px dashed #E0D9CE' }}>
                       ✏️ 本次个性化安排
-                      <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C', marginLeft: 8 }}>针对该患者的具体内容，可按需调整</span>
+                      <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C', marginLeft: 8 }}>针对该会员的具体内容，可按需调整</span>
                     </div>
                     <div style={{ display: 'flex', gap: 10 }}>
                       <div className="form-group" style={{ marginBottom: 12, flex: 1 }}>
@@ -662,7 +662,7 @@ export default function PlanDetailPage() {
         )}
       </div>
 
-      {/* AI体检方案讨论区：家庭医生对加项/未加项有疑问可留言，AI结合本次方案内容回应
+      {/* AI体检方案讨论区：健康顾问对加项/未加项有疑问可留言，AI结合本次方案内容回应
           （2026-07-17需求：如新增了更年期相关检查需求但方案未调整，医生可在此提出疑问并让AI解释/修正）*/}
       {plan.type === 'annual_checkup' && (
         <PlanDiscussionPanel planId={plan._id} discussions={plan.content?.discussions || []} staff={staff} onRefresh={load} />
@@ -707,7 +707,7 @@ export default function PlanDetailPage() {
   )
 }
 
-// AI体检方案讨论区：家庭医生对加项/未加项有疑问可留言，AI结合方案内容回应，支持发图（截图说明）
+// AI体检方案讨论区：健康顾问对加项/未加项有疑问可留言，AI结合方案内容回应，支持发图（截图说明）
 function PlanDiscussionPanel({ planId, discussions, staff, onRefresh }) {
   const toast = useToast()
   const [text, setText] = useState('')

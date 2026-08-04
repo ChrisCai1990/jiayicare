@@ -344,7 +344,7 @@ export default function FollowUpsPage() {
             return (
               <div key={f._id} className="card" style={{ padding: '14px 18px' }}>
                 <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                  {/* 左侧：患者信息 + 主题 + 标签行 */}
+                  {/* 左侧：会员信息 + 主题 + 标签行 */}
                   <div style={{ flex: 1, minWidth: 220 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginBottom: 6 }}>
                       <span style={{ color: '#1E6B50', cursor: 'pointer', fontWeight: 700, fontSize: 15 }}

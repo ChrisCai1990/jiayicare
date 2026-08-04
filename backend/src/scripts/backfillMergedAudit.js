@@ -4,7 +4,7 @@
  *
  * 背景：audit_status（健管审核）和aiStatus（AI结果确认）是两套先后独立引入、从未真正整合
  * 的字段。此前健管专员要分别在两个弹窗各点一次才能都完成，很多历史报告只走完了"确认AI结果"
- * 这一步，audit_status还停留在unaudited，导致这些报告一直没有真正进入家庭医生双审队列。
+ * 这一步，audit_status还停留在unaudited，导致这些报告一直没有真正进入健康顾问双审队列。
  *
  * 处理范围：aiStatus='reviewed' 且 audit_status!='audited'（不含rejected——被明确驳回过的
  * 报告仍需人工重新走一遍审核，不能自动判定通过）。

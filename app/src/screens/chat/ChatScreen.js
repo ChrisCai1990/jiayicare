@@ -14,7 +14,7 @@ const ASSISTANT = { label: '小嘉', icon: 'sparkles', color: colors.primary };
 
 const QUICK_QUESTIONS = [
   '我的血压最近偏高，怎么办？',
-  '高血压患者饮食上要注意什么？',
+  '帮我梳理一下最近的健康管理重点',
   '我应该多久测一次血糖？',
   '睡眠不好对血压有影响吗？',
 ];
@@ -98,7 +98,7 @@ export default function ChatScreen({ navigation, route }) {
   const [messages, setMessages] = useState([
     {
       id: 1, role: 'ai',
-      content: greeting || '您好，我是小嘉，您的AI健康助手。可以帮您解答健康科普问题、解读指标数据、用药提醒，也能咨询服务套餐和就医流程。请问有什么可以帮您？',
+      content: greeting || '您好，我是小嘉，您的AI健康规划师。我可以帮您梳理健康管理需求、明确阶段目标并规划合适的服务路径。您目前最想改善或管理的是哪一方面？',
       roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
       time: '刚刚', rawTime: new Date().toISOString(),
     },
@@ -259,7 +259,7 @@ export default function ChatScreen({ navigation, route }) {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.topBarCenter}>
-          <Text style={styles.pageTitle}>AI 健康助手</Text>
+          <Text style={styles.pageTitle}>AI 健康规划师</Text>
           <View style={styles.onlineTag}>
             <View style={styles.onlineDot} />
             <Text style={styles.onlineText}>在线</Text>

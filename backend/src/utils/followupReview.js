@@ -2,8 +2,8 @@ const FollowUp = require('../models/FollowUp');
 const HealthRecord = require('../models/HealthRecord');
 const { chat } = require('./ai');
 
-// 月度AI回顾核心逻辑：结合患者近30天打卡数据判断是否需要新增随访，需要则落库为 aiStatus:pending
-// 供 staff.js 的单患者接口和定时任务共用。staffId 为该建议归属的随访人（人工触发用当前登录家医，定时任务用方案配置人）
+// 月度AI回顾核心逻辑：结合会员近30天打卡数据判断是否需要新增随访，需要则落库为 aiStatus:pending
+// 供 staff.js 的单会员接口和定时任务共用。staffId 为该建议归属的随访人（人工触发用当前登录家医，定时任务用方案配置人）
 async function runMonthlyFollowUpReview(user, staffId) {
   const since = new Date(Date.now() - 30 * 86400000);
   const records = await HealthRecord.find({ user: user._id, recordedAt: { $gte: since } })
@@ -14,9 +14,9 @@ async function runMonthlyFollowUpReview(user, staffId) {
   const lastFu = await FollowUp.findOne({ patientId: user._id }).sort({ date: -1 }).lean();
   const lastFuText = lastFu ? `${String(lastFu.date).slice(0, 10)}（${lastFu.theme || '常规'}）` : '无记录';
 
-  const prompt = `你是慢病管理随访专员，请根据患者近期数据做月度回顾，判断是否需要新增随访并生成随访提纲。
+  const prompt = `你是慢病管理随访专员，请根据会员近期数据做月度回顾，判断是否需要新增随访并生成随访提纲。
 
-【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【会员】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
 【上次随访】${lastFuText}
 【近30天打卡数据】
 ${recLines}

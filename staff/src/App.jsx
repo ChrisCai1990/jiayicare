@@ -47,7 +47,7 @@ const AuthCtx = createContext(null)
 export function useStaff() { return useContext(AuthCtx) }
 
 // 路由 path → 权限模块 key。与 Layout.jsx 的 ALL_NAV.moduleKey 保持一致。
-// 未列出的路由（工作台/消息/个人中心/患者详情等）不做模块级权限拦截。
+// 未列出的路由（工作台/消息/个人中心/会员详情等）不做模块级权限拦截。
 export const ROUTE_MODULE = {
   '/patients': 'patients',
   '/followups': 'followups',

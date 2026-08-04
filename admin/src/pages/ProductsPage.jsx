@@ -78,7 +78,7 @@ function PerformanceRuleForm({ rule, onChange }) {
 
 // ── 多服务岗位绩效（一个产品由多岗位协同服务，每岗位占实付价%）──────────
 const PERFORMER_ROLE_OPTIONS = [
-  { value: 'familyDoctor', label: '家庭医生' },
+  { value: 'familyDoctor', label: '健康顾问' },
   { value: 'nutritionist', label: '营养师' },
   { value: 'healthManager', label: '健管专员' },
   { value: 'medicalAssistant', label: '就医专员' },

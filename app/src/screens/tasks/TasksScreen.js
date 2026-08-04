@@ -491,7 +491,7 @@ export default function TasksScreen({ navigation }) {
 
   const followupToItem = (f) => ({
     _id: f._id,
-    title: f.sourceType === 'symptom' ? '不适主诉待家庭医生处理' : (f.theme || '随访计划'),
+    title: f.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (f.theme || '随访计划'),
     type: 'followup',
     description: f.taskRequirements || f.plannedContent || f.content || '',
     taskRequirements: f.taskRequirements || f.plannedContent || '',

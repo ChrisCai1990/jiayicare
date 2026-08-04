@@ -42,7 +42,7 @@ const healthRecordSchema = new mongoose.Schema({
   },
   // 关联报告（如从报告中提取的指标数据，删除报告时级联删除）
   reportId: { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport', default: null },
-  // AI监测异常升级（试点：血压），danger级自动进入家庭医生待审核队列，处理后置为resolved
+  // AI监测异常升级（试点：血压），danger级自动进入健康顾问待审核队列，处理后置为resolved
   aiAlertStatus: { type: String, enum: ['pending', 'resolved', null], default: null },
   // 医护端修正数据时留痕：谁在什么时候改的，原始值是多少（用户端自行编辑不记录，只留最新值）
   editedBy: {

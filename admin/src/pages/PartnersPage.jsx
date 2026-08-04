@@ -3,7 +3,7 @@ import { adminAPI } from '../api'
 import { useToast } from '../App'
 
 const CATEGORIES = ['口腔', '体检', '保险', '酒店', '其他']
-// 真实生效的会员等级——与医护端患者详情页"会员类型"下拉框（PatientDetailPage.jsx）保持一致，
+// 真实生效的会员等级——与医护端会员详情页"会员类型"下拉框（PatientDetailPage.jsx）保持一致，
 // 这是 User.memberType 字段实际会被写入的取值。admin后台另有一套 MemberType 集合（健康重塑计划等），
 // 但那套值从未被写入 User.memberType，两者是完全不同的体系，不能混用，否则权益可见性永远匹配不上。
 const MEMBER_LEVELS = ['优享', '悦享', '尊享', '卓越']

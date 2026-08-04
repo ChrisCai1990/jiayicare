@@ -202,7 +202,7 @@ router.post('/', auth, async (req, res) => {
     // 自动判断状态
     const status = calcStatus(type, value, extra);
 
-    // AI监测异常升级（试点：血压danger级自动进入家庭医生待审核队列）
+    // AI监测异常升级（试点：血压danger级自动进入健康顾问待审核队列）
     const aiAlertStatus = (type === 'bloodPressure' && status === 'danger') ? 'pending' : null;
 
     const record = await HealthRecord.create({
@@ -218,7 +218,7 @@ router.post('/', auth, async (req, res) => {
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),
       aiAlertStatus,
       recordedBy: { source: 'customer' },
-      // 客户自报不适先进入健管专员核实队列，不能未经确认直接交给家庭医生。
+      // 客户自报不适先进入健管专员核实队列，不能未经确认直接交给健康顾问。
       symptomWorkflow: type === 'symptom' ? { status: 'pending_manager' } : undefined,
     });
 
@@ -245,7 +245,7 @@ router.post('/', auth, async (req, res) => {
         const tomorrowStr = new Date(Date.now() + CST_OFFSET + 86400000).toISOString().split('T')[0];
         const tomorrowDate = new Date(tomorrowStr + 'T08:00:00+08:00');
         for (const fu of matched.filter(f => f.repeatDaily)) {
-          // 检查明天是否已存在同一患者同一 checkInItems 的 planned 记录
+          // 检查明天是否已存在同一会员同一 checkInItems 的 planned 记录
           const exists = await FollowUp.findOne({
             patientId: fu.patientId,
             staffId: fu.staffId,

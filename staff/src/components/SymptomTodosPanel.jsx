@@ -20,7 +20,7 @@ export default function SymptomTodosPanel() {
 
   const resolve = async (e, todo) => {
     e.stopPropagation()
-    const decisionNote = window.prompt('请填写家庭医生处理意见：', '')
+    const decisionNote = window.prompt('请填写健康顾问处理意见：', '')
     if (decisionNote === null) return
     try {
       await staffAPI.resolveSymptom(todo.id.replace(/^symptom_/, ''), { status: 'resolved', decisionNote })

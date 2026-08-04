@@ -3,7 +3,7 @@ const SystemConfig = require('../models/SystemConfig');
 const { generateChatFollowupDraft } = require('./chatFollowupDraft');
 
 // 每半月自动为「健管专员」「营养师」两个频道批量生成随访草稿（待专员审核后才正式入档）。
-// 家庭医生频道不纳入自动生成——医疗沟通更谨慎，保留人工在消息页手动触发（见 chatFollowupDraft.js）。
+// 健康顾问频道不纳入自动生成——医疗沟通更谨慎，保留人工在消息页手动触发（见 chatFollowupDraft.js）。
 // 只处理半月内有新聊天的会话，避免给沉默会话生成空草稿；由 generateChatFollowupDraft 内部的
 // "接续上次截止点"逻辑保证不会因为半月才跑一次而漏掉中间的聊天内容。
 
@@ -35,7 +35,7 @@ async function scanAndGenerateChatFollowupDrafts() {
         if (result.status === 'created') created++;
         else skipped++;
       } catch (e) {
-        console.error(`[chat-followup] 患者 ${patientId} 角色 ${role} 自动生成失败`, e.message);
+        console.error(`[chat-followup] 会员 ${patientId} 角色 ${role} 自动生成失败`, e.message);
         skipped++;
       }
     }

@@ -4,8 +4,8 @@
 // ⚠️ 版本说明（2026-07-06 精确校准）：已按《中国血脂管理指南（2023年）》原文图1"中国成人ASCVD
 // 总体发病风险评估流程图"核对全部21种组合的查表矩阵数值（胆固醇3档 × 危险因素个数0/1/2/3 ×
 // 有无高血压 2种情形），不再是2016版近似值。同时新增"余生风险"判定（10年中危且年龄<55岁时触发）。
-// 若患者已确诊 ASCVD（心梗/卒中/血运重建史等），2023版另有"极高危/超高危"二级预防分层，
-// 需要采集病史字段，本工具当前只服务尚无 ASCVD 病史的一级预防评估，不适用于已患病患者。
+// 若会员已确诊 ASCVD（心梗/卒中/血运重建史等），2023版另有"极高危/超高危"二级预防分层，
+// 需要采集病史字段，本工具当前只服务尚无 ASCVD 病史的一级预防评估，不适用于已患病会员。
 //
 // 采用指南推荐的「危险因素分层查表法」，而非纯累加打分。
 //
@@ -18,7 +18,7 @@
 //   sbp: 收缩压 mmHg
 //   dbp: 舒张压 mmHg（用于余生风险判定，可选）
 //   onHypertensionTreatment: 是否正在降压治疗（2026-07-28起：与收缩压≥140同等计入高血压危险因素，
-//     取其一即算，避免服药后血压达标的患者被漏判为"无高血压"）
+//     取其一即算，避免服药后血压达标的会员被漏判为"无高血压"）
 //   smoking: 是否吸烟
 //   diabetes: 是否糖尿病
 //   ckdStage34: 是否患慢性肾脏病(CKD) 3~4期（2023版新增的直接高危判定条件）
@@ -51,10 +51,10 @@ function countRiskFactors({ gender, age, hdl, sbp, smoking, onHypertensionTreatm
   const sbpV = num(sbp);
   const hdlV = num(hdl);
   const ageV = num(age);
-  // 高血压：收缩压 ≥ 140，或正在服用降压药（药物控制到140以下不代表不是高血压患者，
+  // 高血压：收缩压 ≥ 140，或正在服用降压药（药物控制到140以下不代表不是高血压会员，
   // 与国际通用标准ACC/AHA一致——"收缩压≥140 或 已确诊正接受降压治疗"取其一即算，
-  // 2026-07-28修复：此前只看当次测量值，服药患者血压被控制住后会被漏判为"无高血压"，
-  // 导致本应计入高血压危险因素的患者系统性被算成风险偏低）
+  // 2026-07-28修复：此前只看当次测量值，服药会员血压被控制住后会被漏判为"无高血压"，
+  // 导致本应计入高血压危险因素的会员系统性被算成风险偏低）
   if ((sbpV !== null && sbpV >= 140) || onHypertensionTreatment) { count++; factors.push('高血压(收缩压≥140或正在降压治疗)'); }
   if (smoking) { count++; factors.push('吸烟'); }
   // 低 HDL-C：< 1.0 mmol/L
@@ -135,7 +135,7 @@ function assessAscvd(input = {}) {
   const gender = input.gender === 'female' ? 'female' : 'male';
   const sbpV = num(input.sbp);
   // 高血压判定：收缩压≥140，或正在服用降压药（与 countRiskFactors 保持同一口径，
-  // 避免"当次测量值达标但本质仍是高血压患者"被漏判，见下方 countRiskFactors 注释）
+  // 避免"当次测量值达标但本质仍是高血压会员"被漏判，见下方 countRiskFactors 注释）
   const hasHypertension = (sbpV !== null && sbpV >= 140) || !!input.onHypertensionTreatment;
 
   const direct = isDirectHighRisk(input);

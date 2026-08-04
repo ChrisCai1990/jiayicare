@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Outlet, useNavigate, useLocation } from 'react-router-dom'
 import { useStaff } from '../App'
 import { staffAPI } from '../api'
@@ -99,7 +99,7 @@ export default function Layout() {
       <aside className={`sidebar ${sidebarOpen ? 'sidebar-open' : ''}`}>
         <div className="sidebar-logo">
           <div className="sidebar-logo-title">嘉医汇</div>
-          <div className="sidebar-logo-sub">做家庭医师行业领跑者</div>
+          <div className="sidebar-logo-sub">做健康顾问行业领跑者</div>
         </div>
 
         <nav className="sidebar-nav">

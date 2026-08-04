@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { useToast } from '../App'
@@ -581,7 +581,7 @@ export default function NewPatientPage() {
               <Grid>
                 <F label="本人比较关注的健康问题" span={2}><textarea className="form-input" rows={2} placeholder="如：血糖控制、体重管理、睡眠改善" value={form.healthConcern} onChange={set('healthConcern')} /></F>
                 <F label="更关注谁的健康问题" span={2}><input className="form-input" placeholder="如：自己、父母、子女" value={form.healthConcernFor} onChange={set('healthConcernFor')} /></F>
-                <F label="期望得到怎样的家庭医师服务" span={2}><textarea className="form-input" rows={2} placeholder="如：定期随访、慢病管理、就医协助" value={form.expectedService} onChange={set('expectedService')} /></F>
+                <F label="期望得到怎样的健康顾问服务" span={2}><textarea className="form-input" rows={2} placeholder="如：定期随访、慢病管理、就医协助" value={form.expectedService} onChange={set('expectedService')} /></F>
                 <F label="是否配备居家检测设备" span={2}><textarea className="form-input" rows={2} placeholder="是/否，是则填写设备类型（如血压计、血糖仪）" value={form.hasHomeMonitor} onChange={set('hasHomeMonitor')} /></F>
                 <F label="是否配备居家小药箱" span={2}>
                   <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
@@ -637,7 +637,7 @@ export default function NewPatientPage() {
           {/* 管理信息 */}
           <Section title="管理信息">
             <Grid>
-              <F label="家庭医师" span={2}><select className="form-input" value={form.assignedFamilyDoctor} onChange={set('assignedFamilyDoctor')}><option value="">-- 未分配 --</option>{familyDoctors.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
+              <F label="健康顾问" span={2}><select className="form-input" value={form.assignedFamilyDoctor} onChange={set('assignedFamilyDoctor')}><option value="">-- 未分配 --</option>{familyDoctors.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="营养师" span={2}><select className="form-input" value={form.assignedNutritionist} onChange={set('assignedNutritionist')}><option value="">-- 未分配 --</option>{nutritionists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="健管专员" span={2}><select className="form-input" value={form.assignedHealthManager} onChange={set('assignedHealthManager')}><option value="">-- 未分配 --</option>{healthManagers.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>
               <F label="专科医师" span={2}><select className="form-input" value={form.assignedSpecialist} onChange={set('assignedSpecialist')}><option value="">-- 未分配 --</option>{specialists.map(s => <option key={s._id} value={s._id}>{s.name}{s.title ? ` · ${s.title}` : ''}</option>)}</select></F>

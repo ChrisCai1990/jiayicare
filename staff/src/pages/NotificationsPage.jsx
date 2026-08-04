@@ -383,7 +383,7 @@ export default function NotificationsPage() {
                           <span style={{ fontWeight: m.hasUnread ? 700 : 600, fontSize: 14 }}>{m.patientName}</span>
                           <span style={{ fontSize: 11, color: '#aaa' }}>{m.patientPhone}</span>
                           <span style={{ fontSize: 11, background: '#f0f0f0', color: '#666', padding: '1px 7px', borderRadius: 99 }}>
-                            {roleKey === 'doctor' ? '家庭医师' : roleKey === 'nutritionist' ? '营养师' : '健管师'}
+                            {roleKey === 'doctor' ? '健康顾问' : roleKey === 'nutritionist' ? '营养师' : '健管师'}
                           </span>
                         </div>
                         <div style={{ fontSize: 13, color: '#4A6558', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.content}</div>
@@ -674,7 +674,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const [draftReview, setDraftReview] = useState(null)
   const bottomRef = useRef(null)
 
-  const ROLE_LABEL = { doctor: '家庭医师', nutritionist: '营养师', manager: '健管师' }
+  const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师' }
 
   const handleGenerateDraft = async () => {
     setDraftGenerating(true)

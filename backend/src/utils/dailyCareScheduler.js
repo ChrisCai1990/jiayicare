@@ -107,7 +107,7 @@ async function scanAndSendDailyCare() {
       await Message.create({
         user: uid,
         type: 'system',
-        sender: 'AI健康助手',
+        sender: 'AI健康规划师',
         title: '今日健康关怀',
         content,
         unread: true,

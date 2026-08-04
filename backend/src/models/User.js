@@ -1,4 +1,4 @@
-﻿const mongoose = require('mongoose');
+const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
   phone:    { type: String, required: false, unique: true, sparse: true },
@@ -91,7 +91,7 @@ const userSchema = new mongoose.Schema({
   // 健康需求
   healthConcern:       { type: String, default: '' }, // 本人比较关注的健康问题
   healthConcernFor:    { type: String, default: '' }, // 更关注谁的健康问题
-  expectedService:     { type: String, default: '' }, // 期望得到怎样的家庭医师服务
+  expectedService:     { type: String, default: '' }, // 期望得到怎样的健康顾问服务
   hasHomeMonitor:      { type: String, default: '' }, // 是否配备居家检测设备
   hasMedicineCabinet:  { type: String, default: '' }, // 是否配备居家小药箱
   // 联系信息（#34）
@@ -104,7 +104,7 @@ const userSchema = new mongoose.Schema({
     changedAt: { type: Date, default: Date.now },
   }],
   deliveryAddress: { type: String, default: '' },  // 配送地址（快递用）
-  // 患者类型（成人/儿童）
+  // 会员类型（成人/儿童）
   patientCategory: { type: String, enum: ['adult', 'child'], default: 'adult' },
   birthDate: { type: String, default: '' }, // YYYY-MM-DD
 
@@ -165,7 +165,7 @@ const userSchema = new mongoose.Schema({
   // 医护端管理字段
   assignedHealthPlanner:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健康规划师：客户经理，负责转化规划/方案统筹/订单与服务进度监控/佣金归属，与健管专员(日常执行)分工不同
   assignedHealthManager:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健管专员
-  assignedFamilyDoctor:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 家庭医师
+  assignedFamilyDoctor:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 健康顾问
   assignedNutritionist:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 营养师
   assignedSpecialist:       { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 专科医师
   assignedTcmDoctor:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 中医师
@@ -175,8 +175,8 @@ const userSchema = new mongoose.Schema({
   chronicDiseases: { type: [String], default: [] }, // 慢病标签，如 ['高血压','糖尿病']
   idNumber:        { type: String, default: '' },   // 证件号（身份证号或护照号，具体类型见 idType）
   idType:          { type: String, enum: ['idCard', 'passport'], default: 'idCard' }, // 证件类型：身份证/护照。护照号跳过身份证格式校验与性别/生日自动解析
-  source:          { type: String, default: '' },   // 患者来源
-  patientType:     { type: String, enum: ['regular', 'vip', 'trial', ''], default: '' }, // 患者类型
+  source:          { type: String, default: '' },   // 会员来源
+  patientType:     { type: String, enum: ['regular', 'vip', 'trial', ''], default: '' }, // 会员类型
   remark:          { type: String, default: '' },   // 备注（管理信息卡）
   basicRemark:     { type: String, default: '' },   // 备注（基本信息卡，与 remark 独立）
   preferences:     { type: String, default: '' },   // 个性化喜好/禁忌（AI生成随访/消息/内容推荐时需读取遵守，如"不喜欢过年期间到医院"）
@@ -205,14 +205,14 @@ const userSchema = new mongoose.Schema({
   lifestyleHistory: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 问卷自动导入健康档案的待审核草稿（{generatedAt,questionnaireId,responseId,status,items[]}）
   archiveDraft: { type: mongoose.Schema.Types.Mixed, default: null },
-  // 问卷无冲突自动写入档案的留痕日志（最近20条，供家庭医生查看系统自动做了什么改动）
+  // 问卷无冲突自动写入档案的留痕日志（最近20条，供健康顾问查看系统自动做了什么改动）
   // [{ questionnaireTitle, appliedAt, items: [{path,label,valueStr}] }]
   archiveAutoLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
   // 健管专员人工审核档案草稿并写入(archive-draft/apply)的确认留痕（2026-07-21新增，此前该接口
   // 只写字段本身，没记录"谁在什么时候确认写入的"）。[{ confirmedBy, confirmedByName, confirmedAt,
   // items: [{path,value}], sourceQuestionnaireId, sourceResponseId }]
   archiveConfirmLog: { type: [mongoose.Schema.Types.Mixed], default: [] },
-  // 心理健康量表最新结果（问卷推送→患者填写→自动写入，无需审核）
+  // 心理健康量表最新结果（问卷推送→会员填写→自动写入，无需审核）
   // { epworth: {totalScore,severity,filledAt,questionnaireId}, scl90: {totalScore,factorScores:{躯体化:2.1,...},filledAt,questionnaireId}, sds:{...}, sas:{...} }
   psychAssessments: { type: mongoose.Schema.Types.Mixed, default: {} },
   // 10年ASCVD风险评估（医护端录入体检参数→按中国指南自动分层，展示在心理评估下方）
@@ -270,18 +270,18 @@ const userSchema = new mongoose.Schema({
     status:    { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
   }],
 
-  // ── 家庭医生健康档案已查看确认 ──────────────────────────────────────
-  // 家庭医生在生成/查看AI健康分析、AI风险评估前，必须先看过患者的原始体检资料。这是客户维度
+  // ── 健康顾问健康档案已查看确认 ──────────────────────────────────────
+  // 健康顾问在生成/查看AI健康分析、AI风险评估前，必须先看过会员的原始体检资料。这是客户维度
   // 的一次性确认动作（不是逐份审核报告数据本身，那是健管专员 MedicalReport.audit_status 的职责）。
   // archiveReviewSnapshotAt 记录确认时该客户最新一份报告的时间，之后如有更新的报告或健康档案
-  // 变动晚于这个时间，视为"已查看"状态失效，需要家庭医生重新查看确认（见 reportAuditGate.js）。
+  // 变动晚于这个时间，视为"已查看"状态失效，需要健康顾问重新查看确认（见 reportAuditGate.js）。
   archiveReviewStatus: { type: String, enum: ['pending', 'reviewed'], default: 'pending' },
   archiveReviewedAt:   { type: Date, default: null },
   archiveReviewedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   archiveReviewedByName: { type: String, default: '' },
   archiveReviewSnapshotAt: { type: Date, default: null },
   // PUT /user/me 走原生driver不会自动维护Mongoose的updatedAt，健康档案更新需要单独打点，
-  // 供家庭医生"已查看确认"失效判断使用（对比这个时间和 archiveReviewSnapshotAt）
+  // 供健康顾问"已查看确认"失效判断使用（对比这个时间和 archiveReviewSnapshotAt）
   healthProfileUpdatedAt: { type: Date, default: null },
 
   // ── 身体成分（4.2）──────────────────────────────────────────────────

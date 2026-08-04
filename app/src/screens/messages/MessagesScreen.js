@@ -514,7 +514,7 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
 
 // ── 撰写消息 Modal ────────────────────────────────────────────────
 const RECIPIENTS = [
-  { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
+  { key: 'doctor',       label: '健康顾问', icon: 'medical',           color: colors.primary },
   { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
   { key: 'manager',      label: '健管师',   icon: 'person',            color: colors.accent  },
 ];
@@ -589,7 +589,7 @@ function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo
           <Text style={[styles.composeLabel, { marginTop: 16 }]}>消息内容</Text>
           <TextInput
             style={styles.composeTextArea}
-            placeholder="请输入您想告诉家庭医师、营养师或健管师的内容……"
+            placeholder="请输入您想告诉健康顾问、营养师或健管师的内容……"
             placeholderTextColor={colors.textMuted}
             value={content}
             onChangeText={t => { setContent(t); setError(''); }}
@@ -724,7 +724,7 @@ export default function MessagesScreen({ navigation }) {
 
   // 构建统一会话列表
   const ROLE_DEFS = [
-    { key: 'doctor',       label: '家庭医师', icon: 'medical',           color: colors.primary },
+    { key: 'doctor',       label: '健康顾问', icon: 'medical',           color: colors.primary },
     { key: 'manager',      label: '健管师',   icon: 'person',            color: '#D97706'      },
     { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
   ];
@@ -752,17 +752,7 @@ export default function MessagesScreen({ navigation }) {
     kind: 'notif',
   };
 
-  // AI 助手行（置顶）
-  const aiConv = {
-    key: '__ai__', label: 'AI 健康助手', icon: 'sparkles', color: '#1A2B24',
-    last: null, unread: 0, lastTime: Infinity, kind: 'ai',
-  };
-
-  // 全部合并，AI 置顶，其余按最新消息时间倒序
-  const convList = [
-    aiConv,
-    ...[...roleConvs, notifConv].sort((a, b) => b.lastTime - a.lastTime),
-  ];
+  const convList = [...roleConvs, notifConv].sort((a, b) => b.lastTime - a.lastTime);
 
   const totalUnread = messages.filter(m => m.unread).length;
 
@@ -787,11 +777,9 @@ export default function MessagesScreen({ navigation }) {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
               ? `您尚未配备${conv.label}，暂不提供此项服务`
-              : conv.last?.content || conv.last?.title || (conv.kind === 'ai' ? '随时问我健康问题，24小时在线' : conv.kind === 'notif' ? '暂无通知' : '暂无消息');
+              : conv.last?.content || conv.last?.title || (conv.kind === 'notif' ? '暂无通知' : '暂无消息');
             const onPress = unassigned
               ? () => {}
-              : conv.kind === 'ai'
-              ? () => navigation.navigate('Chat')
               : conv.kind === 'notif'
               ? () => setShowNotifModal(true)
               : () => setThreadRole(conv.key);
@@ -951,7 +939,7 @@ function NotificationListModal({ visible, messages, onClose, onPress, onMarkRead
 
 // ── 对话线程（全屏，对齐 ChatScreen 风格）────────────────────────
 const ROLE_META = {
-  doctor:       { label: '家庭医师', icon: 'medical',           color: colors.primary },
+  doctor:       { label: '健康顾问', icon: 'medical',           color: colors.primary },
   manager:      { label: '健管师',   icon: 'person',            color: '#D97706'      },
   nutritionist: { label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
 };

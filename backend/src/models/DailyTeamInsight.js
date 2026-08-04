@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const dailyTeamInsightSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   date: { type: String, required: true }, // YYYY-MM-DD，对应"今天"展示的是哪一天生成的内容
-  doctor:       { type: String, default: '' }, // 家庭医生：医疗风险提示
+  doctor:       { type: String, default: '' }, // 健康顾问：医疗风险提示
   nutritionist: { type: String, default: '' }, // 营养师：饮食建议
   healthManager:{ type: String, default: '' }, // 健康管理师：跟进内容
   aiSummary:    { type: String, default: '' }, // AI健康分析摘要

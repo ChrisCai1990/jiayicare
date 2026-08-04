@@ -81,7 +81,7 @@ export default function ProfilePage() {
       return user.careTeam.map((m, i) => ({ name: m.name, role: m.role, bg: TEAM_COLORS[i % TEAM_COLORS.length] }));
     }
     return [
-      user?.doctor?.name ? { name: user.doctor.name, role: user.doctor.title || '家庭医师', bg: TEAM_COLORS[0] } : null,
+      user?.doctor?.name ? { name: user.doctor.name, role: user.doctor.title || '健康顾问', bg: TEAM_COLORS[0] } : null,
       user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家', bg: TEAM_COLORS[1] } : null,
     ].filter(Boolean);
   })();
@@ -191,7 +191,7 @@ export default function ProfilePage() {
           <ScrollView scrollX style={{ whiteSpace: 'nowrap' }}>
             <View style={{ display: 'inline-flex', gap: `${spacing.sm}px` }}>
               {careTeam.map((member, i) => (
-                <View key={i} onClick={() => nav('/pages/chat/index')} style={{
+                <View key={i} onClick={() => Taro.switchTab({ url: '/pages/chat/index' })} style={{
                   display: 'inline-flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#fff',
                   borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, minWidth: '88px',
                 }}>

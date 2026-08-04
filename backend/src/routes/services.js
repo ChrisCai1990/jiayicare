@@ -26,7 +26,7 @@ const SERVICE_CATALOG = [
   },
   {
     id: 'S2', category: '专家咨询',
-    name: '心内科专家30分钟视频问诊',
+    name: '健康管理需求梳理服务',
     subtitle: '主任医师一对一，报告解读+用药建议',
     price: 299, originalPrice: 499,
     rating: 4.8, reviewCount: 512,
@@ -46,7 +46,7 @@ const SERVICE_CATALOG = [
   },
   {
     id: 'S4', category: '健康课程',
-    name: '高血压患者自我管理训练营',
+    name: '高血压会员自我管理训练营',
     subtitle: '4周系统课程，含饮食+运动+用药+监测',
     price: 399, originalPrice: 598,
     rating: 4.9, reviewCount: 243,
@@ -258,7 +258,7 @@ router.post('/order', auth, async (req, res) => {
   if (paymentMethod) paymentParts.push(`支付方式：${paymentMethod}`);
   const orderNote = [note, paymentParts.join('；')].filter(Boolean).join('；');
 
-  // 谁推送谁获推广费：查该患者对这个产品最近一次的推送记录，推送人自动定为转介绍人(referrerId)，
+  // 谁推送谁获推广费：查该会员对这个产品最近一次的推送记录，推送人自动定为转介绍人(referrerId)，
   // 不需要超管事后手动指定。服务人(fulfillerId)不默认等于推送人——用户明确"推送人和服务人不一定是
   // 同一个"，仍需推荐人本人或超管另行指定（PATCH /staff/orders/:id/fulfiller），不产生服务人时
   // 该订单只生成推广费，不生成服务费。
@@ -277,7 +277,7 @@ router.post('/order', auth, async (req, res) => {
   }
 
   // 商城产品只进入客户的健康规划师。每位正式客户都应配置规划师；缺失时阻止下单，
-  // 避免订单被自动派给家庭医生或落入无人负责的通用池。
+  // 避免订单被自动派给健康顾问或落入无人负责的通用池。
   const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner');
   if (!patientForStaff?.assignedHealthPlanner) {
     return res.status(409).json({ success: false, message: '您的健康规划师尚未配置，请联系客服完善后再提交预约' });

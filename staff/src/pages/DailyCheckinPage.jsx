@@ -193,7 +193,7 @@ export default function DailyCheckinPage() {
                       <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>
                         {item.recordedBy?.source === 'staff' ? (item.recordedBy.staffName || '医护人员') : '客户打卡'}
                         {' · '}{new Date(item.recordedAt).toLocaleString('zh-CN')}
-                        {' · '}{item.symptomWorkflow?.status === 'pending_doctor' ? '待家庭医生处理' : '已处理'}
+                        {' · '}{item.symptomWorkflow?.status === 'pending_doctor' ? '待健康顾问处理' : '已处理'}
                       </div>
                       {(['pending_manager', 'pending_doctor'].includes(item.symptomWorkflow?.status)) && !item.symptomWorkflow?.verifiedAt && (
                         <button className="btn btn-primary btn-sm" style={{ marginTop: 7 }}
@@ -223,13 +223,13 @@ export default function DailyCheckinPage() {
                 onChange={e => setStatusText(e.target.value)}
                 placeholder="请描述症状、部位、持续时间及审核中发现的问题" />
               <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>
-                保存后将记录录入人员和时间，并进入该客户家庭医生的待办任务。
+                保存后将记录录入人员和时间，并进入该客户健康顾问的待办任务。
               </div>
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setStatusModal(null)}>取消</button>
               <button className="btn btn-primary" disabled={statusSaving || !statusText.trim()} onClick={saveHealthStatus}>
-                {statusSaving ? '保存中...' : '保存并提交家庭医生'}
+                {statusSaving ? '保存中...' : '保存并提交健康顾问'}
               </button>
             </div>
           </div>
@@ -254,7 +254,7 @@ export default function DailyCheckinPage() {
               <textarea className="form-input" rows={2} value={symptomDecision}
                 onChange={e => setSymptomDecision(e.target.value)} placeholder="记录与客户核实的结果" />
               <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>
-                确认转交后，将同时出现在家庭医生工作台和用户端待办；家庭医生处理完成后，用户端待办自动结束。
+                确认转交后，将同时出现在健康顾问工作台和用户端待办；健康顾问处理完成后，用户端待办自动结束。
               </div>
             </div>
             <div className="modal-footer">
@@ -262,7 +262,7 @@ export default function DailyCheckinPage() {
                 onClick={() => verifySymptom('dismiss')}>确认为误录</button>
               <button className="btn btn-primary" disabled={symptomSaving || !symptomValue.trim()}
                 onClick={() => verifySymptom('refer_doctor')}>
-                {symptomSaving ? '提交中...' : '确认并转家庭医生'}
+                {symptomSaving ? '提交中...' : '确认并转健康顾问'}
               </button>
             </div>
           </div>

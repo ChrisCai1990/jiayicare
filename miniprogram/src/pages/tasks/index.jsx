@@ -82,7 +82,7 @@ export default function TasksPage() {
             }}>
               <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: '14px', fontWeight: 700, color: p.sourceType === 'symptom' ? colors.danger : colors.textPrimary, display: 'block' }}>{p.sourceType === 'symptom' ? '不适主诉待家庭医生处理' : (p.theme || '随访计划')}</Text>
+                  <Text style={{ fontSize: '14px', fontWeight: 700, color: p.sourceType === 'symptom' ? colors.danger : colors.textPrimary, display: 'block' }}>{p.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (p.theme || '随访计划')}</Text>
                   <Text style={{ fontSize: '12px', color: colors.textMuted }}>
                     {p.staffId?.name || '医护团队'} · {p.date ? new Date(p.date).toLocaleDateString('zh-CN') : ''}
                   </Text>

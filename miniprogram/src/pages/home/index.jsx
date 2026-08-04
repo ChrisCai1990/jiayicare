@@ -254,7 +254,7 @@ export default function HomePage() {
   const followupTaskItems = followups.map((plan) => ({
       _id: plan._id,
       type: 'followup',
-      title: plan.sourceType === 'symptom' ? '不适主诉待家庭医生处理' : (plan.theme || '随访计划'),
+      title: plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划'),
       description: plan.taskRequirements || plan.plannedContent || plan.content,
       assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
       dueDate: plan.date ? new Date(plan.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '',
@@ -292,7 +292,7 @@ export default function HomePage() {
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: colors.background }}>
         <View>
           <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.primary, display: 'block', letterSpacing: '-0.3px' }}>嘉医汇</Text>
-          <Text style={{ fontSize: '10px', color: colors.textMuted, marginTop: '2px', letterSpacing: '0.2px' }}>私人家庭医生，全生命周期健康管理</Text>
+          <Text style={{ fontSize: '10px', color: colors.textMuted, marginTop: '2px', letterSpacing: '0.2px' }}>数字化健康管理，全周期服务陪伴</Text>
         </View>
         <View
           style={{ width: '38px', height: '38px', borderRadius: '19px', backgroundColor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}

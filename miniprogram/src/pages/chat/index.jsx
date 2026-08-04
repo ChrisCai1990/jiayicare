@@ -7,12 +7,12 @@ import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 
-// AI健康助手对话界面（简化版，接真实 /chat 接口）
+// AI健康规划师：仅梳理健康管理需求与规划平台服务，不提供医疗咨询。
 export default function ChatPage() {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [messages, setMessages] = useState([
-    { role: 'assistant', content: '您好，我是嘉医汇AI健康助手，有什么可以帮您的吗？' },
+    { role: 'assistant', content: '您好，我是小嘉，您的AI健康规划师。我可以帮您梳理健康管理需求、明确阶段目标并规划合适的服务路径。您目前最想改善或管理的是哪一方面？' },
   ]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -46,7 +46,7 @@ export default function ChatPage() {
         <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
           <Icon name="chevron-left" size={20} color={colors.textPrimary} />
         </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康助手</Text>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>AI健康规划师</Text>
         <View style={{ width: '28px' }} />
       </View>
 
@@ -64,7 +64,7 @@ export default function ChatPage() {
             </View>
           </View>
         ))}
-        {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>AI 正在思考...</Text>}
+        {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在梳理您的需求...</Text>}
         <View id="bottom-anchor" />
       </ScrollView>
 

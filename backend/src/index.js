@@ -113,19 +113,19 @@ app.listen(PORT, () => {
   // 首次登录用户第二批问卷（生活方式+心理健康）延迟自动推送，每天扫描一次
   require('./utils/onboardingPush').startBatch2Scheduler();
 
-  // 已确认管理方案患者的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
+  // 已确认管理方案会员的月度AI随访回顾，每天扫描一次（命中月初才实际执行）
   require('./utils/monthlyFollowUpScheduler').startMonthlyReviewScheduler();
 
-  // AI自主随访跟进试点：血压监测该测未测自动提醒患者，每天扫描一次
+  // AI自主随访跟进试点：血压监测该测未测自动提醒会员，每天扫描一次
   require('./utils/bpMonitorScheduler').startBPMonitorScheduler();
 
   // AI每日健康关怀：每天给活跃客户推一条专属关怀+去打卡入口，提升打开率与打卡留存
   require('./utils/dailyCareScheduler').startDailyCareScheduler();
 
-  // 首页「健康团队今日动态」：每天凌晨批量生成家庭医生/营养师/健康管理师/AI健康分析反馈，次日首页直接读现成结果
+  // 首页「健康团队今日动态」：每天凌晨批量生成健康顾问/营养师/健康管理师/AI健康分析反馈，次日首页直接读现成结果
   require('./utils/dailyTeamInsightScheduler').startDailyTeamInsightScheduler();
 
-  // 健管专员/营养师与患者的聊天记录，每半月自动提炼生成随访草稿待审核（家庭医生频道保留人工触发）
+  // 健管专员/营养师与会员的聊天记录，每半月自动提炼生成随访草稿待审核（健康顾问频道保留人工触发）
   require('./utils/chatFollowupScheduler').startChatFollowupScheduler();
 
   // 年度管理方案的"日常监测/季度评估"随访占位滚动窗口补生成，每天扫描一次

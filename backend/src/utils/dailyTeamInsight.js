@@ -50,17 +50,17 @@ async function generateDailyTeamInsight(userId, dateStr) {
     return upsertInsight(userId, dateStr, { ...FALLBACK });
   }
 
-  const prompt = `你是"金伊森"健康管理团队的助手，需要基于患者${user.name}昨日（${dateStr}）的健康打卡数据，
-以家庭医生、营养师、健康管理师、AI健康分析四个视角分别给出简短反馈，供患者今天打开App时查看。
+  const prompt = `你是"金伊森"健康管理团队的助手，需要基于会员${user.name}昨日（${dateStr}）的健康打卡数据，
+以健康顾问、营养师、健康管理师、AI健康分析四个视角分别给出简短反馈，供会员今天打开App时查看。
 
-【患者慢病标签】${user.chronicDiseases?.join('、') || '无'}
+【会员慢病标签】${user.chronicDiseases?.join('、') || '无'}
 【昨日打卡数据】
 ${dataText}
 
 要求：
 - 每项反馈基于实际数据，不要编造数据中没有的内容；若某类数据缺失，对应角度可如实说明"暂无相关数据"
 - 语气专业、简洁、有温度，像真人专员说的话，不要出现"作为AI"字样
-- doctor（家庭医生）：关注是否有医疗风险信号，没有则说明"暂无新的医疗风险"
+- doctor（健康顾问）：关注是否有医疗风险信号，没有则说明"暂无新的医疗风险"
 - nutritionist（营养师）：基于饮食/血糖等数据给出次日饮食建议
 - healthManager（健康管理师）：基于整体完成度说明跟进内容或待更新项
 - aiSummary（AI健康分析）：一句话总结昨日数据反映出的身体状态变化

@@ -3,7 +3,7 @@ import { adminAPI } from '../api'
 import { useAdmin, useToast } from '../App'
 
 const ROLE_LABEL = {
-  familyDoctor:    '家庭医生',
+  familyDoctor:    '健康顾问',
   nutritionist:    '营养师',
   healthManager:   '健管专员',
   medicalAssistant:'就医专员',
@@ -127,7 +127,7 @@ export default function StaffPage() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <div>
           <h2 style={{ fontSize: 20, fontWeight: 700 }}>医护账号管理</h2>
-          <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>管理医护端登录账号（健管专员、家庭医生等）</p>
+          <p style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>管理医护端登录账号（健管专员、健康顾问等）</p>
         </div>
         {isSuperAdmin && (
           <div style={{ display: 'flex', gap: 8 }}>

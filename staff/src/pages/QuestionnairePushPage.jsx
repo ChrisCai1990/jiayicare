@@ -159,7 +159,7 @@ function PreviewModal({ questionnaire, onClose }) {
   )
 }
 
-// ── 查看回答弹窗（支持全部 / 指定患者）────────────────────────────
+// ── 查看回答弹窗（支持全部 / 指定会员）────────────────────────────
 function ResponsesModal({ questionnaire, filterPatientId, onClose }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)

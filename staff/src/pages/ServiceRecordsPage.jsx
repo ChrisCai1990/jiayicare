@@ -214,7 +214,7 @@ export default function ServiceRecordsPage() {
                   {detailRecord.result}
                 </div>
               )}
-              {/* 就医协助方案推送后自动生成的记录（无result），提示去患者详情页用"补充记录"追加就医结果——
+              {/* 就医协助方案推送后自动生成的记录（无result），提示去会员详情页用"补充记录"追加就医结果——
                   与日常随访/医生随访/营养干预统一走同一套追加机制，不单独另造一套编辑覆盖的交互
                   （2026-07-13 需求：方案要能自动记一笔，等就医完毕可以补录信息） */}
               {detailRecord.sourceHealthPlanId && !detailRecord.result && (

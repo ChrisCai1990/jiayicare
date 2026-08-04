@@ -3,7 +3,7 @@ import { adminAPI } from '../../api'
 import { useAdmin, useToast } from '../../App'
 
 const SYSTEM_ROLE_LABEL = {
-  familyDoctor:    '家庭医生',
+  familyDoctor:    '健康顾问',
   nutritionist:    '营养师',
   healthManager:   '健管专员',
   medicalAssistant:'就医专员',

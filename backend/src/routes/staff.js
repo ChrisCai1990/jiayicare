@@ -1,4 +1,4 @@
-﻿const express = require('express');
+const express = require('express');
 const jwt = require('jsonwebtoken');
 let _ssePublish = null;
 function ssePublish(...args) { if (!_ssePublish) { try { _ssePublish = require('./messages').ssePublish; } catch {} } _ssePublish?.(...args); }
@@ -103,7 +103,7 @@ const uploadScreening = multer({
 
 // 医护端角色标签
 const ROLE_LABEL = {
-  familyDoctor:    '家庭医师',
+  familyDoctor:    '健康顾问',
   nutritionist:    '营养师',
   healthManager:   '健管专员',
   medicalAssistant:'就医专员',
@@ -270,7 +270,7 @@ async function getMentoredTeamMemberIds(staffId) {
   return members.map(m => m._id);
 }
 
-// 汇总某员工在患者归属过滤中的可见 staffId 集合：本人 + 下属 + （作为导师时）团队成员
+// 汇总某员工在会员归属过滤中的可见 staffId 集合：本人 + 下属 + （作为导师时）团队成员
 async function getVisibleStaffIds(staff) {
   const ids = [staff._id];
   const [subIds, teamMemberIds] = await Promise.all([
@@ -282,12 +282,12 @@ async function getVisibleStaffIds(staff) {
 }
 
 // ── GET /api/staff/patients ───────────────────────────────────────
-// 查询分配给当前医护人员（及其下属）的患者列表
+// 查询分配给当前医护人员（及其下属）的会员列表
 router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
   const { page = 1, limit = 20, search = '', disease = '', type = '', scope = '' } = req.query;
   const staff = req.staff;
 
-  // 超管看全部，其他角色只看分配给自己（及下属）的患者
+  // 超管看全部，其他角色只看分配给自己（及下属）的会员
   let staffIds = [staff._id];
   const mentoredIds = staff.role !== 'superadmin' ? await getMentoredTeamMemberIds(staff._id) : [];
   const isMentor = mentoredIds.length > 0;
@@ -316,7 +316,7 @@ router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (r
   const assignFilter = {};
   if (staff.role !== 'superadmin') {
     if (isMentor) {
-      // 导师模式：团队成员角色各异，凡是团队任一成员挂在任意归属字段上的患者都可见（跨字段 OR）
+      // 导师模式：团队成员角色各异，凡是团队任一成员挂在任意归属字段上的会员都可见（跨字段 OR）
       assignFilter.$or = ASSIGN_FIELDS.map(f => ({ [f]: { $in: staffIds } }));
     } else {
       // 普通模式：只看自己角色对应的归属字段（healthManager 及未列出角色归入 assignedHealthManager）
@@ -480,7 +480,7 @@ router.post('/patients/assign', staffAuth, async (req, res) => {
 });
 
 // ── POST /api/staff/patients ──────────────────────────────────────
-// 新建患者（录入）
+// 新建会员（录入）
 router.post('/patients', staffAuth, checkPermission('patients', 'create'), async (req, res) => {
   const staff = req.staff;
   const {
@@ -687,7 +687,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
     .populate('assignedHealthPlanner', 'name title role');
   if (!user || user.isDeleted) return res.status(404).json({ success: false, message: '会员不存在' });
 
-  // 权限校验：非超管只能查看分配给自己（或下属、团队成员）的患者
+  // 权限校验：非超管只能查看分配给自己（或下属、团队成员）的会员
   if (req.staff.role !== 'superadmin') {
     const staffIds = (await getVisibleStaffIds(req.staff)).map(String);
     const matches = (field) => field && staffIds.includes(String(field._id || field));
@@ -725,7 +725,7 @@ router.get('/patients/:id', staffAuth, async (req, res) => {
 // ── PUT /api/staff/patients/:id ───────────────────────────────────
 router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
   const existingPatient = await User.findById(req.params.id).select('phone contactPhone lifestyle lifestyle_data').lean();
-  if (!existingPatient) return res.status(404).json({ success: false, message: '患者不存在' });
+  if (!existingPatient) return res.status(404).json({ success: false, message: '会员不存在' });
   const allowed = [
     'name', 'phone', 'gender', 'age', 'height', 'weight', 'preferredTitle',
     'birthDate', 'memberType', 'clientBrand', 'belief',
@@ -822,7 +822,7 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
 
   // 归属字段：字段本身未出现在请求体里才跳过（保持原值不动）；一旦前端显式传了这个key，
   // 哪怕值是空字符串（前端"-- 未分配 --"选项对应的值），也要当成"清空指派"处理，写入 null。
-  // 此前把"传了空字符串"和"根本没传"混为一谈、一律 delete 跳过，导致把家庭医生/健管专员
+  // 此前把"传了空字符串"和"根本没传"混为一谈、一律 delete 跳过，导致把健康顾问/健管专员
   // 改成"未分配"后保存不生效、页面刷新还是原来的指派人（2026-07-13 反馈，以黄辉为例复现）。
   // 原因：User.collection.updateOne 绕过 Mongoose 类型转换，字符串无法匹配 ObjectId 查询
   ['assignedHealthManager', 'assignedFamilyDoctor', 'assignedNutritionist',
@@ -955,7 +955,7 @@ router.post('/patients/:id/recalculate-score', staffAuth, async (req, res) => {
 
 // ── GET /api/staff/patients/:id/followups ─────────────────────────
 // 数据权限与 /staff/followups（随访管理列表）、工作台随访任务面板保持同一套 assignedTo 口径，
-// 保证从工作台/随访管理点进某个患者详情页，看到的随访记录范围是一致的。
+// 保证从工作台/随访管理点进某个会员详情页，看到的随访记录范围是一致的。
 router.get('/patients/:id/followups', staffAuth, async (req, res) => {
   const { page = 1, limit = 20 } = req.query;
   const skip = (Number(page) - 1) * Number(limit);
@@ -1000,7 +1000,7 @@ router.get('/patients/:id/followups', staffAuth, async (req, res) => {
 router.get('/followups', staffAuth, checkPermission('followups', 'view'), async (req, res) => {
   const { page = 1, limit = 20, status = '', dateFrom = '', dateTo = '', patientName = '', assignedTo = '', sourceType = '', excludeSourceType = '', scope = '' } = req.query;
 
-  // 如果按患者姓名搜索，先查出匹配的用户ID
+  // 如果按会员姓名搜索，先查出匹配的用户ID
   let patientFilter = {};
   if (patientName) {
     const matchedUsers = await User.find({ name: { $regex: patientName, $options: 'i' } }).select('_id');
@@ -1008,8 +1008,8 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
   }
 
   // 数据权限：随访任务归属实际执行人（assignedTo）；未指定执行人时退回创建人自己。
-  // 例外：家庭医生作为患者的第一责任人，需要看到名下患者的全部随访（含健管专员等他人执行的），
-  // 用于把控质量，但不代表随访归属改到家庭医生名下——执行人仍是 assignedTo 那个人。
+  // 例外：健康顾问作为会员的第一责任人，需要看到名下会员的全部随访（含健管专员等他人执行的），
+  // 用于把控质量，但不代表随访归属改到健康顾问名下——执行人仍是 assignedTo 那个人。
   let ownerFilter;
   const visibleStaffIds = await getVisibleStaffIds(req.staff);
   if (req.staff.role === 'familyDoctor' && scope !== 'assigned') {
@@ -1049,7 +1049,7 @@ router.get('/followups', staffAuth, checkPermission('followups', 'view'), async 
     FollowUp.countDocuments(filter),
   ]);
 
-  // 获取本页患者最近一次打卡（健康记录）时间
+  // 获取本页会员最近一次打卡（健康记录）时间
   const patientIds = [...new Set(followUps.map(f => f.patientId?._id).filter(Boolean))];
   const lastRecords = await HealthRecord.aggregate([
     { $match: { userId: { $in: patientIds }, ...tenantMatchStage() } },
@@ -1241,7 +1241,7 @@ router.put('/followups/:id', staffAuth, checkPermission('followups', 'edit'), as
 });
 
 // ── PATCH /api/staff/followups/:id/review ────────────────────────
-// 家庭医生审核方案确认后自动生成的随访计划（aiStatus:pending）。approve→正式生效；reject→取消
+// 健康顾问审核方案确认后自动生成的随访计划（aiStatus:pending）。approve→正式生效；reject→取消
 router.patch('/followups/:id/review', staffAuth, async (req, res) => {
   try {
     const { action, edits } = req.body; // action: approve | reject；edits: 审核时可修改的字段（可选）
@@ -1251,7 +1251,7 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
 
     if (action === 'reject') {
       followUp.status = 'cancelled';
-      followUp.cancelReason = '家庭医生审核未通过';
+      followUp.cancelReason = '健康顾问审核未通过';
       followUp.aiStatus = null;
       await followUp.save();
       return res.json({ success: true, message: '已驳回' });
@@ -1282,7 +1282,7 @@ router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'
 });
 
 // ── GET /api/staff/reports ────────────────────────────────────────
-// 简报：我的患者数、今日随访数、本月随访数
+// 简报：我的会员数、今日随访数、本月随访数
 router.get('/reports', staffAuth, async (req, res) => {
   const staff = req.staff;
   const visibleStaffIds = staff.role === 'superadmin' ? null : await getVisibleStaffIds(staff);
@@ -1303,7 +1303,7 @@ router.get('/reports', staffAuth, async (req, res) => {
     : { [assignmentField]: { $in: visibleStaffIds } };
 
   // 随访列表以 assignedTo（实际执行人）为归属；首页统计必须使用同一口径。
-  // 仅旧数据没有 assignedTo 时，才退回 staffId（创建人），避免就医协助由家庭医生创建、
+  // 仅旧数据没有 assignedTo 时，才退回 staffId（创建人），避免就医协助由健康顾问创建、
   // 就医专员执行时，专员列表能看到但首页统计仍为 0。
   const followUpOwnerFilter = staff.role === 'superadmin'
     ? {}
@@ -1351,7 +1351,7 @@ router.get('/reports', staffAuth, async (req, res) => {
 });
 
 // ── GET /api/staff/staff-list ─────────────────────────────────────
-// 获取同部门医护人员列表（用于患者分配下拉）
+// 获取同部门医护人员列表（用于会员分配下拉）
 router.get('/staff-list', staffAuth, async (req, res) => {
   const { role = '', roles = '' } = req.query;
   // 下拉仅提供 Admin 员工设置中处于启用状态的员工；兼容历史未写 staffStatus 的账号。
@@ -1387,9 +1387,9 @@ router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, re
     const matchedUsers = await User.find({ name: { $regex: patientName, $options: 'i' } }).select('_id');
     filter.patientId = { $in: matchedUsers.map(u => u._id) };
   }
-  // 查看权限按"患者归属"而非"创建人"：家庭医生需要看到自己名下患者的全部方案（含营养师生成的营养方案）
-  // 才能全面了解患者情况，但只有对应角色能编辑——查看范围和编辑范围是两条独立规则。
-  // 2026-07-07 用户反馈："家庭医生看不到客户的营养干预方案，家庭医生要能看到客户的所有信息"
+  // 查看权限按"会员归属"而非"创建人"：健康顾问需要看到自己名下会员的全部方案（含营养师生成的营养方案）
+  // 才能全面了解会员情况，但只有对应角色能编辑——查看范围和编辑范围是两条独立规则。
+  // 2026-07-07 用户反馈："健康顾问看不到客户的营养干预方案，健康顾问要能看到客户的所有信息"
   const ROLE_ASSIGN_FIELD_FOR_PLANS = {
     healthManager: 'assignedHealthManager', familyDoctor: 'assignedFamilyDoctor',
     nutritionist: 'assignedNutritionist', medicalAssistant: 'assignedMedicalAssistant',
@@ -1445,11 +1445,11 @@ router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanTy
 });
 
 // 部分方案类型只归特定角色负责（不论谁生成的），跟"仅制定人可改"是两条独立限制都要满足：
-// 年度体检方案/年度管理方案只有家庭医生能编辑/审核，营养干预方案只有营养师——
-// 2026-07-07 用户明确规则：家庭医生生成的方案营养师不能删改，反之亦然，按患者角色分工而非单纯创建人
+// 年度体检方案/年度管理方案只有健康顾问能编辑/审核，营养干预方案只有营养师——
+// 2026-07-07 用户明确规则：健康顾问生成的方案营养师不能删改，反之亦然，按会员角色分工而非单纯创建人
 const PLAN_TYPE_OWNER_ROLE = { annual_checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' };
 function checkPlanTypeRole(plan, staffRole) {
-  // 就医协助由家庭医生制定医疗安排、就医专员负责执行；两种角色都需要编辑权限。
+  // 就医协助由健康顾问制定医疗安排、就医专员负责执行；两种角色都需要编辑权限。
   if (plan.type === 'medical_assist') {
     return staffRole === 'superadmin' || staffRole === 'familyDoctor' || staffRole === 'medicalAssistant';
   }
@@ -1599,7 +1599,7 @@ router.patch('/plans/:id/items/:itemId', staffAuth, async (req, res) => {
   res.json({ success: true, data: plan });
 });
 
-// ── AI体检方案讨论区：家庭医生对AI给出的加项/未加项有疑问可留言，AI结合方案内容回应
+// ── AI体检方案讨论区：健康顾问对AI给出的加项/未加项有疑问可留言，AI结合方案内容回应
 // （2026-07-17需求：新增了更年期相关检查需求但方案没跟着调整时，医生可在此提出疑问）────
 // POST /api/staff/plans/:id/discussions
 router.post('/plans/:id/discussions', staffAuth, async (req, res) => {
@@ -1661,7 +1661,7 @@ router.post('/plans/:id/discussions/ai-reply', staffAuth, async (req, res) => {
     const addonItems = (plan.items || []).filter(i => i.itemGroup === 'addon').map(i => `${i.name}（${i.notes || ''}）`).join('；');
     const discussionText = discussions.map(d => `${d.isAI ? 'AI' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
 
-    const prompt = `你是协助家庭医生复核AI年度体检方案的助手。以下是本次方案的构成，以及医生围绕方案提出的疑问。请针对医生最新的疑问给出解释或修正建议。
+    const prompt = `你是协助健康顾问复核AI年度体检方案的助手。以下是本次方案的构成，以及医生围绕方案提出的疑问。请针对医生最新的疑问给出解释或修正建议。
 
 【套餐名称】${c.packageName || plan.title || ''}
 【基础项目（体检中心标准套餐，固定不可改）】${baseItems || '无'}
@@ -1691,7 +1691,7 @@ router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
   if (!checkPlanTypeRole(plan, req.staff.role)) {
-    return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（家庭医生/营养师）删除' });
+    return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（健康顾问/营养师）删除' });
   }
   if (!(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '当前角色无权管理该类型的健康方案' });
@@ -1840,7 +1840,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
 
 // PATCH /api/staff/medical-reports/:id — 修改报告信息（审核通过前可用）
 // type(报告归类下拉,与前端 app/TYPE_LIST、staff/REPORT_L1_TYPES 保持一致) → 对应 ProjectCategory 顶层
-// 分类节点的 name。用于编辑报告归类时反查节点、同步写入 screeningL1，避免患者详情页分组展示时同一
+// 分类节点的 name。用于编辑报告归类时反查节点、同步写入 screeningL1，避免会员详情页分组展示时同一
 // 大类下"走screeningL1路径"和"只有type字段"的报告分裂成两个独立分组（2026-07-18排查确认的根因）。
 const REPORT_TYPE_TO_L1_NAME = {
   general_exam:   '一般检查',
@@ -1903,7 +1903,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
     // 2026-07-21合并两步健管审核：audit_status 和 aiStatus 是历史上先后独立引入的两套字段
     // （audit_status先有、aiStatus后加，从未真正整合），此前健管专员要先在"审核AI结果"弹窗
     // 确认一遍（aiStatus→reviewed），再单独打开"查看"弹窗点一次审核通过（audit_status→audited）
-    // 才会进入家庭医生双审队列，两步实质做的是同一件"我确认这份报告没问题"的事。现在合并：
+    // 才会进入健康顾问双审队列，两步实质做的是同一件"我确认这份报告没问题"的事。现在合并：
     // 确认AI结果即视为健管专员审核通过，不必再多点一次。但"驳回后重新提交"场景例外——那是
     // 已经被专员明确打回过一次的报告，重新提交应仍需人工再看一遍，不能自动直接判定通过。
     let autoAuditPending = false;
@@ -2013,8 +2013,8 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
     report.audit_status = 'audited';
     report.audited_by = req.staff.name;
     report.audited_at = new Date();
-    // 健管专员审核通过这一刻的 reportItems 存一份只读快照，供家庭医生后续编辑后仍可溯源
-    // "最初健管专员审核的是什么"；家庭医生双审是新功能，只在首次审核通过时补快照，不覆盖已有的
+    // 健管专员审核通过这一刻的 reportItems 存一份只读快照，供健康顾问后续编辑后仍可溯源
+    // "最初健管专员审核的是什么"；健康顾问双审是新功能，只在首次审核通过时补快照，不覆盖已有的
     report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
       ? report.staffAuditSnapshot
       : { reportItems: report.reportItems, snapshotAt: new Date() };
@@ -2066,8 +2066,8 @@ router.patch('/medical-reports/:id/audit', staffAuth, checkPermission('reports',
 });
 
 // GET /api/staff/patients/:id/reports/pending-doctor-audit — 该客户所有"健管专员已审核，
-// 但晚于家庭医生上次查看确认健康档案"的报告列表，用于家庭医生待办页面提示"有新审核完的体检
-// 数据，需要查看确认健康档案"。2026-07-28改造：家庭医生不再逐份审核报告数据本身（那是健管
+// 但晚于健康顾问上次查看确认健康档案"的报告列表，用于健康顾问待办页面提示"有新审核完的体检
+// 数据，需要查看确认健康档案"。2026-07-28改造：健康顾问不再逐份审核报告数据本身（那是健管
 // 专员audit_status的职责），这里只做"是否有新数据需要提醒查看"的判断，实际动作走
 // POST /patients/:id/archive-review。
 router.get('/patients/:id/reports/pending-doctor-audit', staffAuth, async (req, res) => {
@@ -2083,16 +2083,16 @@ router.get('/patients/:id/reports/pending-doctor-audit', staffAuth, async (req, 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// PATCH /api/staff/medical-reports/:id/family-doctor-view — 家庭医生点开单份报告查看时调用，
+// PATCH /api/staff/medical-reports/:id/family-doctor-view — 健康顾问点开单份报告查看时调用，
 // 立即持久化"已查看"，不依赖最后一次性的"确认已查看"整体动作，避免中途退出后进度丢失
 router.patch('/medical-reports/:id/family-doctor-view', staffAuth, async (req, res) => {
   try {
     if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
-      return res.status(403).json({ success: false, message: '仅家庭医生可标记查看' });
+      return res.status(403).json({ success: false, message: '仅健康顾问可标记查看' });
     }
     const update = { familyDoctorViewedAt: new Date(), familyDoctorViewedBy: req.staff._id };
     // 联动用户端"待解读/已解读"状态：此前 status 字段从未被任何动作驱动过，一直卡死在默认值
-    // 'pending'（待解读）。这里家庭医生查看即联动置为已解读，但只在当前仍是初始"待解读"状态时
+    // 'pending'（待解读）。这里健康顾问查看即联动置为已解读，但只在当前仍是初始"待解读"状态时
     // 才覆盖——如果已经是 normal/abnormal 这类真实临床结果状态，不应该被这次查看动作覆盖掉。
     const report = await MedicalReport.findById(req.params.id).select('status');
     if (report && report.status === 'pending') {
@@ -2114,14 +2114,14 @@ router.get('/patients/:id/screening-yearly-summary', staffAuth, async (req, res)
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// POST /api/staff/patients/:id/archive-review — 家庭医生确认已查看该客户新增的健康档案/体检
+// POST /api/staff/patients/:id/archive-review — 健康顾问确认已查看该客户新增的健康档案/体检
 // 报告。这是客户维度的增量确认（不是逐份审核报告数据，也不是"全部推倒重来"）——已经看过、
 // 确认过的历史内容永久算数，点这个接口只是把"上次确认"的时间点往前推进，之后只需要再看
 // 这次确认之后新增的部分（见 reportAuditGate.js hasUnreviewedNewContent）。
 router.post('/patients/:id/archive-review', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
   try {
     if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
-      return res.status(403).json({ success: false, message: '仅家庭医生可确认查看健康档案' });
+      return res.status(403).json({ success: false, message: '仅健康顾问可确认查看健康档案' });
     }
     const user = await User.findById(req.params.id).select('assignedFamilyDoctor');
     if (!user) return res.status(404).json({ success: false, message: '客户不存在' });
@@ -2146,7 +2146,7 @@ router.post('/patients/:id/archive-review', staffAuth, checkPermission('patients
         archiveReviewSnapshotAt: snapshotAt,
       } }
     );
-    // “确认已查看健康档案”即家庭医生完成本轮确认；同步关闭用户端报告的“待解读”状态。
+    // “确认已查看健康档案”即健康顾问完成本轮确认；同步关闭用户端报告的“待解读”状态。
     // 单份点开接口也会即时同步，这里批量兜底兼容在该联动规则上线前已经确认过的历史报告。
     await MedicalReport.updateMany(
       {
@@ -2491,9 +2491,9 @@ router.delete('/service-records/:id', staffAuth, checkPermission('service_record
   res.json({ success: true, message: '已删除' });
 });
 
-// POST /api/staff/patients/:id/chat-followup/ai-draft — AI从与患者的聊天记录提炼生成随访草稿
-// body.role: manager(健管，默认) / doctor(家庭医生) / nutritionist(营养师)，分别写入对应服务记录分类
-// body.range: today(当日，默认) / 3d(近3天) / week(近1周) —— 仅在该患者该角色从未生成过草稿时，决定首次回看多久；
+// POST /api/staff/patients/:id/chat-followup/ai-draft — AI从与会员的聊天记录提炼生成随访草稿
+// body.role: manager(健管，默认) / doctor(健康顾问) / nutritionist(营养师)，分别写入对应服务记录分类
+// body.range: today(当日，默认) / 3d(近3天) / week(近1周) —— 仅在该会员该角色从未生成过草稿时，决定首次回看多久；
 //   此后自动从上一次草稿的截止时间接续取到现在，无论中间隔了多久都不会漏掉聊天内容
 router.post('/patients/:id/chat-followup/ai-draft', staffAuth, checkPermission('service_records', 'create'), async (req, res) => {
   try {
@@ -2501,7 +2501,7 @@ router.post('/patients/:id/chat-followup/ai-draft', staffAuth, checkPermission('
     const result = await generateChatFollowupDraft({
       patientId: req.params.id, role: req.body?.role, range: req.body?.range, staffId: req.staff._id,
     });
-    if (result.status === 'skip') return res.status(result.message === '患者不存在' ? 404 : 400).json({ success: false, message: result.message });
+    if (result.status === 'skip') return res.status(result.message === '会员不存在' ? 404 : 400).json({ success: false, message: result.message });
     res.json({ success: true, data: result.record, reused: result.status === 'reused' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -2807,7 +2807,7 @@ router.get('/team', staffAuth, checkPermission('team', 'view'), async (req, res)
       FollowUp.countDocuments({ staffId: m._id }),
       HealthPlan.countDocuments({ staffId: m._id }),
     ]);
-    // 家庭医生专属：名下患者"健康档案已查看确认"完成情况（增量制，已确认过的历史内容不重复计入待办），
+    // 健康顾问专属：名下会员"健康档案已查看确认"完成情况（增量制，已确认过的历史内容不重复计入待办），
     // 供团队负责人判断是否真的看过资料而非敷衍点击（2026-07-28新增）
     let archiveReviewStats = null;
     if (m.role === 'familyDoctor') {
@@ -2821,8 +2821,8 @@ router.get('/team', staffAuth, checkPermission('team', 'view'), async (req, res)
   res.json({ success: true, data: { members: statsArr, total: statsArr.length } });
 });
 
-// ── 患者档案 - 附属数据 ─────────────────────────────────────
-// GET /api/staff/patients/:id/plans — 患者的健康方案列表（含年度管理方案）
+// ── 会员档案 - 附属数据 ─────────────────────────────────────
+// GET /api/staff/patients/:id/plans — 会员的健康方案列表（含年度管理方案）
 router.get('/patients/:id/plans', staffAuth, async (req, res) => {
   const [healthPlans, annualPlans] = await Promise.all([
     HealthPlan.find({ patientId: req.params.id })
@@ -2867,7 +2867,7 @@ router.get('/patients/:id/plans', staffAuth, async (req, res) => {
   res.json({ success: true, data: [...annualMapped, ...healthPlans] });
 });
 
-// GET /api/staff/patients/:id/reports — 患者的体检报告列表
+// GET /api/staff/patients/:id/reports — 会员的体检报告列表
 router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   const reports = await MedicalReport.find({ user: req.params.id })
     .select('-content')
@@ -2926,6 +2926,8 @@ router.get('/patients/:id/requisitions', staffAuth, async (req, res) => {
 
 // POST /api/staff/requisitions — 创建开单
 router.post('/requisitions', staffAuth, async (req, res) => {
+  return res.status(410).json({ success: false, message: '检查开单功能已停用。本平台仅提供非医疗健康管理服务。' });
+  /* istanbul ignore next -- 保留旧实现仅用于历史版本追溯，不再可达 */
   try {
     const { patientId, title, notes, items, dueDate } = req.body;
     if (!patientId || !items?.length) {
@@ -3031,7 +3033,7 @@ router.get('/requisition-items/:type/:id/sub-items', staffAuth, async (req, res)
 });
 
 // ── User app: 获取待上传开单 ──────────────────────────────
-// GET /api/staff/patients/:id/service-records — 患者的服务记录
+// GET /api/staff/patients/:id/service-records — 会员的服务记录
 router.get('/patients/:id/service-records', staffAuth, async (req, res) => {
   const records = await ServiceRecord.find({ patientId: req.params.id })
     .sort({ date: -1 })
@@ -3059,7 +3061,7 @@ router.post('/patients/:id/gift', staffAuth, async (req, res) => {
     validTo: validTo ? new Date(validTo) : null,
     remark: remark || '',
   });
-  // 如果赠送健康基金，更新患者 healthFund 余额
+  // 如果赠送健康基金，更新会员 healthFund 余额
   if (giftType === 'fund' && fundAmount > 0) {
     const updated = await User.findOneAndUpdate(
       { _id: new mongoose.Types.ObjectId(req.params.id) },
@@ -3171,7 +3173,7 @@ router.get('/referrals', staffAuth, async (req, res) => {
   const { direction = 'received', status = '', page = 1, limit = 20, patientId = '' } = req.query;
   let filter;
   if (patientId) {
-    // 会员维度：该患者的所有转介记录
+    // 会员维度：该会员的所有转介记录
     filter = { patientId };
   } else {
     filter = direction === 'sent'
@@ -3217,7 +3219,7 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
 
     const prompt = `你是一位专业医师，收到同事的会诊转介请求，请根据以下信息草拟你的会诊回复。${summary ? '重点：接收医师已给出处理概要，请忠实围绕该概要扩写，不要偏离或臆造其未提及的诊疗结论。' : ''}
 
-【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
+【会员】${user.name}，${user.gender || ''}，${user.age || '?'}岁
 【主要诊断/慢病】${(user.chronicDiseases || []).join('、') || '无'}
 【当前主要用药】${meds.length ? meds.map(m => `${m.name} ${m.dosage}`).join('；') : '无'}
 【药物过敏】${user.healthProfile?.drugAllergy || '无'}
@@ -3225,7 +3227,7 @@ router.post('/referrals/:id/ai-response-draft', staffAuth, async (req, res) => {
 【转介原因】${referral.reason}
 【转介详细说明】${referral.content || '无'}${summaryBlock}
 请分两行输出：
-问题分析：（对患者当前问题的分析评估，60字内）
+问题分析：（对会员当前问题的分析评估，60字内）
 会诊意见：（会诊结论、后续建议、转归方向，80字内）`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 400 });
@@ -3295,7 +3297,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
       ? { assignedFamilyDoctor: { $in: visibleStaffIds } }
       : { assignedHealthManager: { $in: visibleStaffIds } };
 
-  // 按角色过滤：我负责的患者（含下属、团队成员）+ 我这个角色对应的留言频道，统计未读用户留言数（用于侧边栏红点）
+  // 按角色过滤：我负责的会员（含下属、团队成员）+ 我这个角色对应的留言频道，统计未读用户留言数（用于侧边栏红点）
   const msgPatientFilter =
     staff.role === 'superadmin'      ? {} :
     staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: { $in: visibleStaffIds } } :
@@ -3318,7 +3320,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
       .sort({ createdAt: -1 }).limit(20)
       .populate('fromStaffId', 'name role')
       .populate('patientId', 'name phone'),
-    // 即将到期患者（30天内）
+    // 即将到期会员（30天内）
     User.find({ ...myFilter, serviceExpiry: { $gt: now, $lte: cutoff30 } })
       .select('name phone servicePackage serviceExpiry')
       .sort({ serviceExpiry: 1 }).limit(20),
@@ -3326,7 +3328,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
     Referral.countDocuments({ toStaffId: staff._id, status: 'pending' }),
     // 我发出的转介、对方已回复但我未查看
     Referral.countDocuments({ fromStaffId: staff._id, fromStaffUnread: true }),
-    // 我负责的患者（用于统计未读留言）
+    // 我负责的会员（用于统计未读留言）
     User.find(msgPatientFilter).select('_id').lean(),
   ]);
 
@@ -3358,7 +3360,7 @@ router.get('/notifications', staffAuth, async (req, res) => {
   });
 });
 
-// ── 获取患者的活跃方案（用于报告关联） ─────────────────────
+// ── 获取会员的活跃方案（用于报告关联） ─────────────────────
 // GET /api/staff/patients/:id/active-plan-items
 router.get('/patients/:id/active-plan-items', staffAuth, async (req, res) => {
   const plans = await HealthPlan.find({ patientId: req.params.id, status: 'active' })
@@ -3459,7 +3461,7 @@ router.get('/abnormal-reviews', staffAuth, checkPermission('abnormal_review', 'v
     if (patientId) filter.patientId = patientId;
     if (status) filter.status = status;
 
-    // 权限过滤：非 superadmin/manager 只看自己（含下属、团队成员）管的患者
+    // 权限过滤：非 superadmin/manager 只看自己（含下属、团队成员）管的会员
     if (!['superadmin', 'manager'].includes(req.staff.role)) {
       const visibleStaffIds = await getVisibleStaffIds(req.staff);
       const myPatients = await User.find({ assignedFamilyDoctor: { $in: visibleStaffIds } }).select('_id');
@@ -3488,12 +3490,12 @@ router.post('/abnormal-reviews', staffAuth, checkPermission('abnormal_review', '
       patientId, reportId, title, abnormalItems, reviewDate, notes,
       reviewReason, reviewHospital, reviewDepartment,
     } = req.body;
-    if (!patientId) return res.status(400).json({ success: false, message: '请选择患者' });
+    if (!patientId) return res.status(400).json({ success: false, message: '请选择会员' });
 
     const staffName = req.staff.name || req.staff.username || '健管师';
     const reviewTitle = title || '异常复查提醒';
 
-    // 给患者创建待办任务
+    // 给会员创建待办任务
     const task = await Task.create({
       user:        patientId,
       title:       reviewTitle,
@@ -3623,17 +3625,17 @@ router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   }
 });
 
-// 年度管理方案：只有家庭医生/超管可生成和编辑（2026-07-07 用户明确规则：年度管理方案和年度体检方案
-// 只由家庭医生负责，营养师等其他角色不应有生成/编辑权限，此前任何登录角色都能操作）
+// 年度管理方案：只有健康顾问/超管可生成和编辑（2026-07-07 用户明确规则：年度管理方案和年度体检方案
+// 只由健康顾问负责，营养师等其他角色不应有生成/编辑权限，此前任何登录角色都能操作）
 router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-    return res.status(403).json({ success: false, message: '仅家庭医生可生成/编辑年度管理方案' });
+    return res.status(403).json({ success: false, message: '仅健康顾问可生成/编辑年度管理方案' });
   }
   try {
     const { planType, moduleData, notes, year } = req.body;
     if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
     const targetYear = year || new Date().getFullYear();
-    // 按「患者+年度+方案类型」定位，4个类型各存一份，互不覆盖
+    // 按「会员+年度+方案类型」定位，4个类型各存一份，互不覆盖
     const plan = await AnnualPlan.findOneAndUpdate(
       { patientId: req.params.id, year: targetYear, planType },
       { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.staff._id },
@@ -3708,7 +3710,7 @@ router.patch('/patients/:id/annual-plan/push', staffAuth, async (req, res) => {
 });
 
 // ── GET /api/staff/patients/:id/orders ───────────────────────────
-// 获取指定患者的服务订单（供医护端查看并安排）
+// 获取指定会员的服务订单（供医护端查看并安排）
 router.get('/patients/:id/orders', staffAuth, async (req, res) => {
   try {
     const orders = await Order.find({ user: req.params.id })
@@ -3776,7 +3778,7 @@ router.get('/patients/:id/screening-year-summaries', staffAuth, async (req, res)
 router.put('/patients/:id/screening-year-summaries/:year', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-      return res.status(403).json({ success: false, message: '仅家庭医生可新增或编辑年度专项筛查小结' });
+      return res.status(403).json({ success: false, message: '仅健康顾问可新增或编辑年度专项筛查小结' });
     }
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');
     let summary = await ScreeningYearSummary.findOne({ user: req.params.id, year: Number(req.params.year) });
@@ -3806,7 +3808,7 @@ router.put('/patients/:id/screening-year-summaries/:year', staffAuth, async (req
 router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-      return res.status(403).json({ success: false, message: '仅家庭医生可生成年度专项筛查小结' });
+      return res.status(403).json({ success: false, message: '仅健康顾问可生成年度专项筛查小结' });
     }
     const year = Number(req.params.year);
     const reports = await MedicalReport.find({
@@ -3894,7 +3896,7 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
 router.patch('/patients/:id/screening-year-summaries/:year/approve', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-      return res.status(403).json({ success: false, message: '仅家庭医生可审核年度专项筛查小结' });
+      return res.status(403).json({ success: false, message: '仅健康顾问可审核年度专项筛查小结' });
     }
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');
     const summary = await ScreeningYearSummary.findOne({ user: req.params.id, year: Number(req.params.year) });
@@ -3916,7 +3918,7 @@ router.patch('/patients/:id/screening-year-summaries/:year/approve', staffAuth, 
 router.delete('/patients/:id/screening-year-summaries/:year', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-      return res.status(403).json({ success: false, message: '仅家庭医生可删除年度专项筛查小结' });
+      return res.status(403).json({ success: false, message: '仅健康顾问可删除年度专项筛查小结' });
     }
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');
     const summary = await ScreeningYearSummary.findOne({ user: req.params.id, year: Number(req.params.year) });
@@ -4005,11 +4007,11 @@ router.post('/orders/:id/redeem', staffAuth, async (req, res) => {
   }
 });
 
-// 健管专员/就医专员手动新增药物、营养素时需上级审核（药物→家庭医师，营养素→营养师）。
+// 健管专员/就医专员手动新增药物、营养素时需上级审核（药物→健康顾问，营养素→营养师）。
 // 其余角色（家医/营养师本人、超管等）录入直接生效，避免自己审自己。
 const NEEDS_REVIEW_ROLES = ['healthManager', 'medicalAssistant'];
 
-// 药物待审处理：approve/reject 限家庭医师/超管（审核权限）；withdraw 限录入本人或超管（撤回自己提交的待审记录）
+// 药物待审处理：approve/reject 限健康顾问/超管（审核权限）；withdraw 限录入本人或超管（撤回自己提交的待审记录）
 router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, res) => {
   try {
     const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
@@ -4027,7 +4029,7 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
       return res.json({ success: true, message: '已撤回' });
     }
 
-    if (!isDoctor) return res.status(403).json({ success: false, message: '仅家庭医师可审核药物' });
+    if (!isDoctor) return res.status(403).json({ success: false, message: '仅健康顾问可审核药物' });
     if (action === 'reject') {
       await med.deleteOne();
       return res.json({ success: true, message: '已驳回并删除' });
@@ -4042,7 +4044,7 @@ router.patch('/patients/:id/medications/:medId/review', staffAuth, async (req, r
 
 // 注：营养素审核复用已有的 PATCH .../supplements/:sid/ai-review 接口（营养师审核，已补审核人字段），此处不再重复定义。
 
-// ── 患者药物管理（医护端 CRUD）────────────────────────────────────
+// ── 会员药物管理（医护端 CRUD）────────────────────────────────────
 // 停用不等于删除：停用后记录仍应在列表可见（标"已停用"，可恢复），此前用 active:true 过滤导致
 // 停用后从列表消失、跟真删除没区别——医护端无法找回来查看或恢复。改为返回全部，前端按 stopped 标注状态。
 router.get('/patients/:id/medications', staffAuth, async (req, res) => {
@@ -4056,7 +4058,7 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   try {
     const { name, brandName, specification, dosage, method, frequency, timing, startDate, endDate, purpose, note } = req.body;
     if (!name || !dosage || !frequency) return res.status(400).json({ success: false, message: '药品名称、剂量、频次不能为空' });
-    // 健管专员/就医专员手动新增的药物需家庭医师审核后才生效；家医/超管等本人录入直接生效（不必自审）
+    // 健管专员/就医专员手动新增的药物需健康顾问审核后才生效；家医/超管等本人录入直接生效（不必自审）
     const needReview = NEEDS_REVIEW_ROLES.includes(req.staff.role);
     const med = await Medication.create({
       user: req.params.id, name, brandName: brandName || '', specification: specification || '', dosage, method: method || '口服',
@@ -4113,7 +4115,7 @@ router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) =>
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 患者营养素管理（医护端 CRUD）──────────────────────────────────
+// ── 会员营养素管理（医护端 CRUD）──────────────────────────────────
 // 停用不等于删除：停用后记录仍应在列表可见（标"已停用"，可恢复），此前用 stopped:false 过滤导致
 // 停用后从列表消失、跟真删除没区别——医护端无法找回来查看或恢复。改为返回全部，前端按 stopped 标注状态。
 router.get('/patients/:id/supplements', staffAuth, async (req, res) => {
@@ -4188,7 +4190,7 @@ router.delete('/patients/:id/supplements/:supId', staffAuth, async (req, res) =>
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 患者专项筛查结果（医护端查看）────────────────────────────────
+// ── 会员专项筛查结果（医护端查看）────────────────────────────────
 router.get('/patients/:id/screening', staffAuth, async (req, res) => {
   try {
     const items = await UserScreeningItem.find({ user: req.params.id })
@@ -4288,7 +4290,7 @@ router.post('/patients/:id/screening/dedup', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 患者日常打卡记录（医护端查看）────────────────────────────────
+// ── 会员日常打卡记录（医护端查看）────────────────────────────────
 router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   try {
     const { limit = 30, type, startDate, endDate } = req.query;
@@ -4304,7 +4306,7 @@ router.get('/patients/:id/health-records', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 家庭医师处理血压异常升级（AI自动跟进试点）──
+// ── 健康顾问处理血压异常升级（AI自动跟进试点）──
 // PATCH /api/staff/health-records/:id/resolve-alert
 router.patch('/health-records/:id/resolve-alert', staffAuth, async (req, res) => {
   try {
@@ -4318,7 +4320,7 @@ router.patch('/health-records/:id/resolve-alert', staffAuth, async (req, res) =>
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 医护端代患者录入初始健康数据（与用户端格式一致）─────────────────
+// ── 医护端代会员录入初始健康数据（与用户端格式一致）─────────────────
 // POST /api/staff/patients/:id/health-records
 router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
   try {
@@ -4372,7 +4374,7 @@ router.post('/patients/:id/health-records', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// 健管专员核实客户自报不适：允许修正误录内容，再确认转家庭医生；误报可直接关闭。
+// 健管专员核实客户自报不适：允许修正误录内容，再确认转健康顾问；误报可直接关闭。
 router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) => {
   try {
     if (!['healthManager', 'superadmin'].includes(req.staff.role)) {
@@ -4380,7 +4382,7 @@ router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) =
     }
     const action = req.body.action;
     if (!['save', 'refer_doctor', 'dismiss'].includes(action)) {
-      return res.status(400).json({ success: false, message: '请选择保存审核、转家庭医生或确认为误录' });
+      return res.status(400).json({ success: false, message: '请选择保存审核、转健康顾问或确认为误录' });
     }
     const record = await HealthRecord.findOne({
       _id: req.params.id,
@@ -4396,7 +4398,7 @@ router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) =
     record.value = nextValue;
     if (req.body.note !== undefined) record.note = String(req.body.note || '').trim();
     if (action === 'save') {
-      // 保存本次核实修改但暂不流转，仍留在健管专员待办中，之后再决定是否转家庭医生。
+      // 保存本次核实修改但暂不流转，仍留在健管专员待办中，之后再决定是否转健康顾问。
       record.symptomWorkflow.status = 'pending_manager';
       record.symptomWorkflow.decisionNote = String(req.body.decisionNote || '').trim();
       record.editedBy = {
@@ -4423,7 +4425,7 @@ router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) =
         record.symptomWorkflow.verifiedByName = '';
         record.symptomWorkflow.verifiedAt = null;
         await record.save();
-        return res.status(400).json({ success: false, message: '该客户尚未分配家庭医生，请先完成分配' });
+        return res.status(400).json({ success: false, message: '该客户尚未分配健康顾问，请先完成分配' });
       }
       const exists = await FollowUp.exists({ sourceType: 'symptom', sourceId: record._id, status: { $in: ['planned', 'in_progress'] } });
       if (!exists) {
@@ -4434,7 +4436,7 @@ router.patch('/health-records/:id/verify-symptom', staffAuth, async (req, res) =
           date: new Date(),
           type: 'other',
           status: 'planned',
-          theme: `家庭医生处理不适主诉：${record.value}`,
+          theme: `健康顾问处理不适主诉：${record.value}`,
           plannedContent: [record.value, record.note].filter(Boolean).join('；'),
           sourceType: 'symptom',
           sourceId: record._id,
@@ -4468,11 +4470,11 @@ router.delete('/health-records/:id/symptom', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// 家庭医生处理不适主诉：确认转介、交由健管专员跟进，或记录已处理。
+// 健康顾问处理不适主诉：确认转介、交由健管专员跟进，或记录已处理。
 router.patch('/health-records/:id/resolve-symptom', staffAuth, async (req, res) => {
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-      return res.status(403).json({ success: false, message: '仅家庭医生可处理不适主诉' });
+      return res.status(403).json({ success: false, message: '仅健康顾问可处理不适主诉' });
     }
     const status = req.body.status;
     if (!['manager_followup', 'referred', 'resolved'].includes(status)) {
@@ -4490,7 +4492,7 @@ router.patch('/health-records/:id/resolve-symptom', staffAuth, async (req, res) 
       { new: true },
     );
     if (!record) return res.status(404).json({ success: false, message: '记录不存在或已处理' });
-    // 家庭医生完成判断后，关闭此前同时展示在医生工作台和用户端的同源待办。
+    // 健康顾问完成判断后，关闭此前同时展示在医生工作台和用户端的同源待办。
     await FollowUp.updateMany(
       { sourceType: 'symptom', sourceId: record._id, status: { $in: ['planned', 'in_progress', 'missed'] } },
       { $set: { status: 'completed', completedAt: new Date(), completedBy: 'staff', executedContent: String(req.body.decisionNote || '').trim() } },
@@ -4518,7 +4520,7 @@ router.patch('/health-records/:id/resolve-symptom', staffAuth, async (req, res) 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 医护端修正患者打卡数据（数据有疑问，确认后修正；留痕修改人+修改时间+原值）────
+// ── 医护端修正会员打卡数据（数据有疑问，确认后修正；留痕修改人+修改时间+原值）────
 // PUT /api/staff/patients/:patientId/health-records/:recordId
 router.put('/patients/:patientId/health-records/:recordId', staffAuth, async (req, res) => {
   try {
@@ -4556,7 +4558,7 @@ router.get('/patients/:id/family-links', staffAuth, async (req, res) => {
     await synchronizeFamilyGroup([req.params.id]);
     const user = await User.findById(req.params.id)
       .populate('familyLinks.linkedUser', 'name phone gender birthDate isDeleted');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     res.json({ success: true, data: (user.familyLinks || []).filter(l => l.linkedUser && !l.linkedUser.isDeleted) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -4570,7 +4572,7 @@ router.post('/patients/:id/family-links', staffAuth, async (req, res) => {
       User.findById(req.params.id),
       User.findById(linkedUserId),
     ]);
-    if (!userA || !userB) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!userA || !userB) return res.status(404).json({ success: false, message: '会员不存在' });
     if (String(userA._id) === String(userB._id)) {
       return res.status(400).json({ success: false, message: '不能关联自己' });
     }
@@ -4603,7 +4605,7 @@ router.post('/patients/:id/family-links', staffAuth, async (req, res) => {
 router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) => {
   try {
     const userA = await User.findById(req.params.id);
-    if (!userA) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!userA) return res.status(404).json({ success: false, message: '会员不存在' });
     const link = userA.familyLinks.id(req.params.linkId);
     if (!link) return res.status(404).json({ success: false, message: '关联不存在' });
     const linkedUserId = link.linkedUser;
@@ -4630,7 +4632,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const ALL_CHECKIN_TYPES = ['diet','exercise','sleep','weight','bowel','water','smoking','alcohol','bloodPressure','heartRate','bloodSugar'];
     const TYPE_LABEL = { bloodPressure:'血压', bloodSugar:'血糖', weight:'体重', heartRate:'心率', sleep:'睡眠', mood:'情绪', diet:'饮食', exercise:'运动', water:'饮水', bowel:'排便', smoking:'吸烟', alcohol:'饮酒', symptom:'今日健康状态' };
 
-    // 管辖患者（团队负责人/组长可见范围扩展到下属及团队成员名下患者）
+    // 管辖会员（团队负责人/组长可见范围扩展到下属及团队成员名下会员）
     const patientFilter = {};
     if (staff.role !== 'superadmin') {
       const visibleStaffIds = await getVisibleStaffIds(staff);
@@ -4656,7 +4658,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
       recordedAt: { $gte: start, $lte: end },
     }).select('user type value unit recordedAt imageUrl extra note recordedBy symptomWorkflow status').sort({ recordedAt: -1 }).lean();
 
-    // 按患者分组：同一类型当天可能打卡多次（如血压测3次），全部保留，不只取最新一条
+    // 按会员分组：同一类型当天可能打卡多次（如血压测3次），全部保留，不只取最新一条
     const byPatient = {};
     records.forEach(r => {
       const uid = String(r.user);
@@ -4666,7 +4668,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
       byPatient[uid].types[r.type].push(r);
     });
 
-    // 只返回有打卡记录的患者，按最近打卡时间倒序
+    // 只返回有打卡记录的会员，按最近打卡时间倒序
     const result = Object.entries(byPatient)
       .map(([uid, data]) => {
         const patient = patientMap[uid] || {};
@@ -4693,13 +4695,13 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 用户留言收件箱：查看分配给自己的患者发来的消息 ──────────────────
+// ── 用户留言收件箱：查看分配给自己的会员发来的消息 ──────────────────
 // GET /api/staff/user-messages
 router.get('/user-messages', staffAuth, async (req, res) => {
   try {
     const staff = req.staff;
 
-    // 找到分配给该医护人员（含下属、团队成员）的患者
+    // 找到分配给该医护人员（含下属、团队成员）的会员
     const visibleStaffIds = await getVisibleStaffIds(staff);
     const myFilter =
       staff.role === 'familyDoctor'    ? { assignedFamilyDoctor: { $in: visibleStaffIds } } :
@@ -4713,8 +4715,8 @@ router.get('/user-messages', staffAuth, async (req, res) => {
     const patientMap = {};
     myPatients.forEach(p => { patientMap[String(p._id)] = p; });
 
-    // 按角色过滤：家庭医师只看 doctor 留言，营养师只看 nutritionist 留言，健管专员/医助只看 manager 留言，superadmin 不受限看全部
-    // （此前健管端用 {} 不过滤，会越权看到发给家庭医生/营养师的留言，也会在点开时误将其标记已读导致家庭医生端漏看）
+    // 按角色过滤：健康顾问只看 doctor 留言，营养师只看 nutritionist 留言，健管专员/医助只看 manager 留言，superadmin 不受限看全部
+    // （此前健管端用 {} 不过滤，会越权看到发给健康顾问/营养师的留言，也会在点开时误将其标记已读导致健康顾问端漏看）
     const recipientFilter =
       staff.role === 'familyDoctor'  ? { recipient: { $in: ['doctor', null, undefined] } } :
       staff.role === 'nutritionist'  ? { recipient: 'nutritionist' } :
@@ -4740,8 +4742,8 @@ router.get('/user-messages', staffAuth, async (req, res) => {
   }
 });
 
-// 角色只能查看/操作自己对应频道的对话（家庭医师→doctor，营养师→nutritionist，健管专员/医助→manager），
-// 防止越权看到并误将其他角色的留言标记已读（曾导致健管专员点开家庭医生的对话后，家庭医生端误判为"已读"而漏看）
+// 角色只能查看/操作自己对应频道的对话（健康顾问→doctor，营养师→nutritionist，健管专员/医助→manager），
+// 防止越权看到并误将其他角色的留言标记已读（曾导致健管专员点开健康顾问的对话后，健康顾问端误判为"已读"而漏看）
 function assertRoleMatchesChannel(staffRole, channelRole) {
   if (staffRole === 'superadmin') return true;
   const allowed =
@@ -4884,7 +4886,7 @@ router.patch('/patients/:id/body-composition', staffAuth, async (req, res) => {
 router.patch('/patients/:id/body-composition-history/:index', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const idx = parseInt(req.params.index);
     const history = user.bodyCompHistory || [];
     if (idx < 0 || idx >= history.length) return res.status(400).json({ success: false, message: '索引越界' });
@@ -4910,7 +4912,7 @@ router.patch('/patients/:id/body-composition-history/:index', staffAuth, async (
 router.delete('/patients/:id/body-composition-history/:index', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const idx = parseInt(req.params.index);
     const history = [...(user.bodyCompHistory || [])];
     if (idx < 0 || idx >= history.length) return res.status(400).json({ success: false, message: '索引越界' });
@@ -4933,11 +4935,11 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       .populate('assignedHealthManager', 'name')
       .populate('assignedFamilyDoctor', 'name')
       .populate('assignedNutritionist', 'name');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const scope = req.body.scope || 'all';
     const force = req.body.force === true;
-    // 生成权限按维度分流：5维分析(doctor)限家庭医师、生活方式(nutrition)限营养师、all限超管；
+    // 生成权限按维度分流：5维分析(doctor)限健康顾问、生活方式(nutrition)限营养师、all限超管；
     // 健管专员等其他角色只能查看不能生成（后端兜底，防越权直调接口）
     const role = req.staff.role;
     const canGen = role === 'superadmin'
@@ -4946,7 +4948,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (!canGen) {
       return res.status(403).json({ success: false, message: '您没有生成该AI健康分析的权限，仅可查看' });
     }
-    // 双审强制前置：家庭医生生成AI健康分析前，必须先审核确认该客户所有健管专员已审核的报告
+    // 双审强制前置：健康顾问生成AI健康分析前，必须先审核确认该客户所有健管专员已审核的报告
     // （2026-07-21需求），营养师维度的生活方式评估同样依赖报告数据，一并拦截。与 user.js 客户
     // 自助生成入口共用同一个 checkReportAuditGate，避免两处判断口径分裂（曾出现user.js完全
     // 没做这层校验的漏洞）。
@@ -4997,12 +4999,12 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       nutritionApprovedBy: prevNutritionEntry.nutritionApprovedBy || prevNutritionEntry.approvedBy || null,
     };
 
-    // 业务顺序：家庭医生完成并审核5维分析后，营养师才能生成生活方式评估。
+    // 业务顺序：健康顾问完成并审核5维分析后，营养师才能生成生活方式评估。
     if ((scope === 'nutrition' || scope === 'all') && !prevEntry.doctorApprovedAt && scope !== 'all') {
       return res.status(409).json({
         success: false,
         needDoctorAnalysis: true,
-        message: '请先由家庭医生生成并审核本年度5维分析，再生成生活方式评估',
+        message: '请先由健康顾问生成并审核本年度5维分析，再生成生活方式评估',
       });
     }
 
@@ -5011,7 +5013,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     // 已审核的那条历史记录本身不会被清空或修改，只是不再是"最新"）
     if (!force) {
       if ((scope === 'doctor' || scope === 'all') && prevEntry.doctorApprovedAt) {
-        return res.status(409).json({ success: false, needConfirm: true, message: '最新一条5维度分析已由家庭医师审核通过，新增评估记录将不再是已审核状态', approvedBy: prevEntry.doctorApprovedBy });
+        return res.status(409).json({ success: false, needConfirm: true, message: '最新一条5维度分析已由健康顾问审核通过，新增评估记录将不再是已审核状态', approvedBy: prevEntry.doctorApprovedBy });
       }
       if ((scope === 'nutrition' || scope === 'all') && prevEntry.nutritionApprovedAt) {
         return res.status(409).json({ success: false, needConfirm: true, message: '最新一条生活方式评估已由营养师审核通过，新增评估记录将不再是已审核状态', approvedBy: prevEntry.nutritionApprovedBy });
@@ -5037,7 +5039,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     }
 
     // 新增一条独立记录。只清空本次生成维度的审核状态，另一方最新审核状态保持不变，
-    // 从而做到家庭医生/营养师任一方重新评估都不影响对方。
+    // 从而做到健康顾问/营养师任一方重新评估都不影响对方。
     const newRecord = {
       scope, sections: mergedSections, generatedAt: new Date(), evaluatedAt, period,
       approvedAt: null, approvedBy: null,
@@ -5088,7 +5090,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
     const { sections, sectionNotes, action, scope, year, recordIndex } = req.body;
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const current = user.aiHealthSummary || {};
     const updated = { ...current };
     const byYear = { ...(updated.byYear || {}) };
@@ -5110,7 +5112,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     const entry = { ...records[idx] };
     if (sections !== undefined) entry.sections = sections;
     if (sectionNotes !== undefined) entry.sectionNotes = sectionNotes;
-    // 审核：按角色维度拆分（家庭医师审5维 / 营养师审生活方式评估）
+    // 审核：按角色维度拆分（健康顾问审5维 / 营养师审生活方式评估）
     // scope: 'doctor' | 'nutrition' | 'all'（缺省=all，兼容旧前端）
     if (action === 'approve') {
       const now = new Date();
@@ -5130,7 +5132,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
         return res.status(400).json({ success: false, message: '生活方式评估内容为空，不能审核通过，请先重新生成' });
       }
       if ((sc === 'doctor' || sc === 'all')) {
-        if (!isSuper && req.staff.role !== 'familyDoctor') return res.status(403).json({ success: false, message: '仅家庭医生可审核该维度' });
+        if (!isSuper && req.staff.role !== 'familyDoctor') return res.status(403).json({ success: false, message: '仅健康顾问可审核该维度' });
         entry.doctorApprovedAt = now; entry.doctorApprovedBy = req.staff.name;
       }
       if ((sc === 'nutrition' || sc === 'all')) {
@@ -5147,7 +5149,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     byYear[y] = { ...records[0], records };
     updated.byYear = byYear;
     // 顶层镜像始终由两条独立链各自的“最新一条”合成，审核营养师记录（它可能不是全局 index 0）
-    // 也能立即同步到用户端与其他下游，同时不会改动家庭医生链。
+    // 也能立即同步到用户端与其他下游，同时不会改动健康顾问链。
     const latestDoctor = records.find(r => r.scope === 'doctor' || r.scope === 'all' || (!r.scope && DOCTOR_KEYS.some(k => r.sections?.[k]))) || {};
     const latestNutrition = records.find(r => r.scope === 'nutrition' || r.scope === 'all' || (!r.scope && r.sections?.[LIFESTYLE_KEY])) || {};
     updated.sections = { ...(latestDoctor.sections || {}), ...(latestNutrition.sections || {}) };
@@ -5174,7 +5176,7 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
 });
 
 // DELETE /api/staff/patients/:id/ai-health-summary/records/:recordIndex
-// 删除某一次误生成评估；家庭医生只能删5维，营养师只能删生活方式，删除一方不影响另一方。
+// 删除某一次误生成评估；健康顾问只能删5维，营养师只能删生活方式，删除一方不影响另一方。
 router.delete('/patients/:id/ai-health-summary/records/:recordIndex', staffAuth, async (req, res) => {
   try {
     const { year, scope } = req.query;
@@ -5187,7 +5189,7 @@ router.delete('/patients/:id/ai-health-summary/records/:recordIndex', staffAuth,
     if (!allowed) return res.status(403).json({ success: false, message: '无权删除该评估记录' });
 
     const user = await User.findById(req.params.id).select('aiHealthSummary');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const current = user.aiHealthSummary || {};
     const byYear = { ...(current.byYear || {}) };
     const y = String(year || current.latestYear || new Date().getFullYear());
@@ -5247,7 +5249,7 @@ router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req
       return res.status(400).json({ success: false, message: '留言内容不能为空' });
     }
     const user = await User.findById(req.params.id).select('aiHealthSummary');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const current = user.aiHealthSummary || {};
     const byYear = { ...(current.byYear || {}) };
     const y = String(year || current.latestYear || new Date().getFullYear());
@@ -5283,7 +5285,7 @@ router.delete('/patients/:id/ai-health-summary/discussions/:index', staffAuth, a
     const { year, recordIndex } = req.query;
     const idx = Number(req.params.index);
     const user = await User.findById(req.params.id).select('aiHealthSummary');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const current = user.aiHealthSummary || {};
     const byYear = { ...(current.byYear || {}) };
     const y = String(year || current.latestYear || new Date().getFullYear());
@@ -5315,7 +5317,7 @@ router.post('/patients/:id/ai-health-summary/discussions/ai-reply', staffAuth, a
   try {
     const { year, recordIndex } = req.body;
     const user = await User.findById(req.params.id).select('name gender age aiHealthSummary');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const current = user.aiHealthSummary || {};
     const byYear = { ...(current.byYear || {}) };
     const y = String(year || current.latestYear || new Date().getFullYear());
@@ -5331,7 +5333,7 @@ router.post('/patients/:id/ai-health-summary/discussions/ai-reply', staffAuth, a
     const sectionsSummary = JSON.stringify(entry.sections || {}).slice(0, 3000);
     const discussionText = discussions.map(d => `${d.isAI ? 'AI' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
 
-    const prompt = `你是协助医护团队复核健康分析报告的AI助手。以下是患者${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI健康分析报告结论摘要，以及医护团队围绕该报告展开的讨论记录。请针对团队最新提出的疑问或补充信息，结合报告已有结论进行解释、推理或修正说明。
+    const prompt = `你是协助医护团队复核健康分析报告的AI助手。以下是会员${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI健康分析报告结论摘要，以及医护团队围绕该报告展开的讨论记录。请针对团队最新提出的疑问或补充信息，结合报告已有结论进行解释、推理或修正说明。
 
 【报告结论摘要】
 ${sectionsSummary}
@@ -5364,14 +5366,14 @@ ${discussionText}
 
 // ── 4.5 AI管理方案生成 ──────────────────────────────────────────
 // POST /api/staff/patients/:id/ai-annual-plan
-// 年度管理方案只有家庭医生/超管可生成（同 annual-plan PUT 接口的角色限制）
+// 年度管理方案只有健康顾问/超管可生成（同 annual-plan PUT 接口的角色限制）
 router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-    return res.status(403).json({ success: false, message: '仅家庭医生可生成年度管理方案' });
+    return res.status(403).json({ success: false, message: '仅健康顾问可生成年度管理方案' });
   }
   try {
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const ais = user.aiHealthSummary;
     if (!ais || !ais.sections) {
@@ -5411,7 +5413,7 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
 
     const missingCheckups = (s.checkup_completeness?.missing || []).join('、') || '无';
 
-    const prompt = `你是一位家庭医师，请根据以下AI健康分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。
+    const prompt = `你是一位健康顾问，请根据以下AI健康分析，生成${year}年度健康管理方案，按指定JSON格式输出各板块字段。
 
 【需优先解决的医疗问题】
 ${medPriorityText}
@@ -5425,10 +5427,10 @@ ${chronicText}
 【缺失体检项目】
 ${missingCheckups}
 
-【患者慢病标签】${user.chronicDiseases?.join('、') || '无'}
+【会员慢病标签】${user.chronicDiseases?.join('、') || '无'}
 
-【本次服务目标（家庭医生填写，方案要朝这个方向靠）】
-${notes ? notes : '（未填写目标，按患者情况常规定制）'}
+【本次服务目标（健康顾问填写，方案要朝这个方向靠）】
+${notes ? notes : '（未填写目标，按会员情况常规定制）'}
 
 请严格按以下JSON格式输出，仅输出JSON：
 {
@@ -5487,7 +5489,7 @@ router.post('/patients/:id/ai-draft', staffAuth, async (req, res) => {
 
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthConcern healthProfile');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { chat } = require('../utils/ai');
     const baseInfo = `姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}`;
@@ -5502,7 +5504,7 @@ router.post('/patients/:id/ai-draft', staffAuth, async (req, res) => {
         : '近14天无打卡数据';
       prompt = `你是健康管理随访人员，请根据以下信息撰写一段专业、简洁、有温度的随访记录草稿（150-250字，自然语言连贯成段，不要分点编号，不要使用Markdown）。
 
-【患者】${baseInfo}
+【会员】${baseInfo}
 【随访主题】${context.theme || '常规随访'}
 【随访方式】${context.type || '电话'}
 【随访重点】${context.focus || '了解近期健康状况、用药与生活方式依从性'}
@@ -5510,19 +5512,19 @@ router.post('/patients/:id/ai-draft', staffAuth, async (req, res) => {
 【近14天打卡数据】
 ${recLines}
 
-请直接输出随访记录正文，体现：本次随访沟通的核心内容、患者反馈、发现的问题、给出的建议。`;
+请直接输出随访记录正文，体现：本次随访沟通的核心内容、会员反馈、发现的问题、给出的建议。`;
     } else if (kind === 'service_record') {
       prompt = `你是健康管理服务人员，请根据以下服务要点，撰写一段完整、规范的服务记录正文（150-250字，自然语言连贯成段，不要分点编号，不要使用Markdown）。
 
-【患者】${baseInfo}
+【会员】${baseInfo}
 【服务类型】${context.serviceType || context.title || '健康服务'}
 【服务要点/摘要】${context.summary || '（未填写）'}
 
 请直接输出服务记录正文。`;
     } else {
-      prompt = `你是家庭医师，请把以下方案要点优化润色为一段清晰、专业、易于患者理解的健康管理方案描述（100-200字，自然语言连贯成段）。
+      prompt = `你是健康顾问，请把以下方案要点优化润色为一段清晰、专业、易于会员理解的健康管理方案描述（100-200字，自然语言连贯成段）。
 
-【患者】${baseInfo}
+【会员】${baseInfo}
 【方案要点】${context.keypoints || context.summary || '（未填写）'}
 
 请直接输出优化后的方案描述正文。`;
@@ -5557,11 +5559,11 @@ function riskYearOf(req) {
 // POST /api/staff/patients/:id/ai-risk-assessment — 生成风险评估（year 不填则为当前年）
 router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   try {
-    // 风险评估仅家庭医师/超管可生成，健管专员等只能查看（与前端按钮隐藏一致，后端兜底防越权直调接口）
+    // 风险评估仅健康顾问/超管可生成，健管专员等只能查看（与前端按钮隐藏一致，后端兜底防越权直调接口）
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-      return res.status(403).json({ success: false, message: '仅家庭医师可生成风险评估' });
+      return res.status(403).json({ success: false, message: '仅健康顾问可生成风险评估' });
     }
-    // 双审强制前置：家庭医生生成风险评估前，必须先审核确认该客户所有健管专员已审核的报告
+    // 双审强制前置：健康顾问生成风险评估前，必须先审核确认该客户所有健管专员已审核的报告
     {
       const { checkReportAuditGate } = require('../utils/reportAuditGate');
       const gateMsg = await checkReportAuditGate(req.params.id);
@@ -5569,7 +5571,7 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
     }
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile labValues lifestyle lifestyle_data');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const year = riskYearOf(req);
     const assessment = await generateRiskAssessment(user);
@@ -5583,13 +5585,13 @@ router.post('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   }
 });
 
-// PATCH /api/staff/patients/:id/ai-risk-assessment — 家庭医生审核/修改（body.year 指定所属年度）
+// PATCH /api/staff/patients/:id/ai-risk-assessment — 健康顾问审核/修改（body.year 指定所属年度）
 router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => {
   try {
     const { dimensions, overallSummary, action } = req.body;
     const year = riskYearOf(req);
     const user = await User.findById(req.params.id);
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const byYear = riskByYear(user.aiRiskAssessment);
     const updated = { ...(byYear[year] || {}) };
     if (dimensions !== undefined) {
@@ -5600,7 +5602,7 @@ router.patch('/patients/:id/ai-risk-assessment', staffAuth, async (req, res) => 
     if (overallSummary !== undefined) updated.overallSummary = overallSummary;
     if (action === 'approve') {
       if (req.staff.role !== 'familyDoctor' && req.staff.role !== 'superadmin') {
-        return res.status(403).json({ success: false, message: '仅家庭医生可审核风险评估' });
+        return res.status(403).json({ success: false, message: '仅健康顾问可审核风险评估' });
       }
       updated.approvedAt = new Date();
       updated.approvedBy = req.staff.name;
@@ -5623,7 +5625,7 @@ router.post('/patients/:id/ai-risk-assessment/discussions', staffAuth, async (re
     }
     const year = riskYearOf(req);
     const user = await User.findById(req.params.id).select('aiRiskAssessment');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const byYear = riskByYear(user.aiRiskAssessment);
     const ra = { ...(byYear[year] || {}) };
     const discussions = Array.isArray(ra.discussions) ? [...ra.discussions] : [];
@@ -5651,7 +5653,7 @@ router.delete('/patients/:id/ai-risk-assessment/discussions/:index', staffAuth, 
     const idx = parseInt(req.params.index, 10);
     const year = riskYearOf(req);
     const user = await User.findById(req.params.id).select('aiRiskAssessment');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const byYear = riskByYear(user.aiRiskAssessment);
     const ra = { ...(byYear[year] || {}) };
     const discussions = Array.isArray(ra.discussions) ? [...ra.discussions] : [];
@@ -5675,7 +5677,7 @@ router.post('/patients/:id/ai-risk-assessment/discussions/ai-reply', staffAuth, 
   try {
     const year = riskYearOf(req);
     const user = await User.findById(req.params.id).select('name gender age aiRiskAssessment');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const byYear = riskByYear(user.aiRiskAssessment);
     const ra = byYear[year] || {};
     const discussions = Array.isArray(ra.discussions) ? ra.discussions : [];
@@ -5686,7 +5688,7 @@ router.post('/patients/:id/ai-risk-assessment/discussions/ai-reply', staffAuth, 
       .map(d => `${d.label}：${d.level}${typeof d.score === 'number' ? `（${d.score}分）` : ''}${d.advice ? `，建议：${d.advice}` : ''}`).join('\n');
     const discussionText = discussions.map(d => `${d.isAI ? 'AI' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
 
-    const prompt = `你是协助医护团队复核风险评估的AI助手。以下是患者${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI风险评估结论，以及医护团队围绕该评估展开的讨论。请针对团队最新提出的疑问或补充信息，结合评估结论进行解释、推理或修正说明。
+    const prompt = `你是协助医护团队复核风险评估的AI助手。以下是会员${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI风险评估结论，以及医护团队围绕该评估展开的讨论。请针对团队最新提出的疑问或补充信息，结合评估结论进行解释、推理或修正说明。
 
 【整体风险】${ra.overallLevel || '未知'}${ra.overallSummary ? `：${ra.overallSummary}` : ''}
 【各维度评估】
@@ -5720,7 +5722,7 @@ router.post('/patients/:id/ascvd-risk', staffAuth, async (req, res) => {
   try {
     const { assessAscvd } = require('../utils/ascvdRisk');
     const user = await User.findById(req.params.id).select('_id');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const evaluatedAt = req.body?.evaluatedAt ? new Date(req.body.evaluatedAt) : new Date();
     const year = String(req.body?.year || evaluatedAt.getFullYear());
     const result = assessAscvd(req.body || {});
@@ -5796,7 +5798,7 @@ router.post('/patients/:id/ai-supplement-suggest', staffAuth, async (req, res) =
   try {
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases lifestyle lifestyle_data labValues');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { chat } = require('../utils/ai');
     const currentSups = await Supplement.find({ user: user._id, stopped: false, aiStatus: { $ne: 'pending' } })
@@ -5808,9 +5810,9 @@ router.post('/patients/:id/ai-supplement-suggest', staffAuth, async (req, res) =
     const lifestyleStr = user.lifestyle_data?.summaryOverride
       || (user.lifestyle ? `饮食：${user.lifestyle.diet || '无'}，运动：${user.lifestyle.exercise || '无'}，睡眠：${user.lifestyle.sleep || '无'}` : '无记录');
 
-    const prompt = `你是一位专业营养师，请根据患者情况生成1-3条营养素补充建议。
+    const prompt = `你是一位专业营养师，请根据会员情况生成1-3条营养素补充建议。
 
-【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
+【会员】${user.name}，${user.gender || ''}，${user.age || '?'}岁
 【慢病标签】${(user.chronicDiseases || []).join('、') || '无'}
 【生活方式概述】${lifestyleStr}
 【当前营养素】${currentSupStr}
@@ -5891,7 +5893,7 @@ router.patch('/patients/:id/supplements/:sid/ai-review', staffAuth, async (req, 
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
-// ── 场景十五：AI 转介草稿（家庭医师/任意角色）────────────────────────────
+// ── 场景十五：AI 转介草稿（健康顾问/任意角色）────────────────────────────
 // POST /api/staff/patients/:id/ai-referral-draft
 // 要求医生先选定接收人、填好转介原因，AI只负责基于"接收人是谁+医生给的原因+医生本次勾选附带的信息"扩写详细说明，不替医生编造转介原因
 router.post('/patients/:id/ai-referral-draft', staffAuth, async (req, res) => {
@@ -5903,7 +5905,7 @@ router.post('/patients/:id/ai-referral-draft', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '请先选择接收人并填写转介原因，AI将据此生成详细说明' });
     }
     const user = await User.findById(req.params.id).select('name gender age');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { chat } = require('../utils/ai');
 
@@ -5918,9 +5920,9 @@ router.post('/patients/:id/ai-referral-draft', staffAuth, async (req, res) => {
       }).join('\n');
     }
 
-    const prompt = `你是一位家庭医师，正准备将患者转介给同事，请仅基于下方信息扩写一份转介详细说明（不超过150字），包含：主要病情、需要对方协助的具体内容。必须紧扣医生已给出的转介原因和本次实际附带的信息，不要编造转介原因，也不要引用未提供的信息。语气专业，条理清晰。
+    const prompt = `你是一位健康顾问，正准备将会员转介给同事，请仅基于下方信息扩写一份转介详细说明（不超过150字），包含：主要病情、需要对方协助的具体内容。必须紧扣医生已给出的转介原因和本次实际附带的信息，不要编造转介原因，也不要引用未提供的信息。语气专业，条理清晰。
 
-【患者】${user.name}，${user.gender || ''}，${user.age || '?'}岁
+【会员】${user.name}，${user.gender || ''}，${user.age || '?'}岁
 【转介目标】${toRole || '医护人员'}${toName ? `（${toName}）` : ''}
 【医生给出的转介原因】${reason.trim()}
 【本次附带的健康信息】
@@ -5954,7 +5956,7 @@ function verifyDraftToken(token, patientId, kind, staffId) {
 router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues preferences');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { chat } = require('../utils/ai');
     // 近30天打卡数据
@@ -5970,10 +5972,10 @@ router.post('/patients/:id/ai-followup-suggestion', staffAuth, async (req, res) 
     const nextPlanned = await FollowUp.findOne({ patientId: user._id, status: 'planned', date: { $gte: new Date() } }).sort({ date: 1 }).lean();
     const nextPlannedText = nextPlanned ? String(nextPlanned.date).slice(0, 10) : '未排期';
 
-    const prompt = `你是慢病管理随访专员，请根据患者近期数据判断随访时机并生成随访提纲。
+    const prompt = `你是慢病管理随访专员，请根据会员近期数据判断随访时机并生成随访提纲。
 
-【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
-【个性化喜好/禁忌】${user.preferences || '无'}（若提及不希望在某些时段/节日被打扰、忌讳某些话题，suggestedDate和outline都要相应避开或调整，如患者不喜欢过年期间到医院，无特殊异常指标时不要在春节期间安排常规随访，可改为仅送上节日祝福）
+【会员】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}
+【个性化喜好/禁忌】${user.preferences || '无'}（若提及不希望在某些时段/节日被打扰、忌讳某些话题，suggestedDate和outline都要相应避开或调整，如会员不喜欢过年期间到医院，无特殊异常指标时不要在春节期间安排常规随访，可改为仅送上节日祝福）
 【上次随访】${lastFuText}
 【已排期下次随访】${nextPlannedText}
 【近30天打卡数据】
@@ -6020,7 +6022,7 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
     if (action !== 'approve') return res.status(400).json({ success: false, message: 'action 必须为 approve' });
     const draft = edits && typeof edits === 'object' ? edits : {};
     const user = await User.findById(req.params.id).select('_id');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const isSuperadmin = req.staff.role === 'superadmin';
     const isGenerator = verifyDraftToken(draftToken, user._id, 'followup', req.staff._id);
@@ -6049,11 +6051,11 @@ router.patch('/patients/:id/ai-followup-draft', staffAuth, async (req, res) => {
 });
 
 // POST /api/staff/patients/:id/ai-followup-monthly-review — 月度AI回顾：结合近30天打卡数据判断随访时机，
-// 直接落库为 aiStatus:pending 的随访建议，走 followup_review 待办队列由家庭医生审核（区别于ai-followup-suggestion的单患者预览+本人采纳模式，这里是批量自动化场景）
+// 直接落库为 aiStatus:pending 的随访建议，走 followup_review 待办队列由健康顾问审核（区别于ai-followup-suggestion的单会员预览+本人采纳模式，这里是批量自动化场景）
 router.post('/patients/:id/ai-followup-monthly-review', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('name gender age chronicDiseases labValues');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { runMonthlyFollowUpReview } = require('../utils/followupReview');
     const fu = await runMonthlyFollowUpReview(user, req.staff._id);
@@ -6067,7 +6069,7 @@ router.post('/patients/:id/ai-followup-monthly-review', staffAuth, async (req, r
 router.post('/patients/:id/ai-coach-message', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('name gender age chronicDiseases preferredTitle preferences');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     // 称呼：优先医护标注的 preferredTitle，否则按性别得体兜底
     const surname = (user.name || '').trim().charAt(0);
@@ -6136,7 +6138,7 @@ router.patch('/patients/:id/ai-coach-draft', staffAuth, async (req, res) => {
     const { action, message: editedMessage, draftToken } = req.body; // action: approve
     if (action !== 'approve') return res.status(400).json({ success: false, message: 'action 必须为 approve' });
     const user = await User.findById(req.params.id).select('_id');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const isSuperadmin = req.staff.role === 'superadmin';
     const isGenerator = verifyDraftToken(draftToken, user._id, 'coach', req.staff._id);
@@ -6158,7 +6160,7 @@ router.post('/patients/:id/coach-message/send', staffAuth, async (req, res) => {
     const { message } = req.body;
     if (!message || !message.trim()) return res.status(400).json({ success: false, message: '消息内容不能为空' });
     const user = await User.findById(req.params.id).select('_id');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     await PushRecord.create({
       staffId: req.staff._id, patientId: user._id,
       type: 'notice', title: '健康教练', content: message.trim(),
@@ -6172,7 +6174,7 @@ router.post('/patients/:id/coach-message/send', staffAuth, async (req, res) => {
 router.post('/patients/:id/ai-content-recommend', staffAuth, async (req, res) => {
   try {
     const user = await User.findById(req.params.id).select('name gender age chronicDiseases aiRiskAssessment preferences');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { chat } = require('../utils/ai');
     // 候选知识库（公开 + 较新），最多40条供AI筛选
@@ -6253,7 +6255,7 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
     const VALID_TYPES = ['annual','body_comp','blood','bloodTest','ultrasound','radiology','mri','endoscopy','ecg','pathology','functional','genetic','other','followup','imaging','tumor','cardiovascular','chronic','health_promote'];
     const safeCategory = VALID_CATEGORIES.includes(screeningCategory) ? screeningCategory : '';
     const safeType     = VALID_TYPES.includes(screeningCategory)     ? screeningCategory : 'other';
-    // 查重：同一患者、同一检查日期、同一 screeningL1，更新已有记录而非新建
+    // 查重：同一会员、同一检查日期、同一 screeningL1，更新已有记录而非新建
     let report;
     const existing = checkDate && screeningL1
       ? await MedicalReport.findOne({ user: req.params.id, checkDate, screeningL1 })
@@ -6364,12 +6366,12 @@ router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.
 // GET /api/staff/patients/:id/screening-reports
 // 2026-07-03修复：此前要求 screeningCategory/screeningL1 非空，这两个字段只有"人工手动录入专项筛查"
 // 路径才会写，AI OCR自动识别的报告（runReportParse写入UserScreeningItem）完全不带这两个字段，
-// 导致走AI识别流程的患者（如潘孝银这批单次上传报告）"体检关键指标"板块永远查不到数据、全部空白。
+// 导致走AI识别流程的会员（如潘孝银这批单次上传报告）"体检关键指标"板块永远查不到数据、全部空白。
 // 前端消费这份数据是按reportItems里的关键词自行匹配提取(REPORT_KEY_MAP)，不依赖这两个字段，
-// 去掉这个限制、直接返回该患者全部报告即可覆盖AI识别路径，不影响原有人工录入数据的展示。
+// 去掉这个限制、直接返回该会员全部报告即可覆盖AI识别路径，不影响原有人工录入数据的展示。
 router.get('/patients/:id/screening-reports', staffAuth, async (req, res) => {
   try {
-    // content 是 data URI（小文件预览，单条可达3MB），患者报告多时全量返回会导致接口
+    // content 是 data URI（小文件预览，单条可达3MB），会员报告多时全量返回会导致接口
     // 体积暴涨到几十MB、耗时超1分钟。前端已有兜底：handleOpenOCRReview 发现列表缺 content
     // 时会调 staffAPI.getReport(id) 单独补拉，所以这里裁掉即可，不影响任何现有功能。
     const reports = await MedicalReport.find({
@@ -6460,7 +6462,7 @@ router.get('/screening-tree', staffAuth, async (req, res) => {
 // ── AI 待办任务聚合接口 ────────────────────────────────────────────
 // 汇总所有 AI 生成内容中待人工审核的任务，按紧急程度排序
 // 各 AI 审核场景 → 负责审核的角色（对齐《AI场景完整需求文档·含权限修正》）
-// 家庭医师：AI汇总5维 / 年度方案 / 药物 / 转介 / 风险评估
+// 健康顾问：AI汇总5维 / 年度方案 / 药物 / 转介 / 风险评估
 // 营养师：  生活方式评估 / 营养干预 / 营养素 / 教练消息
 // 健管专员：健康档案问卷 / 体检报告OCR / 检查开单 / 随访建议
 // 就医专员：就医协助记录
@@ -6471,7 +6473,7 @@ const DIETARY_SURVEY_QUESTIONNAIRE_ID = '6a49eab9fc1595013da70645';
 const TODO_REVIEW_ROLE = {
   report_parse:         'healthManager',
   report_review:        'healthManager',
-  report_familydoctor_review: 'familyDoctor', // 家庭医生双审：健管已审、医生未审的体检报告
+  report_familydoctor_review: 'familyDoctor', // 健康顾问双审：健管已审、医生未审的体检报告
   archive_review:       'healthManager',
   checkup_plan_review:  'healthManager',
   summary_review:       'familyDoctor',
@@ -6499,7 +6501,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       ? Object.keys(TODO_REVIEW_ROLE)
       : Object.keys(TODO_REVIEW_ROLE).filter(t => TODO_REVIEW_ROLE[t] === role);
     const can = (type) => allowedTypes.includes(type);
-    // followup_review 例外：随访待审核按来源方案类型分流给不同角色（年度管理方案/体检方案→家庭医生，营养方案→营养师），
+    // followup_review 例外：随访待审核按来源方案类型分流给不同角色（年度管理方案/体检方案→健康顾问，营养方案→营养师），
     // 不是固定单一角色，TODO_REVIEW_ROLE 的单值映射覆盖不了，这里放宽通过条件，具体过滤见下方按 reviewRole 分流
     const canFollowupReview = isSuper || role === 'familyDoctor' || role === 'nutritionist';
     // service_draft_review 同理：AI聊天记录生成的随访草稿按 ServiceRecord.type 分流给三个角色，也不是固定单一角色
@@ -6509,9 +6511,9 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     const DAY = 24 * 60 * 60 * 1000;
     const todos = [];
 
-    // 患者归属过滤：AI待办此前只按"角色能不能审这个类型"过滤，完全没按"这个患者是不是自己名下"过滤——
-    // 2026-07-07 反馈：患者潘孝银归属营养师吴苗苗，但营养师赵菲盈也能在自己的待审核列表里看到该患者的任务。
-    // 这里按角色对应的 assignedXxx 字段查出"自己名下患者"的ID集合，下面每个查询都加上这个范围限制。
+    // 会员归属过滤：AI待办此前只按"角色能不能审这个类型"过滤，完全没按"这个会员是不是自己名下"过滤——
+    // 2026-07-07 反馈：会员潘孝银归属营养师吴苗苗，但营养师赵菲盈也能在自己的待审核列表里看到该会员的任务。
+    // 这里按角色对应的 assignedXxx 字段查出"自己名下会员"的ID集合，下面每个查询都加上这个范围限制。
     const ROLE_ASSIGN_FIELD = {
       healthManager: 'assignedHealthManager',
       familyDoctor: 'assignedFamilyDoctor',
@@ -6523,16 +6525,16 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       specialist: 'assignedSpecialist',
       healthPlanner: 'assignedHealthPlanner',
     };
-    let myPatientIds = null; // null = 不限制（超管）；否则是当前角色（含团队/下属扩展）名下患者ID数组
+    let myPatientIds = null; // null = 不限制（超管）；否则是当前角色（含团队/下属扩展）名下会员ID数组
     if (!isSuper) {
       const assignField = ROLE_ASSIGN_FIELD[role];
       if (assignField) {
-        // 团队负责人/组长（Team.mentorId）或有下属（Admin.managerId）时，扩大到团队/下属名下患者
+        // 团队负责人/组长（Team.mentorId）或有下属（Admin.managerId）时，扩大到团队/下属名下会员
         const visibleStaffIds = await getVisibleStaffIds(req.staff);
         const myPatients = await User.find({ [assignField]: { $in: visibleStaffIds } }).select('_id').lean();
         myPatientIds = myPatients.map(p => p._id);
       } else {
-        myPatientIds = []; // 角色没有对应归属字段（如healthPlanner），保守起见不展示任何患者相关待办
+        myPatientIds = []; // 角色没有对应归属字段（如healthPlanner），保守起见不展示任何会员相关待办
       }
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
@@ -6573,8 +6575,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 家庭医生：健康档案待查看确认（2026-07-28改造）──
-    // 不再逐份审核报告数据，而是"该客户有健管已审的新报告/健康档案更新，家庭医生需要看一眼
+    // ── 健康顾问：健康档案待查看确认（2026-07-28改造）──
+    // 不再逐份审核报告数据，而是"该客户有健管已审的新报告/健康档案更新，健康顾问需要看一眼
     // 新增部分并确认"，按客户聚合成一条待办（而不是每份报告各一条）。这是增量确认机制：已经
     // 确认过的历史报告不会被重复统计，只统计上次确认之后新增的部分，点开后走
     // archive-review 确认接口（确认后快照往前推进，不需要把历史资料重新翻一遍）。
@@ -6606,8 +6608,8 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
             const info = countMap.get(String(u._id));
             const createdAt = info?.latestAt || u.healthProfileUpdatedAt || new Date();
             const summary = info && info.count > 0
-              ? `健管专员新审核${info.count}份体检报告，家庭医生需查看确认`
-              : '健康档案有更新，家庭医生需查看确认';
+              ? `健管专员新审核${info.count}份体检报告，健康顾问需查看确认`
+              : '健康档案有更新，健康顾问需查看确认';
             todos.push({
               id: 'archivereview_' + u._id, type: 'report_familydoctor_review', label: '健康档案待查看确认', priority: 2,
               patientName: u.name || '未知', patientId: String(u._id),
@@ -6620,7 +6622,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       }
     }
 
-    // ── 健管专员：客户不适主诉待核实（可编辑后转家庭医生）──
+    // ── 健管专员：客户不适主诉待核实（可编辑后转健康顾问）──
     if (can('symptom_verify')) {
       const records = await HealthRecord.find({
         type: 'symptom',
@@ -6642,7 +6644,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       }));
     }
 
-    // ── 家庭医生：客户不适主诉待判断（转介 / 健管跟进 / 已处理）──
+    // ── 健康顾问：客户不适主诉待判断（转介 / 健管跟进 / 已处理）──
     if (can('symptom_review')) {
       const symptomFilter = {
         type: 'symptom',
@@ -6708,10 +6710,10 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 家庭医师 / 营养师：AI 汇总分析按维度拆分审核 ──
+    // ── 健康顾问 / 营养师：AI 汇总分析按维度拆分审核 ──
     if (can('summary_review') || can('lifestyle_review')) {
-      // summary_review(家庭医生)和lifestyle_review(营养师)各自归属字段不同，若都能审(如superadmin)则不限制；
-      // 否则用当前角色对应的患者范围（myPatientIds 已按 role 算好）
+      // summary_review(健康顾问)和lifestyle_review(营养师)各自归属字段不同，若都能审(如superadmin)则不限制；
+      // 否则用当前角色对应的会员范围（myPatientIds 已按 role 算好）
       const sumFilter = { aiHealthSummary: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const sumUsers = await User.find(sumFilter)
         .select('name aiHealthSummary').limit(100).lean();
@@ -6734,7 +6736,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         if (!e.sections) return;
         const createdAt = e.generatedAt || now;
         const overdue = (now - new Date(createdAt)) > DAY;
-        // 家庭医师审 5 维（整体未通过 && 医师维度未通过；自助生成的免审核，不进队列）
+        // 健康顾问审 5 维（整体未通过 && 医师维度未通过；自助生成的免审核，不进队列）
         if (can('summary_review') && e.source !== 'self_service' && !e.approvedAt && !e.doctorApprovedAt) {
           todos.push({
             id: 'summary_' + u._id, type: 'summary_review', label: 'AI健康分析待审核（5维度）', priority: 2,
@@ -6757,7 +6759,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 家庭医师：AI用药建议待审核 ──
+    // ── 健康顾问：AI用药建议待审核 ──
     if (can('medication_review')) {
       const medFilter = { aiStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const pendingMeds = await Medication.find(medFilter)
@@ -6861,7 +6863,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 方案确认后自动生成的随访计划待审核：按 reviewRole 分流（未设置的旧数据默认归家庭医生）──
+    // ── 方案确认后自动生成的随访计划待审核：按 reviewRole 分流（未设置的旧数据默认归健康顾问）──
     if (canFollowupReview) {
       const pendingFollowUps = await FollowUp.find({ aiStatus: 'pending' })
         .populate('patientId', 'name').sort({ date: 1 }).limit(50).lean();
@@ -6881,7 +6883,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 家庭医师：血压监测异常升级（AI自动跟进试点）──
+    // ── 健康顾问：血压监测异常升级（AI自动跟进试点）──
     if (can('bp_alert_review')) {
       const bpFilter = { type: 'bloodPressure', aiAlertStatus: 'pending', ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const alertRecords = await HealthRecord.find(bpFilter)
@@ -6892,14 +6894,14 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'bp_alert_' + r._id, type: 'bp_alert_review', label: '血压监测异常·待处理', priority: 1,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: `AI监测发现收缩压 ${sys} mmHg（危险级），患者已自主打卡，请医生核实处理`,
+          summary: `AI监测发现收缩压 ${sys} mmHg（危险级），会员已自主打卡，请医生核实处理`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=records`,
         });
       });
     }
 
-    // ── 家庭医师：风险预警待处理 → User.aiRiskAssessment(按年度) 最近一年 高/危急 且未审核 ──
+    // ── 健康顾问：风险预警待处理 → User.aiRiskAssessment(按年度) 最近一年 高/危急 且未审核 ──
     if (can('risk_review')) {
       const riskFilter = { aiRiskAssessment: { $ne: null }, ...(myPatientIds ? { _id: { $in: myPatientIds } } : {}) };
       const riskUsers = await User.find(riskFilter).select('name aiRiskAssessment').limit(200).lean();
@@ -6916,14 +6918,14 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
           id: 'risk_' + u._id, type: 'risk_review',
           label: critical ? '风险预警·危急值' : '风险预警·高风险', priority: 1,
           patientName: u.name || '未知', patientId: String(u._id),
-          summary: (ra.overallSummary || '').slice(0, 60) || 'AI检测到高风险，请家庭医师审核',
+          summary: (ra.overallSummary || '').slice(0, 60) || 'AI检测到高风险，请健康顾问审核',
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${u._id}?tab=ai-risk`,
         });
       });
     }
 
-    // ── 健管专员/家庭医师/营养师：AI从聊天记录提炼的随访草稿待审核（ServiceRecord.aiStatus=pending）──
+    // ── 健管专员/健康顾问/营养师：AI从聊天记录提炼的随访草稿待审核（ServiceRecord.aiStatus=pending）──
     if (canServiceDraftReview) {
       const roleTypeMap = { familyDoctor: 'doctor_followup', nutritionist: 'nutrition', healthManager: 'routine', medicalAssistant: 'routine' };
       const draftFilter = { aiStatus: 'pending' };
@@ -6945,7 +6947,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健管专员：AI聊天转人工待办（患者在AI健康助手里点了"转人工"）──
+    // ── 健管专员：AI聊天转人工待办（会员在AI健康规划师里点了"转人工"）──
     if (can('transfer_human')) {
       const transferFilter = { transferred: true, resolved: false, ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const pendingTransfers = await ChatLog.find(transferFilter)
@@ -6955,7 +6957,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'transferhuman_' + c._id, type: 'transfer_human', label: 'AI对话转人工', priority: 1,
           patientName: c.user?.name || '未知', patientId: String(c.user?._id || ''),
-          summary: c.userMessage ? c.userMessage.slice(0, 60) : '患者请求转接人工',
+          summary: c.userMessage ? c.userMessage.slice(0, 60) : '会员请求转接人工',
           createdAt, overdue: (now - new Date(createdAt)) > (2 * 60 * 60 * 1000), // 转人工时效性强，2小时未处理即算超时
           link: `/patients/${c.user?._id}?openChat=1`,
         });
@@ -6975,7 +6977,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
   }
 });
 
-// PATCH /api/staff/chat-transfers/:id/resolve — 标记AI聊天转人工待办为已处理（联系过患者后调用）
+// PATCH /api/staff/chat-transfers/:id/resolve — 标记AI聊天转人工待办为已处理（联系过会员后调用）
 router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
   try {
     const log = await ChatLog.findByIdAndUpdate(req.params.id, { resolved: true }, { new: true });
@@ -6990,10 +6992,10 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 
 【基本规则】
 规则零：只提取本图中实际存在的内容，绝对不推断、联想或补全。
-规则A：跳过患者基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
+规则A：跳过会员基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
 规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
 规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
-规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。汇总、小结页=summary，封面/患者信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
+规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。汇总、小结页=summary，封面/会员信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
 规则C：跳过目录页、项目清单页（只有项目名称没有结果的页面）。
 规则D：name 字段必须干净，去除【】[]《》等括号符号和序号前缀，例：✗"内科】" → ✓"内科"。
 规则E：相似项目名称不可混淆，如"碳13"≠"碳14"，"空腹血糖"≠"餐后血糖"。
@@ -7003,11 +7005,14 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 规则I：diagnosis/conclusion 严禁把报告原文的中文自行替换/翻译成英文。部分检查（如宫颈液基细胞学/TCT病理）国内报告的诊断结论原文其实是中文（如"未见上皮内病变或恶性病变"），但AI可能凭自己知道的TBS分类法英文术语把它替换成英文短语（如"Negative for intraepithelial lesion or malignancy"）——这是幻觉错误，违反规则零。报告上印的是什么文字就原样提取什么文字，不能用自己知道的专业术语替换原文，无论中译英还是英译中都不允许。只有报告原文确实印刷的是英文（少数境外机构报告）时，才翻译成中文标准表述填入。此规则只管diagnosis/conclusion这类结论性文字，name/value/unit和findings里的英文缩写指标代号（如DOB/CRP/IgG等）仍按原文提取。
 规则J：institution（检查机构名称）必须与报告原文印刷的机构全称逐字一致，禁止翻译、音译、编造或添加任何后缀。报告是中文的，institution 必须原样输出中文机构名，绝对不允许自己生成"XX Hospital""XX LLC"这类英文或中英混杂的机构名——这是严重幻觉错误，曾出现把"邵逸夫医院"错误识别成"逸天医院 LLC""那速大医院 LLC"等多种编造变体。institution 只能从报告页眉/页脚/公章/抬头等位置原文抄录，找不到就留空字符串，绝不能靠猜测或联想生成。只有报告原文确实印刷的是英文机构名（境外体检机构报告）时，才原样保留英文。
 规则K（最高优先级）：把整份报告当作一份需要顺序抄录的文档，不要重新组织内容。先从本页顶部开始，沿原版面从上到下、从左到右逐块读取；遇到一个有结果的项目就立即输出对应 item，再继续读取下一个。items 数组必须等于报告原文的阅读顺序。禁止先思考“这些数据该怎么分类”，禁止先收集全部检验再收集全部检查，禁止按 itemType(lab/imaging/data)、器官系统、科室或医学逻辑重新分组，禁止把前后不同位置的同类项目挪到一起。例：原文依次是“内科→血常规→心电图→肝功能→胸部CT”，输出也必须严格保持这个顺序。下面按类型给出的规则只用于决定当前读到的项目应填写哪些字段、是否拆成子项，不是让你按规则编号或类型重新扫描和排序报告。
+规则L（栏目驱动）：先识别页面中的栏目标题和横线分隔区，例如“一般项目/一般检查”“C13检测室”“心脏彩超”“肝胆胰脾彩超”。必须完整读完当前栏目内从第一行到“小结/结论”的所有实际结果，再进入页面下方的下一个栏目。栏目类型只决定字段：一般项目=data，化验/呼气试验=lab，超声/CT/MRI/心电图/内镜/科室体检=imaging。不得因同一页同时出现多种栏目而只提取其中一种，也不得把后一栏提前。
 
 【字段填写规则（仅在顺序读到对应项目时使用；不得按下列编号重排报告）】
 
-1. 一般检查（身高/体重/BMI/脉搏）
-   → itemType="data"，每项单独一条
+1. 一般项目 / 一般检查
+   → itemType="data"，栏目中每个有实际结果的项目逐行单独一条，不限于示例项目
+   → 常见项目包括身高、体重、BMI/体重指数、脉搏、收缩压、舒张压、腰围、臀围、腰臀比；报告实际出现哪项就提取哪项，未出现的绝不补造
+   → 生活方式、现服药情况、家族史等纯问卷文字如果与一般检查同栏，也按原顺序逐行提取为 data，value 原样填写；但“小结”不是独立项目，应写入它对应的异常指标 conclusion，无法明确对应时不提取小结
    → name=项目名，value=数值，unit=单位，referenceRange=参考范围
    → conclusion=该项小结原文（如有）
    → 【严禁编造】身高/体重/血压/脉搏这类生命体征，报告原文只写了一个数值就只输出一条，
@@ -7057,12 +7062,11 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → diagnosis/conclusion 留空字符串（与规则5同理，避免串入其他检查项目的结论）
 
 7. 碳13 / 碳14 呼气试验
-   该检查既有具体测定数值（DOB值）又有阳性/阴性结论，需提取两类条目，不能只写一条imaging把数值丢在文字里：
-   ① 测量数值（itemType="lab"，一条）：name="碳13尿素呼气试验"或"碳14尿素呼气试验"（严格区分，不得改名）；
-      value=DOB测定值，unit=单位，referenceRange=报告印刷的阳性判断阈值（无则留空），status=normal/abnormal；
-      orderName="幽门螺杆菌检测"；diagnosis/conclusion 留空
-   ② 检查结论（itemType="imaging"，一条）：name=同①，findings=检查结果完整原文（可含①的数值），
-      diagnosis=结论原文，conclusion=同 diagnosis
+   → 这是检验项目，只输出一条 itemType="lab"，严禁再额外生成 imaging 条目
+   → name="碳13尿素呼气试验"或"碳14尿素呼气试验"（严格区分，不得改名）
+   → value=DOB测定值，unit=报告单位，referenceRange=报告印刷的阳性/阴性判断阈值，orderName按栏目原名填写（如"C13检测室"）
+   → 报告小结为阳性则 status="abnormal"，阴性则 status="normal"；diagnosis/conclusion 留空
+   → 例如栏目顺序是“一般项目→C13检测室→心脏彩超”，items 也必须先输出全部一般项目，再输出一条C13 lab，随后输出一条心脏彩超 imaging
 
 8. 超声（肝脏/胆囊/胰腺/脾脏/双肾输尿管膀胱/前列腺/甲状腺/颈动脉/心脏超声/乳腺/子宫附件或阴道等）
    → 【核心规则】常见器官固定为：肝脏、胆囊、胰腺、脾脏、甲状腺、乳腺、子宫附件或阴道、双肾输尿管膀胱、前列腺、颈动脉、心脏超声——每个器官各自独立成一条，不得合并（包括肝胆胰脾这类常同页印刷的组合，胆囊/胰腺/脾脏各自单独一条，不要因为"常一起做"就把它们揉进同一条里）。
@@ -7074,6 +7078,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
    → conclusion = 同 diagnosis
    → 示例：报告里"超声提示：1.甲状腺结节；2.颈动脉未见异常；3.肝胆胰脾未见异常"这样分条列出的，必须按序号拆回各自对应的器官条目里（肝、胆、胰、脾各一条），不能整段照抄进同一条，也不能只挑其中一个器官输出
    → 【自查】提取完成后逐句核对：原文"检查描述"里每一段（通常按肝→胆→脾→胰或类似顺序分段）是否都对应生成了一条独立记录？如果原文有4段但只输出了1-2条，说明漏提了，必须补全
+   → 【组合标题强制展开】只要栏目标题或项目名写有“肝胆胰脾超声/肝胆脾胰彩超/上腹部超声”等明确包含肝、胆、胰、脾的组合检查，即使某个器官结果只是“未见异常”，也必须输出肝脏超声、胆囊超声、胰腺超声、脾脏超声共四条；不得只输出有异常的器官，也不得只输出其中一条代表整组
    → 跳过"温馨提示""健康建议"类科普说明文字（如"结石多与饮水少有关，建议..."），这类不是检查所见，不得提取为 findings
 
 9. 肺部CT
@@ -7134,6 +7139,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
   "items": [
     {
       "name": "项目名称",
+      "sourceSection": "该项目在报告中所属的原始栏目标题，如一般项目、C13检测室、肝胆胰脾彩超",
       "itemType": "lab | imaging | data",
       "value": "数值（lab/data类填写）",
       "unit": "单位",
@@ -7175,6 +7181,33 @@ function sortReportItemsBySource(items) {
 
 function stripReportSourceOrder(items) {
   return (items || []).map(({ _page, _order, ...rest }) => rest);
+}
+
+// C13/C14 是带数值和阳性/阴性判断的检验项目。旧 prompt 曾要求模型同时输出 lab+imaging，
+// 历史习惯可能仍让模型重复吐两条；程序层固定只保留原位置的 lab 条目，并吸收结论状态。
+function collapseBreathTestItems(items) {
+  const list = items || [];
+  const breathKind = item => {
+    const text = `${str(item?.name)} ${str(item?.orderName)}`;
+    if (/(?:碳|C)\s*13|13\s*(?:碳|C)/i.test(text) && /呼气|尿素|幽门|检测室/i.test(text)) return 'c13';
+    if (/(?:碳|C)\s*14|14\s*(?:碳|C)/i.test(text) && /呼气|尿素|幽门|检测室/i.test(text)) return 'c14';
+    return '';
+  };
+  const labByKey = new Map();
+  list.forEach(item => {
+    const kind = breathKind(item);
+    if (kind && item.itemType === 'lab') labByKey.set(`${item._page || 0}:${kind}`, item);
+  });
+  return list.filter(item => {
+    const kind = breathKind(item);
+    if (!kind || item.itemType !== 'imaging') return true;
+    const lab = labByKey.get(`${item._page || 0}:${kind}`);
+    if (!lab) return true; // 没有数值条目时宁可保留原内容，避免整项丢失
+    const conclusion = `${str(item.diagnosis)} ${str(item.conclusion)} ${str(item.findings)}`;
+    if (/阳性|positive/i.test(conclusion)) lab.status = 'abnormal';
+    else if (/阴性|negative/i.test(conclusion)) lab.status = 'normal';
+    return false;
+  });
 }
 
 const PATIENT_INFO_NAMES = new Set([
@@ -7340,7 +7373,7 @@ function dropDepartmentSummaryEcho(items) {
 
 // 2026-07-03补充：name本身是"彩超""小结"这类通用类别/栏目泛称（不是"腹部彩超"/"甲状腺彩超"这种具体检查名），
 // 内容要么是纯科普说明文字（"小的结石不出现症状时可不处理..."，跟报告详细报告单里的具体检查所见完全重复，
-// 该患者的真实所见已经体现在归类正确的详细报告单条目里，如"双肾输尿管膀胱彩超"），要么内容极简空洞
+// 该会员的真实所见已经体现在归类正确的详细报告单条目里，如"双肾输尿管膀胱彩超"），要么内容极简空洞
 // （只有"未见异常"四个字，没有对应任何具体检查项目）。matchStatus必为unclassified作安全网，
 // AI识别机构名(institution)兜底过滤：2026-07-21发现同一用户多份中文报告被AI幻觉识别成
 // "逸天医院 LLC""那速大医院 LLC"等编造的中英混杂机构名（真实机构其实是"邵逸夫医院"）。
@@ -8108,13 +8141,21 @@ async function runReportParse(reportId) {
         }
       }
       // 超声多器官未拆分检测+单页重试：肝胆胰脾等常同页出现的器官，若一条记录里同时命中≥2个器官说明没拆开，重试这一页要求按器官拆分
-      const multiOrganPages = [...new Set(
-        allItems.filter(it => isUltrasoundItem(it) && detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length >= 2).map(it => it._page)
-      )].filter(Boolean);
+      const comboUpperAbdomen = it => /肝.*胆.*(?:胰.*脾|脾.*胰)|上腹部.*(?:超声|彩超)/.test(str(it.sourceSection));
+      const coreUpperOrganCount = items => new Set((items || []).flatMap(it =>
+        detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).filter(idx => idx >= 0 && idx <= 3)
+      )).size;
+      const mergedOrganPages = allItems
+        .filter(it => isUltrasoundItem(it) && detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length >= 2)
+        .map(it => it._page);
+      const incompleteComboPages = [...new Set(allItems.filter(comboUpperAbdomen).map(it => it._page).filter(Boolean))]
+        .filter(pageNum => coreUpperOrganCount(allItems.filter(it => it._page === pageNum && comboUpperAbdomen(it))) < 4);
+      const multiOrganPages = [...new Set([...mergedOrganPages, ...incompleteComboPages])].filter(Boolean);
       for (const pageNum of multiOrganPages) {
         try {
           const beforeMaxOrgans = Math.max(...allItems.filter(it => it._page === pageNum && isUltrasoundItem(it))
             .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
+          const beforeCoreCount = coreUpperOrganCount(allItems.filter(it => it._page === pageNum && (comboUpperAbdomen(it) || isUltrasoundItem(it))));
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。`;
@@ -8124,9 +8165,10 @@ async function runReportParse(reportId) {
           const retryItems = tagReportPageItems(p.items, pageNum);
           const afterMaxOrgans = Math.max(...retryItems.filter(it => isUltrasoundItem(it))
             .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
-          if (afterMaxOrgans > 0 && afterMaxOrgans < beforeMaxOrgans) {
+          const afterCoreCount = coreUpperOrganCount(retryItems.filter(it => comboUpperAbdomen(it) || isUltrasoundItem(it)));
+          if ((afterMaxOrgans > 0 && afterMaxOrgans < beforeMaxOrgans) || afterCoreCount > beforeCoreCount) {
             allItems = allItems.filter(it => it._page !== pageNum).concat(retryItems);
-            console.log(`[parse-ai] 页${pageNum}超声拆分重试生效：单条最多命中器官数 ${beforeMaxOrgans}→${afterMaxOrgans}`);
+            console.log(`[parse-ai] 页${pageNum}超声拆分重试生效：单条最多命中器官数 ${beforeMaxOrgans}→${afterMaxOrgans}，肝胆胰脾覆盖 ${beforeCoreCount}→${afterCoreCount}`);
           } else {
             console.log(`[parse-ai] 页${pageNum}超声拆分重试未改善，保留原结果`);
           }
@@ -8206,7 +8248,7 @@ async function runReportParse(reportId) {
       // 若先去重(同名只保留信息量最大的一条)，病理内容会被当"重复"整条丢弃，splitEndoscopyPathology
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
-      const filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(allItems)))))))));
+      const filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems))))))))));
       const classified = stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -8278,7 +8320,7 @@ async function runReportParse(reportId) {
     }
     imageItems = sanitizeBodyCompositionItems(imageItems);
     sortReportItemsBySource(imageItems);
-    const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(imageItems)))))))));
+    const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(imageItems))))))))));
     const classifiedImg = stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems))))))));
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
@@ -8575,10 +8617,12 @@ router.post('/patients/:id/questionnaire-responses/:rid/nutritionist-review', st
 // POST /api/staff/patients/:id/ai-exam-requisition-suggest
 // 返回 { title, notes, suggestions: string[] }，不创建记录，由医护手动开单
 router.post('/patients/:id/ai-exam-requisition-suggest', staffAuth, async (req, res) => {
+  return res.status(410).json({ success: false, message: 'AI检查开单功能已停用。本平台不提供检查开单。' });
+  /* istanbul ignore next -- 保留旧实现仅用于历史版本追溯，不再可达 */
   try {
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile aiRiskAssessment');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     // 读取最新年度管理方案中的异常复查板块
     const latestPlan = await AnnualPlan.findOne({ patientId: user._id })
@@ -8596,9 +8640,9 @@ router.post('/patients/:id/ai-exam-requisition-suggest', staffAuth, async (req, 
       ? monitoringItems.map(i => `· ${i.items || ''}，频次：${i.frequency || ''}`).join('\n')
       : '无';
 
-    const prompt = `你是一位家庭医师助理，请根据患者信息和异常复查提醒，生成本次检查开单建议。
+    const prompt = `你是一位健康顾问助理，请根据会员信息和异常复查提醒，生成本次检查开单建议。
 
-【患者基本信息】
+【会员基本信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
 
 【年度管理方案·异常复查提醒】
@@ -8635,9 +8679,9 @@ ${monitoringText}
 // 只有营养师/超管可生成营养干预方案（用户规则：营养方案只归营养师负责）
 //
 // 2026-07-13 改造：跟年度体检方案同一套问题——模板本身就是为了标准化，此前AI完全自由生成六个板块，
-// 同一营养师给不同患者写的方案结构、用词随时在变，模板形同摆设。改为强制先选 PlanTemplate(nutrition)
+// 同一营养师给不同会员写的方案结构、用词随时在变，模板形同摆设。改为强制先选 PlanTemplate(nutrition)
 // 模板：模板里"膳食总原则/推荐食物/禁忌食物/营养素补充建议/运动建议/烹饪方式/进餐顺序/每日饮水量"这些
-// 固定字段原样锁定作为骨架，AI只负责把"早/午/晚/加餐"具体食物内容，结合患者情况在骨架约束下具体化，
+// 固定字段原样锁定作为骨架，AI只负责把"早/午/晚/加餐"具体食物内容，结合会员情况在骨架约束下具体化，
 // 不允许违反模板里的禁忌食物/膳食原则。
 router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
   if (!['nutritionist', 'superadmin'].includes(req.staff.role)) {
@@ -8651,7 +8695,7 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
 
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile lifestyle_data aiRiskAssessment');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const supplements = await Supplement.find({ user: user._id, stopped: false }).select('name dosage purpose').lean();
     const { chat } = require('../utils/ai');
@@ -8661,18 +8705,18 @@ router.post('/patients/:id/ai-nutrition-plan', staffAuth, async (req, res) => {
     const lifestyle = user.lifestyle_data || {};
     const tc = template.content || {};
 
-    const prompt = `你是一位注册营养师，正在为患者定制营养干预方案。方案的膳食原则/禁忌/营养素补充/运动建议等标准骨架
-已经由模板固定（不可修改），你唯一的任务是：在骨架约束下，把早餐/午餐/晚餐/加餐的具体食物内容，结合患者个人情况
+    const prompt = `你是一位注册营养师，正在为会员定制营养干预方案。方案的膳食原则/禁忌/营养素补充/运动建议等标准骨架
+已经由模板固定（不可修改），你唯一的任务是：在骨架约束下，把早餐/午餐/晚餐/加餐的具体食物内容，结合会员个人情况
 具体化到可执行的程度。绝对不能推荐模板"禁忌食物"里的东西，也不能违反"膳食总原则"。
 
-【患者信息】
+【会员信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
 食物过敏/忌口：${allergyInfo}
 当前营养素补充：${supText}
 饮食习惯：${lifestyle.diet || '未记录'}，运动习惯：${lifestyle.exercise || '未记录'}
 
 【本次服务目标（营养师填写，方案要朝这个方向靠，如与模板骨架冲突以骨架为准）】
-${goal ? goal : '（未填写目标，按患者信息与模板骨架常规定制）'}
+${goal ? goal : '（未填写目标，按会员信息与模板骨架常规定制）'}
 
 【模板固定骨架（不可修改，仅供你参考约束）】
 膳食总原则：${tc.dietPrinciple || '无'}
@@ -8687,7 +8731,7 @@ ${goal ? goal : '（未填写目标，按患者信息与模板骨架常规定制
 
 请以JSON格式输出，仅输出JSON：
 {
-  "description": "结合患者情况的方案说明（100字以内）",
+  "description": "结合会员情况的方案说明（100字以内）",
   "breakfast": "具体早餐内容（食物种类+分量，符合模板原则和禁忌）",
   "lunch": "具体午餐内容",
   "dinner": "具体晚餐内容",
@@ -8764,7 +8808,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
   try {
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const { orderId, templateId, briefNote } = req.query;
     let order = null;
@@ -8782,7 +8826,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     } else if (order?.serviceName) {
       // 按订单服务名匹配就医协助模板库：服务名一般能对应到具体模板（如"医疗代诊服务"）；
       // 少数笼统服务名（如"就医陪同服务"）在模板库里被拆成多个细分模板，此时精确匹配不到，
-      // 转为把候选模板都给AI，让AI结合患者情况+订单备注选最贴近的一个
+      // 转为把候选模板都给AI，让AI结合会员情况+订单备注选最贴近的一个
       matchedTemplate = await PlanTemplate.findOne({ type: 'medical_assist', status: 'active', name: order.serviceName }).lean();
       if (!matchedTemplate) {
         candidateTemplates = await PlanTemplate.find({
@@ -8796,7 +8840,7 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
     const allergyInfo = [user.healthProfile?.foodAllergy, user.healthProfile?.drugAllergy].filter(Boolean).join('；') || '无';
     const orderInfo = order
       ? `客户已下单服务：${order.serviceName}${order.note ? `，备注：${order.note}` : ''}`
-      : '（无关联订单，请按患者情况酌情安排）';
+      : '（无关联订单，请按会员情况酌情安排）';
 
     // 模板字段是否存在标准值（非空）决定是否让AI生成对应个性化内容：
     // 模板本身没有hotel/transport（如"医疗咨询服务"这类无需住宿交通的服务）就不该在方案里凭空编造，
@@ -8809,31 +8853,31 @@ router.post('/patients/:id/ai-medical-assist-plan', staffAuth, async (req, res) 
       transport: !templateForFields || !!templateForFields.content?.transport,
     };
 
-    let templateBlock = '（无匹配模板，请根据患者与订单信息自行拟定方案）';
+    let templateBlock = '（无匹配模板，请根据会员与订单信息自行拟定方案）';
     if (matchedTemplate) {
       templateBlock = `已匹配到标准模板《${matchedTemplate.name}》，这是该服务的标准SOP，仅供你参考具体化个性化内容，
-不要把模板原文抄进你的输出——标准步骤会由系统单独展示，你只需结合患者与订单信息给出针对这个患者的具体安排：
+不要把模板原文抄进你的输出——标准步骤会由系统单独展示，你只需结合会员与订单信息给出针对这个会员的具体安排：
 ${JSON.stringify(matchedTemplate.content)}`;
     } else if (candidateTemplates.length) {
-      templateBlock = `该服务下有多个细分模板，请先判断本次最贴近哪一个（用其模板名作为参考），再结合其标准内容给出针对该患者的个性化安排：
+      templateBlock = `该服务下有多个细分模板，请先判断本次最贴近哪一个（用其模板名作为参考），再结合其标准内容给出针对该会员的个性化安排：
 ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).join('\n')}`;
     }
 
     const fieldSpecs = [
-      `"title": "方案名称，必须包含具体服务类型${templateForFields ? `（本次是${templateForFields.name}）` : ''}和月日，如：${user.name}${templateForFields?.name || '就医协助'}方案（${new Date().getMonth() + 1}月${new Date().getDate()}日），不要只写笼统的'就医协助方案'——同一患者可能多次生成，必须能一眼区分是哪次"`,
+      `"title": "方案名称，必须包含具体服务类型${templateForFields ? `（本次是${templateForFields.name}）` : ''}和月日，如：${user.name}${templateForFields?.name || '就医协助'}方案（${new Date().getMonth() + 1}月${new Date().getDate()}日），不要只写笼统的'就医协助方案'——同一会员可能多次生成，必须能一眼区分是哪次"`,
       `"description": "方案简介，说明本次就医协助的目的（100字以内）"`,
-      askFields.hospital && `"hospital": "建议就诊医院（结合患者慢病情况推断合适的医院，无法判断则留空）"`,
+      askFields.hospital && `"hospital": "建议就诊医院（结合会员慢病情况推断合适的医院，无法判断则留空）"`,
       askFields.department && `"department": "建议就诊科室"`,
       askFields.expert && `"expert": "建议专家，无法判断则留空"`,
-      askFields.hotel && `"hotel": "本次住宿安排（结合患者情况具体化，如模板固定为'无需安排'则原样返回）"`,
-      askFields.transport && `"transport": "本次交通安排（结合患者情况具体化，如模板固定为'无需安排'则原样返回）"`,
-      `"tasks": "针对该患者的具体执行安排，每行一项，需结合模板步骤但要写出本次的具体内容（如具体日期、具体证件），不要原样照抄模板"`,
+      askFields.hotel && `"hotel": "本次住宿安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
+      askFields.transport && `"transport": "本次交通安排（结合会员情况具体化，如模板固定为'无需安排'则原样返回）"`,
+      `"tasks": "针对该会员的具体执行安排，每行一项，需结合模板步骤但要写出本次的具体内容（如具体日期、具体证件），不要原样照抄模板"`,
       `"notes": "本次注意事项，若模板notes是待填空的清单（如'挂号科室：\\n时间安排：'），请把冒号后面的内容具体填好"`,
     ].filter(Boolean).join(',\n  ');
 
-    const prompt = `你是一位就医协助服务专员，请根据患者信息、已下单的服务和标准方案模板生成个性化就医协助方案。
+    const prompt = `你是一位就医协助服务专员，请根据会员信息、已下单的服务和标准方案模板生成个性化就医协助方案。
 
-【患者信息】
+【会员信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，慢病标签：${user.chronicDiseases?.join('、') || '无'}
 过敏史：${allergyInfo}
 
@@ -8841,7 +8885,7 @@ ${candidateTemplates.map(t => `《${t.name}》：${JSON.stringify(t.content)}`).
 ${orderInfo}
 
 【本次简要情况（就医专员当场填写，优先级高于订单信息，如有冲突以此为准）】
-${briefNote ? briefNote : '（就医专员未补充说明，按患者信息与订单信息判断）'}
+${briefNote ? briefNote : '（就医专员未补充说明，按会员信息与订单信息判断）'}
 
 【标准模板（参考，不要照抄）】
 ${templateBlock}
@@ -8851,7 +8895,7 @@ ${templateBlock}
   ${fieldSpecs}
 }
 
-注意：tasks至少2项，且必须是针对该患者的具体安排，不是模板步骤的复述。`;
+注意：tasks至少2项，且必须是针对该会员的具体安排，不是模板步骤的复述。`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 1200 });
     let raw = {};
@@ -9007,17 +9051,17 @@ function orderTypeMetaBackend(t) { return ORDER_TYPE_META_BACKEND[t] || ORDER_TY
 // ── 场景6：AI年度体检方案（健管专员审核） ──────────────────────────────────────
 // POST /api/staff/patients/:id/ai-annual-checkup-plan
 // 创建 HealthPlan type='annual_checkup' status='draft' content.aiStatus='pending'
-// 只有家庭医生/超管可生成年度体检方案（跟年度管理方案同一条用户规则）
+// 只有健康顾问/超管可生成年度体检方案（跟年度管理方案同一条用户规则）
 //
 // 2026-07-13 改造：体检项目最终要安排到线下体检中心执行，体检中心只认自己的标准套餐，此前让AI
 // 自由发明检查项目名称、事后靠模糊字符串匹配(matchCheckupItemsToRequisitionLibrary)去对照医嘱库，
 // 匹配不上就留纯文本——生成的方案跟任何体检中心的实际套餐都对不上，没法真正拿去执行。改为强制先
 // 选定 PlanTemplate(annual_checkup) 套餐模板：模板 content.checkItems（体检中心标准套餐项目）原样
 // 固定写入结果，AI 不再自由发明项目，只能在该模板 content.addons（可选加项库）范围内判断要不要
-// 给这个患者加哪些项、给出理由，天然保证标准部分精确对应体检中心套餐，AI只负责加项决策。
+// 给这个会员加哪些项、给出理由，天然保证标准部分精确对应体检中心套餐，AI只负责加项决策。
 router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) => {
   if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
-    return res.status(403).json({ success: false, message: '仅家庭医生可生成年度体检方案' });
+    return res.status(403).json({ success: false, message: '仅健康顾问可生成年度体检方案' });
   }
   try {
     const { templateId, goal } = req.body;
@@ -9027,7 +9071,7 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
 
     const user = await User.findById(req.params.id)
       .select('name gender age chronicDiseases healthProfile aiRiskAssessment');
-    if (!user) return res.status(404).json({ success: false, message: '患者不存在' });
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
 
     const year = new Date().getFullYear();
     const { chat } = require('../utils/ai');
@@ -9044,15 +9088,15 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
     let aiNote = '';
     if (addonPool.length > 0) {
       const addonListText = addonPool.map((a, i) => `${i + 1}. ${a.name}${a.reason ? `（适用场景：${a.reason}）` : ''}`).join('\n');
-      const prompt = `你是一位健康管理专员，正在为患者定制${year}年度体检方案。方案的标准套餐项目已经固定（体检中心套餐，不可修改），你唯一的任务是：从下面给定的"可选加项库"里，判断该患者需要加哪些项，不允许提出加项库之外的任何项目。
+      const prompt = `你是一位健康管理专员，正在为会员定制${year}年度体检方案。方案的标准套餐项目已经固定（体检中心套餐，不可修改），你唯一的任务是：从下面给定的"可选加项库"里，判断该会员需要加哪些项，不允许提出加项库之外的任何项目。
 
-【患者信息】
+【会员信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，性别：${user.gender || '未知'}
 慢病标签：${user.chronicDiseases?.join('、') || '无'}
 AI风险摘要：${riskSummary}
 
-【本次服务目标（家庭医生填写，选加项时优先照顾这个方向，如"重点排查心血管风险"就优先选心血管相关加项）】
-${goal ? goal : '（未填写目标，按患者信息与风险摘要常规判断）'}
+【本次服务目标（健康顾问填写，选加项时优先照顾这个方向，如"重点排查心血管风险"就优先选心血管相关加项）】
+${goal ? goal : '（未填写目标，按会员信息与风险摘要常规判断）'}
 
 【可选加项库（只能从这些编号里选，不能新增任何库外项目）】
 ${addonListText}
@@ -9060,7 +9104,7 @@ ${addonListText}
 请以JSON格式输出，仅输出JSON：
 {
   "chosen": [
-    { "index": 编号（对应上面列表的数字）, "reason": "为什么建议加这项（结合患者信息，30字以内）" }
+    { "index": 编号（对应上面列表的数字）, "reason": "为什么建议加这项（结合会员信息，30字以内）" }
   ],
   "note": "整体方案说明（50字以内，可为空）"
 }
@@ -9094,7 +9138,7 @@ ${addonListText}
         itemGroup: 'addon',
         // 加项必须标注检查意义，AI已按prompt要求给每项reason，缺失时用模板库自带的适用场景兜底，
         // 避免出现"加了但不知道为什么加"（2026-07-17需求）
-        notes: `检查意义：${ci.reason || '结合患者情况建议增加此项检查'}`,
+        notes: `检查意义：${ci.reason || '结合会员情况建议增加此项检查'}`,
       })),
     ];
 

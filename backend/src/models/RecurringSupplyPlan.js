@@ -15,7 +15,7 @@ const recurringSupplyPlanSchema = new mongoose.Schema({
   nextDueDate:    { type: Date, required: true },       // 下次到期日，定时任务按此生成待办
   enabled:        { type: Boolean, default: true },     // 关闭后定时任务跳过，不再生成新的待办
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan' },
-  createdBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },   // 家庭医生
+  createdBy:      { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' },   // 健康顾问
   // 待办生成状态：到期后生成一条待办给健管专员，aiStatus:'pending'接入现有待办面板；
   // 健管专员确认（对应实际配药/配营养素动作已安排）后置为'approved'，nextDueDate滚到下一周期
   aiStatus:       { type: String, enum: ['pending', 'approved'], default: null },

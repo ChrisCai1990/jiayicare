@@ -138,7 +138,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const nav = useNavigate()
   const toast = useToast()
   const { staff } = useStaff()
-  // 年度管理方案只归家庭医生负责：营养师等其他角色可以查看方案内容，但不该看到能编辑/推送的入口
+  // 年度管理方案只归健康顾问负责：营养师等其他角色可以查看方案内容，但不该看到能编辑/推送的入口
   const canEdit = ['familyDoctor', 'superadmin'].includes(staff?.role)
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -369,7 +369,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
             </span>
           ) : null}
           {dirty && <span style={{ fontSize: 12, color: '#D97706', background: '#FEF9EC', padding: '4px 8px', borderRadius: 20 }}>有未保存更改</span>}
-          {/* 年度管理方案只归家庭医生负责：营养师等其他角色可以查看，但不显示生成/推送这些编辑入口 */}
+          {/* 年度管理方案只归健康顾问负责：营养师等其他角色可以查看，但不显示生成/推送这些编辑入口 */}
           {patientMode && canEdit && (
             <>
               <button

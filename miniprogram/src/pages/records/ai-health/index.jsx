@@ -217,7 +217,7 @@ export default function AiHealthPage() {
   const curLocked = tab === TABS[0] ? summaryLocked : riskLocked;
 
   const handleConsult = () => {
-    Taro.navigateTo({ url: '/pages/chat/index' });
+    Taro.switchTab({ url: '/pages/chat/index' });
   };
 
   return (
@@ -255,7 +255,7 @@ export default function AiHealthPage() {
           {tab === TABS[0] && hasDoctor && curHasData && !reviewStatus.isSelfService && (
             <View style={{ marginBottom: `${spacing.sm}px` }}>
               <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '6px' }}>
-                <Text style={{ fontSize: '13px', color: colors.info, flex: 1 }}>医疗分析（5维度）：{reviewStatus.doctorApproved ? '已由家庭医生审核确认' : '草稿待家庭医生审核，结果可能调整'}</Text>
+                <Text style={{ fontSize: '13px', color: colors.info, flex: 1 }}>健康信息分析（5维度）：{reviewStatus.doctorApproved ? '已由专业人员复核' : '草稿待专业人员复核，结果可能调整'}</Text>
               </View>
               {reviewStatus.hasLifestyle && (
                 <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px` }}>
@@ -267,7 +267,7 @@ export default function AiHealthPage() {
 
           {tab === TABS[1] && hasDoctor && curHasData && (
             <View style={{ display: 'flex', alignItems: 'center', gap: '8px', backgroundColor: '#EBF5FB', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
-              <Text style={{ fontSize: '13px', color: colors.info, flex: 1 }}>{curPending ? '草稿已生成，待您的家庭医生团队审核，审核结果可能有调整' : '已由您的家庭医生团队审核确认'}</Text>
+              <Text style={{ fontSize: '13px', color: colors.info, flex: 1 }}>{curPending ? '草稿已生成，待您的健康顾问团队审核，审核结果可能有调整' : '已由您的健康顾问团队审核确认'}</Text>
             </View>
           )}
 
@@ -289,7 +289,7 @@ export default function AiHealthPage() {
                 <Icon name="📊" size={40} />
               </View>
               <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '4px' }}>暂无{tab}</Text>
-              <Text style={{ fontSize: '13px', color: colors.textMuted, lineHeight: '20px' }}>点击上方按钮，AI将结合您的体检数据与健康档案自动生成{hasDoctor ? '，生成后由家庭医生团队审核' : ''}</Text>
+              <Text style={{ fontSize: '13px', color: colors.textMuted, lineHeight: '20px' }}>点击上方按钮，AI将结合您的体检数据与健康档案自动生成{hasDoctor ? '，生成后由健康顾问团队审核' : ''}</Text>
             </View>
           )}
 

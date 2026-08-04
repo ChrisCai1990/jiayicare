@@ -5,7 +5,7 @@
  * 无法展示订单号/金额/支付方式。本脚本按 patientId + serviceName + 创建时间就近匹配补齐。
  *
  * 匹配规则（保守，只补高置信度的）：
- *   1. 同一患者（followUp.patientId === order.user）
+ *   1. 同一会员（followUp.patientId === order.user）
  *   2. 服务名一致：followUp.theme 去掉「预约：」「服务包开通：」前缀后 === order.serviceName
  *   3. 时间就近：两者 createdAt 相差 ≤ SAME_ORDER_WINDOW_MS（同一次下单是 Promise.all 并发创建，通常毫秒级）
  *   4. 一个 order 只被一条随访认领一次（防止一对多误配）

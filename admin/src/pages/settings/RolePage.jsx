@@ -185,7 +185,7 @@ export default function RolePage() {
             <div className="modal-body">
               <div className="form-group">
                 <label className="form-label">角色名称 *</label>
-                <input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="如：总经理、区域经理、家庭医生" />
+                <input className="form-input" value={name} onChange={e => setName(e.target.value)} placeholder="如：总经理、区域经理、健康顾问" />
               </div>
 
               <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12, color: '#374151' }}>权限配置</div>

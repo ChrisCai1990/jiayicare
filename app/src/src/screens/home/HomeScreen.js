@@ -16,7 +16,7 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ── 快捷服务配置 ─────────────────────────────────────────────────
 const QUICK_SERVICES = [
-  { icon: 'medical-outline',       label: '问诊医生', color: '#1E6B50', bg: '#E8F5EF', screen: 'Chat' },
+  { icon: 'compass-outline',       label: '健康规划', color: '#1E6B50', bg: '#E8F5EF', screen: 'Chat' },
   { icon: 'folder-open-outline',   label: '健康档案', color: '#0077B6', bg: '#E8F3FB', screen: 'Records' },
   { icon: 'medkit-outline',        label: '用药计划', color: '#D44000', bg: '#FDF0EB', screen: 'Medication' },
   { icon: 'hardware-chip-outline', label: 'AI 助手',  color: '#7C3AED', bg: '#F2EEFF', screen: 'Chat' },
@@ -491,7 +491,7 @@ export default function HomeScreen({ navigation }) {
         <View style={styles.topBar}>
           <View>
             <Text style={styles.logo}>嘉医汇</Text>
-            <Text style={styles.logoSub}>私人家庭医生，全生命周期健康管理</Text>
+            <Text style={styles.logoSub}>数字化健康管理，全周期服务陪伴</Text>
           </View>
           <TouchableOpacity
             style={styles.avatarChip}
@@ -535,7 +535,7 @@ export default function HomeScreen({ navigation }) {
               {[
                 { icon: 'person-outline', label: '完善健康资料', done: !!(user?.height && user?.weight), screen: 'EditProfile' },
                 { icon: 'add-circle-outline', label: '录入第一条健康数据', done: false, screen: 'AddRecord' },
-                { icon: 'medical-outline', label: '咨询 AI 健康助手', done: false, screen: 'Chat' },
+                { icon: 'medical-outline', label: '使用 AI 健康规划师', done: false, screen: 'Chat' },
               ].map((step, i) => (
                 <TouchableOpacity
                   key={i}

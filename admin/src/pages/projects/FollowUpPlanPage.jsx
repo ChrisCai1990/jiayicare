@@ -5,7 +5,7 @@ import { useToast } from '../../App'
 const CYCLE_UNIT_LABEL = { day: '天', week: '周', month: '月' }
 
 const ROLE_LABEL = {
-  healthManager: '健管师', familyDoctor: '家庭医生', nurse: '护士',
+  healthManager: '健管师', familyDoctor: '健康顾问', nurse: '护士',
   nutritionist: '营养师', psychologist: '心理师', tcmDoctor: '中医师',
   specialist: '专科医生', healthPlanner: '健康规划师',
 }

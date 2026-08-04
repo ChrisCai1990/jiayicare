@@ -93,9 +93,9 @@ router.get('/me', auth, async (req, res) => {
     };
 
     // 查询已分配的责任人员信息（实时 populate）
-    // 健康规划师与就医专员是服务协调岗位，不混入“家庭医生团队”。
+    // 健康规划师与就医专员是服务协调岗位，不混入“健康顾问团队”。
     const careTeamAssignments = [
-      { id: req.user.assignedFamilyDoctor,    kind: 'familyDoctor',     label: '家庭医师' },
+      { id: req.user.assignedFamilyDoctor,    kind: 'familyDoctor',     label: '健康顾问' },
       { id: req.user.assignedNutritionist,    kind: 'nutritionist',     label: '营养师' },
       { id: req.user.assignedHealthManager,   kind: 'healthManager',    label: '健管专员' },
       { id: req.user.assignedSpecialist,      kind: 'specialist',       label: '专科医师' },
@@ -121,14 +121,14 @@ router.get('/me', auth, async (req, res) => {
     const userData = req.user.toObject();
     userData.aiEntitlements = await getAiEntitlements(req.user);
     // 覆盖 doctor / manager 字段为真实分配数据
-    const fdInfo = toStaffInfo(req.user.assignedFamilyDoctor, '家庭医师');
+    const fdInfo = toStaffInfo(req.user.assignedFamilyDoctor, '健康顾问');
     const nsInfo = toStaffInfo(req.user.assignedNutritionist, '营养师');
     const hmInfo = toStaffInfo(req.user.assignedHealthManager, '健管专员');
 
     if (fdInfo) userData.doctor = { name: fdInfo.name, title: fdInfo.title };
     if (hmInfo) userData.manager = { name: hmInfo.name, title: hmInfo.title };
 
-    // 附加完整家庭医生团队字段（供两个用户端统一展示）
+    // 附加完整健康顾问团队字段（供两个用户端统一展示）
     // kind 为固定岗位类型，用于判断"是否配备某岗位"；role 为具体职称，仅用于展示
     userData.careTeam = careTeamAssignments.map(({ id, kind, label }) => {
       if (!id) return null;
@@ -241,7 +241,7 @@ router.put('/me', auth, async (req, res) => {
       }
     }
 
-    // 健康档案有更新时，家庭医生此前的"已查看确认"视为失效，需重新查看（见 reportAuditGate.js）
+    // 健康档案有更新时，健康顾问此前的"已查看确认"视为失效，需重新查看（见 reportAuditGate.js）
     updateData.healthProfileUpdatedAt = new Date();
 
     // 直接用原生 MongoDB driver，完全绕过 Mongoose schema 类型转换
@@ -743,7 +743,7 @@ router.get('/annual-mgmt-plans', auth, async (req, res) => {
 
 const { syncAnnualPlanFollowUps } = require('../utils/annualPlanFollowUps');
 
-// 方案类型 → 随访待审核归属角色（体检方案由家庭医生把关，营养方案由营养师把关）
+// 方案类型 → 随访待审核归属角色（体检方案由健康顾问把关，营养方案由营养师把关）
 const HEALTH_PLAN_REVIEW_ROLE = { annual_checkup: 'familyDoctor', checkup: 'familyDoctor', nutrition: 'nutritionist', medical_assist: 'medicalAssistant' };
 
 // AI体检/营养方案确认后，生成一条初始随访占位提醒对应角色跟进（不同于年度管理方案的周期性批量排期，
@@ -826,7 +826,7 @@ router.patch('/plans/:planId/confirm', auth, async (req, res) => {
     if (plan.status === 'draft') plan.status = 'active';
     plan.confirmedAt = new Date();
     await plan.save();
-    // 首次确认时，AI体检/营养方案自动生成一条待审核随访占位（体检→家庭医生审核，营养→营养师审核）
+    // 首次确认时，AI体检/营养方案自动生成一条待审核随访占位（体检→健康顾问审核，营养→营养师审核）
     await generateHealthPlanFollowUp(plan).catch(() => {});
     res.json({ success: true, data: plan });
   } catch (err) {
@@ -1049,7 +1049,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     // 下单后需要人工跟进的待办：与 services.js 的 /order 普通下单同一套逻辑——
     // 此前这里完全没生成 FollowUp，导致推送购买的订单不会出现在健康规划师/健管专员工作台
     // （2026-07-13 反馈：员工推送给客户、客户付费后，订单没有在工作台展示）。
-    // staffId 优先归到患者名下的健康规划师，退回健管专员，再退回家庭医生，都没有则兜底给 superadmin
+    // staffId 优先归到会员名下的健康规划师，退回健管专员，再退回健康顾问，都没有则兜底给 superadmin
     const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner assignedHealthManager assignedFamilyDoctor');
     let followUpStaffId = patientForStaff?.assignedHealthPlanner || patientForStaff?.assignedHealthManager || patientForStaff?.assignedFamilyDoctor || null;
     if (!followUpStaffId) {
@@ -1375,11 +1375,11 @@ router.delete('/family-links/:linkId', auth, async (req, res) => {
   }
 });
 
-// ── 用户端 AI 汇总分析 / 风险评估：按是否配备家庭医生分流 ──────────────
-// 有家庭医生（assignedFamilyDoctor 非空）：客户可自助点击生成草稿，标记为待审核；
+// ── 用户端 AI 汇总分析 / 风险评估：按是否配备健康顾问分流 ──────────────
+// 有健康顾问（assignedFamilyDoctor 非空）：客户可自助点击生成草稿，标记为待审核；
 //   生成后立即可见（草稿态），走医护端 getAiTodos 审核队列，家医审核通过后状态变为已审核
-// 无家庭医生：客户可自助点击生成，免审核直接查看AI原始结果（source标记为self_service，
-//   不计入 staff.js getAiTodos 的家庭医生待审核队列，避免误入人工审核工作流）
+// 无健康顾问：客户可自助点击生成，免审核直接查看AI原始结果（source标记为self_service，
+//   不计入 staff.js getAiTodos 的健康顾问待审核队列，避免误入人工审核工作流）
 const { generateHealthSummarySections } = require('../utils/aiHealthSummary');
 const { generateRiskAssessment } = require('../utils/aiRiskAssessment');
 const { buildScreeningYearlySummary } = require('../utils/screeningYearlySummary');
@@ -1429,15 +1429,15 @@ router.get('/ai-health-summary', auth, async (req, res) => {
 });
 
 // POST /api/user/ai-health-summary — 客户自助生成
-// 有家庭医生：生成待审核草稿（复用医护端同款生成逻辑，进入 getAiTodos 审核队列）
-// 无家庭医生：免审核直接生效
+// 有健康顾问：生成待审核草稿（复用医护端同款生成逻辑，进入 getAiTodos 审核队列）
+// 无健康顾问：免审核直接生效
 router.post('/ai-health-summary', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id);
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
     if (!await requireAiEntitlement(user, 'aiHealthAnalysis', res)) return;
 
-    // 双审强制前置：有家庭医生的客户，必须先由家医审核确认所有体检报告才能生成（2026-07-21新增，
+    // 双审强制前置：有健康顾问的客户，必须先由家医审核确认所有体检报告才能生成（2026-07-21新增，
     // 此前只在 staff.js 医护端生成入口拦截，客户自助生成这条路完全没走这道校验，是遗漏的漏洞）
     const { checkReportAuditGate } = require('../utils/reportAuditGate');
     const gateMsg = await checkReportAuditGate(req.user._id);
@@ -1453,11 +1453,11 @@ router.post('/ai-health-summary', auth, async (req, res) => {
       return res.status(409).json({ success: false, code: 'ALREADY_REVIEWED', message: '当前分析已由您的健康管理团队审核确认，如需更新请联系您的健康管理师' });
     }
 
-    // 无家庭医生团队的客户，自助生成每年限1次（硬性限制，不论本次结果后续是否被认为无效，均不可当年再生）
+    // 无健康顾问团队的客户，自助生成每年限1次（硬性限制，不论本次结果后续是否被认为无效，均不可当年再生）
     const hasDoctorPre = !!user.assignedFamilyDoctor;
     const curYear = String(new Date().getFullYear());
     if (!hasDoctorPre && existingSummary.byYear?.[curYear]?.source === 'self_service') {
-      return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI健康分析（每年限1次），如需更新请联系客服升级家庭医生团队服务' });
+      return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI健康分析（每年限1次），如需更新请联系客服升级健康顾问团队服务' });
     }
 
     const { sections, failed } = await generateHealthSummarySections(user);
@@ -1513,7 +1513,7 @@ router.get('/ai-risk-assessment', auth, async (req, res) => {
     const latestYear = years[0];
     const data = latestYear ? byYear[latestYear] : {};
     if (hasDoctor && Array.isArray(data.dimensions) && data.dimensions.length && !data.approvedAt) {
-      return res.json({ success: true, data, hasDoctor, pendingReview: true, message: '草稿已生成，待家庭医生团队审核' });
+      return res.json({ success: true, data, hasDoctor, pendingReview: true, message: '草稿已生成，待健康顾问团队审核' });
     }
     res.json({ success: true, data, hasDoctor });
   } catch (err) {
@@ -1522,7 +1522,7 @@ router.get('/ai-risk-assessment', auth, async (req, res) => {
 });
 
 // POST /api/user/ai-risk-assessment — 客户自助生成
-// 有家庭医生：生成待审核草稿；无家庭医生：免审核直接生效
+// 有健康顾问：生成待审核草稿；无健康顾问：免审核直接生效
 router.post('/ai-risk-assessment', auth, async (req, res) => {
   try {
     const user = await User.findById(req.user._id)
@@ -1530,7 +1530,7 @@ router.post('/ai-risk-assessment', auth, async (req, res) => {
     if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
     if (!await requireAiEntitlement(user, 'aiRiskAssessment', res)) return;
 
-    // 双审强制前置：有家庭医生的客户，必须先由家医审核确认所有体检报告才能生成
+    // 双审强制前置：有健康顾问的客户，必须先由家医审核确认所有体检报告才能生成
     const { checkReportAuditGate } = require('../utils/reportAuditGate');
     const gateMsg = await checkReportAuditGate(req.user._id);
     if (gateMsg) return res.status(403).json({ success: false, code: 'REPORT_AUDIT_PENDING', message: gateMsg });
@@ -1540,15 +1540,15 @@ router.post('/ai-risk-assessment', auth, async (req, res) => {
     const years = Object.keys(byYear).sort((a, b) => Number(b) - Number(a));
     const existingRisk = years.length ? byYear[years[0]] : {};
 
-    // 已由家庭医生团队审核通过的版本，客户端不能再重新生成覆盖。（2026-07-10 金娟反馈①）
+    // 已由健康顾问团队审核通过的版本，客户端不能再重新生成覆盖。（2026-07-10 金娟反馈①）
     if (existingRisk.approvedAt && existingRisk.source !== 'self_service') {
       return res.status(409).json({ success: false, code: 'ALREADY_REVIEWED', message: '当前风险评估已由您的健康管理团队审核确认，如需更新请联系您的健康管理师' });
     }
 
-    // 无家庭医生团队的客户，自助生成每年限1次（硬性限制，不论本次结果后续是否被认为无效，均不可当年再生）
+    // 无健康顾问团队的客户，自助生成每年限1次（硬性限制，不论本次结果后续是否被认为无效，均不可当年再生）
     const hasDoctorPre = !!user.assignedFamilyDoctor;
     if (!hasDoctorPre && byYear[year]?.source === 'self_service') {
-      return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI风险评估（每年限1次），如需更新请联系客服升级家庭医生团队服务' });
+      return res.status(429).json({ success: false, code: 'YEARLY_LIMIT_REACHED', message: '今年已生成过AI风险评估（每年限1次），如需更新请联系客服升级健康顾问团队服务' });
     }
 
     const assessment = await generateRiskAssessment(user);

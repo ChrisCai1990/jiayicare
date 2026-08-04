@@ -26,7 +26,7 @@ function buildRecommendations(answers) {
       recs.push({ type: 'tip', text: '建议坚持记录空腹血糖，饮食宜低糖低GI，定期复查糖化血红蛋白（HbA1c）。' });
     }
     if (answers.q2.includes('冠心病')) {
-      recs.push({ type: 'warning', text: '冠心病患者应避免剧烈运动，注意监测心率，随身携带急救药物并定期复查。' });
+      recs.push({ type: 'warning', text: '冠心病会员应避免剧烈运动，注意监测心率，随身携带急救药物并定期复查。' });
     }
   }
 
@@ -252,7 +252,7 @@ router.post('/:id/submit', auth, async (req, res) => {
     });
 
     if (psychScaleKey) {
-      // 心理健康量表：标准公式计分，无需人工审核，直接写入档案供家庭医生查看；按填写年度存档，支持历年对比
+      // 心理健康量表：标准公式计分，无需人工审核，直接写入档案供健康顾问查看；按填写年度存档，支持历年对比
       try {
         const psychResult = buildPsychResult(questionnaire, response, psychScaleKey);
         const year = String(new Date(psychResult.filledAt).getFullYear());
@@ -279,7 +279,7 @@ router.post('/:id/submit', auth, async (req, res) => {
           const fullUser = await User.findById(req.user._id).lean();
           const draft = buildArchiveDraft(fullUser, questionnaire, response);
 
-          // 无冲突字段：直接写入档案，无需人工审核；同时留痕供家庭医生查看
+          // 无冲突字段：直接写入档案，无需人工审核；同时留痕供健康顾问查看
           if (draft.autoItems.length > 0) {
             const $set = {};
             for (const it of draft.autoItems) $set[it.path] = it.value;

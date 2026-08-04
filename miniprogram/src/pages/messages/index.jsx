@@ -12,7 +12,7 @@ import Icon from '../../components/Icon';
 // - 小程序无 EventSource(SSE) 支持，会话内用 10 秒轮询代替实时推送（app端是SSE）
 // - 语音播报(tts.speak)未接入，小程序场景暂不做
 const ROLE_DEFS = [
-  { key: 'doctor', label: '家庭医师', icon: '🩺', color: colors.primary },
+  { key: 'doctor', label: '健康顾问', icon: '🩺', color: colors.primary },
   { key: 'manager', label: '健管师', icon: '🧑‍💼', color: '#D97706' },
   { key: 'nutritionist', label: '营养师', icon: '🥗', color: '#059669' },
 ];
@@ -120,14 +120,11 @@ export default function MessagesPage() {
     lastTime: notifLast ? new Date(notifLast.createdAt).getTime() : 0, kind: 'notif',
   };
 
-  const aiConv = { key: '__ai__', label: 'AI 健康助手', icon: '✨', color: '#1A2B24', last: null, unread: 0, lastTime: Infinity, kind: 'ai' };
-
-  const convList = [aiConv, ...[...roleConvs, notifConv].sort((a, b) => b.lastTime - a.lastTime)];
+  const convList = [...roleConvs, notifConv].sort((a, b) => b.lastTime - a.lastTime);
   const totalUnread = messages.filter((m) => m.unread).length;
 
   const openConv = async (conv) => {
     if (conv.kind === 'role' && conv.assigned === false) return;
-    if (conv.kind === 'ai') { Taro.navigateTo({ url: '/pages/chat/index' }); return; }
     if (conv.kind === 'notif') { setShowNotif(true); return; }
     setThreadRole(conv.key);
   };
@@ -166,7 +163,7 @@ export default function MessagesPage() {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
               ? `您尚未配备${conv.label}，暂不提供此项服务`
-              : conv.last?.content || conv.last?.title || (conv.kind === 'ai' ? '随时问我健康问题，24小时在线' : conv.kind === 'notif' ? '暂无通知' : '暂无消息');
+              : conv.last?.content || conv.last?.title || (conv.kind === 'notif' ? '暂无通知' : '暂无消息');
             return (
               <View key={conv.key}>
                 <View onClick={() => openConv(conv)} style={{ display: 'flex', alignItems: 'center', padding: `12px ${spacing.md}px` }}>
@@ -471,7 +468,7 @@ function ProductPushDetail({ msg, onClose }) {
 }
 
 const ROLE_META = {
-  doctor: { label: '家庭医师', icon: '🩺', color: colors.primary },
+  doctor: { label: '健康顾问', icon: '🩺', color: colors.primary },
   manager: { label: '健管师', icon: '🧑‍💼', color: '#D97706' },
   nutritionist: { label: '营养师', icon: '🥗', color: '#059669' },
 };

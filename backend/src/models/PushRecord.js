@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-// 统一推送记录：科普/方案/问卷/注意事项等推送给患者的记录
+// 统一推送记录：科普/方案/问卷/注意事项等推送给会员的记录
 const pushRecordSchema = new mongoose.Schema({
   staffId:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', required: true },
   patientId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User',  required: true },

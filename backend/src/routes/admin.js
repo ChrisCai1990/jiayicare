@@ -146,7 +146,7 @@ router.get('/dashboard', adminAuth, async (req, res) => {
     User.find(activeUserFilter).sort({ createdAt: -1 }).limit(5).select('name phone servicePackage healthScore createdAt'),
   ]);
 
-  // 近7天新增患者
+  // 近7天新增会员
   const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
   const newPatients = await User.countDocuments({ ...activeUserFilter, createdAt: { $gt: sevenDaysAgo } });
 
@@ -271,7 +271,7 @@ router.patch('/patients/:id/restore', adminAuth, async (req, res) => {
 });
 
 // ── POST /api/admin/patients/:id/message ─────────────────────────
-// 以医生/健管师身份向患者发送消息
+// 以医生/健管师身份向会员发送消息
 router.post('/patients/:id/message', adminAuth, async (req, res) => {
   const { title, content } = req.body;
   if (!content?.trim()) {
@@ -294,7 +294,7 @@ router.post('/patients/:id/message', adminAuth, async (req, res) => {
 });
 
 // ── POST /api/admin/patients/:id/task ────────────────────────────
-// 为患者创建任务
+// 为会员创建任务
 router.post('/patients/:id/task', adminAuth, async (req, res) => {
   const { title, category = 'followup', description = '', priority = 2 } = req.body;
   if (!title?.trim()) {
@@ -579,7 +579,7 @@ router.patch('/commissions/batch-pay', adminAuth, async (req, res) => {
 });
 
 // ── GET /api/admin/messages ───────────────────────────────────────
-// 查看所有患者发给医生/健管师的留言
+// 查看所有会员发给医生/健管师的留言
 router.get('/messages', adminAuth, async (req, res) => {
   const { page = 1, limit = 30 } = req.query;
   const skip = (parseInt(page) - 1) * parseInt(limit);

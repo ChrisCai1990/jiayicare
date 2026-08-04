@@ -14,6 +14,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notRegistered, setNotRegistered] = useState(false);
+  const [agreed, setAgreed] = useState(false);
 
   const afterLoginSuccess = (user) => {
     if (user?.onboardingCompleted) {
@@ -44,6 +45,7 @@ export default function LoginPage() {
 
   const handleLogin = async () => {
     if (!phone || !code) return;
+    if (!agreed) { setError('请先阅读并勾选同意《用户协议》《隐私政策》和《健康管理服务说明》'); return; }
     setError('');
     setNotRegistered(false);
     try {
@@ -61,6 +63,7 @@ export default function LoginPage() {
 
   // 小程序一键登录：wx.login() 拿 code → 后端 /auth/wechat-mp 换 openid + 签发 JWT
   const wechatLogin = async () => {
+    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
     setError('');
     try {
       setLoading(true);
@@ -75,6 +78,7 @@ export default function LoginPage() {
   };
 
   const demoLogin = async () => {
+    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
     setError('');
     try {
       setLoading(true);
@@ -237,8 +241,12 @@ export default function LoginPage() {
           </Button>
         </View>
 
-        <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, marginTop: `${spacing.md}px` }}>
-          登录代表同意
+        <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>
+          <View style={{ width: '15px', height: '15px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '13px', flexShrink: 0 }}>
+            {agreed && <Text style={{ color: '#fff', fontSize: '11px' }}>✓</Text>}
+          </View>
+          <Text style={{ fontSize: '11px', color: colors.textMuted }}>
+          我已阅读并同意
           <Text
             style={{ color: colors.primary }}
             onClick={() => Taro.navigateTo({ url: '/pages/legal/index?type=terms' })}
@@ -248,7 +256,13 @@ export default function LoginPage() {
             style={{ color: colors.primary }}
             onClick={() => Taro.navigateTo({ url: '/pages/legal/index?type=privacy' })}
           >《隐私政策》</Text>
-        </Text>
+          和
+          <Text
+            style={{ color: colors.primary }}
+            onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}
+          >《健康管理服务说明》</Text>
+          </Text>
+        </View>
       </View>
     </View>
   );

@@ -266,7 +266,7 @@ export default function MessagesScreen({ navigation }) {
             <Ionicons name="sparkles" size={24} color={colors.white} />
           </View>
           <View>
-            <Text style={styles.aiTitle}>AI 健康助手</Text>
+            <Text style={styles.aiTitle}>AI 健康规划师</Text>
             <Text style={styles.aiSubtitle}>随时问我健康问题，24小时在线</Text>
           </View>
         </View>

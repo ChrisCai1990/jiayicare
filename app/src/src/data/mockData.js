@@ -7,7 +7,7 @@ export const mockUser = {
   gender: '男',
   servicePackage: '心脑血管健康管理年度服务包',
   serviceExpiry: '2027-03-15',
-  doctor: { name: '张医生', title: '家庭医生（心内科）', avatar: null },
+  doctor: { name: '张医生', title: '健康顾问（心内科）', avatar: null },
   manager: { name: '王健管', title: '健管专员', avatar: null },
   healthScore: 72,
 };
@@ -382,7 +382,7 @@ export const mockServices = [
   {
     id: 'S2',
     category: '专家咨询',
-    name: '心内科专家30分钟视频问诊',
+    name: '健康管理需求梳理服务',
     subtitle: '主任医师一对一，报告解读+用药建议',
     price: 299,
     originalPrice: 499,
@@ -412,7 +412,7 @@ export const mockServices = [
   {
     id: 'S4',
     category: '健康课程',
-    name: '高血压患者自我管理训练营',
+    name: '高血压会员自我管理训练营',
     subtitle: '4周系统课程，含饮食+运动+用药+监测',
     price: 399,
     originalPrice: 598,

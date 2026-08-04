@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useRef, useMemo } from 'react'
+import React, { useEffect, useState, useRef, useMemo } from 'react'
 import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
@@ -712,7 +712,7 @@ function ArchiveConfirmLogPanel({ log }) {
   )
 }
 
-// 心理健康量表结果（Epworth/SCL90/SDS/SAS，问卷推送患者自填→自动计分写入，只读展示）
+// 心理健康量表结果（Epworth/SCL90/SDS/SAS，问卷推送会员自填→自动计分写入，只读展示）
 const PSYCH_SCALE_META = {
   epworth: { name: 'Epworth 嗜睡量表' },
   scl90:   { name: 'SCL90 症状自评量表' },
@@ -1104,10 +1104,10 @@ export default function PatientDetailPage() {
   const toast = useToast()
   const { staff } = useStaff()
   const [data, setData] = useState(null)
-  const [loadError, setLoadError] = useState(null) // 加载患者详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
+  const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
   const initialTab = new URLSearchParams(location.search).get('tab') || 'info'
-  const [tab, setTab] = useState(initialTab)  // info | records | reports | medications | requisitions | plans | followups | serviceRecords | consumption | family | membership
+  const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
   const [followUps, setFollowUps] = useState([])
   const [plans, setPlans] = useState([])
   const [reports, setReports] = useState([])
@@ -1183,11 +1183,11 @@ export default function PatientDetailPage() {
   const [medForm, setMedForm] = useState({})
   const [supForm, setSupForm] = useState({})
   const [medSaving, setMedSaving] = useState(false)
-  // 家庭医生健康档案查看确认（2026-07-28改造）：不再逐份审核报告数据，改为客户维度的
+  // 健康顾问健康档案查看确认（2026-07-28改造）：不再逐份审核报告数据，改为客户维度的
   // "确认已查看健康档案"，AI健康解析/风险评估生成前强制要求此确认处于有效状态（未过期）。
   // pendingDoctorAuditReports 仍保留为"有哪些新审核完的报告需要提醒"的展示用途。
   //
-  // 2026-07-28补充修复：最初"确认已查看"是个孤立按钮，点一下就直接标记完成，家庭医生完全
+  // 2026-07-28补充修复：最初"确认已查看"是个孤立按钮，点一下就直接标记完成，健康顾问完全
   // 可以不看任何内容就点掉，是假确认。改为强制交互：先弹出待查看报告清单，要求逐份点开
   // （复用 openReportDetail 已有的报告详情弹窗），全部点开过之后"确认已查看"才从禁用变可点。
   //
@@ -1585,9 +1585,9 @@ export default function PatientDetailPage() {
       .catch(() => { /* 保持列表数据，下方会显示加载失败提示 */ })
       .finally(() => setReportDetailLoading(false))
 
-    // 家庭医生打开报告详情，联动标记"已解读"（2026-07-28新增）：此前用户端报告列表的
+    // 健康顾问打开报告详情，联动标记"已解读"（2026-07-28新增）：此前用户端报告列表的
     // "待解读/已解读"状态字段(status)从未被任何动作驱动过，一直卡死在默认值"待解读"，
-    // 跟审核状态毫无关联。改为家庭医生查看过这份报告后自动置为已解读，不需要额外操作。
+    // 跟审核状态毫无关联。改为健康顾问查看过这份报告后自动置为已解读，不需要额外操作。
     if (staff?.role === 'familyDoctor' || staff?.role === 'superadmin') {
       staffAPI.markReportFamilyDoctorViewed(r._id).catch(() => {})
     }
@@ -1624,7 +1624,7 @@ export default function PatientDetailPage() {
     setSymptomActionSaving(true)
     try {
       await staffAPI.verifySymptom(editingSymptom._id, { action, ...symptomForm })
-      toast(action === 'save' ? '审核修改已保存' : action === 'dismiss' ? '已确认为误录' : '已转交家庭医生')
+      toast(action === 'save' ? '审核修改已保存' : action === 'dismiss' ? '已确认为误录' : '已转交健康顾问')
       setEditingSymptom(null)
       await loadScreening()
     } catch (err) {
@@ -1639,7 +1639,7 @@ export default function PatientDetailPage() {
   }
 
   const handleDoctorSymptom = async record => {
-    const decisionNote = window.prompt('请填写家庭医生处理意见：', record.symptomWorkflow?.decisionNote || '')
+    const decisionNote = window.prompt('请填写健康顾问处理意见：', record.symptomWorkflow?.decisionNote || '')
     if (decisionNote === null) return
     try {
       await staffAPI.resolveSymptom(record._id, { status: 'resolved', decisionNote })
@@ -1671,7 +1671,7 @@ export default function PatientDetailPage() {
     openReportDetail({ _id: sourceReportId, title: '原始体检报告' })
   }
   useEffect(() => { load() }, [id])
-  // 切换到不同患者时，上一个患者的"健康档案已查看"进度不能带过来，否则会误判成这个新患者
+  // 切换到不同会员时，上一个会员的"健康档案已查看"进度不能带过来，否则会误判成这个新会员
   // 也已经查看过某些报告（组件是同一实例复用，id变了但state不会自动清零）
   useEffect(() => { setPendingDoctorAuditReports([]) }, [id])
   useEffect(() => {
@@ -1726,7 +1726,6 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'serviceRecords') loadServiceRecords()
     else if (tab === 'referrals') loadPatientReferrals()
-    else if (tab === 'requisitions') loadRequisitions()
     else if (tab === 'medications') { loadMedications(); loadSupplements() }
     else if (tab === 'records') {
       loadScreening()
@@ -1739,7 +1738,7 @@ export default function PatientDetailPage() {
     }
     else if (tab === 'consumption') staffAPI.getPatientOrders(id).then(r => setPatientOrders(r.data || [])).catch(() => {})
     else if (tab === 'ai') {
-      // 家庭医生审核依赖 reports（要展示报告原文对照），同上按需补加载
+      // 健康顾问审核依赖 reports（要展示报告原文对照），同上按需补加载
       if (reports.length === 0) loadReports()
       loadPendingDoctorAudit()
     }
@@ -2142,7 +2141,7 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'reviewed' })
-      toast('审核通过，数据已写入专项筛查，已进入待家庭医生审核')
+      toast('审核通过，数据已写入专项筛查，已进入待健康顾问审核')
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '保存失败') }
@@ -2400,7 +2399,7 @@ export default function PatientDetailPage() {
     } catch (err) { toast(err.message || '操作失败') }
   }
 
-  // 药物审核（家庭医师）：approve=通过生效 / reject=驳回删除
+  // 药物审核（健康顾问）：approve=通过生效 / reject=驳回删除
   const reviewMedication = async (medId, action) => {
     try {
       await staffAPI.reviewPatientMedication(id, medId, action)
@@ -2511,7 +2510,7 @@ export default function PatientDetailPage() {
   const displayBodyComposition = { ...(user.bodyComposition || {}), ...latestBodyCompHistory }
 
   return (
-    // 2026-07-09 金娟反复反馈"界面看不到全局，要键盘左右移动才能找到按键"：患者详情页内某些
+    // 2026-07-09 金娟反复反馈"界面看不到全局，要键盘左右移动才能找到按键"：会员详情页内某些
     // grid(repeat(3,1fr) 含固定宽input/nowrap长label) 会把格子撑到 min-content 宽度，导致整页横向溢出。
     // 逐个格子加 minmax(0,1fr) 风险大且易漏，这里在页面根容器统一加 overflowX:hidden 兜底——
     // 消灭页面级横向滚动条(金娟"键盘左右移动"的直接根源)；内部需要横向滚动的区块(趋势图/tab条/表格)
@@ -2670,7 +2669,7 @@ export default function PatientDetailPage() {
         </div>
       ))}
 
-      {/* 问卷自动写入档案的历史记录（无冲突项，系统已直接写入，供家庭医生核查） */}
+      {/* 问卷自动写入档案的历史记录（无冲突项，系统已直接写入，供健康顾问核查） */}
       <ArchiveAutoLogPanel log={user.archiveAutoLog} />
       {/* 健管专员人工审核确认写入档案的记录（有冲突需人工判断的字段） */}
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
@@ -2685,7 +2684,6 @@ export default function PatientDetailPage() {
           { key: 'ai',            label: 'AI健康分析' },
           { key: 'ai-risk',       label: 'AI风险评估' },
           { key: 'plans',         label: '管理方案' },
-          { key: 'requisitions',  label: '检查开单' },
           { key: 'followups',     label: '随访记录' },
           { key: 'serviceRecords', label: '服务记录' },
           { key: 'referrals',     label: '转介记录' },
@@ -2937,7 +2935,7 @@ export default function PatientDetailPage() {
                   {/* 紧急联系人/紧急联系电话/快递配送地址已统一归到「基本信息」卡（与问卷自动填档字段口径一致，2026-07-11） */}
                   {[
                     { label: '健康规划师',field: 'assignedHealthPlanner',    role: 'healthPlanner' },
-                    { label: '家庭医师',  field: 'assignedFamilyDoctor',     role: 'familyDoctor' },
+                    { label: '健康顾问',  field: 'assignedFamilyDoctor',     role: 'familyDoctor' },
                     { label: '营养师',    field: 'assignedNutritionist',     role: 'nutritionist' },
                     { label: '健管专员',  field: 'assignedHealthManager',    role: 'healthManager' },
                     { label: '专科医师',  field: 'assignedSpecialist',       role: 'specialist' },
@@ -3033,7 +3031,7 @@ export default function PatientDetailPage() {
                 <>
                   {/* 紧急联系人/紧急联系电话/快递配送地址已移至「基本信息」卡（2026-07-11） */}
                   <InfoRow label="健康规划师" value={user.assignedHealthPlanner?.name    || '-'} />
-                  <InfoRow label="家庭医师"   value={user.assignedFamilyDoctor?.name     || '-'} />
+                  <InfoRow label="健康顾问"   value={user.assignedFamilyDoctor?.name     || '-'} />
                   <InfoRow label="营养师"     value={user.assignedNutritionist?.name     || '-'} />
                   <InfoRow label="健管专员"   value={user.assignedHealthManager?.name    || '-'} />
                   {user.assignedSpecialist       && <InfoRow label="专科医师"   value={user.assignedSpecialist?.name      || '-'} />}
@@ -3156,7 +3154,7 @@ export default function PatientDetailPage() {
                   {[
                     { key: 'healthConcern', label: '关注的健康问题', rows: 2 },
                     { key: 'healthConcernFor', label: '更关注谁的健康', rows: 1 },
-                    { key: 'expectedService', label: '期望家庭医师服务', rows: 2 },
+                    { key: 'expectedService', label: '期望健康顾问服务', rows: 2 },
                     { key: 'hasHomeMonitor', label: '居家检测设备', rows: 2 },
                   ].map(({ key, label, rows }) => (
                     <div key={key}>
@@ -3560,7 +3558,7 @@ export default function PatientDetailPage() {
           </div>
         </div>
 
-        {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，患者自填自动写入）── */}
+        {/* ── 心理健康评估（问卷库Epworth/SCL90/SDS/SAS，会员自填自动写入）── */}
         <PsychAssessmentPanel user={user} />
 
         {/* ── 10年ASCVD风险评估（医护录入体检参数→中国指南自动分层）── */}
@@ -4257,7 +4255,7 @@ export default function PatientDetailPage() {
                         ))}
                       </select>}
                       {currentRecord && <span style={{ fontSize: 12, color: currentRecord.status === 'approved' ? '#16A34A' : '#D97706' }}>
-                        {currentRecord.status === 'approved' ? `✓ 家庭医生已审核${currentRecord.approvedByName ? ' · ' + currentRecord.approvedByName : ''}` : '待家庭医生审核'}
+                        {currentRecord.status === 'approved' ? `✓ 健康顾问已审核${currentRecord.approvedByName ? ' · ' + currentRecord.approvedByName : ''}` : '待健康顾问审核'}
                       </span>}
                       <button className="btn btn-secondary btn-sm"
                         aria-expanded={screeningSummaryExpanded}
@@ -4270,7 +4268,7 @@ export default function PatientDetailPage() {
                           try {
                             await staffAPI.generateScreeningYearSummary(id, screeningSummaryYear)
                             await loadScreening()
-                            toast('AI年度专项筛查小结已生成，待家庭医生审核')
+                            toast('AI年度专项筛查小结已生成，待健康顾问审核')
                           } catch (error) { toast(error.message || '生成失败') }
                           finally { setScreeningSummaryBusy(false) }
                         }}>{screeningSummaryBusy ? '生成中…' : '✨ AI自动小结'}</button>
@@ -4304,7 +4302,7 @@ export default function PatientDetailPage() {
                       </div>}
                     </div>
                     {screeningSummaryExpanded && (!currentRecord && !editingScreeningSummary ? (
-                      <div style={{ color: '#8AA89C', fontSize: 13 }}>该年度尚无小结，可由家庭医生新增或使用 AI 自动生成。</div>
+                      <div style={{ color: '#8AA89C', fontSize: 13 }}>该年度尚无小结，可由健康顾问新增或使用 AI 自动生成。</div>
                     ) : (
                       <div style={{ display: 'grid', gap: 10 }}>
                         {categories.map(([key, label]) => (
@@ -4352,7 +4350,7 @@ export default function PatientDetailPage() {
                               setEditingScreeningSummary(null)
                               setScreeningSummaryRecordIndex(0)
                               await loadScreening()
-                              toast(screeningSummaryEditMode === 'new' ? '已新增一次年度小结，待家庭医生审核' : '当前年度小结已修改，待家庭医生审核')
+                              toast(screeningSummaryEditMode === 'new' ? '已新增一次年度小结，待健康顾问审核' : '当前年度小结已修改，待健康顾问审核')
                             } catch (error) { toast(error.message || '保存失败') }
                           }}>保存小结</button>
                         </div>}
@@ -5445,7 +5443,7 @@ export default function PatientDetailPage() {
                   const workflow = record.symptomWorkflow || {}
                   const workflowLabel = {
                     pending_manager: '待健管专员核实',
-                    pending_doctor: '待家庭医生判断',
+                    pending_doctor: '待健康顾问判断',
                     manager_followup: '健管专员跟进',
                     referred: '已转介',
                     resolved: '已处理',
@@ -5475,7 +5473,7 @@ export default function PatientDetailPage() {
                             && !workflow.verifiedAt && (
                             <>
                               <button className="btn btn-secondary btn-sm" onClick={() => openSymptomEditor(record)}>编辑审核</button>
-                              <button className="btn btn-primary btn-sm" onClick={() => referSymptomToDoctor(record)}>待处理：转家庭医生</button>
+                              <button className="btn btn-primary btn-sm" onClick={() => referSymptomToDoctor(record)}>待处理：转健康顾问</button>
                             </>
                           )}
                           {['familyDoctor', 'superadmin'].includes(staff?.role)
@@ -5533,7 +5531,7 @@ export default function PatientDetailPage() {
                   onClick={() => submitSymptomVerification('save')}>保存审核修改</button>
                 <button className="btn btn-primary" disabled={symptomActionSaving || !symptomForm.value.trim()}
                   onClick={() => submitSymptomVerification('refer_doctor')}>
-                  {symptomActionSaving ? '提交中...' : '确认并转家庭医生'}
+                  {symptomActionSaving ? '提交中...' : '确认并转健康顾问'}
                 </button>
               </div>
             </div>
@@ -5858,7 +5856,7 @@ export default function PatientDetailPage() {
         return (
           <div>
             <AiRuleHint scene="health_analysis" />
-            {/* 前置要求：家庭医生生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
+            {/* 前置要求：健康顾问生成AI健康分析/风险评估前必须先查看确认健康档案（2026-07-28改造，
                 不再逐份审核报告数据本身，那是健管专员audit_status的职责） */}
             {['familyDoctor', 'superadmin'].includes(staff?.role) && pendingDoctorAuditReports.length > 0 && (() => {
               // 文案显示"待查看"数量而非总数：此前写死显示 pendingDoctorAuditReports.length（总数），
@@ -5901,7 +5899,7 @@ export default function PatientDetailPage() {
             <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
               <button className={`btn btn-sm ${aiAnalysisView === 'doctor' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => { setAiAnalysisView('doctor'); setEditingAISummary(false) }}>
-                家庭医生 · 5维分析
+                健康顾问 · 5维分析
               </button>
               <button className={`btn btn-sm ${aiAnalysisView === 'nutrition' ? 'btn-primary' : 'btn-secondary'}`}
                 onClick={() => { setAiAnalysisView('nutrition'); setEditingAISummary(false) }}>
@@ -5911,7 +5909,7 @@ export default function PatientDetailPage() {
             {/* 同一年度分成两条独立评估链，各自显示生成时间与历史版本。 */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10, marginBottom: 14 }}>
               {[
-                { key: 'doctor', title: '家庭医生 · 5维分析', records: doctorRecords, current: doctorRecord, color: '#1E6B50' },
+                { key: 'doctor', title: '健康顾问 · 5维分析', records: doctorRecords, current: doctorRecord, color: '#1E6B50' },
                 { key: 'nutrition', title: '营养师 · 生活方式分析', records: nutritionRecords, current: nutritionRecord, color: '#16A34A' },
               ].filter(group => group.key === aiAnalysisView).map(group => (
                 <div key={group.key} className="card" style={{ padding: '12px 14px', borderTop: `3px solid ${group.color}` }}>
@@ -5957,7 +5955,7 @@ export default function PatientDetailPage() {
                     <div>
                       <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>
                         {group.key === 'nutrition' && !latestDoctorApproved
-                          ? '等待家庭医生完成并审核本年度5维分析'
+                          ? '等待健康顾问完成并审核本年度5维分析'
                           : '本年度尚未生成'}
                       </div>
                       {(staff?.role === 'superadmin'
@@ -5976,7 +5974,7 @@ export default function PatientDetailPage() {
             </div>
             {/* 操作栏 */}
             {(() => {
-              // 按角色拆分审核（家庭医师审5维 / 营养师审生活方式评估；超管两者皆可）
+              // 按角色拆分审核（健康顾问审5维 / 营养师审生活方式评估；超管两者皆可）
               const roleScope = staff?.role === 'familyDoctor' ? 'doctor'
                 : staff?.role === 'nutritionist' ? 'nutrition'
                 : staff?.role === 'superadmin' ? 'all' : null
@@ -5992,8 +5990,8 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flex: 1, minWidth: 200 }}>
                   {aiAnalysisView === 'doctor' && <span style={{ fontSize: 12, color: docApproved ? '#22A06B' : '#8AA89C' }}>
                     {docApproved
-                      ? `✓ 5维度分析 已审核${ais.doctorApprovedBy ? '·' + ais.doctorApprovedBy : ''}（家庭医师）`
-                      : '○ 5维度分析 待家庭医师审核'}
+                      ? `✓ 5维度分析 已审核${ais.doctorApprovedBy ? '·' + ais.doctorApprovedBy : ''}（健康顾问）`
+                      : '○ 5维度分析 待健康顾问审核'}
                   </span>}
                   {aiAnalysisView === 'nutrition' && <span style={{ fontSize: 12, color: nutApproved ? '#16A34A' : '#8AA89C' }}>
                     {!hasLifestyle ? '— 生活方式评估（暂无内容）'
@@ -6053,7 +6051,7 @@ export default function PatientDetailPage() {
               )}
               {!editingAISummary && aiAnalysisView === 'nutrition' && (roleScope === 'nutrition') && (
                 <button className="btn btn-sm" disabled={aiSummaryLoading || !latestDoctorApproved}
-                  title={!latestDoctorApproved ? '请先由家庭医生完成并审核本年度5维分析' : ''}
+                  title={!latestDoctorApproved ? '请先由健康顾问完成并审核本年度5维分析' : ''}
                   style={nutApproved ? { background: '#E5E7EB', color: '#6B7280', borderColor: '#E5E7EB' } : { background: '#1E6B50', color: '#fff', borderColor: '#1E6B50' }}
                   onClick={() => {
                     if (nutApproved && !window.confirm('最新一条生活方式评估已审核。重新生成会新增一条待审核记录，原审核记录仍会保留，确定继续？')) return
@@ -6081,16 +6079,16 @@ export default function PatientDetailPage() {
             {!activeHasData ? (
               <div className="card" style={{ textAlign: 'center', padding: 40, color: '#8AA89C', fontSize: 14 }}>
                 {aiAnalysisView === 'doctor'
-                  ? `${curYear}年度5维分析尚未生成，请由家庭医生新增评估。`
+                  ? `${curYear}年度5维分析尚未生成，请由健康顾问新增评估。`
                   : (!latestDoctorApproved
-                    ? `请先由家庭医生完成并审核${curYear}年度5维分析。`
+                    ? `请先由健康顾问完成并审核${curYear}年度5维分析。`
                     : `${curYear}年度生活方式分析尚未生成，请由营养师新增评估。`)}
               </div>
             ) : (
               <>
                 {aiAnalysisView === 'doctor' && hasDoctorData && (
                   <div style={{ margin: '6px 0 12px', padding: '10px 14px', borderRadius: 8, background: '#E8F5EF', color: '#1E6B50', fontWeight: 800 }}>
-                    家庭医生 · 5维健康分析
+                    健康顾问 · 5维健康分析
                   </div>
                 )}
                 {aiAnalysisView === 'doctor' && hasDoctorData && <>
@@ -6408,7 +6406,7 @@ export default function PatientDetailPage() {
                   {riskApproving ? '处理中...' : '审核确认'}
                 </button>
               )}
-              {/* AI风险评估仅家庭医师/超管可生成，健管专员等其他角色只能查看 */}
+              {/* AI风险评估仅健康顾问/超管可生成，健管专员等其他角色只能查看 */}
               {!editingRisk && (staff?.role === 'familyDoctor' || staff?.role === 'superadmin') && (
                 <button className="btn btn-secondary btn-sm" onClick={() => handleGenerateRisk(curYear)} disabled={riskGenerating}>
                   {riskGenerating ? 'AI评估中...' : hasData ? '重新评估' : '✨ AI生成风险评估'}
@@ -6502,7 +6500,7 @@ export default function PatientDetailPage() {
                     )
                   })}
                 </div>
-                <div style={{ fontSize: 11, color: '#B0B8B3', marginTop: 12 }}>本评估由 AI 结合规则引擎生成，仅供医护参考，需家庭医生审核后生效。</div>
+                <div style={{ fontSize: 11, color: '#B0B8B3', marginTop: 12 }}>本评估由 AI 结合规则引擎生成，仅供医护参考，需健康顾问审核后生效。</div>
               </>
             )}
 
@@ -6622,7 +6620,7 @@ export default function PatientDetailPage() {
               <div className="card" style={{ marginBottom: 12, border: '1.5px solid #0077B6' }}>
                 <div className="card-header" style={{ background: '#EFF8FF', display: 'flex', alignItems: 'center', gap: 8 }}>
                   <span style={{ fontSize: 16 }}>💊</span>
-                  <span className="card-title" style={{ color: '#0077B6' }}>药物待审核·需家庭医师确认</span>
+                  <span className="card-title" style={{ color: '#0077B6' }}>药物待审核·需健康顾问确认</span>
                   <span style={{ background: '#0077B615', color: '#0077B6', fontSize: 11, fontWeight: 700, borderRadius: 99, padding: '1px 8px' }}>{pendingMeds.length}</span>
                 </div>
                 <table className="table" style={{ marginBottom: 0 }}>
@@ -6648,11 +6646,11 @@ export default function PatientDetailPage() {
                             </div>
                           ) : (staff?._id && String(m.staffId) === String(staff._id)) ? (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span style={{ fontSize: 12, color: '#8AA89C' }}>等待家庭医师审核</span>
+                              <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问审核</span>
                               <button className="btn btn-sm" style={{ background: '#fee', color: '#c00', border: '1px solid #fcc' }}
                                 onClick={() => { if (window.confirm('确认撤回这条你提交的待审核药物？')) reviewMedication(m._id, 'withdraw') }}>撤回</button>
                             </div>
-                          ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待家庭医师审核</span>}
+                          ) : <span style={{ fontSize: 12, color: '#8AA89C' }}>等待健康顾问审核</span>}
                         </td>
                       </tr>
                     ))}
@@ -6863,7 +6861,7 @@ export default function PatientDetailPage() {
                       if (editingMed) await staffAPI.updatePatientMedication(id, editingMed, medForm)
                       else await staffAPI.createPatientMedication(id, medForm)
                       setShowMedModal(false); loadMedications()
-                      toast(editingMed ? '已保存' : needReview ? '已提交，待家庭医师审核' : '添加成功')
+                      toast(editingMed ? '已保存' : needReview ? '已提交，待健康顾问审核' : '添加成功')
                     } catch (err) { toast(err.message) }
                     finally { setMedSaving(false) }
                   }}>{medSaving ? '保存中...' : '保存'}</button>
@@ -6955,7 +6953,7 @@ export default function PatientDetailPage() {
             <div className="card-title">管理方案</div>
             <div style={{ display: 'flex', gap: 8 }}>
               {/* 2026-07-07 用户明确规则：AI营养方案只有营养师能生成；AI体检方案/年度管理方案
-                  只有家庭医生能生成（营养师能查看这些方案内容，但不该有生成入口） */}
+                  只有健康顾问能生成（营养师能查看这些方案内容，但不该有生成入口） */}
               {['nutritionist', 'superadmin'].includes(staff?.role) && (
                 <button className="btn btn-secondary btn-sm" onClick={() => setShowSelectTplModal('nutrition')}>
                   ✨ AI营养方案
@@ -7660,7 +7658,7 @@ export default function PatientDetailPage() {
       {/* ── 转介记录 Tab ── */}
       {tab === 'referrals' && (() => {
         const REFERRAL_CAT_MAP = {
-          familyDoctor:      '家庭医师转介',
+          familyDoctor:      '健康顾问转介',
           specialist:        '专科医师转介',
           nutritionist:      '营养师转介',
           tcmDoctor:         '中医师转介',
@@ -7670,7 +7668,7 @@ export default function PatientDetailPage() {
           healthManager:     '健管专员转介',
         }
         const REFERRAL_CAT_COLOR = {
-          '家庭医师转介':   '#1E6B50',
+          '健康顾问转介':   '#1E6B50',
           '专科医师转介':   '#0077B6',
           '营养师转介':     '#22A06B',
           '中医师转介':     '#8e44ad',
@@ -7681,7 +7679,7 @@ export default function PatientDetailPage() {
         }
         const STATUS_LABEL = { pending:'待处理', accepted:'已接受', completed:'已完成', rejected:'已拒绝' }
         const STATUS_COLOR = { pending:'#D97706', accepted:'#0077B6', completed:'#22A06B', rejected:'#DC3545' }
-        const CATS = ['家庭医师转介','专科医师转介','营养师转介','中医师转介','心理咨询师转介','运动复健师转介','就医专员转介','健管专员转介']
+        const CATS = ['健康顾问转介','专科医师转介','营养师转介','中医师转介','心理咨询师转介','运动复健师转介','就医专员转介','健管专员转介']
         const grouped = {}
         CATS.forEach(c => { grouped[c] = [] })
         patientReferrals.forEach(r => {
@@ -8532,7 +8530,7 @@ export default function PatientDetailPage() {
         </div>
       )}
 
-      {/* 家庭医生健康档案查看确认弹窗：列出待查看的新增报告，逐份点开（复用下方报告详情弹窗）
+      {/* 健康顾问健康档案查看确认弹窗：列出待查看的新增报告，逐份点开（复用下方报告详情弹窗）
           才会记入"已查看"，全部点开过后"确认已查看"按钮才可点击，防止不看内容就假确认 */}
       {showArchiveReviewModal && (
         <div className="modal-overlay" onClick={() => setShowArchiveReviewModal(false)}>
@@ -8629,7 +8627,7 @@ export default function PatientDetailPage() {
                         <span style={{ fontSize: 12, color: '#8AA89C' }}>{s.checkDate || '-'}</span>
                       </div>
                       {/* 化验/检验结果：仅数值型项目按表格展示。影像检查的结果保存在
-                          findings/diagnosis/conclusion，不能只读 value，否则家庭医生看到空白结果。 */}
+                          findings/diagnosis/conclusion，不能只读 value，否则健康顾问看到空白结果。 */}
                       {s.reportItems?.some(item => item.itemType !== 'imaging' && !(item.findings || item.diagnosis || item.conclusion)) && (
                         <div style={{ marginBottom: 8 }}>
                           <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, marginBottom: 4 }}>检验结果</div>
@@ -8824,7 +8822,7 @@ export default function PatientDetailPage() {
             <div className="modal-footer" style={{ flexDirection: 'column', gap: 8, alignItems: 'stretch' }}>
               {/* 审核操作区：仅当报告待审核时展示。2026-07-21修复：确认AI结果(aiStatus→reviewed)
                   现在会自动把audit_status一并置为audited(见PATCH /medical-reports/:id)，这里的
-                  独立审核入口此前可以绕过AI结果确认、直接把audit_status设audited，导致家庭医生
+                  独立审核入口此前可以绕过AI结果确认、直接把audit_status设audited，导致健康顾问
                   拿到的是未经健管核对过的AI原始提取数据。收紧：走过AI解析流程(aiStatus不是none)
                   的报告必须先在"审核AI结果"弹窗确认，这里不再单独放行；居家监测/功能医学检测等
                   本就不支持AI解析的报告(aiStatus一直是none)保留原有直接审核通道，否则永远无法审核。 */}
@@ -10383,7 +10381,7 @@ export function GiftModal({ patientId, patientName, onClose, onSaved }) {
 
 // ── 转介弹窗 ───────────────────────────────────────────────
 const ROLE_LABEL_MAP = {
-  familyDoctor:'家庭医师', nutritionist:'营养师', healthManager:'健管专员',
+  familyDoctor:'健康顾问', nutritionist:'营养师', healthManager:'健管专员',
   medicalAssistant:'就医专员', psychologist:'心理咨询师', rehabSpecialist:'运动复健师',
   tcmDoctor:'中医师', specialist:'专科医师', healthPlanner:'健康规划师', superadmin:'超级管理员',
 }
@@ -10676,8 +10674,8 @@ function FamilyTab({ patientId, user, onRefresh }) {
         <div className="card-body">
           <InfoRow label="联系人" value={user.contactName || '-'} />
           <InfoRow label="联系电话" value={user.contactPhone2 || user.contactPhone3 || '-'} />
-          <InfoRow label="家庭医师" value={user.assignedFamilyDoctor?.name || '-'} />
-          <InfoRow label="家庭医师职称" value={user.assignedFamilyDoctor?.title || '-'} />
+          <InfoRow label="健康顾问" value={user.assignedFamilyDoctor?.name || '-'} />
+          <InfoRow label="健康顾问职称" value={user.assignedFamilyDoctor?.title || '-'} />
         </div>
       </div>
 
@@ -10995,7 +10993,7 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
   const [selectedId, setSelectedId] = useState('')
   const [generating, setGenerating] = useState(false)
   // 就医协助方案：模板本身是固定骨架(SOP)，不像体检/营养方案有结构化的"标准项目"可锁定，
-  // 就医场景每次的具体情况差异很大（去哪家医院/是否加急/患者状况等），需要专员当场填一句
+  // 就医场景每次的具体情况差异很大（去哪家医院/是否加急/会员状况等），需要专员当场填一句
   // 简要说明，AI结合这句话+模板类型生成初稿，而不是完全靠AI自己猜（2026-07-13需求）
   const [briefNote, setBriefNote] = useState('')
 
@@ -11028,7 +11026,7 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
           <div className="form-group" style={{ marginBottom: 12 }}>
             <label className="form-label">服务目标（可选，AI会结合目标更有方向地生成初稿）</label>
             <textarea className="form-input" rows={2} placeholder={
-              planType === 'medical_assist' ? '如：这次去北京协和看内分泌科，患者行动不便需要轮椅，希望尽快安排'
+              planType === 'medical_assist' ? '如：这次去北京协和看内分泌科，会员行动不便需要轮椅，希望尽快安排'
                 : planType === 'nutrition' ? '如：控制血糖、三个月内减重5公斤'
                   : '如：重点排查心血管风险——会影响AI在加项库里的选择倾向'
             } value={briefNote} onChange={e => setBriefNote(e.target.value)} />
@@ -11036,7 +11034,7 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
         </div>
         <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
           <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 12 }}>
-            方案的标准内容以模板为准，AI只会结合患者情况在模板基础上做定制，不会脱离模板另起一套。
+            方案的标准内容以模板为准，AI只会结合会员情况在模板基础上做定制，不会脱离模板另起一套。
           </div>
           {loading && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
           {error && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {error}</div>}

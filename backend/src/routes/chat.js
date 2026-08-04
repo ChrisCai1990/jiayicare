@@ -7,16 +7,20 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 const router = express.Router();
 
-const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康助手，主要服务于慢性病（高血压、糖尿病、心血管疾病等）患者。职责涵盖：日常健康科普、指标解读、用药提醒建议、服务套餐咨询、就医流程指导。
+const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康规划师。你的角色类似服务顾问：帮助会员梳理健康管理需求、明确阶段目标、介绍平台服务内容、规划服务步骤，并在需要时转接人工健康管理专员。
 
 回答要求：
 1. 使用中文，语气温和专业
 2. 回答控制在200字以内，简洁精准
-3. 涉及药物剂量调整、诊断等，必须建议用户咨询专科医师
-4. 每次回答末尾加：「本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。」
-5. 不捏造数据，对不确定的信息说"建议咨询您的家庭医生"`;
+3. 先询问会员希望改善的问题、期望目标、可投入时间和服务偏好，再给出健康管理需求清单与建议服务路径
+4. 可以介绍健康档案整理、体检信息整理、生活方式管理、健康提醒、复查提醒和就医协助，但不得把某项服务描述为医疗诊断或治疗
+5. 不提供疾病诊断、治疗方案、处方、线上复诊、检查开单、药品推荐、停换药或剂量调整，不解读症状来判断疾病
+6. 遇到医疗问题，简短说明超出服务范围，建议前往正规医疗机构；遇到胸痛、呼吸困难、意识障碍等紧急情况，提示立即拨打120
+7. 不捏造会员信息，不制造焦虑，不承诺疗效，不使用“治愈”“治疗”“保证改善”等表述
+8. 服务推荐必须说明推荐理由，由会员自主选择，不得诱导购买高价套餐
+9. 每次回答末尾加：「小嘉仅提供健康管理需求梳理与服务规划，不提供诊断、治疗或处方。」`;
 
-// 从AI健康分析/风险评估结果中摘取要点，供对话时结合上下文回答（只取已审核可见的版本，与患者当前实际看到的一致）
+// 从AI健康分析/风险评估结果中摘取要点，供对话时结合上下文回答（只取已审核可见的版本，与会员当前实际看到的一致）
 function buildHealthInsightContext(user) {
   const lines = [];
   const summary = user.aiHealthSummary || {};
@@ -37,15 +41,15 @@ function buildHealthInsightContext(user) {
   if (risk.overallSummary) {
     lines.push(`【AI风险评估】整体风险等级：${risk.overallLevel || '未知'}；${risk.overallSummary}`);
   }
-  return lines.length ? `\n患者健康分析要点（供回答时参考，不要直接照搬粘贴，需结合用户实际提问自然表达）：\n${lines.join('\n')}` : '';
+  return lines.length ? `\n会员健康管理资料摘要（仅用于梳理服务需求，不得据此诊断或治疗）：\n${lines.join('\n')}` : '';
 }
 
 // 意图识别（关键词规则，快速无额外API调用）
 function detectIntent(text) {
   const t = text.toLowerCase();
-  const serviceKw = ['预约', '体检', '服务包', '套餐', '怎么买', '购买', '流程', '开通', '续费', '多少钱', '价格'];
+  const serviceKw = ['预约', '体检', '服务包', '套餐', '怎么买', '购买', '流程', '开通', '续费', '多少钱', '价格', '规划', '需求'];
   const dataKw = ['我的', '最新', '上次', '多少', '几点', '血压', '血糖', '心率', '体重', '睡眠', '查一下', '看看'];
-  const outKw = ['处方', '手术', '住院', '诊断', '开药'];
+  const outKw = ['处方', '手术', '住院', '诊断', '开药', '什么病', '怎么治疗', '吃什么药', '停药', '换药', '剂量', '问诊', '开单'];
 
   if (outKw.some(k => t.includes(k))) return 'out_of_scope';
   if (dataKw.filter(k => t.includes(k)).length >= 2) return 'data';
@@ -93,8 +97,7 @@ router.post('/', auth, async (req, res) => {
     return res.status(503).json({ success: false, message: 'AI服务暂未开通，请联系管理员配置。' });
   }
 
-  // 一对一AI咨询：有家庭医生团队的客户可自由咨询、不限次数；无家庭医生的客户仅限于讨论自己的AI健康分析/风险评估结果，
-  // 不承接问诊/服务咨询等开放性话题（该类客户无人工审核兜底，需收窄AI建议范围），且每日限5次防止滥用
+  // AI健康规划师仅承担需求梳理与服务规划；是否配有专业团队都不改变非医疗边界。
   const me = await User.findById(userId).select('assignedFamilyDoctor aiHealthSummary aiRiskAssessment');
   const hasDoctor = !!me?.assignedFamilyDoctor;
 
@@ -103,7 +106,7 @@ router.post('/', auth, async (req, res) => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayCount = await ChatLog.countDocuments({ user: userId, createdAt: { $gte: todayStart } });
     if (todayCount >= DAILY_LIMIT_NO_DOCTOR) {
-      return res.status(429).json({ success: false, message: `今日AI咨询次数已达上限（${DAILY_LIMIT_NO_DOCTOR}次），请明天再来，或联系客服升级家庭医生团队服务` });
+      return res.status(429).json({ success: false, message: `今日AI规划次数已达上限（${DAILY_LIMIT_NO_DOCTOR}次），请明天再来，或联系健康管理专员继续梳理需求` });
     }
   }
 
@@ -112,7 +115,7 @@ router.post('/', auth, async (req, res) => {
 
   // 超出范围直接返回
   if (intent === 'out_of_scope') {
-    const reply = '您的问题涉及专业诊疗范畴，AI助手无法提供此类建议。请联系您的家庭医生或拨打急救电话。本回复由AI生成，仅供健康参考，不构成医疗诊断或建议。';
+    const reply = '这个问题属于医疗诊疗范畴，小嘉不能提供判断或建议。请前往正规医疗机构咨询执业医师；如情况紧急，请立即拨打120。小嘉仅提供健康管理需求梳理与服务规划，不提供诊断、治疗或处方。';
     const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: reply });
     return res.json({ success: true, data: { content: reply, intent, logId: log._id } });
   }
@@ -132,7 +135,7 @@ router.post('/', auth, async (req, res) => {
     userInfo.medications && `用药：${userInfo.medications}`,
   ].filter(Boolean).join('，');
 
-  const scopeNotice = hasDoctor ? '' : `\n【重要限制】该用户暂未配备家庭医生团队，无人工审核兜底。请仅围绕用户自己的AI健康分析/风险评估结果（见下方"患者健康分析要点"）答疑解惑，不要提供超出该结果范围的诊疗建议或开放性问诊服务；若用户提问与自己的分析结果无关，引导其联系客服或等待配备家庭医生团队。`;
+  const scopeNotice = `\n【角色边界】无论会员是否配有专业服务团队，你都只能进行健康管理需求梳理、服务规划与平台服务介绍。健康资料只能用于判断可能需要哪类非医疗健康管理支持，不能用于疾病判断、诊疗建议或用药指导。`;
 
   const systemPrompt = [
     BASE_SYSTEM,
@@ -174,7 +177,7 @@ router.post('/', auth, async (req, res) => {
 });
 
 // POST /api/chat/transfer — 转人工，落库为待办，健管专员在 ai-todos 待审核列表可见（transfer_human 场景），
-// 同时把最近几轮AI聊天摘要注入到健管的人工对话（Message，manager频道），避免患者需要重新描述一遍问题
+// 同时把最近几轮AI聊天摘要注入到健管的人工对话（Message，manager频道），避免会员需要重新描述一遍问题
 router.post('/transfer', auth, async (req, res) => {
   const { lastMessage = '' } = req.body;
   try {
@@ -200,8 +203,8 @@ router.post('/transfer', auth, async (req, res) => {
       sender: '系统',
       title: 'AI对话转人工',
       content: historyLines
-        ? `会员从AI健康助手转来，以下是此前对话摘要：\n\n${historyLines}\n\n会员当前问题：${lastMessage}`
-        : `会员从AI健康助手转来人工咨询：${lastMessage}`,
+        ? `会员从AI健康规划师转来，以下是此前需求梳理摘要：\n\n${historyLines}\n\n会员当前需求：${lastMessage}`
+        : `会员从AI健康规划师转来人工服务规划：${lastMessage}`,
       conversationId: `${req.user._id}_manager`,
     });
 
@@ -219,7 +222,7 @@ router.post('/transfer', auth, async (req, res) => {
 });
 
 // GET /api/chat/logs/:userId — 查看自己的对话记录（只能查自己）
-// 医护端查看患者记录请走 staff 路由（待接入）
+// 医护端查看会员记录请走 staff 路由（待接入）
 router.get('/logs/:userId', auth, async (req, res) => {
   if (req.user._id.toString() !== req.params.userId) {
     return res.status(403).json({ success: false, message: '无权访问' });

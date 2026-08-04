@@ -94,7 +94,7 @@ export default function LoginScreen({ navigation }) {
             <Ionicons name="medical" size={28} color="#5EC99B" />
           </View>
           <Text style={styles.brandName}>嘉医管家</Text>
-          <Text style={styles.brandSlogan}>您的私人家庭医生服务平台</Text>
+          <Text style={styles.brandSlogan}>您的数字化健康管理服务平台</Text>
         </View>
 
         {/* 底部数据背书行 */}

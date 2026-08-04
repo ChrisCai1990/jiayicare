@@ -41,7 +41,7 @@ export default function FollowUpsPanel() {
   // date 存的是下单那一秒的时间戳，导致下单几乎立刻就被判定"已过期"（2026-07-13 反馈）
   const isOverdue = (d) => new Date(d) < todayStart
   const overdueCount = items.filter(f => isOverdue(f.date)).length
-  // 按随访人员姓名本地筛选（家庭医生名下会看到多个执行人的随访，需要快速定位某人）
+  // 按随访人员姓名本地筛选（健康顾问名下会看到多个执行人的随访，需要快速定位某人）
   const filteredItems = searchName.trim()
     ? items.filter(f => (f.assignedTo?.name || '').includes(searchName.trim()))
     : items

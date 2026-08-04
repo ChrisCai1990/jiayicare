@@ -12,17 +12,17 @@ const PACKAGES = [
   {
     id: 'pkg_1y', name: '年度服务包', duration: '12 个月', price: 3650, originalPrice: 5000,
     tag: '最超值', tagColor: '#DC3545', highlight: true,
-    features: ['专属健管师全年陪伴', '专属家庭医生咨询6次', '就医协助服务', 'AI助手无限次使用'],
+    features: ['专属健管师全年陪伴', '健康管理规划6次', '就医协助服务', 'AI健康规划不限次'],
   },
   {
     id: 'pkg_6m', name: '半年服务包', duration: '6 个月', price: 1980, originalPrice: 2800,
     tag: '推荐', tagColor: colors.primary, highlight: false,
-    features: ['专属健管师半年陪伴', '专属家庭医生咨询3次', '就医协助服务95折', 'AI助手无限次使用'],
+    features: ['专属健管师半年陪伴', '健康管理规划3次', '就医协助服务95折', 'AI健康规划不限次'],
   },
   {
     id: 'pkg_3m', name: '季度服务包', duration: '3 个月', price: 1080, originalPrice: 1480,
     tag: '', tagColor: '', highlight: false,
-    features: ['专属健管师季度陪伴', '专属家庭医生咨询1次', 'AI助手无限次使用'],
+    features: ['专属健管师季度陪伴', '健康管理规划1次', 'AI健康规划不限次'],
   },
 ];
 
@@ -78,6 +78,7 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
   const [payMethod, setPayMethod] = useState('wechat');
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState('');
+  const [serviceAgreed, setServiceAgreed] = useState(false);
   const fundBalance = user?.healthFund?.total || 0;
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
@@ -97,6 +98,7 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
+    if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
     setErrMsg(''); setSubmitting(true);
     try {
       const noteLabel = isRenewal ? `续约申请：${pkg.name}（${pkg.duration}）` : `服务包申请：${pkg.name}（${pkg.duration}）`;
@@ -190,6 +192,12 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
         <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '17px', display: 'block', marginBottom: `${spacing.md}px` }}>
           提交后，健管师将在 1 个工作日内联系您完成{PAYMENT_METHODS.find((m) => m.key === payMethod)?.label}支付及服务激活
         </Text>
+        <View onClick={() => setServiceAgreed(!serviceAgreed)} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: `${spacing.md}px` }}>
+          <Text style={{ color: serviceAgreed ? colors.primary : colors.textMuted }}>{serviceAgreed ? '☑' : '☐'}</Text>
+          <Text style={{ flex: 1, fontSize: '11px', color: colors.textSecondary, lineHeight: '17px' }}>
+            我已阅读并同意<Text style={{ color: colors.primary }} onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}>《健康管理服务说明》</Text>，知悉本服务不提供诊断、治疗、处方或检查开单。
+          </Text>
+        </View>
 
         {!!errMsg && (
           <View style={{ backgroundColor: '#FDECEA', borderRadius: `${radius.sm}px`, padding: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
@@ -201,7 +209,7 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
           <View onClick={submitting ? undefined : onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>取消</Text>
           </View>
-          <View onClick={submitting ? undefined : handleSubmit} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting ? 0.6 : 1 }}>
+          <View onClick={submitting ? undefined : handleSubmit} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting || !serviceAgreed ? 0.6 : 1 }}>
             <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{submitting ? '提交中...' : '提交申请'}</Text>
           </View>
         </View>
@@ -357,7 +365,7 @@ export default function RenewalPage() {
 
       <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, marginBottom: `${spacing.xxl}px` }}>
         <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>专属权益</Text>
-        {['专属健管师全程陪伴管理', '专属家庭医生咨询问诊', '无缝衔接：开通即激活，全部功能立即可用'].map((b, i) => (
+        {['专属健管师全程陪伴管理', '健康管理需求梳理与服务规划', '开通后按套餐内容提供非医疗健康管理服务'].map((b, i) => (
           <Text key={i} style={{ fontSize: '12px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>🎁 {b}</Text>
         ))}
       </View>

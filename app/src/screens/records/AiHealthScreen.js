@@ -368,7 +368,7 @@ export default function AiHealthScreen({ navigation }) {
               <View style={[styles.doctorNotice, { marginBottom: 6 }]}>
                 <Ionicons name={reviewStatus.doctorApproved ? 'medkit-outline' : 'time-outline'} size={18} color={reviewStatus.doctorApproved ? colors.success : colors.info} />
                 <Text style={styles.doctorNoticeText}>
-                  医疗分析（5维度）：{reviewStatus.doctorApproved ? '已由家庭医生审核确认' : '草稿待家庭医生审核，结果可能调整'}
+                  健康信息分析（5维度）：{reviewStatus.doctorApproved ? '已由专业人员复核' : '草稿待专业人员复核，结果可能调整'}
                 </Text>
               </View>
               {reviewStatus.hasLifestyle && (
@@ -387,7 +387,7 @@ export default function AiHealthScreen({ navigation }) {
             <View style={styles.doctorNotice}>
               <Ionicons name={curPending ? 'time-outline' : 'medkit-outline'} size={18} color={curPending ? colors.info : colors.success} />
               <Text style={styles.doctorNoticeText}>
-                {curPending ? '草稿已生成，待您的家庭医生团队审核，审核结果可能有调整' : '已由您的家庭医生团队审核确认'}
+                {curPending ? '草稿已生成，待您的健康顾问团队审核，审核结果可能有调整' : '已由您的健康顾问团队审核确认'}
               </Text>
             </View>
           )}
@@ -415,7 +415,7 @@ export default function AiHealthScreen({ navigation }) {
             <View style={styles.emptyWrap}>
               <Ionicons name="analytics-outline" size={44} color={colors.textMuted} />
               <Text style={styles.emptyTitle}>暂无{tab}</Text>
-              <Text style={styles.emptyDesc}>点击上方按钮，AI将结合您的体检数据与健康档案自动生成{hasDoctor ? '，生成后由家庭医生团队审核' : ''}</Text>
+              <Text style={styles.emptyDesc}>点击上方按钮，AI将结合您的体检数据与健康档案自动生成{hasDoctor ? '，生成后由健康顾问团队审核' : ''}</Text>
             </View>
           )}
 

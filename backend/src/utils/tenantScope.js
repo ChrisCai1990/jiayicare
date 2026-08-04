@@ -67,7 +67,7 @@ const performanceRuleSchema = {
 // 服务岗位枚举：一个产品可能由多个岗位协同提供服务（如"轻享健康管理"涉及家医+营养师+AI）。
 // 与 Admin.role 的一线岗位保持一致，供多服务人员绩效分配使用。
 const SERVICE_PERFORMER_ROLES = [
-  'familyDoctor',      // 家庭医生
+  'familyDoctor',      // 健康顾问
   'nutritionist',      // 营养师
   'healthManager',     // 健管专员
   'medicalAssistant',  // 就医专员

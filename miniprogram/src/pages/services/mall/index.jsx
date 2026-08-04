@@ -48,7 +48,7 @@ function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrde
         <View style={{ flex: 1 }}>
           <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>开通专属服务包</Text>
           <View style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-            {['专属家庭医生咨询', '健管师全程陪伴', '全年复查提醒', 'AI无限次咨询'].map((p, i) => (
+            {['健康管理专员服务', '健管师全程陪伴', '全年复查提醒', 'AI健康规划'].map((p, i) => (
               <Text key={i} style={{ fontSize: '11px', color: colors.textSecondary }}>✓ {p}</Text>
             ))}
           </View>
@@ -167,6 +167,7 @@ function PurchaseModal({ item, mode, onClose }) {
   const isPay = mode === 'pay';
   const [note, setNote] = useState('');
   const [payMethod, setPayMethod] = useState('wechat');
+  const [serviceAgreed, setServiceAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [errMsg, setErrMsg] = useState('');
@@ -196,6 +197,7 @@ function PurchaseModal({ item, mode, onClose }) {
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
+    if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
     setSubmitting(true); setErrMsg('');
     try {
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
@@ -375,13 +377,19 @@ function PurchaseModal({ item, mode, onClose }) {
           <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '16px', display: 'block', marginBottom: `${spacing.lg}px` }}>
             {isPay ? '提交后生成待收款订单，健管师将与您确认并完成收款，可在"我的订单"查看' : '提交后，健管师将与您联系确认具体服务安排'}
           </Text>
+          <View onClick={() => setServiceAgreed(!serviceAgreed)} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: `${spacing.md}px` }}>
+            <Text style={{ color: serviceAgreed ? colors.primary : colors.textMuted }}>{serviceAgreed ? '☑' : '☐'}</Text>
+            <Text style={{ flex: 1, fontSize: '11px', color: colors.textSecondary, lineHeight: '17px' }}>
+              我已阅读并同意<Text style={{ color: colors.primary }} onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}>《健康管理服务说明》</Text>，知悉本服务不提供诊断、治疗、处方或检查开单。
+            </Text>
+          </View>
         </ScrollView>
 
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
           <View onClick={onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>取消</Text>
           </View>
-          <View onClick={submitting ? undefined : handleSubmit} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting ? 0.6 : 1 }}>
+          <View onClick={submitting ? undefined : handleSubmit} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting || !serviceAgreed ? 0.6 : 1 }}>
             <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{submitting ? '提交中...' : (isPay ? `确认支付 ¥${finalPrice}` : '提交预约')}</Text>
           </View>
         </View>

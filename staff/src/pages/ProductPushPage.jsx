@@ -283,7 +283,7 @@ export default function ProductPushPage() {
 }
 
 const PERFORMER_ROLE_LABEL = {
-  familyDoctor: '家庭医生', nutritionist: '营养师', healthManager: '健管专员',
+  familyDoctor: '健康顾问', nutritionist: '营养师', healthManager: '健管专员',
   medicalAssistant: '就医专员', psychologist: '心理咨询师', rehabSpecialist: '运动复健师',
   specialist: '专科医师', tcmDoctor: '中医师',
 }

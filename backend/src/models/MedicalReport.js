@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 // 报告解析后的单条项目（检验/检查值）
 const reportItemSchema = new mongoose.Schema({
   name:           { type: String, default: '' }, // 项目名称
+  sourceSection:  { type: String, default: '' }, // 报告原始栏目标题，用于保序和组合检查完整性校验
   value:          { type: String, default: '' }, // 检测值（字符串保留原始格式）
   unit:           { type: String, default: '' }, // 单位
   referenceRange: { type: String, default: '' }, // 参考范围
@@ -112,16 +113,16 @@ const medicalReportSchema = new mongoose.Schema({
   audited_at:   { type: Date,   default: null },
   reject_reason:{ type: String, default: '' },
 
-  // 家庭医生单份查看留痕（2026-07-28新增）：家庭医生在"待查看新增报告"清单里点开某份报告，
+  // 健康顾问单份查看留痕（2026-07-28新增）：健康顾问在"待查看新增报告"清单里点开某份报告，
   // 立即持久化这份报告"已被查看"，不依赖最后一次性点击的"确认已查看"整体动作——否则中途退出
   // 没走到最后确认，下次进来这份报告又会显示"待查看"，用户已经看过的内容却要求重新看一遍。
   familyDoctorViewedAt: { type: Date, default: null },
   familyDoctorViewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
 
-  // ── 家庭医生双审（第二道，2026-07-21新增）───────────────────────────
-  // 家庭医生在做AI健康解析/风险评估前，必须先审核确认该客户所有健管专员已审核的报告。
+  // ── 健康顾问双审（第二道，2026-07-21新增）───────────────────────────
+  // 健康顾问在做AI健康解析/风险评估前，必须先审核确认该客户所有健管专员已审核的报告。
   // 与 audit_status/audited_by/audited_at（健管专员那道）完全独立，互不覆盖。
-  // 家庭医生审核时可编辑 reportItems（专项筛查记录），编辑后的 reportItems 直接作为后续
+  // 健康顾问审核时可编辑 reportItems（专项筛查记录），编辑后的 reportItems 直接作为后续
   // AI分析的数据源（即 reportItems 本体只保留"当前最终生效版本"），健管专员审核时的原始版本
   // 单独存进 staffAuditSnapshot 只读快照供溯源，不随后续编辑变化。
   familyDoctorAudit: {
@@ -129,7 +130,7 @@ const medicalReportSchema = new mongoose.Schema({
     by:     { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
     byName: { type: String, default: '' },
     at:     { type: Date, default: null },
-    // 家庭医生审核时若编辑了 reportItems，逐字段记录改动，供溯源"XX字段由医生于XX时间修改，原值：XX"
+    // 健康顾问审核时若编辑了 reportItems，逐字段记录改动，供溯源"XX字段由医生于XX时间修改，原值：XX"
     editLog: [{
       itemIndex: Number,   // reportItems 数组下标
       itemName:  String,   // 该条项目名称（冗余存一份，方便展示不必反查）
@@ -139,8 +140,8 @@ const medicalReportSchema = new mongoose.Schema({
       at:        Date,
     }],
   },
-  // 健管专员审核通过那一刻的 reportItems 快照，家庭医生首次审核时如果还没有快照会自动补一份。
-  // 只读，不随后续家庭医生编辑变化，用于对比溯源"最初健管专员审核的是什么"。
+  // 健管专员审核通过那一刻的 reportItems 快照，健康顾问首次审核时如果还没有快照会自动补一份。
+  // 只读，不随后续健康顾问编辑变化，用于对比溯源"最初健管专员审核的是什么"。
   staffAuditSnapshot: {
     reportItems: { type: mongoose.Schema.Types.Mixed, default: null },
     snapshotAt:  { type: Date, default: null },

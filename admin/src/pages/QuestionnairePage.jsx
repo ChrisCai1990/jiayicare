@@ -577,7 +577,7 @@ function QuestionnaireModal({ questionnaire, onClose, onSaved }) {
             <div style={{ fontSize: 12, fontWeight: 700, color: '#8AA89C', marginBottom: 2 }}>基本信息</div>
             <input className="form-input" value={form.title}
               onChange={e => set('title', e.target.value)}
-              placeholder="问卷标题 *（如：高血压患者生活质量调查）" />
+              placeholder="问卷标题 *（如：高血压会员生活质量调查）" />
             <textarea className="form-input" rows={2} value={form.description}
               onChange={e => set('description', e.target.value)}
               placeholder="问卷说明（可选）" />

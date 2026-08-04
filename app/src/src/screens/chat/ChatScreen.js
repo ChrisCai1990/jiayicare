@@ -17,7 +17,7 @@ const ROLES = [
 
 const QUICK_QUESTIONS = [
   '我的血压最近偏高，怎么办？',
-  '高血压患者饮食上要注意什么？',
+  '帮我梳理一下最近的健康管理重点',
   '我应该多久测一次血糖？',
   '睡眠不好对血压有影响吗？',
 ];
@@ -141,7 +141,7 @@ export default function ChatScreen({ navigation }) {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.topBarCenter}>
-          <Text style={styles.pageTitle}>AI 健康助手</Text>
+          <Text style={styles.pageTitle}>AI 健康规划师</Text>
           <View style={styles.onlineTag}>
             <View style={styles.onlineDot} />
             <Text style={styles.onlineText}>在线</Text>

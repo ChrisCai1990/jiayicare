@@ -1,3 +1,3 @@
 export default definePageConfig({
-  navigationBarTitleText: 'AI健康助手',
+  navigationBarTitleText: 'AI健康规划师',
 });

@@ -1,5 +1,5 @@
 // 肿瘤筛查覆盖度评估引擎
-// 输入：患者性别/年龄 + 全部专项筛查报告
+// 输入：会员性别/年龄 + 全部专项筛查报告
 // 输出：每个适用肿瘤的覆盖状态（已覆盖 / 待补做 + 原因），供 AI 健康分析的「筛查覆盖度」维度使用。
 // 规则来源：config/cancerScreeningRules.js（金娟医学口径固化）。
 
@@ -136,7 +136,7 @@ function evalCancer(cancerKey, rule, ctx) {
   return result;
 }
 
-// 主入口：评估该患者所有适用肿瘤的覆盖度
+// 主入口：评估该会员所有适用肿瘤的覆盖度
 function assessCancerCoverage(user, reports) {
   const genderF = user.gender === '女';
   const age = user.age != null ? Number(user.age) : null;

@@ -1,6 +1,6 @@
 const mongoose = require('mongoose');
 
-// 员工团队：把若干医护人员编成一个团队，设一名导师(mentor)。导师除了自己名下的患者，
+// 员工团队：把若干医护人员编成一个团队，设一名导师(mentor)。导师除了自己名下的会员，
 // 还能查看同团队其他成员名下的客户档案，用于带教/质量把控。
 // 与 Department（科室，用于挂号）是两套独立概念——Team 是人员协作分组，不是挂号科室。
 const teamSchema = new mongoose.Schema({

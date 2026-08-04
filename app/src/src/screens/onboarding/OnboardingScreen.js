@@ -228,7 +228,7 @@ function Step2({ data, setData }) {
 
 function Step3() {
   const slots = [
-    { role: '家庭医生', title: '负责健康监测与诊疗建议', icon: 'medical', color: colors.primary },
+    { role: '健康管理顾问', title: '负责健康目标梳理与服务规划', icon: 'compass', color: colors.primary },
     { role: '健管专员', title: '负责日常健康管理跟进', icon: 'person', color: colors.accent },
     { role: '营养师', title: '负责饮食方案与营养指导', icon: 'nutrition', color: colors.warning },
   ];

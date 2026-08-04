@@ -26,10 +26,10 @@ const medicationSchema = new mongoose.Schema({
   createdByStaff: { type: Boolean, default: false },
   staffId:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   createdByName:  { type: String, default: '' },   // 新增操作人姓名（谁录入的）
-  // 审核（场景9：家庭医师审核后激活）；健管专员/就医专员手动新增也走此审核流
+  // 审核（场景9：健康顾问审核后激活）；健管专员/就医专员手动新增也走此审核流
   aiStatus: { type: String, enum: ['pending', 'approved', 'rejected'], default: null },
   aiGeneratedBy: { type: String, default: '' },
-  reviewedByName: { type: String, default: '' },   // 审核人姓名（家庭医师）
+  reviewedByName: { type: String, default: '' },   // 审核人姓名（健康顾问）
   reviewedAt:     { type: Date, default: null },   // 审核时间
   sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', ''], default: 'manual' },
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },

@@ -325,7 +325,7 @@ export default function ProfileScreen({ navigation }) {
       return user.careTeam.map((m, i) => ({ name: m.name, role: m.role, online: true, bg: BG_COLORS[i % BG_COLORS.length] }));
     }
     return [
-      user?.doctor?.name  ? { name: user.doctor.name,  role: user.doctor.title  || '家庭医师', online: true, bg: BG_COLORS[0] } : null,
+      user?.doctor?.name  ? { name: user.doctor.name,  role: user.doctor.title  || '健康顾问', online: true, bg: BG_COLORS[0] } : null,
       user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家', online: true, bg: BG_COLORS[1] } : null,
     ].filter(Boolean);
   })();

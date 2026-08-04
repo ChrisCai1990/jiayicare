@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState, useCallback, useRef } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { staffAPI } from '../api'
 import { usePermission } from '../App'
@@ -207,7 +207,7 @@ export default function PatientsPage() {
                 <th>性别/年龄</th>
                 <th>慢病</th>
                 <th>健管专员</th>
-                <th>家庭医师</th>
+                <th>健康顾问</th>
                 <th>健康规划师</th>
                 <th>会员类型</th>
                 <th style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setSortByScore(s => !s)}>

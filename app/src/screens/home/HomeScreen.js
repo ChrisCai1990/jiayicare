@@ -354,7 +354,7 @@ export default function HomeScreen({ navigation }) {
   const activeFollowupTaskItems = followupPlans.filter(plan => !plan.completedByUser && !['completed', 'cancelled'].includes(plan.status)).map(plan => ({
       _id: plan._id,
       type: 'followup',
-      title: plan.sourceType === 'symptom' ? '不适主诉待家庭医生处理' : (plan.theme || '随访计划'),
+      title: plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划'),
       description: plan.taskRequirements || plan.plannedContent || plan.content,
       assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
       dueDate: plan.date

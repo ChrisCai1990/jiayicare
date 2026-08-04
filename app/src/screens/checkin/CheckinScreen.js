@@ -298,7 +298,7 @@ export default function CheckinScreen({ navigation }) {
     setSymptomNote('');
     loadTodayStatus();
     if (hasUrgent) {
-      Alert.alert('建议尽快联系医师', '您选择的症状可能需要及时处理，建议立即联系您的家庭医生或健康管理师。');
+      Alert.alert('建议尽快联系医师', '您选择的症状可能需要及时处理，建议立即联系您的健康顾问或健康管理师。');
     }
   };
 

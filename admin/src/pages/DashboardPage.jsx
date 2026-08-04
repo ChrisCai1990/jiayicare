@@ -53,7 +53,7 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* 最近患者 */}
+      {/* 最近会员 */}
       <div className="card">
         <div className="card-title">
           <span>👥</span> 最新注册会员

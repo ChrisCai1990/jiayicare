@@ -9,7 +9,7 @@ const OPTIONS_4 = [
 
 const PHQ9 = {
   type: 'phq9',
-  name: 'PHQ-9 患者健康问卷（抑郁症筛查）',
+  name: 'PHQ-9 会员健康问卷（抑郁症筛查）',
   intro: '在过去两周内，以下问题困扰您的频率有多少？',
   questions: [
     '做事时提不起劲或没有兴趣',

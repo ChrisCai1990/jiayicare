@@ -290,7 +290,7 @@ export default function CheckinPage() {
     setSymptomNote('');
     loadTodayStatus();
     if (hasUrgent) {
-      Taro.showModal({ title: '建议尽快联系医师', content: '您选择的症状可能需要及时处理，建议立即联系您的家庭医生或健康管理师。', showCancel: false });
+      Taro.showModal({ title: '建议尽快联系医师', content: '您选择的症状可能需要及时处理，建议立即联系您的健康顾问或健康管理师。', showCancel: false });
     }
   };
 

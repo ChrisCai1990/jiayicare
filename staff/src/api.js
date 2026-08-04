@@ -80,7 +80,7 @@ export const staffAPI = {
   getReports:    (p = {}) => req('/staff/medical-reports?' + qs(p)),
   getReport:     (id)     => req(`/staff/medical-reports/${id}`),
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
-  // 家庭医生健康档案查看确认（2026-07-28改造，不再逐份审核报告数据本身）
+  // 健康顾问健康档案查看确认（2026-07-28改造，不再逐份审核报告数据本身）
   getPendingDoctorAuditReports: (patientId) => req(`/staff/patients/${patientId}/reports/pending-doctor-audit`),
   confirmArchiveReview: (patientId) => req(`/staff/patients/${patientId}/archive-review`, { method: 'POST' }),
   markReportFamilyDoctorViewed: (reportId) => req(`/staff/medical-reports/${reportId}/family-doctor-view`, { method: 'PATCH' }),
@@ -270,13 +270,13 @@ export const staffAPI = {
   updatePackage:     (id,d) => req(`/staff/marketing/packages/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
   deletePackage:     (id)   => req(`/staff/marketing/packages/${id}`, { method: 'DELETE' }),
 
-  // 患者药物管理
+  // 会员药物管理
   getPatientMedications:    (id)       => req(`/staff/patients/${id}/medications`),
   createPatientMedication:  (id, data) => req(`/staff/patients/${id}/medications`, { method: 'POST', body: JSON.stringify(data) }),
   updatePatientMedication:  (id, medId, data) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deletePatientMedication:  (id, medId) => req(`/staff/patients/${id}/medications/${medId}`, { method: 'DELETE' }),
 
-  // 患者营养素管理
+  // 会员营养素管理
   getPatientSupplements:    (id)       => req(`/staff/patients/${id}/supplements`),
   createPatientSupplement:  (id, data) => req(`/staff/patients/${id}/supplements`, { method: 'POST', body: JSON.stringify(data) }),
   updatePatientSupplement:  (id, supId, data) => req(`/staff/patients/${id}/supplements/${supId}`, { method: 'PATCH', body: JSON.stringify(data) }),
@@ -285,7 +285,7 @@ export const staffAPI = {
   // 专项筛查三层目录（从管理端套餐动态读取）
   getScreeningTree:         ()         => req('/staff/screening-tree'),
 
-  // 患者专项筛查 & 日常打卡（医护端查看）
+  // 会员专项筛查 & 日常打卡（医护端查看）
   getPatientScreening:      (id)       => req(`/staff/patients/${id}/screening`),
   dedupPatientScreening:    (id)       => req(`/staff/patients/${id}/screening/dedup`, { method: 'POST', body: JSON.stringify({}) }),
   deleteAIScreeningItem:    (id, data) => req(`/staff/patients/${id}/screening/ai-item`, { method: 'DELETE', body: JSON.stringify(data) }),

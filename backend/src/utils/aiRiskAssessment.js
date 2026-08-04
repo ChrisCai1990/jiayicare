@@ -153,11 +153,11 @@ async function generateRiskAssessment(user) {
     return `${label}：近30天共${recs.length}次打卡，最早${fmt(first)}→最近${fmt(last)}`;
   }).join('\n') || '近30天暂无相关打卡记录';
 
-  const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。建议内容如涉及需要医生跟进，一律使用"家庭医生"这一称呼，不要用"主治医生"（本平台提供的是家庭医生服务）。
+  const prompt = `你是一位健康风险评估专家，请基于规则引擎信号和体检数据，对以下4个维度做风险分级。建议内容如涉及需要医生跟进，一律使用"健康顾问"这一称呼，不要用"主治医生"（本平台提供的是健康顾问服务）。
 
 【医疗事实铁律】只能使用证据目录明确支持的事实；无记录写“资料未提供/不足以判断”。冠心病、冠脉支架、心肌梗死不等于脑梗死或脑卒中；颈动脉斑块不等于脑卒中；风险因素不等于确诊疾病。禁止自行补全病史。规则引擎信号必须逐条纳入对应维度，不得遗漏或改写成其他疾病。输出前核对四个维度是否完整、每个因素是否有证据、是否误造病史。
 
-【患者】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
+【会员】姓名：${user.name}，性别：${user.gender || '未知'}，年龄：${user.age || '未知'}岁；慢病标签：${user.chronicDiseases?.join('、') || '无'}；既往史：${user.healthProfile?.pastHistory || '无'}；家族史：${user.healthProfile?.familyHistoryNote || '无'}
 【个人生活习惯】${lifestyleLines}
 【体检关键指标（近一年）】${labLines}
 【规则引擎预警信号】
@@ -166,7 +166,7 @@ ${sigText}
 ${geneticText}
 【近30天打卡记录（血压/血糖/体重/心率日常自测，体现比体检报告更实时的波动）】
 ${checkinText}
-【带编号证据目录（所有患者事实以此为边界）】
+【带编号证据目录（所有会员事实以此为边界）】
 ${evidenceCatalog}
 
 心血管和糖尿病风险维度请特别关注【近30天打卡记录】：如果打卡显示血压/血糖近期持续偏高或波动明显，即使体检报告是达标的，也应在相应维度提示"近期自测数据显示XX有上升趋势，建议复查"，不能仅依赖可能已经过时的体检报告下结论。
