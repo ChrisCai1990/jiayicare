@@ -159,24 +159,51 @@ function HealthPortraitOverview({ user, reports = [] }) {
                 </filter>
               </defs>
               <g filter="url(#portraitShadow)">
-                {isFemalePortrait && <path d="M112 49 Q108 12 140 9 Q172 12 168 49 Q164 65 153 70 H127 Q116 65 112 49Z" fill="#3E5D51" />}
-                {!isFemalePortrait && <path d="M115 31 Q121 8 143 9 Q163 10 166 28 Q151 20 116 33Z" fill="#3E5D51" />}
-                <ellipse cx="140" cy="40" rx="23" ry="29" fill="url(#portraitSkin)" />
-                <path d="M130 43 Q140 49 150 43" fill="none" stroke="#A77E69" strokeWidth="1.2" strokeLinecap="round" opacity=".45" />
-                <circle cx="132" cy="37" r="1.4" fill="#52665E" opacity=".7" /><circle cx="148" cy="37" r="1.4" fill="#52665E" opacity=".7" />
-                <path d="M133 55 Q140 59 147 55" fill="none" stroke="#B27A72" strokeWidth="1.2" strokeLinecap="round" />
-                <path d="M131 64 L130 78 H150 L149 64" fill="url(#portraitSkin)" />
-                {isFemalePortrait ? (
-                  <path d="M112 78 Q140 68 168 78 Q174 112 167 156 L181 210 Q158 221 140 221 Q122 221 99 210 L113 156 Q106 112 112 78Z" fill="url(#portraitGarment)" />
-                ) : (
-                  <path d="M102 80 Q140 67 178 80 L168 211 H112Z" fill="url(#portraitGarment)" />
-                )}
-                <path d="M108 83 Q91 88 88 106 L76 190 Q74 207 86 211 Q99 214 103 197 L116 107Z" fill="url(#portraitSkin)" />
-                <path d="M172 83 Q189 88 192 106 L204 190 Q206 207 194 211 Q181 214 177 197 L164 107Z" fill="url(#portraitSkin)" />
-                <path d="M111 207 Q125 202 139 210 L136 318 H116 Q109 317 110 308Z" fill="#6F9788" />
-                <path d="M141 210 Q155 202 169 207 L170 308 Q171 317 164 318 H144Z" fill="#5F8979" />
-                {!isFemalePortrait && <path d="M126 77 L140 94 L154 77" fill="#F8FBF9" opacity=".9" />}
-                {isFemalePortrait && <path d="M128 77 Q140 91 152 77" fill="none" stroke="#F4FBF7" strokeWidth="3" opacity=".8" />}
+                {isFemalePortrait ? <>
+                  {/* 年轻女性：蓬松卷发、收腰连衣裙与高跟鞋 */}
+                  <path d="M113 52 Q104 29 116 13 Q127 -1 145 3 Q165 5 172 22 Q180 42 166 63 Q158 72 150 67 H126 Q116 68 113 52Z" fill="#4B332B" />
+                  <circle cx="112" cy="31" r="8" fill="#5A3A30" /><circle cx="116" cy="16" r="8" fill="#5A3A30" />
+                  <circle cx="128" cy="8" r="8" fill="#5A3A30" /><circle cx="144" cy="7" r="8" fill="#5A3A30" />
+                  <circle cx="159" cy="13" r="8" fill="#5A3A30" /><circle cx="168" cy="27" r="8" fill="#5A3A30" />
+                  <ellipse cx="140" cy="37" rx="17" ry="23" fill="url(#portraitSkin)" />
+                  <path d="M123 27 Q133 11 160 18 Q150 22 123 35Z" fill="#5A3A30" />
+                  <circle cx="134" cy="37" r="1.3" fill="#4A504D" /><circle cx="147" cy="37" r="1.3" fill="#4A504D" />
+                  <path d="M136 49 Q141 52 146 48" fill="none" stroke="#B66F76" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M134 58 L133 75 H148 L147 58" fill="url(#portraitSkin)" />
+                  <path d="M115 78 Q140 68 165 78 L171 153 L185 218 Q163 226 140 226 Q117 226 95 218 L109 153Z" fill="url(#portraitGarment)" />
+                  <path d="M109 82 Q96 87 93 105 L83 190 Q81 204 90 207 Q100 210 104 195 L118 105Z" fill="url(#portraitSkin)" />
+                  <path d="M171 82 Q184 87 187 105 L197 190 Q199 204 190 207 Q180 210 176 195 L162 105Z" fill="url(#portraitSkin)" />
+                  <path d="M113 153 Q140 161 167 153" fill="none" stroke="#F3E5C5" strokeWidth="4" />
+                  <circle cx="140" cy="156" r="3" fill="#D2AA61" />
+                  <path d="M121 221 L136 221 L132 303 H118Z" fill="url(#portraitSkin)" />
+                  <path d="M144 221 L159 221 L162 303 H148Z" fill="url(#portraitSkin)" />
+                  <path d="M115 300 H133 L132 309 H113 Q109 308 115 300Z" fill="#593E48" />
+                  <path d="M147 300 H164 L170 309 H149Z" fill="#593E48" />
+                  <path d="M114 307 L111 316" stroke="#593E48" strokeWidth="3" strokeLinecap="round" />
+                  <path d="M164 307 L168 316" stroke="#593E48" strokeWidth="3" strokeLinecap="round" />
+                  <path d="M128 74 Q140 88 152 74" fill="none" stroke="#FFF7EA" strokeWidth="3" />
+                </> : <>
+                  {/* 年轻男性：利落发型、修身西装与皮鞋 */}
+                  <path d="M119 29 Q121 5 143 5 Q164 6 168 27 Q157 18 149 17 Q135 22 119 32Z" fill="#2F3D3A" />
+                  <path d="M120 24 Q129 8 153 9 L163 18 Q141 14 120 31Z" fill="#3B4B47" />
+                  <ellipse cx="140" cy="38" rx="17" ry="23" fill="url(#portraitSkin)" />
+                  <circle cx="134" cy="38" r="1.3" fill="#414A47" /><circle cx="147" cy="38" r="1.3" fill="#414A47" />
+                  <path d="M136 50 Q141 52 146 49" fill="none" stroke="#A76F6C" strokeWidth="1.4" strokeLinecap="round" />
+                  <path d="M134 58 L133 76 H148 L147 58" fill="url(#portraitSkin)" />
+                  <path d="M104 82 Q140 67 176 82 L168 213 H112Z" fill="#314B59" />
+                  <path d="M106 84 Q93 88 90 106 L79 190 Q77 204 87 208 Q98 211 102 196 L117 106Z" fill="#314B59" />
+                  <path d="M174 84 Q187 88 190 106 L201 190 Q203 204 193 208 Q182 211 178 196 L163 106Z" fill="#314B59" />
+                  <ellipse cx="86" cy="202" rx="8" ry="10" fill="url(#portraitSkin)" /><ellipse cx="194" cy="202" rx="8" ry="10" fill="url(#portraitSkin)" />
+                  <path d="M124 77 L140 101 L156 77" fill="#FAFCFB" />
+                  <path d="M105 82 L127 78 L140 101 L122 94Z" fill="#456476" />
+                  <path d="M175 82 L153 78 L140 101 L158 94Z" fill="#456476" />
+                  <path d="M140 92 L145 102 L140 149 L135 102Z" fill="#8F3945" />
+                  <circle cx="140" cy="157" r="2" fill="#D2BE96" /><circle cx="140" cy="178" r="2" fill="#D2BE96" />
+                  <path d="M112 209 Q126 203 139 211 L136 306 H113Z" fill="#253946" />
+                  <path d="M141 211 Q154 203 168 209 L167 306 H144Z" fill="#203540" />
+                  <path d="M111 302 H137 L136 313 H105 Q103 308 111 302Z" fill="#171F23" />
+                  <path d="M144 302 H169 Q177 307 175 313 H144Z" fill="#171F23" />
+                </>}
               </g>
               {bodyMarkers.map((marker, index) => {
                 const leftSide = index % 2 === 0
