@@ -25,20 +25,48 @@ function HealthPortraitOverview({ user, reports = [] }) {
     return report.type === 'annual' || /年度.{0,6}体检报告|全面体检|健康体检报告/.test(title)
   }
   const auditedReports = reports.filter(report => report.audit_status === 'audited' || report.aiStatus === 'reviewed')
+  const normalizeCheckDate = (value) => {
+    const text = String(value || '').trim()
+    const matched = text.match(/^(\d{4}-\d{2}-\d{2})/)
+    return matched ? matched[1] : text
+  }
   const batchesByDate = auditedReports.reduce((map, report) => {
-    const dateKey = report.checkDate || report.date || (isExplicitComprehensiveReport(report) ? String(report.reportYear || '') : '')
+    const dateKey = normalizeCheckDate(report.checkDate || report.date || (isExplicitComprehensiveReport(report) ? String(report.reportYear || '') : ''))
     if (!dateKey) return map
     if (!map[dateKey]) map[dateKey] = { dateKey, reports: [] }
     map[dateKey].reports.push(report)
     return map
   }, {})
+  const medicalDomainRules = [
+    /血常规|红细胞|白细胞|血红蛋白|血小板|凝血/,
+    /生化|肝功能|转氨酶|胆红素|白蛋白|肾功能|肌酐|尿素|尿酸|血脂|胆固醇|甘油三酯|血糖|糖化血红蛋白/,
+    /尿常规|尿检|尿蛋白|尿潜血|尿比重/,
+    /心电图|心脏超声|肌钙蛋白|BNP|脑钠肽|颈动脉|血压/,
+    /腹部超声|肝胆胰脾|肝脏超声|胆囊超声|胰腺超声|脾脏超声/,
+    /甲状腺|内分泌|甲功|维生素D/,
+    /前列腺|子宫|附件|卵巢|宫颈|妇科/,
+    /肿瘤标志物|甲胎蛋白|癌胚抗原|CA\d|PSA/,
+    /胸片|胸部CT|肺功能|肺部|呼吸/,
+    /胃镜|肠镜|幽门螺杆菌|呼气试验|消化/,
+    /乙肝|丙肝|梅毒|HIV|EB病毒|感染/,
+    /眼科|视力|眼底|耳鼻喉|听力|口腔/,
+  ]
   const comprehensiveBatches = Object.values(batchesByDate).filter(batch => {
     const items = batch.reports.flatMap(report => report.reportItems || [])
     const titles = new Set(batch.reports.map(report => String(report.title || '').trim()).filter(Boolean))
-    const domains = new Set(items.flatMap(item => [item.screeningParent, item.screeningCategory, item.orderName, item.sourceSection]).filter(Boolean))
+    const searchableText = batch.reports.flatMap(report => [
+      report.title,
+      report.screeningL1,
+      report.screeningL2,
+      report.screeningCategory,
+      ...(report.reportItems || []).flatMap(item => [item.name, item.orderName, item.sourceSection]),
+    ]).filter(Boolean).join(' ')
+    const domainCount = medicalDomainRules.filter(rule => rule.test(searchableText)).length
     const hasExplicitMarker = batch.reports.some(isExplicitComprehensiveReport)
-    const hasBroadCoverage = items.length >= 8 && (domains.size >= 3 || (batch.reports.length >= 3 && titles.size >= 3))
-    return hasExplicitMarker || hasBroadCoverage
+    const hasBroadCoverage = items.length >= 8 && domainCount >= 4
+    const hasBroadSplitCoverage = batch.reports.length >= 5 && titles.size >= 5 && domainCount >= 3
+    const hasCredibleExplicitReport = hasExplicitMarker && items.length >= 6 && domainCount >= 3
+    return hasBroadCoverage || hasBroadSplitCoverage || hasCredibleExplicitReport
   })
   const latestComprehensiveBatch = comprehensiveBatches.sort((a, b) => new Date(b.dateKey) - new Date(a.dateKey))[0]
   const latestComprehensiveDate = latestComprehensiveBatch
@@ -116,12 +144,30 @@ function HealthPortraitOverview({ user, reports = [] }) {
         <div style={{ minHeight: 360, borderRadius: 18, background: 'linear-gradient(180deg,#F1F8F4 0%,#FBFDFC 100%)', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
           <span style={{ position: 'absolute', top: 12, right: 14, padding: '3px 8px', borderRadius: 99, background: '#E3F1EA', color: '#527566', fontSize: 10, fontWeight: 700 }}>{portraitGenderLabel}</span>
           <div aria-label="人物健康画像示意" style={{ position: 'relative', width: 190, height: 310 }}>
-            <div style={{ position: 'absolute', top: 0, left: 48, width: 54, height: 54, borderRadius: '50%', background: '#B8D8C9' }} />
-            <div style={{ position: 'absolute', top: 61, left: isMalePortrait ? 30 : isFemalePortrait ? 38 : 34, width: isMalePortrait ? 90 : isFemalePortrait ? 74 : 82, height: 132, borderRadius: isMalePortrait ? '26px 26px 20px 20px' : '38px 38px 28px 28px', background: '#8FC2AA' }} />
-            <div style={{ position: 'absolute', top: 72, left: 9, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(8deg)', transformOrigin: 'top' }} />
-            <div style={{ position: 'absolute', top: 72, left: 116, width: 25, height: 130, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-8deg)', transformOrigin: 'top' }} />
-            <div style={{ position: 'absolute', top: 183, left: 40, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(2deg)', transformOrigin: 'top' }} />
-            <div style={{ position: 'absolute', top: 183, left: 81, width: 29, height: 126, borderRadius: 20, background: '#B8D8C9', transform: 'rotate(-2deg)', transformOrigin: 'top' }} />
+            <svg viewBox="0 0 190 310" width="190" height="310" aria-hidden="true" style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+              <defs>
+                <linearGradient id="portraitSilhouette" x1="0" y1="0" x2="0.85" y2="1">
+                  <stop offset="0" stopColor="#BBDDD0" />
+                  <stop offset="1" stopColor="#82B9A2" />
+                </linearGradient>
+                <filter id="portraitShadow" x="-30%" y="-20%" width="160%" height="160%">
+                  <feDropShadow dx="0" dy="6" stdDeviation="7" floodColor="#517D6A" floodOpacity=".14" />
+                </filter>
+              </defs>
+              <g filter="url(#portraitShadow)" fill="url(#portraitSilhouette)">
+                <circle cx="75" cy="29" r="27" />
+                <rect x="66" y="52" width="18" height="17" rx="8" />
+                {isFemalePortrait ? (
+                  <path d="M49 72 Q75 57 101 72 Q109 110 103 151 L115 194 H88 L91 299 Q91 307 82 307 H72 Q65 307 65 299 L62 194 H35 L47 151 Q41 111 49 72Z" />
+                ) : (
+                  <path d="M39 72 Q75 57 111 72 L103 180 Q101 194 88 194 L91 299 Q91 307 82 307 H72 Q65 307 65 299 L62 194 H55 Q42 194 40 180Z" />
+                )}
+                <path d="M45 77 Q28 80 25 99 L11 188 Q9 201 20 205 Q32 209 36 196 L52 105Z" />
+                <path d="M105 77 Q122 80 125 99 L139 188 Q141 201 130 205 Q118 209 114 196 L98 105Z" />
+                <path d="M62 190 L62 299 Q62 308 52 308 H46 Q37 308 38 298 L42 188Z" />
+              </g>
+              <path d="M75 72 V188" stroke="#FFFFFF" strokeOpacity=".2" strokeWidth="1" strokeDasharray="3 6" />
+            </svg>
             {bodyMarkers.map((marker, index) => (
               <span key={marker.key} title={allPortraitIssues.filter(issue => marker.pattern.test(issue)).join('；')} style={{ position: 'absolute', top: marker.top, left: 63, display: 'inline-flex', alignItems: 'center', gap: 5, zIndex: 2, whiteSpace: 'nowrap' }}>
                 <span style={{ width: 24, height: 24, borderRadius: '50%', background: index % 2 ? '#D97706' : '#DC3545', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 800, boxShadow: `0 3px 9px ${index % 2 ? '#D9770666' : '#DC354566'}` }}>{index + 1}</span>
@@ -1422,6 +1468,10 @@ export default function PatientDetailPage() {
       if (header) {
         header.dataset.archiveToggle = 'true'
         header.title = '点击收起或展开此板块'
+        if (!card.dataset.archiveInitialized) {
+          card.classList.add('archive-collapsed')
+          card.dataset.archiveInitialized = 'true'
+        }
       }
     })
   }, [tab, data, healthRecords])
