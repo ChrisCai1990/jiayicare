@@ -212,13 +212,13 @@ export default function LoginScreen({ navigation }) {
                 style={styles.notRegBtn}
                 onPress={() => {
                   if (typeof window !== 'undefined') {
-                    window.open('tel:17742039618');
+                    window.open('tel:19106761448');
                   }
                 }}
                 activeOpacity={0.8}
               >
                 <Ionicons name="call-outline" size={15} color="#FFFFFF" style={{ marginRight: 6 }} />
-                <Text style={styles.notRegBtnText}>拨打客服：17742039618</Text>
+                <Text style={styles.notRegBtnText}>拨打客服：19106761448</Text>
               </TouchableOpacity>
               <TouchableOpacity onPress={() => setNotRegistered(false)}>
                 <Text style={styles.notRegDismiss}>返回重试</Text>

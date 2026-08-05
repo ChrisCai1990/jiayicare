@@ -13,9 +13,14 @@ import Icon from '../../components/Icon';
 // - 语音播报(tts.speak)未接入，小程序场景暂不做
 const ROLE_DEFS = [
   { key: 'doctor', label: '健康顾问', icon: '🩺', color: colors.primary },
-  { key: 'manager', label: '健管师', icon: '🧑‍💼', color: '#D97706' },
+  { key: 'manager', label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
   { key: 'nutritionist', label: '营养师', icon: '🥗', color: '#059669' },
 ];
+
+// 兼容数据库中已生成的旧角色名称，历史消息也统一使用当前人物定位。
+const normalizeRoleSender = (sender = '') => sender
+  .replace(/代家庭医师/g, '代健康顾问')
+  .replace(/代健管师/g, '代健管专员');
 
 const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
 const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
@@ -249,7 +254,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
                     </View>
                     <View style={{ flex: 1 }}>
                       <View style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
-                        <Text style={{ fontSize: '14px', fontWeight: msg.unread ? 600 : 500, color: colors.textPrimary }}>{msg.sender || msg.title || conf.label}</Text>
+                        <Text style={{ fontSize: '14px', fontWeight: msg.unread ? 600 : 500, color: colors.textPrimary }}>{normalizeRoleSender(msg.sender) || msg.title || conf.label}</Text>
                         <Text style={{ fontSize: '11px', color: colors.textMuted }}>{fmtMsgTime(msg.createdAt)}</Text>
                       </View>
                       <Text style={{ fontSize: '13px', color: colors.textSecondary }} numberOfLines={3}>{msg.content}</Text>
@@ -280,7 +285,7 @@ function MessageDetailModal({ msg, onClose }) {
             <Icon name={conf.icon} size={20} color={conf.color} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{msg.sender}</Text>
+            <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{normalizeRoleSender(msg.sender)}</Text>
             <Text style={{ fontSize: '12px', color: colors.textMuted }}>{fmtMsgTime(msg.createdAt)}</Text>
           </View>
         </View>
@@ -548,7 +553,7 @@ function ConversationThread({ role, onClose }) {
                   }}>
                     {!isMine && (
                       <Text style={{ fontSize: '11px', fontWeight: 700, color: meta.color, display: 'block', marginBottom: '4px' }}>
-                        {m.sender || meta.label}{m.isAI ? ' · AI' : ''}
+                        {normalizeRoleSender(m.sender) || meta.label}{m.isAI ? ' · AI' : ''}
                       </Text>
                     )}
                     <Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>

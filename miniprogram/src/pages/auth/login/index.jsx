@@ -191,9 +191,9 @@ export default function LoginPage() {
             <Button
               style={{ backgroundColor: '#0077B6', color: '#fff', fontSize: '14px', borderRadius: `${radius.sm}px` }}
               openType="call"
-              onClick={() => Taro.makePhoneCall({ phoneNumber: '17742039618' })}
+              onClick={() => Taro.makePhoneCall({ phoneNumber: '19106761448' })}
             >
-              拨打客服：17742039618
+              拨打客服：19106761448
             </Button>
           </View>
         )}

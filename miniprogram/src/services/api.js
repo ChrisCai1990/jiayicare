@@ -105,6 +105,7 @@ export const userAPI = {
   postAiHealthSummary: () => request('/user/ai-health-summary', { method: 'POST' }),
   getAiRiskAssessment: () => request('/user/ai-risk-assessment'),
   postAiRiskAssessment: () => request('/user/ai-risk-assessment', { method: 'POST' }),
+  getScreeningYearlySummary: (year) => request(`/user/screening-yearly-summary${year ? `?year=${year}` : ''}`),
 };
 
 // ── Health Records ────────────────────────────────────────────────
@@ -116,6 +117,7 @@ export const recordsAPI = {
   },
   trend: (type) => request(`/records/trend/${type}`),
   create: (data) => request('/records', { method: 'POST', body: JSON.stringify(data) }),
+  update: (id, data) => request(`/records/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   delete: (id) => request(`/records/${id}`, { method: 'DELETE' }),
   todayStatus: () => request('/records/today-status'),
 };
@@ -156,6 +158,7 @@ export const messagesAPI = {
   markAllRead: () => request('/messages/read-all', { method: 'PATCH' }),
   send: (to, content) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content }) }),
   getThread: (role) => request(`/messages/thread/${role}`),
+  recall: (id) => request(`/messages/${id}/recall`, { method: 'PATCH' }),
 };
 
 // ── Push Records (医护端推送) ─────────────────────────────────────
@@ -204,6 +207,7 @@ export const chatAPI = {
   transfer: (lastMessage) =>
     request('/chat/transfer', { method: 'POST', body: JSON.stringify({ lastMessage }) }),
   getLogs: (userId) => request(`/chat/logs/${userId}`),
+  recall: (logId) => request(`/chat/logs/${logId}/recall`, { method: 'PATCH' }),
 };
 
 // ── Questionnaire ─────────────────────────────────────────────────
@@ -221,6 +225,7 @@ export const checkupAPI = {
 // ── Services / 服务商城 ───────────────────────────────────────────
 export const servicesAPI = {
   list: () => request('/services'),
+  packages: () => request('/services/packages'),
   order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel) =>
     request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel }) }),
   coupons: () => request('/services/coupons'),

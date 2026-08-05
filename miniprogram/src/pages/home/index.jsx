@@ -396,7 +396,6 @@ export default function HomePage() {
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
             <View>
               <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>常用健康服务</Text>
-              <Text style={{ fontSize: '10px', color: colors.textMuted }}>咨询、检查、调理服务便捷选购</Text>
             </View>
             <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>全部商城 ›</Text></View>
           </View>
@@ -425,7 +424,7 @@ export default function HomePage() {
           borderRadius: `${radius.lg}px`, padding: `${spacing.md}px ${spacing.lg}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.sm,
         }}>
           <Icon name="✅" size={18} color="#fff" />
-          <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: '#fff' }}>完成今日打卡</Text>
+          <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: '#fff' }}>记录健康数据</Text>
           <Text style={{ fontSize: '16px', color: 'rgba(255,255,255,0.8)' }}>›</Text>
         </View>
 

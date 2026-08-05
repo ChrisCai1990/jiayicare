@@ -6,7 +6,6 @@ import { tasksAPI, followupTasksAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 
-// 简化实现：待办任务 + 随访计划合并列表，完整版含分类Tab/表单填写见 app/src/screens/tasks/TasksScreen.js
 export default function TasksPage() {
   const { statusBarHeight } = useNavBar();
   const [tasks, setTasks] = useState([]);
@@ -30,7 +29,15 @@ export default function TasksPage() {
   };
 
   const doneFollowup = async (id) => {
-    try { await followupTasksAPI.done(id, true, false); load(); } catch {}
+    try {
+      const result = await Taro.showActionSheet({ itemList: ['仍需健管专员跟进', '无需跟进，标记完成'] });
+      const needFollowUp = result.tapIndex === 0;
+      await followupTasksAPI.done(id, true, needFollowUp);
+      Taro.showToast({ title: needFollowUp ? '已通知健管专员跟进' : '已完成', icon: 'success' });
+      load();
+    } catch (err) {
+      if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: err.message || '操作失败', icon: 'none' });
+    }
   };
 
   const pendingTasks = tasks.filter((t) => t.status === 'pending');
