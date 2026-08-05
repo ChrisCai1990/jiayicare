@@ -161,6 +161,9 @@ export default function ProfilePage() {
               <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
               <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>到期 {user.serviceExpiry} · 剩余 {daysLeft} 天</Text>
             </View>
+            <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={() => nav('/pages/services/renewal/index')}>
+              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>续约</Text>
+            </View>
           </View>
         </View>
       )}
@@ -181,7 +184,7 @@ export default function ProfilePage() {
         {careTeam.length === 0 ? (
           <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px` }}>
             <Icon name="👥" size={20} color={colors.textMuted} />
-            <Text style={{ flex: 1, fontSize: '12px', color: colors.textMuted, lineHeight: '18px' }}>健管团队待分配，服务关系建立后将由工作人员配置</Text>
+            <Text style={{ flex: 1, fontSize: '12px', color: colors.textMuted, lineHeight: '18px' }}>健管团队待分配，完成服务包开通后即可配置</Text>
           </View>
         ) : (
           <ScrollView scrollX style={{ whiteSpace: 'nowrap' }}>
