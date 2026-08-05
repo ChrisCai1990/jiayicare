@@ -17,6 +17,14 @@ const TYPE_META = {
 };
 const CORE_TYPES = ['bloodPressure', 'bloodSugar', 'sleep', 'heartRate', 'weight'];
 const DAILY_TYPES = ['diet', 'exercise', 'bowel', 'water', 'smoking', 'alcohol', 'mood'];
+const BODY_METRICS = [
+  { key: 'weight', referenceKey: 'weightReference', label: '体成分体重', unit: 'kg', color: '#2563EB' },
+  { key: 'skelMuscle', referenceKey: 'skelMuscleReference', label: '骨骼肌', unit: 'kg', color: colors.primary },
+  { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', label: '体脂率', unit: '%', color: '#D97706' },
+  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪', unit: '级', color: '#7C3AED' },
+];
+const bodyNumber = value => Number(String(value ?? '').match(/-?\d+(?:\.\d+)?/)?.[0]);
+const bodyDate = row => String(row?.measuredAt || row?.checkDate || row?.recordedAt || '').slice(0, 10);
 
 const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: colors.info };
 
@@ -292,20 +300,25 @@ export default function RecordsIndexPage() {
 
         <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>身体成分</Text>
         {(() => {
-          const latestHistory = [...bodyCompHistory].sort((a, b) => String(b.measuredAt || b.checkDate || b.recordedAt || '').localeCompare(String(a.measuredAt || a.checkDate || a.recordedAt || '')))[0] || {};
-          const body = { ...bodyComposition, ...latestHistory };
-          const metrics = [
-            { key: 'weight', label: '体成分体重', unit: 'kg' },
-            { key: 'skelMuscle', label: '骨骼肌', unit: 'kg' },
-            { key: 'bodyFatRate', label: '体脂率', unit: '%' },
-            { key: 'visceralFat', label: '内脏脂肪', unit: '级' },
-          ].filter((item) => body[item.key] !== undefined && body[item.key] !== null && body[item.key] !== '');
-          return metrics.length ? <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: `${spacing.lg}px` }}>
-            {metrics.map((item) => <View key={item.key} style={{ width: 'calc(50% - 4px)', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
-              <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{item.label}</Text>
-              <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>{body[item.key]} {item.unit}</Text>
-            </View>)}
-          </View> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无身体成分数据</Text></View>;
+          const history = [...bodyCompHistory];
+          if (Object.keys(bodyComposition || {}).length) history.push(bodyComposition);
+          const cards = BODY_METRICS.map((metric) => {
+            const rows = history.filter(row => Number.isFinite(bodyNumber(row?.[metric.key])))
+              .sort((a, b) => bodyDate(a).localeCompare(bodyDate(b)));
+            if (!rows.length) return null;
+            const latest = rows[rows.length - 1];
+            const points = rows.map(row => ({ label: bodyDate(row)?.slice(5) || '未标注', value: bodyNumber(row[metric.key]) }));
+            const reference = [...rows].reverse().find(row => row?.[metric.referenceKey])?.[metric.referenceKey] || '未录入';
+            return <View key={metric.key} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.card }}>
+              <View style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
+                <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{metric.label}</Text>
+                <Text style={{ fontSize: '18px', fontWeight: 800, color: metric.color }}>{bodyNumber(latest[metric.key])} {metric.unit}</Text>
+              </View>
+              <TrendChart points={points} height={118} color={metric.color} />
+              <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '6px', display: 'block' }}>最新检测：{bodyDate(latest) || '未标注'} · 参考范围：{reference}</Text>
+            </View>;
+          }).filter(Boolean);
+          return cards.length ? <View style={{ marginBottom: `${spacing.lg}px` }}>{cards}</View> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无身体成分数据</Text></View>;
         })()}
 
         <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>今日健康状态</Text>
