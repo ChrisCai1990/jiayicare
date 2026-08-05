@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, Input, Textarea, ScrollView } from '@tarojs/components';
-import Taro from '@tarojs/taro';
+import Taro, { useRouter } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { questionnaireAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
@@ -192,6 +192,8 @@ function NumberQuestion({ q, answer, onAnswer }) {
 }
 
 export default function QuestionnairePage() {
+  const router = useRouter();
+  const targetQuestionnaireId = router.params?.id ? decodeURIComponent(router.params.id) : '';
   const { statusBarHeight } = useNavBar();
   const { updateUser } = useAuth();
   const [mode, setMode] = useState('select');
@@ -208,8 +210,21 @@ export default function QuestionnairePage() {
   const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
-    questionnaireAPI.pending().then((res) => setPendingQs(res.data || [])).catch(() => {}).finally(() => setLoadingPending(false));
-  }, []);
+    questionnaireAPI.pending()
+      .then((res) => {
+        const pending = res.data || [];
+        setPendingQs(pending);
+        if (targetQuestionnaireId) {
+          const target = pending.find((item) => String(item._id) === String(targetQuestionnaireId));
+          if (target) {
+            setSelectedDynamic(target);
+            setMode('dynamic');
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setLoadingPending(false));
+  }, [targetQuestionnaireId]);
 
   const activeQuestions = mode === 'dynamic' ? (selectedDynamic?.questions || []) : QUESTIONS;
   const q = activeQuestions[currentQ] || activeQuestions[0];

@@ -55,6 +55,7 @@ function normalizePushRecord(pr) {
     productName: pr.title || '',
     productId: pr.productId || null,
     products: pr.products || [],
+    questionnaireId: pr.questionnaireId?._id || pr.questionnaireId || null,
   };
 }
 
@@ -276,6 +277,11 @@ function MessageDetailModal({ msg, onClose }) {
     return <ProductPushDetail msg={msg} onClose={onClose} />;
   }
   const conf = NOTIF_TYPE_CONFIG[msg.type] || { icon: '💬', color: colors.primary };
+  const openQuestionnaire = () => {
+    const questionnaireId = msg.questionnaireId ? `?id=${encodeURIComponent(msg.questionnaireId)}` : '';
+    onClose();
+    Taro.navigateTo({ url: `/pages/questionnaire/index${questionnaireId}` });
+  };
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }} onClick={onClose}>
       <View onClick={(e) => e.stopPropagation && e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '75%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
@@ -293,8 +299,15 @@ function MessageDetailModal({ msg, onClose }) {
         <ScrollView scrollY style={{ flex: 1, marginBottom: `${spacing.md}px` }}>
           <Text style={{ fontSize: '15px', color: colors.textSecondary, lineHeight: '24px' }}>{msg.content || '（暂无详细内容）'}</Text>
         </ScrollView>
-        <View onClick={onClose} style={{ backgroundColor: colors.primary, borderRadius: `${radius.md}px`, padding: '14px', textAlign: 'center' }}>
-          <Text style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>关闭</Text>
+        <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+          <View onClick={onClose} style={{ flex: 1, border: `1.5px solid ${colors.primary}`, borderRadius: `${radius.md}px`, padding: '14px', textAlign: 'center' }}>
+            <Text style={{ color: colors.primary, fontSize: '16px', fontWeight: 700 }}>关闭</Text>
+          </View>
+          {msg.type === 'questionnaire' && (
+            <View onClick={openQuestionnaire} style={{ flex: 2, backgroundColor: '#0077B6', borderRadius: `${radius.md}px`, padding: '14px', textAlign: 'center' }}>
+              <Text style={{ color: '#fff', fontSize: '16px', fontWeight: 700 }}>填写问卷</Text>
+            </View>
+          )}
         </View>
       </View>
     </View>
