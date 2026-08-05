@@ -226,8 +226,8 @@ export const checkupAPI = {
 export const servicesAPI = {
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, wxLoginCode) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, wxLoginCode }) }),
   coupons: () => request('/services/coupons'),
 };
 

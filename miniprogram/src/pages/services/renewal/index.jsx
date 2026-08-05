@@ -6,6 +6,7 @@ import { servicesAPI, messagesAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { getVirtualPaymentLoginCode, requestVirtualPayment } from '../../../utils/virtualPayment';
 
 // 服务包目录：与后端 backend/src/routes/services.js 的 PACKAGE_CATALOG 完全对齐
 const PACKAGES = [
@@ -27,8 +28,7 @@ const PACKAGES = [
 ];
 
 const PAYMENT_METHODS = [
-  { key: 'wechat', label: '微信支付' },
-  { key: 'alipay', label: '支付宝' },
+  { key: 'wechat_virtual', label: '微信小程序虚拟支付' },
   { key: 'bank', label: '银行转账' },
 ];
 
@@ -75,7 +75,7 @@ function PackageCard({ pkg, selected, onSelect }) {
 
 function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
   const { user } = useAuth();
-  const [payMethod, setPayMethod] = useState('wechat');
+  const [payMethod] = useState('wechat_virtual');
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState('');
   const [serviceAgreed, setServiceAgreed] = useState(false);
@@ -102,8 +102,12 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
     setErrMsg(''); setSubmitting(true);
     try {
       const noteLabel = isRenewal ? `续约申请：${pkg.name}（${pkg.duration}）` : `服务包申请：${pkg.name}（${pkg.duration}）`;
-      const res = await servicesAPI.order(pkg.id, noteLabel, payMethod, fundApplied, couponId);
-      if (res.success) onSuccess(res.data?.orderNo || '');
+      const wxLoginCode = finalPrice > 0 ? await getVirtualPaymentLoginCode() : undefined;
+      const res = await servicesAPI.order(pkg.id, noteLabel, payMethod, fundApplied, couponId, undefined, wxLoginCode);
+      if (res.success) {
+        if (res.data?.virtualPayment) await requestVirtualPayment(res.data.virtualPayment);
+        onSuccess(res.data?.orderNo || '');
+      }
       else setErrMsg(res.message || '提交失败，请重试');
     } catch (e) {
       setErrMsg(e.message || '网络错误，请检查连接后重试');
@@ -190,7 +194,7 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
         </View>
 
         <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '17px', display: 'block', marginBottom: `${spacing.md}px` }}>
-          提交后，健管师将在 1 个工作日内联系您完成{PAYMENT_METHODS.find((m) => m.key === payMethod)?.label}支付及服务激活
+          将通过微信官方小程序虚拟支付完成付款，支付成功后健管师将在 1 个工作日内联系您确认服务激活
         </Text>
         <View onClick={() => setServiceAgreed(!serviceAgreed)} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: `${spacing.md}px` }}>
           <Text style={{ color: serviceAgreed ? colors.primary : colors.textMuted }}>{serviceAgreed ? '☑' : '☐'}</Text>
@@ -286,7 +290,7 @@ export default function RenewalPage() {
         </Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, textAlign: 'left', marginBottom: `${spacing.xl}px` }}>
           <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>接下来的流程</Text>
-          {[{ step: '01', label: '健管师电话联系您', desc: '确认套餐信息' }, { step: '02', label: '完成支付', desc: '微信 / 支付宝 / 银行转账' }, { step: '03', label: '服务正式激活', desc: '享受全部专属权益' }].map((s) => (
+          {[{ step: '01', label: '确认套餐信息', desc: '选择服务期限与抵扣权益' }, { step: '02', label: '完成支付', desc: '微信小程序虚拟支付' }, { step: '03', label: '服务正式激活', desc: '享受全部专属权益' }].map((s) => (
             <View key={s.step} style={{ display: 'flex', alignItems: 'flex-start', gap: `${spacing.sm}px`, marginBottom: `${spacing.sm}px` }}>
               <View style={{ width: '28px', height: '28px', borderRadius: '14px', backgroundColor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                 <Text style={{ fontSize: '11px', fontWeight: 800, color: '#fff' }}>{s.step}</Text>

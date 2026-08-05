@@ -11,6 +11,7 @@ const FollowUp = require('../models/FollowUp');
 const Admin   = require('../models/Admin');
 const ServicePackage = require('../models/ServicePackage');
 const { awardOrderPoints } = require('../utils/orderPoints');
+const { getConfig: getVirtualPayConfig, exchangeLoginCode, buildPaymentPayload } = require('../utils/wechatVirtualPayment');
 
 const Product = require('../models/Product');
 
@@ -88,7 +89,7 @@ const PACKAGE_CATALOG = [
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
-  const { serviceId, specificationLabel, note, paymentMethod, useHealthFund, couponId } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod, useHealthFund, couponId, wxLoginCode } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -178,6 +179,20 @@ router.post('/order', auth, async (req, res) => {
 
   const paidAmount = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
 
+  // 有现金支付部分时必须走微信官方小程序虚拟支付。先验证配置和临时登录码，
+  // 避免创建订单、占用优惠券或扣减健康基金后才发现无法拉起支付。
+  let paymentSession = null;
+  if (paidAmount > 0 && paymentMethod === 'wechat_virtual') {
+    try {
+      getVirtualPayConfig();
+      paymentSession = await exchangeLoginCode(wxLoginCode);
+    } catch (err) {
+      return res.status(503).json({ success: false, message: err.message });
+    }
+  } else if (paidAmount > 0 && paymentMethod) {
+    return res.status(400).json({ success: false, message: '小程序购买服务须使用微信官方虚拟支付' });
+  }
+
   const paymentParts = [];
   if (fundUsed > 0) paymentParts.push(`健康基金抵扣¥${fundUsed}`);
   if (couponDiscount > 0) paymentParts.push(`优惠券抵扣¥${couponDiscount}`);
@@ -231,7 +246,7 @@ router.post('/order', auth, async (req, res) => {
     })),
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
-    paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paymentMethod || ''),
+    paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paymentMethod === 'wechat_virtual' ? 'wechat' : ''),
     paidAmount,
   });
 
@@ -265,6 +280,17 @@ router.post('/order', auth, async (req, res) => {
   pendingTasks.push(awardOrderPoints(order));
   await Promise.all(pendingTasks);
 
+  const outTradeNo = `JY${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32);
+  const virtualPayment = paidAmount > 0 && paymentSession
+    ? buildPaymentPayload({
+      sessionKey: paymentSession.session_key,
+      productId: `service-${service.id}`,
+      goodsPrice: Math.round(paidAmount * 100),
+      outTradeNo,
+      attach: order._id.toString(),
+    })
+    : null;
+
   res.json({
     success: true,
     message: isPkg ? '服务包申请已提交，健管师将在 1 个工作日内联系您完成支付与激活' : '预约申请已提交，健管师将在 1-2 个工作日内与您联系',
@@ -275,6 +301,7 @@ router.post('/order', auth, async (req, res) => {
       fundUsed,
       couponDiscount,
       paidAmount,
+      virtualPayment,
     },
   });
 });

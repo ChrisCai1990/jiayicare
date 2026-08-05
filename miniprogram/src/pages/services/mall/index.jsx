@@ -6,10 +6,10 @@ import { servicesAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { getVirtualPaymentLoginCode, requestVirtualPayment } from '../../../utils/virtualPayment';
 
 const PAY_METHODS = [
-  { key: 'wechat', label: '微信支付' },
-  { key: 'alipay', label: '支付宝' },
+  { key: 'wechat_virtual', label: '微信小程序虚拟支付' },
 ];
 
 function formatCouponLabel(c) {
@@ -166,7 +166,7 @@ function PurchaseModal({ item, mode, onClose }) {
   const { user } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote] = useState('');
-  const [payMethod, setPayMethod] = useState('wechat');
+  const [payMethod, setPayMethod] = useState('wechat_virtual');
   const [serviceAgreed, setServiceAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -201,8 +201,12 @@ function PurchaseModal({ item, mode, onClose }) {
     setSubmitting(true); setErrMsg('');
     try {
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
-      const res = await servicesAPI.order(item.id, noteWithSpec, isPay ? payMethod : undefined, isPay ? fundApplied : undefined, isPay ? couponId : undefined, currentSpecLabel || undefined);
-      if (res.success) setSubmitted(true);
+      const wxLoginCode = isPay && finalPrice > 0 ? await getVirtualPaymentLoginCode() : undefined;
+      const res = await servicesAPI.order(item.id, noteWithSpec, isPay ? payMethod : undefined, isPay ? fundApplied : undefined, isPay ? couponId : undefined, currentSpecLabel || undefined, wxLoginCode);
+      if (res.success) {
+        if (res.data?.virtualPayment) await requestVirtualPayment(res.data.virtualPayment);
+        setSubmitted(true);
+      }
       else setErrMsg(res.message || '提交失败，请重试');
     } catch (e) {
       setErrMsg(e.message || '网络错误，请检查连接后重试');
@@ -216,10 +220,10 @@ function PurchaseModal({ item, mode, onClose }) {
       <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
         <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', width: '100%', boxSizing: 'border-box', padding: `${spacing.lg}px`, textAlign: 'center' }}>
           <Text style={{ fontSize: '44px', display: 'block', margin: '16px 0' }}>✅</Text>
-          <Text style={{ fontSize: '20px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{isPay ? '订单已提交' : '预约申请已提交'}</Text>
+          <Text style={{ fontSize: '20px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{isPay ? '支付已完成' : '预约申请已提交'}</Text>
           <Text style={{ fontSize: '14px', color: colors.textSecondary, lineHeight: '22px', display: 'block', marginBottom: `${spacing.xl}px` }}>
             {isPay
-              ? `已为您生成 ¥${finalPrice} 的订单${finalPrice > 0 ? `（${PAY_METHODS.find((m) => m.key === payMethod)?.label}）` : '（已用健康基金/优惠券全额抵扣）'}。完成付款后，健管师将与您联系预约具体服务时间，可在"我的订单"查看进度。`
+              ? `¥${finalPrice} 的订单已提交${finalPrice > 0 ? '并完成微信小程序虚拟支付' : '（已用健康基金/优惠券全额抵扣）'}。健管师将与您联系预约具体服务时间，可在"我的订单"查看进度。`
               : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
           </Text>
           <View onClick={onClose} style={{ backgroundColor: colors.primary, borderRadius: `${radius.md}px`, padding: '14px' }}>
@@ -375,7 +379,7 @@ function PurchaseModal({ item, mode, onClose }) {
           {!!errMsg && <Text style={{ fontSize: '13px', color: colors.danger, display: 'block', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>{errMsg}</Text>}
 
           <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '16px', display: 'block', marginBottom: `${spacing.lg}px` }}>
-            {isPay ? '提交后生成待收款订单，健管师将与您确认并完成收款，可在"我的订单"查看' : '提交后，健管师将与您联系确认具体服务安排'}
+            {isPay ? '提交后将拉起微信官方小程序虚拟支付，支付结果可在“我的订单”查看' : '提交后，健管师将与您联系确认具体服务安排'}
           </Text>
           <View onClick={() => setServiceAgreed(!serviceAgreed)} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: `${spacing.md}px` }}>
             <Text style={{ color: serviceAgreed ? colors.primary : colors.textMuted }}>{serviceAgreed ? '☑' : '☐'}</Text>
