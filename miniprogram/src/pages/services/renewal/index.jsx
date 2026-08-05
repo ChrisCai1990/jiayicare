@@ -104,7 +104,10 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
       const wxLoginCode = finalPrice > 0 ? await getVirtualPaymentLoginCode() : undefined;
       const res = await servicesAPI.order(pkg.id, noteLabel, payMethod, fundApplied, couponId, undefined, wxLoginCode);
       if (res.success) {
-        if (res.data?.virtualPayment) await requestVirtualPayment(res.data.virtualPayment);
+        if (res.data?.virtualPayment) {
+          await requestVirtualPayment(res.data.virtualPayment);
+          await servicesAPI.confirmVirtualPayment(res.data.orderId);
+        }
         onSuccess(res.data?.orderNo || '');
       }
       else setErrMsg(res.message || '提交失败，请重试');

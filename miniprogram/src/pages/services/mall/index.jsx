@@ -204,7 +204,10 @@ function PurchaseModal({ item, mode, onClose }) {
       const wxLoginCode = isPay && finalPrice > 0 ? await getVirtualPaymentLoginCode() : undefined;
       const res = await servicesAPI.order(item.id, noteWithSpec, isPay ? payMethod : undefined, isPay ? fundApplied : undefined, isPay ? couponId : undefined, currentSpecLabel || undefined, wxLoginCode);
       if (res.success) {
-        if (res.data?.virtualPayment) await requestVirtualPayment(res.data.virtualPayment);
+        if (res.data?.virtualPayment) {
+          await requestVirtualPayment(res.data.virtualPayment);
+          await servicesAPI.confirmVirtualPayment(res.data.orderId);
+        }
         setSubmitted(true);
       }
       else setErrMsg(res.message || '提交失败，请重试');

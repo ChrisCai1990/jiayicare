@@ -42,8 +42,17 @@ const orderSchema = new mongoose.Schema({
 
   // ── 真实支付核算（本阶段先支持人工标记已支付，暂不接支付网关，见 backend/CLAUDE.md 待办）──
   paymentMethod: { type: String, enum: ['wechat', 'alipay', 'onsite', 'healthFund', ''], default: '' }, // 微信/支付宝/到店/健康基金抵扣
-  paymentStatus: { type: String, enum: ['unpaid', 'paid', 'refunded'], default: 'unpaid' },
+  paymentStatus: { type: String, enum: ['unpaid', 'pending', 'paid', 'failed', 'refunded'], default: 'unpaid' },
   paidAmount:    { type: Number, default: 0 },   // 实付金额（区别于 servicePrice 标价）
+  paymentExpectedAmount: { type: Number, default: 0 },
+  paymentOutTradeNo: { type: String, default: '', index: true },
+  paymentProductId: { type: String, default: '' },
+  paymentEnvironment: { type: String, enum: ['', 'sandbox', 'production'], default: '' },
+  paymentClientConfirmedAt: { type: Date, default: null },
+  healthFundAmount: { type: Number, default: 0 },
+  healthFundEnterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null },
+  couponId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
+  couponDiscount: { type: Number, default: 0 },
   transactionId: { type: String, default: '' },  // 支付流水号（人工标记时可留空，接入网关后由回调写入）
   paidAt:        { type: Date, default: null },
   paidBy:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 人工标记已支付的操作人（网关自动确认时为 null）

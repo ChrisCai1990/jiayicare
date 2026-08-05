@@ -228,6 +228,7 @@ export const servicesAPI = {
   packages: () => request('/services/packages'),
   order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, wxLoginCode) =>
     request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, wxLoginCode }) }),
+  confirmVirtualPayment: (orderId) => request(`/services/orders/${orderId}/confirm-virtual-payment`, { method: 'POST' }),
   coupons: () => request('/services/coupons'),
 };
 

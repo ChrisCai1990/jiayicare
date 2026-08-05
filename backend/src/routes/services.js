@@ -221,6 +221,8 @@ router.post('/order', auth, async (req, res) => {
   const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner');
   const followUpStaffId = patientForStaff?.assignedHealthPlanner || null;
 
+  const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
+  const paymentProductId = `jiayicare_${Math.round(paidAmount * 100)}`;
   const order = await Order.create({
     user:         req.user._id,
     serviceId:    service.id,
@@ -243,12 +245,23 @@ router.post('/order', auth, async (req, res) => {
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
     paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paymentMethod === 'wechat_virtual' ? 'wechat' : ''),
-    paidAmount,
+    paymentStatus: paidAmount > 0 ? 'pending' : 'paid',
+    paidAmount: 0,
+    paymentExpectedAmount: paidAmount,
+    paymentOutTradeNo: paidAmount > 0 ? outTradeNo : '',
+    paymentProductId: paidAmount > 0 ? paymentProductId : '',
+    paymentEnvironment: paidAmount > 0 ? 'sandbox' : '',
+    healthFundAmount: fundUsed,
+    healthFundEnterpriseId: fundEnterprise?._id || null,
+    couponId: coupon?._id || null,
+    couponDiscount,
   });
 
   // 下单后需要人工跟进的待办：只生成 FollowUp（医护端"待随访任务"面板的数据源，也是用户端展示的唯一数据源），
   // 不再同时创建 Task——此前两套模型无关联字段，导致同一次预约在用户端出现两条重复卡片，
   // 且医护端处理完 FollowUp 后 Task 状态永远不变，用户看不出到底有没有被处理。
+  // Fully covered orders have no external payment step and can settle immediately.
+  if (paidAmount === 0) {
   const pendingTasks = [];
   if (followUpStaffId) {
     pendingTasks.push(FollowUp.create({
@@ -277,14 +290,16 @@ router.post('/order', auth, async (req, res) => {
   // 会反查这笔预记积分退回（见 orders.js 取消接口 + admin.js 退款接口）
   pendingTasks.push(awardOrderPoints(order));
   await Promise.all(pendingTasks);
+  order.paidAt = new Date();
+  await order.save();
+  }
 
-  const outTradeNo = `JY${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32);
   const virtualPayment = paidAmount > 0 && paymentSession
     ? buildPaymentPayload({
       sessionKey: paymentSession.session_key,
       // 微信虚拟支付的道具 ID 必须提前在米大师后台发布。
       // 按实际支付金额使用稳定 ID，避免把 MongoDB 随机 ID 暴露为道具 ID。
-      productId: `jiayicare_${Math.round(paidAmount * 100)}`,
+      productId: paymentProductId,
       goodsPrice: Math.round(paidAmount * 100),
       outTradeNo,
       attach: order._id.toString(),
@@ -304,6 +319,47 @@ router.post('/order', auth, async (req, res) => {
       virtualPayment,
     },
   });
+});
+
+router.post('/orders/:id/confirm-virtual-payment', auth, async (req, res) => {
+  const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
+  if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+  if (order.paymentStatus === 'paid') return res.json({ success: true, data: order });
+  if (order.paymentStatus !== 'pending') return res.status(409).json({ success: false, message: '订单当前状态不能确认支付' });
+
+  order.paymentClientConfirmedAt = new Date();
+  if (order.paymentEnvironment !== 'sandbox') {
+    await order.save();
+    return res.json({ success: true, pending: true, message: '支付结果确认中' });
+  }
+
+  if (order.healthFundAmount > 0) {
+    const enterprise = order.healthFundEnterpriseId ? { _id: order.healthFundEnterpriseId } : null;
+    await require('../utils/healthFundPayment').deductHealthFund({ user: req.user, enterprise, order, amount: order.healthFundAmount });
+  }
+  if (order.couponId) {
+    const used = await Coupon.findOneAndUpdate(
+      { _id: order.couponId, patientId: req.user._id, status: 'active' },
+      { status: 'used', usedAt: new Date(), usedOrderId: order._id },
+      { new: true },
+    );
+    if (!used) return res.status(409).json({ success: false, message: '优惠券状态已变化，请联系客服核对订单' });
+  }
+  order.paymentStatus = 'paid';
+  order.paidAmount = order.paymentExpectedAmount;
+  order.paidAt = new Date();
+  await order.save();
+
+  const patient = await User.findById(req.user._id).select('assignedHealthPlanner');
+  if (patient?.assignedHealthPlanner) {
+    await FollowUp.findOneAndUpdate(
+      { sourceType: 'order', sourceOrderId: order._id },
+      { $setOnInsert: { staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner, patientId: req.user._id, type: 'other', status: 'planned', theme: `订单服务：${order.serviceName}`, content: order.note || '用户已完成支付，请联系确认服务安排' } },
+      { upsert: true, new: true },
+    );
+  }
+  await awardOrderPoints(order);
+  res.json({ success: true, message: '支付成功，订单权益已生效', data: order });
 });
 
 module.exports = router;
