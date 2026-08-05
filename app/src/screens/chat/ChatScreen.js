@@ -10,7 +10,7 @@ import { useAuth } from '../../context/AuthContext';
 import { chatAPI } from '../../services/api';
 import tts from '../../utils/tts';
 
-const ASSISTANT = { label: 'AI健康助手（代健康顾问）', icon: 'sparkles', color: colors.primary };
+const ASSISTANT = { label: 'AI健康助手（代健康规划师）', icon: 'sparkles', color: colors.primary };
 
 const QUICK_QUESTIONS = [
   '我的血压最近偏高，怎么办？',

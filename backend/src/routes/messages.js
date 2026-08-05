@@ -73,7 +73,7 @@ router.patch('/read-all', auth, async (req, res) => {
   res.json({ success: true, message: '全部已读' });
 });
 
-// 用户发送消息（给医生/营养师/健管师）
+// 用户发送消息（给健康顾问/营养师/健管专员）
 router.post('/', auth, async (req, res) => {
   try {
     const { to, content } = req.body;
@@ -94,7 +94,7 @@ router.post('/', auth, async (req, res) => {
       }
     }
 
-    const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师' };
+    const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员' };
     const senderName = req.user.name || req.user.phone;
     const conversationId = `${req.user._id}_${to}`;
     const msg = await Message.create({

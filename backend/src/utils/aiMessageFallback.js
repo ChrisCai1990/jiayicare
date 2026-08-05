@@ -5,10 +5,10 @@ const { chat } = require('./ai');
 let _ssePublish = null;
 function ssePublish(...args) { if (!_ssePublish) { try { _ssePublish = require('../routes/messages').ssePublish; } catch {} } _ssePublish?.(...args); }
 
-// AI消息即时兜底回复：用户给健康顾问/营养师/健管师留言后，AI立即先回一句安抚，
+// AI消息即时兜底回复：用户给健康顾问/营养师/健管专员留言后，AI立即先回一句安抚，
 // 明确不涉及诊断/治疗建议；医护看到后仍可正常人工回复追加，不覆盖AI这条。
-const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师' };
-const SENDER_MAP = { doctor: 'AI健康规划师（代健康顾问）', nutritionist: 'AI健康规划师（代营养师）', manager: 'AI健康规划师（代健管师）' };
+const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员' };
+const SENDER_MAP = { doctor: 'AI健康助手（代健康顾问）', nutritionist: 'AI健康助手（代营养师）', manager: 'AI健康助手（代健管专员）' };
 
 const FULL_DISCLAIMER = '以上为AI初步回复，仅供参考，不构成医疗诊断或建议，您的专属医护人员会尽快跟进。';
 const SHORT_DISCLAIMER = '（AI回复，仅供参考）';
@@ -27,7 +27,7 @@ function buildSystemPrompt(isFirstAIReply, title) {
 
 要求：
 1. 开口称呼用户为"${title}"（自然融入，不用每句都喊，别生硬），用中文，语气自然温和、有真实的情感温度，像真人在关心地聊天
-2. ${isFirstAIReply ? '这是本次对话的第一条回复，简要打个招呼即可，不用说"已收到留言/已记录/会跟进/会分析"这类话——用户每条消息健康顾问/营养师/健管师本来就都会看到，不需要反复强调' : '直接针对用户这句话的内容自然接话，绝对不要出现"已记录""已为您记录""会结合情况分析""会及时跟进"这类重复的客套尾巴'}
+2. ${isFirstAIReply ? '这是本次对话的第一条回复，简要打个招呼即可，不用说"已收到留言/已记录/会跟进/会分析"这类话——用户每条消息健康顾问/营养师/健管专员本来就都会看到，不需要反复强调' : '直接针对用户这句话的内容自然接话，绝对不要出现"已记录""已为您记录""会结合情况分析""会及时跟进"这类重复的客套尾巴'}
 3. 用户表达情绪（开心、担心、感谢、抱怨等）时要先回应情绪本身，再接话，让对方感觉真的被关心，不要只回信息不回感情
 4. 严禁给出任何具体诊断结论、用药调整、检查建议等医疗决策类内容；如果用户问的问题超出你能安全回答的范围，坦诚说明需要等专属医护人员来解答，不要硬答
 5. 控制在80字以内，简洁自然，不要写成客服话术

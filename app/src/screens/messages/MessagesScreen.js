@@ -13,6 +13,11 @@ import Avatar from '../../components/Avatar';
 import EmptyState from '../../components/EmptyState';
 import tts from '../../utils/tts';
 
+// 兼容数据库中已经生成的旧角色名称，确保历史消息也使用当前人物定位。
+const normalizeRoleSender = (sender = '') => sender
+  .replace(/代家庭医师/g, '代健康顾问')
+  .replace(/代健管师/g, '代健管专员');
+
 const TYPE_CONFIG = {
   doctor:        { icon: 'medical',           color: colors.primary },
   manager:       { icon: 'person',            color: colors.accent  },
@@ -68,7 +73,7 @@ function MessageItem({ msg, onPress }) {
       </View>
       <View style={styles.msgContent}>
         <View style={styles.msgHeader}>
-          <Text style={styles.msgSender}>{msg.sender}</Text>
+          <Text style={styles.msgSender}>{normalizeRoleSender(msg.sender)}</Text>
           <Text style={styles.msgTime}>{msg.time || '今天'}</Text>
         </View>
         <Text
@@ -205,7 +210,7 @@ function ProductPushDetail({ msg, onClose }) {
                 <Ionicons name="bag-outline" size={22} color={colors.primary} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.detailSender}>{msg.sender}</Text>
+                <Text style={styles.detailSender}>{normalizeRoleSender(msg.sender)}</Text>
                 <Text style={styles.detailTime}>{msg.time || '今天'}</Text>
               </View>
             </View>
@@ -465,7 +470,7 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
                 <Ionicons name={conf.icon} size={22} color={conf.color} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.detailSender}>{msg.sender}</Text>
+                <Text style={styles.detailSender}>{normalizeRoleSender(msg.sender)}</Text>
                 <Text style={styles.detailTime}>{msg.time || '今天'}</Text>
               </View>
             </View>
@@ -915,7 +920,7 @@ function NotificationListModal({ visible, messages, onClose, onPress, onMarkRead
                       <View style={{ flex: 1 }}>
                         <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
                           <Text style={{ fontSize: 14, fontWeight: msg.unread ? '600' : '500', color: colors.textPrimary }}>
-                            {msg.sender || msg.title || conf.label}
+                            {normalizeRoleSender(msg.sender) || msg.title || conf.label}
                           </Text>
                           <Text style={{ fontSize: 11, color: colors.textMuted }}>{fmtTime(msg.createdAt)}</Text>
                         </View>
@@ -1122,7 +1127,7 @@ function ConversationThreadModal({ role, onClose }) {
                     >
                       {!isMine && (
                         <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
-                          <Text style={[threadStyles.bubbleName, { color: meta.color, marginBottom: 0 }]}>{m.sender || meta.label}</Text>
+                          <Text style={[threadStyles.bubbleName, { color: meta.color, marginBottom: 0 }]}>{normalizeRoleSender(m.sender) || meta.label}</Text>
                           {m.isAI && (
                             <View style={{ marginLeft: 6, paddingHorizontal: 6, paddingVertical: 1, borderRadius: 99, backgroundColor: meta.color + '20' }}>
                               <Text style={{ fontSize: 10, fontWeight: '700', color: meta.color }}>AI</Text>
