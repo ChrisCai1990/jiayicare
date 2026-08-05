@@ -217,13 +217,9 @@ router.post('/order', auth, async (req, res) => {
     }
   }
 
-  // 商城产品只进入客户的健康规划师。每位正式客户都应配置规划师；缺失时阻止下单，
-  // 避免订单被自动派给健康顾问或落入无人负责的通用池。
+  // 已配置规划师时自动派单；尚未配置也允许先完成购买，由客服后续配置和跟进。
   const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner');
-  if (!patientForStaff?.assignedHealthPlanner) {
-    return res.status(409).json({ success: false, message: '您的健康规划师尚未配置，请联系客服完善后再提交预约' });
-  }
-  const followUpStaffId = patientForStaff.assignedHealthPlanner;
+  const followUpStaffId = patientForStaff?.assignedHealthPlanner || null;
 
   const order = await Order.create({
     user:         req.user._id,
@@ -254,17 +250,19 @@ router.post('/order', auth, async (req, res) => {
   // 不再同时创建 Task——此前两套模型无关联字段，导致同一次预约在用户端出现两条重复卡片，
   // 且医护端处理完 FollowUp 后 Task 状态永远不变，用户看不出到底有没有被处理。
   const pendingTasks = [];
-  pendingTasks.push(FollowUp.create({
-    staffId:   followUpStaffId,
-    assignedTo: followUpStaffId,
-    patientId: req.user._id,
-    type:      'other',
-    status:    'planned',
-    theme:     isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
-    content:   orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排'),
-    sourceType: 'order',
-    sourceOrderId: order._id,
-  }));
+  if (followUpStaffId) {
+    pendingTasks.push(FollowUp.create({
+      staffId: followUpStaffId,
+      assignedTo: followUpStaffId,
+      patientId: req.user._id,
+      type: 'other',
+      status: 'planned',
+      theme: isPkg ? `服务包开通：${service.name}` : `预约：${service.name}`,
+      content: orderNote || (isPkg ? '用户申请开通服务包，请联系确认支付并激活' : '用户已提交服务预约，请联系确认安排'),
+      sourceType: 'order',
+      sourceOrderId: order._id,
+    }));
+  }
   // 健康基金实时扣减（与订单绑定，note 记录用于哪笔订单）
   if (fundUsed > 0) pendingTasks.push(require('../utils/healthFundPayment').deductHealthFund({ user:req.user, enterprise:fundEnterprise, order, amount:fundUsed }));
   // 优惠券标记已用

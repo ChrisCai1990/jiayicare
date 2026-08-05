@@ -235,10 +235,10 @@ function PurchaseModal({ item, mode, onClose }) {
   }
 
   return (
-    <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '88%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+    <ScrollView scrollY enhanced showScrollbar style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100%', height: '100vh', backgroundColor: '#fff', zIndex: 100 }}>
+      <View style={{ padding: `${spacing.lg}px`, paddingBottom: '40px', width: '100%', minHeight: '100vh', boxSizing: 'border-box' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
-        <ScrollView scrollY style={{ flex: 1 }}>
+        <View>
           <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
             <View style={{ width: '56px', height: '56px', borderRadius: '16px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
               <Text style={{ fontSize: '26px' }}>🏪</Text>
@@ -387,7 +387,7 @@ function PurchaseModal({ item, mode, onClose }) {
               我已阅读并同意<Text style={{ color: colors.primary }} onClick={(e) => { e.stopPropagation && e.stopPropagation(); Taro.navigateTo({ url: '/pages/legal/index?type=service' }); }}>《健康管理服务说明》</Text>，知悉本服务不提供诊断、治疗、处方或检查开单。
             </Text>
           </View>
-        </ScrollView>
+        </View>
 
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
           <View onClick={onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
@@ -398,7 +398,7 @@ function PurchaseModal({ item, mode, onClose }) {
           </View>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
