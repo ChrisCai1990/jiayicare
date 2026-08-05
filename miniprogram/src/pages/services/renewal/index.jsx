@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text } from '@tarojs/components';
+import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { servicesAPI, messagesAPI } from '../../../services/api';
@@ -118,9 +118,11 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
 
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '88%', boxSizing: 'border-box' }}>
+      <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '88%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.lg}px` }}>{isRenewal ? '确认续约' : '确认开通'}</Text>
+
+        <ScrollView scrollY style={{ flex: 1 }}>
 
         <View style={{ backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
           <View style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
@@ -183,12 +185,12 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
         <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>支付方式</Text>
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
           {PAYMENT_METHODS.map((m) => (
-            <View key={m.key} onClick={() => setPayMethod(m.key)} style={{
+            <View key={m.key} style={{
               flex: 1, textAlign: 'center', padding: '10px 0', borderRadius: `${radius.md}px`,
               border: `1.5px solid ${payMethod === m.key ? colors.primary : colors.border}`,
               backgroundColor: payMethod === m.key ? colors.primary10 : colors.background,
             }}>
-              <Text style={{ fontSize: '12px', color: payMethod === m.key ? colors.textPrimary : colors.textMuted, fontWeight: payMethod === m.key ? 700 : 500 }}>{m.label}</Text>
+              <Text style={{ fontSize: '12px', color: payMethod === m.key ? colors.textPrimary : colors.textMuted, fontWeight: payMethod === m.key ? 700 : 500 }}>✓ {m.label}</Text>
             </View>
           ))}
         </View>
@@ -209,12 +211,14 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
           </View>
         )}
 
-        <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
+        </ScrollView>
+
+        <View style={{ display: 'flex', gap: `${spacing.sm}px`, paddingTop: `${spacing.sm}px` }}>
           <View onClick={submitting ? undefined : onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>取消</Text>
           </View>
           <View onClick={submitting ? undefined : handleSubmit} style={{ flex: 2, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, opacity: submitting || !serviceAgreed ? 0.6 : 1 }}>
-            <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{submitting ? '提交中...' : '提交申请'}</Text>
+            <Text style={{ fontSize: '15px', color: '#fff', fontWeight: 700 }}>{submitting ? '支付处理中...' : `确认支付 ¥${finalPrice}`}</Text>
           </View>
         </View>
       </View>
