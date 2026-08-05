@@ -181,7 +181,7 @@ function ProductPushDetail({ msg, onClose }) {
               共 {checkedItems.length} 项，实付 ¥{finalPrice}
             </Text>
             <Text style={{ fontSize: 13, color: colors.textMuted, textAlign: 'center', paddingHorizontal: 32, lineHeight: 20, marginBottom: 32 }}>
-              健管师将尽快与您确认并安排后续服务
+              健管专员将尽快与您确认并安排后续服务
             </Text>
             <TouchableOpacity style={[styles.detailBuyBtn, { paddingHorizontal: 40 }]} onPress={onClose} activeOpacity={0.85}>
               <Text style={styles.detailBuyBtnText}>完成</Text>
@@ -516,7 +516,7 @@ function MessageDetailModal({ msg, onClose, navigation, onReply }) {
 const RECIPIENTS = [
   { key: 'doctor',       label: '健康顾问', icon: 'medical',           color: colors.primary },
   { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
-  { key: 'manager',      label: '健管师',   icon: 'person',            color: colors.accent  },
+  { key: 'manager',      label: '健管专员', icon: 'person',            color: colors.accent  },
 ];
 
 function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo = 'manager' }) {
@@ -589,7 +589,7 @@ function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo
           <Text style={[styles.composeLabel, { marginTop: 16 }]}>消息内容</Text>
           <TextInput
             style={styles.composeTextArea}
-            placeholder="请输入您想告诉健康顾问、营养师或健管师的内容……"
+            placeholder="请输入您想告诉健康顾问、营养师或健管专员的内容……"
             placeholderTextColor={colors.textMuted}
             value={content}
             onChangeText={t => { setContent(t); setError(''); }}
@@ -725,7 +725,7 @@ export default function MessagesScreen({ navigation }) {
   // 构建统一会话列表
   const ROLE_DEFS = [
     { key: 'doctor',       label: '健康顾问', icon: 'medical',           color: colors.primary },
-    { key: 'manager',      label: '健管师',   icon: 'person',            color: '#D97706'      },
+    { key: 'manager',      label: '健管专员', icon: 'person',            color: '#D97706'      },
     { key: 'nutritionist', label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
   ];
 
@@ -940,7 +940,7 @@ function NotificationListModal({ visible, messages, onClose, onPress, onMarkRead
 // ── 对话线程（全屏，对齐 ChatScreen 风格）────────────────────────
 const ROLE_META = {
   doctor:       { label: '健康顾问', icon: 'medical',           color: colors.primary },
-  manager:      { label: '健管师',   icon: 'person',            color: '#D97706'      },
+  manager:      { label: '健管专员', icon: 'person',            color: '#D97706'      },
   nutritionist: { label: '营养师',   icon: 'nutrition-outline', color: '#059669'      },
 };
 

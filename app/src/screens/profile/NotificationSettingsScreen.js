@@ -15,8 +15,9 @@ const SETTINGS = [
   {
     group: '服务消息',
     items: [
-      { key: 'doctor',       icon: 'call-outline',          label: '医生消息',     desc: '医生回复及随访通知' },
-      { key: 'manager',      icon: 'people-outline',        label: '健管师消息',   desc: '健管专员消息提醒' },
+      { key: 'doctor',       icon: 'call-outline',          label: '健康顾问消息', desc: '健康顾问回复及随访通知' },
+      { key: 'manager',      icon: 'people-outline',        label: '健管专员消息', desc: '健管专员消息提醒' },
+      { key: 'nutritionist', icon: 'nutrition-outline',     label: '营养师消息',   desc: '营养师回复及营养指导通知' },
       { key: 'report',       icon: 'document-text-outline', label: '报告解读',     desc: '检查报告完成通知' },
     ],
   },

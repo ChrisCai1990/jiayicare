@@ -66,7 +66,7 @@ const CONTENT = {
       },
       {
         heading: '6. 您的权利',
-        body: '您有权访问、更正、删除您的个人信息，并有权撤回对数据处理的同意。如需行使上述权利，请联系客服：400-888-8888。',
+        body: '您有权访问、更正、删除您的个人信息，并有权撤回对数据处理的同意。如需行使上述权利，请联系客服：19106761448。',
       },
       {
         heading: '7. 未成年人保护',
@@ -140,7 +140,7 @@ export default function LegalScreen({ navigation, route }) {
 
         <View style={styles.footer}>
           <Text style={styles.footerText}>嘉医汇 · 杭州嘉静佑辰科技有限公司</Text>
-          <Text style={styles.footerText}>客服电话：17742039618</Text>
+          <Text style={styles.footerText}>客服电话：19106761448</Text>
         </View>
         <View style={{ height: 40 }} />
       </ScrollView>

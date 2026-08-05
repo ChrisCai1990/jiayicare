@@ -443,7 +443,6 @@ export default function HomeScreen({ navigation }) {
             <View style={styles.sectionHeader}>
               <View>
                 <Text style={styles.sectionTitle}>常用健康服务</Text>
-                <Text style={{ fontSize: 11, color: colors.textMuted, marginTop: 3 }}>咨询、检查、调理服务便捷选购</Text>
               </View>
               <TouchableOpacity style={styles.sectionMore} onPress={() => navigation.navigate('ServiceMall')}>
                 <Text style={styles.sectionMoreText}>全部商城</Text>
@@ -479,7 +478,7 @@ export default function HomeScreen({ navigation }) {
             activeOpacity={0.85}
           >
             <Ionicons name="checkmark-done-outline" size={20} color={colors.white} />
-            <Text style={styles.checkinEntryBtnText}>完成今日打卡</Text>
+            <Text style={styles.checkinEntryBtnText}>记录健康数据</Text>
             <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
           </TouchableOpacity>
 

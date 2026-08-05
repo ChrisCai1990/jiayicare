@@ -10,7 +10,7 @@ import { feedbackAPI } from '../../services/api';
 const FAQ = [
   {
     q: '如何录入健康数据？',
-    a: '在首页点击"记录数据"，或进入"健康档案"页面点击右上角"录入"按钮，选择对应类型（血压/血糖/心率/体重）即可录入。',
+    a: '在首页点击“记录健康数据”即可录入。',
   },
   {
     q: '我的数据存储在哪里？是否安全？',
@@ -22,7 +22,7 @@ const FAQ = [
   },
   {
     q: '忘记手机号怎么办？',
-    a: '请联系客服（400-xxx-xxxx）提供身份信息，由客服协助进行账号找回或迁移。',
+    a: '请联系客服（19106761448）提供身份信息，由客服协助进行账号找回或迁移。',
   },
   {
     q: '服务包到期后数据是否保留？',
@@ -222,7 +222,7 @@ export default function HelpFeedbackScreen({ navigation }) {
         {/* Contact */}
         <View style={styles.contactWrap}>
           <Ionicons name="headset-outline" size={16} color={colors.textMuted} />
-          <Text style={styles.contactText}>人工客服：400-888-8888（工作日 9:00-18:00）</Text>
+          <Text style={styles.contactText}>人工客服：19106761448（工作日 9:00-18:00）</Text>
         </View>
 
         <View style={{ height: 40 }} />
