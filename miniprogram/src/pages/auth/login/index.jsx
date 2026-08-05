@@ -78,7 +78,6 @@ export default function LoginPage() {
   };
 
   const demoLogin = async () => {
-    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
     setError('');
     try {
       setLoading(true);
@@ -130,6 +129,18 @@ export default function LoginPage() {
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 20px' }} />
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>手机号登录</Text>
         <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>手机号验证码登录，新用户自动注册</Text>
+
+        <Button
+          style={{
+            height: '50px', lineHeight: '50px', borderRadius: `${radius.md}px`,
+            backgroundColor: '#fff', border: `1.5px solid ${colors.primary}`,
+            color: colors.primary, fontSize: '15px', fontWeight: 700, marginBottom: `${spacing.lg}px`,
+          }}
+          onClick={demoLogin}
+          disabled={loading}
+        >
+          先浏览体验（无需授权）
+        </Button>
 
         <View style={{
           display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
@@ -222,16 +233,6 @@ export default function LoginPage() {
           <Button
             style={{
               flex: 1, backgroundColor: '#fff', border: `1.5px solid ${colors.border}`,
-              borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 600, color: colors.textPrimary,
-            }}
-            onClick={demoLogin}
-            disabled={loading}
-          >
-            演示体验
-          </Button>
-          <Button
-            style={{
-              flex: 1, backgroundColor: '#fff', border: `1.5px solid ${colors.border}`,
               borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 600, color: '#07C160',
             }}
             onClick={wechatLogin}
@@ -240,6 +241,10 @@ export default function LoginPage() {
             微信一键登录
           </Button>
         </View>
+
+        <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '8px' }}>
+          可先浏览体验功能，使用个人服务时再自主选择登录
+        </Text>
 
         <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>
           <View style={{ width: '15px', height: '15px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '13px', flexShrink: 0 }}>

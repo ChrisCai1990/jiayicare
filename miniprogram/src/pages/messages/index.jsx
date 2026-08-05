@@ -22,7 +22,8 @@ const normalizeRoleSender = (sender = '') => sender
   .replace(/代家庭医师/g, '代健康顾问')
   .replace(/代健管师/g, '代健管专员');
 
-const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
+// 小程序不展示产品购买推送；产品与服务购买仅在 App 端提供。
+const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'notice']);
 const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
 
 const NOTIF_TYPE_CONFIG = {

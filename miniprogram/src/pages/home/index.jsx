@@ -447,30 +447,6 @@ export default function HomePage() {
           )}
         </View>
 
-        {/* 与 App 一致：常用健康服务放在待办任务之后 */}
-        <View style={{ marginBottom: `${spacing.lg}px` }}>
-          <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>常用健康服务</Text>
-            <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>全部商城 ›</Text></View>
-          </View>
-          <ScrollView scrollX enhanced showScrollbar={false} style={{ width: '100%' }}>
-            <View style={{ display: 'flex', gap: '10px', paddingBottom: '2px' }}>
-              {popularServices.map((item) => (
-                <View key={item.id} onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '142px', flexShrink: 0, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '13px', border: `1px solid ${colors.border}` }}>
-                  <Icon name="🩺" size={20} color={colors.primary} />
-                  <Text style={{ fontSize: '13px', lineHeight: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: '7px', minHeight: '36px' }}>{item.name}</Text>
-                  <Text style={{ fontSize: '14px', fontWeight: 800, color: '#D97706', display: 'block', marginTop: '6px' }}>¥{item.price ?? '咨询'}</Text>
-                  <Text style={{ fontSize: '10px', color: colors.primary, display: 'block', marginTop: '4px' }}>查看服务 ›</Text>
-                </View>
-              ))}
-              <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '104px', flexShrink: 0, minHeight: '132px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="🛒" size={24} color="#fff" />
-                <Text style={{ color: '#fff', fontSize: '12px', fontWeight: 700, marginTop: '7px' }}>查看全部服务</Text>
-              </View>
-            </View>
-          </ScrollView>
-        </View>
-
       </View>
       {/* 底部占位，对齐app端 <View style={{height: spacing.xl*2}}/> */}
       <View style={{ height: '64px' }} />

@@ -194,13 +194,8 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
                 <Text style={{ fontSize: '13px', fontWeight: 700, color: '#fff' }}>{confirming ? '确认中...' : '✓ 确认方案'}</Text>
               </View>
             ) : plan.confirmedAt ? (
-              <View style={{ display: 'flex', flex: 1, gap: '8px' }}>
-                <View style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px 0', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.success}60`, backgroundColor: '#E8F5EF' }}>
-                  <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.success }}>✓ 已确认</Text>
-                </View>
-                <View onClick={() => onRenew(plan)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px 0', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.primary}60` }}>
-                  <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.primary }}>↻ 续约</Text>
-                </View>
+              <View style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px 0', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.success}60`, backgroundColor: '#E8F5EF' }}>
+                <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.success }}>✓ 已确认</Text>
               </View>
             ) : (
               <View onClick={() => onConsult(plan)} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', padding: '10px 0', borderRadius: `${radius.md}px`, border: `1.5px solid ${meta.color}60` }}>
@@ -342,7 +337,6 @@ export default function ServicePlansPage() {
                 onConfirmPlan={handleConfirmPlan}
                 confirming={confirmingPlanId === plan._id}
                 onConsult={handleConsult}
-                onRenew={() => Taro.navigateTo({ url: '/pages/services/renewal/index' })}
               />
             ))
           )}

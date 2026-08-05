@@ -16,8 +16,6 @@ export default defineAppConfig({
     'pages/chat/index',
     'pages/medication/index',
     'pages/reminders/index',
-    'pages/services/mall/index',
-    'pages/services/renewal/index',
     'pages/profile/edit/index',
     'pages/profile/security/index',
     'pages/profile/feedback/index',
