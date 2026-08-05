@@ -1022,7 +1022,7 @@ export default function RecordsScreen({ navigation }) {
                     {isToday ? '今天已记录不适' : '今天暂未记录不适'}
                   </Text>
                   <Text style={styles.healthStatusText}>{isToday ? (latest.value || latest.note || '已提交不适情况') : '如有不适，请在今日健康打卡中及时记录。'}</Text>
-                  {isToday && <Text style={styles.healthStatusMeta}>提交时间：{String(latest.recordedAt).replace('T', ' ').slice(0, 16)} · 来源：客户打卡</Text>}
+                  {isToday && <Text style={styles.healthStatusMeta}>提交时间：{String(latest.recordedAt).replace('T', ' ').slice(0, 16)} · 来源：{latest.recordedBy?.source === 'staff' ? (latest.recordedBy.staffName || '医护团队录入') : latest.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'}</Text>}
                 </View>
               </View>
             );

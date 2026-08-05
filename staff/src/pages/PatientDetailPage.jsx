@@ -1558,6 +1558,9 @@ export default function PatientDetailPage() {
     })
   }
   const [editingSymptom, setEditingSymptom] = useState(null)
+  const [addingSymptom, setAddingSymptom] = useState(false)
+  const [newSymptomForm, setNewSymptomForm] = useState({ value: '', note: '', recordedAt: '' })
+  const [newSymptomSaving, setNewSymptomSaving] = useState(false)
   const [symptomForm, setSymptomForm] = useState({ value: '', note: '', decisionNote: '' })
   const [symptomActionSaving, setSymptomActionSaving] = useState(false)
   // 管理信息下拉选项：服务包(admin商城服务) + 会员来源(admin配置)，替代手工录入（2026-07-10 金娟）
@@ -1908,6 +1911,22 @@ export default function PatientDetailPage() {
       note: record.note || '',
       decisionNote: record.symptomWorkflow?.decisionNote || '',
     })
+  }
+
+  const createSymptomRecord = async () => {
+    if (!newSymptomForm.value.trim() || newSymptomSaving) return
+    setNewSymptomSaving(true)
+    try {
+      await staffAPI.createPatientHealthRecord(id, {
+        type: 'symptom', value: newSymptomForm.value.trim(), note: newSymptomForm.note.trim(),
+        recordedAt: newSymptomForm.recordedAt || new Date().toISOString(),
+      })
+      toast('不适主诉已录入，客户端已同步展示')
+      setAddingSymptom(false)
+      setNewSymptomForm({ value: '', note: '', recordedAt: '' })
+      await loadScreening()
+    } catch (err) { toast(err.message || '录入失败') }
+    finally { setNewSymptomSaving(false) }
   }
 
   const submitSymptomVerification = async action => {
@@ -7816,7 +7835,10 @@ export default function PatientDetailPage() {
                 <div className="card-title">今日健康状态 / 不适主诉</div>
                 <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>近一年不适、处理方案及后续记录集中展示</div>
               </div>
-              <span style={{ fontSize: 12, color: '#4A6558' }}>共 {healthRecords.length} 条</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <span style={{ fontSize: 12, color: '#4A6558' }}>共 {healthRecords.length} 条</span>
+                <button className="btn btn-primary btn-sm" onClick={() => setAddingSymptom(true)}>＋ 新增不适主诉</button>
+              </div>
             </div>
             <div style={{ padding: '14px 20px' }}>
               {healthRecords.length === 0 ? (
@@ -7872,6 +7894,26 @@ export default function PatientDetailPage() {
                   <button className="btn btn-secondary" disabled={symptomActionSaving} onClick={() => submitSymptomVerification('dismiss')}>确认为误录</button>
                   <button className="btn btn-secondary" disabled={symptomActionSaving || !symptomForm.value.trim()} onClick={() => submitSymptomVerification('save')}>保存审核修改</button>
                   <button className="btn btn-primary" disabled={symptomActionSaving || !symptomForm.value.trim()} onClick={() => submitSymptomVerification('refer_doctor')}>{symptomActionSaving ? '提交中...' : '确认并转健康顾问'}</button>
+                </div>
+              </div>
+            </div>
+          )}
+          {addingSymptom && (
+            <div className="modal-overlay" onClick={e => e.target === e.currentTarget && setAddingSymptom(false)}>
+              <div className="modal" style={{ maxWidth: 520 }}>
+                <div className="modal-header"><h3 className="modal-title">新增今日健康状态 / 不适主诉</h3><button className="modal-close" onClick={() => setAddingSymptom(false)}>×</button></div>
+                <div className="modal-body">
+                  <label className="form-label">不适主诉 *</label>
+                  <textarea className="form-input" rows={3} value={newSymptomForm.value} onChange={e => setNewSymptomForm(f => ({ ...f, value: e.target.value }))} placeholder="请填写症状、部位、持续时间和程度" />
+                  <label className="form-label" style={{ marginTop: 12 }}>随访补充说明</label>
+                  <textarea className="form-input" rows={2} value={newSymptomForm.note} onChange={e => setNewSymptomForm(f => ({ ...f, note: e.target.value }))} placeholder="例如：电话随访获知、已给予的初步建议" />
+                  <label className="form-label" style={{ marginTop: 12 }}>发生 / 记录时间</label>
+                  <input className="form-input" type="datetime-local" value={newSymptomForm.recordedAt} onChange={e => setNewSymptomForm(f => ({ ...f, recordedAt: e.target.value }))} />
+                  <div style={{ marginTop: 8, fontSize: 12, color: '#8AA89C' }}>保存后会记录录入人员，并同步展示到客户端健康档案。</div>
+                </div>
+                <div className="modal-footer">
+                  <button className="btn btn-secondary" onClick={() => setAddingSymptom(false)} disabled={newSymptomSaving}>取消</button>
+                  <button className="btn btn-primary" onClick={createSymptomRecord} disabled={newSymptomSaving || !newSymptomForm.value.trim()}>{newSymptomSaving ? '保存中...' : '保存并同步客户端'}</button>
                 </div>
               </div>
             </div>

@@ -328,6 +328,7 @@ export default function RecordsIndexPage() {
           return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: latest ? colors.danger : colors.primary, display: 'block' }}>{latest ? '今天已记录不适' : '今天暂未记录不适'}</Text>
             <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '4px' }}>{latest ? (latest.value || latest.note || '已提交不适情况') : '如有不适，请在首页“记录健康数据”中及时填写。'}</Text>
+            {latest && <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '4px' }}>来源：{latest.recordedBy?.source === 'staff' ? (latest.recordedBy.staffName || '医护团队录入') : latest.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'}</Text>}
           </View>;
         })()}
       </View>
