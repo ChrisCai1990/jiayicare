@@ -16,7 +16,8 @@ function httpsGetJson(url) {
 }
 
 function getConfig() {
-  const env = Number(process.env.WECHAT_VIRTUAL_PAY_ENV || 1);
+  // 审核联调阶段强制使用沙箱，防止体验版产生真实扣款。
+  const env = 1;
   const offerId = process.env.WECHAT_VIRTUAL_PAY_OFFER_ID;
   const appKey = env === 0
     ? process.env.WECHAT_VIRTUAL_PAY_APP_KEY
