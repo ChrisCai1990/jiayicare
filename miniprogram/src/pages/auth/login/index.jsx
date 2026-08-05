@@ -78,7 +78,6 @@ export default function LoginPage() {
   };
 
   const demoLogin = async () => {
-    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
     setError('');
     try {
       setLoading(true);
@@ -130,6 +129,21 @@ export default function LoginPage() {
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 20px' }} />
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>手机号登录</Text>
         <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>手机号验证码登录，新用户自动注册</Text>
+
+        <Button
+          style={{
+            height: '50px', lineHeight: '50px', borderRadius: `${radius.md}px`,
+            backgroundColor: '#fff', border: `1.5px solid ${colors.primary}`,
+            color: colors.primary, fontSize: '15px', fontWeight: 700, marginBottom: '8px',
+          }}
+          onClick={demoLogin}
+          disabled={loading}
+        >
+          先浏览体验（无需授权）
+        </Button>
+        <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block', marginBottom: `${spacing.lg}px` }}>
+          体验过程不获取您的手机号、头像或昵称
+        </Text>
 
         <View style={{
           display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
@@ -219,16 +233,6 @@ export default function LoginPage() {
         </View>
 
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-          <Button
-            style={{
-              flex: 1, backgroundColor: '#fff', border: `1.5px solid ${colors.border}`,
-              borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 600, color: colors.textPrimary,
-            }}
-            onClick={demoLogin}
-            disabled={loading}
-          >
-            演示体验
-          </Button>
           <Button
             style={{
               flex: 1, backgroundColor: '#fff', border: `1.5px solid ${colors.border}`,
