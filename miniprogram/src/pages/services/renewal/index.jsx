@@ -116,12 +116,9 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
   };
 
   return (
-    <View catchMove style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View onClick={(e) => e.stopPropagation && e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', height: '88vh', boxSizing: 'border-box', overflow: 'hidden' }}>
-        <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
+    <ScrollView scrollY enhanced style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, height: '100vh', width: '100%', backgroundColor: colors.background, zIndex: 100 }}>
+      <View style={{ backgroundColor: colors.background, padding: `${spacing.lg}px`, paddingBottom: `${spacing.xxl}px`, width: '100%', minHeight: '100vh', boxSizing: 'border-box' }}>
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.lg}px` }}>{isRenewal ? '确认续约' : '确认开通'}</Text>
-
-        <ScrollView scrollY enhanced enableFlex showScrollbar style={{ height: '60vh', width: '100%' }}>
 
         <View style={{ backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
           <View style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
@@ -210,8 +207,6 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
           </View>
         )}
 
-        </ScrollView>
-
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, paddingTop: `${spacing.sm}px` }}>
           <View onClick={submitting ? undefined : onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>取消</Text>
@@ -221,7 +216,7 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
           </View>
         </View>
       </View>
-    </View>
+    </ScrollView>
   );
 }
 
