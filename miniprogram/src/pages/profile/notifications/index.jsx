@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Switch } from '@tarojs/components';
+import { View, Text, Switch, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import useNavBar from '../../../hooks/useNavBar';
@@ -43,7 +43,7 @@ export default function NotificationSettingsPage() {
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+    <View style={{ height: '100vh', backgroundColor: colors.background, display: 'flex', flexDirection: 'column' }}>
       <View style={{
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
@@ -56,18 +56,8 @@ export default function NotificationSettingsPage() {
         <View style={{ width: '28px' }} />
       </View>
 
-      <View style={{ padding: `${spacing.lg}px` }}>
-      <View style={{ marginBottom: `${spacing.lg}px` }}>
-        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>系统推送通知</Text>
-        <View onClick={() => Taro.openSetting()} style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '14px 16px', boxShadow: shadow.card }}>
-          <Icon name="🔔" size={20} color={colors.primary} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>微信系统通知权限</Text>
-            <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '2px' }}>前往微信授权设置，确保服务消息可以正常提醒</Text>
-          </View>
-          <Text style={{ fontSize: '16px', color: colors.textMuted }}>›</Text>
-        </View>
-      </View>
+      <ScrollView scrollY style={{ flex: 1, height: 0 }}>
+      <View style={{ padding: `${spacing.lg}px`, paddingBottom: '96px' }}>
       {SETTINGS.map((group) => (
         <View key={group.group} style={{ marginBottom: `${spacing.lg}px` }}>
           <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>{group.group}</Text>
@@ -89,6 +79,7 @@ export default function NotificationSettingsPage() {
       ))}
       <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block' }}>关闭后仍可在“消息”页查看历史通知，仅停止新消息推送。</Text>
       </View>
+      </ScrollView>
     </View>
   );
 }

@@ -52,7 +52,7 @@ export default function ReportUploadPage() {
   };
 
   const STATUS_LABEL = {
-    pending: '待解析', parsing: '解析中', parsed: '待审核', approved: '已通过', rejected: '需重传',
+    none: '待解析', processing: '解析中', pending: '待审核', reviewed: '已审核', rejected: '需重传',
   };
 
   return (

@@ -236,13 +236,13 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
           </View>
         ))}
       </View>
-      <ScrollView scrollY style={{ flex: 1 }}>
+      <ScrollView scrollY enhanced showScrollbar style={{ flex: 1, height: 0 }}>
         {filtered.length === 0 ? (
           <View style={{ textAlign: 'center', padding: '60px 0' }}>
             <Text style={{ fontSize: '14px', color: colors.textMuted }}>暂无通知</Text>
           </View>
         ) : (
-          <View style={{ backgroundColor: '#fff', margin: `${spacing.xs}px ${spacing.md}px`, borderRadius: `${radius.md}px`, overflow: 'hidden' }}>
+          <View style={{ backgroundColor: '#fff', margin: `${spacing.xs}px ${spacing.md}px 96px`, borderRadius: `${radius.md}px`, overflow: 'hidden' }}>
             {filtered.map((msg, i) => {
               const conf = NOTIF_TYPE_CONFIG[msg.type] || NOTIF_TYPE_CONFIG.system;
               return (

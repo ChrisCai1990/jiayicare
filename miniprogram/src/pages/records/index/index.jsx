@@ -32,6 +32,8 @@ export default function RecordsIndexPage() {
   const [heartTrend, setHeartTrend] = useState([]);
   const [weightTrend, setWeightTrend] = useState([]);
   const [trendTab, setTrendTab] = useState('bloodPressure');
+  const [bodyComposition, setBodyComposition] = useState({});
+  const [bodyCompHistory, setBodyCompHistory] = useState([]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -45,7 +47,11 @@ export default function RecordsIndexPage() {
   useDidShow(() => {
     load();
     userAPI.getMe().then((res) => {
-      if (res?.success && res.data) updateUser(res.data);
+      if (res?.success && res.data) {
+        updateUser(res.data);
+        setBodyComposition(res.data.bodyComposition || {});
+        setBodyCompHistory(res.data.bodyCompHistory || []);
+      }
     }).catch(() => {});
   });
 
@@ -285,12 +291,22 @@ export default function RecordsIndexPage() {
         </View>
 
         <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>身体成分</Text>
-        <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}>
-          <Text style={{ fontSize: '13px', color: colors.textSecondary }}>
-            {user?.bodyComposition?.bmi ? `BMI ${user.bodyComposition.bmi}` : '暂无身体成分数据'}
-            {user?.bodyComposition?.bodyFat ? ` · 体脂率 ${user.bodyComposition.bodyFat}%` : ''}
-          </Text>
-        </View>
+        {(() => {
+          const latestHistory = [...bodyCompHistory].sort((a, b) => String(b.measuredAt || b.checkDate || b.recordedAt || '').localeCompare(String(a.measuredAt || a.checkDate || a.recordedAt || '')))[0] || {};
+          const body = { ...bodyComposition, ...latestHistory };
+          const metrics = [
+            { key: 'weight', label: '体成分体重', unit: 'kg' },
+            { key: 'skelMuscle', label: '骨骼肌', unit: 'kg' },
+            { key: 'bodyFatRate', label: '体脂率', unit: '%' },
+            { key: 'visceralFat', label: '内脏脂肪', unit: '级' },
+          ].filter((item) => body[item.key] !== undefined && body[item.key] !== null && body[item.key] !== '');
+          return metrics.length ? <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: `${spacing.lg}px` }}>
+            {metrics.map((item) => <View key={item.key} style={{ width: 'calc(50% - 4px)', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
+              <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{item.label}</Text>
+              <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>{body[item.key]} {item.unit}</Text>
+            </View>)}
+          </View> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无身体成分数据</Text></View>;
+        })()}
 
         <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>今日健康状态</Text>
         {(() => {
