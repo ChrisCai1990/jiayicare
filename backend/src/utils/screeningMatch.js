@@ -99,6 +99,15 @@ function matchAllWithIndex(rawName, itemType, index, threshold = 0.6, excludeCat
   // "电解质"节点的钾/钠/氯别名配置本身没问题，是这里的长度门槛把它们拦在了匹配循环之外）。
   // 只拦截空字符串即可——精确匹配分支本身已经足够严格，不会因为放行单字符而引入误配风险。
   if (!q) return [];
+  // 已确认的业务归类具有最高优先级，避免后台同时存在“腰围”等旧叶子时与新节点同分、
+  // 最终受数据库返回顺序影响而随机归类。
+  const forcedLabel = /^(腰围|臀围|腰臀比|腰围臀围)$/.test(q) ? '腰臀围'
+    : /^(跌倒评估|跌倒风险评估|老年人跌倒风险评估|跌倒风险筛查)$/.test(q) ? '生活方式评估' : '';
+  if (forcedLabel) {
+    const forced = index.find(entry => norm(entry.node.label) === norm(forcedLabel)
+      && !excludeCategories.includes(entry.node.category));
+    if (forced) return [{ node: forced.node, confidence: 1 }];
+  }
   const results = [];
   for (const { node, cands } of index) {
     if (excludeCategories.includes(node.category)) continue;
@@ -174,7 +183,12 @@ async function buildAdminIndex() {
       return {
         id: `${String(l1._id)}|${parentLabel}|${c.name}`,
         label: c.name,
-        aliases: c.aliases || [],
+        // 生产归类优先使用后台分类树；补充已确认的机构栏目别名，不能只改静态兜底树。
+        aliases: [
+          ...(c.aliases || []),
+          ...(/腰臀围/.test(c.name) ? ['腰围', '臀围', '腰臀比', '腰围臀围'] : []),
+          ...(/生活方式评估/.test(c.name) ? ['跌倒评估', '跌倒风险评估', '老年人跌倒风险评估', '跌倒风险筛查'] : []),
+        ],
         category: String(l1._id),
         categoryKey: String(l1._id),
         parent: parentLabel,

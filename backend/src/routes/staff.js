@@ -7027,16 +7027,17 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 1. 一般项目 / 一般检查
    → itemType="data"，栏目中每个有实际结果的项目逐行单独一条，不限于示例项目
    → 常见项目包括身高、体重、BMI/体重指数、脉搏、收缩压、舒张压、腰围、臀围、腰臀比；报告实际出现哪项就提取哪项，未出现的绝不补造
-   → 生活方式、现服药情况、家族史等纯问卷文字如果与一般检查同栏，也按原顺序逐行提取为 data，value 原样填写；但“小结”不是独立项目，应写入它对应的异常指标 conclusion，无法明确对应时不提取小结
+   → 生活方式、现服药情况、家族史等纯问卷文字如果与一般检查同栏，也按原顺序逐行提取为 data，value 原样填写
+   → “小结”栏全部跳过：既不生成独立项目，也不写入任何项目的 conclusion/findings/diagnosis
    → name=项目名，value=数值，unit=单位，referenceRange=参考范围
-   → conclusion=该项小结原文（如有）
+   → conclusion=""（一般检查不提取小结）
    → 【严禁编造】身高/体重/血压/脉搏这类生命体征，报告原文只写了一个数值就只输出一条，
      绝对不能自己拆出"左侧/右侧""左上肢/右上肢"这类报告里并不存在的分组条目
 
 2. 血压
    → itemType="data"，name="血压"
    → value=血压值（如"120/80"），unit="mmHg"
-   → conclusion=小结原文（如有）
+   → conclusion=""（血压不提取小结）
    → 报告原文只有一个血压值就只输出一条名为"血压"的记录，不要编造"左上肢血压""右上肢血压"
      这类原文没有写的分侧数据；只有报告原文确实分别印着左右两侧血压时才能各自输出一条
 
@@ -7186,6 +7187,33 @@ function shouldSkipParsedReportPage(parsed) {
   return /(?:异常|体检|检查)结果(?:汇总|及建议|及说明|说明|解读)|体检结论及建议|健康建议|温馨提示|名词解释|目录/.test(title);
 }
 
+const PAGE_COVERAGE_AUDIT_PROMPT = `你是体检报告页面漏项复核助手。请重新检查这张图片，重点检查首轮容易遗漏的右半页、页面下半部、跨栏表格和小字号栏目。
+只输出首轮清单中遗漏的真实检查项目；首轮已经提取的项目不要重复输出。汇总、小结、目录、建议、科普、会员信息和只有标题没有结果的栏目一律不输出。
+血液/尿液/粪便检验每个有结果的子项单独输出；内科、外科、眼科、耳鼻喉、妇科等体格检查按科室整体输出；心电图、碳13/碳14呼气试验、头颅MRI不得漏；组合超声按器官拆开。
+严格返回JSON，不要解释：
+{"items":[{"name":"项目名","itemType":"lab | imaging | data","value":"","unit":"","referenceRange":"","status":"normal | abnormal | attention | unknown","orderName":"","sourceSection":"原栏目标题","bodyPart":"","findings":"","diagnosis":"","conclusion":"","pathologyFindings":"","pathologyDiagnosis":""}]}`;
+
+function reportItemEvidenceKey(item) {
+  const clean = value => str(value).toLowerCase().replace(/[\s，,、:：;；()（）\[\]【】\-_/]/g, '');
+  return `${item?.itemType || ''}|${clean(item?.name)}|${clean(item?.value)}|${clean(item?.unit)}`;
+}
+
+function mergeCoverageAuditItems(originalItems, auditItems) {
+  const result = [...(originalItems || [])];
+  const seen = new Set(result.map(reportItemEvidenceKey));
+  for (const item of (auditItems || [])) {
+    if (!str(item?.name)) continue;
+    const key = reportItemEvidenceKey(item);
+    if (seen.has(key)) continue;
+    const sameNamedWithoutValue = result.some(old => old.itemType === item.itemType
+      && reportItemEvidenceKey({ ...old, value: '', unit: '' }) === reportItemEvidenceKey({ ...item, value: '', unit: '' }));
+    if (sameNamedWithoutValue && !str(item.value)) continue;
+    seen.add(key);
+    result.push(item);
+  }
+  return result;
+}
+
 function tagReportPageItems(items, pageNum) {
   return (items || [])
     .filter(it => it?.name && str(it.name).trim())
@@ -7296,9 +7324,51 @@ function filterPatientInfoItems(items) {
       // 诊断内容，不整条清空——避免误伤"小结：1、翼状胬肉"这种恰好是该项目自身合理诊断、只是格式带了
       // 多余前缀的情况；即使是真串行来的内容，保留下来也不算错误信息，只是去掉不专业的格式痕迹，
       // 比整条删除风险更低。
-      const diagnosis = str(item.diagnosis).replace(/^小结[:：]\s*\d+[、.．]\s*/, '');
-      return { ...item, name, itemType, diagnosis };
+      const isGeneralData = itemType === 'data' && /一般(?:项目|检查)/.test(str(item.sourceSection));
+      const diagnosis = isGeneralData && /^小结[:：]?/.test(str(item.diagnosis))
+        ? '' : str(item.diagnosis).replace(/^小结[:：]\s*\d+[、.．]\s*/, '');
+      const conclusion = isGeneralData && /^小结[:：]?/.test(str(item.conclusion)) ? '' : item.conclusion;
+      return { ...item, name, itemType, diagnosis, conclusion };
     });
+}
+
+// 淋巴结、甲状腺在内科栏目里是触诊子项；只有明确写有超声/彩超/B超才是独立影像检查。
+function mergeInternalMedicineSubparts(items) {
+  const list = items || [];
+  const isInternal = it => /^内科(?:检查|查体|体格检查)?$/.test(str(it.name));
+  const pageHasInternal = new Set(list.filter(isInternal).map(it => it._page));
+  const isSubpart = it => /^(?:浅表)?淋巴结(?:检查|触诊)?$|^甲状腺(?:检查|触诊)?$/.test(str(it.name))
+    && !/超声|彩超|B超/.test(`${str(it.name)}${str(it.sourceSection)}`)
+    && (/内科/.test(str(it.sourceSection)) || pageHasInternal.has(it._page));
+  const subparts = list.filter(isSubpart);
+  if (!subparts.length) return list;
+  const result = list.filter(it => !isSubpart(it));
+  const byPage = new Map();
+  subparts.forEach(it => {
+    if (!byPage.has(it._page)) byPage.set(it._page, []);
+    byPage.get(it._page).push(it);
+  });
+  for (const [page, parts] of byPage) {
+    const additions = parts.map(it => `${str(it.name)}：${str(it.findings) || str(it.value) || str(it.diagnosis)}`).filter(Boolean);
+    const main = result.find(it => it._page === page && isInternal(it));
+    if (main) {
+      main.findings = [...new Set([str(main.findings), ...additions].filter(Boolean))].join('；');
+    } else {
+      result.push({ ...parts[0], name: '内科', itemType: 'imaging', value: '', unit: '', referenceRange: '',
+        findings: additions.join('；'), diagnosis: '', conclusion: '' });
+    }
+  }
+  return result;
+}
+
+function dropNonResultAndSummaryItems(items) {
+  const resultFields = ['value', 'findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis'];
+  return (items || []).filter(it => {
+    if (/^(小结|汇总|总结|异常结果|检查结果)$/.test(str(it.name))) return false;
+    if (/^(小结|汇总|总结|异常结果(?:汇总)?|体检结果(?:汇总)?)$/.test(str(it.sourceSection))) return false;
+    // 上一页只有项目标题、下一页才有内容时，不保存上一页的空壳项目。
+    return resultFields.some(field => str(it[field]));
+  });
 }
 
 // 报告里"名词解释/检查异常结果解读"类科普说明页，有时没被prompt的跳过规则拦住，被当成独立条目提取出来
@@ -7579,8 +7649,10 @@ function cleanupUltrasoundOverlap(items) {
   });
   for (const group of byOrgan.values()) {
     if (group.length < 2) continue;
-    let best = group[0];
-    for (const w of group) if (w.richness > best.richness) best = w;
+    // 前部组合超声已包含该器官结果时保留最先出现的一条；后续独立彩超报告不重复生成。
+    // 没有结果的跨页标题会在进入这里前被清除，因此候选均有实际结果证据。
+    const best = [...group].sort((a, b) => ((list[a.idx]._page || 0) - (list[b.idx]._page || 0))
+      || ((list[a.idx]._order || 0) - (list[b.idx]._order || 0)))[0];
     group.forEach(w => { if (w !== best) dropSet.add(w.idx); });
   }
 
@@ -8148,6 +8220,7 @@ async function runReportParse(reportId) {
       let totalPageCount = 0;
       let okPages = 0;
       const bodyCompCandidatePages = new Set();
+      const detailPages = new Set();
 
       // onBatch：每批图片转出后立即识别，识别完就释放这批图片内存
       await pdfBufferToImages(pdfBuf, {
@@ -8187,6 +8260,7 @@ async function runReportParse(reportId) {
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
             }
+            detailPages.add(pageNum);
             if (Array.isArray(p.items)) {
               allItems = allItems.concat(firstPassItems);
             }
@@ -8196,6 +8270,30 @@ async function runReportParse(reportId) {
           }
         },
       });
+
+      // 每个明细页做第二遍覆盖复核。首轮返回合法JSON但漏掉整页内容或右栏时，过去会被误记为成功；
+      // 复核改用144dpi和max模型，只允许补充首轮遗漏项，再由程序证据键去重。
+      if (report.type !== 'body_comp') {
+        for (const pageNum of detailPages) {
+          try {
+            const img = await renderSinglePage(pdfBuf, pageNum, 144);
+            if (!img) continue;
+            const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
+            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
+            const p = safeParseJSON(text);
+            if (!p || !Array.isArray(p.items)) continue;
+            const oldPage = allItems.filter(it => it._page === pageNum);
+            const mergedPage = mergeCoverageAuditItems(oldPage, tagReportPageItems(p.items, pageNum));
+            if (mergedPage.length > oldPage.length) {
+              allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
+              console.log(`[parse-ai] 页${pageNum}覆盖复核补回${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项）`);
+            }
+          } catch (e) {
+            console.log(`[parse-ai] 页${pageNum}覆盖复核异常: ${e.message}`);
+          }
+        }
+      }
 
       // 数量核对+单页重试：检验单标题写了"N项"但实际条数不够，说明这一页大概率漏提了，只重新识别这一页
       const { pagesToRetry, underOrders } = findUnderExtractedPages(allItems);
@@ -8382,7 +8480,7 @@ async function runReportParse(reportId) {
       // 若先去重(同名只保留信息量最大的一条)，病理内容会被当"重复"整条丢弃，splitEndoscopyPathology
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
-      const filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems))))))))));
+      const filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems))))))))))));
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
@@ -8427,6 +8525,21 @@ async function runReportParse(reportId) {
         }
         let pageItems = tagReportPageItems(parsedPage.items, imageIndex + 1);
         const isBodyCompPage = isBodyCompositionPage(parsedPage, pageItems, report.type);
+        if (!isBodyCompPage) {
+          try {
+            const firstNames = pageItems.map(it => str(it.name)).filter(Boolean);
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整张漏识别）'}`;
+            const auditText = await parseImage(bufs[imageIndex].toString('base64'), auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
+            const auditPage = safeParseJSON(auditText);
+            if (auditPage && Array.isArray(auditPage.items)) {
+              const merged = mergeCoverageAuditItems(pageItems, tagReportPageItems(auditPage.items, imageIndex + 1));
+              if (merged.length > pageItems.length) console.log(`[parse-ai] 图片${imageIndex + 1}覆盖复核补回${merged.length - pageItems.length}项`);
+              pageItems = merged;
+            }
+          } catch (auditError) {
+            console.log(`[parse-ai] 图片${imageIndex + 1}覆盖复核异常: ${auditError.message}`);
+          }
+        }
         if (isBodyCompPage && needsBodyCompositionRetry(pageItems, true)) {
           try {
             const retryText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
@@ -8471,7 +8584,7 @@ async function runReportParse(reportId) {
     }
     imageItems = sanitizeBodyCompositionItems(imageItems);
     sortReportItemsBySource(imageItems);
-    const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(imageItems))))))))));
+    const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(imageItems))))))))))));
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
