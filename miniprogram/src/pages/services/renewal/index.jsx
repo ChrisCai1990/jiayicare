@@ -117,12 +117,12 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
   };
 
   return (
-    <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
-      <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '88%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
+    <View catchMove onTouchMove={(e) => e.stopPropagation && e.stopPropagation()} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
+      <View onClick={(e) => e.stopPropagation && e.stopPropagation()} onTouchMove={(e) => e.stopPropagation && e.stopPropagation()} style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', height: '88vh', boxSizing: 'border-box', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.lg}px` }}>{isRenewal ? '确认续约' : '确认开通'}</Text>
 
-        <ScrollView scrollY style={{ flex: 1 }}>
+        <ScrollView scrollY enhanced showScrollbar style={{ height: 'calc(88vh - 150px)', width: '100%' }} onTouchMove={(e) => e.stopPropagation && e.stopPropagation()}>
 
         <View style={{ backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
           <View style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0' }}>
