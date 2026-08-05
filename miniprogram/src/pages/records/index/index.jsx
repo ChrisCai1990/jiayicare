@@ -14,8 +14,9 @@ const TYPE_META = {
   heartRate: { label: '心率', icon: '❤️', unit: '次/分' },
   weight: { label: '体重', icon: '⚖️', unit: 'kg' },
   sleep: { label: '睡眠', icon: '🌙', unit: '小时' },
-  mood: { label: '情绪', icon: '😊', unit: '分' },
 };
+const CORE_TYPES = ['bloodPressure', 'bloodSugar', 'sleep', 'heartRate', 'weight'];
+const DAILY_TYPES = ['diet', 'exercise', 'bowel', 'water', 'smoking', 'alcohol', 'mood'];
 
 const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: colors.info };
 
@@ -23,12 +24,14 @@ export default function RecordsIndexPage() {
   const { statusBarHeight } = useNavBar();
   const { user, updateUser } = useAuth();
   const [records, setRecords] = useState([]);
-  const [filter, setFilter] = useState('all');
+  const [filter, setFilter] = useState('bloodPressure');
   const [loading, setLoading] = useState(true);
   const [bpTrend, setBpTrend] = useState([]);
   const [bsTrend, setBsTrend] = useState([]);
   const [sleepTrend, setSleepTrend] = useState([]);
-  const [trendTab, setTrendTab] = useState('bp');
+  const [heartTrend, setHeartTrend] = useState([]);
+  const [weightTrend, setWeightTrend] = useState([]);
+  const [trendTab, setTrendTab] = useState('bloodPressure');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,7 +54,9 @@ export default function RecordsIndexPage() {
       recordsAPI.trend('bloodPressure'),
       recordsAPI.trend('bloodSugar'),
       recordsAPI.trend('sleep'),
-    ]).then(([bp, bs, sl]) => {
+      recordsAPI.trend('heartRate'),
+      recordsAPI.trend('weight'),
+    ]).then(([bp, bs, sl, hr, wt]) => {
       if (bp.status === 'fulfilled' && bp.value?.data) {
         setBpTrend(bp.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: r.extra?.sys || parseFloat(r.value) || 0 })));
       }
@@ -61,12 +66,22 @@ export default function RecordsIndexPage() {
       if (sl.status === 'fulfilled' && sl.value?.data) {
         setSleepTrend(sl.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
       }
+      if (hr.status === 'fulfilled' && hr.value?.data) setHeartTrend(hr.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
+      if (wt.status === 'fulfilled' && wt.value?.data) setWeightTrend(wt.value.data.slice(-10).map((r) => ({ label: new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }), value: parseFloat(r.value) || 0 })));
     });
   }, []);
 
-  const filtered = filter === 'all' ? records : records.filter((r) => r.type === filter);
+  const filtered = records.filter((r) => r.type === filter);
+  const dailyRecords = records.filter((r) => DAILY_TYPES.includes(r.type));
+  const symptoms = records.filter((r) => r.type === 'symptom');
   const latestSleep = records.find((r) => r.type === 'sleep');
-  const trendMap = { bp: { data: bpTrend, color: colors.danger, label: '血压 (mmHg)' }, bs: { data: bsTrend, color: colors.warning, label: '血糖 (mmol/L)' }, sleep: { data: sleepTrend, color: '#7C3AED', label: '睡眠 (小时)' } };
+  const trendMap = {
+    bloodPressure: { data: bpTrend, color: colors.danger, label: '血压 (mmHg)' },
+    bloodSugar: { data: bsTrend, color: colors.warning, label: '血糖 (mmol/L)' },
+    sleep: { data: sleepTrend, color: '#7C3AED', label: '睡眠 (小时)' },
+    heartRate: { data: heartTrend, color: '#DC2626', label: '心率 (次/分)' },
+    weight: { data: weightTrend, color: '#0369A1', label: '体重 (kg)' },
+  };
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -75,38 +90,24 @@ export default function RecordsIndexPage() {
 
         <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}>
           <View style={{ display: 'inline-flex', gap: '8px' }}>
-            {['all', ...Object.keys(TYPE_META)].map((k) => (
+            {CORE_TYPES.map((k) => (
               <View
                 key={k}
-                onClick={() => setFilter(k)}
+                onClick={() => { setFilter(k); setTrendTab(k); }}
                 style={{
                   display: 'inline-block', padding: '6px 14px', borderRadius: `${radius.full}px`,
                   backgroundColor: filter === k ? colors.primary : '#fff',
                   border: `1px solid ${filter === k ? colors.primary : colors.border}`,
                 }}
               >
-                {k === 'all' ? (
-                  <Text style={{ fontSize: '12px', color: filter === k ? '#fff' : colors.textPrimary, fontWeight: 600 }}>全部</Text>
-                ) : (
-                  <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Icon name={TYPE_META[k].icon} size={12} color={filter === k ? '#fff' : colors.textPrimary} />
-                    <Text style={{ fontSize: '12px', color: filter === k ? '#fff' : colors.textPrimary, fontWeight: 600 }}>{TYPE_META[k].label}</Text>
-                  </View>
-                )}
+                <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <Icon name={TYPE_META[k].icon} size={12} color={filter === k ? '#fff' : colors.textPrimary} />
+                  <Text style={{ fontSize: '12px', color: filter === k ? '#fff' : colors.textPrimary, fontWeight: 600 }}>{TYPE_META[k].label}</Text>
+                </View>
               </View>
             ))}
           </View>
         </ScrollView>
-
-        <View
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-            backgroundColor: colors.primary, borderRadius: `${radius.md}px`, padding: '12px 0', marginBottom: `${spacing.md}px`,
-          }}
-          onClick={() => Taro.navigateTo({ url: '/pages/records/add/index' })}
-        >
-          <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 700 }}>+ 录入健康数据</Text>
-        </View>
 
         {/* 个人资料入口（2026-07-18 对齐app端健康档案页拆分：静态档案字段搬到独立页） */}
         <View
@@ -147,11 +148,6 @@ export default function RecordsIndexPage() {
             onClick={() => Taro.navigateTo({ url: '/pages/records/report/index' })}>
             <View style={{ display: 'flex', justifyContent: 'center' }}><Icon name="📊" size={20} /></View>
             <Text style={{ fontSize: '12px', color: colors.textPrimary, marginTop: '4px' }}>健康报告</Text>
-          </View>
-          <View style={{ flex: 1, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '12px', textAlign: 'center', boxShadow: shadow.card }}
-            onClick={() => Taro.navigateTo({ url: '/pages/records/upload/index' })}>
-            <View style={{ display: 'flex', justifyContent: 'center' }}><Icon name="📄" size={20} /></View>
-            <Text style={{ fontSize: '12px', color: colors.textPrimary, marginTop: '4px' }}>体检报告</Text>
           </View>
         </View>
 
@@ -196,11 +192,11 @@ export default function RecordsIndexPage() {
         )}
 
         {/* 趋势图 Tab：血压/血糖/睡眠 */}
-        {(bpTrend.length > 0 || bsTrend.length > 0 || sleepTrend.length > 0) && (
+        {(bpTrend.length > 0 || bsTrend.length > 0 || sleepTrend.length > 0 || heartTrend.length > 0 || weightTrend.length > 0) && (
           <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
             <View style={{ display: 'flex', gap: '8px', marginBottom: `${spacing.sm}px` }}>
-              {[{ k: 'bp', l: '血压' }, { k: 'bs', l: '血糖' }, { k: 'sleep', l: '睡眠' }].map((t) => (
-                <View key={t.k} onClick={() => setTrendTab(t.k)} style={{
+              {CORE_TYPES.map((k) => ({ k, l: TYPE_META[k].label })).map((t) => (
+                <View key={t.k} onClick={() => { setTrendTab(t.k); setFilter(t.k); }} style={{
                   padding: '5px 12px', borderRadius: `${radius.full}px`,
                   backgroundColor: trendTab === t.k ? colors.primary : colors.background,
                   border: `1px solid ${trendTab === t.k ? colors.primary : colors.border}`,
@@ -273,6 +269,38 @@ export default function RecordsIndexPage() {
             ));
           })()
         )}
+      </View>
+
+      <View style={{ padding: `0 ${spacing.lg}px` }}>
+        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>日常生活打卡</Text>
+        <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: `${spacing.lg}px` }}>
+          {DAILY_TYPES.map((type) => {
+            const latest = dailyRecords.find((r) => r.type === type);
+            const labelMap = { diet: '饮食', exercise: '运动', bowel: '排便', water: '饮水', smoking: '吸烟', alcohol: '饮酒', mood: '情绪' };
+            return <View key={type} style={{ width: 'calc(50% - 4px)', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
+              <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{labelMap[type]}</Text>
+              <Text style={{ fontSize: '12px', color: latest ? colors.textSecondary : colors.textMuted, marginTop: '4px' }}>{latest?.value || latest?.note || '近30天暂无记录'}</Text>
+            </View>;
+          })}
+        </View>
+
+        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>身体成分</Text>
+        <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}>
+          <Text style={{ fontSize: '13px', color: colors.textSecondary }}>
+            {user?.bodyComposition?.bmi ? `BMI ${user.bodyComposition.bmi}` : '暂无身体成分数据'}
+            {user?.bodyComposition?.bodyFat ? ` · 体脂率 ${user.bodyComposition.bodyFat}%` : ''}
+          </Text>
+        </View>
+
+        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>今日健康状态</Text>
+        {(() => {
+          const todayKey = new Date().toISOString().slice(0, 10);
+          const latest = symptoms.find((r) => String(r.recordedAt || '').slice(0, 10) === todayKey);
+          return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
+            <Text style={{ fontSize: '14px', fontWeight: 700, color: latest ? colors.danger : colors.primary, display: 'block' }}>{latest ? '今天已记录不适' : '今天暂未记录不适'}</Text>
+            <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '4px' }}>{latest ? (latest.value || latest.note || '已提交不适情况') : '如有不适，请在首页“记录健康数据”中及时填写。'}</Text>
+          </View>;
+        })()}
       </View>
       <View style={{ height: '20px' }} />
     </View>

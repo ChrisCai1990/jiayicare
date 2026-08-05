@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, Input, ScrollView } from '@tarojs/components';
+import { View, Text, Textarea, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
 import { chatAPI } from '../../services/api';
@@ -69,14 +69,16 @@ export default function ChatPage() {
       </ScrollView>
 
       <View style={{
-        display: 'flex', alignItems: 'center', gap: '8px', padding: `${spacing.sm}px ${spacing.md}px`,
+        display: 'flex', alignItems: 'flex-end', gap: '8px', padding: `${spacing.sm}px ${spacing.md}px`,
         backgroundColor: '#fff', borderTop: `1px solid ${colors.border}`,
       }}>
-        <Input
-          style={{ flex: 1, backgroundColor: colors.background, borderRadius: `${radius.full}px`, padding: '10px 16px', fontSize: '14px' }}
+        <Textarea
+          style={{ flex: 1, minHeight: '48px', maxHeight: '112px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '12px 14px', fontSize: '15px', lineHeight: '22px' }}
           placeholder="输入您的健康问题..."
           value={input}
           onInput={(e) => setInput(e.detail.value)}
+          autoHeight
+          maxlength={500}
           confirmType="send"
           onConfirm={send}
         />

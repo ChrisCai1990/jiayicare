@@ -4,6 +4,7 @@ import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { reportsAPI, mediaUrl } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
+import Icon from '../../../components/Icon';
 
 // 用 Taro.chooseImage + Taro.uploadFile 对接后端 POST /reports 接口
 export default function ReportUploadPage() {
@@ -55,7 +56,15 @@ export default function ReportUploadPage() {
   };
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.lg}px` }}>
+    <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
+      <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+        <View onClick={() => Taro.navigateBack({ fail: () => Taro.switchTab({ url: '/pages/records/index/index' }) })} style={{ padding: '4px' }}>
+          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
+        </View>
+        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>上传体检/检查报告</Text>
+        <View style={{ width: '28px' }} />
+      </View>
+      <View style={{ padding: `${spacing.lg}px` }}>
       <View
         style={{
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
@@ -83,6 +92,7 @@ export default function ReportUploadPage() {
           </View>
         ))
       )}
+      </View>
     </View>
   );
 }

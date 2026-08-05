@@ -93,7 +93,6 @@ export default function ProfilePage() {
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       {/* Header：paddingTop加状态栏高度，因navigationStyle:custom后需自己避让胶囊按钮区域 */}
       <View style={{ backgroundColor: '#1A2B24', padding: `${statusBarHeight + 8}px 0 32px`, textAlign: 'center', position: 'relative' }}>
-        {/* 头部编辑资料快捷入口（2026-07-19 对齐app端：顶部信息此前无编辑入口） */}
         <View onClick={() => nav('/pages/profile/edit/index')} style={{
           position: 'absolute', top: `${statusBarHeight + 8}px`, right: `${spacing.lg}px`,
           width: '36px', height: '36px', borderRadius: '18px', backgroundColor: 'rgba(255,255,255,0.15)',
@@ -238,7 +237,6 @@ export default function ProfilePage() {
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
         <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>账号设置</Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-          <MenuItem icon="✏️" iconColor="#0077B6" label="编辑资料" onClick={() => nav('/pages/profile/edit/index')} />
           <MenuItem icon="🔔" iconColor="#7C3AED" label="消息通知" onClick={() => nav('/pages/profile/notifications/index')} />
           <MenuItem icon="🔒" iconColor="#22A06B" label="账号安全" onClick={() => nav('/pages/profile/security/index')} />
           <MenuItem icon="❓" iconColor="#D97706" label="帮助与反馈" onClick={() => nav('/pages/profile/feedback/index')} isLast />

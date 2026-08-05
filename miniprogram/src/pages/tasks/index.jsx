@@ -1,33 +1,39 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text } from '@tarojs/components';
+import { View, Text, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { tasksAPI, followupTasksAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 
+const STATUS_TABS = [
+  { key: 'active', label: '未随访' },
+  { key: 'done', label: '已随访' },
+  { key: 'cancelled', label: '已取消' },
+];
+const TIME_TABS = ['全部', '今日', '本周', '本月'];
+
+const dateOf = item => item.dueDate || item.date || item.scheduledAt || item.createdAt;
+const dateKey = item => dateOf(item) ? String(dateOf(item)).slice(0, 10) : '';
+
 export default function TasksPage() {
   const { statusBarHeight } = useNavBar();
   const [tasks, setTasks] = useState([]);
   const [followups, setFollowups] = useState([]);
+  const [statusFilter, setStatusFilter] = useState('active');
+  const [timeFilter, setTimeFilter] = useState('全部');
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
-    try {
-      const [tRes, fRes] = await Promise.allSettled([tasksAPI.list(), followupTasksAPI.list()]);
-      if (tRes.status === 'fulfilled' && tRes.value?.success) setTasks(tRes.value.data || []);
-      if (fRes.status === 'fulfilled' && fRes.value?.success) setFollowups(fRes.value.data || []);
-    } catch {}
+    const [tRes, fRes] = await Promise.allSettled([tasksAPI.list(), followupTasksAPI.list()]);
+    if (tRes.status === 'fulfilled' && tRes.value?.success) setTasks(tRes.value.data || []);
+    if (fRes.status === 'fulfilled' && fRes.value?.success) setFollowups(fRes.value.data || []);
     setLoading(false);
   }, []);
+  useDidShow(load);
 
-  useDidShow(() => { load(); });
-
-  const completeTask = async (id) => {
-    try { await tasksAPI.complete(id); load(); } catch {}
-  };
-
+  const completeTask = async (id) => { try { await tasksAPI.complete(id); load(); } catch {} };
   const doneFollowup = async (id) => {
     try {
       const result = await Taro.showActionSheet({ itemList: ['仍需健管专员跟进', '无需跟进，标记完成'] });
@@ -40,69 +46,50 @@ export default function TasksPage() {
     }
   };
 
-  const pendingTasks = tasks.filter((t) => t.status === 'pending');
-  const pendingFollowups = followups
-    .filter((p) => !p.completedByUser && !['completed', 'cancelled'].includes(p.status))
-    .sort((a, b) => Number(b.sourceType === 'symptom') - Number(a.sourceType === 'symptom'));
+  const normalized = [
+    ...tasks.map(t => ({ ...t, _kind: 'task', _status: t.status === 'cancelled' ? 'cancelled' : t.status === 'completed' ? 'done' : 'active' })),
+    ...followups.map(f => ({ ...f, _kind: 'followup', _status: f.status === 'cancelled' ? 'cancelled' : (f.completedByUser || f.status === 'completed') ? 'done' : 'active' })),
+  ];
+  const today = new Date();
+  const todayKey = today.toISOString().slice(0, 10);
+  const weekEnd = new Date(today); weekEnd.setDate(today.getDate() + 7);
+  const monthEnd = new Date(today); monthEnd.setMonth(today.getMonth() + 1);
+  const visible = normalized.filter(item => {
+    if (item._status !== statusFilter) return false;
+    if (statusFilter !== 'active' || timeFilter === '全部') return true;
+    const key = dateKey(item);
+    if (!key) return true;
+    if (timeFilter === '今日') return key <= todayKey;
+    if (timeFilter === '本周') return new Date(key) <= weekEnd;
+    return new Date(key) <= monthEnd;
+  });
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
-      <View style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`,
-        backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`,
-      }}>
-        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}>
-          <Icon name="chevron-left" size={20} color={colors.textPrimary} />
-        </View>
-        <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>随访与待办</Text>
+      <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.md}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+        <View onClick={() => Taro.navigateBack()} style={{ padding: '4px' }}><Icon name="chevron-left" size={20} color={colors.textPrimary} /></View>
+        <View style={{ textAlign: 'center' }}><Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>待办任务</Text><Text style={{ fontSize: '11px', color: colors.textMuted }}>健康管理进度跟踪</Text></View>
         <View style={{ width: '28px' }} />
       </View>
-
-      <View style={{ padding: `${spacing.lg}px` }}>
-      {loading ? (
-        <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
-      ) : (pendingTasks.length === 0 && pendingFollowups.length === 0) ? (
-        <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}>
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无待办事项，做得很好！</Text>
-        </View>
-      ) : (
-        <>
-          {pendingTasks.map((t) => (
-            <View key={t._id} style={{
-              backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '10px', boxShadow: shadow.card,
-            }}>
-              <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{t.title}</Text>
-                  <Text style={{ fontSize: '12px', color: colors.textMuted }}>{t.assignee || '医护团队'} · {t.dueDate || ''}</Text>
-                </View>
-                <View onClick={() => completeTask(t._id)} style={{ padding: '6px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}>
-                  <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>完成</Text>
-                </View>
+      <View style={{ padding: `${spacing.md}px ${spacing.lg}px 0` }}>
+        <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.sm}px` }}><View style={{ display: 'inline-flex', gap: '8px' }}>
+          {STATUS_TABS.map(tab => <View key={tab.key} onClick={() => setStatusFilter(tab.key)} style={{ padding: '7px 15px', borderRadius: `${radius.full}px`, backgroundColor: statusFilter === tab.key ? colors.primary : '#fff', border: `1px solid ${statusFilter === tab.key ? colors.primary : colors.border}` }}><Text style={{ fontSize: '12px', fontWeight: 600, color: statusFilter === tab.key ? '#fff' : colors.textPrimary }}>{tab.label}</Text></View>)}
+        </View></ScrollView>
+        {statusFilter === 'active' && <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}><View style={{ display: 'inline-flex', gap: '8px' }}>
+          {TIME_TABS.map(tab => <View key={tab} onClick={() => setTimeFilter(tab)} style={{ padding: '6px 14px', borderRadius: `${radius.full}px`, backgroundColor: timeFilter === tab ? colors.primary10 : '#fff', border: `1px solid ${timeFilter === tab ? colors.primary : colors.border}` }}><Text style={{ fontSize: '12px', color: timeFilter === tab ? colors.primary : colors.textSecondary }}>{tab}</Text></View>)}
+        </View></ScrollView>}
+        {loading ? <Text style={{ color: colors.textMuted }}>加载中...</Text> : visible.length === 0 ? <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}><Text style={{ color: colors.textMuted }}>{statusFilter === 'done' ? '暂无已随访记录' : statusFilter === 'cancelled' ? '暂无已取消记录' : '暂无待办任务'}</Text></View> : visible.map(item => (
+          <View key={`${item._kind}-${item._id}`} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '10px', boxShadow: shadow.card }}>
+            <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+              <View style={{ flex: 1 }}>
+                <Text style={{ fontSize: '14px', fontWeight: 700, color: item.sourceType === 'symptom' ? colors.danger : colors.textPrimary, display: 'block' }}>{item.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (item.title || item.theme || '随访计划')}</Text>
+                <Text style={{ fontSize: '12px', color: colors.textMuted }}>{item.staffId?.name || item.assignee || '健康管理团队'} · {dateKey(item)}</Text>
+                {!!item.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{item.content}</Text>}
               </View>
+              {statusFilter === 'active' && <View onClick={() => item._kind === 'followup' ? doneFollowup(item._id) : completeTask(item._id)} style={{ padding: '7px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}><Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>完成</Text></View>}
             </View>
-          ))}
-          {pendingFollowups.map((p) => (
-            <View key={p._id} style={{
-              backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: '10px', boxShadow: shadow.card,
-            }}>
-              <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: '14px', fontWeight: 700, color: p.sourceType === 'symptom' ? colors.danger : colors.textPrimary, display: 'block' }}>{p.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (p.theme || '随访计划')}</Text>
-                  <Text style={{ fontSize: '12px', color: colors.textMuted }}>
-                    {p.staffId?.name || '医护团队'} · {p.date ? new Date(p.date).toLocaleDateString('zh-CN') : ''}
-                  </Text>
-                  {!!p.content && <Text style={{ fontSize: '12px', color: colors.textSecondary, marginTop: '4px' }}>{p.content}</Text>}
-                </View>
-                <View onClick={() => doneFollowup(p._id)} style={{ padding: '6px 14px', backgroundColor: colors.primary10, borderRadius: `${radius.full}px` }}>
-                  <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>完成</Text>
-                </View>
-              </View>
-            </View>
-          ))}
-        </>
-      )}
+          </View>
+        ))}
       </View>
     </View>
   );

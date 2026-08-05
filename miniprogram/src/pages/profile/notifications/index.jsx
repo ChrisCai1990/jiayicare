@@ -19,7 +19,7 @@ const SETTINGS = [
     { key: 'report', label: '报告解读', desc: '检查报告完成通知' },
   ] },
   { group: '系统通知', items: [
-    { key: 'system', label: '系统通知', desc: '服务更新及重要公告' },
+    { key: 'system', label: '系统推送通知', desc: '服务更新、重要公告及系统消息推送' },
     { key: 'service_exp', label: '服务到期提醒', desc: '服务包即将到期提醒' },
   ] },
 ];
@@ -57,6 +57,17 @@ export default function NotificationSettingsPage() {
       </View>
 
       <View style={{ padding: `${spacing.lg}px` }}>
+      <View style={{ marginBottom: `${spacing.lg}px` }}>
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>系统推送通知</Text>
+        <View onClick={() => Taro.openSetting()} style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '14px 16px', boxShadow: shadow.card }}>
+          <Icon name="🔔" size={20} color={colors.primary} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>微信系统通知权限</Text>
+            <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '2px' }}>前往微信授权设置，确保服务消息可以正常提醒</Text>
+          </View>
+          <Text style={{ fontSize: '16px', color: colors.textMuted }}>›</Text>
+        </View>
+      </View>
       {SETTINGS.map((group) => (
         <View key={group.group} style={{ marginBottom: `${spacing.lg}px` }}>
           <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', display: 'block', marginBottom: `${spacing.sm}px` }}>{group.group}</Text>
