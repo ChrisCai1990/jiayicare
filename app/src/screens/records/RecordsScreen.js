@@ -987,6 +987,18 @@ export default function RecordsScreen({ navigation }) {
           </View>
         </View>
 
+        {/* ── 身体成分置于持续健康数据末尾，使用与医护端相同历史 ── */}
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <View style={styles.sectionTitleRow}>
+              <Ionicons name="analytics-outline" size={17} color="#7C3AED" />
+              <Text style={styles.sectionTitle}>身体成分</Text>
+            </View>
+            <Text style={styles.sectionHint}>按检测日期</Text>
+          </View>
+          <BodyCompositionCharts history={bodyCompHistory} current={bodyComposition} />
+        </View>
+
         {/* ── 今日健康状态：来自“今天有不适吗” ────────────────── */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
@@ -1015,18 +1027,6 @@ export default function RecordsScreen({ navigation }) {
               </View>
             );
           })()}
-        </View>
-
-        {/* ── 身体成分置于持续健康数据末尾，使用与医护端相同历史 ── */}
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionTitleRow}>
-              <Ionicons name="analytics-outline" size={17} color="#7C3AED" />
-              <Text style={styles.sectionTitle}>身体成分</Text>
-            </View>
-            <Text style={styles.sectionHint}>按检测日期</Text>
-          </View>
-          <BodyCompositionCharts history={bodyCompHistory} current={bodyComposition} />
         </View>
 
         <View style={{ height: spacing.xl * 2 }} />
