@@ -282,7 +282,9 @@ router.post('/order', auth, async (req, res) => {
   const virtualPayment = paidAmount > 0 && paymentSession
     ? buildPaymentPayload({
       sessionKey: paymentSession.session_key,
-      productId: `service-${service.id}`,
+      // 微信虚拟支付的道具 ID 必须提前在米大师后台发布。
+      // 按实际支付金额使用稳定 ID，避免把 MongoDB 随机 ID 暴露为道具 ID。
+      productId: `jiayicare_${Math.round(paidAmount * 100)}`,
       goodsPrice: Math.round(paidAmount * 100),
       outTradeNo,
       attach: order._id.toString(),
