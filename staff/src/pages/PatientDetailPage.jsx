@@ -708,6 +708,19 @@ function AIArrEdit({ value, placeholder, onChange }) {
   )
 }
 
+function AIListLines({ items, color = '#4A6558' }) {
+  if (!Array.isArray(items) || items.length === 0) return null
+  return (
+    <div style={{ marginTop: 4 }}>
+      {items.map((item, index) => (
+        <div key={`${index}-${item}`} style={{ fontSize: 13, lineHeight: 1.75, color, overflowWrap: 'anywhere' }}>
+          · {item}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 function AISectionSourceButton({ title, ids, onOpen }) {
   if (!Array.isArray(ids) || ids.length === 0) {
     return <div style={{ fontSize: 12, color: '#B0B8B3', marginBottom: 10 }}>暂无可关联的原始材料</div>
@@ -6530,7 +6543,7 @@ export default function PatientDetailPage() {
                   )
                 })()}
                 {/* 板块一：肿瘤风险筛查分析 */}
-                <AISectionCard title="肿瘤风险筛查分析" icon="🔬" color="#7C3AED">
+                <AISectionCard title="肿瘤筛查信息整理" icon="🔬" color="#7C3AED">
                   <AISectionSourceButton title="肿瘤风险筛查分析" ids={sourceIdsFor('tumor_risk')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -6541,17 +6554,17 @@ export default function PatientDetailPage() {
                         <textarea className="form-control" rows={2} value={sec.tumor_risk?.summary || ''} onChange={e => updSec('tumor_risk', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {(sec.tumor_risk?.completed || []).length > 0 && <div><span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>✅ 已完成筛查</span><div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{sec.tumor_risk.completed.join('、')}</div></div>}
-                      {(sec.tumor_risk?.abnormal || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>⚠️ 异常发现</span>{sec.tumor_risk.abnormal.map((a, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{a}</div>)}</div>}
-                      {(sec.tumor_risk?.missing || []).length > 0 && <div><span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>📌 未覆盖项目</span><div style={{ fontSize: 13, color: '#D97706', marginTop: 3 }}>{sec.tumor_risk.missing.join('、')}</div></div>}
-                      {sec.tumor_risk?.summary && <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.tumor_risk.summary}</div>}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {(sec.tumor_risk?.completed || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>已完成筛查</div><AIListLines items={sec.tumor_risk.completed} /></div>}
+                      {(sec.tumor_risk?.abnormal || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>异常发现</div><AIListLines items={sec.tumor_risk.abnormal} color="#DC2626" /></div>}
+                      {(sec.tumor_risk?.missing || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>未覆盖项目</div><AIListLines items={sec.tumor_risk.missing} color="#8AA89C" /></div>}
+                      {sec.tumor_risk?.summary && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1A2B24', background: '#F2EDE3', borderRadius: 8, padding: '9px 12px', marginTop: 2 }}>{sec.tumor_risk.summary}</div>}
                     </div>
                   )}
                 </AISectionCard>
 
                 {/* 板块二：心脑血管病风险分析 */}
-                <AISectionCard title="心脑血管病风险分析" icon="❤️" color="#EF4444">
+                <AISectionCard title="心脑血管相关信息整理" icon="❤️" color="#EF4444">
                   <AISectionSourceButton title="心脑血管病风险分析" ids={sourceIdsFor('cardiovascular_risk')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -6562,16 +6575,16 @@ export default function PatientDetailPage() {
                         <textarea className="form-control" rows={2} value={sec.cardiovascular_risk?.summary || ''} onChange={e => updSec('cardiovascular_risk', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {(sec.cardiovascular_risk?.high || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>🔴 重点关注信息</span>{sec.cardiovascular_risk.high.map((h, i) => <div key={i} style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{h}</div>)}</div>}
-                      {(sec.cardiovascular_risk?.medium || []).length > 0 && <div><span style={{ fontSize: 11, color: '#D97706', fontWeight: 600 }}>🟡 持续关注信息</span>{sec.cardiovascular_risk.medium.map((m, i) => <div key={i} style={{ fontSize: 13, color: '#D97706', marginTop: 3 }}>{m}</div>)}</div>}
-                      {sec.cardiovascular_risk?.summary && <div style={{ fontSize: 13, color: '#4A6558', background: '#FAF9F7', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>{sec.cardiovascular_risk.summary}</div>}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {(sec.cardiovascular_risk?.high || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>重点关注信息</div><AIListLines items={sec.cardiovascular_risk.high} color="#DC2626" /></div>}
+                      {(sec.cardiovascular_risk?.medium || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>持续关注信息</div><AIListLines items={sec.cardiovascular_risk.medium} color="#D97706" /></div>}
+                      {sec.cardiovascular_risk?.summary && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1A2B24', background: '#F2EDE3', borderRadius: 8, padding: '9px 12px', marginTop: 2 }}>{sec.cardiovascular_risk.summary}</div>}
                     </div>
                   )}
                 </AISectionCard>
 
                 {/* 板块三：慢性病及其他健康指标 */}
-                <AISectionCard title="慢性病及其他健康指标分析" icon="📊" color="#0077B6">
+                <AISectionCard title="慢病及其他健康信息整理" icon="📊" color="#0077B6">
                   <AISectionSourceButton title="慢性病及其他健康指标分析" ids={sourceIdsFor('chronic_disease')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -6599,12 +6612,12 @@ export default function PatientDetailPage() {
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {sec.chronic_disease.items.map((item, i) => (
-                          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '7px 0', borderBottom: i < sec.chronic_disease.items.length - 1 ? '1px solid #F5F2EC' : 'none' }}>
+                          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '9px 0', borderBottom: i < sec.chronic_disease.items.length - 1 ? '1px solid #F5F2EC' : 'none' }}>
                             <span style={{ width: 8, height: 8, borderRadius: '50%', background: STATUS_COLOR[item.status] || '#aaa', marginTop: 5, flexShrink: 0 }} />
                             <div style={{ flex: 1 }}>
-                              <span style={{ fontWeight: 600, fontSize: 13, color: '#1A2B24' }}>{item.name}</span>
-                              {item.value && <span style={{ fontSize: 13, color: '#4A6558' }}> · {item.value}</span>}
-                              {item.note && <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>{item.note}</div>}
+                              <div style={{ fontWeight: 600, fontSize: 13, lineHeight: 1.7, color: '#1A2B24' }}>{item.name}</div>
+                              {item.value && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#4A6558' }}>· {item.value}</div>}
+                              {item.note && <div style={{ fontSize: 12, lineHeight: 1.7, color: '#6B7280', marginTop: 2 }}>· {item.note}</div>}
                               {item.sourceReportId && (
                                 <button className="btn btn-secondary btn-sm" style={{ marginTop: 5 }}
                                   onClick={() => openAIAnalysisSource(item.sourceReportId)}>🔗 查看分析依据</button>
@@ -6618,7 +6631,7 @@ export default function PatientDetailPage() {
                 </AISectionCard>
 
                 {/* 板块四：体检全面性评估 */}
-                <AISectionCard title="体检全面性评估" icon="📋" color="#1E6B50">
+                <AISectionCard title="体检资料覆盖情况" icon="📋" color="#1E6B50">
                   <AISectionSourceButton title="体检全面性评估" ids={sourceIdsFor('checkup_completeness')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -6629,16 +6642,16 @@ export default function PatientDetailPage() {
                         <textarea className="form-control" rows={2} value={sec.checkup_completeness?.suggestion || ''} onChange={e => updSec('checkup_completeness', 'suggestion', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
                     </div>
                   ) : (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {(sec.checkup_completeness?.covered || []).length > 0 && <div><span style={{ fontSize: 11, color: '#16A34A', fontWeight: 600 }}>✅ 已覆盖项目</span><div style={{ fontSize: 13, color: '#4A6558', marginTop: 3 }}>{sec.checkup_completeness.covered.join('、')}</div></div>}
-                      {(sec.checkup_completeness?.missing || []).length > 0 && <div><span style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>❌ 缺失重要项目</span><div style={{ fontSize: 13, color: '#DC2626', marginTop: 3 }}>{sec.checkup_completeness.missing.join('、')}</div></div>}
-                      {sec.checkup_completeness?.suggestion && <div style={{ fontSize: 13, color: '#1E6B50', background: '#E8F5EF', borderRadius: 6, padding: '6px 10px', marginTop: 4 }}>📌 {sec.checkup_completeness.suggestion}</div>}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      {(sec.checkup_completeness?.covered || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>已覆盖</div><AIListLines items={sec.checkup_completeness.covered} /></div>}
+                      {(sec.checkup_completeness?.missing || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>缺失项目</div><AIListLines items={sec.checkup_completeness.missing} color="#D97706" /></div>}
+                      {sec.checkup_completeness?.suggestion && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1A2B24', background: '#F2EDE3', borderRadius: 8, padding: '9px 12px', marginTop: 2 }}>{sec.checkup_completeness.suggestion}</div>}
                     </div>
                   )}
                 </AISectionCard>
 
                 {/* 板块五：需优先解决的医疗问题 */}
-                <AISectionCard title="需优先解决的医疗问题" icon="🏥" color="#DC2626">
+                <AISectionCard title="需优先关注的信息" icon="🏥" color="#DC2626">
                   <AISectionSourceButton title="需优先解决的医疗问题" ids={sourceIdsFor('medical_priority')} onOpen={openSectionSources} />
                   {docEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
