@@ -175,6 +175,7 @@ function PurchaseModal({ item, mode, onClose }) {
   const [specIdx, setSpecIdx] = useState(0);
 
   const fundBalance = user?.healthFund?.total || 0;
+  const canUseFund = Boolean(user?.enterpriseId) && fundBalance > 0;
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
@@ -193,7 +194,7 @@ function PurchaseModal({ item, mode, onClose }) {
     ? Math.min(selectedCoupon.type === 'amount' ? selectedCoupon.value : Math.round(currentPrice * (100 - selectedCoupon.value)) / 100, currentPrice)
     : 0;
   const priceAfterCoupon = Math.max(0, Math.round((currentPrice - couponDiscount) * 100) / 100);
-  const fundApplied = useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
+  const fundApplied = canUseFund && useFund ? Math.min(Number(fundAmountInput) || 0, fundBalance, priceAfterCoupon) : 0;
   const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundApplied) * 100) / 100);
 
   const handleSubmit = async () => {
@@ -323,7 +324,7 @@ function PurchaseModal({ item, mode, onClose }) {
             </>
           )}
 
-          {isPay && fundBalance > 0 && (
+          {isPay && canUseFund && (
             <>
               <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>健康基金抵扣（余额¥{fundBalance.toFixed(2)}）</Text>
