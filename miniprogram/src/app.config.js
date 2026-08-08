@@ -1,8 +1,8 @@
 export default defineAppConfig({
   pages: [
-    // 首屏：登录页判断放在 app.jsx 里做重定向，pages[0] 必须是实际入口
-    'pages/auth/login/index',
     'pages/home/index',
+    // 用户可先浏览首页与服务商城；购买、健康档案等需要身份的功能再主动登录。
+    'pages/auth/login/index',
     'pages/records/index/index',
     'pages/tasks/index',
     'pages/messages/index',

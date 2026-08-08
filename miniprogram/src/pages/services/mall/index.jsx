@@ -446,7 +446,20 @@ export default function ServiceMallPage() {
     }).finally(() => setLoading(false));
   }, []);
 
-  const openPurchase = (svc, mode) => { setPurchaseMode(mode); setSelectedService(svc); };
+  const openPurchase = (svc, mode) => {
+    if (!user) {
+      Taro.showModal({
+        title: '登录后继续',
+        content: '服务内容可直接浏览。提交咨询或购买服务时，需要先登录以保存订单和联系信息。',
+        confirmText: '去登录',
+      }).then(({ confirm }) => {
+        if (confirm) Taro.navigateTo({ url: '/pages/auth/login/index' });
+      });
+      return;
+    }
+    setPurchaseMode(mode);
+    setSelectedService(svc);
+  };
   const filtered = activeCategory === '全部' ? services : services.filter((s) => s.category === activeCategory);
 
   return (

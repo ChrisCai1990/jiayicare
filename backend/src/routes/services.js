@@ -19,7 +19,9 @@ const ServiceInquiry = require('../models/ServiceInquiry');
 const Product = require('../models/Product');
 
 // GET /api/services — 从商城产品获取（管理员在后台维护的 Products）
-router.get('/', auth, async (req, res) => {
+// Public catalogue: reviewers and prospective users must be able to browse
+// service content before being asked to log in or authorize personal data.
+router.get('/', async (req, res) => {
   const products = await Product.find({ status: 'on' }).sort({ sortOrder: 1, createdAt: 1 });
 
   // 商品只以管理后台上架数据为准，不使用演示目录兜底。
