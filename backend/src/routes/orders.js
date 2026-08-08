@@ -6,16 +6,45 @@ const { refundOrderPoints } = require('../utils/orderPoints');
 const Payment = require('../models/Payment');
 const Refund = require('../models/Refund');
 const wechatPay = require('../utils/wechatPay');
+const { confirmRefund } = require('../utils/orderSettlement');
 const router = express.Router();
+
+async function reconcileRefund(order) {
+  if (!['requested', 'processing'].includes(order.refundStatus)) return;
+  const refund = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing'] } }).sort({ createdAt: -1 });
+  if (!refund || refund.status === 'requested') return;
+  try {
+    const remote = await wechatPay.queryRefund(refund.outRefundNo);
+    refund.refundId = remote.refund_id || refund.refundId;
+    if (remote.status === 'SUCCESS') {
+      await confirmRefund(refund, { source: 'orders_list_query', refundStatus: remote.status });
+    } else if (['ABNORMAL', 'CLOSED'].includes(remote.status)) {
+      refund.status = remote.status === 'CLOSED' ? 'closed' : 'failed';
+      refund.failureMessage = remote.user_received_account || remote.status;
+      await refund.save();
+      await Order.updateOne({ _id: refund.order }, { refundStatus: 'failed' });
+    }
+  } catch (err) {
+    console.error('[orders-refund-query]', err.message);
+  }
+}
 
 // 获取当前用户的订单列表
 router.get('/', auth, async (req, res) => {
   try {
-    const orders = await Order.find({ user: req.user._id })
+    let orders = await Order.find({ user: req.user._id })
       .populate('paymentId')
       .populate('fulfillmentId')
       .sort({ createdAt: -1 })
       .limit(50);
+    await Promise.all(orders.filter(order => order.refundStatus === 'processing').map(reconcileRefund));
+    if (orders.some(order => order.refundStatus === 'processing')) {
+      orders = await Order.find({ user: req.user._id })
+        .populate('paymentId')
+        .populate('fulfillmentId')
+        .sort({ createdAt: -1 })
+        .limit(50);
+    }
     res.json({ success: true, data: orders });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取订单失败', error: err.message });

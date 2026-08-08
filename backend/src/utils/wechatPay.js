@@ -124,6 +124,20 @@ function requestRefund({ outTradeNo, outRefundNo, amount, totalAmount, reason })
   });
 }
 
+function queryRefund(outRefundNo) {
+  return apiRequest('GET', `/v3/refund/domestic/refunds/${encodeURIComponent(outRefundNo)}`);
+}
+
+async function downloadPlatformCertificates() {
+  const data = await apiRequest('GET', '/v3/certificates');
+  return (data.data || []).map(item => ({
+    serialNo: item.serial_no,
+    effectiveTime: item.effective_time,
+    expireTime: item.expire_time,
+    certificate: decryptResource(item.encrypt_certificate),
+  }));
+}
+
 function verifyNotifySignature(headers, rawBody) {
   const cfg = config();
   if (!cfg.platformPublicKey) throw new Error('缺少 WECHAT_PAY_PLATFORM_PUBLIC_KEY，不能验证微信支付回调');
@@ -154,6 +168,8 @@ module.exports = {
   queryOrder,
   closeOrder,
   requestRefund,
+  queryRefund,
+  downloadPlatformCertificates,
   verifyNotifySignature,
   decryptResource,
 };

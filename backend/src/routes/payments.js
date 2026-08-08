@@ -68,6 +68,25 @@ router.get('/:orderId/status', auth, async (req, res) => {
       console.error('[wechat-pay-query]', err.message);
     }
   }
+  if (['requested', 'processing'].includes(order.refundStatus)) {
+    const refund = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing'] } }).sort({ createdAt: -1 });
+    if (refund) {
+      try {
+        const remote = await wechatPay.queryRefund(refund.outRefundNo);
+        refund.refundId = remote.refund_id || refund.refundId;
+        if (remote.status === 'SUCCESS') {
+          await confirmRefund(refund, { source: 'active_query', refundStatus: remote.status });
+        } else if (['ABNORMAL', 'CLOSED'].includes(remote.status)) {
+          refund.status = remote.status === 'CLOSED' ? 'closed' : 'failed';
+          refund.failureMessage = remote.user_received_account || remote.status;
+          await refund.save();
+          await Order.updateOne({ _id: refund.order }, { refundStatus: 'failed' });
+        }
+      } catch (err) {
+        console.error('[wechat-refund-query]', err.message);
+      }
+    }
+  }
   const fresh = await Order.findById(order._id);
   const latestPayment = await Payment.findOne({ order: order._id }).sort({ createdAt: -1 });
   res.json({ success: true, data: { order: fresh, payment: latestPayment } });
