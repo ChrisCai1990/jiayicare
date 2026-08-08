@@ -112,7 +112,7 @@ router.post('/send-code', async (req, res) => {
 
 // 验证码登录 / 注册
 router.post('/login', async (req, res) => {
-  const { phone, code } = req.body;
+  const { phone, code, wxLoginCode } = req.body;
   if (!phone || !code) {
     return res.status(400).json({ success: false, message: '手机号和验证码不能为空' });
   }
@@ -135,6 +135,18 @@ router.post('/login', async (req, res) => {
     // 仅演示账号填充演示数据；真实新用户初始为空数据
     if (isDemo) {
       seedUserData(user._id).catch(console.error);
+    }
+  }
+
+  // A phone login in the mini program must converge on the same account as wx.login.
+  // Otherwise records/benefits stay on the phone user while payment OpenID lands on a second user.
+  if (wxLoginCode && process.env.WECHAT_MP_APPID && process.env.WECHAT_MP_SECRET) {
+    const sessionData = await httpsGet(`https://api.weixin.qq.com/sns/jscode2session?appid=${process.env.WECHAT_MP_APPID}&secret=${process.env.WECHAT_MP_SECRET}&js_code=${encodeURIComponent(wxLoginCode)}&grant_type=authorization_code`);
+    if (!sessionData.errcode && sessionData.openid) {
+      const occupied = await User.findOne({ wechatMpOpenid: sessionData.openid, _id: { $ne: user._id } });
+      if (occupied?.phone) return res.status(409).json({ success: false, message: '该微信已绑定其他手机号账户，请联系客服合并账户' });
+      if (occupied) await User.updateOne({ _id: occupied._id }, { $unset: { wechatMpOpenid: 1 } });
+      user = await User.findByIdAndUpdate(user._id, { wechatMpOpenid: sessionData.openid }, { new: true });
     }
   }
 

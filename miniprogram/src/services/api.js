@@ -81,8 +81,11 @@ export const authAPI = {
   sendCode: (phone) =>
     request('/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) }),
 
-  login: (phone, code) =>
-    request('/auth/login', { method: 'POST', body: JSON.stringify({ phone, code }) }),
+  login: async (phone, code) => {
+    let wxLoginCode = '';
+    try { wxLoginCode = (await Taro.login()).code || ''; } catch {}
+    return request('/auth/login', { method: 'POST', body: JSON.stringify({ phone, code, wxLoginCode }) });
+  },
 
   // 小程序登录：不再走网页授权 code，而是 Taro.login() 拿 code 后传给 /auth/wechat-mp
   wechatLogin: () =>
