@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView, Image, Input } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { servicesAPI } from '../../../services/api';
+import { servicesAPI, authAPI, userAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
@@ -163,7 +163,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
 }
 
 function PurchaseModal({ item, mode, onClose }) {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote] = useState('');
   const [payMethod, setPayMethod] = useState('wechat_pay');
@@ -174,8 +174,9 @@ function PurchaseModal({ item, mode, onClose }) {
   const hasSpecs = !!(item?.servicePrices && item.servicePrices.length > 0);
   const [specIdx, setSpecIdx] = useState(0);
 
-  const fundBalance = user?.healthFund?.total || 0;
-  const canUseFund = Boolean(user?.enterpriseId) && fundBalance > 0;
+  const [checkoutUser, setCheckoutUser] = useState(null);
+  const fundBalance = checkoutUser?.healthFund?.total || 0;
+  const canUseFund = Boolean(checkoutUser?.enterpriseId) && fundBalance > 0;
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
@@ -184,6 +185,9 @@ function PurchaseModal({ item, mode, onClose }) {
   useEffect(() => {
     if (!isPay) return;
     servicesAPI.coupons().then((res) => { if (res.success) setCoupons(res.data || []); }).catch(() => {});
+    userAPI.getMe().then((res) => {
+      if (res.success) { setCheckoutUser(res.data); updateUser(res.data); }
+    }).catch(() => {});
   }, [isPay]);
 
   const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
@@ -201,6 +205,12 @@ function PurchaseModal({ item, mode, onClose }) {
     if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
     setSubmitting(true); setErrMsg('');
     try {
+      if (isPay && !checkoutUser?.wechatMpOpenid) {
+        const bound = await authAPI.bindWechat();
+        if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
+        setCheckoutUser(bound.data);
+        updateUser(bound.data);
+      }
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
       const res = isPay
         ? await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined)

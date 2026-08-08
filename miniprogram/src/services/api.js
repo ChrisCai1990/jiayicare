@@ -90,6 +90,11 @@ export const authAPI = {
       if (!code) throw new Error('微信登录失败，请重试');
       return request('/auth/wechat-mp', { method: 'POST', body: JSON.stringify({ code }) });
     }),
+  bindWechat: () =>
+    Taro.login().then(({ code }) => {
+      if (!code) throw new Error('微信身份获取失败，请重试');
+      return request('/auth/wechat-mp/bind', { method: 'POST', body: JSON.stringify({ code }) });
+    }),
 };
 
 // ── User ─────────────────────────────────────────────────────────

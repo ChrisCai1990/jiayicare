@@ -4,6 +4,7 @@ const https = require('https');
 const User = require('../models/User');
 const GiftRecord = require('../models/GiftRecord');
 const VerificationCode = require('../models/VerificationCode');
+const requireUser = require('../middleware/auth');
 const { seedUserData } = require('../config/seedData');
 const router = express.Router();
 
@@ -255,6 +256,32 @@ router.post('/wechat-mp', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ success: false, message: '小程序登录失败', error: err.message });
+  }
+});
+
+// Bind the current phone/member account to the WeChat identity used by this mini program.
+// This keeps health records, enterprise benefits and payment OpenID on one user account.
+router.post('/wechat-mp/bind', requireUser, async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ success: false, message: '缺少微信登录凭证' });
+  try {
+    const appid = process.env.WECHAT_MP_APPID;
+    const secret = process.env.WECHAT_MP_SECRET;
+    const sessionData = await httpsGet(`https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`);
+    if (sessionData.errcode || !sessionData.openid) {
+      return res.status(400).json({ success: false, message: `微信身份绑定失败：${sessionData.errmsg || sessionData.errcode || '未返回 openid'}` });
+    }
+
+    const occupied = await User.findOne({ wechatMpOpenid: sessionData.openid, _id: { $ne: req.user._id } });
+    if (occupied?.phone) {
+      return res.status(409).json({ success: false, message: '该微信已绑定其他手机号账户，请联系客服合并账户' });
+    }
+    if (occupied) await User.updateOne({ _id: occupied._id }, { $unset: { wechatMpOpenid: 1 } });
+    const user = await User.findByIdAndUpdate(req.user._id, { wechatMpOpenid: sessionData.openid }, { new: true });
+    const healthFund = await computeHealthFund(user);
+    res.json({ success: true, message: '微信身份绑定成功', data: { ...user.toObject(), healthFund } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '微信身份绑定失败', error: err.message });
   }
 });
 
