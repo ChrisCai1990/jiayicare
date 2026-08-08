@@ -226,10 +226,16 @@ export const checkupAPI = {
 export const servicesAPI = {
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, wxLoginCode) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, wxLoginCode }) }),
-  confirmVirtualPayment: (orderId) => request(`/services/orders/${orderId}/confirm-virtual-payment`, { method: 'POST' }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel) =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel }) }),
+  inquire: (serviceId, note, specificationLabel) =>
+    request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
   coupons: () => request('/services/coupons'),
+};
+
+export const paymentsAPI = {
+  status: (orderId) => request(`/payments/${orderId}/status`),
+  retry: (orderId) => request(`/payments/${orderId}/retry`, { method: 'POST' }),
 };
 
 // ── Partner Benefits ────────────────────────────────────────────
@@ -241,6 +247,7 @@ export const partnerBenefitsAPI = {
 export const ordersAPI = {
   list: () => request('/orders'),
   cancel: (id) => request(`/orders/${id}/cancel`, { method: 'PATCH' }),
+  requestRefund: (id, reason) => request(`/orders/${id}/refund-request`, { method: 'POST', body: JSON.stringify({ reason }) }),
 };
 
 // ── Feedback ──────────────────────────────────────────────────────

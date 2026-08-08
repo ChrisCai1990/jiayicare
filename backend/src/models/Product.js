@@ -15,6 +15,17 @@ const productSchema = new mongoose.Schema({
   stock:         { type: Number, default: 0 },
   sales:         { type: Number, default: 0 },
   status:        { type: String, enum: ['on', 'off'], default: 'off' },
+  fulfillmentType: {
+    type: String,
+    enum: ['offline_service', 'remote_service', 'delivery_and_service', 'subscription_service', 'digital_content'],
+    default: 'offline_service',
+  },
+  paymentChannel: { type: String, enum: ['wechat_pay', 'offline'], default: 'wechat_pay' },
+  bookingRequired: { type: Boolean, default: true },
+  deliveryRequired: { type: Boolean, default: false },
+  serviceLocation: { type: String, default: '' },
+  validityDays: { type: Number, default: 365, min: 1 },
+  refundPolicy: { type: String, default: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。' },
   // 绩效分配规则（引流人+单一服务人两个比例，历史结构，保留兼容）
   performanceRule: require('../utils/tenantScope').performanceRuleSchema,
   // 多服务岗位绩效：一个产品由多个岗位协同提供服务，每岗位各自的绩效比例（占实付价%）。
@@ -26,6 +37,15 @@ const productSchema = new mongoose.Schema({
     name: { type: String, required: true },
     units: { type: Number, default: 1, min: 1 },
     performers: { type: [require('../utils/tenantScope').servicePerformerRoleSchema], default: [] },
+  }],
+  skus: [{
+    code: { type: String, required: true },
+    label: { type: String, required: true },
+    price: { type: Number, required: true, min: 0 },
+    totalUnits: { type: Number, default: 1, min: 1 },
+    validityDays: { type: Number, default: 365, min: 1 },
+    fulfillmentType: { type: String, enum: ['offline_service', 'remote_service', 'delivery_and_service', 'subscription_service', 'digital_content'] },
+    active: { type: Boolean, default: true },
   }],
 }, { timestamps: true });
 

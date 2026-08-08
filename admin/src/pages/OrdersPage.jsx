@@ -11,8 +11,15 @@ const STATUS_META = {
 }
 const STATUS_LABELS = { scheduled: '标记已安排', completed: '标记完成', cancelled: '取消订单' }
 const STATUS_COLORS = { scheduled: '#3B82F6', completed: '#10B981', cancelled: '#EF4444' }
-const PAYMENT_METHOD_LABELS = { wechat: '微信支付', alipay: '支付宝', onsite: '到店支付', healthFund: '健康基金抵扣' }
-const PAY_STATUS_META = { unpaid: { label: '未支付', badge: 'badge-gray' }, paid: { label: '已支付', badge: 'badge-green' }, refunded: { label: '已退款', badge: 'badge-yellow' } }
+const PAYMENT_METHOD_LABELS = { wechat: '微信支付', onsite: '到店支付', healthFund: '健康基金抵扣' }
+const PAY_STATUS_META = {
+  unpaid: { label: '未支付', badge: 'badge-gray' },
+  pending: { label: '支付确认中', badge: 'badge-yellow' },
+  failed: { label: '支付失败', badge: 'badge-red' },
+  paid: { label: '已支付', badge: 'badge-green' },
+  refunded: { label: '已退款', badge: 'badge-yellow' },
+}
+const REFUND_STATUS_LABELS = { requested: '用户申请退款', processing: '微信退款中', partially_refunded: '部分退款', refunded: '已退款', failed: '退款失败' }
 
 export default function OrdersPage() {
   const nav = useNavigate()
@@ -27,7 +34,7 @@ export default function OrdersPage() {
   const [loading, setLoading] = useState(true)
   const [updating, setUpdating] = useState(null) // orderId being updated
   const [payModalOrder, setPayModalOrder] = useState(null)
-  const [payMethod, setPayMethod] = useState('wechat')
+  const [payMethod, setPayMethod] = useState('onsite')
   const [verifyModalOrder, setVerifyModalOrder] = useState(null)
   const [verifyInput, setVerifyInput] = useState('')
   const [attrModalOrder, setAttrModalOrder] = useState(null)
@@ -78,15 +85,35 @@ export default function OrdersPage() {
   }
 
   const handleRefund = async (order) => {
-    if (!window.confirm(`确认为「${order.serviceName}」（${order.user?.name || ''}）办理退款？将退回已预记的消费积分，此操作不可撤销。`)) return
+    const reason = window.prompt(`请输入「${order.serviceName}」（${order.user?.name || ''}）的退款原因。退款将通过微信原路退回，提交后请等待微信确认。`, '用户申请退款')
+    if (reason == null) return
+    if (!reason.trim()) { toast('❌ 请输入退款原因'); return }
+    if (!window.confirm(`确认提交全额退款 ¥${oPaidAmount(order)}？提交后不能通过本后台撤销。`)) return
     setUpdating(order._id)
     try {
-      const res = await adminAPI.refundOrder(order._id)
+      const res = await adminAPI.refundOrder(order._id, reason.trim(), oPaidAmount(order))
       toast('✅ ' + res.message)
       await load(page)
     } catch (err) {
       toast('❌ ' + (err.message || '退款失败'))
     } finally { setUpdating(null) }
+  }
+
+  const oPaidAmount = (order) => Number(order.paidAmount || order.paymentExpectedAmount || order.servicePrice || 0)
+
+  const handleShipment = async (order) => {
+    const deliveryCompany = window.prompt('请输入微信物流公司编码（例如 SF、ZTO、YTO；请以微信物流公司编码表为准）', order.fulfillmentId?.deliveryCompany || '')
+    if (deliveryCompany == null) return
+    const trackingNo = window.prompt('请输入物流单号', order.fulfillmentId?.trackingNo || '')
+    if (trackingNo == null) return
+    if (!deliveryCompany.trim() || !trackingNo.trim()) { toast('❌ 物流公司编码和单号不能为空'); return }
+    setUpdating(order._id)
+    try {
+      const res = await adminAPI.updateFulfillment(order._id, { status: 'shipped', deliveryCompany: deliveryCompany.trim(), trackingNo: trackingNo.trim(), reportToWechat: true })
+      toast('✅ ' + res.message)
+      await load(page)
+    } catch (err) { toast('❌ ' + (err.message || '物流上报失败')) }
+    finally { setUpdating(null) }
   }
 
   const confirmVerify = async () => {
@@ -214,6 +241,9 @@ export default function OrdersPage() {
                             {o.verifiedAt && <div style={{ color: 'var(--primary)' }}>已核销</div>}
                           </div>
                         )}
+                        {REFUND_STATUS_LABELS[o.refundStatus] && (
+                          <div style={{ fontSize: 11, color: '#DC3545', marginTop: 3 }}>{REFUND_STATUS_LABELS[o.refundStatus]}</div>
+                        )}
                       </td>
                       <td style={{ color: 'var(--text-secondary)', fontSize: 12, maxWidth: 160 }}>
                         {o.note ? <span title={o.note}>{o.note.slice(0, 30)}{o.note.length > 30 ? '...' : ''}</span> : '--'}
@@ -221,10 +251,10 @@ export default function OrdersPage() {
                       <td style={{ color: 'var(--text-muted)', fontSize: 12 }}>{fmtTime(o.createdAt)}</td>
                       <td>
                         <div className="status-actions">
-                          {o.paymentStatus === 'unpaid' && (
+                          {o.paymentStatus === 'unpaid' && !o.paymentId && o.paymentMethod !== 'wechat' && (
                             <button className="btn btn-sm status-btn" style={{ borderColor: '#10B981', color: '#10B981', background: '#10B98112' }}
-                              disabled={updating === o._id} onClick={() => { setPayModalOrder(o); setPayMethod('wechat') }}>
-                              标记已支付
+                              disabled={updating === o._id} onClick={() => { setPayModalOrder(o); setPayMethod('onsite') }}>
+                              登记线下收款
                             </button>
                           )}
                           {!o.verifiedAt && (
@@ -244,6 +274,12 @@ export default function OrdersPage() {
                             <button className="btn btn-sm status-btn" style={{ borderColor: '#DC3545', color: '#DC3545', background: '#DC354512' }}
                               disabled={updating === o._id} onClick={() => handleRefund(o)}>
                               退款
+                            </button>
+                          )}
+                          {o.paymentStatus === 'paid' && o.fulfillmentType === 'delivery_and_service' && o.fulfillmentId?.wechatDeliveryStatus !== 'reported' && (
+                            <button className="btn btn-sm status-btn" style={{ borderColor: '#0EA5E9', color: '#0EA5E9', background: '#0EA5E912' }}
+                              disabled={updating === o._id} onClick={() => handleShipment(o)}>
+                              录入物流并上报微信
                             </button>
                           )}
                           {nextActions.map(s => (

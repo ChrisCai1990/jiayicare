@@ -11,7 +11,10 @@ const FollowUp = require('../models/FollowUp');
 const Admin   = require('../models/Admin');
 const ServicePackage = require('../models/ServicePackage');
 const { awardOrderPoints } = require('../utils/orderPoints');
-const { getConfig: getVirtualPayConfig, exchangeLoginCode, buildPaymentPayload } = require('../utils/wechatVirtualPayment');
+const Payment = require('../models/Payment');
+const wechatPay = require('../utils/wechatPay');
+const Fulfillment = require('../models/Fulfillment');
+const ServiceInquiry = require('../models/ServiceInquiry');
 
 const Product = require('../models/Product');
 
@@ -44,6 +47,14 @@ router.get('/', auth, async (req, res) => {
       images: p.images || [],
       servicePrices: p.servicePrices || [],
       description: p.description || '',
+      fulfillmentType: p.fulfillmentType || 'offline_service',
+      paymentChannel: p.paymentChannel || 'wechat_pay',
+      bookingRequired: p.bookingRequired !== false,
+      deliveryRequired: !!p.deliveryRequired,
+      serviceLocation: p.serviceLocation || '',
+      validityDays: p.validityDays || 365,
+      refundPolicy: p.refundPolicy || '',
+      skus: p.skus || [],
     };
   });
 
@@ -85,11 +96,33 @@ const PACKAGE_CATALOG = [
   { id: 'pkg_3m', name: '季度服务包', duration: '3 个月',  price: 1080, originalPrice: 1480, icon: 'shield-checkmark', category: '服务包' },
 ];
 
+router.post('/inquiries', auth, async (req, res) => {
+  const product = await Product.findOne({ _id: req.body.serviceId, status: 'on' });
+  if (!product) return res.status(404).json({ success: false, message: '服务项目不存在或已下架' });
+  const inquiry = await ServiceInquiry.create({
+    user: req.user._id,
+    product: product._id,
+    specificationLabel: String(req.body.specificationLabel || ''),
+    note: String(req.body.note || '').trim(),
+  });
+  const patient = await User.findById(req.user._id).select('assignedHealthPlanner');
+  if (patient?.assignedHealthPlanner) {
+    await FollowUp.create({
+      staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner,
+      patientId: req.user._id, type: 'other', status: 'planned',
+      theme: `服务咨询：${product.name}`,
+      content: [req.body.specificationLabel, req.body.note].filter(Boolean).join('；') || '用户希望咨询该服务',
+      sourceType: 'other',
+    });
+  }
+  res.json({ success: true, data: inquiry, message: '咨询已提交，健管师将尽快联系您' });
+});
+
 // POST /api/services/order — 提交服务预约（支持单项服务 & 服务包）
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
-  const { serviceId, specificationLabel, note, paymentMethod, useHealthFund, couponId, wxLoginCode } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -100,19 +133,29 @@ router.post('/order', auth, async (req, res) => {
   const product = await Product.findById(serviceId).catch(() => null);
   if (product) {
     const prices = product.servicePrices || [];
+    const activeSkus = (product.skus || []).filter(item => item.active !== false);
+    const selectedSku = specificationLabel
+      ? activeSkus.find(item => item.label === specificationLabel)
+      : activeSkus[0];
     const selectedPrice = specificationLabel
       ? prices.find(item => item.label === specificationLabel)
       : prices[0];
-    if (specificationLabel && !selectedPrice) {
+    if (specificationLabel && !selectedSku && !selectedPrice) {
       return res.status(400).json({ success: false, message: '所选服务规格已调整，请刷新后重新选择' });
     }
     service = {
       id: product._id.toString(),
       name: product.name,
-      price: selectedPrice ? selectedPrice.price : product.originalPrice,
-      specificationLabel: selectedPrice?.label || '',
+      price: selectedSku ? selectedSku.price : (selectedPrice ? selectedPrice.price : product.originalPrice),
+      specificationLabel: selectedSku?.label || selectedPrice?.label || '',
+      skuCode: selectedSku?.code || '',
+      skuTotalUnits: selectedSku?.totalUnits || 0,
+      skuValidityDays: selectedSku?.validityDays || product.validityDays || 365,
+      skuFulfillmentType: selectedSku?.fulfillmentType || '',
       category: product.category || '',
       icon: 'storefront-outline',
+      fulfillmentType: product.fulfillmentType || 'offline_service',
+      paymentChannel: product.paymentChannel || 'wechat_pay',
     };
   }
   if (!service && mongoose.isValidObjectId(serviceId)) {
@@ -140,8 +183,10 @@ router.post('/order', auth, async (req, res) => {
 
   const isPkg = !!servicePackage || !!PACKAGE_CATALOG.find(p => p.id === serviceId);
   const unitsMatch = String(service.specificationLabel || '').match(/(\d+)\s*次/);
-  const productServiceItems = (product?.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
-  const totalUnits = productServiceItems.length
+  const productServiceItems = service.skuCode ? [] : (product?.serviceItems || []).filter(item => item.name && Number(item.units) > 0);
+  const totalUnits = service.skuTotalUnits
+    ? Math.max(1, Number(service.skuTotalUnits))
+    : productServiceItems.length
     ? productServiceItems.reduce((sum, item) => sum + Math.max(1, Number(item.units) || 1), 0)
     : (unitsMatch ? Math.max(1, Number(unitsMatch[1])) : 1);
   const unitPrice = Math.round((service.price / totalUnits) * 100) / 100;
@@ -179,18 +224,17 @@ router.post('/order', auth, async (req, res) => {
 
   const paidAmount = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
 
-  // 有现金支付部分时必须走微信官方小程序虚拟支付。先验证配置和临时登录码，
-  // 避免创建订单、占用优惠券或扣减健康基金后才发现无法拉起支付。
-  let paymentSession = null;
-  if (paidAmount > 0 && paymentMethod === 'wechat_virtual') {
-    try {
-      getVirtualPayConfig();
-      paymentSession = await exchangeLoginCode(wxLoginCode);
-    } catch (err) {
-      return res.status(503).json({ success: false, message: err.message });
-    }
-  } else if (paidAmount > 0 && paymentMethod) {
-    return res.status(400).json({ success: false, message: '小程序购买服务须使用微信官方虚拟支付' });
+  // 真实服务统一使用普通微信小程序支付。最终入账只接受微信回调或服务端主动查单，
+  // 绝不以客户端 requestPayment 的 success 回调直接确认已支付。
+  if (paidAmount > 0 && paymentMethod !== 'wechat_pay') {
+    return res.status(400).json({ success: false, message: '该服务须使用微信小程序支付' });
+  }
+  const commercePaymentChannel = service.paymentChannel || 'wechat_pay';
+  if (paidAmount > 0 && commercePaymentChannel !== 'wechat_pay') {
+    return res.status(409).json({ success: false, message: '该商品当前未配置普通微信支付，请联系客服' });
+  }
+  if (paidAmount > 0 && !req.user.wechatMpOpenid) {
+    return res.status(400).json({ success: false, message: '请先使用微信登录绑定当前小程序账号后再支付' });
   }
 
   const paymentParts = [];
@@ -222,19 +266,23 @@ router.post('/order', auth, async (req, res) => {
   const followUpStaffId = patientForStaff?.assignedHealthPlanner || null;
 
   const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
-  const paymentProductId = `jiayicare_${Math.round(paidAmount * 100)}`;
+  const orderNo = outTradeNo;
   const order = await Order.create({
     user:         req.user._id,
     serviceId:    service.id,
     serviceName:  isPkg ? `${service.name}（${service.duration}）` : service.name,
     servicePrice: service.price,
     specificationLabel: service.specificationLabel || '',
+    skuCode: service.skuCode || '',
     unitPrice,
     totalUnits,
     usedUnits: 0,
     serviceIcon:  service.icon || 'shield-checkmark',
     note:         orderNote,
     status:       'pending',
+    orderNo,
+    tradeStatus: paidAmount > 0 ? 'awaiting_payment' : 'paid',
+    fulfillmentType: service.skuFulfillmentType || service.fulfillmentType || (isPkg ? 'subscription_service' : 'offline_service'),
     orderType:    isPkg ? 'package' : (product ? 'product' : 'service'),
     referrerId,
     servicePerformers,
@@ -244,13 +292,13 @@ router.post('/order', auth, async (req, res) => {
     })),
     performanceRuleSnapshot: product?.performanceRule ? (product.performanceRule.toObject ? product.performanceRule.toObject() : product.performanceRule) : null,
     servicePerformerRolesSnapshot: (product?.servicePerformerRoles || []).map(p => p.toObject ? p.toObject() : p),
-    paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paymentMethod === 'wechat_virtual' ? 'wechat' : ''),
+    paymentMethod: fundUsed > 0 && paidAmount === 0 ? 'healthFund' : (paidAmount > 0 ? 'wechat' : ''),
     paymentStatus: paidAmount > 0 ? 'pending' : 'paid',
     paidAmount: 0,
     paymentExpectedAmount: paidAmount,
     paymentOutTradeNo: paidAmount > 0 ? outTradeNo : '',
-    paymentProductId: paidAmount > 0 ? paymentProductId : '',
-    paymentEnvironment: paidAmount > 0 ? 'sandbox' : '',
+    paymentProductId: '',
+    paymentEnvironment: paidAmount > 0 ? 'production' : '',
     healthFundAmount: fundUsed,
     healthFundEnterpriseId: fundEnterprise?._id || null,
     couponId: coupon?._id || null,
@@ -291,75 +339,69 @@ router.post('/order', auth, async (req, res) => {
   pendingTasks.push(awardOrderPoints(order));
   await Promise.all(pendingTasks);
   order.paidAt = new Date();
+  const fulfillment = await Fulfillment.findOneAndUpdate(
+    { order: order._id },
+    { $setOnInsert: { order: order._id, user: order.user, type: order.fulfillmentType, status: order.fulfillmentType === 'delivery_and_service' ? 'awaiting_shipment' : 'awaiting_booking', note: order.note || '' } },
+    { upsert: true, new: true },
+  );
+  order.fulfillmentId = fulfillment._id;
+  order.fulfillmentStatus = fulfillment.status;
   await order.save();
   }
 
-  const virtualPayment = paidAmount > 0 && paymentSession
-    ? buildPaymentPayload({
-      sessionKey: paymentSession.session_key,
-      // 微信虚拟支付的道具 ID 必须提前在米大师后台发布。
-      // 按实际支付金额使用稳定 ID，避免把 MongoDB 随机 ID 暴露为道具 ID。
-      productId: paymentProductId,
-      goodsPrice: Math.round(paidAmount * 100),
+  let payment = null;
+  let paymentParams = null;
+  if (paidAmount > 0) {
+    payment = await Payment.create({
+      order: order._id,
+      user: req.user._id,
+      channel: 'wechat_pay',
+      status: 'created',
+      amount: paidAmount,
       outTradeNo,
-      attach: order._id.toString(),
-    })
-    : null;
+    });
+    try {
+      const prepay = await wechatPay.createJsapiPayment({
+        description: service.name,
+        outTradeNo,
+        amount: paidAmount,
+        openid: req.user.wechatMpOpenid,
+        attach: order._id.toString(),
+      });
+      payment.prepayId = prepay.prepayId;
+      payment.status = 'processing';
+      await payment.save();
+      order.paymentId = payment._id;
+      await order.save();
+      paymentParams = prepay.client;
+    } catch (err) {
+      payment.status = 'failed';
+      payment.failureCode = err.code || 'CREATE_PAYMENT_FAILED';
+      payment.failureMessage = err.message;
+      await payment.save();
+      order.tradeStatus = 'closed';
+      order.paymentStatus = 'failed';
+      await order.save();
+      return res.status(503).json({ success: false, message: `微信支付下单失败：${err.message}`, data: { orderId: order._id } });
+    }
+  }
 
   res.json({
     success: true,
-    message: isPkg ? '服务包申请已提交，健管师将在 1 个工作日内联系您完成支付与激活' : '预约申请已提交，健管师将在 1-2 个工作日内与您联系',
+    message: paidAmount > 0
+      ? '订单已创建，请完成微信支付；支付结果以微信服务端确认为准'
+      : (isPkg ? '服务包订单已支付，健管师将在 1 个工作日内联系您安排服务' : '订单已支付，健管师将在 1-2 个工作日内与您联系'),
     data: {
       orderId: order._id,
-      orderNo: order._id.toString().slice(-8).toUpperCase(),
+      orderNo: order.orderNo || order._id.toString().slice(-8).toUpperCase(),
       originalPrice: service.price,
       fundUsed,
       couponDiscount,
       paidAmount,
-      virtualPayment,
+      paymentParams,
+      paymentStatus: order.paymentStatus,
     },
   });
-});
-
-router.post('/orders/:id/confirm-virtual-payment', auth, async (req, res) => {
-  const order = await Order.findOne({ _id: req.params.id, user: req.user._id });
-  if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
-  if (order.paymentStatus === 'paid') return res.json({ success: true, data: order });
-  if (order.paymentStatus !== 'pending') return res.status(409).json({ success: false, message: '订单当前状态不能确认支付' });
-
-  order.paymentClientConfirmedAt = new Date();
-  if (order.paymentEnvironment !== 'sandbox') {
-    await order.save();
-    return res.json({ success: true, pending: true, message: '支付结果确认中' });
-  }
-
-  if (order.healthFundAmount > 0) {
-    const enterprise = order.healthFundEnterpriseId ? { _id: order.healthFundEnterpriseId } : null;
-    await require('../utils/healthFundPayment').deductHealthFund({ user: req.user, enterprise, order, amount: order.healthFundAmount });
-  }
-  if (order.couponId) {
-    const used = await Coupon.findOneAndUpdate(
-      { _id: order.couponId, patientId: req.user._id, status: 'active' },
-      { status: 'used', usedAt: new Date(), usedOrderId: order._id },
-      { new: true },
-    );
-    if (!used) return res.status(409).json({ success: false, message: '优惠券状态已变化，请联系客服核对订单' });
-  }
-  order.paymentStatus = 'paid';
-  order.paidAmount = order.paymentExpectedAmount;
-  order.paidAt = new Date();
-  await order.save();
-
-  const patient = await User.findById(req.user._id).select('assignedHealthPlanner');
-  if (patient?.assignedHealthPlanner) {
-    await FollowUp.findOneAndUpdate(
-      { sourceType: 'order', sourceOrderId: order._id },
-      { $setOnInsert: { staffId: patient.assignedHealthPlanner, assignedTo: patient.assignedHealthPlanner, patientId: req.user._id, type: 'other', status: 'planned', theme: `订单服务：${order.serviceName}`, content: order.note || '用户已完成支付，请联系确认服务安排' } },
-      { upsert: true, new: true },
-    );
-  }
-  await awardOrderPoints(order);
-  res.json({ success: true, message: '支付成功，订单权益已生效', data: order });
 });
 
 module.exports = router;

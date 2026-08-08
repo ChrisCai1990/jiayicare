@@ -19,6 +19,9 @@ const EMPTY_FORM = {
   name: '', subtitle: '', category: '', originalPrice: '', sortOrder: 999,
   features: '', description: '', stock: 0, status: 'off',
   images: [], servicePrices: [],
+  fulfillmentType: 'offline_service', paymentChannel: 'wechat_pay', bookingRequired: true,
+  deliveryRequired: false, serviceLocation: '', validityDays: 365,
+  refundPolicy: '服务开始前可申请退款；已发生的第三方费用及已完成服务不予退还。', skus: [],
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
   serviceItems: [],
@@ -324,6 +327,14 @@ function ProductModal({ product, categories, onClose, onSaved }) {
       status: product.status || 'off',
       images: product.images || [],
       servicePrices: (product.servicePrices || []).map(sp => ({ label: sp.label, price: String(sp.price) })),
+      fulfillmentType: product.fulfillmentType || 'offline_service',
+      paymentChannel: product.paymentChannel || 'wechat_pay',
+      bookingRequired: product.bookingRequired !== false,
+      deliveryRequired: !!product.deliveryRequired,
+      serviceLocation: product.serviceLocation || '',
+      validityDays: product.validityDays || 365,
+      refundPolicy: product.refundPolicy || '',
+      skus: product.skus || [],
       performanceRule: product.performanceRule || { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
       servicePerformerRoles: (product.servicePerformerRoles || []).map(r => ({
         role: r.role, ruleType: r.ruleType || 'percentage', rate: r.rate || 0, amount: r.amount || 0, defaultStaffId: r.defaultStaffId ? String(r.defaultStaffId) : '',
@@ -369,6 +380,14 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         status: form.status,
         images: form.images,
         servicePrices: cleanedPrices,
+        fulfillmentType: form.fulfillmentType,
+        paymentChannel: form.paymentChannel,
+        bookingRequired: form.bookingRequired,
+        deliveryRequired: form.deliveryRequired,
+        serviceLocation: form.serviceLocation,
+        validityDays: Math.max(1, parseInt(form.validityDays) || 365),
+        refundPolicy: form.refundPolicy,
+        skus: form.skus || [],
         performanceRule: form.performanceRule,
         servicePerformerRoles: (form.servicePerformerRoles || [])
           .filter(r => r.role)
@@ -467,6 +486,41 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                   <option value="off">下架</option>
                   <option value="on">上架</option>
                 </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">履约类型 *</label>
+                <select className="form-input" value={form.fulfillmentType} onChange={e => set('fulfillmentType', e.target.value)}>
+                  <option value="offline_service">线下预约服务</option>
+                  <option value="remote_service">远程人工服务</option>
+                  <option value="delivery_and_service">配送＋人工服务</option>
+                  <option value="subscription_service">长期健康计划</option>
+                  <option value="digital_content">纯数字内容</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">支付通道 *</label>
+                <select className="form-input" value={form.paymentChannel} onChange={e => set('paymentChannel', e.target.value)}>
+                  <option value="wechat_pay">普通微信支付</option>
+                  <option value="offline">线下收款</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">服务有效期（天）</label>
+                <input className="form-input" type="number" min="1" value={form.validityDays} onChange={e => set('validityDays', e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">服务地点</label>
+                <input className="form-input" value={form.serviceLocation} onChange={e => set('serviceLocation', e.target.value)} placeholder="线上、用户所在地或具体机构" />
+              </div>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" checked={form.bookingRequired} onChange={e => set('bookingRequired', e.target.checked)} />需要预约
+              </label>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" checked={form.deliveryRequired} onChange={e => set('deliveryRequired', e.target.checked)} />包含实物/资料配送
+              </label>
+              <div className="form-group" style={{ gridColumn: '1/-1' }}>
+                <label className="form-label">退款规则 *</label>
+                <textarea className="form-input" rows={3} value={form.refundPolicy} onChange={e => set('refundPolicy', e.target.value)} />
               </div>
               <div className="form-group" style={{ gridColumn: '1/-1' }}>
                 <label className="form-label">产品特点（逗号分隔）</label>

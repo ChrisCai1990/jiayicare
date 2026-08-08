@@ -6,10 +6,10 @@ import { servicesAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
-import { getVirtualPaymentLoginCode, requestVirtualPayment } from '../../../utils/virtualPayment';
+import { requestWechatPayment, waitForPayment } from '../../../utils/wechatPay';
 
 const PAY_METHODS = [
-  { key: 'wechat_virtual', label: '微信小程序虚拟支付' },
+  { key: 'wechat_pay', label: '微信支付' },
 ];
 
 function formatCouponLabel(c) {
@@ -166,7 +166,7 @@ function PurchaseModal({ item, mode, onClose }) {
   const { user } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote] = useState('');
-  const [payMethod, setPayMethod] = useState('wechat_virtual');
+  const [payMethod, setPayMethod] = useState('wechat_pay');
   const [serviceAgreed, setServiceAgreed] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -201,12 +201,13 @@ function PurchaseModal({ item, mode, onClose }) {
     setSubmitting(true); setErrMsg('');
     try {
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
-      const wxLoginCode = isPay && finalPrice > 0 ? await getVirtualPaymentLoginCode() : undefined;
-      const res = await servicesAPI.order(item.id, noteWithSpec, isPay ? payMethod : undefined, isPay ? fundApplied : undefined, isPay ? couponId : undefined, currentSpecLabel || undefined, wxLoginCode);
+      const res = isPay
+        ? await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined)
+        : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined);
       if (res.success) {
-        if (res.data?.virtualPayment) {
-          await requestVirtualPayment(res.data.virtualPayment);
-          await servicesAPI.confirmVirtualPayment(res.data.orderId);
+        if (res.data?.paymentParams) {
+          await requestWechatPayment(res.data.paymentParams);
+          await waitForPayment(res.data.orderId);
         }
         setSubmitted(true);
       }
@@ -226,7 +227,7 @@ function PurchaseModal({ item, mode, onClose }) {
           <Text style={{ fontSize: '20px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>{isPay ? '支付已完成' : '预约申请已提交'}</Text>
           <Text style={{ fontSize: '14px', color: colors.textSecondary, lineHeight: '22px', display: 'block', marginBottom: `${spacing.xl}px` }}>
             {isPay
-              ? `¥${finalPrice} 的订单已提交${finalPrice > 0 ? '并完成微信小程序虚拟支付' : '（已用健康基金/优惠券全额抵扣）'}。健管师将与您联系预约具体服务时间，可在"我的订单"查看进度。`
+              ? `¥${finalPrice} 的订单已提交${finalPrice > 0 ? '并完成微信支付' : '（已用健康基金/优惠券全额抵扣）'}。健管师将与您联系预约具体服务时间，可在"我的订单"查看进度。`
               : '健管师将在 1-2 个工作日内与您联系，请保持手机畅通。'}
           </Text>
           <View onClick={onClose} style={{ backgroundColor: colors.primary, borderRadius: `${radius.md}px`, padding: '14px' }}>
@@ -382,7 +383,7 @@ function PurchaseModal({ item, mode, onClose }) {
           {!!errMsg && <Text style={{ fontSize: '13px', color: colors.danger, display: 'block', textAlign: 'center', marginBottom: `${spacing.sm}px` }}>{errMsg}</Text>}
 
           <Text style={{ fontSize: '11px', color: colors.textMuted, lineHeight: '16px', display: 'block', marginBottom: `${spacing.lg}px` }}>
-            {isPay ? '提交后将拉起微信官方小程序虚拟支付，支付结果可在“我的订单”查看' : '提交后，健管师将与您联系确认具体服务安排'}
+            {isPay ? '提交后将拉起微信支付，支付结果以微信服务端确认为准，可在“我的订单”查看' : '提交后，健管师将与您联系确认具体服务安排'}
           </Text>
           <View onClick={() => setServiceAgreed(!serviceAgreed)} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: `${spacing.md}px` }}>
             <Text style={{ color: serviceAgreed ? colors.primary : colors.textMuted }}>{serviceAgreed ? '☑' : '☐'}</Text>

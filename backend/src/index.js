@@ -43,7 +43,10 @@ app.use(cors({
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../uploads');
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use('/api/uploads', express.static(UPLOADS_DIR));
-app.use(express.json({ limit: '25mb' }));
+app.use(express.json({
+  limit: '25mb',
+  verify: (req, res, buffer) => { req.rawBody = buffer.toString('utf8'); },
+}));
 app.use(express.urlencoded({ limit: '25mb', extended: true }));
 app.use(morgan('dev'));
 
@@ -58,6 +61,7 @@ app.get('/api/health', (req, res) => {
 
 // 路由
 app.use('/api/auth',    require('./routes/auth'));
+app.use('/api/payments', require('./routes/payments'));
 
 // 用户端(app)专属路由：服务到期锁定统一在此挂载（默认锁+白名单放行，见 checkServiceActive.js 注释）。
 // auth 已把 req.user 挂好，checkServiceActive 直接读 req.user.serviceExpiry 判断，不需要每个路由文件单独引入。

@@ -31,6 +31,14 @@ const orderSchema = new mongoose.Schema({
   serviceIcon: { type: String },
   note:        { type: String, default: '' },
   orderType:   { type: String, enum: ['service', 'package', 'product'], default: 'service' },
+  orderNo:     { type: String, default: '', index: true },
+  skuCode:     { type: String, default: '' },
+  fulfillmentType: { type: String, enum: ['offline_service', 'remote_service', 'delivery_and_service', 'subscription_service', 'digital_content'], default: 'offline_service' },
+  tradeStatus: { type: String, enum: ['created', 'awaiting_payment', 'paid', 'fulfilling', 'completed', 'closed', 'refund_pending', 'partially_refunded', 'refunded'], default: 'created', index: true },
+  fulfillmentStatus: { type: String, default: '' },
+  refundStatus: { type: String, enum: ['', 'none', 'requested', 'processing', 'partially_refunded', 'refunded', 'failed'], default: 'none' },
+  paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null },
+  fulfillmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Fulfillment', default: null },
   pushRecordId:{ type: mongoose.Schema.Types.ObjectId, ref: 'PushRecord', default: null },
   status: {
     type: String,
@@ -53,6 +61,8 @@ const orderSchema = new mongoose.Schema({
   healthFundEnterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null },
   couponId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
   couponDiscount: { type: Number, default: 0 },
+  healthFundSettledAt: { type: Date, default: null },
+  couponSettledAt: { type: Date, default: null },
   transactionId: { type: String, default: '' },  // 支付流水号（人工标记时可留空，接入网关后由回调写入）
   paidAt:        { type: Date, default: null },
   paidBy:        { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 人工标记已支付的操作人（网关自动确认时为 null）

@@ -12,6 +12,10 @@ const Message = require('../models/Message');
 const Order = require('../models/Order');
 const PointsLog = require('../models/PointsLog');
 const { refundOrderPoints } = require('../utils/orderPoints');
+const Payment = require('../models/Payment');
+const Refund = require('../models/Refund');
+const wechatPay = require('../utils/wechatPay');
+const Fulfillment = require('../models/Fulfillment');
 const Service = require('../models/Service');
 const Product = require('../models/Product');
 const ProductCategory = require('../models/ProductCategory');
@@ -337,6 +341,8 @@ router.get('/orders', adminAuth, async (req, res) => {
   const [orders, total] = await Promise.all([
     Order.find(filter)
       .populate('user', 'name phone')
+      .populate('paymentId')
+      .populate('fulfillmentId')
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(parseInt(limit)),
@@ -356,6 +362,9 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
 
   const currentOrder = await Order.findById(req.params.id);
   if (!currentOrder) return res.status(404).json({ success: false, message: '订单不存在' });
+  if (status === 'cancelled' && currentOrder.paymentStatus === 'paid') {
+    return res.status(409).json({ success: false, message: '已支付订单不能直接取消，请先通过微信退款流程原路退款' });
+  }
   if (status === 'completed' && (currentOrder.totalUnits || 1) > (currentOrder.usedUnits || 0)) {
     return res.status(400).json({ success: false, message: '多次服务不能直接完成，请逐次核销' });
   }
@@ -370,6 +379,26 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
 
   // 订单被取消：若之前预记过消费积分，退回
   if (status === 'cancelled') await refundOrderPoints(order);
+  const fulfillmentStatus = status === 'scheduled' ? 'booked' : status === 'completed' ? 'completed' : status === 'cancelled' ? 'cancelled' : null;
+  if (fulfillmentStatus) {
+    const fulfillment = await Fulfillment.findOneAndUpdate(
+      { order: order._id },
+      { status: fulfillmentStatus, bookingTime: status === 'scheduled' ? (scheduledAt ? new Date(scheduledAt) : new Date()) : undefined, completedAt: status === 'completed' ? new Date() : undefined },
+      { new: true },
+    );
+    if (fulfillment) {
+      order.fulfillmentStatus = fulfillment.status;
+      order.tradeStatus = status === 'completed' ? 'completed' : status === 'cancelled' ? 'closed' : 'fulfilling';
+      await order.save();
+      if (status === 'completed' && fulfillment.wechatDeliveryStatus !== 'reported') {
+        try { await require('../utils/wechatOrderShipping').reportOrderFulfillment(order, fulfillment); }
+        catch (err) {
+          fulfillment.wechatDeliveryStatus = 'failed'; await fulfillment.save();
+          return res.status(502).json({ success: false, message: `服务已完成，但微信订单履约上报失败：${err.message}`, data: order });
+        }
+      }
+    }
+  }
 
   res.json({ success: true, data: order, message: `订单已更新为：${status}` });
 });
@@ -377,12 +406,15 @@ router.patch('/orders/:id/status', adminAuth, async (req, res) => {
 // ── PATCH /api/admin/orders/:id/pay — 人工标记已支付（暂未接支付网关，见backend/CLAUDE.md待办）──
 router.patch('/orders/:id/pay', adminAuth, async (req, res) => {
   const { paymentMethod, paidAmount } = req.body;
-  const VALID_METHODS = ['wechat', 'alipay', 'onsite', 'healthFund'];
+  const VALID_METHODS = ['onsite', 'healthFund'];
   if (!VALID_METHODS.includes(paymentMethod)) {
-    return res.status(400).json({ success: false, message: '支付方式无效' });
+    return res.status(400).json({ success: false, message: '微信支付订单必须以微信支付回调为准，后台不能手工标记；这里只允许登记线下收款' });
   }
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+  if (order.paymentId || order.paymentMethod === 'wechat') {
+    return res.status(409).json({ success: false, message: '该订单已进入微信支付链路，不能改为线下已付款；请让用户继续支付或关闭后重新下单' });
+  }
   if (order.paymentStatus === 'paid') return res.status(400).json({ success: false, message: '该订单已标记为已支付，请勿重复操作' });
 
   order.paymentMethod = paymentMethod;
@@ -416,13 +448,80 @@ router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
   const order = await Order.findById(req.params.id);
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
   if (order.paymentStatus !== 'paid') return res.status(400).json({ success: false, message: '只有已支付的订单才能退款' });
+  const reason = String(req.body.reason || '').trim();
+  if (!reason) return res.status(400).json({ success: false, message: '请输入退款原因' });
+  const payment = await Payment.findOne({ order: order._id, status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
+  if (!payment?.outTradeNo) {
+    return res.status(409).json({ success: false, message: '该订单没有真实微信支付流水，不能在此标记为已退款；请按历史订单流程人工核对' });
+  }
+  const amount = Number(req.body.amount || payment.amount);
+  if (!Number.isFinite(amount) || amount <= 0 || amount > payment.amount) {
+    return res.status(400).json({ success: false, message: '退款金额无效' });
+  }
+  let refund = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing'] } });
+  if (refund?.status === 'processing') return res.status(409).json({ success: false, message: '该订单退款正在微信处理中，请勿重复提交' });
+  if (refund) {
+    refund.requestedBy = req.admin._id;
+    refund.reason = reason;
+    refund.amount = amount;
+    await refund.save();
+  } else {
+    refund = await Refund.create({
+      order: order._id, payment: payment._id, user: order.user,
+      requestedBy: req.admin._id,
+      outRefundNo: `RF${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32),
+      amount, totalAmount: payment.amount, reason, status: 'requested',
+    });
+  }
+  try {
+    const remote = await wechatPay.requestRefund({ outTradeNo: payment.outTradeNo, outRefundNo: refund.outRefundNo, amount, totalAmount: payment.amount, reason });
+    refund.refundId = remote.refund_id || '';
+    if (remote.status === 'SUCCESS') {
+      await refund.save();
+      await require('../utils/orderSettlement').confirmRefund(refund, { source: 'refund_api' });
+      res.json({ success: true, data: { order, refund }, message: '微信退款成功' });
+    } else {
+      refund.status = 'processing';
+      await refund.save();
+      order.tradeStatus = 'refund_pending'; order.refundStatus = 'processing'; await order.save();
+      res.json({ success: true, data: { order, refund }, message: '退款已提交微信，等待处理结果' });
+    }
+  } catch (err) {
+    refund.status = 'failed'; refund.failureCode = err.code || ''; refund.failureMessage = err.message; await refund.save();
+    order.refundStatus = 'failed'; await order.save();
+    res.status(502).json({ success: false, message: `微信退款提交失败：${err.message}` });
+  }
+});
 
-  order.paymentStatus = 'refunded';
-  if (order.status === 'pending' || order.status === 'scheduled') order.status = 'cancelled';
+router.patch('/orders/:id/fulfillment', adminAuth, async (req, res) => {
+  const order = await Order.findById(req.params.id);
+  if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
+  if (order.paymentStatus !== 'paid') return res.status(409).json({ success: false, message: '订单尚未支付，不能开始履约' });
+  const allowed = ['pending_assignment', 'awaiting_booking', 'booked', 'awaiting_shipment', 'shipped', 'in_service', 'completed', 'cancelled'];
+  if (!allowed.includes(req.body.status)) return res.status(400).json({ success: false, message: '履约状态无效' });
+  let fulfillment = await Fulfillment.findOneAndUpdate(
+    { order: order._id },
+    { $set: {
+      status: req.body.status,
+      bookingTime: req.body.bookingTime || undefined,
+      serviceLocation: String(req.body.serviceLocation || ''),
+      deliveryCompany: String(req.body.deliveryCompany || ''),
+      trackingNo: String(req.body.trackingNo || ''),
+      note: String(req.body.note || ''),
+      completedAt: req.body.status === 'completed' ? new Date() : undefined,
+    }, $setOnInsert: { order: order._id, user: order.user, type: order.fulfillmentType || 'offline_service' } },
+    { upsert: true, new: true },
+  );
+  if (req.body.reportToWechat && fulfillment.wechatDeliveryStatus !== 'reported') {
+    try { fulfillment = await require('../utils/wechatOrderShipping').reportOrderFulfillment(order, fulfillment); }
+    catch (err) { fulfillment.wechatDeliveryStatus = 'failed'; await fulfillment.save(); return res.status(502).json({ success: false, message: err.message, data: fulfillment }); }
+  }
+  order.fulfillmentId = fulfillment._id;
+  order.fulfillmentStatus = fulfillment.status;
+  if (['booked', 'shipped', 'in_service'].includes(fulfillment.status)) order.tradeStatus = 'fulfilling';
+  if (fulfillment.status === 'completed') order.tradeStatus = 'completed';
   await order.save();
-  await refundOrderPoints(order);
-
-  res.json({ success: true, data: order, message: '已退款，积分已退回' });
+  res.json({ success: true, data: { order, fulfillment }, message: fulfillment.wechatDeliveryStatus === 'reported' ? '履约已更新并上报微信' : '履约已更新' });
 });
 
 // ── PATCH /api/admin/orders/:id/verify — 到店核销 ──
@@ -1248,9 +1347,12 @@ router.get('/products', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus } = req.body;
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
+  }
+  if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
+    return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
   const product = await Product.create({
     name, subtitle: subtitle || '', images: images || [],
@@ -1260,16 +1362,23 @@ router.post('/products', adminAuth, async (req, res) => {
     performanceRule: performanceRule || undefined,
     servicePerformerRoles: servicePerformerRoles || [],
     serviceItems: serviceItems || [],
+    fulfillmentType: fulfillmentType || 'offline_service', paymentChannel: paymentChannel || 'wechat_pay',
+    bookingRequired: bookingRequired !== false, deliveryRequired: !!deliveryRequired,
+    serviceLocation: serviceLocation || '', validityDays: validityDays || 365,
+    refundPolicy: refundPolicy || undefined, skus: skus || [],
   });
   res.json({ success: true, data: product, message: '产品创建成功' });
 });
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus } = req.body;
+  if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
+    return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
+  }
   const product = await Product.findByIdAndUpdate(
     req.params.id,
-    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [] },
+    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus: skus || [] },
     { new: true }
   );
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });

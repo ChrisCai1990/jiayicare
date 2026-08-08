@@ -15,6 +15,8 @@ function pointsForAmount(paidAmount) {
 async function awardOrderPoints(order) {
   const amount = pointsForAmount(order.paidAmount);
   if (amount <= 0) return;
+  const alreadyAwarded = await PointsLog.findOne({ refType: 'Order', refId: order._id, source: 'consumption' });
+  if (alreadyAwarded) return;
   await Promise.all([
     User.collection.updateOne({ _id: order.user }, { $inc: { pointsBalance: amount } }),
     PointsLog.create({

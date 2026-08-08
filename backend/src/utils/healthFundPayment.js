@@ -35,6 +35,8 @@ async function validateHealthFundDeduction({ user, requested, orderAmount, categ
 
 async function deductHealthFund({ user, enterprise, order, amount }) {
   if (!amount) return null;
+  const existing = await HealthFundTransaction.findOne({ orderId: order._id, type: 'deduction', status: 'active' });
+  if (existing) return existing;
   const updated = await user.constructor.findOneAndUpdate(
     { _id: user._id, healthFundBalance: { $gte: amount } },
     { $inc: { healthFundBalance: -amount } },
