@@ -8,6 +8,10 @@ import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
+const normalizeRiskTagValues = values => [...new Set((Array.isArray(values) ? values : [values])
+  .flatMap(value => String(value || '').split(/[、,，;；\n]+/))
+  .map(value => value.trim())
+  .filter(Boolean))]
 
 function HealthPortraitOverview({ user, reports = [] }) {
   const [expandedGroups, setExpandedGroups] = useState({})
@@ -1592,7 +1596,7 @@ export default function PatientDetailPage() {
   const [severityForm, setSeverityForm] = useState({})
   const [showTagEditor, setShowTagEditor] = useState(false)
   const [tagEditorDiseases, setTagEditorDiseases] = useState({ tumor_risk: [], cardiovascular_risk: [], chronic_disease: [] })
-  const [tagEditorInput, setTagEditorInput] = useState('')
+  const [tagEditorInput, setTagEditorInput] = useState({ tumor_risk: '', cardiovascular_risk: '', chronic_disease: '' })
   const [tagSaving, setTagSaving] = useState(false)
   // 4.2 身体成分
   const [editingBodyComp, setEditingBodyComp] = useState(false)
@@ -2139,9 +2143,13 @@ export default function PatientDetailPage() {
   const handleSaveTags = async () => {
     try {
       setTagSaving(true)
-      await staffAPI.reviewHealthRiskTags(id, tagEditorDiseases)
+      const tags = Object.fromEntries(Object.keys(tagEditorDiseases).map(key => [key,
+        normalizeRiskTagValues([...(tagEditorDiseases[key] || []), tagEditorInput[key] || '']),
+      ]))
+      await staffAPI.reviewHealthRiskTags(id, tags)
       toast('标签已审核确认')
       setShowTagEditor(false)
+      setTagEditorInput({ tumor_risk: '', cardiovascular_risk: '', chronic_disease: '' })
       load()
     } catch (err) { toast(err.message || '保存失败') }
     finally { setTagSaving(false) }
@@ -2880,16 +2888,54 @@ export default function PatientDetailPage() {
       {/* AI 从专项筛查异常项生成，健康顾问分三类审核 */}
       <div style={{ marginBottom: 12, padding: '10px 14px', background: '#F7FAF8', borderRadius: 10 }}>
         {[['tumor_risk','肿瘤风险'], ['cardiovascular_risk','心脑血管病风险'], ['chronic_disease','慢性病及其他风险']].map(([key, label]) => {
-          const values = user.healthRiskTags?.[key] || (key === 'chronic_disease' ? user.chronicDiseases || [] : [])
+          const values = normalizeRiskTagValues(user.healthRiskTags?.[key] || (key === 'chronic_disease' ? user.chronicDiseases || [] : []))
+          const addTags = () => {
+            const additions = String(tagEditorInput[key] || '').split(/[、,，;；\n]+/).map(v => v.trim()).filter(Boolean)
+            if (!additions.length) return
+            setTagEditorDiseases(cur => ({ ...cur, [key]: [...new Set([...(cur[key] || []), ...additions])] }))
+            setTagEditorInput(cur => ({ ...cur, [key]: '' }))
+          }
+          const handleTagInputChange = value => {
+            if (!/[、,，;；\n]/.test(value)) {
+              setTagEditorInput(cur => ({ ...cur, [key]: value }))
+              return
+            }
+            const parts = value.split(/[、,，;；\n]+/)
+            const endsWithSeparator = /[、,，;；\n]$/.test(value)
+            const remainder = endsWithSeparator ? '' : parts.pop() || ''
+            const additions = parts.map(v => v.trim()).filter(Boolean)
+            if (additions.length) {
+              setTagEditorDiseases(cur => ({ ...cur, [key]: [...new Set([...(cur[key] || []), ...additions])] }))
+            }
+            setTagEditorInput(cur => ({ ...cur, [key]: remainder }))
+          }
+          const handleTagPaste = event => {
+            const pasted = event.clipboardData.getData('text')
+            if (!/[、,，;；\n]/.test(pasted)) return
+            event.preventDefault()
+            const additions = `${tagEditorInput[key] || ''}${pasted}`.split(/[、,，;；\n]+/).map(v => v.trim()).filter(Boolean)
+            setTagEditorDiseases(cur => ({ ...cur, [key]: [...new Set([...(cur[key] || []), ...additions])] }))
+            setTagEditorInput(cur => ({ ...cur, [key]: '' }))
+          }
           return <div key={key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minHeight: 32 }}>
             <span style={{ width: 120, fontSize: 12, fontWeight: 600, color: '#4A6558', paddingTop: 3 }}>{label}：</span>
-            {showTagEditor ? <input className="form-input" style={{ flex: 1, fontSize: 12 }} value={(tagEditorDiseases[key] || []).join('、')} onChange={e => setTagEditorDiseases(cur => ({ ...cur, [key]: e.target.value.split(/[、,，]/).map(v => v.trim()).filter(Boolean) }))} />
+            {showTagEditor ? <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: (tagEditorDiseases[key] || []).length ? 7 : 0 }}>
+                {(tagEditorDiseases[key] || []).map(v => <span key={v} className="badge badge-danger" style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  {v}<button type="button" aria-label={`删除${v}`} onClick={() => setTagEditorDiseases(cur => ({ ...cur, [key]: (cur[key] || []).filter(item => item !== v) }))} style={{ border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', padding: 0, lineHeight: 1 }}>×</button>
+                </span>)}
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <input className="form-input" style={{ flex: 1, fontSize: 12 }} value={tagEditorInput[key] || ''} placeholder="输入标签，逗号、顿号或分号后自动添加" onChange={e => handleTagInputChange(e.target.value)} onPaste={handleTagPaste} onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); addTags() } }} />
+                <button type="button" className="btn btn-secondary btn-sm" onClick={addTags}>＋ 添加</button>
+              </div>
+            </div>
               : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>{values.length ? values.map(v => <span key={v} className="badge badge-danger">{v}</span>) : <span style={{ fontSize: 12, color: '#A0AAA5' }}>暂无</span>}</div>}
           </div>
         })}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
           {!showTagEditor ? <>
-            {['familyDoctor','superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" onClick={() => { const t = user.healthRiskTags || {}; setTagEditorDiseases({ tumor_risk: t.tumor_risk || [], cardiovascular_risk: t.cardiovascular_risk || [], chronic_disease: t.chronic_disease || user.chronicDiseases || [] }); setShowTagEditor(true) }}>人工编辑标签</button>}
+            {['familyDoctor','superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" onClick={() => { const t = user.healthRiskTags || {}; setTagEditorDiseases({ tumor_risk: normalizeRiskTagValues(t.tumor_risk || []), cardiovascular_risk: normalizeRiskTagValues(t.cardiovascular_risk || []), chronic_disease: normalizeRiskTagValues(t.chronic_disease || user.chronicDiseases || []) }); setTagEditorInput({ tumor_risk: '', cardiovascular_risk: '', chronic_disease: '' }); setShowTagEditor(true) }}>人工编辑标签</button>}
           </> : <><button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => setTagEditorDiseases({ tumor_risk: [], cardiovascular_risk: [], chronic_disease: [] })}>清空全部</button><button className="btn btn-secondary btn-sm" onClick={() => setShowTagEditor(false)}>取消</button><button className="btn btn-primary btn-sm" onClick={handleSaveTags} disabled={tagSaving}>{tagSaving ? '保存中…' : '保存确认'}</button></>}
           {user.healthRiskTags?.status && <span style={{ fontSize: 12, color: user.healthRiskTags.status === 'reviewed' ? '#16A34A' : '#D97706', alignSelf: 'center' }}>{user.healthRiskTags.status === 'reviewed' ? `已审核${user.healthRiskTags.reviewedByName ? ' · '+user.healthRiskTags.reviewedByName : ''}` : '待审核'}</span>}
         </div>

@@ -987,7 +987,9 @@ router.put('/patients/:id/health-risk-tags/review', staffAuth, checkPermission('
   try {
     if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可审核确认标签' });
     const patient = await User.findById(req.params.id); if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    const tags = {}; ['tumor_risk', 'cardiovascular_risk', 'chronic_disease'].forEach(k => { tags[k] = [...new Set((req.body.tags?.[k] || []).map(v => String(v).trim()).filter(Boolean))]; });
+    const tags = {}; ['tumor_risk', 'cardiovascular_risk', 'chronic_disease'].forEach(k => {
+      tags[k] = [...new Set((req.body.tags?.[k] || []).flatMap(v => String(v).split(/[、,，;；\n]+/)).map(v => v.trim()).filter(Boolean))];
+    });
     const before = patient.healthRiskTags?.toObject?.() || patient.healthRiskTags || null;
     const nextTags = { ...tags, status: 'reviewed', generatedAt: patient.healthRiskTags?.generatedAt || null, reviewedAt: new Date(), reviewedByName: req.staff.name || '' };
     await User.collection.updateOne({ _id: patient._id }, {
