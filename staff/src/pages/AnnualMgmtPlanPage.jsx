@@ -407,12 +407,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
 
-  const templateModuleEntries = selectedAdminTemplate
-    ? (selectedAdminTemplate.content?.followUpPlans || []).map(templateNodeToModule)
-    : (PLAN_TYPE_MODULES[planType] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
   const patientName = patientMode ? (patient?.name || '会员') : (plan?.patientId?.name || '会员')
   const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
   const selectedAdminTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
+  const templateModuleEntries = selectedAdminTemplate
+    ? (selectedAdminTemplate.content?.followUpPlans || []).map(templateNodeToModule)
+    : (PLAN_TYPE_MODULES[planType] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
   const activePlanType = selectedAdminTemplate
     ? { ...(PLAN_TYPES.find(pt => pt.key === planType) || PLAN_TYPES[3]), name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
     : PLAN_TYPES.find(pt => pt.key === planType)
