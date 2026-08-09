@@ -106,7 +106,40 @@ router.post('/:orderId/retry', auth, async (req, res) => {
       return res.json({ success: true, data: { order: paidOrder, alreadyPaid: true } });
     }
   } catch (err) { console.error('[wechat-pay-retry-query]', err.message); }
-  res.json({ success: true, data: { order, paymentParams: wechatPay.buildClientParams(payment.prepayId) } });
+  if (!req.user.wechatMpOpenid) return res.status(400).json({ success: false, message: '请先绑定当前微信身份后再支付' });
+
+  // A prepay_id is tied to the payer OpenID used when it was created. Reusing
+  // an earlier prepay after the member refreshes their WeChat binding triggers
+  // “下单账号与支付账号不一致”. Close it and create a fresh payment for the
+  // current WeChat session instead.
+  try { await wechatPay.closeOrder(payment.outTradeNo); } catch (err) { console.warn('[wechat-pay-retry-close]', err.message); }
+  payment.status = 'closed';
+  payment.closedAt = new Date();
+  await payment.save();
+
+  const outTradeNo = `JY${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32);
+  const amount = Number(order.paymentExpectedAmount || payment.amount || 0);
+  const nextPayment = await Payment.create({
+    order: order._id, user: req.user._id, channel: 'wechat_pay', status: 'created', amount, outTradeNo,
+  });
+  try {
+    const prepay = await wechatPay.createJsapiPayment({
+      description: order.serviceName || '健康管理服务', outTradeNo, amount,
+      openid: req.user.wechatMpOpenid, attach: order._id.toString(),
+    });
+    nextPayment.prepayId = prepay.prepayId;
+    nextPayment.status = 'processing';
+    await nextPayment.save();
+    order.paymentId = nextPayment._id;
+    order.paymentOutTradeNo = outTradeNo;
+    await order.save();
+    return res.json({ success: true, data: { order, paymentParams: prepay.client } });
+  } catch (err) {
+    nextPayment.status = 'failed';
+    nextPayment.failureMessage = err.message;
+    await nextPayment.save();
+    return res.status(503).json({ success: false, message: `重新发起微信支付失败：${err.message}` });
+  }
 });
 
 module.exports = router;

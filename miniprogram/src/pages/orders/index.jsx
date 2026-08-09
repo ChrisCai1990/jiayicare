@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow, useRouter } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { ordersAPI, paymentsAPI } from '../../services/api';
+import { authAPI, ordersAPI, paymentsAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
@@ -75,6 +75,8 @@ export default function OrdersPage() {
 
   const continuePayment = async (id) => {
     try {
+      const bound = await authAPI.bindWechat();
+      if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
       const result = await paymentsAPI.retry(id);
       if (result.data?.paymentParams) {
         await requestWechatPayment(result.data.paymentParams);

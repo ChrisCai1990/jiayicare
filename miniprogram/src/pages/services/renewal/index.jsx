@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { authAPI, servicesAPI, messagesAPI } from '../../../services/api';
+import { authAPI, servicesAPI, messagesAPI, userAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
@@ -73,19 +73,23 @@ function PackageCard({ pkg, selected, onSelect }) {
 }
 
 function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [payMethod] = useState('wechat_pay');
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg] = useState('');
   const [serviceAgreed, setServiceAgreed] = useState(false);
-  const fundBalance = user?.healthFund?.total || 0;
+  const [checkoutUser, setCheckoutUser] = useState(user);
+  const fundBalance = checkoutUser?.healthFund?.total || 0;
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
   const [couponId, setCouponId] = useState(null);
 
   useEffect(() => {
-    servicesAPI.coupons().then((res) => { if (res.success) setCoupons(res.data || []); }).catch(() => {});
+    Promise.all([servicesAPI.coupons(), userAPI.getMe()]).then(([couponRes, userRes]) => {
+      if (couponRes.success) setCoupons(couponRes.data || []);
+      if (userRes.success) { setCheckoutUser(userRes.data); updateUser(userRes.data); }
+    }).catch(() => setErrMsg('优惠权益加载失败，请检查网络后重试'));
   }, []);
 
   const selectedCoupon = coupons.find((c) => c._id === couponId) || null;
@@ -153,10 +157,11 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
           </View>
         </View>
 
-        {coupons.length > 0 && (
+        {(
           <>
-            <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>优惠券</Text>
+            <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>抵用券</Text>
             <View style={{ marginBottom: `${spacing.md}px` }}>
+              {coupons.length === 0 && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>当前账户暂无可用抵用券</Text>}
               <View onClick={() => setCouponId(null)} style={{ padding: '10px 12px', borderRadius: `${radius.md}px`, border: `1.5px solid ${!couponId ? colors.primary : colors.border}`, backgroundColor: !couponId ? colors.primary10 : colors.background, marginBottom: '8px' }}>
                 <Text style={{ fontSize: '13px', color: !couponId ? colors.textPrimary : colors.textMuted, fontWeight: !couponId ? 700 : 500 }}>不使用优惠券</Text>
               </View>

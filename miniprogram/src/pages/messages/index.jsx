@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI, servicesAPI } from '../../services/api';
+import { messagesAPI, pushRecordsAPI, servicesAPI, userAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -321,7 +321,7 @@ const RENEWAL_PAYMENT_METHODS = [
 ];
 
 function ProductPushDetail({ msg, onClose }) {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const productList = (msg.products && msg.products.length > 0)
     ? msg.products
     : (msg.productId ? [{ productId: msg.productId, name: msg.productName, price: msg.price, category: '', icon: '🛍' }] : []);
@@ -331,14 +331,18 @@ function ProductPushDetail({ msg, onClose }) {
   const [paid, setPaid] = useState(false);
   const [payError, setPayError] = useState('');
   const [payMethod, setPayMethod] = useState('wechat');
-  const fundBalance = user?.healthFund?.total || 0;
+  const [checkoutUser, setCheckoutUser] = useState(user);
+  const fundBalance = checkoutUser?.healthFund?.total || 0;
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
   const [couponId, setCouponId] = useState(null);
 
   useEffect(() => {
-    servicesAPI.coupons().then((res) => { if (res.success) setCoupons(res.data || []); }).catch(() => {});
+    Promise.all([servicesAPI.coupons(), userAPI.getMe()]).then(([couponRes, userRes]) => {
+      if (couponRes.success) setCoupons(couponRes.data || []);
+      if (userRes.success) { setCheckoutUser(userRes.data); updateUser(userRes.data); }
+    }).catch(() => setPayError('优惠权益加载失败，请检查网络后重试'));
   }, []);
 
   const toggleItem = (id) => setCheckedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -422,9 +426,10 @@ function ProductPushDetail({ msg, onClose }) {
           })}
         </ScrollView>
 
-        {coupons.length > 0 && (
+        {(
           <View style={{ marginBottom: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>优惠券</Text>
+            <Text style={{ fontSize: '12px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>抵用券</Text>
+            {coupons.length === 0 && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>当前账户暂无可用抵用券</Text>}
             <ScrollView scrollX style={{ whiteSpace: 'nowrap' }}>
               <View onClick={() => setCouponId(null)} style={{ display: 'inline-block', padding: '8px 12px', borderRadius: `${radius.md}px`, marginRight: '8px', border: `1.5px solid ${!couponId ? colors.primary : colors.border}`, backgroundColor: !couponId ? colors.primary10 : '#fff' }}>
                 <Text style={{ fontSize: '12px', color: !couponId ? colors.primary : colors.textMuted, fontWeight: !couponId ? 700 : 500 }}>不使用</Text>
