@@ -3946,6 +3946,13 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       childrenByParent.get(parent).push(node);
     });
     childrenByParent.forEach(nodes => nodes.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || new Date(a.createdAt) - new Date(b.createdAt)));
+    const categoryById = new Map(categoryNodes.map(node => [String(node._id), node]));
+    const categoryByName = new Map(categoryNodes.map(node => [node.name, node]));
+    const rootCategoryName = node => {
+      let current = node;
+      while (current?.parent && categoryById.has(String(current.parent))) current = categoryById.get(String(current.parent));
+      return current?.name || '';
+    };
     const projectOrder = new Map(); let projectSequence = 0;
     const visitCategory = node => {
       if (!projectOrder.has(node.name)) projectOrder.set(node.name, projectSequence++);
@@ -3954,9 +3961,14 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     (childrenByParent.get('__root__') || []).forEach(visitCategory);
 
     const CATEGORY_MAP = { tumor_risk: true, cardiovascular_risk: true, chronic_disease: true };
-    const categoryBucket = (category, l1Label = '') => {
-      if (category === 'tumor' || /肿瘤筛查/.test(l1Label)) return 'tumor_risk';
-      if (['cardiovascular', 'brain_vessel'].includes(category) || /心脑血管病?筛查|心血管筛查|脑血管筛查/.test(l1Label)) return 'cardiovascular_risk';
+    const categoryBucket = (category, l1Label = '', projectName = '') => {
+      // 项目目录归属优先，避免整份报告的类型把“高血压早筛”等项目带入心脑血管小结。
+      const categoryNode = categoryById.get(String(category || ''));
+      const projectNode = categoryByName.get(projectName);
+      const directoryRoot = rootCategoryName(categoryNode || projectNode);
+      const effectiveL1 = directoryRoot || l1Label;
+      if (/肿瘤筛查/.test(effectiveL1) || (!directoryRoot && category === 'tumor')) return 'tumor_risk';
+      if (/心脑血管病?筛查|心血管筛查|脑血管筛查/.test(effectiveL1) || (!directoryRoot && ['cardiovascular', 'brain_vessel'].includes(category))) return 'cardiovascular_risk';
       return 'chronic_disease';
     };
     const input = {};
@@ -3965,9 +3977,10 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
         const reportBucket = categoryBucket(report.screeningCategory, report.screeningL1 || '');
         // 只认专项筛查已经保存的分类，不再根据项目名称关键词猜测归属。
         // item 有自己的一级分类时以 item 为准；没有时继承整份报告分类。每项只会进入一个小结。
-        const selectedItems = (report.reportItems || []).filter(item =>
-          categoryBucket(item.screeningCategory || report.screeningCategory, report.screeningL1 || '') === key
-        );
+        const selectedItems = (report.reportItems || []).filter(item => {
+          const projectName = item.screeningParent || report.screeningL2 || report.title || '其他项目';
+          return categoryBucket(item.screeningCategory || report.screeningCategory, report.screeningL1 || '', projectName) === key;
+        });
         if (!selectedItems.length || (report.reportItems || []).length === 0 && reportBucket !== key) return null;
         const grouped = new Map();
         selectedItems.forEach(item => {
