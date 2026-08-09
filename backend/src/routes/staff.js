@@ -8569,6 +8569,28 @@ async function runReportParse(reportId) {
             console.log(`[parse-ai] 页${pageNum}覆盖复核异常: ${e.message}`);
           }
         }
+        if (useShaoyifuTemplate) {
+          const targetedPrompts = {
+            4: '只补提眼科、耳鼻喉科、妇科三条科室检查。每科一条imaging，科内全部原文写入findings；三科必须全部输出。',
+            6: '只补提胆囊超声和脾脏超声两条。必须分别输出，name固定为胆囊超声、脾脏超声；findings只能抄对应器官原文，脾脏不得写成胰腺。',
+            11: '只补提乙肝三系五项：先抄左栏表面抗原、核心抗体、表面抗体，再抄右栏e抗原、e抗体。五项必须全部输出，尤其不得遗漏乙型肝炎病毒表面抗体。',
+          };
+          for (const pageNum of [4, 6, 11].filter(n => shaoyifuTemplate.needsCoverageAudit(n, allItems))) {
+            try {
+              const img = await renderSinglePage(pdfBuf, pageNum, 200);
+              if (!img) continue;
+              const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}\n\n【邵逸夫模板缺项专项补提】${targetedPrompts[pageNum]}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
+              const parsed = safeParseJSON(retryText);
+              if (!parsed || !Array.isArray(parsed.items)) continue;
+              const oldPage = allItems.filter(it => it._page === pageNum);
+              const mergedPage = mergeCoverageAuditItems(oldPage, tagReportPageItems(parsed.items, pageNum));
+              allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
+              console.log(`[parse-ai] 页${pageNum}模板缺项专项补提完成：${oldPage.length}→${mergedPage.length}`);
+            } catch (e) {
+              console.log(`[parse-ai] 页${pageNum}模板缺项专项补提异常: ${e.message}`);
+            }
+          }
+        }
       }
 
       // 数量核对+单页重试：检验单标题写了"N项"但实际条数不够，说明这一页大概率漏提了，只重新识别这一页

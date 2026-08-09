@@ -98,6 +98,8 @@ function applyShaoyifuOrderAndGroups(inputItems) {
     const page = Number(item?._page || 0);
     const name = text(item.name);
     const next = { ...item };
+    if (page === 4 && /眼科|耳鼻喉|妇科/.test(`${name} ${text(item.sourceSection)}`)) next.itemType = 'imaging';
+    if (page === 6 && /肝|胆囊|胰腺|脾脏|肾|子宫|附件|甲状腺/.test(`${name} ${text(item.sourceSection)}`)) next.itemType = 'imaging';
     let order = originalIndex;
     if (page === 9) {
       if (/红细胞沉降率|ESR/i.test(name)) next.orderName = '红细胞沉降率(ESR)';
@@ -180,7 +182,12 @@ function normalizeShaoyifuItems(inputItems) {
     if (/肺.*CT|胸部.*CT/.test(key)) key = '肺部CT';
     if (/头颅.*MRA/.test(key)) key = '头颅MRA';
     const old = imagingBest.get(key);
-    if (!old || content(item).length > content(old).length) imagingBest.set(key, item);
+    const semanticScore = candidate => {
+      const organ = [/肝/, /胆囊/, /胰腺/, /脾脏/, /肾/, /子宫|附件/, /甲状腺/]
+        .find(pattern => pattern.test(text(candidate?.name)));
+      return (organ && organ.test(text(candidate?.findings || candidate?.value)) ? 100000 : 0) + content(candidate).length;
+    };
+    if (!old || semanticScore(item) > semanticScore(old)) imagingBest.set(key, item);
   }
   items = passthrough.concat([...imagingBest.values()]);
   return applyShaoyifuOrderAndGroups(items);

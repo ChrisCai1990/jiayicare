@@ -72,6 +72,8 @@ const ordered = applyShaoyifuOrderAndGroups([
   { _page: 11, itemType: 'lab', name: 'HPV18(高危亚型)' },
   { _page: 11, itemType: 'lab', name: 'HPV16(高危亚型)' },
 ]);
+assert.equal(applyShaoyifuOrderAndGroups([{ _page: 4, itemType: 'data', name: '眼科体检' }])[0].itemType, 'imaging');
+assert.equal(applyShaoyifuOrderAndGroups([{ _page: 6, itemType: 'lab', name: '脾脏彩超' }])[0].itemType, 'imaging');
 assert.deepEqual(ordered.filter(i => i._page === 6).map(i => i.name), ['胰腺彩超', '脾脏彩超']);
 assert.deepEqual(ordered.filter(i => i._page === 9).map(i => i.name), ['白细胞计数', '红细胞计数']);
 assert.deepEqual(ordered.filter(i => i._page === 11).map(i => i.name), ['尿肌酐测定', '乙型肝炎病毒e抗体', 'HPV16(高危亚型)', 'HPV18(高危亚型)']);
