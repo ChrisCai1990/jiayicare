@@ -169,6 +169,13 @@ function TaskDetailModal({ task, onClose, onDone }) {
 }
 
 export default function HomePage() {
+  Taro.useShareAppMessage(() => ({
+    title: '嘉医汇｜全生命周期健康管理',
+    path: '/pages/home/index',
+  }));
+  Taro.useShareTimeline(() => ({
+    title: '嘉医汇｜全生命周期健康管理',
+  }));
   const { statusBarHeight } = useNavBar();
   const { user: authUser, isDemo } = useAuth();
   const [dashData, setDashData] = useState(null);

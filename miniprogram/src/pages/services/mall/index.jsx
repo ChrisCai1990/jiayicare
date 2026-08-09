@@ -410,6 +410,13 @@ function PurchaseModal({ item, mode, onClose }) {
 }
 
 export default function ServiceMallPage() {
+  Taro.useShareAppMessage(() => ({
+    title: '嘉医汇健康服务商城',
+    path: '/pages/services/mall/index',
+  }));
+  Taro.useShareTimeline(() => ({
+    title: '嘉医汇健康服务商城',
+  }));
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('全部');

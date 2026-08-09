@@ -7,6 +7,10 @@ import { useAuth } from '../../../context/AuthContext';
 import Icon from '../../../components/Icon';
 
 export default function LoginPage() {
+  Taro.useShareAppMessage(() => ({
+    title: '嘉医汇｜全生命周期健康管理',
+    path: '/pages/home/index',
+  }));
   const { login } = useAuth();
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
