@@ -167,7 +167,7 @@ export const messagesAPI = {
   unreadCount: () => request('/messages/unread-count'),
   markRead: (id) => request(`/messages/${id}/read`, { method: 'PATCH' }),
   markAllRead: () => request('/messages/read-all', { method: 'PATCH' }),
-  send: (to, content) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content }) }),
+  send: (to, content, extra = {}) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content, ...extra }) }),
   getThread: (role) => request(`/messages/thread/${role}`),
   recall: (id) => request(`/messages/${id}/recall`, { method: 'PATCH' }),
 };

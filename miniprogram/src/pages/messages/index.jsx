@@ -1,8 +1,8 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import { View, Text, Textarea, ScrollView } from '@tarojs/components';
+import { View, Text, Textarea, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI, servicesAPI, userAPI } from '../../services/api';
+import { messagesAPI, pushRecordsAPI, servicesAPI, userAPI, chatAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -510,6 +510,7 @@ function ConversationThread({ role, onClose }) {
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [foodImage, setFoodImage] = useState(null);
   const meta = ROLE_META[role] || ROLE_META.manager;
   const pollRef = useRef(null);
 
@@ -530,16 +531,40 @@ function ConversationThread({ role, onClose }) {
 
   const send = async () => {
     const text = input.trim();
-    if (!text || sending) return;
+    if ((!text && !foodImage) || sending) return;
     setSending(true);
     setInput('');
     try {
-      const res = await messagesAPI.send(role, text);
+      let extra = {};
+      if (role === 'nutritionist' && foodImage) {
+        Taro.showLoading({ title: 'AI初评中', mask: true });
+        const analyzed = await chatAPI.analyzeNutrition({ text, image: foodImage.data, mimeType: foodImage.mimeType });
+        extra = { imageUrl: analyzed?.data?.imageUrl || foodImage.data, aiAnalysis: analyzed?.data?.content || '照片已提交，等待营养师查看。' };
+        Taro.hideLoading();
+      }
+      const res = await messagesAPI.send(role, text || '饮食照片', extra);
       if (res?.data) setMsgs((prev) => (prev.some((m) => m._id === res.data._id) ? prev : [...prev, res.data]));
+      setFoodImage(null);
+      setTimeout(loadThread, 500);
     } catch {
+      Taro.hideLoading();
       setInput(text);
     } finally {
       setSending(false);
+    }
+  };
+
+  const chooseFoodImage = async () => {
+    try {
+      const result = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const path = result.tempFilePaths?.[0];
+      if (!path) return;
+      const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+      const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      setFoodImage({ path, mimeType, data: `data:${mimeType};base64,${base64}` });
+    } catch (err) {
+      if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '无法读取图片', icon: 'none' });
     }
   };
 
@@ -577,9 +602,10 @@ function ConversationThread({ role, onClose }) {
                     maxWidth: '78%', padding: '10px 14px', borderRadius: `${radius.md}px`,
                     backgroundColor: isMine ? colors.primary : '#fff', border: isMine ? 'none' : `1px solid ${colors.border}`,
                   }}>
+                    {!!m.imageUrl && <Image src={m.imageUrl} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', marginBottom: '6px', display: 'block' }} />}
                     {!isMine && (
                       <Text style={{ fontSize: '11px', fontWeight: 700, color: meta.color, display: 'block', marginBottom: '4px' }}>
-                        {normalizeRoleSender(m.sender) || meta.label}{m.isAI ? ' · AI' : ''}
+                        {m.isAI ? 'AI生成' : (normalizeRoleSender(m.sender) || meta.label)}
                       </Text>
                     )}
                     <Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>
@@ -592,7 +618,15 @@ function ConversationThread({ role, onClose }) {
         <View id="thread-bottom" />
       </ScrollView>
 
+      {role === 'nutritionist' && foodImage && (
+        <View style={{ padding: `8px ${spacing.lg}px`, backgroundColor: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <Image src={foodImage.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} />
+          <Text style={{ flex: 1, fontSize: '12px', color: colors.textSecondary }}>饮食照片已选择，发送后由AI先做初步分析</Text>
+          <Text onClick={() => setFoodImage(null)} style={{ color: colors.danger, fontSize: '12px' }}>移除</Text>
+        </View>
+      )}
       <View style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', padding: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
+        {role === 'nutritionist' && <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '18px' }}>📷</Text></View>}
         <Textarea
           style={{ flex: 1, backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 14px', fontSize: '14px', maxHeight: '100px', border: `1.5px solid ${colors.border}`, boxSizing: 'border-box' }}
           placeholder={`发消息给${meta.label}…`}
@@ -602,7 +636,7 @@ function ConversationThread({ role, onClose }) {
           autoHeight
         />
         <View onClick={send} style={{
-          width: '40px', height: '40px', borderRadius: '20px', backgroundColor: (!input.trim() || sending) ? colors.border : colors.primary,
+          width: '40px', height: '40px', borderRadius: '20px', backgroundColor: ((!input.trim() && !foodImage) || sending) ? colors.border : colors.primary,
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
           <Icon name="➤" size={16} color="#fff" />

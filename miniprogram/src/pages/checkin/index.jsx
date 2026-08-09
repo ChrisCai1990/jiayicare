@@ -213,7 +213,7 @@ export default function CheckinPage() {
         try {
           const analyzed = await chatAPI.analyzeNutrition({ weight: payload.value, recordId: saved.data._id });
           Taro.hideLoading();
-          Taro.showModal({ title: 'AI营养师 · 体重分析', content: analyzed?.data?.content || '体重已记录', showCancel: false });
+          Taro.showModal({ title: 'AI生成 · 营养分析', content: `以下内容由人工智能（AI）生成，仅供参考：\n\n${analyzed?.data?.content || '体重已记录'}`, showCancel: false });
         } catch { Taro.hideLoading(); }
       }
     } catch (err) {
@@ -266,7 +266,7 @@ export default function CheckinPage() {
             image: checkinImage?.data || '', mimeType: checkinImage?.mimeType || 'image/jpeg', recordId: saved.data._id,
           });
           Taro.hideLoading();
-          Taro.showModal({ title: 'AI营养师分析', content: analyzed?.data?.content || '饮食已记录', showCancel: false });
+          Taro.showModal({ title: 'AI生成 · 营养分析', content: `以下内容由人工智能（AI）生成，仅供参考：\n\n${analyzed?.data?.content || '饮食已记录'}`, showCancel: false });
         } catch { Taro.hideLoading(); }
       }
     } catch (err) {
@@ -456,12 +456,13 @@ export default function CheckinPage() {
                     <Chip key={mt} label={mt} active={checkinMealType === mt} color={checkinModal.color} onClick={() => setCheckinMealType(mt)} />
                   ))}
                 </View>
-                <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>饮食照片（推荐）</Text>
-                <View onClick={chooseCheckinImage} style={{ border: `1px dashed ${checkinModal.color}`, borderRadius: `${radius.sm}px`, padding: '10px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {checkinImage ? <Image src={checkinImage.path} mode="aspectFill" style={{ width: '140px', height: '100px', borderRadius: '8px' }} /> : <Text style={{ color: checkinModal.color, fontSize: '13px', fontWeight: 600 }}>📷 拍照或从相册选择</Text>}
-                </View>
               </>
             )}
+
+            <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>{checkinModal.key === 'diet' ? '饮食照片（推荐，提交后由AI初评）' : '记录照片（可选）'}</Text>
+            <View onClick={chooseCheckinImage} style={{ border: `1px dashed ${checkinModal.color}`, borderRadius: `${radius.sm}px`, padding: '10px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              {checkinImage ? <Image src={checkinImage.path} mode="aspectFill" style={{ width: '140px', height: '100px', borderRadius: '8px' }} /> : <Text style={{ color: checkinModal.color, fontSize: '13px', fontWeight: 600 }}>📷 拍照或从相册选择</Text>}
+            </View>
 
             {checkinModal.key === 'exercise' && (
               <>

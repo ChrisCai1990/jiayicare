@@ -96,7 +96,7 @@ export default function ChatPage() {
       }}>
         <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: '10px' }}>健康管家</Text>
         <View style={{ display: 'flex', backgroundColor: colors.background, borderRadius: `${radius.full}px`, padding: '3px' }}>
-          {[{ key: 'ai', label: '服务规划' }, { key: 'nutrition', label: 'AI营养师' }, { key: 'team', label: '我的团队' }].map((item) => (
+          {[{ key: 'ai', label: '服务规划' }, { key: 'team', label: '我的团队' }].map((item) => (
             <View key={item.key} onClick={() => setView(item.key)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.full}px`, backgroundColor: view === item.key ? '#fff' : 'transparent' }}>
               <Text style={{ fontSize: '13px', fontWeight: 700, color: view === item.key ? colors.primary : colors.textMuted }}>{item.label}</Text>
             </View>
@@ -111,6 +111,10 @@ export default function ChatPage() {
         </ScrollView>
       </View>
       <View style={{ display: view === 'ai' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+      <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
+        <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
+        <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>内容仅用于健康管理需求梳理与服务规划，不替代专业人员意见</Text>
+      </View>
       <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView="bottom-anchor">
         {messages.length === 1 && (
           <View style={{ marginBottom: `${spacing.md}px` }}>
@@ -133,6 +137,7 @@ export default function ChatPage() {
               backgroundColor: m.role === 'user' ? colors.primary : '#fff',
               border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
             }}>
+              {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>AI生成</Text>}
               <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>
             </View>
           </View>
@@ -168,11 +173,16 @@ export default function ChatPage() {
       </View>
 
       <View style={{ display: view === 'nutrition' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+        <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
+          <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面分析与回复由人工智能（AI）生成</Text>
+          <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>照片识别、份量及热量为估算，不替代医生或注册营养师意见</Text>
+        </View>
         <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView="nutrition-bottom">
           {nutritionMessages.map((m, i) => (
             <View key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '10px' }}>
               <View style={{ maxWidth: '82%', padding: '10px 14px', borderRadius: `${radius.md}px`, backgroundColor: m.role === 'user' ? '#059669' : '#fff', border: m.role === 'user' ? 'none' : `1px solid ${colors.border}` }}>
                 {!!m.image && <Image src={m.image} mode="aspectFill" style={{ width: '180px', height: '135px', borderRadius: '10px', marginBottom: '8px', display: 'block' }} />}
+                {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>AI生成</Text>}
                 <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '21px', whiteSpace: 'pre-wrap' }}>{m.content}</Text>
               </View>
             </View>

@@ -234,15 +234,20 @@ export default function AiHealthPage() {
         <View style={{ width: '28px' }} />
       </View>
 
-      <View style={{ display: 'flex', margin: `${spacing.md}px ${spacing.lg}px`, backgroundColor: colors.border + '50', borderRadius: `${radius.md}px`, padding: '4px' }}>
+       <View style={{ display: 'flex', margin: `${spacing.md}px ${spacing.lg}px`, backgroundColor: colors.border + '50', borderRadius: `${radius.md}px`, padding: '4px' }}>
         {TABS.map((t) => (
           <View key={t} onClick={() => setTab(t)} style={{ flex: 1, textAlign: 'center', padding: '9px 0', borderRadius: `${radius.sm}px`, backgroundColor: tab === t ? '#fff' : 'transparent', boxShadow: tab === t ? shadow.sm : 'none' }}>
             <Text style={{ fontSize: '14px', color: tab === t ? colors.primary : colors.textSecondary, fontWeight: tab === t ? 700 : 500 }}>{t}</Text>
           </View>
         ))}
-      </View>
+       </View>
 
-      {loading ? (
+       <View style={{ margin: `0 ${spacing.lg}px ${spacing.md}px`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
+         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面健康信息整理与趋势分析由人工智能（AI）生成</Text>
+         <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>内容仅供健康管理参考，审核状态请以页面说明为准</Text>
+       </View>
+
+       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, textAlign: 'center', display: 'block', marginTop: '40px' }}>加载中...</Text>
       ) : (
         <View style={{ padding: `0 ${spacing.lg}px ${spacing.xxl}px` }}>

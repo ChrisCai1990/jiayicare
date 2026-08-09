@@ -76,8 +76,8 @@ router.patch('/read-all', auth, async (req, res) => {
 // 用户发送消息（给健康顾问/营养师/健管专员）
 router.post('/', auth, async (req, res) => {
   try {
-    const { to, content } = req.body;
-    if (!content?.trim()) {
+    const { to, content, imageUrl = '', aiAnalysis = '' } = req.body;
+    if (!content?.trim() && !imageUrl) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
     const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager'];
@@ -103,6 +103,7 @@ router.post('/', auth, async (req, res) => {
       sender:  senderName,
       title:   `用户留言 → ${TITLE_MAP[to]}`,
       content: content.trim(),
+      imageUrl: String(imageUrl || ''),
       unread:  false,
       recipient: to,
       conversationId,
@@ -111,6 +112,16 @@ router.post('/', auth, async (req, res) => {
     ssePublish(conversationId, { type: 'message', data: msg });
     console.log(`✉️  用户留言 [${senderName}] → ${to}: ${content.trim()}`);
     res.json({ success: true, data: msg, message: '消息已发送' });
+
+    if (to === 'nutritionist' && aiAnalysis?.trim()) {
+      const aiMsg = await Message.create({
+        user: req.user._id, type: 'nutritionist', sender: 'AI营养初评',
+        title: 'AI生成 · 饮食照片初步分析', content: aiAnalysis.trim(), unread: true,
+        conversationId, isAI: true, aiGenerated: true,
+      });
+      ssePublish(conversationId, { type: 'message', data: aiMsg });
+      return;
+    }
 
     // AI立即先回一句安抚（不阻塞响应），医护看到后仍可正常人工回复追加
     require('../utils/aiMessageFallback').replyWithAI({
