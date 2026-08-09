@@ -931,6 +931,41 @@ router.put('/patients/:id', staffAuth, checkPermission('patients', 'edit'), asyn
   res.json({ success: true, data: user });
 });
 
+router.post('/patients/:id/health-risk-tags/generate', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    const patient = await User.findById(req.params.id);
+    if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const reports = await MedicalReport.find({ user: patient._id, audit_status: 'audited' }).select('screeningCategory screeningL1 screeningL2 title reportItems').lean();
+    const tags = { tumor_risk: [], cardiovascular_risk: [], chronic_disease: [] };
+    const tumor = /肿瘤|癌|HPV|乳腺|宫颈|甲状腺结节|肺结节|胃蛋白酶原|EB病毒|AFP|CEA|CA\d|PSA|NSE|CYFRA|SCC|HE4/i;
+    const cardio = /心脑|心血管|脑血管|血压|动脉|心脏|心电|血脂|胆固醇|甘油三酯|脂蛋白|同型半胱氨酸|Hcy|Lp-PLA2/i;
+    reports.forEach(report => (report.reportItems || []).forEach(item => {
+      if (!(item.status === 'abnormal' || /异常|偏高|升高|偏低|降低|阳性|结节|斑块|囊肿|沉积|增厚|狭窄/i.test(`${item.value || ''} ${item.conclusion || ''}`))) return;
+      const label = String(item.name || item.itemName || item.conclusion || '').trim(); if (!label) return;
+      const text = `${report.screeningCategory || ''} ${report.screeningL1 || ''} ${report.screeningL2 || ''} ${report.title || ''} ${label}`;
+      const key = tumor.test(text) ? 'tumor_risk' : cardio.test(text) ? 'cardiovascular_risk' : 'chronic_disease';
+      if (!tags[key].includes(label)) tags[key].push(label);
+    }));
+    const before = patient.healthRiskTags?.toObject?.() || patient.healthRiskTags || null;
+    patient.healthRiskTags = { ...tags, status: 'unreviewed', generatedAt: new Date() };
+    patient.healthRiskTagAuditLog.push({ action: 'ai_generated', operatorId: req.staff._id, operatorName: req.staff.name || '', before, after: tags });
+    await patient.save(); res.json({ success: true, data: patient.healthRiskTags });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/patients/:id/health-risk-tags/review', staffAuth, checkPermission('patients', 'edit'), async (req, res) => {
+  try {
+    if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可审核确认标签' });
+    const patient = await User.findById(req.params.id); if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
+    const tags = {}; ['tumor_risk', 'cardiovascular_risk', 'chronic_disease'].forEach(k => { tags[k] = [...new Set((req.body.tags?.[k] || []).map(v => String(v).trim()).filter(Boolean))]; });
+    const before = patient.healthRiskTags?.toObject?.() || patient.healthRiskTags || null;
+    patient.healthRiskTags = { ...tags, status: 'reviewed', generatedAt: patient.healthRiskTags?.generatedAt, reviewedAt: new Date(), reviewedByName: req.staff.name || '' };
+    patient.chronicDiseases = [...new Set(Object.values(tags).flat())];
+    patient.healthRiskTagAuditLog.push({ action: 'reviewed', operatorId: req.staff._id, operatorName: req.staff.name || '', before, after: tags });
+    await patient.save(); res.json({ success: true, data: patient.healthRiskTags });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── POST /api/staff/patients/:id/recalculate-score ────────────────
 router.post('/patients/:id/recalculate-score', staffAuth, async (req, res) => {
   try {

@@ -173,6 +173,11 @@ const userSchema = new mongoose.Schema({
   assignedRehabSpecialist:  { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 运动复健师
   assignedMedicalAssistant: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null }, // 就医专员
   chronicDiseases: { type: [String], default: [] }, // 慢病标签，如 ['高血压','糖尿病']
+  healthRiskTags: {
+    tumor_risk: { type: [String], default: [] }, cardiovascular_risk: { type: [String], default: [] }, chronic_disease: { type: [String], default: [] },
+    status: { type: String, enum: ['unreviewed', 'reviewed'], default: 'unreviewed' }, generatedAt: Date, reviewedAt: Date, reviewedByName: { type: String, default: '' },
+  },
+  healthRiskTagAuditLog: [{ action: String, operatorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin' }, operatorName: String, before: mongoose.Schema.Types.Mixed, after: mongoose.Schema.Types.Mixed, createdAt: { type: Date, default: Date.now } }],
   idNumber:        { type: String, default: '' },   // 证件号（身份证号或护照号，具体类型见 idType）
   idType:          { type: String, enum: ['idCard', 'passport'], default: 'idCard' }, // 证件类型：身份证/护照。护照号跳过身份证格式校验与性别/生日自动解析
   source:          { type: String, default: '' },   // 会员来源

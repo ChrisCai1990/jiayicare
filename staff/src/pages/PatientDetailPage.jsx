@@ -1494,6 +1494,7 @@ export default function PatientDetailPage() {
   const [screeningYearSummaries, setScreeningYearSummaries] = useState([])
   const [screeningSummaryYear, setScreeningSummaryYear] = useState(new Date().getFullYear())
   const [screeningSummaryExpanded, setScreeningSummaryExpanded] = useState(true)
+  const [screeningSectionExpanded, setScreeningSectionExpanded] = useState({})
   const [screeningSummaryBusy, setScreeningSummaryBusy] = useState(false)
   const [editingScreeningSummary, setEditingScreeningSummary] = useState(null)
   const [screeningSummaryRecordIndex, setScreeningSummaryRecordIndex] = useState(0)
@@ -1585,7 +1586,7 @@ export default function PatientDetailPage() {
   const [editingDiseaseSeverity, setEditingDiseaseSeverity] = useState(false)
   const [severityForm, setSeverityForm] = useState({})
   const [showTagEditor, setShowTagEditor] = useState(false)
-  const [tagEditorDiseases, setTagEditorDiseases] = useState([])
+  const [tagEditorDiseases, setTagEditorDiseases] = useState({ tumor_risk: [], cardiovascular_risk: [], chronic_disease: [] })
   const [tagEditorInput, setTagEditorInput] = useState('')
   const [tagSaving, setTagSaving] = useState(false)
   // 4.2 身体成分
@@ -2133,8 +2134,8 @@ export default function PatientDetailPage() {
   const handleSaveTags = async () => {
     try {
       setTagSaving(true)
-      await staffAPI.updatePatient(id, { chronicDiseases: tagEditorDiseases })
-      toast('标签已保存')
+      await staffAPI.reviewHealthRiskTags(id, tagEditorDiseases)
+      toast('标签已审核确认')
       setShowTagEditor(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
@@ -2871,66 +2872,23 @@ export default function PatientDetailPage() {
         </div>
       </div>
 
-      {/* 慢病标签 */}
-      <div style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {(user.chronicDiseases?.length > 0)
-            ? user.chronicDiseases.map(d => <span key={d} className="badge badge-danger">{d}</span>)
-            : <span style={{ fontSize: 12, color: '#8AA89C' }}>暂无慢性病标签</span>
-          }
-          {!showTagEditor && (
-            <button
-              style={{ fontSize: 12, padding: '2px 10px', borderRadius: 99, border: '1px dashed #DC3545', background: 'none', color: '#DC3545', cursor: 'pointer' }}
-              onClick={() => { setTagEditorDiseases(user.chronicDiseases || []); setTagEditorInput(''); setShowTagEditor(true) }}
-            >编辑标签</button>
-          )}
-        </div>
-        {showTagEditor && (
-          <div style={{ marginTop: 10, padding: '14px 16px', background: '#fff', border: '1px solid #e0d9ce', borderRadius: 10 }}>
-            <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>快捷选择</div>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-              {['高血压','糖尿病','冠心病','高脂血症','痛风','甲状腺疾病','慢性肾病','脂肪肝','骨质疏松','慢阻肺','桥本甲状腺炎','自身免疫病'].map(d => (
-                <button key={d} type="button"
-                  style={{ fontSize: 12, padding: '3px 10px', borderRadius: 99, border: `1px solid ${tagEditorDiseases.includes(d) ? '#DC3545' : '#ddd'}`, background: tagEditorDiseases.includes(d) ? '#fee2e2' : '#f9f9f9', color: tagEditorDiseases.includes(d) ? '#DC3545' : '#666', cursor: 'pointer' }}
-                  onClick={() => setTagEditorDiseases(cur => cur.includes(d) ? cur.filter(x => x !== d) : [...cur, d])}>
-                  {d}
-                </button>
-              ))}
-            </div>
-            {tagEditorDiseases.length > 0 && (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                {tagEditorDiseases.map((d, i) => (
-                  <span key={i} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 10px', borderRadius: 99, background: '#fee2e2', color: '#DC3545', fontSize: 12 }}>
-                    {d}
-                    <button type="button" style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC3545', padding: 0, lineHeight: 1, fontSize: 14 }}
-                      onClick={() => setTagEditorDiseases(cur => cur.filter((_, j) => j !== i))}>×</button>
-                  </span>
-                ))}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-              <input className="form-input" placeholder="自定义标签，按 Enter 添加" style={{ flex: 1, fontSize: 13 }}
-                value={tagEditorInput}
-                onChange={e => setTagEditorInput(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter' && tagEditorInput.trim()) {
-                    e.preventDefault()
-                    const v = tagEditorInput.trim()
-                    if (!tagEditorDiseases.includes(v)) setTagEditorDiseases(cur => [...cur, v])
-                    setTagEditorInput('')
-                  }
-                }} />
-              <button type="button" className="btn btn-secondary btn-sm" onClick={() => {
-                const v = tagEditorInput.trim()
-                if (v && !tagEditorDiseases.includes(v)) { setTagEditorDiseases(cur => [...cur, v]); setTagEditorInput('') }
-              }}>添加</button>
-            </div>
-            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-              <button className="btn btn-secondary btn-sm" onClick={() => setShowTagEditor(false)}>取消</button>
-              <button className="btn btn-primary btn-sm" onClick={handleSaveTags} disabled={tagSaving}>{tagSaving ? '保存中…' : '保存'}</button>
-            </div>
+      {/* AI 从专项筛查异常项生成，健康顾问分三类审核 */}
+      <div style={{ marginBottom: 12, padding: '10px 14px', background: '#F7FAF8', borderRadius: 10 }}>
+        {[['tumor_risk','肿瘤风险'], ['cardiovascular_risk','心脑血管病风险'], ['chronic_disease','慢性病及其他风险']].map(([key, label]) => {
+          const values = user.healthRiskTags?.[key] || (key === 'chronic_disease' ? user.chronicDiseases || [] : [])
+          return <div key={key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minHeight: 32 }}>
+            <span style={{ width: 120, fontSize: 12, fontWeight: 600, color: '#4A6558', paddingTop: 3 }}>{label}：</span>
+            {showTagEditor ? <input className="form-input" style={{ flex: 1, fontSize: 12 }} value={(tagEditorDiseases[key] || []).join('、')} onChange={e => setTagEditorDiseases(cur => ({ ...cur, [key]: e.target.value.split(/[、,，]/).map(v => v.trim()).filter(Boolean) }))} />
+              : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>{values.length ? values.map(v => <span key={v} className="badge badge-danger">{v}</span>) : <span style={{ fontSize: 12, color: '#A0AAA5' }}>暂无</span>}</div>}
           </div>
-        )}
+        })}
+        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
+          {!showTagEditor ? <>
+            <button className="btn btn-secondary btn-sm" onClick={async () => { try { await staffAPI.generateHealthRiskTags(id); await load(); toast('已从专项筛查异常结果提取，待健康顾问审核') } catch (e) { toast(e.message || '提取失败') } }}>✨ AI提取标签</button>
+            {['familyDoctor','superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" onClick={() => { const t = user.healthRiskTags || {}; setTagEditorDiseases({ tumor_risk: t.tumor_risk || [], cardiovascular_risk: t.cardiovascular_risk || [], chronic_disease: t.chronic_disease || user.chronicDiseases || [] }); setShowTagEditor(true) }}>编辑并审核</button>}
+          </> : <><button className="btn btn-secondary btn-sm" onClick={() => setShowTagEditor(false)}>取消</button><button className="btn btn-primary btn-sm" onClick={handleSaveTags} disabled={tagSaving}>{tagSaving ? '保存中…' : '审核确认'}</button></>}
+          {user.healthRiskTags?.status && <span style={{ fontSize: 12, color: user.healthRiskTags.status === 'reviewed' ? '#16A34A' : '#D97706', alignSelf: 'center' }}>{user.healthRiskTags.status === 'reviewed' ? `已审核${user.healthRiskTags.reviewedByName ? ' · '+user.healthRiskTags.reviewedByName : ''}` : '待审核'}</span>}
+        </div>
       </div>
 
       {/* 服务效期提示 */}
@@ -4732,39 +4690,19 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'grid', gap: 10 }}>
                         {categories.map(([key, label]) => (
                           <div key={key} style={{ background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid #EEF2EF' }}>
-                            <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 5 }}>{label}</div>
-                            {editingScreeningSummary ? (
+                            <button type="button" onClick={() => setScreeningSectionExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
+                              style={{ width: '100%', border: 0, background: 'none', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: 0 }}>
+                              <span>{label}</span><span>{screeningSectionExpanded[key] ? '收起 ▲' : '展开 ▼'}</span>
+                            </button>
+                            {screeningSectionExpanded[key] && (editingScreeningSummary ? (
                               <textarea className="form-input" rows={3} value={sections[key]?.summary || ''}
                                 onChange={e => setEditingScreeningSummary(prev => ({
                                   ...prev,
                                   [key]: { ...(prev[key] || {}), summary: e.target.value },
                                 }))} />
-                            ) : <div style={{ whiteSpace: 'pre-wrap', fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>{sections[key]?.summary || '暂无相关资料'}</div>}
-                            {!editingScreeningSummary && (sections[key]?.sourceReportIds || []).length > 0 && (
-                              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 7 }}>
-                                {sections[key].sourceReportIds.map(reportId => {
-                                  const report = screeningReports.find(item => String(item._id) === String(reportId))
-                                  const material = (sections[key]?.sourceMaterials || []).find(item => String(item.reportId) === String(reportId))
-                                  const categoryWords = key === 'tumor_risk'
-                                    ? ['肿瘤', '癌', 'NSE', 'PSA', 'AFP', 'CEA', 'CA19', 'CA125', 'CA15', 'CA72', 'CYFRA', 'SCC', 'HE4', 'ProGRP']
-                                    : key === 'cardiovascular_risk'
-                                      ? ['心脑', '心血管', '脑血管', '血压', '血脂', '胆固醇', '甘油三酯', '脂蛋白', '同型半胱氨酸', 'Hcy', '心电']
-                                      : ['慢性', '糖尿病', '血糖', '肝', '肾', '甲状腺', '功能医学', '常规']
-                                  const derivedItemNames = (report?.reportItems || [])
-                                    .map(item => item.name || '')
-                                    .filter(name => categoryWords.some(word => name.includes(word)))
-                                  const relevantNames = [...new Set([...(material?.itemNames || []), ...derivedItemNames].filter(Boolean))]
-                                  const sourceLabel = relevantNames.length
-                                    ? relevantNames.join('、')
-                                    : (report?.screeningL2 || report?.title || '原始资料')
-                                  const reportName = [sourceLabel, report?.hospital || report?.institution, String(report?.checkDate || report?.date || '').slice(0, 10)].filter(Boolean).join(' · ')
-                                  return (
-                                  <button key={reportId} className="btn btn-secondary btn-sm"
-                                    onClick={() => openAIAnalysisSource(reportId)}>🔗 查看原始材料：{reportName}</button>
-                                  )
-                                })}
-                              </div>
-                            )}
+                            ) : <div style={{ marginTop: 7, fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>
+                              {(sections[key]?.summary || '暂无相关资料').split(/[；;。\n]+/).map(v => v.trim()).filter(Boolean).map((line, i) => <div key={i}>{line}</div>)}
+                            </div>)}
                           </div>
                         ))}
                         {editingScreeningSummary && <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6 }}>

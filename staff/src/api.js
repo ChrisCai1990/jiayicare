@@ -48,6 +48,8 @@ export const staffAPI = {
   getPatient:         (id)     => req(`/staff/patients/${id}`),
   createPatient:      (data)   => req('/staff/patients', { method: 'POST', body: JSON.stringify(data) }),
   updatePatient:      (id, d)  => req(`/staff/patients/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
+  generateHealthRiskTags: id => req(`/staff/patients/${id}/health-risk-tags/generate`, { method: 'POST' }),
+  reviewHealthRiskTags: (id, tags) => req(`/staff/patients/${id}/health-risk-tags/review`, { method: 'PUT', body: JSON.stringify({ tags }) }),
   recalculateScore:   (id)     => req(`/staff/patients/${id}/recalculate-score`, { method: 'POST' }),
   serviceOptions:     (clientBrand = '') => req('/staff/service-options?' + qs({ clientBrand })),
   memberTypeOptions:  (clientBrand = '') => req('/staff/member-type-options?' + qs({ clientBrand })),
