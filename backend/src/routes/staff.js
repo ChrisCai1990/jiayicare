@@ -9543,9 +9543,8 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
 
     // 每次生成都从后端实时读取当前平台的启用模板，不缓存模板快照作为下次生成来源。
     // Admin 更新模板后，新方案立即使用更新后的版本；同时禁止跨平台套用模板。
-    const templateBrandFilter = user.clientBrand === 'jiayiguanjia'
-      ? { $in: ['jiayiguanjia', '', null] }
-      : user.clientBrand;
+    // 无品牌前缀的历史体检套餐是两平台共用的基础模板；明确标注平台的模板仍严格隔离。
+    const templateBrandFilter = { $in: [user.clientBrand, '', null] };
     const template = await PlanTemplate.findOne({
       _id: templateId,
       type: 'annual_checkup',

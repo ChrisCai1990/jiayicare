@@ -156,10 +156,22 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const [confirmedAt, setConfirmedAt] = useState(null)
   const [aiPlanLoading, setAiPlanLoading] = useState(false)
   const [staffList, setStaffList]   = useState([])
+  const [adminTemplates, setAdminTemplates] = useState([])
+  const [templatesLoading, setTemplatesLoading] = useState(false)
+  const [selectedTemplateId, setSelectedTemplateId] = useState('')
 
   useEffect(() => {
     staffAPI.getStaffList().then(r => setStaffList(r.data || [])).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!patientMode || !patient?._id) return
+    setTemplatesLoading(true)
+    staffAPI.getPlanTemplates('health_management', patient._id)
+      .then(r => setAdminTemplates(r.data || []))
+      .catch(err => { setAdminTemplates([]); toast(err.message || '加载Admin管理方案模板失败') })
+      .finally(() => setTemplatesLoading(false))
+  }, [patientMode, patient?._id])
 
   useEffect(() => {
     setLoading(true)
@@ -182,17 +194,20 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           : (queryPlanType ? null : list.find(p => p.planType))
         if (target) {
           setPlanType(target.planType)
+          setSelectedTemplateId(target.templateId || '')
           setModuleData(target.moduleData || {})
           setPushedAt(target.pushedAt || null)
           setConfirmedAt(target.confirmedAt || null)
         } else if (queryPlanType) {
           // 该类型还没有任何已保存数据，选中类型但板块留空，等用户点AI生成
           setPlanType(queryPlanType)
+          setSelectedTemplateId('')
           setModuleData({})
           setPushedAt(null)
           setConfirmedAt(null)
         } else {
           setPlanType('')
+          setSelectedTemplateId('')
           setModuleData({})
           setPushedAt(null)
           setConfirmedAt(null)
@@ -223,7 +238,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setDirty(true)
   }, [])
 
-  const handlePlanTypeChange = (key) => {
+  const handlePlanTypeChange = (key, template = null) => {
     // 旧流程（HealthPlan）只有一份数据，保持原行为
     if (!patientMode) { setPlanType(key); setDirty(true); return }
     if (key === planType) return
@@ -231,6 +246,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     // 加载该类型自己的数据（每个类型独立一份）
     const p = plansByType[key]
     setPlanType(key)
+    setSelectedTemplateId(template?._id || p?.templateId || '')
     setModuleData(p?.moduleData || {})
     setPushedAt(p?.pushedAt || null)
     setConfirmedAt(p?.confirmedAt || null)
@@ -242,7 +258,8 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     setSaving(true)
     try {
       if (patientMode) {
-        const res = await staffAPI.saveAnnualPlan(id, { planType, moduleData, year })
+        const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
+        const res = await staffAPI.saveAnnualPlan(id, { planType, moduleData, year, templateId: selectedTemplateId || null, templateName: selectedTemplate?.name || '' })
         const saved = res.data
         if (saved) {
           setPlansByType(prev => ({ ...prev, [planType]: saved }))
@@ -269,11 +286,13 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   // 还没有任何内容，不存在"覆盖"风险，不用弹确认框打断体验）
   const runAIGenerate = async (type, skipConfirm = false) => {
     if (!type) { toast('请先在下方选择一个方案类型，再点AI生成'); return }
-    const ptName = PLAN_TYPES.find(pt => pt.key === type)?.name || '该类型'
+    const selectedTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
+    if (patientMode && !selectedTemplate) { toast('请先选择从Admin后台调取的健康管理方案模板'); return }
+    const ptName = selectedTemplate?.content?.planName || selectedTemplate?.name || PLAN_TYPES.find(pt => pt.key === type)?.name || '该类型'
     if (!skipConfirm && !window.confirm(`AI将基于已审核的汇总分析，生成「${ptName}」对应的方案板块，现有内容将被覆盖，确认继续？`)) return
     setAiPlanLoading(true)
     try {
-      const res = await staffAPI.generateAIAnnualPlan(id, type)
+      const res = await staffAPI.generateAIAnnualPlan(id, type, '', selectedTemplateId)
       const aiData = res.data || {}
       // 只填充当前所选方案类型包含的板块，其余类型的板块忽略（一次只生成一个方案）
       const allowedKeys = PLAN_TYPE_MODULES[type] || []
@@ -320,7 +339,10 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
   const currentModuleKeys = PLAN_TYPE_MODULES[planType] || []
   const patientName = patientMode ? (patient?.name || '会员') : (plan?.patientId?.name || '会员')
   const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
-  const activePlanType = PLAN_TYPES.find(pt => pt.key === planType)
+  const selectedAdminTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
+  const activePlanType = selectedAdminTemplate
+    ? { ...(PLAN_TYPES.find(pt => pt.key === planType) || PLAN_TYPES[3]), name: selectedAdminTemplate.content?.planName || selectedAdminTemplate.name }
+    : PLAN_TYPES.find(pt => pt.key === planType)
   const backPath = patientMode ? '/plans?tab=annual_health_mgmt' : '/plans?type=annual_mgmt'
 
   const yearOptions = [new Date().getFullYear() - 1, new Date().getFullYear(), new Date().getFullYear() + 1]
@@ -403,20 +425,27 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       <div style={{ background: '#fff', borderRadius: 12, padding: 20, marginBottom: 20, border: '1px solid #E0D9CE' }}>
         <div style={{ fontWeight: 600, fontSize: 15, color: '#1A2B24', marginBottom: 14 }}>选择方案类型</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 10 }}>
-          {PLAN_TYPES.map(pt => (
+          {templatesLoading && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 20, color: '#8AA89C' }}>正在从Admin后台加载模板...</div>}
+          {!templatesLoading && adminTemplates.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: 20, color: '#D97706' }}>该客户所属平台暂无健康管理方案模板，请在Admin后台配置“客户归属”和“方案归类”</div>}
+          {adminTemplates.map((tpl, index) => {
+            const key = tpl.content?.planType || 'health_prevention'
+            const base = PLAN_TYPES.find(pt => pt.key === key) || PLAN_TYPES[index % PLAN_TYPES.length]
+            const pt = { ...base, key, templateId: tpl._id, name: tpl.content?.planName || tpl.name }
+            const isSelected = selectedTemplateId === tpl._id
+            return (
             <div
-              key={pt.key}
-              onClick={() => handlePlanTypeChange(pt.key)}
+              key={tpl._id}
+              onClick={() => handlePlanTypeChange(pt.key, tpl)}
               style={{
                 display: 'flex', alignItems: 'center', gap: 10,
                 padding: '12px 16px', borderRadius: 10, cursor: 'pointer',
-                border: `2px solid ${planType === pt.key ? pt.color : '#E0D9CE'}`,
-                background: planType === pt.key ? pt.bg : '#fff',
+                border: `2px solid ${isSelected ? pt.color : '#E0D9CE'}`,
+                background: isSelected ? pt.bg : '#fff',
                 transition: 'all 0.15s',
               }}
             >
               <span style={{ fontSize: 22 }}>{pt.icon}</span>
-              <div style={{ fontWeight: 600, fontSize: 14, color: planType === pt.key ? pt.color : '#1A2B24' }}>{pt.name}</div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: isSelected ? pt.color : '#1A2B24' }}>{pt.name}</div>
               {patientMode && plansByType[pt.key] && (
                 <span style={{
                   marginLeft: planType === pt.key ? 8 : 'auto', fontSize: 11, fontWeight: 600,
@@ -425,9 +454,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
                   padding: '1px 7px', borderRadius: 10,
                 }}>{plansByType[pt.key].pushedAt ? '已推送' : '已配置'}</span>
               )}
-              {planType === pt.key && <span style={{ marginLeft: plansByType[pt.key] ? 6 : 'auto', color: pt.color, fontSize: 18 }}>✓</span>}
+              {isSelected && <span style={{ marginLeft: plansByType[pt.key] ? 6 : 'auto', color: pt.color, fontSize: 18 }}>✓</span>}
             </div>
-          ))}
+          )})}
         </div>
       </div>
 

@@ -345,7 +345,7 @@ export const staffAPI = {
   addAIHealthSummaryDiscussion:    (id, content, year, images, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year, images, recordIndex }) }),
   deleteAIHealthSummaryDiscussion: (id, index, year, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions/${index}?year=${year || ''}&recordIndex=${recordIndex ?? ''}`, { method: 'DELETE' }),
   generateAIHealthSummaryReply:    (id, year, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions/ai-reply`, { method: 'POST', body: JSON.stringify({ year, recordIndex }) }),
-  generateAIAnnualPlan:    (id, planType, notes) => req(`/staff/patients/${id}/ai-annual-plan`,    { method: 'POST', body: JSON.stringify({ planType, notes }) }),
+  generateAIAnnualPlan:    (id, planType, notes, templateId) => req(`/staff/patients/${id}/ai-annual-plan`, { method: 'POST', body: JSON.stringify({ planType, notes, templateId }) }),
 
   // 场景七：AI 辅助生成文案草稿（kind: followup | service_record | plan_desc）
   generateAIDraft:         (id, kind, context = {}) => req(`/staff/patients/${id}/ai-draft`, { method: 'POST', body: JSON.stringify({ kind, context }) }),

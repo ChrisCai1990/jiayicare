@@ -4,6 +4,8 @@ const mongoose = require('mongoose');
 const annualPlanSchema = new mongoose.Schema({
   patientId:  { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   planType:   { type: String, enum: ['health_reshape', 'young_state', 'chronic_stable', 'health_prevention'] },
+  templateId: { type: mongoose.Schema.Types.ObjectId, ref: 'PlanTemplate', default: null },
+  templateName: { type: String, default: '' },
   year:       { type: Number, default: () => new Date().getFullYear() },
   moduleData: { type: mongoose.Schema.Types.Mixed, default: {} }, // { moduleKey: { enabled, field1, field2... } }
   notes:      { type: String, default: '' },

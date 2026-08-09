@@ -7383,20 +7383,9 @@ export default function PatientDetailPage() {
                 </button>
               )}
               {['familyDoctor', 'superadmin'].includes(staff?.role) && (
-                <select className="btn btn-secondary btn-sm" style={{ cursor: 'pointer' }} value=""
-                  onChange={e => {
-                    const planType = e.target.value
-                    if (!planType) return
-                    // 2026-07-14反馈：不该跳转就自动生成，用户要先看清楚页面、确认板块内容，
-                    // 再自己点"✨ AI生成方案"按钮——只带 planType 定位选中类型，不带 autoGen
-                    nav(`/patients/${id}/annual-health?planType=${planType}`)
-                  }}>
-                  <option value="">✨ AI年度管理方案</option>
-                  <option value="health_reshape">健康重塑方案</option>
-                  <option value="young_state">健康年轻态方案</option>
-                  <option value="chronic_stable">慢病维稳方案</option>
-                  <option value="health_prevention">健康预防方案</option>
-                </select>
+                <button className="btn btn-secondary btn-sm" onClick={() => nav(`/patients/${id}/annual-health`)}>
+                  ✨ AI年度管理方案
+                </button>
               )}
             </div>
           </div>
