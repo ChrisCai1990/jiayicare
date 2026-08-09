@@ -2361,7 +2361,7 @@ export default function PatientDetailPage() {
       const target = items.find(it => it.name === editingMetric.itemName)
       if (!target) { toast('来源报告中找不到该项目，请刷新后重试'); setSavingMetric(false); return }
       target.value = newVal
-      await staffAPI.updateReport(editingMetric.reportId, { reportItems: items })
+      await staffAPI.updateReport(editingMetric.reportId, { reportItems: items, editSource: editingMetric.history ? 'key_metric_history' : 'key_metric_current' })
       await staffAPI.recalculateScore(id)
       toast(`${editingMetric.label} 已更新为 ${newVal}`)
       setEditingMetric(null)
@@ -5451,6 +5451,7 @@ export default function PatientDetailPage() {
                       // 供「单项修改」精确回写：记来源报告 id 与命中的项目名
                       reportId: report._id,
                       itemName: item.name,
+                      lastEdit: [...(report.dataEditLog || [])].reverse().find(log => log.itemName === item.name && log.field === 'value'),
                     }
                     break
                   }
@@ -5551,6 +5552,7 @@ export default function PatientDetailPage() {
                       ref: item.referenceRange || '',
                       reportId: report._id,
                       itemName: item.name,
+                      lastEdit: [...(report.dataEditLog || [])].reverse().find(log => log.itemName === item.name && log.field === 'value'),
                       rawValue: item.value,
                       date: d,
                     })
@@ -5647,6 +5649,7 @@ export default function PatientDetailPage() {
                             </div>
                           )}
                           {sourceLabel && <div style={{ fontSize: 10, color: '#8AA89C', marginTop: 2 }}>{sourceLabel}{date ? `  ${date}` : ''}</div>}
+                          {src.lastEdit && <div style={{ fontSize: 10, color: '#D97706', marginTop: 2 }}>最近修改：{src.lastEdit.operatorName || '未知人员'} · {new Date(src.lastEdit.at).toLocaleString('zh-CN')}</div>}
                           {!isEditingThis && pts.length >= 2 && (
                             <div style={{ marginTop: 4 }}>
                               <MiniTrendChart
@@ -5678,6 +5681,7 @@ export default function PatientDetailPage() {
                                       setEditingMetric({ key: d.key, reportId: point.reportId, itemName: point.itemName, label: `${d.label}（历史）`, history: true })
                                       setEditingMetricVal(String(point.rawValue))
                                     }}>修改来源</button>
+                                    {point.lastEdit && <span style={{ color: '#8AA89C', marginLeft: 'auto' }}>修改：{point.lastEdit.operatorName || '未知人员'} · {new Date(point.lastEdit.at).toLocaleString('zh-CN')}</span>}
                                   </>}
                                 </div>
                               })}

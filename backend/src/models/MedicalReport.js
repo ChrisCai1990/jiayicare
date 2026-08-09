@@ -146,6 +146,19 @@ const medicalReportSchema = new mongoose.Schema({
     reportItems: { type: mongoose.Schema.Types.Mixed, default: null },
     snapshotAt:  { type: Date, default: null },
   },
+  // 报告结构化数据人工修正留痕：关键指标当前值和历史值修改均写回原报告并记录责任人。
+  dataEditLog: [{
+    itemIndex: Number,
+    itemName: { type: String, default: '' },
+    field: { type: String, default: '' },
+    oldValue: { type: String, default: '' },
+    newValue: { type: String, default: '' },
+    operatorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    operatorName: { type: String, default: '' },
+    operatorRole: { type: String, default: '' },
+    source: { type: String, default: '' },
+    at: { type: Date, default: Date.now },
+  }],
   // 医护端：上传人 & 关联方案项目
   uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   planItemId:       { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目

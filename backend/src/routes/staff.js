@@ -1942,7 +1942,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, mimeType, fileSize } = req.body;
+    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, mimeType, fileSize, editSource } = req.body;
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
     if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
@@ -2001,10 +2001,24 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       // (value/findings/diagnosis/conclusion) 全空的空壳项（金娟2023-05-16超声7项里有5项是空壳），
       // 既让页面显示混乱，又污染专项筛查。保存时统一剔除这类完全空白的项，保留至少有名称或有任一内容的项。
       const _blank = (v) => String(v == null ? '' : v).trim() === '';
-      report.reportItems = (Array.isArray(reportItems) ? reportItems : []).filter(it => {
+      const nextItems = (Array.isArray(reportItems) ? reportItems : []).filter(it => {
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
       });
+      if (editSource || report.audit_status === 'audited') {
+        const trackedFields = ['value', 'unit', 'referenceRange', 'status', 'findings', 'diagnosis', 'conclusion'];
+        const oldItems = report.reportItems || [];
+        nextItems.forEach((item, index) => trackedFields.forEach(field => {
+          const oldValue = String(oldItems[index]?.[field] ?? '');
+          const newValue = String(item?.[field] ?? '');
+          if (oldValue !== newValue) report.dataEditLog.push({
+            itemIndex: index, itemName: item.name || oldItems[index]?.name || '', field, oldValue, newValue,
+            operatorId: req.staff._id, operatorName: req.staff.name || req.staff.username || '', operatorRole: req.staff.role || '',
+            source: editSource || 'report_edit', at: new Date(),
+          });
+        }));
+      }
+      report.reportItems = nextItems;
     }
     if (autoAuditPending) {
       applyAuditedInstitution(report);
@@ -2332,17 +2346,37 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
     const { type, patientId } = req.query;
     const filter = { status: 'active' };
     if (type) filter.type = type;
+    let patientBrand = '';
     if (patientId) {
       const patient = await User.findById(patientId).select('clientBrand');
       if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
       if (!patient.clientBrand) return res.json({ success: true, data: [] });
-      // 嘉医管家是拆分前的历史默认平台。旧模板没有 clientBrand，必须继续归入嘉医管家；
-      // 金伊森只读取明确标记为 jinyisen 的模板，避免跨平台串用。
-      filter.clientBrand = patient.clientBrand === 'jiayiguanjia'
-        ? { $in: ['jiayiguanjia', '', null] }
-        : patient.clientBrand;
+      patientBrand = patient.clientBrand;
     }
-    const templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
+    let templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
+    if (patientBrand) {
+      const inferLegacyBrand = tpl => {
+        if (tpl.clientBrand) return tpl.clientBrand;
+        if (/^金伊森\s*[|｜]/.test(tpl.name || '')) return 'jinyisen';
+        if (/^嘉医管家\s*[|｜]/.test(tpl.name || '')) return 'jiayiguanjia';
+        return ''; // 无品牌前缀的历史基础模板（如体检套餐）作为两平台共享模板
+      };
+      const inferPlanType = tpl => {
+        if (tpl.content?.planType) return tpl.content.planType;
+        const name = tpl.name || '';
+        if (/重塑|护航/.test(name)) return 'health_reshape';
+        if (/年轻态|轻享/.test(name)) return 'young_state';
+        if (/维稳|顾问/.test(name)) return 'chronic_stable';
+        return 'health_prevention';
+      };
+      templates = templates
+        .filter(tpl => ['', patientBrand].includes(inferLegacyBrand(tpl)))
+        .map(tpl => ({
+          ...tpl,
+          effectiveClientBrand: inferLegacyBrand(tpl) || patientBrand,
+          content: { ...(tpl.content || {}), planType: inferPlanType(tpl) },
+        }));
+    }
     res.json({ success: true, data: templates });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
@@ -3717,13 +3751,13 @@ router.put('/patients/:id/annual-plan', staffAuth, async (req, res) => {
     return res.status(403).json({ success: false, message: '仅健康顾问可生成/编辑年度管理方案' });
   }
   try {
-    const { planType, moduleData, notes, year } = req.body;
+    const { planType, moduleData, notes, year, templateId, templateName } = req.body;
     if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
     const targetYear = year || new Date().getFullYear();
     // 按「会员+年度+方案类型」定位，4个类型各存一份，互不覆盖
     const plan = await AnnualPlan.findOneAndUpdate(
       { patientId: req.params.id, year: targetYear, planType },
-      { planType, moduleData: moduleData || {}, notes: notes || '', createdBy: req.staff._id },
+      { planType, moduleData: moduleData || {}, notes: notes || '', templateId: templateId || null, templateName: templateName || '', createdBy: req.staff._id },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
     // 保存方案的同时按模块内容同步生成随访占位（就医/会诊/复查/接种/检测各条记录直接生成，
@@ -3919,25 +3953,22 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     };
     (childrenByParent.get('__root__') || []).forEach(visitCategory);
 
-    const CATEGORY_MAP = {
-      tumor_risk: { keys: ['tumor'], words: ['肿瘤', '癌', '肿瘤标志物', 'NSE', 'PSA', 'AFP', 'CEA', 'CA19', 'CA125', 'CA15', 'CA72', 'CYFRA', 'SCC', 'HE4', 'ProGRP'] },
-      cardiovascular_risk: { keys: ['cardiovascular', 'brain_vessel'], words: ['心脑', '心血管', '脑血管', '血压', '血脂', '心电'] },
-      chronic_disease: { keys: ['chronic', 'functional', 'other_routine', 'health_promote'], words: ['慢性', '糖尿病', '肝', '肾', '甲状腺', '功能医学', '常规'] },
+    const CATEGORY_MAP = { tumor_risk: true, cardiovascular_risk: true, chronic_disease: true };
+    const categoryBucket = (category, l1Label = '') => {
+      if (category === 'tumor' || /肿瘤筛查/.test(l1Label)) return 'tumor_risk';
+      if (['cardiovascular', 'brain_vessel'].includes(category) || /心脑血管病?筛查|心血管筛查|脑血管筛查/.test(l1Label)) return 'cardiovascular_risk';
+      return 'chronic_disease';
     };
     const input = {};
-    Object.entries(CATEGORY_MAP).forEach(([key, rule]) => {
+    Object.keys(CATEGORY_MAP).forEach(key => {
       input[key] = reports.flatMap(report => {
-        const reportCategoryMatched = rule.keys.includes(report.screeningCategory);
-        const relevantItems = (report.reportItems || []).filter(item => {
-          const itemText = [item.name, item.orderName, item.screeningParent, item.screeningL1, item.screeningL2]
-            .filter(Boolean).join(' ');
-          return rule.keys.includes(item.screeningCategory)
-            || rule.words.some(word => itemText.includes(word));
-        });
-        // 组合检验单必须按具体项目归类。例如“NSE+同型半胱氨酸+血脂七项”中，
-        // 肿瘤小结只能读取 NSE，不能把同一张报告里的血脂/Hcy 一并作为肿瘤依据。
-        if (!relevantItems.length && !reportCategoryMatched) return null;
-        const selectedItems = relevantItems.length ? relevantItems : (report.reportItems || []);
+        const reportBucket = categoryBucket(report.screeningCategory, report.screeningL1 || '');
+        // 只认专项筛查已经保存的分类，不再根据项目名称关键词猜测归属。
+        // item 有自己的一级分类时以 item 为准；没有时继承整份报告分类。每项只会进入一个小结。
+        const selectedItems = (report.reportItems || []).filter(item =>
+          categoryBucket(item.screeningCategory || report.screeningCategory, report.screeningL1 || '') === key
+        );
+        if (!selectedItems.length || (report.reportItems || []).length === 0 && reportBucket !== key) return null;
         const grouped = new Map();
         selectedItems.forEach(item => {
           const projectName = item.screeningParent || report.screeningL2 || report.title || '其他项目';
@@ -5498,6 +5529,12 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     // 后端实际能生成的板块全集
     const GENERATABLE = ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring', 'lifestyle', 'annual_checkup'];
     const planType = req.body.planType || '';
+    const templateId = req.body.templateId || '';
+    let selectedTemplate = null;
+    if (templateId) {
+      selectedTemplate = await PlanTemplate.findOne({ _id: templateId, type: 'health_management', status: 'active' }).lean();
+      if (!selectedTemplate) return res.status(404).json({ success: false, message: 'Admin健康管理方案模板不存在或已停用' });
+    }
     const notes = req.body.notes || '';
     const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k));
 
@@ -5539,6 +5576,9 @@ ${missingCheckups}
 【本次服务目标（健康顾问填写，方案要朝这个方向靠）】
 ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
 
+【Admin健康管理方案模板】
+${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.planDesc || ''}；随访节点：${(selectedTemplate.content?.followUpPlans || []).map(p => p.name).join('、') || '无'}` : '未选择模板'}
+
 请严格按以下JSON格式输出，仅输出JSON：
 {
   "medical_treatment": [
@@ -5578,7 +5618,7 @@ ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
     if (allowedKeys.includes('lifestyle') && raw.lifestyle) result.lifestyle = { enabled: true, ...raw.lifestyle };
     if (allowedKeys.includes('annual_checkup') && raw.annual_checkup) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
 
-    res.json({ success: true, data: result });
+    res.json({ success: true, data: result, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
