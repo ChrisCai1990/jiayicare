@@ -63,7 +63,8 @@ async function buildAnnualPlanFollowUps(plan) {
   // assignedTo：随访任务实际归属的执行人（方案里填的"随访人员"），决定随访出现在谁的工作台"名下"；
   // staffId 仅表示创建人，两者语义不同，混用会导致审核通过后随访挂不到指定人名下。
   const push = (date, theme, content, assignedTo) => {
-    if (!date) return;
+    // 只有明确了随访时间和随访人，才构成可执行的随访计划；否则不向客户或工作台投放半成品。
+    if (!date || !assignedTo) return;
     const d = new Date(date);
     if (isNaN(d.getTime())) return;
     const mongoose = require('mongoose');
@@ -113,7 +114,8 @@ async function buildAnnualPlanFollowUps(plan) {
   if (Array.isArray(monitoringRecords)) {
     monitoringRecords.forEach((rec) => {
       const days = FREQUENCY_DAYS[rec.frequency];
-      if (!days) return;
+      // 每日监测属于客户日常打卡，不生成逐日随访计划，避免医护端和客户端堆积。
+      if (!days || days === 1 || rec.repeatDaily === true) return;
       const horizonEnd = new Date(Date.now() + HORIZON_DAYS * 86400000);
       let cursor = new Date(Date.now() + days * 86400000);
       const monitorLines = [

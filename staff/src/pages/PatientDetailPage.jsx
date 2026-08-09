@@ -10,6 +10,7 @@ import malePortraitPhoto from '../assets/health-portrait-male.webp'
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 
 function HealthPortraitOverview({ user, reports = [] }) {
+  const [expandedGroups, setExpandedGroups] = useState({})
   const profile = user.healthProfile || {}
   // 健康画像只呈现可明确识别的健康问题。问卷中的“有/无/以上均无”等选项值
   // 缺少具体医学信息，直接展示会被误解为新的健康问题。
@@ -233,14 +234,16 @@ function HealthPortraitOverview({ user, reports = [] }) {
               <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginBottom: 8 }}>{group.label}</div>
               <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
                 {group.items.length ? <>
-                  {group.items.slice(0, 8).map((item, index) => {
+                  {group.items.slice(0, expandedGroups[group.label] ? group.items.length : 8).map((item, index) => {
                     const markerNumbers = markerNumbersForIssue(item)
                     return <span key={`${item}-${index}`} title={item} style={{ padding: '4px 9px', borderRadius: 7, background: `${group.color}12`, color: group.color, fontSize: 12, fontWeight: 600, lineHeight: 1.5, maxWidth: '100%', overflowWrap: 'anywhere', display: 'inline-flex', alignItems: 'center', gap: 5 }}>
                       {markerNumbers.map(marker => <span key={marker.number} style={{ width: 17, height: 17, flex: '0 0 17px', borderRadius: '50%', background: marker.color, color: '#fff', display: 'inline-grid', placeItems: 'center', fontSize: 9, fontWeight: 800 }}>{marker.number}</span>)}
                       <span>{item}</span>
                     </span>
                   })}
-                  {group.items.length > 8 && <span style={{ padding: '4px 9px', borderRadius: 7, background: '#F3F5F4', color: '#66756E', fontSize: 12 }}>另有 {group.items.length - 8} 项，详见体检报告</span>}
+                  {group.items.length > 8 && <button type="button" onClick={() => setExpandedGroups(s => ({ ...s, [group.label]: !s[group.label] }))} style={{ padding: '4px 9px', border: 0, borderRadius: 7, background: '#F3F5F4', color: '#52675E', fontSize: 12, cursor: 'pointer' }}>
+                    {expandedGroups[group.label] ? '收起' : `展开其余 ${group.items.length - 8} 项`}
+                  </button>}
                 </> : <span style={{ color: '#A0AEA7', fontSize: 12 }}>{group.emptyText || '暂无记录'}</span>}
               </div>
             </div>
@@ -1364,7 +1367,8 @@ export default function PatientDetailPage() {
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
-  const initialTab = new URLSearchParams(location.search).get('tab') || 'info'
+  const requestedTab = new URLSearchParams(location.search).get('tab') || 'info'
+  const initialTab = requestedTab === 'ai-risk' ? 'ai' : requestedTab
   const [tab, setTab] = useState(initialTab === 'requisitions' ? 'info' : initialTab)
   const archiveSectionsRef = useRef(null)
   const [followUps, setFollowUps] = useState([])
@@ -2976,7 +2980,6 @@ export default function PatientDetailPage() {
           { key: 'portrait',      label: '健康画像' },
           { key: 'medications',   label: '用药及营养补充信息' },
           { key: 'ai',            label: 'AI健康信息整理' },
-          { key: 'ai-risk',       label: '健康关注提示' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
           { key: 'serviceRecords', label: '服务记录' },
@@ -8837,7 +8840,10 @@ export default function PatientDetailPage() {
                 onClick={async () => {
                   if (!window.confirm('确认删除这条随访记录？删除后不可恢复。')) return
                   try {
-                    await staffAPI.deleteFollowUp(followUpDetail._id)
+                    const reason = window.prompt('请填写删除原因（删除后医护端和客户端均不再展示）：')
+                    if (reason === null) return
+                    if (!reason.trim()) { toast('请填写删除原因'); return }
+                    await staffAPI.deleteFollowUp(followUpDetail._id, reason.trim())
                     toast('已删除')
                     setFollowUpDetail(null); loadFollowUps()
                   } catch (err) { toast(err.message || '删除失败') }
@@ -10075,6 +10081,7 @@ export default function PatientDetailPage() {
       {showSelectTplModal && (
         <SelectTemplateAndGenerateModal
           planType={showSelectTplModal}
+          patientId={id}
           title={showSelectTplModal === 'annual_checkup' ? 'AI体检方案' : showSelectTplModal === 'nutrition' ? 'AI营养方案' : 'AI就医协助方案'}
           onClose={() => { setShowSelectTplModal(null); setPendingMedicalAssistOrderId('') }}
           onGenerate={async (templateId, briefNote) => {
@@ -11451,7 +11458,7 @@ function AttachedHealthInfoView({ info }) {
 // ── AI方案生成前先选模板弹窗（体检方案/营养方案/就医协助方案通用）───────────────────
 // 2026-07-13：三类方案都是"AI只在模板骨架基础上定制"，不该让AI自由发明。此前AI一点即生成，
 // 完全跳过模板；改为先弹出模板选择，选定后才真正调用AI生成，模板骨架部分由后端原样锁定。
-function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }) {
+function SelectTemplateAndGenerateModal({ planType, title, patientId, onClose, onGenerate }) {
   const toast = useToast()
   const [templates, setTemplates] = useState([])
   const [loading, setLoading] = useState(true)
@@ -11464,11 +11471,11 @@ function SelectTemplateAndGenerateModal({ planType, title, onClose, onGenerate }
   const [briefNote, setBriefNote] = useState('')
 
   useEffect(() => {
-    staffAPI.getPlanTemplates(planType)
+    staffAPI.getPlanTemplates(planType, patientId)
       .then(res => setTemplates(res.data || []))
       .catch(err => setError(err.message || '加载失败'))
       .finally(() => setLoading(false))
-  }, [planType])
+  }, [planType, patientId])
 
   const handleGenerate = async () => {
     if (!selectedId) { toast('请先选择模板'); return }

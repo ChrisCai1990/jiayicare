@@ -1330,13 +1330,24 @@ router.patch('/followups/:id/review', staffAuth, async (req, res) => {
 // ── DELETE /api/staff/followups/:id ──────────────────────────────
 // 软删除：状态改为 cancelled，不物理删除
 router.delete('/followups/:id', staffAuth, checkPermission('followups', 'delete'), async (req, res) => {
-  const query = req.staff.role === 'superadmin' ? { _id: req.params.id } : { _id: req.params.id, staffId: req.staff._id };
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) return res.status(400).json({ success: false, message: '删除随访计划必须填写原因' });
+  const query = req.staff.role === 'superadmin'
+    ? { _id: req.params.id }
+    : { _id: req.params.id, $or: [{ staffId: req.staff._id }, { assignedTo: req.staff._id }] };
   const followUp = await FollowUp.findOne(query);
   if (!followUp) return res.status(404).json({ success: false, message: '随访记录不存在' });
-  followUp.status = 'cancelled';
-  if (!followUp.cancelReason) followUp.cancelReason = '手动删除';
-  await followUp.save();
-  res.json({ success: true, message: '已取消' });
+  // “删除”与“取消”语义分开：删除后不再出现在医护端/客户端长列表；原因写入独立审计日志。
+  const FollowUpDeletionLog = require('../models/FollowUpDeletionLog');
+  await FollowUpDeletionLog.create({
+    followUpId: followUp._id,
+    patientId: followUp.patientId,
+    deletedBy: req.staff._id,
+    reason,
+    snapshot: followUp.toObject(),
+  });
+  await FollowUp.deleteOne({ _id: followUp._id });
+  res.json({ success: true, message: '已删除' });
 });
 
 // ── GET /api/staff/reports ────────────────────────────────────────
@@ -9468,12 +9479,20 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
   try {
     const { templateId, goal } = req.body;
     if (!templateId) return res.status(400).json({ success: false, message: '请先选择体检套餐模板' });
-    const template = await PlanTemplate.findOne({ _id: templateId, type: 'annual_checkup' }).lean();
-    if (!template) return res.status(404).json({ success: false, message: '套餐模板不存在' });
-
     const user = await User.findById(req.params.id)
-      .select('name gender age chronicDiseases healthProfile aiRiskAssessment');
+      .select('name gender age chronicDiseases healthProfile clientBrand');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    if (!user.clientBrand) return res.status(400).json({ success: false, message: '请先设置客户所属平台（嘉医管家或金伊森）' });
+
+    // 每次生成都从后端实时读取当前平台的启用模板，不缓存模板快照作为下次生成来源。
+    // Admin 更新模板后，新方案立即使用更新后的版本；同时禁止跨平台套用模板。
+    const template = await PlanTemplate.findOne({
+      _id: templateId,
+      type: 'annual_checkup',
+      status: 'active',
+      clientBrand: user.clientBrand,
+    }).lean();
+    if (!template) return res.status(404).json({ success: false, message: '当前平台的体检套餐模板不存在或已停用，请重新选择' });
 
     const year = new Date().getFullYear();
     const { chat } = require('../utils/ai');
@@ -9482,8 +9501,32 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
     const checkItems = tplContent.checkItems || [];
     const addonPool = tplContent.addons || [];
 
-    const riskYears = Object.keys(riskByYear(user.aiRiskAssessment)).sort((a, b) => Number(b) - Number(a));
-    const riskSummary = (riskYears.length ? riskByYear(user.aiRiskAssessment)[riskYears[0]]?.overallSummary : null) || '暂无健康关注提示';
+    const [questionnaireResponses, historicalReports] = await Promise.all([
+      QuestionnaireResponse.find({ user: user._id })
+        .sort({ submittedAt: -1 })
+        .limit(10)
+        .populate('questionnaire', 'title questions')
+        .lean(),
+      MedicalReport.find({
+        user: user._id,
+        $or: [{ audit_status: 'audited' }, { aiStatus: 'reviewed' }],
+      }).sort({ checkDate: -1, createdAt: -1 }).limit(20).lean(),
+    ]);
+    const questionnaireSummary = questionnaireResponses.map(response => {
+      const questionMap = new Map((response.questionnaire?.questions || []).map(q => [String(q.id), q.text]));
+      const answerLines = Object.entries(response.answers || {}).map(([questionId, answer]) => {
+        const value = typeof answer === 'object' ? JSON.stringify(answer) : String(answer);
+        return `${questionMap.get(String(questionId)) || questionId}：${value}`;
+      });
+      return `问卷《${response.questionnaire?.title || '健康问卷'}》：${answerLines.join('；')}`;
+    }).join('\n') || '暂无已提交健康问卷';
+    const reportSummary = historicalReports.map(report => {
+      const relevantItems = (report.reportItems || []).map(item =>
+        [item.name || item.bodyPart, item.value, item.unit, item.conclusion || item.diagnosis || item.findings, item.status]
+          .filter(Boolean).join(' ')
+      ).filter(Boolean);
+      return `${report.checkDate || report.date || report.reportYear || '日期未知'}《${report.title}》：${relevantItems.join('；')}`;
+    }).join('\n') || '暂无历年已审核体检报告';
 
     // 加项库为空时无需调用AI，标准项目直接落地即可
     let chosenAddonIds = [];
@@ -9495,7 +9538,13 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
 【会员信息】
 姓名：${user.name}，年龄：${user.age || '未知'}岁，性别：${user.gender || '未知'}
 慢病标签：${user.chronicDiseases?.join('、') || '无'}
-AI风险摘要：${riskSummary}
+健康档案：${JSON.stringify(user.healthProfile || {})}
+
+【客户已提交的健康问卷（重点关注客户主动填写的关注事项和目标）】
+${questionnaireSummary}
+
+【历年已审核体检报告】
+${reportSummary}
 
 【本次服务目标（健康顾问填写，选加项时优先照顾这个方向，如"重点排查心血管风险"就优先选心血管相关加项）】
 ${goal ? goal : '（未填写目标，按会员信息与风险摘要常规判断）'}
@@ -9558,6 +9607,13 @@ ${addonListText}
         packageDesc: tplContent.packageDesc || '',
         checkItems, addons: addonPool,
         templateId: template._id,
+        templateUpdatedAt: template.updatedAt,
+        clientBrand: user.clientBrand,
+        generationGoal: goal || '',
+        evidence: {
+          questionnaireResponseIds: questionnaireResponses.map(r => r._id),
+          medicalReportIds: historicalReports.map(r => r._id),
+        },
       },
       status: 'draft',
     });

@@ -62,7 +62,7 @@ export const staffAPI = {
   getPatientFollowUps: (id, p={})=> req(`/staff/patients/${id}/followups?` + qs(p)),
   createFollowUp:      (data)   => req('/staff/followups', { method: 'POST', body: JSON.stringify(data) }),
   updateFollowUp:      (id, d)  => req(`/staff/followups/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
-  deleteFollowUp:      (id)     => req(`/staff/followups/${id}`, { method: 'DELETE' }),
+  deleteFollowUp:      (id, reason) => req(`/staff/followups/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   reviewFollowUp:      (id, d)  => req(`/staff/followups/${id}/review`, { method: 'PATCH', body: JSON.stringify(d) }),
 
   // Health Plans
@@ -152,7 +152,7 @@ export const staffAPI = {
   getFollowupPlans: () => req('/staff/followup-plans'),
 
   // 健康方案模板（新建方案时选用）
-  getPlanTemplates: (type) => req('/staff/plan-templates' + (type ? '?type=' + type : '')),
+  getPlanTemplates: (type, patientId = '') => req('/staff/plan-templates?' + qs({ type, patientId })),
 
 
   // Questionnaires push
