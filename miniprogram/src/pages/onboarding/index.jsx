@@ -18,17 +18,18 @@ export default function OnboardingPage() {
   const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
 
-  const canSubmit = name.trim() && contactPhone.trim() && !submitting;
+  const canSubmit = name.trim() && idNumber.trim() && contactPhone.trim() && !submitting;
 
   const submit = async () => {
     setErrorMsg('');
     if (!name.trim()) { setErrorMsg('请填写姓名'); return; }
+    if (!idNumber.trim()) { setErrorMsg(`请填写${idType === 'passport' ? '护照号' : '身份证号'}`); return; }
     if (!contactPhone.trim()) { setErrorMsg('请填写联系电话'); return; }
     setSubmitting(true);
     try {
       const res = await userAPI.onboarding({
         name: name.trim(),
-        idNumber: idNumber.trim() || undefined,
+        idNumber: idNumber.trim(),
         idType,
         contactPhone: contactPhone.trim(),
       });

@@ -81,9 +81,11 @@ export const authAPI = {
   sendCode: (phone) =>
     request('/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) }),
 
-  login: async (phone, code) => {
+  login: async (phone, code, { bindWechat = true } = {}) => {
     let wxLoginCode = '';
-    try { wxLoginCode = (await Taro.login()).code || ''; } catch {}
+    if (bindWechat) {
+      try { wxLoginCode = (await Taro.login()).code || ''; } catch {}
+    }
     return request('/auth/login', { method: 'POST', body: JSON.stringify({ phone, code, wxLoginCode }) });
   },
 

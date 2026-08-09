@@ -47,7 +47,7 @@ function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
 
 export default function ProfilePage() {
   const { statusBarHeight } = useNavBar();
-  const { user, logout, updateUser } = useAuth();
+  const { user, token, loading: authLoading, logout, updateUser } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
   const [orderCounts, setOrderCounts] = useState({ payment: 0, service: 0, progress: 0, afterSale: 0 });
 
@@ -77,6 +77,14 @@ export default function ProfilePage() {
     : '未开通';
 
   const nav = (url) => Taro.navigateTo({ url });
+  const openProfile = () => {
+    if (authLoading) return;
+    if (!token || !user) {
+      Taro.navigateTo({ url: '/pages/auth/login/index' });
+      return;
+    }
+    nav(user.onboardingCompleted ? '/pages/profile/edit/index' : '/pages/onboarding/index');
+  };
   const doLogout = () => { setShowLogout(false); logout(); Taro.reLaunch({ url: '/pages/auth/login/index' }); };
 
   return (
@@ -90,13 +98,21 @@ export default function ProfilePage() {
         }}>
           <Icon name="✏️" size={15} color="#fff" />
         </View>
-        <View onClick={() => nav('/pages/profile/benefits/index')} style={{
+        <View onClick={openProfile} style={{
           width: '76px', height: '76px', borderRadius: '38px', backgroundColor: 'rgba(255,255,255,0.15)',
           margin: '16px auto 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
           <Text style={{ fontSize: '30px', color: '#fff', fontWeight: 700 }}>{(user?.name || '用')[0]}</Text>
         </View>
-        <Text style={{ fontSize: '22px', fontWeight: 700, color: '#fff', marginTop: `${spacing.sm}px`, display: 'block' }}>{user?.name || '用户'}</Text>
+        <View onClick={openProfile}>
+          <Text style={{ fontSize: '22px', fontWeight: 700, color: '#fff', marginTop: `${spacing.sm}px`, display: 'block' }}>{user?.name || '用户'}</Text>
+          {!authLoading && (!token || !user) && (
+            <Text style={{ fontSize: '13px', color: '#8FE0BD', marginTop: '6px', display: 'block', fontWeight: 600 }}>点击登录 / 注册 ›</Text>
+          )}
+          {!authLoading && token && user && !user.onboardingCompleted && (
+            <Text style={{ fontSize: '13px', color: '#8FE0BD', marginTop: '6px', display: 'block', fontWeight: 600 }}>点击完善个人资料 ›</Text>
+          )}
+        </View>
         <Text style={{ fontSize: '13px', color: 'rgba(255,255,255,0.6)', marginTop: '4px', display: 'block' }}>
           {[user?.age && `${user.age}岁`, user?.gender !== '未知' && user?.gender, user?.phone].filter(Boolean).join(' · ')}
         </Text>
@@ -151,8 +167,8 @@ export default function ProfilePage() {
               <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
               <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>到期 {user.serviceExpiry} · 剩余 {daysLeft} 天</Text>
             </View>
-            <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={() => nav('/pages/services/renewal/index')}>
-              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>续约</Text>
+            <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={() => nav('/pages/orders/index')}>
+              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>查看订单</Text>
             </View>
           </View>
         </View>

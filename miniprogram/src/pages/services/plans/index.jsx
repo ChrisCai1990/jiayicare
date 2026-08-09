@@ -343,7 +343,7 @@ export default function ServicePlansPage() {
                 onConfirmPlan={handleConfirmPlan}
                 confirming={confirmingPlanId === plan._id}
                 onConsult={handleConsult}
-                onRenew={() => Taro.navigateTo({ url: '/pages/services/renewal/index' })}
+                onRenew={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}
               />
             ))
           )}

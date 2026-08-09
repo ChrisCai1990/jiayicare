@@ -327,8 +327,10 @@ router.post('/onboarding', auth, async (req, res) => {
   try {
     const { name, idNumber, idType, contactPhone } = req.body;
     if (!name || !name.trim()) return res.status(400).json({ success: false, message: '请填写姓名' });
+    if (!idNumber || !idNumber.trim()) return res.status(400).json({ success: false, message: `请填写${idType === 'passport' ? '护照号' : '身份证号'}` });
     if (!contactPhone || !contactPhone.trim()) return res.status(400).json({ success: false, message: '请填写联系电话' });
     const normalizedContactPhone = contactPhone.trim();
+    const normalizedIdNumber = idNumber.trim().toUpperCase();
 
     // 联系电话若已经对应另一份正式手机号档案，不能仅凭未验证的表单输入自动合并身份。
     // 明确提示客户重新走该手机号验证码登录，既避免重复档案，也避免越权绑定他人档案。
@@ -347,8 +349,21 @@ router.post('/onboarding', auth, async (req, res) => {
     // 护照号格式各国不一，不做身份证格式校验也不做性别/生日自动解析；仅身份证号走原有解析逻辑
     const isPassport = idType === 'passport';
     const { parseIdCard } = require('../utils/idCard');
-    const parsed = (idNumber && !isPassport) ? parseIdCard(idNumber) : null;
-    if (idNumber && !isPassport && !parsed) return res.status(400).json({ success: false, message: '身份证号格式不正确' });
+    const parsed = !isPassport ? parseIdCard(normalizedIdNumber) : null;
+    if (!isPassport && !parsed) return res.status(400).json({ success: false, message: '身份证号格式不正确' });
+
+    const idOwner = await User.findOne({
+      idNumber: normalizedIdNumber,
+      _id: { $ne: req.user._id },
+      isDeleted: { $ne: true },
+    }).select('_id');
+    if (idOwner) {
+      return res.status(409).json({
+        success: false,
+        code: 'IDENTITY_PROFILE_EXISTS',
+        message: '该证件号已有健康档案，请使用档案预留手机号登录或联系客服核验合并。',
+      });
+    }
 
     const updateData = {
       name: name.trim(),
@@ -356,7 +371,8 @@ router.post('/onboarding', auth, async (req, res) => {
       onboardingCompleted: true,
       onboardingCompletedAt: new Date(),
     };
-    if (idNumber) { updateData.idNumber = idNumber; updateData.idType = isPassport ? 'passport' : 'idCard'; }
+    updateData.idNumber = normalizedIdNumber;
+    updateData.idType = isPassport ? 'passport' : 'idCard';
     if (parsed) {
       updateData.gender = parsed.gender;
       updateData.birthDate = parsed.birthDate;

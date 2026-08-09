@@ -82,7 +82,8 @@ export default function LoginPage() {
     try {
       setLoading(true);
       const r1 = await authAPI.sendCode('13800138000');
-      const r2 = await authAPI.login('13800138000', r1.code || '123456');
+      // 体验账号只展示脱敏样例，绝不能占用体验者的微信 OpenID。
+      const r2 = await authAPI.login('13800138000', r1.code || '123456', { bindWechat: false });
       if (r2.success) {
         await login(r2.data.user, r2.data.token);
         afterLoginSuccess(r2.data.user);

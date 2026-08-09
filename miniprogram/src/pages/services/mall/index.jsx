@@ -25,42 +25,6 @@ function Stars({ rating }) {
   );
 }
 
-function BannerCard({ hasService, isMember, servicePackage, daysLeft, onViewOrders, onActivate }) {
-  if (hasService) {
-    return (
-      <View style={{ backgroundColor: colors.primary, borderRadius: `${radius.xl}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px` }}>
-        <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.7)', backgroundColor: 'rgba(255,255,255,0.2)', padding: '3px 8px', borderRadius: `${radius.full}px`, display: 'inline-block', marginBottom: '6px' }}>专属会员权益</Text>
-        <Text style={{ fontSize: '18px', fontWeight: 800, color: '#fff', display: 'block' }}>{servicePackage || '年度服务包'}</Text>
-        <Text style={{ fontSize: '12px', color: 'rgba(255,255,255,0.65)', display: 'block', margin: '3px 0 10px' }}>专属健康服务 · 剩余 {daysLeft} 天</Text>
-        <View onClick={onViewOrders} style={{ display: 'inline-block', backgroundColor: '#fff', padding: '6px 12px', borderRadius: `${radius.full}px` }}>
-          <Text style={{ fontSize: '12px', color: colors.primary, fontWeight: 700 }}>查看我的订单 ›</Text>
-        </View>
-      </View>
-    );
-  }
-  if (isMember) return null;
-  return (
-    <View style={{ backgroundColor: '#fff', borderRadius: `${radius.xl}px`, border: `1.5px solid ${colors.primary}30`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
-      <View style={{ display: 'flex', gap: `${spacing.md}px`, marginBottom: `${spacing.md}px` }}>
-        <View style={{ width: '48px', height: '48px', borderRadius: '14px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-          <Text style={{ fontSize: '22px' }}>🛡️</Text>
-        </View>
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '6px' }}>开通专属服务包</Text>
-          <View style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-            {['健康管理专员服务', '健管师全程陪伴', '全年复查提醒', 'AI健康规划'].map((p, i) => (
-              <Text key={i} style={{ fontSize: '11px', color: colors.textSecondary }}>✓ {p}</Text>
-            ))}
-          </View>
-        </View>
-      </View>
-      <View onClick={onActivate} style={{ backgroundColor: colors.primary, borderRadius: `${radius.md}px`, padding: '12px 0', textAlign: 'center' }}>
-        <Text style={{ fontSize: '14px', fontWeight: 700, color: '#fff' }}>立即开通 ›</Text>
-      </View>
-    </View>
-  );
-}
-
 function ServiceCard({ item, onDetail, onPay }) {
   const windowWidth = Taro.getWindowInfo ? Taro.getWindowInfo().windowWidth : Taro.getSystemInfoSync().windowWidth;
   const isWide = windowWidth >= 768;
@@ -457,11 +421,6 @@ export default function ServiceMallPage() {
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState('');
 
-  const hasService = !!(user?.servicePackage && user?.serviceExpiry);
-  const isMember = !!user?.memberType || hasService;
-  const expiry = hasService ? new Date(user.serviceExpiry) : null;
-  const daysLeft = expiry ? Math.max(0, Math.ceil((expiry - new Date()) / 86400000)) : 0;
-
   useEffect(() => {
     servicesAPI.list().then((res) => {
       if (!res.success) throw new Error(res.message || '服务加载失败');
@@ -502,17 +461,6 @@ export default function ServiceMallPage() {
         </View>
         <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>服务商城</Text>
         <View style={{ width: '28px' }} />
-      </View>
-
-      <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
-        <BannerCard
-          hasService={hasService}
-          isMember={isMember}
-          servicePackage={user?.servicePackage}
-          daysLeft={daysLeft}
-          onViewOrders={() => Taro.navigateTo({ url: '/pages/orders/index' })}
-          onActivate={() => Taro.navigateTo({ url: '/pages/services/renewal/index' })}
-        />
       </View>
 
       <ScrollView scrollX style={{ whiteSpace: 'nowrap', padding: `0 ${spacing.lg}px`, marginBottom: `${spacing.sm}px` }}>

@@ -6,6 +6,7 @@ const GiftRecord = require('../models/GiftRecord');
 const VerificationCode = require('../models/VerificationCode');
 const requireUser = require('../middleware/auth');
 const { seedUserData } = require('../config/seedData');
+const DEMO_PHONE = '13800138000';
 const router = express.Router();
 
 // 计算用户健康基金汇总（与 /user/me 保持一致）
@@ -81,7 +82,7 @@ router.post('/send-code', async (req, res) => {
   }
 
   // 演示账号始终用固定验证码
-  const isDemo = phone === '13800138000';
+  const isDemo = phone === DEMO_PHONE;
   const code = isDemo ? '123456' : String(Math.floor(100000 + Math.random() * 900000));
 
   // 持久化到 MongoDB（TTL 索引自动清理过期记录，服务重启不丢失）
@@ -125,7 +126,7 @@ router.post('/login', async (req, res) => {
   await VerificationCode.deleteOne({ phone }); // 一次性使用
 
   // 查找用户（新手机号自动创建账号）
-  const isDemo = phone === '13800138000';
+  const isDemo = phone === DEMO_PHONE;
   let user = await User.findOne({ phone });
   if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
   const isNew = !user; // 修复：在创建前判断，而非硬编码 false
@@ -140,11 +141,11 @@ router.post('/login', async (req, res) => {
 
   // A phone login in the mini program must converge on the same account as wx.login.
   // Otherwise records/benefits stay on the phone user while payment OpenID lands on a second user.
-  if (wxLoginCode && process.env.WECHAT_MP_APPID && process.env.WECHAT_MP_SECRET) {
+  if (!isDemo && wxLoginCode && process.env.WECHAT_MP_APPID && process.env.WECHAT_MP_SECRET) {
     const sessionData = await httpsGet(`https://api.weixin.qq.com/sns/jscode2session?appid=${process.env.WECHAT_MP_APPID}&secret=${process.env.WECHAT_MP_SECRET}&js_code=${encodeURIComponent(wxLoginCode)}&grant_type=authorization_code`);
     if (!sessionData.errcode && sessionData.openid) {
       const occupied = await User.findOne({ wechatMpOpenid: sessionData.openid, _id: { $ne: user._id } });
-      if (occupied?.phone) return res.status(409).json({ success: false, message: '该微信已绑定其他手机号账户，请联系客服合并账户' });
+      if (occupied?.phone && occupied.phone !== DEMO_PHONE) return res.status(409).json({ success: false, message: '该微信已绑定其他手机号账户，请联系客服合并账户' });
       if (occupied) await User.updateOne({ _id: occupied._id }, { $unset: { wechatMpOpenid: 1 } });
       user = await User.findByIdAndUpdate(user._id, { wechatMpOpenid: sessionData.openid }, { new: true });
     }
@@ -245,6 +246,11 @@ router.post('/wechat-mp', async (req, res) => {
 
     // 查找或创建用户（以 wechatMpOpenid 为唯一键）
     let user = await User.findOne({ wechatMpOpenid: openid });
+    // 历史版本曾把体验者的 OpenID 绑定到演示账号；首次再次登录时自动释放并建真实新账号。
+    if (user?.phone === DEMO_PHONE) {
+      await User.updateOne({ _id: user._id }, { $unset: { wechatMpOpenid: 1 } });
+      user = null;
+    }
     if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
     const isNew = !user;
     if (!user) {
@@ -285,7 +291,7 @@ router.post('/wechat-mp/bind', requireUser, async (req, res) => {
     }
 
     const occupied = await User.findOne({ wechatMpOpenid: sessionData.openid, _id: { $ne: req.user._id } });
-    if (occupied?.phone) {
+    if (occupied?.phone && occupied.phone !== DEMO_PHONE) {
       return res.status(409).json({ success: false, message: '该微信已绑定其他手机号账户，请联系客服合并账户' });
     }
     if (occupied) await User.updateOne({ _id: occupied._id }, { $unset: { wechatMpOpenid: 1 } });
