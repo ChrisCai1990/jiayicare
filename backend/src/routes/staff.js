@@ -283,6 +283,17 @@ async function getVisibleStaffIds(staff) {
   return [...new Set(all)];
 }
 
+const PLAN_ASSIGN_FIELDS = ['assignedFamilyDoctor', 'assignedNutritionist', 'assignedSpecialist', 'assignedTcmDoctor', 'assignedPsychologist', 'assignedRehabSpecialist', 'assignedMedicalAssistant', 'assignedHealthManager', 'assignedHealthPlanner'];
+const PLAN_ROLE_ASSIGN_FIELD = { familyDoctor: 'assignedFamilyDoctor', nutritionist: 'assignedNutritionist', specialist: 'assignedSpecialist', tcmDoctor: 'assignedTcmDoctor', psychologist: 'assignedPsychologist', rehabSpecialist: 'assignedRehabSpecialist', medicalAssistant: 'assignedMedicalAssistant', healthManager: 'assignedHealthManager', healthPlanner: 'assignedHealthPlanner' };
+async function getVisiblePlanPatientIds(staff) {
+  if (['superadmin', 'platformSuper'].includes(staff.role)) return null;
+  const [staffIds, mentoredIds] = await Promise.all([getVisibleStaffIds(staff), getMentoredTeamMemberIds(staff._id)]);
+  const query = mentoredIds.length
+    ? { $or: PLAN_ASSIGN_FIELDS.map(field => ({ [field]: { $in: staffIds } })) }
+    : { [PLAN_ROLE_ASSIGN_FIELD[staff.role] || 'assignedHealthManager']: { $in: staffIds } };
+  return (await User.find(query).select('_id')).map(user => user._id);
+}
+
 // ── GET /api/staff/patients ───────────────────────────────────────
 // 查询分配给当前医护人员（及其下属）的会员列表
 router.get('/patients', staffAuth, checkPermission('patients', 'view'), async (req, res) => {
@@ -1466,24 +1477,10 @@ router.get('/plans', staffAuth, checkPermission('plans', 'view'), async (req, re
   // 查看权限按"会员归属"而非"创建人"：健康顾问需要看到自己名下会员的全部方案（含营养师生成的营养方案）
   // 才能全面了解会员情况，但只有对应角色能编辑——查看范围和编辑范围是两条独立规则。
   // 2026-07-07 用户反馈："健康顾问看不到客户的营养干预方案，健康顾问要能看到客户的所有信息"
-  const ROLE_ASSIGN_FIELD_FOR_PLANS = {
-    healthManager: 'assignedHealthManager', familyDoctor: 'assignedFamilyDoctor',
-    nutritionist: 'assignedNutritionist', medicalAssistant: 'assignedMedicalAssistant',
-    psychologist: 'assignedPsychologist', rehabSpecialist: 'assignedRehabSpecialist',
-    tcmDoctor: 'assignedTcmDoctor', specialist: 'assignedSpecialist',
-    healthPlanner: 'assignedHealthPlanner',
-  };
-  if (req.staff.role !== 'superadmin') {
-    const assignField = ROLE_ASSIGN_FIELD_FOR_PLANS[req.staff.role];
-    if (assignField) {
-      const myPatients = await User.find({ [assignField]: req.staff._id }).select('_id');
-      const myPatientIds = myPatients.map(p => p._id);
-      filter.patientId = filter.patientId
-        ? { $in: (filter.patientId.$in || [filter.patientId]).filter(id => myPatientIds.some(p => String(p) === String(id))) }
-        : { $in: myPatientIds };
-    } else {
-      filter.staffId = req.staff._id; // 无归属字段的角色（如healthPlanner）退回按创建人过滤
-    }
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds) {
+    const requested = filter.patientId?.$in || (filter.patientId ? [filter.patientId] : null);
+    filter.patientId = { $in: requested ? requested.filter(id => visibleIds.some(v => String(v) === String(id))) : visibleIds };
   }
   const skip = (Number(page) - 1) * Number(limit);
   const [plans, total] = await Promise.all([
@@ -1575,6 +1572,8 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
 router.patch('/plans/:id/push', staffAuth, async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(plan.patientId?._id || plan.patientId))) return res.status(403).json({ success: false, message: '无权查看该会员的方案' });
   const isSelectedMedicalAssistant = plan.type === 'medical_assist'
     && plan.content?.staffId
     && String(plan.content.staffId) === String(req.staff._id);
@@ -3726,9 +3725,12 @@ router.get('/annual-health-plans', staffAuth, async (req, res) => {
     const year = req.query.year ? parseInt(req.query.year) : new Date().getFullYear();
     const { patientName } = req.query;
     const filter = { year };
+    const visibleIds = await getVisiblePlanPatientIds(req.staff);
+    if (visibleIds) filter.patientId = { $in: visibleIds };
     if (patientName) {
       const matchedUsers = await User.find({ name: { $regex: patientName, $options: 'i' } }).select('_id');
-      filter.patientId = { $in: matchedUsers.map(u => u._id) };
+      const matchedIds = matchedUsers.map(u => u._id);
+      filter.patientId = { $in: visibleIds ? matchedIds.filter(id => visibleIds.some(v => String(v) === String(id))) : matchedIds };
     }
     const plans = await AnnualPlan.find(filter)
       .populate('patientId', 'name phone')
@@ -3742,6 +3744,8 @@ router.get('/annual-health-plans', staffAuth, async (req, res) => {
 
 // ── 年度管理方案 ─────────────────────────────────────────────────────
 router.get('/patients/:id/annual-plan', staffAuth, async (req, res) => {
+  const visibleIds = await getVisiblePlanPatientIds(req.staff);
+  if (visibleIds && !visibleIds.some(id => String(id) === String(req.params.id))) return res.status(403).json({ success: false, message: '无权查看该会员的年度管理方案' });
   try {
     const { year, planType } = req.query;
     const query = { patientId: req.params.id };
