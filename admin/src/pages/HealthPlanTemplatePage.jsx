@@ -21,7 +21,6 @@ const defaultContent = {
     addons: [],     // [{ type:'lab'|'exam', id, name, reason }]
   },
   health_management: {
-    clientBrand: '',
     planName: '',
     planDesc: '',
     followUpPlans: [],
@@ -269,14 +268,6 @@ function PlanContentForm({ type, initialContent, contentRef }) {
   if (type === 'health_management') return (
     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
       <div className="form-group">
-        <label className="form-label">客户归属 *</label>
-        <select className="form-input" value={content.clientBrand || ''} onChange={e => set('clientBrand', e.target.value)}>
-          <option value="">请选择客户归属</option>
-          <option value="jiayiguanjia">嘉医管家</option>
-          <option value="jinyisen">金伊森</option>
-        </select>
-      </div>
-      <div className="form-group">
         <label className="form-label">方案名称 *</label>
         <input className="form-input" value={content.planName || ''} onChange={e => set('planName', e.target.value)} placeholder="如：慢病管理标准方案" />
       </div>
@@ -384,6 +375,7 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
   const isEdit = !!template?._id
   const [name, setName] = useState(template?.name || '')
   const [status, setStatus] = useState(template?.status || 'active')
+  const [clientBrand, setClientBrand] = useState(template?.clientBrand || template?.content?.clientBrand || 'jiayiguanjia')
   const [loading, setLoading] = useState(false)
   const contentRef = useRef(template?.content || defaultContent[planType] || {})
 
@@ -391,13 +383,13 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
 
   const save = async () => {
     if (!name.trim()) { toast('❌ 模板名称不能为空'); return }
-    const content = contentRef.current
+    const content = { ...contentRef.current, clientBrand }
     setLoading(true)
     try {
       if (isEdit) {
-        await adminAPI.updatePlanTemplate(template._id, { name, status, clientBrand: content.clientBrand || '', content })
+        await adminAPI.updatePlanTemplate(template._id, { name, status, clientBrand, content })
       } else {
-        await adminAPI.createPlanTemplate({ type: planType, name, status, clientBrand: content.clientBrand || '', content })
+        await adminAPI.createPlanTemplate({ type: planType, name, status, clientBrand, content })
       }
       toast(`✅ 模板${isEdit ? '更新' : '创建'}成功`)
       onSaved()
@@ -429,6 +421,13 @@ function TemplateModal({ template, planType, onClose, onSaved }) {
               <select className="form-input" value={status} onChange={e => setStatus(e.target.value)}>
                 <option value="active">启用</option>
                 <option value="inactive">停用</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">客户归属 *</label>
+              <select className="form-input" value={clientBrand} onChange={e => setClientBrand(e.target.value)}>
+                <option value="jiayiguanjia">嘉医管家</option>
+                <option value="jinyisen">金伊森</option>
               </select>
             </div>
           </div>

@@ -2336,7 +2336,11 @@ router.get('/plan-templates', staffAuth, async (req, res) => {
       const patient = await User.findById(patientId).select('clientBrand');
       if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
       if (!patient.clientBrand) return res.json({ success: true, data: [] });
-      filter.clientBrand = patient.clientBrand;
+      // 嘉医管家是拆分前的历史默认平台。旧模板没有 clientBrand，必须继续归入嘉医管家；
+      // 金伊森只读取明确标记为 jinyisen 的模板，避免跨平台串用。
+      filter.clientBrand = patient.clientBrand === 'jiayiguanjia'
+        ? { $in: ['jiayiguanjia', '', null] }
+        : patient.clientBrand;
     }
     const templates = await PlanTemplate.find(filter).sort({ name: 1 }).lean();
     res.json({ success: true, data: templates });
@@ -9499,11 +9503,14 @@ router.post('/patients/:id/ai-annual-checkup-plan', staffAuth, async (req, res) 
 
     // 每次生成都从后端实时读取当前平台的启用模板，不缓存模板快照作为下次生成来源。
     // Admin 更新模板后，新方案立即使用更新后的版本；同时禁止跨平台套用模板。
+    const templateBrandFilter = user.clientBrand === 'jiayiguanjia'
+      ? { $in: ['jiayiguanjia', '', null] }
+      : user.clientBrand;
     const template = await PlanTemplate.findOne({
       _id: templateId,
       type: 'annual_checkup',
       status: 'active',
-      clientBrand: user.clientBrand,
+      clientBrand: templateBrandFilter,
     }).lean();
     if (!template) return res.status(404).json({ success: false, message: '当前平台的体检套餐模板不存在或已停用，请重新选择' });
 

@@ -1024,10 +1024,18 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
   const [followupForms, setFollowupForms] = useState([])
 
   useEffect(() => {
-    staffAPI.getPlanTemplates('health_management')
+    setSelectedTpl(null)
+    setTemplates([])
+    if (!patientId) { setLoadingTpls(false); setTplError(''); return }
+    setLoadingTpls(true)
+    setTplError('')
+    staffAPI.getPlanTemplates('health_management', patientId)
       .then(res => setTemplates(res.data || []))
       .catch(err => setTplError(err.message || '加载失败'))
       .finally(() => setLoadingTpls(false))
+  }, [patientId])
+
+  useEffect(() => {
     Promise.all([staffAPI.getFollowupPlans(), staffAPI.getFollowupForms()])
       .then(([pr, fr]) => { setFollowupPlans(pr.data || []); setFollowupForms(fr.data || []) })
       .catch(() => {})
@@ -1069,9 +1077,14 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body" style={{ maxHeight: 440, overflowY: 'auto' }}>
+          <div className="form-group">
+            <label className="form-label">先选择会员，系统将按客户归属加载模板 *</label>
+            <PatientSearchInput value={patientId} onChange={setPatientId} />
+          </div>
+          {!patientId && <div style={{ padding: 20, textAlign: 'center', color: '#8AA89C' }}>请选择会员后查看所属平台的管理方案模板</div>}
           {loadingTpls && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>加载模板中...</div>}
           {tplError && <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>⚠️ {tplError}</div>}
-          {!loadingTpls && !tplError && templates.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>暂无可用模板，请先在超管后台创建健康管理方案模板</div>}
+          {patientId && !loadingTpls && !tplError && templates.length === 0 && <div style={{ padding: 20, textAlign: 'center', color: '#aaa' }}>该客户所属平台暂无可用模板，请先在超管后台创建对应归属的健康管理方案模板</div>}
           {templates.map(tpl => {
             const c = tpl.content || {}
             const ts = ANNUAL_MGMT_TYPE_COLORS[c.planType] || { color: '#666', bg: '#f0f0f0' }
@@ -1114,11 +1127,6 @@ function AnnualMgmtPlanModal({ onClose, onSaved }) {
             <span>已选模板：<strong>{selectedTpl?.content?.planName || selectedTpl?.name}</strong></span>
             {planType && <span style={{ fontSize: 11, padding: '1px 7px', borderRadius: 10, fontWeight: 600, color: typeStyle.color, border: `1px solid ${typeStyle.color}` }}>{ANNUAL_MGMT_TYPE_LABELS[planType]}</span>}
             <button type="button" onClick={() => setStep(1)} style={{ marginLeft: 'auto', fontSize: 12, color: typeStyle.color, background: 'none', border: `1px solid ${typeStyle.color}`, borderRadius: 14, padding: '2px 10px', cursor: 'pointer' }}>更换模板</button>
-          </div>
-          {/* 搜索会员 */}
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">搜索会员 *</label>
-            <PatientSearchInput value={patientId} onChange={setPatientId} />
           </div>
           {/* 方案名称 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -1680,11 +1688,14 @@ function NewPlanModal({ onClose, onSaved, type }) {
   useEffect(() => {
     setLoadingTpls(true)
     setTplError('')
-    staffAPI.getPlanTemplates(tplType)
+    setTemplateId('')
+    setTemplates([])
+    if (!patientId) { setLoadingTpls(false); return }
+    staffAPI.getPlanTemplates(tplType, patientId)
       .then(res => setTemplates(res.data || []))
       .catch(err => setTplError(err.message || '加载失败，请刷新重试'))
       .finally(() => setLoadingTpls(false))
-  }, [tplType])
+  }, [tplType, patientId])
 
   // annual_mgmt：加载随访方案库 + 随访表库
   useEffect(() => {
@@ -1828,7 +1839,11 @@ function NewPlanModal({ onClose, onSaved, type }) {
           {/* 方案类型（从模板库选）*/}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">方案类型 *</label>
-            {loadingTpls ? (
+            {!patientId ? (
+              <div style={{ color: '#8AA89C', fontSize: 13, padding: '8px 12px', background: '#F3F7F5', borderRadius: 8 }}>
+                请先选择会员，系统将自动显示其所属平台模板
+              </div>
+            ) : loadingTpls ? (
               <div style={{ color: '#aaa', fontSize: 13, padding: '8px 0' }}>加载模板中...</div>
             ) : tplError ? (
               <div style={{ color: '#DC3545', fontSize: 13, padding: '8px 12px', background: '#FEF2F2', borderRadius: 8 }}>
