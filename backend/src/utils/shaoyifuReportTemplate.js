@@ -16,12 +16,12 @@ function pageMode(pageNum) {
 const PAGE_RULES = {
   4: '一般项目每行单独输出；体重、体重指数、脉搏、跌倒评分不得遗漏。眼科、耳鼻喉科、妇科分别各输出一条imaging，科室内全部“项目：描述”合并写入findings，不得拆成多个检验项。页面底部各科建议写入对应科室findings；不得读取小结页内容。',
   5: '全科医学检查只输出一条imaging，name固定为“全科医学检查”。家族史、慢病史、手术史、是否吸烟、是否饮酒、心脏、胸部、腹部其他、神经系统、皮肤、浅表淋巴结、甲状腺、乳房、脊柱、四肢关节、痔疮等全部按“项目：原文结果”依次合并进findings，禁止逐条输出。',
-  6: '腹部超声必须拆成肝脏超声、胆囊超声、胰腺超声、脾脏超声、双肾超声五条；子宫附件超声、甲状腺超声必须提取。双侧乳房彩超若本页只有标题、结果在下一页，本页不要输出空壳，留待下一页提取。',
+  6: '腹部超声必须严格按原报告行序拆成肝脏超声、胆囊超声、胰腺超声、脾脏超声、双肾超声五条；项目名称必须取该器官标题，findings只能写同一器官所见，严禁把“脾脏彩超”改名为“胰腺超声”或串入胰腺内容。子宫附件超声、甲状腺超声必须提取。双侧乳房彩超若本页只有标题、结果在下一页，本页不要输出空壳，留待下一页提取。',
   7: '提取上一页延续的双侧乳房彩超为一条完整乳房超声；继续提取颈动脉超声、心脏超声、肺部CT。肺部CT只生成一条。',
   8: '必须提取常规十二导心电图、C13呼气试验、头颅MRA、宫颈液基细胞学检查(TCT)，每个项目一条。',
   9: '逐栏逐行读取血常规、红细胞沉降率(ESR)、尿常规。每个表格均先完整读取左栏，再完整读取右栏；右栏是独立项目，绝不继承左栏名称。血常规和尿常规所有印刷子项都必须输出。',
   10: '本页不得跳过。逐栏逐行提取生化、甲状腺功能、25-羟基维生素D、空腹胰岛素、肿瘤标志物；先完整左栏再完整右栏，项目名称、结果、单位、参考范围严格同行对应。',
-  11: '逐栏逐行提取尿微量白蛋白/尿肌酐比值、乙肝三系、EB病毒、胃功能、EB-VCA IgM、HPV24型。必须完整读取左右栏。EB病毒与胃蛋白酶原/胃泌素是不同项目；HPV左右两栏24型全部逐条输出；大便常规标记未检，不输出。',
+  11: '逐栏逐行提取尿微量白蛋白/尿肌酐比值、乙肝三系、EB病毒、胃功能、EB-VCA IgM、HPV24型。每个检验单必须先完整读取左栏从上到下，再读取右栏从上到下，禁止从右到左。尿微量必须包含右栏“尿肌酐测定”，且不得归入乙肝三系；乙肝三系左栏依次为表面抗原、核心抗体、表面抗体，之后才是右栏e抗原、e抗体。EB病毒与胃蛋白酶原/胃泌素是不同项目；HPV左右两栏24型全部逐条输出；大便常规标记未检，不输出。',
   20: '本页仅用于补充常规十二导心电图的心率、P-R间期、QRS时限、QT/QTc、电轴、RV5、SV1、RV5+SV1及诊断。只输出一条心电图，不生成其他条目。',
 };
 
@@ -86,27 +86,15 @@ const PAGE9_ORDER = [
   /颜色/, /葡萄糖/, /酮体/, /潜血/, /蛋白质/, /亚硝酸盐/, /有形成分/, /^白细胞$/, /小圆上皮/, /病理管型/, /结晶/,
 ];
 const PAGE11_ORDER = [
-  /^微量尿蛋白$|^微量尿白蛋白$/, /尿肌酐计算/, /尿肌酐测定/, /微量尿.*尿肌酐比值/,
-  /乙型肝炎病毒表面抗原/, /乙型肝炎病毒e抗原/, /乙型肝炎病毒核心抗体/, /乙型肝炎病毒表面抗体/, /乙型肝炎病毒e抗体/,
+  /^微量尿蛋白$|^微量尿白蛋白$/, /尿肌酐计算/, /微量尿.*尿肌酐比值/, /尿肌酐测定/,
+  /乙型肝炎病毒表面抗原/, /乙型肝炎病毒核心抗体/, /乙型肝炎病毒表面抗体/, /乙型肝炎病毒e抗原/, /乙型肝炎病毒e抗体/,
   /胃泌素/, /胃蛋白酶原I(?!I)/, /VCA[-－]?IgA/i, /胃蛋白酶原II/, /EB.*IgM|VCA.*IgM/i,
   /HPV16\D/i, /HPV31\D/i, /HPV35\D/i, /HPV45\D/i, /HPV52\D/i, /HPV56\D/i, /HPV59\D/i, /HPV68\D/i, /HPV82\D/i, /HPV06\D/i, /HPV42\D/i, /HPV44\D/i,
   /HPV18\D/i, /HPV33\D/i, /HPV39\D/i, /HPV51\D/i, /HPV53\D/i, /HPV58\D/i, /HPV66\D/i, /HPV73\D/i, /HPV83\D/i, /HPV11\D/i, /HPV43\D/i, /HPV81\D/i,
 ];
 
-function normalizePage6Organ(item) {
-  if (Number(item?._page) !== 6 || item?.itemType !== 'imaging') return item;
-  const findings = text(item.findings || item.value);
-  const organRules = [
-    [/^肝脏|肝脏[：:]/, '肝脏超声'], [/^胆囊|胆囊[：:]/, '胆囊超声'],
-    [/^胰腺|胰腺[：:]/, '胰腺超声'], [/^脾脏|脾脏[：:]/, '脾脏超声'],
-    [/^双肾|^肾脏|双肾[：:]|肾脏[：:]/, '双肾超声'],
-  ];
-  const detected = organRules.find(([pattern]) => pattern.test(findings));
-  return detected ? { ...item, name: detected[1], sourceSection: detected[1] } : item;
-}
-
 function applyShaoyifuOrderAndGroups(inputItems) {
-  return (inputItems || []).map(normalizePage6Organ).map((item, originalIndex) => {
+  return (inputItems || []).map((item, originalIndex) => {
     const page = Number(item?._page || 0);
     const name = text(item.name);
     const next = { ...item };
@@ -124,9 +112,9 @@ function applyShaoyifuOrderAndGroups(inputItems) {
       else if (/EB|VCA/i.test(name)) next.orderName = 'EB病毒抗体';
       order = matchIndex(name, PAGE11_ORDER);
     } else if (page === 6) order = matchIndex(name, PAGE6_ORDER);
-    next._sourceOrder = page * 1000 + order;
+    next._order = order;
     return next;
-  }).sort((a, b) => Number(a._page || 0) - Number(b._page || 0) || Number(a._sourceOrder || 0) - Number(b._sourceOrder || 0));
+  }).sort((a, b) => Number(a._page || 0) - Number(b._page || 0) || Number(a._order || 0) - Number(b._order || 0));
 }
 
 function normalizeShaoyifuItems(inputItems) {

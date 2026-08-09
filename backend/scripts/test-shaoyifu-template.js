@@ -8,7 +8,7 @@ assert.equal(pageMode(10), 'extract');
 assert.equal(pageMode(19), 'duplicate');
 assert.equal(pageMode(20), 'ecg_enrichment');
 assert.match(promptForPage(10), /本页不得跳过/);
-assert.match(promptForPage(11), /左右栏/);
+assert.match(promptForPage(11), /左栏从上到下.*右栏从上到下/);
 assert(needsCoverageAudit(10, []));
 assert(needsCoverageAudit(11, [{ _page: 11, name: 'HPV16' }]));
 assert(needsCoverageAudit(6, [
@@ -59,6 +59,8 @@ assert.equal(classificationName({ itemType: 'imaging', name: '耳鼻喉科体检
 assert.equal(classificationName({ itemType: 'imaging', name: '妇科体检' }), '妇科检查');
 assert.equal(classificationName({ itemType: 'lab', name: '胰岛素0小时' }), '空腹胰岛素+C肽');
 assert.equal(classificationName({ itemType: 'lab', name: '糖链抗原125' }), '泛肿瘤标志物');
+assert.equal(classificationName({ itemType: 'lab', name: '糖链抗原15-3' }), '泛肿瘤标志物');
+assert.equal(classificationName({ itemType: 'lab', name: '促甲状腺刺激激素' }), '甲状腺功能');
 
 const ordered = applyShaoyifuOrderAndGroups([
   { _page: 6, itemType: 'imaging', name: '脾脏彩超', findings: '胰腺：形态大小正常' },
@@ -70,7 +72,7 @@ const ordered = applyShaoyifuOrderAndGroups([
   { _page: 11, itemType: 'lab', name: 'HPV18(高危亚型)' },
   { _page: 11, itemType: 'lab', name: 'HPV16(高危亚型)' },
 ]);
-assert.deepEqual(ordered.filter(i => i._page === 6).map(i => i.name), ['胰腺超声', '脾脏超声']);
+assert.deepEqual(ordered.filter(i => i._page === 6).map(i => i.name), ['胰腺彩超', '脾脏彩超']);
 assert.deepEqual(ordered.filter(i => i._page === 9).map(i => i.name), ['白细胞计数', '红细胞计数']);
 assert.deepEqual(ordered.filter(i => i._page === 11).map(i => i.name), ['尿肌酐测定', '乙型肝炎病毒e抗体', 'HPV16(高危亚型)', 'HPV18(高危亚型)']);
 assert.equal(ordered.find(i => i.name === '尿肌酐测定').orderName, '微量尿蛋白/尿肌酐比值');

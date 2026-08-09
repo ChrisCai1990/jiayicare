@@ -283,11 +283,12 @@ function classificationName(item) {
   if (/血常规|血细胞分析|全血细胞计数/.test(group)) return '血常规';
   if (/红细胞沉降率|\bESR\b/i.test(`${name} ${group}`)) return '血沉+抗O+类风湿因子';
   if (/尿液干化学|尿有形成分|尿常规/.test(group)) return '尿常规';
+  if (/促甲状腺.*激素|促甲状腺激素|\bTSH\b/i.test(`${name} ${group}`)) return '甲状腺功能';
   if (/微量尿蛋白|微量尿白蛋白|尿肌酐比值/.test(group)) return '尿微量白蛋白/尿肌酐';
   if (/乙肝三系|HBsAg|HBsAb|HBeAg|HBeAb|HBcAb/i.test(group)) return '乙肝三系';
   if (/HPV24|人乳头状瘤病毒基因分型/.test(group) || /^HPV\d+/i.test(name)) return 'HPV';
   if (/胰岛素.*0小时|空腹胰岛素/i.test(`${name} ${group}`)) return '空腹胰岛素+C肽';
-  if (/糖链抗原(?:125|153|19-9|72-4)|甲胎蛋白|癌胚抗原/.test(name)) return '泛肿瘤标志物';
+  if (/糖链抗原(?:125|15-?3|19-?9|72-?4)|CA\s*15-?3|甲胎蛋白|癌胚抗原/i.test(name)) return '泛肿瘤标志物';
   if (/胃蛋白酶原|胃泌素/.test(name)) return '胃功能3项';
   if (/EB病毒|VCA[-－]?Ig/i.test(name)) return 'EB病毒抗体';
   return item?.name;
