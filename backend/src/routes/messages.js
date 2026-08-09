@@ -2,6 +2,7 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
 const PushRecord = require('../models/PushRecord');
+const { uploadBase64 } = require('../utils/oss');
 const router = express.Router();
 
 // 获取未读消息数（含推送记录，用于导航角标）
@@ -76,8 +77,8 @@ router.patch('/read-all', auth, async (req, res) => {
 // 用户发送消息（给健康顾问/营养师/健管专员）
 router.post('/', auth, async (req, res) => {
   try {
-    const { to, content, imageUrl = '', aiAnalysis = '' } = req.body;
-    if (!content?.trim() && !imageUrl) {
+    const { to, content, imageUrl = '', image = '', mimeType = 'image/jpeg', aiAnalysis = '', suppressAI = false } = req.body;
+    if (!content?.trim() && !imageUrl && !image) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
     const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager'];
@@ -97,13 +98,18 @@ router.post('/', auth, async (req, res) => {
     const TITLE_MAP = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管专员' };
     const senderName = req.user.name || req.user.phone;
     const conversationId = `${req.user._id}_${to}`;
+    let storedImageUrl = String(imageUrl || '');
+    if (image) {
+      const uploaded = await uploadBase64(image, mimeType, 'messages');
+      storedImageUrl = uploaded.url;
+    }
     const msg = await Message.create({
       user:    req.user._id,
       type:    'user',
       sender:  senderName,
       title:   `用户留言 → ${TITLE_MAP[to]}`,
       content: content.trim(),
-      imageUrl: String(imageUrl || ''),
+      imageUrl: storedImageUrl,
       unread:  false,
       recipient: to,
       conversationId,
@@ -122,6 +128,7 @@ router.post('/', auth, async (req, res) => {
       ssePublish(conversationId, { type: 'message', data: aiMsg });
       return;
     }
+    if (suppressAI || to === 'nutritionist') return;
 
     // AI立即先回一句安抚（不阻塞响应），医护看到后仍可正常人工回复追加
     require('../utils/aiMessageFallback').replyWithAI({

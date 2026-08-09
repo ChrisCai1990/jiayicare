@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI, servicesAPI, userAPI, chatAPI } from '../../services/api';
+import { messagesAPI, pushRecordsAPI, servicesAPI, userAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -537,17 +537,13 @@ function ConversationThread({ role, onClose }) {
     try {
       let extra = {};
       if (role === 'nutritionist' && foodImage) {
-        Taro.showLoading({ title: 'AI初评中', mask: true });
-        const analyzed = await chatAPI.analyzeNutrition({ text, image: foodImage.data, mimeType: foodImage.mimeType });
-        extra = { imageUrl: analyzed?.data?.imageUrl || foodImage.data, aiAnalysis: analyzed?.data?.content || '照片已提交，等待营养师查看。' };
-        Taro.hideLoading();
+        extra = { image: foodImage.data, mimeType: foodImage.mimeType, suppressAI: true };
       }
       const res = await messagesAPI.send(role, text || '饮食照片', extra);
       if (res?.data) setMsgs((prev) => (prev.some((m) => m._id === res.data._id) ? prev : [...prev, res.data]));
       setFoodImage(null);
       setTimeout(loadThread, 500);
     } catch {
-      Taro.hideLoading();
       setInput(text);
     } finally {
       setSending(false);
@@ -621,7 +617,7 @@ function ConversationThread({ role, onClose }) {
       {role === 'nutritionist' && foodImage && (
         <View style={{ padding: `8px ${spacing.lg}px`, backgroundColor: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Image src={foodImage.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} />
-          <Text style={{ flex: 1, fontSize: '12px', color: colors.textSecondary }}>饮食照片已选择，发送后由AI先做初步分析</Text>
+          <Text style={{ flex: 1, fontSize: '12px', color: colors.textSecondary }}>饮食照片已选择，将直接发送给营养师</Text>
           <Text onClick={() => setFoodImage(null)} style={{ color: colors.danger, fontSize: '12px' }}>移除</Text>
         </View>
       )}
