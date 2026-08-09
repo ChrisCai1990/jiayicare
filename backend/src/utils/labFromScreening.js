@@ -28,7 +28,7 @@ const REPORT_KEY_MAP = {
   lpla2: ['Lp-PLA2', '脂蛋白磷脂酶A2', 'LPLA2'],
   sbp:   { names: ['收缩压', 'SBP', '收缩压(mmHg)'], exclude: ['下降率', '最大值', '最小值', '负荷', '标准差', '变异'] },
   dbp:   { names: ['舒张压', 'DBP', '舒张压(mmHg)'], exclude: ['下降率', '最大值', '最小值', '负荷', '标准差', '变异'] },
-  weight:['体重', 'Weight', 'BW'],
+  weight:{ names: ['体重', 'Weight', 'BW'], exclude: ['体重指数', 'BMI', '身体质量指数'] },
 };
 
 // 展示用中文标签 + 单位（给 AI prompt 拼文本用）

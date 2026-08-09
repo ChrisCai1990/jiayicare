@@ -935,17 +935,31 @@ router.post('/patients/:id/health-risk-tags/generate', staffAuth, checkPermissio
   try {
     const patient = await User.findById(req.params.id);
     if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
-    const reports = await MedicalReport.find({ user: patient._id, audit_status: 'audited' }).select('screeningCategory screeningL1 screeningL2 title reportItems').lean();
+    const reports = await MedicalReport.find({ user: patient._id, audit_status: 'audited' }).select('screeningCategory screeningL1 screeningL2 title reportItems examConclusion examMainConclusions').lean();
     const tags = { tumor_risk: [], cardiovascular_risk: [], chronic_disease: [] };
     const tumor = /肿瘤|癌|HPV|乳腺|宫颈|甲状腺结节|肺结节|胃蛋白酶原|EB病毒|AFP|CEA|CA\d|PSA|NSE|CYFRA|SCC|HE4/i;
     const cardio = /心脑|心血管|脑血管|血压|动脉|心脏|心电|血脂|胆固醇|甘油三酯|脂蛋白|同型半胱氨酸|Hcy|Lp-PLA2/i;
-    reports.forEach(report => (report.reportItems || []).forEach(item => {
-      if (!(item.status === 'abnormal' || /异常|偏高|升高|偏低|降低|阳性|结节|斑块|囊肿|沉积|增厚|狭窄/i.test(`${item.value || ''} ${item.conclusion || ''}`))) return;
-      const label = String(item.name || item.itemName || item.conclusion || '').trim(); if (!label) return;
-      const text = `${report.screeningCategory || ''} ${report.screeningL1 || ''} ${report.screeningL2 || ''} ${report.title || ''} ${label}`;
-      const key = tumor.test(text) ? 'tumor_risk' : cardio.test(text) ? 'cardiovascular_risk' : 'chronic_disease';
-      if (!tags[key].includes(label)) tags[key].push(label);
-    }));
+    const normal = /^(?:未见明显异常|未见异常|正常|阴性|大致正常|未见占位|未见病变|NILM)$/i;
+    const addConclusion = (report, itemName, raw) => {
+      String(raw || '').replace(/^【[^】]+】\s*/, '').split(/[；;。\n]+/).map(v => v.trim()).filter(Boolean).forEach(label => {
+        if (normal.test(label) || /^(?:建议|请结合|定期复查|随诊)/.test(label)) return;
+        const text = `${report.screeningCategory || ''} ${report.screeningL1 || ''} ${report.screeningL2 || ''} ${report.title || ''} ${itemName || ''} ${label}`;
+        const key = tumor.test(text) ? 'tumor_risk' : cardio.test(text) ? 'cardiovascular_risk' : 'chronic_disease';
+        if (!tags[key].includes(label)) tags[key].push(label);
+      });
+    };
+    reports.forEach(report => {
+      // 检验项目只有数值和异常状态，没有诊断，不能把项目名称当风险标签。
+      (report.reportItems || []).filter(item => item.itemType === 'imaging').forEach(item => {
+        addConclusion(report, item.name, item.diagnosis || item.conclusion);
+      });
+      Object.entries(report.examMainConclusions || {}).forEach(([name, conclusion]) => addConclusion(report, name, conclusion));
+      // 兼容人工录入的旧检查记录，格式为「【检查名】\n诊断结论」。
+      String(report.examConclusion || '').split(/\n\n+/).forEach(block => {
+        const matched = block.match(/^【([^】]+)】\s*([\s\S]*)$/);
+        if (matched) addConclusion(report, matched[1], matched[2]);
+      });
+    });
     const before = patient.healthRiskTags?.toObject?.() || patient.healthRiskTags || null;
     patient.healthRiskTags = { ...tags, status: 'unreviewed', generatedAt: new Date() };
     patient.healthRiskTagAuditLog.push({ action: 'ai_generated', operatorId: req.staff._id, operatorName: req.staff.name || '', before, after: tags });
@@ -3868,6 +3882,22 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     }).select('_id title checkDate date hospital institution screeningCategory screeningL1 screeningL2 reportItems aiSummary').lean();
     if (!reports.length) return res.status(400).json({ success: false, message: `${year}年度没有已审核报告，无法生成小结` });
 
+    // 小结核对顺序必须与专项筛查目录一致，不能交给 AI 自由重排。
+    const categoryNodes = await ProjectCategory.find({ status: 'active' }).select('_id name parent sortOrder createdAt').lean();
+    const childrenByParent = new Map();
+    categoryNodes.forEach(node => {
+      const parent = node.parent ? String(node.parent) : '__root__';
+      if (!childrenByParent.has(parent)) childrenByParent.set(parent, []);
+      childrenByParent.get(parent).push(node);
+    });
+    childrenByParent.forEach(nodes => nodes.sort((a, b) => (a.sortOrder || 0) - (b.sortOrder || 0) || new Date(a.createdAt) - new Date(b.createdAt)));
+    const projectOrder = new Map(); let projectSequence = 0;
+    const visitCategory = node => {
+      if (!projectOrder.has(node.name)) projectOrder.set(node.name, projectSequence++);
+      (childrenByParent.get(String(node._id)) || []).forEach(visitCategory);
+    };
+    (childrenByParent.get('__root__') || []).forEach(visitCategory);
+
     const CATEGORY_MAP = {
       tumor_risk: { keys: ['tumor'], words: ['肿瘤', '癌', '肿瘤标志物', 'NSE', 'PSA', 'AFP', 'CEA', 'CA19', 'CA125', 'CA15', 'CA72', 'CYFRA', 'SCC', 'HE4', 'ProGRP'] },
       cardiovascular_risk: { keys: ['cardiovascular', 'brain_vessel'], words: ['心脑', '心血管', '脑血管', '血压', '血脂', '心电'] },
@@ -3875,7 +3905,7 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     };
     const input = {};
     Object.entries(CATEGORY_MAP).forEach(([key, rule]) => {
-      input[key] = reports.map(report => {
+      input[key] = reports.flatMap(report => {
         const reportCategoryMatched = rule.keys.includes(report.screeningCategory);
         const relevantItems = (report.reportItems || []).filter(item => {
           const itemText = [item.name, item.orderName, item.screeningParent, item.screeningL1, item.screeningL2]
@@ -3887,24 +3917,24 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
         // 肿瘤小结只能读取 NSE，不能把同一张报告里的血脂/Hcy 一并作为肿瘤依据。
         if (!relevantItems.length && !reportCategoryMatched) return null;
         const selectedItems = relevantItems.length ? relevantItems : (report.reportItems || []);
-        return {
-          reportId: String(report._id),
-          title: report.title,
-          date: report.checkDate || report.date,
-          institution: report.hospital || report.institution || '',
-          sourceItemNames: selectedItems.map(item => item.name).filter(Boolean),
-          conclusions: selectedItems.map(item => ({
-            name: item.name,
-            value: item.value,
-            status: item.status,
-            conclusion: item.conclusion || item.diagnosis || item.findings || '',
-          })),
-        };
-      }).filter(Boolean);
+        const grouped = new Map();
+        selectedItems.forEach(item => {
+          const projectName = item.screeningParent || report.screeningL2 || report.title || '其他项目';
+          if (!grouped.has(projectName)) grouped.set(projectName, []);
+          grouped.get(projectName).push(item);
+        });
+        return [...grouped.entries()].map(([projectName, items]) => ({
+          projectName,
+          reportId: String(report._id), title: report.title,
+          date: report.checkDate || report.date, institution: report.hospital || report.institution || '',
+          sourceItemNames: items.map(item => item.name).filter(Boolean),
+          conclusions: items.map(item => ({ name: item.name, value: item.value, status: item.status, conclusion: item.conclusion || item.diagnosis || item.findings || '' })),
+        }));
+      }).filter(Boolean).sort((a, b) => (projectOrder.get(a.projectName) ?? 99999) - (projectOrder.get(b.projectName) ?? 99999));
     });
 
     const { chat } = require('../utils/ai');
-    const raw = await chat([{ role: 'user', content: `根据以下${year}年度已审核检查资料，分别形成简洁、客观的年度健康小结。不得补造资料；没有数据要明确写“本年度暂无相关已审核资料”。只输出JSON：{"tumor_risk":"...","cardiovascular_risk":"...","chronic_disease":"..."}。\n${JSON.stringify(input)}` }], { maxTokens: 1800 });
+    const raw = await chat([{ role: 'user', content: `根据以下${year}年度已审核检查资料，分别形成简洁、客观的年度健康小结。输入中的项目已经严格按专项筛查目录从前到后排列，输出必须保持完全相同的项目顺序：例如第一项是“肺癌早筛”，第一行必须先写“肺癌早筛：...”。每个有资料的项目独占一行，以“项目名：结论”开头；同一项目可汇总其检验和检查结果，但禁止跨项目合并、禁止调整顺序、禁止跳跃描述。没有数据的项目不写；整个分类没有数据时写“本年度暂无相关已审核资料”。不得补造资料。只输出JSON，三个值均为用换行分隔的字符串：{"tumor_risk":"...","cardiovascular_risk":"...","chronic_disease":"..."}。\n${JSON.stringify(input)}` }], { maxTokens: 2200 });
     let parsed;
     try {
       parsed = JSON.parse(String(raw).replace(/^```json\s*|```$/g, '').trim());

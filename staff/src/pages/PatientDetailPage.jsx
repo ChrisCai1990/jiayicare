@@ -4701,7 +4701,7 @@ export default function PatientDetailPage() {
                                   [key]: { ...(prev[key] || {}), summary: e.target.value },
                                 }))} />
                             ) : <div style={{ marginTop: 7, fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>
-                              {(sections[key]?.summary || '暂无相关资料').split(/[；;。\n]+/).map(v => v.trim()).filter(Boolean).map((line, i) => <div key={i}>{line}</div>)}
+                              {(sections[key]?.summary || '暂无相关资料').split(/\n+/).map(v => v.trim()).filter(Boolean).map((line, i) => <div key={i}>{line}</div>)}
                             </div>)}
                           </div>
                         ))}
@@ -5414,7 +5414,7 @@ export default function PatientDetailPage() {
                 // 否则会被误判命中显示成血压数值（2026-07-03 潘孝银"动态血压"报告复现过）
                 sbp:   { names: ['收缩压','SBP','收缩压(mmHg)'], exclude: ['下降率','最大值','最小值','负荷','标准差','变异'] },
                 dbp:   { names: ['舒张压','DBP','舒张压(mmHg)'], exclude: ['下降率','最大值','最小值','负荷','标准差','变异'] },
-                weight:['体重','Weight','BW'],
+                weight:{ names: ['体重','Weight','BW'], exclude: ['体重指数','BMI','身体质量指数'] },
               }
               // 排序报告（最新在前）
               const sortedReports = [...screeningReports].sort((a, b) =>
@@ -5627,9 +5627,9 @@ export default function PatientDetailPage() {
                             <div style={{ fontSize: 15, fontWeight: 700, color: textColor, display: 'flex', alignItems: 'baseline', gap: 6 }}>
                               <span>{val} <span style={{ fontSize: 11, fontWeight: 400, color: '#8AA89C' }}>{d.unit}</span></span>
                               {canEdit && (
-                                <button title="单项修改（直接改来源报告数据，无需AI重跑）"
-                                  style={{ fontSize: 11, fontWeight: 400, color: '#1E6B50', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-                                  onClick={() => { setEditingMetric({ key: d.key, reportId: src.reportId, itemName: src.itemName, label: d.label }); setEditingMetricVal(String(val)) }}>改</button>
+                                <button title="单项修改（直接改来源报告数据，无需AI重跑）" className="btn btn-secondary btn-sm"
+                                  style={{ fontSize: 11, fontWeight: 500, color: '#1E6B50', padding: '2px 8px', lineHeight: 1.3 }}
+                                  onClick={() => { setEditingMetric({ key: d.key, reportId: src.reportId, itemName: src.itemName, label: d.label }); setEditingMetricVal(String(val)) }}>编辑</button>
                               )}
                             </div>
                           )}
