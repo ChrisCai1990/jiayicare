@@ -151,7 +151,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
   };
 
   if (threadRole) {
-    return <ConversationThread role={threadRole} onClose={() => { setThreadRole(null); loadMessages(); }} />;
+    return <ConversationThread role={threadRole} embedded={embedded} onClose={() => { setThreadRole(null); loadMessages(); }} />;
   }
 
   return (
@@ -504,7 +504,7 @@ const ROLE_META = {
   nutritionist: { label: '营养师', icon: '🥗', color: '#059669' },
 };
 
-function ConversationThread({ role, onClose }) {
+function ConversationThread({ role, onClose, embedded = false }) {
   const { statusBarHeight } = useNavBar();
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -565,8 +565,8 @@ function ConversationThread({ role, onClose }) {
   };
 
   return (
-    <View style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: colors.background }}>
-      <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+    <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
+      <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
         <View onClick={onClose} style={{ marginRight: '12px' }}><Icon name="‹" size={16} color={colors.textPrimary} /></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
@@ -575,7 +575,7 @@ function ConversationThread({ role, onClose }) {
         <View style={{ width: '20px' }} />
       </View>
 
-      <ScrollView scrollY scrollIntoView="thread-bottom" style={{ flex: 1, padding: `${spacing.lg}px` }}>
+      <ScrollView scrollY scrollTop={999999} style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px` }}>
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : msgs.length === 0 ? (
@@ -621,7 +621,7 @@ function ConversationThread({ role, onClose }) {
           <Text onClick={() => setFoodImage(null)} style={{ color: colors.danger, fontSize: '12px' }}>移除</Text>
         </View>
       )}
-      <View style={{ display: 'flex', alignItems: 'flex-end', gap: '8px', padding: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
+      <View style={{ display: 'flex', alignItems: 'flex-end', flexShrink: 0, gap: '8px', padding: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
         {role === 'nutritionist' && <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '18px' }}>📷</Text></View>}
         <Textarea
           style={{ flex: 1, backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 14px', fontSize: '14px', maxHeight: '100px', border: `1.5px solid ${colors.border}`, boxSizing: 'border-box' }}
