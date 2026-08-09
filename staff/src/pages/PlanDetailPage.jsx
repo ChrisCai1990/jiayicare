@@ -241,8 +241,11 @@ export default function PlanDetailPage() {
   }
 
   const handleRejectAI = async () => {
+    const reason = window.prompt('请输入拒绝并删除该AI方案的原因')
+    if (reason === null) return
+    if (!reason.trim()) { toast('必须填写删除原因'); return }
     if (!window.confirm('确认拒绝并删除此AI方案？')) return
-    try { await staffAPI.deletePlan(id); toast('已删除'); nav(-1) }
+    try { await staffAPI.deletePlan(id, reason.trim()); toast('已删除'); nav(-1) }
     catch (err) { toast(err.message) }
   }
 
@@ -285,8 +288,11 @@ export default function PlanDetailPage() {
   }
 
   const handleDelete = async () => {
-    if (!window.confirm('确定删除此方案？')) return
-    try { await staffAPI.deletePlan(id); toast('已删除'); nav('/plans') }
+    const reason = window.prompt('请输入删除原因（例如：模板类型选择错误）')
+    if (reason === null) return
+    if (!reason.trim()) { toast('必须填写删除原因'); return }
+    if (!window.confirm('确定删除此方案？该方案自动生成且尚未完成的随访计划也会一并删除。')) return
+    try { await staffAPI.deletePlan(id, reason.trim()); toast('已删除'); nav('/plans') }
     catch (err) { toast(err.message) }
   }
 

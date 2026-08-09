@@ -407,6 +407,20 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
 
+  const handleDelete = async () => {
+    if (!patientMode || !plansByType[planType]) return
+    const reason = window.prompt('请输入删除原因（例如：模板类型选择错误）')
+    if (reason === null) return
+    if (!reason.trim()) { toast('必须填写删除原因'); return }
+    if (!window.confirm('确定删除当前年度管理方案？该方案自动生成且尚未完成的随访计划也会一并删除。')) return
+    try {
+      const res = await staffAPI.deleteAnnualPlan(id, year, planType, reason.trim())
+      setPlansByType(prev => { const next = { ...prev }; delete next[planType]; return next })
+      setModuleData({}); setSelectedTemplateId(''); setPushedAt(null); setConfirmedAt(null); setDirty(false)
+      toast(res.relatedFollowUpsDeleted ? `方案已删除，同时删除 ${res.relatedFollowUpsDeleted} 条未完成随访计划` : '方案已删除')
+    } catch (err) { toast(err.message || '删除失败') }
+  }
+
   const patientName = patientMode ? (patient?.name || '会员') : (plan?.patientId?.name || '会员')
   const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
   const selectedAdminTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
@@ -566,6 +580,11 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
 
       {/* 底部保存 */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+        {patientMode && canEdit && plansByType[planType] && (
+          <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '10px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
+            删除方案
+          </button>
+        )}
         <button
           onClick={() => nav(backPath)}
           style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}

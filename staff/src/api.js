@@ -70,7 +70,7 @@ export const staffAPI = {
   getPlan:        (id)     => req(`/staff/plans/${id}`),
   createPlan:     (data)   => req('/staff/plans', { method: 'POST', body: JSON.stringify(data) }),
   updatePlan:     (id, d)  => req(`/staff/plans/${id}`, { method: 'PUT', body: JSON.stringify(d) }),
-  deletePlan:     (id)     => req(`/staff/plans/${id}`, { method: 'DELETE' }),
+  deletePlan:     (id, reason) => req(`/staff/plans/${id}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   pushPlan:       (id)     => req(`/staff/plans/${id}/push`, { method: 'PATCH' }),
   // AI体检方案讨论区
   addPlanDiscussion:      (id, content, images) => req(`/staff/plans/${id}/discussions`, { method: 'POST', body: JSON.stringify({ content, images }) }),
@@ -233,6 +233,7 @@ export const staffAPI = {
   getAnnualHealthPlans: (year, patientName) => req(`/staff/annual-health-plans?` + qs({ year: year || '', patientName: patientName || '' })),
   getAnnualPlan:        (patientId, year) => req(`/staff/patients/${patientId}/annual-plan` + (year ? `?year=${year}` : '')),
   saveAnnualPlan:       (patientId, data) => req(`/staff/patients/${patientId}/annual-plan`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteAnnualPlan:     (patientId, year, planType, reason) => req(`/staff/patients/${patientId}/annual-plan?year=${year}&planType=${encodeURIComponent(planType)}`, { method: 'DELETE', body: JSON.stringify({ reason }) }),
   confirmSupplyPlan:    (planId) => req(`/staff/supply-plans/${planId}/confirm`, { method: 'PATCH' }),
   pushAnnualPlan:       (patientId, year, planType) => req(`/staff/patients/${patientId}/annual-plan/push?year=${year}` + (planType ? `&planType=${planType}` : ''), { method: 'PATCH' }),
   // 订单管理

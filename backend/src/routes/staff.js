@@ -39,6 +39,7 @@ const MemberLevel    = require('../models/MemberLevel');
 const Activity       = require('../models/Activity');
 const SessionPackage = require('../models/SessionPackage');
 const AnnualPlan = require('../models/AnnualPlan');
+const PlanDeletionLog = require('../models/PlanDeletionLog');
 const Product = require('../models/Product');
 const ServiceProposal = require('../models/ServiceProposal');
 const FollowUpForm      = require('../models/FollowUpForm');
@@ -1765,6 +1766,8 @@ ${discussionText}
 router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async (req, res) => {
   const plan = await HealthPlan.findById(req.params.id);
   if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+  const reason = String(req.body?.reason || '').trim();
+  if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
   if (!checkPlanTypeRole(plan, req.staff.role)) {
     return res.status(403).json({ success: false, message: '该类型方案仅限对应角色（健康顾问/营养师）删除' });
   }
@@ -1774,8 +1777,20 @@ router.delete('/plans/:id', staffAuth, checkPermission('plans', 'delete'), async
   if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id)) {
     return res.status(403).json({ success: false, message: '仅方案制定人可删除' });
   }
-  await HealthPlan.findByIdAndDelete(req.params.id);
-  res.json({ success: true, message: '已删除' });
+  const relatedFollowUps = await FollowUp.find({
+    sourceHealthPlanId: plan._id,
+    status: { $in: ['planned', 'in_progress', 'cancelled'] },
+  }).lean();
+  await PlanDeletionLog.create({
+    planId: plan._id, planModel: 'HealthPlan', patientId: plan.patientId,
+    planType: plan.type, title: plan.title, deletedBy: req.staff._id, reason,
+    snapshot: plan.toObject(), relatedFollowUpsDeleted: relatedFollowUps.length,
+  });
+  await Promise.all([
+    FollowUp.deleteMany({ _id: { $in: relatedFollowUps.map(f => f._id) } }),
+    HealthPlan.findByIdAndDelete(req.params.id),
+  ]);
+  res.json({ success: true, message: '已删除', relatedFollowUpsDeleted: relatedFollowUps.length });
 });
 
 // ── 报告管理 ──────────────────────────────────────────────
@@ -3881,6 +3896,41 @@ router.patch('/orders/:id/start', staffAuth, async (req, res) => {
       .populate('user', 'name phone');
     if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
     res.json({ success: true, data: order, message: '服务已安排' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// DELETE /api/staff/patients/:id/annual-plan — 删除选错类型的年度管理方案并清理未完成的自动随访。
+router.delete('/patients/:id/annual-plan', staffAuth, async (req, res) => {
+  if (!['familyDoctor', 'superadmin'].includes(req.staff.role)) {
+    return res.status(403).json({ success: false, message: '仅健康顾问可删除年度管理方案' });
+  }
+  try {
+    const reason = String(req.body?.reason || '').trim();
+    if (!reason) return res.status(400).json({ success: false, message: '请填写删除原因' });
+    const targetYear = Number(req.query.year) || new Date().getFullYear();
+    const planType = String(req.query.planType || '').trim();
+    if (!planType) return res.status(400).json({ success: false, message: '缺少方案类型' });
+    const plan = await AnnualPlan.findOne({ patientId: req.params.id, year: targetYear, planType });
+    if (!plan) return res.status(404).json({ success: false, message: '方案不存在' });
+    const relatedFollowUps = await FollowUp.find({
+      sourceAnnualPlanId: plan._id,
+      status: { $in: ['planned', 'in_progress', 'cancelled'] },
+    }).lean();
+    await PlanDeletionLog.create({
+      planId: plan._id, planModel: 'AnnualPlan', patientId: plan.patientId,
+      planType: plan.planType, title: `${plan.year}年度${plan.templateName || '管理方案'}`,
+      deletedBy: req.staff._id, reason, snapshot: plan.toObject(),
+      relatedFollowUpsDeleted: relatedFollowUps.length,
+    });
+    const RecurringSupplyPlan = require('../models/RecurringSupplyPlan');
+    await Promise.all([
+      FollowUp.deleteMany({ _id: { $in: relatedFollowUps.map(f => f._id) } }),
+      RecurringSupplyPlan.updateMany({ sourceAnnualPlanId: plan._id }, { $set: { enabled: false } }),
+      AnnualPlan.deleteOne({ _id: plan._id }),
+    ]);
+    res.json({ success: true, message: '已删除', relatedFollowUpsDeleted: relatedFollowUps.length });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }

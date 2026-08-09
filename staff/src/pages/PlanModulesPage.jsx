@@ -235,6 +235,18 @@ export default function PlanModulesPage() {
     }
   }
 
+  const handleDelete = async () => {
+    const reason = window.prompt('请输入删除原因（例如：模板类型选择错误）')
+    if (reason === null) return
+    if (!reason.trim()) { toast('必须填写删除原因'); return }
+    if (!window.confirm('确定删除此方案？该方案自动生成且尚未完成的随访计划也会一并删除。')) return
+    try {
+      const res = await staffAPI.deletePlan(id, reason.trim())
+      toast(res.relatedFollowUpsDeleted ? `方案已删除，同时删除 ${res.relatedFollowUpsDeleted} 条未完成随访计划` : '方案已删除')
+      nav('/plans?type=' + plan.type)
+    } catch (err) { toast(err.message || '删除失败') }
+  }
+
   if (loading) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>加载中...</div>
   if (!plan) return <div style={{ textAlign: 'center', padding: 80, color: '#aaa' }}>方案不存在</div>
 
@@ -314,6 +326,11 @@ export default function PlanModulesPage() {
 
       {/* 底部保存 */}
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 12 }}>
+        {canEdit && (
+          <button onClick={handleDelete} style={{ background: '#fff', color: '#DC2626', border: '1px solid #FCA5A5', padding: '10px 20px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}>
+            删除方案
+          </button>
+        )}
         <button
           onClick={() => nav('/plans?type=' + plan.type)}
           style={{ background: '#fff', color: '#666', border: '1px solid #ddd', padding: '10px 24px', borderRadius: 8, cursor: 'pointer', fontSize: 14 }}
