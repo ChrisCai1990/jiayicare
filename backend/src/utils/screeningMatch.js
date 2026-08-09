@@ -249,8 +249,25 @@ function classifyItemWithMatches(item, matches) {
 }
 
 async function classifyItemAsync(item) {
-  const matches = await matchAllAdmin(item.name, item.itemType);
+  const matches = await matchAllAdmin(classificationName(item), item.itemType);
   return classifyItemWithMatches(item, matches);
+}
+
+// 检验单先逐项规整，再按“所属检验单”统一归类。否则血常规里的“中性粒百分数”、尿常规里的
+// “红细胞”等子项会因为项目名过细而待归类，甚至误命中其他同名检查。
+function classificationName(item) {
+  if (item?.itemType !== 'lab') return item?.name;
+  const name = String(item?.name || '');
+  const group = `${String(item?.orderName || '')} ${String(item?.sourceSection || '')}`;
+  if (/血常规|血细胞分析|全血细胞计数/.test(group)) return '血常规';
+  if (/红细胞沉降率|\bESR\b/i.test(`${name} ${group}`)) return '血沉+抗O+类风湿因子';
+  if (/尿液干化学|尿有形成分|尿常规/.test(group)) return '尿常规';
+  if (/微量尿蛋白|微量尿白蛋白|尿肌酐比值/.test(group)) return '尿微量白蛋白/尿肌酐';
+  if (/乙肝三系|HBsAg|HBsAb|HBeAg|HBeAb|HBcAb/i.test(group)) return '乙肝三系';
+  if (/HPV24|人乳头状瘤病毒基因分型/.test(group)) return 'HPV24型';
+  if (/胃蛋白酶原|胃泌素/.test(name)) return '胃功能3项';
+  if (/EB病毒|VCA[-－]?Ig/i.test(name)) return 'EB病毒抗体';
+  return item?.name;
 }
 
 async function classifyItemsAsync(items) {
@@ -258,7 +275,7 @@ async function classifyItemsAsync(items) {
   const useIndex = index.length ? index : STATIC_INDEX;
   const excludeCategories = index.length ? [] : ['hp'];
   return (items || []).map(item => {
-    const matches = matchAllWithIndex(item.name, item.itemType, useIndex, 0.6, excludeCategories);
+    const matches = matchAllWithIndex(classificationName(item), item.itemType, useIndex, 0.6, excludeCategories);
     return classifyItemWithMatches(item, matches);
   });
 }
@@ -275,5 +292,5 @@ module.exports = {
   matchAll, matchOne: (n, t) => { const r = matchAll(n, t); return r[0] || null; },
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
-  matchAllWithIndex, isFunctionalMedicineL1,
+  matchAllWithIndex, isFunctionalMedicineL1, classificationName,
 };

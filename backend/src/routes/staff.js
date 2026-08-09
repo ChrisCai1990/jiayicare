@@ -8200,18 +8200,22 @@ async function runReportParse(reportId) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
+  const shaoyifuTemplate = require('../utils/shaoyifuReportTemplate');
+  const useShaoyifuTemplate = shaoyifuTemplate.isShaoyifuReport(report);
 
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
   try {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/96dpi)`);
+      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${useShaoyifuTemplate ? 160 : 96}dpi)`);
 
-      const VL_MODEL = 'qwen-vl-plus'; // 实测比max快2.8倍、指令遵从性优于ocr-latest
+      // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
+      // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
+      const VL_MODEL = useShaoyifuTemplate ? 'qwen-vl-max' : 'qwen-vl-plus';
       const CONCURRENCY = 3;
       const BATCH_SIZE = 8;
-      const DPI = 96;
+      const DPI = useShaoyifuTemplate ? 160 : 96;
 
       let allItems = [];
       const summaries = [];
@@ -8235,11 +8239,18 @@ async function runReportParse(reportId) {
           const worker = async () => {
             while (cursor < batchImages.length) {
               const i = cursor++;
+              const pageNum = batchIndex * BATCH_SIZE + i + 1;
+              if (useShaoyifuTemplate && ['skip', 'duplicate'].includes(shaoyifuTemplate.pageMode(pageNum))) {
+                batchResults[i] = { pageType: 'template_skip', skipPage: true, items: [], _templateSkip: true };
+                continue;
+              }
               for (let attempt = 0; attempt < 2; attempt++) {
                 try {
-                  const firstPassPrompt = report.type === 'body_comp' ? BODY_COMPOSITION_RETRY_PROMPT : REPORT_PARSE_PROMPT;
+                  const firstPassPrompt = report.type === 'body_comp'
+                    ? BODY_COMPOSITION_RETRY_PROMPT
+                    : REPORT_PARSE_PROMPT + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: useShaoyifuTemplate ? 8192 : 4096 });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -8254,9 +8265,10 @@ async function runReportParse(reportId) {
             if (!p) continue;
             okPages++;
             const pageNum = batchIndex * BATCH_SIZE + i + 1;
+            if (p._templateSkip) continue;
             const firstPassItems = tagReportPageItems(p.items, pageNum);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
-            if (shouldSkipParsedReportPage(p) && report.type !== 'body_comp') {
+            if (shouldSkipParsedReportPage(p) && report.type !== 'body_comp' && !useShaoyifuTemplate) {
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
             }
@@ -8274,20 +8286,30 @@ async function runReportParse(reportId) {
       // 每个明细页做第二遍覆盖复核。首轮返回合法JSON但漏掉整页内容或右栏时，过去会被误记为成功；
       // 复核改用144dpi和max模型，只允许补充首轮遗漏项，再由程序证据键去重。
       if (report.type !== 'body_comp') {
-        for (const pageNum of detailPages) {
+        const coveragePages = useShaoyifuTemplate
+          ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
+          : [...detailPages];
+        for (const pageNum of coveragePages) {
           try {
-            const img = await renderSinglePage(pdfBuf, pageNum, 144);
+            const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
-            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096 });
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
+            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: useShaoyifuTemplate ? 8192 : 4096 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
             const oldPage = allItems.filter(it => it._page === pageNum);
-            const mergedPage = mergeCoverageAuditItems(oldPage, tagReportPageItems(p.items, pageNum));
+            const auditedPage = tagReportPageItems(p.items, pageNum);
+            const useAuditedPage = useShaoyifuTemplate
+              && shaoyifuTemplate.needsCoverageAudit(pageNum, oldPage)
+              && !shaoyifuTemplate.needsCoverageAudit(pageNum, auditedPage);
+            const mergedPage = useAuditedPage ? auditedPage : mergeCoverageAuditItems(oldPage, auditedPage);
             if (mergedPage.length > oldPage.length) {
               allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
               console.log(`[parse-ai] 页${pageNum}覆盖复核补回${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项）`);
+            } else if (useAuditedPage) {
+              allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
+              console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
             }
           } catch (e) {
             console.log(`[parse-ai] 页${pageNum}覆盖复核异常: ${e.message}`);
@@ -8468,6 +8490,7 @@ async function runReportParse(reportId) {
       }
 
       allItems = sanitizeBodyCompositionItems(allItems);
+      if (useShaoyifuTemplate) allItems = shaoyifuTemplate.normalizeShaoyifuItems(allItems);
 
       // 2026-07-02修复：各类单页重试(数量核对/超声拆分/空内容补全)命中后都是把条目从原位置摘掉、
       // 用 .concat() 拼到 allItems 末尾，导致这些条目脱离了报告原文的页码顺序、被甩到审核列表最后面，
