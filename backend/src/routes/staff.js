@@ -961,9 +961,13 @@ router.post('/patients/:id/health-risk-tags/generate', staffAuth, checkPermissio
       });
     });
     const before = patient.healthRiskTags?.toObject?.() || patient.healthRiskTags || null;
-    patient.healthRiskTags = { ...tags, status: 'unreviewed', generatedAt: new Date() };
-    patient.healthRiskTagAuditLog.push({ action: 'ai_generated', operatorId: req.staff._id, operatorName: req.staff.name || '', before, after: tags });
-    await patient.save(); res.json({ success: true, data: patient.healthRiskTags });
+    const nextTags = { ...tags, status: 'unreviewed', generatedAt: new Date(), reviewedAt: null, reviewedByName: '' };
+    // 只更新标签相关字段，避免会员旧档案里的历史枚举值阻断标签生成。
+    await User.collection.updateOne({ _id: patient._id }, {
+      $set: { healthRiskTags: nextTags },
+      $push: { healthRiskTagAuditLog: { action: 'ai_generated', operatorId: req.staff._id, operatorName: req.staff.name || '', before, after: tags, createdAt: new Date() } },
+    });
+    res.json({ success: true, data: nextTags });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -973,10 +977,12 @@ router.put('/patients/:id/health-risk-tags/review', staffAuth, checkPermission('
     const patient = await User.findById(req.params.id); if (!patient) return res.status(404).json({ success: false, message: '会员不存在' });
     const tags = {}; ['tumor_risk', 'cardiovascular_risk', 'chronic_disease'].forEach(k => { tags[k] = [...new Set((req.body.tags?.[k] || []).map(v => String(v).trim()).filter(Boolean))]; });
     const before = patient.healthRiskTags?.toObject?.() || patient.healthRiskTags || null;
-    patient.healthRiskTags = { ...tags, status: 'reviewed', generatedAt: patient.healthRiskTags?.generatedAt, reviewedAt: new Date(), reviewedByName: req.staff.name || '' };
-    patient.chronicDiseases = [...new Set(Object.values(tags).flat())];
-    patient.healthRiskTagAuditLog.push({ action: 'reviewed', operatorId: req.staff._id, operatorName: req.staff.name || '', before, after: tags });
-    await patient.save(); res.json({ success: true, data: patient.healthRiskTags });
+    const nextTags = { ...tags, status: 'reviewed', generatedAt: patient.healthRiskTags?.generatedAt || null, reviewedAt: new Date(), reviewedByName: req.staff.name || '' };
+    await User.collection.updateOne({ _id: patient._id }, {
+      $set: { healthRiskTags: nextTags, chronicDiseases: [...new Set(Object.values(tags).flat())] },
+      $push: { healthRiskTagAuditLog: { action: 'reviewed', operatorId: req.staff._id, operatorName: req.staff.name || '', before, after: tags, createdAt: new Date() } },
+    });
+    res.json({ success: true, data: nextTags });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -3945,12 +3951,19 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     });
 
     const { chat } = require('../utils/ai');
-    const raw = await chat([{ role: 'user', content: `根据以下${year}年度已审核检查资料，分别形成简洁、客观的年度健康小结。输入中的项目已经严格按专项筛查目录从前到后排列，输出必须保持完全相同的项目顺序：例如第一项是“肺癌早筛”，第一行必须先写“肺癌早筛：...”。每个有资料的项目独占一行，以“项目名：结论”开头；同一项目可汇总其检验和检查结果，但禁止跨项目合并、禁止调整顺序、禁止跳跃描述。没有数据的项目不写；整个分类没有数据时写“本年度暂无相关已审核资料”。不得补造资料。只输出JSON，三个值均为用换行分隔的字符串：{"tumor_risk":"...","cardiovascular_risk":"...","chronic_disease":"..."}。\n${JSON.stringify(input)}` }], { maxTokens: 2200 });
+    const raw = await chat([{ role: 'user', content: `根据以下${year}年度已审核检查资料，分别形成简洁、客观的年度健康小结。输入中的项目已经严格按专项筛查目录从前到后排列，输出必须保持完全相同的项目顺序：例如第一项是“肺癌早筛”，第一行必须先写“肺癌早筛：...”。每个有资料的项目独占一行，以“项目名：结论”开头；同一项目可汇总其检验和检查结果，但禁止跨项目合并、禁止调整顺序、禁止跳跃描述。肿瘤标志物若全部正常，只写“肿瘤标志物：无异常”，不得罗列每个正常指标；只有存在异常时才列异常项。没有数据的项目不写；整个分类没有数据时写“本年度暂无相关已审核资料”。不得补造资料。只输出JSON，三个值均为用换行分隔的字符串：{"tumor_risk":"...","cardiovascular_risk":"...","chronic_disease":"..."}。\n${JSON.stringify(input)}` }], { maxTokens: 2200 });
     let parsed;
     try {
       parsed = JSON.parse(String(raw).replace(/^```json\s*|```$/g, '').trim());
     } catch {
       return res.status(502).json({ success: false, message: 'AI年度小结返回格式异常，请重试' });
+    }
+    const tumorMarkerGroups = input.tumor_risk.filter(group => /肿瘤标志物/.test(group.projectName));
+    if (tumorMarkerGroups.length && tumorMarkerGroups.every(group => group.conclusions.every(item => !['abnormal', 'attention'].includes(item.status)))) {
+      const lines = String(parsed.tumor_risk || '').split(/\n+/).filter(Boolean);
+      const firstIndex = lines.findIndex(line => /^肿瘤标志物[：:]/.test(line.trim()));
+      if (firstIndex >= 0) lines[firstIndex] = '肿瘤标志物：无异常';
+      parsed.tumor_risk = lines.join('\n');
     }
     const sections = {};
     Object.keys(CATEGORY_MAP).forEach(key => {

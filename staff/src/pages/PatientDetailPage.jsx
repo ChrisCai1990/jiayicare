@@ -1587,6 +1587,7 @@ export default function PatientDetailPage() {
   const [editingMetric, setEditingMetric] = useState(null) // { key, reportId, itemName, label }
   const [editingMetricVal, setEditingMetricVal] = useState('')
   const [savingMetric, setSavingMetric] = useState(false)
+  const [expandedMetricHistory, setExpandedMetricHistory] = useState({})
   const [editingDiseaseSeverity, setEditingDiseaseSeverity] = useState(false)
   const [severityForm, setSeverityForm] = useState({})
   const [showTagEditor, setShowTagEditor] = useState(false)
@@ -4704,7 +4705,12 @@ export default function PatientDetailPage() {
                                   [key]: { ...(prev[key] || {}), summary: e.target.value },
                                 }))} />
                             ) : <div style={{ marginTop: 7, fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>
-                              {(sections[key]?.summary || '暂无相关资料').split(/\n+/).map(v => v.trim()).filter(Boolean).map((line, i) => <div key={i}>{line}</div>)}
+                              {(sections[key]?.summary || '暂无相关资料').split(/\n+/).map(v => v.trim()).filter(Boolean).map((line, i) => {
+                                const matched = line.match(/^([^：:]+)[：:]\s*(.*)$/)
+                                return <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
+                                  {matched ? <><span style={{ flexShrink: 0, padding: '1px 8px', borderRadius: 99, background: '#E8F5EF', color: '#1E6B50', fontSize: 12, fontWeight: 600 }}>{matched[1]}</span><span>{matched[2]}</span></> : <span>{line}</span>}
+                                </div>
+                              })}
                             </div>)}
                           </div>
                         ))}
@@ -5543,6 +5549,10 @@ export default function PatientDetailPage() {
                       x: dateStr, y: parseFloat(item.value),
                       institution: report.hospital || report.institution || '',
                       ref: item.referenceRange || '',
+                      reportId: report._id,
+                      itemName: item.name,
+                      rawValue: item.value,
+                      date: d,
                     })
                   }
                 })
@@ -5609,7 +5619,7 @@ export default function PatientDetailPage() {
                       const displayRefHigh = savedRef.refHigh ?? d.refHigh
                       const src = derived[d.key] || {}
                       const canEdit = !!src.reportId && !!src.itemName
-                      const isEditingThis = editingMetric && editingMetric.key === d.key
+                      const isEditingThis = editingMetric && !editingMetric.history && editingMetric.key === d.key
                       return (
                         <div key={d.key} style={{ padding: '10px 12px', background: bgColor, borderRadius: 8, borderLeft: `3px solid ${borderColor}` }}>
                           <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2, display: 'flex', justifyContent: 'space-between' }}>
@@ -5648,6 +5658,31 @@ export default function PatientDetailPage() {
                               />
                             </div>
                           )}
+                          {pts.length > 0 && <div style={{ marginTop: 5 }}>
+                            <button type="button" onClick={() => setExpandedMetricHistory(prev => ({ ...prev, [d.key]: !prev[d.key] }))}
+                              style={{ border: 0, background: 'none', color: '#1E6B50', fontSize: 11, cursor: 'pointer', padding: 0 }}>
+                              {expandedMetricHistory[d.key] ? '收起历史 ▲' : `查看/修改历史（${pts.length}）▼`}
+                            </button>
+                            {expandedMetricHistory[d.key] && <div style={{ marginTop: 5, borderTop: '1px solid #E5E7EB' }}>
+                              {[...pts].reverse().map((point, pointIndex) => {
+                                const editingPoint = editingMetric?.history && String(editingMetric.reportId) === String(point.reportId) && editingMetric.itemName === point.itemName
+                                return <div key={`${point.reportId}-${point.itemName}-${pointIndex}`} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0', fontSize: 11 }}>
+                                  <span style={{ color: '#8AA89C', minWidth: 68 }}>{String(point.date || point.x).slice(0, 10)}</span>
+                                  {editingPoint ? <>
+                                    <input className="form-control" autoFocus value={editingMetricVal} onChange={e => setEditingMetricVal(e.target.value)} style={{ width: 72, padding: '2px 6px', fontSize: 11 }} />
+                                    <button className="btn btn-primary btn-sm" disabled={savingMetric} onClick={handleSaveMetric}>保存</button>
+                                    <button className="btn btn-secondary btn-sm" onClick={() => setEditingMetric(null)}>取消</button>
+                                  </> : <>
+                                    <span style={{ fontWeight: 600 }}>{point.rawValue} {d.unit}</span>
+                                    <button className="btn btn-secondary btn-sm" style={{ padding: '1px 6px', fontSize: 10 }} onClick={() => {
+                                      setEditingMetric({ key: d.key, reportId: point.reportId, itemName: point.itemName, label: `${d.label}（历史）`, history: true })
+                                      setEditingMetricVal(String(point.rawValue))
+                                    }}>修改来源</button>
+                                  </>}
+                                </div>
+                              })}
+                            </div>}
+                          </div>}
                         </div>
                       )
                     })}
