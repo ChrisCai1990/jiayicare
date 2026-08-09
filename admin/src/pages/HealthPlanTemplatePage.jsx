@@ -796,6 +796,8 @@ export default function HealthPlanTemplatePage() {
                 <thead>
                   <tr>
                     <th>模板名称</th>
+                    <th>客户归属</th>
+                    {activeType === 'health_management' && <th>方案归类</th>}
                     <th>状态</th>
                     <th>创建时间</th>
                     <th>操作</th>
@@ -803,13 +805,15 @@ export default function HealthPlanTemplatePage() {
                 </thead>
                 <tbody>
                   {templates.length === 0 && (
-                    <tr><td colSpan={4} style={{ textAlign: 'center', color: '#888', padding: 32 }}>
+                    <tr><td colSpan={activeType === 'health_management' ? 6 : 5} style={{ textAlign: 'center', color: '#888', padding: 32 }}>
                       暂无{activeTypeMeta?.label}模板，点击「新增模板」添加
                     </td></tr>
                   )}
                   {templates.map(tpl => (
                     <tr key={tpl._id}>
                       <td style={{ fontWeight: 600 }}>{tpl.name}</td>
+                      <td>{tpl.clientBrand === 'jinyisen' ? '金伊森' : tpl.clientBrand === 'jiayiguanjia' ? '嘉医管家' : '两平台共用（历史）'}</td>
+                      {activeType === 'health_management' && <td>{{ health_reshape: '健康重塑类', young_state: '健康年轻态类', chronic_stable: '慢病维稳类', health_prevention: '健康预防类' }[tpl.content?.planType] || '待归类'}</td>}
                       <td>
                         <span className={`badge ${tpl.status === 'active' ? 'badge-green' : 'badge-gray'}`}>
                           {tpl.status === 'active' ? '启用' : '停用'}

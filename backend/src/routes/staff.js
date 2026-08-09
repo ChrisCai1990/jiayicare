@@ -5581,6 +5581,9 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
 
 请严格按以下JSON格式输出，仅输出JSON：
 {
+  "templateNodes": [
+    { "index": 1, "content": "对应Admin模板第1个具体方案的个性化安排", "time": "计划时间或周期", "frequency": "执行频次", "notes": "注意事项" }
+  ],
   "medical_treatment": [
     { "reason": "就医原因", "department": "就诊科室", "visit_time": "${year}-07-15", "notes": "注意事项（如带齐历次体检报告）" }
   ],
@@ -5598,7 +5601,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
   "annual_checkup": { "focus": "重点关注项目", "date": "${year + 1}-06-01", "escort": false }
 }
 
-注意：medical_treatment仅填高优先级就医需求；specialist_collab有会诊需求才填；monitoring根据慢病标签确定项目；无相关内容用空数组。`;
+注意：templateNodes必须与Admin模板“具体方案”逐项对应，index从1开始，不得漏项、合并或自行增加；medical_treatment仅填高优先级就医需求；specialist_collab有会诊需求才填；monitoring根据慢病标签确定项目；无相关内容用空数组。`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 2000 });
 
@@ -5617,6 +5620,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
     });
     if (allowedKeys.includes('lifestyle') && raw.lifestyle) result.lifestyle = { enabled: true, ...raw.lifestyle };
     if (allowedKeys.includes('annual_checkup') && raw.annual_checkup) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
+    result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes : [];
 
     res.json({ success: true, data: result, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {

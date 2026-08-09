@@ -119,6 +119,62 @@ const MODULE_DEFS = {
       { key: 'followUpStaff',    label: '随访人员',       type: 'staff-select' },
     ],
   },
+  medication: {
+    name: '药物服用', icon: '💊', multi: true, summaryKey: 'items', summaryLabel: '药物/事项',
+    fields: [
+      { key: 'items', label: '药物或管理事项', type: 'text' },
+      { key: 'frequency', label: '频次', type: 'text' },
+      { key: 'time', label: '计划时间', type: 'date' },
+      { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
+      { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+    ],
+  },
+  supplement: {
+    name: '营养素补充', icon: '🧴', multi: true, summaryKey: 'items', summaryLabel: '营养素/事项',
+    fields: [
+      { key: 'items', label: '营养素或管理事项', type: 'text' },
+      { key: 'frequency', label: '频次', type: 'text' },
+      { key: 'time', label: '计划时间', type: 'date' },
+      { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
+      { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+    ],
+  },
+  nutrition_intervention: {
+    name: '强化营养干预', icon: '🥗', multi: true, summaryKey: 'items', summaryLabel: '干预事项',
+    fields: [
+      { key: 'items', label: '干预内容', type: 'text' },
+      { key: 'frequency', label: '干预频次', type: 'text' },
+      { key: 'time', label: '计划时间', type: 'date' },
+      { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
+      { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+    ],
+  },
+}
+
+// Admin“具体方案”名称 → 医护端可编辑板块。顺序完全采用模板 followUpPlans，不再按前端套餐类型猜测。
+const templateNodeToModule = (node, index) => {
+  const name = String(node?.name || '').replace(/[【】]/g, '').trim()
+  let key = ''
+  if (/医疗问题解决/.test(name)) key = 'medical_treatment'
+  else if (/全专联合会诊/.test(name)) key = 'specialist_collab'
+  else if (/异常复查提醒/.test(name)) key = 'abnormal_followup'
+  else if (/疫苗接种/.test(name)) key = 'vaccine'
+  else if (/药物服用/.test(name)) key = 'medication'
+  else if (/营养素补充/.test(name)) key = 'supplement'
+  else if (/强化营养干预/.test(name)) key = 'nutrition_intervention'
+  else if (/日常监测/.test(name)) key = 'monitoring'
+  else if (/年度体检/.test(name)) key = 'annual_checkup'
+  else if (/季度评估/.test(name)) key = 'quarterly_eval'
+  else if (/生活方式评估/.test(name)) key = `lifestyle_${index}`
+  else key = `template_${String(node?.id || index)}`
+  const baseKey = key.startsWith('lifestyle_') ? 'lifestyle' : key
+  const fallback = { name: name || `方案节点${index + 1}`, icon: '📌', fields: [
+    { key: 'time', label: '计划时间/周期', type: 'text' },
+    { key: 'content', label: '具体内容', type: 'textarea' },
+    { key: 'followUpStaff', label: '随访人员', type: 'staff-select' },
+    { key: 'notes', label: '注意事项', type: 'textarea', internal: true },
+  ] }
+  return { key, def: { ...(MODULE_DEFS[baseKey] || fallback), name: name || MODULE_DEFS[baseKey]?.name || fallback.name }, source: node }
 }
 
 // ── 各方案类型包含的板块（按顺序）──────────────────────────────────
@@ -299,9 +355,24 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
       setModuleData(prev => {
         const merged = { ...prev }
         Object.entries(aiData).forEach(([key, val]) => {
+          if (key === 'templateNodes') return
           if (!allowedKeys.includes(key)) return
           if (val && (val.records?.length > 0 || val.enabled)) {
             merged[key] = val
+          }
+        })
+        const templateEntries = (selectedTemplate?.content?.followUpPlans || []).map(templateNodeToModule)
+        ;(aiData.templateNodes || []).forEach((node, index) => {
+          const entry = templateEntries[Number(node.index || index + 1) - 1]
+          if (!entry) return
+          const baseKey = entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key
+          if (MODULE_DEFS[baseKey]?.multi) {
+            merged[entry.key] = { records: [{
+              items: node.content || '', content: node.content || '', time: node.time || '',
+              frequency: node.frequency || '', notes: node.notes || '',
+            }] }
+          } else {
+            merged[entry.key] = { enabled: true, focus: node.content || '', content: node.content || '', time: node.time || '', frequency: node.frequency || '', notes: node.notes || '' }
           }
         })
         return merged
@@ -336,7 +407,9 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
     }
   }
 
-  const currentModuleKeys = PLAN_TYPE_MODULES[planType] || []
+  const templateModuleEntries = selectedAdminTemplate
+    ? (selectedAdminTemplate.content?.followUpPlans || []).map(templateNodeToModule)
+    : (PLAN_TYPE_MODULES[planType] || []).map(key => ({ key, def: MODULE_DEFS[key] }))
   const patientName = patientMode ? (patient?.name || '会员') : (plan?.patientId?.name || '会员')
   const planTitle = patientMode ? '年度健康管理方案' : (plan?.title || '年度管理方案')
   const selectedAdminTemplate = adminTemplates.find(t => t._id === selectedTemplateId)
@@ -475,12 +548,12 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
               &nbsp;= 不推送给客户
             </div>
           </div>
-          {currentModuleKeys.map(mKey => (
+          {templateModuleEntries.map(entry => (
             <ModulePanel
-              key={mKey}
-              moduleKey={mKey}
-              def={MODULE_DEFS[mKey]}
-              data={moduleData[mKey] || {}}
+              key={entry.key}
+              moduleKey={entry.key}
+              def={entry.def}
+              data={moduleData[entry.key] || {}}
               onChange={handleModuleChange}
             />
           ))}
