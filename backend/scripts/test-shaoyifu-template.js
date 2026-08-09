@@ -43,5 +43,13 @@ assert.equal(classificationName({ itemType: 'lab', name: '乙型肝炎病毒e抗
 assert.equal(classificationName({ itemType: 'lab', name: '胃蛋白酶原I', orderName: 'EB病毒/胃功能' }), '胃功能3项');
 assert.equal(classificationName({ itemType: 'lab', name: 'VCA-IgA', orderName: 'EB病毒/胃功能' }), 'EB病毒抗体');
 assert.equal(classificationName({ itemType: 'lab', name: 'HPV51(高危亚型)', orderName: 'HPV24型' }), 'HPV24型');
+assert.equal(classificationName({ itemType: 'data', name: '体重' }), '身高体重BMI');
+assert.equal(classificationName({ itemType: 'data', name: '体重指数(BMI)' }), '身高体重BMI');
+assert.equal(classificationName({ itemType: 'data', name: '脉搏' }), '脉搏呼吸');
+assert.equal(classificationName({ itemType: 'data', name: '跌倒评分' }), '跌倒评估');
+assert.equal(classificationName({ itemType: 'imaging', name: '全科医学检查' }), '全科医学检查');
+assert.equal(classificationName({ itemType: 'imaging', name: '胆囊彩超' }), '胆囊超声');
+assert.equal(classificationName({ itemType: 'imaging', name: '脾脏彩超' }), '脾脏超声');
+assert.equal(classificationName({ itemType: 'imaging', name: '子宫、附件彩超' }), '子宫附件/阴道超声');
 
 console.log('shaoyifu template regression: ok');

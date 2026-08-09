@@ -256,9 +256,30 @@ async function classifyItemAsync(item) {
 // 检验单先逐项规整，再按“所属检验单”统一归类。否则血常规里的“中性粒百分数”、尿常规里的
 // “红细胞”等子项会因为项目名过细而待归类，甚至误命中其他同名检查。
 function classificationName(item) {
-  if (item?.itemType !== 'lab') return item?.name;
   const name = String(item?.name || '');
   const group = `${String(item?.orderName || '')} ${String(item?.sourceSection || '')}`;
+  const context = `${name} ${group}`;
+  if (item?.itemType === 'data') {
+    if (/身高|体重指数|\bBMI\b|^体重$/i.test(name)) return '身高体重BMI';
+    if (/脉搏|呼吸/.test(name)) return '脉搏呼吸';
+    if (/跌倒/.test(name)) return '跌倒评估';
+    if (/血压/.test(name)) return '血压';
+    if (/腰围/.test(name)) return '腰围';
+  }
+  if (item?.itemType === 'imaging') {
+    if (/全科医学|全科|内科.*外科/.test(context)) return '全科医学检查';
+    if (/眼科/.test(context)) return '眼科体检';
+    if (/耳鼻喉|ENT/i.test(context)) return '耳鼻喉科体检';
+    if (/妇科体检/.test(context)) return '妇科体检';
+    if (/子宫.*附件|附件.*子宫|阴道超声/.test(context)) return '子宫附件/阴道超声';
+    if (/胆囊/.test(context)) return '胆囊超声';
+    if (/脾脏|脾彩超|脾超声/.test(context)) return '脾脏超声';
+    if (/胰腺|胰彩超|胰超声/.test(context)) return '胰腺超声';
+    if (/肝脏|肝彩超|肝超声/.test(context)) return '肝脏超声';
+    if (/双肾|肾脏超声/.test(context)) return '双肾超声';
+    return item?.name;
+  }
+  if (item?.itemType !== 'lab') return item?.name;
   if (/血常规|血细胞分析|全血细胞计数/.test(group)) return '血常规';
   if (/红细胞沉降率|\bESR\b/i.test(`${name} ${group}`)) return '血沉+抗O+类风湿因子';
   if (/尿液干化学|尿有形成分|尿常规/.test(group)) return '尿常规';

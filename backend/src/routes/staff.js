@@ -40,6 +40,7 @@ const Activity       = require('../models/Activity');
 const SessionPackage = require('../models/SessionPackage');
 const AnnualPlan = require('../models/AnnualPlan');
 const Product = require('../models/Product');
+const ServiceProposal = require('../models/ServiceProposal');
 const FollowUpForm      = require('../models/FollowUpForm');
 const FollowUpPlan      = require('../models/FollowUpPlan');
 const SystemConfig      = require('../models/SystemConfig');
@@ -6505,6 +6506,7 @@ const TODO_REVIEW_ROLE = {
   symptom_verify:       'healthManager',
   transfer_human:       'healthManager',
   supply_plan_review:   'healthManager', // 定期配药/配营养素计划到期，健管专员确认安排
+  service_proposal_review: 'healthPlanner',
 };
 
 router.get('/ai-todos', staffAuth, async (req, res) => {
@@ -6554,6 +6556,19 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
     }
     const myPatientIdSet = myPatientIds ? new Set(myPatientIds.map(String)) : null;
     const inMyScope = (userId) => !myPatientIdSet || myPatientIdSet.has(String(userId));
+
+    if (can('service_proposal_review')) {
+      const proposalFilter = { status: 'pending', planner: req.staff._id };
+      const proposals = await ServiceProposal.find(proposalFilter).populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
+      proposals.forEach(proposal => todos.push({
+        id: 'serviceproposal_' + proposal._id, type: 'service_proposal_review', label: '服务方案草稿待审核', priority: 2,
+        patientName: proposal.user?.name || '未知', patientId: String(proposal.user?._id || ''),
+        summary: proposal.customerNeed || proposal.proposalText.slice(0, 60), proposalText: proposal.proposalText,
+        products: proposal.recommendedProducts || [], confidence: proposal.confidence,
+        createdAt: proposal.createdAt, overdue: (now - new Date(proposal.createdAt)) > DAY,
+        link: `/patients/${proposal.user?._id}`,
+      }));
+    }
 
     // ── 健管专员：体检报告 OCR 待审核（aiStatus=pending）──
     // ── 健管专员：用户自己上传、尚未AI解析的体检报告（待解析）──
@@ -6990,6 +7005,41 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+router.patch('/service-proposals/:id/review', staffAuth, async (req, res) => {
+  try {
+    const proposal = await ServiceProposal.findOne({ _id: req.params.id, status: 'pending' });
+    if (!proposal) return res.status(404).json({ success: false, message: '方案草稿不存在或已处理' });
+    const isSuper = req.staff.role === 'superadmin';
+    if (!isSuper && (req.staff.role !== 'healthPlanner' || String(proposal.planner) !== String(req.staff._id))) {
+      return res.status(403).json({ success: false, message: '无权审核该方案' });
+    }
+    const action = req.body.action;
+    if (!['approve', 'reject'].includes(action)) return res.status(400).json({ success: false, message: '审核动作无效' });
+    proposal.status = action === 'approve' ? 'approved' : 'rejected';
+    proposal.reviewNote = String(req.body.reviewNote || '');
+    proposal.reviewedBy = req.staff._id;
+    proposal.reviewedAt = new Date();
+    if (action === 'approve') {
+      if (req.body.proposalText) proposal.proposalText = String(req.body.proposalText);
+      const productLines = proposal.recommendedProducts.map(item => `• ${item.name}${item.price ? `（¥${item.price}）` : ''}：${item.reason || ''}`).join('\n');
+      await Message.create({
+        user: proposal.user, type: 'manager', sender: req.staff.name || '健康规划师',
+        content: `您的专属服务方案已确认：\n\n${proposal.proposalText}${productLines ? `\n\n推荐服务：\n${productLines}` : ''}`,
+        conversationId: `${proposal.user}_manager`, unread: true,
+      });
+      proposal.deliveredAt = new Date();
+    } else {
+      await FollowUp.findOneAndUpdate(
+        { sourceType: 'other', patientId: proposal.user, theme: '服务方案需人工沟通', status: 'planned' },
+        { $setOnInsert: { staffId: proposal.planner, assignedTo: proposal.planner, patientId: proposal.user, type: 'other', status: 'planned', theme: '服务方案需人工沟通', content: proposal.reviewNote || '自动生成的服务方案不适合，请联系客户重新确认需求', sourceType: 'other' } },
+        { upsert: true, new: true },
+      );
+    }
+    await proposal.save();
+    res.json({ success: true, data: proposal, message: action === 'approve' ? '已通过并发送给客户' : '已驳回并生成联系待办' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // PATCH /api/staff/chat-transfers/:id/resolve — 标记AI聊天转人工待办为已处理（联系过会员后调用）
@@ -8213,7 +8263,7 @@ async function runReportParse(reportId) {
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
       const VL_MODEL = useShaoyifuTemplate ? 'qwen-vl-max' : 'qwen-vl-plus';
-      const CONCURRENCY = 3;
+      const CONCURRENCY = useShaoyifuTemplate ? 2 : 3;
       const BATCH_SIZE = 8;
       const DPI = useShaoyifuTemplate ? 160 : 96;
 
@@ -8250,7 +8300,7 @@ async function runReportParse(reportId) {
                     ? BODY_COMPOSITION_RETRY_PROMPT
                     : REPORT_PARSE_PROMPT + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: useShaoyifuTemplate ? 8192 : 4096 });
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -8295,7 +8345,7 @@ async function runReportParse(reportId) {
             if (!img) continue;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
-            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: useShaoyifuTemplate ? 8192 : 4096 });
+            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
             const oldPage = allItems.filter(it => it._page === pageNum);
@@ -8326,7 +8376,7 @@ async function runReportParse(reportId) {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) continue;
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到条数明显少于标题声明数量的检验单：${underOrders.filter(o => allItems.some(it => it._page === pageNum && it.orderName === o.orderName)).map(o => `"${o.orderName}"（标题写${o.expected}项，之前只提取到${o.actual}项）`).join('、')}。请重新逐行核对该检验单在图片中的每一行，确保每一个子项都单独输出一条，不得合并、省略或遗漏任何一行，即使多行结果完全相同（如都是阴性）也要逐条列出。`;
-            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
+            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
             const retryItems = tagReportPageItems(p.items, pageNum);
@@ -8366,7 +8416,7 @@ async function runReportParse(reportId) {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) continue;
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页的血常规/血细胞分析检验单曾漏提了部分子项（缺少：${missingGroups.join('、')}）。请重新逐行核对该检验单在图片中的每一行，血常规通常有白细胞、中性粒细胞、淋巴细胞、单核细胞、嗜酸性粒细胞、嗜碱性粒细胞、红细胞、血红蛋白、血小板等约20项子指标（含绝对值和百分比两种），必须逐条全部输出，不得省略或遗漏任何一行。`;
-            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
+            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
             const retryItems = tagReportPageItems(p.items, pageNum);
@@ -8402,7 +8452,7 @@ async function runReportParse(reportId) {
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。`;
-          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
+          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
@@ -8431,7 +8481,7 @@ async function runReportParse(reportId) {
           if (!img) continue;
           const emptyNames = allItems.filter(it => it._page === pageNum && PHYSICAL_EXAM_NAMES.some(n => str(it.name).startsWith(n)) && !str(it.findings) && !str(it.diagnosis)).map(it => it.name);
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到"${emptyNames.join('、')}"项目但检查所见/诊断意见内容为空，请重新核对该项目在图片中的具体内容，完整填写findings和diagnosis字段，不要留空。`;
-          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: 4096 });
+          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
