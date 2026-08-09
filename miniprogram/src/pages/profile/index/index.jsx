@@ -90,7 +90,7 @@ export default function ProfilePage() {
         }}>
           <Icon name="✏️" size={15} color="#fff" />
         </View>
-        <View style={{
+        <View onClick={() => nav('/pages/profile/benefits/index')} style={{
           width: '76px', height: '76px', borderRadius: '38px', backgroundColor: 'rgba(255,255,255,0.15)',
           margin: '16px auto 0', display: 'flex', alignItems: 'center', justifyContent: 'center',
         }}>
@@ -185,6 +185,7 @@ export default function ProfilePage() {
               </View>
             ))}
           </View>
+          <Text style={{ fontSize: '15px', color: colors.textMuted, marginLeft: '8px' }}>›</Text>
         </View>
       </View>
 

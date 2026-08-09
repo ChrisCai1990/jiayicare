@@ -1813,6 +1813,29 @@ router.get('/system-config/daily-care', adminAuth, async (req, res) => {
   }
 });
 
+const DEFAULT_HEALTH_FUND_POLICY = {
+  title: '健康基金使用规则',
+  description: '健康基金可用于符合条件的健康管理服务抵扣；退款审核通过后按原来源退回。',
+  personalPriority: true,
+  allowCouponStacking: true,
+  refundToOriginalSource: true,
+};
+
+router.get('/system-config/health-fund', adminAuth, async (req, res) => {
+  try {
+    const cfg = await SystemConfig.findOne({ key:'healthFundPolicy' });
+    res.json({ success:true, data:{ ...DEFAULT_HEALTH_FUND_POLICY, ...(cfg?.value||{}) } });
+  } catch (err) { res.status(500).json({ success:false, message:err.message }); }
+});
+
+router.put('/system-config/health-fund', adminAuth, async (req, res) => {
+  try {
+    const value = { ...DEFAULT_HEALTH_FUND_POLICY, ...req.body };
+    await SystemConfig.findOneAndUpdate({ key:'healthFundPolicy' }, { key:'healthFundPolicy', value, label:'健康基金使用与退款规则' }, { upsert:true, new:true });
+    res.json({ success:true, data:value, message:'健康基金规则已保存' });
+  } catch (err) { res.status(500).json({ success:false, message:err.message }); }
+});
+
 // PUT /api/admin/system-config/daily-care —— 开关AI每日关怀
 router.put('/system-config/daily-care', adminAuth, async (req, res) => {
   try {

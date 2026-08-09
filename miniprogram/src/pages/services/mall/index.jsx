@@ -315,7 +315,7 @@ function PurchaseModal({ item, mode, onClose }) {
             <>
               <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>支付方式</Text>
-                <Text style={{ fontSize: '10px', color: colors.textMuted }}>结算 v1.0.21</Text>
+                <Text style={{ fontSize: '10px', color: colors.textMuted }}>结算 v1.0.22</Text>
               </View>
               <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
                 {PAY_METHODS.map((m) => (

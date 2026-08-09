@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { giftsAPI, partnerBenefitsAPI, pointsAPI } from '../../services/api';
+import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../services/api';
 
 const POINTS_SOURCE_LABEL = { checkin: '打卡', consumption: '消费', redeem: '兑换', adjust: '调整' };
 
@@ -224,7 +224,8 @@ export default function BenefitsScreen({ navigation }) {
   const [refreshing, setRefreshing] = useState(false);
   const [detailGift, setDetailGift] = useState(null);
 
-  const fund = user?.healthFund || {};
+  const [fundDetail, setFundDetail] = useState(null);
+  const fund = fundDetail || user?.healthFund || {};
   const fundTotal    = fund.total    ?? (user?.healthFundBalance || 0);
   const fundPersonal = fund.personal ?? 0;
   const fundCorp     = fund.corporate ?? 0;
@@ -235,6 +236,9 @@ export default function BenefitsScreen({ navigation }) {
       if (res.success) setGifts(res.data);
     } catch {}
     finally { setGiftsLoading(false); setRefreshing(false); }
+  }, []);
+  const loadFund = useCallback(async () => {
+    try { const res = await userAPI.getHealthFund(); if (res.success) setFundDetail(res.data); } catch {}
   }, []);
 
   // ── 积分 ──
@@ -261,7 +265,7 @@ export default function BenefitsScreen({ navigation }) {
     finally { setGroupsLoading(false); setRefreshing(false); }
   }, []);
 
-  useEffect(() => { loadGifts(); loadPartnerBenefits(); loadPoints(); }, [loadGifts, loadPartnerBenefits, loadPoints]);
+  useEffect(() => { loadGifts(); loadPartnerBenefits(); loadPoints(); loadFund(); }, [loadGifts, loadPartnerBenefits, loadPoints, loadFund]);
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -322,6 +326,12 @@ export default function BenefitsScreen({ navigation }) {
                   <Text style={styles.fundItemVal}>¥{fundCorp.toLocaleString()}</Text>
                 </View>
               </View>
+            </View>
+
+            {!!fund.policy?.description && <View style={styles.pointsCard}><Text style={styles.pointsLabel}>{fund.policy.title||'健康基金使用规则'}</Text><Text style={{fontSize:12,color:colors.textSecondary,lineHeight:19,marginTop:6}}>{fund.policy.description}</Text></View>}
+            <View style={styles.pointsCard}>
+              <Text style={styles.pointsLabel}>基金收支明细</Text>
+              {!fund.transactions?.length ? <Text style={{fontSize:12,color:colors.textMuted,marginTop:8}}>暂无基金收支记录</Text> : fund.transactions.map(item=><View key={`${item.type}-${item._id}`} style={{flexDirection:'row',justifyContent:'space-between',paddingVertical:9,borderTopWidth:1,borderTopColor:colors.border}}><View style={{flex:1}}><Text style={{fontSize:13,color:colors.textPrimary}}>{item.remark||item.orderName||'健康基金变动'}</Text><Text style={{fontSize:11,color:colors.textMuted}}>{new Date(item.createdAt).toLocaleString('zh-CN')}</Text></View><Text style={{fontSize:14,fontWeight:'700',color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text></View>)}
             </View>
 
             {/* 积分卡片 */}

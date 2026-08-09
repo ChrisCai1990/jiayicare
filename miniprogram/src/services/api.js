@@ -103,6 +103,7 @@ export const authAPI = {
 // ── User ─────────────────────────────────────────────────────────
 export const userAPI = {
   getMe: () => request('/user/me'),
+  getHealthFund: () => request('/user/health-fund'),
   getDashboard: () => request('/user/dashboard'),
   updateMe: (data) => request('/user/me', { method: 'PUT', body: JSON.stringify(data) }),
   onboarding: (data) => request('/user/onboarding', { method: 'POST', body: JSON.stringify(data) }),

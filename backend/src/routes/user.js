@@ -184,6 +184,26 @@ router.get('/me', auth, async (req, res) => {
   }
 });
 
+router.get('/health-fund', auth, async (req, res) => {
+  try {
+    const HealthFundTransaction = require('../models/HealthFundTransaction');
+    const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
+    const [personalAvailable, corporateAvailable, transactions, grants, config] = await Promise.all([
+      getPersonalFundAvailable(req.user), getCorporateFundAvailable(req.user),
+      HealthFundTransaction.find({ userId: req.user._id }).populate('orderId', 'serviceName orderNo').sort({ createdAt: -1 }).limit(100).lean(),
+      GiftRecord.find({ patientId: req.user._id, giftType: 'fund' }).sort({ createdAt: -1 }).limit(100).lean(),
+      SystemConfig.findOne({ key: 'healthFundPolicy' }).lean(),
+    ]);
+    const total = Number(req.user.healthFundBalance) || 0;
+    const personal = Math.min(personalAvailable, total);
+    const ledger = [
+      ...transactions.map(item => ({ _id:item._id, type:item.type, source:item.source, amount:Number(item.amount)||0, remark:item.remark||'', orderName:item.orderId?.serviceName||'', orderNo:item.orderId?.orderNo||'', createdAt:item.createdAt })),
+      ...grants.map(item => ({ _id:item._id, type:'grant', source:item.fundType||'other', amount:Number(item.fundAmount)||0, remark:item.remark||(item.fundType==='enterprise'?'企业赠送健康基金':'自有健康基金入账'), orderName:'', orderNo:'', createdAt:item.createdAt })),
+    ].sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt)).slice(0,100);
+    res.json({ success:true, data:{ total, personal, corporate:Math.min(corporateAvailable,Math.max(0,total-personal)), policy:config?.value||{}, transactions:ledger } });
+  } catch (err) { res.status(500).json({ success:false, message:'获取健康基金明细失败', error:err.message }); }
+});
+
 // 更新用户信息（支持 healthProfile + 联系信息变更日志）
 router.put('/me', auth, async (req, res) => {
   try {

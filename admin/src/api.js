@@ -354,6 +354,8 @@ export const adminAPI = {
   // AI 每日健康关怀开关
   getDailyCareConfig:    ()        => req('/system-config/daily-care'),
   updateDailyCareConfig: (enabled) => req('/system-config/daily-care', { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  getHealthFundConfig:   ()        => req('/system-config/health-fund'),
+  updateHealthFundConfig:(data)    => req('/system-config/health-fund', { method: 'PUT', body: JSON.stringify(data) }),
 
   // 365 会员管理（需求20）
 }

@@ -3,7 +3,7 @@ import { View, Text, ScrollView, Image } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { useAuth } from '../../../context/AuthContext';
-import { giftsAPI, partnerBenefitsAPI, pointsAPI } from '../../../services/api';
+import { giftsAPI, partnerBenefitsAPI, pointsAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
@@ -84,8 +84,9 @@ export default function BenefitsPage() {
   const [groups, setGroups] = useState([]);
   const [groupsLoading, setGroupsLoading] = useState(true);
   const [detailBenefit, setDetailBenefit] = useState(null);
+  const [fundDetail, setFundDetail] = useState(null);
 
-  const fund = user?.healthFund || {};
+  const fund = fundDetail || user?.healthFund || {};
   const fundTotal = fund.total ?? (user?.healthFundBalance || 0);
   const fundPersonal = fund.personal ?? 0;
   const fundCorp = fund.corporate ?? 0;
@@ -104,6 +105,10 @@ export default function BenefitsPage() {
     } catch {}
   }, []);
 
+  const loadFund = useCallback(async () => {
+    try { const res = await userAPI.getHealthFund(); if (res.success) setFundDetail(res.data); } catch {}
+  }, []);
+
   const loadPartnerBenefits = useCallback(async () => {
     try {
       const res = await partnerBenefitsAPI.list();
@@ -111,7 +116,7 @@ export default function BenefitsPage() {
     } catch {} finally { setGroupsLoading(false); }
   }, []);
 
-  useEffect(() => { loadGifts(); loadPartnerBenefits(); loadPoints(); }, [loadGifts, loadPartnerBenefits, loadPoints]);
+  useEffect(() => { loadGifts(); loadPartnerBenefits(); loadPoints(); loadFund(); }, [loadGifts, loadPartnerBenefits, loadPoints, loadFund]);
 
   const activeGifts = gifts.filter((g) => g.status === 'active');
   const historyGifts = gifts.filter((g) => g.status !== 'active');
@@ -161,6 +166,19 @@ export default function BenefitsPage() {
                 <Text style={{ fontSize: '17px', fontWeight: 700, color: '#fff' }}>¥{fundCorp.toLocaleString()}</Text>
               </View>
             </View>
+          </View>
+
+          {!!fund.policy?.description && <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}>
+            <Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'6px'}}>{fund.policy.title||'健康基金使用规则'}</Text>
+            <Text style={{fontSize:'12px',color:colors.textSecondary,lineHeight:'19px'}}>{fund.policy.description}</Text>
+          </View>}
+
+          <View style={{ backgroundColor:'#fff', borderRadius:`${radius.md}px`, border:`1px solid ${colors.border}`, padding:`${spacing.md}px`, marginBottom:`${spacing.md}px` }}>
+            <Text style={{fontSize:'13px',fontWeight:700,color:colors.textPrimary,display:'block',marginBottom:'6px'}}>基金收支明细</Text>
+            {!fund.transactions?.length ? <Text style={{fontSize:'12px',color:colors.textMuted}}>暂无基金收支记录</Text> : fund.transactions.map(item=><View key={`${item.type}-${item._id}`} style={{display:'flex',justifyContent:'space-between',padding:'9px 0',borderTop:`1px solid ${colors.borderLight}`}}>
+              <View style={{flex:1,minWidth:0}}><Text style={{fontSize:'13px',color:colors.textPrimary,display:'block'}}>{item.remark||item.orderName||'健康基金变动'}</Text><Text style={{fontSize:'11px',color:colors.textMuted}}>{new Date(item.createdAt).toLocaleString('zh-CN')}{item.orderNo?` · ${item.orderNo}`:''}</Text></View>
+              <Text style={{fontSize:'14px',fontWeight:700,color:item.amount>=0?colors.success:colors.danger}}>{item.amount>=0?'+':'-'}¥{Math.abs(item.amount).toFixed(2)}</Text>
+            </View>)}
           </View>
 
           <View onClick={() => setPointsExpanded((v) => !v)} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.xs }}>
