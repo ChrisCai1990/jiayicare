@@ -133,8 +133,8 @@ export default function OrdersPage() {
     if (!attrModalOrder) return
     setUpdating(attrModalOrder._id)
     try {
-      await adminAPI.setOrderAttribution(attrModalOrder._id, attrForm.referrerId || null, attrForm.fulfillerId || null)
-      toast('✅ 绩效归属已设置')
+      const res = await adminAPI.setOrderAttribution(attrModalOrder._id, attrForm.referrerId || null, attrForm.fulfillerId || null)
+      toast('✅ ' + res.message)
       setAttrModalOrder(null)
       await load(page)
     } catch (err) {

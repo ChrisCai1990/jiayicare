@@ -591,16 +591,38 @@ router.patch('/orders/:id/verify', adminAuth, async (req, res) => {
   });
 });
 
-// ── PATCH /api/admin/orders/:id/attribution — 设置转介绍人/服务人归属（核销结算前需先设置，否则无归属不生成绩效）──
+// ── PATCH /api/admin/orders/:id/attribution — 设置归属；已完成订单自动补算佣金 ──
 router.patch('/orders/:id/attribution', adminAuth, async (req, res) => {
   const { referrerId, fulfillerId } = req.body;
   const order = await Order.findByIdAndUpdate(
     req.params.id,
     { referrerId: referrerId || null, fulfillerId: fulfillerId || null },
     { new: true }
-  ).populate('referrerId', 'name role').populate('fulfillerId', 'name role');
+  );
   if (!order) return res.status(404).json({ success: false, message: '订单不存在' });
-  res.json({ success: true, data: order, message: '绩效归属已更新' });
+
+  let created = [];
+  if (order.status === 'completed') {
+    const { settleOrderCommission, settleRedemptionCommission } = require('../utils/commissionSettlement');
+    if (order.serviceItemsSnapshot?.length) {
+      for (const redemption of order.redemptions || []) {
+        const result = await settleRedemptionCommission(order, redemption);
+        created.push(...result.created);
+      }
+    } else {
+      ({ created } = await settleOrderCommission(order));
+    }
+  }
+
+  const populated = await Order.findById(order._id)
+    .populate('referrerId', 'name role')
+    .populate('fulfillerId', 'name role');
+  const message = created.length
+    ? `绩效归属已更新，已自动生成${created.length}条待审核佣金`
+    : order.status === 'completed'
+      ? '绩效归属已更新；未新增佣金，请确认绩效规则已配置且金额大于0'
+      : '绩效归属已更新，完成核销后将自动生成佣金';
+  res.json({ success: true, data: populated, createdCount: created.length, message });
 });
 
 // ── 佣金审核打款流程 ────────────────────────────────────────────

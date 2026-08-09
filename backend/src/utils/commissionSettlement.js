@@ -47,6 +47,14 @@ async function settleOrderCommission(order) {
 
   const createCommission = async (staffId, role, rate, amount) => {
     if (!staffId || !amount || amount <= 0) return;
+    // 补设归属或重复保存时只补缺失项，避免同一订单、员工和绩效角色重复入账。
+    const existing = await Commission.findOne({
+      orderId: order._id,
+      staffId,
+      role,
+      redemptionSequence: null,
+    }).select('_id');
+    if (existing) return;
     const commission = await Commission.create({
       staffId, role, tenantId: order.tenantId, patientId: order.user, orderId: order._id,
       orderAmount: base, commissionRate: rate, commissionAmount: amount,
@@ -71,7 +79,8 @@ async function settleOrderCommission(order) {
     const orderPerformerMap = {};
     (order.servicePerformers || []).forEach(sp => { if (sp.role && sp.staffId) orderPerformerMap[sp.role] = sp.staffId; });
     for (const pr of performerRoles) {
-      const staffId = orderPerformerMap[pr.role] || pr.defaultStaffId;
+      const staffId = orderPerformerMap[pr.role] || pr.defaultStaffId
+        || (performerRoles.length === 1 ? order.fulfillerId : null);
       if (!staffId) continue; // 该岗位没落实到具体人，跳过不生成
       const ruleType = pr.ruleType || 'percentage';
       if (ruleType === 'none') continue;
@@ -89,7 +98,8 @@ async function settleOrderCommission(order) {
     await createCommission(order.fulfillerId, 'fulfiller', rate, amount);
   }
 
-  order.commissionStatus = created.length ? 'pending' : 'none';
+  const hasCommission = created.length > 0 || await Commission.exists({ orderId: order._id });
+  order.commissionStatus = hasCommission ? 'pending' : 'none';
   await order.save();
   return { created };
 }
@@ -104,7 +114,8 @@ async function settleRedemptionCommission(order, redemption) {
   (order.servicePerformers || []).forEach(sp => { if (sp.role && sp.staffId) performerMap[sp.role] = sp.staffId; });
   const created = [];
   for (const rule of item.performers || []) {
-    const staffId = performerMap[rule.role] || rule.defaultStaffId;
+    const staffId = performerMap[rule.role] || rule.defaultStaffId
+      || (item.performers.length === 1 ? order.fulfillerId : null);
     const ruleType = rule.ruleType || 'percentage';
     if (!staffId || ruleType === 'none') continue;
     const rate = ruleType === 'percentage' ? (Number(rule.rate) || 0) / 100 : 0;
