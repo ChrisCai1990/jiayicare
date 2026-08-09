@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { View, Text, Textarea, ScrollView } from '@tarojs/components';
+import { View, Text, Textarea, ScrollView, Input, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
 import { chatAPI } from '../../services/api';
@@ -20,6 +20,12 @@ export default function ChatPage() {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [view, setView] = useState('ai');
+  const [nutritionMessages, setNutritionMessages] = useState([
+    { role: 'assistant', content: '您好，我是AI营养师。您可以描述今天吃了什么、记录体重，或拍一张饮食照片，我会立即做初步分析。' },
+  ]);
+  const [nutritionInput, setNutritionInput] = useState('');
+  const [weightInput, setWeightInput] = useState('');
+  const [foodImage, setFoodImage] = useState(null);
   const scrollRef = useRef();
 
   useDidShow(() => {
@@ -50,6 +56,38 @@ export default function ChatPage() {
     setInput(text);
   };
 
+  const chooseFoodImage = async () => {
+    try {
+      const result = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const path = result.tempFilePaths?.[0];
+      if (!path) return;
+      const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+      const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      setFoodImage({ path, mimeType, data: `data:${mimeType};base64,${base64}` });
+    } catch (err) {
+      if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '无法读取图片，请重试', icon: 'none' });
+    }
+  };
+
+  const sendNutrition = async () => {
+    const text = nutritionInput.trim();
+    const weight = weightInput.trim();
+    if ((!text && !weight && !foodImage) || sending) return;
+    const summary = [text, weight ? `体重 ${weight}kg` : '', foodImage ? '已上传饮食照片' : ''].filter(Boolean).join(' · ');
+    const currentImage = foodImage;
+    setNutritionMessages((prev) => [...prev, { role: 'user', content: summary, image: currentImage?.path }]);
+    setNutritionInput(''); setWeightInput(''); setFoodImage(null); setSending(true);
+    try {
+      const res = await chatAPI.analyzeNutrition({
+        text, weight: weight || null, image: currentImage?.data || '', mimeType: currentImage?.mimeType || 'image/jpeg',
+      });
+      setNutritionMessages((prev) => [...prev, { role: 'assistant', content: res?.data?.content || '已完成初步分析。' }]);
+    } catch (err) {
+      setNutritionMessages((prev) => [...prev, { role: 'assistant', content: err.message || '营养分析失败，请稍后重试。' }]);
+    } finally { setSending(false); }
+  };
+
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: '100vh', backgroundColor: colors.background }}>
       <View style={{
@@ -58,7 +96,7 @@ export default function ChatPage() {
       }}>
         <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: '10px' }}>健康管家</Text>
         <View style={{ display: 'flex', backgroundColor: colors.background, borderRadius: `${radius.full}px`, padding: '3px' }}>
-          {[{ key: 'ai', label: '服务规划' }, { key: 'team', label: '我的团队' }].map((item) => (
+          {[{ key: 'ai', label: '服务规划' }, { key: 'nutrition', label: 'AI营养师' }, { key: 'team', label: '我的团队' }].map((item) => (
             <View key={item.key} onClick={() => setView(item.key)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.full}px`, backgroundColor: view === item.key ? '#fff' : 'transparent' }}>
               <Text style={{ fontSize: '13px', fontWeight: 700, color: view === item.key ? colors.primary : colors.textMuted }}>{item.label}</Text>
             </View>
@@ -127,6 +165,42 @@ export default function ChatPage() {
           <Text style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>发送</Text>
         </View>
       </View>
+      </View>
+
+      <View style={{ display: view === 'nutrition' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+        <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView="nutrition-bottom">
+          {nutritionMessages.map((m, i) => (
+            <View key={i} style={{ display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '10px' }}>
+              <View style={{ maxWidth: '82%', padding: '10px 14px', borderRadius: `${radius.md}px`, backgroundColor: m.role === 'user' ? '#059669' : '#fff', border: m.role === 'user' ? 'none' : `1px solid ${colors.border}` }}>
+                {!!m.image && <Image src={m.image} mode="aspectFill" style={{ width: '180px', height: '135px', borderRadius: '10px', marginBottom: '8px', display: 'block' }} />}
+                <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '21px', whiteSpace: 'pre-wrap' }}>{m.content}</Text>
+              </View>
+            </View>
+          ))}
+          {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在识别食物并估算营养...</Text>}
+          <View id="nutrition-bottom" />
+        </ScrollView>
+        {!!foodImage && (
+          <View style={{ padding: `8px ${spacing.md}px`, backgroundColor: '#fff', display: 'flex', flexDirection: 'row', alignItems: 'center', gap: '8px' }}>
+            <Image src={foodImage.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} />
+            <Text style={{ flex: 1, fontSize: '12px', color: colors.textSecondary }}>饮食照片已选择</Text>
+            <View onClick={() => setFoodImage(null)}><Text style={{ color: colors.danger, fontSize: '12px' }}>移除</Text></View>
+          </View>
+        )}
+        <View style={{ padding: `${spacing.sm}px ${spacing.md}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
+          <View style={{ display: 'flex', gap: '8px', marginBottom: '8px', alignItems: 'center' }}>
+            <View onClick={chooseFoodImage} style={{ padding: '8px 11px', borderRadius: `${radius.full}px`, backgroundColor: '#E8F5EF' }}><Text style={{ color: '#059669', fontSize: '12px', fontWeight: 600 }}>📷 饮食照片</Text></View>
+            <View style={{ display: 'flex', flex: 1, alignItems: 'center', backgroundColor: colors.background, borderRadius: `${radius.full}px`, padding: '0 10px' }}>
+              <Input type="digit" value={weightInput} onInput={(e) => setWeightInput(e.detail.value)} placeholder="本次体重（选填）" style={{ flex: 1, fontSize: '13px', height: '36px' }} />
+              <Text style={{ fontSize: '12px', color: colors.textMuted }}>kg</Text>
+            </View>
+          </View>
+          <View style={{ display: 'flex', alignItems: 'flex-end', gap: '8px' }}>
+            <Textarea value={nutritionInput} onInput={(e) => setNutritionInput(e.detail.value)} placeholder="描述食物、份量或您的目标..." autoHeight maxlength={500} style={{ flex: 1, minHeight: '44px', maxHeight: '100px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px' }} />
+            <View onClick={sendNutrition} style={{ padding: '10px 16px', borderRadius: `${radius.full}px`, backgroundColor: (nutritionInput.trim() || weightInput.trim() || foodImage) && !sending ? '#059669' : colors.border }}><Text style={{ color: '#fff', fontSize: '14px', fontWeight: 600 }}>分析</Text></View>
+          </View>
+          <Text style={{ fontSize: '10px', color: colors.textMuted, display: 'block', marginTop: '6px' }}>照片识别与热量仅为估算，不替代医生或注册营养师意见</Text>
+        </View>
       </View>
     </View>
   );

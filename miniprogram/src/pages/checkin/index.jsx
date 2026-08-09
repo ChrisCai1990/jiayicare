@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Input, Picker } from '@tarojs/components';
+import { View, Text, Input, Picker, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { recordsAPI } from '../../services/api';
+import { recordsAPI, chatAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 
@@ -100,6 +100,7 @@ export default function CheckinPage() {
   const [checkinMealType, setCheckinMealType] = useState('');
   const [checkinTimeSlot, setCheckinTimeSlot] = useState('');
   const [checkinSaving, setCheckinSaving] = useState(false);
+  const [checkinImage, setCheckinImage] = useState(null);
 
   const [measureModal, setMeasureModal] = useState(null);
   const [measureValues, setMeasureValues] = useState({});
@@ -151,6 +152,7 @@ export default function CheckinPage() {
       setCheckinNote('');
       setCheckinMealType('');
       setCheckinTimeSlot(item.key === 'exercise' ? '现在' : '');
+      setCheckinImage(null);
       setCheckinDate(todayStr);
       setCheckinModal(item);
     }
@@ -205,7 +207,15 @@ export default function CheckinPage() {
 
     setMeasureSaving(true);
     try {
-      await recordsAPI.create(payload);
+      const saved = await recordsAPI.create(payload);
+      if (measureType === 'weight' && saved?.data?._id) {
+        Taro.showLoading({ title: 'AI分析中', mask: true });
+        try {
+          const analyzed = await chatAPI.analyzeNutrition({ weight: payload.value, recordId: saved.data._id });
+          Taro.hideLoading();
+          Taro.showModal({ title: 'AI营养师 · 体重分析', content: analyzed?.data?.content || '体重已记录', showCancel: false });
+        } catch { Taro.hideLoading(); }
+      }
     } catch (err) {
       setMeasureSaving(false);
       Taro.showToast({ title: err.message || '保存失败', icon: 'none' });
@@ -231,7 +241,7 @@ export default function CheckinPage() {
     const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
     const slotPrefix = resolvedTimeSlot ? `【${resolvedTimeSlot}】` : '';
     try {
-      await recordsAPI.create({
+      const saved = await recordsAPI.create({
         category: item.category || 'lifestyle',
         type: item.key,
         label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}`
@@ -240,12 +250,25 @@ export default function CheckinPage() {
         value: (mealPrefix + slotPrefix + checkinNote) || checkinMealType || resolvedTimeSlot || '已打卡',
         note: '',
         status: 'normal',
+        imageUrl: checkinImage?.data || '',
         extra: {
+          ...(checkinImage ? { imageUrl: checkinImage.data } : {}),
           ...(checkinMealType ? { mealType: checkinMealType } : {}),
           ...(resolvedTimeSlot ? { timeSlot: resolvedTimeSlot } : {}),
         },
         recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
       });
+      if (item.key === 'diet' && saved?.data?._id) {
+        Taro.showLoading({ title: 'AI营养分析中', mask: true });
+        try {
+          const analyzed = await chatAPI.analyzeNutrition({
+            text: checkinNote || `${checkinMealType}饮食记录`, mealType: checkinMealType,
+            image: checkinImage?.data || '', mimeType: checkinImage?.mimeType || 'image/jpeg', recordId: saved.data._id,
+          });
+          Taro.hideLoading();
+          Taro.showModal({ title: 'AI营养师分析', content: analyzed?.data?.content || '饮食已记录', showCancel: false });
+        } catch { Taro.hideLoading(); }
+      }
     } catch (err) {
       setCheckinSaving(false);
       Taro.showToast({ title: err.message || '保存失败', icon: 'none' });
@@ -254,6 +277,20 @@ export default function CheckinPage() {
     setCheckinSaving(false);
     setCheckinModal(null);
     if (isToday) loadTodayStatus();
+  };
+
+  const chooseCheckinImage = async () => {
+    try {
+      const result = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const path = result.tempFilePaths?.[0];
+      if (!path) return;
+      const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+      const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+      setCheckinImage({ path, mimeType, data: `data:${mimeType};base64,${base64}` });
+    } catch (err) {
+      if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '图片读取失败', icon: 'none' });
+    }
   };
 
   const toggleSymptom = (s) => {
@@ -418,6 +455,10 @@ export default function CheckinPage() {
                   {['早餐', '午餐', '晚餐', '加餐'].map((mt) => (
                     <Chip key={mt} label={mt} active={checkinMealType === mt} color={checkinModal.color} onClick={() => setCheckinMealType(mt)} />
                   ))}
+                </View>
+                <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>饮食照片（推荐）</Text>
+                <View onClick={chooseCheckinImage} style={{ border: `1px dashed ${checkinModal.color}`, borderRadius: `${radius.sm}px`, padding: '10px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {checkinImage ? <Image src={checkinImage.path} mode="aspectFill" style={{ width: '140px', height: '100px', borderRadius: '8px' }} /> : <Text style={{ color: checkinModal.color, fontSize: '13px', fontWeight: 600 }}>📷 拍照或从相册选择</Text>}
                 </View>
               </>
             )}

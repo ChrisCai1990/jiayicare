@@ -1,6 +1,7 @@
 const express = require('express');
 const auth = require('../middleware/auth');
-const { chat } = require('../utils/ai');
+const { chat, parseImage } = require('../utils/ai');
+const { uploadBase64 } = require('../utils/oss');
 const ChatLog = require('../models/ChatLog');
 const HealthRecord = require('../models/HealthRecord');
 const User = require('../models/User');
@@ -25,6 +26,28 @@ const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康
 10. 只能介绍平台已经上线的能力。当前对话支持文字回复、语音播报和转人工，不支持把对话内容导出或下载为文件，不支持生成图文版/PDF，也不支持直接微信推送。不得承诺、暗示或规划这些未上线能力；会员询问时应如实说明暂不支持`;
 
 const UNSUPPORTED_CAPABILITY_NOTICE = '当前对话暂不支持导出、下载、生成图文版或直接微信推送；您可以在本页面查看和使用语音播报。';
+
+const NUTRITION_SYSTEM = `你是嘉医汇AI营养师，只提供一般性饮食与体重管理建议，不诊断疾病、不调整药物、不承诺疗效。
+请根据客户文字、饮食照片和健康档案做保守估算。照片看不到的油、糖、调味料和重量不得假装精确；信息不足时必须追问。
+输出严格JSON，不要Markdown：
+{"mealSummary":"餐食概述","foods":[{"name":"食物","portion":"估算份量","calorieMin":0,"calorieMax":0}],"calorieMin":0,"calorieMax":0,"protein":"蛋白质估算范围或未知","carbs":"碳水估算范围或未知","fat":"脂肪估算范围或未知","assessment":"简短评价","suggestions":["建议"],"questions":["需要客户补充的问题"],"riskFlags":["过敏、疾病、孕产、儿童、进食障碍或明显异常风险"],"confidence":"high|medium|low","reply":"给客户的中文回复，300字内，说明是估算；有风险时建议联系专业人员"}`;
+
+function parseAiJson(raw) {
+  const text = String(raw || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  return JSON.parse(text);
+}
+
+function nutritionUserContext(user) {
+  const profile = user.healthProfile || {};
+  const allergies = [profile.foodAllergy, ...(profile.allergies || []).map(a => a?.substance || a?.name || a)].filter(Boolean);
+  return [
+    user.age && `年龄${user.age}岁`, user.gender && user.gender !== '未知' && `性别${user.gender}`,
+    user.height && `身高${user.height}cm`, user.weight && `档案体重${user.weight}kg`,
+    user.chronicDiseases?.length && `慢病${user.chronicDiseases.join('、')}`,
+    allergies.length && `过敏${allergies.join('、')}`,
+    user.healthConcern && `健康目标/关注${user.healthConcern}`,
+  ].filter(Boolean).join('；');
+}
 
 // 模型偶尔会越过提示词承诺尚未上线的平台能力。返回前做确定性兜底，
 // 只拦截肯定式能力承诺；“暂不支持/无法/不能”等真实说明保持原样。
@@ -235,6 +258,124 @@ router.post('/', auth, async (req, res) => {
   } catch (err) {
     console.error('Chat error:', err.message);
     res.status(500).json({ success: false, message: `AI响应失败，请稍后重试。（${err.message}）` });
+  }
+});
+
+// POST /api/chat/nutrition — AI营养师：支持饮食文字、体重和单张饮食照片。
+// 图片只做食物与份量的保守估算；确定性体重数值同时写入健康记录，便于后续趋势分析。
+router.post('/nutrition', auth, async (req, res) => {
+  const { text = '', weight, image = '', mimeType = 'image/jpeg', mealType = '', recordId = '' } = req.body || {};
+  const cleanText = String(text || '').trim().slice(0, 1000);
+  const numericWeight = weight === '' || weight === undefined || weight === null ? null : Number(weight);
+  const hasImage = typeof image === 'string' && image.length > 0;
+  if (!cleanText && numericWeight === null && !hasImage) {
+    return res.status(400).json({ success: false, message: '请填写饮食内容、体重或上传饮食照片' });
+  }
+  if (numericWeight !== null && (!Number.isFinite(numericWeight) || numericWeight < 20 || numericWeight > 300)) {
+    return res.status(400).json({ success: false, message: '请输入20–300kg之间的有效体重' });
+  }
+  if (hasImage) {
+    if (!/^data:image\/(jpeg|jpg|png|webp|heic|heif);base64,/i.test(image)) {
+      return res.status(400).json({ success: false, message: '仅支持 JPG、PNG、WEBP 或 HEIC 饮食照片' });
+    }
+    if (image.length > 12 * 1024 * 1024) {
+      return res.status(413).json({ success: false, message: '图片过大，请压缩到8MB以内后重试' });
+    }
+  }
+  if (!process.env.QWEN_API_KEY) {
+    return res.status(503).json({ success: false, message: 'AI营养分析服务暂未开通' });
+  }
+
+  const t0 = Date.now();
+  try {
+    const existingRecord = recordId
+      ? await HealthRecord.findOne({ _id: recordId, user: req.user._id })
+      : null;
+    if (recordId && !existingRecord) return res.status(404).json({ success: false, message: '健康记录不存在' });
+    const user = await User.findById(req.user._id)
+      .select('name age gender height weight chronicDiseases healthProfile healthConcern assignedNutritionist clientBrand');
+    const context = nutritionUserContext(user || {});
+    const inputDescription = [
+      cleanText && `客户描述：${cleanText}`,
+      numericWeight !== null && `客户本次体重：${numericWeight}kg`,
+      mealType && `餐次：${String(mealType).slice(0, 20)}`,
+      context && `客户档案：${context}`,
+    ].filter(Boolean).join('\n');
+    const prompt = `${NUTRITION_SYSTEM}\n\n${inputDescription || '客户仅上传了饮食照片，请识别照片中的餐食。'}`;
+    const raw = hasImage
+      ? await parseImage(image, prompt, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 1400, timeoutMs: 60000 })
+      : await chat([{ role: 'user', content: inputDescription }], { systemPrompt: NUTRITION_SYSTEM, jsonMode: true, maxTokens: 1400 });
+    const analysis = parseAiJson(raw);
+    const safeAnalysis = {
+      mealSummary: String(analysis.mealSummary || '').slice(0, 300),
+      foods: Array.isArray(analysis.foods) ? analysis.foods.slice(0, 20) : [],
+      calorieMin: Number(analysis.calorieMin) || 0,
+      calorieMax: Number(analysis.calorieMax) || 0,
+      protein: String(analysis.protein || '未知').slice(0, 100),
+      carbs: String(analysis.carbs || '未知').slice(0, 100),
+      fat: String(analysis.fat || '未知').slice(0, 100),
+      assessment: String(analysis.assessment || '').slice(0, 500),
+      suggestions: Array.isArray(analysis.suggestions) ? analysis.suggestions.slice(0, 6).map(String) : [],
+      questions: Array.isArray(analysis.questions) ? analysis.questions.slice(0, 4).map(String) : [],
+      riskFlags: Array.isArray(analysis.riskFlags) ? analysis.riskFlags.slice(0, 6).map(String) : [],
+      confidence: ['high', 'medium', 'low'].includes(analysis.confidence) ? analysis.confidence : 'low',
+    };
+    const reply = String(analysis.reply || [safeAnalysis.mealSummary, safeAnalysis.assessment, ...safeAnalysis.suggestions].filter(Boolean).join('\n')).slice(0, 1200)
+      || '已收到您的记录，但当前信息不足以可靠估算，请补充食物名称和大致份量。';
+
+    let imageUrl = '';
+    if (hasImage && process.env.OSS_ACCESS_KEY_ID) {
+      try {
+        const uploaded = await uploadBase64(image, mimeType, 'nutrition');
+        imageUrl = uploaded.url;
+      } catch (uploadError) {
+        console.error('Nutrition image upload error:', uploadError.message);
+      }
+    }
+
+    const records = [];
+    if (numericWeight !== null && existingRecord?.type === 'weight') {
+      existingRecord.extra = { ...(existingRecord.extra || {}), nutritionAnalysis: safeAnalysis };
+      await existingRecord.save();
+      records.push(existingRecord);
+      await User.updateOne({ _id: req.user._id }, { $set: { weight: numericWeight } });
+    } else if (numericWeight !== null) {
+      records.push(await HealthRecord.create({
+        user: req.user._id, category: 'metabolism', type: 'weight', label: '体重',
+        value: String(numericWeight), unit: 'kg', status: 'normal', note: cleanText,
+        recordedAt: new Date(), recordedBy: { source: 'customer' },
+      }));
+      await User.updateOne({ _id: req.user._id }, { $set: { weight: numericWeight } });
+    }
+    if ((hasImage || cleanText) && existingRecord?.type === 'diet') {
+      existingRecord.extra = { ...(existingRecord.extra || {}), imageUrl: imageUrl || existingRecord.extra?.imageUrl || '', mealType: mealType || existingRecord.extra?.mealType || '', nutritionAnalysis: safeAnalysis };
+      existingRecord.imageUrl = imageUrl || existingRecord.imageUrl || '';
+      existingRecord.status = safeAnalysis.riskFlags.length ? 'warning' : 'normal';
+      await existingRecord.save();
+      records.push(existingRecord);
+    } else if (hasImage || cleanText) {
+      records.push(await HealthRecord.create({
+        user: req.user._id, category: 'lifestyle', type: 'diet', label: '饮食记录',
+        value: safeAnalysis.mealSummary || cleanText || '饮食照片', unit: '', note: cleanText,
+        imageUrl, extra: { imageUrl, mealType, nutritionAnalysis: safeAnalysis },
+        status: safeAnalysis.riskFlags.length ? 'warning' : 'normal', recordedAt: new Date(),
+        recordedBy: { source: 'customer' },
+      }));
+    }
+    const userMessage = [cleanText, numericWeight !== null ? `体重${numericWeight}kg` : '', hasImage ? '[饮食照片]' : ''].filter(Boolean).join('；');
+    const log = await ChatLog.create({
+      user: req.user._id, role: 'nutritionist', intent: 'nutrition', userMessage,
+      aiReply: reply, imageUrl, structuredData: safeAnalysis, durationMs: Date.now() - t0,
+    });
+
+    res.json({ success: true, data: {
+      content: reply, analysis: safeAnalysis, imageUrl, logId: log._id,
+      recordIds: records.map(record => record._id), needsHumanReview: safeAnalysis.riskFlags.length > 0,
+      nutritionistAssigned: !!user?.assignedNutritionist,
+    } });
+  } catch (err) {
+    console.error('Nutrition analysis error:', err.message);
+    res.status(500).json({ success: false, message: `营养分析失败，请稍后重试。（${err.message}）` });
   }
 });
 

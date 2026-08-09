@@ -2,9 +2,10 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   SafeAreaView, TextInput, KeyboardAvoidingView, Platform,
-  ActivityIndicator,
+  ActivityIndicator, Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
 import { chatAPI } from '../../services/api';
@@ -44,6 +45,7 @@ function MessageBubble({ msg, speaking, onSpeak, onRecall }) {
         {!isUser && msg.roleName && (
           <Text style={[styles.bubbleRole, { color: msg.roleColor || colors.primary }]}>{msg.roleName}</Text>
         )}
+        {!!msg.image && <Image source={{ uri: msg.image }} style={{ width: 210, height: 150, borderRadius: 10, marginBottom: 8 }} />}
         <Text style={[styles.bubbleText, isUser && styles.bubbleTextUser]}>{msg.content}</Text>
         {!isUser && (
           <Text style={styles.disclaimer}>{DISCLAIMER}</Text>
@@ -88,6 +90,9 @@ export default function ChatScreen({ navigation, route }) {
   const [transferred, setTransferred] = useState(false);
   const [speakingId, setSpeakingId] = useState(null);
   const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [mode, setMode] = useState(route?.params?.mode === 'nutrition' ? 'nutrition' : 'health');
+  const [foodImage, setFoodImage] = useState(null);
+  const [weightInput, setWeightInput] = useState('');
   const scrollRef = useRef(null);
 
   const now = () => new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
@@ -133,11 +138,17 @@ export default function ChatScreen({ navigation, route }) {
 
   const send = async (text) => {
     const msg = (text || input).trim();
-    if (!msg || isLoading) return;
+    if ((!msg && !foodImage && !weightInput.trim()) || isLoading) return;
     setInput('');
 
-    const userMsg = { id: Date.now(), role: 'user', content: msg, time: now() };
+    const selectedImage = foodImage;
+    const selectedWeight = weightInput.trim();
+    const displayText = mode === 'nutrition'
+      ? [msg, selectedWeight ? `体重 ${selectedWeight}kg` : '', selectedImage ? '已上传饮食照片' : ''].filter(Boolean).join(' · ')
+      : msg;
+    const userMsg = { id: Date.now(), role: 'user', content: displayText, image: selectedImage?.uri, time: now() };
     setMessages(prev => [...prev, userMsg]);
+    setFoodImage(null); setWeightInput('');
     setIsLoading(true);
 
     // Build message history for API (user + assistant only, last 10)
@@ -155,7 +166,9 @@ export default function ChatScreen({ navigation, route }) {
     }
 
     try {
-      const res = await chatAPI.send(history, buildUserInfo());
+      const res = mode === 'nutrition'
+        ? await chatAPI.analyzeNutrition({ text: msg, weight: selectedWeight || null, image: selectedImage?.data || '', mimeType: selectedImage?.mimeType || 'image/jpeg' })
+        : await chatAPI.send(history, buildUserInfo());
       const replyContent = res.success
         ? res.data.content
         : (res.message || 'AI暂时无法回复，请稍后再试。');
@@ -176,6 +189,15 @@ export default function ChatScreen({ navigation, route }) {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const chooseFoodImage = async () => {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.75, base64: true });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setFoodImage({ uri: asset.uri, mimeType: asset.mimeType || 'image/jpeg', data: `data:${asset.mimeType || 'image/jpeg'};base64,${asset.base64}` });
   };
 
   useEffect(() => {
@@ -223,7 +245,7 @@ export default function ChatScreen({ navigation, route }) {
           <Ionicons name="arrow-back" size={22} color={colors.textPrimary} />
         </TouchableOpacity>
         <View style={styles.topBarCenter}>
-          <Text style={styles.pageTitle}>AI 健康助手</Text>
+          <Text style={styles.pageTitle}>{mode === 'nutrition' ? 'AI 营养师' : 'AI 健康助手'}</Text>
           <View style={styles.onlineTag}>
             <View style={styles.onlineDot} />
             <Text style={styles.onlineText}>在线</Text>
@@ -237,6 +259,13 @@ export default function ChatScreen({ navigation, route }) {
       </View>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <View style={{ flexDirection: 'row', padding: 6, marginHorizontal: spacing.lg, marginTop: spacing.sm, backgroundColor: colors.white, borderRadius: radius.full }}>
+          {[['health', '健康问答'], ['nutrition', '营养分析']].map(([key, label]) => (
+            <TouchableOpacity key={key} onPress={() => setMode(key)} style={{ flex: 1, paddingVertical: 7, borderRadius: radius.full, backgroundColor: mode === key ? colors.primary : 'transparent', alignItems: 'center' }}>
+              <Text style={{ fontSize: 12, fontWeight: '600', color: mode === key ? colors.white : colors.textMuted }}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
         <ScrollView
           ref={scrollRef}
           showsVerticalScrollIndicator={false}
@@ -282,10 +311,19 @@ export default function ChatScreen({ navigation, route }) {
         )}
 
         {/* Input bar */}
+        {mode === 'nutrition' && (
+          <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.xs, backgroundColor: colors.white }}>
+            {!!foodImage && <Image source={{ uri: foodImage.uri }} style={{ width: 64, height: 64, borderRadius: 8, marginBottom: 6 }} />}
+            <View style={{ flexDirection: 'row', gap: spacing.sm }}>
+              <TouchableOpacity onPress={chooseFoodImage} style={{ paddingHorizontal: 12, paddingVertical: 8, borderRadius: radius.full, backgroundColor: '#E8F5EF' }}><Text style={{ color: '#059669', fontSize: 12, fontWeight: '600' }}>选择饮食照片</Text></TouchableOpacity>
+              <TextInput value={weightInput} onChangeText={setWeightInput} keyboardType="decimal-pad" placeholder="体重 kg（选填）" style={{ flex: 1, paddingHorizontal: 12, borderRadius: radius.full, backgroundColor: colors.background, fontSize: 13 }} />
+            </View>
+          </View>
+        )}
         <View style={styles.inputBar}>
           <TextInput
             style={styles.inputField}
-            placeholder="输入您的健康问题..."
+            placeholder={mode === 'nutrition' ? '描述食物、份量或目标...' : '输入您的健康问题...'}
             value={input}
             onChangeText={setInput}
             multiline
@@ -294,9 +332,9 @@ export default function ChatScreen({ navigation, route }) {
             onSubmitEditing={() => send()}
           />
           <TouchableOpacity
-            style={[styles.sendBtn, (!input.trim() || isLoading) && styles.sendBtnDisabled]}
+            style={[styles.sendBtn, ((!input.trim() && !foodImage && !weightInput.trim()) || isLoading) && styles.sendBtnDisabled]}
             onPress={() => send()}
-            disabled={!input.trim() || isLoading}
+            disabled={(!input.trim() && !foodImage && !weightInput.trim()) || isLoading}
           >
             {isLoading
               ? <ActivityIndicator size="small" color={colors.white} />

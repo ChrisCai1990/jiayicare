@@ -217,6 +217,9 @@ export const chatAPI = {
     request('/chat/transfer', { method: 'POST', body: JSON.stringify({ lastMessage }) }),
   getLogs: (userId) => request(`/chat/logs/${userId}`),
   recall: (logId) => request(`/chat/logs/${logId}/recall`, { method: 'PATCH' }),
+  analyzeNutrition: (data) => request('/chat/nutrition', {
+    method: 'POST', body: JSON.stringify(data), timeout: 70000,
+  }),
 };
 
 // ── Questionnaire ─────────────────────────────────────────────────

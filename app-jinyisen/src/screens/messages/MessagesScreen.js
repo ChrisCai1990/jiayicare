@@ -628,8 +628,11 @@ function ComposeModal({ visible, onClose, onSent, initialContent = '', initialTo
 export default function MessagesScreen({ navigation }) {
   const { isDemo, user } = useAuth();
   const careTeamKinds = new Set((user?.careTeam || []).map(m => m.kind));
+  const careTeamMember = (key) => {
+    const kind = { doctor: 'familyDoctor', nutritionist: 'nutritionist', manager: 'healthManager' }[key];
+    return (user?.careTeam || []).find(m => m.kind === kind) || null;
+  };
   const hasRole = (key) => {
-    if (isDemo) return true;
     if (key === 'doctor') return careTeamKinds.has('familyDoctor');
     if (key === 'nutritionist') return careTeamKinds.has('nutritionist');
     if (key === 'manager') return careTeamKinds.has('healthManager');
@@ -739,7 +742,7 @@ export default function MessagesScreen({ navigation }) {
     );
     const last = msgs[0];
     const unread = msgs.filter(m => m.unread).length;
-    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key) };
+    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key), member: careTeamMember(r.key) };
   });
 
   // 系统通知行
@@ -786,8 +789,8 @@ export default function MessagesScreen({ navigation }) {
           {convList.map((conv, i) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
-              ? `您尚未配备${conv.label}，暂不提供此项服务`
-              : conv.last?.content || conv.last?.title || (conv.kind === 'ai' ? '随时问我健康问题，24小时在线' : conv.kind === 'notif' ? '暂无通知' : '暂无消息');
+              ? '仅对年度会员开放，开通后为您配置专属服务团队'
+              : conv.last?.content || conv.last?.title || (conv.kind === 'ai' ? '随时问我健康问题，24小时在线' : conv.kind === 'notif' ? '暂无通知' : conv.member ? `已配置：${conv.member.name}${conv.member.role ? ` · ${conv.member.role}` : ''}` : '暂无消息');
             const onPress = unassigned
               ? () => {}
               : conv.kind === 'ai'
@@ -809,7 +812,7 @@ export default function MessagesScreen({ navigation }) {
                   </View>
                   <View style={styles.chatBody}>
                     <View style={styles.chatTopRow}>
-                      <Text style={[styles.chatName, unassigned && { color: colors.textMuted }]}>{conv.label}</Text>
+                      <Text style={[styles.chatName, unassigned && { color: colors.textMuted }]}>{conv.label}{conv.member?.name ? ` · ${conv.member.name}` : ''}</Text>
                       {conv.last && !unassigned && <Text style={styles.chatTime}>{fmtMsgTime(conv.last.createdAt)}</Text>}
                     </View>
                     <Text style={[styles.chatPreview, conv.unread > 0 && !unassigned && { color: colors.textPrimary, fontWeight: '500' }]} numberOfLines={1}>

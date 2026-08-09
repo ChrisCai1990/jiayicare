@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
-import { recordsAPI } from '../../services/api';
+import { recordsAPI, chatAPI } from '../../services/api';
 
 // 本地日期字符串（YYYY-MM-DD）——不能用 toISOString()，那是 UTC 日期
 function toLocalDateStr(d) {
@@ -235,7 +235,13 @@ export default function CheckinScreen({ navigation }) {
 
     setMeasureSaving(true);
     try {
-      await recordsAPI.create(payload);
+      const saved = await recordsAPI.create(payload);
+      if (measureType === 'weight' && saved?.data?._id) {
+        try {
+          const analyzed = await chatAPI.analyzeNutrition({ weight: payload.value, recordId: saved.data._id });
+          Alert.alert('AI营养师 · 体重分析', analyzed?.data?.content || '体重已记录');
+        } catch {}
+      }
     } catch (err) {
       setMeasureSaving(false);
       Alert.alert('保存失败', err.message || '网络异常，请重试');
@@ -261,7 +267,7 @@ export default function CheckinScreen({ navigation }) {
     const mealPrefix = item.key === 'diet' && checkinMealType ? `【${checkinMealType}】` : '';
     const slotPrefix = resolvedTimeSlot ? `【${resolvedTimeSlot}】` : '';
     try {
-      await recordsAPI.create({
+      const saved = await recordsAPI.create({
         category: item.category || 'lifestyle',
         type: item.key,
         label: mealPrefix ? `${item.recordLabel || item.label}·${checkinMealType}`
@@ -278,6 +284,15 @@ export default function CheckinScreen({ navigation }) {
         },
         recordedAt: isToday ? new Date().toISOString() : `${checkinDate}T12:00:00`,
       });
+      if (item.key === 'diet' && saved?.data?._id) {
+        try {
+          const analyzed = await chatAPI.analyzeNutrition({
+            text: checkinNote || `${checkinMealType}饮食记录`, mealType: checkinMealType,
+            image: checkinImage || '', mimeType: (checkinImage.match(/^data:([^;]+);/) || [])[1] || 'image/jpeg', recordId: saved.data._id,
+          });
+          Alert.alert('AI营养师分析', analyzed?.data?.content || '饮食已记录');
+        } catch {}
+      }
     } catch (err) {
       setCheckinSaving(false);
       Alert.alert('保存失败', err.message || '网络异常，请重试');

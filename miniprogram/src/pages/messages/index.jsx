@@ -75,10 +75,13 @@ function fmtMsgTime(t) {
 
 export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
   const { statusBarHeight } = useNavBar();
-  const { user, isDemo } = useAuth();
+  const { user } = useAuth();
   const careTeamKinds = new Set((user?.careTeam || []).map((m) => m.kind));
+  const careTeamMember = (key) => {
+    const kind = { doctor: 'familyDoctor', nutritionist: 'nutritionist', manager: 'healthManager' }[key];
+    return (user?.careTeam || []).find((m) => m.kind === kind) || null;
+  };
   const hasRole = (key) => {
-    if (isDemo) return true;
     if (key === 'doctor') return careTeamKinds.has('familyDoctor');
     if (key === 'nutritionist') return careTeamKinds.has('nutritionist');
     if (key === 'manager') return careTeamKinds.has('healthManager');
@@ -116,7 +119,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
     const msgs = messages.filter((m) => m.type === r.key || (m.conversationId && m.conversationId.endsWith(`_${r.key}`)));
     const last = msgs[0];
     const unread = msgs.filter((m) => m.unread).length;
-    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key) };
+    return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key), member: careTeamMember(r.key) };
   });
 
   const notifLast = notifMessages[0];
@@ -169,8 +172,8 @@ export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
           {convList.map((conv, i) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
-              ? `您尚未配备${conv.label}，暂不提供此项服务`
-              : conv.last?.content || conv.last?.title || (conv.kind === 'notif' ? '暂无通知' : '暂无消息');
+              ? '仅对年度会员开放，开通后为您配置专属服务团队'
+              : conv.last?.content || conv.last?.title || (conv.kind === 'notif' ? '暂无通知' : conv.member ? `已配置：${conv.member.name}${conv.member.role ? ` · ${conv.member.role}` : ''}` : '暂无消息');
             return (
               <View key={conv.key}>
                 <View onClick={() => openConv(conv)} style={{ display: 'flex', alignItems: 'center', padding: `12px ${spacing.md}px` }}>
@@ -187,7 +190,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
                   </View>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
-                      <Text style={{ fontSize: '15px', fontWeight: 600, color: unassigned ? colors.textMuted : colors.textPrimary }}>{conv.label}</Text>
+                      <Text style={{ fontSize: '15px', fontWeight: 600, color: unassigned ? colors.textMuted : colors.textPrimary }}>{conv.label}{conv.member?.name ? ` · ${conv.member.name}` : ''}</Text>
                       {conv.last && !unassigned && <Text style={{ fontSize: '11px', color: colors.textMuted }}>{fmtMsgTime(conv.last.createdAt)}</Text>}
                     </View>
                     <Text style={{ fontSize: '13px', color: conv.unread > 0 && !unassigned ? colors.textPrimary : colors.textMuted }} numberOfLines={1}>{preview}</Text>

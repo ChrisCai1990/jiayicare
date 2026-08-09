@@ -200,6 +200,9 @@ export const chatAPI = {
       body: JSON.stringify({ lastMessage }),
     }),
   getLogs: (userId) => request(`/chat/logs/${userId}`),
+  analyzeNutrition: (data) => request('/chat/nutrition', {
+    method: 'POST', body: JSON.stringify(data), timeout: 70000,
+  }),
 };
 
 // ── Questionnaire ─────────────────────────────────────────────────
