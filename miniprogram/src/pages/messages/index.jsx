@@ -536,7 +536,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
     setInput('');
     try {
       let extra = {};
-      if (role === 'nutritionist' && foodImage) {
+      if (foodImage) {
         extra = { image: foodImage.data, mimeType: foodImage.mimeType, suppressAI: true };
       }
       const res = await messagesAPI.send(role, text || '饮食照片', extra);
@@ -567,7 +567,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
-        <View onClick={onClose} style={{ marginRight: '12px' }}><Icon name="‹" size={16} color={colors.textPrimary} /></View>
+        <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
           <Text style={{ fontSize: '11px', color: colors.success }}>● 在线</Text>
@@ -575,7 +575,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
         <View style={{ width: '20px' }} />
       </View>
 
-      <ScrollView scrollY scrollTop={999999} style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px` }}>
+      <ScrollView scrollY scrollIntoView={msgs.length ? `thread-msg-${msgs[msgs.length - 1]._id}` : 'thread-bottom'} scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : msgs.length === 0 ? (
@@ -591,7 +591,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
             const isMine = m.type === 'user';
             const showTime = i === 0 || (new Date(m.createdAt) - new Date(msgs[i - 1].createdAt)) > 300000;
             return (
-              <View key={m._id}>
+              <View key={m._id} id={`thread-msg-${m._id}`}>
                 {showTime && <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, margin: '12px 0' }}>{new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</Text>}
                 <View style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: '10px' }}>
                   <View style={{
@@ -611,18 +611,18 @@ function ConversationThread({ role, onClose, embedded = false }) {
             );
           })
         )}
-        <View id="thread-bottom" />
+        <View id="thread-bottom" style={{ height: '24px' }} />
       </ScrollView>
 
-      {role === 'nutritionist' && foodImage && (
+      {foodImage && (
         <View style={{ padding: `8px ${spacing.lg}px`, backgroundColor: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Image src={foodImage.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} />
-          <Text style={{ flex: 1, fontSize: '12px', color: colors.textSecondary }}>饮食照片已选择，将直接发送给营养师</Text>
+          <Text style={{ flex: 1, fontSize: '12px', color: colors.textSecondary }}>图片已选择，将直接发送给{meta.label}</Text>
           <Text onClick={() => setFoodImage(null)} style={{ color: colors.danger, fontSize: '12px' }}>移除</Text>
         </View>
       )}
       <View style={{ display: 'flex', alignItems: 'flex-end', flexShrink: 0, gap: '8px', padding: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
-        {role === 'nutritionist' && <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '18px' }}>📷</Text></View>}
+        <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '18px' }}>📷</Text></View>
         <Textarea
           style={{ flex: 1, backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 14px', fontSize: '14px', maxHeight: '100px', border: `1.5px solid ${colors.border}`, boxSizing: 'border-box' }}
           placeholder={`发消息给${meta.label}…`}
