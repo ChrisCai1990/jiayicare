@@ -16,6 +16,7 @@ function parseBloodType(str) {
 }
 const auth = require('../middleware/auth');
 const Admin = require('../models/Admin');
+const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 const User = require('../models/User');
 const UserChangeLog = require('../models/UserChangeLog');
 const HealthRecord = require('../models/HealthRecord');
@@ -90,17 +91,18 @@ async function requireAiEntitlement(user, key, res) {
 // 获取当前用户信息（含健康基金汇总 + 责任团队真实数据）
 router.get('/me', auth, async (req, res) => {
   try {
-    const giftFundAgg = await GiftRecord.aggregate([
-      { $match: { patientId: req.user._id, giftType: 'fund', status: 'active' } },
-      { $group: { _id: '$fundType', total: { $sum: '$fundAmount' } } },
-    ]);
-    const enterpriseFund = giftFundAgg.find(g => g._id === 'enterprise')?.total || 0;
-    const totalBalance = req.user.healthFundBalance || 0;
-    const healthFund = {
-      total:     totalBalance,
-      corporate: Math.min(enterpriseFund, totalBalance),
-      personal:  Math.max(0, totalBalance - enterpriseFund),
-    };
+      const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
+      const [personalAvailable, corporateAvailable] = await Promise.all([
+        getPersonalFundAvailable(req.user),
+        getCorporateFundAvailable(req.user),
+      ]);
+      const totalBalance = req.user.healthFundBalance || 0;
+      const personal = Math.min(personalAvailable, totalBalance);
+      const healthFund = {
+        total:     totalBalance,
+        corporate: Math.min(corporateAvailable, Math.max(0, totalBalance - personal)),
+        personal,
+      };
 
     // 查询已分配的责任人员信息（实时 populate）
     // 健康规划师与就医专员是服务协调岗位，不混入“健康顾问团队”。
@@ -1014,13 +1016,14 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
 
     let fundUsed = 0;
     let fundEnterprise = null;
+    let fundBreakdown = { personal: 0, corporate: 0 };
     if (useHealthFund > 0) {
       try {
         const productDocs = await Product.find({ _id:{ $in:toPay.map(p=>p.productId).filter(id=>require('mongoose').Types.ObjectId.isValid(id)) } }).select('category');
         const categories = [...new Set(productDocs.map(p=>p.category).filter(Boolean))];
         const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:categories.length === 1 ? categories[0] : '' });
         if (checked.enterprise?.healthFundPaymentRule?.eligibleCategories?.length && categories.some(c=>!checked.enterprise.healthFundPaymentRule.eligibleCategories.includes(c))) throw new Error('所选服务中含有不支持企业健康基金抵扣的分类');
-        fundUsed=checked.allowed; fundEnterprise=checked.enterprise;
+        fundUsed=checked.allowed; fundEnterprise=checked.enterprise; fundBreakdown=checked.breakdown;
       } catch(err) { return res.status(400).json({success:false,message:err.message}); }
     }
     const finalPrice = Math.max(0, Math.round((priceAfterCoupon - fundUsed) * 100) / 100);
@@ -1051,6 +1054,8 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
           .map(sp => ({ role: sp.role, staffId: sp.staffId })),
         paymentMethod: fundUsed > 0 && finalPrice === 0 ? 'healthFund' : (paymentMethod || ''),
         paidAmount: paid,
+        healthFundAmount: idx === 0 ? fundUsed : 0,
+        healthFundBreakdown: idx === 0 ? fundBreakdown : { personal: 0, corporate: 0 },
       };
     });
 
@@ -1060,16 +1065,11 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     // 此前这里完全没生成 FollowUp，导致推送购买的订单不会出现在健康规划师/健管专员工作台
     // （2026-07-13 反馈：员工推送给客户、客户付费后，订单没有在工作台展示）。
     // staffId 优先归到会员名下的健康规划师，退回健管专员，再退回健康顾问，都没有则兜底给 superadmin
-    const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner assignedHealthManager assignedFamilyDoctor');
-    let followUpStaffId = patientForStaff?.assignedHealthPlanner || patientForStaff?.assignedHealthManager || patientForStaff?.assignedFamilyDoctor || null;
-    if (!followUpStaffId) {
-      const superadmin = await Admin.findOne({ role: 'superadmin' }).select('_id');
-      followUpStaffId = superadmin?._id || null;
-    }
+    const followUpStaffId = await resolveHealthPlanner(req.user._id);
 
     const followUps = [];
     if (!record.readAt) followUps.push(PushRecord.updateOne({ _id: record._id }, { readAt: new Date() }));
-    if (fundUsed > 0) followUps.push(require('../utils/healthFundPayment').deductHealthFund({ user:req.user, enterprise:fundEnterprise, order:orders[0], amount:fundUsed }));
+    if (fundUsed > 0) followUps.push(require('../utils/healthFundPayment').deductHealthFund({ user:req.user, enterprise:fundEnterprise, order:orders[0], amount:fundUsed, breakdown:fundBreakdown }));
     if (coupon) {
       coupon.status = 'used';
       coupon.usedAt = new Date();
@@ -1080,6 +1080,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       orders.forEach(order => {
         followUps.push(FollowUp.create({
           staffId:   followUpStaffId,
+          assignedTo: followUpStaffId,
           patientId: req.user._id,
           type:      'other',
           status:    'planned',

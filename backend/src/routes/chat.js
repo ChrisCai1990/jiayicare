@@ -5,6 +5,9 @@ const ChatLog = require('../models/ChatLog');
 const HealthRecord = require('../models/HealthRecord');
 const User = require('../models/User');
 const Message = require('../models/Message');
+const Product = require('../models/Product');
+const ServiceProposal = require('../models/ServiceProposal');
+const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 const router = express.Router();
 
 const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康规划师。你的角色类似服务顾问：帮助会员梳理健康管理需求、明确阶段目标、介绍平台服务内容、规划服务步骤，并在需要时转接人工健康管理专员。
@@ -78,6 +81,36 @@ function detectIntent(text) {
   if (dataKw.filter(k => t.includes(k)).length >= 2) return 'data';
   if (serviceKw.some(k => t.includes(k))) return 'service';
   return 'knowledge';
+}
+
+async function maybeCreateServiceProposal({ userId, messages, lastUserMsg }) {
+  const userTurns = messages.filter(message => message.role === 'user');
+  const ready = userTurns.length >= 2 && /(方案|推荐|适合|购买|下单|安排|需要什么服务|怎么做)/.test(lastUserMsg);
+  if (!ready) return null;
+  const existing = await ServiceProposal.findOne({ user: userId, status: 'pending', createdAt: { $gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } });
+  if (existing) return existing;
+  const planner = await resolveHealthPlanner(userId);
+  if (!planner) return null;
+  const products = await Product.find({ status: 'on' }).sort({ sortOrder: 1 }).limit(30).select('_id name subtitle originalPrice servicePrices memberPrices features').lean();
+  if (!products.length) return null;
+  const raw = await chat([
+    { role: 'user', content: `对话：\n${messages.slice(-10).map(m => `${m.role === 'user' ? '客户' : '规划师'}：${m.content}`).join('\n')}\n\n当前可售服务：\n${products.map(p => `${p._id}|${p.name}|${p.subtitle || ''}|参考价${p.originalPrice || 0}|${(p.features || []).join('、')}`).join('\n')}` },
+  ], {
+    jsonMode: true, maxTokens: 1000,
+    systemPrompt: '你是服务方案草稿生成器。只能推荐给定的在售服务，不提供诊断、治疗或处方。输出JSON：customerNeed字符串、proposalText字符串（面向客户，300字内）、confidence数值0-1、recommendations数组，每项含productId、reason。',
+  });
+  const parsed = JSON.parse(raw);
+  const productMap = new Map(products.map(product => [String(product._id), product]));
+  const recommendations = (parsed.recommendations || []).map(item => {
+    const product = productMap.get(String(item.productId));
+    return product ? { productId: product._id, name: product.name, price: product.originalPrice || 0, reason: String(item.reason || '') } : null;
+  }).filter(Boolean);
+  if (!recommendations.length) return null;
+  return ServiceProposal.create({
+    user: userId, planner, customerNeed: String(parsed.customerNeed || lastUserMsg),
+    proposalText: String(parsed.proposalText || ''), confidence: Number(parsed.confidence) || 0,
+    recommendedProducts: recommendations,
+  });
 }
 
 // 拉取用户最近健康数据摘要
@@ -192,8 +225,13 @@ router.post('/', auth, async (req, res) => {
 
     // 需要拿到 _id 返回给前端才能支持"当场撤回"（撤回按 logId 定位 ChatLog 记录）
     const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: replyText, durationMs });
+    let proposal = null;
+    if (intent === 'service') {
+      try { proposal = await maybeCreateServiceProposal({ userId, messages, lastUserMsg }); }
+      catch (proposalError) { console.error('Service proposal draft error:', proposalError.message); }
+    }
 
-    res.json({ success: true, data: { content: replyText, intent, logId: log._id } });
+    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已为您整理服务方案，正在由专属健康规划师审核。` : replyText, intent, logId: log._id, proposalPending: !!proposal } });
   } catch (err) {
     console.error('Chat error:', err.message);
     res.status(500).json({ success: false, message: `AI响应失败，请稍后重试。（${err.message}）` });

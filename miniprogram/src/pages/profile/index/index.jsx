@@ -1,19 +1,18 @@
-import React, { useState, useEffect } from 'react';
-import { View, Text, ScrollView } from '@tarojs/components';
+import React, { useState } from 'react';
+import { View, Text } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
 import { useAuth } from '../../../context/AuthContext';
 import { ordersAPI, userAPI } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
+import { getOrderCounts } from '../../../utils/orderStatus';
 
 const PACKAGE_LABELS = {
   pkg_1y: '年度会员', pkg_6m: '半年会员', pkg_3m: '季度会员',
   health_prevention: '健康预防计划', chronic_stable: '慢病维稳计划',
   young_state: '健康年轻态计划', health_reshape: '健康重塑计划',
 };
-
-const TEAM_COLORS = ['#1E6B50', '#0077B6', '#7C3AED', '#D44000'];
 
 function MenuItem({ icon, iconColor, label, value, badge, onClick, isLast }) {
   const ic = iconColor || colors.primary;
@@ -50,7 +49,7 @@ export default function ProfilePage() {
   const { statusBarHeight } = useNavBar();
   const { user, logout, updateUser } = useAuth();
   const [showLogout, setShowLogout] = useState(false);
-  const [pendingOrders, setPendingOrders] = useState(0);
+  const [orderCounts, setOrderCounts] = useState({ payment: 0, service: 0, progress: 0, afterSale: 0 });
 
   useDidShow(() => {
     userAPI.getMe().then((res) => {
@@ -58,11 +57,13 @@ export default function ProfilePage() {
     }).catch(() => {});
   });
 
-  useEffect(() => {
+  const loadOrderCounts = () => {
     ordersAPI.list().then((res) => {
-      if (res.success) setPendingOrders(res.data.filter((o) => o.status === 'pending').length);
+      if (res.success) setOrderCounts(getOrderCounts(res.data || []));
     }).catch(() => {});
-  }, []);
+  };
+
+  useDidShow(() => { loadOrderCounts(); });
 
   const hasService = !!(user?.servicePackage && user?.serviceExpiry);
   const expiry = hasService ? new Date(user.serviceExpiry) : null;
@@ -74,17 +75,6 @@ export default function ProfilePage() {
   const memberType = hasService
     ? (user.memberType || PACKAGE_LABELS[user.servicePackage] || user.servicePackage || '标准会员')
     : '未开通';
-
-  // 健康管家团队（2026-07-18 从首页移入，与app端一致）
-  const careTeam = (() => {
-    if (user?.careTeam?.length > 0) {
-      return user.careTeam.map((m, i) => ({ name: m.name, role: m.role, bg: TEAM_COLORS[i % TEAM_COLORS.length] }));
-    }
-    return [
-      user?.doctor?.name ? { name: user.doctor.name, role: user.doctor.title || '健康顾问', bg: TEAM_COLORS[0] } : null,
-      user?.manager?.name ? { name: user.manager.name, role: user.manager.title || '健康管家', bg: TEAM_COLORS[1] } : null,
-    ].filter(Boolean);
-  })();
 
   const nav = (url) => Taro.navigateTo({ url });
   const doLogout = () => { setShowLogout(false); logout(); Taro.reLaunch({ url: '/pages/auth/login/index' }); };
@@ -168,68 +158,51 @@ export default function ProfilePage() {
         </View>
       )}
 
-      {/* 健康管理（"健康档案""体检报告"已移除，2026-07-18 去重：底部导航"健康档案"Tab已是完整入口） */}
+      {/* 服务型订单快捷入口：突出用户下一步动作，不照搬传统商城物流状态 */}
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>健康管理</Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-          <MenuItem icon="📋" iconColor="#7C3AED" label="健康方案" onClick={() => nav('/pages/services/plans/index')} />
-          <MenuItem icon="💊" iconColor="#D97706" label="用药管理" onClick={() => nav('/pages/medication/index')} />
-          <MenuItem icon="🌿" iconColor="#22A06B" label="营养素管理" onClick={() => nav('/pages/nutrition/index')} isLast />
-        </View>
-      </View>
-
-      {/* 我的健康管家团队（2026-07-18 从首页移入） */}
-      <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>我的健康管家团队</Text>
-        {careTeam.length === 0 ? (
-          <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px` }}>
-            <Icon name="👥" size={20} color={colors.textMuted} />
-            <Text style={{ flex: 1, fontSize: '12px', color: colors.textMuted, lineHeight: '18px' }}>健管团队待分配，完成服务包开通后即可配置</Text>
+          <View onClick={() => nav('/pages/orders/index')} style={{ display: 'flex', alignItems: 'center', padding: '14px 16px 10px' }}>
+            <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>我的订单</Text>
+            <Text style={{ fontSize: '12px', color: colors.textMuted }}>全部订单 ›</Text>
           </View>
-        ) : (
-          <ScrollView scrollX style={{ whiteSpace: 'nowrap' }}>
-            <View style={{ display: 'inline-flex', gap: `${spacing.sm}px` }}>
-              {careTeam.map((member, i) => (
-                <View key={i} onClick={() => Taro.switchTab({ url: '/pages/chat/index' })} style={{
-                  display: 'inline-flex', flexDirection: 'column', alignItems: 'center', backgroundColor: '#fff',
-                  borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, minWidth: '88px',
-                }}>
-                  <View style={{ width: '52px', height: '52px', borderRadius: '26px', backgroundColor: member.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px' }}>
-                    <Text style={{ fontSize: '20px', fontWeight: 700, color: '#fff' }}>{member.name[0]}</Text>
-                  </View>
-                  <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary }}>{member.name}</Text>
-                  <Text style={{ fontSize: '10px', color: colors.textMuted }}>{member.role}</Text>
+          <View style={{ display: 'flex', padding: '6px 4px 16px' }}>
+            {[
+              { key: 'payment', label: '待支付', icon: 'banknote' },
+              { key: 'service', label: '待服务', icon: 'calendar-days' },
+              { key: 'progress', label: '进行中', icon: 'clock' },
+              { key: 'afterSale', label: '退款/售后', icon: 'rotate-cw' },
+            ].map((item) => (
+              <View key={item.key} onClick={() => nav(`/pages/orders/index?tab=${item.key}`)} style={{ flex: 1, position: 'relative', textAlign: 'center', padding: '5px 0' }}>
+                <View style={{ height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <Icon name={item.icon} size={20} color={colors.textSecondary} />
                 </View>
-              ))}
-            </View>
-          </ScrollView>
-        )}
-      </View>
-
-      {/* 家庭成员 */}
-      <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>家庭成员</Text>
-        <View onClick={() => nav('/pages/profile/family/index')} style={{
-          display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
-          border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, gap: `${spacing.sm}px`,
-        }}>
-          <View style={{ width: '40px', height: '40px', borderRadius: '12px', backgroundColor: colors.primary10, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <Icon name="👪" size={18} color={colors.primary} />
+                {orderCounts[item.key] > 0 && (
+                  <View style={{ position: 'absolute', top: 0, left: '55%', minWidth: '16px', height: '16px', padding: '0 3px', borderRadius: '8px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Text style={{ fontSize: '9px', color: '#fff', fontWeight: 700 }}>{Math.min(orderCounts[item.key], 99)}</Text>
+                  </View>
+                )}
+                <Text style={{ display: 'block', marginTop: '4px', fontSize: '11px', color: colors.textSecondary }}>{item.label}</Text>
+              </View>
+            ))}
           </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>家庭成员管理</Text>
-            <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>关联家人账号，共享健康基金与就医协助</Text>
-          </View>
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>›</Text>
         </View>
       </View>
 
-      {/* 我的服务 */}
+      {/* 高频入口合并为四宫格，团队沟通统一放到“健康管家”Tab */}
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
-        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>我的服务</Text>
-        <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-          <MenuItem icon="🧾" iconColor={colors.primary} label="我的订单" badge={pendingOrders} onClick={() => nav('/pages/orders/index')} />
-          <MenuItem icon="🎁" iconColor="#8e44ad" label="会员权益" onClick={() => nav('/pages/profile/benefits/index')} isLast />
+        <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>常用功能</Text>
+        <View style={{ display: 'flex', flexWrap: 'wrap', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
+          {[
+            { label: '健康方案', icon: 'clipboard-list', color: '#7C3AED', url: '/pages/services/plans/index' },
+            { label: '用药管理', icon: 'pill', color: '#D97706', url: '/pages/medication/index' },
+            { label: '营养管理', icon: 'leaf', color: '#22A06B', url: '/pages/nutrition/index' },
+            { label: '家庭成员', icon: 'users', color: colors.primary, url: '/pages/profile/family/index' },
+          ].map((item, index) => (
+            <View key={item.label} onClick={() => nav(item.url)} style={{ width: '50%', boxSizing: 'border-box', padding: '16px 12px', display: 'flex', alignItems: 'center', gap: '9px', borderRight: index % 2 === 0 ? `1px solid ${colors.borderLight}` : 'none', borderBottom: index < 2 ? `1px solid ${colors.borderLight}` : 'none' }}>
+              <View style={{ width: '34px', height: '34px', borderRadius: '10px', backgroundColor: item.color + '20', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={item.icon} size={17} color={item.color} /></View>
+              <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>{item.label}</Text>
+            </View>
+          ))}
         </View>
       </View>
 
@@ -237,7 +210,8 @@ export default function ProfilePage() {
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
         <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>账号设置</Text>
         <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-          <MenuItem icon="🔔" iconColor="#7C3AED" label="消息通知" onClick={() => nav('/pages/profile/notifications/index')} />
+          <MenuItem icon="🎁" iconColor="#8e44ad" label="会员权益" onClick={() => nav('/pages/profile/benefits/index')} />
+          <MenuItem icon="🔔" iconColor="#7C3AED" label="通知设置" onClick={() => nav('/pages/profile/notifications/index')} />
           <MenuItem icon="🔒" iconColor="#22A06B" label="账号安全" onClick={() => nav('/pages/profile/security/index')} />
           <MenuItem icon="❓" iconColor="#D97706" label="帮助与反馈" onClick={() => nav('/pages/profile/feedback/index')} isLast />
         </View>
@@ -246,10 +220,12 @@ export default function ProfilePage() {
       {/* 关于与法律 */}
       <View style={{ padding: `${spacing.lg}px ${spacing.lg}px 0` }}>
         <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1px', marginBottom: `${spacing.sm}px`, display: 'block' }}>关于与法律</Text>
-        <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden' }}>
-          <MenuItem icon="📄" iconColor="#6B7280" label="用户协议" onClick={() => nav('/pages/legal/index?type=terms')} />
-          <MenuItem icon="🛡️" iconColor="#6B7280" label="隐私政策" onClick={() => nav('/pages/legal/index?type=privacy')} />
-          <MenuItem icon="ℹ️" iconColor="#6B7280" label="免责声明" onClick={() => nav('/pages/legal/index?type=disclaimer')} isLast />
+        <View style={{ display: 'flex', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, padding: '12px 4px' }}>
+          {[['用户协议', 'terms'], ['隐私政策', 'privacy'], ['免责声明', 'disclaimer']].map(([label, type], index) => (
+            <View key={type} onClick={() => nav(`/pages/legal/index?type=${type}`)} style={{ flex: 1, textAlign: 'center', borderRight: index < 2 ? `1px solid ${colors.borderLight}` : 'none' }}>
+              <Text style={{ fontSize: '11px', color: colors.textSecondary }}>{label}</Text>
+            </View>
+          ))}
         </View>
       </View>
 

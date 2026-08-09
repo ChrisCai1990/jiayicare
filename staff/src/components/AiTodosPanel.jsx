@@ -30,6 +30,7 @@ const TYPE_CONFIG = {
   service_draft_review: { icon: '🤖', label: 'AI随访草稿待审核', color: '#7C3AED', priority: 3 },
   medical_assist_plan_review: { icon: '🚑', label: 'AI就医协助方案待审核', color: '#0077B6', priority: 2 },
   supply_plan_review:  { icon: '📦', label: '定期配药/配营养素待安排', color: '#D97706', priority: 3 },
+  service_proposal_review: { icon: '💼', label: '服务方案草稿待审核', color: '#1E6B50', priority: 2 },
 }
 
 function formatTime(date) {
@@ -79,6 +80,21 @@ export default function AiTodosPanel() {
     staffAPI.confirmSupplyPlan(planId)
       .then(() => setTodos(ts => ts.filter(t => t.id !== todo.id)))
       .catch(() => {})
+  }
+
+  const reviewServiceProposal = async (e, todo, action) => {
+    e.stopPropagation()
+    const proposalId = todo.id.replace(/^serviceproposal_/, '')
+    if (action === 'approve') {
+      const edited = window.prompt('审核服务方案；可直接修改后发送：', todo.proposalText || '')
+      if (edited === null || !edited.trim()) return
+      await staffAPI.reviewServiceProposal(proposalId, { action, proposalText: edited.trim() })
+    } else {
+      const note = window.prompt('请填写不适合的原因或后续联系重点：', '')
+      if (note === null) return
+      await staffAPI.reviewServiceProposal(proposalId, { action, reviewNote: note })
+    }
+    setTodos(ts => ts.filter(t => t.id !== todo.id))
   }
 
   const resolveSymptom = (e, todo, status) => {
@@ -194,6 +210,13 @@ export default function AiTodosPanel() {
                     onClick={(e) => resolveTransfer(e, todo)}
                     style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}
                   >标记已联系</button>
+                ) : todo.type === 'service_proposal_review' ? (
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    <button onClick={(e) => reviewServiceProposal(e, todo, 'approve')}
+                      style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: '1px solid #1E6B50', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>审核通过</button>
+                    <button onClick={(e) => reviewServiceProposal(e, todo, 'reject')}
+                      style={{ fontSize: 11, color: '#D97706', background: 'none', border: '1px solid #D97706', borderRadius: 4, padding: '1px 6px', cursor: 'pointer' }}>需人工沟通</button>
+                  </div>
                 ) : todo.type === 'supply_plan_review' ? (
                   <button
                     onClick={(e) => resolveSupplyPlan(e, todo)}

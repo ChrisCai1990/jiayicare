@@ -28,9 +28,21 @@ const bodyDate = row => String(row?.measuredAt || row?.checkDate || row?.recorde
 
 const STATUS_COLOR = { normal: colors.success, warning: colors.warning, low: colors.info };
 
+const pad2 = value => String(value).padStart(2, '0');
+const formatRecordDate = value => {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '未知日期';
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+};
+const formatRecordTime = value => {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  return `${pad2(date.getHours())}:${pad2(date.getMinutes())}`;
+};
+
 export default function RecordsIndexPage() {
   const { statusBarHeight } = useNavBar();
-  const { user, updateUser } = useAuth();
+  const { updateUser } = useAuth();
   const [records, setRecords] = useState([]);
   const [filter, setFilter] = useState('bloodPressure');
   const [loading, setLoading] = useState(true);
@@ -42,6 +54,7 @@ export default function RecordsIndexPage() {
   const [trendTab, setTrendTab] = useState('bloodPressure');
   const [bodyComposition, setBodyComposition] = useState({});
   const [bodyCompHistory, setBodyCompHistory] = useState([]);
+  const [showAllRecords, setShowAllRecords] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,7 +120,7 @@ export default function RecordsIndexPage() {
             {CORE_TYPES.map((k) => (
               <View
                 key={k}
-                onClick={() => { setFilter(k); setTrendTab(k); }}
+                onClick={() => { setFilter(k); setTrendTab(k); setShowAllRecords(false); }}
                 style={{
                   display: 'inline-block', padding: '6px 14px', borderRadius: `${radius.full}px`,
                   backgroundColor: filter === k ? colors.primary : '#fff',
@@ -123,71 +136,22 @@ export default function RecordsIndexPage() {
           </View>
         </ScrollView>
 
-        {/* 个人资料入口（2026-07-18 对齐app端健康档案页拆分：静态档案字段搬到独立页） */}
-        <View
-          onClick={() => Taro.navigateTo({ url: '/pages/records/upload/index' })}
-          style={{
-            display: 'flex', alignItems: 'center', gap: `${spacing.md}px`,
-            backgroundColor: colors.primary, borderRadius: `${radius.lg}px`,
-            padding: `${spacing.lg}px ${spacing.md}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.card,
-          }}
-        >
-          <View style={{ width: '48px', height: '48px', borderRadius: '15px', backgroundColor: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <Icon name="📤" size={24} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: '16px', fontWeight: 800, color: '#fff', display: 'block', marginBottom: '4px' }}>上传体检/检查报告</Text>
-            <Text style={{ fontSize: '11px', lineHeight: '17px', color: 'rgba(255,255,255,0.76)' }}>支持相册选图和拍照，上传后自动解析归档</Text>
-          </View>
-          <Text style={{ color: '#fff', fontSize: '18px' }}>›</Text>
-        </View>
-        <View onClick={() => Taro.navigateTo({ url: '/pages/records/medical-reports/index' })} style={{ textAlign: 'center', padding: '9px 0', marginBottom: `${spacing.md}px` }}>
-          <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.primary }}>📄 查看已上传报告</Text>
-        </View>
-
-        <View onClick={() => Taro.navigateTo({ url: '/pages/records/profile-archive/index' })} style={{
-          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`,
-          border: `1px solid ${colors.border}`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card,
-        }}>
-          <Icon name="👤" size={20} />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>个人资料</Text>
-            <Text style={{ fontSize: '11px', color: colors.textMuted }}>基本信息 · 基础健康档案 · 生活方式 · 年度复查</Text>
-          </View>
-          <Text style={{ fontSize: '14px', color: colors.textMuted }}>›</Text>
-        </View>
-
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>档案工具</Text>
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
-          <View style={{ flex: 1, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '12px', textAlign: 'center', boxShadow: shadow.card }}
-            onClick={() => Taro.navigateTo({ url: '/pages/records/report/index' })}>
-            <View style={{ display: 'flex', justifyContent: 'center' }}><Icon name="📊" size={20} /></View>
-            <Text style={{ fontSize: '12px', color: colors.textPrimary, marginTop: '4px' }}>健康报告</Text>
-          </View>
+          {[
+            { label: '上传报告', hint: '拍照或相册', icon: 'upload', url: '/pages/records/upload/index', primary: true },
+            { label: '报告记录', hint: '查看原始资料', icon: 'file-text', url: '/pages/records/medical-reports/index' },
+            { label: '健康报告', hint: '汇总与趋势', icon: 'bar-chart-3', url: '/pages/records/report/index' },
+          ].map((action) => (
+            <View key={action.label} onClick={() => Taro.navigateTo({ url: action.url })} style={{ flex: 1, minWidth: 0, backgroundColor: action.primary ? colors.primary : '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${action.primary ? colors.primary : colors.border}`, padding: '13px 8px', textAlign: 'center', boxShadow: shadow.card }}>
+              <View style={{ display: 'flex', justifyContent: 'center', marginBottom: '6px' }}><Icon name={action.icon} size={20} color={action.primary ? '#fff' : colors.primary} /></View>
+              <Text style={{ fontSize: '12px', fontWeight: 700, color: action.primary ? '#fff' : colors.textPrimary, display: 'block' }}>{action.label}</Text>
+              <Text style={{ fontSize: '9px', color: action.primary ? 'rgba(255,255,255,0.72)' : colors.textMuted, display: 'block', marginTop: '2px', whiteSpace: 'nowrap' }}>{action.hint}</Text>
+            </View>
+          ))}
         </View>
 
-        {/* 健康信息整理入口卡片 */}
-        <View onClick={() => {
-          if (!user?.aiEntitlements?.aiHealthAnalysis && !user?.aiEntitlements?.aiRiskAssessment) {
-            Taro.showModal({
-              title: '年度会员专属',
-              content: 'AI健康信息整理与趋势分析、健康关注提示仅向健康预防计划、健康护航计划客户开放。相关内容仅作信息整理，不构成诊断或治疗建议。',
-              confirmText: '查看商城',
-              success: res => { if (res.confirm) Taro.navigateTo({ url: '/pages/services/mall/index' }); },
-            });
-            return;
-          }
-          Taro.navigateTo({ url: '/pages/records/ai-health/index' });
-        }} style={{
-          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#1A2B24', borderRadius: `${radius.md}px`,
-          padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`,
-        }}>
-          <Icon name="✨" size={24} color="#fff" />
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: '14px', fontWeight: 700, color: '#fff', display: 'block' }}>健康信息整理 / 关注提示</Text>
-            <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.6)' }}>{user?.aiEntitlements?.aiHealthAnalysis || user?.aiEntitlements?.aiRiskAssessment ? 'AI结合体检数据与健康档案自动生成解读' : '年度会员专属 · 查看权益'}</Text>
-          </View>
-          <Text style={{ color: '#fff', fontSize: '14px' }}>›</Text>
-        </View>
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>健康数据</Text>
 
         {/* 睡眠指标卡片 */}
         {!!latestSleep && (
@@ -237,17 +201,17 @@ export default function RecordsIndexPage() {
             // 按归属日期分组，同日多条折叠展示"共N次"，区分记录时间(recordedAt)和提交时间(createdAt)（2026-07-18 对齐app端）
             const groups = [];
             const groupMap = {};
-            filtered.forEach((r) => {
+            (showAllRecords ? filtered : filtered.slice(0, 3)).forEach((r) => {
               const d = r.recordedAt ? new Date(r.recordedAt) : null;
               const dateKey = d ? `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` : '未知日期';
-              const dateLabel = d ? d.toLocaleDateString('zh-CN', { month: 'long', day: 'numeric' }) : '未知日期';
+              const dateLabel = formatRecordDate(r.recordedAt);
               if (!groupMap[dateKey]) {
                 groupMap[dateKey] = { dateKey, dateLabel, items: [] };
                 groups.push(groupMap[dateKey]);
               }
               groupMap[dateKey].items.push(r);
             });
-            return groups.map((group) => (
+            return <>{groups.map((group) => (
               <View key={group.dateKey} style={{ marginBottom: `${spacing.md}px` }}>
                 <View style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
                   <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textSecondary }}>{group.dateLabel}</Text>
@@ -255,11 +219,11 @@ export default function RecordsIndexPage() {
                 </View>
                 {group.items.map((r) => {
                   const meta = TYPE_META[r.type] || { label: r.label || r.type, icon: '📋', unit: r.unit || '' };
-                  const recordedTime = r.recordedAt ? new Date(r.recordedAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }) : '';
+                  const recordedTime = formatRecordTime(r.recordedAt);
                   const isBackfilled = r.recordedAt && r.createdAt &&
                     new Date(r.createdAt).toDateString() !== new Date(r.recordedAt).toDateString();
                   const createdLabel = isBackfilled
-                    ? `提交于 ${new Date(r.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                    ? `补录于 ${formatRecordDate(r.createdAt).replace(/^\d{4}年/, '')} ${formatRecordTime(r.createdAt)}`
                     : '';
                   return (
                     <View key={r._id} style={{
@@ -280,7 +244,11 @@ export default function RecordsIndexPage() {
                   );
                 })}
               </View>
-            ));
+            ))}{filtered.length > 3 && (
+              <View onClick={() => setShowAllRecords((value) => !value)} style={{ textAlign: 'center', padding: '10px 0 18px' }}>
+                <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{showAllRecords ? '收起记录' : `查看全部 ${filtered.length} 条`}</Text>
+              </View>
+            )}</>;
           })()
         )}
       </View>

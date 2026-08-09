@@ -247,7 +247,12 @@ export default function RenewalPage() {
         content: '续约意向已通知健管师，请留意"消息"页面的产品推送并完成支付。',
         confirmText: '去看消息',
         cancelText: '好的',
-        success: (res) => { if (res.confirm) Taro.switchTab({ url: '/pages/messages/index' }); },
+        success: (res) => {
+          if (res.confirm) {
+            Taro.setStorageSync('healthHubView', 'team');
+            Taro.switchTab({ url: '/pages/chat/index' });
+          }
+        },
       });
     } catch (e) {
       Taro.showToast({ title: e.message || '发送失败', icon: 'none' });
@@ -341,7 +346,7 @@ export default function RenewalPage() {
           </Text>
         </View>
 
-        <View onClick={() => Taro.switchTab({ url: '/pages/messages/index' })} style={{
+        <View onClick={() => { Taro.setStorageSync('healthHubView', 'team'); Taro.switchTab({ url: '/pages/chat/index' }); }} style={{
           backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.primary}`,
           padding: `${spacing.md}px`, textAlign: 'center', marginBottom: `${spacing.md}px`,
         }}>

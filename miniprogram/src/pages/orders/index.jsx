@@ -1,11 +1,12 @@
 import React, { useState, useCallback } from 'react';
 import { View, Text } from '@tarojs/components';
-import Taro, { useDidShow } from '@tarojs/taro';
+import Taro, { useDidShow, useRouter } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { ordersAPI, paymentsAPI } from '../../services/api';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import { requestWechatPayment, waitForPayment } from '../../utils/wechatPay';
+import { ORDER_TABS, formatOrderTime, getOrderCategory, getOrderCounts } from '../../utils/orderStatus';
 
 const STATUS_META = {
   pending: { label: '待处理', color: colors.warning },
@@ -33,8 +34,11 @@ const FULFILLMENT_LABELS = {
 
 export default function OrdersPage() {
   const { statusBarHeight } = useNavBar();
+  const router = useRouter();
   const [list, setList] = useState([]);
   const [loading, setLoading] = useState(true);
+  const initialTab = ORDER_TABS.some((tab) => tab.key === router.params?.tab) ? router.params.tab : 'all';
+  const [activeTab, setActiveTab] = useState(initialTab);
 
   const load = useCallback(() => {
     setLoading(true);
@@ -43,6 +47,9 @@ export default function OrdersPage() {
   }, []);
 
   useDidShow(() => { load(); });
+
+  const counts = getOrderCounts(list);
+  const visibleList = activeTab === 'all' ? list : list.filter((order) => getOrderCategory(order) === activeTab);
 
   const cancel = async (id) => {
     try {
@@ -94,15 +101,27 @@ export default function OrdersPage() {
         <View style={{ width: '28px' }} />
       </View>
 
+      <View style={{ backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`, whiteSpace: 'nowrap', overflowX: 'auto' }}>
+        <View style={{ display: 'inline-flex', minWidth: '100%', padding: '0 8px' }}>
+          {ORDER_TABS.map((tab) => (
+            <View key={tab.key} onClick={() => setActiveTab(tab.key)} style={{ flex: tab.key === 'afterSale' ? 1.25 : 1, minWidth: tab.key === 'afterSale' ? '76px' : '58px', textAlign: 'center', padding: '13px 4px 10px', borderBottom: activeTab === tab.key ? `2px solid ${colors.primary}` : '2px solid transparent' }}>
+              <Text style={{ fontSize: '12px', color: activeTab === tab.key ? colors.primary : colors.textSecondary, fontWeight: activeTab === tab.key ? 700 : 500 }}>
+                {tab.label}{counts[tab.key] > 0 && tab.key !== 'all' ? ` ${counts[tab.key]}` : ''}
+              </Text>
+            </View>
+          ))}
+        </View>
+      </View>
+
       <View style={{ padding: `${spacing.lg}px` }}>
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
-      ) : list.length === 0 ? (
+      ) : visibleList.length === 0 ? (
         <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}>
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无订单</Text>
+          <Text style={{ fontSize: '13px', color: colors.textMuted }}>{list.length === 0 ? '暂无订单' : '当前分类暂无订单'}</Text>
         </View>
       ) : (
-        list.map((o) => {
+        visibleList.map((o) => {
           const meta = TRADE_STATUS_META[o.tradeStatus] || STATUS_META[o.status] || STATUS_META.pending;
           return (
             <View key={o._id} style={{
@@ -113,7 +132,7 @@ export default function OrdersPage() {
                 <Text style={{ fontSize: '12px', color: meta.color, fontWeight: 700 }}>{meta.label}</Text>
               </View>
               <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block' }}>
-                {o.createdAt ? new Date(o.createdAt).toLocaleString('zh-CN') : ''}
+                {formatOrderTime(o.createdAt)}
               </Text>
               {o.servicePrice != null && (
                 <Text style={{ fontSize: '15px', fontWeight: 800, color: colors.primary, display: 'block', marginTop: '6px' }}>¥{o.servicePrice}</Text>

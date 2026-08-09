@@ -58,6 +58,7 @@ const orderSchema = new mongoose.Schema({
   paymentEnvironment: { type: String, enum: ['', 'sandbox', 'production'], default: '' },
   paymentClientConfirmedAt: { type: Date, default: null },
   healthFundAmount: { type: Number, default: 0 },
+  healthFundBreakdown: { personal: { type: Number, default: 0 }, corporate: { type: Number, default: 0 } },
   healthFundEnterpriseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Enterprise', default: null },
   couponId: { type: mongoose.Schema.Types.ObjectId, ref: 'Coupon', default: null },
   couponDiscount: { type: Number, default: 0 },

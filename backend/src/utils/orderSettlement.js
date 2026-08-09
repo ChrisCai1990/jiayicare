@@ -5,6 +5,7 @@ const Coupon = require('../models/Coupon');
 const User = require('../models/User');
 const FollowUp = require('../models/FollowUp');
 const { awardOrderPoints, refundOrderPoints } = require('./orderPoints');
+const { resolveHealthPlanner } = require('./healthPlannerAssignment');
 
 async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   let payment = await Payment.findOneAndUpdate(
@@ -32,7 +33,7 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   if (order.healthFundAmount > 0 && !order.healthFundSettledAt) {
     const enterprise = order.healthFundEnterpriseId ? { _id: order.healthFundEnterpriseId } : null;
     const user = await User.findById(order.user);
-    await require('./healthFundPayment').deductHealthFund({ user, enterprise, order, amount: order.healthFundAmount });
+    await require('./healthFundPayment').deductHealthFund({ user, enterprise, order, amount: order.healthFundAmount, breakdown: order.healthFundBreakdown });
     order.healthFundSettledAt = new Date();
   }
   if (order.couponId && !order.couponSettledAt) {
@@ -65,13 +66,13 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   order.fulfillmentStatus = fulfillment.status;
   await order.save();
 
-  const patient = await User.findById(order.user).select('assignedHealthPlanner');
-  if (patient?.assignedHealthPlanner) {
+  const plannerId = await resolveHealthPlanner(order.user);
+  if (plannerId) {
     await FollowUp.findOneAndUpdate(
       { sourceType: 'order', sourceOrderId: order._id },
       { $setOnInsert: {
-        staffId: patient.assignedHealthPlanner,
-        assignedTo: patient.assignedHealthPlanner,
+        staffId: plannerId,
+        assignedTo: plannerId,
         patientId: order.user,
         type: 'other', status: 'planned',
         theme: `订单服务：${order.serviceName}`,
@@ -117,17 +118,20 @@ async function confirmRefund(refund, snapshot) {
     await refundOrderPoints(order);
     if (order.healthFundAmount > 0) {
       const HealthFundTransaction = require('../models/HealthFundTransaction');
-      const deduction = await HealthFundTransaction.findOne({ orderId: order._id, type: 'deduction', status: 'active' });
+      const deductions = await HealthFundTransaction.find({ orderId: order._id, type: 'deduction', status: 'active' });
       const reversal = await HealthFundTransaction.findOne({ orderId: order._id, type: 'reversal', status: 'active' });
-      if (deduction && !reversal) {
+      if (deductions.length && !reversal) {
         const user = await User.findByIdAndUpdate(order.user, { $inc: { healthFundBalance: order.healthFundAmount } }, { new: true });
-        await HealthFundTransaction.create({
+        await HealthFundTransaction.insertMany(deductions.map(deduction => ({
           userId: order.user, enterpriseId: deduction.enterpriseId, orderId: order._id,
-          type: 'reversal', source: deduction.source, amount: order.healthFundAmount,
+          type: 'reversal', source: deduction.source, amount: Math.abs(deduction.amount),
           balanceAfter: user.healthFundBalance, reversedTransactionId: deduction._id,
           remark: `订单${order.serviceName}退款返还`,
-        });
-        deduction.status = 'reversed'; await deduction.save();
+        })));
+        await HealthFundTransaction.updateMany(
+          { _id: { $in: deductions.map(item => item._id) } },
+          { status: 'reversed' },
+        );
       }
     }
     if (order.couponId) {

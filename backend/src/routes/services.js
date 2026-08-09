@@ -17,6 +17,7 @@ const Fulfillment = require('../models/Fulfillment');
 const ServiceInquiry = require('../models/ServiceInquiry');
 
 const Product = require('../models/Product');
+const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 
 // GET /api/services — 从商城产品获取（管理员在后台维护的 Products）
 // Public catalogue: reviewers and prospective users must be able to browse
@@ -217,10 +218,11 @@ router.post('/order', auth, async (req, res) => {
 
   let fundUsed = 0;
   let fundEnterprise = null;
+  let fundBreakdown = { personal: 0, corporate: 0 };
   if (useHealthFund > 0) {
     try {
       const checked = await require('../utils/healthFundPayment').validateHealthFundDeduction({ user:req.user, requested:useHealthFund, orderAmount:priceAfterCoupon, category:service.category || '' });
-      fundUsed = checked.allowed; fundEnterprise = checked.enterprise;
+      fundUsed = checked.allowed; fundEnterprise = checked.enterprise; fundBreakdown = checked.breakdown;
     } catch (err) { return res.status(400).json({ success:false, message:err.message }); }
   }
 
@@ -264,8 +266,7 @@ router.post('/order', auth, async (req, res) => {
   }
 
   // 已配置规划师时自动派单；尚未配置也允许先完成购买，由客服后续配置和跟进。
-  const patientForStaff = await User.findById(req.user._id).select('assignedHealthPlanner');
-  const followUpStaffId = patientForStaff?.assignedHealthPlanner || null;
+  const followUpStaffId = await resolveHealthPlanner(req.user._id);
 
   const outTradeNo = `JY${Date.now()}${new mongoose.Types.ObjectId().toString().slice(-8)}`.slice(0, 32);
   const orderNo = outTradeNo;
@@ -302,6 +303,7 @@ router.post('/order', auth, async (req, res) => {
     paymentProductId: '',
     paymentEnvironment: paidAmount > 0 ? 'production' : '',
     healthFundAmount: fundUsed,
+    healthFundBreakdown: fundBreakdown,
     healthFundEnterpriseId: fundEnterprise?._id || null,
     couponId: coupon?._id || null,
     couponDiscount,
@@ -327,7 +329,7 @@ router.post('/order', auth, async (req, res) => {
     }));
   }
   // 健康基金实时扣减（与订单绑定，note 记录用于哪笔订单）
-  if (fundUsed > 0) pendingTasks.push(require('../utils/healthFundPayment').deductHealthFund({ user:req.user, enterprise:fundEnterprise, order, amount:fundUsed }));
+  if (fundUsed > 0) pendingTasks.push(require('../utils/healthFundPayment').deductHealthFund({ user:req.user, enterprise:fundEnterprise, order, amount:fundUsed, breakdown:fundBreakdown }));
   // 优惠券标记已用
   if (coupon) {
     coupon.status = 'used';

@@ -66,15 +66,9 @@ export default defineAppConfig({
       },
       {
         pagePath: 'pages/chat/index',
-        text: '健康规划',
+        text: '健康管家',
         iconPath: 'assets/tab/report.png',
         selectedIconPath: 'assets/tab/report-active.png',
-      },
-      {
-        pagePath: 'pages/messages/index',
-        text: '消息',
-        iconPath: 'assets/tab/messages.png',
-        selectedIconPath: 'assets/tab/messages-active.png',
       },
       {
         pagePath: 'pages/profile/index/index',

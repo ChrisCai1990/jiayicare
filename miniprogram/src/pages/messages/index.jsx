@@ -73,7 +73,7 @@ function fmtMsgTime(t) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export default function MessagesPage() {
+export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
   const { statusBarHeight } = useNavBar();
   const { user, isDemo } = useAuth();
   const careTeamKinds = new Set((user?.careTeam || []).map((m) => m.kind));
@@ -108,6 +108,7 @@ export default function MessagesPage() {
   }, []);
 
   useDidShow(() => { loadMessages(); });
+  useEffect(() => { if (refreshKey) loadMessages(); }, [refreshKey, loadMessages]);
 
   const notifMessages = messages.filter((m) => NOTIF_TYPES.has(m.type) && !m.conversationId);
 
@@ -151,15 +152,15 @@ export default function MessagesPage() {
   }
 
   return (
-    <View style={{ minHeight: '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xl}px` }}>
-      <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.sm}px` }}>
+    <View style={{ minHeight: embedded ? 'auto' : '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xl}px` }}>
+      {!embedded && <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.sm}px` }}>
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary }}>消息</Text>
         {totalUnread > 0 && (
           <View style={{ marginLeft: '8px', minWidth: '22px', height: '22px', borderRadius: '11px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 6px' }}>
             <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>{totalUnread > 99 ? '99+' : totalUnread}</Text>
           </View>
         )}
-      </View>
+      </View>}
 
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>

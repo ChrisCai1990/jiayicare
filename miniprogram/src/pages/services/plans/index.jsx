@@ -283,7 +283,8 @@ export default function ServicePlansPage() {
       Taro.showToast({ title: '您当前暂未分配健康管理师，请联系服务团队', icon: 'none' });
       return;
     }
-    Taro.switchTab({ url: '/pages/messages/index' });
+    Taro.setStorageSync('healthHubView', 'team');
+    Taro.switchTab({ url: '/pages/chat/index' });
   };
 
   const handleItemPress = (item, plan, meta) => setDetailModal({ item, plan, meta });

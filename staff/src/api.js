@@ -302,6 +302,7 @@ export const staffAPI = {
 
   // AI 待办任务聚合
   getAiTodos: () => req('/staff/ai-todos'),
+  reviewServiceProposal: (id, data) => req(`/staff/service-proposals/${id}/review`, { method: 'PATCH', body: JSON.stringify(data) }),
 
   // 日常健康打卡总览
   getCheckinOverview: (p = {}) => req('/staff/checkin-overview?' + qs(p)),
