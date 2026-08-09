@@ -139,6 +139,7 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
 
   // 健康基金抵扣 + 优惠券
   const fundBalance = user?.healthFund?.total || 0;
+  const fundRuleDescription = user?.healthFund?.rule?.description || '';
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
@@ -351,14 +352,17 @@ function PurchaseModal({ item, mode = 'consult', onClose }) {
                 </TouchableOpacity>
               </View>
               {useFund && (
-                <TextInput
-                  style={[styles.noteInput, { minHeight: 0, marginBottom: spacing.md }]}
-                  keyboardType="numeric"
-                  placeholder={`最多可抵扣 ¥${Math.min(fundBalance, priceAfterCoupon)}`}
-                  placeholderTextColor={colors.textMuted}
-                  value={fundAmountInput}
-                  onChangeText={setFundAmountInput}
-                />
+                <>
+                  {!!fundRuleDescription && <Text style={{ fontSize: 11, color: colors.textSecondary, lineHeight: 17, marginBottom: 8 }}>使用规则：{fundRuleDescription}</Text>}
+                  <TextInput
+                    style={[styles.noteInput, { minHeight: 0, marginBottom: spacing.md }]}
+                    keyboardType="numeric"
+                    placeholder={`最多可抵扣 ¥${Math.min(fundBalance, priceAfterCoupon)}`}
+                    placeholderTextColor={colors.textMuted}
+                    value={fundAmountInput}
+                    onChangeText={setFundAmountInput}
+                  />
+                </>
               )}
             </>
           )}

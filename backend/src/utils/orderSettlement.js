@@ -117,22 +117,7 @@ async function confirmRefund(refund, snapshot) {
     await Fulfillment.updateOne({ order: order._id }, { status: 'cancelled' });
     await refundOrderPoints(order);
     if (order.healthFundAmount > 0) {
-      const HealthFundTransaction = require('../models/HealthFundTransaction');
-      const deductions = await HealthFundTransaction.find({ orderId: order._id, type: 'deduction', status: 'active' });
-      const reversal = await HealthFundTransaction.findOne({ orderId: order._id, type: 'reversal', status: 'active' });
-      if (deductions.length && !reversal) {
-        const user = await User.findByIdAndUpdate(order.user, { $inc: { healthFundBalance: order.healthFundAmount } }, { new: true });
-        await HealthFundTransaction.insertMany(deductions.map(deduction => ({
-          userId: order.user, enterpriseId: deduction.enterpriseId, orderId: order._id,
-          type: 'reversal', source: deduction.source, amount: Math.abs(deduction.amount),
-          balanceAfter: user.healthFundBalance, reversedTransactionId: deduction._id,
-          remark: `订单${order.serviceName}退款返还`,
-        })));
-        await HealthFundTransaction.updateMany(
-          { _id: { $in: deductions.map(item => item._id) } },
-          { status: 'reversed' },
-        );
-      }
+      await require('./healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}退款返还` });
     }
     if (order.couponId) {
       await Coupon.updateOne(

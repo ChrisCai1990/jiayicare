@@ -2,7 +2,8 @@ const mongoose = require('mongoose');
 
 const refundSchema = new mongoose.Schema({
   order: { type: mongoose.Schema.Types.ObjectId, ref: 'Order', required: true, index: true },
-  payment: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', required: true, index: true },
+  // 纯健康基金订单没有微信支付流水，也必须能创建退款申请并原路退回基金。
+  payment: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment', default: null, index: true },
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   requestedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   outRefundNo: { type: String, required: true, unique: true, index: true },

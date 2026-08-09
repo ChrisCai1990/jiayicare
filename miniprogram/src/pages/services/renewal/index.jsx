@@ -80,6 +80,7 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
   const [serviceAgreed, setServiceAgreed] = useState(false);
   const [checkoutUser, setCheckoutUser] = useState(user);
   const fundBalance = checkoutUser?.healthFund?.total || 0;
+  const fundRuleDescription = checkoutUser?.healthFund?.rule?.description || '';
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
@@ -177,15 +178,18 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
         )}
 
         {fundBalance > 0 && (
-          <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: `${spacing.md}px` }}>
-            <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>健康基金抵扣（余额¥{fundBalance.toFixed(2)}）</Text>
-            <View onClick={() => {
-              const next = !useFund;
-              setUseFund(next);
-              if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
-            }} style={{ padding: '6px 12px', borderRadius: `${radius.full}px`, border: `1.5px solid ${useFund ? colors.primary : colors.border}`, backgroundColor: useFund ? colors.primary10 : colors.background }}>
-              <Text style={{ fontSize: '12px', fontWeight: 600, color: useFund ? colors.textPrimary : colors.textMuted }}>{useFund ? '已启用' : '使用基金'}</Text>
+          <View style={{ marginBottom: `${spacing.md}px` }}>
+            <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>健康基金抵扣（余额¥{fundBalance.toFixed(2)}）</Text>
+              <View onClick={() => {
+                const next = !useFund;
+                setUseFund(next);
+                if (next) setFundAmountInput(String(Math.min(fundBalance, priceAfterCoupon)));
+              }} style={{ padding: '6px 12px', borderRadius: `${radius.full}px`, border: `1.5px solid ${useFund ? colors.primary : colors.border}`, backgroundColor: useFund ? colors.primary10 : colors.background }}>
+                <Text style={{ fontSize: '12px', fontWeight: 600, color: useFund ? colors.textPrimary : colors.textMuted }}>{useFund ? '已启用' : '使用基金'}</Text>
+              </View>
             </View>
+            {useFund && !!fundRuleDescription && <Text style={{ fontSize: '11px', color: colors.textSecondary, lineHeight: '17px', display: 'block', marginTop: '8px' }}>使用规则：{fundRuleDescription}</Text>}
           </View>
         )}
 

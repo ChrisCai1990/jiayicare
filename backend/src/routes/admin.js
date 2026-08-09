@@ -451,11 +451,12 @@ router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请输入退款原因' });
   const payment = await Payment.findOne({ order: order._id, status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
-  if (!payment?.outTradeNo) {
+  const isFundOnly = !payment?.outTradeNo && order.healthFundAmount > 0 && Number(order.paidAmount || 0) === 0;
+  if (!payment?.outTradeNo && !isFundOnly) {
     return res.status(409).json({ success: false, message: '该订单没有真实微信支付流水，不能在此标记为已退款；请按历史订单流程人工核对' });
   }
-  const amount = Number(req.body.amount || payment.amount);
-  if (!Number.isFinite(amount) || amount <= 0 || amount > payment.amount) {
+  const amount = isFundOnly ? 0 : Number(req.body.amount || payment.amount);
+  if (!isFundOnly && (!Number.isFinite(amount) || amount <= 0 || amount > payment.amount)) {
     return res.status(400).json({ success: false, message: '退款金额无效' });
   }
   let refund = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing'] } });
@@ -467,11 +468,16 @@ router.patch('/orders/:id/refund', adminAuth, async (req, res) => {
     await refund.save();
   } else {
     refund = await Refund.create({
-      order: order._id, payment: payment._id, user: order.user,
+      order: order._id, payment: payment?._id || null, user: order.user,
       requestedBy: req.admin._id,
       outRefundNo: `RF${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32),
-      amount, totalAmount: payment.amount, reason, status: 'requested',
+      amount, totalAmount: payment?.amount || 0, reason, status: 'requested',
     });
+  }
+  if (isFundOnly) {
+    await require('../utils/orderSettlement').confirmRefund(refund, { source: 'health_fund_refund' });
+    const updatedOrder = await Order.findById(order._id);
+    return res.json({ success: true, data: { order: updatedOrder, refund }, message: '健康基金已原路退回' });
   }
   try {
     const remote = await wechatPay.requestRefund({ outTradeNo: payment.outTradeNo, outRefundNo: refund.outRefundNo, amount, totalAmount: payment.amount, reason });

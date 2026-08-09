@@ -178,6 +178,7 @@ function PurchaseModal({ item, mode, onClose }) {
   const fundBalance = checkoutUser?.healthFund?.total || 0;
   const personalFund = checkoutUser?.healthFund?.personal || 0;
   const corporateFund = checkoutUser?.healthFund?.corporate || 0;
+  const fundRuleDescription = checkoutUser?.healthFund?.rule?.description || '';
   const canUseFund = fundBalance > 0;
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
@@ -314,7 +315,7 @@ function PurchaseModal({ item, mode, onClose }) {
             <>
               <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary }}>支付方式</Text>
-                <Text style={{ fontSize: '10px', color: colors.textMuted }}>结算 v1.0.20</Text>
+                <Text style={{ fontSize: '10px', color: colors.textMuted }}>结算 v1.0.21</Text>
               </View>
               <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
                 {PAY_METHODS.map((m) => (
@@ -365,6 +366,7 @@ function PurchaseModal({ item, mode, onClose }) {
               {useFund && (
                 <>
                   <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>自有 ¥{personalFund.toFixed(2)} · 企业赠送 ¥{corporateFund.toFixed(2)}</Text>
+                  {!!fundRuleDescription && <Text style={{ fontSize: '11px', color: colors.textSecondary, lineHeight: '17px', display: 'block', marginBottom: '8px' }}>使用规则：{fundRuleDescription}</Text>}
                   <Input
                     type="digit"
                     style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px', marginBottom: `${spacing.md}px`, boxSizing: 'border-box' }}

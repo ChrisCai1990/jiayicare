@@ -18,6 +18,7 @@ const auth = require('../middleware/auth');
 const Admin = require('../models/Admin');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 const User = require('../models/User');
+const Enterprise = require('../models/Enterprise');
 const UserChangeLog = require('../models/UserChangeLog');
 const HealthRecord = require('../models/HealthRecord');
 const DailyTeamInsight = require('../models/DailyTeamInsight');
@@ -92,9 +93,10 @@ async function requireAiEntitlement(user, key, res) {
 router.get('/me', auth, async (req, res) => {
   try {
       const { getCorporateFundAvailable, getPersonalFundAvailable } = require('../utils/healthFundPayment');
-      const [personalAvailable, corporateAvailable] = await Promise.all([
+      const [personalAvailable, corporateAvailable, enterprise] = await Promise.all([
         getPersonalFundAvailable(req.user),
         getCorporateFundAvailable(req.user),
+        req.user.enterpriseId ? Enterprise.findById(req.user.enterpriseId).select('healthFundPaymentRule').lean() : null,
       ]);
       const totalBalance = req.user.healthFundBalance || 0;
       const personal = Math.min(personalAvailable, totalBalance);
@@ -102,6 +104,28 @@ router.get('/me', auth, async (req, res) => {
         total:     totalBalance,
         corporate: Math.min(corporateAvailable, Math.max(0, totalBalance - personal)),
         personal,
+        rule: (() => {
+          const rule = enterprise?.healthFundPaymentRule;
+          if (!rule?.enabled) return {
+            enabled: false,
+            description: '自有健康基金可在余额内抵扣；企业赠送基金暂未启用支付抵扣。',
+          };
+          const limit = rule.deductionType === 'percentage'
+            ? `企业基金每单最高抵扣订单金额的${Number(rule.deductionValue) || 0}%`
+            : rule.deductionType === 'fixedAmount'
+              ? `企业基金每单最高抵扣¥${Number(rule.deductionValue) || 0}`
+              : '企业基金可在可用余额内抵扣';
+          const threshold = Number(rule.minOrderAmount) > 0 ? `，订单满¥${Number(rule.minOrderAmount)}可用` : '';
+          const categories = rule.eligibleCategories?.length ? `，适用于：${rule.eligibleCategories.join('、')}` : '，适用于全部服务分类';
+          return {
+            enabled: true,
+            deductionType: rule.deductionType,
+            deductionValue: Number(rule.deductionValue) || 0,
+            minOrderAmount: Number(rule.minOrderAmount) || 0,
+            eligibleCategories: rule.eligibleCategories || [],
+            description: rule.note?.trim() || `自有基金优先抵扣；${limit}${threshold}${categories}。退款审核通过后，基金按原来源退回。`,
+          };
+        })(),
       };
 
     // 查询已分配的责任人员信息（实时 populate）

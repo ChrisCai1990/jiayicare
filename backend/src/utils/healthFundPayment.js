@@ -69,4 +69,34 @@ async function deductHealthFund({ user, enterprise, order, amount, breakdown }) 
   return HealthFundTransaction.insertMany(rows);
 }
 
-module.exports = { validateHealthFundDeduction, deductHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
+async function reverseHealthFund({ order, remark = '订单退款返还' }) {
+  if (!order?.healthFundAmount) return 0;
+  const deductions = await HealthFundTransaction.find({ orderId: order._id, type: 'deduction', status: 'active' });
+  if (!deductions.length) return 0;
+  const alreadyReversed = await HealthFundTransaction.findOne({ orderId: order._id, type: 'reversal', status: 'active' });
+  if (alreadyReversed) return 0;
+
+  const amount = deductions.reduce((sum, item) => sum + Math.abs(Number(item.amount) || 0), 0);
+  if (amount <= 0) return 0;
+  const User = require('../models/User');
+  const updated = await User.findByIdAndUpdate(order.user, { $inc: { healthFundBalance: amount } }, { new: true });
+  if (!updated) throw new Error('健康基金返还失败：用户不存在');
+  await HealthFundTransaction.insertMany(deductions.map(deduction => ({
+    userId: order.user,
+    enterpriseId: deduction.enterpriseId,
+    orderId: order._id,
+    type: 'reversal',
+    source: deduction.source,
+    amount: Math.abs(deduction.amount),
+    balanceAfter: updated.healthFundBalance,
+    reversedTransactionId: deduction._id,
+    remark,
+  })));
+  await HealthFundTransaction.updateMany(
+    { _id: { $in: deductions.map(item => item._id) }, status: 'active' },
+    { status: 'reversed' },
+  );
+  return amount;
+}
+
+module.exports = { validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };

@@ -81,6 +81,14 @@ router.patch('/:id/cancel', auth, async (req, res) => {
     order.status = 'cancelled';
     order.tradeStatus = 'closed';
     await order.save();
+    await require('../utils/healthFundPayment').reverseHealthFund({ order, remark: `订单${order.serviceName}取消返还` });
+    if (order.couponId) {
+      const Coupon = require('../models/Coupon');
+      await Coupon.updateOne(
+        { _id: order.couponId, usedOrderId: order._id, status: 'used' },
+        { status: 'active', usedAt: null, usedOrderId: null },
+      );
+    }
     await refundOrderPoints(order); // 若下单时预记过消费积分，取消订单要退回
     // 联动取消该订单生成的随访待办（sourceType='order'），此前只改订单状态，随访记录仍是 planned，
     // 导致用户端"待办任务"和医护端工作台永久残留一条订单已取消却还在等安排的僵尸待办
@@ -102,13 +110,13 @@ router.post('/:id/refund-request', auth, async (req, res) => {
   const reason = String(req.body.reason || '').trim();
   if (!reason) return res.status(400).json({ success: false, message: '请输入退款原因' });
   const payment = await Payment.findOne({ order: order._id, status: 'succeeded', channel: 'wechat_pay' }).sort({ createdAt: -1 });
-  if (!payment) return res.status(409).json({ success: false, message: '未找到可退款的微信支付流水，请联系客服' });
+  if (!payment && !(order.healthFundAmount > 0)) return res.status(409).json({ success: false, message: '未找到可原路退回的支付记录，请联系客服' });
   const existing = await Refund.findOne({ order: order._id, status: { $in: ['requested', 'processing', 'succeeded'] } });
   if (existing) return res.json({ success: true, data: existing, message: '退款申请已提交，请勿重复申请' });
   const refund = await Refund.create({
-    order: order._id, payment: payment._id, user: req.user._id,
+    order: order._id, payment: payment?._id || null, user: req.user._id,
     outRefundNo: `RF${Date.now()}${order._id.toString().slice(-8)}`.slice(0, 32),
-    amount: payment.amount, totalAmount: payment.amount, reason, status: 'requested',
+    amount: payment?.amount || 0, totalAmount: payment?.amount || 0, reason, status: 'requested',
   });
   order.tradeStatus = 'refund_pending'; order.refundStatus = 'requested'; await order.save();
   res.json({ success: true, data: refund, message: '退款申请已提交，工作人员审核后将原路退回' });

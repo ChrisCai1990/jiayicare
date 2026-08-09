@@ -102,6 +102,7 @@ function EnterpriseModal({ enterprise, onClose, onSaved }) {
           <div className="form-group"><label className="form-label">比例（%）/金额（元）</label><input className="form-input" type="number" min="0" value={form.healthFundPaymentRule?.deductionValue || 0} onChange={e=>setFundRule('deductionValue',Number(e.target.value)||0)}/></div>
           <div className="form-group"><label className="form-label">最低订单金额</label><input className="form-input" type="number" min="0" value={form.healthFundPaymentRule?.minOrderAmount || 0} onChange={e=>setFundRule('minOrderAmount',Number(e.target.value)||0)}/></div>
           <div className="form-group"><label className="form-label">适用产品分类（逗号分隔，留空为全部）</label><input className="form-input" value={(form.healthFundPaymentRule?.eligibleCategories || []).join(',')} onChange={e=>setFundRule('eligibleCategories',e.target.value.split(',').map(v=>v.trim()).filter(Boolean))}/></div>
+          <div className="form-group" style={{gridColumn:'1/-1'}}><label className="form-label">客户可见的使用规则说明</label><textarea className="form-input" rows={3} value={form.healthFundPaymentRule?.note || ''} onChange={e=>setFundRule('note',e.target.value)} placeholder="例如：自有基金优先抵扣；企业基金限指定服务使用，退款审核通过后按原来源退回。留空则由系统根据上方规则自动生成。"/></div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>取消</button>
