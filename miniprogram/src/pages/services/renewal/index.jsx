@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, ScrollView } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
-import { servicesAPI, messagesAPI } from '../../../services/api';
+import { authAPI, servicesAPI, messagesAPI } from '../../../services/api';
 import { useAuth } from '../../../context/AuthContext';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
@@ -100,6 +100,10 @@ function ConfirmModal({ pkg, isRenewal, onClose, onSuccess }) {
     if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
     setErrMsg(''); setSubmitting(true);
     try {
+      if (finalPrice > 0) {
+        const bound = await authAPI.bindWechat();
+        if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
+      }
       const noteLabel = isRenewal ? `续约申请：${pkg.name}（${pkg.duration}）` : `服务包申请：${pkg.name}（${pkg.duration}）`;
       const res = await servicesAPI.order(pkg.id, noteLabel, payMethod, fundApplied, couponId);
       if (res.success) {

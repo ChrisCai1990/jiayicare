@@ -176,18 +176,26 @@ function PurchaseModal({ item, mode, onClose }) {
 
   const [checkoutUser, setCheckoutUser] = useState(null);
   const fundBalance = checkoutUser?.healthFund?.total || 0;
-  const canUseFund = Boolean(checkoutUser?.enterpriseId) && fundBalance > 0;
+  const personalFund = checkoutUser?.healthFund?.personal || 0;
+  const corporateFund = checkoutUser?.healthFund?.corporate || 0;
+  const canUseFund = fundBalance > 0;
   const [useFund, setUseFund] = useState(false);
   const [fundAmountInput, setFundAmountInput] = useState('');
   const [coupons, setCoupons] = useState([]);
   const [couponId, setCouponId] = useState(null);
+  const [benefitsLoading, setBenefitsLoading] = useState(false);
+  const [benefitsError, setBenefitsError] = useState('');
 
   useEffect(() => {
     if (!isPay) return;
-    servicesAPI.coupons().then((res) => { if (res.success) setCoupons(res.data || []); }).catch(() => {});
-    userAPI.getMe().then((res) => {
-      if (res.success) { setCheckoutUser(res.data); updateUser(res.data); }
-    }).catch(() => {});
+    setBenefitsLoading(true);
+    setBenefitsError('');
+    Promise.all([servicesAPI.coupons(), userAPI.getMe()]).then(([couponRes, userRes]) => {
+      if (couponRes.success) setCoupons(couponRes.data || []);
+      if (userRes.success) { setCheckoutUser(userRes.data); updateUser(userRes.data); }
+      if (!couponRes.success || !userRes.success) setBenefitsError('优惠权益加载失败，请重试');
+    }).catch(() => setBenefitsError('优惠权益加载失败，请检查网络后重试'))
+      .finally(() => setBenefitsLoading(false));
   }, [isPay]);
 
   const currentPrice = hasSpecs ? (item.servicePrices[specIdx]?.price ?? item.price) : item.price;
@@ -205,7 +213,10 @@ function PurchaseModal({ item, mode, onClose }) {
     if (!serviceAgreed) { setErrMsg('请先阅读并同意《健康管理服务说明》'); return; }
     setSubmitting(true); setErrMsg('');
     try {
-      if (isPay && !checkoutUser?.wechatMpOpenid) {
+      // Always refresh the payer OpenID from the current WeChat session before
+      // creating a payment. A stored OpenID may belong to an earlier tester and
+      // causes WeChat to reject the payment as payer/order-account mismatch.
+      if (isPay && finalPrice > 0) {
         const bound = await authAPI.bindWechat();
         if (!bound.success) throw new Error(bound.message || '微信身份绑定失败');
         setCheckoutUser(bound.data);
@@ -316,10 +327,12 @@ function PurchaseModal({ item, mode, onClose }) {
             </>
           )}
 
-          {isPay && coupons.length > 0 && (
+          {isPay && (
             <>
-              <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>优惠券</Text>
+              <Text style={{ fontSize: '13px', fontWeight: 600, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>抵用券</Text>
               <View style={{ marginBottom: `${spacing.md}px` }}>
+                {benefitsLoading && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>正在加载可用抵用券...</Text>}
+                {!benefitsLoading && coupons.length === 0 && <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>当前账户暂无可用抵用券</Text>}
                 <View onClick={() => setCouponId(null)} style={{ padding: '10px 12px', borderRadius: `${radius.md}px`, border: `1.5px solid ${!couponId ? colors.primary : colors.border}`, backgroundColor: !couponId ? colors.primary10 : '#fff', marginBottom: '8px' }}>
                   <Text style={{ fontSize: '13px', color: !couponId ? colors.primary : colors.textSecondary, fontWeight: !couponId ? 700 : 500 }}>不使用优惠券</Text>
                 </View>
@@ -347,15 +360,25 @@ function PurchaseModal({ item, mode, onClose }) {
                 </View>
               </View>
               {useFund && (
-                <Input
-                  type="digit"
-                  style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px', marginBottom: `${spacing.md}px`, boxSizing: 'border-box' }}
-                  placeholder={`最多可抵扣 ¥${Math.min(fundBalance, priceAfterCoupon)}`}
-                  value={fundAmountInput}
-                  onInput={(e) => setFundAmountInput(e.detail.value)}
-                />
+                <>
+                  <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>自有 ¥{personalFund.toFixed(2)} · 企业赠送 ¥{corporateFund.toFixed(2)}</Text>
+                  <Input
+                    type="digit"
+                    style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.md}px`, padding: '10px 12px', fontSize: '14px', marginBottom: `${spacing.md}px`, boxSizing: 'border-box' }}
+                    placeholder={`最多可抵扣 ¥${Math.min(fundBalance, priceAfterCoupon)}`}
+                    value={fundAmountInput}
+                    onInput={(e) => setFundAmountInput(e.detail.value)}
+                  />
+                </>
               )}
             </>
+          )}
+
+          {isPay && !benefitsLoading && !canUseFund && (
+            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: `${spacing.md}px` }}>当前账户暂无可用健康基金</Text>
+          )}
+          {isPay && benefitsError && (
+            <Text style={{ fontSize: '12px', color: colors.danger, display: 'block', marginBottom: `${spacing.md}px` }}>{benefitsError}</Text>
           )}
 
           {isPay && (couponDiscount > 0 || fundApplied > 0) && (
