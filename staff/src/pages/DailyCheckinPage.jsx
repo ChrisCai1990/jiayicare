@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import { staffAPI } from '../api'
 
 const TYPE_COLOR = {
@@ -12,6 +12,8 @@ const TYPE_COLOR = {
 
 export default function DailyCheckinPage() {
   const nav = useNavigate()
+  const location = useLocation()
+  const focusedRecordId = new URLSearchParams(location.search).get('healthRecordId') || ''
   const [records, setRecords] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -32,17 +34,27 @@ export default function DailyCheckinPage() {
     setLoading(true)
     try {
       const params = {}
+      if (focusedRecordId) params.healthRecordId = focusedRecordId
       if (dateFilter) params.date = dateFilter
       if (nameFilter) params.patientName = nameFilter
       const res = await staffAPI.getCheckinOverview(params)
       setRecords(res.data || [])
       setTotal(res.total || 0)
+      if (focusedRecordId && res.focusedRecordId) {
+        const patient = (res.data || []).find(p => p.doneItems?.some(item => item._id === res.focusedRecordId))
+        const record = patient?.doneItems?.find(item => item._id === res.focusedRecordId)
+        if (patient && record?.type === 'symptom'
+          && ['pending_manager', 'pending_doctor'].includes(record.symptomWorkflow?.status)
+          && !record.symptomWorkflow?.verifiedAt) {
+          openSymptomReview(record, patient)
+        }
+      }
     } catch (err) {
       console.error(err)
     } finally {
       setLoading(false)
     }
-  }, [dateFilter, nameFilter])
+  }, [dateFilter, nameFilter, focusedRecordId])
 
   useEffect(() => { load() }, [load])
 

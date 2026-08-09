@@ -128,7 +128,7 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
 
   return (
     <div style={{ padding: '16px 20px', borderBottom: '1px solid #f0ece4', background: '#f9f7f3' }}>
-      <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1.2fr auto', gap: 10, alignItems: 'flex-end' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: plan.type === 'annual_checkup' ? '1.5fr 1fr 1.2fr auto' : '1.5fr 1fr 1fr 1.2fr auto', gap: 10, alignItems: 'flex-end' }}>
 
         {/* 项目名称（搜索+手填） */}
         <div ref={dropRef} style={{ position: 'relative' }}>
@@ -174,11 +174,11 @@ function AddItemPanel({ plan, onAdded, onCancel }) {
           </select>
         </div>
 
-        {/* 计划日期 */}
-        <div>
+        {/* 年度体检使用方案级统一时间，其余方案仍可逐项安排 */}
+        {plan.type !== 'annual_checkup' && <div>
           <label className="form-label" style={{ fontSize: 11 }}>计划日期</label>
           <input className="form-input" type="date" value={form.scheduledDate} onChange={e => set('scheduledDate', e.target.value)} />
-        </div>
+        </div>}
 
         {/* 注意事项 */}
         <div>
@@ -315,7 +315,14 @@ export default function PlanDetailPage() {
   }
 
   const startEdit = () => {
-    const base = { title: plan.title, description: plan.description || '', notes: plan.notes || '' }
+    const legacyCheckupDate = plan.items?.find(item => item.scheduledDate)?.scheduledDate
+    const rawCheckupDate = plan.checkupDate || legacyCheckupDate
+    const base = {
+      title: plan.title,
+      description: plan.description || '',
+      notes: plan.notes || '',
+      checkupDate: rawCheckupDate ? new Date(rawCheckupDate).toISOString().slice(0, 10) : '',
+    }
     if (plan.type === 'medical_assist') {
       const c = plan.content || {}
       Object.assign(base, {
@@ -352,6 +359,7 @@ export default function PlanDetailPage() {
     try {
       const { hospital, department, expert, hotel, transport, tasks, ...rest } = editForm
       const payload = { ...rest }
+      if (plan.type !== 'annual_checkup') delete payload.checkupDate
       if (plan.type === 'medical_assist') {
         payload.content = { ...(plan.content || {}), hospital, department, expert, hotel, transport, tasks }
       }
@@ -485,6 +493,13 @@ export default function PlanDetailPage() {
                   </div>
                   <textarea className="form-input" rows={3} placeholder="方案整体说明..." value={editForm.description} onChange={e => setEditForm(f => ({ ...f, description: e.target.value }))} />
                 </div>
+                {plan.type === 'annual_checkup' && (
+                  <div className="form-group" style={{ marginBottom: 12 }}>
+                    <label className="form-label">统一体检时间</label>
+                    <input className="form-input" type="date" value={editForm.checkupDate || ''}
+                      onChange={e => setEditForm(f => ({ ...f, checkupDate: e.target.value }))} />
+                  </div>
+                )}
                 {plan.type === 'medical_assist' && (
                   <>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#1A2B24', marginBottom: 10, paddingTop: 4, borderTop: '1px dashed #E0D9CE' }}>
@@ -538,6 +553,7 @@ export default function PlanDetailPage() {
                   ['状态', plan.confirmedAt ? '已确认' : STATUS_LABEL[plan.status]],
                   ['年度', plan.year + ' 年'],
                   ['制定人', plan.staffId?.name],
+                  ...(plan.type === 'annual_checkup' ? [['体检时间', plan.checkupDate ? new Date(plan.checkupDate).toLocaleDateString('zh-CN') : '未设置']] : []),
                   ['推送时间', plan.pushedAt ? new Date(plan.pushedAt).toLocaleDateString('zh-CN') : '未推送'],
                   ...(plan.confirmedAt ? [['会员确认时间', new Date(plan.confirmedAt).toLocaleDateString('zh-CN')]] : []),
                   ...(plan.description ? [['描述', plan.description]] : []),
@@ -608,7 +624,7 @@ export default function PlanDetailPage() {
                 </div>
                 <table className="table">
                   <thead><tr>
-                    <th>#</th><th>项目名称</th><th>计划日期</th><th>注意事项</th><th>状态</th><th>操作</th>
+                    <th>#</th><th>项目名称</th>{plan.type !== 'annual_checkup' && <th>计划日期</th>}<th>注意事项</th><th>状态</th><th>操作</th>
                   </tr></thead>
                   <tbody>
                     {items.map((item, idx) => (
@@ -637,7 +653,7 @@ export default function PlanDetailPage() {
                             <span style={{ marginLeft: 6, fontSize: 11, color: '#D97706', background: '#FEF3E2', padding: '1px 5px', borderRadius: 3 }}>待人工关联</span>
                           )}
                         </td>
-                        <td style={{ fontSize: 13, color: '#666' }}>{item.scheduledDate ? new Date(item.scheduledDate).toLocaleDateString('zh-CN') : '-'}</td>
+                        {plan.type !== 'annual_checkup' && <td style={{ fontSize: 13, color: '#666' }}>{item.scheduledDate ? new Date(item.scheduledDate).toLocaleDateString('zh-CN') : '-'}</td>}
                         <td style={{ maxWidth: 220, fontSize: 12, color: '#8AA89C', whiteSpace: 'pre-wrap' }}>{item.notes || '-'}</td>
                         <td>
                           <span style={{ color: ITEM_STATUS_COLOR[item.status], fontWeight: 500, fontSize: 13 }}>
@@ -689,11 +705,11 @@ export default function PlanDetailPage() {
                 <input className="form-input" value={editingItemForm.name}
                   onChange={e => setEditingItemForm(f => ({ ...f, name: e.target.value }))} />
               </div>
-              <div className="form-group" style={{ marginBottom: 0 }}>
+              {plan.type !== 'annual_checkup' && <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">计划日期</label>
                 <input className="form-input" type="date" value={editingItemForm.scheduledDate}
                   onChange={e => setEditingItemForm(f => ({ ...f, scheduledDate: e.target.value }))} />
-              </div>
+              </div>}
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">注意事项 / 具体建议</label>
                 <textarea className="form-input" rows={6} placeholder="具体可执行的建议内容..."

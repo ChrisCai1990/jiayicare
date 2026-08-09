@@ -1503,14 +1503,15 @@ router.get('/plans/:id', staffAuth, async (req, res) => {
 
 // POST /api/staff/plans
 router.post('/plans', staffAuth, checkPermission('plans', 'create'), checkPlanType(req => req.body.type), async (req, res) => {
-  const { patientId, type, title, description, year, startDate, endDate, items, followupFrequency, summary, content } = req.body;
+  const { patientId, type, title, description, year, startDate, endDate, checkupDate, items, followupFrequency, summary, content } = req.body;
   if (!patientId || !type || !title) return res.status(400).json({ success: false, message: '会员、类型、标题不能为空' });
   const plan = await HealthPlan.create({
     staffId: req.staff._id, patientId, type, title,
     description: description || '', year: year || new Date().getFullYear(),
     startDate: startDate ? new Date(startDate) : null,
     endDate: endDate ? new Date(endDate) : null,
-    items: (items || []).map(item => ({ ...item, status: 'pending' })),
+    checkupDate: checkupDate ? new Date(checkupDate) : null,
+    items: (items || []).map(item => ({ ...item, scheduledDate: type === 'annual_checkup' ? null : item.scheduledDate, status: 'pending' })),
     followupFrequency: followupFrequency || '',
     summary: summary || '',
     content: content || {},
@@ -1563,8 +1564,11 @@ router.put('/plans/:id', staffAuth, checkPermission('plans', 'edit'), async (req
   if (req.staff.role !== 'superadmin' && String(plan.staffId) !== String(req.staff._id) && !isSelectedMedicalAssistant) {
     return res.status(403).json({ success: false, message: '仅方案制定人可修改' });
   }
-  const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
+  const allowed = ['title', 'description', 'year', 'startDate', 'endDate', 'checkupDate', 'items', 'followupFrequency', 'summary', 'status', 'content'];
   allowed.forEach(k => { if (req.body[k] !== undefined) plan[k] = req.body[k]; });
+  if (plan.type === 'annual_checkup' && req.body.items !== undefined) {
+    plan.items.forEach(item => { item.scheduledDate = null; });
+  }
   plan.markModified('content');
   await plan.save();
   res.json({ success: true, data: plan });
@@ -4832,7 +4836,7 @@ router.delete('/patients/:id/family-links/:linkId', staffAuth, async (req, res) 
 // 返回当天（默认今天）每位客户的打卡汇总：已打卡项、未打卡项、最近打卡时间
 router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'view'), async (req, res) => {
   try {
-    const { date, patientName } = req.query;
+    const { date, patientName, healthRecordId } = req.query;
     const staff = req.staff;
 
     // 全部打卡类型（与用户端一致）
@@ -4854,14 +4858,23 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
     const patientMap = {};
     patients.forEach(p => { patientMap[String(p._id)] = p; });
 
+    // 从待办进入时按记录精确定位，并使用该记录的实际打卡日期。
+    let focusedRecord = null;
+    if (healthRecordId && mongoose.isValidObjectId(healthRecordId)) {
+      focusedRecord = await HealthRecord.findOne({
+        _id: healthRecordId,
+        user: { $in: patientIds },
+      }).select('user recordedAt').lean();
+    }
+
     // 日期范围（默认今天）
-    const targetDate = date ? new Date(date) : new Date();
+    const targetDate = focusedRecord?.recordedAt || (date ? new Date(date) : new Date());
     const start = new Date(targetDate); start.setHours(0, 0, 0, 0);
     const end   = new Date(targetDate); end.setHours(23, 59, 59, 999);
 
     // 拉取当天所有打卡记录
     const records = await HealthRecord.find({
-      user: { $in: patientIds },
+      user: focusedRecord ? focusedRecord.user : { $in: patientIds },
       recordedAt: { $gte: start, $lte: end },
     }).select('user type value unit recordedAt imageUrl extra note recordedBy symptomWorkflow status').sort({ recordedAt: -1 }).lean();
 
@@ -4898,7 +4911,7 @@ router.get('/checkin-overview', staffAuth, checkPermission('daily_checkin', 'vie
       })
       .sort((a, b) => new Date(b.latestRecordAt) - new Date(a.latestRecordAt));
 
-    res.json({ success: true, data: result, total: result.length });
+    res.json({ success: true, data: result, total: result.length, focusedRecordId: focusedRecord ? String(healthRecordId) : null });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

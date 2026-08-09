@@ -47,6 +47,7 @@ const healthPlanSchema = new mongoose.Schema({
   year:        { type: Number, default: () => new Date().getFullYear() },
   startDate:   { type: Date, default: null },
   endDate:     { type: Date, default: null },
+  checkupDate: { type: Date, default: null },     // 年度体检方案统一体检时间
   items:       [planItemSchema],
   // 随访计划专属
   followupFrequency: { type: String, default: '' }, // 如"每2周一次"

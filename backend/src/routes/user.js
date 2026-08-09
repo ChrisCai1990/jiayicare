@@ -865,7 +865,7 @@ router.get('/plans', auth, async (req, res) => {
       status: { $in: ['active', 'draft'] },
       'content.aiStatus': { $ne: 'pending' },
     })
-      .select('title type description content items status startDate endDate followupFrequency confirmedAt pushedAt notes year')
+      .select('title type description content items status startDate endDate checkupDate followupFrequency confirmedAt pushedAt notes year')
       .populate('staffId', 'name role title')
       .sort({ createdAt: -1 });
     res.json({ success: true, data: plans });
