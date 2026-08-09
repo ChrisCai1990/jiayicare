@@ -1044,6 +1044,10 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
     // ── 健康基金 + 优惠券抵扣（作用于勾选产品合计，按价格占比分摊到各订单）──
     let coupon = null;
     let couponDiscount = 0;
+    const fundPolicy = await require('../utils/healthFundPayment').getHealthFundPolicy();
+    if (couponId && useHealthFund > 0 && !fundPolicy.allowCouponStacking) {
+      return res.status(400).json({ success:false, message:'健康基金与抵用券不可同时使用，请选择其中一种' });
+    }
     if (couponId) {
       coupon = await Coupon.findOne({ _id: couponId, patientId: req.user._id, status: 'active' });
       if (!coupon) return res.status(400).json({ success: false, message: '优惠券不可用或已使用' });
@@ -1055,6 +1059,7 @@ router.post('/push-records/:id/pay', auth, async (req, res) => {
       }
       couponDiscount = coupon.type === 'amount' ? coupon.value : Math.round(totalPrice * (100 - coupon.value)) / 100;
       couponDiscount = Math.min(couponDiscount, totalPrice);
+      couponDiscount = Math.min(couponDiscount, require('../utils/healthFundPayment').deductionLimit(fundPolicy.couponDeductionType, fundPolicy.couponDeductionValue, totalPrice));
     }
     const priceAfterCoupon = Math.max(0, Math.round((totalPrice - couponDiscount) * 100) / 100);
 

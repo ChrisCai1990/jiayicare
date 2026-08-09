@@ -2,24 +2,30 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
-export default function HealthFundConfigPage() {
-  const toast = useToast()
-  const [form, setForm] = useState({ title:'健康基金使用规则', description:'', personalPriority:true, allowCouponStacking:true, refundToOriginalSource:true })
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  useEffect(() => { adminAPI.getHealthFundConfig().then(r=>setForm(f=>({...f,...r.data}))).catch(e=>toast(e.message)).finally(()=>setLoading(false)) }, [])
-  const set = (key,value) => setForm(f=>({...f,[key]:value}))
-  const save = async () => { setSaving(true); try { const r=await adminAPI.updateHealthFundConfig(form); toast(r.message); } catch(e){ toast(e.message) } finally { setSaving(false) } }
-  if (loading) return <div className="page-loading">加载中...</div>
-  return <div className="page">
-    <div className="page-header"><div><h1 className="page-title">💰 健康基金管理</h1><p className="page-subtitle">管理 C 端健康基金的使用原则、叠加规则和退款说明；不影响 B2B2C 企业客户资料。</p></div></div>
-    <div className="card"><div className="card-body" style={{maxWidth:760}}>
-      <div className="form-group"><label className="form-label">规则标题</label><input className="form-input" value={form.title||''} onChange={e=>set('title',e.target.value)}/></div>
-      <div className="form-group"><label className="form-label">用户端展示的完整规则</label><textarea className="form-input" rows={6} value={form.description||''} onChange={e=>set('description',e.target.value)} placeholder="说明适用服务、抵扣顺序、抵扣上限、有效期及退款返还原则"/></div>
-      <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.personalPriority} onChange={e=>set('personalPriority',e.target.checked)}/>自有基金优先抵扣</label>
-      <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.allowCouponStacking} onChange={e=>set('allowCouponStacking',e.target.checked)}/>允许与抵用券叠加</label>
-      <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.refundToOriginalSource} onChange={e=>set('refundToOriginalSource',e.target.checked)}/>退款审核通过后按原来源退回</label>
-      <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'保存中...':'保存规则'}</button>
-    </div></div>
-  </div>
+const defaults={title:'健康基金使用规则',description:'',personalPriority:true,personalDeductionType:'unlimited',personalDeductionValue:0,corporateDeductionType:'fixedAmount',corporateDeductionValue:200,minOrderAmount:0,eligibleCategories:[],allowCouponStacking:true,couponDeductionType:'unlimited',couponDeductionValue:0,refundToOriginalSource:true}
+const typeOptions=[['unlimited','不限制（最多抵至应付金额）'],['fixedAmount','固定金额上限'],['percentage','订单金额比例上限']]
+function LimitField({title,type,value,onType,onValue}) { return <div className="form-group"><label className="form-label">{title}</label><div style={{display:'grid',gridTemplateColumns:'minmax(240px,1fr) minmax(180px,1fr)',gap:12}}><select className="form-input" value={type} onChange={e=>onType(e.target.value)}>{typeOptions.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>{type!=='unlimited'&&<div style={{display:'flex',alignItems:'center',gap:8}}><input className="form-input" type="number" min="0" max={type==='percentage'?100:undefined} value={value} onChange={e=>onValue(e.target.value)}/><span>{type==='percentage'?'%':'元/单'}</span></div>}</div></div> }
+
+export default function HealthFundConfigPage(){
+ const toast=useToast(),[form,setForm]=useState(defaults),[loading,setLoading]=useState(true),[saving,setSaving]=useState(false)
+ useEffect(()=>{adminAPI.getHealthFundConfig().then(r=>setForm({...defaults,...r.data})).catch(e=>toast(e.message)).finally(()=>setLoading(false))},[])
+ const set=(k,v)=>setForm(f=>({...f,[k]:v})); const save=async()=>{setSaving(true);try{const r=await adminAPI.updateHealthFundConfig(form);setForm({...defaults,...r.data});toast(r.message)}catch(e){toast(e.message)}finally{setSaving(false)}}
+ if(loading)return <div className="page-loading">加载中...</div>
+ return <div className="page"><div className="page-header"><div><h1 className="page-title">💰 健康基金管理</h1><p className="page-subtitle">设置 C 端实际抵扣规则；企业客户资料及企业专属规则仍在“企业客户管理”中维护。</p></div></div><div className="card"><div className="card-body" style={{maxWidth:860}}>
+  <h3>基金抵扣参数</h3>
+  <LimitField title="自有健康基金每单最高抵扣" type={form.personalDeductionType} value={form.personalDeductionValue} onType={v=>set('personalDeductionType',v)} onValue={v=>set('personalDeductionValue',v)}/>
+  <LimitField title="企业赠送健康基金每单最高抵扣（平台上限）" type={form.corporateDeductionType} value={form.corporateDeductionValue} onType={v=>set('corporateDeductionType',v)} onValue={v=>set('corporateDeductionValue',v)}/>
+  <div className="form-group"><label className="form-label">使用健康基金最低订单金额（元）</label><input className="form-input" type="number" min="0" value={form.minOrderAmount} onChange={e=>set('minOrderAmount',e.target.value)}/></div>
+  <div className="form-group"><label className="form-label">可用服务分类（逗号分隔；留空表示全部）</label><input className="form-input" value={(form.eligibleCategories||[]).join(',')} onChange={e=>set('eligibleCategories',e.target.value.split(',').map(v=>v.trim()).filter(Boolean))}/></div>
+  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.personalPriority} onChange={e=>set('personalPriority',e.target.checked)}/>优先抵扣自有基金（不勾选则优先抵扣企业赠送基金）</label>
+  <h3 style={{marginTop:28}}>抵用券规则</h3>
+  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.allowCouponStacking} onChange={e=>set('allowCouponStacking',e.target.checked)}/>允许健康基金与抵用券同单叠加（当前顺序：先抵用券，后健康基金）</label>
+  <LimitField title="抵用券每单最高抵扣（平台上限）" type={form.couponDeductionType} value={form.couponDeductionValue} onType={v=>set('couponDeductionType',v)} onValue={v=>set('couponDeductionValue',v)}/>
+  <h3 style={{marginTop:28}}>用户说明与退款</h3>
+  <div className="form-group"><label className="form-label">规则标题</label><input className="form-input" value={form.title||''} onChange={e=>set('title',e.target.value)}/></div>
+  <div className="form-group"><label className="form-label">补充说明（仅展示，不参与计算）</label><textarea className="form-input" rows={4} value={form.description||''} onChange={e=>set('description',e.target.value)}/></div>
+  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.refundToOriginalSource} onChange={e=>set('refundToOriginalSource',e.target.checked)}/>退款审核通过后，基金按自有/企业原来源退回</label>
+  <p style={{color:'#718096'}}>企业赠送基金的实际可抵扣额，会取本页平台上限与“企业客户管理”中该企业专属上限的较小值。</p>
+  <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'保存中...':'保存并立即生效'}</button>
+ </div></div></div>
 }

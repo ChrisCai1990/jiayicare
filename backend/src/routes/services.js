@@ -197,6 +197,10 @@ router.post('/order', auth, async (req, res) => {
   // ── 健康基金 + 优惠券抵扣（下单即扣，实时校验余额/券状态）──────────
   let coupon = null;
   let couponDiscount = 0;
+  const fundPolicy = await require('../utils/healthFundPayment').getHealthFundPolicy();
+  if (couponId && useHealthFund > 0 && !fundPolicy.allowCouponStacking) {
+    return res.status(400).json({ success:false, message:'健康基金与抵用券不可同时使用，请选择其中一种' });
+  }
   if (couponId) {
     coupon = await Coupon.findOne({ _id: couponId, patientId: req.user._id, status: 'active' });
     if (!coupon) {
@@ -212,6 +216,7 @@ router.post('/order', auth, async (req, res) => {
       ? coupon.value
       : Math.round(service.price * (100 - coupon.value)) / 100;
     couponDiscount = Math.min(couponDiscount, service.price);
+    couponDiscount = Math.min(couponDiscount, require('../utils/healthFundPayment').deductionLimit(fundPolicy.couponDeductionType, fundPolicy.couponDeductionValue, service.price));
   }
 
   const priceAfterCoupon = Math.max(0, Math.round((service.price - couponDiscount) * 100) / 100);

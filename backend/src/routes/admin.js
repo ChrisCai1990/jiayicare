@@ -1817,7 +1817,15 @@ const DEFAULT_HEALTH_FUND_POLICY = {
   title: '健康基金使用规则',
   description: '健康基金可用于符合条件的健康管理服务抵扣；退款审核通过后按原来源退回。',
   personalPriority: true,
+  personalDeductionType: 'unlimited',
+  personalDeductionValue: 0,
+  corporateDeductionType: 'fixedAmount',
+  corporateDeductionValue: 200,
+  minOrderAmount: 0,
+  eligibleCategories: [],
   allowCouponStacking: true,
+  couponDeductionType: 'unlimited',
+  couponDeductionValue: 0,
   refundToOriginalSource: true,
 };
 
@@ -1830,7 +1838,11 @@ router.get('/system-config/health-fund', adminAuth, async (req, res) => {
 
 router.put('/system-config/health-fund', adminAuth, async (req, res) => {
   try {
+    const types = ['unlimited', 'percentage', 'fixedAmount'];
     const value = { ...DEFAULT_HEALTH_FUND_POLICY, ...req.body };
+    ['personalDeductionType','corporateDeductionType','couponDeductionType'].forEach(k => { if (!types.includes(value[k])) value[k] = 'unlimited'; });
+    ['personalDeductionValue','corporateDeductionValue','couponDeductionValue','minOrderAmount'].forEach(k => { value[k] = Math.max(0, Number(value[k]) || 0); });
+    value.eligibleCategories = Array.isArray(value.eligibleCategories) ? value.eligibleCategories.map(String).map(v=>v.trim()).filter(Boolean) : [];
     await SystemConfig.findOneAndUpdate({ key:'healthFundPolicy' }, { key:'healthFundPolicy', value, label:'健康基金使用与退款规则' }, { upsert:true, new:true });
     res.json({ success:true, data:value, message:'健康基金规则已保存' });
   } catch (err) { res.status(500).json({ success:false, message:err.message }); }

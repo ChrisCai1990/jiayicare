@@ -1,6 +1,27 @@
 const Enterprise = require('../models/Enterprise');
 const GiftRecord = require('../models/GiftRecord');
 const HealthFundTransaction = require('../models/HealthFundTransaction');
+const SystemConfig = require('../models/SystemConfig');
+
+const DEFAULT_HEALTH_FUND_POLICY = {
+  title: '健康基金使用规则', description: '', personalPriority: true,
+  personalDeductionType: 'unlimited', personalDeductionValue: 0,
+  corporateDeductionType: 'fixedAmount', corporateDeductionValue: 200,
+  minOrderAmount: 0, eligibleCategories: [], allowCouponStacking: true,
+  couponDeductionType: 'unlimited', couponDeductionValue: 0,
+  refundToOriginalSource: true,
+};
+
+async function getHealthFundPolicy() {
+  const cfg = await SystemConfig.findOne({ key: 'healthFundPolicy' }).lean();
+  return { ...DEFAULT_HEALTH_FUND_POLICY, ...(cfg?.value || {}) };
+}
+
+function deductionLimit(type, value, orderAmount) {
+  if (type === 'percentage') return orderAmount * Math.min(100, Math.max(0, Number(value) || 0)) / 100;
+  if (type === 'fixedAmount') return Math.max(0, Number(value) || 0);
+  return orderAmount;
+}
 
 async function getCorporateFundAvailable(user) {
   const grants = await GiftRecord.aggregate([
@@ -30,26 +51,31 @@ async function getPersonalFundAvailable(user) {
 async function validateHealthFundDeduction({ user, requested, orderAmount, category }) {
   const amount = Number(requested) || 0;
   if (amount <= 0) return { allowed: 0, enterprise: null };
+  const policy = await getHealthFundPolicy();
+  if (orderAmount < (Number(policy.minOrderAmount) || 0)) throw new Error(`订单满¥${policy.minOrderAmount}方可使用健康基金`);
+  if (policy.eligibleCategories?.length && !policy.eligibleCategories.includes(category)) throw new Error('该类服务不在健康基金可抵扣范围内');
   const personalAvailable = await getPersonalFundAvailable(user);
-  const personalUsed = Math.min(amount, orderAmount, personalAvailable);
-  const corporateRequested = Math.max(0, amount - personalUsed);
+  const personalLimit = deductionLimit(policy.personalDeductionType, policy.personalDeductionValue, orderAmount);
+  const corporateAvailable = user.enterpriseId ? await getCorporateFundAvailable(user) : 0;
   let enterprise = null;
-  let corporateUsed = 0;
-  if (corporateRequested > 0) {
-    if (!user.enterpriseId) throw new Error(`自有健康基金本单最多可抵扣¥${personalUsed.toFixed(2)}`);
+  let corporateLimit = deductionLimit(policy.corporateDeductionType, policy.corporateDeductionValue, orderAmount);
+  if (user.enterpriseId && corporateAvailable > 0) {
     enterprise = await Enterprise.findById(user.enterpriseId);
     const rule = enterprise?.healthFundPaymentRule;
-    if (!enterprise || enterprise.status !== 'active' || !rule?.enabled) throw new Error(`自有健康基金本单最多可抵扣¥${personalUsed.toFixed(2)}；企业基金尚未启用`);
-    if (orderAmount < (Number(rule.minOrderAmount) || 0)) throw new Error(`订单满¥${rule.minOrderAmount}方可使用企业健康基金`);
-    if (rule.eligibleCategories?.length && !rule.eligibleCategories.includes(category)) throw new Error('该类服务不在企业健康基金可抵扣范围内');
-    const corporateAvailable = await getCorporateFundAvailable(user);
-    let ruleLimit = orderAmount;
-    if (rule.deductionType === 'percentage') ruleLimit = orderAmount * Math.min(100, Number(rule.deductionValue) || 0) / 100;
-    if (rule.deductionType === 'fixedAmount') ruleLimit = Number(rule.deductionValue) || 0;
-    corporateUsed = Math.min(corporateRequested, corporateAvailable, ruleLimit, orderAmount - personalUsed);
-    if (corporateRequested > corporateUsed) throw new Error(`本单健康基金最多可抵扣¥${(personalUsed + corporateUsed).toFixed(2)}`);
+    if (!enterprise || enterprise.status !== 'active' || !rule?.enabled) corporateLimit = 0;
+    else {
+      if (orderAmount < (Number(rule.minOrderAmount) || 0)) corporateLimit = 0;
+      if (rule.eligibleCategories?.length && !rule.eligibleCategories.includes(category)) corporateLimit = 0;
+      corporateLimit = Math.min(corporateLimit, deductionLimit(rule.deductionType, rule.deductionValue, orderAmount));
+    }
   }
-  return { allowed: amount, enterprise, breakdown: { personal: personalUsed, corporate: corporateUsed } };
+  let remaining = Math.min(amount, orderAmount);
+  let personalUsed = 0; let corporateUsed = 0;
+  const takePersonal = () => { const used=Math.min(remaining, personalAvailable, personalLimit); personalUsed=used; remaining-=used; };
+  const takeCorporate = () => { const used=Math.min(remaining, corporateAvailable, corporateLimit); corporateUsed=used; remaining-=used; };
+  if (policy.personalPriority !== false) { takePersonal(); takeCorporate(); } else { takeCorporate(); takePersonal(); }
+  if (remaining > 0) throw new Error(`本单健康基金最多可抵扣¥${(amount - remaining).toFixed(2)}`);
+  return { allowed: amount, enterprise, policy, breakdown: { personal: personalUsed, corporate: corporateUsed } };
 }
 
 async function deductHealthFund({ user, enterprise, order, amount, breakdown }) {
@@ -99,4 +125,4 @@ async function reverseHealthFund({ order, remark = '订单退款返还' }) {
   return amount;
 }
 
-module.exports = { validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
+module.exports = { DEFAULT_HEALTH_FUND_POLICY, getHealthFundPolicy, deductionLimit, validateHealthFundDeduction, deductHealthFund, reverseHealthFund, getCorporateFundAvailable, getPersonalFundAvailable };
