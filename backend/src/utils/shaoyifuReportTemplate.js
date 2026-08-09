@@ -36,7 +36,20 @@ function needsCoverageAudit(pageNum, items) {
   const hasAll = patterns => patterns.every(pattern => pattern.test(names));
   if (pageNum === 4) return !hasAll([/体重/, /体重指数|BMI/i, /脉搏/, /跌倒/, /眼科/, /耳鼻喉|ENT/i, /妇科/]);
   if (pageNum === 5) return pageItems.length < 10 || !/家族史/.test(names);
-  if (pageNum === 6) return !hasAll([/肝/, /胆/, /胰/, /脾/, /肾/, /子宫|附件/, /甲状腺/]);
+  if (pageNum === 6) {
+    const semanticItem = (namePattern, contentPattern, minFindings = 1) => pageItems.some(item => {
+      if (!namePattern.test(`${text(item.name)} ${text(item.sourceSection)}`)) return false;
+      const findings = text(item.findings || item.value);
+      return findings.length >= minFindings && contentPattern.test(findings);
+    });
+    return !semanticItem(/肝/, /肝/)
+      || !semanticItem(/胆/, /胆/)
+      || !semanticItem(/胰/, /胰/)
+      || !semanticItem(/脾/, /脾/)
+      || !semanticItem(/肾/, /肾/)
+      || !semanticItem(/子宫|附件/, /子宫|宫颈|附件/, 20)
+      || !semanticItem(/甲状腺/, /甲状腺/, 20);
+  }
   if (pageNum === 7) return !hasAll([/乳房|乳腺/, /颈动脉/, /心脏/, /肺.*CT|胸部.*CT/]);
   if (pageNum === 8) return !hasAll([/心电图/, /C13|碳13/i, /MRA/i, /宫颈液基|TCT/i]);
   if (pageNum === 9) return pageItems.length < 35 || !hasAll([/红细胞计数/, /血小板压积/, /红细胞沉降|ESR/i, /细菌/]);
@@ -56,6 +69,64 @@ function isNamed(item, pattern) {
 
 function mergeText(...parts) {
   return [...new Set(parts.map(text).filter(Boolean))].join('；');
+}
+
+const matchIndex = (value, rules) => {
+  const haystack = text(value);
+  const index = rules.findIndex(rule => rule.test(haystack));
+  return index < 0 ? rules.length : index;
+};
+
+const PAGE6_ORDER = [/肝/, /胆囊/, /胰/, /脾/, /肾/, /子宫|附件/, /甲状腺/, /乳房|乳腺/];
+const PAGE9_ORDER = [
+  /白细胞计数/, /血红蛋白/, /平均红细胞体积/, /平均红细胞血红蛋白浓度/, /中性.*百分/, /单核.*百分/, /嗜碱.*百分/, /淋巴.*绝对/, /嗜酸.*绝对/, /红细胞分布宽度/, /平均血小板体积/, /糖化血红蛋白|HbA1c/i,
+  /^红细胞计数$/, /红细胞比积/, /平均红细胞血红蛋白量/, /血小板计数/, /淋巴.*百分/, /嗜酸.*百分/, /中性.*绝对/, /单核.*绝对/, /嗜碱.*绝对/, /血小板分布宽度/, /血小板压积/,
+  /红细胞沉降率|ESR/i,
+  /浊度|清亮/, /胆红素/, /比重/, /^pH$/i, /尿胆原/, /白细胞酯酶/, /^红细胞$/, /上皮细胞/, /^管型$/, /^细菌$/,
+  /颜色/, /葡萄糖/, /酮体/, /潜血/, /蛋白质/, /亚硝酸盐/, /有形成分/, /^白细胞$/, /小圆上皮/, /病理管型/, /结晶/,
+];
+const PAGE11_ORDER = [
+  /^微量尿蛋白$|^微量尿白蛋白$/, /尿肌酐计算/, /尿肌酐测定/, /微量尿.*尿肌酐比值/,
+  /乙型肝炎病毒表面抗原/, /乙型肝炎病毒e抗原/, /乙型肝炎病毒核心抗体/, /乙型肝炎病毒表面抗体/, /乙型肝炎病毒e抗体/,
+  /胃泌素/, /胃蛋白酶原I(?!I)/, /VCA[-－]?IgA/i, /胃蛋白酶原II/, /EB.*IgM|VCA.*IgM/i,
+  /HPV16\D/i, /HPV31\D/i, /HPV35\D/i, /HPV45\D/i, /HPV52\D/i, /HPV56\D/i, /HPV59\D/i, /HPV68\D/i, /HPV82\D/i, /HPV06\D/i, /HPV42\D/i, /HPV44\D/i,
+  /HPV18\D/i, /HPV33\D/i, /HPV39\D/i, /HPV51\D/i, /HPV53\D/i, /HPV58\D/i, /HPV66\D/i, /HPV73\D/i, /HPV83\D/i, /HPV11\D/i, /HPV43\D/i, /HPV81\D/i,
+];
+
+function normalizePage6Organ(item) {
+  if (Number(item?._page) !== 6 || item?.itemType !== 'imaging') return item;
+  const findings = text(item.findings || item.value);
+  const organRules = [
+    [/^肝脏|肝脏[：:]/, '肝脏超声'], [/^胆囊|胆囊[：:]/, '胆囊超声'],
+    [/^胰腺|胰腺[：:]/, '胰腺超声'], [/^脾脏|脾脏[：:]/, '脾脏超声'],
+    [/^双肾|^肾脏|双肾[：:]|肾脏[：:]/, '双肾超声'],
+  ];
+  const detected = organRules.find(([pattern]) => pattern.test(findings));
+  return detected ? { ...item, name: detected[1], sourceSection: detected[1] } : item;
+}
+
+function applyShaoyifuOrderAndGroups(inputItems) {
+  return (inputItems || []).map(normalizePage6Organ).map((item, originalIndex) => {
+    const page = Number(item?._page || 0);
+    const name = text(item.name);
+    const next = { ...item };
+    let order = originalIndex;
+    if (page === 9) {
+      if (/红细胞沉降率|ESR/i.test(name)) next.orderName = '红细胞沉降率(ESR)';
+      else if (/尿|浊度|胆红素|比重|尿胆原|白细胞酯酶|上皮细胞|管型|细菌|颜色|葡萄糖|酮体|潜血|蛋白质|亚硝酸盐|有形成分|结晶/.test(`${name} ${text(item.orderName)}`)) next.orderName = '尿液干化学分析';
+      else next.orderName = '血常规';
+      order = matchIndex(name, PAGE9_ORDER);
+    } else if (page === 11) {
+      if (/微量尿|尿肌酐/.test(name)) next.orderName = '微量尿蛋白/尿肌酐比值';
+      else if (/乙型肝炎|HB[sebc]A/i.test(name)) next.orderName = '乙肝三系';
+      else if (/HPV\d+/i.test(name)) next.orderName = '人乳头状瘤病毒基因分型(HPV24型)';
+      else if (/胃蛋白酶原|胃泌素/.test(name)) next.orderName = '胃功能3项';
+      else if (/EB|VCA/i.test(name)) next.orderName = 'EB病毒抗体';
+      order = matchIndex(name, PAGE11_ORDER);
+    } else if (page === 6) order = matchIndex(name, PAGE6_ORDER);
+    next._sourceOrder = page * 1000 + order;
+    return next;
+  }).sort((a, b) => Number(a._page || 0) - Number(b._page || 0) || Number(a._sourceOrder || 0) - Number(b._sourceOrder || 0));
 }
 
 function normalizeShaoyifuItems(inputItems) {
@@ -124,7 +195,7 @@ function normalizeShaoyifuItems(inputItems) {
     if (!old || content(item).length > content(old).length) imagingBest.set(key, item);
   }
   items = passthrough.concat([...imagingBest.values()]);
-  return items.sort((a, b) => Number(a._page || 0) - Number(b._page || 0));
+  return applyShaoyifuOrderAndGroups(items);
 }
 
-module.exports = { isShaoyifuReport, pageMode, promptForPage, needsCoverageAudit, normalizeShaoyifuItems };
+module.exports = { isShaoyifuReport, pageMode, promptForPage, needsCoverageAudit, normalizeShaoyifuItems, applyShaoyifuOrderAndGroups };

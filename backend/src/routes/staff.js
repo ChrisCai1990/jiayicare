@@ -8588,7 +8588,8 @@ async function runReportParse(reportId) {
       // 若先去重(同名只保留信息量最大的一条)，病理内容会被当"重复"整条丢弃，splitEndoscopyPathology
       // 根本没机会把它拆成独立的"胃镜病理"记录。先拆分让病理内容换成不同的名字("胃镜病理")，
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
-      const filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems))))))))))));
+      let filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems))))))))))));
+      if (useShaoyifuTemplate) filteredItems = shaoyifuTemplate.applyShaoyifuOrderAndGroups(filteredItems);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');

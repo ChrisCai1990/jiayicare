@@ -267,10 +267,10 @@ function classificationName(item) {
     if (/腰围/.test(name)) return '腰围';
   }
   if (item?.itemType === 'imaging') {
-    if (/全科医学|全科|内科.*外科/.test(context)) return '全科医学检查';
-    if (/眼科/.test(context)) return '眼科体检';
-    if (/耳鼻喉|ENT/i.test(context)) return '耳鼻喉科体检';
-    if (/妇科体检/.test(context)) return '妇科体检';
+    if (/全科医学|全科|内科.*外科/.test(context)) return '内外科（全科）';
+    if (/眼科/.test(context)) return '眼科检查';
+    if (/耳鼻喉|ENT/i.test(context)) return '耳鼻喉科检查';
+    if (/妇科体检|妇科检查/.test(context)) return '妇科检查';
     if (/子宫.*附件|附件.*子宫|阴道超声/.test(context)) return '子宫附件/阴道超声';
     if (/胆囊/.test(context)) return '胆囊超声';
     if (/脾脏|脾彩超|脾超声/.test(context)) return '脾脏超声';
@@ -285,7 +285,9 @@ function classificationName(item) {
   if (/尿液干化学|尿有形成分|尿常规/.test(group)) return '尿常规';
   if (/微量尿蛋白|微量尿白蛋白|尿肌酐比值/.test(group)) return '尿微量白蛋白/尿肌酐';
   if (/乙肝三系|HBsAg|HBsAb|HBeAg|HBeAb|HBcAb/i.test(group)) return '乙肝三系';
-  if (/HPV24|人乳头状瘤病毒基因分型/.test(group)) return 'HPV24型';
+  if (/HPV24|人乳头状瘤病毒基因分型/.test(group) || /^HPV\d+/i.test(name)) return 'HPV';
+  if (/胰岛素.*0小时|空腹胰岛素/i.test(`${name} ${group}`)) return '空腹胰岛素+C肽';
+  if (/糖链抗原(?:125|153|19-9|72-4)|甲胎蛋白|癌胚抗原/.test(name)) return '泛肿瘤标志物';
   if (/胃蛋白酶原|胃泌素/.test(name)) return '胃功能3项';
   if (/EB病毒|VCA[-－]?Ig/i.test(name)) return 'EB病毒抗体';
   return item?.name;
