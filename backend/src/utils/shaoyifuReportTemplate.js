@@ -98,8 +98,8 @@ function applyShaoyifuOrderAndGroups(inputItems) {
     const page = Number(item?._page || 0);
     const name = text(item.name);
     const next = { ...item };
-    if (page === 4 && /眼科|耳鼻喉|妇科/.test(`${name} ${text(item.sourceSection)}`)) next.itemType = 'imaging';
-    if (page === 6 && /肝|胆囊|胰腺|脾脏|肾|子宫|附件|甲状腺/.test(`${name} ${text(item.sourceSection)}`)) next.itemType = 'imaging';
+    if (/眼科|耳鼻喉|妇科/.test(`${name} ${text(item.sourceSection)}`)) next.itemType = 'imaging';
+    if (/肝脏|胆囊|胰腺|脾脏|双肾|肾脏|子宫.*附件|附件.*子宫|甲状腺.*(?:超声|彩超)/.test(`${name} ${text(item.sourceSection)}`)) next.itemType = 'imaging';
     let order = originalIndex;
     if (page === 9) {
       if (/红细胞沉降率|ESR/i.test(name)) next.orderName = '红细胞沉降率(ESR)';
