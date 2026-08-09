@@ -2889,9 +2889,8 @@ export default function PatientDetailPage() {
         })}
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
           {!showTagEditor ? <>
-            <button className="btn btn-secondary btn-sm" onClick={async () => { try { await staffAPI.generateHealthRiskTags(id); await load(); toast('已从专项筛查异常结果提取，待健康顾问审核') } catch (e) { toast(e.message || '提取失败') } }}>✨ AI提取标签</button>
-            {['familyDoctor','superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" onClick={() => { const t = user.healthRiskTags || {}; setTagEditorDiseases({ tumor_risk: t.tumor_risk || [], cardiovascular_risk: t.cardiovascular_risk || [], chronic_disease: t.chronic_disease || user.chronicDiseases || [] }); setShowTagEditor(true) }}>编辑并审核</button>}
-          </> : <><button className="btn btn-secondary btn-sm" onClick={() => setShowTagEditor(false)}>取消</button><button className="btn btn-primary btn-sm" onClick={handleSaveTags} disabled={tagSaving}>{tagSaving ? '保存中…' : '审核确认'}</button></>}
+            {['familyDoctor','superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" onClick={() => { const t = user.healthRiskTags || {}; setTagEditorDiseases({ tumor_risk: t.tumor_risk || [], cardiovascular_risk: t.cardiovascular_risk || [], chronic_disease: t.chronic_disease || user.chronicDiseases || [] }); setShowTagEditor(true) }}>人工编辑标签</button>}
+          </> : <><button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => setTagEditorDiseases({ tumor_risk: [], cardiovascular_risk: [], chronic_disease: [] })}>清空全部</button><button className="btn btn-secondary btn-sm" onClick={() => setShowTagEditor(false)}>取消</button><button className="btn btn-primary btn-sm" onClick={handleSaveTags} disabled={tagSaving}>{tagSaving ? '保存中…' : '保存确认'}</button></>}
           {user.healthRiskTags?.status && <span style={{ fontSize: 12, color: user.healthRiskTags.status === 'reviewed' ? '#16A34A' : '#D97706', alignSelf: 'center' }}>{user.healthRiskTags.status === 'reviewed' ? `已审核${user.healthRiskTags.reviewedByName ? ' · '+user.healthRiskTags.reviewedByName : ''}` : '待审核'}</span>}
         </div>
       </div>
@@ -4707,8 +4706,9 @@ export default function PatientDetailPage() {
                             ) : <div style={{ marginTop: 7, fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>
                               {(sections[key]?.summary || '暂无相关资料').split(/\n+/).map(v => v.trim()).filter(Boolean).map((line, i) => {
                                 const matched = line.match(/^([^：:]+)[：:]\s*(.*)$/)
-                                return <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 6 }}>
-                                  {matched ? <><span style={{ flexShrink: 0, padding: '1px 8px', borderRadius: 99, background: '#E8F5EF', color: '#1E6B50', fontSize: 12, fontWeight: 600 }}>{matched[1]}</span><span>{matched[2]}</span></> : <span>{line}</span>}
+                                return <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>
+                                  <span style={{ flexShrink: 0, width: 20, height: 20, borderRadius: '50%', background: '#1E6B50', color: '#fff', fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginTop: 1 }}>{i + 1}</span>
+                                  {matched ? <span><strong style={{ color: '#1E6B50' }}>{matched[1]}：</strong>{matched[2]}</span> : <span>{line}</span>}
                                 </div>
                               })}
                             </div>)}
