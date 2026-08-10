@@ -2499,8 +2499,25 @@ export default function PatientDetailPage() {
       await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
       const res = await staffAPI.parseReportPageAI(ocrReviewReport._id, ocrReviewPage)
       toast(res.message || `第${ocrReviewPage}页补提已开始`)
-      setOcrReviewReport(null)
-      loadReports()
+      setOcrReviewReport(prev => prev ? { ...prev, pageParseStatus: { pageNum: ocrReviewPage, status: 'processing', message: `正在补提第${ocrReviewPage}页` } } : prev)
+      // 保持审核窗口打开并轮询；完成后原地刷新该页数据，避免用户靠猜测反复点击。
+      for (let poll = 0; poll < 150; poll++) {
+        await new Promise(resolve => setTimeout(resolve, 5000))
+        const latestRes = await staffAPI.getReport(ocrReviewReport._id)
+        const latest = latestRes.data
+        if (!latest) continue
+        setOcrReviewReport(prev => (prev && prev._id === latest._id) ? { ...prev, ...latest } : prev)
+        if (latest.pageParseStatus?.status !== 'processing') {
+          if (latest.pageParseStatus?.status === 'success') {
+            setOcrEditItems(JSON.parse(JSON.stringify(latest.reportItems || [])))
+            toast(latest.pageParseStatus.message || `第${ocrReviewPage}页补提完成`)
+          } else if (latest.pageParseStatus?.status === 'failed') {
+            toast(`补提失败：${latest.pageParseStatus.message || '未知错误'}`)
+          }
+          loadReports()
+          break
+        }
+      }
     } catch (err) { toast(err.message || '单页补提失败') }
     finally { setOcrSaving(false) }
   }
@@ -9460,6 +9477,8 @@ export default function PatientDetailPage() {
         const lastSourcePage = sourcePages[sourcePages.length - 1] || firstSourcePage
         const expectedPages = Array.from({ length: Math.max(1, lastSourcePage - firstSourcePage + 1) }, (_, i) => firstSourcePage + i)
         const activePage = ocrReviewPage || firstSourcePage
+        const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
+        const pageParsing = activePageParse?.status === 'processing'
         const missingPages = expectedPages.filter(page => !sourcePages.includes(page))
         // 专项筛查归类：选项分组 + 手动归类
         // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
@@ -9609,6 +9628,11 @@ export default function PatientDetailPage() {
                   )
                 })()}
               <div className="modal-body" ref={ocrModalBodyRef} style={{ overflowY: 'auto', flex: 1, minWidth: 0 }}>
+                {activePageParse && (
+                  <div style={{ margin: '10px 12px 0', padding: '9px 12px', borderRadius: 7, fontSize: 12, background: pageParsing ? '#FFF8E6' : activePageParse.status === 'success' ? '#F0FDF4' : '#FFF0F0', color: pageParsing ? '#9A6700' : activePageParse.status === 'success' ? '#1E6B50' : '#B42318' }}>
+                    {pageParsing ? `第${activePage}页正在补提，请稍候，完成后本页会自动刷新。` : activePageParse.message}
+                  </div>
+                )}
                 {(() => {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
                   // 后端已经按报告页码和页内位置保存顺序；审核层只按该顺序展示，不再按类型重排。
@@ -9809,9 +9833,9 @@ export default function PatientDetailPage() {
               </div>
               <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
                 <button className="btn btn-secondary" style={{ flex: 0.7 }}
-                  disabled={ocrSaving} onClick={handleParseCurrentPage}
+                  disabled={ocrSaving || pageParsing} onClick={handleParseCurrentPage}
                   title={`只重新提取原报告第${activePage}页，其他页保持不变`}>
-                  {ocrSaving ? '处理中…' : `补提第${activePage}页`}
+                  {pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : `补提第${activePage}页`}
                 </button>
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleReclassifyOCR}

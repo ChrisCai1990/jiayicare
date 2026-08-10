@@ -8990,7 +8990,7 @@ async function runReportParse(reportId) {
 // 只补提指定PDF页并与该页已有结果合并；其他页面及其人工审核内容完全保留。
 async function runReportPageParse(reportId, pageNum) {
   const { parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, renderSinglePage, isPdfReport } = require('../utils/pdf');
+  const { fetchReportBuffer, renderSinglePage, renderSinglePageRegions, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
@@ -9002,21 +9002,28 @@ async function runReportPageParse(reportId, pageNum) {
   const templatePrompt = useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum)
     : useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '';
   const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-  const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 160);
-  if (!img) throw new Error(`无法渲染第${pageNum}页`);
-  let parsed = null;
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  const images = (useZheyiTemplate && pageNum === 14)
+    ? await renderSinglePageRegions(pdfBuf, pageNum, 160)
+    : [await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 160)];
+  if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
+  let parsedItems = [];
+  for (let regionIndex = 0; regionIndex < images.length; regionIndex++) {
+    let parsed = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
     try {
-      const raw = await parseImage(img, `${REPORT_PARSE_PROMPT}${templatePrompt}\n\n【单页补提】只核对原报告第${pageNum}页，从上到下、从左到右提取全部实际结果，不得跳过任何栏目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
+      const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
+      const raw = await parseImage(images[regionIndex], `${REPORT_PARSE_PROMPT}${templatePrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行提取全部实际结果，不得跳过任何栏目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
       parsed = safeParseJSON(raw);
       if (parsed?.items?.length) break;
     } catch (error) {
       if (attempt === 3) throw error;
       console.log(`[parse-page] ${reportId} P${pageNum} 第${attempt}次失败，自动重试: ${error.message}`);
     }
+    }
+    if (!parsed?.items?.length) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未识别到有效项目，原数据未改动`);
+    parsedItems = mergeCoverageAuditItems(parsedItems, parsed.items);
   }
-  if (!parsed?.items?.length) throw new Error(`第${pageNum}页未识别到有效项目，原数据未改动`);
-  let newPage = tagReportPageItems(parsed.items, pageNum);
+  let newPage = tagReportPageItems(parsedItems, pageNum);
   if (useShaoyifuTemplate) newPage = shaoyifuTemplate.normalizeShaoyifuItems(newPage);
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   const latest = await MedicalReport.findById(reportId);
@@ -9028,6 +9035,7 @@ async function runReportPageParse(reportId, pageNum) {
   await MedicalReport.findByIdAndUpdate(reportId, {
     reportItems: combined,
     aiStatus: 'pending',
+    pageParseStatus: { pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: `第${pageNum}页补提完成，共${classifiedPage.length}项`, itemCount: classifiedPage.length },
   });
   console.log(`[parse-page] ${reportId} P${pageNum} 完成：${oldPage.length}→${classifiedPage.length}，其他页保留${preserved.length}项`);
 }
@@ -9097,7 +9105,14 @@ router.post('/medical-reports/:id/parse-page', staffAuth, async (req, res) => {
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    runReportPageParse(report._id, pageNum).catch(error => console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message));
+    if (report.pageParseStatus?.status === 'processing' && Number(report.pageParseStatus.pageNum) === pageNum) {
+      return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
+    }
+    await MedicalReport.findByIdAndUpdate(report._id, { pageParseStatus: { pageNum, status: 'processing', startedAt: new Date(), message: `正在补提第${pageNum}页` } });
+    runReportPageParse(report._id, pageNum).catch(async error => {
+      console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message);
+      await MedicalReport.findByIdAndUpdate(report._id, { pageParseStatus: { pageNum, status: 'failed', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: error.message } }).catch(() => {});
+    });
     res.json({ success: true, processing: true, message: `第${pageNum}页补提已开始，其他页面不会改动` });
   } catch (err) {
     res.status(500).json({ success: false, message: '单页补提失败：' + err.message });

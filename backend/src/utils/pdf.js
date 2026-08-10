@@ -79,7 +79,7 @@ function getPdfPageCount(pdfPath) {
 }
 
 // 转换 PDF 指定页范围为 PNG base64 数组（单批，转完即清理临时文件）
-function convertPdfRange(pdfPath, firstPage, lastPage, dpi) {
+function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
   return new Promise((resolve, reject) => {
     let tmpDir;
     try {
@@ -88,8 +88,10 @@ function convertPdfRange(pdfPath, firstPage, lastPage, dpi) {
     const outPrefix = path.join(tmpDir, 'page');
     const cleanup = () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} };
 
+    const cropArgs = crop ? ['-x', String(crop.x), '-y', String(crop.y), '-W', String(crop.width), '-H', String(crop.height)] : [];
     execFile('pdftoppm', [
       '-png', '-r', String(dpi),
+      ...cropArgs,
       '-f', String(firstPage), '-l', String(lastPage),
       pdfPath, outPrefix,
     ], { timeout: 60000 }, (err) => {
@@ -174,6 +176,30 @@ async function renderSinglePage(pdfBuffer, pageNum, dpi = 96) {
   }
 }
 
+// 高密度表格页分区渲染，减少单次视觉模型输入和输出，避免整页识别超时。
+async function renderSinglePageRegions(pdfBuffer, pageNum, dpi = 160) {
+  const tmpPdf = path.join(os.tmpdir(), `pdf-regions-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  fs.writeFileSync(tmpPdf, pdfBuffer);
+  try {
+    const width = Math.round(8.27 * dpi);
+    const height = Math.round(11.69 * dpi);
+    const overlap = Math.round(height * 0.08);
+    const split = Math.round(height * 0.55);
+    const crops = [
+      { x: 0, y: 0, width, height: split },
+      { x: 0, y: split - overlap, width, height: height - split + overlap },
+    ];
+    const images = [];
+    for (const crop of crops) {
+      const rendered = await convertPdfRange(tmpPdf, pageNum, pageNum, dpi, crop);
+      if (rendered[0]) images.push(rendered[0]);
+    }
+    return images;
+  } finally {
+    try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+}
+
 // 判断报告是否为 PDF
 function isPdfReport(report) {
   return report.mimeType === 'application/pdf'
@@ -181,4 +207,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage };
+module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage, renderSinglePageRegions };
