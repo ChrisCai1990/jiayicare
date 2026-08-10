@@ -1,7 +1,7 @@
 const { chat } = require('./ai');
 const { deriveLabFromReports, buildLatestLabText, buildTrendText, extractTumorMarkers, buildTumorMarkerText, extractGeneticFindings, extractExamFindings } = require('./labFromScreening');
 const { assessCancerCoverage, buildCoverageText } = require('./cancerScreeningCoverage');
-const { buildEvidenceCatalog, auditMedicalJson } = require('./aiFactGuard');
+const { buildEvidenceCatalog } = require('./aiFactGuard');
 
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
@@ -568,15 +568,8 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
     };
   }
 
-  // 第二轮仅做事实审计：删除无证据结论、纠正相近病名混淆，并补回明确遗漏的检查。
-  if (!parseFailed && wantDoctor) {
-    // 审计只需修正既有JSON，不需要与首轮相同的最大输出额度；限制额度可降低耗时，
-    // 审计偶发超时时仍由aiFactGuard安全回退到首轮结果。
-    const audited = await auditMedicalJson({ sections }, evidenceCatalog, {
-      maxTokens: Math.min(maxTokens, 3200), timeoutMs: wantDoctor ? 90000 : 45000,
-    });
-    if (audited?.sections) sections = { ...sections, ...audited.sections };
-  }
+  // 不再对整份长JSON发起第二次AI重写：该调用长期因输出截断或超时而回退首轮结果，
+  // 还会使总请求超过网关等待时间。事实边界继续由首轮证据目录、确定性分类归并和人工审核保证。
 
   if (!parseFailed && reuseTumor) sections.tumor_risk = reusedTumorSection;
 
