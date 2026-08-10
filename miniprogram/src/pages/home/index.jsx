@@ -311,21 +311,21 @@ export default function HomePage() {
 
       <View style={{ padding: `0 ${spacing.lg}px` }}>
         {/* 问候卡：像素级对齐 app 端 HomeScreen.js heroCard（深墨绿背景#1A2B24、56px评分数字、等级/趋势标签/迷你走势线/行动建议） */}
-        <View style={{ backgroundColor: '#1A2B24', borderRadius: `${radius.lg}px`, padding: '14px 16px', marginBottom: '10px' }}>
-          <Text style={{ fontSize: '14px', color: 'rgba(255,255,255,0.65)' }}>{greeting}</Text>
-          <Text style={{ fontSize: '18px', fontWeight: 700, color: '#fff', display: 'block', marginTop: '2px', marginBottom: '8px' }}>
+        <View style={{ backgroundColor: '#1A2B24', borderRadius: `${radius.lg}px`, padding: '11px 15px', marginBottom: '8px' }}>
+          <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.65)' }}>{greeting}</Text>
+          <Text style={{ fontSize: '16px', fontWeight: 700, color: '#fff', display: 'block', marginTop: '1px', marginBottom: '4px' }}>
             {name}，{statusText} <Icon name={statusEmoji} size={18} color="#fff" />
           </Text>
           <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
-            <Text style={{ fontSize: '46px', fontWeight: 800, color: '#fff', lineHeight: '50px', letterSpacing: '-2px' }}>
+            <Text style={{ fontSize: '36px', fontWeight: 800, color: '#fff', lineHeight: '39px', letterSpacing: '-1px' }}>
               {scoreDisplay != null ? scoreDisplay : '--'}
             </Text>
             <View style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <Text style={{ fontSize: '13px', color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>
+              <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>
                 {scoreDisplay != null ? '健康评分 / 100' : '暂无评分，请录入数据'}
               </Text>
               {scoreDisplay != null && (
-                <Text style={{ fontSize: '13px', fontWeight: 700, color: gradeColors[grade] || '#fff' }}>{grade}</Text>
+                <Text style={{ fontSize: '11px', fontWeight: 700, color: gradeColors[grade] || '#fff' }}>{grade}</Text>
               )}
               {isDemo && (
                 <Text style={{
@@ -341,60 +341,38 @@ export default function HomePage() {
             )}
           </View>
           {trendActionText && (
-            <Text style={{ fontSize: '12px', color: 'rgba(255,255,255,0.85)', marginTop: `${spacing.sm}px`, display: 'block', lineHeight: '17px' }}>{trendActionText}</Text>
+            <Text style={{ fontSize: '10px', color: 'rgba(255,255,255,0.82)', marginTop: '4px', display: 'block', lineHeight: '14px' }} numberOfLines={1}>{trendActionText}</Text>
           )}
         </View>
 
         {/* 成长打卡卡片：像素级对齐 app 端 GrowthCard 组件。从未打卡（streak=0且totalCheckinDays=0）时不渲染，
             新用户先引导打卡，不空谈成长——与app端一致 */}
         {(growth.streak > 0 || growth.totalCheckinDays > 0) && (
-          <View style={{ backgroundColor: '#fff', borderRadius: '18px', padding: '13px 15px', marginBottom: '12px', boxShadow: '0px 4px 12px rgba(30,107,80,0.06)' }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: '18px', padding: '10px 14px', marginBottom: '9px', boxShadow: '0px 4px 12px rgba(30,107,80,0.06)' }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ display: 'flex', alignItems: 'baseline' }}>
                 <Icon name="🔥" size={20} color="#D97706" style={{ marginRight: '6px' }} />
-                <Text style={{ fontSize: '28px', fontWeight: 800, color: colors.primary, lineHeight: '32px' }}>{growth.streak}</Text>
-                <Text style={{ fontSize: '15px', color: '#4A6558', fontWeight: 600, marginLeft: '4px' }}>天连续打卡</Text>
+                <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.primary, lineHeight: '26px' }}>{growth.streak}</Text>
+                <Text style={{ fontSize: '13px', color: '#4A6558', fontWeight: 600, marginLeft: '3px' }}>天连续打卡</Text>
               </View>
               <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                <Text style={{ fontSize: '12px', color: colors.textMuted }}>近30天累计</Text>
-                <Text style={{ fontSize: '18px', fontWeight: 700, color: colors.textPrimary }}>{growth.totalCheckinDays} 天</Text>
+                <Text style={{ fontSize: '10px', color: colors.textMuted }}>近30天累计</Text>
+                <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>{growth.totalCheckinDays} 天</Text>
               </View>
             </View>
 
             {!!growth.trendHighlight && (
-              <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#EAF5EF', borderRadius: '10px', padding: '8px 10px', marginTop: '10px' }}>
+              <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#EAF5EF', borderRadius: '9px', padding: '6px 9px', marginTop: '7px' }}>
                 <Icon name={growth.trendHighlight.direction === 'up' ? '📈' : '📉'} size={16} color={colors.primary} style={{ marginRight: '8px' }} />
-                <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600, flex: 1 }}>
+                <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 600, flex: 1 }} numberOfLines={1}>
                   你的{growth.trendHighlight.label}在变好：{growth.trendHighlight.from}{growth.trendHighlight.unit} → {growth.trendHighlight.to}{growth.trendHighlight.unit}
                 </Text>
               </View>
             )}
 
-            {growth.monthCalendar?.length > 0 && (
-              <View style={{ marginTop: '10px' }}>
-                <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>本月打卡</Text>
-                <View style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
-                  {growth.monthCalendar.map((d) => {
-                    const isToday = d.day === new Date().getDate();
-                    return (
-                      <View key={d.day} style={{
-                        width: '18px', height: '18px', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        backgroundColor: d.checked ? colors.primary : (d.future ? '#F3F4F6' : '#E8E1D5'),
-                        border: isToday ? '1.5px solid #D97706' : 'none',
-                      }}>
-                        <Text style={{ fontSize: '8px', color: d.checked ? '#fff' : '#B8AC99', fontWeight: 600 }}>{d.day}</Text>
-                      </View>
-                    );
-                  })}
-                </View>
-              </View>
-            )}
-
-            {growth.streak > 0 && (
-              <Text style={{ marginTop: '8px', textAlign: 'center', fontSize: '12px', color: '#4A6558', display: 'block' }}>
-                今天是坚持第 {growth.streak + 1} 天，点击上方按钮完成今日打卡 <Icon name="👆" size={13} color="#4A6558" />
-              </Text>
-            )}
+            <Text style={{ marginTop: '6px', fontSize: '10px', color: colors.textMuted, display: 'block' }} numberOfLines={1}>
+              本月已打卡 {growth.totalCheckinDays} 天{growth.streak > 0 ? ` · 今天继续保持第 ${growth.streak + 1} 天` : ''}
+            </Text>
           </View>
         )}
 
@@ -402,11 +380,33 @@ export default function HomePage() {
             首页只保留入口按钮，健康管家团队卡片已移至"我的"页 */}
         <View onClick={() => Taro.navigateTo({ url: '/pages/checkin/index' })} style={{
           display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: colors.primary,
-          borderRadius: `${radius.lg}px`, padding: `${spacing.md}px ${spacing.lg}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.sm,
+          borderRadius: `${radius.lg}px`, padding: '12px 16px', marginBottom: `${spacing.md}px`, boxShadow: shadow.sm,
         }}>
           <Icon name="✅" size={18} color="#fff" />
           <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: '#fff' }}>记录健康数据</Text>
           <Text style={{ fontSize: '16px', color: 'rgba(255,255,255,0.8)' }}>›</Text>
+        </View>
+
+        <View style={{ marginBottom: `${spacing.md}px` }}>
+          <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
+            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>常用健康服务</Text>
+            <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>全部商城 ›</Text></View>
+          </View>
+          <ScrollView scrollX enhanced showScrollbar={false} style={{ width: '100%' }}>
+            <View style={{ display: 'flex', gap: '8px', paddingBottom: '2px' }}>
+              {popularServices.map((item) => (
+                <View key={item.id} onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '122px', flexShrink: 0, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '10px', border: `1px solid ${colors.border}` }}>
+                  <Icon name="🩺" size={17} color={colors.primary} />
+                  <Text style={{ fontSize: '12px', lineHeight: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: '5px', minHeight: '32px' }} numberOfLines={2}>{item.name}</Text>
+                  <Text style={{ fontSize: '13px', fontWeight: 800, color: '#D97706', display: 'block', marginTop: '4px' }}>¥{item.price ?? '咨询'}</Text>
+                </View>
+              ))}
+              <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '88px', flexShrink: 0, minHeight: '100px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+                <Icon name="🛒" size={20} color="#fff" />
+                <Text style={{ color: '#fff', fontSize: '11px', fontWeight: 700, marginTop: '5px' }}>全部服务</Text>
+              </View>
+            </View>
+          </ScrollView>
         </View>
 
         {/* 待办任务：像素级对齐app端TaskItem/ReminderItem图标行+紧急度徽章，
@@ -452,30 +452,6 @@ export default function HomePage() {
               <Text style={{ fontSize: '12px', color: colors.primary }}>›</Text>
             </View>
           )}
-        </View>
-
-        {/* 与 App 一致：常用健康服务放在待办任务之后 */}
-        <View style={{ marginBottom: `${spacing.lg}px` }}>
-          <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>常用健康服务</Text>
-            <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>全部商城 ›</Text></View>
-          </View>
-          <ScrollView scrollX enhanced showScrollbar={false} style={{ width: '100%' }}>
-            <View style={{ display: 'flex', gap: '10px', paddingBottom: '2px' }}>
-              {popularServices.map((item) => (
-                <View key={item.id} onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '142px', flexShrink: 0, backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: '13px', border: `1px solid ${colors.border}` }}>
-                  <Icon name="🩺" size={20} color={colors.primary} />
-                  <Text style={{ fontSize: '13px', lineHeight: '18px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginTop: '7px', minHeight: '36px' }}>{item.name}</Text>
-                  <Text style={{ fontSize: '14px', fontWeight: 800, color: '#D97706', display: 'block', marginTop: '6px' }}>¥{item.price ?? '咨询'}</Text>
-                  <Text style={{ fontSize: '10px', color: colors.primary, display: 'block', marginTop: '4px' }}>查看服务 ›</Text>
-                </View>
-              ))}
-              <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })} style={{ width: '104px', flexShrink: 0, minHeight: '132px', borderRadius: `${radius.md}px`, backgroundColor: colors.primary, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <Icon name="🛒" size={24} color="#fff" />
-                <Text style={{ color: '#fff', fontSize: '12px', fontWeight: 700, marginTop: '7px' }}>查看全部服务</Text>
-              </View>
-            </View>
-          </ScrollView>
         </View>
 
       </View>
