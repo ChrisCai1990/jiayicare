@@ -748,6 +748,7 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
   const [uploadingImg, setUploadingImg] = useState(false)
   const [posting, setPosting] = useState(false)
   const [aiReplying, setAiReplying] = useState(false)
+  const [expanded, setExpanded] = useState(false)
   const list = Array.isArray(discussions) ? discussions : []
 
   const handlePickImage = async (e) => {
@@ -801,12 +802,13 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
 
   return (
     <div className="card" style={{ marginBottom: 14 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', borderBottom: '1px solid #F0EDE7' }}>
+      <button type="button" onClick={() => setExpanded(value => !value)} style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '12px 20px 10px', border: 'none', borderBottom: expanded ? '1px solid #F0EDE7' : 'none', background: 'transparent', cursor: 'pointer', textAlign: 'left' }}>
         <span style={{ fontSize: 17 }}>💬</span>
         <span style={{ fontWeight: 700, fontSize: 14, color: '#1A2B24', flex: 1 }}>{title}</span>
         <span style={{ fontSize: 12, color: '#8AA89C' }}>{list.length} 条留言</span>
-      </div>
-      <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <span style={{ fontSize: 12, color: '#8AA89C' }}>{expanded ? '收起 ▲' : '展开 ▼'}</span>
+      </button>
+      {expanded && <div style={{ padding: '12px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
         {list.length === 0 ? (
           <div style={{ fontSize: 13, color: '#8AA89C' }}>暂无留言，对本年度分析有疑问或补充信息可在此讨论，也可让AI重新分析给出解释</div>
         ) : (
@@ -880,7 +882,7 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
             {posting ? (aiReplying ? 'AI回复中...' : '发布中...') : '发布'}
           </button>
         </div>
-      </div>
+      </div>}
     </div>
   )
 }
