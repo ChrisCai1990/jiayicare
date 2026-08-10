@@ -113,7 +113,11 @@ export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
   useDidShow(() => { loadMessages(); });
   useEffect(() => { if (refreshKey) loadMessages(); }, [refreshKey, loadMessages]);
 
-  const notifMessages = messages.filter((m) => NOTIF_TYPES.has(m.type) && !m.conversationId);
+  // 系统消息有时也会携带 conversationId。它仍然属于用户通知，不能因为
+  // 关联了会话就从“健康管家”入口消失。
+  const notifMessages = messages.filter((m) => NOTIF_TYPES.has(m.type));
+  const questionnaireMessages = notifMessages.filter((m) => m.type === 'questionnaire');
+  const serviceMessages = notifMessages.filter((m) => m.type !== 'questionnaire');
 
   const roleConvs = ROLE_DEFS.map((r) => {
     const msgs = messages.filter((m) => m.type === r.key || (m.conversationId && m.conversationId.endsWith(`_${r.key}`)));
@@ -168,6 +172,51 @@ export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
       ) : (
+        <>
+        {notifMessages.length > 0 && (
+          <View style={{ margin: `0 ${spacing.md}px ${spacing.md}px` }}>
+            <View style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>
+              <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary }}>服务提醒</Text>
+              <Text onClick={() => setShowNotif(true)} style={{ fontSize: '13px', color: colors.primary }}>查看全部 ›</Text>
+            </View>
+
+            {questionnaireMessages.slice(0, 2).map((msg) => (
+              <View key={`questionnaire-${msg._id}`} onClick={() => markReadAndOpenDetail(msg)} style={{ display: 'flex', alignItems: 'center', padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px`, backgroundColor: '#EAF5FB', border: '1px solid #B9DDEE', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
+                <View style={{ width: '42px', height: '42px', borderRadius: '12px', backgroundColor: '#0077B6', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px`, flexShrink: 0 }}>
+                  <Icon name={NOTIF_TYPE_CONFIG.questionnaire.icon} size={19} color="#fff" />
+                </View>
+                <View style={{ flex: 1, minWidth: 0 }}>
+                  <View style={{ display: 'flex', alignItems: 'center', marginBottom: '3px' }}>
+                    <Text style={{ fontSize: '14px', fontWeight: 700, color: '#075B86' }}>待填写问卷</Text>
+                    {msg.unread && <View style={{ width: '7px', height: '7px', borderRadius: '4px', backgroundColor: colors.danger, marginLeft: '6px' }} />}
+                  </View>
+                  <Text style={{ fontSize: '13px', color: colors.textSecondary }} numberOfLines={2}>{msg.content || msg.title}</Text>
+                </View>
+                <Text style={{ marginLeft: `${spacing.sm}px`, color: '#0077B6', fontSize: '13px', fontWeight: 700 }}>立即填写 ›</Text>
+              </View>
+            ))}
+
+            {serviceMessages.slice(0, questionnaireMessages.length > 0 ? 2 : 3).map((msg) => {
+              const conf = NOTIF_TYPE_CONFIG[msg.type] || NOTIF_TYPE_CONFIG.system;
+              return (
+                <View key={`service-${msg._id}`} onClick={() => markReadAndOpenDetail(msg)} style={{ display: 'flex', alignItems: 'center', padding: `12px ${spacing.md}px`, marginBottom: `${spacing.sm}px`, backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
+                  <View style={{ position: 'relative', width: '38px', height: '38px', borderRadius: '11px', backgroundColor: conf.color + '24', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px`, flexShrink: 0 }}>
+                    <Icon name={conf.icon} size={17} color={conf.color} />
+                    {msg.unread && <View style={{ position: 'absolute', top: '-2px', right: '-2px', width: '8px', height: '8px', borderRadius: '4px', backgroundColor: colors.danger, border: '1px solid #fff' }} />}
+                  </View>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '3px' }}>
+                      <Text style={{ fontSize: '14px', fontWeight: msg.unread ? 700 : 600, color: colors.textPrimary }}>{msg.title || conf.label}</Text>
+                      <Text style={{ fontSize: '11px', color: colors.textMuted, marginLeft: '8px' }}>{fmtMsgTime(msg.createdAt)}</Text>
+                    </View>
+                    <Text style={{ fontSize: '13px', color: colors.textSecondary }} numberOfLines={2}>{msg.content}</Text>
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
         <View style={{ backgroundColor: '#fff', margin: `0 ${spacing.md}px`, borderRadius: `${radius.md}px`, overflow: 'hidden', boxShadow: shadow.card }}>
           {convList.map((conv, i) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
@@ -201,6 +250,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
             );
           })}
         </View>
+        </>
       )}
 
       {showNotif && (
@@ -223,8 +273,9 @@ export default function MessagesPage({ embedded = false, refreshKey = 0 }) {
 function NotifModal({ messages, tab, setTab, onClose, onPress }) {
   const { statusBarHeight } = useNavBar();
   const filtered = messages.filter((m) => {
+    if (tab === '待填问卷') return m.type === 'questionnaire';
     if (tab === '系统') return m.type === 'system';
-    if (tab === '推送') return PUSH_TYPES.has(m.type);
+    if (tab === '服务推送') return PUSH_TYPES.has(m.type) && m.type !== 'questionnaire';
     return true;
   });
 
@@ -235,7 +286,7 @@ function NotifModal({ messages, tab, setTab, onClose, onPress }) {
         <Text style={{ flex: 1, fontSize: '16px', fontWeight: 700, color: colors.textPrimary, textAlign: 'center', marginRight: '40px' }}>系统通知</Text>
       </View>
       <View style={{ display: 'flex', margin: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#EEEAE3', borderRadius: `${radius.sm}px`, padding: '3px' }}>
-        {['全部', '系统', '推送'].map((t) => (
+        {['全部', '待填问卷', '系统', '服务推送'].map((t) => (
           <View key={t} onClick={() => setTab(t)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.xs}px`, backgroundColor: tab === t ? '#fff' : 'transparent' }}>
             <Text style={{ fontSize: '13px', color: tab === t ? colors.textPrimary : colors.textMuted, fontWeight: tab === t ? 600 : 500 }}>{t}</Text>
           </View>
