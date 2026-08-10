@@ -6438,6 +6438,7 @@ export default function PatientDetailPage() {
         const itemSourceMatches = (item, sectionKey) => {
           const itemText = [item.name, item.latest, item.value, item.trend, item.note, ...(item.keyChanges || [])].filter(Boolean).join(' ')
           const years = [...new Set((itemText.match(/20\d{2}/g) || []))]
+          const continuousClaim = /每年|逐年|连续|历年|每年度/.test(itemText)
           const words = ITEM_SOURCE_WORDS[item.name] || [item.name]
           const sectionIds = new Set(sourceIdsFor(sectionKey))
           const reportYear = report => String(report.checkDate || report.date || report.createdAt || '').slice(0, 4)
@@ -6445,14 +6446,20 @@ export default function PatientDetailPage() {
             report.examDescription, report.examConclusion, report.aiSummary,
             ...(report.reportItems || []).flatMap(row => [row.name, row.sourceSection, row.orderName, row.findings, row.diagnosis, row.conclusion, row.value])
           ].filter(Boolean).join(' ')
+          const linked = (item.sourceEvidence || []).map(evidence => {
+            const report = screeningReports.find(row => String(row._id) === String(evidence.reportId))
+            return report ? { report, focus: { itemName: item.name, years: [String(evidence.year || '').trim()].filter(Boolean), words, items: evidence.items || [] } } : null
+          }).filter(Boolean)
+          if (linked.length) return linked
           const exact = screeningReports.filter(report => {
             const year = reportYear(report)
-            if (years.length && !years.includes(year)) return false
+            // “从2022年开始每年都有”只会显式出现起始年，不能据此把2023/2024等中间年份过滤掉。
+            if (!continuousClaim && years.length && !years.includes(year)) return false
             return words.some(word => word && reportText(report).includes(word))
           })
           const sameYearReferenced = screeningReports.filter(report => {
             if (!sectionIds.has(String(report._id))) return false
-            return !years.length || years.includes(reportYear(report))
+            return continuousClaim || !years.length || years.includes(reportYear(report))
           })
           const referenced = screeningReports.filter(report => sectionIds.has(String(report._id)))
           const selected = exact.length ? exact : (sameYearReferenced.length ? sameYearReferenced : referenced)
@@ -6462,11 +6469,20 @@ export default function PatientDetailPage() {
         }
         const openItemSources = (item, sectionKey) => {
           const matches = itemSourceMatches(item, sectionKey)
+          const itemText = [item.latest, item.value, item.trend, ...(item.keyChanges || [])].filter(Boolean).join(' ')
+          const statedYears = [...new Set(itemText.match(/20\d{2}/g) || [])].map(Number).sort((a, b) => a - b)
+          const actualYears = [...new Set(matches.map(({ report }) => Number(String(report.checkDate || report.date || report.createdAt || '').slice(0, 4))).filter(Number.isFinite))]
+          const continuousClaim = /每年|逐年|连续|历年|每年度/.test(itemText)
+          const endYear = statedYears.length > 1 ? statedYears[statedYears.length - 1] : Math.max(...actualYears, ...statedYears)
+          const expectedYears = continuousClaim && statedYears.length && Number.isFinite(endYear)
+            ? Array.from({ length: endYear - statedYears[0] + 1 }, (_, index) => statedYears[0] + index) : statedYears
+          const missingYears = expectedYears.filter(year => !actualYears.includes(year))
           setAiSourceGroup({
             title: `${item.name} · 对应年份原件`,
             ids: matches.map(({ report }) => String(report._id)),
             reportLabel,
             focusById: Object.fromEntries(matches.map(({ report, focus }) => [String(report._id), focus])),
+            missingYears,
           })
         }
         const openSectionSources = (title, ids) => setAiSourceGroup({ title, ids, reportLabel })
@@ -8005,6 +8021,9 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ overflowY: 'auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {(aiSourceGroup.missingYears || []).length > 0 && <div style={{ padding: 10, borderRadius: 8, background: '#FFF7ED', border: '1px solid #FDBA74', color: '#9A3412', fontSize: 12 }}>
+                  证据链不完整：分析涉及 {aiSourceGroup.missingYears.join('、')} 年，但尚未定位到这些年份的原件。请先核对分析结论或补充原始报告。
+                </div>}
                 {aiSourceGroup.ids.length === 0 && <div style={{ padding: 14, color: '#8AA89C', fontSize: 13 }}>暂未关联到可打开的原始报告，请检查该年度报告文件是否仍在档案中。</div>}
                 {aiSourceGroup.ids.map(reportId => (
                   <div key={reportId} style={{ padding: 10, border: '1px solid #E5E7EB', borderRadius: 8 }}>

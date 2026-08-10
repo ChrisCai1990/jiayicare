@@ -725,6 +725,28 @@ function findSourceMatch(name, index) {
   return hit ? { sourceReportId: hit.reportId, sourceItemIndex: hit.itemIndex } : null;
 }
 
+function buildStructuredSourceEvidence(name, reports, rule) {
+  if (!rule) return [];
+  const cutoffYear = new Date().getFullYear() - 4;
+  return reports.flatMap(report => {
+    const date = String(report.checkDate || report.date || '').slice(0, 10);
+    const year = Number(report.reportYear || date.slice(0, 4));
+    if (!Number.isFinite(year) || year < cutoffYear) return [];
+    const matchedItems = (report.reportItems || []).map((item, itemIndex) => ({ item, itemIndex })).filter(({ item }) => rule.test([
+      item.name, item.sourceSection, item.orderName, item.bodyPart, item.value,
+      item.findings, item.diagnosis, item.conclusion,
+    ].filter(Boolean).join(' ')));
+    const reportText = [report.title, report.screeningL2, report.examDescription, report.examConclusion, report.note].filter(Boolean).join(' ');
+    if (!matchedItems.length && !rule.test(reportText)) return [];
+    return [{
+      reportId: String(report._id), date, year,
+      items: matchedItems.map(({ item, itemIndex }) => ({
+        itemIndex, name: item.name || name, sourcePage: item.sourcePage || null,
+      })),
+    }];
+  }).sort((a, b) => String(a.date).localeCompare(String(b.date)));
+}
+
 // 遍历 medical_priority.items 和 chronic_disease.items（这两个板块的每条结论都带 name 字段，
 // 最适合按名称核对到具体检查项），就地补充溯源字段
 function attachSourceLinks(sections, allReports) {
@@ -740,6 +762,22 @@ function attachSourceLinks(sections, allReports) {
   const allIds = [...new Set(allReports.map(report => String(report._id)))];
   if (sections.checkup_completeness) sections.checkup_completeness.sourceReportIds = allIds;
   if (sections.medical_priority) sections.medical_priority.sourceReportIds = allIds;
+
+  if (Array.isArray(sections.tumor_risk?.cancers)) {
+    sections.tumor_risk.cancers.forEach(item => {
+      item.sourceEvidence = buildStructuredSourceEvidence(item.name, allReports, CANCER_EVIDENCE_RULES[item.name]);
+    });
+  }
+  if (Array.isArray(sections.cardiovascular_risk?.topics)) {
+    sections.cardiovascular_risk.topics.forEach(item => {
+      item.sourceEvidence = buildStructuredSourceEvidence(item.name, allReports, FOCUSED_TREND_RULES[item.name]);
+    });
+  }
+  if (Array.isArray(sections.chronic_disease?.items)) {
+    sections.chronic_disease.items.forEach(item => {
+      item.sourceEvidence = buildStructuredSourceEvidence(item.name, allReports, FOCUSED_TREND_RULES[item.name]);
+    });
+  }
 
   const mp = sections.medical_priority;
   if (mp && Array.isArray(mp.items)) {
