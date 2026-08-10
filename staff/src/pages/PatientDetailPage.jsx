@@ -1635,13 +1635,15 @@ export default function PatientDetailPage() {
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
-  const [ocrFocusItem, setOcrFocusItem] = useState('')
+  const [ocrFocusItemIndex, setOcrFocusItemIndex] = useState(null)
   const [ocrSaving, setOcrSaving] = useState(false)
   const [ocrClassifySearch, setOcrClassifySearch] = useState({}) // {[rowIndex]: searchText}
   const [ocrClassifyOpen, setOcrClassifyOpen] = useState({})    // {[rowIndex]: bool}
   const [ocrClassifyDropUp, setOcrClassifyDropUp] = useState({}) // {[rowIndex]: bool} 归类下拉框展开方向，按实测可用空间动态判断
   const ocrClassifyWrapRefs = useRef({})                        // {[rowIndex]: {current: HTMLElement}}
   const ocrModalBodyRef = useRef(null)                          // 归类下拉框的真实裁切边界是这个 overflow:auto 的表格滚动容器，不是浏览器视口
+  const ocrItemRefs = useRef({})
+  const ocrFocusHandledRef = useRef(null)
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
   // 客户归属决定会员类型和服务包选项，两者均读取 admin 会员设置。
@@ -2468,7 +2470,26 @@ export default function PatientDetailPage() {
     finally { setParsingReportId(null) }
   }
 
-  const handleOpenOCRReview = (r, focusItem = '') => {
+  useEffect(() => {
+    if (!ocrReviewReport || ocrFocusItemIndex == null) return
+    const focusKey = `${ocrReviewReport._id}:${ocrFocusItemIndex}`
+    if (ocrFocusHandledRef.current === focusKey) return
+    ocrFocusHandledRef.current = focusKey
+    const frame = requestAnimationFrame(() => {
+      const body = ocrModalBodyRef.current
+      const target = ocrItemRefs.current[ocrFocusItemIndex]
+      if (!body || !target) return
+      const bodyRect = body.getBoundingClientRect()
+      const targetRect = target.getBoundingClientRect()
+      // 只滚动弹窗右侧一次；不能用 ref 中的 scrollIntoView，否则每次输入重渲染都会把用户拉回原处。
+      body.scrollTop += targetRect.top - bodyRect.top - (body.clientHeight - targetRect.height) / 2
+    })
+    const timer = setTimeout(() => setOcrFocusItemIndex(null), 2600)
+    return () => { cancelAnimationFrame(frame); clearTimeout(timer) }
+  }, [ocrReviewReport, ocrFocusItemIndex])
+
+  const handleOpenOCRReview = (r, focusItems = []) => {
+    ocrFocusHandledRef.current = null
     setOcrReviewReport(r)
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
@@ -2487,10 +2508,26 @@ export default function PatientDetailPage() {
         if (isImg && !it.findings && it.value) return { ...it, findings: it.value, value: '' }
         return it
       })
+    const targets = (Array.isArray(focusItems) ? focusItems : [focusItems]).map(v => String(v || '').trim()).filter(Boolean)
+    let focusedIndex = -1
+    // 具体项目名按点击记录中的顺序优先匹配，目录名只在最后兜底，避免定位到前面的宽泛同名项。
+    for (const target of targets) {
+      focusedIndex = items.findIndex(it => String(it.name || '').trim() === target)
+      if (focusedIndex >= 0) break
+    }
+    if (focusedIndex < 0) {
+      for (const target of targets) {
+        focusedIndex = items.findIndex(it => [it.name, it.sourceSection, it.orderName].some(v => {
+          const value = String(v || '').trim()
+          return value && (value.includes(target) || target.includes(value))
+        }))
+        if (focusedIndex >= 0) break
+      }
+    }
     setOcrEditItems(items)
-    setOcrFocusItem(focusItem || '')
+    setOcrFocusItemIndex(focusedIndex >= 0 ? focusedIndex : null)
     const pages = items.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0)
-    const focused = focusItem ? items.find(it => [it.name, it.sourceSection, it.orderName].some(v => String(v || '').includes(focusItem) || focusItem.includes(String(v || '')))) : null
+    const focused = focusedIndex >= 0 ? items[focusedIndex] : null
     setOcrReviewPage(Number(focused?.sourcePage) || (pages.length ? Math.min(...pages) : 1))
   }
 
@@ -4522,7 +4559,12 @@ export default function PatientDetailPage() {
                           const rid = (r._sourceItems || [])[0]?.reportId
                           if (!rid) return
                           const rpt = reports.find(x => String(x._id) === rid)
-                          if (rpt) handleOpenOCRReview(rpt, (r._sourceItems || [])[0]?.itemLabel || r.screeningL3 || r.title || '')
+                          if (rpt) handleOpenOCRReview(rpt, [
+                            ...(r.reportItems || []).map(item => item.name),
+                            (r._sourceItems || [])[0]?.itemLabel,
+                            r.screeningL3,
+                            r.title,
+                          ])
                         }} style={{ background: 'none', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#4A6558', cursor: 'pointer', flexShrink: 0 }}>编辑</button>
                         <button onClick={async () => {
                           if (!window.confirm('删除该AI识别筛查项？')) return
@@ -9990,9 +10032,9 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                         {indexed.map(({ it, i }) => {
                           const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
-                          const isFocusedItem = !!ocrFocusItem && [it.name, it.sourceSection, it.orderName].some(v => String(v || '').includes(ocrFocusItem) || ocrFocusItem.includes(String(v || '')))
+                          const isFocusedItem = ocrFocusItemIndex === i
                           return (
-                            <div key={i} ref={node => { if (node && isFocusedItem) window.setTimeout(() => node.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80) }}
+                            <div key={i} ref={node => { if (node) ocrItemRefs.current[i] = node; else delete ocrItemRefs.current[i] }}
                               style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
