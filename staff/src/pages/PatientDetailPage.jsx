@@ -6634,9 +6634,59 @@ export default function PatientDetailPage() {
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {(sec.tumor_risk?.completed || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>已完成筛查</div><AIListLines items={sec.tumor_risk.completed} /></div>}
-                      {(sec.tumor_risk?.abnormal || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>异常发现</div><AIListLines items={sec.tumor_risk.abnormal} color="#DC2626" /></div>}
-                      {(sec.tumor_risk?.missing || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>未覆盖项目</div><AIListLines items={sec.tumor_risk.missing} color="#8AA89C" /></div>}
+                      {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0 ? (() => {
+                        const statusMeta = {
+                          covered: { label: '已覆盖', color: '#15803D', bg: '#DCFCE7' },
+                          due_soon: { label: '即将到期', color: '#A16207', bg: '#FEF9C3' },
+                          overdue: { label: '已到期', color: '#C2410C', bg: '#FFEDD5' },
+                          follow_up_due: { label: '异常复查', color: '#B91C1C', bg: '#FEE2E2' },
+                          not_routinely_recommended: { label: '无需常规年筛', color: '#475569', bg: '#F1F5F9' },
+                          unknown: { label: '资料不足', color: '#64748B', bg: '#F1F5F9' },
+                        }
+                        const trendMeta = {
+                          no_data: '暂无趋势', baseline: '已建立基线', stable: '基本稳定', improving: '改善',
+                          worsening: '需关注变化', fluctuating: '存在波动', not_comparable: '暂不可比较',
+                        }
+                        const priority = { follow_up_due: 0, overdue: 1, due_soon: 2, unknown: 3, covered: 4, not_routinely_recommended: 5 }
+                        const cancers = [...sec.tumor_risk.cancers].sort((a, b) => (priority[a.status] ?? 9) - (priority[b.status] ?? 9))
+                        const ov = sec.tumor_risk.overview || {}
+                        return <>
+                          <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: '11px 13px' }}>
+                            <div style={{ fontWeight: 800, color: '#5B21B6', marginBottom: 5 }}>{ov.headline || sec.tumor_risk.summary || '常见肿瘤筛查与趋势总览'}</div>
+                            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 12, color: '#6B7280' }}>
+                              <span>常见肿瘤目录 {cancers.length} 项</span>
+                              <span style={{ color: '#15803D' }}>已覆盖 {Number(ov.coveredCount) || cancers.filter(c => c.status === 'covered').length} 项</span>
+                              <span style={{ color: '#B91C1C' }}>需关注 {Number(ov.attentionCount) || cancers.filter(c => ['follow_up_due', 'overdue', 'due_soon'].includes(c.status)).length} 项</span>
+                              <span>待补资料 {Number(ov.unknownCount) || cancers.filter(c => c.status === 'unknown').length} 项</span>
+                            </div>
+                          </div>
+                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
+                            {cancers.map((cancer, index) => {
+                              const meta = statusMeta[cancer.status] || statusMeta.unknown
+                              const needsAttention = ['follow_up_due', 'overdue', 'due_soon'].includes(cancer.status)
+                              return <details key={`${cancer.name}-${index}`} open={needsAttention}
+                                style={{ border: `1px solid ${needsAttention ? meta.bg : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
+                                <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+                                  <span style={{ fontWeight: 800, color: '#1F2937', flex: 1 }}>{cancer.name}</span>
+                                  <span style={{ fontSize: 11, fontWeight: 700, color: meta.color, background: meta.bg, borderRadius: 999, padding: '2px 8px' }}>{meta.label}</span>
+                                  <span style={{ fontSize: 11, color: '#64748B' }}>{trendMeta[cancer.trendStatus] || '趋势待确认'}</span>
+                                </summary>
+                                <div style={{ marginTop: 9, paddingTop: 8, borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, lineHeight: 1.6 }}>
+                                  {cancer.latest && <div><b style={{ color: '#64748B' }}>最近检查：</b>{cancer.latest}</div>}
+                                  {cancer.trend && <div><b style={{ color: '#64748B' }}>5年趋势：</b>{cancer.trend}</div>}
+                                  {(cancer.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{cancer.keyChanges.join('；')}</div>}
+                                  {cancer.nextAction && <div style={{ color: meta.color }}><b>下一步：</b>{cancer.nextAction}</div>}
+                                  {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
+                                </div>
+                              </details>
+                            })}
+                          </div>
+                        </>
+                      })() : <>
+                        {(sec.tumor_risk?.completed || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>已完成筛查</div><AIListLines items={sec.tumor_risk.completed} /></div>}
+                        {(sec.tumor_risk?.abnormal || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>异常发现</div><AIListLines items={sec.tumor_risk.abnormal} color="#DC2626" /></div>}
+                        {(sec.tumor_risk?.missing || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>未覆盖项目</div><AIListLines items={sec.tumor_risk.missing} color="#8AA89C" /></div>}
+                      </>}
                       {sec.tumor_risk?.summary && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1A2B24', background: '#F2EDE3', borderRadius: 8, padding: '9px 12px', marginTop: 2 }}>{sec.tumor_risk.summary}</div>}
                     </div>
                   )}

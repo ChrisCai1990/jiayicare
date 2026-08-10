@@ -64,10 +64,11 @@ const CANCER_RULES = {
   },
   pancreas: {
     label: '胰腺癌', gender: 'all',
-    gold:      [{ key: 'abd_img', label: '腹部超声/CT', matchNames: ['腹部超声', '腹部CT', '上腹', '胰腺'] },
-                { key: 'ca199', label: 'CA19-9', matchNames: ['CA19-9', 'CA199', '糖链抗原19'] }],
-    alternate: [], adjunct: [],
-    note: 'CA19-9持续升高+腹部影像异常需警惕，单项轻度升高特异性低。',
+    // 业务口径：常规肝胆胰脾/上腹部影像明确观察到胰腺，即算基础影像覆盖；标志物不作为达标前提。
+    gold:      [{ key: 'abd_img', label: '肝胆胰脾超声/腹部CT', matchNames: ['肝胆胰脾', '腹部超声', '腹部CT', '上腹', '胰腺'] }],
+    alternate: [],
+    adjunct:   [{ key: 'ca199', label: 'CA19-9', matchNames: ['CA19-9', 'CA199', '糖链抗原19'] }],
+    note: '肝胆胰脾超声或腹部影像明确观察到胰腺可记为基础覆盖；这不等于排除胰腺肿瘤，也不据此要求普通无症状人群每年专项筛查。CA19-9仅作辅助。',
   },
 
   // ── 男性特有 ──
@@ -105,11 +106,14 @@ const CANCER_RULES = {
   },
   ovarian: {
     label: '卵巢癌', gender: 'F',
-    gold:      [{ key: 'gyn_us', label: '妇科超声', matchNames: ['妇科超声', '经阴道超声', '子宫附件超声', '盆腔超声'] },
-                { key: 'ca125', label: 'CA125', matchNames: ['CA125', 'CA-125', '糖链抗原125'] }],
-    alternate: [], adjunct: [{ key: 'he4', label: 'HE4', matchNames: ['HE4', '附睾蛋白'] }],
-    note: 'CA125特异性有限，需结合妇科超声与HE4判断。',
-    requireAll: true,
+    // 业务口径：子宫附件/经阴道/盆腔超声明确观察到附件或卵巢，即算基础影像覆盖。
+    gold:      [{ key: 'gyn_us', label: '子宫附件/经阴道超声', matchNames: ['妇科超声', '经阴道超声', '阴道超声', '子宫附件', '附件超声', '盆腔超声', '卵巢超声'] }],
+    alternate: [],
+    adjunct:   [
+      { key: 'ca125', label: 'CA125', matchNames: ['CA125', 'CA-125', '糖链抗原125'] },
+      { key: 'he4', label: 'HE4', matchNames: ['HE4', '附睾蛋白'] },
+    ],
+    note: '子宫附件、经阴道或盆腔超声明确观察到卵巢/附件可记为基础覆盖；这不等于排除卵巢肿瘤，也不据此要求普通无症状女性每年专项筛查。CA125、HE4仅作辅助。',
   },
   endometrial: {
     label: '子宫内膜癌', gender: 'F',

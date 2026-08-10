@@ -6,6 +6,16 @@ const { buildEvidenceCatalog, auditMedicalJson } = require('./aiFactGuard');
 const DOCTOR_KEYS = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness'];
 const LIFESTYLE_KEY = 'lifestyle_assessment';
 
+const COMMON_CANCER_CATALOG = {
+  M: ['肺癌', '结直肠癌', '肝癌', '胃癌', '食管癌', '前列腺癌', '甲状腺癌', '膀胱癌', '胰腺癌', '淋巴瘤'],
+  F: ['肺癌', '乳腺癌', '甲状腺癌', '结直肠癌', '宫颈癌', '胃癌', '肝癌', '子宫体癌', '卵巢癌', '食管癌'],
+};
+
+function buildCancerCatalogText(user) {
+  const genderKey = user.gender === '女' ? 'F' : 'M';
+  return COMMON_CANCER_CATALOG[genderKey].map((label, index) => `${index + 1}. ${label}`).join('\n');
+}
+
 // 生成AI健康汇总分析的 sections 内容（不含审核字段），供医护端接口和用户端自助接口共用
 // scope: 'all'（默认，全量生成）| 'doctor'（仅5维度，生活方式评估留空对象供上层合并旧值）| 'nutrition'（仅生活方式评估）
 // existingSections: 已有的 sections（用于生成时给AI提供另一方内容作为上下文，实现两部分内容互相关联而非孤立）
@@ -57,7 +67,11 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
     reportsByYear[year].push(r);
   });
   const reportSummaryLines = [];
-  Object.keys(reportsByYear).sort((a, b) => b - a).forEach(year => {
+  const latestReportYear = Math.max(new Date().getFullYear(), ...Object.keys(reportsByYear).map(Number).filter(Number.isFinite));
+  const trendYears = Object.keys(reportsByYear)
+    .map(Number).filter(year => Number.isFinite(year) && year >= latestReportYear - 4 && year <= latestReportYear)
+    .sort((a, b) => b - a);
+  trendYears.forEach(year => {
     reportSummaryLines.push(`▶ ${year}年：`);
     reportsByYear[year].forEach(r => {
       const evidenceId = `RPT-${String(allReports.findIndex(item => String(item._id) === String(r._id)) + 1).padStart(3, '0')}`;
@@ -86,6 +100,7 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   // 肿瘤筛查覆盖度（规则引擎确定性结论，按男女前十大肿瘤逐项判断"该做的筛查做了没"，
   // 含胃镜免胃蛋白酶原/肠镜免便潜血/HP连续3年阴性/乳腺钼靶40岁等规则）——2026-07-10 金娟
   const coverageText = buildCoverageText(assessCancerCoverage(user, allReports));
+  const cancerCatalogText = buildCancerCatalogText(user);
 
   // 近30天打卡记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
   const CHECKIN_LABEL = { weight: '体重(kg)', bloodPressure: '血压(mmHg)', bloodSugar: '血糖(mmol/L)', heartRate: '心率(次/分)', sleep: '睡眠(小时)', mood: '情绪(1-10分)', exercise: '运动', diet: '饮食', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒', symptom: '症状自评' };
@@ -194,6 +209,14 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
 
 【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议会员恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
 
+【肿瘤覆盖与趋势输出铁律】
+①必须按下方性别对应的10种常见肿瘤逐项输出，既不能遗漏，也不能把“常见肿瘤目录”等同于“每年必须做10项筛查”。
+②先判断该会员是否达到常规或高风险筛查条件。资料不足时状态写unknown，禁止直接写overdue；暂无普通无症状人群常规筛查依据时写not_routinely_recommended，不得写“漏筛”。
+③提醒优先级：原报告/医生明确复查期限 > 已有异常随访 > 规则引擎筛查周期。只有证据明确支持一年一次时，超过一年才能写overdue；不得把正常肠镜、HPV/TCT等全部粗暴设成一年到期。
+④趋势最长比较最近5个自然年。0次记录写no_data；1次写baseline（仅建立基线，禁止写稳定）；至少2个可比时间点才可写stable/improving/worsening/fluctuating。不能确认是同一病灶、检查方法或单位不可比时写not_comparable。
+⑤影像/内镜趋势只比较原报告明确记载的部位、数量、大小、性质和分级；不得自行对应病灶。每项趋势结论必须简短，关键变化最多3条，并保留证据编号。
+⑥肿瘤标志物只能作为辅助趋势，正常不代表排除肿瘤，单项轻度升高不得判癌。
+
 【用药及营养补充信息】仅复述会员当前记录，并标注信息来源或待人工核对状态。不得自行建立药物、营养补充剂与检查异常之间的因果关系；不得建议新增、停用、更换或调整剂量、频次和用法。如原始报告明确要求复核，应原样概述并提示携带原始资料咨询正规医疗机构。
 
 【会员基本信息】
@@ -239,6 +262,9 @@ ${geneticText}
 
 【肿瘤筛查覆盖度（系统按男女高发肿瘤规则判定，✓已覆盖/△部分/✗未筛查）】
 ${coverageText}
+
+【本会员性别对应的10种常见肿瘤目录（仅作为逐项风险评估目录，不代表每项都需年度筛查）】
+${cancerCatalogText}
 
 【带编号证据目录（结论必须以此为事实边界）】
 ${evidenceCatalog}
@@ -298,7 +324,27 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
       "completed": ["已完成的筛查项目（含年份），严格依据【肿瘤筛查覆盖度】中✓已覆盖的项，不要臆造"],
       "abnormal": ["异常发现（结合肿瘤标志物动态趋势+影像内镜所见；标志物单项轻度升高须注明特异性局限不得判癌；无则空数组）"],
       "missing": ["待补做的筛查项目，严格依据【肿瘤筛查覆盖度】中△部分/✗未筛查的待补项（如乳腺钼靶未做、HP需复查、肺癌LDCT未做等），逐条给出补做建议"],
-      "summary": "肿瘤筛查总评（50-100字）：按男女高发肿瘤说明覆盖情况，点明哪些该补做，并强调标志物特异性局限避免制造恐慌"
+      "summary": "肿瘤筛查总评（50-100字）：只总结最重要的异常复查、到期项和资料缺口，不逐项复述10种肿瘤",
+      "overview": {
+        "catalog": "男性或女性常见10种肿瘤",
+        "coveredCount": 0,
+        "attentionCount": 0,
+        "unknownCount": 0,
+        "headline": "一句话先说明当前最需要处理的事项；没有到期或异常时说明目前无紧急待办"
+      },
+      "cancers": [
+        {
+          "name": "必须严格按【本会员性别对应的10种常见肿瘤目录】顺序逐项输出，共10项",
+          "status": "covered或due_soon或overdue或follow_up_due或not_routinely_recommended或unknown",
+          "riskBasis": "仅写资料明确存在的适用条件；资料不足则写资料不足",
+          "latest": "最近一次有效检查的日期、方式和结论摘要；没有则写暂无有效记录",
+          "trendStatus": "no_data或baseline或stable或improving或worsening或fluctuating或not_comparable",
+          "trend": "最长5年趋势结论，最多60字；只有一次检查不得写稳定",
+          "keyChanges": ["最多3条关键年份变化，不机械罗列所有年份"],
+          "nextAction": "仅写到期判断、资料核对或遵循原报告/医生复查要求，不自行开检查单",
+          "evidenceIds": ["RPT-001"]
+        }
+      ]
     },
     "cardiovascular_risk": {
       "high": ["重点关注信息（仅引用已有资料，有则填，无则空数组）"],
@@ -328,7 +374,9 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
   // 导致JSON不完整解析失败、静默降级成全空结构——2026-07-03 潘孝银"已生成但内容全空"即此原因。
   // 2026-07-07：nutrition(生活方式评估)原定1200仍偏低——5个维度(饮食/运动/睡眠/烟酒/情绪)每个都要
   // 输出finding+risk+suggestion三段文字，实测JSON在1700字符左右就被截断报错，1200token撑不住完整输出
-  const maxTokens = scope === 'all' ? 4000 : (scope === 'doctor' ? 3200 : 2000);
+  // 肿瘤维度新增男女常见10种肿瘤逐项卡片后，doctor/all 输出明显增长；预留足够空间，
+  // 避免JSON尾部截断。生活方式单独生成仍保持原额度。
+  const maxTokens = scope === 'all' ? 6000 : (scope === 'doctor' ? 5200 : 2000);
   const text = await chat([{ role: 'user', content: prompt }], { maxTokens, temperature: 0.05, jsonMode: true });
 
   let sections = null;
