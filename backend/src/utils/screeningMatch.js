@@ -101,8 +101,9 @@ function matchAllWithIndex(rawName, itemType, index, threshold = 0.6, excludeCat
   if (!q) return [];
   // 已确认的业务归类具有最高优先级，避免后台同时存在“腰围”等旧叶子时与新节点同分、
   // 最终受数据库返回顺序影响而随机归类。
-  const forcedLabel = /^(腰围|臀围|腰臀比|腰围臀围)$/.test(q) ? '腰臀围'
-    : /^(跌倒评估|跌倒风险评估|老年人跌倒风险评估|跌倒风险筛查)$/.test(q) ? '生活方式评估' : '';
+  const forcedLabel = /^(腰围|腹围|臀围|腰臀比|腰围臀围)$/.test(q) ? '腰臀围'
+    : /^(现服药情况|现居住地|现居住地地域|生活方式运动|生活方式睡眠|生活方式饮酒|生活方式吸烟|家族史|跌倒评估|跌倒风险评估|老年人跌倒风险评估|跌倒风险筛查)$/.test(q) ? '生活方式评估'
+      : /^(心率|脉搏|脉率|脉搏心率|心率脉搏)$/.test(q) ? '脉搏' : '';
   if (forcedLabel) {
     const forced = index.find(entry => norm(entry.node.label) === norm(forcedLabel)
       && !excludeCategories.includes(entry.node.category));
@@ -288,7 +289,10 @@ function classificationName(item) {
   if (/乙肝三系|HBsAg|HBsAb|HBeAg|HBeAb|HBcAb/i.test(group)) return '乙肝三系';
   if (/HPV24|人乳头状瘤病毒基因分型/.test(group) || /^HPV\d+/i.test(name)) return 'HPV';
   if (/胰岛素.*0小时|空腹胰岛素/i.test(`${name} ${group}`)) return '空腹胰岛素+C肽';
-  if (/糖链抗原(?:125|15-?3|19-?9|72-?4)|CA\s*15-?3|甲胎蛋白|癌胚抗原/i.test(name)) return '泛肿瘤标志物';
+  if (/总前列腺特异|游离前列腺特异|游离前列腺抗原比值|T-?PSA|F-?PSA|TPSA|FPSA/i.test(name)) return '男性特定肿瘤标志物';
+  if (/糖链?抗原|细胞角蛋白19片段|神经元特异性烯醇化酶|鳞状细胞癌相关抗原|甲胎蛋白|癌胚抗原/i.test(name)) return '泛肿瘤标志物';
+  if (/层[粘黏]连蛋白|血清透明质酸|三型前胶原N端肽|IV\s*型胶原|壳多糖酶3样蛋白1|CHI3L1/i.test(name)) return '肝纤维化指标';
+  if (/维生素A|维生素E|维生素K1/.test(name)) return '其他维生素类';
   if (/胃蛋白酶原|胃泌素/.test(name)) return '胃功能3项';
   if (/EB病毒|VCA[-－]?Ig/i.test(name)) return 'EB病毒抗体';
   return item?.name;

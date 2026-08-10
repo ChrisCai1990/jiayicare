@@ -8616,6 +8616,36 @@ async function runReportParse(reportId) {
             }
           }
         }
+        if (useZheyiTemplate) {
+          const targetedPrompts = {
+            6: '只按原报告逐行补提一般检查，必须包含心率、体重、腰围/腹围、现服药情况、现居住地；随后眼科、耳鼻喉科各自只输出一条imaging，科内项目按“项目：结果”换行写入findings。',
+            7: '耳鼻喉科续页、口腔科、内科、外科分别每科一条imaging，科内所有项目按“项目：结果”换行写入findings；小结、建议、健康宣教不提取。',
+            9: '必须输出胸部（低剂量螺旋）CT、肾脏超声，并把肝胆脾胰彩超拆成肝脏超声、胆囊超声、脾脏超声、胰腺超声四条。',
+            10: '必须分别输出甲状腺超声、颈动脉超声、膀胱超声、前列腺超声、心脏超声；禁止组合。',
+            11: '必须输出常规心电图、骨密度、碳13呼气试验、粪便检查，并提取本页所有血常规起始项目。',
+            12: '本页不得跳过。逐行完整提取血常规续页、尿生化、空腹胰岛素和尿常规起始的每一个指标。',
+            14: '本页不得跳过。逐行完整提取同型半胱氨酸、肝功能、肾功能、血脂、血糖、电解质、超敏C反应蛋白和糖化血红蛋白，每个指标单独一条。',
+            15: '逐行完整提取肝纤维化四项、甲状腺功能、维生素A/D/E/K1、EB病毒及壳多糖酶3样蛋白1；不得遗漏。',
+          };
+          const retryPages = Object.keys(targetedPrompts).map(Number).filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems));
+          for (const pageNum of retryPages) {
+            try {
+              const img = await renderSinglePage(pdfBuf, pageNum, 160);
+              if (!img) continue;
+              const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}${zheyiTemplate.promptForPage(pageNum)}\n\n【浙一缺项专项补提】${targetedPrompts[pageNum]}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
+              const parsed = safeParseJSON(retryText);
+              if (!parsed || !Array.isArray(parsed.items)) continue;
+              const oldPage = allItems.filter(it => it._page === pageNum);
+              const retryPage = tagReportPageItems(parsed.items, pageNum);
+              if (retryPage.length >= oldPage.length) {
+                allItems = allItems.filter(it => it._page !== pageNum).concat(retryPage);
+                console.log(`[parse-ai] 浙一页${pageNum}缺项专项补提：${oldPage.length}→${retryPage.length}`);
+              }
+            } catch (e) {
+              console.log(`[parse-ai] 浙一页${pageNum}缺项专项补提异常: ${e.message}`);
+            }
+          }
+        }
       }
 
       // 数量核对+单页重试：检验单标题写了"N项"但实际条数不够，说明这一页大概率漏提了，只重新识别这一页

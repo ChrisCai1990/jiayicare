@@ -297,11 +297,11 @@ const NODES = [
   { id: 'other|一般检查|腰臀围', category: 'other', categoryKey: 'other', parent: '一般检查', label: '腰臀围', itemType: 'data', gender: null,
     aliases: ['腰围', '臀围', '腰臀比', '腰围臀围'] },
   { id: 'other|一般检查|生活方式评估', category: 'other', categoryKey: 'other', parent: '一般检查', label: '生活方式评估', itemType: 'data', gender: null,
-    aliases: ['跌倒评估', '跌倒风险评估', '老年人跌倒风险评估', '跌倒风险筛查'] },
+    aliases: ['跌倒评估', '跌倒风险评估', '老年人跌倒风险评估', '跌倒风险筛查', '现服药情况', '现居住地', '现居住地地域', '生活方式运动', '生活方式睡眠', '生活方式饮酒', '生活方式吸烟', '家族史'] },
   { id: 'other|一般检查|BMI', category: 'other', categoryKey: 'other', parent: '一般检查', label: 'BMI', itemType: 'data', gender: null,
     aliases: ['体质指数', 'BMI体质指数', '体质量指数', '体重指数'] },
   { id: 'other|一般检查|脉搏', category: 'other', categoryKey: 'other', parent: '一般检查', label: '脉搏', itemType: 'data', gender: null,
-    aliases: ['脉搏测量', '脉率', '心率脉搏', '脉搏(次/分)', '脉搏次/分'] },
+    aliases: ['脉搏测量', '脉率', '心率', '脉搏心率', '心率脉搏', '脉搏(次/分)', '脉搏次/分'] },
   // 眼科检查（独立二级分类）
   { id: 'other|眼科检查|视力检查', category: 'other', categoryKey: 'other', parent: '眼科检查', label: '视力检查', itemType: 'imaging', gender: null,
     aliases: ['视力', '视力测查', '裸眼视力', '矫正视力', '左眼视力', '右眼视力'] },
