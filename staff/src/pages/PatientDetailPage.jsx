@@ -1612,6 +1612,7 @@ export default function PatientDetailPage() {
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
   const [aiAnalysisView, setAiAnalysisView] = useState('doctor')
+  const [lastRegeneratedItem, setLastRegeneratedItem] = useState('')
   const [aiSourceGroup, setAiSourceGroup] = useState(null) // { title, ids }
   // 场景八：健康关注提示（内部沿用既有风险数据结构）
   const [riskYear, setRiskYear] = useState(null)             // 当前查看的AI风险评估年度
@@ -2445,6 +2446,7 @@ export default function PatientDetailPage() {
       const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: aiYear, scope, recordIndex: aiRecordIndex.doctor, sectionKey, itemName, instruction: instruction.trim() })
       setAiSummaryForm(res.data)
       setUser(prev => prev ? { ...prev, aiHealthSummary: res.data } : prev)
+      setLastRegeneratedItem(`${sectionKey}:${itemName}`)
       toast(`${itemName}已单项重新生成`)
     } catch (err) { toast(err.message || '单项重新生成失败') }
     finally { setAiSummaryLoading(false) }
@@ -6322,7 +6324,7 @@ export default function PatientDetailPage() {
               {list.map((item, index) => {
                 const isAttention = attention(item)
                 const badge = statusBadge(item)
-                return <details key={`${item.name}-${index}`} open={isAttention}
+                return <details key={`${item.name}-${index}`} open={isAttention || lastRegeneratedItem === `${sectionKey}:${item.name}`}
                   style={{ border: `1px solid ${isAttention ? '#FECACA' : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
                   <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontWeight: 800, color: '#1F2937', flex: 1 }}>{item.name}</span>
@@ -6719,7 +6721,7 @@ export default function PatientDetailPage() {
                             {cancers.map((cancer, index) => {
                               const meta = statusMeta[cancer.status] || statusMeta.unknown
                               const needsAttention = ['follow_up_due', 'overdue', 'due_soon'].includes(cancer.status)
-                              return <details key={`${cancer.name}-${index}`} open={needsAttention}
+                              return <details key={`${cancer.name}-${index}`} open={needsAttention || lastRegeneratedItem === `tumor_risk:${cancer.name}`}
                                 style={{ border: `1px solid ${needsAttention ? meta.bg : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
                                 <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                                   <span style={{ fontWeight: 800, color: '#1F2937', flex: 1 }}>{cancer.name}</span>
