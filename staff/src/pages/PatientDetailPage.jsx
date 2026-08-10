@@ -1996,31 +1996,6 @@ export default function PatientDetailPage() {
     setReportSourceFocus(focus)
     openReportDetail({ _id: sourceReportId, title: '原始体检报告' })
   }
-  const locateScreeningSource = (sourceReportId, focus = null) => {
-    const report = screeningReports.find(r => String(r._id) === String(sourceReportId))
-    if (!report) return toast('未找到对应的专项筛查记录')
-    const focusWords = focus?.words || [focus?.itemName].filter(Boolean)
-    const classified = screeningItems.find(item => String(item.reportId || '') === String(sourceReportId)
-      && (!focusWords.length || focusWords.some(word => [item.itemLabel, item.parentLabel, ...(item.matchedItems || []).map(x => x.name)].filter(Boolean).join(' ').includes(word))))
-      || screeningItems.find(item => String(item.reportId || '') === String(sourceReportId))
-    const categoryAliases = { tumor: ['肿瘤'], cardio: ['心脑', '心血管'], chronic: ['慢性'] }
-    const categoryTree = classified && !String(classified.category || '').match(/^[a-f\d]{24}$/i)
-      ? screeningTree.find(node => (categoryAliases[classified.category] || []).some(word => node.label?.includes(word))) : null
-    const l1 = String(classified?.category?.match?.(/^[a-f\d]{24}$/i) ? classified.category : (categoryTree?._id || report.screeningL1 || report.screeningCategory || ''))
-    const l2 = classified?.parentLabel || report.screeningL2 || report.title || ''
-    if (l1) setScreeningActiveL1(l1)
-    if (l1 && l2) setScreeningActiveL2s(prev => ({ ...prev, [l1]: l2 }))
-    setExpandedRecords(prev => new Set([...prev, report._id]))
-    setAiSourceGroup(null)
-    window.setTimeout(() => {
-      const node = document.querySelector(`[data-source-report-id="${report._id}"]`) || document.getElementById(`screening-record-${report._id}`) || document.getElementById('screening-results')
-      node?.scrollIntoView({ behavior: 'smooth', block: 'center' })
-      if (node) {
-        node.style.boxShadow = '0 0 0 3px rgba(124,58,237,.28)'
-        window.setTimeout(() => { node.style.boxShadow = '' }, 2200)
-      }
-    }, 120)
-  }
   useEffect(() => { load() }, [id])
   // 切换到不同会员时，上一个会员的"健康档案已查看"进度不能带过来，否则会误判成这个新会员
   // 也已经查看过某些报告（组件是同一实例复用，id变了但state不会自动清零）
@@ -6465,21 +6440,30 @@ export default function PatientDetailPage() {
           const years = [...new Set((itemText.match(/20\d{2}/g) || []))]
           const words = ITEM_SOURCE_WORDS[item.name] || [item.name]
           const sectionIds = new Set(sourceIdsFor(sectionKey))
-          return screeningReports.filter(report => {
+          const reportYear = report => String(report.checkDate || report.date || report.createdAt || '').slice(0, 4)
+          const reportText = report => [report.title, report.screeningL1, report.screeningL2, report.note,
+            report.examDescription, report.examConclusion, report.aiSummary,
+            ...(report.reportItems || []).flatMap(row => [row.name, row.sourceSection, row.orderName, row.findings, row.diagnosis, row.conclusion, row.value])
+          ].filter(Boolean).join(' ')
+          const exact = screeningReports.filter(report => {
+            const year = reportYear(report)
+            if (years.length && !years.includes(year)) return false
+            return words.some(word => word && reportText(report).includes(word))
+          })
+          const sameYearReferenced = screeningReports.filter(report => {
             if (!sectionIds.has(String(report._id))) return false
-            const reportYear = String(report.checkDate || report.date || '').slice(0, 4)
-            if (years.length && !years.includes(reportYear)) return false
-            const reportText = [report.title, report.screeningL1, report.screeningL2,
-              ...(report.reportItems || []).flatMap(row => [row.name, row.sourceSection, row.findings, row.diagnosis, row.conclusion, row.value])
-            ].filter(Boolean).join(' ')
-            return words.some(word => word && reportText.includes(word))
-          }).sort((a, b) => String(a.checkDate || a.date || '').localeCompare(String(b.checkDate || b.date || '')))
-            .map(report => ({ report, focus: { itemName: item.name, years, words } }))
+            return !years.length || years.includes(reportYear(report))
+          })
+          const referenced = screeningReports.filter(report => sectionIds.has(String(report._id)))
+          const selected = exact.length ? exact : (sameYearReferenced.length ? sameYearReferenced : referenced)
+          return selected.filter((report, index, list) => list.findIndex(row => String(row._id) === String(report._id)) === index)
+            .sort((a, b) => String(a.checkDate || a.date || '').localeCompare(String(b.checkDate || b.date || '')))
+            .map(report => ({ report, focus: { itemName: item.name, years: [reportYear(report)].filter(Boolean), words } }))
         }
         const openItemSources = (item, sectionKey) => {
           const matches = itemSourceMatches(item, sectionKey)
           setAiSourceGroup({
-            title: `${item.name} · 对应年份原始材料`,
+            title: `${item.name} · 对应年份原件`,
             ids: matches.map(({ report }) => String(report._id)),
             reportLabel,
             focusById: Object.fromEntries(matches.map(({ report, focus }) => [String(report._id), focus])),
@@ -7972,19 +7956,16 @@ export default function PatientDetailPage() {
         <div className="modal-overlay" onClick={() => setAiSourceGroup(null)}>
           <div className="modal" style={{ maxWidth: 720, maxHeight: '80vh', display: 'flex', flexDirection: 'column' }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h3 className="modal-title">{aiSourceGroup.title} · 原始材料</h3>
+              <h3 className="modal-title">{aiSourceGroup.title}</h3>
               <button className="modal-close" onClick={() => setAiSourceGroup(null)}>✕</button>
             </div>
             <div className="modal-body" style={{ overflowY: 'auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {aiSourceGroup.ids.length === 0 && <div style={{ padding: 14, color: '#8AA89C', fontSize: 13 }}>未找到同时匹配该检查名称和对应年份的材料，请核对专项筛查归属。</div>}
+                {aiSourceGroup.ids.length === 0 && <div style={{ padding: 14, color: '#8AA89C', fontSize: 13 }}>暂未关联到可打开的原始报告，请检查该年度报告文件是否仍在档案中。</div>}
                 {aiSourceGroup.ids.map(reportId => (
                   <div key={reportId} style={{ padding: 10, border: '1px solid #E5E7EB', borderRadius: 8 }}>
                     <div style={{ fontSize: 13, color: '#334155', fontWeight: 600, marginBottom: 8 }}>{aiSourceGroup.reportLabel(reportId)}</div>
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => openAIAnalysisSource(reportId, aiSourceGroup.focusById?.[String(reportId)] || null)}>查看原件对应位置</button>
-                      <button className="btn btn-primary btn-sm" onClick={() => locateScreeningSource(reportId, aiSourceGroup.focusById?.[String(reportId)] || null)}>定位到专项筛查</button>
-                    </div>
+                    <button className="btn btn-primary btn-sm" onClick={() => openAIAnalysisSource(reportId, aiSourceGroup.focusById?.[String(reportId)] || null)}>查看并定位原件</button>
                   </div>
                 ))}
               </div>
