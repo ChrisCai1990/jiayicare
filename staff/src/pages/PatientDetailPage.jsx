@@ -6292,20 +6292,26 @@ export default function PatientDetailPage() {
           const list = Array.isArray(items) ? items : []
           if (!list.length) return null
           const attention = item => ['attention', 'abnormal', 'worsening'].includes(item.status) || item.trendStatus === 'worsening'
+          const statusBadge = item => attention(item)
+            ? { label: '需关注', color: '#B91C1C', bg: '#FEE2E2' }
+            : item.status === 'mild_abnormal' || item.status === 'monitor'
+              ? { label: '持续关注', color: '#A16207', bg: '#FEF9C3' }
+              : { label: '基本稳定', color: '#15803D', bg: '#DCFCE7' }
           return <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '11px 13px' }}>
+            <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: '11px 13px' }}>
               <div style={{ fontWeight: 800, color: accent }}>{overview?.headline || '健康指标趋势总览'}</div>
               <div style={{ marginTop: 5, fontSize: 12, color: '#64748B' }}>共 {list.length} 个主题 · 需关注 {Number(overview?.attentionCount) || list.filter(attention).length} 项</div>
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
               {list.map((item, index) => {
                 const isAttention = attention(item)
+                const badge = statusBadge(item)
                 return <details key={`${item.name}-${index}`} open={isAttention}
                   style={{ border: `1px solid ${isAttention ? '#FECACA' : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
                   <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: isAttention ? '#DC2626' : (STATUS_COLOR[item.status] || '#16A34A'), flexShrink: 0 }} />
                     <span style={{ fontWeight: 800, color: '#1F2937', flex: 1 }}>{item.name}</span>
-                    <span style={{ fontSize: 11, color: isAttention ? '#B91C1C' : '#64748B' }}>{TREND_LABEL[item.trendStatus] || '趋势待确认'}</span>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: badge.color, background: badge.bg, borderRadius: 999, padding: '2px 8px' }}>{badge.label}</span>
+                    <span style={{ fontSize: 11, color: '#64748B' }}>{TREND_LABEL[item.trendStatus] || '趋势待确认'}</span>
                   </summary>
                   <div style={{ marginTop: 9, paddingTop: 8, borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, lineHeight: 1.6 }}>
                     {(item.latest || item.value) && <div><b style={{ color: '#64748B' }}>最近检查：</b>{item.latest || item.value}</div>}
@@ -6328,8 +6334,8 @@ export default function PatientDetailPage() {
         }
         const SOURCE_RULES = {
           tumor_risk: { keys: ['tumor'], words: ['肿瘤', '癌', '肿瘤标志物'] },
-          cardiovascular_risk: { keys: ['cardiovascular', 'brain_vessel'], words: ['心脑', '心血管', '脑血管', '血压', '血脂', '心电'] },
-          chronic_disease: { keys: ['chronic', 'functional', 'other_routine', 'health_promote'], words: ['慢性', '糖尿病', '肝', '肾', '甲状腺', '功能医学', '常规'] },
+          cardiovascular_risk: { keys: ['cardiovascular', 'brain_vessel'], words: ['心电图', '心脏超声', '冠脉', '心脏磁共振', '颈动脉', '头颅MRI', '头颅MRA', '同型半胱氨酸', '脂蛋白磷脂酶A2'] },
+          chronic_disease: { keys: ['chronic', 'functional', 'other_routine', 'health_promote'], words: ['血压', '血糖', '糖化血红蛋白', '血脂', '尿酸', '肾功能', '肌酐', '骨密度', '骨质疏松'] },
           checkup_completeness: { keys: [], words: [] },
           medical_priority: { keys: [], words: [] },
         }
@@ -6679,8 +6685,8 @@ export default function PatientDetailPage() {
                           no_data: '暂无趋势', baseline: '已建立基线', stable: '基本稳定', improving: '改善',
                           worsening: '需关注变化', fluctuating: '存在波动', not_comparable: '暂不可比较',
                         }
-                        const priority = { follow_up_due: 0, overdue: 1, due_soon: 2, unknown: 3, covered: 4, not_routinely_recommended: 5 }
-                        const cancers = [...sec.tumor_risk.cancers].sort((a, b) => (priority[a.status] ?? 9) - (priority[b.status] ?? 9))
+                        // 后端已按当前男女常见肿瘤目录排序；展示层不得再按关注等级重排。
+                        const cancers = [...sec.tumor_risk.cancers]
                         const ov = sec.tumor_risk.overview || {}
                         return <>
                           <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: '11px 13px' }}>
