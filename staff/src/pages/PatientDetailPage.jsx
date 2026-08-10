@@ -6492,6 +6492,36 @@ export default function PatientDetailPage() {
           const items = (f.sections?.[secKey]?.items || []).filter((_, i) => i !== idx)
           return { ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), items } } }
         })
+        const updStructuredItem = (secKey, listKey, idx, field, value) => setAiSummaryForm(f => {
+          const list = [...(f.sections?.[secKey]?.[listKey] || [])]
+          list[idx] = { ...list[idx], [field]: value }
+          return { ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), [listKey]: list } } }
+        })
+        const updOverviewHeadline = (secKey, value) => setAiSummaryForm(f => ({
+          ...f, sections: { ...f.sections, [secKey]: { ...(f.sections?.[secKey] || {}), overview: { ...(f.sections?.[secKey]?.overview || {}), headline: value } } }
+        }))
+        const renderStructuredEditor = (secKey, listKey, list, statusOptions) => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {(list || []).map((item, idx) => (
+              <div key={`${item.name}-${idx}`} style={{ border: '1px solid #DDD6FE', borderRadius: 9, padding: 11, background: '#FAFAFF' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, 1fr) minmax(120px, .7fr)', gap: 8, marginBottom: 8 }}>
+                  <input style={inStyle} value={item.name || ''} placeholder="项目名称" onChange={e => updStructuredItem(secKey, listKey, idx, 'name', e.target.value)} />
+                  <select style={inStyle} value={item.status || statusOptions[0][0]} onChange={e => updStructuredItem(secKey, listKey, idx, 'status', e.target.value)}>
+                    {statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </div>
+                <textarea className="form-control" rows={2} value={item.latest || ''} placeholder="最近检查" onChange={e => updStructuredItem(secKey, listKey, idx, 'latest', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%', marginBottom: 7 }} />
+                <textarea className="form-control" rows={2} value={item.trend || ''} placeholder="5年趋势" onChange={e => updStructuredItem(secKey, listKey, idx, 'trend', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%', marginBottom: 7 }} />
+                <select style={{ ...inStyle, marginBottom: 7 }} value={item.trendStatus || 'no_data'} onChange={e => updStructuredItem(secKey, listKey, idx, 'trendStatus', e.target.value)}>
+                  <option value="no_data">暂无趋势</option><option value="baseline">已建立基线</option><option value="stable">基本稳定</option>
+                  <option value="improving">改善</option><option value="worsening">需关注变化</option><option value="fluctuating">存在波动</option><option value="not_comparable">暂不可比较</option>
+                </select>
+                <textarea className="form-control" rows={2} value={(item.keyChanges || []).join('\n')} placeholder="关键变化（每行一条）" onChange={e => updStructuredItem(secKey, listKey, idx, 'keyChanges', e.target.value.split('\n'))} style={{ fontSize: 12, resize: 'vertical', width: '100%', marginBottom: 7 }} />
+                <textarea className="form-control" rows={2} value={item.nextAction || ''} placeholder="下一步" onChange={e => updStructuredItem(secKey, listKey, idx, 'nextAction', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
+              </div>
+            ))}
+          </div>
+        )
 
         // SectionCard / ArrEdit 已提到模块级（AISectionCard / AIArrEdit），避免重渲染失焦
 
@@ -6777,9 +6807,14 @@ export default function PatientDetailPage() {
                   {renderSectionActions('tumor_risk')}
                   {docEditing && (!editingAISection || editingAISection === 'tumor_risk') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {[['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
-                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.tumor_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('tumor_risk', f, e.target.value)} /></div>
-                      ))}
+                      {sec.tumor_risk?.overview && <textarea className="form-control" rows={2} value={sec.tumor_risk.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('tumor_risk', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />}
+                      {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0
+                        ? renderStructuredEditor('tumor_risk', 'cancers', sec.tumor_risk.cancers, [
+                          ['covered','已覆盖'], ['due_soon','即将到期'], ['overdue','已到期'], ['follow_up_due','异常复查'], ['not_routinely_recommended','无需常规年筛'], ['unknown','资料不足'],
+                        ])
+                        : [['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
+                          <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.tumor_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('tumor_risk', f, e.target.value)} /></div>
+                        ))}
                       <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>总评</div>
                         <textarea className="form-control" rows={2} value={sec.tumor_risk?.summary || ''} onChange={e => updSec('tumor_risk', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
                     </div>
@@ -6851,9 +6886,14 @@ export default function PatientDetailPage() {
                   {renderSectionActions('cardiovascular_risk')}
                   {docEditing && (!editingAISection || editingAISection === 'cardiovascular_risk') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {[['high','🔴 重点关注信息（每行一条）'],['medium','🟡 持续关注信息（每行一条）']].map(([f,lbl]) => (
-                        <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.cardiovascular_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('cardiovascular_risk', f, e.target.value)} /></div>
-                      ))}
+                      {sec.cardiovascular_risk?.overview && <textarea className="form-control" rows={2} value={sec.cardiovascular_risk.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('cardiovascular_risk', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />}
+                      {Array.isArray(sec.cardiovascular_risk?.topics) && sec.cardiovascular_risk.topics.length > 0
+                        ? renderStructuredEditor('cardiovascular_risk', 'topics', sec.cardiovascular_risk.topics, [
+                          ['attention','需关注'], ['monitor','持续监测'], ['stable','基本稳定'], ['unknown','资料不足'],
+                        ])
+                        : [['high','🔴 重点关注信息（每行一条）'],['medium','🟡 持续关注信息（每行一条）']].map(([f,lbl]) => (
+                          <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.cardiovascular_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('cardiovascular_risk', f, e.target.value)} /></div>
+                        ))}
                       <div><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>综合评估</div>
                         <textarea className="form-control" rows={2} value={sec.cardiovascular_risk?.summary || ''} onChange={e => updSec('cardiovascular_risk', 'summary', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} /></div>
                     </div>
@@ -6875,7 +6915,11 @@ export default function PatientDetailPage() {
                   <AISectionSourceButton title="慢性病及其他健康指标分析" ids={sourceIdsFor('chronic_disease')} onOpen={openSectionSources} />
                   {renderSectionActions('chronic_disease')}
                   {docEditing && (!editingAISection || editingAISection === 'chronic_disease') ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    (sec.chronic_disease?.items || []).some(item => item.trend || item.latest || item.trendStatus) ? <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                      {sec.chronic_disease?.overview && <textarea className="form-control" rows={2} value={sec.chronic_disease.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('chronic_disease', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />}
+                      {renderStructuredEditor('chronic_disease', 'items', sec.chronic_disease.items, [
+                        ['abnormal','异常'], ['mild_abnormal','轻度异常'], ['normal','正常'],
+                      ])}</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.chronic_disease?.items || []).map((item, i) => (
                         <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '8px 12px', background: '#FAFAF8' }}>
                           <div style={{ display: 'flex', gap: 6, marginBottom: 4, alignItems: 'center' }}>
