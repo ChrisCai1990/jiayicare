@@ -5240,7 +5240,57 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       }
     }
 
-    const { sections: genResult, failed } = await generateHealthSummarySections(user, { scope, existingSections: prevEntry.sections || null });
+    // 跨年度优先采用增量生成：继承最近一个更早年度中“已审核”的健康顾问结果，
+    // 只把目标年度新增报告交给AI。没有已审核基线时自动回退到原来的全量生成。
+    let incrementalBase = null;
+    if (scope === 'doctor' || scope === 'all') {
+      const priorYears = Object.keys(byYear)
+        .filter(y => Number(y) < Number(year))
+        .sort((a, b) => Number(b) - Number(a));
+      for (const priorYear of priorYears) {
+        const entry = byYear[priorYear] || {};
+        const candidates = Array.isArray(entry.records) ? entry.records : (entry.sections ? [entry] : []);
+        const approved = candidates.find(record =>
+          (record.doctorApprovedAt || record.approvedAt)
+          && DOCTOR_KEYS.some(key => record.sections?.[key]));
+        if (approved) {
+          incrementalBase = { year: priorYear, sections: approved.sections };
+          break;
+        }
+      }
+    }
+    let reusedTumorSection = null;
+    if ((scope === 'doctor' || scope === 'all') && prevDoctorEntry.sections?.tumor_risk && prevDoctorEntry.generatedAt) {
+      const tumorChanged = await MedicalReport.exists({
+        user: req.params.id,
+        updatedAt: { $gt: new Date(prevDoctorEntry.generatedAt) },
+        $or: [
+          { screeningCategory: 'tumor' },
+          { 'reportItems.screeningCategory': 'tumor' },
+          { screeningL1: /肿瘤筛查/ },
+        ],
+      });
+      if (!tumorChanged) reusedTumorSection = prevDoctorEntry.sections.tumor_risk;
+    }
+    if (!reusedTumorSection && incrementalBase?.sections?.tumor_risk) {
+      const yearStart = `${year}-01-01`;
+      const nextYearStart = `${Number(year) + 1}-01-01`;
+      const hasTargetYearTumorReport = await MedicalReport.exists({
+        user: req.params.id,
+        $and: [
+          { $or: [{ reportYear: Number(year) }, { reportYear: year }, { checkDate: { $gte: yearStart, $lt: nextYearStart } }] },
+          { $or: [{ screeningCategory: 'tumor' }, { 'reportItems.screeningCategory': 'tumor' }, { screeningL1: /肿瘤筛查/ }] },
+        ],
+      });
+      if (!hasTargetYearTumorReport) reusedTumorSection = incrementalBase.sections.tumor_risk;
+    }
+    const { sections: genResult, failed } = await generateHealthSummarySections(user, {
+      scope,
+      existingSections: prevEntry.sections || null,
+      analysisYear: year,
+      incrementalBase,
+      reusedTumorSection,
+    });
     // AI返回解析失败或本该生成的板块是空壳内容：不写入数据库，直接报错，避免前端显示"已生成"却看不到内容
     // （2026-07-07 赵菲盈反馈"生活方式评估提示已生成但实际没有"即此场景——此前空壳会被当成功写入）
     if (failed) {

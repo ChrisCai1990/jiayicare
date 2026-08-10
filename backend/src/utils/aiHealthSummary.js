@@ -108,7 +108,10 @@ function buildFocusedTrendEvidenceText(reports) {
 // 生成AI健康汇总分析的 sections 内容（不含审核字段），供医护端接口和用户端自助接口共用
 // scope: 'all'（默认，全量生成）| 'doctor'（仅5维度，生活方式评估留空对象供上层合并旧值）| 'nutrition'（仅生活方式评估）
 // existingSections: 已有的 sections（用于生成时给AI提供另一方内容作为上下文，实现两部分内容互相关联而非孤立）
-async function generateHealthSummarySections(user, { scope = 'all', existingSections = null } = {}) {
+async function generateHealthSummarySections(user, {
+  scope = 'all', existingSections = null, analysisYear = null, incrementalBase = null,
+  reusedTumorSection = null,
+} = {}) {
   const MedicalReport = require('../models/MedicalReport');
   const Medication = require('../models/Medication');
   const Supplement = require('../models/Supplement');
@@ -129,9 +132,26 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
     ? activeSupplements.map(s => `${s.name} ${s.dosage}，${s.frequency}${s.purpose ? `（${s.purpose}）` : ''}${s.startDate ? `，自${s.startDate}起` : ''}`).join('；')
     : '暂无长期营养素补充记录';
 
-  const allReports = await MedicalReport.find({ user: user._id })
+  const allHistoricalReports = await MedicalReport.find({ user: user._id })
     .sort({ checkDate: -1, date: -1, createdAt: -1 })
     .select('title screeningL2 examConclusion checkDate date reportYear screeningCategory reportItems note');
+  const targetYear = Number(analysisYear);
+  const useIncremental = !!(incrementalBase?.sections && Number.isFinite(targetYear));
+  // 有上一年度已审核基线时，只把目标年度新增报告送入AI；历史趋势由已审核基线承接。
+  // 规则引擎仍可读取完整历史，用于肿瘤覆盖周期等确定性判断。
+  let allReports = useIncremental
+    ? allHistoricalReports.filter(report => {
+      const date = String(report.checkDate || report.date || '');
+      return Number(report.reportYear || date.slice(0, 4)) === targetYear;
+    })
+    : allHistoricalReports;
+  const reuseTumor = !!(reusedTumorSection && (scope === 'doctor' || scope === 'all'));
+  if (reuseTumor) {
+    allReports = allReports.filter(report => {
+      const text = [report.screeningCategory, report.title, report.screeningL2].filter(Boolean).join(' ');
+      return report.screeningCategory !== 'tumor' && !/肿瘤筛查|癌早筛/.test(text);
+    });
+  }
 
   // 【体检关键指标】立足点：优先从专项筛查报告 reportItems 派生真实数值（与医护端「体检关键指标」卡片同源），
   // 而非读几乎为空的 user.labValues。这是"AI提取数据没一次对的"的根因修复（2026-07-10）。
@@ -188,9 +208,9 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   const examFindingsText = extractExamFindings(allReports);
   // 肿瘤筛查覆盖度（规则引擎确定性结论，按男女前十大肿瘤逐项判断"该做的筛查做了没"，
   // 含胃镜免胃蛋白酶原/肠镜免便潜血/HP连续3年阴性/乳腺钼靶40岁等规则）——2026-07-10 金娟
-  const coverageText = buildCoverageText(assessCancerCoverage(user, allReports));
-  const cancerCatalogText = buildCancerCatalogText(user);
-  const cancerEvidenceText = buildCancerEvidenceText(user, allReports);
+  const coverageText = reuseTumor ? '本次复用已生成肿瘤板块，不重复分析' : buildCoverageText(assessCancerCoverage(user, allHistoricalReports));
+  const cancerCatalogText = reuseTumor ? '本次复用' : buildCancerCatalogText(user);
+  const cancerEvidenceText = reuseTumor ? '本次复用' : buildCancerEvidenceText(user, allReports);
   const focusedTrendEvidenceText = buildFocusedTrendEvidenceText(allReports);
 
   // 近30天打卡记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
@@ -283,6 +303,7 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
     `规则计算的肿瘤筛查覆盖度：${coverageText}`,
     `最近一次关键指标：${labSummary}`,
     `专科检查异常：${examFindingsText}`,
+    useIncremental ? `上一年度已审核AI健康信息整理（仅作为历史基线，需用本年度新资料更新）：${JSON.stringify(incrementalBase.sections)}` : '',
   ]);
 
   const prompt = `${roleIntro}
@@ -377,6 +398,8 @@ ${focusedTrendEvidenceText}
 ${evidenceCatalog}
 
 ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessment ? `\n【营养师已评估的生活方式内容（供参考，本次不需要重新生成这部分，仅作为你判断5维度分析时的背景信息）】\n${JSON.stringify(existingSections.lifestyle_assessment)}\n` : ''}${existingSections && scope === 'nutrition' && DOCTOR_KEYS.some(k => existingSections[k]) ? `\n【健康顾问已生成的5维度分析（供参考，本次请结合这些医疗判断来评估生活方式，本次不需要重新生成这部分）】\n${JSON.stringify(Object.fromEntries(DOCTOR_KEYS.map(k => [k, existingSections[k]]).filter(([, v]) => v)))}\n` : ''}
+${useIncremental ? `\n【年度增量更新模式——最高优先级】\n基线年度：${incrementalBase.year}；目标年度：${targetYear}。以上一年度已审核AI健康信息整理为历史基线，只用目标年度新增报告更新对应卡片。未出现本年度新证据的卡片沿用基线内容；出现新证据时更新最近检查、5年趋势、关键变化和下一步。输出仍须是完整sections，不得只输出差异。不得把基线中的历史事实改写成新发生事实。\n` : ''}
+${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果，禁止输出tumor_risk；只生成其余健康顾问板块。\n' : ''}
 请严格按以下JSON格式输出，仅输出JSON，不要添加任何其他内容${!wantDoctor || !wantLifestyle ? '（本次只需输出下方列出的板块，不要输出其他板块）' : ''}：
 {
   "sections": {${wantLifestyle ? `
@@ -427,7 +450,7 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
         }
       ]
     },
-    "tumor_risk": {
+    ${reuseTumor ? '' : `"tumor_risk": {
       "completed": ["已完成的筛查项目（含年份），严格依据【肿瘤筛查覆盖度】中✓已覆盖的项，不要臆造"],
       "abnormal": ["异常发现（结合肿瘤标志物动态趋势+影像内镜所见；标志物单项轻度升高须注明特异性局限不得判癌；无则空数组）"],
       "missing": ["待补做的筛查项目，严格依据【肿瘤筛查覆盖度】中△部分/✗未筛查的待补项（如乳腺钼靶未做、HP需复查、肺癌LDCT未做等），逐条给出补做建议"],
@@ -452,7 +475,7 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
           "evidenceIds": ["RPT-001"]
         }
       ]
-    },
+    },`}
     "cardiovascular_risk": {
       "high": ["重点关注信息（仅引用已有资料，有则填，无则空数组）"],
       "medium": ["持续关注信息（仅引用已有资料，有则填，无则空数组）"],
@@ -511,11 +534,11 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
   // 输出finding+risk+suggestion三段文字，实测JSON在1700字符左右就被截断报错，1200token撑不住完整输出
   // 肿瘤维度新增男女常见10种肿瘤逐项卡片后，doctor/all 输出明显增长；预留足够空间，
   // 避免JSON尾部截断。生活方式单独生成仍保持原额度。
-  const maxTokens = scope === 'all' ? 6000 : (scope === 'doctor' ? 5200 : 2000);
+  const maxTokens = scope === 'all' ? 8192 : (scope === 'doctor' ? 8192 : 2000);
   // 健康信息整理包含最长5年资料和10种常见肿瘤卡片，属于长文本任务；仅此场景放宽
   // 单次AI请求上限，普通聊天等接口仍保持ai.js默认45秒。
   const text = await chat([{ role: 'user', content: prompt }], {
-    maxTokens, temperature: 0.05, jsonMode: true, timeoutMs: wantDoctor ? 90000 : 45000,
+    maxTokens, temperature: 0.05, jsonMode: true, timeoutMs: wantDoctor ? 120000 : 45000,
   });
 
   let sections = null;
@@ -555,6 +578,8 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
     if (audited?.sections) sections = { ...sections, ...audited.sections };
   }
 
+  if (!parseFailed && reuseTumor) sections.tumor_risk = reusedTumorSection;
+
   // 模型偶尔仍会把血糖或血脂子指标拆成多张卡；展示前做确定性归并。
   if (!parseFailed && wantDoctor) normalizeTrendSections(sections, user);
 
@@ -563,7 +588,7 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
   // reportItems 里按名称模糊匹配——匹配到就补充 sourceReportId/sourceItemIndex 供前端渲染成
   // 可点击链接，匹配不到就是纯文本，不冒充精确定位。
   if (!parseFailed) {
-    attachSourceLinks(sections, allReports);
+    attachSourceLinks(sections, allHistoricalReports);
   }
 
   // 生活方式评估解析出的是空壳（items为空且summary为空）也视为失败，不能悄悄写入数据库
