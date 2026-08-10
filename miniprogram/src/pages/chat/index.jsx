@@ -19,7 +19,7 @@ export default function ChatPage() {
   ]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [view, setView] = useState('ai');
+  const [view, setView] = useState('team');
   const [nutritionMessages, setNutritionMessages] = useState([
     { role: 'assistant', content: '您好，我是AI营养师。您可以描述今天吃了什么、记录体重，或拍一张饮食照片，我会立即做初步分析。' },
   ]);
@@ -94,13 +94,9 @@ export default function ChatPage() {
         padding: `${statusBarHeight + 10}px ${spacing.lg}px ${spacing.sm}px`,
         backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}`, flexShrink: 0,
       }}>
-        <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: '10px' }}>健康管家</Text>
-        <View style={{ display: 'flex', backgroundColor: colors.background, borderRadius: `${radius.full}px`, padding: '3px' }}>
-          {[{ key: 'ai', label: '服务规划' }, { key: 'team', label: '我的团队' }].map((item) => (
-            <View key={item.key} onClick={() => setView(item.key)} style={{ flex: 1, textAlign: 'center', padding: '7px 0', borderRadius: `${radius.full}px`, backgroundColor: view === item.key ? '#fff' : 'transparent' }}>
-              <Text style={{ fontSize: '13px', fontWeight: 700, color: view === item.key ? colors.primary : colors.textMuted }}>{item.label}</Text>
-            </View>
-          ))}
+        <View style={{ display: 'flex', alignItems: 'center', minHeight: '30px' }}>
+          {view === 'ai' && <Text onClick={() => setView('team')} style={{ fontSize: '14px', color: colors.primary, marginRight: '10px' }}>‹ 返回</Text>}
+          <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary }}>{view === 'ai' ? '健康规划师' : '健康管家'}</Text>
         </View>
       </View>
 

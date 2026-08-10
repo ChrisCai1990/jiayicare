@@ -311,44 +311,22 @@ export default function HomePage() {
 
       <View style={{ padding: `0 ${spacing.lg}px` }}>
         {/* 问候卡：像素级对齐 app 端 HomeScreen.js heroCard（深墨绿背景#1A2B24、56px评分数字、等级/趋势标签/迷你走势线/行动建议） */}
-        <View style={{ backgroundColor: '#1A2B24', borderRadius: `${radius.lg}px`, padding: '11px 15px', marginBottom: '8px' }}>
-          <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.65)' }}>{greeting}</Text>
-          <Text style={{ fontSize: '16px', fontWeight: 700, color: '#fff', display: 'block', marginTop: '1px', marginBottom: '4px' }}>
-            {name}，{statusText} <Icon name={statusEmoji} size={18} color="#fff" />
-          </Text>
-          <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
-            <Text style={{ fontSize: '36px', fontWeight: 800, color: '#fff', lineHeight: '39px', letterSpacing: '-1px' }}>
-              {scoreDisplay != null ? scoreDisplay : '--'}
-            </Text>
-            <View style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-              <Text style={{ fontSize: '11px', color: 'rgba(255,255,255,0.65)', fontWeight: 500 }}>
-                {scoreDisplay != null ? '健康评分 / 100' : '暂无评分，请录入数据'}
-              </Text>
-              {scoreDisplay != null && (
-                <Text style={{ fontSize: '11px', fontWeight: 700, color: gradeColors[grade] || '#fff' }}>{grade}</Text>
-              )}
-              {isDemo && (
-                <Text style={{
-                  fontSize: '12px', color: '#fff', fontWeight: 600, backgroundColor: 'rgba(255,255,255,0.18)',
-                  padding: '3px 8px', borderRadius: `${radius.full}px`, display: 'inline-block',
-                }}>↑ 较上月 +3 分</Text>
-              )}
-            </View>
-            {scoreDisplay != null && scoreTrendPoints.length >= 2 && (
-              <View style={{ marginLeft: 'auto', width: '68px' }}>
-                <TrendChart points={scoreTrendPoints} height={24} color="rgba(255,255,255,0.7)" mini showValues={false} />
-              </View>
-            )}
+        <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#1A2B24', borderRadius: `${radius.lg}px`, padding: '12px 15px', marginBottom: '8px', minHeight: '58px' }}>
+          <View style={{ flex: 1, minWidth: 0 }}>
+            <Text style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', display: 'block' }}>{greeting}</Text>
+            <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff', display: 'block', marginTop: '2px' }} numberOfLines={1}>{name}，{statusText}</Text>
+            {trendActionText && <Text style={{ fontSize: '9px', color: 'rgba(255,255,255,0.7)', display: 'block', marginTop: '3px' }} numberOfLines={1}>{trendActionText}</Text>}
           </View>
-          {trendActionText && (
-            <Text style={{ fontSize: '10px', color: 'rgba(255,255,255,0.82)', marginTop: '4px', display: 'block', lineHeight: '14px' }} numberOfLines={1}>{trendActionText}</Text>
-          )}
+          <View style={{ display: 'flex', alignItems: 'baseline', marginLeft: '10px' }}>
+            <Text style={{ fontSize: '32px', fontWeight: 800, color: '#fff', lineHeight: '36px' }}>{scoreDisplay != null ? scoreDisplay : '--'}</Text>
+            <Text style={{ fontSize: '10px', color: gradeColors[grade] || '#fff', marginLeft: '4px' }}>{scoreDisplay != null ? `${grade} / 100` : '待录入'}</Text>
+          </View>
         </View>
 
         {/* 成长打卡卡片：像素级对齐 app 端 GrowthCard 组件。从未打卡（streak=0且totalCheckinDays=0）时不渲染，
             新用户先引导打卡，不空谈成长——与app端一致 */}
         {(growth.streak > 0 || growth.totalCheckinDays > 0) && (
-          <View style={{ backgroundColor: '#fff', borderRadius: '18px', padding: '10px 14px', marginBottom: '9px', boxShadow: '0px 4px 12px rgba(30,107,80,0.06)' }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: '16px', padding: '9px 13px', marginBottom: '8px', boxShadow: '0px 4px 12px rgba(30,107,80,0.06)' }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ display: 'flex', alignItems: 'baseline' }}>
                 <Icon name="🔥" size={20} color="#D97706" style={{ marginRight: '6px' }} />
@@ -361,18 +339,7 @@ export default function HomePage() {
               </View>
             </View>
 
-            {!!growth.trendHighlight && (
-              <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#EAF5EF', borderRadius: '9px', padding: '6px 9px', marginTop: '7px' }}>
-                <Icon name={growth.trendHighlight.direction === 'up' ? '📈' : '📉'} size={16} color={colors.primary} style={{ marginRight: '8px' }} />
-                <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 600, flex: 1 }} numberOfLines={1}>
-                  你的{growth.trendHighlight.label}在变好：{growth.trendHighlight.from}{growth.trendHighlight.unit} → {growth.trendHighlight.to}{growth.trendHighlight.unit}
-                </Text>
-              </View>
-            )}
-
-            <Text style={{ marginTop: '6px', fontSize: '10px', color: colors.textMuted, display: 'block' }} numberOfLines={1}>
-              本月已打卡 {growth.totalCheckinDays} 天{growth.streak > 0 ? ` · 今天继续保持第 ${growth.streak + 1} 天` : ''}
-            </Text>
+            {!!growth.trendHighlight && <Text style={{ marginTop: '4px', fontSize: '9px', color: colors.primary, display: 'block' }} numberOfLines={1}>↑ {growth.trendHighlight.label}在变好：{growth.trendHighlight.from}{growth.trendHighlight.unit} → {growth.trendHighlight.to}{growth.trendHighlight.unit}</Text>}
           </View>
         )}
 

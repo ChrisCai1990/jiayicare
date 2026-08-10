@@ -202,7 +202,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
             <Text style={{ color: colors.primary, fontSize: '18px' }}>›</Text>
           </View>
 
-          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>我的团队</Text>
+          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>服务健管团队</Text>
           <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
           {roleConvs.map((conv) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
