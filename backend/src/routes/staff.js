@@ -4044,7 +4044,7 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       if (/心脑血管病?筛查|心血管筛查|脑血管筛查/.test(effectiveL1) || (!directoryRoot && ['cardiovascular', 'brain_vessel'].includes(category))) return 'cardiovascular_risk';
       return 'chronic_disease';
     };
-    const { buildSummaryInputGroups } = require('../utils/screeningSummaryInput');
+    const { buildSummaryInputGroups, ensureLpla2InCardiovascularSummary } = require('../utils/screeningSummaryInput');
     const input = {};
     Object.keys(CATEGORY_MAP).forEach(key => {
       input[key] = buildSummaryInputGroups(reports, key, categoryBucket, projectOrder);
@@ -4058,6 +4058,10 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     } catch {
       return res.status(502).json({ success: false, message: 'AI年度小结返回格式异常，请重试' });
     }
+    parsed.cardiovascular_risk = ensureLpla2InCardiovascularSummary(
+      parsed.cardiovascular_risk,
+      input.cardiovascular_risk,
+    );
     const tumorMarkerGroups = input.tumor_risk.filter(group => /肿瘤标志物/.test(group.projectName));
     if (tumorMarkerGroups.length && tumorMarkerGroups.every(group => group.conclusions.every(item => !['abnormal', 'attention'].includes(item.status)))) {
       const lines = String(parsed.tumor_risk || '').split(/\n+/).filter(Boolean);

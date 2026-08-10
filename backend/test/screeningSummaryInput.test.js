@@ -1,6 +1,9 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildSummaryInputGroups, projectNameForItem, resolveConfiguredProjectName } = require('../src/utils/screeningSummaryInput');
+const {
+  buildSummaryInputGroups, projectNameForItem, resolveConfiguredProjectName,
+  ensureLpla2InCardiovascularSummary,
+} = require('../src/utils/screeningSummaryInput');
 
 const tumorBucket = () => 'tumor_risk';
 
@@ -35,4 +38,25 @@ test('综合腹部影像不根据结论中的相邻器官词误改项目', () =>
 test('脾脏项目兼容线上旧目录名称并保持目录顺序', () => {
   const order = new Map([['肝癌早筛', 3], ['胰腺-胆囊癌早筛（脾）', 8]]);
   assert.equal(resolveConfiguredProjectName('胰腺-胆囊-脾脏癌早筛', order), '胰腺-胆囊癌早筛（脾）');
+});
+
+test('脑血管病小结遗漏脂蛋白磷脂酶A2时确定性补入原项目行', () => {
+  const groups = [{
+    projectName: '脑血管病早筛',
+    conclusions: [{ name: '脂蛋白磷脂酶A2', value: '128 ng/mL', status: 'normal', conclusion: '' }],
+  }];
+  const result = ensureLpla2InCardiovascularSummary(
+    '心血管病早筛：常规心电图正常。\n脑血管病早筛：双侧颈动脉内膜毛糙增厚。',
+    groups,
+  );
+  assert.equal(result, '心血管病早筛：常规心电图正常。\n脑血管病早筛：双侧颈动脉内膜毛糙增厚；脂蛋白磷脂酶A2正常（128 ng/mL）。');
+});
+
+test('脑血管病小结已有脂蛋白磷脂酶A2时不重复追加', () => {
+  const summary = '脑血管病早筛：脂蛋白磷脂酶A2正常；颈动脉内膜毛糙。';
+  const groups = [{
+    projectName: '脑血管病早筛',
+    conclusions: [{ name: 'Lp-PLA2', value: '128', status: 'normal', conclusion: '' }],
+  }];
+  assert.equal(ensureLpla2InCardiovascularSummary(summary, groups), summary);
 });

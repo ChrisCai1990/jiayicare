@@ -56,4 +56,35 @@ function buildSummaryInputGroups(reports, bucketKey, categoryBucket, projectOrde
     (projectOrder.get(a.projectName) ?? 99999) - (projectOrder.get(b.projectName) ?? 99999));
 }
 
-module.exports = { buildSummaryInputGroups, projectNameForItem, resolveConfiguredProjectName };
+function ensureLpla2InCardiovascularSummary(summary, groups) {
+  const text = String(summary || '');
+  if (/Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(text)) return text;
+
+  const group = (groups || []).find(entry =>
+    (entry.conclusions || []).some(item => /Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(String(item.name || ''))));
+  if (!group) return text;
+
+  const item = group.conclusions.find(entry => /Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(String(entry.name || '')));
+  const value = String(item.value || '').trim();
+  const conclusion = String(item.conclusion || '').trim();
+  let detail;
+  if (conclusion) {
+    detail = /Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(conclusion)
+      ? conclusion
+      : `脂蛋白磷脂酶A2：${conclusion}`;
+  } else {
+    const statusText = { normal: '正常', abnormal: '异常', attention: '需关注' }[item.status] || '已检查';
+    detail = `脂蛋白磷脂酶A2${statusText}${value ? `（${value}）` : ''}`;
+  }
+
+  const lines = text.split(/\n+/).filter(Boolean);
+  const lineIndex = lines.findIndex(line => line.trim().startsWith(`${group.projectName}：`) || line.trim().startsWith(`${group.projectName}:`));
+  if (lineIndex >= 0) {
+    lines[lineIndex] = `${lines[lineIndex].replace(/[。；;\s]+$/, '')}；${detail}。`;
+  } else {
+    lines.push(`${group.projectName}：${detail}。`);
+  }
+  return lines.join('\n');
+}
+
+module.exports = { buildSummaryInputGroups, projectNameForItem, resolveConfiguredProjectName, ensureLpla2InCardiovascularSummary };
