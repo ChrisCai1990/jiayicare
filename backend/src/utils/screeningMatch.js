@@ -103,7 +103,9 @@ function matchAllWithIndex(rawName, itemType, index, threshold = 0.6, excludeCat
   // 最终受数据库返回顺序影响而随机归类。
   const forcedLabel = /^(腰围|腹围|臀围|腰臀比|腰围臀围)$/.test(q) ? '腰臀围'
     : /^(现服药情况|现居住地|现居住地地域|生活方式运动|生活方式睡眠|生活方式饮酒|生活方式吸烟|家族史|跌倒评估|跌倒风险评估|老年人跌倒风险评估|跌倒风险筛查)$/.test(q) ? '生活方式评估'
-      : /^(心率|脉搏|脉率|脉搏心率|心率脉搏)$/.test(q) ? '脉搏' : '';
+      : /^(心率|脉搏|脉率|脉搏心率|心率脉搏)$/.test(q) ? '脉搏'
+        : /^(腺苷脱氨酶|ada)$/.test(q) ? '肝功能'
+          : /^(总钙|无机磷)$/.test(q) ? '电解质' : '';
   if (forcedLabel) {
     const forced = index.find(entry => norm(entry.node.label) === norm(forcedLabel)
       && !excludeCategories.includes(entry.node.category));

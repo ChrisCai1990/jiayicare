@@ -231,7 +231,7 @@ const NODES = [
       '丙氨酸氨基转移酶', '天门冬氨酸氨基转移酶', '天冬氨酸氨基转移酶', '碱性磷酸酶', 'ALP', 'γ-谷氨酰转肽酶', 'GGT', '谷氨酰转肽酶',
       '总胆红素', 'Tbil', 'TBIL', '直接胆红素', 'Dbil', 'DBIL', '间接胆红素',
       '总蛋白', 'TP', '白蛋白', 'ALB', '球蛋白', 'GLO', '前白蛋白',
-      '乳酸脱氢酶', 'LDH', '总胆汁酸', 'TBA'] },
+      '乳酸脱氢酶', 'LDH', '总胆汁酸', 'TBA', '腺苷脱氨酶', 'ADA'] },
   { id: 'chronic|脏器功能筛查|肾功能', category: 'chronic', categoryKey: 'chronic', parent: '脏器功能筛查', label: '肾功能', itemType: 'lab', gender: null,
     aliases: ['肾功', '肾功能检查', '肌酐', '尿素氮', '血肌酐', 'Cr', 'CREA', 'BUN', '尿酸', 'UA',
       '尿素', 'UREA', '肾小球滤过率', 'GFR', 'eGFR', '肌酐清除率', '血尿酸'] },
@@ -343,7 +343,7 @@ const NODES = [
   { id: 'other|维生素及电解质|电解质', category: 'other', categoryKey: 'other', parent: '维生素及电解质', label: '电解质', itemType: 'lab', gender: null,
     aliases: ['电解质检查', '血钾', '血钠', '血氯', '钾钠氯', '血清电解质', '电解质组合',
       '钾', 'K+', '钠', 'Na+', '氯', 'Cl-', '二氧化碳结合力', 'CO2CP', '二氧化碳', '钙', 'Ca',
-      '无机磷', '磷', '镁', 'Mg'] },
+      '总钙', '无机磷', '磷', '镁', 'Mg'] },
   // 注：维生素B族仅在有对应检测报告时归类，普通体检报告无此项
   { id: 'other|维生素及电解质|维生素B族', category: 'other', categoryKey: 'other', parent: '维生素及电解质', label: '维生素B族', itemType: 'lab', gender: null,
     aliases: ['维生素B12', '叶酸检测', 'VitB12检测', 'B12检测'] },
