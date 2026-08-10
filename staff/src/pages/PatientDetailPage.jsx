@@ -9635,7 +9635,7 @@ export default function PatientDetailPage() {
                           return (
                             <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isImaging(it) ? '#fafaf8' : '#fff' }}>
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
-                                第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.orderName ? ` · ${it.orderName}` : ''}
+                                {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
                               </div>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                                 <input style={{ ...inp, fontWeight: 600, flex: 2 }} value={it.name || ''} placeholder="项目名称" onChange={e => updItem(i, { name: e.target.value })} />

@@ -10,6 +10,7 @@ const reportItemSchema = new mongoose.Schema({
   status:         { type: String, enum: ['normal', 'abnormal', 'attention', 'unknown'], default: 'unknown', set: v => (v ? v : 'unknown') }, // AI对影像类项目常返回空字符串，空值兜底避免保存时枚举校验报错
   itemType:       { type: String, enum: ['lab', 'imaging', 'data'], default: 'lab' }, // 检验/影像文字/数据曲线类
   orderName:      { type: String, default: '' }, // 所属检验医嘱组名（用于编辑时还原分组）
+  sourcePage:     { type: Number, default: null }, // 原报告页码，供医护审核快速定位
 
   // ── 检查项目（imaging：超声/内镜/CT/MRI/心电图等）完整内容（需求：AI体检报告·检查项完整展示）──
   bodyPart:    { type: String, default: '' }, // 检查部位

@@ -7486,7 +7486,7 @@ function mergeCoverageAuditItems(originalItems, auditItems) {
 function tagReportPageItems(items, pageNum) {
   return (items || [])
     .filter(it => it?.name && str(it.name).trim())
-    .map((it, index) => ({ ...it, _page: pageNum, _order: index }));
+    .map((it, index) => ({ ...it, sourcePage: pageNum, _page: pageNum, _order: index }));
 }
 
 function sortReportItemsBySource(items) {
@@ -8471,13 +8471,15 @@ async function runReportParse(reportId) {
   if (!report) return;
   const shaoyifuTemplate = require('../utils/shaoyifuReportTemplate');
   const useShaoyifuTemplate = shaoyifuTemplate.isShaoyifuReport(report);
+  const zheyiTemplate = require('../utils/zheyiReportTemplate');
+  const useZheyiTemplate = zheyiTemplate.isZheyiReport(report);
 
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
   try {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${useShaoyifuTemplate ? 160 : 96}dpi)`);
+      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${useShaoyifuTemplate ? 160 : 96}dpi${useZheyiTemplate ? '/浙一P6-P16' : ''})`);
 
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
@@ -8513,11 +8515,17 @@ async function runReportParse(reportId) {
                 batchResults[i] = { pageType: 'template_skip', skipPage: true, items: [], _templateSkip: true };
                 continue;
               }
+              if (useZheyiTemplate && zheyiTemplate.pageMode(pageNum) !== 'extract') {
+                batchResults[i] = { pageType: 'template_skip', skipPage: true, items: [], _templateSkip: true };
+                continue;
+              }
               for (let attempt = 0; attempt < 2; attempt++) {
                 try {
                   const firstPassPrompt = report.type === 'body_comp'
                     ? BODY_COMPOSITION_RETRY_PROMPT
-                    : REPORT_PARSE_PROMPT + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '');
+                    : REPORT_PARSE_PROMPT
+                      + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
+                      + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
                   const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
                   const p = safeParseJSON(text);
@@ -8537,7 +8545,7 @@ async function runReportParse(reportId) {
             if (p._templateSkip) continue;
             const firstPassItems = tagReportPageItems(p.items, pageNum);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
-            if (shouldSkipParsedReportPage(p) && report.type !== 'body_comp' && !useShaoyifuTemplate) {
+            if (shouldSkipParsedReportPage(p) && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
             }
@@ -8557,13 +8565,15 @@ async function runReportParse(reportId) {
       if (report.type !== 'body_comp') {
         const coveragePages = useShaoyifuTemplate
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
+          : useZheyiTemplate
+            ? [...detailPages].filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems))
           : [...detailPages];
         for (const pageNum of coveragePages) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
             const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
@@ -8782,6 +8792,7 @@ async function runReportParse(reportId) {
 
       allItems = sanitizeBodyCompositionItems(allItems);
       if (useShaoyifuTemplate) allItems = shaoyifuTemplate.normalizeShaoyifuItems(allItems);
+      if (useZheyiTemplate) allItems = zheyiTemplate.normalizeZheyiItems(allItems);
 
       // 2026-07-02修复：各类单页重试(数量核对/超声拆分/空内容补全)命中后都是把条目从原位置摘掉、
       // 用 .concat() 拼到 allItems 末尾，导致这些条目脱离了报告原文的页码顺序、被甩到审核列表最后面，
@@ -8796,8 +8807,10 @@ async function runReportParse(reportId) {
       // 就不会再跟检查记录同名竞争，去重规则只需要在真正重复的记录间挑选，不会误伤互补信息。
       const advisoryFiltered = dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems)));
       // 邵逸夫模板的眼科/耳鼻喉科/妇科本来就是“短科室名+多条编号所见”，结构与通用小结回声相似，不能删除。
-      const departmentFiltered = useShaoyifuTemplate ? advisoryFiltered : dropDepartmentSummaryEcho(advisoryFiltered);
-      let filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))))))));
+      const departmentFiltered = (useShaoyifuTemplate || useZheyiTemplate) ? advisoryFiltered : dropDepartmentSummaryEcho(advisoryFiltered);
+      const cleanedItems = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))));
+      const departmentNormalized = useZheyiTemplate ? cleanedItems : mergeInternalMedicineSubparts(mergeEntSubparts(cleanedItems));
+      let filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(departmentNormalized));
       if (useShaoyifuTemplate) filteredItems = shaoyifuTemplate.applyShaoyifuOrderAndGroups(filteredItems);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
