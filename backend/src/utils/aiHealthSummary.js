@@ -65,6 +65,44 @@ function buildCancerEvidenceText(user, reports) {
   return lines.join('\n');
 }
 
+const FOCUSED_TREND_RULES = {
+  心电图: /心电图|ECG|窦性心律|ST[-—]?T|ST段|T波/i,
+  心脏超声: /心脏超声|心脏彩超|超声心动图|射血分数|LVEF/i,
+  冠脉CTA: /冠脉CTA|冠状动脉CTA|冠脉CT|冠状动脉CT/i,
+  运动评估: /运动评估|运动负荷|运动心电|心肺运动|平板试验|踏车试验/i,
+  心脏磁共振: /心脏磁共振|心脏MRI|心肌磁共振|CMR/i,
+  颈动脉超声: /颈动脉超声|颈动脉彩超|颈动脉斑块|颈动脉内中膜/i,
+  头颅MRI: /头颅MRI|颅脑MRI|头颅磁共振|颅脑磁共振/i,
+  头颅MRA: /头颅MRA|颅脑MRA|脑血管MRA|磁共振血管成像/i,
+  同型半胱氨酸: /同型半胱氨酸|\bHcy\b/i,
+  脂蛋白磷脂酶A2: /脂蛋白.*磷脂酶A2|Lp-?PLA2/i,
+  血压: /血压|收缩压|舒张压/i,
+  血糖: /空腹血糖|葡萄糖|糖化血红蛋白|HbA1c/i,
+  血脂: /总胆固醇|高密度脂蛋白|低密度脂蛋白|甘油三酯|载脂蛋白|脂蛋白\(a\)|\bTC\b|HDL|LDL|\bTG\b/i,
+  尿酸: /尿酸|\bUA\b/i,
+};
+
+function buildFocusedTrendEvidenceText(reports) {
+  const cutoffYear = new Date().getFullYear() - 4;
+  return Object.entries(FOCUSED_TREND_RULES).map(([topic, pattern]) => {
+    const hits = [];
+    reports.forEach((report, reportIndex) => {
+      const date = String(report.checkDate || report.date || '').slice(0, 10);
+      const year = Number(report.reportYear || date.slice(0, 4));
+      if (Number.isFinite(year) && year < cutoffYear) return;
+      const matched = (report.reportItems || []).filter(item => pattern.test([
+        item.name, item.bodyPart, item.value, item.findings, item.diagnosis, item.conclusion,
+      ].filter(Boolean).join(' ')));
+      if (!matched.length) return;
+      const evidenceId = `RPT-${String(reportIndex + 1).padStart(3, '0')}`;
+      hits.push(`[${evidenceId}] ${date || year || '日期未知'} ${matched.slice(0, 12).map(item =>
+        `${item.name || '未命名'}=${[item.value, item.unit, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('；') || '未记录结果'}`
+      ).join(' | ')}`);
+    });
+    return `【${topic}】${hits.length ? `\n${hits.join('\n')}` : '近5年无记录'}`;
+  }).join('\n');
+}
+
 // 生成AI健康汇总分析的 sections 内容（不含审核字段），供医护端接口和用户端自助接口共用
 // scope: 'all'（默认，全量生成）| 'doctor'（仅5维度，生活方式评估留空对象供上层合并旧值）| 'nutrition'（仅生活方式评估）
 // existingSections: 已有的 sections（用于生成时给AI提供另一方内容作为上下文，实现两部分内容互相关联而非孤立）
@@ -151,6 +189,7 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   const coverageText = buildCoverageText(assessCancerCoverage(user, allReports));
   const cancerCatalogText = buildCancerCatalogText(user);
   const cancerEvidenceText = buildCancerEvidenceText(user, allReports);
+  const focusedTrendEvidenceText = buildFocusedTrendEvidenceText(allReports);
 
   // 近30天打卡记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
   const CHECKIN_LABEL = { weight: '体重(kg)', bloodPressure: '血压(mmHg)', bloodSugar: '血糖(mmol/L)', heartRate: '心率(次/分)', sleep: '睡眠(小时)', mood: '情绪(1-10分)', exercise: '运动', diet: '饮食', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒', symptom: '症状自评' };
@@ -255,9 +294,12 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
 
 【心理量表铁律——必须严格遵守】①SCL90各因子分必须严格按系统标注的正常/异常判定来解读：因子分＜2一律属正常范围，即使某因子（如精神病性1.2）在数值上略高于其他因子，只要＜2就是正常，绝不能描述为"升高/偏高/异常"。②心理量表（SCL90/SAS/SDS/嗜睡）的因子和结论只能写进"情绪/心理"相关分析，严禁把精神病性、偏执等心理因子塞进 cardiovascular_risk（心脑血管）、tumor_risk（肿瘤）等躯体维度——这些心理因子与躯体疾病风险无直接因果关系。③只有当系统明确标注某因子为异常时，才可在情绪维度提示。
 
-分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【近30天打卡记录】【当前用药与营养素补充】综合评估。【近30天打卡记录】反映的是体检之后更实时的自测数据（如体重是否持续下降、血压近期是否稳定、运动频率、睡眠时长），如果与体检报告结论有出入（如体检时血压正常但近期打卡持续偏高），应在相应维度中明确指出这一变化趋势并给出建议，不能只字不提。你手上的是该会员全部专项筛查数据（体检指标/肿瘤标志物/影像内镜所见/基因/心理量表/听力视力等专科检查），请充分利用，不要只盯着少数几个指标。【专科检查异常发现】里列出的每一条（如听力高频下降、视力/屈光异常、口腔、骨密度等）都必须在分析中被提及并给出建议，这类非主流指标最容易被遗漏，务必逐条覆盖，纳入 medical_priority 或 chronic_disease 相应维度。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。每个分析维度都应体现「几年数据的趋势变化 → 原因分析 → 未来建议」三段式，而非仅描述当前值。
+分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【近30天打卡记录】【当前用药与营养素补充】综合评估。【近30天打卡记录】反映的是体检之后更实时的自测数据（如体重是否持续下降、血压近期是否稳定、运动频率、睡眠时长），如果与体检报告结论有出入（如体检时血压正常但近期打卡持续偏高），应在相应维度中明确指出这一变化趋势。专项筛查报告中的检查所见（影像/内镜）请重点比对历年同类检查变化。每个分析维度都应体现「几年数据的趋势变化 → 当前结论 → 下一步」而非仅描述当前值。
 
-【心脑血管与慢病趋势卡规则】cardiovascular_risk.topics和chronic_disease.items只按会员真实存在的资料建卡，不为凑数量创建空主题。每张卡先找最近一次，再比较最近5个自然年内同名指标或同类检查；0次=no_data，1次=baseline，至少2个可比点才可判断stable/improving/worsening/fluctuating。血压、血脂、颈动脉、冠脉、心电/心脏结构必须分主题；血糖、肝功能、肾功能、尿酸、骨密度及其他专科异常也应分主题。不同检测方法、不同单位或不同部位不得硬比较，写not_comparable。关键变化最多3条，不逐年堆砌全文。
+【心脑血管与慢病趋势卡规则——严格限定范围】
+①cardiovascular_risk.topics只允许以下主题，且每种检查独立建卡、独立比较：心电图、心脏超声、冠脉CTA、运动评估/运动负荷试验、心脏磁共振；脑血管方向为颈动脉超声、头颅MRI、头颅MRA、同型半胱氨酸、脂蛋白磷脂酶A2（Lp-PLA2）。其他项目不得放入心脑血管趋势卡。
+②chronic_disease.items只允许4个主题：血压；血糖（空腹血糖、糖化血红蛋白）；血脂（总胆固醇、HDL-C、LDL-C、甘油三酯及报告中同组血脂指标）；尿酸。肝功能、肾功能、骨密度、听力、视力、甲状腺功能及其他专科项目不得输出到慢性病趋势卡。
+③只按会员真实存在的资料建卡，不为凑数量创建空主题。每张卡先找最近一次，再比较最近5个自然年内同名指标或同类检查；0次不建卡，1次=baseline，至少2个可比点才可判断stable/improving/worsening/fluctuating。不同检测方法、单位或部位不得硬比较，写not_comparable。关键变化最多3条，不逐年堆砌全文。
 
 【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议会员恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
 
@@ -325,6 +367,9 @@ ${cancerCatalogText}
 
 【常见肿瘤近5年分组证据（程序逐年归拢；必须逐项核对，不得遗漏年份，不得跨检查类型直接比较）】
 ${cancerEvidenceText}
+
+【心脑血管与四类慢病近5年分组证据（只允许依据这些主题建趋势卡）】
+${focusedTrendEvidenceText}
 
 【带编号证据目录（结论必须以此为事实边界）】
 ${evidenceCatalog}
@@ -417,7 +462,7 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
       },
       "topics": [
         {
-          "name": "仅输出有资料的主题，如血压、血脂、颈动脉、冠脉、心电图/心脏结构",
+          "name": "只能是：心电图、心脏超声、冠脉CTA、运动评估、心脏磁共振、颈动脉超声、头颅MRI、头颅MRA、同型半胱氨酸、脂蛋白磷脂酶A2之一；无资料不输出",
           "status": "attention或monitor或stable或unknown",
           "latest": "最近一次检查日期、项目及结果摘要",
           "trendStatus": "no_data或baseline或stable或improving或worsening或fluctuating或not_comparable",
@@ -436,7 +481,7 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
       },
       "items": [
         {
-          "name": "仅输出有资料的系统或指标主题，如血糖、肾功能、肝功能、尿酸、骨密度、听力等",
+          "name": "只能是血压、血糖、血脂、尿酸之一；无资料不输出",
           "value": "当前值简述（兼容旧展示）",
           "status": "abnormal或mild_abnormal或normal",
           "note": "简要说明（30字内，兼容旧展示）",
