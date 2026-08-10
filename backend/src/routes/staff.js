@@ -4031,31 +4031,10 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       if (/心脑血管病?筛查|心血管筛查|脑血管筛查/.test(effectiveL1) || (!directoryRoot && ['cardiovascular', 'brain_vessel'].includes(category))) return 'cardiovascular_risk';
       return 'chronic_disease';
     };
+    const { buildSummaryInputGroups } = require('../utils/screeningSummaryInput');
     const input = {};
     Object.keys(CATEGORY_MAP).forEach(key => {
-      input[key] = reports.flatMap(report => {
-        const reportBucket = categoryBucket(report.screeningCategory, report.screeningL1 || '');
-        // 只认专项筛查已经保存的分类，不再根据项目名称关键词猜测归属。
-        // item 有自己的一级分类时以 item 为准；没有时继承整份报告分类。每项只会进入一个小结。
-        const selectedItems = (report.reportItems || []).filter(item => {
-          const projectName = item.screeningParent || report.screeningL2 || report.title || '其他项目';
-          return categoryBucket(item.screeningCategory || report.screeningCategory, report.screeningL1 || '', projectName) === key;
-        });
-        if (!selectedItems.length || (report.reportItems || []).length === 0 && reportBucket !== key) return null;
-        const grouped = new Map();
-        selectedItems.forEach(item => {
-          const projectName = item.screeningParent || report.screeningL2 || report.title || '其他项目';
-          if (!grouped.has(projectName)) grouped.set(projectName, []);
-          grouped.get(projectName).push(item);
-        });
-        return [...grouped.entries()].map(([projectName, items]) => ({
-          projectName,
-          reportId: String(report._id), title: report.title,
-          date: report.checkDate || report.date, institution: report.hospital || report.institution || '',
-          sourceItemNames: items.map(item => item.name).filter(Boolean),
-          conclusions: items.map(item => ({ name: item.name, value: item.value, status: item.status, conclusion: item.conclusion || item.diagnosis || item.findings || '' })),
-        }));
-      }).filter(Boolean).sort((a, b) => (projectOrder.get(a.projectName) ?? 99999) - (projectOrder.get(b.projectName) ?? 99999));
+      input[key] = buildSummaryInputGroups(reports, key, categoryBucket, projectOrder);
     });
 
     const { chat } = require('../utils/ai');
@@ -4077,11 +4056,8 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     Object.keys(CATEGORY_MAP).forEach(key => {
       sections[key] = {
         summary: String(parsed[key] || ''),
-        sourceReportIds: input[key].map(item => item.reportId),
-        sourceMaterials: input[key].map(item => ({
-          reportId: item.reportId,
-          itemNames: item.sourceItemNames,
-        })),
+        sourceReportIds: [...new Set(input[key].flatMap(item => item.reportIds))],
+        sourceMaterials: input[key].flatMap(item => item.sourceMaterials),
       };
     });
     const ScreeningYearSummary = require('../models/ScreeningYearSummary');

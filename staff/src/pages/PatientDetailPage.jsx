@@ -4812,18 +4812,19 @@ export default function PatientDetailPage() {
                     ) : (
                       <div style={{ display: 'grid', gap: 10 }}>
                         {categories.map(([key, label]) => (
-                          <div key={key} style={{ background: '#fff', borderRadius: 8, padding: '10px 12px', border: '1px solid #EEF2EF' }}>
+                          <div key={key} style={{ background: '#fff', borderRadius: 8, padding: '14px 16px', border: '1px solid #EEF2EF' }}>
                             <button type="button" onClick={() => setScreeningSectionExpanded(prev => ({ ...prev, [key]: !prev[key] }))}
                               style={{ width: '100%', border: 0, background: 'none', display: 'flex', justifyContent: 'space-between', fontWeight: 600, fontSize: 13, cursor: 'pointer', padding: 0 }}>
                               <span>{label}</span><span>{screeningSectionExpanded[key] ? '收起 ▲' : '展开 ▼'}</span>
                             </button>
                             {screeningSectionExpanded[key] && (editingScreeningSummary ? (
-                              <textarea className="form-input" rows={3} value={sections[key]?.summary || ''}
+                              <textarea className="form-input" rows={10} value={sections[key]?.summary || ''}
+                                style={{ marginTop: 12, minHeight: 240, maxHeight: '60vh', boxSizing: 'border-box', padding: '14px 16px', fontSize: 14, lineHeight: 1.8, resize: 'vertical' }}
                                 onChange={e => setEditingScreeningSummary(prev => ({
                                   ...prev,
                                   [key]: { ...(prev[key] || {}), summary: e.target.value },
                                 }))} />
-                            ) : <div style={{ marginTop: 7, fontSize: 13, color: '#4A6558', lineHeight: 1.7 }}>
+                            ) : <div style={{ marginTop: 12, padding: '2px 4px', fontSize: 14, color: '#4A6558', lineHeight: 1.85 }}>
                               {(sections[key]?.summary || '暂无相关资料').split(/\n+/).map(v => v.trim()).filter(Boolean).map((line, i) => {
                                 const matched = line.match(/^([^：:]+)[：:]\s*(.*)$/)
                                 return <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 8 }}>

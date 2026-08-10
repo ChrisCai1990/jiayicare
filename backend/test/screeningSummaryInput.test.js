@@ -1,0 +1,38 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const { buildSummaryInputGroups, projectNameForItem, resolveConfiguredProjectName } = require('../src/utils/screeningSummaryInput');
+
+const tumorBucket = () => 'tumor_risk';
+
+test('同一筛查项目跨报告合并为一组', () => {
+  const reports = [
+    { _id: 'r1', reportItems: [{ name: '肝脏超声', itemType: 'imaging', screeningParent: '肝癌早筛' }] },
+    { _id: 'r2', reportItems: [{ name: '肝纤维弹性超声', itemType: 'imaging', screeningParent: '肝癌早筛' }] },
+  ];
+  const groups = buildSummaryInputGroups(reports, 'tumor_risk', tumorBucket);
+  assert.equal(groups.length, 1);
+  assert.equal(groups[0].projectName, '肝癌早筛');
+  assert.deepEqual(groups[0].reportIds, ['r1', 'r2']);
+  assert.equal(groups[0].conclusions.length, 2);
+});
+
+test('旧数据中误挂到肝癌早筛的脾脏影像按器官纠正', () => {
+  const item = {
+    name: '脾脏超声', bodyPart: '脾脏', itemType: 'imaging',
+    screeningParent: '肝癌早筛', conclusion: '脾形态大小正常，脾内回声均匀细小。',
+  };
+  assert.equal(projectNameForItem(item, {}), '胰腺-胆囊-脾脏癌早筛');
+});
+
+test('综合腹部影像不根据结论中的相邻器官词误改项目', () => {
+  const item = {
+    name: '肝脏超声', itemType: 'imaging', screeningKey: 'tumor|肝癌早筛|肝脏超声',
+    conclusion: '肝脏未见异常，脾脏未见异常。',
+  };
+  assert.equal(projectNameForItem(item, {}), '肝癌早筛');
+});
+
+test('脾脏项目兼容线上旧目录名称并保持目录顺序', () => {
+  const order = new Map([['肝癌早筛', 3], ['胰腺-胆囊癌早筛（脾）', 8]]);
+  assert.equal(resolveConfiguredProjectName('胰腺-胆囊-脾脏癌早筛', order), '胰腺-胆囊癌早筛（脾）');
+});
