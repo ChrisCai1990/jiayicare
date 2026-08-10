@@ -268,6 +268,9 @@ function classificationName(item) {
     if (/腰围/.test(name)) return '腰围';
   }
   if (item?.itemType === 'imaging') {
+    if (/口腔|牙科/.test(context)) return '牙科';
+    if (/糖尿病.*风险/.test(context)) return '糖尿病早期风险检测';
+    if (/碳\s*13|C\s*-?13|碳13\/14/.test(context)) return '碳13呼气试验';
     if (/全科医学|全科|内科.*外科/.test(context)) return '内外科（全科）';
     if (/眼科/.test(context)) return '眼科检查';
     if (/耳鼻喉|ENT/i.test(context)) return '耳鼻喉科检查';
@@ -284,6 +287,7 @@ function classificationName(item) {
   if (/血常规|血细胞分析|全血细胞计数/.test(group)) return '血常规';
   if (/红细胞沉降率|\bESR\b/i.test(`${name} ${group}`)) return '血沉+抗O+类风湿因子';
   if (/尿液干化学|尿有形成分|尿常规/.test(group)) return '尿常规';
+  if (/尿生化|尿微量白蛋白|尿肌酐|尿白蛋白.*肌酐/.test(group)) return '尿肾功能';
   if (/促甲状腺.*激素|促甲状腺激素|\bTSH\b/i.test(`${name} ${group}`)) return '甲状腺功能';
   if (/微量尿蛋白|微量尿白蛋白|尿肌酐比值/.test(group)) return '尿微量白蛋白/尿肌酐';
   if (/乙肝三系|HBsAg|HBsAb|HBeAg|HBeAb|HBcAb/i.test(group)) return '乙肝三系';

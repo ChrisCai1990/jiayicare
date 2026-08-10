@@ -8,10 +8,10 @@ test('识别浙一报告但不误识别其他医院', () => {
   assert.equal(template.isZheyiReport({ hospital: '浙江大学医学院附属邵逸夫医院' }), false);
 });
 
-test('程序级页码范围固定为P6-P16', () => {
+test('程序级页码范围固定为P6-P15', () => {
   for (let page = 1; page <= 5; page++) assert.equal(template.pageMode(page), 'skip');
-  for (let page = 6; page <= 16; page++) assert.equal(template.pageMode(page), 'extract');
-  for (let page = 17; page <= 28; page++) assert.equal(template.pageMode(page), 'duplicate');
+  for (let page = 6; page <= 15; page++) assert.equal(template.pageMode(page), 'extract');
+  for (let page = 16; page <= 28; page++) assert.equal(template.pageMode(page), 'duplicate');
 });
 
 test('适配提示强制科室逐行、小结跳过、腹部超声拆分', () => {
@@ -59,7 +59,55 @@ test('肿瘤、肝纤维化和维生素项目写入正确检验组', () => {
   assert.equal(groups['维生素K1'], '其他维生素类');
 });
 
-test('归一化结果只保留P6-P16且保持原顺序', () => {
+test('归一化结果只保留P6-P15且保持原顺序', () => {
   const input = [{ name: '汇总', _page: 3 }, { name: '视力', _page: 6 }, { name: '白细胞计数', _page: 12 }, { name: '重复原件', _page: 17 }];
   assert.deepEqual(template.normalizeZheyiItems(input).map(item => item.name), ['视力', '白细胞计数']);
+});
+
+test('一般检查、科室名称和建议内容按固定规则归一化', () => {
+  const rows = [
+    { name: '心率', value: '72', itemType: 'data', _page: 6 },
+    { name: '体重(kg)', value: '65', itemType: 'data', _page: 6 },
+    { name: '龋齿', findings: '无', sourceSection: '口腔科', itemType: 'imaging', _page: 7 },
+    { name: '心脏', findings: '正常', sourceSection: '内科', itemType: 'imaging', _page: 7 },
+    { name: '痔疮', findings: '建议就诊', sourceSection: '外科', itemType: 'imaging', _page: 7 },
+  ];
+  const out = template.normalizeZheyiItems(rows);
+  assert.ok(out.some(item => item.name === '脉搏心率'));
+  assert.ok(out.some(item => item.name === '体重'));
+  assert.ok(out.some(item => item.name === '牙科'));
+  assert.ok(out.some(item => item.name === '内外科（全科）'));
+  assert.ok(!out.some(item => /痔疮/.test(`${item.name} ${item.findings}`)));
+});
+
+test('眼压去重并将风险、骨密度、呼气试验转为检查项目', () => {
+  const rows = [
+    { name: '眼压', value: '左15 右16', itemType: 'data', _page: 8 },
+    { name: '眼压检查', findings: '左眼15mmHg，右眼16mmHg', itemType: 'imaging', _page: 8 },
+    { name: '糖尿病早期风险检测', value: '风险较低', itemType: 'lab', _page: 8 },
+    { name: '骨密度测定', value: 'T值-1.0', itemType: 'lab', _page: 11 },
+    { name: '13C尿素呼气试验', value: '阴性', itemType: 'lab', _page: 11 },
+  ];
+  const out = template.normalizeZheyiItems(rows);
+  assert.equal(out.filter(item => item.name === '眼压检查').length, 1);
+  for (const name of ['糖尿病早期风险检测', '骨密度', '碳13/14呼气试验']) {
+    const item = out.find(row => row.name === name);
+    assert.equal(item.itemType, 'imaging');
+    assert.ok(item.findings);
+  }
+});
+
+test('粪便聚合不带参考范围，尿常规不改变，尿生化归尿肾功能', () => {
+  const rows = [
+    { name: '颜色', value: '黄褐色', referenceRange: '黄褐色', orderName: '粪便常规', itemType: 'lab', _page: 11 },
+    { name: '隐血', value: '阴性', referenceRange: '阴性', orderName: '粪便常规', itemType: 'lab', _page: 11 },
+    { name: '尿白细胞', value: '阴性', referenceRange: '阴性', orderName: '尿常规', itemType: 'lab', _page: 12 },
+    { name: '尿微量白蛋白', value: '10', orderName: '尿生化', itemType: 'lab', _page: 12 },
+  ];
+  const out = template.normalizeZheyiItems(rows);
+  const stool = out.find(item => item.name === '粪便检查');
+  assert.match(stool.findings, /颜色：黄褐色/);
+  assert.equal(stool.referenceRange, '');
+  assert.ok(out.some(item => item.name === '尿白细胞' && item.itemType === 'lab'));
+  assert.equal(out.find(item => item.name === '尿微量白蛋白').orderName, '尿肾功能');
 });

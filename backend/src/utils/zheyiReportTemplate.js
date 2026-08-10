@@ -7,7 +7,7 @@ function isZheyiReport(report) {
 
 function pageMode(pageNum) {
   if (pageNum >= 1 && pageNum <= 5) return 'skip';
-  if (pageNum >= 6 && pageNum <= 16) return 'extract';
+  if (pageNum >= 6 && pageNum <= 15) return 'extract';
   return 'duplicate';
 }
 
@@ -22,17 +22,16 @@ const PAGE_SECTIONS = {
   13: '尿常规续页、肿瘤标志物、胃功能',
   14: '同型半胱氨酸、肝肾功能、血脂、血糖、电解质、炎症指标、糖化血红蛋白',
   15: '肝纤维化、甲状腺功能、维生素、EB病毒及其他检验',
-  16: '第15页检验结果续页（如有）',
 };
 
 function promptForPage(pageNum) {
   const sections = PAGE_SECTIONS[pageNum] || '本页原始明细';
   return `\n\n【浙一体检报告第${pageNum}页适配规则，最高优先级】
 本页应按原版顺序处理：${sections}。
-1. 一般检查必须逐行输出data。眼科、耳鼻喉科、口腔科、内科、外科则每个科室只输出一条imaging：name=科室名称；findings按原顺序写成多行“项目名称：检查结果”，不得把科内每一行生成独立item。
+1. 一般检查必须逐行输出data，心率命名为“脉搏心率”，体重不得遗漏。眼科、耳鼻喉科、牙科、内外科（全科）则每个科室只输出一条imaging：findings按原顺序写成多行“项目名称：检查结果”，不得把科内每一行生成独立item。眼压单独输出一条“眼压检查”，不得同时混入眼科检查。
 2. “科室小结”“小结”“建议”“健康宣教”全部跳过，不生成item，也不得写入findings/diagnosis/conclusion。
 3. 肝胆脾胰组合超声必须拆成肝脏超声、胆囊超声、脾脏超声、胰腺超声四条；双肾相关内容另列肾脏超声。每条只能包含对应器官原文。
-4. 检验表格逐行输出，每个指标一条lab，项目、结果、单位、参考范围必须严格同行对应。
+4. 检验表格逐行输出，每个指标一条lab，项目、结果、单位、参考范围必须严格同行对应；粪便检查除外，整张粪便检查只输出一条imaging，findings逐行写“项目：结果”，不写参考范围。尿常规维持逐项lab提取。
 5. 输出顺序必须与本页从上到下的阅读顺序一致。`;
 }
 
@@ -55,11 +54,10 @@ function needsCoverageAudit(pageNum, items) {
 function normalizeZheyiItems(items) {
   let kept = (items || []).filter(item => pageMode(Number(item?._page || 0)) === 'extract');
   const departmentDefs = [
-    { name: '眼科检查', pattern: /眼科/ },
+    { name: '眼科检查', pattern: /眼科/, exclude: /眼压/ },
     { name: '耳鼻喉科检查', pattern: /耳鼻喉|ENT/i },
-    { name: '口腔科检查', pattern: /口腔|牙科/ },
-    { name: '内科检查', pattern: /(?:^|检查)内科|内科检查/ },
-    { name: '外科检查', pattern: /(?:^|检查)外科|外科检查/ },
+    { name: '牙科', pattern: /口腔|牙科/ },
+    { name: '内外科（全科）', pattern: /内科|外科|全科/ },
   ];
   const consumed = new Set();
   const mergedDepartments = [];
@@ -67,7 +65,8 @@ function normalizeZheyiItems(items) {
     const rows = kept.filter((item, index) => {
       const context = `${text(item.sourceSection)} ${text(item.orderName)} ${text(item.name)}`;
       if (!def.pattern.test(context)) return false;
-      if (/小结|建议|健康宣教/.test(text(item.name))) { consumed.add(index); return false; }
+      if (def.exclude?.test(context)) return false;
+      if (/小结|建议|健康宣教|痔疮/.test(text(item.name))) { consumed.add(index); return false; }
       consumed.add(index);
       return true;
     });
@@ -133,15 +132,32 @@ function normalizeZheyiItems(items) {
   }
   kept = expanded;
 
+  // 粪便检查按检查项目聚合展示；尿常规保持逐项检验，不在此处改变。
+  const stoolRows = kept.filter(item => /粪便|大便|便常规/.test(`${text(item.sourceSection)} ${text(item.orderName)} ${text(item.name)}`));
+  if (stoolRows.length) {
+    const stoolSet = new Set(stoolRows);
+    const findings = stoolRows.map(row => {
+      const value = text(row.value || row.findings || row.diagnosis || row.conclusion);
+      return value ? `${text(row.name)}：${value}${text(row.unit)}` : '';
+    }).filter(Boolean).join('\n');
+    kept = kept.filter(item => !stoolSet.has(item));
+    if (findings) kept.push({ ...stoolRows[0], name: '粪便检查', sourceSection: '粪便检查', orderName: '粪便检查', itemType: 'imaging', value: '', unit: '', referenceRange: '', findings, diagnosis: '', conclusion: '', status: 'unknown' });
+  }
+
   kept = kept.map(item => {
     const context = `${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`;
     const next = { ...item };
+    if (/^(心率|脉率|脉搏)$/i.test(text(next.name))) next.name = '脉搏心率';
+    if (/体重/.test(context) && !/体重指数|BMI/i.test(context)) next.name = '体重';
+    if (/眼压/.test(context)) { next.name = '眼压检查'; next.itemType = 'imaging'; }
+    if (/糖尿病.*(?:早期)?风险.*检测|糖尿病风险筛查/.test(context)) { next.name = '糖尿病早期风险检测'; next.itemType = 'imaging'; next.findings = text(next.findings || next.value || next.diagnosis || next.conclusion); next.value = ''; next.unit = ''; next.referenceRange = ''; }
     if (/肺部HR\s*CT|肺部.*高分辨率.*CT|胸部.*低剂量.*(?:螺旋)?CT|肺部.*CT/i.test(context)) next.name = '胸部（低剂量螺旋）CT';
     if (/肝脏.*(?:纤维)?弹性.*(?:超声|B超)/.test(context)) next.name = '肝脏弹性超声';
     if (/肺.*通气.*功能/.test(context)) next.name = '肺通气功能检查';
     if (/常规.*心电图|十二导.*心电图/.test(context)) next.name = '常规心电图';
-    if (/骨密度/.test(context)) next.name = '骨密度';
-    if (/13.*(?:碳|C).*呼气|(?:碳|C)13.*呼气/i.test(context)) next.name = '碳13呼气试验';
+    if (/骨密度/.test(context)) { next.name = '骨密度'; next.itemType = 'imaging'; next.findings = text(next.findings || next.value || next.diagnosis || next.conclusion); next.value = ''; next.unit = ''; next.referenceRange = ''; }
+    if (/13.*(?:碳|C).*呼气|(?:碳|C)13.*呼气/i.test(context)) { next.name = '碳13/14呼气试验'; next.orderName = '碳13/14呼气试验'; next.itemType = 'imaging'; next.findings = text(next.findings || next.value || next.diagnosis || next.conclusion); next.value = ''; next.unit = ''; next.referenceRange = ''; }
+    if (/尿生化|尿微量白蛋白|尿肌酐|尿白蛋白.*肌酐/.test(`${text(next.sourceSection)} ${text(next.orderName)}`)) next.orderName = '尿肾功能';
     if (/总前列腺特异|总PSA|TPSA/i.test(context)) next.orderName = '男性特定肿瘤标志物';
     else if (/游离前列腺特异|游离前列腺抗原比值|F-?PSA|FPSA/i.test(context)) next.orderName = '男性特定肿瘤标志物';
     else if (/甲胎蛋白|癌胚抗原|糖抗原|细胞角蛋白|神经元特异|鳞状细胞癌/.test(context)) next.orderName = '泛肿瘤标志物';
@@ -153,6 +169,13 @@ function normalizeZheyiItems(items) {
     }
     return next;
   });
+  const eyePressure = kept.filter(item => item.name === '眼压检查');
+  if (eyePressure.length > 1) {
+    const best = eyePressure.sort((a, b) => text(b.findings || b.value).length - text(a.findings || a.value).length)[0];
+    kept = kept.filter(item => item.name !== '眼压检查');
+    kept.push(best);
+  }
+  kept = kept.filter(item => !/痔疮/.test(`${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`));
   return kept.sort((a, b) => Number(a._page || 0) - Number(b._page || 0) || Number(a._order || 0) - Number(b._order || 0));
 }
 
