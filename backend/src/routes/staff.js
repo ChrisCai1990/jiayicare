@@ -8642,7 +8642,17 @@ async function runReportParse(reportId) {
             try {
               const img = await renderSinglePage(pdfBuf, pageNum, 160);
               if (!img) continue;
-              const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}${zheyiTemplate.promptForPage(pageNum)}\n\n【浙一缺项专项补提】${targetedPrompts[pageNum]}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
+              let retryText = '';
+              const maxAttempts = pageNum === 14 ? 3 : 1;
+              for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                  retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}${zheyiTemplate.promptForPage(pageNum)}\n\n【浙一缺项专项补提】${targetedPrompts[pageNum]}\n这是第${attempt}次完整性尝试，必须返回本页全部项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
+                  if (safeParseJSON(retryText)?.items?.length) break;
+                } catch (error) {
+                  if (attempt === maxAttempts) throw error;
+                  console.log(`[parse-ai] 浙一页${pageNum}专项补提第${attempt}次失败，自动重试: ${error.message}`);
+                }
+              }
               const parsed = safeParseJSON(retryText);
               if (!parsed || !Array.isArray(parsed.items)) continue;
               const oldPage = allItems.filter(it => it._page === pageNum);
