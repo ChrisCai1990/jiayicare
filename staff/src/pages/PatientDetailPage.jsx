@@ -1608,6 +1608,7 @@ export default function PatientDetailPage() {
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false)
   const [parsingReportId, setParsingReportId] = useState(null)
   const [editingAISummary, setEditingAISummary] = useState(false)
+  const [editingAISection, setEditingAISection] = useState('')
   const [aiSummaryForm, setAiSummaryForm] = useState({})
   const [aiYear, setAiYear] = useState(null)        // 当前查看的AI健康分析年度
   const [aiRecordIndex, setAiRecordIndex] = useState({ doctor: 0, nutrition: 0 })
@@ -2593,6 +2594,20 @@ export default function PatientDetailPage() {
       setEditingAISummary(false)
       load()
     } catch (err) { toast(err.message || '保存失败') }
+  }
+
+  const handleSaveAISection = async (sectionKey, approve = false, sectionValue = undefined) => {
+    try {
+      const res = await staffAPI.updateAIHealthSummary(id, {
+        sections: { [sectionKey]: sectionValue === undefined ? cleanSections(aiSummaryForm.sections)?.[sectionKey] : sectionValue },
+        sectionKey, year: aiYear, scope: sectionKey === 'lifestyle_assessment' ? 'nutrition' : 'doctor',
+        recordIndex: aiRecordIndex[sectionKey === 'lifestyle_assessment' ? 'nutrition' : 'doctor'],
+        ...(approve ? { action: 'approve' } : {}),
+      })
+      setUser(prev => prev ? { ...prev, aiHealthSummary: res.data } : prev)
+      setEditingAISummary(false); setEditingAISection('')
+      toast(approve ? '该板块已审核通过' : '该板块草稿已保存')
+    } catch (err) { toast(err.message || '板块保存失败') }
   }
 
   // 按角色维度审核 AI 汇总分析（scope: 'doctor'=5维 / 'nutrition'=生活方式评估）
@@ -6298,6 +6313,30 @@ export default function PatientDetailPage() {
         const sec = editingAISummary ? (aiSummaryForm.sections || {}) : (ais.sections || {})
         const docEditing = editingAISummary === 'doctor'
         const nutEditing = editingAISummary === 'nutrition'
+        const renderSectionActions = (sectionKey) => {
+          const review = doctorRecord.sectionReviews?.[sectionKey] || {}
+          const isEditing = docEditing && editingAISection === sectionKey
+          return <div style={{ display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'flex-end', marginBottom: 10, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 11, color: review.status === 'approved' ? '#15803D' : '#64748B' }}>
+              {review.status === 'approved'
+                ? `已审核 · ${review.approvedBy || ''} · ${review.approvedAt ? new Date(review.approvedAt).toLocaleString('zh-CN') : ''}`
+                : review.updatedAt
+                  ? `待重新审核 · ${review.updatedBy || ''}修改于 ${new Date(review.updatedAt).toLocaleString('zh-CN')}${review.approvedAt ? ` · 上次审核 ${new Date(review.approvedAt).toLocaleString('zh-CN')}` : ''}`
+                  : '待审核'}
+            </span>
+            {!isEditing ? <>
+              <button className="btn btn-secondary btn-sm" onClick={() => {
+                setAiSummaryForm({ sections: JSON.parse(JSON.stringify(ais.sections || {})) }); setAiYear(curYear)
+                setAiRecordIndex(v => ({ ...v, doctor: doctorRecord._recordIndex || 0 })); setEditingAISummary('doctor'); setEditingAISection(sectionKey)
+              }}>编辑本板块</button>
+              <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISection(sectionKey, true, ais.sections?.[sectionKey])}>审核本板块</button>
+            </> : <>
+              <button className="btn btn-secondary btn-sm" onClick={() => { setEditingAISummary(false); setEditingAISection('') }}>取消</button>
+              <button className="btn btn-secondary btn-sm" onClick={() => handleSaveAISection(sectionKey, false)}>临时保存</button>
+              <button className="btn btn-primary btn-sm" onClick={() => handleSaveAISection(sectionKey, true)}>保存并审核</button>
+            </>}
+          </div>
+        }
         const hasDoctorData = !!(ais.sections?.medical_priority || ais.sections?.tumor_risk || ais.sections?.cardiovascular_risk || ais.sections?.chronic_disease || ais.sections?.checkup_completeness)
         const hasLifestyle = !!(ais.sections?.lifestyle_assessment?.summary || (ais.sections?.lifestyle_assessment?.items || []).length)
         const hasData = hasDoctorData || hasLifestyle
@@ -6681,7 +6720,8 @@ export default function PatientDetailPage() {
                 {/* 板块一：肿瘤风险筛查分析 */}
                 <AISectionCard title="肿瘤筛查信息整理" icon="🔬" color="#7C3AED">
                   <AISectionSourceButton title="肿瘤风险筛查分析" ids={sourceIdsFor('tumor_risk')} onOpen={openSectionSources} />
-                  {docEditing ? (
+                  {renderSectionActions('tumor_risk')}
+                  {docEditing && (!editingAISection || editingAISection === 'tumor_risk') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['completed','✅ 已完成筛查（每行一条）'],['abnormal','⚠️ 异常发现（每行一条）'],['missing','📌 未覆盖项目（每行一条）']].map(([f,lbl]) => (
                         <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.tumor_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('tumor_risk', f, e.target.value)} /></div>
@@ -6753,7 +6793,8 @@ export default function PatientDetailPage() {
                 {/* 板块二：心脑血管病风险分析 */}
                 <AISectionCard title="心脑血管相关信息整理" icon="❤️" color="#EF4444">
                   <AISectionSourceButton title="心脑血管病风险分析" ids={sourceIdsFor('cardiovascular_risk')} onOpen={openSectionSources} />
-                  {docEditing ? (
+                  {renderSectionActions('cardiovascular_risk')}
+                  {docEditing && (!editingAISection || editingAISection === 'cardiovascular_risk') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['high','🔴 重点关注信息（每行一条）'],['medium','🟡 持续关注信息（每行一条）']].map(([f,lbl]) => (
                         <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.cardiovascular_risk?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('cardiovascular_risk', f, e.target.value)} /></div>
@@ -6777,7 +6818,8 @@ export default function PatientDetailPage() {
                 {/* 板块三：慢性病及其他健康指标 */}
                 <AISectionCard title="慢病及其他健康信息整理" icon="📊" color="#0077B6">
                   <AISectionSourceButton title="慢性病及其他健康指标分析" ids={sourceIdsFor('chronic_disease')} onOpen={openSectionSources} />
-                  {docEditing ? (
+                  {renderSectionActions('chronic_disease')}
+                  {docEditing && (!editingAISection || editingAISection === 'chronic_disease') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.chronic_disease?.items || []).map((item, i) => (
                         <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '8px 12px', background: '#FAFAF8' }}>
@@ -6826,7 +6868,8 @@ export default function PatientDetailPage() {
                 {/* 板块四：体检全面性评估 */}
                 <AISectionCard title="体检资料覆盖情况" icon="📋" color="#1E6B50">
                   <AISectionSourceButton title="体检全面性评估" ids={sourceIdsFor('checkup_completeness')} onOpen={openSectionSources} />
-                  {docEditing ? (
+                  {renderSectionActions('checkup_completeness')}
+                  {docEditing && (!editingAISection || editingAISection === 'checkup_completeness') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {[['covered','✅ 已覆盖项目（每行一条）'],['missing','❌ 缺失重要项目（每行一条）']].map(([f,lbl]) => (
                         <div key={f}><div style={{ fontSize: 11, color: '#4A6558', marginBottom: 3 }}>{lbl}</div><AIArrEdit value={(sec.checkup_completeness?.[f] || []).join('\n')} placeholder={lbl} onChange={e => updSecArr('checkup_completeness', f, e.target.value)} /></div>
@@ -6846,7 +6889,8 @@ export default function PatientDetailPage() {
                 {/* 板块五：需优先解决的医疗问题 */}
                 <AISectionCard title="需优先关注的信息" icon="🏥" color="#DC2626">
                   <AISectionSourceButton title="需优先解决的医疗问题" ids={sourceIdsFor('medical_priority')} onOpen={openSectionSources} />
-                  {docEditing ? (
+                  {renderSectionActions('medical_priority')}
+                  {docEditing && (!editingAISection || editingAISection === 'medical_priority') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.medical_priority?.items || []).map((item, i) => (
                         <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: '#FAFAF8' }}>

@@ -5417,7 +5417,7 @@ router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async 
 // PATCH /api/staff/patients/:id/ai-health-summary
 router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   try {
-    const { sections, sectionNotes, action, scope, year, recordIndex } = req.body;
+    const { sections, sectionNotes, action, scope, year, recordIndex, sectionKey } = req.body;
     const user = await User.findById(req.params.id);
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const current = user.aiHealthSummary || {};
@@ -5439,13 +5439,37 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       return res.status(400).json({ success: false, message: '记录不存在' });
     }
     const entry = { ...records[idx] };
-    if (sections !== undefined) entry.sections = sections;
+    const beforeSection = sectionKey ? entry.sections?.[sectionKey] : null;
+    if (sections !== undefined) {
+      entry.sections = sectionKey
+        ? { ...(entry.sections || {}), [sectionKey]: sections[sectionKey] }
+        : sections;
+    }
     if (sectionNotes !== undefined) entry.sectionNotes = sectionNotes;
+    if (sectionKey && sections !== undefined) {
+      entry.sectionReviews = { ...(entry.sectionReviews || {}), [sectionKey]: {
+        ...(entry.sectionReviews?.[sectionKey] || {}), status: 'draft', updatedAt: new Date(), updatedBy: req.staff.name,
+      } };
+      entry.sectionChangeLog = [...(entry.sectionChangeLog || []), {
+        sectionKey, action: 'save', at: new Date(), by: req.staff.name,
+        before: beforeSection || null, after: entry.sections?.[sectionKey] || null,
+      }];
+    }
     // 审核：按角色维度拆分（健康顾问审5维 / 营养师审生活方式评估）
     // scope: 'doctor' | 'nutrition' | 'all'（缺省=all，兼容旧前端）
     if (action === 'approve') {
       const now = new Date();
       const isSuper = req.staff.role === 'superadmin';
+      if (sectionKey) {
+        if (!isSuper && req.staff.role !== (sectionKey === LIFESTYLE_KEY ? 'nutritionist' : 'familyDoctor')) {
+          return res.status(403).json({ success: false, message: '无该板块审核权限' });
+        }
+        if (!entry.sections?.[sectionKey]) return res.status(400).json({ success: false, message: '板块内容为空，不能审核' });
+        entry.sectionReviews = { ...(entry.sectionReviews || {}), [sectionKey]: {
+          ...(entry.sectionReviews?.[sectionKey] || {}), status: 'approved', approvedAt: now, approvedBy: req.staff.name,
+        } };
+        entry.sectionChangeLog = [...(entry.sectionChangeLog || []), { sectionKey, action: 'approve', at: now, by: req.staff.name }];
+      }
       const sectionData = entry.sections || {};
       const hasDoctorContent = DOCTOR_KEYS.some(key => {
         const value = sectionData[key];
@@ -5460,11 +5484,11 @@ router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       if ((sc === 'nutrition' || sc === 'all') && !hasNutritionContent) {
         return res.status(400).json({ success: false, message: '生活方式评估内容为空，不能审核通过，请先重新生成' });
       }
-      if ((sc === 'doctor' || sc === 'all')) {
+      if (!sectionKey && (sc === 'doctor' || sc === 'all')) {
         if (!isSuper && req.staff.role !== 'familyDoctor') return res.status(403).json({ success: false, message: '仅健康顾问可审核该维度' });
         entry.doctorApprovedAt = now; entry.doctorApprovedBy = req.staff.name;
       }
-      if ((sc === 'nutrition' || sc === 'all')) {
+      if (!sectionKey && (sc === 'nutrition' || sc === 'all')) {
         if (!isSuper && req.staff.role !== 'nutritionist') return res.status(403).json({ success: false, message: '仅营养师可审核该维度' });
         entry.nutritionApprovedAt = now; entry.nutritionApprovedBy = req.staff.name;
       }
