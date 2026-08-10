@@ -298,7 +298,7 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
 
 【心脑血管与慢病趋势卡规则——严格限定范围】
 ①cardiovascular_risk.topics只允许以下主题，且每种检查独立建卡、独立比较：心电图、心脏超声、冠脉CTA、运动评估/运动负荷试验、心脏磁共振；脑血管方向为颈动脉超声、头颅MRI、头颅MRA、同型半胱氨酸、脂蛋白磷脂酶A2（Lp-PLA2）。其他项目不得放入心脑血管趋势卡。
-②chronic_disease.items只允许4个主题：血压；血糖（空腹血糖、糖化血红蛋白）；血脂（总胆固醇、HDL-C、LDL-C、甘油三酯及报告中同组血脂指标）；尿酸。肝功能、肾功能、骨密度、听力、视力、甲状腺功能及其他专科项目不得输出到慢性病趋势卡。
+②chronic_disease.items只允许最多4张聚合卡：血压、血糖、血脂、尿酸。空腹血糖和糖化血红蛋白必须合并在同一张“血糖”卡内；总胆固醇、HDL-C、LDL-C、甘油三酯及报告中同组血脂指标必须合并在同一张“血脂”卡内；尿酸只放入“尿酸”卡。严禁把任何子指标拆成独立卡片。肝功能、肾功能、骨密度、听力、视力、甲状腺功能及其他专科项目不得输出到慢性病趋势卡。
 ③只按会员真实存在的资料建卡，不为凑数量创建空主题。每张卡先找最近一次，再比较最近5个自然年内同名指标或同类检查；0次不建卡，1次=baseline，至少2个可比点才可判断stable/improving/worsening/fluctuating。不同检测方法、单位或部位不得硬比较，写not_comparable。关键变化最多3条，不逐年堆砌全文。
 
 【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议会员恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
@@ -553,6 +553,9 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
     if (audited?.sections) sections = { ...sections, ...audited.sections };
   }
 
+  // 模型偶尔仍会把血糖或血脂子指标拆成多张卡；展示前做确定性归并。
+  if (!parseFailed && wantDoctor) consolidateChronicDiseaseItems(sections);
+
   // 数据溯源：AI文本结论核实起来要反复跳转查原始档案，很麻烦。这里不是让AI自己编造溯源标识
   // （AI可能编造或对错号，指错地方比没有链接更误导人），而是后端用规则去 allReports 的
   // reportItems 里按名称模糊匹配——匹配到就补充 sourceReportId/sourceItemIndex 供前端渲染成
@@ -578,6 +581,42 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
     return { sections: { [LIFESTYLE_KEY]: sections[LIFESTYLE_KEY] }, failed: parseFailed };
   }
   return { sections, failed: parseFailed };
+}
+
+const CHRONIC_GROUP_PATTERNS = [
+  ['血压', /血压|收缩压|舒张压/i],
+  ['血糖', /血糖|葡萄糖|糖化血红蛋白|HbA1c/i],
+  ['血脂', /血脂|总胆固醇|高密度脂蛋白|低密度脂蛋白|甘油三酯|载脂蛋白|脂蛋白\(a\)|\bTC\b|HDL|LDL|\bTG\b/i],
+  ['尿酸', /尿酸|\bUA\b/i],
+];
+
+function consolidateChronicDiseaseItems(sections) {
+  const chronic = sections && sections.chronic_disease;
+  if (!chronic || !Array.isArray(chronic.items)) return;
+  const grouped = new Map();
+  chronic.items.forEach(item => {
+    const text = [item.name, item.value, item.note, item.latest, item.trend].filter(Boolean).join(' ');
+    const matched = CHRONIC_GROUP_PATTERNS.find(([, pattern]) => pattern.test(text));
+    if (!matched) return;
+    const groupName = matched[0];
+    if (!grouped.has(groupName)) {
+      grouped.set(groupName, { ...item, name: groupName });
+      return;
+    }
+    const target = grouped.get(groupName);
+    ['value', 'note', 'latest', 'trend', 'nextAction'].forEach(key => {
+      const incoming = String(item[key] || '').trim();
+      if (incoming && !String(target[key] || '').includes(incoming)) {
+        target[key] = [target[key], incoming].filter(Boolean).join('；');
+      }
+    });
+    target.keyChanges = [...new Set([...(target.keyChanges || []), ...(item.keyChanges || [])])].slice(0, 3);
+    target.evidenceIds = [...new Set([...(target.evidenceIds || []), ...(item.evidenceIds || [])])];
+    if (item.status === 'abnormal' || (item.status === 'mild_abnormal' && target.status === 'normal')) {
+      target.status = item.status;
+    }
+  });
+  chronic.items = CHRONIC_GROUP_PATTERNS.map(([name]) => grouped.get(name)).filter(Boolean);
 }
 
 // 把 allReports 展平成 {name, reportId, itemIndex} 的扁平索引，供按名称模糊匹配
