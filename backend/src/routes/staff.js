@@ -8480,12 +8480,12 @@ async function runReportParse(reportId) {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
       const isComprehensiveCheckup = report.type === 'annual';
-      const baseDpi = useShaoyifuTemplate ? 160 : (isComprehensiveCheckup ? 144 : 96);
+      const baseDpi = useShaoyifuTemplate ? 160 : ((useZheyiTemplate || isComprehensiveCheckup) ? 144 : 96);
       console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''})`);
 
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
-      const VL_MODEL = (useShaoyifuTemplate || isComprehensiveCheckup) ? 'qwen-vl-max' : 'qwen-vl-plus';
+      const VL_MODEL = (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 'qwen-vl-max' : 'qwen-vl-plus';
       const CONCURRENCY = useShaoyifuTemplate ? 2 : 3;
       const BATCH_SIZE = 8;
       const DPI = baseDpi;
@@ -8529,7 +8529,7 @@ async function runReportParse(reportId) {
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || isComprehensiveCheckup) ? 120000 : 45000 });
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 120000 : 45000 });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -8583,7 +8583,7 @@ async function runReportParse(reportId) {
             if (!img) continue;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
-            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
             const oldPage = allItems.filter(it => it._page === pageNum);
