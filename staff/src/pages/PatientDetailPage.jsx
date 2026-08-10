@@ -2413,9 +2413,11 @@ export default function PatientDetailPage() {
       setAiSummaryLoading(true)
       const res = await staffAPI.generateAIHealthSummary(id, y, scope, force)
       setAiSummaryForm(res.data)
+      // 生成接口已返回最新完整AI汇总，直接更新当前会员状态即可立即展示。
+      // 不再调用整页load()重复拉取会员、报告、问卷等大量无关数据。
+      setUser(prev => prev ? { ...prev, aiHealthSummary: res.data } : prev)
       setAiYear(y)
       toast(`${y}年度AI分析已生成`)
-      load()
     } catch (err) {
       if (err.needConfirm) {
         const label = scope === 'nutrition' ? '生活方式信息整理' : (scope === 'doctor' ? '5维健康信息整理' : 'AI健康信息整理')
