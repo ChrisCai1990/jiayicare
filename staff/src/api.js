@@ -342,6 +342,7 @@ export const staffAPI = {
 
   // 4.4 AI健康汇总 / 4.5 AI管理方案生成
   generateAIHealthSummary: (id, year, scope, force) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'POST', body: JSON.stringify({ year, scope, force }) }),
+  regenerateAIHealthSummaryItem: (id, data) => req(`/staff/patients/${id}/ai-health-summary/regenerate-item`, { method: 'POST', body: JSON.stringify(data) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAIHealthSummaryRecord:     (id, year, recordIndex, scope) => req(`/staff/patients/${id}/ai-health-summary/records/${recordIndex}?year=${year}&scope=${scope}`, { method: 'DELETE' }),
   addAIHealthSummaryDiscussion:    (id, content, year, images, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year, images, recordIndex }) }),

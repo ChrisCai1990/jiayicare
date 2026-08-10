@@ -5354,6 +5354,65 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
   }
 });
 
+// 单项重新生成：只核对并替换指定趋势卡，不重跑整份健康信息整理。
+router.post('/patients/:id/ai-health-summary/regenerate-item', staffAuth, async (req, res) => {
+  try {
+    const { year, scope = 'doctor', recordIndex = 0, sectionKey, itemName, instruction } = req.body || {};
+    const fieldMap = { tumor_risk: 'cancers', cardiovascular_risk: 'topics', chronic_disease: 'items' };
+    const field = fieldMap[sectionKey];
+    if (!field || !itemName || !String(instruction || '').trim()) return res.status(400).json({ success: false, message: '请选择项目并填写修正问题' });
+    if (!['superadmin', 'familyDoctor'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '无单项重新生成权限' });
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const summary = user.aiHealthSummary || {};
+    const y = String(year || summary.latestYear || new Date().getFullYear());
+    const entry = summary.byYear?.[y];
+    const records = Array.isArray(entry?.records) ? entry.records : (entry?.sections ? [entry] : []);
+    const candidates = records.filter(r => scope === 'doctor' ? (r.scope === 'doctor' || r.scope === 'all' || !r.scope) : true);
+    const record = candidates[Number(recordIndex) || 0];
+    const list = record?.sections?.[sectionKey]?.[field];
+    const itemIndex = Array.isArray(list) ? list.findIndex(item => item.name === itemName) : -1;
+    if (itemIndex < 0) return res.status(404).json({ success: false, message: '未找到需要重新生成的卡片' });
+
+    const aliases = {
+      头颅MRI: /头颅|颅脑|脑部|MRI|磁共振/i, 头颅MRA: /头颅|颅脑|MRA|脑血管/i,
+      心电图: /心电图|ECG/i, 心脏超声: /心脏超声|心脏彩超|超声心动图/i,
+      冠脉CTA: /冠脉|冠状动脉|CTA/i, 颈动脉超声: /颈动脉/i,
+      血糖: /血糖|葡萄糖|糖化血红蛋白|HbA1c/i, 血脂: /血脂|胆固醇|甘油三酯|HDL|LDL/i,
+      血压: /血压|收缩压|舒张压/i, 尿酸: /尿酸/i, 肾功能: /肾功能|肌酐|尿素|eGFR|胱抑素/i,
+      骨质疏松: /骨密度|骨质疏松|骨量减少|T值|Z值/i,
+    };
+    const pattern = aliases[itemName] || new RegExp(String(itemName).replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/癌$/, ''), 'i');
+    const cutoff = new Date().getFullYear() - 4;
+    const reports = await MedicalReport.find({ user: req.params.id }).sort({ checkDate: 1 }).select('title checkDate date reportYear reportItems').lean();
+    const evidence = [];
+    reports.forEach((report, reportIndex) => {
+      const date = String(report.checkDate || report.date || '').slice(0, 10);
+      const reportYear = Number(report.reportYear || date.slice(0, 4));
+      if (reportYear < cutoff) return;
+      const items = (report.reportItems || []).filter(item => pattern.test([item.name,item.bodyPart,item.value,item.findings,item.diagnosis,item.conclusion].filter(Boolean).join(' ')));
+      if (items.length) evidence.push({ evidenceId: `RPT-${reportIndex + 1}`, date, items: items.map(i => ({ name:i.name, value:i.value, unit:i.unit, findings:i.findings, diagnosis:i.diagnosis, conclusion:i.conclusion })) });
+    });
+    const { chat } = require('../utils/ai');
+    const raw = await chat([{ role: 'user', content: `你是健康信息整理助手。只重新生成“${itemName}”这一张卡，禁止修改或输出其他卡片。\n用户修正问题：${String(instruction).trim()}\n原卡片：${JSON.stringify(list[itemIndex])}\n近5年原始证据：${JSON.stringify(evidence)}\n请逐年核对，不得遗漏证据中的年份，不得补造事实。保持原卡字段结构，只输出单个JSON对象。` }], { maxTokens: 1600, temperature: 0, jsonMode: true, timeoutMs: 60000 });
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ success: false, message: '单项生成结果格式错误，请重试' });
+    const updatedItem = JSON.parse(match[0]);
+    updatedItem.name = itemName;
+    list[itemIndex] = updatedItem;
+    record.sections[sectionKey][field] = list;
+    record.itemRegenerationLog = [...(record.itemRegenerationLog || []), { sectionKey, itemName, instruction: String(instruction).trim(), at: new Date(), by: req.staff._id }];
+    entry.records = records;
+    entry.sections = records[0]?.sections || entry.sections;
+    summary.byYear[y] = entry;
+    if (String(summary.latestYear) === y || !summary.latestYear) summary.sections = entry.sections;
+    await User.collection.updateOne({ _id: user._id }, { $set: { aiHealthSummary: summary } });
+    res.json({ success: true, data: summary, item: updatedItem });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 // ── 4.4 AI健康汇总分析：审核/更新 ────────────────────────────────
 // PATCH /api/staff/patients/:id/ai-health-summary
 router.patch('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {

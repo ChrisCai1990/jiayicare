@@ -2436,6 +2436,20 @@ export default function PatientDetailPage() {
     finally { setAiSummaryLoading(false) }
   }
 
+  const handleRegenerateAISummaryItem = async (sectionKey, itemName) => {
+    const instruction = window.prompt(`请输入“${itemName}”需要重新核对的问题：`, '')
+    if (!instruction?.trim()) return
+    try {
+      setAiSummaryLoading(true)
+      const scope = sectionKey === 'tumor_risk' || sectionKey === 'cardiovascular_risk' || sectionKey === 'chronic_disease' ? 'doctor' : 'all'
+      const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: aiYear, scope, recordIndex: aiRecordIndex.doctor, sectionKey, itemName, instruction: instruction.trim() })
+      setAiSummaryForm(res.data)
+      setUser(prev => prev ? { ...prev, aiHealthSummary: res.data } : prev)
+      toast(`${itemName}已单项重新生成`)
+    } catch (err) { toast(err.message || '单项重新生成失败') }
+    finally { setAiSummaryLoading(false) }
+  }
+
   const handleParseReportAI = async (reportId) => {
     setParsingReportId(reportId)
     try {
@@ -6290,7 +6304,7 @@ export default function PatientDetailPage() {
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
         const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
         const TREND_LABEL = { no_data: '暂无趋势', baseline: '已建立基线', stable: '基本稳定', improving: '改善', worsening: '需关注变化', fluctuating: '存在波动', not_comparable: '暂不可比较' }
-        const renderHealthTrendCards = (items, overview, accent = '#1D4ED8') => {
+        const renderHealthTrendCards = (items, overview, accent = '#1D4ED8', sectionKey = '') => {
           const list = Array.isArray(items) ? items : []
           if (!list.length) return null
           const attention = item => ['attention', 'abnormal', 'worsening'].includes(item.status) || item.trendStatus === 'worsening'
@@ -6321,6 +6335,7 @@ export default function PatientDetailPage() {
                     {(item.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{item.keyChanges.join('；')}</div>}
                     {item.nextAction && <div style={{ color: isAttention ? '#B91C1C' : accent }}><b>下一步：</b>{item.nextAction}</div>}
                     {!item.trend && item.note && <div style={{ color: '#64748B' }}>{item.note}</div>}
+                    {sectionKey && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem(sectionKey, item.name)}>✎ 录入问题并单项重新生成</button>}
                   </div>
                 </details>
               })}
@@ -6717,6 +6732,7 @@ export default function PatientDetailPage() {
                                   {(cancer.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{cancer.keyChanges.join('；')}</div>}
                                   {cancer.nextAction && <div style={{ color: meta.color }}><b>下一步：</b>{cancer.nextAction}</div>}
                                   {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
+                                  <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name)}>✎ 录入问题并单项重新生成</button>
                                 </div>
                               </details>
                             })}
@@ -6746,7 +6762,7 @@ export default function PatientDetailPage() {
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                       {Array.isArray(sec.cardiovascular_risk?.topics) && sec.cardiovascular_risk.topics.length > 0
-                        ? renderHealthTrendCards(sec.cardiovascular_risk.topics, sec.cardiovascular_risk.overview, '#B91C1C')
+                        ? renderHealthTrendCards(sec.cardiovascular_risk.topics, sec.cardiovascular_risk.overview, '#B91C1C', 'cardiovascular_risk')
                         : <>
                           {(sec.cardiovascular_risk?.high || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>重点关注信息</div><AIListLines items={sec.cardiovascular_risk.high} color="#DC2626" /></div>}
                           {(sec.cardiovascular_risk?.medium || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>持续关注信息</div><AIListLines items={sec.cardiovascular_risk.medium} color="#D97706" /></div>}
@@ -6783,7 +6799,7 @@ export default function PatientDetailPage() {
                     (sec.chronic_disease?.items || []).length === 0 ? (
                       <div style={{ color: '#8AA89C', fontSize: 13 }}>各项慢性病指标暂无异常</div>
                     ) : sec.chronic_disease.items.some(item => item.trend || item.latest || item.trendStatus) ? (
-                      renderHealthTrendCards(sec.chronic_disease.items, sec.chronic_disease.overview, '#0369A1')
+                      renderHealthTrendCards(sec.chronic_disease.items, sec.chronic_disease.overview, '#0369A1', 'chronic_disease')
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {sec.chronic_disease.items.map((item, i) => (
