@@ -2491,6 +2491,20 @@ export default function PatientDetailPage() {
     finally { setOcrSaving(false) }
   }
 
+  const handleParseCurrentPage = async () => {
+    if (!ocrReviewReport || !ocrReviewPage) return
+    setOcrSaving(true)
+    try {
+      // 先保存当前人工修改，再启动单页补提，避免覆盖尚未保存的审核内容。
+      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
+      const res = await staffAPI.parseReportPageAI(ocrReviewReport._id, ocrReviewPage)
+      toast(res.message || `第${ocrReviewPage}页补提已开始`)
+      setOcrReviewReport(null)
+      loadReports()
+    } catch (err) { toast(err.message || '单页补提失败') }
+    finally { setOcrSaving(false) }
+  }
+
   const handleReclassifyOCR = async () => {
     setOcrSaving(true)
     try {
@@ -9794,6 +9808,11 @@ export default function PatientDetailPage() {
               </div>
               </div>
               <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 0.7 }}
+                  disabled={ocrSaving} onClick={handleParseCurrentPage}
+                  title={`只重新提取原报告第${activePage}页，其他页保持不变`}>
+                  {ocrSaving ? '处理中…' : `补提第${activePage}页`}
+                </button>
                 <button className="btn btn-secondary" style={{ flex: 0.6 }}
                   disabled={ocrSaving} onClick={handleReclassifyOCR}
                   title="用最新专项筛查目录重新自动归类所有项目">
