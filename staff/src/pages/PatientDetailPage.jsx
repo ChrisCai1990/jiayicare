@@ -709,9 +709,9 @@ function AISectionCard({ title, icon, color, children }) {
 }
 function AIArrEdit({ value, placeholder, onChange }) {
   return (
-    <textarea className="form-control" rows={3} placeholder={placeholder}
+    <textarea className="form-control" rows={5} placeholder={placeholder}
       value={value} onChange={onChange}
-      style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
+      style={{ fontSize: 14, lineHeight: 1.7, minHeight: 125, resize: 'vertical', width: '100%' }} />
   )
 }
 
@@ -6519,21 +6519,25 @@ export default function PatientDetailPage() {
         const renderStructuredEditor = (secKey, listKey, list, statusOptions) => (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {(list || []).map((item, idx) => (
-              <div key={`${item.name}-${idx}`} style={{ border: '1px solid #DDD6FE', borderRadius: 9, padding: 11, background: '#FAFAFF' }}>
+              <div key={`${item.name}-${idx}`} style={{ border: '1px solid #DDD6FE', borderRadius: 10, padding: '16px 18px', background: '#FAFAFF', width: '100%', boxSizing: 'border-box' }}>
                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, 1fr) minmax(120px, .7fr)', gap: 8, marginBottom: 8 }}>
                   <input style={inStyle} value={item.name || ''} placeholder="项目名称" onChange={e => updStructuredItem(secKey, listKey, idx, 'name', e.target.value)} />
                   <select style={inStyle} value={item.status || statusOptions[0][0]} onChange={e => updStructuredItem(secKey, listKey, idx, 'status', e.target.value)}>
                     {statusOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </div>
-                <textarea className="form-control" rows={2} value={item.latest || ''} placeholder="最近检查" onChange={e => updStructuredItem(secKey, listKey, idx, 'latest', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%', marginBottom: 7 }} />
-                <textarea className="form-control" rows={2} value={item.trend || ''} placeholder="5年趋势" onChange={e => updStructuredItem(secKey, listKey, idx, 'trend', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%', marginBottom: 7 }} />
+                <div style={{ fontSize: 12, color: '#475569', fontWeight: 700, marginBottom: 5 }}>最近检查</div>
+                <textarea className="form-control" rows={4} value={item.latest || ''} placeholder="填写最近一次检查的日期、项目和结果" onChange={e => updStructuredItem(secKey, listKey, idx, 'latest', e.target.value)} style={{ fontSize: 14, lineHeight: 1.7, resize: 'vertical', width: '100%', minHeight: 110, marginBottom: 12 }} />
+                <div style={{ fontSize: 12, color: '#475569', fontWeight: 700, marginBottom: 5 }}>5年趋势</div>
+                <textarea className="form-control" rows={5} value={item.trend || ''} placeholder="填写各年份检查记录及趋势判断" onChange={e => updStructuredItem(secKey, listKey, idx, 'trend', e.target.value)} style={{ fontSize: 14, lineHeight: 1.7, resize: 'vertical', width: '100%', minHeight: 135, marginBottom: 10 }} />
                 <select style={{ ...inStyle, marginBottom: 7 }} value={item.trendStatus || 'no_data'} onChange={e => updStructuredItem(secKey, listKey, idx, 'trendStatus', e.target.value)}>
                   <option value="no_data">暂无趋势</option><option value="baseline">已建立基线</option><option value="stable">基本稳定</option>
                   <option value="improving">改善</option><option value="worsening">需关注变化</option><option value="fluctuating">存在波动</option><option value="not_comparable">暂不可比较</option>
                 </select>
-                <textarea className="form-control" rows={2} value={(item.keyChanges || []).join('\n')} placeholder="关键变化（每行一条）" onChange={e => updStructuredItem(secKey, listKey, idx, 'keyChanges', e.target.value.split('\n'))} style={{ fontSize: 12, resize: 'vertical', width: '100%', marginBottom: 7 }} />
-                <textarea className="form-control" rows={2} value={item.nextAction || ''} placeholder="下一步" onChange={e => updStructuredItem(secKey, listKey, idx, 'nextAction', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />
+                <div style={{ fontSize: 12, color: '#475569', fontWeight: 700, marginBottom: 5 }}>关键变化</div>
+                <textarea className="form-control" rows={3} value={(item.keyChanges || []).join('\n')} placeholder="每行填写一条关键变化" onChange={e => updStructuredItem(secKey, listKey, idx, 'keyChanges', e.target.value.split('\n'))} style={{ fontSize: 14, lineHeight: 1.7, resize: 'vertical', width: '100%', minHeight: 90, marginBottom: 12 }} />
+                <div style={{ fontSize: 12, color: '#475569', fontWeight: 700, marginBottom: 5 }}>下一步</div>
+                <textarea className="form-control" rows={3} value={item.nextAction || ''} placeholder="填写复查或后续处理建议" onChange={e => updStructuredItem(secKey, listKey, idx, 'nextAction', e.target.value)} style={{ fontSize: 14, lineHeight: 1.7, resize: 'vertical', width: '100%', minHeight: 90 }} />
               </div>
             ))}
           </div>
@@ -6823,7 +6827,7 @@ export default function PatientDetailPage() {
                   {renderSectionActions('tumor_risk')}
                   {docEditing && (!editingAISection || editingAISection === 'tumor_risk') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {sec.tumor_risk?.overview && <textarea className="form-control" rows={2} value={sec.tumor_risk.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('tumor_risk', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />}
+                      {sec.tumor_risk?.overview && <textarea className="form-control" rows={3} value={sec.tumor_risk.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('tumor_risk', e.target.value)} style={{ fontSize: 14, lineHeight: 1.7, minHeight: 90, resize: 'vertical', width: '100%' }} />}
                       {Array.isArray(sec.tumor_risk?.cancers) && sec.tumor_risk.cancers.length > 0
                         ? renderStructuredEditor('tumor_risk', 'cancers', sec.tumor_risk.cancers, [
                           ['covered','已覆盖'], ['due_soon','即将到期'], ['overdue','已到期'], ['follow_up_due','异常复查'], ['not_routinely_recommended','无需常规年筛'], ['unknown','资料不足'],
@@ -6902,7 +6906,7 @@ export default function PatientDetailPage() {
                   {renderSectionActions('cardiovascular_risk')}
                   {docEditing && (!editingAISection || editingAISection === 'cardiovascular_risk') ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {sec.cardiovascular_risk?.overview && <textarea className="form-control" rows={2} value={sec.cardiovascular_risk.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('cardiovascular_risk', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />}
+                      {sec.cardiovascular_risk?.overview && <textarea className="form-control" rows={3} value={sec.cardiovascular_risk.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('cardiovascular_risk', e.target.value)} style={{ fontSize: 14, lineHeight: 1.7, minHeight: 90, resize: 'vertical', width: '100%' }} />}
                       {Array.isArray(sec.cardiovascular_risk?.topics) && sec.cardiovascular_risk.topics.length > 0
                         ? renderStructuredEditor('cardiovascular_risk', 'topics', sec.cardiovascular_risk.topics, [
                           ['attention','需关注'], ['monitor','持续监测'], ['stable','基本稳定'], ['unknown','资料不足'],
@@ -6932,7 +6936,7 @@ export default function PatientDetailPage() {
                   {renderSectionActions('chronic_disease')}
                   {docEditing && (!editingAISection || editingAISection === 'chronic_disease') ? (
                     (sec.chronic_disease?.items || []).some(item => item.trend || item.latest || item.trendStatus) ? <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                      {sec.chronic_disease?.overview && <textarea className="form-control" rows={2} value={sec.chronic_disease.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('chronic_disease', e.target.value)} style={{ fontSize: 12, resize: 'vertical', width: '100%' }} />}
+                      {sec.chronic_disease?.overview && <textarea className="form-control" rows={3} value={sec.chronic_disease.overview.headline || ''} placeholder="卡片总览" onChange={e => updOverviewHeadline('chronic_disease', e.target.value)} style={{ fontSize: 14, lineHeight: 1.7, minHeight: 90, resize: 'vertical', width: '100%' }} />}
                       {renderStructuredEditor('chronic_disease', 'items', sec.chronic_disease.items, [
                         ['abnormal','异常'], ['mild_abnormal','轻度异常'], ['normal','正常'],
                       ])}</div> : <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
