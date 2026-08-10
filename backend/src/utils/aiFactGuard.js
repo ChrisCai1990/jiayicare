@@ -7,7 +7,9 @@ const FACT_GUARD_SYSTEM_PROMPT = `你是医疗事实审计器，不是自由写�
 3. 同一事实存在冲突时，不得自行选边，必须写“资料冲突，待人工确认”。
 4. 必须逐项检查证据目录中的报告，补回候选分析遗漏的、与对应分析维度直接相关的重要已完成检查和明确异常；不得凭医学常识新增会员事实。
 5. 规则引擎信号属于确定性事实，不得遗漏、改写成其他疾病或降低其重要性。
-6. 保持输入JSON的字段结构，不增加解释文字，不输出Markdown，只返回完整JSON。`;
+6. 趋势必须同轨比较：内镜只与内镜、病理只与病理、影像只与影像、同名检验指标只与同名指标比较。禁止把病理分级和内镜分级直接比较为进展或改善。
+7. 胰弹性蛋白酶/粪便胰弹性蛋白酶不得归入胰腺癌筛查或趋势。有效期内已有肠镜时，粪便隐血不得列为优先补做、到期或未覆盖项。
+8. 保持输入JSON的字段结构，不增加解释文字，不输出Markdown，只返回完整JSON。`;
 
 function buildEvidenceCatalog(user, reports = [], extraFacts = []) {
   const lines = [
@@ -33,7 +35,7 @@ function buildEvidenceCatalog(user, reports = [], extraFacts = []) {
   return lines.join('\n');
 }
 
-async function auditMedicalJson(candidate, evidenceCatalog, { maxTokens = 3200 } = {}) {
+async function auditMedicalJson(candidate, evidenceCatalog, { maxTokens = 3200, timeoutMs = 45000 } = {}) {
   try {
     const prompt = `【证据目录】\n${evidenceCatalog}\n\n【待审计JSON】\n${JSON.stringify(candidate)}\n\n请执行事实核对、遗漏检查和概念纠错，返回修正后的同结构JSON。`;
     const text = await chat([{ role: 'user', content: prompt }], {
@@ -41,6 +43,7 @@ async function auditMedicalJson(candidate, evidenceCatalog, { maxTokens = 3200 }
       maxTokens,
       temperature: 0,
       jsonMode: true,
+      timeoutMs,
     });
     const match = text.trim().match(/\{[\s\S]*\}/);
     return match ? JSON.parse(match[0]) : candidate;

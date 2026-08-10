@@ -16,6 +16,55 @@ function buildCancerCatalogText(user) {
   return COMMON_CANCER_CATALOG[genderKey].map((label, index) => `${index + 1}. ${label}`).join('\n');
 }
 
+// 先用确定性关键词把分散在年度体检、组合超声、内镜及病理中的癌种相关证据归拢，
+// 再交给AI总结。它不替代原始证据目录，只解决长报告中某一年/某个组合项目容易被遗漏的问题。
+const CANCER_EVIDENCE_RULES = {
+  肺癌: /胸部CT|肺部CT|肺CT|LDCT|肺结节|磨玻璃|肺纤维/i,
+  结直肠癌: /肠镜|结肠镜|直肠镜|回肠末端|结肠|直肠|肠息肉|肠病理|粪便隐血|便潜血|FOBT/i,
+  肝癌: /肝脏|肝胆|脂肪肝|甲胎蛋白|\bAFP\b|肝纤维|纤维化|弹性超声|弹性成像|透明质酸|层粘连蛋白|Ⅲ型前胶原|III型前胶原|Ⅳ型胶原|IV型胶原/i,
+  胃癌: /胃镜|胃窦|胃角|胃体|胃底|胃黏膜|胃病理|幽门螺杆|碳13|碳14|13C|14C/i,
+  食管癌: /食管|胃镜|食管镜|反流性食管炎|Barrett/i,
+  前列腺癌: /前列腺|\bPSA\b|前列腺特异抗原/i,
+  甲状腺癌: /甲状腺|TI-RADS|TIRADS/i,
+  膀胱癌: /膀胱|泌尿系|双肾.*输尿管|输尿管.*膀胱|尿路超声|尿潜血|尿隐血/i,
+  胰腺癌: /胰腺|肝胆胰脾|上腹部超声|腹部CT|CA19-9|CA199/i,
+  淋巴瘤: /淋巴结|淋巴瘤|浅表淋巴|纵隔淋巴/i,
+  乳腺癌: /乳腺|乳房|BI-RADS|BIRADS|钼靶|乳腺X线/i,
+  宫颈癌: /宫颈|HPV|TCT|液基细胞|阴道镜/i,
+  子宫体癌: /子宫|宫腔|内膜|阴道超声|经阴道超声/i,
+  卵巢癌: /卵巢|附件|子宫附件|阴道超声|经阴道超声|CA125|HE4/i,
+};
+
+function buildCancerEvidenceText(user, reports) {
+  const names = COMMON_CANCER_CATALOG[user.gender === '女' ? 'F' : 'M'];
+  const cutoffYear = new Date().getFullYear() - 4;
+  const lines = [];
+  names.forEach(name => {
+    const pattern = CANCER_EVIDENCE_RULES[name];
+    const hits = [];
+    reports.forEach((report, reportIndex) => {
+      const date = String(report.checkDate || report.date || '').slice(0, 10);
+      const year = Number(report.reportYear || date.slice(0, 4));
+      if (Number.isFinite(year) && year < cutoffYear) return;
+      const reportText = [report.title, report.screeningL2, report.examConclusion, report.note].filter(Boolean).join(' ');
+      const matchedItems = (report.reportItems || []).filter(item => pattern.test([
+        item.name, item.bodyPart, item.findings, item.diagnosis, item.conclusion,
+      ].filter(Boolean).join(' ')));
+      if (!pattern.test(reportText) && !matchedItems.length) return;
+      const evidenceId = `RPT-${String(reportIndex + 1).padStart(3, '0')}`;
+      const details = matchedItems.slice(0, 12).map(item => {
+        const raw = [item.value, item.unit, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join('；');
+        const type = item.itemType === 'pathology' || /病理|活检|组织学/.test(`${item.name || ''}${raw}`)
+          ? '病理' : (item.itemType === 'endoscopy' || /胃镜|肠镜|内镜/.test(item.name || '') ? '内镜' : (item.itemType === 'imaging' ? '影像' : '检验'));
+        return `${type}:${item.name || '未命名'}=${raw || '未记录结果'}`;
+      });
+      hits.push(`[${evidenceId}] ${date || year || '日期未知'} ${details.length ? details.join(' | ') : reportText.slice(0, 240)}`);
+    });
+    lines.push(`【${name}】${hits.length ? `\n${hits.join('\n')}` : '近5年未匹配到相关记录'}`);
+  });
+  return lines.join('\n');
+}
+
 // 生成AI健康汇总分析的 sections 内容（不含审核字段），供医护端接口和用户端自助接口共用
 // scope: 'all'（默认，全量生成）| 'doctor'（仅5维度，生活方式评估留空对象供上层合并旧值）| 'nutrition'（仅生活方式评估）
 // existingSections: 已有的 sections（用于生成时给AI提供另一方内容作为上下文，实现两部分内容互相关联而非孤立）
@@ -101,6 +150,7 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
   // 含胃镜免胃蛋白酶原/肠镜免便潜血/HP连续3年阴性/乳腺钼靶40岁等规则）——2026-07-10 金娟
   const coverageText = buildCoverageText(assessCancerCoverage(user, allReports));
   const cancerCatalogText = buildCancerCatalogText(user);
+  const cancerEvidenceText = buildCancerEvidenceText(user, allReports);
 
   // 近30天打卡记录汇总：按type分组，数值类给出首末值+均值体现趋势，文本类给出最近几条原文
   const CHECKIN_LABEL = { weight: '体重(kg)', bloodPressure: '血压(mmHg)', bloodSugar: '血糖(mmol/L)', heartRate: '心率(次/分)', sleep: '睡眠(小时)', mood: '情绪(1-10分)', exercise: '运动', diet: '饮食', water: '饮水', bowel: '排便', smoking: '吸烟', alcohol: '饮酒', symptom: '症状自评' };
@@ -207,6 +257,8 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
 
 分析原则：以【最近一次体检关键指标】为立足点判断当前健康状态，结合【历年体检指标趋势】和【历年专项筛查报告】判断变化方向与风险演进，并结合【健康档案】【生活方式与膳食调查】【近30天打卡记录】【当前用药与营养素补充】综合评估。【近30天打卡记录】反映的是体检之后更实时的自测数据（如体重是否持续下降、血压近期是否稳定、运动频率、睡眠时长），如果与体检报告结论有出入（如体检时血压正常但近期打卡持续偏高），应在相应维度中明确指出这一变化趋势并给出建议，不能只字不提。你手上的是该会员全部专项筛查数据（体检指标/肿瘤标志物/影像内镜所见/基因/心理量表/听力视力等专科检查），请充分利用，不要只盯着少数几个指标。【专科检查异常发现】里列出的每一条（如听力高频下降、视力/屈光异常、口腔、骨密度等）都必须在分析中被提及并给出建议，这类非主流指标最容易被遗漏，务必逐条覆盖，纳入 medical_priority 或 chronic_disease 相应维度。专项筛查报告中的检查所见（影像/内镜）请重点比对历年变化趋势，如结节大小/形态变化、颈动脉斑块变化、甲状腺TI-RADS分级变化等。每个分析维度都应体现「几年数据的趋势变化 → 原因分析 → 未来建议」三段式，而非仅描述当前值。
 
+【心脑血管与慢病趋势卡规则】cardiovascular_risk.topics和chronic_disease.items只按会员真实存在的资料建卡，不为凑数量创建空主题。每张卡先找最近一次，再比较最近5个自然年内同名指标或同类检查；0次=no_data，1次=baseline，至少2个可比点才可判断stable/improving/worsening/fluctuating。血压、血脂、颈动脉、冠脉、心电/心脏结构必须分主题；血糖、肝功能、肾功能、尿酸、骨密度及其他专科异常也应分主题。不同检测方法、不同单位或不同部位不得硬比较，写not_comparable。关键变化最多3条，不逐年堆砌全文。
+
 【肿瘤标志物解读铁律——必须严格遵守，避免制造恐慌】除 PSA（前列腺癌相对特异）外，AFP/CEA/CA19-9/CA125/CA15-3/CA724/HE4/NSE 等常见肿瘤标志物特异性都不高：单项轻度升高绝不能直接判为"疑似癌症"或建议会员恐慌就医，必须结合影像/内镜结果、动态趋势（是否持续进行性升高）、既往史家族史综合判断。标志物正常也不代表无肿瘤风险。请在 tumor_risk 维度中明确说明标志物的这一局限性。
 
 【肿瘤覆盖与趋势输出铁律】
@@ -216,6 +268,11 @@ async function generateHealthSummarySections(user, { scope = 'all', existingSect
 ④趋势最长比较最近5个自然年。0次记录写no_data；1次写baseline（仅建立基线，禁止写稳定）；至少2个可比时间点才可写stable/improving/worsening/fluctuating。不能确认是同一病灶、检查方法或单位不可比时写not_comparable。
 ⑤影像/内镜趋势只比较原报告明确记载的部位、数量、大小、性质和分级；不得自行对应病灶。每项趋势结论必须简短，关键变化最多3条，并保留证据编号。
 ⑥肿瘤标志物只能作为辅助趋势，正常不代表排除肿瘤，单项轻度升高不得判癌。
+⑦必须逐项使用【常见肿瘤近5年分组证据】核对年份，分组证据中存在的年份不得遗漏。结直肠癌尤其要同时核对历年肠镜；组合名称“泌尿系超声/双肾输尿管膀胱”中明确包含膀胱时，必须计入膀胱影像记录。
+⑧同一器官的不同检查类型分轨比较：内镜所见只与内镜所见比较，病理只与病理比较，影像只与影像比较，检验指标按同名指标比较。禁止用2023年病理分级与2026年胃镜下分级直接得出“进展/改善”；应分别写“内镜变化”和“病理变化”，缺少同轨时间点时写仅建立基线。
+⑨肝癌卡必须逐项核对：肝脏影像、AFP、肝脏弹性/纤维化超声，以及透明质酸、层粘连蛋白、Ⅲ型前胶原、Ⅳ型胶原等已存在的肝纤维化指标；有记录就呈现其同名指标趋势，不得只写AFP和脂肪肝。
+⑩胰弹性蛋白酶/粪便胰弹性蛋白酶反映胰腺外分泌功能，不得作为胰腺癌筛查证据、异常或趋势。胰腺癌基础覆盖只认明确观察胰腺的腹部影像；CA19-9仅作辅助。
+⑪已经有有效期内肠镜时，粪便隐血/FOBT不得列为“需关注、到期或优先补做”；已经完成胃肠镜也不得仅因粪便隐血阳性直接生成“优先排查消化道器质性病变”，只能忠实记录该结果并提示结合已完成内镜结论由医生判断。
 
 【用药及营养补充信息】仅复述会员当前记录，并标注信息来源或待人工核对状态。不得自行建立药物、营养补充剂与检查异常之间的因果关系；不得建议新增、停用、更换或调整剂量、频次和用法。如原始报告明确要求复核，应原样概述并提示携带原始资料咨询正规医疗机构。
 
@@ -265,6 +322,9 @@ ${coverageText}
 
 【本会员性别对应的10种常见肿瘤目录（仅作为逐项风险评估目录，不代表每项都需年度筛查）】
 ${cancerCatalogText}
+
+【常见肿瘤近5年分组证据（程序逐年归拢；必须逐项核对，不得遗漏年份，不得跨检查类型直接比较）】
+${cancerEvidenceText}
 
 【带编号证据目录（结论必须以此为事实边界）】
 ${evidenceCatalog}
@@ -349,15 +409,43 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
     "cardiovascular_risk": {
       "high": ["重点关注信息（仅引用已有资料，有则填，无则空数组）"],
       "medium": ["持续关注信息（仅引用已有资料，有则填，无则空数组）"],
-      "summary": "心脑血管相关信息概述（50-100字，不作疾病概率判断）"
+      "summary": "心脑血管相关信息概述（50-100字，不作疾病概率判断）",
+      "overview": {
+        "headline": "一句话只总结最重要的变化或当前无紧急待办",
+        "attentionCount": 0,
+        "stableCount": 0
+      },
+      "topics": [
+        {
+          "name": "仅输出有资料的主题，如血压、血脂、颈动脉、冠脉、心电图/心脏结构",
+          "status": "attention或monitor或stable或unknown",
+          "latest": "最近一次检查日期、项目及结果摘要",
+          "trendStatus": "no_data或baseline或stable或improving或worsening或fluctuating或not_comparable",
+          "trend": "最长5年同类检查趋势，最多60字；只有一次不得写稳定",
+          "keyChanges": ["最多3条关键年份变化"],
+          "nextAction": "依据原报告或已有管理要求给出下一步，不作诊断和开单",
+          "evidenceIds": ["RPT-001"]
+        }
+      ]
     },
     "chronic_disease": {
+      "overview": {
+        "headline": "一句话只总结慢病及其他指标最重要的变化",
+        "attentionCount": 0,
+        "stableCount": 0
+      },
       "items": [
         {
-          "name": "系统或指标名称",
-          "value": "当前值描述",
+          "name": "仅输出有资料的系统或指标主题，如血糖、肾功能、肝功能、尿酸、骨密度、听力等",
+          "value": "当前值简述（兼容旧展示）",
           "status": "abnormal或mild_abnormal或normal",
-          "note": "简要说明（30字内）"
+          "note": "简要说明（30字内，兼容旧展示）",
+          "latest": "最近一次检查日期、项目及结果摘要",
+          "trendStatus": "no_data或baseline或stable或improving或worsening或fluctuating或not_comparable",
+          "trend": "最长5年同名指标或同类检查趋势，最多60字；不同单位/方法不可硬比",
+          "keyChanges": ["最多3条关键年份变化"],
+          "nextAction": "依据原报告或既有管理要求给出下一步，不作诊断和用药调整",
+          "evidenceIds": ["RPT-001"]
         }
       ]
     },
@@ -414,7 +502,9 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
   if (!parseFailed && wantDoctor) {
     // 审计只需修正既有JSON，不需要与首轮相同的最大输出额度；限制额度可降低耗时，
     // 审计偶发超时时仍由aiFactGuard安全回退到首轮结果。
-    const audited = await auditMedicalJson({ sections }, evidenceCatalog, { maxTokens: Math.min(maxTokens, 3200) });
+    const audited = await auditMedicalJson({ sections }, evidenceCatalog, {
+      maxTokens: Math.min(maxTokens, 3200), timeoutMs: wantDoctor ? 90000 : 45000,
+    });
     if (audited?.sections) sections = { ...sections, ...audited.sections };
   }
 

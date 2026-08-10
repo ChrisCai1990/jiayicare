@@ -6287,6 +6287,38 @@ export default function PatientDetailPage() {
 
         const URGENCY_BADGE = { high: { label: '高', bg: '#FEE2E2', color: '#DC2626' }, medium: { label: '中', bg: '#FEF9EC', color: '#D97706' }, low: { label: '低', bg: '#F0FDF4', color: '#16A34A' } }
         const STATUS_COLOR = { abnormal: '#DC2626', mild_abnormal: '#D97706', normal: '#16A34A' }
+        const TREND_LABEL = { no_data: '暂无趋势', baseline: '已建立基线', stable: '基本稳定', improving: '改善', worsening: '需关注变化', fluctuating: '存在波动', not_comparable: '暂不可比较' }
+        const renderHealthTrendCards = (items, overview, accent = '#1D4ED8') => {
+          const list = Array.isArray(items) ? items : []
+          if (!list.length) return null
+          const attention = item => ['attention', 'abnormal', 'worsening'].includes(item.status) || item.trendStatus === 'worsening'
+          return <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 10, padding: '11px 13px' }}>
+              <div style={{ fontWeight: 800, color: accent }}>{overview?.headline || '健康指标趋势总览'}</div>
+              <div style={{ marginTop: 5, fontSize: 12, color: '#64748B' }}>共 {list.length} 个主题 · 需关注 {Number(overview?.attentionCount) || list.filter(attention).length} 项</div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 8 }}>
+              {list.map((item, index) => {
+                const isAttention = attention(item)
+                return <details key={`${item.name}-${index}`} open={isAttention}
+                  style={{ border: `1px solid ${isAttention ? '#FECACA' : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
+                  <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: isAttention ? '#DC2626' : (STATUS_COLOR[item.status] || '#16A34A'), flexShrink: 0 }} />
+                    <span style={{ fontWeight: 800, color: '#1F2937', flex: 1 }}>{item.name}</span>
+                    <span style={{ fontSize: 11, color: isAttention ? '#B91C1C' : '#64748B' }}>{TREND_LABEL[item.trendStatus] || '趋势待确认'}</span>
+                  </summary>
+                  <div style={{ marginTop: 9, paddingTop: 8, borderTop: '1px solid #F1F5F9', display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12, lineHeight: 1.6 }}>
+                    {(item.latest || item.value) && <div><b style={{ color: '#64748B' }}>最近检查：</b>{item.latest || item.value}</div>}
+                    {item.trend && <div><b style={{ color: '#64748B' }}>5年趋势：</b>{item.trend}</div>}
+                    {(item.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{item.keyChanges.join('；')}</div>}
+                    {item.nextAction && <div style={{ color: isAttention ? '#B91C1C' : accent }}><b>下一步：</b>{item.nextAction}</div>}
+                    {!item.trend && item.note && <div style={{ color: '#64748B' }}>{item.note}</div>}
+                  </div>
+                </details>
+              })}
+            </div>
+          </div>
+        }
         const inStyle = { width: '100%', padding: '5px 8px', border: '1px solid #E0D9CE', borderRadius: 6, fontSize: 12, boxSizing: 'border-box', fontFamily: 'inherit', background: '#FAFAF8' }
         const reportLabel = reportId => {
           const report = screeningReports.find(r => String(r._id) === String(reportId))
@@ -6705,8 +6737,12 @@ export default function PatientDetailPage() {
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      {(sec.cardiovascular_risk?.high || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>重点关注信息</div><AIListLines items={sec.cardiovascular_risk.high} color="#DC2626" /></div>}
-                      {(sec.cardiovascular_risk?.medium || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>持续关注信息</div><AIListLines items={sec.cardiovascular_risk.medium} color="#D97706" /></div>}
+                      {Array.isArray(sec.cardiovascular_risk?.topics) && sec.cardiovascular_risk.topics.length > 0
+                        ? renderHealthTrendCards(sec.cardiovascular_risk.topics, sec.cardiovascular_risk.overview, '#B91C1C')
+                        : <>
+                          {(sec.cardiovascular_risk?.high || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>重点关注信息</div><AIListLines items={sec.cardiovascular_risk.high} color="#DC2626" /></div>}
+                          {(sec.cardiovascular_risk?.medium || []).length > 0 && <div><div style={{ fontSize: 12, color: '#8AA89C', fontWeight: 600 }}>持续关注信息</div><AIListLines items={sec.cardiovascular_risk.medium} color="#D97706" /></div>}
+                        </>}
                       {sec.cardiovascular_risk?.summary && <div style={{ fontSize: 13, lineHeight: 1.7, color: '#1A2B24', background: '#F2EDE3', borderRadius: 8, padding: '9px 12px', marginTop: 2 }}>{sec.cardiovascular_risk.summary}</div>}
                     </div>
                   )}
@@ -6738,6 +6774,8 @@ export default function PatientDetailPage() {
                   ) : (
                     (sec.chronic_disease?.items || []).length === 0 ? (
                       <div style={{ color: '#8AA89C', fontSize: 13 }}>各项慢性病指标暂无异常</div>
+                    ) : sec.chronic_disease.items.some(item => item.trend || item.latest || item.trendStatus) ? (
+                      renderHealthTrendCards(sec.chronic_disease.items, sec.chronic_disease.overview, '#0369A1')
                     ) : (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {sec.chronic_disease.items.map((item, i) => (
