@@ -377,7 +377,11 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
   // 肿瘤维度新增男女常见10种肿瘤逐项卡片后，doctor/all 输出明显增长；预留足够空间，
   // 避免JSON尾部截断。生活方式单独生成仍保持原额度。
   const maxTokens = scope === 'all' ? 6000 : (scope === 'doctor' ? 5200 : 2000);
-  const text = await chat([{ role: 'user', content: prompt }], { maxTokens, temperature: 0.05, jsonMode: true });
+  // 健康信息整理包含最长5年资料和10种常见肿瘤卡片，属于长文本任务；仅此场景放宽
+  // 单次AI请求上限，普通聊天等接口仍保持ai.js默认45秒。
+  const text = await chat([{ role: 'user', content: prompt }], {
+    maxTokens, temperature: 0.05, jsonMode: true, timeoutMs: wantDoctor ? 90000 : 45000,
+  });
 
   let sections = null;
   let parseFailed = false;
@@ -408,7 +412,9 @@ ${existingSections && scope === 'doctor' && existingSections.lifestyle_assessmen
 
   // 第二轮仅做事实审计：删除无证据结论、纠正相近病名混淆，并补回明确遗漏的检查。
   if (!parseFailed && wantDoctor) {
-    const audited = await auditMedicalJson({ sections }, evidenceCatalog, { maxTokens });
+    // 审计只需修正既有JSON，不需要与首轮相同的最大输出额度；限制额度可降低耗时，
+    // 审计偶发超时时仍由aiFactGuard安全回退到首轮结果。
+    const audited = await auditMedicalJson({ sections }, evidenceCatalog, { maxTokens: Math.min(maxTokens, 3200) });
     if (audited?.sections) sections = { ...sections, ...audited.sections };
   }
 
