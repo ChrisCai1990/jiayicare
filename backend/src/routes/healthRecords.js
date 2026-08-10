@@ -5,6 +5,7 @@ const FollowUp = require('../models/FollowUp');
 const User = require('../models/User');
 const PointsLog = require('../models/PointsLog');
 const { calcStatus } = require('../utils/healthRecordStatus');
+const { uploadBase64 } = require('../utils/oss');
 const router = express.Router();
 
 // 打卡固定积分：每种打卡类型每天（CST）限计一次，防刷分
@@ -190,7 +191,7 @@ router.get('/today-status', auth, async (req, res) => {
 // 新增记录
 router.post('/', auth, async (req, res) => {
   try {
-    const { category, type, label, value, unit, extra, note, recordedAt } = req.body;
+    const { category, type, label, value, unit, extra, note, recordedAt, imageUrl = '', images = [] } = req.body;
 
     if (!type || value === undefined || value === null || value === '') {
       return res.status(400).json({ success: false, message: '类型和数值不能为空' });
@@ -205,6 +206,12 @@ router.post('/', auth, async (req, res) => {
     // AI监测异常升级（试点：血压danger级自动进入健康顾问待审核队列）
     const aiAlertStatus = (type === 'bloodPressure' && status === 'danger') ? 'pending' : null;
 
+    const imageUrls = [];
+    if (imageUrl) imageUrls.push((await uploadBase64(imageUrl, 'image/jpeg', 'health-records')).url);
+    for (const item of images.slice(0, 9)) {
+      if (item?.data) imageUrls.push((await uploadBase64(item.data, item.mimeType || 'image/jpeg', 'health-records')).url);
+    }
+
     const record = await HealthRecord.create({
       user: req.user._id,
       category: resolvedCategory,
@@ -213,6 +220,8 @@ router.post('/', auth, async (req, res) => {
       value: String(value),
       unit: unit || '',
       extra: extra || {},
+      imageUrl: imageUrls[0] || '',
+      imageUrls,
       status,
       note: note || '',
       recordedAt: recordedAt ? new Date(recordedAt) : new Date(),

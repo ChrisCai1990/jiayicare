@@ -79,7 +79,9 @@ app.use('/api/reminders', auth, checkServiceActive, require('./routes/reminders'
 app.use('/api/reports',       auth, checkServiceActive, require('./routes/reports'));
 app.use('/api/chat',          auth, checkServiceActive, require('./routes/chat'));
 app.use('/api/questionnaire', auth, checkServiceActive, require('./routes/questionnaire'));
-app.use('/api/services',      auth, checkServiceActive, require('./routes/services'));
+// Catalogue must remain public so a recipient can preview a shared product before login.
+// Sensitive service routes enforce auth inside routes/services.js.
+app.use('/api/services',      require('./routes/services'));
 app.use('/api/partner-benefits', require('./routes/partnerBenefits'));
 app.use('/api/enterprise-hr', require('./routes/enterpriseHr'));
 app.use('/api/ops-dashboard', require('./routes/opsDashboard'));

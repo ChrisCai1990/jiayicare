@@ -41,6 +41,7 @@ const SessionPackage = require('../models/SessionPackage');
 const AnnualPlan = require('../models/AnnualPlan');
 const PlanDeletionLog = require('../models/PlanDeletionLog');
 const Product = require('../models/Product');
+const ProductShare = require('../models/ProductShare');
 const ServiceProposal = require('../models/ServiceProposal');
 const FollowUpForm      = require('../models/FollowUpForm');
 const FollowUpPlan      = require('../models/FollowUpPlan');
@@ -2693,6 +2694,18 @@ router.get('/commission/code', staffAuth, async (req, res) => {
   res.json({ success: true, data: { referralCode: code, staffId: req.staff._id, name: req.staff.name } });
 });
 
+router.get('/commission/share-products', staffAuth, async (req, res) => {
+  const products = await Product.find({ status: 'on' }).select('name images').sort({ sortOrder: 1, createdAt: -1 }).lean();
+  res.json({ success: true, data: products });
+});
+
+router.post('/commission/product-share', staffAuth, async (req, res) => {
+  const product = await Product.findOne({ _id: req.body.productId, status: 'on' }).select('name images');
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在或已下架' });
+  const share = await ProductShare.create({ token: crypto.randomBytes(18).toString('base64url'), productId: product._id, sharerType: 'staff', sharerStaffId: req.staff._id, expiresAt: new Date(Date.now() + 30 * 86400000) });
+  res.json({ success: true, data: { token: share.token, productId: String(product._id), productName: product.name, path: `/pages/services/mall/index?productId=${product._id}&shareToken=${share.token}` } });
+});
+
 // GET /api/staff/commission/team — 管理员查看团队分佣
 router.get('/commission/team', staffAuth, async (req, res) => {
   if (!['superadmin', 'manager'].includes(req.staff.role)) {
@@ -4968,6 +4981,22 @@ router.get('/user-messages/:userId/thread', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.patch('/user-messages/:messageId/ai-review', staffAuth, async (req, res) => {
+  try {
+    if (!['nutritionist', 'superadmin'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师可审核' });
+    const { action, content } = req.body || {};
+    if (!['approve', 'reject'].includes(action)) return res.status(400).json({ success: false, message: '无效审核操作' });
+    const msg = await Message.findOne({ _id: req.params.messageId, type: 'nutritionist', aiGenerated: true, aiReviewStatus: 'pending' });
+    if (!msg) return res.status(404).json({ success: false, message: '待审核草稿不存在' });
+    if (content?.trim()) msg.content = content.trim();
+    msg.aiReviewStatus = action === 'approve' ? 'approved' : 'rejected';
+    msg.aiReviewedAt = new Date(); msg.aiReviewedBy = req.staff._id; msg.unread = action === 'approve';
+    await msg.save();
+    if (action === 'approve' && msg.conversationId) ssePublish(msg.conversationId, { type: 'message', data: msg });
+    res.json({ success: true, data: msg });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // ── 医护端撤回自己发送的回复（2分钟内，与用户端 messages.js 撤回规则一致）────────────
 // PATCH /api/staff/user-messages/:messageId/recall
 const MESSAGE_RECALL_WINDOW_MS = 2 * 60 * 1000;
@@ -5015,8 +5044,8 @@ router.patch('/user-messages/:userId/read', staffAuth, async (req, res) => {
 // POST /api/staff/user-messages/:userId/reply
 router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
   try {
-    const { content } = req.body;
-    if (!content?.trim()) {
+    const { content = '', images = [] } = req.body;
+    if (!content?.trim() && !images.length) {
       return res.status(400).json({ success: false, message: '回复内容不能为空' });
     }
     const patient = await User.findById(req.params.userId).select('name');
@@ -5035,12 +5064,17 @@ router.post('/user-messages/:userId/reply', staffAuth, async (req, res) => {
     const conversationId = `${req.params.userId}_${roleKey}`;
     const senderLabel = staff.title ? `${staff.name}（${staff.title}）` : staff.name;
 
+    const imageUrls = [];
+    for (const item of images.slice(0, 9)) {
+      if (item?.data) imageUrls.push((await require('../utils/oss').uploadBase64(item.data, item.mimeType || 'image/jpeg', 'messages')).url);
+    }
     const replyMsg = await Message.create({
       user:    req.params.userId,
       type:    msgType,
       sender:  senderLabel,
       title:   `${staff.name} 回复了您的留言`,
-      content: content.trim(),
+      content: content.trim() || '图片',
+      imageUrl: imageUrls[0] || '', imageUrls,
       unread:  true,
       conversationId,
     });

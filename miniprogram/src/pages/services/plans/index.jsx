@@ -215,13 +215,6 @@ function PlanCard({ plan, expanded, onToggle, onItemPress, onConfirmPlan, confir
 }
 
 export default function ServicePlansPage() {
-  Taro.useShareAppMessage(() => ({
-    title: '嘉医汇健康服务方案',
-    path: '/pages/services/plans/index',
-  }));
-  Taro.useShareTimeline(() => ({
-    title: '嘉医汇健康服务方案',
-  }));
   const { statusBarHeight } = useNavBar();
   const [plans, setPlans] = useState([]);
   const [loading, setLoading] = useState(true);

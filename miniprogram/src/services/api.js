@@ -168,6 +168,7 @@ export const messagesAPI = {
   markRead: (id) => request(`/messages/${id}/read`, { method: 'PATCH' }),
   markAllRead: () => request('/messages/read-all', { method: 'PATCH' }),
   send: (to, content, extra = {}) => request('/messages', { method: 'POST', body: JSON.stringify({ to, content, ...extra }) }),
+  submitNutritionAnalysis: (content) => request('/messages/nutrition-analysis', { method: 'POST', body: JSON.stringify({ content }) }),
   getThread: (role) => request(`/messages/thread/${role}`),
   recall: (id) => request(`/messages/${id}/recall`, { method: 'PATCH' }),
 };
@@ -238,10 +239,12 @@ export const checkupAPI = {
 
 // ── Services / 服务商城 ───────────────────────────────────────────
 export const servicesAPI = {
+  createProductShare: (productId) => request('/services/product-shares', { method: 'POST', body: JSON.stringify({ productId }) }),
+  claimProductShare: (token) => request(`/services/product-shares/${token}/claim`, { method: 'POST' }),
   list: () => request('/services'),
   packages: () => request('/services/packages'),
-  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel) =>
-    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel }) }),
+  order: (serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken = '') =>
+    request('/services/order', { method: 'POST', body: JSON.stringify({ serviceId, note, paymentMethod, useHealthFund, couponId, specificationLabel, shareToken }) }),
   inquire: (serviceId, note, specificationLabel) =>
     request('/services/inquiries', { method: 'POST', body: JSON.stringify({ serviceId, note, specificationLabel }) }),
   coupons: () => request('/services/coupons'),

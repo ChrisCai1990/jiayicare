@@ -15,17 +15,22 @@ export default function CommissionPage() {
   const [referralCode, setReferralCode] = useState('')
   const [page, setPage] = useState(1)
   const [copied, setCopied] = useState(false)
+  const [products, setProducts] = useState([])
+  const [shareProductId, setShareProductId] = useState('')
+  const [productSharePath, setProductSharePath] = useState('')
   const limit = 20
 
   useEffect(() => {
     Promise.all([
       staffAPI.getMyCommission({ page, limit }),
       staffAPI.getReferralCode(),
-    ]).then(([c, r]) => {
+      staffAPI.getCommissionShareProducts(),
+    ]).then(([c, r, p]) => {
       setRecords(c.data.records)
       setTotal(c.data.total)
       setTotalEarned(c.data.totalEarned)
       setReferralCode(r.data.referralCode)
+      setProducts(p.data || [])
     }).catch(console.error).finally(() => setLoading(false))
   }, [page])
 
@@ -35,12 +40,35 @@ export default function CommissionPage() {
 
   const shareLink = `http://121.40.156.39?ref=${referralCode}`
 
+  const createProductShare = async () => {
+    if (!shareProductId) return
+    const res = await staffAPI.createCommissionProductShare(shareProductId)
+    setProductSharePath(res.data.path)
+    await navigator.clipboard.writeText(res.data.path)
+    alert('产品小程序路径已生成并复制，可用于生成小程序卡片：\n' + res.data.path)
+  }
+
   if (loading) return <div className="page-loading">加载中...</div>
 
   return (
     <div className="page">
       <div className="page-header">
         <h1 className="page-title">分佣中心</h1>
+      </div>
+
+      <div className="card" style={{ marginBottom: 24 }}>
+        <div className="card-header"><div className="card-title">📤 分享具体服务产品</div></div>
+        <div className="card-body">
+          <div style={{ display:'flex', gap:10, alignItems:'center' }}>
+            <select className="form-input" value={shareProductId} onChange={e=>setShareProductId(e.target.value)} style={{maxWidth:420}}>
+              <option value="">选择要分享的产品</option>
+              {products.map(p=><option key={p._id} value={p._id}>{p.name}</option>)}
+            </select>
+            <button className="btn btn-primary" disabled={!shareProductId} onClick={createProductShare}>生成专属分享路径</button>
+          </div>
+          {productSharePath && <div style={{marginTop:10,fontSize:12,color:'#4A6558',wordBreak:'break-all'}}>{productSharePath}</div>}
+          <p style={{fontSize:12,color:'#8AA89C'}}>客户通过此产品路径下单后，订单自动归属当前销售，按产品营收分配规则结算。</p>
+        </div>
       </div>
 
       {/* 统计卡片 */}

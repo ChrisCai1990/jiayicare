@@ -15,6 +15,8 @@ const Payment = require('../models/Payment');
 const wechatPay = require('../utils/wechatPay');
 const Fulfillment = require('../models/Fulfillment');
 const ServiceInquiry = require('../models/ServiceInquiry');
+const ProductShare = require('../models/ProductShare');
+const crypto = require('crypto');
 
 const Product = require('../models/Product');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
@@ -75,6 +77,36 @@ router.get('/coupons', auth, async (req, res) => {
   res.json({ success: true, data: coupons });
 });
 
+// Product-only sharing. A token identifies the sharer without exposing user ids in the URL.
+router.post('/product-shares', auth, async (req, res) => {
+  const product = await Product.findOne({ _id: req.body.productId, status: 'on' }).select('_id name images');
+  if (!product) return res.status(404).json({ success: false, message: '产品不存在或已下架' });
+  const share = await ProductShare.create({
+    token: crypto.randomBytes(18).toString('base64url'),
+    productId: product._id,
+    sharerType: 'customer',
+    sharerUserId: req.user._id,
+    expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  });
+  res.json({ success: true, data: { token: share.token, productId: String(product._id), title: product.name, imageUrl: product.images?.[0] || '' } });
+});
+
+router.post('/product-shares/:token/claim', auth, async (req, res) => {
+  const share = await ProductShare.findOne({ token: req.params.token, expiresAt: { $gt: new Date() } });
+  if (!share) return res.status(404).json({ success: false, message: '分享链接已失效' });
+  if (share.sharerUserId && String(share.sharerUserId) === String(req.user._id)) {
+    return res.json({ success: true, data: { productId: String(share.productId), selfShare: true } });
+  }
+  if (share.recipientUserId && String(share.recipientUserId) !== String(req.user._id)) {
+    return res.status(409).json({ success: false, message: '该分享关系已由其他客户确认' });
+  }
+  share.recipientUserId = req.user._id;
+  share.openedAt ||= new Date();
+  share.claimedAt ||= new Date();
+  await share.save();
+  res.json({ success: true, data: { productId: String(share.productId), selfShare: false } });
+});
+
 // 新客户可自主开通的服务包，展示内容完全由 Admin 维护。
 router.get('/packages', auth, async (req, res) => {
   const user = await User.findById(req.user._id).select('clientBrand').lean();
@@ -125,7 +157,7 @@ router.post('/inquiries', auth, async (req, res) => {
 // useHealthFund: 本次要抵扣的健康基金金额（元，<= 余额 且 <= 订单原价）
 // couponId: 本次要使用的优惠券 _id（amount 满减 或 percent 折扣，两者可叠加使用）
 router.post('/order', auth, async (req, res) => {
-  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId } = req.body;
+  const { serviceId, specificationLabel, note, paymentMethod = 'wechat_pay', useHealthFund, couponId, shareToken = '' } = req.body;
   if (!serviceId) {
     return res.status(400).json({ success: false, message: '请指定服务项目' });
   }
@@ -258,10 +290,21 @@ router.post('/order', auth, async (req, res) => {
   // 该订单只生成推广费，不生成服务费。
   let referrerId = null;
   let servicePerformers = [];
+  let productShare = null;
+  if (shareToken && product) {
+    productShare = await ProductShare.findOne({
+      token: shareToken,
+      productId: product._id,
+      recipientUserId: req.user._id,
+      convertedOrderId: null,
+      expiresAt: { $gt: new Date() },
+    });
+    if (productShare?.sharerStaffId) referrerId = productShare.sharerStaffId;
+  }
   if (product) {
     const lastPush = await PushRecord.findOne({ patientId: req.user._id, type: 'product', productId: service.id })
       .sort({ createdAt: -1 }).select('staffId servicePerformers');
-    if (lastPush) {
+    if (lastPush && !referrerId) {
       referrerId = lastPush.staffId;
       // 推送时为该产品指定的各岗位服务人（productId 匹配或未标 productId 的通用项）带入订单，供核销结算按岗位发绩效
       servicePerformers = (lastPush.servicePerformers || [])
@@ -313,6 +356,12 @@ router.post('/order', auth, async (req, res) => {
     couponId: coupon?._id || null,
     couponDiscount,
   });
+  if (productShare) {
+    productShare.convertedOrderId = order._id;
+    productShare.convertedAt = new Date();
+    productShare.rewardStatus = productShare.sharerType === 'customer' ? 'pending' : 'none';
+    await productShare.save();
+  }
 
   // 下单后需要人工跟进的待办：只生成 FollowUp（医护端"待随访任务"面板的数据源，也是用户端展示的唯一数据源），
   // 不再同时创建 Task——此前两套模型无关联字段，导致同一次预约在用户端出现两条重复卡片，
@@ -356,6 +405,7 @@ router.post('/order', auth, async (req, res) => {
   order.fulfillmentId = fulfillment._id;
   order.fulfillmentStatus = fulfillment.status;
   await order.save();
+  await require('../utils/productShareRewards').grantProductShareRewards(order);
   }
 
   let payment = null;

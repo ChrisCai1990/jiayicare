@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, Textarea, ScrollView, Image, Input } from '@tarojs/components';
+import { View, Text, Textarea, ScrollView, Image, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../../theme';
 import { servicesAPI, authAPI, userAPI } from '../../../services/api';
@@ -77,7 +77,7 @@ function ServiceCard({ item, onDetail, onPay }) {
   );
 }
 
-function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
+function ServiceDetailModal({ item, onClose, onConsult, onPay, shareReady }) {
   return (
     <View style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'flex-end' }}>
       <View style={{ backgroundColor: '#fff', borderRadius: '28px 28px 0 0', padding: `${spacing.lg}px`, width: '100%', maxHeight: '85%', boxSizing: 'border-box', display: 'flex', flexDirection: 'column' }}>
@@ -113,6 +113,9 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
             </View>
           </View>
         </ScrollView>
+        <Button openType="share" disabled={!shareReady} style={{ marginBottom: '10px', border: `1px solid ${colors.primary}`, color: colors.primary, backgroundColor: '#fff', borderRadius: `${radius.md}px`, fontSize: '14px' }}>
+          {shareReady ? '转发这个产品' : '正在生成分享链接…'}
+        </Button>
         <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
           <View onClick={onClose} style={{ flex: 1, textAlign: 'center', padding: '14px', borderRadius: `${radius.md}px`, border: `1.5px solid ${colors.border}` }}>
             <Text style={{ fontSize: '15px', color: colors.textSecondary, fontWeight: 600 }}>返回</Text>
@@ -126,7 +129,7 @@ function ServiceDetailModal({ item, onClose, onConsult, onPay }) {
   );
 }
 
-function PurchaseModal({ item, mode, onClose }) {
+function PurchaseModal({ item, mode, onClose, shareToken = '' }) {
   const { user, updateUser } = useAuth();
   const isPay = mode === 'pay';
   const [note, setNote] = useState('');
@@ -189,7 +192,7 @@ function PurchaseModal({ item, mode, onClose }) {
       }
       const noteWithSpec = [currentSpecLabel ? `规格：${currentSpecLabel}（¥${currentPrice}）` : '', note.trim()].filter(Boolean).join('；');
       const res = isPay
-        ? await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined)
+        ? await servicesAPI.order(item.id, noteWithSpec, payMethod, fundApplied, couponId, currentSpecLabel || undefined, shareToken)
         : await servicesAPI.inquire(item.id, note.trim(), currentSpecLabel || undefined);
       if (res.success) {
         if (res.data?.paymentParams) {
@@ -410,13 +413,6 @@ function PurchaseModal({ item, mode, onClose }) {
 }
 
 export default function ServiceMallPage() {
-  Taro.useShareAppMessage(() => ({
-    title: '嘉医汇健康服务商城',
-    path: '/pages/services/mall/index',
-  }));
-  Taro.useShareTimeline(() => ({
-    title: '嘉医汇健康服务商城',
-  }));
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('全部');
@@ -425,6 +421,33 @@ export default function ServiceMallPage() {
   const [purchaseMode, setPurchaseMode] = useState('consult');
   const [services, setServices] = useState([]);
   const [categories, setCategories] = useState(['全部']);
+  const [shareToken, setShareToken] = useState('');
+  const routeParams = Taro.getCurrentInstance()?.router?.params || {};
+
+  Taro.useShareAppMessage(() => {
+    if (!detailService || !shareToken) return { title: '嘉医汇', path: '/pages/home/index' };
+    return {
+      title: detailService.name,
+      path: `/pages/services/mall/index?productId=${detailService.id}&shareToken=${shareToken}`,
+      imageUrl: detailService.images?.[0],
+    };
+  });
+
+  useEffect(() => {
+    if (!detailService || !user) {
+      setShareToken('');
+      Taro.hideShareMenu();
+      return;
+    }
+    let active = true;
+    Taro.hideShareMenu();
+    servicesAPI.createProductShare(detailService.id).then((res) => {
+      if (!active || !res.success) return;
+      setShareToken(res.data.token);
+      Taro.showShareMenu({ menus: ['shareAppMessage'] });
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [detailService?.id, user?._id]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState('');
 
@@ -433,6 +456,8 @@ export default function ServiceMallPage() {
       if (!res.success) throw new Error(res.message || '服务加载失败');
       setServices(res.data?.services || []);
       setCategories(res.data?.categories || ['全部']);
+      const target = (res.data?.services || []).find((service) => service.id === routeParams.productId);
+      if (target) setDetailService(target);
     }).catch(() => {
       setServices([]);
       setCategories(['全部']);
@@ -440,8 +465,17 @@ export default function ServiceMallPage() {
     }).finally(() => setLoading(false));
   }, []);
 
+  useEffect(() => {
+    if (!user || !routeParams.shareToken) return;
+    servicesAPI.claimProductShare(routeParams.shareToken).catch(() => {});
+  }, [user?._id, routeParams.shareToken]);
+
   const openPurchase = (svc, mode) => {
     if (!user) {
+      try {
+        const query = [routeParams.productId && `productId=${routeParams.productId}`, routeParams.shareToken && `shareToken=${routeParams.shareToken}`].filter(Boolean).join('&');
+        Taro.setStorageSync('jy_post_login_url', `/pages/services/mall/index${query ? `?${query}` : ''}`);
+      } catch {}
       Taro.showModal({
         title: '登录后继续',
         content: '服务内容可直接浏览。提交咨询或购买服务时，需要先登录以保存订单和联系信息。',
@@ -502,11 +536,12 @@ export default function ServiceMallPage() {
           onClose={() => setDetailService(null)}
           onConsult={() => { openPurchase(detailService, 'consult'); setDetailService(null); }}
           onPay={() => { openPurchase(detailService, 'pay'); setDetailService(null); }}
+          shareReady={!!shareToken}
         />
       )}
 
       {selectedService && (
-        <PurchaseModal item={selectedService} mode={purchaseMode} onClose={() => setSelectedService(null)} />
+        <PurchaseModal item={selectedService} mode={purchaseMode} shareToken={routeParams.shareToken || ''} onClose={() => setSelectedService(null)} />
       )}
     </View>
   );

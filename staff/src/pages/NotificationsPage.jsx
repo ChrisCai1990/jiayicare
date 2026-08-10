@@ -672,6 +672,7 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   const [draftRange, setDraftRange] = useState(CHAT_DRAFT_DEFAULT_RANGE[roleKey] || 'today')
   const [draftGenerating, setDraftGenerating] = useState(false)
   const [draftReview, setDraftReview] = useState(null)
+  const [replyImages, setReplyImages] = useState([])
   const bottomRef = useRef(null)
 
   const ROLE_LABEL = { doctor: '健康顾问', nutritionist: '营养师', manager: '健管师' }
@@ -698,11 +699,12 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
   const handleSend = async () => {
-    if (!content.trim()) { setErr('请输入回复内容'); return }
+    if (!content.trim() && !replyImages.length) { setErr('请输入回复内容或选择图片'); return }
     setSubmitting(true); setErr('')
     try {
-      await staffAPI.replyToUser(userId, content.trim())
+      await staffAPI.replyToUser(userId, content.trim(), replyImages.map(({data,mimeType})=>({data,mimeType})))
       setContent('')
+      setReplyImages([])
       onSent()
       await loadThread()
     } catch (e) { setErr(e.message || '发送失败') }
@@ -710,6 +712,14 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
   }
 
   const fmtTime = t => new Date(t).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+
+  const reviewAI = async (message, action) => {
+    try {
+      await staffAPI.reviewNutritionAIMessage(message._id, action, message.content)
+      await loadThread()
+      toast(action === 'approve' ? '审核通过，已推送给客户' : '已驳回AI草稿')
+    } catch (e) { toast(e.message || '审核失败') }
+  }
 
   return (
     <div className="modal-overlay" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
@@ -758,7 +768,16 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
                     background: isUser ? '#fff' : (m.isAI ? '#D97706' : '#1E6B50'), color: isUser ? '#1A2B24' : '#fff',
                     fontSize: 14, lineHeight: 1.6, whiteSpace: 'pre-wrap',
                     boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
-                  }}>{m.content}</div>
+                  }}>
+                    {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map(url => <img key={url} src={url} alt="沟通图片" style={{ display: 'block', maxWidth: '100%', maxHeight: 220, borderRadius: 8, marginBottom: 6 }} />)}
+                    {m.content}
+                  </div>
+                  {roleKey === 'nutritionist' && m.aiGenerated && m.aiReviewStatus === 'pending' && (
+                    <div style={{ display: 'flex', gap: 6, marginTop: 6, justifyContent: 'flex-end' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => reviewAI(m, 'reject')}>驳回</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => reviewAI(m, 'approve')}>审核并推送</button>
+                    </div>
+                  )}
                 </div>
               </div>
             )
@@ -767,7 +786,9 @@ function ThreadModal({ userId, userName, roleKey, onClose, onSent, onNavigate })
         </div>
 
         <div style={{ flexShrink: 0, padding: '12px 20px', borderTop: '1px solid #f0ede8', background: '#fff' }}>
+          {replyImages.length > 0 && <div style={{display:'flex',gap:8,marginBottom:8,flexWrap:'wrap'}}>{replyImages.map((img,i)=><div key={i} style={{position:'relative'}}><img src={img.data} alt="待发送" style={{width:58,height:58,objectFit:'cover',borderRadius:8}}/><button type="button" onClick={()=>setReplyImages(v=>v.filter((_,x)=>x!==i))} style={{position:'absolute',right:-4,top:-4,border:0,borderRadius:10,background:'#DC3545',color:'#fff'}}>×</button></div>)}</div>}
           <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end' }}>
+            <label className="btn btn-secondary" style={{alignSelf:'stretch',display:'flex',alignItems:'center',cursor:'pointer'}}>图片<input type="file" accept="image/*" multiple hidden onChange={e=>{Array.from(e.target.files||[]).slice(0,9-replyImages.length).forEach(file=>{const reader=new FileReader();reader.onload=()=>setReplyImages(v=>[...v,{data:reader.result,mimeType:file.type||'image/jpeg'}].slice(0,9));reader.readAsDataURL(file)});e.target.value='' }}/></label>
             <textarea className="form-input" rows={2} value={content}
               onChange={e => { setContent(e.target.value); setErr('') }}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend() } }}

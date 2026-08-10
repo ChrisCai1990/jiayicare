@@ -30,10 +30,26 @@ router.get('/thread/:role', auth, async (req, res) => {
   const VALID = ['doctor', 'nutritionist', 'manager'];
   if (!VALID.includes(role)) return res.status(400).json({ success: false, message: '无效角色' });
   const conversationId = `${req.user._id}_${role}`;
-  const messages = await Message.find({ conversationId, recalled: { $ne: true } }).sort({ createdAt: 1 }).limit(100);
+  const messages = await Message.find({
+    conversationId,
+    recalled: { $ne: true },
+    $or: [{ aiGenerated: { $ne: true } }, { aiReviewStatus: { $in: ['', 'approved'] } }],
+  }).sort({ createdAt: 1 }).limit(100);
   // 标记所有未读为已读
   await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
   res.json({ success: true, data: messages, conversationId });
+});
+
+router.post('/nutrition-analysis', auth, async (req, res) => {
+  const content = String(req.body?.content || '').trim();
+  if (!content) return res.status(400).json({ success: false, message: 'AI分析内容不能为空' });
+  const conversationId = `${req.user._id}_nutritionist`;
+  const aiMsg = await Message.create({
+    user: req.user._id, type: 'nutritionist', sender: 'AI营养分析', title: 'AI生成 · 待营养师审核',
+    content, unread: false, conversationId, isAI: true, aiGenerated: true, aiReviewStatus: 'pending',
+  });
+  ssePublish(conversationId, { type: 'message', data: aiMsg });
+  res.json({ success: true, data: aiMsg });
 });
 
 // 撤回一条消息（仅本人发送的消息，2分钟内可撤回，与AI助手频道 chat.js 的撤回规则一致）
@@ -77,8 +93,8 @@ router.patch('/read-all', auth, async (req, res) => {
 // 用户发送消息（给健康顾问/营养师/健管专员）
 router.post('/', auth, async (req, res) => {
   try {
-    const { to, content, imageUrl = '', image = '', mimeType = 'image/jpeg', aiAnalysis = '', suppressAI = false } = req.body;
-    if (!content?.trim() && !imageUrl && !image) {
+    const { to, content, imageUrl = '', image = '', images = [], mimeType = 'image/jpeg', aiAnalysis = '', suppressAI = false } = req.body;
+    if (!content?.trim() && !imageUrl && !image && !images.length) {
       return res.status(400).json({ success: false, message: '消息内容不能为空' });
     }
     const VALID_RECIPIENTS = ['doctor', 'nutritionist', 'manager'];
@@ -99,9 +115,16 @@ router.post('/', auth, async (req, res) => {
     const senderName = req.user.name || req.user.phone;
     const conversationId = `${req.user._id}_${to}`;
     let storedImageUrl = String(imageUrl || '');
+    const storedImageUrls = [];
     if (image) {
       const uploaded = await uploadBase64(image, mimeType, 'messages');
       storedImageUrl = uploaded.url;
+      storedImageUrls.push(uploaded.url);
+    }
+    for (const item of images.slice(0, 9)) {
+      if (!item?.data) continue;
+      const uploaded = await uploadBase64(item.data, item.mimeType || 'image/jpeg', 'messages');
+      storedImageUrls.push(uploaded.url);
     }
     const msg = await Message.create({
       user:    req.user._id,
@@ -110,6 +133,7 @@ router.post('/', auth, async (req, res) => {
       title:   `用户留言 → ${TITLE_MAP[to]}`,
       content: content.trim(),
       imageUrl: storedImageUrl,
+      imageUrls: storedImageUrls,
       unread:  false,
       recipient: to,
       conversationId,
@@ -123,12 +147,21 @@ router.post('/', auth, async (req, res) => {
       const aiMsg = await Message.create({
         user: req.user._id, type: 'nutritionist', sender: 'AI营养初评',
         title: 'AI生成 · 饮食照片初步分析', content: aiAnalysis.trim(), unread: true,
-        conversationId, isAI: true, aiGenerated: true,
+        conversationId, isAI: true, aiGenerated: true, aiReviewStatus: 'pending',
       });
       ssePublish(conversationId, { type: 'message', data: aiMsg });
+      require('../utils/aiMessageFallback').replyWithAI({
+        userId: req.user._id, recipient: to, content: content.trim() || '用户上传了饮食图片，请结合会话进行沟通', conversationId,
+      });
       return;
     }
-    if (suppressAI || to === 'nutritionist') return;
+    if (to === 'nutritionist') {
+      require('../utils/aiMessageFallback').replyWithAI({
+        userId: req.user._id, recipient: to, content: content.trim() || '用户上传了健康记录图片', conversationId,
+      });
+      return;
+    }
+    if (suppressAI) return;
 
     // AI立即先回一句安抚（不阻塞响应），医护看到后仍可正常人工回复追加
     require('../utils/aiMessageFallback').replyWithAI({

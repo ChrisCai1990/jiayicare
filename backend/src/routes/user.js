@@ -823,18 +823,22 @@ const HEALTH_PLAN_REVIEW_ROLE = { annual_checkup: 'familyDoctor', checkup: 'fami
 async function generateHealthPlanFollowUp(plan) {
   const reviewRole = HEALTH_PLAN_REVIEW_ROLE[plan.type];
   if (!reviewRole) return 0;
+  const patient = await User.findById(plan.patientId)
+    .select('assignedHealthManager assignedFamilyDoctor assignedNutritionist').lean();
+  const assignedTo = plan.type === 'nutrition'
+    ? patient?.assignedNutritionist
+    : (patient?.assignedHealthManager || patient?.assignedFamilyDoctor);
   const typeLabel = plan.type === 'nutrition' ? 'AI营养方案' : 'AI体检方案';
-  await FollowUp.create({
-    patientId: plan.patientId,
-    staffId: plan.staffId,
-    date: new Date(Date.now() + 7 * 86400000),
-    theme: `${typeLabel}确认后随访 · ${plan.title || ''}`,
-    status: 'planned',
-    sourceHealthPlanId: plan._id,
-    sourceType: 'health_plan',
-    aiStatus: 'pending',
-    reviewRole,
-  });
+  await FollowUp.findOneAndUpdate(
+    { sourceHealthPlanId: plan._id, sourceType: 'health_plan' },
+    { $set: {
+      patientId: plan.patientId, staffId: plan.staffId, assignedTo: assignedTo || plan.staffId,
+      date: new Date(Date.now() + 7 * 86400000),
+      theme: `${typeLabel}确认后随访 · ${plan.title || ''}`,
+      status: 'planned', aiStatus: 'approved', reviewRole,
+    } },
+    { upsert: true, new: true, setDefaultsOnInsert: true },
+  );
   return 1;
 }
 
@@ -952,6 +956,7 @@ router.get('/followup-tasks', auth, async (req, res) => {
   try {
     const followups = await FollowUp.find({
       patientId: req.user._id,
+      aiStatus: { $ne: 'pending' },
       $or: [
         { status: { $in: ['planned', 'in_progress', 'missed', 'completed', 'cancelled'] } }, // 已取消也要展示，供用户端"已取消"筛选查看
         { completedByUser: true },

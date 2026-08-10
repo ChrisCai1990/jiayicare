@@ -84,6 +84,7 @@ async function confirmPayment({ outTradeNo, transactionId, paidAt, snapshot }) {
   order.paymentStatus = 'paid';
   order.tradeStatus = 'paid';
   await order.save();
+  await require('./productShareRewards').grantProductShareRewards(order);
   return order;
 }
 
@@ -125,6 +126,7 @@ async function confirmRefund(refund, snapshot) {
         { status: 'active', usedAt: null, usedOrderId: null },
       );
     }
+    await require('./productShareRewards').reverseProductShareRewards(order);
   }
   await order.save();
   return order;

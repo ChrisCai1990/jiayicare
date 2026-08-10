@@ -22,7 +22,10 @@ export default function LoginPage() {
 
   const afterLoginSuccess = (user) => {
     if (user?.onboardingCompleted) {
-      Taro.switchTab({ url: '/pages/home/index' });
+      let target = '';
+      try { target = Taro.getStorageSync('jy_post_login_url') || ''; Taro.removeStorageSync('jy_post_login_url'); } catch {}
+      if (target) Taro.redirectTo({ url: target });
+      else Taro.switchTab({ url: '/pages/home/index' });
     } else {
       Taro.redirectTo({ url: '/pages/onboarding/index' });
     }
@@ -81,22 +84,6 @@ export default function LoginPage() {
     } finally { setLoading(false); }
   };
 
-  const demoLogin = async () => {
-    setError('');
-    try {
-      setLoading(true);
-      const r1 = await authAPI.sendCode('13800138000');
-      // 体验账号只展示脱敏样例，绝不能占用体验者的微信 OpenID。
-      const r2 = await authAPI.login('13800138000', r1.code || '123456', { bindWechat: false });
-      if (r2.success) {
-        await login(r2.data.user, r2.data.token);
-        afterLoginSuccess(r2.data.user);
-      }
-    } catch (err) {
-      setError(err.message || '演示登录失败，请稍后重试');
-    } finally { setLoading(false); }
-  };
-
   const canSend = phone.length === 11 && countdown === 0;
   const canLogin = phone.length === 11 && code.length === 6;
 
@@ -134,21 +121,6 @@ export default function LoginPage() {
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 20px' }} />
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary, display: 'block' }}>手机号登录</Text>
         <Text style={{ fontSize: '13px', color: colors.textMuted, marginBottom: '24px', display: 'block' }}>手机号验证码登录，新用户自动注册</Text>
-
-        <Button
-          style={{
-            height: '50px', lineHeight: '50px', borderRadius: `${radius.md}px`,
-            backgroundColor: '#fff', border: `1.5px solid ${colors.primary}`,
-            color: colors.primary, fontSize: '15px', fontWeight: 700, marginBottom: '8px',
-          }}
-          onClick={demoLogin}
-          disabled={loading}
-        >
-          先浏览体验（无需授权）
-        </Button>
-        <Text style={{ fontSize: '11px', color: colors.textMuted, textAlign: 'center', display: 'block', marginBottom: `${spacing.lg}px` }}>
-          体验过程不获取您的手机号、头像或昵称
-        </Text>
 
         <View style={{
           display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,

@@ -2,7 +2,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
-import { messagesAPI, pushRecordsAPI, servicesAPI, userAPI } from '../../services/api';
+import { messagesAPI, pushRecordsAPI, servicesAPI, userAPI, chatAPI } from '../../services/api';
 import { useAuth } from '../../context/AuthContext';
 import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
@@ -510,7 +510,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
   const [loading, setLoading] = useState(true);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
-  const [foodImage, setFoodImage] = useState(null);
+  const [foodImages, setFoodImages] = useState([]);
   const meta = ROLE_META[role] || ROLE_META.manager;
   const pollRef = useRef(null);
 
@@ -531,17 +531,35 @@ function ConversationThread({ role, onClose, embedded = false }) {
 
   const send = async () => {
     const text = input.trim();
-    if ((!text && !foodImage) || sending) return;
+    if ((!text && !foodImages.length) || sending) return;
     setSending(true);
     setInput('');
     try {
       let extra = {};
-      if (foodImage) {
-        extra = { image: foodImage.data, mimeType: foodImage.mimeType, suppressAI: true };
+      if (foodImages.length) {
+        extra = { images: foodImages.map(({ data, mimeType }) => ({ data, mimeType })) };
       }
-      const res = await messagesAPI.send(role, text || '饮食照片', extra);
+      const res = await messagesAPI.send(role, text || '图片记录', extra);
       if (res?.data) setMsgs((prev) => (prev.some((m) => m._id === res.data._id) ? prev : [...prev, res.data]));
-      setFoodImage(null);
+      setFoodImages([]);
+      if (role === 'nutritionist') {
+        try {
+          const inputs = foodImages.length ? foodImages : [null];
+          const analyses = [];
+          for (let i = 0; i < inputs.length; i += 1) {
+            const imageItem = inputs[i];
+            const analysis = await chatAPI.analyzeNutrition({
+              text: i === 0 ? text : `这是本次记录的第${i + 1}张图片，请结合前后图片分析`,
+              image: imageItem?.data || '', mimeType: imageItem?.mimeType || 'image/jpeg',
+            });
+            const reply = analysis?.data?.content || analysis?.data?.reply || '';
+            if (reply) analyses.push(imageItem ? `图片${i + 1}：${reply}` : reply);
+          }
+          if (analyses.length) await messagesAPI.submitNutritionAnalysis(analyses.join('\n\n'));
+        } catch {
+          Taro.showToast({ title: '消息已发送，AI分析稍后重试', icon: 'none' });
+        }
+      }
       setTimeout(loadThread, 500);
     } catch {
       setInput(text);
@@ -552,13 +570,14 @@ function ConversationThread({ role, onClose, embedded = false }) {
 
   const chooseFoodImage = async () => {
     try {
-      const result = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const path = result.tempFilePaths?.[0];
-      if (!path) return;
-      const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
-      const ext = (path.split('.').pop() || 'jpg').toLowerCase();
-      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      setFoodImage({ path, mimeType, data: `data:${mimeType};base64,${base64}` });
+      const result = await Taro.chooseImage({ count: Math.max(1, 9 - foodImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const next = (result.tempFilePaths || []).map((path) => {
+        const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+        const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+        const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+        return { path, mimeType, data: `data:${mimeType};base64,${base64}` };
+      });
+      setFoodImages((prev) => [...prev, ...next].slice(0, 9));
     } catch (err) {
       if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '无法读取图片', icon: 'none' });
     }
@@ -566,7 +585,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
 
   return (
     <View style={{ display: 'flex', flexDirection: 'column', height: embedded ? '100%' : '100vh', flex: 1, minHeight: 0, backgroundColor: colors.background }}>
-      <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
+      <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
           <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
@@ -598,7 +617,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
                     maxWidth: '78%', padding: '10px 14px', borderRadius: `${radius.md}px`,
                     backgroundColor: isMine ? colors.primary : '#fff', border: isMine ? 'none' : `1px solid ${colors.border}`,
                   }}>
-                    {!!m.imageUrl && <Image src={m.imageUrl} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', marginBottom: '6px', display: 'block' }} />}
+                    {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url) => <Image key={url} src={url} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', marginBottom: '6px', display: 'block' }} />)}
                     {!isMine && (
                       <Text style={{ fontSize: '11px', fontWeight: 700, color: meta.color, display: 'block', marginBottom: '4px' }}>
                         {m.isAI ? 'AI生成' : (normalizeRoleSender(m.sender) || meta.label)}
@@ -614,17 +633,15 @@ function ConversationThread({ role, onClose, embedded = false }) {
         <View id="thread-bottom" style={{ height: '24px' }} />
       </ScrollView>
 
-      {foodImage && (
+      {foodImages.length > 0 && (
         <View style={{ padding: `8px ${spacing.lg}px`, backgroundColor: '#fff', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Image src={foodImage.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} />
-          <Text style={{ flex: 1, fontSize: '12px', color: colors.textSecondary }}>图片已选择，将直接发送给{meta.label}</Text>
-          <Text onClick={() => setFoodImage(null)} style={{ color: colors.danger, fontSize: '12px' }}>移除</Text>
+          {foodImages.map((img, index) => <View key={img.path} style={{ position: 'relative' }}><Image src={img.path} mode="aspectFill" style={{ width: '52px', height: '52px', borderRadius: '8px' }} /><Text onClick={() => setFoodImages((prev) => prev.filter((_, i) => i !== index))} style={{ position: 'absolute', right: 0, top: 0, color: '#fff', backgroundColor: colors.danger }}>×</Text></View>)}
         </View>
       )}
-      <View style={{ display: 'flex', alignItems: 'flex-end', flexShrink: 0, gap: '8px', padding: `${spacing.sm}px ${spacing.lg}px`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
+      <View style={{ display: 'flex', alignItems: 'flex-end', flexShrink: 0, gap: '8px', padding: `${spacing.sm}px ${spacing.lg}px`, paddingBottom: `calc(${spacing.sm}px + env(safe-area-inset-bottom))`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
         <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '18px' }}>📷</Text></View>
         <Textarea
-          style={{ flex: 1, backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 14px', fontSize: '14px', maxHeight: '100px', border: `1.5px solid ${colors.border}`, boxSizing: 'border-box' }}
+          style={{ flex: 1, backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 14px', fontSize: '14px', minHeight: '72px', maxHeight: '140px', border: `1.5px solid ${colors.border}`, boxSizing: 'border-box' }}
           placeholder={`发消息给${meta.label}…`}
           value={input}
           onInput={(e) => setInput(e.detail.value)}
@@ -632,7 +649,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
           autoHeight
         />
         <View onClick={send} style={{
-          width: '40px', height: '40px', borderRadius: '20px', backgroundColor: ((!input.trim() && !foodImage) || sending) ? colors.border : colors.primary,
+          width: '40px', height: '40px', borderRadius: '20px', backgroundColor: ((!input.trim() && !foodImages.length) || sending) ? colors.border : colors.primary,
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
         }}>
           <Icon name="➤" size={16} color="#fff" />

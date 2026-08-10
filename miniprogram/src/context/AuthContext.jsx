@@ -57,7 +57,7 @@ export function AuthProvider({ children }) {
   };
 
   // 演示账号（13800138000）才展示 mock 数据
-  const isDemo = user?.phone === '13800138000';
+  const isDemo = false;
 
   return (
     <AuthContext.Provider value={{ user, token, loading, login, logout, updateUser, isDemo }}>

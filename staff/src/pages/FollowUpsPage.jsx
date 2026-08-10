@@ -263,9 +263,12 @@ export default function FollowUpsPage() {
   }
 
   const handleDelete = async (id) => {
-    if (!window.confirm('确定要删除这条随访记录吗？')) return
+    if (!window.confirm('确定要删除这条随访记录吗？删除后用户端也不再展示。')) return
+    const reason = window.prompt('请填写删除原因：')
+    if (reason === null) return
+    if (!reason.trim()) { toast('请填写删除原因'); return }
     try {
-      await staffAPI.deleteFollowUp(id)
+      await staffAPI.deleteFollowUp(id, reason.trim())
       toast('已删除')
       load()
     } catch (err) { toast(err.message || '删除失败') }

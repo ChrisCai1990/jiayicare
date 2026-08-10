@@ -9,6 +9,7 @@ const healthRecordSchema = new mongoose.Schema({
   value:    { type: String, required: true },
   unit:     { type: String },
   extra:    { type: mongoose.Schema.Types.Mixed }, // { sys, dia } for BP; { mealType } for blood sugar; { imageUrl } for diet/exercise
+  imageUrls:{ type: [String], default: [] },
   imageUrl: { type: String, default: '' },         // 打卡图片（base64 或 URL）
   status:   { type: String, enum: ['normal', 'warning', 'danger'], default: 'normal' },
   note:     { type: String, default: '' },

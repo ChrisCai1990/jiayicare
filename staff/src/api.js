@@ -176,6 +176,8 @@ export const staffAPI = {
   // Commission
   getMyCommission:  (p = {}) => req('/staff/commission/me?' + qs(p)),
   getReferralCode:  ()       => req('/staff/commission/code'),
+  getCommissionShareProducts: () => req('/staff/commission/share-products'),
+  createCommissionProductShare: (productId) => req('/staff/commission/product-share', { method: 'POST', body: JSON.stringify({ productId }) }),
   getTeamCommission:()       => req('/staff/commission/team'),
 
   // Operations
@@ -316,9 +318,10 @@ export const staffAPI = {
   getUserMessages: () => req('/staff/user-messages'),
 
   // 回复用户留言
-  replyToUser: (userId, content) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content }) }),
+  replyToUser: (userId, content, images = []) => req(`/staff/user-messages/${userId}/reply`, { method: 'POST', body: JSON.stringify({ content, images }) }),
   // 获取用户对话线程
   getUserMessageThread: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/thread?role=${role}`),
+  reviewNutritionAIMessage: (messageId, action, content) => req(`/staff/user-messages/${messageId}/ai-review`, { method: 'PATCH', body: JSON.stringify({ action, content }) }),
   // 标记某用户留言为已读
   markUserMessagesRead: (userId, role = 'manager') => req(`/staff/user-messages/${userId}/read`, { method: 'PATCH', body: JSON.stringify({ role }) }),
 

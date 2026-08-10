@@ -7,6 +7,10 @@ const messageSchema = new mongoose.Schema({
   title:   { type: String },
   content: { type: String, required: true },
   imageUrl: { type: String, default: '' },
+  imageUrls: { type: [String], default: [] },
+  aiReviewStatus: { type: String, enum: ['', 'draft', 'pending', 'approved', 'rejected'], default: '' },
+  aiReviewedAt: { type: Date, default: null },
+  aiReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   unread:      { type: Boolean, default: true },
   readAt:      { type: Date },
   staffReadAt: { type: Date },  // 医护端已读时间（null = 医护未读）

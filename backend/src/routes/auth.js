@@ -82,8 +82,11 @@ router.post('/send-code', async (req, res) => {
   }
 
   // 演示账号始终用固定验证码
-  const isDemo = phone === DEMO_PHONE;
-  const code = isDemo ? '123456' : String(Math.floor(100000 + Math.random() * 900000));
+  if (phone === DEMO_PHONE) {
+    return res.status(403).json({ success: false, message: '演示账号已停用，请使用本人真实身份登录' });
+  }
+  const isDemo = false;
+  const code = String(Math.floor(100000 + Math.random() * 900000));
 
   // 持久化到 MongoDB（TTL 索引自动清理过期记录，服务重启不丢失）
   await VerificationCode.findOneAndUpdate(
@@ -103,12 +106,10 @@ router.post('/send-code', async (req, res) => {
     return res.json({ success: true, message: '验证码已发送至您的手机' });
   }
 
-  // 未配置短信 或 演示账号：返回验证码（仅开发/演示用）
-  res.json({
-    success: true,
-    message: isDemo ? '演示账号验证码：123456' : '验证码已发送（未配置短信服务，验证码见下）',
-    ...((!smsEnabled() || isDemo) && { code }),
-  });
+  if (process.env.NODE_ENV === 'production') {
+    return res.status(503).json({ success: false, message: '短信服务暂不可用，请稍后重试' });
+  }
+  res.json({ success: true, message: '开发环境验证码已生成', code });
 });
 
 // 验证码登录 / 注册
@@ -126,7 +127,8 @@ router.post('/login', async (req, res) => {
   await VerificationCode.deleteOne({ phone }); // 一次性使用
 
   // 查找用户（新手机号自动创建账号）
-  const isDemo = phone === DEMO_PHONE;
+  if (phone === DEMO_PHONE) return res.status(403).json({ success: false, message: '演示账号已停用' });
+  const isDemo = false;
   let user = await User.findOne({ phone });
   if (user?.isDeleted) return res.status(403).json({ success: false, message: '该会员信息已停用，如需恢复请联系管理员' });
   const isNew = !user; // 修复：在创建前判断，而非硬编码 false

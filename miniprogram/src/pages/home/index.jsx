@@ -311,13 +311,13 @@ export default function HomePage() {
 
       <View style={{ padding: `0 ${spacing.lg}px` }}>
         {/* 问候卡：像素级对齐 app 端 HomeScreen.js heroCard（深墨绿背景#1A2B24、56px评分数字、等级/趋势标签/迷你走势线/行动建议） */}
-        <View style={{ backgroundColor: '#1A2B24', borderRadius: `${radius.lg}px`, padding: `${spacing.lg}px`, marginBottom: `${spacing.md}px` }}>
+        <View style={{ backgroundColor: '#1A2B24', borderRadius: `${radius.lg}px`, padding: '14px 16px', marginBottom: '10px' }}>
           <Text style={{ fontSize: '14px', color: 'rgba(255,255,255,0.65)' }}>{greeting}</Text>
-          <Text style={{ fontSize: '20px', fontWeight: 700, color: '#fff', display: 'block', marginTop: '4px', marginBottom: `${spacing.md}px` }}>
+          <Text style={{ fontSize: '18px', fontWeight: 700, color: '#fff', display: 'block', marginTop: '2px', marginBottom: '8px' }}>
             {name}，{statusText} <Icon name={statusEmoji} size={18} color="#fff" />
           </Text>
           <View style={{ display: 'flex', alignItems: 'center', gap: `${spacing.md}px` }}>
-            <Text style={{ fontSize: '56px', fontWeight: 800, color: '#fff', lineHeight: '60px', letterSpacing: '-2px' }}>
+            <Text style={{ fontSize: '46px', fontWeight: 800, color: '#fff', lineHeight: '50px', letterSpacing: '-2px' }}>
               {scoreDisplay != null ? scoreDisplay : '--'}
             </Text>
             <View style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
@@ -335,7 +335,7 @@ export default function HomePage() {
               )}
             </View>
             {scoreDisplay != null && scoreTrendPoints.length >= 2 && (
-              <View style={{ marginLeft: 'auto', width: '80px' }}>
+              <View style={{ marginLeft: 'auto', width: '68px' }}>
                 <TrendChart points={scoreTrendPoints} height={24} color="rgba(255,255,255,0.7)" mini showValues={false} />
               </View>
             )}
@@ -348,11 +348,11 @@ export default function HomePage() {
         {/* 成长打卡卡片：像素级对齐 app 端 GrowthCard 组件。从未打卡（streak=0且totalCheckinDays=0）时不渲染，
             新用户先引导打卡，不空谈成长——与app端一致 */}
         {(growth.streak > 0 || growth.totalCheckinDays > 0) && (
-          <View style={{ backgroundColor: '#fff', borderRadius: '20px', padding: '18px', marginBottom: '16px', boxShadow: '0px 4px 12px rgba(30,107,80,0.06)' }}>
+          <View style={{ backgroundColor: '#fff', borderRadius: '18px', padding: '13px 15px', marginBottom: '12px', boxShadow: '0px 4px 12px rgba(30,107,80,0.06)' }}>
             <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <View style={{ display: 'flex', alignItems: 'baseline' }}>
                 <Icon name="🔥" size={20} color="#D97706" style={{ marginRight: '6px' }} />
-                <Text style={{ fontSize: '34px', fontWeight: 800, color: colors.primary, lineHeight: '38px' }}>{growth.streak}</Text>
+                <Text style={{ fontSize: '28px', fontWeight: 800, color: colors.primary, lineHeight: '32px' }}>{growth.streak}</Text>
                 <Text style={{ fontSize: '15px', color: '#4A6558', fontWeight: 600, marginLeft: '4px' }}>天连续打卡</Text>
               </View>
               <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
@@ -362,7 +362,7 @@ export default function HomePage() {
             </View>
 
             {!!growth.trendHighlight && (
-              <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#EAF5EF', borderRadius: '12px', padding: '10px', marginTop: '14px' }}>
+              <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#EAF5EF', borderRadius: '10px', padding: '8px 10px', marginTop: '10px' }}>
                 <Icon name={growth.trendHighlight.direction === 'up' ? '📈' : '📉'} size={16} color={colors.primary} style={{ marginRight: '8px' }} />
                 <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 600, flex: 1 }}>
                   你的{growth.trendHighlight.label}在变好：{growth.trendHighlight.from}{growth.trendHighlight.unit} → {growth.trendHighlight.to}{growth.trendHighlight.unit}
@@ -371,18 +371,18 @@ export default function HomePage() {
             )}
 
             {growth.monthCalendar?.length > 0 && (
-              <View style={{ marginTop: '14px' }}>
-                <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>本月打卡</Text>
-                <View style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
+              <View style={{ marginTop: '10px' }}>
+                <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '6px' }}>本月打卡</Text>
+                <View style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
                   {growth.monthCalendar.map((d) => {
                     const isToday = d.day === new Date().getDate();
                     return (
                       <View key={d.day} style={{
-                        width: '20px', height: '20px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        width: '18px', height: '18px', borderRadius: '5px', display: 'flex', alignItems: 'center', justifyContent: 'center',
                         backgroundColor: d.checked ? colors.primary : (d.future ? '#F3F4F6' : '#E8E1D5'),
                         border: isToday ? '1.5px solid #D97706' : 'none',
                       }}>
-                        <Text style={{ fontSize: '9px', color: d.checked ? '#fff' : '#B8AC99', fontWeight: 600 }}>{d.day}</Text>
+                        <Text style={{ fontSize: '8px', color: d.checked ? '#fff' : '#B8AC99', fontWeight: 600 }}>{d.day}</Text>
                       </View>
                     );
                   })}
@@ -391,7 +391,7 @@ export default function HomePage() {
             )}
 
             {growth.streak > 0 && (
-              <Text style={{ marginTop: '12px', textAlign: 'center', fontSize: '13px', color: '#4A6558', display: 'block' }}>
+              <Text style={{ marginTop: '8px', textAlign: 'center', fontSize: '12px', color: '#4A6558', display: 'block' }}>
                 今天是坚持第 {growth.streak + 1} 天，点击上方按钮完成今日打卡 <Icon name="👆" size={13} color="#4A6558" />
               </Text>
             )}

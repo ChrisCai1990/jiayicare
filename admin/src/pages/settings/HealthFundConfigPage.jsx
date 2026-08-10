@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { adminAPI } from '../../api'
 import { useToast } from '../../App'
 
-const defaults={title:'健康基金使用规则',description:'',personalPriority:true,personalDeductionType:'unlimited',personalDeductionValue:0,corporateDeductionType:'fixedAmount',corporateDeductionValue:200,minOrderAmount:0,eligibleCategories:[],allowCouponStacking:true,couponDeductionType:'unlimited',couponDeductionValue:0,refundToOriginalSource:true}
+const defaults={title:'健康基金使用规则',description:'',personalPriority:true,personalDeductionType:'unlimited',personalDeductionValue:0,corporateDeductionType:'fixedAmount',corporateDeductionValue:200,minOrderAmount:0,eligibleCategories:[],allowCouponStacking:true,couponDeductionType:'unlimited',couponDeductionValue:0,refundToOriginalSource:true,enabled:false,sharerAmount:0,recipientAmount:0}
 const typeOptions=[['unlimited','不限制（最多抵至应付金额）'],['fixedAmount','固定金额上限'],['percentage','订单金额比例上限']]
 function LimitField({title,type,value,onType,onValue}) { return <div className="form-group"><label className="form-label">{title}</label><div style={{display:'grid',gridTemplateColumns:'minmax(240px,1fr) minmax(180px,1fr)',gap:12}}><select className="form-input" value={type} onChange={e=>onType(e.target.value)}>{typeOptions.map(([v,l])=><option key={v} value={v}>{l}</option>)}</select>{type!=='unlimited'&&<div style={{display:'flex',alignItems:'center',gap:8}}><input className="form-input" type="number" min="0" max={type==='percentage'?100:undefined} value={value} onChange={e=>onValue(e.target.value)}/><span>{type==='percentage'?'%':'元/单'}</span></div>}</div></div> }
 
@@ -25,6 +25,13 @@ export default function HealthFundConfigPage(){
   <div className="form-group"><label className="form-label">规则标题</label><input className="form-input" value={form.title||''} onChange={e=>set('title',e.target.value)}/></div>
   <div className="form-group"><label className="form-label">补充说明（仅展示，不参与计算）</label><textarea className="form-input" rows={4} value={form.description||''} onChange={e=>set('description',e.target.value)}/></div>
   <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.refundToOriginalSource} onChange={e=>set('refundToOriginalSource',e.target.checked)}/>退款审核通过后，基金按自有/企业原来源退回</label>
+  <h3 style={{marginTop:28}}>产品分享成交奖励</h3>
+  <label style={{display:'flex',gap:8,margin:'14px 0'}}><input type="checkbox" checked={!!form.enabled} onChange={e=>set('enabled',e.target.checked)}/>启用客户分享产品成交后双方健康基金奖励</label>
+  <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:12}}>
+    <div className="form-group"><label className="form-label">分享客户奖励（元）</label><input className="form-input" type="number" min="0" value={form.sharerAmount} onChange={e=>set('sharerAmount',e.target.value)}/></div>
+    <div className="form-group"><label className="form-label">购买客户奖励（元）</label><input className="form-input" type="number" min="0" value={form.recipientAmount} onChange={e=>set('recipientAmount',e.target.value)}/></div>
+  </div>
+  <p style={{color:'#718096'}}>奖励仅在被分享客户完成有效支付后发放；全额退款时自动冲销，分享人不能给自己产生奖励。</p>
   <p style={{color:'#718096'}}>企业赠送基金的实际可抵扣额，会取本页平台上限与“企业客户管理”中该企业专属上限的较小值。</p>
   <button className="btn btn-primary" onClick={save} disabled={saving}>{saving?'保存中...':'保存并立即生效'}</button>
  </div></div></div>

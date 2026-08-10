@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { View, Text, Input, Picker, Image } from '@tarojs/components';
+import { View, Text, Input, Picker, Image, Textarea } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius, shadow } from '../../theme';
 import { useAuth } from '../../context/AuthContext';
@@ -100,7 +100,7 @@ export default function CheckinPage() {
   const [checkinMealType, setCheckinMealType] = useState('');
   const [checkinTimeSlot, setCheckinTimeSlot] = useState('');
   const [checkinSaving, setCheckinSaving] = useState(false);
-  const [checkinImage, setCheckinImage] = useState(null);
+  const [checkinImages, setCheckinImages] = useState([]);
 
   const [measureModal, setMeasureModal] = useState(null);
   const [measureValues, setMeasureValues] = useState({});
@@ -152,7 +152,7 @@ export default function CheckinPage() {
       setCheckinNote('');
       setCheckinMealType('');
       setCheckinTimeSlot(item.key === 'exercise' ? '现在' : '');
-      setCheckinImage(null);
+      setCheckinImages([]);
       setCheckinDate(todayStr);
       setCheckinModal(item);
     }
@@ -242,9 +242,8 @@ export default function CheckinPage() {
         value: (mealPrefix + slotPrefix + checkinNote) || checkinMealType || resolvedTimeSlot || '已打卡',
         note: '',
         status: 'normal',
-        imageUrl: checkinImage?.data || '',
+        images: checkinImages.map(({ data, mimeType }) => ({ data, mimeType })),
         extra: {
-          ...(checkinImage ? { imageUrl: checkinImage.data } : {}),
           ...(checkinMealType ? { mealType: checkinMealType } : {}),
           ...(resolvedTimeSlot ? { timeSlot: resolvedTimeSlot } : {}),
         },
@@ -262,13 +261,14 @@ export default function CheckinPage() {
 
   const chooseCheckinImage = async () => {
     try {
-      const result = await Taro.chooseImage({ count: 1, sizeType: ['compressed'], sourceType: ['album', 'camera'] });
-      const path = result.tempFilePaths?.[0];
-      if (!path) return;
-      const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
-      const ext = (path.split('.').pop() || 'jpg').toLowerCase();
-      const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
-      setCheckinImage({ path, mimeType, data: `data:${mimeType};base64,${base64}` });
+      const result = await Taro.chooseImage({ count: Math.max(1, 9 - checkinImages.length), sizeType: ['compressed'], sourceType: ['album', 'camera'] });
+      const next = (result.tempFilePaths || []).map((path) => {
+        const base64 = Taro.getFileSystemManager().readFileSync(path, 'base64');
+        const ext = (path.split('.').pop() || 'jpg').toLowerCase();
+        const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : 'image/jpeg';
+        return { path, mimeType, data: `data:${mimeType};base64,${base64}` };
+      });
+      setCheckinImages((prev) => [...prev, ...next].slice(0, 9));
     } catch (err) {
       if (!/cancel/i.test(err?.errMsg || '')) Taro.showToast({ title: '图片读取失败', icon: 'none' });
     }
@@ -442,7 +442,7 @@ export default function CheckinPage() {
 
             <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>{checkinModal.key === 'diet' ? '饮食照片（推荐）' : '记录照片（可选）'}</Text>
             <View onClick={chooseCheckinImage} style={{ border: `1px dashed ${checkinModal.color}`, borderRadius: `${radius.sm}px`, padding: '10px', marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {checkinImage ? <Image src={checkinImage.path} mode="aspectFill" style={{ width: '140px', height: '100px', borderRadius: '8px' }} /> : <Text style={{ color: checkinModal.color, fontSize: '13px', fontWeight: 600 }}>📷 拍照或从相册选择</Text>}
+              {checkinImages.length ? <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>{checkinImages.map((img, index) => <View key={img.path} style={{ position: 'relative' }}><Image src={img.path} mode="aspectFill" style={{ width: '88px', height: '72px', borderRadius: '8px' }} /><Text onClick={(e) => { e.stopPropagation?.(); setCheckinImages((prev) => prev.filter((_, i) => i !== index)); }} style={{ position: 'absolute', right: 0, top: 0, color: '#fff', backgroundColor: colors.danger }}>×</Text></View>)}</View> : <Text style={{ color: checkinModal.color, fontSize: '13px', fontWeight: 600 }}>📷 拍照或从相册选择（最多9张）</Text>}
             </View>
 
             {checkinModal.key === 'exercise' && (
@@ -457,11 +457,18 @@ export default function CheckinPage() {
             )}
 
             <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>记录内容（可选）</Text>
-            <Input
-              style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: '10px 12px', fontSize: '14px', backgroundColor: colors.background, boxSizing: 'border-box', width: '100%' }}
+            <Textarea
+              style={{
+                border: `1.5px solid ${colors.primary}55`, borderRadius: `${radius.sm}px`,
+                padding: '0 12px', fontSize: '14px', color: colors.textPrimary,
+                backgroundColor: '#fff', boxSizing: 'border-box', width: '100%',
+                minHeight: '96px', lineHeight: '22px',
+              }}
               placeholder={`记录今天的${checkinModal.label}情况...`}
               value={checkinNote}
               onInput={(e) => setCheckinNote(e.detail.value)}
+              maxlength={1000}
+              autoHeight
             />
 
             <View style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
@@ -532,11 +539,13 @@ export default function CheckinPage() {
 
             <View style={{ marginBottom: '12px' }}>
               <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>备注（可选，如异常原因）</Text>
-              <Input
+              <Textarea
                 style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: '10px 12px', fontSize: '14px', backgroundColor: colors.background, boxSizing: 'border-box', width: '100%' }}
                 placeholder="如：血压偏高，昨晚熬夜了"
                 value={measureNote}
                 onInput={(e) => setMeasureNote(e.detail.value)}
+                maxlength={1000}
+                autoHeight
               />
             </View>
 
@@ -578,11 +587,13 @@ export default function CheckinPage() {
             </View>
 
             <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>其他描述（可选）</Text>
-            <Input
+            <Textarea
               style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: '10px 12px', fontSize: '14px', backgroundColor: colors.background, boxSizing: 'border-box', width: '100%' }}
               placeholder="描述具体不适情况，如部位、持续时间等"
               value={symptomNote}
               onInput={(e) => setSymptomNote(e.detail.value)}
+              maxlength={1000}
+              autoHeight
             />
 
             <View style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
