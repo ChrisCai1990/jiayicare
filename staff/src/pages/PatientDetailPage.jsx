@@ -1633,6 +1633,7 @@ export default function PatientDetailPage() {
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
+  const [ocrFocusItem, setOcrFocusItem] = useState('')
   const [ocrSaving, setOcrSaving] = useState(false)
   const [ocrClassifySearch, setOcrClassifySearch] = useState({}) // {[rowIndex]: searchText}
   const [ocrClassifyOpen, setOcrClassifyOpen] = useState({})    // {[rowIndex]: bool}
@@ -1879,6 +1880,7 @@ export default function PatientDetailPage() {
   }
 
   const [reportScreeningData, setReportScreeningData] = useState([])
+  const [reportSourceFocus, setReportSourceFocus] = useState(null)
 
   const openReportDetail = (r) => {
     // 立即显示弹窗（用列表里已有的数据）
@@ -1989,9 +1991,35 @@ export default function PatientDetailPage() {
     }
   }
 
-  const openAIAnalysisSource = (sourceReportId) => {
+  const openAIAnalysisSource = (sourceReportId, focus = null) => {
     if (!sourceReportId) return
+    setReportSourceFocus(focus)
     openReportDetail({ _id: sourceReportId, title: '原始体检报告' })
+  }
+  const locateScreeningSource = (sourceReportId, focus = null) => {
+    const report = screeningReports.find(r => String(r._id) === String(sourceReportId))
+    if (!report) return toast('未找到对应的专项筛查记录')
+    const focusWords = focus?.words || [focus?.itemName].filter(Boolean)
+    const classified = screeningItems.find(item => String(item.reportId || '') === String(sourceReportId)
+      && (!focusWords.length || focusWords.some(word => [item.itemLabel, item.parentLabel, ...(item.matchedItems || []).map(x => x.name)].filter(Boolean).join(' ').includes(word))))
+      || screeningItems.find(item => String(item.reportId || '') === String(sourceReportId))
+    const categoryAliases = { tumor: ['肿瘤'], cardio: ['心脑', '心血管'], chronic: ['慢性'] }
+    const categoryTree = classified && !String(classified.category || '').match(/^[a-f\d]{24}$/i)
+      ? screeningTree.find(node => (categoryAliases[classified.category] || []).some(word => node.label?.includes(word))) : null
+    const l1 = String(classified?.category?.match?.(/^[a-f\d]{24}$/i) ? classified.category : (categoryTree?._id || report.screeningL1 || report.screeningCategory || ''))
+    const l2 = classified?.parentLabel || report.screeningL2 || report.title || ''
+    if (l1) setScreeningActiveL1(l1)
+    if (l1 && l2) setScreeningActiveL2s(prev => ({ ...prev, [l1]: l2 }))
+    setExpandedRecords(prev => new Set([...prev, report._id]))
+    setAiSourceGroup(null)
+    window.setTimeout(() => {
+      const node = document.querySelector(`[data-source-report-id="${report._id}"]`) || document.getElementById(`screening-record-${report._id}`) || document.getElementById('screening-results')
+      node?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      if (node) {
+        node.style.boxShadow = '0 0 0 3px rgba(124,58,237,.28)'
+        window.setTimeout(() => { node.style.boxShadow = '' }, 2200)
+      }
+    }, 120)
   }
   useEffect(() => { load() }, [id])
   // 切换到不同会员时，上一个会员的"健康档案已查看"进度不能带过来，否则会误判成这个新会员
@@ -2463,7 +2491,7 @@ export default function PatientDetailPage() {
     finally { setParsingReportId(null) }
   }
 
-  const handleOpenOCRReview = (r) => {
+  const handleOpenOCRReview = (r, focusItem = '') => {
     setOcrReviewReport(r)
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
@@ -2483,8 +2511,10 @@ export default function PatientDetailPage() {
         return it
       })
     setOcrEditItems(items)
+    setOcrFocusItem(focusItem || '')
     const pages = items.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0)
-    setOcrReviewPage(pages.length ? Math.min(...pages) : 1)
+    const focused = focusItem ? items.find(it => [it.name, it.sourceSection, it.orderName].some(v => String(v || '').includes(focusItem) || focusItem.includes(String(v || '')))) : null
+    setOcrReviewPage(Number(focused?.sourcePage) || (pages.length ? Math.min(...pages) : 1))
   }
 
   const handleApproveOCR = async () => {
@@ -4493,7 +4523,7 @@ export default function PatientDetailPage() {
             const hasExam = r.examDescription || r.examConclusion
             const totalCount = labItems.length + imgItems.length + funcItems.length + (hasExam ? 1 : 0)
             return (
-              <div key={r._id} style={{ padding: '6px 0 6px 12px', borderLeft: `2px solid ${color}40`, marginBottom: 2 }}>
+              <div id={`screening-record-${r._id}`} data-source-report-id={(r._sourceItems || [])[0]?.reportId || r._id} key={r._id} style={{ padding: '6px 0 6px 12px', borderLeft: `2px solid ${color}40`, marginBottom: 2, transition: 'box-shadow .2s' }}>
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                   <div onClick={() => setExpandedRecords(prev => {
                       const next = new Set(prev)
@@ -4515,7 +4545,7 @@ export default function PatientDetailPage() {
                           const rid = (r._sourceItems || [])[0]?.reportId
                           if (!rid) return
                           const rpt = reports.find(x => String(x._id) === rid)
-                          if (rpt) handleOpenOCRReview(rpt)
+                          if (rpt) handleOpenOCRReview(rpt, (r._sourceItems || [])[0]?.itemLabel || r.screeningL3 || r.title || '')
                         }} style={{ background: 'none', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 11, padding: '1px 6px', color: '#4A6558', cursor: 'pointer', flexShrink: 0 }}>编辑</button>
                         <button onClick={async () => {
                           if (!window.confirm('删除该AI识别筛查项？')) return
@@ -4698,7 +4728,7 @@ export default function PatientDetailPage() {
           const hasAny = screeningReports.length > 0 || screeningItems.length > 0
           const AI_CAT_LABEL = { tumor: '肿瘤风险筛查', cardio: '心脑血管', chronic: '慢性病筛查', hp: '健康促进', other: '其他筛查' }
           return (
-            <div className="card" style={{ marginBottom: 16 }}>
+            <div id="screening-results" className="card" style={{ marginBottom: 16 }}>
               <div className="card-header">
                 <div className="card-title">专项筛查结果</div>
                 <div style={{ display: 'flex', gap: 8 }}>
@@ -6376,6 +6406,7 @@ export default function PatientDetailPage() {
                     {(item.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{item.keyChanges.join('；')}</div>}
                     {item.nextAction && <div style={{ color: isAttention ? '#B91C1C' : accent }}><b>下一步：</b>{item.nextAction}</div>}
                     {!item.trend && item.note && <div style={{ color: '#64748B' }}>{item.note}</div>}
+                    {sectionKey && <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(item, sectionKey)}>🔗 按年份查看对应材料</button>}
                     {sectionKey && <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem(sectionKey, item.name)}>✎ 录入问题并单项重新生成</button>}
                   </div>
                 </details>
@@ -6414,6 +6445,45 @@ export default function PatientDetailPage() {
             return rule.keys.includes(report.screeningCategory) || rule.words.some(word => text.includes(word))
           })
           return [...new Set(matched.map(report => String(report._id)))]
+        }
+        const ITEM_SOURCE_WORDS = {
+          '肺癌': ['肺', '胸部CT', '肺CT', '低剂量CT'],
+          '结直肠癌': ['肠镜', '结肠镜', '直肠镜', '粪便隐血', '便潜血'],
+          '胃癌': ['胃镜', '胃窦', '胃角', '幽门螺杆菌', '病理'],
+          '食管癌': ['食管', '胃镜', '病理'],
+          '肝癌': ['肝脏', '肝胆', 'AFP', '甲胎蛋白', '肝纤维'],
+          '前列腺癌': ['前列腺', 'PSA'],
+          '甲状腺癌': ['甲状腺'],
+          '胰腺癌': ['胰腺', '肝胆胰脾'],
+          '膀胱癌': ['膀胱', '双肾输尿管膀胱', '泌尿系'],
+          '乳腺癌': ['乳腺'],
+          '宫颈癌': ['宫颈', 'TCT', 'HPV'],
+          '卵巢癌': ['卵巢', '子宫附件', '阴道超声'],
+        }
+        const itemSourceMatches = (item, sectionKey) => {
+          const itemText = [item.name, item.latest, item.value, item.trend, item.note, ...(item.keyChanges || [])].filter(Boolean).join(' ')
+          const years = [...new Set((itemText.match(/20\d{2}/g) || []))]
+          const words = ITEM_SOURCE_WORDS[item.name] || [item.name]
+          const sectionIds = new Set(sourceIdsFor(sectionKey))
+          return screeningReports.filter(report => {
+            if (!sectionIds.has(String(report._id))) return false
+            const reportYear = String(report.checkDate || report.date || '').slice(0, 4)
+            if (years.length && !years.includes(reportYear)) return false
+            const reportText = [report.title, report.screeningL1, report.screeningL2,
+              ...(report.reportItems || []).flatMap(row => [row.name, row.sourceSection, row.findings, row.diagnosis, row.conclusion, row.value])
+            ].filter(Boolean).join(' ')
+            return words.some(word => word && reportText.includes(word))
+          }).sort((a, b) => String(a.checkDate || a.date || '').localeCompare(String(b.checkDate || b.date || '')))
+            .map(report => ({ report, focus: { itemName: item.name, years, words } }))
+        }
+        const openItemSources = (item, sectionKey) => {
+          const matches = itemSourceMatches(item, sectionKey)
+          setAiSourceGroup({
+            title: `${item.name} · 对应年份原始材料`,
+            ids: matches.map(({ report }) => String(report._id)),
+            reportLabel,
+            focusById: Object.fromEntries(matches.map(({ report, focus }) => [String(report._id), focus])),
+          })
         }
         const openSectionSources = (title, ids) => setAiSourceGroup({ title, ids, reportLabel })
 
@@ -6774,6 +6844,7 @@ export default function PatientDetailPage() {
                                   {(cancer.keyChanges || []).length > 0 && <div><b style={{ color: '#64748B' }}>关键变化：</b>{cancer.keyChanges.join('；')}</div>}
                                   {cancer.nextAction && <div style={{ color: meta.color }}><b>下一步：</b>{cancer.nextAction}</div>}
                                   {cancer.riskBasis && cancer.status === 'unknown' && <div><b style={{ color: '#64748B' }}>待核对：</b>{cancer.riskBasis}</div>}
+                                  <button className="btn btn-secondary btn-sm" onClick={() => openItemSources(cancer, 'tumor_risk')}>🔗 按年份查看对应材料</button>
                                   <button className="btn btn-secondary btn-sm" disabled={aiSummaryLoading} onClick={() => handleRegenerateAISummaryItem('tumor_risk', cancer.name)}>✎ 录入问题并单项重新生成</button>
                                 </div>
                               </details>
@@ -7906,11 +7977,15 @@ export default function PatientDetailPage() {
             </div>
             <div className="modal-body" style={{ overflowY: 'auto' }}>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {aiSourceGroup.ids.length === 0 && <div style={{ padding: 14, color: '#8AA89C', fontSize: 13 }}>未找到同时匹配该检查名称和对应年份的材料，请核对专项筛查归属。</div>}
                 {aiSourceGroup.ids.map(reportId => (
-                  <button key={reportId} className="btn btn-secondary" style={{ textAlign: 'left', justifyContent: 'flex-start' }}
-                    onClick={() => openAIAnalysisSource(reportId)}>
-                    🔗 {aiSourceGroup.reportLabel(reportId)}
-                  </button>
+                  <div key={reportId} style={{ padding: 10, border: '1px solid #E5E7EB', borderRadius: 8 }}>
+                    <div style={{ fontSize: 13, color: '#334155', fontWeight: 600, marginBottom: 8 }}>{aiSourceGroup.reportLabel(reportId)}</div>
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button className="btn btn-secondary btn-sm" onClick={() => openAIAnalysisSource(reportId, aiSourceGroup.focusById?.[String(reportId)] || null)}>查看原件对应位置</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => locateScreeningSource(reportId, aiSourceGroup.focusById?.[String(reportId)] || null)}>定位到专项筛查</button>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
@@ -9351,6 +9426,24 @@ export default function PatientDetailPage() {
               {showReportDetail.note && (
                 <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>{showReportDetail.note}</div>
               )}
+              {reportSourceFocus && (() => {
+                const words = reportSourceFocus.words || [reportSourceFocus.itemName]
+                const rows = [...(showReportDetail.reportItems || []), ...reportScreeningData.flatMap(s => s.reportItems || [])]
+                  .filter(item => words.some(word => word && [item.name, item.sourceSection, item.orderName, item.findings, item.diagnosis, item.conclusion].filter(Boolean).join(' ').includes(word)))
+                return (
+                  <div style={{ marginTop: 12, padding: 12, border: '2px solid #7C3AED', background: '#F5F3FF', borderRadius: 9 }}>
+                    <div style={{ color: '#5B21B6', fontWeight: 800, fontSize: 13, marginBottom: 7 }}>
+                      已定位：{reportSourceFocus.itemName}{reportSourceFocus.years?.length ? `（${reportSourceFocus.years.join('、')}年）` : ''}
+                    </div>
+                    {rows.length ? rows.map((item, index) => (
+                      <div key={index} style={{ padding: '7px 0', borderTop: index ? '1px solid #DDD6FE' : 'none', fontSize: 12, lineHeight: 1.65 }}>
+                        <b>{item.name || item.sourceSection}</b>{item.sourcePage ? <span style={{ color: '#7C3AED' }}> · 原报告第{item.sourcePage}页</span> : null}
+                        <div>{item.findings || item.value || item.diagnosis || item.conclusion || '已匹配到该检查项目'}</div>
+                      </div>
+                    )) : <div style={{ color: '#64748B', fontSize: 12 }}>已定位到对应年份报告，但结构化项目中未找到精确条目，请按报告页码或原件核对。</div>}
+                  </div>
+                )
+              })()}
 
               {/* 专项筛查详情 */}
               {reportScreeningData.length > 0 && (
@@ -9846,8 +9939,11 @@ export default function PatientDetailPage() {
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                         {indexed.map(({ it, i }) => {
                           const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
+                          const isFocusedItem = !!ocrFocusItem && [it.name, it.sourceSection, it.orderName].some(v => String(v || '').includes(ocrFocusItem) || ocrFocusItem.includes(String(v || '')))
                           return (
-                            <div key={i} style={{ border: '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isImaging(it) ? '#fafaf8' : '#fff' }}>
+                            <div key={i} ref={node => { if (node && isFocusedItem) window.setTimeout(() => node.scrollIntoView({ behavior: 'smooth', block: 'center' }), 80) }}
+                              style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
+                              {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
                                 {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
                               </div>
