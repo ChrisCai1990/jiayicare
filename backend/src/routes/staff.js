@@ -8479,14 +8479,16 @@ async function runReportParse(reportId) {
   try {
     if (isPdf) {
       const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${useShaoyifuTemplate ? 160 : 96}dpi${useZheyiTemplate ? '/浙一P6-P16' : ''})`);
+      const isComprehensiveCheckup = report.type === 'annual';
+      const baseDpi = useShaoyifuTemplate ? 160 : (isComprehensiveCheckup ? 144 : 96);
+      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''})`);
 
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
-      const VL_MODEL = useShaoyifuTemplate ? 'qwen-vl-max' : 'qwen-vl-plus';
+      const VL_MODEL = (useShaoyifuTemplate || isComprehensiveCheckup) ? 'qwen-vl-max' : 'qwen-vl-plus';
       const CONCURRENCY = useShaoyifuTemplate ? 2 : 3;
       const BATCH_SIZE = 8;
-      const DPI = useShaoyifuTemplate ? 160 : 96;
+      const DPI = baseDpi;
 
       let allItems = [];
       const summaries = [];
@@ -8527,7 +8529,7 @@ async function runReportParse(reportId) {
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
-                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+                  const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || isComprehensiveCheckup) ? 120000 : 45000 });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
                   if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
@@ -8545,7 +8547,9 @@ async function runReportParse(reportId) {
             if (p._templateSkip) continue;
             const firstPassItems = tagReportPageItems(p.items, pageNum);
             if (isBodyCompositionPage(p, firstPassItems, report.type)) bodyCompCandidatePages.add(pageNum);
-            if (shouldSkipParsedReportPage(p) && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
+            const hasStructuredResults = firstPassItems.some(item => str(item.name)
+              && [item.value, item.findings, item.diagnosis, item.conclusion].some(value => str(value)));
+            if (shouldSkipParsedReportPage(p) && !hasStructuredResults && report.type !== 'body_comp' && !useShaoyifuTemplate && !useZheyiTemplate) {
               console.log(`[parse-ai] 页${pageNum}判定为${str(p.pageType) || '非明细页'}，程序层跳过全部条目`);
               continue;
             }
@@ -8567,7 +8571,12 @@ async function runReportParse(reportId) {
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
           : useZheyiTemplate
             ? [...detailPages].filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems))
-          : [...detailPages];
+          : (() => {
+              const pages = [...detailPages].sort((a, b) => a - b);
+              if (!pages.length) return [];
+              // 通用报告必须复核首尾明细页之间的每一页；中间页即使首轮误判为空，也不得跳过。
+              return Array.from({ length: pages[pages.length - 1] - pages[0] + 1 }, (_, i) => pages[0] + i);
+            })();
         for (const pageNum of coveragePages) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
