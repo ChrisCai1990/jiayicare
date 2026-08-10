@@ -574,7 +574,7 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   if (!parseFailed && reuseTumor) sections.tumor_risk = reusedTumorSection;
 
   // 模型偶尔仍会把血糖或血脂子指标拆成多张卡；展示前做确定性归并。
-  if (!parseFailed && wantDoctor) normalizeTrendSections(sections, user);
+  if (!parseFailed && wantDoctor) normalizeTrendSections(sections, user, allHistoricalReports);
 
   // 数据溯源：AI文本结论核实起来要反复跳转查原始档案，很麻烦。这里不是让AI自己编造溯源标识
   // （AI可能编造或对错号，指错地方比没有链接更误导人），而是后端用规则去 allReports 的
@@ -615,7 +615,7 @@ const CHRONIC_GROUP_PATTERNS = [
 const CARDIO_TOPIC_ORDER = ['心电图', '心脏超声', '冠脉CTA', '运动评估', '心脏磁共振', '颈动脉超声', '头颅MRI', '头颅MRA', '同型半胱氨酸', '脂蛋白磷脂酶A2'];
 const CARDIO_TOPIC_PATTERNS = CARDIO_TOPIC_ORDER.map(name => [name, new RegExp(name === '运动评估' ? '运动评估|运动负荷' : name, 'i')]);
 
-function normalizeTrendSections(sections, user) {
+function normalizeTrendSections(sections, user, reports = []) {
   const tumor = sections && sections.tumor_risk;
   if (tumor && Array.isArray(tumor.cancers)) {
     const order = COMMON_CANCER_CATALOG[user.gender === '女' ? 'F' : 'M'];
@@ -633,8 +633,46 @@ function normalizeTrendSections(sections, user) {
       if (matched && !normalized.has(matched[0])) normalized.set(matched[0], { ...item, name: matched[0] });
     });
     cardio.topics = CARDIO_TOPIC_ORDER.map(name => normalized.get(name)).filter(Boolean);
+    backfillCardioTopicEvidence(cardio.topics, reports);
   }
   consolidateChronicDiseaseItems(sections);
+}
+
+function backfillCardioTopicEvidence(topics, reports) {
+  const cutoffYear = new Date().getFullYear() - 4;
+  topics.forEach(topic => {
+    const rule = FOCUSED_TREND_RULES[topic.name];
+    if (!rule) return;
+    const hits = [];
+    reports.forEach((report, reportIndex) => {
+      const date = String(report.checkDate || report.date || '').slice(0, 10);
+      const year = Number(report.reportYear || date.slice(0, 4));
+      if (!Number.isFinite(year) || year < cutoffYear) return;
+      const matched = (report.reportItems || []).filter(item => rule.test([
+        item.name, item.bodyPart, item.value, item.findings, item.diagnosis, item.conclusion,
+      ].filter(Boolean).join(' ')));
+      if (!matched.length) return;
+      const item = matched[0];
+      const result = [item.diagnosis, item.conclusion, item.findings, item.value].filter(Boolean).join('；').slice(0, 80);
+      hits.push({
+        date, year, name: item.name || topic.name, result,
+        evidenceId: `RPT-${String(reportIndex + 1).padStart(3, '0')}`,
+      });
+    });
+    if (!hits.length) return;
+    hits.sort((a, b) => String(a.date).localeCompare(String(b.date)));
+    const latest = hits[hits.length - 1];
+    const years = [...new Set(hits.map(hit => hit.year))];
+    topic.latest = `${latest.date || latest.year} ${latest.name}${latest.result ? `：${latest.result}` : ''}`;
+    const yearPrefix = `近5年检查记录：${years.join('、')}年`;
+    topic.trend = String(topic.trend || '').includes(years[0])
+      ? topic.trend
+      : `${yearPrefix}${topic.trend ? `；${topic.trend}` : ''}`.slice(0, 120);
+    const deterministicChanges = hits.map(hit => `${hit.year}年${hit.name}${hit.result ? `：${hit.result}` : ''}`.slice(0, 100));
+    topic.keyChanges = [...new Set([...deterministicChanges, ...(topic.keyChanges || [])])].slice(-3);
+    topic.evidenceIds = [...new Set([...(topic.evidenceIds || []), ...hits.map(hit => hit.evidenceId)])];
+    if (hits.length === 1) topic.trendStatus = 'baseline';
+  });
 }
 
 function consolidateChronicDiseaseItems(sections) {
