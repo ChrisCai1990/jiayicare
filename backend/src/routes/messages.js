@@ -2,14 +2,23 @@ const express = require('express');
 const auth = require('../middleware/auth');
 const Message = require('../models/Message');
 const PushRecord = require('../models/PushRecord');
+const { QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
 const { uploadBase64 } = require('../utils/oss');
 const router = express.Router();
 
 // 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
+  const completedQuestionnaireIds = await QuestionnaireResponse.distinct('questionnaire', { user: req.user._id });
   const [msgCount, pushCount] = await Promise.all([
     Message.countDocuments({ user: req.user._id, unread: true, recalled: { $ne: true } }),
-    PushRecord.countDocuments({ patientId: req.user._id, readAt: null }),
+    PushRecord.countDocuments({
+      patientId: req.user._id,
+      readAt: null,
+      $or: [
+        { type: { $ne: 'questionnaire' } },
+        { questionnaireId: { $nin: completedQuestionnaireIds } },
+      ],
+    }),
   ]);
   res.json({ success: true, count: msgCount + pushCount });
 });

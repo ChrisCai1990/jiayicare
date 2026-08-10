@@ -106,7 +106,7 @@ export default function ChatPage() {
 
       {/* 两个区域同时挂载：团队消息进入页面即后台加载，切换时不再临时请求。 */}
       <View style={{ display: view === 'team' ? 'flex' : 'none', flex: 1, minHeight: 0 }}>
-        <MessagesPage embedded />
+        <MessagesPage embedded onOpenPlanner={() => setView('ai')} />
       </View>
       <View style={{ display: view === 'ai' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
       <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
