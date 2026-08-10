@@ -1630,6 +1630,7 @@ export default function PatientDetailPage() {
   const [aiHelperBusy, setAiHelperBusy] = useState(false)
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
+  const [ocrReviewPage, setOcrReviewPage] = useState(null)
   const [ocrSaving, setOcrSaving] = useState(false)
   const [ocrClassifySearch, setOcrClassifySearch] = useState({}) // {[rowIndex]: searchText}
   const [ocrClassifyOpen, setOcrClassifyOpen] = useState({})    // {[rowIndex]: bool}
@@ -2463,6 +2464,8 @@ export default function PatientDetailPage() {
         return it
       })
     setOcrEditItems(items)
+    const pages = items.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0)
+    setOcrReviewPage(pages.length ? Math.min(...pages) : 1)
   }
 
   const handleApproveOCR = async () => {
@@ -9438,6 +9441,12 @@ export default function PatientDetailPage() {
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
         const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
+        const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
+        const firstSourcePage = sourcePages[0] || 1
+        const lastSourcePage = sourcePages[sourcePages.length - 1] || firstSourcePage
+        const expectedPages = Array.from({ length: Math.max(1, lastSourcePage - firstSourcePage + 1) }, (_, i) => firstSourcePage + i)
+        const activePage = ocrReviewPage || firstSourcePage
+        const missingPages = expectedPages.filter(page => !sourcePages.includes(page))
         // 专项筛查归类：选项分组 + 手动归类
         // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
         // 格式：[{ label: 'L1分类名', opts: [{value: 'L1|packageName|itemName', label: '...', groupLabel: 'L1分类名'}] }]
@@ -9527,6 +9536,13 @@ export default function PatientDetailPage() {
             <div className="modal" style={{ maxWidth: 1120, maxHeight: '92vh', display: 'flex', flexDirection: 'column' }}>
               <div className="modal-header" style={{ flexShrink: 0 }}>
                 <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
+                  <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
+                  <select value={activePage} onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
+                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
+                  </select>
+                  <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
+                </div>
                 <button className="modal-close" onClick={() => setOcrReviewReport(null)}>✕</button>
               </div>
               <div style={{ display: 'flex', flex: 1, overflow: 'hidden', minHeight: 0 }}>
@@ -9543,11 +9559,12 @@ export default function PatientDetailPage() {
                       <div style={paneStyle}>
                         <div style={{ fontSize: 11, color: '#8AA89C', padding: '2px 4px 6px' }}>原始报告（共{multiUrls.length}张，对照核对）</div>
                         {multiUrls.map((u, idx) => {
+                          if (idx + 1 !== activePage) return null
                           const s = u.startsWith('/') ? API_ORIGIN + u : u
                           return isPdf ? (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
-                              <iframe src={s} title={`报告${idx + 1}`} style={{ width: '100%', height: '40vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                              <iframe src={`${s}#page=${activePage}`} title={`报告${idx + 1}`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
@@ -9570,7 +9587,7 @@ export default function PatientDetailPage() {
                       {isImg ? (
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
-                        <iframe src={src} title="报告PDF" style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                        <iframe key={activePage} src={`${src}#page=${activePage}`} title={`报告PDF第${activePage}页`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
                       )}
@@ -9581,7 +9598,8 @@ export default function PatientDetailPage() {
                 {(() => {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
                   // 后端已经按报告页码和页内位置保存顺序；审核层只按该顺序展示，不再按类型重排。
-                  const indexed = ocrEditItems.map((it, i) => ({ it, i }))
+                  const indexedAll = ocrEditItems.map((it, i) => ({ it, i }))
+                  const indexed = indexedAll.filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
                   // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
                   const isImaging = (it) => it.itemType === 'imaging' || (it.value || '').length > 40
                   const labRows = indexed.filter(({ it }) => !isImaging(it))
