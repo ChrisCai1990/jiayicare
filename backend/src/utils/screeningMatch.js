@@ -229,6 +229,8 @@ async function matchAllAdmin(rawName, itemType, threshold = 0.6) {
 // 给一条 reportItem 填充归类字段（支持多类目，screeningKeys 为数组）
 function classifyItemWithMatches(item, matches) {
   if (!matches.length) {
+    // 增量归类失败时保留人工确认或历史已匹配结果，不能因目录别名调整把已归类项目退回“待归类”。
+    if (item?.screeningKey || item?.matchStatus === 'matched') return { ...item };
     return {
       ...item,
       screeningKeys: [],
@@ -280,29 +282,40 @@ function classificationName(item) {
     if (/眼科/.test(context)) return '眼科检查';
     if (/耳鼻喉|ENT/i.test(context)) return '耳鼻喉科检查';
     if (/妇科体检|妇科检查/.test(context)) return '妇科检查';
+    if (/肺CT|肺部CT|胸部CT|低剂量.*CT|CT.*低剂量/i.test(context)) return '胸部（低剂量螺旋）CT';
+    if (/前列腺/.test(name)) return '前列腺超声';
     if (/子宫.*附件|附件.*子宫|阴道超声/.test(context)) return '子宫附件/阴道超声';
     if (/胆囊/.test(context)) return '胆囊超声';
     if (/脾脏|脾彩超|脾超声/.test(context)) return '脾脏超声';
     if (/胰腺|胰彩超|胰超声/.test(context)) return '胰腺超声';
     if (/肝脏|肝彩超|肝超声/.test(context)) return '肝脏超声';
+    // 报告可只拆出“膀胱”一条，但专项筛查树按完整泌尿系项目统一归类。
+    if (/膀胱/.test(context)) return '双肾输尿管膀胱超声';
     if (/双肾|肾脏超声/.test(context)) return '双肾超声';
     return item?.name;
   }
   if (item?.itemType !== 'lab') return item?.name;
+  // 数值型报告常只有单项名称、没有可靠的 orderName，先按已确认的检验组合规整。
+  if (/碳尿素.*(?:幽门螺杆菌|呼气)|尿素.*呼气|(?:幽门螺杆菌|幽门螺旋杆菌).*呼气/i.test(context)) return '碳13呼气试验';
+  if (/^(?:钾|钠|氯|钙|总钙|镁|磷|无机磷)$/.test(name.trim()) || /血(?:钾|钠|氯|钙|镁|磷)|电解质/.test(context)) return '电解质';
+  if (/肌酸激酶(?:[-－]?MB同工酶活性测定)?|肌酸磷酸激酶|\b(?:CK|CKMB|CK-MB)\b/i.test(context)) return '心肌酶谱';
   if (/血常规|血细胞分析|全血细胞计数/.test(group)) return '血常规';
   if (/红细胞沉降率|\bESR\b/i.test(`${name} ${group}`)) return '血沉+抗O+类风湿因子';
   // 粪便报告通常拆成颜色、性状、红/白细胞、真菌、寄生虫、隐血等子项，必须按检验单统一归类。
   if (/粪便|大便|便常规|便隐血|便潜血/.test(group)) return '粪便常规+隐血';
   if (/尿液干化学|尿有形成分|尿常规/.test(group)) return '尿常规';
+  if (/潜血|隐血/.test(name) && /尿|干化学/.test(group)) return '尿常规';
   // 尿微量白蛋白/尿肌酐是专项叶子分类，优先于宽泛的“尿肾功能”。
   if (/尿微量白蛋白|微量尿(?:白)?蛋白|尿肌酐|尿白蛋白.*肌酐|尿肌酐比值|\b(?:mALB|MAU|UCr|ACR)\b/i.test(`${name} ${group}`)) return '尿微量白蛋白/尿肌酐';
   if (/尿生化|尿肾功能/.test(group)) return '尿微量白蛋白/尿肌酐';
   if (/促甲状腺.*激素|促甲状腺激素|\bTSH\b/i.test(`${name} ${group}`)) return '甲状腺功能';
-  if (/乙肝三系|HBsAg|HBsAb|HBeAg|HBeAb|HBcAb/i.test(group)) return '乙肝三系';
+  if (/乙肝三系|乙型肝炎病毒(?:表面|e|E|核心)(?:抗原|抗体)|HBsAg|HBsAb|HBeAg|HBeAb|HBcAb/i.test(context)) return '乙肝三系';
+  if (/凝血酶原(?:时间|活动度|百分活度)|PT%|APTT|国际标准化比值|\bINR\b|纤维蛋白原|凝血酶时间/i.test(context)) return '凝血功能';
   if (/HPV24|人乳头状瘤病毒基因分型/.test(group) || /^HPV\d+/i.test(name)) return 'HPV';
   if (/胰岛素.*0小时|空腹胰岛素/i.test(`${name} ${group}`)) return '空腹胰岛素+C肽';
-  if (/总前列腺特异|游离前列腺特异|游离前列腺抗原比值|T-?PSA|F-?PSA|TPSA|FPSA/i.test(name)) return '男性特定肿瘤标志物';
-  if (/糖链?抗原|细胞角蛋白19片段|神经元特异性烯醇化酶|鳞状细胞癌相关抗原|甲胎蛋白|癌胚抗原/i.test(name)) return '泛肿瘤标志物';
+  if (/^(?:总|游离)?PSA(?:\s*[\/／]\s*(?:总|游离)?PSA)?$|总前列腺特异|游离前列腺特异|游离前列腺抗原比值|T-?PSA|F-?PSA|TPSA|FPSA/i.test(name)) return '男性特定肿瘤标志物';
+  if (/HbA1[abc]|糖化血红蛋白/i.test(name)) return '糖化血红蛋白';
+  if (/糖链?抗原|细胞角蛋白19片段|神经元特异(?:性)?烯醇化酶|鳞状细胞癌相关抗原|甲胎蛋白|癌胚抗原/i.test(name)) return '泛肿瘤标志物';
   if (/层[粘黏]连蛋白|血清透明质酸|三型前胶原N端肽|IV\s*型胶原|壳多糖酶3样蛋白1|CHI3L1/i.test(name)) return '肝纤维化指标';
   if (/维生素A|维生素E|维生素K1/.test(name)) return '其他维生素类';
   if (/胃蛋白酶原|胃泌素/.test(name)) return '胃功能3项';
@@ -314,8 +327,24 @@ async function classifyItemsAsync(items) {
   const index = await buildAdminIndex();
   const useIndex = index.length ? index : STATIC_INDEX;
   const excludeCategories = index.length ? [] : ['hp'];
-  return (items || []).map(item => {
-    const matches = matchAllWithIndex(classificationName(item), item.itemType, useIndex, 0.6, excludeCategories);
+  const list = items || [];
+  // 单份粪便检验单有时不带可靠的 orderName。以同页“性状/真菌/寄生虫”等特征确认粪便区块，
+  // 只给粪便常见子项补上下文，避免“颜色、红细胞”等通用名称永久待归类。
+  const stoolPages = new Set();
+  const byPage = new Map();
+  list.forEach(item => {
+    const page = item?._page ?? 0;
+    if (!byPage.has(page)) byPage.set(page, []);
+    byPage.get(page).push(String(item?.name || '').trim());
+  });
+  byPage.forEach((names, page) => {
+    if (names.some(n => /^(?:性状|真菌|寄生虫)$/.test(n)) && names.filter(n => /^(?:颜色|性状|红细胞|白细胞|真菌|寄生虫|隐血试验|潜血)$/.test(n)).length >= 2) stoolPages.add(page);
+  });
+  return list.map(item => {
+    const name = String(item?.name || '').trim();
+    const stoolChild = stoolPages.has(item?._page ?? 0) && /^(?:颜色|性状|红细胞|白细胞|真菌|寄生虫|隐血试验|潜血)$/.test(name);
+    const normalizedItem = stoolChild ? { ...item, orderName: `${item.orderName || ''} 粪便常规` } : item;
+    const matches = matchAllWithIndex(classificationName(normalizedItem), item.itemType, useIndex, 0.6, excludeCategories);
     return classifyItemWithMatches(item, matches);
   });
 }

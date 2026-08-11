@@ -48,6 +48,14 @@ for (const name of ['颜色', '性状', '红细胞', '白细胞', '真菌', '寄
   assert.equal(classificationName({ itemType: 'lab', name, orderName: '粪便常规' }), '粪便常规+隐血');
 }
 assert.equal(classificationName({ itemType: 'lab', name: '乙型肝炎病毒e抗体', orderName: '乙肝三系' }), '乙肝三系');
+assert.equal(classificationName({ itemType: 'lab', name: '乙型肝炎病毒表面抗原', orderName: '检验报告' }), '乙肝三系');
+for (const name of ['钾', '钙', '总钙', '镁', '磷', '无机磷']) {
+  assert.equal(classificationName({ itemType: 'lab', name, orderName: '生化（门诊）' }), '电解质');
+}
+for (const name of ['肌酸激酶', '肌酸激酶-MB同工酶活性测定']) {
+  assert.equal(classificationName({ itemType: 'lab', name, orderName: '生化（门诊）' }), '心肌酶谱');
+}
+assert.equal(classificationName({ itemType: 'lab', name: '碳尿素测幽门螺杆菌结果', orderName: '检验报告' }), '碳13呼气试验');
 assert.equal(classificationName({ itemType: 'lab', name: '胃蛋白酶原I', orderName: 'EB病毒/胃功能' }), '胃功能3项');
 assert.equal(classificationName({ itemType: 'lab', name: 'VCA-IgA', orderName: 'EB病毒/胃功能' }), 'EB病毒抗体');
 assert.equal(classificationName({ itemType: 'lab', name: 'HPV51(高危亚型)', orderName: 'HPV24型' }), 'HPV');
@@ -63,6 +71,14 @@ assert.equal(classificationName({ itemType: 'imaging', name: '子宫、附件彩
 assert.equal(classificationName({ itemType: 'imaging', name: '眼科体检' }), '眼科检查');
 assert.equal(classificationName({ itemType: 'imaging', name: '耳鼻喉科体检' }), '耳鼻喉科检查');
 assert.equal(classificationName({ itemType: 'imaging', name: '妇科体检' }), '妇科检查');
+assert.equal(classificationName({ itemType: 'imaging', name: '膀胱', findings: '膀胱充盈佳，壁未见明显增厚' }), '双肾输尿管膀胱超声');
+assert.equal(classificationName({ itemType: 'imaging', name: '前列腺', findings: '未见明显异常' }), '前列腺超声');
+assert.equal(classificationName({ itemType: 'imaging', name: '肺CT', findings: '右上肺小结节' }), '胸部（低剂量螺旋）CT');
+assert.equal(classificationName({ itemType: 'lab', name: '潜血', orderName: '尿干化学' }), '尿常规');
+assert.equal(classificationName({ itemType: 'lab', name: '凝血酶原百分活度(PT%)' }), '凝血功能');
+for (const name of ['PSA', 'FPSA', 'TPSA', 'FPSA/TPSA']) assert.equal(classificationName({ itemType: 'lab', name }), '男性特定肿瘤标志物');
+for (const name of ['HbA1a', 'HbA1b', 'HbA1c']) assert.equal(classificationName({ itemType: 'lab', name }), '糖化血红蛋白');
+assert.equal(classificationName({ itemType: 'lab', name: '神经元特异烯醇化酶' }), '泛肿瘤标志物');
 assert.equal(classificationName({ itemType: 'lab', name: '胰岛素0小时' }), '空腹胰岛素+C肽');
 assert.equal(classificationName({ itemType: 'lab', name: '糖链抗原125' }), '泛肿瘤标志物');
 assert.equal(classificationName({ itemType: 'lab', name: '糖链抗原15-3' }), '泛肿瘤标志物');

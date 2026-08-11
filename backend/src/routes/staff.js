@@ -7774,7 +7774,9 @@ function canonicalizeExamName(name) {
   // 会被下面的肠镜正则误命中"肠镜"两个字（十二指-肠镜），实际这是胃部检查，必须先判断走胃镜分支
   if (/胃镜|电子胃镜|无痛胃镜|胃十二指肠镜|胃.{0,3}十二指肠镜/.test(n)) return '胃镜检查';
   if (/肠镜|电子肠镜|无痛肠镜|结肠镜/.test(n)) return '肠镜检查';
-  if (/肺CT|胸部CT|肺部CT|低剂量.*CT|CT.*低剂量/i.test(n)) return '肺部CT';
+  if (/肺CT|胸部CT|肺部CT|低剂量.*CT|CT.*低剂量/i.test(n)) return '胸部CT';
+  if (/^前列腺$/.test(n)) return '前列腺超声';
+  if (/^膀胱$/.test(n)) return '膀胱超声';
   if (/双眼眼底照相|眼底照相|眼底检查/.test(n)) return '双眼眼底照相';
   if (/^裂隙灯/.test(n)) return '裂隙灯检查';
   if (/^视力/.test(n)) return '视力检查';
@@ -9434,13 +9436,30 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
   }
 });
 
-// POST /staff/patients/:id/reports/:rid/reclassify — 对报告里 unclassified 项重跑自动归类
+// POST /staff/patients/:id/reports/:rid/reclassify — 只对报告里未归类项重跑自动归类。
+// 已归类项可能经过医护人工确认，screeningKey 是权威结果，重新归类时不得覆盖。
 router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id }).lean();
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const { classifyItemsAsync } = require('../utils/screeningMatch');
-    const reclassified = await classifyItemsAsync(report.reportItems || []);
+    const originalItems = report.reportItems || [];
+    const pendingIndexes = [];
+    const pendingItems = [];
+    originalItems.forEach((item, index) => {
+      const hasConfirmedClassification = Boolean(
+        item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length)
+      );
+      if (!hasConfirmedClassification) {
+        pendingIndexes.push(index);
+        pendingItems.push(item);
+      }
+    });
+    const newlyClassified = await classifyItemsAsync(pendingItems);
+    const reclassified = originalItems.slice();
+    pendingIndexes.forEach((originalIndex, pendingIndex) => {
+      reclassified[originalIndex] = newlyClassified[pendingIndex];
+    });
     await MedicalReport.findByIdAndUpdate(report._id, { reportItems: reclassified });
     const matchedCount = reclassified.filter(i => i.matchStatus === 'matched').length;
     res.json({ success: true, data: reclassified, matchedCount });
