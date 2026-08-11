@@ -5,6 +5,7 @@ const User = require('../models/User');
 const GiftRecord = require('../models/GiftRecord');
 const VerificationCode = require('../models/VerificationCode');
 const SystemConfig = require('../models/SystemConfig');
+const { checkSmsRateLimit, recordSmsAttempt } = require('../utils/smsRateLimiter');
 const requireUser = require('../middleware/auth');
 const { seedUserData } = require('../config/seedData');
 const DEMO_PHONE = '13800138000';
@@ -106,6 +107,13 @@ router.post('/send-code', async (req, res) => {
   if (phone === DEMO_PHONE) {
     return res.status(403).json({ success: false, message: '演示账号已停用，请使用本人真实身份登录' });
   }
+  const rateLimit = checkSmsRateLimit(phone, req.ip);
+  if (!rateLimit.allowed) {
+    res.set('Retry-After', String(rateLimit.retryAfterSeconds));
+    return res.status(429).json({ success: false, message: rateLimit.message });
+  }
+  // Count the attempt before contacting the provider so concurrent requests cannot bypass the limit.
+  recordSmsAttempt(phone, req.ip);
   const isDemo = false;
   const code = String(Math.floor(100000 + Math.random() * 900000));
 
