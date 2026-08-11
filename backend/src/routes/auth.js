@@ -4,10 +4,31 @@ const https = require('https');
 const User = require('../models/User');
 const GiftRecord = require('../models/GiftRecord');
 const VerificationCode = require('../models/VerificationCode');
+const SystemConfig = require('../models/SystemConfig');
 const requireUser = require('../middleware/auth');
 const { seedUserData } = require('../config/seedData');
 const DEMO_PHONE = '13800138000';
 const router = express.Router();
+
+router.get('/review-experience/status', async (_req, res) => {
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  const cfg = await SystemConfig.findOne({ key: 'reviewExperience' }).lean();
+  res.json({ success: true, data: { enabled: cfg?.value?.enabled === true } });
+});
+
+router.post('/review-experience/login', async (_req, res) => {
+  const cfg = await SystemConfig.findOne({ key: 'reviewExperience' }).lean();
+  if (cfg?.value?.enabled !== true) return res.status(403).json({ success: false, message: '审核体验暂未开放' });
+  let user = await User.findOne({ phone: DEMO_PHONE });
+  if (!user) {
+    user = await User.create({ phone: DEMO_PHONE, name: '审核体验用户', onboardingCompleted: true, onboardingCompletedAt: new Date() });
+    await seedUserData(user._id);
+  }
+  if (user.isDeleted) return res.status(403).json({ success: false, message: '审核体验账号已停用' });
+  const token = jwt.sign({ id: user._id, reviewExperience: true }, process.env.JWT_SECRET, { expiresIn: '1d' });
+  const healthFund = await computeHealthFund(user);
+  res.json({ success: true, data: { token, user: { ...user.toObject(), healthFund, reviewExperience: true }, isNew: false } });
+});
 
 // 计算用户健康基金汇总（与 /user/me 保持一致）
 async function computeHealthFund(user) {

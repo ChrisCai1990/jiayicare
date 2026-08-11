@@ -1835,6 +1835,17 @@ router.get('/system-config/daily-care', adminAuth, async (req, res) => {
   }
 });
 
+router.get('/system-config/review-experience', adminAuth, async (_req, res) => {
+  const cfg = await SystemConfig.findOne({ key: 'reviewExperience' });
+  res.json({ success: true, data: cfg ? cfg.value : { enabled: false } });
+});
+
+router.put('/system-config/review-experience', adminAuth, async (req, res) => {
+  const value = { enabled: req.body.enabled === true };
+  await SystemConfig.findOneAndUpdate({ key: 'reviewExperience' }, { key: 'reviewExperience', value, label: '小程序审核一键体验' }, { upsert: true, new: true });
+  res.json({ success: true, data: value, message: value.enabled ? '已开启审核一键体验' : '已关闭审核一键体验' });
+});
+
 const DEFAULT_HEALTH_FUND_POLICY = {
   title: '健康基金使用规则',
   description: '健康基金可用于符合条件的健康管理服务抵扣；退款审核通过后按原来源退回。',
