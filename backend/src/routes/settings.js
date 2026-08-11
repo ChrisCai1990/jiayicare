@@ -477,6 +477,13 @@ router.delete('/service-packages/:id', adminAuth, async (req, res) => {
 // ═══════════════════════════════════════════════════════════════
 
 // ── 分类管理 ────────────────────────────────────────────────────
+const normalizeCategoryAliases = value => Array.isArray(value)
+  ? [...new Set(value.map(v => String(v || '').trim()).filter(Boolean))]
+  : [...new Set(String(value || '').split(/[，,、\n]/).map(v => v.trim()).filter(Boolean))];
+const refreshClassificationIndex = () => {
+  try { require('../utils/screeningMatch').invalidateAdminIndexCache(); } catch (_) { /* 下次读取重建 */ }
+};
+
 router.get('/categories', adminAuth, async (req, res) => {
   const all = await ProjectCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean();
   const map = {};
@@ -493,16 +500,20 @@ router.get('/categories', adminAuth, async (req, res) => {
 });
 
 router.post('/categories', adminAuth, async (req, res) => {
-  const { name, parent, sortOrder } = req.body;
+  const { name, parent, sortOrder, aliases } = req.body;
   if (!name) return res.status(400).json({ success: false, message: '分类名称不能为空' });
-  const cat = await ProjectCategory.create({ name, parent: parent || null, sortOrder: sortOrder || 0 });
+  const cat = await ProjectCategory.create({ name, parent: parent || null, sortOrder: sortOrder || 0, aliases: normalizeCategoryAliases(aliases) });
+  refreshClassificationIndex();
   res.json({ success: true, data: cat, message: '分类已创建' });
 });
 
 router.put('/categories/:id', adminAuth, async (req, res) => {
-  const { name, parent, sortOrder } = req.body;
-  const cat = await ProjectCategory.findByIdAndUpdate(req.params.id, { name, parent: parent || null, sortOrder }, { new: true });
+  const { name, parent, sortOrder, aliases } = req.body;
+  const update = { name, parent: parent || null, sortOrder };
+  if (aliases !== undefined) update.aliases = normalizeCategoryAliases(aliases);
+  const cat = await ProjectCategory.findByIdAndUpdate(req.params.id, update, { new: true });
   if (!cat) return res.status(404).json({ success: false, message: '分类不存在' });
+  refreshClassificationIndex();
   res.json({ success: true, data: cat, message: '分类已更新' });
 });
 
@@ -510,6 +521,7 @@ router.delete('/categories/:id', adminAuth, async (req, res) => {
   const hasChildren = await ProjectCategory.findOne({ parent: req.params.id });
   if (hasChildren) return res.status(400).json({ success: false, message: '该分类下有子分类，请先删除' });
   await ProjectCategory.findByIdAndDelete(req.params.id);
+  refreshClassificationIndex();
   res.json({ success: true, message: '分类已删除' });
 });
 

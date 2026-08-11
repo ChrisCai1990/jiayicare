@@ -9,7 +9,7 @@ export default function CategoryPage() {
   const [loading, setLoading] = useState(true)
   const [showModal, setShowModal] = useState(false)
   const [editId, setEditId] = useState(null)
-  const [form, setForm] = useState({ name: '', parent: '', sortOrder: 0 })
+  const [form, setForm] = useState({ name: '', parent: '', sortOrder: 0, aliasesText: '' })
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [search, setSearch] = useState('')
@@ -28,18 +28,19 @@ export default function CategoryPage() {
   useEffect(() => { load() }, [])
 
   const openCreate = (parentId = '') => {
-    setEditId(null); setForm({ name: '', parent: parentId, sortOrder: 0 }); setError(''); setShowModal(true)
+    setEditId(null); setForm({ name: '', parent: parentId, sortOrder: 0, aliasesText: '' }); setError(''); setShowModal(true)
   }
   const openEdit = item => {
-    setEditId(item._id); setForm({ name: item.name, parent: item.parent || '', sortOrder: item.sortOrder || 0 }); setError(''); setShowModal(true)
+    setEditId(item._id); setForm({ name: item.name, parent: item.parent || '', sortOrder: item.sortOrder || 0, aliasesText: (item.aliases || []).join('、') }); setError(''); setShowModal(true)
   }
 
   const handleSave = async () => {
     if (!form.name.trim()) { setError('分类名称不能为空'); return }
     setSaving(true); setError('')
     try {
-      if (editId) { await adminAPI.updateCategory(editId, form); toast('分类已更新') }
-      else { await adminAPI.createCategory(form); toast('分类已创建') }
+      const payload = { ...form, aliases: form.aliasesText }; delete payload.aliasesText
+      if (editId) { await adminAPI.updateCategory(editId, payload); toast('分类已更新') }
+      else { await adminAPI.createCategory(payload); toast('分类已创建') }
       setShowModal(false); load()
     } catch (e) { setError(e.message) }
     finally { setSaving(false) }
@@ -143,6 +144,11 @@ export default function CategoryPage() {
               <div className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">排序权重</label>
                 <input className="form-input" type="number" value={form.sortOrder} onChange={e => setForm(f => ({ ...f, sortOrder: Number(e.target.value) }))} />
+              </div>
+              <div className="form-group" style={{ marginTop: 12, marginBottom: 0 }}>
+                <label className="form-label">报告项目别名</label>
+                <textarea className="form-input" rows={4} value={form.aliasesText} onChange={e => setForm(f => ({ ...f, aliasesText: e.target.value }))} placeholder="多个别名用逗号、顿号或换行分隔" />
+                <div style={{ fontSize: 12, color: '#6B7280', marginTop: 4 }}>系统只对启用的叶子分类名称和这里的别名做精确匹配；未配置的项目保持待归类。</div>
               </div>
             </div>
             <div className="modal-footer">

@@ -8,7 +8,6 @@
 // key 格式统一为 `<L1的_id>|<L2名字>|<叶子节点名字>`，与医护端"录入筛查结果"手工录入时
 // screeningL1 用的 _id 格式一致，两条入口（AI自动 / 人工录入）产出的 key 可以互认、去重。
 
-const { NODES } = require('../config/screeningTree');
 const ProjectCategory = require('../models/ProjectCategory');
 
 // 归一化：转小写、全角转半角、去标点空格、去常见检查后缀词
@@ -99,18 +98,6 @@ function matchAllWithIndex(rawName, itemType, index, threshold = 0.6, excludeCat
   // "电解质"节点的钾/钠/氯别名配置本身没问题，是这里的长度门槛把它们拦在了匹配循环之外）。
   // 只拦截空字符串即可——精确匹配分支本身已经足够严格，不会因为放行单字符而引入误配风险。
   if (!q) return [];
-  // 已确认的业务归类具有最高优先级，避免后台同时存在“腰围”等旧叶子时与新节点同分、
-  // 最终受数据库返回顺序影响而随机归类。
-  const forcedLabel = /^(腰围|腹围|臀围|腰臀比|腰围臀围)$/.test(q) ? '腰臀围'
-    : /^(现服药情况|现居住地|现居住地地域|生活方式运动|生活方式睡眠|生活方式饮酒|生活方式吸烟|家族史|跌倒评估|跌倒风险评估|老年人跌倒风险评估|跌倒风险筛查)$/.test(q) ? '生活方式评估'
-      : /^(心率|脉搏|脉率|脉搏心率|心率脉搏)$/.test(q) ? '脉搏'
-        : /^(腺苷脱氨酶|ada)$/.test(q) ? '肝功能'
-          : /^(总钙|无机磷)$/.test(q) ? '电解质' : '';
-  if (forcedLabel) {
-    const forced = index.find(entry => norm(entry.node.label) === norm(forcedLabel)
-      && !excludeCategories.includes(entry.node.category));
-    if (forced) return [{ node: forced.node, confidence: 1 }];
-  }
   const results = [];
   for (const { node, cands } of index) {
     if (excludeCategories.includes(node.category)) continue;
@@ -121,11 +108,8 @@ function matchAllWithIndex(rawName, itemType, index, threshold = 0.6, excludeCat
   return results;
 }
 
-// ── 旧版：静态 screeningTree.js 索引（仅在 admin 分类管理数据异常/为空时兜底用）──
-const STATIC_INDEX = buildIndex(NODES);
-function matchAll(rawName, itemType, threshold = 0.6, excludeCategories = ['hp']) {
-  return matchAllWithIndex(rawName, itemType, STATIC_INDEX, threshold, excludeCategories);
-}
+// 正常生产归类只允许读取 Admin 分类管理。旧同步接口不再使用静态分类表。
+function matchAll() { return []; }
 
 // ── 新版：admin「分类管理」(ProjectCategory) 索引 ──────────────────────
 // 叶子节点（没有子分类的节点）才是可匹配的"项目"，非叶子节点是纯分类分组，不参与匹配。
@@ -220,17 +204,16 @@ function invalidateAdminIndexCache() {
   adminIndexCache = null;
 }
 
-async function matchAllAdmin(rawName, itemType, threshold = 0.6) {
+async function matchAllAdmin(rawName, itemType, threshold = 1) {
   const index = await buildAdminIndex();
-  if (!index.length) return matchAll(rawName, itemType); // admin分类为空时兜底用旧静态库
+  if (!index.length) return [];
   return matchAllWithIndex(rawName, itemType, index, threshold, []);
 }
 
 // 给一条 reportItem 填充归类字段（支持多类目，screeningKeys 为数组）
 function classifyItemWithMatches(item, matches) {
+  if (item?.screeningKey || item?.matchStatus === 'matched') return { ...item };
   if (!matches.length) {
-    // 增量归类失败时保留人工确认或历史已匹配结果，不能因目录别名调整把已归类项目退回“待归类”。
-    if (item?.screeningKey || item?.matchStatus === 'matched') return { ...item };
     return {
       ...item,
       screeningKeys: [],
@@ -254,104 +237,39 @@ function classifyItemWithMatches(item, matches) {
 }
 
 async function classifyItemAsync(item) {
-  const matches = await matchAllAdmin(classificationName(item), item.itemType);
+  const candidates = classificationCandidates(item);
+  const results = await Promise.all(candidates.map(value => matchAllAdmin(value, item.itemType, 1)));
+  const matches = mergeExactMatches(results.flat());
   return classifyItemWithMatches(item, matches);
 }
 
-// 检验单先逐项规整，再按“所属检验单”统一归类。否则血常规里的“中性粒百分数”、尿常规里的
-// “红细胞”等子项会因为项目名过细而待归类，甚至误命中其他同名检查。
-function classificationName(item) {
-  const name = String(item?.name || '');
-  const group = `${String(item?.orderName || '')} ${String(item?.sourceSection || '')}`;
-  const context = `${name} ${group}`;
-  if (item?.itemType === 'data') {
-    if (/身高|体重指数|\bBMI\b|^体重$/i.test(name)) return '身高体重BMI';
-    if (/脉搏|呼吸/.test(name)) return '脉搏呼吸';
-    if (/跌倒/.test(name)) return '跌倒评估';
-    if (/血压/.test(name)) return '血压';
-    if (/腰围/.test(name)) return '腰围';
-  }
-  if (item?.itemType === 'imaging') {
-    // 器官标题优先于所属组合检查名，避免“脾脏”因 orderName 含“胰腺”而误归类。
-    if (/^脾(?:脏)?(?:彩超|B超|超声)?(?:检查)?$/.test(name.trim())) return '脾脏超声';
-    if (/^胰(?:腺)?(?:彩超|B超|超声)?(?:检查)?$/.test(name.trim())) return '胰腺超声';
-    if (/口腔|牙科/.test(context)) return '牙科';
-    if (/糖尿病.*风险/.test(context)) return '糖尿病早期风险检测';
-    if (/碳\s*13|C\s*-?13|碳13\/14/.test(context)) return '碳13呼气试验';
-    if (/全科医学|全科|内科.*外科/.test(context)) return '内外科（全科）';
-    if (/眼科/.test(context)) return '眼科检查';
-    if (/耳鼻喉|ENT/i.test(context)) return '耳鼻喉科检查';
-    if (/妇科体检|妇科检查/.test(context)) return '妇科检查';
-    if (/肺CT|肺部CT|胸部CT|低剂量.*CT|CT.*低剂量/i.test(context)) return '胸部（低剂量螺旋）CT';
-    if (/前列腺/.test(name)) return '前列腺超声';
-    if (/子宫.*附件|附件.*子宫|阴道超声/.test(context)) return '子宫附件/阴道超声';
-    if (/胆囊/.test(context)) return '胆囊超声';
-    if (/脾脏|脾彩超|脾超声/.test(context)) return '脾脏超声';
-    if (/胰腺|胰彩超|胰超声/.test(context)) return '胰腺超声';
-    if (/肝脏|肝彩超|肝超声/.test(context)) return '肝脏超声';
-    // 报告可只拆出“膀胱”一条，但专项筛查树按完整泌尿系项目统一归类。
-    if (/膀胱/.test(context)) return '双肾输尿管膀胱超声';
-    if (/双肾|肾脏超声/.test(context)) return '双肾超声';
-    return item?.name;
-  }
-  if (item?.itemType !== 'lab') return item?.name;
-  // 数值型报告常只有单项名称、没有可靠的 orderName，先按已确认的检验组合规整。
-  if (/碳尿素.*(?:幽门螺杆菌|呼气)|尿素.*呼气|(?:幽门螺杆菌|幽门螺旋杆菌).*呼气/i.test(context)) return '碳13呼气试验';
-  if (/^(?:钾|钠|氯|钙|总钙|镁|磷|无机磷)$/.test(name.trim()) || /血(?:钾|钠|氯|钙|镁|磷)|电解质/.test(context)) return '电解质';
-  if (/肌酸激酶(?:[-－]?MB同工酶活性测定)?|肌酸磷酸激酶|\b(?:CK|CKMB|CK-MB)\b/i.test(context)) return '心肌酶谱';
-  if (/血常规|血细胞分析|全血细胞计数/.test(group)) return '血常规';
-  if (/红细胞沉降率|\bESR\b/i.test(`${name} ${group}`)) return '血沉+抗O+类风湿因子';
-  // 粪便报告通常拆成颜色、性状、红/白细胞、真菌、寄生虫、隐血等子项，必须按检验单统一归类。
-  if (/粪便|大便|便常规|便隐血|便潜血/.test(group)) return '粪便常规+隐血';
-  if (/尿液干化学|尿有形成分|尿常规/.test(group)) return '尿常规';
-  if (/潜血|隐血/.test(name) && /尿|干化学/.test(group)) return '尿常规';
-  // 尿微量白蛋白/尿肌酐是专项叶子分类，优先于宽泛的“尿肾功能”。
-  if (/尿微量白蛋白|微量尿(?:白)?蛋白|尿肌酐|尿白蛋白.*肌酐|尿肌酐比值|\b(?:mALB|MAU|UCr|ACR)\b/i.test(`${name} ${group}`)) return '尿微量白蛋白/尿肌酐';
-  if (/尿生化|尿肾功能/.test(group)) return '尿微量白蛋白/尿肌酐';
-  if (/促甲状腺.*激素|促甲状腺激素|\bTSH\b/i.test(`${name} ${group}`)) return '甲状腺功能';
-  if (/乙肝三系|乙型肝炎病毒(?:表面|e|E|核心)(?:抗原|抗体)|HBsAg|HBsAb|HBeAg|HBeAb|HBcAb/i.test(context)) return '乙肝三系';
-  if (/凝血酶原(?:时间|活动度|百分活度)|PT%|APTT|国际标准化比值|\bINR\b|纤维蛋白原|凝血酶时间/i.test(context)) return '凝血功能';
-  if (/HPV24|人乳头状瘤病毒基因分型/.test(group) || /^HPV\d+/i.test(name)) return 'HPV';
-  if (/胰岛素.*0小时|空腹胰岛素/i.test(`${name} ${group}`)) return '空腹胰岛素+C肽';
-  if (/^(?:总|游离)?PSA(?:\s*[\/／]\s*(?:总|游离)?PSA)?$|总前列腺特异|游离前列腺特异|游离前列腺抗原比值|T-?PSA|F-?PSA|TPSA|FPSA/i.test(name)) return '男性特定肿瘤标志物';
-  if (/HbA1[abc]|糖化血红蛋白/i.test(name)) return '糖化血红蛋白';
-  if (/糖链?抗原|细胞角蛋白19片段|神经元特异(?:性)?烯醇化酶|鳞状细胞癌相关抗原|甲胎蛋白|癌胚抗原/i.test(name)) return '泛肿瘤标志物';
-  if (/层[粘黏]连蛋白|血清透明质酸|三型前胶原N端肽|IV\s*型胶原|壳多糖酶3样蛋白1|CHI3L1/i.test(name)) return '肝纤维化指标';
-  if (/维生素A|维生素E|维生素K1/.test(name)) return '其他维生素类';
-  if (/胃蛋白酶原|胃泌素/.test(name)) return '胃功能3项';
-  if (/EB病毒|VCA[-－]?Ig/i.test(name)) return 'EB病毒抗体';
-  return item?.name;
+// 归类候选只取报告原文，不在代码中解释医学含义。Admin可把项目原名、检验单名或栏目名
+// 配成叶子分类名称/别名；未配置时保持待归类。
+function classificationCandidates(item) {
+  return [...new Set([item?.name, item?.orderName, item?.sourceSection]
+    .map(value => String(value || '').trim()).filter(Boolean))];
+}
+function classificationName(item) { return String(item?.name || ''); }
+function mergeExactMatches(matches) {
+  const byKey = new Map();
+  matches.filter(match => match.confidence === 1).forEach(match => {
+    if (!byKey.has(match.node.id)) byKey.set(match.node.id, match);
+  });
+  return [...byKey.values()];
 }
 
 async function classifyItemsAsync(items) {
   const index = await buildAdminIndex();
-  const useIndex = index.length ? index : STATIC_INDEX;
-  const excludeCategories = index.length ? [] : ['hp'];
-  const list = items || [];
-  // 单份粪便检验单有时不带可靠的 orderName。以同页“性状/真菌/寄生虫”等特征确认粪便区块，
-  // 只给粪便常见子项补上下文，避免“颜色、红细胞”等通用名称永久待归类。
-  const stoolPages = new Set();
-  const byPage = new Map();
-  list.forEach(item => {
-    const page = item?._page ?? 0;
-    if (!byPage.has(page)) byPage.set(page, []);
-    byPage.get(page).push(String(item?.name || '').trim());
-  });
-  byPage.forEach((names, page) => {
-    if (names.some(n => /^(?:性状|真菌|寄生虫)$/.test(n)) && names.filter(n => /^(?:颜色|性状|红细胞|白细胞|真菌|寄生虫|隐血试验|潜血)$/.test(n)).length >= 2) stoolPages.add(page);
-  });
-  return list.map(item => {
-    const name = String(item?.name || '').trim();
-    const stoolChild = stoolPages.has(item?._page ?? 0) && /^(?:颜色|性状|红细胞|白细胞|真菌|寄生虫|隐血试验|潜血)$/.test(name);
-    const normalizedItem = stoolChild ? { ...item, orderName: `${item.orderName || ''} 粪便常规` } : item;
-    const matches = matchAllWithIndex(classificationName(normalizedItem), item.itemType, useIndex, 0.6, excludeCategories);
+  return (items || []).map(item => {
+    const matches = mergeExactMatches(classificationCandidates(item)
+      .flatMap(value => matchAllWithIndex(value, item.itemType, index, 1, [])));
     return classifyItemWithMatches(item, matches);
   });
 }
 
-// 旧版同步接口，保留给尚未迁移的调用方；内部仍用静态库
+// 旧同步接口无法访问Admin数据库，不再尝试自动归类。
 function classifyItem(item) {
-  return classifyItemWithMatches(item, matchAll(item.name, item.itemType));
+  return classifyItemWithMatches(item, []);
 }
 function classifyItems(items) {
   return (items || []).map(classifyItem);
@@ -361,5 +279,5 @@ module.exports = {
   matchAll, matchOne: (n, t) => { const r = matchAll(n, t); return r[0] || null; },
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
-  matchAllWithIndex, isFunctionalMedicineL1, classificationName,
+  matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates,
 };

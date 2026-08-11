@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { isShaoyifuReport, pageMode, promptForPage, needsCoverageAudit, normalizeShaoyifuItems, applyShaoyifuOrderAndGroups } = require('../src/utils/shaoyifuReportTemplate');
-const { classificationName } = require('../src/utils/screeningMatch');
+const { classificationName, classificationCandidates } = require('../src/utils/screeningMatch');
 
 assert(isShaoyifuReport({ title: '2026-07-15邵逸夫体检报告LZM' }));
 assert.equal(pageMode(2), 'skip');
@@ -38,51 +38,8 @@ assert.equal(normalized.filter(i => /心电图/.test(i.name)).length, 1);
 assert.match(normalized.find(i => /心电图/.test(i.name)).findings, /P-R间期140ms/);
 assert.equal(normalized.some(i => Number(i._page) >= 12 && Number(i._page) !== 20), false);
 
-assert.equal(classificationName({ itemType: 'lab', name: '中性粒百分数', orderName: '血常规' }), '血常规');
-assert.equal(classificationName({ itemType: 'lab', name: '红细胞沉降率(ESR)', orderName: '红细胞沉降率(ESR)' }), '血沉+抗O+类风湿因子');
-assert.equal(classificationName({ itemType: 'lab', name: '细菌', orderName: '尿液干化学分析' }), '尿常规');
-assert.equal(classificationName({ itemType: 'lab', name: '尿肌酐测定', orderName: '微量尿白蛋白/尿肌酐比值' }), '尿微量白蛋白/尿肌酐');
-assert.equal(classificationName({ itemType: 'lab', name: '微量尿白蛋白', orderName: '检验报告' }), '尿微量白蛋白/尿肌酐');
-assert.equal(classificationName({ itemType: 'lab', name: '尿肌酐计算', orderName: '尿生化' }), '尿微量白蛋白/尿肌酐');
-for (const name of ['颜色', '性状', '红细胞', '白细胞', '真菌', '寄生虫', '隐血试验']) {
-  assert.equal(classificationName({ itemType: 'lab', name, orderName: '粪便常规' }), '粪便常规+隐血');
-}
-assert.equal(classificationName({ itemType: 'lab', name: '乙型肝炎病毒e抗体', orderName: '乙肝三系' }), '乙肝三系');
-assert.equal(classificationName({ itemType: 'lab', name: '乙型肝炎病毒表面抗原', orderName: '检验报告' }), '乙肝三系');
-for (const name of ['钾', '钙', '总钙', '镁', '磷', '无机磷']) {
-  assert.equal(classificationName({ itemType: 'lab', name, orderName: '生化（门诊）' }), '电解质');
-}
-for (const name of ['肌酸激酶', '肌酸激酶-MB同工酶活性测定']) {
-  assert.equal(classificationName({ itemType: 'lab', name, orderName: '生化（门诊）' }), '心肌酶谱');
-}
-assert.equal(classificationName({ itemType: 'lab', name: '碳尿素测幽门螺杆菌结果', orderName: '检验报告' }), '碳13呼气试验');
-assert.equal(classificationName({ itemType: 'lab', name: '胃蛋白酶原I', orderName: 'EB病毒/胃功能' }), '胃功能3项');
-assert.equal(classificationName({ itemType: 'lab', name: 'VCA-IgA', orderName: 'EB病毒/胃功能' }), 'EB病毒抗体');
-assert.equal(classificationName({ itemType: 'lab', name: 'HPV51(高危亚型)', orderName: 'HPV24型' }), 'HPV');
-assert.equal(classificationName({ itemType: 'data', name: '体重' }), '身高体重BMI');
-assert.equal(classificationName({ itemType: 'data', name: '体重指数(BMI)' }), '身高体重BMI');
-assert.equal(classificationName({ itemType: 'data', name: '脉搏' }), '脉搏呼吸');
-assert.equal(classificationName({ itemType: 'data', name: '跌倒评分' }), '跌倒评估');
-assert.equal(classificationName({ itemType: 'imaging', name: '全科医学检查' }), '内外科（全科）');
-assert.equal(classificationName({ itemType: 'imaging', name: '胆囊彩超' }), '胆囊超声');
-assert.equal(classificationName({ itemType: 'imaging', name: '脾脏彩超' }), '脾脏超声');
-assert.equal(classificationName({ itemType: 'imaging', name: '脾', orderName: '肝胆胰脾超声/胰腺超声' }), '脾脏超声');
-assert.equal(classificationName({ itemType: 'imaging', name: '子宫、附件彩超' }), '子宫附件/阴道超声');
-assert.equal(classificationName({ itemType: 'imaging', name: '眼科体检' }), '眼科检查');
-assert.equal(classificationName({ itemType: 'imaging', name: '耳鼻喉科体检' }), '耳鼻喉科检查');
-assert.equal(classificationName({ itemType: 'imaging', name: '妇科体检' }), '妇科检查');
-assert.equal(classificationName({ itemType: 'imaging', name: '膀胱', findings: '膀胱充盈佳，壁未见明显增厚' }), '双肾输尿管膀胱超声');
-assert.equal(classificationName({ itemType: 'imaging', name: '前列腺', findings: '未见明显异常' }), '前列腺超声');
-assert.equal(classificationName({ itemType: 'imaging', name: '肺CT', findings: '右上肺小结节' }), '胸部（低剂量螺旋）CT');
-assert.equal(classificationName({ itemType: 'lab', name: '潜血', orderName: '尿干化学' }), '尿常规');
-assert.equal(classificationName({ itemType: 'lab', name: '凝血酶原百分活度(PT%)' }), '凝血功能');
-for (const name of ['PSA', 'FPSA', 'TPSA', 'FPSA/TPSA']) assert.equal(classificationName({ itemType: 'lab', name }), '男性特定肿瘤标志物');
-for (const name of ['HbA1a', 'HbA1b', 'HbA1c']) assert.equal(classificationName({ itemType: 'lab', name }), '糖化血红蛋白');
-assert.equal(classificationName({ itemType: 'lab', name: '神经元特异烯醇化酶' }), '泛肿瘤标志物');
-assert.equal(classificationName({ itemType: 'lab', name: '胰岛素0小时' }), '空腹胰岛素+C肽');
-assert.equal(classificationName({ itemType: 'lab', name: '糖链抗原125' }), '泛肿瘤标志物');
-assert.equal(classificationName({ itemType: 'lab', name: '糖链抗原15-3' }), '泛肿瘤标志物');
-assert.equal(classificationName({ itemType: 'lab', name: '促甲状腺刺激激素' }), '甲状腺功能');
+assert.equal(classificationName({ name: '肌酸激酶', orderName: '生化（门诊）' }), '肌酸激酶');
+assert.deepEqual(classificationCandidates({ name: '颜色', orderName: '粪便常规', sourceSection: '检验报告' }), ['颜色', '粪便常规', '检验报告']);
 
 const ordered = applyShaoyifuOrderAndGroups([
   { _page: 6, itemType: 'imaging', name: '脾脏彩超', findings: '胰腺：形态大小正常' },
