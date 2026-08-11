@@ -327,8 +327,8 @@ const NODES = [
     aliases: ['血细胞分析', '全血细胞计数', 'CBC', '血常规检查', '血液分析'] },
   { id: 'other|三大常规|尿常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '尿常规', itemType: 'lab', gender: null,
     aliases: ['尿液分析', '尿液常规', '尿检', '尿液检查'] },
-  { id: 'other|三大常规|粪便常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '粪便常规', itemType: 'lab', gender: null,
-    aliases: ['大便常规', '粪便常规+隐血', '便常规', '大便检查'] },
+  { id: 'other|三大常规|粪便常规', category: 'other', categoryKey: 'other', parent: '三大常规', label: '粪便常规+隐血', itemType: 'lab', gender: null,
+    aliases: ['粪便常规', '大便常规', '大便常规+隐血', '便常规', '大便检查', '便隐血', '便潜血'] },
 
   // 激素类
   { id: 'other|激素类|甲状腺功能', category: 'other', categoryKey: 'other', parent: '激素类', label: '甲状腺功能', itemType: 'lab', gender: null,

@@ -42,6 +42,11 @@ assert.equal(classificationName({ itemType: 'lab', name: '中性粒百分数', o
 assert.equal(classificationName({ itemType: 'lab', name: '红细胞沉降率(ESR)', orderName: '红细胞沉降率(ESR)' }), '血沉+抗O+类风湿因子');
 assert.equal(classificationName({ itemType: 'lab', name: '细菌', orderName: '尿液干化学分析' }), '尿常规');
 assert.equal(classificationName({ itemType: 'lab', name: '尿肌酐测定', orderName: '微量尿白蛋白/尿肌酐比值' }), '尿微量白蛋白/尿肌酐');
+assert.equal(classificationName({ itemType: 'lab', name: '微量尿白蛋白', orderName: '检验报告' }), '尿微量白蛋白/尿肌酐');
+assert.equal(classificationName({ itemType: 'lab', name: '尿肌酐计算', orderName: '尿生化' }), '尿微量白蛋白/尿肌酐');
+for (const name of ['颜色', '性状', '红细胞', '白细胞', '真菌', '寄生虫', '隐血试验']) {
+  assert.equal(classificationName({ itemType: 'lab', name, orderName: '粪便常规' }), '粪便常规+隐血');
+}
 assert.equal(classificationName({ itemType: 'lab', name: '乙型肝炎病毒e抗体', orderName: '乙肝三系' }), '乙肝三系');
 assert.equal(classificationName({ itemType: 'lab', name: '胃蛋白酶原I', orderName: 'EB病毒/胃功能' }), '胃功能3项');
 assert.equal(classificationName({ itemType: 'lab', name: 'VCA-IgA', orderName: 'EB病毒/胃功能' }), 'EB病毒抗体');
@@ -53,6 +58,7 @@ assert.equal(classificationName({ itemType: 'data', name: '跌倒评分' }), '�
 assert.equal(classificationName({ itemType: 'imaging', name: '全科医学检查' }), '内外科（全科）');
 assert.equal(classificationName({ itemType: 'imaging', name: '胆囊彩超' }), '胆囊超声');
 assert.equal(classificationName({ itemType: 'imaging', name: '脾脏彩超' }), '脾脏超声');
+assert.equal(classificationName({ itemType: 'imaging', name: '脾', orderName: '肝胆胰脾超声/胰腺超声' }), '脾脏超声');
 assert.equal(classificationName({ itemType: 'imaging', name: '子宫、附件彩超' }), '子宫附件/阴道超声');
 assert.equal(classificationName({ itemType: 'imaging', name: '眼科体检' }), '眼科检查');
 assert.equal(classificationName({ itemType: 'imaging', name: '耳鼻喉科体检' }), '耳鼻喉科检查');
