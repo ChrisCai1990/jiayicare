@@ -9,6 +9,7 @@ const Message = require('../models/Message');
 const Product = require('../models/Product');
 const ServiceProposal = require('../models/ServiceProposal');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
+const { isAiRecommendable, buildAiCatalogEntry, resolveProductPrices } = require('../utils/productAiProfile');
 const router = express.Router();
 
 const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康规划师。你的角色类似服务顾问：帮助会员梳理健康管理需求、明确阶段目标、介绍平台服务内容、规划服务步骤，并在需要时转接人工健康管理专员。
@@ -114,19 +115,25 @@ async function maybeCreateServiceProposal({ userId, messages, lastUserMsg }) {
   if (existing) return existing;
   const planner = await resolveHealthPlanner(userId);
   if (!planner) return null;
-  const products = await Product.find({ status: 'on' }).sort({ sortOrder: 1 }).limit(30).select('_id name subtitle originalPrice servicePrices memberPrices features').lean();
+  const productCandidates = await Product.find({ status: 'on', 'aiProfile.enabledForRecommendation': true })
+    .sort({ sortOrder: 1 }).limit(50)
+    .select('_id name category subtitle originalPrice servicePrices skus features fulfillmentType bookingRequired deliveryRequired serviceLocation validityDays refundPolicy status aiProfile')
+    .lean();
+  const products = productCandidates.filter(isAiRecommendable);
   if (!products.length) return null;
+  const catalog = products.map(buildAiCatalogEntry);
   const raw = await chat([
-    { role: 'user', content: `对话：\n${messages.slice(-10).map(m => `${m.role === 'user' ? '客户' : '规划师'}：${m.content}`).join('\n')}\n\n当前可售服务：\n${products.map(p => `${p._id}|${p.name}|${p.subtitle || ''}|参考价${p.originalPrice || 0}|${(p.features || []).join('、')}`).join('\n')}` },
+    { role: 'user', content: `对话：\n${messages.slice(-10).map(m => `${m.role === 'user' ? '客户' : '规划师'}：${m.content}`).join('\n')}\n\n当前允许 AI 推荐的实时服务目录（JSON）：\n${JSON.stringify(catalog)}` },
   ], {
     jsonMode: true, maxTokens: 1000,
-    systemPrompt: '你是服务方案草稿生成器。只能推荐给定的在售服务，不提供诊断、治疗或处方。输出JSON：customerNeed字符串、proposalText字符串（面向客户，300字内）、confidence数值0-1、recommendations数组，每项含productId、reason。',
+    systemPrompt: '你是健康管理服务方案草稿生成器。只能推荐目录中给定的产品，必须遵守适用/不适用、必问、地域、不可承诺和转人工规则；信息不足时不要推荐。不得诊断、治疗、开药或承诺资源和效果。通常推荐1项，最多2项。输出JSON：customerNeed字符串、proposalText字符串（面向客户，300字内）、confidence数值0-1、recommendations数组，每项含productId、reason。',
   });
   const parsed = JSON.parse(raw);
   const productMap = new Map(products.map(product => [String(product._id), product]));
   const recommendations = (parsed.recommendations || []).map(item => {
     const product = productMap.get(String(item.productId));
-    return product ? { productId: product._id, name: product.name, price: product.originalPrice || 0, reason: String(item.reason || '') } : null;
+    const price = product ? Math.min(...resolveProductPrices(product).map(option => option.price)) : 0;
+    return product ? { productId: product._id, name: product.name, price, reason: String(item.reason || '') } : null;
   }).filter(Boolean);
   if (!recommendations.length) return null;
   return ServiceProposal.create({

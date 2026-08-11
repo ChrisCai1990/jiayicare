@@ -1,5 +1,24 @@
 const mongoose = require('mongoose');
 
+const aiProfileSchema = new mongoose.Schema({
+  enabledForRecommendation: { type: Boolean, default: false },
+  targetNeeds:       [{ type: String, trim: true }],
+  suitableFor:       [{ type: String, trim: true }],
+  notSuitableFor:    [{ type: String, trim: true }],
+  requiredQuestions: [{ type: String, trim: true }],
+  supportedCities:   [{ type: String, trim: true }],
+  includedItems:     [{ type: String, trim: true }],
+  excludedItems:     [{ type: String, trim: true }],
+  promiseLimits:     [{ type: String, trim: true }],
+  handoffConditions: [{ type: String, trim: true }],
+  nextAction: {
+    type: String,
+    enum: ['inquire', 'book', 'buy', 'handoff'],
+    default: 'inquire',
+  },
+  operatorNotes: { type: String, default: '', trim: true },
+}, { _id: false });
+
 const productSchema = new mongoose.Schema({
   tenantId:      { type: mongoose.Schema.Types.ObjectId, ref: 'Tenant', default: null, index: true }, // 所属机构（多租户隔离键，各机构各自维护自己的定价库）
   name:          { type: String, required: true },
@@ -47,6 +66,7 @@ const productSchema = new mongoose.Schema({
     fulfillmentType: { type: String, enum: ['offline_service', 'remote_service', 'delivery_and_service', 'subscription_service', 'digital_content'] },
     active: { type: Boolean, default: true },
   }],
+  aiProfile: { type: aiProfileSchema, default: () => ({}) },
 }, { timestamps: true });
 
 productSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);

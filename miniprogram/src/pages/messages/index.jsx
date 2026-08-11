@@ -17,6 +17,13 @@ const ROLE_DEFS = [
   { key: 'nutritionist', label: '营养师', icon: '🥗', color: '#059669' },
 ];
 
+const EXTRA_TEAM_META = {
+  specialist: { label: '专科医师', icon: '🏥', color: '#2563EB' },
+  tcmDoctor: { label: '中医师', icon: '🌿', color: '#7C3AED' },
+  psychologist: { label: '心理咨询师', icon: '💜', color: '#8A4AC7' },
+  rehabSpecialist: { label: '运动复健师', icon: '🏃', color: '#0891B2' },
+};
+
 // 兼容数据库中已生成的旧角色名称，历史消息也统一使用当前人物定位。
 const normalizeRoleSender = (sender = '') => sender
   .replace(/代家庭医师/g, '代健康顾问')
@@ -76,10 +83,13 @@ function fmtMsgTime(t) {
 export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenPlanner }) {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
-  const careTeamKinds = new Set((user?.careTeam || []).map((m) => m.kind));
+  // Older production users can have careTeam saved as null/object. Keep render
+  // code array-safe so one legacy record cannot blank the entire Taro page.
+  const careTeam = Array.isArray(user?.careTeam) ? user.careTeam : [];
+  const careTeamKinds = new Set(careTeam.map((m) => m?.kind).filter(Boolean));
   const careTeamMember = (key) => {
     const kind = { doctor: 'familyDoctor', nutritionist: 'nutritionist', manager: 'healthManager' }[key];
-    return (user?.careTeam || []).find((m) => m.kind === kind) || null;
+    return careTeam.find((m) => m?.kind === kind) || null;
   };
   const hasRole = (key) => {
     if (key === 'doctor') return careTeamKinds.has('familyDoctor');
@@ -101,12 +111,14 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
       const [msgRes, pushRes, pendingRes] = await Promise.allSettled([
         messagesAPI.list(), pushRecordsAPI.list(), questionnaireAPI.pending(),
       ]);
-      const msgData = msgRes.status === 'fulfilled' && msgRes.value?.success ? msgRes.value.data : [];
-      const pushData = pushRes.status === 'fulfilled' && pushRes.value?.success
-        ? pushRes.value.data.map(normalizePushRecord) : [];
+      const rawMessages = msgRes.status === 'fulfilled' && msgRes.value?.success ? msgRes.value.data : [];
+      const msgData = Array.isArray(rawMessages) ? rawMessages : [];
+      const rawPushRecords = pushRes.status === 'fulfilled' && pushRes.value?.success ? pushRes.value.data : [];
+      const pushData = Array.isArray(rawPushRecords) ? rawPushRecords.map(normalizePushRecord) : [];
       const all = [...msgData, ...pushData].sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
       setMessages(all);
-      const pending = pendingRes.status === 'fulfilled' && pendingRes.value?.success ? pendingRes.value.data || [] : [];
+      const rawPending = pendingRes.status === 'fulfilled' && pendingRes.value?.success ? pendingRes.value.data : [];
+      const pending = Array.isArray(rawPending) ? rawPending : [];
       setPendingQuestionnaireIds(new Set(pending.map((item) => String(item._id))));
       const unread = all.filter((item) => item.unread).length;
       if (unread > 0) Taro.setTabBarBadge({ index: 2, text: String(Math.min(unread, 99)) }).catch(() => {});
@@ -131,11 +143,15 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
   const systemMessages = notifMessages.filter((m) => !questionnaireMessages.includes(m) && !careMessages.includes(m));
 
   const roleConvs = ROLE_DEFS.map((r) => {
-    const msgs = messages.filter((m) => m.type === r.key || (m.conversationId && m.conversationId.endsWith(`_${r.key}`)));
+    const msgs = messages.filter((m) => m.type === r.key || (m.conversationId && String(m.conversationId).endsWith(`_${r.key}`)));
     const last = msgs[0];
     const unread = msgs.filter((m) => m.unread).length;
     return { ...r, last, unread, lastTime: last ? new Date(last.createdAt).getTime() : 0, kind: 'role', assigned: hasRole(r.key), member: careTeamMember(r.key) };
   });
+  const extraTeamMembers = careTeam
+    .filter((member) => EXTRA_TEAM_META[member?.kind])
+    .map((member) => ({ ...EXTRA_TEAM_META[member.kind], key: member.kind, member, assigned: true, kind: 'profile' }));
+  const assignedTeamCount = roleConvs.filter((conv) => conv.assigned).length + extraTeamMembers.length;
 
   const totalUnread = messages.filter((m) => m.unread).length;
 
@@ -164,7 +180,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
   }
 
   return (
-    <View style={{ minHeight: embedded ? 'auto' : '100vh', backgroundColor: colors.background, paddingBottom: `${spacing.xl}px` }}>
+    <View style={{ width: '100%', flex: embedded ? 1 : 'none', minHeight: embedded ? 'auto' : '100vh', boxSizing: 'border-box', backgroundColor: colors.background, paddingBottom: `${spacing.xl}px` }}>
       {!embedded && <View style={{ display: 'flex', alignItems: 'center', padding: `${statusBarHeight + 12}px ${spacing.lg}px ${spacing.sm}px` }}>
         <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.textPrimary }}>消息</Text>
         {totalUnread > 0 && (
@@ -177,24 +193,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
       {loading ? (
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
       ) : (
-        <View style={{ padding: `0 ${spacing.md}px` }}>
-          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>系统推送</Text>
-          <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
-            {[
-              { label: '待填问卷', icon: '📝', color: '#0077B6', count: questionnaireMessages.length, tab: '待填问卷' },
-              { label: '每日关怀', icon: '💜', color: '#8A4AC7', count: careMessages.filter((m) => m.unread).length, tab: '每日关怀' },
-              { label: '系统通知', icon: '🔔', color: colors.primary, count: systemMessages.filter((m) => m.unread).length, tab: '系统通知' },
-            ].map((item) => (
-              <View key={item.label} onClick={() => { setNotifTab(item.tab); setShowNotif(true); }} style={{ position: 'relative', flex: 1, minWidth: 0, padding: '14px 5px 12px', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
-                <View style={{ width: '36px', height: '36px', borderRadius: '12px', margin: '0 auto 7px', backgroundColor: `${item.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon name={item.icon} size={17} color={item.color} />
-                </View>
-                <Text style={{ fontSize: '12px', fontWeight: 650, color: colors.textPrimary }}>{item.label}</Text>
-                {item.count > 0 && <View style={{ position: 'absolute', top: '7px', right: '12px', minWidth: '17px', height: '17px', borderRadius: '9px', padding: '0 3px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontSize: '9px', fontWeight: 700 }}>{item.count > 99 ? '99+' : item.count}</Text></View>}
-              </View>
-            ))}
-          </View>
-
+        <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.md}px` }}>
           <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>健康规划师</Text>
           <View onClick={onOpenPlanner} style={{ display: 'flex', alignItems: 'center', padding: '13px 14px', marginBottom: `${spacing.md}px`, backgroundColor: '#EAF4EF', borderRadius: `${radius.md}px`, border: '1px solid #C9DED4' }}>
             <View style={{ width: '42px', height: '42px', borderRadius: '13px', backgroundColor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px` }}><Icon name="✨" size={18} color="#fff" /></View>
@@ -202,17 +201,23 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
             <Text style={{ color: colors.primary, fontSize: '18px' }}>›</Text>
           </View>
 
-          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>服务健管团队</Text>
-          <View style={{ display: 'flex', gap: `${spacing.sm}px` }}>
-          {roleConvs.map((conv) => {
+          <View style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>
+            <View>
+              <Text style={{ display: 'block', fontSize: '17px', fontWeight: 800, color: colors.textPrimary }}>我的健康服务团队</Text>
+              <Text style={{ display: 'block', fontSize: '11px', color: colors.textMuted, marginTop: '2px' }}>{assignedTeamCount > 0 ? `已配置 ${assignedTeamCount} 位服务人员` : '开通相应服务后为您配置专属人员'}</Text>
+            </View>
+            {assignedTeamCount > 0 && <View style={{ padding: '4px 8px', borderRadius: `${radius.full}px`, backgroundColor: '#E8F5EF' }}><Text style={{ color: colors.primary, fontSize: '10px', fontWeight: 700 }}>服务中</Text></View>}
+          </View>
+          <View style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: `${spacing.sm}px`, marginBottom: `${spacing.lg}px` }}>
+          {[...roleConvs, ...extraTeamMembers].map((conv) => {
             const unassigned = conv.kind === 'role' && conv.assigned === false;
             const preview = unassigned
               ? '仅对年度会员开放，开通后为您配置专属服务团队'
               : conv.last?.content || conv.last?.title || (conv.member ? `已配置：${conv.member.name}` : '暂无消息');
             return (
-                <View key={conv.key} onClick={() => openConv(conv)} style={{ position: 'relative', flex: 1, minWidth: 0, padding: '13px 7px', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
+                <View key={conv.key} onClick={() => conv.kind === 'role' && openConv(conv)} style={{ position: 'relative', display: 'flex', alignItems: 'center', width: '100%', minWidth: 0, padding: '13px 14px', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${unassigned ? colors.border : `${conv.color}30`}`, boxShadow: shadow.xs }}>
                   <View style={{
-                    position: 'relative', width: '42px', height: '42px', borderRadius: '13px', margin: '0 auto 7px',
+                    position: 'relative', width: '44px', height: '44px', borderRadius: '14px', marginRight: '12px',
                     backgroundColor: unassigned ? colors.border : conv.color, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
                   }}>
                     <Icon name={conv.icon} size={20} color="#fff" />
@@ -222,11 +227,32 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
                       </View>
                     )}
                   </View>
-                  <Text style={{ display: 'block', fontSize: '12px', fontWeight: 700, color: unassigned ? colors.textMuted : colors.textPrimary }} numberOfLines={1}>{conv.label}</Text>
-                  <Text style={{ display: 'block', marginTop: '3px', fontSize: '10px', color: colors.textMuted }} numberOfLines={1}>{conv.member?.name || preview}</Text>
+                  <View style={{ flex: 1, minWidth: 0 }}>
+                    <View style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+                      <Text style={{ fontSize: '14px', fontWeight: 750, color: unassigned ? colors.textMuted : colors.textPrimary }}>{conv.member?.name || conv.label}</Text>
+                      {!!conv.member?.name && <Text style={{ fontSize: '10px', color: conv.color, backgroundColor: `${conv.color}14`, borderRadius: `${radius.full}px`, padding: '2px 6px' }}>{conv.member.role || conv.label}</Text>}
+                    </View>
+                    <Text style={{ display: 'block', marginTop: '5px', fontSize: '11px', color: colors.textMuted, lineHeight: '16px' }} numberOfLines={2}>{conv.member?.name ? (conv.last?.content || conv.last?.title || '已加入您的服务团队，可在这里查看沟通与服务消息') : preview}</Text>
+                  </View>
+                  {conv.kind === 'role' && !unassigned && <Text style={{ fontSize: '18px', color: colors.textMuted, marginLeft: '8px' }}>›</Text>}
                 </View>
             );
           })}
+          </View>
+
+          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>消息与提醒</Text>
+          <View style={{ display: 'flex', width: '100%', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
+            {[
+              { label: '待填问卷', icon: '📝', color: '#0077B6', count: questionnaireMessages.length, tab: '待填问卷' },
+              { label: '每日关怀', icon: '💜', color: '#8A4AC7', count: careMessages.filter((m) => m.unread).length, tab: '每日关怀' },
+              { label: '系统通知', icon: '🔔', color: colors.primary, count: systemMessages.filter((m) => m.unread).length, tab: '系统通知' },
+            ].map((item) => (
+              <View key={item.label} onClick={() => { setNotifTab(item.tab); setShowNotif(true); }} style={{ position: 'relative', flex: 1, width: 0, minWidth: 0, minHeight: '96px', padding: '13px 5px 11px', boxSizing: 'border-box', textAlign: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`, boxShadow: shadow.xs }}>
+                <View style={{ width: '34px', height: '34px', borderRadius: '11px', margin: '0 auto 7px', backgroundColor: `${item.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Icon name={item.icon} size={16} color={item.color} /></View>
+                <Text style={{ fontSize: '12px', fontWeight: 650, color: colors.textPrimary }}>{item.label}</Text>
+                {item.count > 0 && <View style={{ position: 'absolute', top: '7px', right: '12px', minWidth: '17px', height: '17px', borderRadius: '9px', padding: '0 3px', backgroundColor: colors.danger, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ color: '#fff', fontSize: '9px', fontWeight: 700 }}>{item.count > 99 ? '99+' : item.count}</Text></View>}
+              </View>
+            ))}
           </View>
         </View>
       )}

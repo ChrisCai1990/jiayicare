@@ -25,6 +25,33 @@ const EMPTY_FORM = {
   performanceRule: { ruleType: 'none', referrerRate: 0, fulfillerRate: 0, referrerAmount: 0, fulfillerAmount: 0 },
   servicePerformerRoles: [],
   serviceItems: [],
+  aiProfile: {
+    enabledForRecommendation: false, targetNeeds: [], suitableFor: [], notSuitableFor: [],
+    requiredQuestions: [], supportedCities: [], includedItems: [], excludedItems: [],
+    promiseLimits: [], handoffConditions: [], nextAction: 'inquire', operatorNotes: '',
+  },
+}
+
+const AI_LIST_FIELDS = [
+  ['targetNeeds', '目标需求', '客户会用什么需求描述来匹配此产品，每行一项'],
+  ['suitableFor', '适用人群', '明确适合的人群或场景，每行一项'],
+  ['notSuitableFor', '不适用情况', '不应由 AI 自动推荐的情况，每行一项'],
+  ['requiredQuestions', '购买前必问', '推荐或购买前必须向客户确认的问题，每行一项'],
+  ['supportedCities', '支持城市/地区', '留空表示商城尚未明确，AI 应转人工确认'],
+  ['includedItems', '包含项目', '当前服务或价格明确包含的内容，每行一项'],
+  ['excludedItems', '不包含项目', '第三方费用或明确不包含的内容，每行一项'],
+  ['promiseLimits', '不可承诺事项', '不能保证的结果，每行一项'],
+  ['handoffConditions', '转人工条件', '出现哪些情况必须交给真人，每行一项'],
+]
+
+function TextListField({ label, hint, value, onChange }) {
+  return <div className="form-group">
+    <label className="form-label">{label}</label>
+    <textarea className="form-input" rows={4} value={(value || []).join('\n')}
+      onChange={e => onChange(e.target.value.split('\n').map(s => s.trim()).filter(Boolean))}
+      placeholder={hint} />
+    <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>{hint}</div>
+  </div>
 }
 
 // ── 转介绍绩效规则（各机构自行设定，引流人/服务人各自比例或固定金额） ──
@@ -343,6 +370,19 @@ function ProductModal({ product, categories, onClose, onSaved }) {
         key: item.key, name: item.name, units: item.units || 1,
         performers: (item.performers || []).map(r => ({ role:r.role, ruleType:r.ruleType || 'percentage', rate:r.rate || 0, amount:r.amount || 0, defaultStaffId:r.defaultStaffId ? String(r.defaultStaffId) : '' })),
       })),
+      aiProfile: {
+        ...EMPTY_FORM.aiProfile,
+        ...(product.aiProfile || {}),
+        targetNeeds: product.aiProfile?.targetNeeds || [],
+        suitableFor: product.aiProfile?.suitableFor || [],
+        notSuitableFor: product.aiProfile?.notSuitableFor || [],
+        requiredQuestions: product.aiProfile?.requiredQuestions || [],
+        supportedCities: product.aiProfile?.supportedCities || [],
+        includedItems: product.aiProfile?.includedItems || [],
+        excludedItems: product.aiProfile?.excludedItems || [],
+        promiseLimits: product.aiProfile?.promiseLimits || [],
+        handoffConditions: product.aiProfile?.handoffConditions || [],
+      },
     }
   })
   const [loading, setLoading] = useState(false)
@@ -402,6 +442,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
           key: item.key || `item_${Date.now()}`, name: item.name.trim(), units: Math.max(1, parseInt(item.units) || 1),
           performers: (item.performers || []).filter(r=>r.role).map(r=>({ role:r.role, ruleType:r.ruleType || 'percentage', rate:parseFloat(r.rate)||0, amount:parseFloat(r.amount)||0, defaultStaffId:r.defaultStaffId||null })),
         })),
+        aiProfile: form.aiProfile,
       }
       if (isEdit) {
         await adminAPI.updateProduct(product._id, payload)
@@ -424,6 +465,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     { key: 'performance', label: '绩效分配' },
     { key: 'images', label: '产品图片' },
     { key: 'desc', label: '详情描述' },
+    { key: 'ai', label: 'AI推荐设置' },
   ]
 
   return (
@@ -583,6 +625,41 @@ function ProductModal({ product, categories, onClose, onSaved }) {
                 onChange={e => set('description', e.target.value)}
                 placeholder="描述产品详情、服务流程、注意事项等..." />
               <div style={{ fontSize: 11, color: '#aaa', marginTop: 4 }}>支持 HTML 富文本格式</div>
+            </div>
+          )}
+
+          {tab === 'ai' && (
+            <div>
+              <div style={{ background: '#f3f8f5', border: '1px solid #d7e8df', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+                <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 600, color: '#1E6B50' }}>
+                  <input type="checkbox" checked={form.aiProfile.enabledForRecommendation}
+                    onChange={e => set('aiProfile', { ...form.aiProfile, enabledForRecommendation: e.target.checked })} />
+                  允许 AI 自动推荐此产品
+                </label>
+                <div style={{ fontSize: 12, color: '#66756e', marginTop: 6 }}>
+                  只有目标需求、适用人群、购买前必问、不可承诺事项和转人工条件全部填写后，AI 才会真正使用此产品。
+                </div>
+              </div>
+              {AI_LIST_FIELDS.map(([key, label, hint]) => (
+                <TextListField key={key} label={label} hint={hint} value={form.aiProfile[key]}
+                  onChange={value => set('aiProfile', { ...form.aiProfile, [key]: value })} />
+              ))}
+              <div className="form-group">
+                <label className="form-label">推荐后的默认动作</label>
+                <select className="form-input" value={form.aiProfile.nextAction}
+                  onChange={e => set('aiProfile', { ...form.aiProfile, nextAction: e.target.value })}>
+                  <option value="inquire">先提交咨询</option>
+                  <option value="book">预约服务</option>
+                  <option value="buy">直接购买</option>
+                  <option value="handoff">转人工确认</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">运营内部备注（不会提供给客户）</label>
+                <textarea className="form-input" rows={4} value={form.aiProfile.operatorNotes || ''}
+                  onChange={e => set('aiProfile', { ...form.aiProfile, operatorNotes: e.target.value })}
+                  placeholder="待确认事项、资源限制、配置依据等" />
+              </div>
             </div>
           )}
         </div>

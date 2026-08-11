@@ -1375,7 +1375,7 @@ router.get('/products', adminAuth, async (req, res) => {
 
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus, aiProfile } = req.body;
   if (!name || !category || originalPrice === undefined) {
     return res.status(400).json({ success: false, message: '名称、分类、原价为必填项' });
   }
@@ -1394,21 +1394,21 @@ router.post('/products', adminAuth, async (req, res) => {
     bookingRequired: bookingRequired !== false, deliveryRequired: !!deliveryRequired,
     serviceLocation: serviceLocation || '', validityDays: validityDays || 365,
     refundPolicy: refundPolicy || undefined, skus: skus || [],
+    aiProfile: require('../utils/productAiProfile').normalizeAiProfile(aiProfile),
   });
   res.json({ success: true, data: product, message: '产品创建成功' });
 });
 
 // PUT /api/admin/products/:id
 router.put('/products/:id', adminAuth, async (req, res) => {
-  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus } = req.body;
+  const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus, aiProfile } = req.body;
   if (paymentChannel && !['wechat_pay', 'offline'].includes(paymentChannel)) {
     return res.status(400).json({ success: false, message: '真实服务商品仅支持普通微信支付或线下收款' });
   }
-  const product = await Product.findByIdAndUpdate(
-    req.params.id,
-    { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus: skus || [] },
-    { new: true }
-  );
+  const updateData = { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles: servicePerformerRoles || [], serviceItems: serviceItems || [], fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus: skus || [] };
+  // 兼容尚未升级的管理端：请求未携带 aiProfile 时保留原配置，避免普通产品编辑意外关闭 AI 推荐。
+  if (aiProfile !== undefined) updateData.aiProfile = require('../utils/productAiProfile').normalizeAiProfile(aiProfile);
+  const product = await Product.findByIdAndUpdate(req.params.id, updateData, { new: true });
   if (!product) return res.status(404).json({ success: false, message: '产品不存在' });
   res.json({ success: true, data: product, message: '产品更新成功' });
 });
