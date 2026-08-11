@@ -43,6 +43,8 @@ function getAssistTemplateMeta(templateName) {
 }
 const ITEM_STATUS = { pending:'待完成', completed:'已完成', skipped:'已跳过' }
 const ITEM_STATUS_COLOR = { pending:'#D97706', completed:'#22A06B', skipped:'#aaa' }
+const IMPORTANT_CHECKUP_RE = /(碳|尿素)?\s*13\s*[cC]?\s*(尿素)?呼气|[cC]\s*13\s*呼气|胃肠镜|胃镜|肠镜|冠(状动脉|脉).*(CTA|CT血管)|冠脉\s*CTA/i
+function isImportantCheckupItem(item) { return !!item?.isImportantPrecaution || IMPORTANT_CHECKUP_RE.test(item?.name || '') }
 
 const ITEM_CATEGORIES = ['检验检查', '影像检查', '功能医学检测', '体格检查', '问诊咨询', '营养干预', '运动康复', '心理评估', '中医调理', '生活方式', '其他']
 
@@ -227,7 +229,11 @@ export default function PlanDetailPage() {
   useEffect(() => { load() }, [id])
 
   const handlePush = async () => {
-    if (!window.confirm('确认推送此方案给会员？')) return
+    const importantNames = plan?.type === 'annual_checkup' ? (plan.items || []).filter(isImportantCheckupItem).map(item => item.name) : []
+    const prompt = importantNames.length
+      ? `检测到 ${importantNames.length} 项需重点准备：${importantNames.join('、')}。系统将在推送时自动补齐醒目的检查前注意事项，确认推送？`
+      : '确认推送此方案给会员？'
+    if (!window.confirm(prompt)) return
     try { await staffAPI.pushPlan(id); toast('方案已推送'); load() }
     catch (err) { toast(err.message) }
   }
@@ -446,6 +452,15 @@ export default function PlanDetailPage() {
 
       {PLAN_AI_SCENE[plan.type] && <AiRuleHint scene={PLAN_AI_SCENE[plan.type]} />}
 
+      {plan.type === 'annual_checkup' && (plan.items || []).some(isImportantCheckupItem) && (
+        <div className="card" style={{ marginBottom: 20, border: '1.5px solid #F59E0B', background: '#FFFBEB' }}>
+          <div style={{ padding: '14px 18px', display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 22 }}>⚠️</span>
+            <div><div style={{ fontWeight: 700, color: '#92400E' }}>检查前重点准备事项</div><div style={{ marginTop: 4, color: '#A16207', fontSize: 13 }}>已识别到 C13呼气试验、胃肠镜或冠脉CTA 等特殊项目。推送时系统会自动补齐标准注意事项，并重点提示客户提前准备；涉及停药或调整用药时，须由开单医生确认。</div></div>
+          </div>
+        </div>
+      )}
+
       {/* 标准动作（模板SOP，只读）——直接来自模板原始骨架，不经AI改写，跟下方"本次个性化安排"分开陈列，
           避免模板标准动作和AI针对该会员的个性化内容混在一起分不清（2026-07-13反馈"模版就是为了标准化"） */}
       {plan.type === 'medical_assist' && plan.content?.templateSnapshot && (
@@ -628,10 +643,11 @@ export default function PlanDetailPage() {
                   </tr></thead>
                   <tbody>
                     {items.map((item, idx) => (
-                      <tr key={item._id}>
+                      <tr key={item._id} style={isImportantCheckupItem(item) ? { background: '#FFFBEB' } : undefined}>
                         <td style={{ color: '#aaa' }}>{item._idx + 1}</td>
                         <td>
                           <strong>{item.name}</strong>
+                          {isImportantCheckupItem(item) && <span style={{ marginLeft: 6, fontSize: 11, color: '#B45309', background: '#FEF3C7', border: '1px solid #FCD34D', padding: '2px 6px', borderRadius: 10, fontWeight: 700 }}>⚠ 重点准备</span>}
                           {/* 套餐基础项/AI加项明确区分，加项的"检查意义"在下方"注意事项"列展示（2026-07-17需求） */}
                           {item.itemGroup === 'base' && (
                             <span style={{ marginLeft: 6, fontSize: 11, color: '#4A6558', background: '#EFEBE3', padding: '1px 5px', borderRadius: 3 }}>基础项</span>
@@ -654,7 +670,7 @@ export default function PlanDetailPage() {
                           )}
                         </td>
                         {plan.type !== 'annual_checkup' && <td style={{ fontSize: 13, color: '#666' }}>{item.scheduledDate ? new Date(item.scheduledDate).toLocaleDateString('zh-CN') : '-'}</td>}
-                        <td style={{ maxWidth: 220, fontSize: 12, color: '#8AA89C', whiteSpace: 'pre-wrap' }}>{item.notes || '-'}</td>
+                        <td style={{ maxWidth: 280, fontSize: 12, color: isImportantCheckupItem(item) ? '#92400E' : '#8AA89C', whiteSpace: 'pre-wrap', fontWeight: isImportantCheckupItem(item) ? 600 : 400 }}>{item.notes || (isImportantCheckupItem(item) ? '推送时自动补齐标准注意事项' : '-')}</td>
                         <td>
                           <span style={{ color: ITEM_STATUS_COLOR[item.status], fontWeight: 500, fontSize: 13 }}>
                             {ITEM_STATUS[item.status]}

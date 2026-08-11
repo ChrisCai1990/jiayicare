@@ -21,6 +21,9 @@ const planItemSchema = new mongoose.Schema({
   // 年度体检方案专用：区分是体检中心标准套餐项目还是AI建议的可选加项，前端据此展示"基础项/加项"徽标
   // （2026-07-17需求：套餐基础项和加项要明确区分，加项要标注检查意义）
   itemGroup:   { type: String, enum: ['base', 'addon', ''], default: '' },
+  precautionKey: { type: String, default: '' },
+  precautionTitle: { type: String, default: '' },
+  isImportantPrecaution: { type: Boolean, default: false },
 }, { _id: true });
 
 const healthPlanSchema = new mongoose.Schema({

@@ -34,6 +34,16 @@ const medicationSchema = new mongoose.Schema({
   sourceType: { type: String, enum: ['manual', 'annual_plan', 'ai', ''], default: 'manual' },
   sourceAnnualPlanId: { type: mongoose.Schema.Types.ObjectId, ref: 'AnnualPlan', default: null },
   sourceRecordKey: { type: String, default: '' },
+  reminder: {
+    enabled:      { type: Boolean, default: false },
+    intervalDays: { type: Number, min: 1, max: 365, default: 30 },
+    startDate:    { type: String, default: '' },
+    endDate:      { type: String, default: '' },
+    remindTime:   { type: String, default: '09:00' },
+    note:         { type: String, default: '' },
+    updatedAt:    { type: Date, default: null },
+    updatedBy:    { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  },
   // 今日打卡记录
   checkIns: [{
     date:   { type: String }, // YYYY-MM-DD

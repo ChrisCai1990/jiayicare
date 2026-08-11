@@ -59,6 +59,7 @@ const PlanTemplate      = require('../models/PlanTemplate');
 const Medication        = require('../models/Medication');
 const Supplement        = require('../models/Supplement');
 const UserScreeningItem = require('../models/UserScreeningItem');
+const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
@@ -1589,6 +1590,12 @@ router.patch('/plans/:id/push', staffAuth, async (req, res) => {
     || isSelectedMedicalAssistant;
   if (!canPush || !checkPlanTypeRole(plan, req.staff.role) || !(await planTypeAllowed(req, plan.type))) {
     return res.status(403).json({ success: false, message: '无权推送该方案' });
+  }
+  // 重点检查在推送前自动补齐标准准备事项，保证客户收到的方案不是只有项目名。
+  // 医学上可能涉及停药的内容统一要求向开单医生确认，避免系统替代医嘱。
+  if (plan.type === 'annual_checkup') {
+    const result = applyCheckupPrecautions(plan.items.map(item => item.toObject()));
+    plan.items = result.items;
   }
   plan.status = 'active';
   plan.pushedAt = new Date();
@@ -4277,6 +4284,66 @@ router.post('/patients/:id/medications', staffAuth, async (req, res) => {
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+// AI用药提醒：按专员设置的周期生成客户与健管专员共用的随访计划。
+// 重复保存会替换尚未完成的未来计划，已完成记录保留作为服务轨迹。
+router.put('/patients/:id/medications/:medId/reminder', staffAuth, async (req, res) => {
+  try {
+    const med = await Medication.findOne({ _id: req.params.medId, user: req.params.id });
+    if (!med) return res.status(404).json({ success: false, message: '用药记录不存在' });
+    if (med.stopped) return res.status(400).json({ success: false, message: '已停用药物不能设置提醒' });
+
+    const enabled = req.body.enabled !== false;
+    const intervalDays = Number(req.body.intervalDays || 30);
+    if (!Number.isInteger(intervalDays) || intervalDays < 1 || intervalDays > 365) {
+      return res.status(400).json({ success: false, message: '提醒周期须为1至365天' });
+    }
+    const today = new Date(Date.now() + 8 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const startDate = String(req.body.startDate || today);
+    const endDate = String(req.body.endDate || med.endDate || '');
+    const remindTime = /^\d{2}:\d{2}$/.test(req.body.remindTime || '') ? req.body.remindTime : '09:00';
+    const start = new Date(`${startDate}T${remindTime}:00+08:00`);
+    const hardEnd = new Date(start);
+    hardEnd.setDate(hardEnd.getDate() + 365);
+    const end = endDate ? new Date(`${endDate}T23:59:59+08:00`) : hardEnd;
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start) {
+      return res.status(400).json({ success: false, message: '提醒起止日期不正确' });
+    }
+
+    const patient = await User.findById(req.params.id).select('assignedHealthManager');
+    const assignee = patient?.assignedHealthManager || med.staffId || req.staff._id;
+    await FollowUp.deleteMany({
+      patientId: req.params.id,
+      sourceType: 'medication_reminder',
+      sourceId: med._id,
+      status: { $in: ['planned', 'in_progress'] },
+      date: { $gte: new Date() },
+    });
+
+    let generated = 0;
+    if (enabled) {
+      const rows = [];
+      for (let cursor = new Date(start); cursor <= end && rows.length < 120; cursor.setDate(cursor.getDate() + intervalDays)) {
+        rows.push({
+          patientId: req.params.id, staffId: assignee, assignedTo: assignee,
+          date: new Date(cursor), type: 'wechat', status: 'planned',
+          theme: `AI用药提醒 · ${med.name}`,
+          plannedContent: `请按医嘱使用${med.name}（${med.dosage}，${med.frequency}${med.timing ? `，${med.timing}` : ''}），并反馈服药情况、不适反应及是否需要续药。${req.body.note ? `\n提醒备注：${String(req.body.note).trim()}` : ''}`,
+          tags: ['用药提醒', 'AI自动计划'], sourceType: 'medication_reminder', sourceId: med._id,
+        });
+      }
+      if (rows.length) await FollowUp.insertMany(rows);
+      generated = rows.length;
+    }
+
+    med.reminder = {
+      enabled, intervalDays, startDate, endDate, remindTime,
+      note: String(req.body.note || '').trim(), updatedAt: new Date(), updatedBy: req.staff._id,
+    };
+    await med.save();
+    res.json({ success: true, data: med, generated, message: enabled ? `已生成${generated}条随访计划` : '已关闭用药提醒' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 // 仅记录创建人（staffId）或超管可修改/停用，避免他人越权改动其他医护录入的用药记录
 router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => {
   try {
@@ -4298,6 +4365,8 @@ router.patch('/patients/:id/medications/:medId', staffAuth, async (req, res) => 
         stoppedBy: req.staff._id,
         stoppedByName: req.staff.name || '',
       });
+      med.reminder = { ...(med.reminder?.toObject?.() || med.reminder || {}), enabled: false, updatedAt: new Date(), updatedBy: req.staff._id };
+      await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] }, date: { $gte: new Date() } });
     } else {
       const allowed = ['name', 'brandName', 'specification', 'dosage', 'method', 'frequency', 'timing', 'startDate', 'endDate', 'purpose', 'note', 'aiStatus'];
       allowed.forEach(key => { if (req.body[key] !== undefined) med[key] = req.body[key]; });
@@ -4317,6 +4386,7 @@ router.delete('/patients/:id/medications/:medId', staffAuth, async (req, res) =>
       return res.status(403).json({ success: false, message: '仅记录创建人可删除' });
     }
     await med.deleteOne();
+    await FollowUp.deleteMany({ sourceType: 'medication_reminder', sourceId: med._id, status: { $in: ['planned', 'in_progress'] } });
     res.json({ success: true });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
