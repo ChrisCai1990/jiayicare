@@ -6938,9 +6938,18 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
 
     // ── 健管专员：体检报告 OCR 待审核（aiStatus=pending）──
     // ── 健管专员：用户自己上传、尚未AI解析的体检报告（待解析）──
-    // 用户端上传的报告 aiStatus=none 且 uploadedBy=null（非医护录入），需健管触发AI解析
+    // 客户端和医护端上传的报告都进入待解析队列，便于“一人上传、一人解析/审核”协作。
+    // 必须已有实际文件，避免体检计划预先生成的空报告占位记录成为待办。
     if (can('report_parse')) {
-      const parseFilter = { aiStatus: 'none', uploadedBy: null, ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
+      const parseFilter = {
+        aiStatus: 'none',
+        $or: [
+          { fileUrl: /.+/ },
+          { 'fileUrls.0': { $exists: true } },
+          { content: /.+/ },
+        ],
+        ...(myPatientIds ? { user: { $in: myPatientIds } } : {}),
+      };
       const toParseReports = await MedicalReport.find(parseFilter)
         .populate('user', 'name phone').sort({ createdAt: -1 }).limit(50).lean();
       toParseReports.forEach(r => {
@@ -6948,7 +6957,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
         todos.push({
           id: 'reportparse_' + r._id, type: 'report_parse', label: '体检报告待解析', priority: 2,
           patientName: r.user?.name || '未知', patientId: String(r.user?._id || ''),
-          summary: `${r.title} · 客户上传，待AI解析`,
+          summary: `${r.title} · ${r.uploadedBy ? '医护上传' : '客户上传'}，待AI解析`,
           createdAt, overdue: (now - new Date(createdAt)) > DAY,
           link: `/patients/${r.user?._id}?tab=reports&reportId=${r._id}`,
         });
