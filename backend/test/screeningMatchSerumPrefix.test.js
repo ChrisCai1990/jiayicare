@@ -67,3 +67,30 @@ test('其他肝炎抗体不误归入乙肝三系', () => {
     ['丙型肝炎病毒抗体'],
   );
 });
+
+test('总和游离前列腺特异性抗原新增男性特定肿瘤标志物候选', () => {
+  const names = [
+    '总前列腺特异性抗原',
+    '游离前列腺特异性抗原',
+    '总前列腺特异抗原',
+    '游离前列腺抗原比值',
+    'TPSA',
+    'FPSA',
+    'T-PSA',
+    'F-PSA',
+    'FPSA/TPSA',
+  ];
+
+  for (const name of names) {
+    const candidates = classificationCandidates({ itemType: 'lab', name });
+    assert.ok(candidates.includes(name), `${name}应保留原名`);
+    assert.ok(candidates.includes('男性特定肿瘤标志物'), `${name}应新增男性特定肿瘤标志物候选`);
+  }
+});
+
+test('普通前列腺检查不误归入男性特定肿瘤标志物', () => {
+  assert.deepEqual(
+    classificationCandidates({ itemType: 'imaging', name: '前列腺超声' }),
+    ['前列腺超声'],
+  );
+});
