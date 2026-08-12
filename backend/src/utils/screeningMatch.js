@@ -9,6 +9,9 @@
 // screeningL1 用的 _id 格式一致，两条入口（AI自动 / 人工录入）产出的 key 可以互认、去重。
 
 const ProjectCategory = require('../models/ProjectCategory');
+const LabTestOrder = require('../models/LabTestOrder');
+const LabTestItem = require('../models/LabTestItem');
+const SpecialExam = require('../models/SpecialExam');
 
 // 归一化：转小写、全角转半角、去标点空格、去常见检查后缀词
 function norm(s) {
@@ -123,8 +126,23 @@ async function buildAdminIndex() {
   const now = Date.now();
   if (adminIndexCache && (now - adminIndexCacheAt) < ADMIN_INDEX_TTL_MS) return adminIndexCache;
 
-  const cats = await ProjectCategory.find({ status: 'active' }).lean();
+  const [cats, catalogItems] = await Promise.all([
+    ProjectCategory.find({ status: 'active' }).lean(),
+    Promise.all([
+      LabTestOrder.find({ status: 'active', categoryId: { $ne: null } }).select('name categoryId').lean(),
+      LabTestItem.find({ status: 'active', categoryId: { $ne: null } }).select('name categoryId').lean(),
+      SpecialExam.find({ status: 'active', deleted: { $ne: true }, categoryId: { $ne: null } }).select('name categoryId').lean(),
+    ]).then(groups => groups.flat()),
+  ]);
   const byId = new Map(cats.map(c => [String(c._id), c]));
+  const catalogAliasesByCategory = new Map();
+  catalogItems.forEach(item => {
+    const categoryId = String(item.categoryId || '');
+    const name = String(item.name || '').trim();
+    if (!categoryId || !name) return;
+    if (!catalogAliasesByCategory.has(categoryId)) catalogAliasesByCategory.set(categoryId, []);
+    catalogAliasesByCategory.get(categoryId).push(name);
+  });
   const childCount = new Map();
   cats.forEach(c => {
     if (c.parent) childCount.set(String(c.parent), (childCount.get(String(c.parent)) || 0) + 1);
@@ -173,6 +191,7 @@ async function buildAdminIndex() {
         // 生产归类优先使用后台分类树；补充已确认的机构栏目别名，不能只改静态兜底树。
         aliases: [
           ...(c.aliases || []),
+          ...(catalogAliasesByCategory.get(String(c._id)) || []),
           ...(/腰臀围/.test(c.name) ? ['腰围', '臀围', '腰臀比', '腰围臀围'] : []),
           ...(/生活方式评估/.test(c.name) ? ['跌倒评估', '跌倒风险评估', '老年人跌倒风险评估', '跌倒风险筛查'] : []),
         ],
