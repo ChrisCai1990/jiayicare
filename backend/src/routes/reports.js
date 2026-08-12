@@ -26,7 +26,13 @@ router.get('/by-category', auth, async (req, res) => {
     // 按年份分组
     const yearMap = {};
     reports.forEach(r => {
-      const year = r.reportYear || (r.date ? new Date(r.date).getFullYear() : new Date(r.createdAt).getFullYear());
+      const dateValue = r.checkDate || r.date;
+      const dateYear = dateValue ? new Date(dateValue).getFullYear() : NaN;
+      const createdYear = r.createdAt ? new Date(r.createdAt).getFullYear() : NaN;
+      // 检查日期优先；reportYear 只作为历史数据没有合法日期时的兜底。
+      const year = !Number.isNaN(dateYear)
+        ? dateYear
+        : (r.reportYear || (!Number.isNaN(createdYear) ? createdYear : 'unknown'));
       if (!yearMap[year]) yearMap[year] = {};
       const cat = r.screeningCategory || 'other_routine';
       if (!yearMap[year][cat]) yearMap[year][cat] = [];

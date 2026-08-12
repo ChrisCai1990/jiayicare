@@ -8368,11 +8368,20 @@ export default function PatientDetailPage() {
         const yearMap = {}
         filteredReports.forEach(r => {
           const dateStr = r.checkDate || r.date
-          const yr = r.reportYear || (dateStr ? new Date(dateStr).getFullYear() : new Date(r.createdAt).getFullYear()) || '未知'
+          // 检查日期是报告归属年份的事实来源。reportYear 是历史冗余字段，旧数据在修改日期后
+          // 可能没有同步，若优先使用它会把 2025 年报告错误显示在 2026 年名下。
+          const dateYear = dateStr ? new Date(dateStr).getFullYear() : NaN
+          const createdYear = r.createdAt ? new Date(r.createdAt).getFullYear() : NaN
+          const yr = (!Number.isNaN(dateYear) ? dateYear : (r.reportYear || (!Number.isNaN(createdYear) ? createdYear : '未知')))
           if (!yearMap[yr]) yearMap[yr] = {}
-          const l1Node = r.screeningL1
+          let l1Node = r.screeningL1
             ? screeningTree.find(n => String(n._id) === r.screeningL1)
             : titleToL1[r.title]
+          // 历史记录可能在类型被改成“体成分”等具体类型时丢失 screeningL1。
+          // 这类常规检查应回到“其他常规筛查”，不能再额外生成含义不明的“其他”分组。
+          if (!l1Node && ['body_comp', 'blood', 'bloodTest', 'ultrasound', 'radiology', 'mri', 'endoscopy', 'ecg', 'pathology', 'genetic', 'followup', 'imaging'].includes(r.type)) {
+            l1Node = screeningTree.find(n => n.label === '其他常规筛查')
+          }
           // screeningL1/标题都匹配不上时（多为用户端自主上传+编辑改归类的报告），按 type 字段（REPORT_L1_TYPES）
           // 分组，而不是一律扔进"其他"——此前这里只认字面量'annual'，编辑弹窗改了报告归类却完全不影响分组展示，
           // 看起来像"改了没生效"（2026-07-17反馈）

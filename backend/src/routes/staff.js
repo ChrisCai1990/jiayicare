@@ -1987,7 +1987,9 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       if (l1Name) {
         const l1Node = await ProjectCategory.findOne({ parent: null, name: l1Name, status: 'active' }).select('_id').lean();
         report.screeningL1 = l1Node ? String(l1Node._id) : '';
-      } else {
+      } else if (type === 'other' && !report.screeningL1) {
+        // “其他”本身没有可反查的固定节点；仅当报告原本也没有人工选择的一级类目时保持为空。
+        // 体成分、基因检测等具体类型同样没有映射，但不得因此清掉上传时选择的“其他常规筛查”。
         report.screeningL1 = '';
       }
     }
