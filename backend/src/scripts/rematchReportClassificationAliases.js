@@ -26,17 +26,21 @@ async function main() {
     if (!targets.length) continue;
     const classified = await classifyItemsAsync(targets);
     let changed = false;
+    const setFields = {};
     targetIndexes.forEach((originalIndex, targetIndex) => {
       const next = classified[targetIndex];
       if (next.matchStatus !== 'matched') return;
       changed = true;
       fixedItems++;
       console.log(`[修复] 报告${report._id} “${original[originalIndex].name}” → ${next.screeningKey}`);
-      original[originalIndex] = { ...(original[originalIndex].toObject ? original[originalIndex].toObject() : original[originalIndex]), ...next };
+      for (const field of ['screeningKeys', 'screeningKey', 'screeningCategory', 'screeningParent', 'matchStatus', 'matchConfidence']) {
+        setFields[`reportItems.${originalIndex}.${field}`] = next[field];
+      }
     });
     if (changed) {
       touchedReports++;
-      if (APPLY) { report.reportItems = original; await report.save(); }
+      // 只更新归类字段，兼容历史报告中已不符合当前Schema枚举的旧条目，不触发整份报告校验。
+      if (APPLY) await MedicalReport.collection.updateOne({ _id: report._id }, { $set: setFields });
     }
   }
   console.log(`[targeted-rematch] mode=${APPLY ? 'APPLY' : 'DRY-RUN'} reports=${touchedReports} items=${fixedItems}`);
