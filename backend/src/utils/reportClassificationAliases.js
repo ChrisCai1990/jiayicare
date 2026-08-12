@@ -3,7 +3,6 @@ const REPORT_CLASSIFICATION_ALIASES = {
     '乙型肝炎病毒表面抗原定量', '乙型肝炎病毒表面抗体定量',
     '乙型肝炎病毒e抗原', '乙型肝炎病毒e抗体', '乙型肝炎病毒核心抗体',
   ],
-  碳13呼气试验: ['碳尿素测幽门螺杆菌结果', '碳尿素测幽门螺杆菌'],
   糖化血红蛋白: ['HbA1a', 'HbA1b', 'HbA1c', 'HbA1'],
   电解质: ['钾', '钠', '氯', '钙', '总钙', '镁', '磷', '无机磷'],
   心肌酶谱: ['肌酸激酶', '肌酸激酶-MB同工酶活性测定', '肌酸激酶MB同工酶活性测定'],
@@ -11,4 +10,12 @@ const REPORT_CLASSIFICATION_ALIASES = {
   '粪便常规+隐血': ['粪便常规', '大便常规', '便常规', '粪便检查'],
 };
 
-module.exports = { REPORT_CLASSIFICATION_ALIASES };
+const CATEGORY_NAME_PATTERNS = {
+  糖化血红蛋白: /^糖化血红蛋白(?:组合)?$/,
+  电解质: /^电解质(?:组合)?$/,
+  心肌酶谱: /^心肌酶(?:谱|组合)?$/,
+  尿常规: /^尿常规$/,
+  '粪便常规+隐血': /^(?:粪便|大便)常规(?:\+隐血)?$/,
+};
+
+module.exports = { REPORT_CLASSIFICATION_ALIASES, CATEGORY_NAME_PATTERNS };

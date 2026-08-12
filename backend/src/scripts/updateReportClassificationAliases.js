@@ -5,7 +5,7 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const ProjectCategory = require('../models/ProjectCategory');
-const { REPORT_CLASSIFICATION_ALIASES } = require('../utils/reportClassificationAliases');
+const { REPORT_CLASSIFICATION_ALIASES, CATEGORY_NAME_PATTERNS } = require('../utils/reportClassificationAliases');
 
 const APPLY = process.argv.includes('--apply');
 
@@ -14,8 +14,12 @@ async function main() {
   console.log(`[classification-aliases] mode=${APPLY ? 'APPLY' : 'DRY-RUN'}`);
   let changed = 0;
   for (const [name, aliases] of Object.entries(REPORT_CLASSIFICATION_ALIASES)) {
-    const category = await ProjectCategory.findOne({ name, status: 'active' });
-    if (!category) throw new Error(`未找到有效分类：${name}`);
+    let categories = await ProjectCategory.find({ name, status: 'active' });
+    if (!categories.length && CATEGORY_NAME_PATTERNS[name]) {
+      categories = await ProjectCategory.find({ name: CATEGORY_NAME_PATTERNS[name], status: 'active' });
+    }
+    if (categories.length !== 1) throw new Error(`分类“${name}”匹配到${categories.length}项：${categories.map(item => item.name).join('、') || '无'}`);
+    const [category] = categories;
     const current = new Set((category.aliases || []).map(value => String(value).trim()).filter(Boolean));
     const missing = aliases.filter(alias => !current.has(alias));
     console.log(`${name}: ${missing.length ? `新增 ${missing.join('、')}` : '无需更新'}`);
