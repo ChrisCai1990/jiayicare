@@ -6,10 +6,10 @@ const User = require('../src/models/User');
 const { generateHealthSummarySections } = require('../src/utils/aiHealthSummary');
 
 async function main() {
-  const [userId, year = String(new Date().getFullYear()), rawRecordIndex = '0'] = process.argv.slice(2);
+  const [userId, year = String(new Date().getFullYear()), rawRecordIndex = '0', expectedGeneratedAt] = process.argv.slice(2);
   const recordIndex = Number(rawRecordIndex);
   if (!mongoose.isValidObjectId(userId) || !Number.isInteger(recordIndex) || recordIndex < 0) {
-    throw new Error('Usage: node backend/scripts/upgradeLegacyTumorSection.js <userId> [year] [recordIndex]');
+    throw new Error('Usage: node backend/scripts/upgradeLegacyTumorSection.js <userId> [year] [recordIndex] [expectedGeneratedAt]');
   }
 
   await mongoose.connect(process.env.MONGODB_URI);
@@ -21,6 +21,9 @@ async function main() {
   const records = Array.isArray(entry?.records) ? entry.records : [];
   const record = records[recordIndex];
   if (!record?.sections?.tumor_risk) throw new Error('Target AI record or tumor section not found');
+  if (expectedGeneratedAt && new Date(record.generatedAt).toISOString() !== new Date(expectedGeneratedAt).toISOString()) {
+    throw new Error(`Target record changed: expected ${expectedGeneratedAt}, found ${record.generatedAt || 'no generatedAt'}`);
+  }
   if (Array.isArray(record.sections.tumor_risk.cancers) && record.sections.tumor_risk.cancers.length === 10) {
     console.log('Target tumor section is already structured; no update needed.');
     return;

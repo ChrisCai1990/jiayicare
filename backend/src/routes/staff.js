@@ -5244,7 +5244,12 @@ router.delete('/patients/:id/body-composition-history/:index', staffAuth, async 
 // POST /api/staff/patients/:id/ai-health-summary
 // body: { year, scope: 'doctor'|'nutrition'|'all'（默认all，兼容旧前端）, force: boolean（对方已审核时二次确认后传true）}
 const { generateHealthSummarySections, DOCTOR_KEYS, LIFESTYLE_KEY } = require('../utils/aiHealthSummary');
+// PM2 currently runs this service as a single fork. Keep one expensive generation per
+// member/scope in flight so a timed-out browser request or a second tab cannot append
+// a duplicate history record while the first request is still working.
+const activeAIHealthSummaryJobs = new Set();
 router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
+  let generationJobKey = null;
   try {
     const user = await User.findById(req.params.id)
       .populate('assignedHealthManager', 'name')
@@ -5263,6 +5268,15 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     if (!canGen) {
       return res.status(403).json({ success: false, message: '您没有生成该AI健康信息整理的权限，仅可查看' });
     }
+    generationJobKey = `${req.params.id}:${scope}`;
+    if (activeAIHealthSummaryJobs.has(generationJobKey)) {
+      return res.status(409).json({
+        success: false,
+        generationInProgress: true,
+        message: '该会员的同类AI健康信息整理正在生成，请等待完成后刷新页面，勿重复提交',
+      });
+    }
+    activeAIHealthSummaryJobs.add(generationJobKey);
     // 双审强制前置：健康顾问生成AI健康分析前，必须先审核确认该客户所有健管专员已审核的报告
     // （2026-07-21需求），营养师维度的生活方式评估同样依赖报告数据，一并拦截。与 user.js 客户
     // 自助生成入口共用同一个 checkReportAuditGate，避免两处判断口径分裂（曾出现user.js完全
@@ -5450,6 +5464,8 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
     res.json({ success: true, data: summary });
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
+  } finally {
+    if (generationJobKey) activeAIHealthSummaryJobs.delete(generationJobKey);
   }
 });
 
