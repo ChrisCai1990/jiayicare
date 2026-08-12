@@ -6355,8 +6355,20 @@ export default function PatientDetailPage() {
         const nutritionRecord = nutritionRecords.find(r => r._recordIndex === aiRecordIndex.nutrition) || nutritionRecords[0] || {}
         const latestDoctorApproved = !!(doctorRecords[0]?.doctorApprovedAt || doctorRecords[0]?.approvedAt)
         // 两条链独立选择历史记录，展示层再组合，任何一方重新评估都不会改变另一方当前结果。
+        // 旧版记录的 sections 同时包含健康顾问和营养师板块，不能直接整体展开 nutritionRecord.sections；
+        // 否则旧营养记录会覆盖当前选中的新版5维分析，出现“下拉框是第2次、内容却是第1次”的错位。
+        const doctorSectionKeys = ['medical_priority', 'tumor_risk', 'cardiovascular_risk', 'chronic_disease', 'checkup_completeness']
+        const selectedDoctorSections = Object.fromEntries(
+          doctorSectionKeys
+            .filter(key => doctorRecord.sections?.[key] !== undefined)
+            .map(key => [key, doctorRecord.sections[key]])
+        )
+        const selectedLifestyleSection = nutritionRecord.sections?.lifestyle_assessment
         const ais = {
-          sections: { ...(doctorRecord.sections || {}), ...(nutritionRecord.sections || {}) },
+          sections: {
+            ...selectedDoctorSections,
+            ...(selectedLifestyleSection !== undefined ? { lifestyle_assessment: selectedLifestyleSection } : {}),
+          },
           doctorApprovedAt: doctorRecord.doctorApprovedAt || doctorRecord.approvedAt,
           doctorApprovedBy: doctorRecord.doctorApprovedBy || doctorRecord.approvedBy,
           nutritionApprovedAt: nutritionRecord.nutritionApprovedAt || nutritionRecord.approvedAt,
