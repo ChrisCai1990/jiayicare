@@ -284,6 +284,7 @@ function classificationName(item) {
   const name = String(item?.name || '').trim();
   if (item?.itemType !== 'lab') return name;
 
+  if (/乙型肝炎(?:病毒)?(?:表面|e|E|核心)(?:抗原|抗体)/.test(name)) return '乙肝三系';
   if (/糖(?:类|链)?抗原|\bCA\s*[-－]?\s*\d+(?:\s*[-－]\s*\d+)?\b|细胞角蛋白(?:19)?片段|\bCYFRA\s*21\s*[-－]?\s*1\b|神经元特异(?:性)?烯醇化酶|\bNSE\b|鳞状细胞癌(?:相关)?抗原|\bSCCA?\b|胃泌素释放肽前体|\bProGRP\b|恶性肿瘤特异性生长因子|\bTSGF\b|甲胎蛋白|\bAFP\b|癌胚抗原|\bCEA\b/i.test(name)) return '泛肿瘤标志物';
   if (/胃蛋白酶原|胃泌素|\bPG\s*(?:I{1,2}|1|2)(?:\s*[\/／]\s*PG?\s*(?:I{1,2}|1|2))?\b/i.test(name)) return '胃功能3项';
   if (/^(?:血清|血)?(?:尿素(?:氮)?|肌酐|尿酸)(?:$|[（(【\[]|\s|\+)|^(?:UREA|CREA(?:-?J)?|BUN|UA)$/i.test(name)) return '肾功能';

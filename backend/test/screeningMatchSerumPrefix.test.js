@@ -44,3 +44,26 @@ test('去血清前缀候选可以精确命中Admin已有项目名', () => {
 test('非血清开头的项目不生成截断候选', () => {
   assert.deepEqual(classificationCandidates({ itemType: 'lab', name: '血小板计数' }), ['血小板计数']);
 });
+
+test('乙肝抗原抗体定量名称新增乙肝三系候选', () => {
+  const names = [
+    '乙型肝炎表面抗体定量',
+    '乙型肝炎e抗原定量',
+    '乙型肝炎e抗体定量',
+    '乙型肝炎核心抗体定量',
+    '乙型肝炎病毒表面抗原测定',
+  ];
+
+  for (const name of names) {
+    const candidates = classificationCandidates({ itemType: 'lab', name });
+    assert.ok(candidates.includes(name), `${name}应保留原名`);
+    assert.ok(candidates.includes('乙肝三系'), `${name}应新增乙肝三系候选`);
+  }
+});
+
+test('其他肝炎抗体不误归入乙肝三系', () => {
+  assert.deepEqual(
+    classificationCandidates({ itemType: 'lab', name: '丙型肝炎病毒抗体' }),
+    ['丙型肝炎病毒抗体'],
+  );
+});
