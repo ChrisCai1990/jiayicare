@@ -266,7 +266,16 @@ async function classifyItemAsync(item) {
 // 配成叶子分类名称/别名；未配置时保持待归类。
 function classificationCandidates(item) {
   return [...new Set([item?.name, item?.orderName, item?.sourceSection, classificationName(item)]
-    .map(value => String(value || '').trim()).filter(Boolean))];
+    .flatMap(reportNameCandidates).filter(Boolean))];
+}
+
+// “血清”描述的是标本类型，不是检验项目本身。既保留报告原名，也增加去掉该前缀后的候选，
+// 让“血清总蛋白”能够精确命中Admin已有的“总蛋白”，且不影响任何既有精确匹配。
+function reportNameCandidates(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  const withoutSerumPrefix = raw.replace(/^血清\s*/, '').trim();
+  return withoutSerumPrefix && withoutSerumPrefix !== raw ? [raw, withoutSerumPrefix] : [raw];
 }
 
 // 报告原名仍优先做Admin精确匹配；以下规则只新增一个稳定分类名候选，兼容医院在项目名后
@@ -309,5 +318,5 @@ module.exports = {
   matchAll, matchOne: (n, t) => { const r = matchAll(n, t); return r[0] || null; },
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
-  matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates,
+  matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates, reportNameCandidates,
 };
