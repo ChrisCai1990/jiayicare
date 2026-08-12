@@ -9402,23 +9402,9 @@ router.get('/diag/pdf', staffAuth, async (req, res) => {
 // 现改为：只读 ProjectCategory 本身（叶子节点=末级分类），按 classifyItemsAsync 完全相同的公式拼 value，
 // 保证两边 key 一致才能互认/去重。不复用 screeningMatch.js 内部的 buildAdminIndex 函数，避免为了这个展示需求
 // 改动 AI 归类核心逻辑依赖的共享代码——本路由改动完全独立、出问题只影响这一个下拉框，不影响 AI 自动归类主流程。
-// 展示文字额外带上该叶子节点直接挂载(categoryId)的检验医嘱/检查医嘱/功能医学检测名称，方便医护辨认。
 router.get('/screening-catalog', staffAuth, async (req, res) => {
   try {
-    const [cats, orders, exams, funcTests] = await Promise.all([
-      ProjectCategory.find({ status: 'active' }).select('name parent').lean(),
-      LabTestOrder.find({ status: 'active', categoryId: { $ne: null } }).select('name categoryId').lean(),
-      SpecialExam.find({ status: 'active', deleted: { $ne: true }, categoryId: { $ne: null } }).select('name categoryId').lean(),
-      FunctionalMedicineTest.find({ status: 'active', deleted: { $ne: true }, categoryId: { $ne: null } }).select('name categoryId').lean(),
-    ]);
-
-    // 按分类节点_id聚合直接挂载的检验医嘱/检查医嘱/功能医学检测名称，供选项展示辅助文字用
-    const namesByCat = new Map();
-    [...orders, ...exams, ...funcTests].forEach(item => {
-      const key = String(item.categoryId);
-      if (!namesByCat.has(key)) namesByCat.set(key, []);
-      namesByCat.get(key).push(item.name);
-    });
+    const cats = await ProjectCategory.find({ status: 'active' }).select('name parent').lean();
 
     const byId = new Map(cats.map(c => [String(c._id), c]));
     const childCount = new Map();
@@ -9451,13 +9437,12 @@ router.get('/screening-catalog', staffAuth, async (req, res) => {
       const l1Id = String(l1._id);
       if (excludeL1Ids.has(l1Id)) return;
 
-      const extraNames = [...new Set(namesByCat.get(String(leaf._id)) || [])];
-      const displaySuffix = extraNames.length ? ` (${extraNames.join('、')})` : '';
       const value = `${l1Id}|${parentLabel}|${leaf.name}`;
       if (!groupsByL1.has(l1.name)) groupsByL1.set(l1.name, []);
       groupsByL1.get(l1.name).push({
         value,
-        label: `${parentLabel !== leaf.name ? parentLabel + ' / ' : ''}${leaf.name}${displaySuffix}`,
+        // 只展示Admin真实分类层级；已归类项目名仅用于后台搜索/自动匹配，不伪装成分类名称。
+        label: `${parentLabel !== leaf.name ? parentLabel + ' / ' : ''}${leaf.name}`,
         groupLabel: l1.name,
       });
     });

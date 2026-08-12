@@ -259,15 +259,15 @@ async function classifyItemAsync(item) {
   // 已归类结果（包括人工审核确认）是权威数据，不再重新匹配。
   if (hasConfirmedClassification(item)) return { ...item };
   const candidates = classificationCandidates(item);
-  const results = await Promise.all(candidates.map(value => matchAllAdmin(value, item.itemType, 1)));
-  const matches = mergeExactMatches(results.flat());
+  const index = await buildAdminIndex();
+  const matches = selectAdminMatches(candidates, item.itemType, index);
   return classifyItemWithMatches(item, matches);
 }
 
 // 归类候选只取报告原文，不在代码中解释医学含义。Admin可把项目原名、检验单名或栏目名
 // 配成叶子分类名称/别名；未配置时保持待归类。
 function classificationCandidates(item) {
-  return [...new Set([item?.name, item?.orderName, item?.sourceSection, classificationName(item)]
+  return [...new Set([item?.name, item?.orderName, item?.sourceSection]
     .flatMap(reportNameCandidates).filter(Boolean))];
 }
 
@@ -288,25 +288,31 @@ function reportNameCandidates(value) {
   return withoutSerumPrefix && withoutSerumPrefix !== raw ? [raw, withoutSerumPrefix] : [raw];
 }
 
-// 报告原名仍优先做Admin精确匹配；以下规则只新增一个稳定分类名候选，兼容医院在项目名后
-// 附加检测方法、英文缩写或OCR尾码的情况，不替换也不删除Admin已有项目/别名。
+// 兼容旧调用方：不再在代码里把项目名翻译成硬编码分类名，分类只能来自Admin索引。
 function classificationName(item) {
-  const name = String(item?.name || '').trim();
-  if (item?.itemType !== 'lab') return name;
-
-  if (/乙型肝炎(?:病毒)?(?:表面|e|E|核心)(?:抗原|抗体)/.test(name)) return '乙肝三系';
-  if (/总前列腺特异(?:性)?抗原|游离前列腺特异(?:性)?抗原|游离前列腺抗原比值|^(?:总|游离)?PSA(?:\s*[\/／]\s*(?:总|游离)?PSA)?$|\b(?:TPSA|FPSA|T-PSA|F-PSA)\b/i.test(name)) return '男性特定肿瘤标志物';
-  if (/糖(?:类|链)?抗原|\bCA\s*[-－]?\s*\d+(?:\s*[-－]\s*\d+)?\b|细胞角蛋白(?:19)?片段|\bCYFRA\s*21\s*[-－]?\s*1\b|神经元特异(?:性)?烯醇化酶|\bNSE\b|鳞状细胞癌(?:相关)?抗原|\bSCCA?\b|胃泌素释放肽前体|\bProGRP\b|恶性肿瘤特异性生长因子|\bTSGF\b|甲胎蛋白|\bAFP\b|癌胚抗原|\bCEA\b/i.test(name)) return '泛肿瘤标志物';
-  if (/胃蛋白酶原|胃泌素|\bPG\s*(?:I{1,2}|1|2)(?:\s*[\/／]\s*PG?\s*(?:I{1,2}|1|2))?\b/i.test(name)) return '胃功能3项';
-  if (/^(?:血清|血)?(?:尿素(?:氮)?|肌酐|尿酸)(?:$|[（(【\[]|\s|\+)|^(?:UREA|CREA(?:-?J)?|BUN|UA)$/i.test(name)) return '肾功能';
-  return name;
+  return String(item?.name || '').trim();
 }
-function mergeExactMatches(matches) {
+
+function mergeMatches(matches) {
   const byKey = new Map();
-  matches.filter(match => match.confidence === 1).forEach(match => {
-    if (!byKey.has(match.node.id)) byKey.set(match.node.id, match);
+  matches.forEach(match => {
+    const previous = byKey.get(match.node.id);
+    if (!previous || match.confidence > previous.confidence) byKey.set(match.node.id, match);
   });
-  return [...byKey.values()];
+  return [...byKey.values()].sort((a, b) => b.confidence - a.confidence);
+}
+
+// 唯一数据源是Admin：先精确匹配Admin分类名/别名/已归类项目名，再做关键词包含匹配。
+// 若最高分同时指向多个Admin分类，则保持待归类，禁止按数据库顺序随意选择。
+function selectAdminMatches(candidates, itemType, index) {
+  const exact = mergeMatches(candidates.flatMap(value => matchAllWithIndex(value, itemType, index, 1, [])));
+  if (exact.length === 1) return exact;
+  if (exact.length > 1) return [];
+
+  const fuzzy = mergeMatches(candidates.flatMap(value => matchAllWithIndex(value, itemType, index, 0.75, [])));
+  if (!fuzzy.length) return [];
+  if (fuzzy.length > 1 && fuzzy[0].confidence === fuzzy[1].confidence) return [];
+  return [fuzzy[0]];
 }
 
 async function classifyItemsAsync(items) {
@@ -314,8 +320,7 @@ async function classifyItemsAsync(items) {
   return (items || []).map(item => {
     // 增量归类：已归类项原样返回，只处理待归类项。既避免重复计算，也防止新规则覆盖审核结果。
     if (hasConfirmedClassification(item)) return { ...item };
-    const matches = mergeExactMatches(classificationCandidates(item)
-      .flatMap(value => matchAllWithIndex(value, item.itemType, index, 1, [])));
+    const matches = selectAdminMatches(classificationCandidates(item), item.itemType, index);
     return classifyItemWithMatches(item, matches);
   });
 }
@@ -333,5 +338,5 @@ module.exports = {
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
   matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates, reportNameCandidates,
-  hasConfirmedClassification,
+  hasConfirmedClassification, selectAdminMatches,
 };

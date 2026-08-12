@@ -5,6 +5,8 @@ const {
   classificationCandidates,
   hasConfirmedClassification,
   matchAllWithIndex,
+  norm,
+  selectAdminMatches,
 } = require('../src/utils/screeningMatch');
 
 test('血清前缀作为新增候选，不替换报告原名', () => {
@@ -46,54 +48,15 @@ test('非血清开头的项目不生成截断候选', () => {
   assert.deepEqual(classificationCandidates({ itemType: 'lab', name: '血小板计数' }), ['血小板计数']);
 });
 
-test('乙肝抗原抗体定量名称新增乙肝三系候选', () => {
-  const names = [
-    '乙型肝炎表面抗体定量',
-    '乙型肝炎e抗原定量',
-    '乙型肝炎e抗体定量',
-    '乙型肝炎核心抗体定量',
-    '乙型肝炎病毒表面抗原测定',
-  ];
-
-  for (const name of names) {
-    const candidates = classificationCandidates({ itemType: 'lab', name });
-    assert.ok(candidates.includes(name), `${name}应保留原名`);
-    assert.ok(candidates.includes('乙肝三系'), `${name}应新增乙肝三系候选`);
-  }
-});
-
-test('其他肝炎抗体不误归入乙肝三系', () => {
-  assert.deepEqual(
-    classificationCandidates({ itemType: 'lab', name: '丙型肝炎病毒抗体' }),
-    ['丙型肝炎病毒抗体'],
-  );
-});
-
-test('总和游离前列腺特异性抗原新增男性特定肿瘤标志物候选', () => {
-  const names = [
-    '总前列腺特异性抗原',
-    '游离前列腺特异性抗原',
-    '总前列腺特异抗原',
-    '游离前列腺抗原比值',
-    'TPSA',
-    'FPSA',
-    'T-PSA',
-    'F-PSA',
-    'FPSA/TPSA',
-  ];
-
-  for (const name of names) {
-    const candidates = classificationCandidates({ itemType: 'lab', name });
-    assert.ok(candidates.includes(name), `${name}应保留原名`);
-    assert.ok(candidates.includes('男性特定肿瘤标志物'), `${name}应新增男性特定肿瘤标志物候选`);
-  }
-});
-
-test('普通前列腺检查不误归入男性特定肿瘤标志物', () => {
-  assert.deepEqual(
-    classificationCandidates({ itemType: 'imaging', name: '前列腺超声' }),
-    ['前列腺超声'],
-  );
+test('关键词包含匹配也只能返回Admin索引里的真实分类', () => {
+  const id = 'other|传染病筛查|其他传染病检测';
+  const index = [{
+    node: { id, label: '其他传染病检测', category: 'other', parent: '传染病筛查' },
+    cands: ['其他传染病检测', '人免疫缺陷病毒抗体（ELISA）', '丙型肝炎抗体']
+      .map(raw => ({ raw, n: norm(raw) })),
+  }];
+  assert.equal(selectAdminMatches(['人免疫缺陷病毒抗体'], 'lab', index)[0]?.node.id, id);
+  assert.equal(selectAdminMatches(['丙型肝炎抗体'], 'lab', index)[0]?.node.id, id);
 });
 
 test('已有归类标识的项目视为已确认，待归类项目才继续匹配', () => {
