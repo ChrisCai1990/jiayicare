@@ -60,6 +60,7 @@ const Medication        = require('../models/Medication');
 const Supplement        = require('../models/Supplement');
 const UserScreeningItem = require('../models/UserScreeningItem');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
+const { aggregateUrineStoolPanels } = require('../utils/urineStoolPanel');
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
@@ -7563,10 +7564,10 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
      和红细胞/血小板相关的各项衍生指标（MCV/MCH/MCHC/RDW/MPV/PDW等）同样要逐条提取，不能省略
 
 6. 尿常规 / 粪便常规
-   → 不再整体合并成一条：按报告原文实际印刷的子项逐条提取，与规则5血液检验同样处理
-   → itemType="lab"，每个子项（如尿蛋白质/尿隐血/尿糖/白细胞/红细胞/比重/酸碱度等）单独一条
-   → name/value/unit/referenceRange/status 逐项填写，orderName="尿常规"或"粪便常规"（报告原名是
-     "尿液综合分析"等其他叫法时，orderName 按报告实际印刷的标题填写，不要自己编造成"尿常规"）
+   → 每张检验单只输出一条，不把颜色、红细胞、白细胞、隐血等子项拆成独立item
+   → itemType="lab"，name固定为"尿常规"或"粪便常规"，orderName填写报告实际印刷的检验单标题
+   → findings按报告原顺序逐行填写“子项名称：结果”，必须包含正常和异常的全部实际结果
+   → value/unit/referenceRange固定留空，不提取各子项参考范围；status只要任一子项明确异常即为abnormal，全部明确正常才为normal，否则unknown
    → 同一份尿/便检验单的子项常跨页打印（如流式法子项在一页、干化学法子项在下一页），只要下一页
      开头没有出现新的检验单标题，就说明是同一份检验单续页，续页的子项 orderName 仍填同一个名字，
      不能因为分页就当成两份不同的检验单
@@ -7758,8 +7759,7 @@ const PATIENT_INFO_NAMES = new Set([
 
 // 体格检查类项目名单——模型偶尔会把这些误标成 lab/data，提取后强制纠正为 imaging（金娟07-01反馈：眼压检查被提取成检验类型）
 // 用前缀匹配而非精确相等：AI 常在名称后附加方法说明，如"眼压检查(非接触眼压计法或压平眼压计法)"
-// 尿常规/粪便常规（07-02补充）同属这类"整体一条imaging记录、按规则6不拆子项"的项目，此前漏加导致AI误标成lab类型时没被纠正回来
-const PHYSICAL_EXAM_NAMES = ['内科', '外科', '耳鼻喉', '视力检查', '眼压检查', '眼科', '裂隙灯检查', '尿常规', '粪便常规'];
+const PHYSICAL_EXAM_NAMES = ['内科', '外科', '耳鼻喉', '视力检查', '眼压检查', '眼科', '裂隙灯检查'];
 
 // 每次体检最多只应出现一次的检查类型，AI经常写出好几种变体名字（"胃镜"/"电子胃镜"/"无痛胃镜"），
 // 导致同一检查因为名字对不上没法被后面的同名去重规则识别成重复——统一改写成标准名，再走已有去重逻辑。
@@ -9071,6 +9071,7 @@ async function runReportParse(reportId) {
       allItems = sanitizeBodyCompositionItems(allItems);
       if (useShaoyifuTemplate) allItems = shaoyifuTemplate.normalizeShaoyifuItems(allItems);
       if (useZheyiTemplate) allItems = zheyiTemplate.normalizeZheyiItems(allItems);
+      allItems = aggregateUrineStoolPanels(allItems);
 
       // 2026-07-02修复：各类单页重试(数量核对/超声拆分/空内容补全)命中后都是把条目从原位置摘掉、
       // 用 .concat() 拼到 allItems 末尾，导致这些条目脱离了报告原文的页码顺序、被甩到审核列表最后面，
@@ -9192,6 +9193,7 @@ async function runReportParse(reportId) {
       }
     }
     imageItems = sanitizeBodyCompositionItems(imageItems);
+    imageItems = aggregateUrineStoolPanels(imageItems);
     sortReportItemsBySource(imageItems);
     const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(imageItems))))))))))));
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
@@ -9256,10 +9258,11 @@ async function runReportPageParse(reportId, pageNum) {
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
-  const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
+  const mergedPage = aggregateUrineStoolPanels(mergeCoverageAuditItems(oldPage, newPage));
   const classifiedPage = await classifyItemsAsync(mergedPage);
   const preserved = (latest.reportItems || []).filter(item => Number(item.sourcePage) !== pageNum);
-  const combined = [...preserved, ...classifiedPage].sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0));
+  const combined = aggregateUrineStoolPanels([...preserved, ...classifiedPage])
+    .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0));
   await MedicalReport.findByIdAndUpdate(reportId, {
     reportItems: combined,
     aiStatus: 'pending',

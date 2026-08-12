@@ -31,7 +31,7 @@ function promptForPage(pageNum) {
 1. 一般检查必须逐行输出data，心率命名为“脉搏心率”，体重不得遗漏。眼科、耳鼻喉科、牙科、内外科（全科）则每个科室只输出一条imaging：findings按原顺序写成多行“项目名称：检查结果”，不得把科内每一行生成独立item。眼压单独输出一条“眼压检查”，不得同时混入眼科检查。
 2. “科室小结”“小结”“建议”“健康宣教”全部跳过，不生成item，也不得写入findings/diagnosis/conclusion。
 3. 肝胆脾胰组合超声必须拆成肝脏超声、胆囊超声、脾脏超声、胰腺超声四条；双肾相关内容另列肾脏超声。每条只能包含对应器官原文。
-4. 检验表格逐行输出，每个指标一条lab，项目、结果、单位、参考范围必须严格同行对应；粪便检查除外，整张粪便检查只输出一条imaging，findings逐行写“项目：结果”，不写参考范围。尿常规维持逐项lab提取。
+4. 普通检验表格逐行输出，每个指标一条lab，项目、结果、单位、参考范围必须严格同行对应。尿常规和粪便常规除外：每张检验单只输出一条lab，name固定为“尿常规”或“粪便常规”，findings逐行写“项目：结果”，value/unit/referenceRange留空。尿生化、尿微量白蛋白/尿肌酐和独立便潜血仍单独提取。
 5. 输出顺序必须与本页从上到下的阅读顺序一致。`;
 }
 
@@ -131,18 +131,6 @@ function normalizeZheyiItems(items) {
     expanded.push(item);
   }
   kept = expanded;
-
-  // 粪便检查按检查项目聚合展示；尿常规保持逐项检验，不在此处改变。
-  const stoolRows = kept.filter(item => /粪便|大便|便常规/.test(`${text(item.sourceSection)} ${text(item.orderName)} ${text(item.name)}`));
-  if (stoolRows.length) {
-    const stoolSet = new Set(stoolRows);
-    const findings = stoolRows.map(row => {
-      const value = text(row.value || row.findings || row.diagnosis || row.conclusion);
-      return value ? `${text(row.name)}：${value}${text(row.unit)}` : '';
-    }).filter(Boolean).join('\n');
-    kept = kept.filter(item => !stoolSet.has(item));
-    if (findings) kept.push({ ...stoolRows[0], name: '粪便检查', sourceSection: '粪便检查', orderName: '粪便检查', itemType: 'imaging', value: '', unit: '', referenceRange: '', findings, diagnosis: '', conclusion: '', status: 'unknown' });
-  }
 
   kept = kept.map(item => {
     const context = `${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`;

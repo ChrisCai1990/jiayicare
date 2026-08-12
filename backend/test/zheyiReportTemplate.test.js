@@ -97,7 +97,7 @@ test('眼压去重并将风险、骨密度、呼气试验转为检查项目', ()
   }
 });
 
-test('粪便聚合不带参考范围，尿常规不改变，尿生化归尿肾功能', () => {
+test('尿粪常规保留给统一聚合器处理，尿生化归尿肾功能', () => {
   const rows = [
     { name: '颜色', value: '黄褐色', referenceRange: '黄褐色', orderName: '粪便常规', itemType: 'lab', _page: 11 },
     { name: '隐血', value: '阴性', referenceRange: '阴性', orderName: '粪便常规', itemType: 'lab', _page: 11 },
@@ -105,9 +105,7 @@ test('粪便聚合不带参考范围，尿常规不改变，尿生化归尿肾�
     { name: '尿微量白蛋白', value: '10', orderName: '尿生化', itemType: 'lab', _page: 12 },
   ];
   const out = template.normalizeZheyiItems(rows);
-  const stool = out.find(item => item.name === '粪便检查');
-  assert.match(stool.findings, /颜色：黄褐色/);
-  assert.equal(stool.referenceRange, '');
+  assert.ok(out.some(item => item.name === '颜色' && item.orderName === '粪便常规'));
   assert.ok(out.some(item => item.name === '尿白细胞' && item.itemType === 'lab'));
   assert.equal(out.find(item => item.name === '尿微量白蛋白').orderName, '尿肾功能');
 });
