@@ -3,6 +3,7 @@ const assert = require('node:assert/strict');
 
 const {
   classificationCandidates,
+  hasConfirmedClassification,
   matchAllWithIndex,
 } = require('../src/utils/screeningMatch');
 
@@ -93,4 +94,11 @@ test('普通前列腺检查不误归入男性特定肿瘤标志物', () => {
     classificationCandidates({ itemType: 'imaging', name: '前列腺超声' }),
     ['前列腺超声'],
   );
+});
+
+test('已有归类标识的项目视为已确认，待归类项目才继续匹配', () => {
+  assert.equal(hasConfirmedClassification({ screeningKey: 'a|b|c' }), true);
+  assert.equal(hasConfirmedClassification({ screeningKeys: ['a|b|c'] }), true);
+  assert.equal(hasConfirmedClassification({ matchStatus: 'matched' }), true);
+  assert.equal(hasConfirmedClassification({ matchStatus: 'unclassified', screeningKeys: [] }), false);
 });

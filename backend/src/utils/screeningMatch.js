@@ -256,6 +256,8 @@ function classifyItemWithMatches(item, matches) {
 }
 
 async function classifyItemAsync(item) {
+  // 已归类结果（包括人工审核确认）是权威数据，不再重新匹配。
+  if (hasConfirmedClassification(item)) return { ...item };
   const candidates = classificationCandidates(item);
   const results = await Promise.all(candidates.map(value => matchAllAdmin(value, item.itemType, 1)));
   const matches = mergeExactMatches(results.flat());
@@ -267,6 +269,14 @@ async function classifyItemAsync(item) {
 function classificationCandidates(item) {
   return [...new Set([item?.name, item?.orderName, item?.sourceSection, classificationName(item)]
     .flatMap(reportNameCandidates).filter(Boolean))];
+}
+
+function hasConfirmedClassification(item) {
+  return Boolean(
+    item?.screeningKey
+    || (Array.isArray(item?.screeningKeys) && item.screeningKeys.length)
+    || item?.matchStatus === 'matched'
+  );
 }
 
 // “血清”描述的是标本类型，不是检验项目本身。既保留报告原名，也增加去掉该前缀后的候选，
@@ -302,6 +312,8 @@ function mergeExactMatches(matches) {
 async function classifyItemsAsync(items) {
   const index = await buildAdminIndex();
   return (items || []).map(item => {
+    // 增量归类：已归类项原样返回，只处理待归类项。既避免重复计算，也防止新规则覆盖审核结果。
+    if (hasConfirmedClassification(item)) return { ...item };
     const matches = mergeExactMatches(classificationCandidates(item)
       .flatMap(value => matchAllWithIndex(value, item.itemType, index, 1, [])));
     return classifyItemWithMatches(item, matches);
@@ -321,4 +333,5 @@ module.exports = {
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
   matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates, reportNameCandidates,
+  hasConfirmedClassification,
 };
