@@ -8,7 +8,7 @@ import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import MessagesPage from '../messages/index';
 
-const QUICK_PROMPTS = ['制定阶段健康目标', '梳理我的健康需求', '了解适合我的服务'];
+const QUICK_PROMPTS = ['帮我分析需求', '推荐适合的服务', '生成健康服务规划'];
 
 // 小嘉健康规划师：仅梳理健康管理需求与规划平台服务，不提供医疗咨询。
 export default function ChatPage() {
@@ -96,7 +96,7 @@ export default function ChatPage() {
       }}>
         <View style={{ display: 'flex', alignItems: 'center', minHeight: '30px' }}>
           {view === 'ai' && <Text onClick={() => setView('team')} style={{ fontSize: '14px', color: colors.primary, marginRight: '10px' }}>‹ 返回</Text>}
-          <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary }}>{view === 'ai' ? '健康规划师' : '健康管家'}</Text>
+          <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary }}>{view === 'ai' ? 'AI健康规划师' : '健康管家'}</Text>
         </View>
       </View>
 
@@ -105,6 +105,10 @@ export default function ChatPage() {
         <MessagesPage embedded onOpenPlanner={() => setView('ai')} />
       </View>
       <View style={{ display: view === 'ai' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
+      <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: '#EAF4EF', border: '1px solid #C9DED4' }}>
+        <Text style={{ display: 'block', color: colors.textPrimary, fontSize: '15px', fontWeight: 800 }}>先了解您，再为您规划</Text>
+        <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '11px', lineHeight: '17px', marginTop: '4px' }}>通过需求分析、服务匹配和阶段安排，形成清晰、可执行的健康服务规划。</Text>
+      </View>
       <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
         <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>内容仅用于健康管理需求梳理与服务规划，不替代专业人员意见</Text>
@@ -112,11 +116,12 @@ export default function ChatPage() {
       <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView="bottom-anchor">
         {messages.length === 1 && (
           <View style={{ marginBottom: `${spacing.md}px` }}>
-            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>可以从这些问题开始</Text>
-            <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>您想先做哪一步？</Text>
+            <View style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               {QUICK_PROMPTS.map((prompt) => (
-                <View key={prompt} onClick={() => choosePrompt(prompt)} style={{ padding: '8px 11px', borderRadius: `${radius.full}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}` }}>
-                  <Text style={{ fontSize: '12px', color: colors.primary }}>{prompt}</Text>
+                <View key={prompt} onClick={() => choosePrompt(prompt)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 13px', borderRadius: `${radius.sm}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}` }}>
+                  <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 700 }}>{prompt}</Text>
+                  <Text style={{ fontSize: '16px', color: colors.primary }}>›</Text>
                 </View>
               ))}
             </View>

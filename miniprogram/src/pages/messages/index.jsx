@@ -194,11 +194,15 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
       ) : (
         <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.md}px` }}>
-          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>健康规划师</Text>
-          <View onClick={onOpenPlanner} style={{ display: 'flex', alignItems: 'center', padding: '13px 14px', marginBottom: `${spacing.md}px`, backgroundColor: '#EAF4EF', borderRadius: `${radius.md}px`, border: '1px solid #C9DED4' }}>
-            <View style={{ width: '42px', height: '42px', borderRadius: '13px', backgroundColor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: `${spacing.sm}px` }}><Icon name="✨" size={18} color="#fff" /></View>
-            <View style={{ flex: 1 }}><Text style={{ display: 'block', fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>小嘉健康规划师</Text><Text style={{ fontSize: '12px', color: colors.textMuted }}>梳理需求、制定阶段目标与服务规划</Text></View>
-            <Text style={{ color: colors.primary, fontSize: '18px' }}>›</Text>
+          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>AI健康规划</Text>
+          <View onClick={onOpenPlanner} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '16px', marginBottom: `${spacing.md}px`, backgroundColor: colors.primary, borderRadius: `${radius.lg}px`, boxShadow: shadow.card }}>
+            <View style={{ position: 'absolute', width: '100px', height: '100px', borderRadius: '50px', right: '-25px', top: '-35px', backgroundColor: 'rgba(255,255,255,0.08)' }} />
+            <View style={{ width: '46px', height: '46px', borderRadius: '15px', backgroundColor: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px', flexShrink: 0 }}><Icon name="✨" size={20} color="#fff" /></View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ display: 'block', fontSize: '16px', fontWeight: 800, color: '#fff' }}>AI健康规划师</Text>
+              <Text style={{ display: 'block', fontSize: '11px', lineHeight: '17px', color: 'rgba(255,255,255,0.84)', marginTop: '3px' }}>分析健康需求，匹配适合的服务，生成个性化规划</Text>
+            </View>
+            <Text style={{ position: 'relative', color: '#fff', fontSize: '20px', marginLeft: '8px' }}>›</Text>
           </View>
 
           <View style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>

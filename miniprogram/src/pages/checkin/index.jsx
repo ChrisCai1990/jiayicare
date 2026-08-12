@@ -502,15 +502,21 @@ export default function CheckinPage() {
 
             {measureModal.measureType === 'sleep' ? (
               <View>
-                {[{ key: 'sleepTime', label: '入睡时间', placeholder: '如：22:30' }, { key: 'wakeTime', label: '醒来时间', placeholder: '如：06:30' }].map((f) => (
+                {[{ key: 'sleepTime', label: '入睡时间', defaultValue: '22:30' }, { key: 'wakeTime', label: '醒来时间', defaultValue: '06:30' }].map((f) => (
                   <View key={f.key} style={{ marginBottom: '12px' }}>
                     <Text style={{ fontSize: '13px', color: colors.textSecondary, display: 'block', marginBottom: '6px' }}>{f.label}</Text>
-                    <Input
-                      style={{ border: `1px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: '10px 12px', fontSize: '14px', backgroundColor: colors.background, boxSizing: 'border-box', width: '100%' }}
-                      placeholder={f.placeholder}
-                      value={measureValues[f.key] || ''}
-                      onInput={(e) => setMeasureValues((prev) => ({ ...prev, [f.key]: e.detail.value }))}
-                    />
+                    <Picker
+                      mode="time"
+                      value={measureValues[f.key] || f.defaultValue}
+                      onChange={(e) => setMeasureValues((prev) => ({ ...prev, [f.key]: e.detail.value }))}
+                    >
+                      <View style={{ minHeight: '48px', border: `1.5px solid ${colors.border}`, borderRadius: `${radius.sm}px`, padding: '0 14px', backgroundColor: colors.background, boxSizing: 'border-box', width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <Text style={{ fontSize: '16px', color: measureValues[f.key] ? colors.textPrimary : colors.textMuted }}>
+                          {measureValues[f.key] || `请选择${f.label}`}
+                        </Text>
+                        <Text style={{ fontSize: '18px', color: colors.textMuted }}>›</Text>
+                      </View>
+                    </Picker>
                   </View>
                 ))}
                 {measureValues.sleepTime && measureValues.wakeTime ? (

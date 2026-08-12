@@ -292,11 +292,6 @@ export default function HomePage() {
     }
   };
 
-  const openServicePlanner = () => {
-    Taro.setStorageSync('healthHubView', 'ai');
-    Taro.switchTab({ url: '/pages/chat/index' });
-  };
-
   return (
     <ScrollView scrollY style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       {/* 顶部Logo栏：像素级对齐app端topBar（22px logo/38x38 primary实心头像chip）。
@@ -325,33 +320,6 @@ export default function HomePage() {
           <View style={{ display: 'flex', alignItems: 'baseline', marginLeft: '10px' }}>
             <Text style={{ fontSize: '32px', fontWeight: 800, color: '#fff', lineHeight: '36px' }}>{scoreDisplay != null ? scoreDisplay : '--'}</Text>
             <Text style={{ fontSize: '10px', color: gradeColors[grade] || '#fff', marginLeft: '4px' }}>{scoreDisplay != null ? `${grade} / 100` : '待录入'}</Text>
-          </View>
-        </View>
-
-        <View onClick={openServicePlanner} style={{
-          position: 'relative', overflow: 'hidden', backgroundColor: colors.primary,
-          borderRadius: `${radius.lg}px`, padding: '16px 17px', marginBottom: '12px', boxShadow: shadow.card,
-        }}>
-          <View style={{ position: 'absolute', width: '110px', height: '110px', borderRadius: '55px', backgroundColor: 'rgba(255,255,255,0.08)', right: '-28px', top: '-35px' }} />
-          <View style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <View style={{ width: '42px', height: '42px', borderRadius: '14px', backgroundColor: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px', flexShrink: 0 }}>
-              <Icon name="✨" size={21} color="#fff" />
-            </View>
-            <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ display: 'block', color: '#fff', fontSize: '16px', fontWeight: 800 }}>AI健康规划师</Text>
-              <Text style={{ display: 'block', color: 'rgba(255,255,255,0.84)', fontSize: '11px', lineHeight: '17px', marginTop: '3px' }}>不知道怎么选服务？先梳理需求，再匹配合适方案</Text>
-            </View>
-            <View style={{ backgroundColor: '#fff', borderRadius: `${radius.full}px`, padding: '8px 11px', marginLeft: '8px', flexShrink: 0 }}>
-              <Text style={{ color: colors.primary, fontSize: '11px', fontWeight: 800 }}>开始规划 ›</Text>
-            </View>
-          </View>
-          <View style={{ position: 'relative', display: 'flex', alignItems: 'center', gap: '12px', marginTop: '11px', paddingLeft: '2px' }}>
-            {['分析需求', '匹配服务', '人工承接'].map((item) => (
-              <View key={item} style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Text style={{ color: '#A7F3D0', fontSize: '10px', fontWeight: 800 }}>✓</Text>
-                <Text style={{ color: 'rgba(255,255,255,0.9)', fontSize: '10px' }}>{item}</Text>
-              </View>
-            ))}
           </View>
         </View>
 
