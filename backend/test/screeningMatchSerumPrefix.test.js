@@ -7,6 +7,7 @@ const {
   matchAllWithIndex,
   norm,
   selectAdminMatches,
+  selectMatchesForItem,
 } = require('../src/utils/screeningMatch');
 
 test('血清前缀作为新增候选，不替换报告原名', () => {
@@ -64,4 +65,32 @@ test('已有归类标识的项目视为已确认，待归类项目才继续匹�
   assert.equal(hasConfirmedClassification({ screeningKeys: ['a|b|c'] }), true);
   assert.equal(hasConfirmedClassification({ matchStatus: 'matched' }), true);
   assert.equal(hasConfirmedClassification({ matchStatus: 'unclassified', screeningKeys: [] }), false);
+});
+
+test('项目名关键词命中优先于所属栏目精确命中', () => {
+  const heartId = 'cardio|心血管病早筛|心肌酶谱+利钠肽（BNP）';
+  const liverId = 'chronic|脏器功能筛查|肝功能';
+  const index = [
+    {
+      node: { id: heartId, label: '心肌酶谱+利钠肽（BNP）', category: 'cardio', parent: '心血管病早筛' },
+      cands: ['心肌酶谱+利钠肽（BNP）', '乳酸脱氢酶（LDH）'].map(raw => ({ raw, n: norm(raw) })),
+    },
+    {
+      node: { id: liverId, label: '肝功能', category: 'chronic', parent: '脏器功能筛查' },
+      cands: [{ raw: '肝功能', n: norm('肝功能') }],
+    },
+  ];
+
+  const matches = selectMatchesForItem({ itemType: 'lab', name: '乳酸脱氢酶', orderName: '酶学检查', sourceSection: '肝功能' }, index);
+  assert.equal(matches.length, 1);
+  assert.equal(matches[0].node.id, heartId);
+});
+
+test('仅当项目名无法命中Admin时才使用栏目兜底', () => {
+  const index = [{
+    node: { id: 'chronic|脏器功能筛查|肝功能', label: '肝功能', category: 'chronic', parent: '脏器功能筛查' },
+    cands: [{ raw: '肝功能', n: norm('肝功能') }],
+  }];
+  const matches = selectMatchesForItem({ itemType: 'lab', name: '未知指标', sourceSection: '肝功能' }, index);
+  assert.equal(matches[0]?.node.label, '肝功能');
 });

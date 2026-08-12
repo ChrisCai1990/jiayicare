@@ -258,9 +258,8 @@ function classifyItemWithMatches(item, matches) {
 async function classifyItemAsync(item) {
   // 已归类结果（包括人工审核确认）是权威数据，不再重新匹配。
   if (hasConfirmedClassification(item)) return { ...item };
-  const candidates = classificationCandidates(item);
   const index = await buildAdminIndex();
-  const matches = selectAdminMatches(candidates, item.itemType, index);
+  const matches = selectMatchesForItem(item, index);
   return classifyItemWithMatches(item, matches);
 }
 
@@ -269,6 +268,16 @@ async function classifyItemAsync(item) {
 function classificationCandidates(item) {
   return [...new Set([item?.name, item?.orderName, item?.sourceSection]
     .flatMap(reportNameCandidates).filter(Boolean))];
+}
+
+// 项目名是归类的第一事实来源；检验单名/栏目名只在项目名完全无法命中Admin时兜底。
+// 避免“乳酸脱氢酶”因所属栏目写着“肝功能”，让栏目精确命中压过项目名对心肌酶谱的关键词命中。
+function selectMatchesForItem(item, index) {
+  const primary = reportNameCandidates(item?.name);
+  const primaryMatches = selectAdminMatches(primary, item?.itemType, index);
+  if (primaryMatches.length) return primaryMatches;
+  const context = [...new Set([item?.orderName, item?.sourceSection].flatMap(reportNameCandidates).filter(Boolean))];
+  return selectAdminMatches(context, item?.itemType, index);
 }
 
 function hasConfirmedClassification(item) {
@@ -320,7 +329,7 @@ async function classifyItemsAsync(items) {
   return (items || []).map(item => {
     // 增量归类：已归类项原样返回，只处理待归类项。既避免重复计算，也防止新规则覆盖审核结果。
     if (hasConfirmedClassification(item)) return { ...item };
-    const matches = selectAdminMatches(classificationCandidates(item), item.itemType, index);
+    const matches = selectMatchesForItem(item, index);
     return classifyItemWithMatches(item, matches);
   });
 }
@@ -338,5 +347,5 @@ module.exports = {
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
   matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates, reportNameCandidates,
-  hasConfirmedClassification, selectAdminMatches,
+  hasConfirmedClassification, selectAdminMatches, selectMatchesForItem,
 };
