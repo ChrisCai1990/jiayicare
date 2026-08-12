@@ -1873,6 +1873,14 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
 
     const checkDate = date || '';
     const reportYear = checkDate ? new Date(checkDate).getFullYear() : new Date().getFullYear();
+    // screeningL1 是报告一级归类的权威字段。只接受当前启用的顶层节点，避免保存已经删除、
+    // 停用或非一级的分类 ID；type 仅保留为兼容字段，不再反过来覆盖人工选择。
+    let resolvedScreeningL1 = '';
+    if (screeningL1) {
+      const selectedL1 = await ProjectCategory.findOne({ _id: screeningL1, parent: null, status: 'active' }).select('_id').lean();
+      if (!selectedL1) return res.status(400).json({ success: false, message: '所选报告大类已失效，请重新选择' });
+      resolvedScreeningL1 = String(selectedL1._id);
+    }
 
     // 如果提供了 screeningL1 + 日期，检查是否已存在"同类筛查但还没有文件"的占位记录（避免上传报告和
     // 手动录入产生两条审核）——2026-07-03修复两处：
@@ -1884,8 +1892,8 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     //    体检方案生成的空壳占位记录，等着补文件）才合并覆盖；已经有文件的必须新建，不能覆盖一份已经
     //    真实存在的报告。
     let report;
-    if (screeningL1 && checkDate) {
-      const existing = await MedicalReport.findOne({ user: patientId, checkDate, screeningL1, screeningL2: screeningL2 || '', fileUrl: '' });
+    if (resolvedScreeningL1 && checkDate) {
+      const existing = await MedicalReport.findOne({ user: patientId, checkDate, screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '', fileUrl: '' });
       if (existing) {
         if (title) existing.title = title;
         if (hospital) existing.hospital = hospital;
@@ -1919,7 +1927,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
       mimeType: effectiveMimeType, fileSize: fileSize || '',
       uploadedBy: req.staff._id, audit_status: 'unaudited',
       planId: planId || null, planItemId: planItemId || null,
-      screeningL1: screeningL1 || '', screeningL2: screeningL2 || '',
+      screeningL1: resolvedScreeningL1, screeningL2: screeningL2 || '',
     });
     // report 已成功入库，回填体检方案条目失败不应让前端误判整次上传失败（此前 plan.save() 抛错会被下面
     // 的 catch 捕到、返回500"上传失败"，但 report 记录其实已经存在——健管专员据此又重传一次，导致同一

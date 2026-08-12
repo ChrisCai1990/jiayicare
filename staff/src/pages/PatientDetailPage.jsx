@@ -499,6 +499,7 @@ const REPORT_L1_TYPES = [
   { key: 'home_monitor',   label: '居家监测' },
   { key: 'other',          label: '其他常规筛查' },
 ]
+const REPORT_L1_LABEL_TO_TYPE = Object.fromEntries(REPORT_L1_TYPES.map(item => [item.label, item.key]))
 const PLAN_TYPE_LABEL = {
   annual_checkup:'年度体检方案', annual_mgmt:'年度管理方案',
   nutrition:'营养干预方案', medical_assist:'就医协助方案',
@@ -8364,7 +8365,8 @@ export default function PatientDetailPage() {
 
         // 按年份 → L1 分组（优先用 screeningL1 字段，旧数据 fallback 到标题匹配）
         const ANNUAL_KEY = '__annual__'
-        const OTHER_KEY  = '__other__'
+        const ROUTINE_OTHER_KEY = '__other_routine__'
+        const routineOtherNode = screeningTree.find(n => n.label === '其他常规筛查')
         const yearMap = {}
         filteredReports.forEach(r => {
           const dateStr = r.checkDate || r.date
@@ -8377,17 +8379,17 @@ export default function PatientDetailPage() {
           let l1Node = r.screeningL1
             ? screeningTree.find(n => String(n._id) === r.screeningL1)
             : titleToL1[r.title]
+          const l1TypeMeta = !l1Node && r.type && r.type !== 'other' ? REPORT_L1_TYPES.find(t => t.key === r.type) : null
           // 历史记录可能在类型被改成“体成分”等具体类型时丢失 screeningL1。
           // 这类常规检查应回到“其他常规筛查”，不能再额外生成含义不明的“其他”分组。
-          if (!l1Node && ['body_comp', 'blood', 'bloodTest', 'ultrasound', 'radiology', 'mri', 'endoscopy', 'ecg', 'pathology', 'genetic', 'followup', 'imaging'].includes(r.type)) {
-            l1Node = screeningTree.find(n => n.label === '其他常规筛查')
-          }
+          // “其他”不是业务类目。任何无法匹配当前分类树、也没有明确兼容类型的非年度历史报告，
+          // 都统一归入真实的“其他常规筛查”，不再暴露内部兜底名称“其他”。
+          if (!l1Node && !l1TypeMeta && r.type !== 'annual') l1Node = routineOtherNode
           // screeningL1/标题都匹配不上时（多为用户端自主上传+编辑改归类的报告），按 type 字段（REPORT_L1_TYPES）
           // 分组，而不是一律扔进"其他"——此前这里只认字面量'annual'，编辑弹窗改了报告归类却完全不影响分组展示，
           // 看起来像"改了没生效"（2026-07-17反馈）
-          const l1TypeMeta = !l1Node && r.type && r.type !== 'other' ? REPORT_L1_TYPES.find(t => t.key === r.type) : null
-          const key = l1Node ? String(l1Node._id) : (l1TypeMeta ? `type_${l1TypeMeta.key}` : (r.type === 'annual' ? ANNUAL_KEY : OTHER_KEY))
-          if (!yearMap[yr][key]) yearMap[yr][key] = { node: l1Node, label: l1TypeMeta ? l1TypeMeta.label : (key === ANNUAL_KEY ? '年度体检报告' : null), reports: [] }
+          const key = l1Node ? String(l1Node._id) : (l1TypeMeta ? `type_${l1TypeMeta.key}` : (r.type === 'annual' ? ANNUAL_KEY : ROUTINE_OTHER_KEY))
+          if (!yearMap[yr][key]) yearMap[yr][key] = { node: l1Node, label: l1TypeMeta ? l1TypeMeta.label : (key === ANNUAL_KEY ? '年度体检报告' : '其他常规筛查'), reports: [] }
           yearMap[yr][key].reports.push(r)
         })
         const years = Object.keys(yearMap).sort((a, b) => b - a)
@@ -8405,7 +8407,7 @@ export default function PatientDetailPage() {
           const annualKey = yrData[ANNUAL_KEY] ? [ANNUAL_KEY] : []
           const treeKeys  = screeningTree.map(n => String(n._id)).filter(k => yrData[k])
           const typeKeys  = REPORT_L1_TYPES.map(t => `type_${t.key}`).filter(k => yrData[k])
-          const otherKey  = yrData[OTHER_KEY] ? [OTHER_KEY] : []
+          const otherKey  = yrData[ROUTINE_OTHER_KEY] ? [ROUTINE_OTHER_KEY] : []
           return [...annualKey, ...treeKeys, ...typeKeys, ...otherKey]
         }
 
@@ -11005,6 +11007,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
 
   const isAnnual = form.l1Id === ANNUAL_L1_ID
   const currentL1 = isAnnual ? null : screeningTree.find(n => String(n._id) === form.l1Id)
+  const selectedReportType = isAnnual ? 'annual' : (REPORT_L1_LABEL_TO_TYPE[currentL1?.label] || 'other')
   const l2Options = currentL1?.children || []
 
   const handleL1Change = (l1Id) => {
@@ -11075,7 +11078,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         await staffAPI.uploadReport({
           patientId,
           title: form.title,
-          type: isAnnual ? 'annual' : 'other',
+          type: selectedReportType,
           screeningL1: isAnnual ? '' : form.l1Id,
           screeningL2: isAnnual ? '' : form.l2Label,
           hospital: form.hospital,
@@ -11107,7 +11110,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           await staffAPI.uploadReport({
             patientId,
             title: form.title + titleSuffix,
-            type: isAnnual ? 'annual' : 'other',
+            type: selectedReportType,
             screeningL1: isAnnual ? '' : form.l1Id,
             screeningL2: isAnnual ? '' : form.l2Label,
             hospital: form.hospital,
