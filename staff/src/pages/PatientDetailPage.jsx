@@ -692,7 +692,7 @@ function RequisitionModal({ patientId, onClose, onSaved, prefillTitle = '', pref
 
 // AI健康分析的卡片与数组编辑框：必须定义在组件外（模块级），否则每次输入重渲染会重建组件导致输入框失焦
 function AISectionCard({ title, icon, color, children }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
   return (
     <div className="card" style={{ marginBottom: 14 }}>
       <button type="button" onClick={() => setExpanded(v => !v)}
@@ -6429,7 +6429,7 @@ export default function PatientDetailPage() {
               {list.map((item, index) => {
                 const isAttention = attention(item)
                 const badge = statusBadge(item)
-                return <details key={`${item.name}-${index}`} open={isAttention || lastRegeneratedItem === `${sectionKey}:${item.name}`}
+                return <details key={`${item.name}-${index}`} open={lastRegeneratedItem === `${sectionKey}:${item.name}`}
                   style={{ border: `1px solid ${isAttention ? '#FECACA' : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
                   <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                     <span style={{ fontWeight: 800, color: '#1F2937', flex: 1 }}>{item.name}</span>
@@ -6931,7 +6931,7 @@ export default function PatientDetailPage() {
                             {cancers.map((cancer, index) => {
                               const meta = statusMeta[cancer.status] || statusMeta.unknown
                               const needsAttention = ['follow_up_due', 'overdue', 'due_soon'].includes(cancer.status)
-                              return <details key={`${cancer.name}-${index}`} open={needsAttention || lastRegeneratedItem === `tumor_risk:${cancer.name}`}
+                              return <details key={`${cancer.name}-${index}`} open={lastRegeneratedItem === `tumor_risk:${cancer.name}`}
                                 style={{ border: `1px solid ${needsAttention ? meta.bg : '#E5E7EB'}`, borderRadius: 9, background: '#fff', padding: '9px 11px' }}>
                                 <summary style={{ cursor: 'pointer', listStyle: 'none', display: 'flex', alignItems: 'center', gap: 8 }}>
                                   <span style={{ fontWeight: 800, color: '#1F2937', flex: 1 }}>{cancer.name}</span>

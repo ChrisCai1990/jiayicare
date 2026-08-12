@@ -5355,7 +5355,11 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       }
     }
     let reusedTumorSection = null;
-    if ((scope === 'doctor' || scope === 'all') && prevDoctorEntry.sections?.tumor_risk && prevDoctorEntry.generatedAt) {
+    // 只复用已经升级为“10项肿瘤趋势卡”的新版板块。旧版只有 completed/abnormal/missing，
+    // 若直接复用会导致新生成的5维分析中唯独肿瘤板块仍停留在旧展示结构。
+    const isStructuredTumorSection = section => Array.isArray(section?.cancers)
+      && section.cancers.length === 10 && !!section.overview;
+    if ((scope === 'doctor' || scope === 'all') && isStructuredTumorSection(prevDoctorEntry.sections?.tumor_risk) && prevDoctorEntry.generatedAt) {
       const tumorChanged = await MedicalReport.exists({
         user: req.params.id,
         updatedAt: { $gt: new Date(prevDoctorEntry.generatedAt) },
@@ -5367,7 +5371,7 @@ router.post('/patients/:id/ai-health-summary', staffAuth, async (req, res) => {
       });
       if (!tumorChanged) reusedTumorSection = prevDoctorEntry.sections.tumor_risk;
     }
-    if (!reusedTumorSection && incrementalBase?.sections?.tumor_risk) {
+    if (!reusedTumorSection && isStructuredTumorSection(incrementalBase?.sections?.tumor_risk)) {
       const yearStart = `${year}-01-01`;
       const nextYearStart = `${Number(year) + 1}-01-01`;
       const hasTargetYearTumorReport = await MedicalReport.exists({
