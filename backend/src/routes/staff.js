@@ -60,7 +60,6 @@ const Medication        = require('../models/Medication');
 const Supplement        = require('../models/Supplement');
 const UserScreeningItem = require('../models/UserScreeningItem');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
-const { aggregateUrineStoolPanels } = require('../utils/urineStoolPanel');
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
@@ -7594,14 +7593,13 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
      和红细胞/血小板相关的各项衍生指标（MCV/MCH/MCHC/RDW/MPV/PDW等）同样要逐条提取，不能省略
 
 6. 尿常规 / 粪便常规
-   → 每张检验单只输出一条，不把颜色、红细胞、白细胞、隐血等子项拆成独立item
-   → itemType="lab"，name固定为"尿常规"或"粪便常规"，orderName填写报告实际印刷的检验单标题
-   → findings按报告原顺序逐行填写“子项名称：结果”，必须包含正常和异常的全部实际结果
-   → value/unit/referenceRange固定留空，不提取各子项参考范围；status只要任一子项明确异常即为abnormal，全部明确正常才为normal，否则unknown
+   → 必须按照报告表格中实际印刷的检查项目逐行提取；颜色、性状、红细胞、白细胞、真菌、寄生虫、隐血等每个项目各输出一条独立item，禁止合并成“尿常规/粪便常规”摘要
+   → itemType="lab"，name=该行检查项目原名，value/unit/referenceRange/status严格取该行内容，orderName=报告实际印刷的检验单标题
+   → 表格印刷几行实际结果就输出几条，正常项和异常项都必须保留；禁止用findings代替逐行结构化结果
    → 同一份尿/便检验单的子项常跨页打印（如流式法子项在一页、干化学法子项在下一页），只要下一页
      开头没有出现新的检验单标题，就说明是同一份检验单续页，续页的子项 orderName 仍填同一个名字，
      不能因为分页就当成两份不同的检验单
-   → diagnosis/conclusion 留空字符串（与规则5同理，避免串入其他检查项目的结论）
+   → findings/diagnosis/conclusion 留空字符串（与规则5同理，避免串入其他检查项目的结论）
 
 7. 碳13 / 碳14 呼气试验
    → 这是检验项目，只输出一条 itemType="lab"，严禁再额外生成 imaging 条目
@@ -9101,7 +9099,7 @@ async function runReportParse(reportId) {
       allItems = sanitizeBodyCompositionItems(allItems);
       if (useShaoyifuTemplate) allItems = shaoyifuTemplate.normalizeShaoyifuItems(allItems);
       if (useZheyiTemplate) allItems = zheyiTemplate.normalizeZheyiItems(allItems);
-      allItems = aggregateUrineStoolPanels(allItems);
+      // 尿/便常规保留报告中的逐行检查项目，不再聚合成一条摘要。
 
       // 2026-07-02修复：各类单页重试(数量核对/超声拆分/空内容补全)命中后都是把条目从原位置摘掉、
       // 用 .concat() 拼到 allItems 末尾，导致这些条目脱离了报告原文的页码顺序、被甩到审核列表最后面，
@@ -9118,7 +9116,8 @@ async function runReportParse(reportId) {
       // 邵逸夫模板的眼科/耳鼻喉科/妇科本来就是“短科室名+多条编号所见”，结构与通用小结回声相似，不能删除。
       const departmentFiltered = (useShaoyifuTemplate || useZheyiTemplate) ? advisoryFiltered : dropDepartmentSummaryEcho(advisoryFiltered);
       const cleanedItems = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))));
-      const departmentNormalized = useZheyiTemplate ? cleanedItems : mergeInternalMedicineSubparts(mergeEntSubparts(cleanedItems));
+      // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
+      const departmentNormalized = useZheyiTemplate ? cleanedItems : mergeInternalMedicineSubparts(cleanedItems);
       let filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(departmentNormalized));
       if (useShaoyifuTemplate) filteredItems = shaoyifuTemplate.applyShaoyifuOrderAndGroups(filteredItems);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
@@ -9180,6 +9179,38 @@ async function runReportParse(reportId) {
             console.log(`[parse-ai] 图片${imageIndex + 1}覆盖复核异常: ${auditError.message}`);
           }
         }
+        // 图片报告没有PDF分支的逐页超声复核。组合上腹部检查若未覆盖肝、胆、胰、脾四个
+        // 独立器官，使用原图做一次定向复核，并且只在器官覆盖数确实增加时采用结果。
+        if (!isBodyCompPage) {
+          const upperText = pageItems.map(it => `${str(it.name)} ${str(it.orderName)} ${str(it.sourceSection)}`).join(' ');
+          const isUpperCombo = /肝.*胆.*(?:胰.*脾|脾.*胰)|上腹部.*(?:超声|彩超)/.test(upperText);
+          const upperCount = items => new Set((items || []).flatMap(it =>
+            detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).filter(idx => idx >= 0 && idx <= 3)
+          )).size;
+          const beforeUpperCount = upperCount(pageItems);
+          if (isUpperCombo && beforeUpperCount < 4) {
+            try {
+              const retryPrompt = `${REPORT_PARSE_PROMPT}\n\n【肝胆胰脾超声强制复核】原图是组合上腹部超声。必须逐段读取并只输出四条独立imaging记录：肝脏超声、胆囊超声、胰腺超声、脾脏超声。每条findings只能放对应器官原文；诊断结论按器官拆回，不得把诊断句另建成检查项目，不得缺少正常器官。`;
+              const retryText = await parseImage(bufs[imageIndex].toString('base64'), retryPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
+              const retryPage = safeParseJSON(retryText);
+              if (retryPage && Array.isArray(retryPage.items)) {
+                const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
+                const afterUpperCount = upperCount(retryItems);
+                if (afterUpperCount > beforeUpperCount) {
+                  const isUpperAbdomenItem = item => {
+                    const context = `${str(item.name)} ${str(item.orderName)} ${str(item.sourceSection)} ${str(item.findings)}`;
+                    return isUltrasoundItem(item) && detectOrgans(context).some(idx => idx >= 0 && idx <= 3);
+                  };
+                  // 只替换本页上腹部超声记录，保留同图中的其他检验/检查项目。
+                  pageItems = pageItems.filter(item => !isUpperAbdomenItem(item)).concat(retryItems.filter(isUpperAbdomenItem));
+                  console.log(`[parse-ai] 图片${imageIndex + 1}肝胆胰脾拆分复核生效：器官覆盖 ${beforeUpperCount}→${afterUpperCount}`);
+                }
+              }
+            } catch (upperError) {
+              console.log(`[parse-ai] 图片${imageIndex + 1}肝胆胰脾拆分复核异常: ${upperError.message}`);
+            }
+          }
+        }
         if (isBodyCompPage && needsBodyCompositionRetry(pageItems, true)) {
           try {
             const retryText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
@@ -9223,9 +9254,9 @@ async function runReportParse(reportId) {
       }
     }
     imageItems = sanitizeBodyCompositionItems(imageItems);
-    imageItems = aggregateUrineStoolPanels(imageItems);
+    // 尿/便常规逐项保留；不得在审核前重新聚合。
     sortReportItemsBySource(imageItems);
-    const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(mergeEntSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(imageItems))))))))))));
+    const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(imageItems)))))))))));
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
@@ -9288,10 +9319,10 @@ async function runReportPageParse(reportId, pageNum) {
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
-  const mergedPage = aggregateUrineStoolPanels(mergeCoverageAuditItems(oldPage, newPage));
+  const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
   const classifiedPage = await classifyItemsAsync(mergedPage);
   const preserved = (latest.reportItems || []).filter(item => Number(item.sourcePage) !== pageNum);
-  const combined = aggregateUrineStoolPanels([...preserved, ...classifiedPage])
+  const combined = [...preserved, ...classifiedPage]
     .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0));
   await MedicalReport.findByIdAndUpdate(reportId, {
     reportItems: combined,

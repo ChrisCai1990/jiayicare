@@ -16,21 +16,20 @@ test('程序级页码范围固定为P6-P15', () => {
 
 test('适配提示强制科室逐行、小结跳过、腹部超声拆分', () => {
   const prompt = template.promptForPage(6);
-  assert.match(prompt, /每个科室只输出一条/);
+  assert.match(prompt, /逐行输出独立imaging/);
   assert.match(prompt, /科室小结.*全部跳过/);
   assert.match(prompt, /肝脏超声、胆囊超声、脾脏超声、胰腺超声四条/);
 });
 
-test('科室内部项目合并成换行文本且小结不进入结果', () => {
+test('科室内部项目逐行保留且小结不进入结果', () => {
   const rows = [
     { name: '视力', sourceSection: '眼科检查', findings: '左眼1.0 右眼1.0', itemType: 'imaging', _page: 6, _order: 1 },
     { name: '色觉', sourceSection: '眼科检查', findings: '正常', itemType: 'imaging', _page: 6, _order: 2 },
     { name: '科室小结', sourceSection: '眼科检查', findings: '健康建议', itemType: 'imaging', _page: 6, _order: 3 },
   ];
   const out = template.normalizeZheyiItems(rows);
-  assert.equal(out.length, 1);
-  assert.equal(out[0].name, '眼科检查');
-  assert.equal(out[0].findings, '视力：左眼1.0 右眼1.0\n色觉：正常');
+  assert.equal(out.length, 2);
+  assert.deepEqual(out.map(row => row.name), ['视力', '色觉']);
 });
 
 test('组合超声拆成器官记录并规范关键检查名称', () => {
@@ -75,8 +74,8 @@ test('一般检查、科室名称和建议内容按固定规则归一化', () =>
   const out = template.normalizeZheyiItems(rows);
   assert.ok(out.some(item => item.name === '脉搏心率'));
   assert.ok(out.some(item => item.name === '体重'));
-  assert.ok(out.some(item => item.name === '牙科'));
-  assert.ok(out.some(item => item.name === '内外科（全科）'));
+  assert.ok(out.some(item => item.name === '龋齿'));
+  assert.ok(out.some(item => item.name === '心脏'));
   assert.ok(!out.some(item => /痔疮/.test(`${item.name} ${item.findings}`)));
 });
 

@@ -28,10 +28,10 @@ function promptForPage(pageNum) {
   const sections = PAGE_SECTIONS[pageNum] || '本页原始明细';
   return `\n\n【浙一体检报告第${pageNum}页适配规则，最高优先级】
 本页应按原版顺序处理：${sections}。
-1. 一般检查必须逐行输出data，心率命名为“脉搏心率”，体重不得遗漏。眼科、耳鼻喉科、牙科、内外科（全科）则每个科室只输出一条imaging：findings按原顺序写成多行“项目名称：检查结果”，不得把科内每一行生成独立item。眼压单独输出一条“眼压检查”，不得同时混入眼科检查。
+1. 一般检查必须逐行输出data，心率命名为“脉搏心率”，体重不得遗漏。眼科、耳鼻喉科、牙科、内外科（全科）必须按报告实际印刷的检查项目逐行输出独立imaging，不得合并成科室摘要；建议文字不是检查项目，不得输出。眼压单独输出一条“眼压检查”。
 2. “科室小结”“小结”“建议”“健康宣教”全部跳过，不生成item，也不得写入findings/diagnosis/conclusion。
 3. 肝胆脾胰组合超声必须拆成肝脏超声、胆囊超声、脾脏超声、胰腺超声四条；双肾相关内容另列肾脏超声。每条只能包含对应器官原文。
-4. 普通检验表格逐行输出，每个指标一条lab，项目、结果、单位、参考范围必须严格同行对应。尿常规和粪便常规除外：每张检验单只输出一条lab，name固定为“尿常规”或“粪便常规”，findings逐行写“项目：结果”，value/unit/referenceRange留空。尿生化、尿微量白蛋白/尿肌酐和独立便潜血仍单独提取。
+4. 所有检验表格逐行输出，每个指标一条lab，项目、结果、单位、参考范围必须严格同行对应。尿常规和粪便常规也必须逐项拆分，不得合并成摘要；尿生化、尿微量白蛋白/尿肌酐和独立便潜血同样逐项提取。
 5. 输出顺序必须与本页从上到下的阅读顺序一致。`;
 }
 
@@ -53,36 +53,9 @@ function needsCoverageAudit(pageNum, items) {
 
 function normalizeZheyiItems(items) {
   let kept = (items || []).filter(item => pageMode(Number(item?._page || 0)) === 'extract');
-  const departmentDefs = [
-    { name: '眼科检查', pattern: /眼科/, exclude: /眼压/ },
-    { name: '耳鼻喉科检查', pattern: /耳鼻喉|ENT/i },
-    { name: '牙科', pattern: /口腔|牙科/ },
-    { name: '内外科（全科）', pattern: /内科|外科|全科/ },
-  ];
-  const consumed = new Set();
-  const mergedDepartments = [];
-  for (const def of departmentDefs) {
-    const rows = kept.filter((item, index) => {
-      const context = `${text(item.sourceSection)} ${text(item.orderName)} ${text(item.name)}`;
-      if (!def.pattern.test(context)) return false;
-      if (def.exclude?.test(context)) return false;
-      if (/小结|建议|健康宣教|痔疮/.test(text(item.name))) { consumed.add(index); return false; }
-      consumed.add(index);
-      return true;
-    });
-    if (!rows.length) continue;
-    const lineOf = row => {
-      const label = text(row.name).replace(def.pattern, '').replace(/^检查[:：]?|[：:]$/g, '').trim() || text(row.name);
-      const value = text(row.findings || row.value || row.diagnosis || row.conclusion);
-      if (!value || /小结|建议|健康宣教/.test(label)) return '';
-      return `${label}：${value}`;
-    };
-    const findings = rows.map(lineOf).filter(Boolean).join('\n');
-    if (!findings) continue;
-    const first = rows[0];
-    mergedDepartments.push({ ...first, name: def.name, sourceSection: def.name, itemType: 'imaging', value: '', unit: '', referenceRange: '', findings, diagnosis: '', conclusion: '', status: 'unknown' });
-  }
-  kept = kept.filter((_, index) => !consumed.has(index)).concat(mergedDepartments);
+  // 科室报告按实际印刷的检查项目保留；只剔除建议/小结，不再合并成一个科室摘要。
+  kept = kept.filter(item => !/小结|建议|健康宣教/.test(text(item.name))
+    && !(/痔疮/.test(text(item.name)) && /建议/.test(`${text(item.findings)} ${text(item.value)} ${text(item.diagnosis)} ${text(item.conclusion)}`)));
 
   const expanded = [];
   const segment = (source, start, stops) => {

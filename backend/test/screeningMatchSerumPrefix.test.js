@@ -94,3 +94,12 @@ test('仅当项目名无法命中Admin时才使用栏目兜底', () => {
   const matches = selectMatchesForItem({ itemType: 'lab', name: '未知指标', sourceSection: '肝功能' }, index);
   assert.equal(matches[0]?.node.label, '肝功能');
 });
+
+test('项目名未命中时禁止使用混合套餐名猜分类', () => {
+  const index = [{
+    node: { id: 'functional|维生素及电解质类|电解质', label: '电解质', category: 'functional', parent: '维生素及电解质类' },
+    cands: [{ raw: '电解质', n: norm('电解质') }],
+  }];
+  const matches = selectMatchesForItem({ itemType: 'lab', name: '胰岛素-0小时', orderName: '胰岛素/电解质测定' }, index);
+  assert.deepEqual(matches, []);
+});

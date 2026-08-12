@@ -276,7 +276,12 @@ function selectMatchesForItem(item, index) {
   const primary = reportNameCandidates(item?.name);
   const primaryMatches = selectAdminMatches(primary, item?.itemType, index);
   if (primaryMatches.length) return primaryMatches;
-  const context = [...new Set([item?.orderName, item?.sourceSection].flatMap(reportNameCandidates).filter(Boolean))];
+  // 组合医嘱/混合套餐不能作为兜底分类依据。例如“胰岛素/电解质测定”中的胰岛素若
+  // 尚未在Admin绑定分类，拿整段套餐名兜底会被电解质关键词错误吸走。此时宁可待归类。
+  const safeContextValues = [item?.orderName, item?.sourceSection]
+    .map(value => String(value || '').trim())
+    .filter(value => value && !/[\/＋+、,，;；]/.test(value));
+  const context = [...new Set(safeContextValues.flatMap(reportNameCandidates).filter(Boolean))];
   return selectAdminMatches(context, item?.itemType, index);
 }
 
