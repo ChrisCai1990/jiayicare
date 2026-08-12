@@ -5,6 +5,8 @@
 require('dotenv').config();
 const mongoose = require('mongoose');
 const ProjectCategory = require('../models/ProjectCategory');
+const LabTestOrder = require('../models/LabTestOrder');
+const LabTestItem = require('../models/LabTestItem');
 const { REPORT_CLASSIFICATION_ALIASES, CATEGORY_NAME_PATTERNS } = require('../utils/reportClassificationAliases');
 
 const APPLY = process.argv.includes('--apply');
@@ -17,6 +19,15 @@ async function main() {
     let categories = await ProjectCategory.find({ name, status: 'active' });
     if (!categories.length && CATEGORY_NAME_PATTERNS[name]) {
       categories = await ProjectCategory.find({ name: CATEGORY_NAME_PATTERNS[name], status: 'active' });
+    }
+    if (!categories.length) {
+      const linked = await Promise.all([
+        LabTestOrder.find({ name: { $in: aliases }, status: 'active', categoryId: { $ne: null } }).select('categoryId').lean(),
+        LabTestItem.find({ name: { $in: aliases }, status: 'active', categoryId: { $ne: null } }).select('categoryId').lean(),
+      ]).then(groups => groups.flat());
+      const categoryIds = [...new Set(linked.map(item => String(item.categoryId || '')).filter(Boolean))];
+      if (categoryIds.length === 1) categories = await ProjectCategory.find({ _id: categoryIds[0], status: 'active' });
+      else if (categoryIds.length > 1) throw new Error(`分类“${name}”的已归类检验项目指向${categoryIds.length}个不同分类`);
     }
     if (categories.length !== 1) throw new Error(`分类“${name}”匹配到${categories.length}项：${categories.map(item => item.name).join('、') || '无'}`);
     const [category] = categories;
