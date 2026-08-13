@@ -200,6 +200,43 @@ async function renderSinglePageRegions(pdfBuffer, pageNum, dpi = 160) {
   }
 }
 
+// 双栏检验单按左右半幅物理切图；整图提示无法保证视觉模型真正移动到右栏。
+async function renderSinglePageColumns(pdfBuffer, pageNum, dpi = 180) {
+  const tmpPdf = path.join(os.tmpdir(), `pdf-columns-${Date.now()}-${Math.random().toString(36).slice(2)}.pdf`);
+  fs.writeFileSync(tmpPdf, pdfBuffer);
+  try {
+    const width = Math.round(8.27 * dpi);
+    const height = Math.round(11.69 * dpi);
+    const overlap = Math.round(width * 0.08);
+    const split = Math.round(width * 0.52);
+    const crops = [
+      { x: 0, y: 0, width: split, height },
+      { x: split - overlap, y: 0, width: width - split + overlap, height },
+    ];
+    const images = [];
+    for (const crop of crops) {
+      const rendered = await convertPdfRange(tmpPdf, pageNum, pageNum, dpi, crop);
+      if (rendered[0]) images.push(rendered[0]);
+    }
+    return images;
+  } finally {
+    try { fs.unlinkSync(tmpPdf); } catch {}
+  }
+}
+
+async function splitImageColumns(imageBuffer) {
+  const Jimp = require('jimp-compact');
+  const image = await Jimp.read(imageBuffer);
+  const width = image.bitmap.width;
+  const height = image.bitmap.height;
+  const overlap = Math.round(width * 0.08);
+  const split = Math.round(width * 0.52);
+  const crops = [image.clone().crop(0, 0, split, height), image.clone().crop(split - overlap, 0, width - split + overlap, height)];
+  return Promise.all(crops.map(crop => new Promise((resolve, reject) => {
+    crop.getBase64(Jimp.MIME_PNG, (error, value) => error ? reject(error) : resolve(String(value).split(',')[1]));
+  })));
+}
+
 // 判断报告是否为 PDF
 function isPdfReport(report) {
   return report.mimeType === 'application/pdf'
@@ -207,4 +244,4 @@ function isPdfReport(report) {
     || (report.content || '').startsWith('data:application/pdf');
 }
 
-module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage, renderSinglePageRegions };
+module.exports = { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns };

@@ -7788,7 +7788,7 @@ const PATIENT_INFO_NAMES = new Set([
 // 体格检查类项目名单——模型偶尔会把这些误标成 lab/data，提取后强制纠正为 imaging（金娟07-01反馈：眼压检查被提取成检验类型）
 // 用前缀匹配而非精确相等：AI 常在名称后附加方法说明，如"眼压检查(非接触眼压计法或压平眼压计法)"
 const PHYSICAL_EXAM_NAMES = ['内科', '外科', '耳鼻喉', '视力检查', '眼压检查', '眼科', '裂隙灯检查'];
-const { normalizeDepartmentExamItems, normalizeBreathTestItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
+const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 
 // 每次体检最多只应出现一次的检查类型，AI经常写出好几种变体名字（"胃镜"/"电子胃镜"/"无痛胃镜"），
 // 导致同一检查因为名字对不上没法被后面的同名去重规则识别成重复——统一改写成标准名，再走已有去重逻辑。
@@ -9118,7 +9118,7 @@ async function runReportParse(reportId) {
       const departmentFiltered = (useShaoyifuTemplate || useZheyiTemplate) ? advisoryFiltered : dropDepartmentSummaryEcho(advisoryFiltered);
       const cleanedItems = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))));
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
-      const departmentNormalized = normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems));
+      const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
       if (useShaoyifuTemplate) filteredItems = shaoyifuTemplate.applyShaoyifuOrderAndGroups(filteredItems);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
@@ -9257,7 +9257,17 @@ async function runReportParse(reportId) {
     imageItems = sanitizeBodyCompositionItems(imageItems);
     // 尿/便常规逐项保留；不得在审核前重新聚合。
     sortReportItemsBySource(imageItems);
-    const cleanedImageItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(normalizeBreathTestItems(imageItems, report))))))))))))));
+    const imageWithoutNoise = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(
+      dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(
+        collapseBreathTestItems(normalizeBreathTestItems(imageItems, report))
+      ))))
+    )));
+    const imageExamNormalized = normalizeSingleExamReportItems(
+      normalizeDepartmentExamItems(mergeInternalMedicineSubparts(imageWithoutNoise)), report
+    );
+    const cleanedImageItems = fillEmptyDiagnosisFromFindings(
+      realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(imageExamNormalized))
+    );
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
@@ -9282,7 +9292,7 @@ async function runReportParse(reportId) {
 // 只补提指定PDF页并与该页已有结果合并；其他页面及其人工审核内容完全保留。
 async function runReportPageParse(reportId, pageNum) {
   const { parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, isPdfReport } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
@@ -9299,15 +9309,16 @@ async function runReportPageParse(reportId, pageNum) {
   let images;
   if (isPdf) {
     const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
+    // 补提统一按左右半幅识别；浙一特殊密集页再沿用上下分区。
     images = (useZheyiTemplate && pageNum === 14)
       ? await renderSinglePageRegions(pdfBuf, pageNum, 160)
-      : [await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 160)];
+      : await renderSinglePageColumns(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 180);
   } else {
     const buffers = report.fileUrls?.length
       ? await fetchReportBuffers(report, UPLOADS_DIR)
       : [await fetchReportBuffer(report, UPLOADS_DIR)];
     if (pageNum > buffers.length) throw new Error(`图片报告只有${buffers.length}页，无法补提第${pageNum}页`);
-    images = [buffers[pageNum - 1].toString('base64')];
+    images = await splitImageColumns(buffers[pageNum - 1]);
   }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
   let parsedItems = [];
@@ -9340,6 +9351,7 @@ async function runReportPageParse(reportId, pageNum) {
   let newPage = tagReportPageItems(parsedItems, pageNum);
   if (useShaoyifuTemplate) newPage = shaoyifuTemplate.normalizeShaoyifuItems(newPage);
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
+  newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
   const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
   const mergedPage = mergeCoverageAuditItems(oldPage, newPage);

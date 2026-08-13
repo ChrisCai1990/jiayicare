@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { normalizeDepartmentExamItems, normalizeBreathTestItems, realignUpperAbdomenConclusions, upperAbdomenCoverage } = require('../src/utils/reportItemNormalization');
+const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions, upperAbdomenCoverage } = require('../src/utils/reportItemNormalization');
 
 test('碳13标题纠正OCR丢失13和幽门螺杆菌错字', () => {
   const out = normalizeBreathTestItems([{
@@ -11,6 +11,31 @@ test('碳13标题纠正OCR丢失13和幽门螺杆菌错字', () => {
   assert.equal(out[0].itemType, 'imaging');
   assert.equal(out[0].findings, '测定值：0.6\n正常值：<4.0');
   assert.equal(out[0].diagnosis, '阴性');
+});
+
+test('单项碳13报告删除医生和结论版面标签，只保留一个检查项目', () => {
+  const output = normalizeSingleExamReportItems([
+    { name: '报告医生', value: '骆菊丽', itemType: 'lab' },
+    { name: '开单医生', value: '郑霞', itemType: 'lab' },
+    { name: '碳尿素测幽门', value: '0.6', referenceRange: '<4.0', diagnosis: '阴性', itemType: 'lab' },
+    { name: '诊断结论', findings: '阴性', itemType: 'imaging' },
+  ], { title: '碳13呼气试验' });
+  assert.equal(output.length, 1);
+  assert.equal(output[0].name, '碳13呼气试验');
+  assert.equal(output[0].itemType, 'imaging');
+});
+
+test('全科单项报告无论OCR标成lab还是data都整体收敛为一个检查项目', () => {
+  const output = normalizeSingleExamReportItems([
+    { name: '是否吸烟', value: '不吸', itemType: 'lab' },
+    { name: '是否饮酒', value: '饮酒', itemType: 'data' },
+    { name: '甲状腺', value: '甲状腺结节', itemType: 'lab', status: 'abnormal' },
+  ], { title: '全科（内外科）' });
+  assert.equal(output.length, 1);
+  assert.equal(output[0].name, '全科医学检查');
+  assert.equal(output[0].itemType, 'imaging');
+  assert.match(output[0].findings, /是否吸烟：不吸/);
+  assert.match(output[0].findings, /甲状腺：甲状腺结节/);
 });
 
 test('耳鼻喉科按检查项目汇总，不把器官细行当成独立检查', () => {

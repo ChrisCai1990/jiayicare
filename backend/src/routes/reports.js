@@ -4,7 +4,7 @@ const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
 const { uploadBase64, deleteFile, urlToKey } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
-const { normalizeDepartmentExamItems, normalizeBreathTestItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
+const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 const router = express.Router();
 
 // 类目中文映射
@@ -488,9 +488,9 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
     });
 
     // 用户端与医护端共用同一套确定性结构规则，避免同一报告因上传入口不同再次出现不同结果。
-    const normalizedItems = realignUpperAbdomenConclusions(normalizeDepartmentExamItems(
+    const normalizedItems = realignUpperAbdomenConclusions(normalizeSingleExamReportItems(normalizeDepartmentExamItems(
       normalizeBreathTestItems(filteredItems, report)
-    ));
+    ), report));
 
     await MedicalReport.findByIdAndUpdate(report._id, {
       reportItems: normalizedItems,

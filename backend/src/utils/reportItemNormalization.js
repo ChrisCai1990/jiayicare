@@ -99,7 +99,36 @@ function normalizeBreathTestItems(items, report = {}) {
       status: /阳性/.test(conclusion) ? 'abnormal' : /阴性/.test(conclusion) ? 'normal' : text(richest.status) || 'unknown',
     });
   });
-  return output;
+  // 单项呼气试验报告只能形成一个检查项目；报告医生、开单医生、诊断结论等版面标签不是项目。
+  return reportKind ? output : output;
+}
+
+const NON_EXAM_LABEL = /^(?:报告医生|开单医生|审核者|申请科室|检查医生|报告日期|检查日期|报告时间|检查时间|报告编号|检查报告号|诊断结论|检查描述|所见)$/;
+
+// 单项报告按“检查项目”收敛。模型可以负责读字，但不能决定把版面标签拆成多少个检验项目。
+function normalizeSingleExamReportItems(items, report = {}) {
+  const list = items || [];
+  const title = `${text(report.title)} ${text(report.screeningL2)} ${text(report.screeningL3)}`;
+  if (/(?:碳|C)\s*1[34].{0,8}呼气/i.test(title)) {
+    const normalized = normalizeBreathTestItems(list, report).filter(item => /呼气试验/.test(text(item.name)));
+    return normalized.length ? [normalized[0]] : list.filter(item => !NON_EXAM_LABEL.test(text(item.name)));
+  }
+  if (/全科|内外科/.test(title)) {
+    const rows = list.filter(item => !NON_EXAM_LABEL.test(text(item.name)));
+    if (!rows.length) return list;
+    const findings = rows.map(item => {
+      const value = text(item.findings) || text(item.value) || text(item.diagnosis) || text(item.conclusion);
+      return value ? `${text(item.name)}：${value}` : '';
+    }).filter(Boolean);
+    const abnormal = rows.some(item => item.status === 'abnormal');
+    return [{
+      ...rows[0], name: '全科医学检查', itemType: 'imaging', value: '', unit: '', referenceRange: '',
+      orderName: '全科医学检查', sourceSection: '全科医学检查', bodyPart: '',
+      findings: [...new Set(findings)].join('\n'), diagnosis: '', conclusion: '',
+      status: abnormal ? 'abnormal' : 'normal',
+    }];
+  }
+  return list;
 }
 
 const UPPER_ORGANS = [
@@ -148,5 +177,5 @@ function upperAbdomenCoverage(items) {
   return new Set((items || []).map(item => upperOrganIndex(item.name)).filter(index => index >= 0)).size;
 }
 
-module.exports = { normalizeDepartmentExamItems, normalizeBreathTestItems, realignUpperAbdomenConclusions, upperAbdomenCoverage };
+module.exports = { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions, upperAbdomenCoverage };
 

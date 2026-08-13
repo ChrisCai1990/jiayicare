@@ -351,10 +351,16 @@ function selectAdminMatches(candidates, itemType, index) {
 
 async function classifyItemsAsync(items) {
   const index = await buildAdminIndex();
-  return (items || []).map(item => {
+  const list = items || [];
+  const urinePages = new Set(list.filter(item => /尿常规|尿液分析|尿干化学|尿沉渣/i.test(`${item?.orderName || ''} ${item?.sourceSection || ''}`))
+    .map(item => Number(item?._page || item?.sourcePage || 0)));
+  return list.map(item => {
     // 增量归类：已归类项原样返回，只处理待归类项。既避免重复计算，也防止新规则覆盖审核结果。
     if (hasConfirmedClassification(item)) return { ...item };
-    const matches = selectMatchesForItem(item, index);
+    const page = Number(item?._page || item?.sourcePage || 0);
+    const urineSibling = urinePages.has(page) && /^(?:潜血|隐血|尿隐血|尿潜血|葡萄糖|白细胞|红细胞|胆红素|尿胆原|酮体|亚硝酸盐|蛋白质|比重|酸碱度|pH)$/i.test(String(item?.name || '').trim());
+    const matchItem = urineSibling ? { ...item, sourceSection: item.sourceSection || '尿常规' } : item;
+    const matches = selectMatchesForItem(matchItem, index);
     return classifyItemWithMatches(item, matches);
   });
 }
