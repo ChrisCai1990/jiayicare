@@ -14,9 +14,10 @@ test('程序级页码范围固定为P6-P15', () => {
   for (let page = 16; page <= 28; page++) assert.equal(template.pageMode(page), 'duplicate');
 });
 
-test('适配提示强制科室逐行、小结跳过、腹部超声拆分', () => {
+test('适配提示强制按科室检查项目汇总、小结跳过、腹部超声拆分', () => {
   const prompt = template.promptForPage(6);
-  assert.match(prompt, /逐行输出独立imaging/);
+  assert.match(prompt, /各科室只输出一条imaging检查项目/);
+  assert.match(prompt, /逐行写入findings/);
   assert.match(prompt, /科室小结.*全部跳过/);
   assert.match(prompt, /肝脏超声、胆囊超声、脾脏超声、胰腺超声四条/);
 });

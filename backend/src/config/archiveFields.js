@@ -121,7 +121,7 @@ const ARCHIVE_FIELDS = [
   { path: 'lifestyle_data.scheduleRegularity', label: '作息规律性',     group: '膳食调查', type: 'enum', options: ['规律', '不规律'] },
   { path: 'lifestyle_data.exerciseRemark',     label: '运动备注',       group: '膳食调查', type: 'text' },
   // 烟酒与应酬
-  { path: 'lifestyle_data.smokingStatus',     label: '吸烟情况',   group: '膳食调查', type: 'enum', options: ['＜10支/日', '10-20支/日', '20-30支/日', '30支以上/日', '不吸烟', '吸二手烟', '戒烟'] },
+  { path: 'lifestyle_data.smokingStatus',     label: '吸烟情况',   group: '膳食调查', type: 'enum', options: ['＜10支/日', '10-20支/日', '20-30支/日', '30支以上/日', '不吸烟', '吸二手烟', '吸电子烟', '抽雪茄', '戒烟'] },
   { path: 'lifestyle_data.drinkingFrequency', label: '饮酒频率',   group: '膳食调查', type: 'enum', options: ['＜1天/周', '1-3天/周', '3天/周及以上', '每天喝', '几乎不喝酒'] },
   { path: 'lifestyle_data.drinkingType',      label: '饮酒类型',   group: '膳食调查', type: 'array' },
   { path: 'lifestyle_data.drinkingTypeOtherDesc', label: '饮酒类型-其它说明', group: '膳食调查', type: 'text' },

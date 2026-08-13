@@ -7788,6 +7788,7 @@ const PATIENT_INFO_NAMES = new Set([
 // 体格检查类项目名单——模型偶尔会把这些误标成 lab/data，提取后强制纠正为 imaging（金娟07-01反馈：眼压检查被提取成检验类型）
 // 用前缀匹配而非精确相等：AI 常在名称后附加方法说明，如"眼压检查(非接触眼压计法或压平眼压计法)"
 const PHYSICAL_EXAM_NAMES = ['内科', '外科', '耳鼻喉', '视力检查', '眼压检查', '眼科', '裂隙灯检查'];
+const { normalizeDepartmentExamItems, normalizeBreathTestItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 
 // 每次体检最多只应出现一次的检查类型，AI经常写出好几种变体名字（"胃镜"/"电子胃镜"/"无痛胃镜"），
 // 导致同一检查因为名字对不上没法被后面的同名去重规则识别成重复——统一改写成标准名，再走已有去重逻辑。
@@ -9117,8 +9118,8 @@ async function runReportParse(reportId) {
       const departmentFiltered = (useShaoyifuTemplate || useZheyiTemplate) ? advisoryFiltered : dropDepartmentSummaryEcho(advisoryFiltered);
       const cleanedItems = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))));
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
-      const departmentNormalized = useZheyiTemplate ? cleanedItems : mergeInternalMedicineSubparts(cleanedItems);
-      let filteredItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(departmentNormalized));
+      const departmentNormalized = normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems));
+      let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
       if (useShaoyifuTemplate) filteredItems = shaoyifuTemplate.applyShaoyifuOrderAndGroups(filteredItems);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
@@ -9256,7 +9257,7 @@ async function runReportParse(reportId) {
     imageItems = sanitizeBodyCompositionItems(imageItems);
     // 尿/便常规逐项保留；不得在审核前重新聚合。
     sortReportItemsBySource(imageItems);
-    const cleanedImageItems = fillEmptyDiagnosisFromFindings(cleanupUltrasoundOverlap(mergeInternalMedicineSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(imageItems)))))))))));
+    const cleanedImageItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(normalizeBreathTestItems(imageItems, report))))))))))))));
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
@@ -9281,21 +9282,33 @@ async function runReportParse(reportId) {
 // 只补提指定PDF页并与该页已有结果合并；其他页面及其人工审核内容完全保留。
 async function runReportPageParse(reportId, pageNum) {
   const { parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, renderSinglePage, renderSinglePageRegions, isPdfReport } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
-  if (!report || !isPdfReport(report)) throw new Error('仅PDF报告支持单页补提');
+  if (!report) throw new Error('报告不存在');
+  const isPdf = isPdfReport(report);
+  const isImage = report.mimeType?.startsWith('image/') || (Array.isArray(report.fileUrls) && report.fileUrls.length > 0);
+  if (!isPdf && !isImage) throw new Error('仅PDF或图片报告支持单页补提');
   const shaoyifuTemplate = require('../utils/shaoyifuReportTemplate');
   const zheyiTemplate = require('../utils/zheyiReportTemplate');
   const useShaoyifuTemplate = shaoyifuTemplate.isShaoyifuReport(report);
   const useZheyiTemplate = zheyiTemplate.isZheyiReport(report);
   const templatePrompt = useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum)
     : useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '';
-  const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
-  const images = (useZheyiTemplate && pageNum === 14)
-    ? await renderSinglePageRegions(pdfBuf, pageNum, 160)
-    : [await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 160)];
+  let images;
+  if (isPdf) {
+    const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
+    images = (useZheyiTemplate && pageNum === 14)
+      ? await renderSinglePageRegions(pdfBuf, pageNum, 160)
+      : [await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 160)];
+  } else {
+    const buffers = report.fileUrls?.length
+      ? await fetchReportBuffers(report, UPLOADS_DIR)
+      : [await fetchReportBuffer(report, UPLOADS_DIR)];
+    if (pageNum > buffers.length) throw new Error(`图片报告只有${buffers.length}页，无法补提第${pageNum}页`);
+    images = [buffers[pageNum - 1].toString('base64')];
+  }
   if (!images.length || !images[0]) throw new Error(`无法渲染第${pageNum}页`);
   let parsedItems = [];
   for (let regionIndex = 0; regionIndex < images.length; regionIndex++) {
@@ -9312,7 +9325,17 @@ async function runReportPageParse(reportId, pageNum) {
     }
     }
     if (!parsed?.items?.length) throw new Error(`第${pageNum}页${images.length > 1 ? (regionIndex === 0 ? '上半部分' : '下半部分') : ''}未识别到有效项目，原数据未改动`);
-    parsedItems = mergeCoverageAuditItems(parsedItems, parsed.items);
+    let regionItems = parsed.items;
+    // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
+    try {
+      const existingNames = regionItems.map(item => str(item.name)).filter(Boolean).join('、');
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n已提取项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出遗漏项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
+      const audit = safeParseJSON(auditRaw);
+      if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
+    } catch (auditError) {
+      console.log(`[parse-page] ${reportId} P${pageNum} 右栏覆盖复核异常: ${auditError.message}`);
+    }
+    parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
   }
   let newPage = tagReportPageItems(parsedItems, pageNum);
   if (useShaoyifuTemplate) newPage = shaoyifuTemplate.normalizeShaoyifuItems(newPage);
@@ -9499,9 +9522,15 @@ router.post('/patients/:id/reports/:rid/reclassify', staffAuth, async (req, res)
       const hasConfirmedClassification = Boolean(
         item.screeningKey || (Array.isArray(item.screeningKeys) && item.screeningKeys.length)
       );
-      if (!hasConfirmedClassification) {
+      const structuralCorrection = /乳酸脱氢酶|(?:碳|C)\s*1[34].{0,8}呼气|尿素.{0,8}呼气/i.test(String(item.name || ''))
+        || /尿常规|尿液分析|尿干化学|尿沉渣/i.test(`${String(item.orderName || '')} ${String(item.sourceSection || '')}`);
+      if (!hasConfirmedClassification || structuralCorrection) {
         pendingIndexes.push(index);
-        pendingItems.push(item);
+        pendingItems.push(structuralCorrection ? {
+          ...item,
+          screeningKey: '', screeningKeys: [], screeningCategory: '', screeningParent: '',
+          matchStatus: 'unclassified', matchConfidence: 0,
+        } : item);
       }
     });
     const newlyClassified = await classifyItemsAsync(pendingItems);

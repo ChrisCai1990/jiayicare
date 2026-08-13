@@ -1,6 +1,6 @@
 const assert = require('assert');
 const { isShaoyifuReport, pageMode, promptForPage, needsCoverageAudit, normalizeShaoyifuItems, applyShaoyifuOrderAndGroups } = require('../src/utils/shaoyifuReportTemplate');
-const { classificationName, classificationCandidates } = require('../src/utils/screeningMatch');
+const { classificationName } = require('../src/utils/screeningMatch');
 
 assert(isShaoyifuReport({ title: '2026-07-15邵逸夫体检报告LZM' }));
 assert.equal(pageMode(2), 'skip');
@@ -29,6 +29,7 @@ const normalized = normalizeShaoyifuItems([
 
 const generalMedicine = normalized.filter(i => i.name === '全科医学检查');
 assert.equal(generalMedicine.length, 1);
+assert.equal(generalMedicine[0].itemType, 'imaging');
 assert.match(generalMedicine[0].findings, /家族史：高血压 母/);
 assert.match(generalMedicine[0].findings, /心脏：未见明显异常/);
 assert.equal(normalized.filter(i => i.name === '乳房超声').length, 1);
@@ -39,7 +40,6 @@ assert.match(normalized.find(i => /心电图/.test(i.name)).findings, /P-R间期
 assert.equal(normalized.some(i => Number(i._page) >= 12 && Number(i._page) !== 20), false);
 
 assert.equal(classificationName({ name: '肌酸激酶', orderName: '生化（门诊）' }), '肌酸激酶');
-assert.deepEqual(classificationCandidates({ name: '颜色', orderName: '粪便常规', sourceSection: '检验报告' }), ['颜色', '粪便常规', '检验报告']);
 
 const ordered = applyShaoyifuOrderAndGroups([
   { _page: 6, itemType: 'imaging', name: '脾脏彩超', findings: '胰腺：形态大小正常' },

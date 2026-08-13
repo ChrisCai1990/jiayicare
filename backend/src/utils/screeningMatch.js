@@ -273,6 +273,11 @@ function classificationCandidates(item) {
 // 项目名是归类的第一事实来源；检验单名/栏目名只在项目名完全无法命中Admin时兜底。
 // 避免“乳酸脱氢酶”因所属栏目写着“肝功能”，让栏目精确命中压过项目名对心肌酶谱的关键词命中。
 function selectMatchesForItem(item, index) {
+  const authoritativePanel = authoritativePanelClassificationName(item);
+  if (authoritativePanel) {
+    const panelMatches = selectAdminMatches([authoritativePanel], item?.itemType, index);
+    if (panelMatches.length) return panelMatches;
+  }
   const primary = reportNameCandidates(item?.name);
   const primaryMatches = selectAdminMatches(primary, item?.itemType, index);
   if (primaryMatches.length) return primaryMatches;
@@ -283,6 +288,21 @@ function selectMatchesForItem(item, index) {
     .filter(value => value && !/[\/＋+、,，;；]/.test(value));
   const context = [...new Set(safeContextValues.flatMap(reportNameCandidates).filter(Boolean))];
   return selectAdminMatches(context, item?.itemType, index);
+}
+
+// 仅对报告中明确标出的检验单类型使用上下文，解决同名单项跨体系误归类。
+// 普通生化项目不走这里，所以“乳酸脱氢酶 + 肝功能栏目”仍严格按项目名称优先。
+function authoritativePanelClassificationName(item) {
+  const name = String(item?.name || '').trim();
+  const context = `${String(item?.orderName || '')} ${String(item?.sourceSection || '')}`.trim();
+  const all = `${name} ${context}`;
+  if (/(?:碳|C)\s*1[34].{0,8}呼气|尿素.{0,8}呼气|呼气.{0,8}试验/i.test(all)) {
+    return /(?:碳|C)\s*14/i.test(all) ? '碳14呼气试验' : '碳13呼气试验';
+  }
+  if (/尿微量白蛋白|微量尿蛋白|尿肌酐|尿白蛋白.*肌酐|尿生化|尿肾功能/i.test(context)) return '';
+  if (/尿常规|尿液分析|尿干化学|尿沉渣/i.test(context) || /^(?:尿常规|尿液分析)$/.test(name)) return '尿常规';
+  if (/粪便常规|大便常规|便常规|粪便检查/i.test(context) || /^(?:粪便常规|大便常规|便常规)$/.test(name)) return '粪便常规';
+  return '';
 }
 
 function hasConfirmedClassification(item) {
@@ -352,5 +372,5 @@ module.exports = {
   classifyItem, classifyItems, norm,
   classifyItemAsync, classifyItemsAsync, matchAllAdmin, buildAdminIndex, invalidateAdminIndexCache,
   matchAllWithIndex, isFunctionalMedicineL1, classificationName, classificationCandidates, reportNameCandidates,
-  hasConfirmedClassification, selectAdminMatches, selectMatchesForItem,
+  hasConfirmedClassification, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName,
 };

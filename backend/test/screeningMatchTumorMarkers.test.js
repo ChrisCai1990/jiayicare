@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { norm, selectAdminMatches } = require('../src/utils/screeningMatch');
+const { norm, selectAdminMatches, selectMatchesForItem, authoritativePanelClassificationName } = require('../src/utils/screeningMatch');
 
 function adminIndex(entries) {
   return entries.map(([id, label, aliases]) => ({
@@ -33,4 +33,21 @@ test('同分命中多个Admin分类时保持待归类', () => {
     ['b|二类|项目B', '项目B', ['共同关键词']],
   ]);
   assert.deepEqual(selectAdminMatches(['共同关键词'], 'lab', index), []);
+});
+
+test('乳酸脱氢酶按项目名优先，不能被肝功能栏目覆盖', () => {
+  const index = adminIndex([
+    ['heart|心肌酶|心肌酶谱', '心肌酶谱', ['乳酸脱氢酶', 'LDH']],
+    ['liver|肝功能|肝功能', '肝功能', ['肝功能常规']],
+  ]);
+  const matches = selectMatchesForItem({ name: '乳酸脱氢酶', orderName: '肝功能常规', itemType: 'lab' }, index);
+  assert.equal(matches[0]?.node.id, 'heart|心肌酶|心肌酶谱');
+});
+
+test('尿常规上下文覆盖同名葡萄糖的跨体系歧义', () => {
+  assert.equal(authoritativePanelClassificationName({ name: '葡萄糖', sourceSection: '尿干化学' }), '尿常规');
+});
+
+test('碳13呼气试验即使OCR名称不完整也使用呼气试验归类原子', () => {
+  assert.equal(authoritativePanelClassificationName({ name: '尿素呼气试验', orderName: '碳13呼气试验' }), '碳13呼气试验');
 });

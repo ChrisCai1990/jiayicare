@@ -4,6 +4,7 @@ const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
 const { uploadBase64, deleteFile, urlToKey } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
+const { normalizeDepartmentExamItems, normalizeBreathTestItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 const router = express.Router();
 
 // 类目中文映射
@@ -229,7 +230,8 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
 → conclusion 字段留空字符串，不填检查者/检验者/审核者姓名，不填任何人名。
 → 【orderName 必填，填写该子项所属的检验单大标题】：
 
-  肝功能类：丙氨酸氨基转移酶(ALT)/天门冬氨酸氨基转移酶(AST)/碱性磷酸酶(ALP)/γ-谷氨酰转肽酶(GGT)/总蛋白/白蛋白/球蛋白/前白蛋白/总胆红素/直接胆红素/间接胆红素/乳酸脱氢酶(LDH)/总胆汁酸 → "肝功能"
+  肝功能类：丙氨酸氨基转移酶(ALT)/天门冬氨酸氨基转移酶(AST)/碱性磷酸酶(ALP)/γ-谷氨酰转肽酶(GGT)/总蛋白/白蛋白/球蛋白/前白蛋白/总胆红素/直接胆红素/间接胆红素/总胆汁酸 → "肝功能"
+  【项目名称优先】乳酸脱氢酶(LDH)不得因报告大标题或组合医嘱含“肝功能”而归到肝功能；保留报告原始项目名，由后台分类管理中该项目绑定的分类决定。
 
   肾功能类：肌酐/血肌酐/血清肌酐(Scr)/尿素/尿素氮(BUN)/尿酸/肾小球滤过率/eGFR/胱抑素C（报告标题无论写"肾功能"/"肾功能四项"/"肾功能+尿酸"等任何变体，一律 orderName="肾功能"）→ "肾功能"
   【严禁血尿混淆】"肌酐"必须按标本来源严格区分：血液/血清标本的肌酐(血肌酐/血清肌酐/Scr，参考范围通常 40-110 μmol/L)归"肾功能"；尿液标本的肌酐(尿肌酐/U-Cr，数值通常成千上万 μmol/L、参考范围完全不同)归"尿微量白蛋白"，绝对不能把尿肌酐的数值当作血肌酐提取。判断依据：项目名是否带"尿"字、报告分组标题(血液检验 vs 尿液检验)、参考范围量级。同理，血肌酐也不能被写进尿相关分组。
@@ -485,8 +487,13 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
       item.name = (item.name || '').replace(/^[【\[《〔\s\d、.、]+|[】\]》〕\s]+$/g, '').trim();
     });
 
+    // 用户端与医护端共用同一套确定性结构规则，避免同一报告因上传入口不同再次出现不同结果。
+    const normalizedItems = realignUpperAbdomenConclusions(normalizeDepartmentExamItems(
+      normalizeBreathTestItems(filteredItems, report)
+    ));
+
     await MedicalReport.findByIdAndUpdate(report._id, {
-      reportItems: filteredItems,
+      reportItems: normalizedItems,
       aiSummary:   parsed.summary || '',
       aiStatus:    'pending',
       institution: parsed.institution || report.institution,
