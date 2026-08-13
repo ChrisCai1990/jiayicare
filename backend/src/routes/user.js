@@ -497,7 +497,10 @@ router.get('/dashboard', auth, async (req, res) => {
 
     // 今日评分打点（同一天不重复写入，最多保留 30 条）
     const today = new Date().toISOString().slice(0, 10);
-    const history = req.user.scoreHistory || [];
+    // Some legacy users were created before scoreHistory had a strict schema.
+    // Treat any malformed value as empty history instead of allowing `.some()`
+    // or spread to fail the whole dashboard response.
+    const history = Array.isArray(req.user.scoreHistory) ? req.user.scoreHistory : [];
     if (!history.some(h => h.date === today) && req.user.healthScore > 0) {
       const newHistory = [...history, { score: req.user.healthScore, date: today }]
         .slice(-30);
