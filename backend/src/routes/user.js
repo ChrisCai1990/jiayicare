@@ -57,6 +57,23 @@ const SERVICE_PACKAGE_LABELS = {
   pkg_3m:            '季度服务包',
 };
 
+// bodyComposition mirrors the latest bodyCompHistory entry. The user clients
+// append that current snapshot to the historical series, so omit its matching
+// history row from the API response to avoid rendering the latest examination
+// twice. This is response normalization only; stored reports and audit state
+// remain unchanged.
+function historyWithoutCurrentBodyComposition(historyValue, currentValue) {
+  const history = Array.isArray(historyValue) ? historyValue : [];
+  if (!currentValue || typeof currentValue !== 'object') return history;
+  const sourceId = String(currentValue.sourceReportId || '');
+  const measuredAt = String(currentValue.measuredAt || currentValue.checkDate || currentValue.recordedAt || '').slice(0, 10);
+  return history.filter((row) => {
+    if (sourceId) return String(row?.sourceReportId || '') !== sourceId;
+    const rowDate = String(row?.measuredAt || row?.checkDate || row?.recordedAt || '').slice(0, 10);
+    return !measuredAt || rowDate !== measuredAt;
+  });
+}
+
 // AI 健康信息权益：有效年度会员始终开放；同时配有健康顾问和健管专员的
 // 历史客户也视为年度会员，避免旧数据未写 servicePackage 时被误拦截。
 async function getAiEntitlements(user) {
@@ -155,6 +172,7 @@ router.get('/me', auth, async (req, res) => {
     };
 
     const userData = req.user.toObject();
+    userData.bodyCompHistory = historyWithoutCurrentBodyComposition(userData.bodyCompHistory, userData.bodyComposition);
     userData.aiEntitlements = await getAiEntitlements(req.user);
     // 覆盖 doctor / manager 字段为真实分配数据
     const fdInfo = toStaffInfo(req.user.assignedFamilyDoctor, '健康顾问');
