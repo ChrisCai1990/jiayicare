@@ -2420,15 +2420,22 @@ export default function PatientDetailPage() {
   }
 
   // 4.4 AI汇总（scope: 'doctor'=仅5维度 / 'nutrition'=仅生活方式评估 / 'all'=兼容旧逻辑全量）
+  const applyAIHealthSummary = (summary) => {
+    setAiSummaryForm(summary || {})
+    setData(prev => prev ? {
+      ...prev,
+      user: { ...prev.user, aiHealthSummary: summary || {} },
+    } : prev)
+  }
+
   const handleGenerateAISummary = async (year, scope = 'all', force = false) => {
     const y = String(year || new Date().getFullYear())
     try {
       setAiSummaryLoading(true)
       const res = await staffAPI.generateAIHealthSummary(id, y, scope, force)
-      setAiSummaryForm(res.data)
+      applyAIHealthSummary(res.data)
       // 生成接口已返回最新完整AI汇总，直接更新当前会员状态即可立即展示。
       // 不再调用整页load()重复拉取会员、报告、问卷等大量无关数据。
-      setUser(prev => prev ? { ...prev, aiHealthSummary: res.data } : prev)
       setAiYear(y)
       toast(`${y}年度AI分析已生成`)
     } catch (err) {
@@ -2456,8 +2463,7 @@ export default function PatientDetailPage() {
       setAiSummaryLoading(true)
       const scope = sectionKey === 'tumor_risk' || sectionKey === 'cardiovascular_risk' || sectionKey === 'chronic_disease' ? 'doctor' : 'all'
       const res = await staffAPI.regenerateAIHealthSummaryItem(id, { year: aiYear, scope, recordIndex: aiRecordIndex.doctor, sectionKey, itemName, instruction: instruction.trim() })
-      setAiSummaryForm(res.data)
-      setUser(prev => prev ? { ...prev, aiHealthSummary: res.data } : prev)
+      applyAIHealthSummary(res.data)
       setLastRegeneratedItem(`${sectionKey}:${itemName}`)
       toast(`${itemName}已单项重新生成`)
     } catch (err) { toast(err.message || '单项重新生成失败') }
@@ -2652,7 +2658,7 @@ export default function PatientDetailPage() {
         recordIndex: aiRecordIndex[sectionKey === 'lifestyle_assessment' ? 'nutrition' : 'doctor'],
         ...(approve ? { action: 'approve' } : {}),
       })
-      setUser(prev => prev ? { ...prev, aiHealthSummary: res.data } : prev)
+      applyAIHealthSummary(res.data)
       setEditingAISummary(false); setEditingAISection('')
       toast(approve ? '该板块已审核通过' : '该板块草稿已保存')
     } catch (err) { toast(err.message || '板块保存失败') }

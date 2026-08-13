@@ -12,15 +12,23 @@ function reportYear(r) {
   return d ? new Date(d).getFullYear() : null;
 }
 
+// 体检机构项目名常混用顿号、逗号、括号和空格（如“子宫、附件彩超”）。
+// 覆盖判定只比较去除这些格式字符后的名称，避免同一检查因排版差异漏匹配。
+function normalizeExamName(value) {
+  return String(value || '').toLowerCase().replace(/[\s、，,。·:：;；()（）【】\[\]\/\\_-]+/g, '');
+}
+
 // 在一批报告里，找出某检查项「最近一次做的日期」；itemNeg 用于判断阴性（HP专用）。
 // 匹配范围：报告 title / screeningL2 / 各 reportItem 的 name。
 function findDoneRecords(reports, matchNames) {
   const hits = [];
+  const normalizedNames = matchNames.map(normalizeExamName).filter(Boolean);
   reports.forEach(r => {
     const titleText = `${r.title || ''} ${r.screeningL2 || ''}`;
-    const titleHit = matchNames.some(n => titleText.toLowerCase().includes(n.toLowerCase()));
+    const normalizedTitle = normalizeExamName(titleText);
+    const titleHit = normalizedNames.some(n => normalizedTitle.includes(n));
     const items = (r.reportItems || []).filter(it =>
-      it.name && matchNames.some(n => it.name.toLowerCase().includes(n.toLowerCase())));
+      it.name && normalizedNames.some(n => normalizeExamName(it.name).includes(n)));
     if (titleHit || items.length) {
       hits.push({ date: reportDate(r), year: reportYear(r), items, titleHit });
     }
