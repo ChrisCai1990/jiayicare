@@ -4176,7 +4176,7 @@ export default function PatientDetailPage() {
                   <div>
                     <div style={{ marginBottom: 12 }}>
                       <LsRadio label="吸烟情况" value={ld.smokingStatus} editing={editingLifestyle}
-                        options={['＜10支/日', '10-20支/日', '20-30支/日', '30支以上/日', '不吸烟', '吸二手烟', '戒烟']}
+                        options={['＜10支/日', '10-20支/日', '20-30支/日', '30支以上/日', '不吸烟', '吸二手烟', '吸电子烟', '抽雪茄', '戒烟']}
                         onChange={v => setLd({ smokingStatus: v })} />
                     </div>
                     <div style={row2}>
