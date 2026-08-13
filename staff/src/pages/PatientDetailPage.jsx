@@ -742,7 +742,7 @@ function AISectionSourceButton({ title, ids, onOpen }) {
 }
 
 // AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯团队内部留言，AI不参与回复
-function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, staff, onRefresh, onPreviewImage, title = 'AI分析讨论' }) {
+function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, staff, onRefresh, onPreviewImage, title = 'AI分析讨论', sectionKey }) {
   const toast = useToast()
   const [text, setText] = useState('')
   const [images, setImages] = useState([]) // 已上传图片URL，如"AI认为某检查没做，实际做了"可截图说明
@@ -750,7 +750,10 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
   const [posting, setPosting] = useState(false)
   const [aiReplying, setAiReplying] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const list = Array.isArray(discussions) ? discussions : []
+  const [applying, setApplying] = useState(false)
+  const list = (Array.isArray(discussions) ? discussions : [])
+    .map((item, originalIndex) => ({ ...item, originalIndex }))
+    .filter(item => item.sectionKey === sectionKey)
 
   const handlePickImage = async (e) => {
     const file = e.target.files?.[0]
@@ -768,7 +771,7 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
     if (!text.trim() && images.length === 0) return
     setPosting(true)
     try {
-      await staffAPI.addAIHealthSummaryDiscussion(patientId, text.trim(), year, images, recordIndex)
+      await staffAPI.addAIHealthSummaryDiscussion(patientId, text.trim(), year, images, recordIndex, sectionKey)
       setText('')
       setImages([])
       onRefresh()
@@ -776,7 +779,7 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
     // 发布成功后自动让AI接话，形成对话式讨论，无需再手动点按钮
     setAiReplying(true)
     try {
-      await staffAPI.generateAIHealthSummaryReply(patientId, year, recordIndex)
+      await staffAPI.generateAIHealthSummaryReply(patientId, year, recordIndex, sectionKey)
       onRefresh()
     } catch (err) { toast(err.message || 'AI回应失败') }
     finally { setPosting(false); setAiReplying(false) }
@@ -794,11 +797,26 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
   const handleAiReply = async () => {
     setAiReplying(true)
     try {
-      await staffAPI.generateAIHealthSummaryReply(patientId, year, recordIndex)
+      await staffAPI.generateAIHealthSummaryReply(patientId, year, recordIndex, sectionKey)
       toast('AI已回应')
       onRefresh()
     } catch (err) { toast(err.message || 'AI回应失败') }
     finally { setAiReplying(false) }
+  }
+
+  const handleApplyDiscussion = async () => {
+    const label = {
+      medical_priority: '需优先关注的信息', tumor_risk: '肿瘤筛查', cardiovascular_risk: '心脑血管',
+      chronic_disease: '慢性病及其他指标', checkup_completeness: '体检资料覆盖', lifestyle_assessment: '生活方式分析',
+    }[sectionKey]
+    if (!window.confirm(`将参考本轮全部讨论和原始报告，局部重写“${label}”板块。其他板块不变，原审核状态将撤回为待审核。是否继续？`)) return
+    setApplying(true)
+    try {
+      await staffAPI.applyAIHealthSummaryDiscussion(patientId, year, recordIndex, sectionKey)
+      toast(`${label}已按讨论局部补提，请核对后重新审核`)
+      await onRefresh()
+    } catch (err) { toast(err.message || '局部补提失败') }
+    finally { setApplying(false) }
   }
 
   return (
@@ -829,7 +847,7 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <span style={{ fontSize: 11, color: '#8AA89C' }}>{d.createdAt ? new Date(d.createdAt).toLocaleString('zh-CN') : ''}</span>
                       {(isOwner || staff?.role === 'superadmin') && (
-                        <span onClick={() => handleDelete(i)} style={{ fontSize: 11, color: '#DC3545', cursor: 'pointer' }}>删除</span>
+                        <span onClick={() => handleDelete(d.originalIndex)} style={{ fontSize: 11, color: '#DC3545', cursor: 'pointer' }}>删除</span>
                       )}
                     </div>
                   </div>
@@ -854,9 +872,14 @@ function AISummaryDiscussionPanel({ patientId, year, recordIndex, discussions, s
           <div style={{ fontSize: 12, color: '#0077B6', display: 'flex', alignItems: 'center', gap: 6 }}>✨ AI思考中...</div>
         )}
         {list.length > 0 && (
-          <button className="btn btn-secondary btn-sm" style={{ alignSelf: 'flex-start' }} disabled={aiReplying || posting} onClick={handleAiReply}>
-            {aiReplying ? '分析中...' : '✨ 让AI再想一次'}
-          </button>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button className="btn btn-secondary btn-sm" disabled={aiReplying || posting || applying} onClick={handleAiReply}>
+              {aiReplying ? '分析中...' : '✨ 让AI再想一次'}
+            </button>
+            <button className="btn btn-primary btn-sm" disabled={aiReplying || posting || applying} onClick={handleApplyDiscussion}>
+              {applying ? '局部补提中...' : '↻ 按讨论局部补提'}
+            </button>
+          </div>
         )}
         {images.length > 0 && (
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -6966,6 +6989,7 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </AISectionCard>
+                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="肿瘤筛查 · AI讨论" sectionKey="tumor_risk" />
 
                 {/* 板块二：心脑血管病风险分析 */}
                 <AISectionCard title="心脑血管相关信息整理" icon="❤️" color="#EF4444">
@@ -6996,6 +7020,7 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </AISectionCard>
+                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="心脑血管 · AI讨论" sectionKey="cardiovascular_risk" />
 
                 {/* 板块三：慢性病及其他健康指标 */}
                 <AISectionCard title="慢病及其他健康信息整理" icon="📊" color="#0077B6">
@@ -7050,6 +7075,7 @@ export default function PatientDetailPage() {
                     )
                   )}
                 </AISectionCard>
+                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="慢病及其他指标 · AI讨论" sectionKey="chronic_disease" />
 
                 {/* 板块四：体检全面性评估 */}
                 <AISectionCard title="体检资料覆盖情况" icon="📋" color="#1E6B50">
@@ -7071,6 +7097,7 @@ export default function PatientDetailPage() {
                     </div>
                   )}
                 </AISectionCard>
+                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="体检资料覆盖 · AI讨论" sectionKey="checkup_completeness" />
 
                 {/* 板块五：需优先解决的医疗问题 */}
                 <AISectionCard title="需优先关注的信息" icon="🏥" color="#DC2626">
@@ -7128,6 +7155,7 @@ export default function PatientDetailPage() {
                     )
                   )}
                 </AISectionCard>
+                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="需优先关注的信息 · AI讨论" sectionKey="medical_priority" />
                 </>}
 
                 {/* 板块六：生活方式评估（结合最近一次体检 + 膳食调查综合概述） */}
@@ -7136,7 +7164,7 @@ export default function PatientDetailPage() {
                     营养师 · 生活方式分析
                   </div>
                 )}
-                {aiAnalysisView === 'nutrition' && hasLifestyle && <AISectionCard title="生活方式评估" icon="🌿" color="#16A34A">
+                {aiAnalysisView === 'nutrition' && hasLifestyle && <><AISectionCard title="生活方式评估" icon="🌿" color="#16A34A">
                   {nutEditing ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                       {(sec.lifestyle_assessment?.items || []).map((item, i) => (
@@ -7172,15 +7200,8 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   )}
-                </AISectionCard>}
-
-                {/* AI健康分析讨论区：团队针对该年度分析提出疑问/补充信息，纯留言，AI不参与回复 */}
-                {aiAnalysisView === 'doctor' && <AISummaryDiscussionPanel patientId={id} year={curYear}
-                  recordIndex={doctorRecord._recordIndex} discussions={doctorRecord.discussions || []}
-                  staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="5维分析 · AI讨论" />}
-                {aiAnalysisView === 'nutrition' && <AISummaryDiscussionPanel patientId={id} year={curYear}
-                  recordIndex={nutritionRecord._recordIndex} discussions={nutritionRecord.discussions || []}
-                  staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="生活方式分析 · AI讨论" />}
+                </AISectionCard>
+                <AISummaryDiscussionPanel patientId={id} year={curYear} recordIndex={nutritionRecord._recordIndex} discussions={nutritionRecord.discussions || []} staff={staff} onRefresh={load} onPreviewImage={setPreviewImageUrl} title="生活方式分析 · AI讨论" sectionKey="lifestyle_assessment" /></>}
               </>
             )}
           </div>

@@ -5714,7 +5714,8 @@ router.delete('/patients/:id/ai-health-summary/records/:recordIndex', staffAuth,
 // POST /api/staff/patients/:id/ai-health-summary/discussions — 团队针对AI健康分析的讨论留言（按年度，纯团队内部留言，AI不参与回复）
 router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req, res) => {
   try {
-    const { content, year, images } = req.body;
+    const { content, year, images, sectionKey } = req.body;
+    if (![...DOCTOR_KEYS, LIFESTYLE_KEY].includes(sectionKey)) return res.status(400).json({ success: false, message: '讨论必须关联具体分析板块' });
     // 图片可选，但至少要有文字或图片其中一样（2026-07-17需求：AI认为某检查没做，实际做了，截图说明更直观）
     if ((!content || !content.trim()) && !(Array.isArray(images) && images.length)) {
       return res.status(400).json({ success: false, message: '留言内容不能为空' });
@@ -5737,6 +5738,7 @@ router.post('/patients/:id/ai-health-summary/discussions', staffAuth, async (req
       staffRole: req.staff.roleLabel || req.staff.role || '',
       content: (content || '').trim(),
       images: Array.isArray(images) ? images.filter(Boolean) : [],
+      sectionKey,
       createdAt: new Date(),
     });
     entry.discussions = discussions;
@@ -5786,7 +5788,7 @@ router.delete('/patients/:id/ai-health-summary/discussions/:index', staffAuth, a
 // 回应仅作为讨论区里的一条AI留言展示，不自动改写主报告sections，团队看完认为需要更新仍需手动编辑
 router.post('/patients/:id/ai-health-summary/discussions/ai-reply', staffAuth, async (req, res) => {
   try {
-    const { year, recordIndex } = req.body;
+    const { year, recordIndex, sectionKey } = req.body;
     const user = await User.findById(req.params.id).select('name gender age aiHealthSummary');
     if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
     const current = user.aiHealthSummary || {};
@@ -5797,14 +5799,15 @@ router.post('/patients/:id/ai-health-summary/discussions/ai-reply', staffAuth, a
     const idx = Number.isInteger(recordIndex) ? recordIndex : 0;
     if (idx < 0 || idx >= records.length) return res.status(400).json({ success: false, message: '记录不存在' });
     const entry = { ...records[idx] };
-    const discussions = Array.isArray(entry.discussions) ? entry.discussions : [];
+    const allDiscussions = Array.isArray(entry.discussions) ? entry.discussions : [];
+    const discussions = allDiscussions.filter(item => item.sectionKey === sectionKey);
     if (discussions.length === 0) return res.status(400).json({ success: false, message: '暂无讨论留言，无法生成AI回应' });
 
     const { chat } = require('../utils/ai');
-    const sectionsSummary = JSON.stringify(entry.sections || {}).slice(0, 3000);
+    const sectionsSummary = JSON.stringify(entry.sections?.[sectionKey] || {}).slice(0, 3000);
     const discussionText = discussions.map(d => `${d.isAI ? 'AI' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
 
-    const prompt = `你是协助医护团队复核健康分析报告的AI助手。以下是会员${user.name}（${user.gender || ''}，${user.age || '?'}岁）的AI健康分析报告结论摘要，以及医护团队围绕该报告展开的讨论记录。请针对团队最新提出的疑问或补充信息，结合报告已有结论进行解释、推理或修正说明。
+    const prompt = `你是协助医护团队复核健康分析报告的AI助手。以下是会员${user.name}（${user.gender || ''}，${user.age || '?'}岁）的“${sectionKey}”板块结论，以及医护团队只围绕该板块展开的讨论记录。请针对团队最新提出的疑问或补充信息，结合本板块已有结论进行解释、推理或修正说明。
 
 【报告结论摘要】
 ${sectionsSummary}
@@ -5822,8 +5825,9 @@ ${discussionText}
       content: (text || '').trim(),
       createdAt: new Date(),
       isAI: true,
+      sectionKey,
     };
-    const updatedDiscussions = [...discussions, reply];
+    const updatedDiscussions = [...allDiscussions, reply];
     entry.discussions = updatedDiscussions;
     records[idx] = entry;
     byYear[y] = { records };
@@ -5832,6 +5836,65 @@ ${discussionText}
       { $set: { [`aiHealthSummary.byYear.${y}`]: { records } } }
     );
     res.json({ success: true, data: updatedDiscussions });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 根据完整讨论上下文局部重写一个分析板块；其他板块保持不变，并撤回原审核状态供人工复核。
+router.post('/patients/:id/ai-health-summary/discussions/apply', staffAuth, async (req, res) => {
+  try {
+    if (!['superadmin', 'familyDoctor', 'nutritionist'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '无局部补提权限' });
+    const { year, recordIndex, sectionKey } = req.body || {};
+    const doctorKeys = new Set(DOCTOR_KEYS);
+    const isNutrition = sectionKey === LIFESTYLE_KEY;
+    if (!doctorKeys.has(sectionKey) && !isNutrition) return res.status(400).json({ success: false, message: '请选择需要补提的分析板块' });
+    if (isNutrition && !['superadmin', 'nutritionist'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅营养师可补提生活方式分析' });
+    if (!isNutrition && !['superadmin', 'familyDoctor'].includes(req.staff.role)) return res.status(403).json({ success: false, message: '仅健康顾问可补提5维分析' });
+
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ success: false, message: '会员不存在' });
+    const summary = user.aiHealthSummary || {};
+    const y = String(year || summary.latestYear || new Date().getFullYear());
+    const yearEntry = { ...(summary.byYear?.[y] || {}) };
+    const records = Array.isArray(yearEntry.records) ? [...yearEntry.records] : (yearEntry.sections ? [yearEntry] : []);
+    const idx = Number.isInteger(recordIndex) ? recordIndex : 0;
+    const entry = records[idx];
+    if (!entry?.sections?.[sectionKey]) return res.status(400).json({ success: false, message: '目标分析板块不存在' });
+    const discussions = (Array.isArray(entry.discussions) ? entry.discussions : []).filter(item => item.sectionKey === sectionKey);
+    if (!discussions.length) return res.status(400).json({ success: false, message: '暂无讨论内容，无法局部补提' });
+
+    const reports = await MedicalReport.find({ user: req.params.id }).sort({ checkDate: -1, date: -1 })
+      .select('title screeningL2 checkDate date reportYear examConclusion reportItems').lean();
+    const cutoff = new Date().getFullYear() - 4;
+    const evidence = reports.filter(report => {
+      const date = String(report.checkDate || report.date || '');
+      return Number(report.reportYear || date.slice(0, 4)) >= cutoff;
+    }).map(report => ({
+      title: report.screeningL2 || report.title, date: String(report.checkDate || report.date || '').slice(0, 10),
+      conclusion: report.examConclusion,
+      items: (report.reportItems || []).map(item => ({ name: item.name, value: item.value, unit: item.unit, status: item.status, findings: item.findings, diagnosis: item.diagnosis, conclusion: item.conclusion })),
+    }));
+    const discussionText = discussions.map(d => `${d.isAI ? 'AI助手' : d.staffName}${d.staffRole ? `（${d.staffRole}）` : ''}：${d.content}`).join('\n');
+    const { chat } = require('../utils/ai');
+    const raw = await chat([{ role: 'user', content: `你是健康信息整理复核助手。请根据医护团队的完整讨论和近5年原始证据，只重写“${sectionKey}”板块。
+严禁修改或输出其他板块；讨论中的主张必须由原始证据支持，若讨论与证据冲突，以原始证据为准并保留“待核对”表述；不得补造检查、数值、诊断或用药事实。保持原板块JSON字段结构，只输出单个JSON对象。
+
+【原板块】${JSON.stringify(entry.sections[sectionKey])}
+【完整讨论】\n${discussionText}
+【近5年原始证据】${JSON.stringify(evidence).slice(0, 24000)}` }], { maxTokens: 4000, temperature: 0, jsonMode: true, timeoutMs: 90000 });
+    const match = String(raw || '').match(/\{[\s\S]*\}/);
+    if (!match) return res.status(500).json({ success: false, message: '局部补提结果格式错误，请重试' });
+    const updatedSection = JSON.parse(match[0]);
+    entry.sections = { ...entry.sections, [sectionKey]: updatedSection };
+    entry.discussionApplyLog = [...(entry.discussionApplyLog || []), { sectionKey, at: new Date(), by: req.staff._id, discussionCount: discussions.length }];
+    if (isNutrition) { entry.nutritionApprovedAt = null; entry.nutritionApprovedBy = null; }
+    else { entry.doctorApprovedAt = null; entry.doctorApprovedBy = null; }
+    records[idx] = entry;
+    yearEntry.records = records;
+    yearEntry.sections = records[0]?.sections || yearEntry.sections;
+    summary.byYear = { ...(summary.byYear || {}), [y]: yearEntry };
+    if (String(summary.latestYear) === y || !summary.latestYear) summary.sections = yearEntry.sections;
+    await User.collection.updateOne({ _id: user._id }, { $set: { aiHealthSummary: summary } });
+    res.json({ success: true, data: summary, section: updatedSection });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

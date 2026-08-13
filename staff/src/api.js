@@ -349,9 +349,10 @@ export const staffAPI = {
   regenerateAIHealthSummaryItem: (id, data) => req(`/staff/patients/${id}/ai-health-summary/regenerate-item`, { method: 'POST', body: JSON.stringify(data) }),
   updateAIHealthSummary:   (id, data) => req(`/staff/patients/${id}/ai-health-summary`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteAIHealthSummaryRecord:     (id, year, recordIndex, scope) => req(`/staff/patients/${id}/ai-health-summary/records/${recordIndex}?year=${year}&scope=${scope}`, { method: 'DELETE' }),
-  addAIHealthSummaryDiscussion:    (id, content, year, images, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year, images, recordIndex }) }),
+  addAIHealthSummaryDiscussion:    (id, content, year, images, recordIndex, sectionKey) => req(`/staff/patients/${id}/ai-health-summary/discussions`, { method: 'POST', body: JSON.stringify({ content, year, images, recordIndex, sectionKey }) }),
   deleteAIHealthSummaryDiscussion: (id, index, year, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions/${index}?year=${year || ''}&recordIndex=${recordIndex ?? ''}`, { method: 'DELETE' }),
-  generateAIHealthSummaryReply:    (id, year, recordIndex) => req(`/staff/patients/${id}/ai-health-summary/discussions/ai-reply`, { method: 'POST', body: JSON.stringify({ year, recordIndex }) }),
+  generateAIHealthSummaryReply:    (id, year, recordIndex, sectionKey) => req(`/staff/patients/${id}/ai-health-summary/discussions/ai-reply`, { method: 'POST', body: JSON.stringify({ year, recordIndex, sectionKey }) }),
+  applyAIHealthSummaryDiscussion:  (id, year, recordIndex, sectionKey) => req(`/staff/patients/${id}/ai-health-summary/discussions/apply`, { method: 'POST', body: JSON.stringify({ year, recordIndex, sectionKey }) }),
   generateAIAnnualPlan:    (id, planType, notes, templateId) => req(`/staff/patients/${id}/ai-annual-plan`, { method: 'POST', body: JSON.stringify({ planType, notes, templateId }) }),
 
   // 场景七：AI 辅助生成文案草稿（kind: followup | service_record | plan_desc）
