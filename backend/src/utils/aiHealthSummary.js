@@ -208,7 +208,8 @@ async function generateHealthSummarySections(user, {
   const examFindingsText = extractExamFindings(allReports);
   // 肿瘤筛查覆盖度（规则引擎确定性结论，按男女前十大肿瘤逐项判断"该做的筛查做了没"，
   // 含胃镜免胃蛋白酶原/肠镜免便潜血/HP连续3年阴性/乳腺钼靶40岁等规则）——2026-07-10 金娟
-  const coverageText = reuseTumor ? '本次复用已生成肿瘤板块，不重复分析' : buildCoverageText(assessCancerCoverage(user, allHistoricalReports));
+  const cancerCoverage = reuseTumor ? [] : assessCancerCoverage(user, allHistoricalReports);
+  const coverageText = reuseTumor ? '本次复用已生成肿瘤板块，不重复分析' : buildCoverageText(cancerCoverage);
   const cancerCatalogText = reuseTumor ? '本次复用' : buildCancerCatalogText(user);
   const cancerEvidenceText = reuseTumor ? '本次复用' : buildCancerEvidenceText(user, allReports);
   const focusedTrendEvidenceText = buildFocusedTrendEvidenceText(allReports);
@@ -576,6 +577,10 @@ ${reuseTumor ? '\n【肿瘤板块复用】本次肿瘤分析沿用已有结果�
   // 模型偶尔仍会把血糖或血脂子指标拆成多张卡；展示前做确定性归并。
   if (!parseFailed && wantDoctor) normalizeTrendSections(sections, user, allHistoricalReports);
 
+  // AI 可能无视提示词，把同一份子宫附件超声同时写成“卵巢癌已覆盖”和
+  // “子宫内膜癌/经阴道超声缺失”。结构化规则证据优先于模型措辞，生成后强制纠正。
+  if (!parseFailed && wantDoctor && !reuseTumor) reconcileGynecologicUltrasoundCoverage(sections, cancerCoverage);
+
   // 数据溯源：AI文本结论核实起来要反复跳转查原始档案，很麻烦。这里不是让AI自己编造溯源标识
   // （AI可能编造或对错号，指错地方比没有链接更误导人），而是后端用规则去 allReports 的
   // reportItems 里按名称模糊匹配——匹配到就补充 sourceReportId/sourceItemIndex 供前端渲染成
@@ -614,6 +619,44 @@ const CHRONIC_GROUP_PATTERNS = [
 
 const CARDIO_TOPIC_ORDER = ['心电图', '心脏超声', '冠脉CTA', '运动评估', '心脏磁共振', '颈动脉超声', '头颅MRI', '头颅MRA', '同型半胱氨酸', '脂蛋白磷脂酶A2'];
 const CARDIO_TOPIC_PATTERNS = CARDIO_TOPIC_ORDER.map(name => [name, new RegExp(name === '运动评估' ? '运动评估|运动负荷' : name, 'i')]);
+
+const ENDOMETRIAL_TEXT = /子宫(?:内膜|体)癌|经阴道(?:妇科)?超声|子宫附件(?:\/经阴道)?超声/i;
+
+function reconcileGynecologicUltrasoundCoverage(sections, coverageResults = []) {
+  const coverage = coverageResults.find(item => item.key === 'endometrial');
+  if (!coverage || coverage.status !== 'ok') return;
+
+  const coveredLabel = '子宫体癌（子宫附件/经阴道超声）';
+  const tumor = sections?.tumor_risk;
+  if (tumor) {
+    tumor.missing = (tumor.missing || []).filter(item => !ENDOMETRIAL_TEXT.test(String(item)));
+    tumor.completed = [...(tumor.completed || []).filter(item => !ENDOMETRIAL_TEXT.test(String(item))), coveredLabel];
+    const cancer = (tumor.cancers || []).find(item => /子宫(?:内膜|体)癌/.test(String(item.name || '')));
+    if (cancer && ['unknown', 'overdue', 'due_soon'].includes(cancer.status)) {
+      cancer.name = '子宫体癌';
+      cancer.status = 'covered';
+      cancer.latest = coverage.doneItems?.[0] || cancer.latest;
+      cancer.trendStatus = cancer.trendStatus === 'no_data' ? 'baseline' : cancer.trendStatus;
+      cancer.nextAction = '已完成子宫附件/经阴道超声基础影像检查；后续结合症状及原报告建议管理。';
+    }
+    if (tumor.overview && Array.isArray(tumor.cancers)) {
+      tumor.overview.coveredCount = tumor.cancers.filter(item => item.status === 'covered').length;
+      tumor.overview.unknownCount = tumor.cancers.filter(item => item.status === 'unknown').length;
+      tumor.overview.attentionCount = tumor.cancers.filter(item => ['follow_up_due', 'overdue', 'due_soon'].includes(item.status)).length;
+    }
+  }
+
+  const completeness = sections?.checkup_completeness;
+  if (completeness) {
+    completeness.missing = (completeness.missing || []).filter(item => !ENDOMETRIAL_TEXT.test(String(item)));
+    completeness.covered = [...(completeness.covered || []).filter(item => !ENDOMETRIAL_TEXT.test(String(item))), coveredLabel];
+    completeness.suggestion = String(completeness.suggestion || '')
+      .replace(/(?:、|，|,)?(?:及)?经阴道(?:妇科)?超声/g, '')
+      .replace(/补做及/g, '补做')
+      .replace(/[、，,]+(?=[；。]|$)/g, '')
+      .trim();
+  }
+}
 
 function normalizeTrendSections(sections, user, reports = []) {
   const tumor = sections && sections.tumor_risk;
@@ -796,4 +839,4 @@ function attachSourceLinks(sections, allReports) {
   }
 }
 
-module.exports = { generateHealthSummarySections, DOCTOR_KEYS, LIFESTYLE_KEY };
+module.exports = { generateHealthSummarySections, reconcileGynecologicUltrasoundCoverage, DOCTOR_KEYS, LIFESTYLE_KEY };
