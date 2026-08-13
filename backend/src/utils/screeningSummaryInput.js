@@ -32,6 +32,8 @@ function buildSummaryInputGroups(reports, bucketKey, categoryBucket, projectOrde
   const grouped = new Map();
   (reports || []).forEach(report => {
     (report.reportItems || []).forEach(item => {
+      // 年度小结是异常摘要，不重复罗列正常、阴性或状态不明的检查结果。
+      if (!['abnormal', 'attention'].includes(item.status)) return;
       const projectName = resolveConfiguredProjectName(projectNameForItem(item, report), projectOrder);
       if (categoryBucket(item.screeningCategory || report.screeningCategory, report.screeningL1 || '', projectName) !== bucketKey) return;
       if (!grouped.has(projectName)) grouped.set(projectName, {
@@ -61,10 +63,14 @@ function ensureLpla2InCardiovascularSummary(summary, groups) {
   if (/Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(text)) return text;
 
   const group = (groups || []).find(entry =>
-    (entry.conclusions || []).some(item => /Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(String(item.name || ''))));
+    (entry.conclusions || []).some(item =>
+      ['abnormal', 'attention'].includes(item.status)
+      && /Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(String(item.name || ''))));
   if (!group) return text;
 
-  const item = group.conclusions.find(entry => /Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(String(entry.name || '')));
+  const item = group.conclusions.find(entry =>
+    ['abnormal', 'attention'].includes(entry.status)
+    && /Lp[-\s]?PLA2|脂蛋白(?:相关)?磷脂酶A2/i.test(String(entry.name || '')));
   const value = String(item.value || '').trim();
   const conclusion = String(item.conclusion || '').trim();
   let detail;

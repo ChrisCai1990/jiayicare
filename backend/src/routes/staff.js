@@ -4068,13 +4068,17 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
     });
 
     const { chat } = require('../utils/ai');
-    const raw = await chat([{ role: 'user', content: `根据以下${year}年度已审核检查资料，分别形成简洁、客观的年度健康小结。输入中的项目已经严格按专项筛查目录从前到后排列，输出必须保持完全相同的项目顺序：例如第一项是“肺癌早筛”，第一行必须先写“肺癌早筛：...”。每个有资料的项目独占一行，以“项目名：结论”开头；同一项目可汇总其检验和检查结果，但禁止跨项目合并、禁止调整顺序、禁止跳跃描述。肿瘤标志物若全部正常，只写“肿瘤标志物：无异常”，不得罗列每个正常指标；只有存在异常时才列异常项。没有数据的项目不写；整个分类没有数据时写“本年度暂无相关已审核资料”。不得补造资料。只输出JSON，三个值均为用换行分隔的字符串：{"tumor_risk":"...","cardiovascular_risk":"...","chronic_disease":"..."}。\n${JSON.stringify(input)}` }], { maxTokens: 2200 });
+    const raw = await chat([{ role: 'user', content: `根据以下${year}年度已审核检查资料，分别形成简洁、客观的年度异常小结。输入中只包含异常或需关注的项目，严禁描述正常、阴性、未见明显异常的结果。项目已经严格按专项筛查目录从前到后排列，输出必须保持完全相同的项目顺序。每个有异常的项目独占一行，以“项目名：异常结论”开头；同一项目可汇总其异常结果，但禁止跨项目合并、禁止调整顺序、禁止补充正常结果。某分类没有异常项目时，对应值返回空字符串，不得写“正常”“无异常”或“未见异常”。不得补造资料。只输出JSON，三个值均为用换行分隔的字符串：{"tumor_risk":"...","cardiovascular_risk":"...","chronic_disease":"..."}。\n${JSON.stringify(input)}` }], { maxTokens: 1600 });
     let parsed;
     try {
       parsed = JSON.parse(String(raw).replace(/^```json\s*|```$/g, '').trim());
     } catch {
       return res.status(502).json({ success: false, message: 'AI年度小结返回格式异常，请重试' });
     }
+    Object.keys(CATEGORY_MAP).forEach(key => {
+      // 空分类在程序层强制留空，避免模型用“正常/无异常”占位。
+      if (!input[key].length) parsed[key] = '';
+    });
     parsed.cardiovascular_risk = ensureLpla2InCardiovascularSummary(
       parsed.cardiovascular_risk,
       input.cardiovascular_risk,
