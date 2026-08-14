@@ -1373,6 +1373,18 @@ router.get('/products', adminAuth, async (req, res) => {
   res.json({ success: true, data: products });
 });
 
+// 从客户可见详情生成待人工审核的推荐规则，不落库、不自动启用。
+router.post('/products/ai-draft', adminAuth, async (req, res) => {
+  try {
+    const { generateProductAiDraft } = require('../utils/productAiDraft');
+    const draft = await generateProductAiDraft(req.body || {});
+    res.json({ success: true, data: draft, message: '推荐规则草稿已生成，请审核后保存' });
+  } catch (err) {
+    const missing = err.message === '请先填写详情描述';
+    res.status(missing ? 400 : 500).json({ success: false, message: missing ? err.message : `生成失败：${err.message}` });
+  }
+});
+
 // POST /api/admin/products
 router.post('/products', adminAuth, async (req, res) => {
   const { name, subtitle, images, originalPrice, servicePrices, memberPrices, category, sortOrder, features, description, stock, status, performanceRule, servicePerformerRoles, serviceItems, fulfillmentType, paymentChannel, bookingRequired, deliveryRequired, serviceLocation, validityDays, refundPolicy, skus, aiProfile } = req.body;

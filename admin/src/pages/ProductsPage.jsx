@@ -386,6 +386,7 @@ function ProductModal({ product, categories, onClose, onSaved }) {
     }
   })
   const [loading, setLoading] = useState(false)
+  const [generatingAi, setGeneratingAi] = useState(false)
   const [tab, setTab] = useState('basic')
   const [staffList, setStaffList] = useState([])
 
@@ -396,6 +397,30 @@ function ProductModal({ product, categories, onClose, onSaved }) {
   }, [])
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const generateAiProfile = async () => {
+    if (!form.description.trim()) { toast('❌ 请先填写详情描述'); setTab('desc'); return }
+    setGeneratingAi(true)
+    try {
+      const res = await adminAPI.generateProductAiDraft({
+        name: form.name, subtitle: form.subtitle, category: form.category, description: form.description,
+        features: form.features.split(',').map(s => s.trim()).filter(Boolean),
+        fulfillmentType: form.fulfillmentType, serviceLocation: form.serviceLocation,
+      })
+      const draft = res.data || {}
+      setForm(current => {
+        const merged = { ...current.aiProfile }
+        AI_LIST_FIELDS.forEach(([key]) => {
+          if (!(merged[key] || []).length && Array.isArray(draft[key])) merged[key] = draft[key]
+        })
+        if (!merged.nextAction || merged.nextAction === 'inquire') merged.nextAction = draft.nextAction || 'inquire'
+        merged.enabledForRecommendation = false
+        return { ...current, aiProfile: merged }
+      })
+      toast('✅ 已补充空白推荐规则，请审核后保存并手动启用')
+    } catch (err) { toast('❌ ' + (err.message || '生成失败，请重试')) }
+    finally { setGeneratingAi(false) }
+  }
 
   const save = async () => {
     if (!form.name || !form.category || form.originalPrice === '') {
@@ -630,6 +655,15 @@ function ProductModal({ product, categories, onClose, onSaved }) {
 
           {tab === 'ai' && (
             <div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'center', background: '#fff8e8', border: '1px solid #f0dfb4', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 600, color: '#6f5312' }}>根据详情智能生成</div>
+                  <div style={{ fontSize: 12, color: '#7d704e', marginTop: 4 }}>仅补充空白字段，不覆盖人工内容，也不会自动开启推荐。</div>
+                </div>
+                <button type="button" className="btn btn-primary" onClick={generateAiProfile} disabled={generatingAi} style={{ whiteSpace: 'nowrap' }}>
+                  {generatingAi ? '生成中...' : '智能生成'}
+                </button>
+              </div>
               <div style={{ background: '#f3f8f5', border: '1px solid #d7e8df', borderRadius: 8, padding: 12, marginBottom: 16 }}>
                 <label style={{ display: 'flex', gap: 8, alignItems: 'center', fontWeight: 600, color: '#1E6B50' }}>
                   <input type="checkbox" checked={form.aiProfile.enabledForRecommendation}

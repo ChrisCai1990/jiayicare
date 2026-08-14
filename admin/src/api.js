@@ -133,6 +133,7 @@ export const adminAPI = {
 
   // 商城产品管理
   products:           (params = {}) => req('/products?' + new URLSearchParams(params).toString()),
+  generateProductAiDraft: (data)   => req('/products/ai-draft', { method: 'POST', body: JSON.stringify(data) }),
   createProduct:      (data)     => req('/products', { method: 'POST', body: JSON.stringify(data) }),
   updateProduct:      (id, data) => req(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   toggleProduct:      (id)       => req(`/products/${id}/toggle`, { method: 'PATCH' }),
