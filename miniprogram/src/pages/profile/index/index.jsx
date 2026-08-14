@@ -167,8 +167,8 @@ export default function ProfilePage() {
               <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
               <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>到期 {user.serviceExpiry} · 剩余 {daysLeft} 天</Text>
             </View>
-            <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={() => nav('/pages/orders/index')}>
-              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>查看订单</Text>
+            <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={() => nav('/pages/profile/benefits/index')}>
+              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>查看权益</Text>
             </View>
           </View>
         </View>

@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { View, Text, Textarea, ScrollView, Input, Image } from '@tarojs/components';
 import Taro, { useDidShow } from '@tarojs/taro';
 import { colors, spacing, radius } from '../../theme';
@@ -9,14 +9,13 @@ import Icon from '../../components/Icon';
 import MessagesPage from '../messages/index';
 
 const QUICK_PROMPTS = ['帮我分析需求', '推荐适合的服务', '生成健康服务规划'];
+const PLANNER_GREETING = { role: 'assistant', content: '您好，我是小嘉健康规划师。我可以帮您梳理健康管理需求、明确阶段目标并规划合适的服务路径。您目前最想改善或管理的是哪一方面？' };
 
 // 小嘉健康规划师：仅梳理健康管理需求与规划平台服务，不提供医疗咨询。
 export default function ChatPage() {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
-  const [messages, setMessages] = useState([
-    { role: 'assistant', content: '您好，我是小嘉健康规划师。我可以帮您梳理健康管理需求、明确阶段目标并规划合适的服务路径。您目前最想改善或管理的是哪一方面？' },
-  ]);
+  const [messages, setMessages] = useState([PLANNER_GREETING]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [view, setView] = useState('team');
@@ -26,7 +25,26 @@ export default function ChatPage() {
   const [nutritionInput, setNutritionInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [foodImage, setFoodImage] = useState(null);
+  const historyUserRef = useRef('');
   const scrollRef = useRef();
+
+  // 与 App 端保持一致：进入规划师时从后端恢复最近 50 轮对话。
+  // 对话记录按登录用户查询，既能跨页面/重启保留，也不会在切换账号时串话。
+  useEffect(() => {
+    if (!user?._id || historyUserRef.current === user._id) return;
+    const historyUserId = user._id;
+    historyUserRef.current = historyUserId;
+    setMessages([PLANNER_GREETING]);
+    chatAPI.getLogs(historyUserId).then((res) => {
+      if (historyUserRef.current !== historyUserId) return;
+      if (!res?.success || !Array.isArray(res.data) || res.data.length === 0) return;
+      const historyMessages = [...res.data].reverse().flatMap((log) => [
+        log.userMessage ? { role: 'user', content: log.userMessage } : null,
+        log.aiReply ? { role: 'assistant', content: log.aiReply } : null,
+      ].filter(Boolean));
+      setMessages([PLANNER_GREETING, ...historyMessages]);
+    }).catch(() => {});
+  }, [user?._id]);
 
   useDidShow(() => {
     const requestedView = Taro.getStorageSync('healthHubView');
