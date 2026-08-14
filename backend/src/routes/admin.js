@@ -1345,7 +1345,7 @@ router.get('/product-categories', adminAuth, async (req, res) => {
 
 // POST /api/admin/product-categories
 router.post('/product-categories', adminAuth, async (req, res) => {
-  const { name, parent = null, sortOrder } = req.body;
+  const { name, parentId, parent = parentId || null, sortOrder } = req.body;
   if (!name?.trim()) return res.status(400).json({ success: false, message: '分类名称不能为空' });
   const existing = await ProductCategory.findOne({ name: name.trim() });
   if (existing) return res.status(400).json({ success: false, message: '该分类名称已存在' });
@@ -1361,10 +1361,10 @@ router.post('/product-categories', adminAuth, async (req, res) => {
   res.json({ success: true, data: cat, message: '分类创建成功' });
 });
 
-router.put('/product-categories/:id', adminAuth, async (req, res) => {
+const updateProductCategory = async (req, res) => {
   const category = await ProductCategory.findById(req.params.id);
   if (!category) return res.status(404).json({ success: false, message: '分类不存在' });
-  const { name, parent, sortOrder } = req.body;
+  const { name, parentId, parent = parentId, sortOrder } = req.body;
   if (name !== undefined) {
     if (!name?.trim()) return res.status(400).json({ success: false, message: '分类名称不能为空' });
     const duplicate = await ProductCategory.findOne({ name: name.trim(), _id: { $ne: category._id } });
@@ -1385,7 +1385,10 @@ router.put('/product-categories/:id', adminAuth, async (req, res) => {
   if (sortOrder !== undefined && Number.isFinite(Number(sortOrder))) category.sortOrder = Number(sortOrder);
   await category.save();
   res.json({ success: true, data: category, message: '分类已更新' });
-});
+};
+
+router.put('/product-categories/:id', adminAuth, updateProductCategory);
+router.patch('/product-categories/:id', adminAuth, updateProductCategory);
 
 // DELETE /api/admin/product-categories/:id
 router.delete('/product-categories/:id', adminAuth, async (req, res) => {
