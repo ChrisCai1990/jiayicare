@@ -4109,7 +4109,7 @@ export default function PatientDetailPage() {
                     <div style={secTitle}>三餐与加餐</div>
                     <div style={row2}>
                       <LsText label="早餐时间" value={ld.breakfastTime} editing={editingLifestyle} placeholder="如 07:30" onChange={v => setLd({ breakfastTime: v })} />
-                      <LsRadio label="早餐就餐方式" value={ld.breakfastDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '少吃', '不吃']} onChange={v => setLd({ breakfastDetail: v })} />
+                      <LsRadio label="早餐就餐方式" value={ld.breakfastDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '公司', '少吃', '不吃']} onChange={v => setLd({ breakfastDetail: v })} />
                       <LsText label="早餐品类描述" value={ld.breakfastDesc} editing={editingLifestyle} placeholder="如 粥、鸡蛋、包子" onChange={v => setLd({ breakfastDesc: v })} />
                       <div>
                         <LsRadio label="上午加餐" value={ld.morningSnack} editing={editingLifestyle} options={['是', '否']} onChange={v => setLd({ morningSnack: v })} />
@@ -4120,7 +4120,7 @@ export default function PatientDetailPage() {
                     </div>
                     <div style={row2}>
                       <LsText label="午餐时间" value={ld.lunchTime} editing={editingLifestyle} placeholder="如 12:00" onChange={v => setLd({ lunchTime: v })} />
-                      <LsRadio label="午餐就餐方式" value={ld.lunchDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '少吃', '不吃']} onChange={v => setLd({ lunchDetail: v })} />
+                      <LsRadio label="午餐就餐方式" value={ld.lunchDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '公司', '少吃', '不吃']} onChange={v => setLd({ lunchDetail: v })} />
                       <LsText label="午餐品类描述" value={ld.lunchDesc} editing={editingLifestyle} placeholder="如 米饭、炒菜、汤" onChange={v => setLd({ lunchDesc: v })} />
                       <div>
                         <LsRadio label="下午加餐" value={ld.afternoonSnack} editing={editingLifestyle} options={['是', '否']} onChange={v => setLd({ afternoonSnack: v })} />
@@ -4131,7 +4131,7 @@ export default function PatientDetailPage() {
                     </div>
                     <div style={row2}>
                       <LsText label="晚餐时间" value={ld.dinnerTime} editing={editingLifestyle} placeholder="如 18:30" onChange={v => setLd({ dinnerTime: v })} />
-                      <LsRadio label="晚餐就餐方式" value={ld.dinnerDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '少吃', '不吃']} onChange={v => setLd({ dinnerDetail: v })} />
+                      <LsRadio label="晚餐就餐方式" value={ld.dinnerDetail} editing={editingLifestyle} options={['居家', '饭店', '外卖', '在校', '公司', '少吃', '不吃']} onChange={v => setLd({ dinnerDetail: v })} />
                       <LsText label="晚餐品类描述" value={ld.dinnerDesc} editing={editingLifestyle} placeholder="如 蔬菜、豆腐、汤" onChange={v => setLd({ dinnerDesc: v })} />
                       <div>
                         <LsRadio label="晚间加餐" value={ld.eveningSnack} editing={editingLifestyle} options={['是', '否']} onChange={v => setLd({ eveningSnack: v })} />
@@ -4171,7 +4171,7 @@ export default function PatientDetailPage() {
                     </div>
                     <div style={{ marginBottom: 12 }}>
                       <LsCheckbox label="不良饮食习惯（可多选）" value={ld.badDietHabits || []} editing={editingLifestyle}
-                        options={['三餐不规律', '常吃夜宵', '常吃外卖', '进餐速度过快', '常吃油炸食品', '常吃甜品及含糖饮料', '常吃腌制食品', '常吃动物内脏', '饮食重油', '口味偏咸', '无不良饮食习惯']}
+                        options={['三餐不规律', '常吃夜宵', '常吃外卖', '进餐速度过快', '常吃油炸食品', '常吃甜品及含糖饮料', '常吃腌制食品', '常吃动物内脏', '饮食重油', '口味偏咸', '挑食', '偏食', '无不良饮食习惯']}
                         onChange={v => setLd({ badDietHabits: v })} />
                     </div>
                     <LsRadio label="应酬频率" value={ld.entertainment} editing={editingLifestyle} options={['1-2次/周', '3-5次/周', '6-7次/周', '无或偶尔']} onChange={v => setLd({ entertainment: v })} />
