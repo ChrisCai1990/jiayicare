@@ -19,8 +19,10 @@ const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康
 2. 回答控制在200字以内，简洁精准
 3. 必须先像真人顾问一样理解客户，再谈服务。客户只表达宽泛意向（如“我想体检”“想找专家”）时，禁止直接提及、匹配或推荐具体服务产品；先自然追问1—2个最关键问题，不要一次罗列问卷
 4. 只有需求基本清楚后，才可推荐平台已有服务。推荐前先简短复述对客户需求的理解并说明理由；不得仅凭“体检”“专家”等关键词命中产品
-5. 可以介绍健康档案整理、体检信息整理、生活方式管理、健康提醒、复查提醒和就医协助，但不得把某项服务描述为医疗诊断或治疗
-6. 不提供疾病诊断、治疗方案、处方、线上复诊、检查开单、药品推荐、停换药或剂量调整，不解读症状来判断疾病
+5. 必须承接客户刚刚回答的信息，不得重复已经问过或客户已经回答的问题。客户追问价格、流程、时间或服务内容时，先直接回答该问题，再视需要补问一个问题
+6. 客户的疾病、检查指标、既往报告和健康风险不属于你的判断范围，也不得用于服务匹配。你只了解客户想获得的帮助、服务对象、城市、时间、预算和服务偏好；涉及健康资料时，引导客户查看健康档案或咨询专业人员
+7. 可以介绍健康档案整理、体检信息整理、生活方式管理、健康提醒、复查提醒和就医协助，但不得把某项服务描述为医疗诊断或治疗
+8. 不提供疾病诊断、治疗方案、处方、线上复诊、检查开单、药品推荐、停换药或剂量调整，不解读症状来判断疾病
 7. 遇到医疗问题，简短说明超出服务范围，建议前往正规医疗机构；遇到胸痛、呼吸困难、意识障碍等紧急情况，提示立即拨打120
 8. 不捏造会员信息，不制造焦虑，不承诺疗效，不使用“治愈”“治疗”“保证改善”等表述
 9. 服务推荐必须说明推荐理由，由会员自主选择，不得诱导购买高价套餐
@@ -112,14 +114,20 @@ function detectIntent(text) {
 }
 
 async function buildVerifiedServiceReply(lastUserMsg, messages = []) {
-  const asksForExpert = /(专家|医生|挂号|约诊)/.test(lastUserMsg);
-  const asksForCheckup = /(体检|健康检查)/.test(lastUserMsg);
-  if (!asksForExpert && !asksForCheckup) return null;
-
   const customerText = messages
     .filter(message => message.role === 'user')
     .map(message => String(message.content || ''))
     .join(' ');
+  const recentCustomerText = messages
+    .filter(message => message.role === 'user')
+    .slice(-3)
+    .map(message => String(message.content || ''))
+    .join(' ');
+  const asksForExpert = /(专家|医生|挂号|约诊)/.test(recentCustomerText);
+  const asksForCheckup = /(体检|健康检查)/.test(recentCustomerText);
+  if (!asksForExpert && !asksForCheckup) return null;
+
+  const asksForPrice = /(收费|价格|多少钱|费用|价钱)/.test(lastUserMsg);
   const needDimensions = [
     /(本人|自己|家人|父母|孩子|员工|单位|企业)/,
     /(常规|全面|专项|入职|年度|复查|重点|症状|关注|目的|科室|方向)/,
@@ -141,7 +149,7 @@ async function buildVerifiedServiceReply(lastUserMsg, messages = []) {
     : /(体检|健康检查)/;
   const product = await Product.findOne({ status: 'on', name: servicePattern })
     .sort({ sortOrder: 1 })
-    .select('name subtitle')
+    .select('name subtitle originalPrice servicePrices skus')
     .lean();
   if (asksForExpert) {
     if (!product) {
@@ -152,6 +160,11 @@ async function buildVerifiedServiceReply(lastUserMsg, messages = []) {
 
   if (!product) {
     return `目前没有查询到可核验的上架体检服务，我不能自行制定体检方案或组合检查项目。如您愿意，我可以为您转接专属健康规划师继续确认。\n\n${disclaimer}`;
+  }
+  if (asksForPrice) {
+    const prices = resolveProductPrices(product).map(option => Number(option.price)).filter(price => Number.isFinite(price) && price >= 0);
+    const priceText = prices.length ? `目前平台显示的价格为${Math.min(...prices)}元起` : '具体价格以服务页面当前展示为准';
+    return `您问的是「${product.name}」的收费。${priceText}；不同服务内容或规格可能有差异。如果您愿意，我也可以接着说明它具体包含哪些服务。\n\n${disclaimer}`;
   }
   return `您的需求适合平台已上架的「${product.name}」。我可以继续了解城市、时间和预算偏好，帮助您确认这项服务；具体检查项目由服务内容或专业人员确认，小嘉不自行制定体检方案。\n\n${disclaimer}`;
 }
@@ -233,7 +246,7 @@ router.post('/', auth, async (req, res) => {
   }
 
   // AI健康规划师仅承担服务需求识别与服务推荐；是否配有专业团队都不改变非医疗边界。
-  const me = await User.findById(userId).select('assignedFamilyDoctor aiHealthSummary aiRiskAssessment');
+  const me = await User.findById(userId).select('assignedFamilyDoctor');
   const hasDoctor = !!me?.assignedFamilyDoctor;
 
   const DAILY_LIMIT_NO_DOCTOR = 5;
@@ -262,29 +275,17 @@ router.post('/', auth, async (req, res) => {
     return res.json({ success: true, data: { content: reply, intent, logId: log._id } });
   }
 
-  // 数据查询类：附上健康数据
-  let dataContext = '';
-  if (intent === 'data') {
-    dataContext = await getUserDataContext(userId);
-  }
-
   // 拼接系统提示
   const userContext = [
     userInfo.name  && `姓名：${userInfo.name}`,
-    userInfo.age   && `年龄：${userInfo.age}岁`,
-    userInfo.gender && userInfo.gender !== '未知' && `性别：${userInfo.gender}`,
-    userInfo.conditions && `既往病史：${userInfo.conditions}`,
-    userInfo.medications && `用药：${userInfo.medications}`,
   ].filter(Boolean).join('，');
 
-  const scopeNotice = `\n【角色边界】无论会员是否配有专业服务团队，你都只能识别服务需求、推荐平台已有服务并协助转接专属健康规划师。不得制定任何健康、体检、诊疗或服务方案。健康资料只能用于匹配服务类别，不能用于疾病判断、诊疗建议、用药指导或检查项目推荐。`;
+  const scopeNotice = `\n【角色边界】无论会员是否配有专业服务团队，你都只能识别客户想获得什么服务帮助、推荐平台已有服务并协助转接专属健康规划师。客户的疾病、指标、报告和风险与你的服务匹配无关，不得读取、复述或据此推荐服务，也不得制定任何健康、体检、诊疗或服务方案。`;
 
   const systemPrompt = [
     BASE_SYSTEM,
     scopeNotice,
     userContext ? `\n用户基本信息：${userContext}` : '',
-    buildHealthInsightContext(me),
-    dataContext,
   ].join('');
 
   // 格式化历史消息：最近10条，且只取24小时内的（避免几天前的话题被当作当前场景误关联）。
