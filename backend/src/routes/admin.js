@@ -1349,15 +1349,15 @@ router.post('/product-categories', adminAuth, async (req, res) => {
   if (!name?.trim()) return res.status(400).json({ success: false, message: '分类名称不能为空' });
   const existing = await ProductCategory.findOne({ name: name.trim() });
   if (existing) return res.status(400).json({ success: false, message: '该分类名称已存在' });
-  let parentId = null;
+  let resolvedParentId = null;
   if (parent) {
     const parentCategory = await ProductCategory.findById(parent);
     if (!parentCategory) return res.status(400).json({ success: false, message: '父级分类不存在' });
     if (parentCategory.parent) return res.status(400).json({ success: false, message: '商城分类最多支持两级' });
-    parentId = parentCategory._id;
+    resolvedParentId = parentCategory._id;
   }
   const count = await ProductCategory.countDocuments();
-  const cat = await ProductCategory.create({ name: name.trim(), parent: parentId, sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : count * 10 });
+  const cat = await ProductCategory.create({ name: name.trim(), parent: resolvedParentId, sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : count * 10 });
   res.json({ success: true, data: cat, message: '分类创建成功' });
 });
 
