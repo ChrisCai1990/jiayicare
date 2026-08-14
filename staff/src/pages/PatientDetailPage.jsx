@@ -434,21 +434,29 @@ function MiniTrendChart({ data, color = '#1E6B50', label, refLow, refHigh }) {
   );
 }
 
-const BODY_COMP_METRICS = [
-  { key: 'weight', referenceKey: 'weightReference', label: '体成分体重（kg）', color: '#2563EB' },
-  { key: 'skelMuscle', referenceKey: 'skelMuscleReference', label: '骨骼肌（kg）', color: '#1E6B50' },
-  { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', label: '体脂率（%）', color: '#D97706' },
-  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪（级）', color: '#7C3AED' },
+const ADULT_BODY_COMP_METRICS = [
+  { key: 'weight', referenceKey: 'weightReference', label: '体成分体重', unit: 'kg', placeholder: '如 56.2', color: '#2563EB' },
+  { key: 'skelMuscle', referenceKey: 'skelMuscleReference', label: '骨骼肌量', unit: 'kg', placeholder: '如 28.5', color: '#1E6B50' },
+  { key: 'visceralFat', referenceKey: 'visceralFatReference', label: '内脏脂肪', unit: '级', placeholder: '如 9', color: '#7C3AED' },
+  { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', label: '体脂率', unit: '%', placeholder: '如 25.3', color: '#D97706' },
 ]
 
-function BodyCompositionTrendCharts({ history = [] }) {
+const PEDIATRIC_BODY_COMP_METRICS = [
+  { key: 'weight', referenceKey: 'weightReference', label: '体成分体重', unit: 'kg', placeholder: '如 24.6', color: '#2563EB' },
+  { key: 'calcium', referenceKey: 'calciumReference', label: '钙质', unit: 'kg', placeholder: '如 0.61', color: '#0F8B8D' },
+  { key: 'protein', referenceKey: 'proteinReference', label: '蛋白质', unit: 'kg', placeholder: '如 4.6', color: '#65A30D' },
+  { key: 'fatMass', referenceKey: 'fatMassReference', label: '脂肪量', unit: 'kg', placeholder: '如 1.9', color: '#D97706' },
+  { key: 'muscleMass', referenceKey: 'muscleMassReference', label: '肌肉量', unit: 'kg', placeholder: '如 21.0', color: '#7C3AED' },
+]
+
+function BodyCompositionTrendCharts({ history = [], metrics = ADULT_BODY_COMP_METRICS }) {
   const parseRange = value => {
     // 参考范围常写成 [33.8-38.5]；这里的“-”是区间分隔符，不是第二个数的负号。
     const nums = String(value || '').match(/\d+(?:\.\d+)?/g)?.map(Number) || []
     return nums.length >= 2 ? { low: nums[0], high: nums[1] } : {}
   }
   const rows = [...history].sort((a, b) => String(a?.measuredAt || a?.recordedAt || '').localeCompare(String(b?.measuredAt || b?.recordedAt || '')))
-  const available = BODY_COMP_METRICS.map(metric => {
+  const available = metrics.map(metric => {
     const data = rows.map(row => ({
       y: Number.parseFloat(row?.[metric.key]),
       x: String(row?.measuredAt || row?.recordedAt || '').slice(0, 10),
@@ -464,7 +472,7 @@ function BodyCompositionTrendCharts({ history = [] }) {
       <div style={{ fontSize: 12, color: '#8AA89C', marginBottom: 8 }}>趋势曲线（按测量日期）</div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12 }}>
         {available.map(({ metric, data, range }) => (
-          <MiniTrendChart key={metric.key} data={data} color={metric.color} label={metric.label} refLow={range.low} refHigh={range.high} />
+        <MiniTrendChart key={metric.key} data={data} color={metric.color} label={`${metric.label}（${metric.unit}）`} refLow={range.low} refHigh={range.high} />
         ))}
       </div>
     </div>
@@ -2994,6 +3002,9 @@ export default function PatientDetailPage() {
 
   const { user, recentFollowUps, recentRecords } = data
   const age = user.age ? `${user.age}岁` : '-'
+  const numericAge = Number(user.age)
+  const isPediatricBodyComp = Number.isFinite(numericAge) && numericAge >= 0 && numericAge < 18
+  const bodyCompMetrics = isPediatricBodyComp ? PEDIATRIC_BODY_COMP_METRICS : ADULT_BODY_COMP_METRICS
   const bmi = user.height && user.weight
     ? (user.weight / Math.pow(user.height / 100, 2)).toFixed(1)
     : null
@@ -5914,13 +5925,8 @@ export default function PatientDetailPage() {
           </div>
           <div style={{ padding: '12px 20px' }}>
             {editingBodyComp ? (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '10px 20px' }}>
-                {[
-                  { label: '体成分体重', field: 'weight', referenceField: 'weightReference', unit: 'kg', placeholder: '如 56.2' },
-                  { label: '骨骼肌量', field: 'skelMuscle', referenceField: 'skelMuscleReference', unit: 'kg', placeholder: '如 28.5' },
-                  { label: '内脏脂肪', field: 'visceralFat', referenceField: 'visceralFatReference', unit: '级', placeholder: '如 9' },
-                  { label: '体脂率', field: 'bodyFatRate', referenceField: 'bodyFatRateReference', unit: '%', placeholder: '如 25.3' },
-                ].map(({ label, field, referenceField, unit, placeholder }) => (
+              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${bodyCompMetrics.length}, minmax(0, 1fr))`, gap: '10px 20px' }}>
+                {bodyCompMetrics.map(({ label, key: field, referenceKey: referenceField, unit, placeholder }) => (
                   <div key={field}>
                     <span style={{ fontSize: 12, color: '#8AA89C', display: 'block', marginBottom: 3 }}>{label}{unit ? ` (${unit})` : ''}</span>
                     <input className="form-control" value={bodyCompForm[field] || ''} placeholder={placeholder}
@@ -5937,14 +5943,10 @@ export default function PatientDetailPage() {
               </div>
             ) : (
               <div>
-                {(displayBodyComposition.weight || displayBodyComposition.skelMuscle || displayBodyComposition.visceralFat || displayBodyComposition.bodyFatRate) ? (
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '6px 16px' }}>
-                    {[
-                      ['体成分体重', displayBodyComposition.weight, 'kg', displayBodyComposition.weightReference],
-                      ['骨骼肌量', displayBodyComposition.skelMuscle, 'kg', displayBodyComposition.skelMuscleReference],
-                      ['内脏脂肪', displayBodyComposition.visceralFat, '级', displayBodyComposition.visceralFatReference],
-                      ['体脂率', displayBodyComposition.bodyFatRate, '%', displayBodyComposition.bodyFatRateReference],
-                    ].filter(([,v]) => v != null && v !== '').map(([label, val, unit, reference]) => (
+                {bodyCompMetrics.some(metric => displayBodyComposition[metric.key] != null && displayBodyComposition[metric.key] !== '') ? (
+                  <div style={{ display: 'grid', gridTemplateColumns: `repeat(${bodyCompMetrics.length}, minmax(0, 1fr))`, gap: '6px 16px' }}>
+                    {bodyCompMetrics.map(metric => [metric.label, displayBodyComposition[metric.key], metric.unit, displayBodyComposition[metric.referenceKey]])
+                      .filter(([,v]) => v != null && v !== '').map(([label, val, unit, reference]) => (
                       <div key={label} style={{ padding: '6px 10px', background: '#f9f7f3', borderRadius: 8, borderLeft: '3px solid #1E6B50' }}>
                         <div style={{ fontSize: 11, color: '#8AA89C' }}>{label}</div>
                         <div style={{ fontSize: 14, fontWeight: 600 }}>{val}{unit && <span style={{ fontSize: 11, fontWeight: 400 }}> {unit}</span>}</div>
@@ -5958,7 +5960,7 @@ export default function PatientDetailPage() {
                 ) : (
                   <div style={{ color: '#aaa', fontSize: 14, textAlign: 'center', padding: '12px 0' }}>暂无身体成分数据，点击「编辑」录入</div>
                 )}
-                <BodyCompositionTrendCharts history={user.bodyCompHistory || []} />
+                <BodyCompositionTrendCharts history={user.bodyCompHistory || []} metrics={bodyCompMetrics} />
                 {/* 历史记录 */}
                 {!editingBodyComp && (user.bodyCompHistory || []).length > 0 && (
                   <div style={{ marginTop: 12, borderTop: '1px solid #f0ece4', paddingTop: 10 }}>
@@ -5970,15 +5972,10 @@ export default function PatientDetailPage() {
                         <div key={i} style={{ fontSize: 12, color: '#4A6558', padding: '6px 0', borderBottom: '1px solid #f9f7f3' }}>
                           {isEditingThis ? (
                             <div>
-                              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 6 }}>
-                                {[
-                                  { label: '体成分体重(kg)', field: 'weight' },
-                                  { label: '骨骼肌量(kg)', field: 'skelMuscle' },
-                                  { label: '内脏脂肪(级)', field: 'visceralFat' },
-                                  { label: '体脂率(%)', field: 'bodyFatRate' },
-                                ].map(({ label, field }) => (
+                              <div style={{ display: 'grid', gridTemplateColumns: `repeat(${bodyCompMetrics.length}, 1fr)`, gap: 6, marginBottom: 6 }}>
+                                {bodyCompMetrics.map(({ label, key: field, unit }) => (
                                   <div key={field}>
-                                    <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>{label}</div>
+                                    <div style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>{label}({unit})</div>
                                     <input className="form-control" style={{ fontSize: 12, padding: '3px 6px' }}
                                       value={historyEditForm[field] || ''}
                                       onChange={e => setHistoryEditForm(f => ({ ...f, [field]: e.target.value }))} />
@@ -6004,10 +6001,9 @@ export default function PatientDetailPage() {
                           ) : (
                             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                               <span style={{ color: '#aaa', minWidth: 90 }}>{h.measuredAt || (h.recordedAt ? new Date(h.recordedAt).toLocaleDateString('zh-CN') : '-')}</span>
-                              {h.weight && <span>体成分体重: {h.weight}kg</span>}
-                              {h.skelMuscle && <span>骨骼肌: {h.skelMuscle}kg</span>}
-                              {h.visceralFat && <span>内脏脂肪: {h.visceralFat}级</span>}
-                              {h.bodyFatRate && <span>体脂率: {h.bodyFatRate}%</span>}
+                              {bodyCompMetrics.filter(metric => h[metric.key] != null && h[metric.key] !== '').map(metric => (
+                                <span key={metric.key}>{metric.label}: {h[metric.key]}{metric.unit}</span>
+                              ))}
                               <div style={{ marginLeft: 'auto', display: 'flex', gap: 4 }}>
                                 <button style={{ fontSize: 11, color: '#1E6B50', background: 'none', border: 'none', cursor: 'pointer', padding: '0 4px' }}
                                   onClick={() => { setEditingHistoryIndex(realIndex); setHistoryEditForm({ ...h }); }}>编辑</button>
