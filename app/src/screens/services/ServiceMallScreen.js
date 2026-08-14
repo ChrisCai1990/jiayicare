@@ -560,7 +560,7 @@ export default function ServiceMallScreen({ navigation, route }) {
   const [purchaseMode, setPurchaseMode]     = useState('consult'); // consult 预约 | pay 付费
   const openPurchase = (svc, mode) => { setPurchaseMode(mode); setSelectedService(svc); };
   const [services, setServices]     = useState([]);
-  const [categories, setCategories] = useState(['全部']);
+  const [categoryTree, setCategoryTree] = useState([]);
   const [loadingList, setLoadingList] = useState(true);
   const [listError, setListError] = useState('');
 
@@ -576,10 +576,10 @@ export default function ServiceMallScreen({ navigation, route }) {
         const res = await servicesAPI.list();
         if (!res.success) throw new Error(res.message || '服务加载失败');
         setServices(res.data?.services || []);
-        setCategories(res.data?.categories || ['全部']);
+        setCategoryTree(res.data?.categoryTree || (res.data?.categories || []).filter(name => name !== '全部').map(name => ({ id: name, name, children: [] })));
       } catch {
         setServices([]);
-        setCategories(['全部']);
+        setCategoryTree([]);
         setListError('服务加载失败，请稍后重试');
       } finally {
         setLoadingList(false);
@@ -587,9 +587,13 @@ export default function ServiceMallScreen({ navigation, route }) {
     })();
   }, []);
 
-  const filtered = activeCategory === '全部'
-    ? services
-    : services.filter(s => s.category === activeCategory);
+  const activeParent = categoryTree.find(category => category.name === activeCategory || category.children?.some(child => child.name === activeCategory));
+  const selectedNames = activeCategory === '全部'
+    ? null
+    : activeParent?.name === activeCategory
+      ? [activeParent.name, ...(activeParent.children || []).map(child => child.name)]
+      : [activeCategory];
+  const filtered = selectedNames ? services.filter(service => selectedNames.includes(service.category)) : services;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -622,19 +626,41 @@ export default function ServiceMallScreen({ navigation, route }) {
           />
         </View>
 
-        {/* Category Tabs */}
-        <View style={{ marginTop: spacing.md }}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: spacing.lg, gap: spacing.sm }}>
-            {categories.map(cat => (
-              <TouchableOpacity
-                key={cat}
-                style={[styles.catChip, activeCategory === cat && styles.catChipActive]}
-                onPress={() => setActiveCategory(cat)}
-              >
-                <Text style={[styles.catChipText, activeCategory === cat && styles.catChipTextActive]}>{cat}</Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
+        {/* Category navigation: all categories remain visible without horizontal scrolling. */}
+        <View style={styles.categoryPanel}>
+          <View style={styles.categoryHeadingRow}>
+            <Text style={styles.categoryHeading}>服务分类</Text>
+            <Text style={styles.categoryHint}>选择后查看对应服务</Text>
+          </View>
+          <TouchableOpacity style={[styles.allCategoryButton, activeCategory === '全部' && styles.categoryButtonActive]} onPress={() => setActiveCategory('全部')}>
+            <Text style={[styles.categoryButtonText, activeCategory === '全部' && styles.categoryButtonTextActive]}>全部服务</Text>
+          </TouchableOpacity>
+          <View style={styles.categoryGrid}>
+            {categoryTree.map(category => {
+              const selected = activeParent?.id === category.id && activeCategory !== '全部';
+              return (
+                <TouchableOpacity key={category.id} style={[styles.categoryButton, selected && styles.categoryButtonSelected]} onPress={() => setActiveCategory(category.name)}>
+                  <Text style={[styles.categoryButtonText, selected && styles.categoryButtonTextSelected]}>{category.name}</Text>
+                  <Text style={styles.categoryCount}>{category.totalProductCount ?? category.productCount ?? 0} 项服务</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+          {!!activeParent?.children?.length && activeCategory !== '全部' && (
+            <View style={styles.subcategorySection}>
+              <Text style={styles.subcategoryTitle}>{activeParent.name} · 细分类型</Text>
+              <View style={styles.subcategoryWrap}>
+                <TouchableOpacity style={[styles.catChip, activeCategory === activeParent.name && styles.catChipActive]} onPress={() => setActiveCategory(activeParent.name)}>
+                  <Text style={[styles.catChipText, activeCategory === activeParent.name && styles.catChipTextActive]}>全部</Text>
+                </TouchableOpacity>
+                {activeParent.children.map(child => (
+                  <TouchableOpacity key={child.id} style={[styles.catChip, activeCategory === child.name && styles.catChipActive]} onPress={() => setActiveCategory(child.name)}>
+                    <Text style={[styles.catChipText, activeCategory === child.name && styles.catChipTextActive]}>{child.name}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          )}
         </View>
 
         {/* Services */}
@@ -734,6 +760,32 @@ const styles = StyleSheet.create({
   catChipActive: { borderColor: colors.primary, backgroundColor: colors.primary },
   catChipText: { fontSize: 13, color: colors.textSecondary, fontWeight: '500' },
   catChipTextActive: { color: colors.white, fontWeight: '700' },
+  categoryPanel: {
+    marginHorizontal: spacing.lg, marginTop: spacing.md, padding: spacing.md,
+    borderRadius: radius.xl, backgroundColor: colors.white, ...shadow.sm,
+  },
+  categoryHeadingRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: spacing.sm },
+  categoryHeading: { fontSize: 15, color: colors.textPrimary, fontWeight: '700' },
+  categoryHint: { fontSize: 12, color: colors.textMuted },
+  allCategoryButton: {
+    paddingVertical: 10, borderRadius: radius.md, alignItems: 'center',
+    borderWidth: 1, borderColor: colors.border, backgroundColor: colors.background,
+  },
+  categoryButtonActive: { borderColor: colors.primary, backgroundColor: colors.primary },
+  categoryButtonTextActive: { color: colors.white },
+  categoryGrid: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: spacing.sm, marginTop: spacing.sm },
+  categoryButton: {
+    width: '48.5%', minHeight: 62, paddingHorizontal: spacing.sm, paddingVertical: 10,
+    borderRadius: radius.md, borderWidth: 1, borderColor: colors.border,
+    backgroundColor: colors.white, alignItems: 'center', justifyContent: 'center',
+  },
+  categoryButtonSelected: { borderColor: colors.primary, backgroundColor: '#E8F5EF' },
+  categoryButtonText: { fontSize: 14, color: colors.textPrimary, fontWeight: '600', textAlign: 'center' },
+  categoryButtonTextSelected: { color: colors.primary, fontWeight: '700' },
+  categoryCount: { fontSize: 11, color: colors.textMuted, marginTop: 3 },
+  subcategorySection: { marginTop: spacing.md, paddingTop: spacing.sm, borderTopWidth: 1, borderTopColor: colors.border },
+  subcategoryTitle: { fontSize: 12, color: colors.textMuted, marginBottom: spacing.sm },
+  subcategoryWrap: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   resultCount: { fontSize: 12, color: colors.textMuted, marginBottom: spacing.xs },
   serviceCard: {
     backgroundColor: colors.white, borderRadius: radius.xl, padding: spacing.md, ...shadow.sm,

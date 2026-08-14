@@ -19,20 +19,50 @@ const ProductShare = require('../models/ProductShare');
 const crypto = require('crypto');
 
 const Product = require('../models/Product');
+const ProductCategory = require('../models/ProductCategory');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 
 // GET /api/services — 从商城产品获取（管理员在后台维护的 Products）
 // Public catalogue: reviewers and prospective users must be able to browse
 // service content before being asked to log in or authorize personal data.
 router.get('/', async (req, res) => {
-  const products = await Product.find({ status: 'on' }).sort({ sortOrder: 1, createdAt: 1 });
+  const [products, categoryDocs] = await Promise.all([
+    Product.find({ status: 'on' }).sort({ sortOrder: 1, createdAt: 1 }),
+    ProductCategory.find().sort({ sortOrder: 1, createdAt: 1 }).lean(),
+  ]);
+
+  const productCountByCategory = products.reduce((counts, product) => {
+    const name = String(product.category || '').trim();
+    if (name) counts.set(name, (counts.get(name) || 0) + 1);
+    return counts;
+  }, new Map());
+  const categoryNodes = categoryDocs.map(category => ({
+    id: String(category._id), name: category.name,
+    parentId: category.parent ? String(category.parent) : null,
+    productCount: productCountByCategory.get(category.name) || 0,
+    children: [],
+  }));
+  const categoryById = new Map(categoryNodes.map(category => [category.id, category]));
+  const categoryTree = [];
+  categoryNodes.forEach(category => {
+    const parent = category.parentId && categoryById.get(category.parentId);
+    if (parent) parent.children.push(category);
+    else categoryTree.push(category);
+  });
+  const configuredNames = new Set(categoryNodes.map(category => category.name));
+  productCountByCategory.forEach((productCount, name) => {
+    if (!configuredNames.has(name)) categoryTree.push({ id: `legacy:${name}`, name, parentId: null, productCount, children: [] });
+  });
+  categoryTree.forEach(category => {
+    category.totalProductCount = category.productCount + category.children.reduce((sum, child) => sum + child.productCount, 0);
+  });
 
   // 商品只以管理后台上架数据为准，不使用演示目录兜底。
   if (products.length === 0) {
-    return res.json({ success: true, data: { categories: ['全部'], services: [] } });
+    return res.json({ success: true, data: { categories: ['全部'], categoryTree, services: [] } });
   }
 
-  const categories = ['全部', ...new Set(products.map(p => p.category))];
+  const categories = ['全部', ...categoryTree.flatMap(category => [category.name, ...category.children.map(child => child.name)])];
   const services = products.map(p => {
     const firstPrice = p.servicePrices?.[0];
     return {
@@ -63,7 +93,7 @@ router.get('/', async (req, res) => {
     };
   });
 
-  res.json({ success: true, data: { categories, services } });
+  res.json({ success: true, data: { categories, categoryTree, services } });
 });
 
 // GET /api/services/coupons — 当前用户可用的优惠券

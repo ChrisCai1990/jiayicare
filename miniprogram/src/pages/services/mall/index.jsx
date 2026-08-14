@@ -417,7 +417,7 @@ export default function ServiceMallPage() {
   const [selectedService, setSelectedService] = useState(null);
   const [purchaseMode, setPurchaseMode] = useState('consult');
   const [services, setServices] = useState([]);
-  const [categories, setCategories] = useState(['全部']);
+  const [categoryTree, setCategoryTree] = useState([]);
   const [shareToken, setShareToken] = useState('');
   const routeParams = Taro.getCurrentInstance()?.router?.params || {};
 
@@ -452,12 +452,12 @@ export default function ServiceMallPage() {
     servicesAPI.list().then((res) => {
       if (!res.success) throw new Error(res.message || '服务加载失败');
       setServices(res.data?.services || []);
-      setCategories(res.data?.categories || ['全部']);
+      setCategoryTree(res.data?.categoryTree || (res.data?.categories || []).filter((name) => name !== '全部').map((name) => ({ id: name, name, children: [] })));
       const target = (res.data?.services || []).find((service) => service.id === routeParams.productId);
       if (target) setDetailService(target);
     }).catch(() => {
       setServices([]);
-      setCategories(['全部']);
+      setCategoryTree([]);
       setListError('服务加载失败，请稍后重试');
     }).finally(() => setLoading(false));
   }, []);
@@ -485,7 +485,13 @@ export default function ServiceMallPage() {
     setPurchaseMode(mode);
     setSelectedService(svc);
   };
-  const filtered = activeCategory === '全部' ? services : services.filter((s) => s.category === activeCategory);
+  const activeParent = categoryTree.find((category) => category.name === activeCategory || category.children?.some((child) => child.name === activeCategory));
+  const selectedNames = activeCategory === '全部'
+    ? null
+    : activeParent?.name === activeCategory
+      ? [activeParent.name, ...(activeParent.children || []).map((child) => child.name)]
+      : [activeCategory];
+  const filtered = selectedNames ? services.filter((service) => selectedNames.includes(service.category)) : services;
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -501,17 +507,49 @@ export default function ServiceMallPage() {
         <View style={{ width: '28px' }} />
       </View>
 
-      <ScrollView scrollX style={{ whiteSpace: 'nowrap', padding: `0 ${spacing.lg}px`, marginBottom: `${spacing.sm}px` }}>
-        {categories.map((cat) => (
-          <View key={cat} onClick={() => setActiveCategory(cat)} style={{
-            display: 'inline-block', padding: '8px 16px', borderRadius: `${radius.full}px`, marginRight: '8px',
-            border: `1.5px solid ${activeCategory === cat ? colors.primary : colors.border}`,
-            backgroundColor: activeCategory === cat ? colors.primary : '#fff',
+      <View style={{ margin: `${spacing.md}px ${spacing.lg}px ${spacing.sm}px`, padding: `${spacing.md}px`, borderRadius: `${radius.xl}px`, backgroundColor: '#fff', boxShadow: shadow.sm }}>
+        <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
+          <Text style={{ fontSize: '15px', color: colors.textPrimary, fontWeight: 700 }}>服务分类</Text>
+          <Text style={{ fontSize: '12px', color: colors.textMuted }}>选择后查看对应服务</Text>
+        </View>
+        <View style={{ display: 'flex', flexWrap: 'wrap', gap: `${spacing.sm}px` }}>
+          <View onClick={() => setActiveCategory('全部')} style={{
+            width: '100%', padding: '10px 12px', borderRadius: `${radius.md}px`, textAlign: 'center',
+            border: `1px solid ${activeCategory === '全部' ? colors.primary : colors.border}`,
+            backgroundColor: activeCategory === '全部' ? colors.primary : colors.background,
           }}>
-            <Text style={{ fontSize: '13px', color: activeCategory === cat ? '#fff' : colors.textSecondary, fontWeight: activeCategory === cat ? 700 : 500 }}>{cat}</Text>
+            <Text style={{ fontSize: '14px', color: activeCategory === '全部' ? '#fff' : colors.textPrimary, fontWeight: 700 }}>全部服务</Text>
           </View>
-        ))}
-      </ScrollView>
+          {categoryTree.map((category) => {
+            const selected = activeParent?.id === category.id && activeCategory !== '全部';
+            return (
+              <View key={category.id} onClick={() => setActiveCategory(category.name)} style={{
+                width: `calc(50% - ${spacing.xs}px)`, boxSizing: 'border-box', padding: '11px 8px', borderRadius: `${radius.md}px`, textAlign: 'center',
+                border: `1px solid ${selected ? colors.primary : colors.border}`,
+                backgroundColor: selected ? '#E8F5EF' : '#fff',
+              }}>
+                <Text style={{ fontSize: '14px', color: selected ? colors.primary : colors.textPrimary, fontWeight: selected ? 700 : 600 }}>{category.name}</Text>
+                <Text style={{ display: 'block', fontSize: '11px', color: colors.textMuted, marginTop: '3px' }}>{category.totalProductCount ?? category.productCount ?? 0} 项服务</Text>
+              </View>
+            );
+          })}
+        </View>
+        {!!activeParent?.children?.length && activeCategory !== '全部' && (
+          <View style={{ marginTop: `${spacing.md}px`, paddingTop: `${spacing.sm}px`, borderTop: `1px solid ${colors.border}` }}>
+            <Text style={{ display: 'block', fontSize: '12px', color: colors.textMuted, marginBottom: `${spacing.sm}px` }}>{activeParent.name} · 细分类型</Text>
+            <View style={{ display: 'flex', flexWrap: 'wrap', gap: `${spacing.sm}px` }}>
+              <View onClick={() => setActiveCategory(activeParent.name)} style={{ padding: '7px 12px', borderRadius: `${radius.full}px`, backgroundColor: activeCategory === activeParent.name ? colors.primary : colors.background }}>
+                <Text style={{ fontSize: '13px', color: activeCategory === activeParent.name ? '#fff' : colors.textSecondary }}>全部</Text>
+              </View>
+              {activeParent.children.map((child) => (
+                <View key={child.id} onClick={() => setActiveCategory(child.name)} style={{ padding: '7px 12px', borderRadius: `${radius.full}px`, backgroundColor: activeCategory === child.name ? colors.primary : colors.background }}>
+                  <Text style={{ fontSize: '13px', color: activeCategory === child.name ? '#fff' : colors.textSecondary }}>{child.name}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+      </View>
 
       <View style={{ padding: `0 ${spacing.lg}px`, paddingBottom: `${spacing.xxl}px` }}>
         {loading ? (

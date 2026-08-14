@@ -1369,7 +1369,9 @@ const updateProductCategory = async (req, res) => {
     if (!name?.trim()) return res.status(400).json({ success: false, message: '分类名称不能为空' });
     const duplicate = await ProductCategory.findOne({ name: name.trim(), _id: { $ne: category._id } });
     if (duplicate) return res.status(400).json({ success: false, message: '该分类名称已存在' });
+    const previousName = category.name;
     category.name = name.trim();
+    if (previousName !== category.name) await Product.updateMany({ category: previousName }, { $set: { category: category.name } });
   }
   if (parent !== undefined) {
     if (!parent) category.parent = null;
