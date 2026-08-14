@@ -47,7 +47,8 @@ const config = {
       // 只做 alias 对齐，不做 chunk 拆分——chunk 拆分会打乱 Taro 内置的
       // commonChunks 加载顺序，引发另一个运行时错误，得不偿失。
       const taroReactDir = path.dirname(require.resolve('@tarojs/react/package.json'));
-      chain.resolve.alias.set('react', path.resolve(taroReactDir, 'node_modules/react'));
+      const reactDir = path.dirname(require.resolve('react/package.json'));
+      chain.resolve.alias.set('react', reactDir);
     },
   },
   h5: {
