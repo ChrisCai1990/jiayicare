@@ -368,7 +368,7 @@ export default function AnnualMgmtPlanPage({ patientMode = false }) {
           const baseKey = entry.key.startsWith('lifestyle_') ? 'lifestyle' : entry.key
           if (MODULE_DEFS[baseKey]?.multi) {
             merged[entry.key] = { records: [{
-              items: node.content || '', content: node.content || '', time: node.time || '',
+              items: node.title || node.content || '', content: node.content || '', time: node.time || '',
               frequency: node.frequency || '', notes: node.notes || '',
             }] }
           } else {

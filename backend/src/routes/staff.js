@@ -5935,8 +5935,15 @@ router.post('/patients/:id/ai-annual-plan', staffAuth, async (req, res) => {
     const allowedKeys = (PLAN_TYPE_MODULES[planType] || GENERATABLE).filter(k => GENERATABLE.includes(k));
 
     const { chat } = require('../utils/ai');
+    const { nextAnnualCheckupDate, hepatitisBAllNegative, conciseTitle } = require('../utils/annualPlanGeneration');
     const s = ais.sections;
     const year = new Date().getFullYear();
+
+    const reports = await MedicalReport.find({ user: user._id, audit_status: 'audited' })
+      .select('checkDate reportItems.name reportItems.value reportItems.examDate')
+      .sort({ checkDate: -1, createdAt: -1 }).lean();
+    const suggestedCheckupDate = nextAnnualCheckupDate(reports);
+    const allHepatitisBMarkersNegative = hepatitisBAllNegative(reports);
 
     const medPriorityText = (s.medical_priority?.items || [])
       .map(i => `【${i.urgency === 'high' ? '高' : i.urgency === 'medium' ? '中' : '低'}】${i.name}：${i.current}，建议${i.action}，科室：${i.department}`)
@@ -5969,6 +5976,10 @@ ${missingCheckups}
 
 【会员慢病标签】${user.chronicDiseases?.join('、') || '无'}
 
+【疫苗判断】乙肝三系是否五项全阴：${allHepatitisBMarkersNegative ? '是，必须建议接种乙肝疫苗' : '否或资料不完整，不自动判定'}；流感疫苗、肺炎疫苗符合年龄、慢病等接种条件时应建议接种。
+
+【年度体检计划日期】${suggestedCheckupDate || '无可靠的上次体检日期，请给出建议并由健康顾问确认'}${suggestedCheckupDate ? '（按上次体检后11个月，即满一年提前1个月自动计算）' : ''}
+
 【本次服务目标（健康顾问填写，方案要朝这个方向靠）】
 ${notes ? notes : '（未填写目标，按会员情况常规定制）'}
 
@@ -5978,7 +5989,7 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
 请严格按以下JSON格式输出，仅输出JSON：
 {
   "templateNodes": [
-    { "index": 1, "content": "对应Admin模板第1个具体方案的个性化安排", "time": "计划时间或周期", "frequency": "执行频次", "notes": "注意事项" }
+    { "index": 1, "title": "简单明确的行动名称", "content": "对应Admin模板第1个具体方案的个性化安排", "time": "计划时间或周期", "frequency": "执行频次", "notes": "注意事项" }
   ],
   "medical_treatment": [
     { "reason": "就医原因", "department": "就诊科室", "visit_time": "${year}-07-15", "notes": "注意事项（如带齐历次体检报告）" }
@@ -5994,10 +6005,10 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
     { "items": "监测项目", "frequency": "每日1次", "time": "每天早晨", "notes": "注意事项" }
   ],
   "lifestyle": { "focus": "干预重点（饮食、运动、睡眠等）", "time": "${year}年全年" },
-  "annual_checkup": { "focus": "重点关注项目", "date": "${year + 1}-06-01", "escort": false }
+  "annual_checkup": { "focus": "重点关注项目", "date": "${suggestedCheckupDate || `${year + 1}-06-01`}", "escort": false }
 }
 
-注意：templateNodes必须与Admin模板“具体方案”逐项对应，index从1开始，不得漏项、合并或自行增加；medical_treatment仅填高优先级就医需求；specialist_collab有会诊需求才填；monitoring根据慢病标签确定项目；无相关内容用空数组。`;
+注意：所有展示为项目名称的字段必须简单明确，只写“要做什么”，不得把原因、剂量、操作细节或注意事项塞进名称；items、name和templateNodes.title不超过20个汉字，详细内容分别写入reason/content/notes。templateNodes必须与Admin模板“具体方案”逐项对应，index从1开始，不得漏项、合并或自行增加；medical_treatment仅填高优先级就医需求；specialist_collab有会诊需求才填；monitoring根据慢病标签确定项目；乙肝三系五项全阴时必须生成乙肝疫苗记录，流感和肺炎疫苗符合条件时生成对应记录；无相关内容用空数组。`;
 
     const text = await chat([{ role: 'user', content: prompt }], { maxTokens: 2000 });
 
@@ -6012,11 +6023,31 @@ ${selectedTemplate ? `${selectedTemplate.name}；${selectedTemplate.content?.pla
     const result = {};
     ['medical_treatment', 'specialist_collab', 'abnormal_followup', 'vaccine', 'monitoring'].forEach(key => {
       if (!allowedKeys.includes(key)) return;
-      result[key] = { records: Array.isArray(raw[key]) ? raw[key] : [] };
+      const records = Array.isArray(raw[key]) ? raw[key] : [];
+      result[key] = { records: records.map(record => ({
+        ...record,
+        ...(record.items ? { items: conciseTitle(record.items) } : {}),
+        ...(record.name ? { name: conciseTitle(record.name) } : {}),
+      })) };
     });
     if (allowedKeys.includes('lifestyle') && raw.lifestyle) result.lifestyle = { enabled: true, ...raw.lifestyle };
     if (allowedKeys.includes('annual_checkup') && raw.annual_checkup) result.annual_checkup = { enabled: true, ...raw.annual_checkup };
-    result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes : [];
+    result.templateNodes = Array.isArray(raw.templateNodes) ? raw.templateNodes.map(node => ({
+      ...node,
+      title: conciseTitle(node.title || node.content),
+    })) : [];
+
+    if (allowedKeys.includes('annual_checkup') && suggestedCheckupDate) {
+      result.annual_checkup = { ...(result.annual_checkup || { enabled: true }), date: suggestedCheckupDate };
+    }
+
+    if (allowedKeys.includes('vaccine') && allHepatitisBMarkersNegative) {
+      const vaccineRecords = result.vaccine?.records || [];
+      if (!vaccineRecords.some(record => /乙肝/.test(record.name || ''))) {
+        vaccineRecords.unshift({ name: '接种乙肝疫苗', time: '', reason: '乙肝三系五项全阴，建议按免疫程序接种' });
+      }
+      result.vaccine = { records: vaccineRecords };
+    }
 
     res.json({ success: true, data: result, template: selectedTemplate ? { _id: selectedTemplate._id, name: selectedTemplate.name } : null });
   } catch (err) {
