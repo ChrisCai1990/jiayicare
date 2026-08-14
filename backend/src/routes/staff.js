@@ -60,6 +60,14 @@ const Medication        = require('../models/Medication');
 const Supplement        = require('../models/Supplement');
 const UserScreeningItem = require('../models/UserScreeningItem');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
+const {
+  PEDIATRIC_BODY_COMPOSITION_PROMPT,
+  isPediatricAge,
+  pediatricBodyCompositionKind,
+  validPediatricBodyCompositionItem,
+  sanitizePediatricBodyCompositionPage,
+  mergePediatricBodyCompositionRetry,
+} = require('../utils/pediatricBodyComposition');
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
@@ -8471,7 +8479,9 @@ async function forceBodyCompositionClassification(items) {
   while (root?.parent && byId.has(String(root.parent))) root = byId.get(String(root.parent));
   const screeningKey = `${String(root?._id || target._id)}|${parent.name}|${target.name}`;
   return (items || []).map(item => {
-    const kind = /人体成分|身体成分/.test(str(item.sourceSection)) ? bodyCompositionKind(item.name) : '';
+    const kind = /人体成分|身体成分/.test(str(item.sourceSection))
+      ? (bodyCompositionKind(item.name) || pediatricBodyCompositionKind(item.name))
+      : '';
     if (!kind) return item;
     return {
       ...item,
@@ -8709,8 +8719,14 @@ async function syncScreeningItems(userId, reportId, items) {
 // 将已审核报告中的四项身体成分写入统一历史。体成分体重保存在身体成分对象内，不覆盖一般检查体重。
 async function syncBodyCompositionFromReport(report) {
   if (!report?.user || !Array.isArray(report.reportItems)) return;
+  const reportUser = await User.findById(report.user).select('age').lean();
+  const pediatric = isPediatricAge(reportUser?.age);
   const aliases = [
     { key: 'weight', referenceKey: 'weightReference', pattern: /^体重$|^weight$/i },
+    { key: 'calcium', referenceKey: 'calciumReference', pattern: /^钙质$|^钙量$|^calcium$/i },
+    { key: 'protein', referenceKey: 'proteinReference', pattern: /^蛋白质$|^protein$/i },
+    { key: 'fatMass', referenceKey: 'fatMassReference', pattern: /^脂肪量$|^体脂肪量$|^body\s*fat\s*mass$/i },
+    { key: 'muscleMass', referenceKey: 'muscleMassReference', pattern: /^肌肉量$|^muscle\s*mass$/i },
     { key: 'skelMuscle', referenceKey: 'skelMuscleReference', pattern: /骨骼肌(?:量)?|skeletal\s*muscle/i },
     { key: 'bodyFatRate', referenceKey: 'bodyFatRateReference', pattern: /体脂(?:肪)?率|\bPBF\b/i },
     { key: 'visceralFat', referenceKey: 'visceralFatReference', pattern: /内脏脂肪(?:等级|指数|面积)?|\bVFA\b/i },
@@ -8726,7 +8742,7 @@ async function syncBodyCompositionFromReport(report) {
   for (const def of aliases) {
     const item = report.reportItems.find(it => def.pattern.test(String(it.name || ''))
       && (def.key !== 'weight' || /人体成分|身体成分|body\s*composition/i.test(String(it.sourceSection || '')))
-      && validBodyCompositionItem(it));
+      && (pediatric ? validPediatricBodyCompositionItem(it) : validBodyCompositionItem(it)));
     if (!item || String(item.value ?? '').trim() === '') continue;
     entry[def.key] = String(item.value).trim();
     entry[def.referenceKey] = String(item.referenceRange || '').trim();
@@ -8824,6 +8840,11 @@ async function runReportParse(reportId) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
+  const reportUser = await User.findById(report.user).select('age').lean();
+  const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
+  const bodyCompositionPrompt = usePediatricBodyComposition
+    ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
+    : BODY_COMPOSITION_RETRY_PROMPT;
   const shaoyifuTemplate = require('../utils/shaoyifuReportTemplate');
   const useShaoyifuTemplate = shaoyifuTemplate.isShaoyifuReport(report);
   const zheyiTemplate = require('../utils/zheyiReportTemplate');
@@ -8879,7 +8900,7 @@ async function runReportParse(reportId) {
               for (let attempt = 0; attempt < 2; attempt++) {
                 try {
                   const firstPassPrompt = report.type === 'body_comp'
-                    ? BODY_COMPOSITION_RETRY_PROMPT
+                    ? bodyCompositionPrompt
                     : REPORT_PARSE_PROMPT
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
                       + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
@@ -9166,14 +9187,16 @@ async function runReportParse(reportId) {
           const oldPageItems = allItems.filter(it => it._page === pageNum);
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
-          const text = await parseImage(img, BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
+          const text = await parseImage(img, bodyCompositionPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
-          const oldQuality = bodyCompositionQuality(oldPageItems);
-          const newQuality = bodyCompositionEvidenceQuality(retryItems);
-          let mergedPageItems = mergeBodyCompositionRetry(oldPageItems, retryItems);
-          try {
+          const oldQuality = usePediatricBodyComposition ? oldPageItems.filter(validPediatricBodyCompositionItem).length : bodyCompositionQuality(oldPageItems);
+          const newQuality = usePediatricBodyComposition ? retryItems.filter(item => validPediatricBodyCompositionItem(item, true)).length : bodyCompositionEvidenceQuality(retryItems);
+          let mergedPageItems = usePediatricBodyComposition
+            ? mergePediatricBodyCompositionRetry(oldPageItems, retryItems)
+            : mergeBodyCompositionRetry(oldPageItems, retryItems);
+          if (!usePediatricBodyComposition) try {
             const chartText = await parseImage(img, BODY_COMPOSITION_CHART_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 1200 });
             const chartPage = safeParseJSON(chartText);
             if (chartPage && Array.isArray(chartPage.items)) {
@@ -9182,7 +9205,7 @@ async function runReportParse(reportId) {
           } catch (chartError) {
             console.log(`[parse-ai] 页${pageNum}人体成分柱状图专项识别异常: ${chartError.message}`);
           }
-          const acceptedQuality = bodyCompositionQuality(mergedPageItems);
+          const acceptedQuality = usePediatricBodyComposition ? mergedPageItems.filter(validPediatricBodyCompositionItem).length : bodyCompositionQuality(mergedPageItems);
           if (acceptedQuality > 0) {
             allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPageItems);
             console.log(`[parse-ai] 页${pageNum}人体成分专项复核生效：接受 ${acceptedQuality} 项，其中原始证据通过 ${newQuality} 项（原首轮有效 ${oldQuality} 项）`);
@@ -9195,7 +9218,12 @@ async function runReportParse(reportId) {
         }
       }
 
-      allItems = sanitizeBodyCompositionItems(allItems);
+      allItems = usePediatricBodyComposition
+        ? [...new Set(allItems.map(item => item._page || 0))].flatMap(page => {
+            const pageItems = allItems.filter(item => (item._page || 0) === page);
+            return bodyCompCandidatePages.has(page) ? sanitizePediatricBodyCompositionPage(pageItems, true) : pageItems;
+          })
+        : sanitizeBodyCompositionItems(allItems);
       if (useShaoyifuTemplate) allItems = shaoyifuTemplate.normalizeShaoyifuItems(allItems);
       if (useZheyiTemplate) allItems = zheyiTemplate.normalizeZheyiItems(allItems);
       // 尿/便常规保留报告中的逐行检查项目，不再聚合成一条摘要。
@@ -9251,7 +9279,7 @@ async function runReportParse(reportId) {
     let lastRawText = '';
     for (let imageIndex = 0; imageIndex < bufs.length; imageIndex++) {
       try {
-        const firstPassPrompt = report.type === 'body_comp' ? BODY_COMPOSITION_RETRY_PROMPT : REPORT_PARSE_PROMPT;
+        const firstPassPrompt = report.type === 'body_comp' ? bodyCompositionPrompt : REPORT_PARSE_PROMPT;
         const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : 'qwen-vl-plus';
         lastRawText = await parseImage(bufs[imageIndex].toString('base64'), firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: 4096 });
         const parsedPage = safeParseJSON(lastRawText);
@@ -9312,14 +9340,16 @@ async function runReportParse(reportId) {
         }
         if (isBodyCompPage && needsBodyCompositionRetry(pageItems, true)) {
           try {
-            const retryText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_RETRY_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
+            const retryText = await parseImage(bufs[imageIndex].toString('base64'), bodyCompositionPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 2048 });
             const retryPage = safeParseJSON(retryText);
             if (retryPage && !shouldSkipParsedReportPage(retryPage) && Array.isArray(retryPage.items)) {
               const retryItems = tagReportPageItems(retryPage.items, imageIndex + 1);
-              const oldQuality = bodyCompositionQuality(pageItems);
-              const newQuality = bodyCompositionEvidenceQuality(retryItems);
-              const mergedPageItems = mergeBodyCompositionRetry(pageItems, retryItems);
-              const acceptedQuality = bodyCompositionQuality(mergedPageItems);
+              const oldQuality = usePediatricBodyComposition ? pageItems.filter(validPediatricBodyCompositionItem).length : bodyCompositionQuality(pageItems);
+              const newQuality = usePediatricBodyComposition ? retryItems.filter(item => validPediatricBodyCompositionItem(item, true)).length : bodyCompositionEvidenceQuality(retryItems);
+              const mergedPageItems = usePediatricBodyComposition
+                ? mergePediatricBodyCompositionRetry(pageItems, retryItems)
+                : mergeBodyCompositionRetry(pageItems, retryItems);
+              const acceptedQuality = usePediatricBodyComposition ? mergedPageItems.filter(validPediatricBodyCompositionItem).length : bodyCompositionQuality(mergedPageItems);
               if (acceptedQuality > 0) {
                 pageItems = mergedPageItems;
                 console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项复核生效：接受 ${acceptedQuality} 项，其中原始证据通过 ${newQuality} 项（原首轮有效 ${oldQuality} 项）`);
@@ -9332,7 +9362,7 @@ async function runReportParse(reportId) {
             console.log(`[parse-ai] 图片${imageIndex + 1}人体成分专项重试异常: ${e.message}`);
           }
         }
-        if (isBodyCompPage) {
+        if (isBodyCompPage && !usePediatricBodyComposition) {
           try {
             const chartText = await parseImage(bufs[imageIndex].toString('base64'), BODY_COMPOSITION_CHART_PROMPT, { isUrl: false, model: 'qwen-vl-max', maxTokens: 1200 });
             const chartPage = safeParseJSON(chartText);
@@ -9344,7 +9374,9 @@ async function runReportParse(reportId) {
             console.log(`[parse-ai] 图片${imageIndex + 1}人体成分柱状图专项识别异常: ${chartError.message}`);
           }
         }
-        imageItems = imageItems.concat(sanitizeBodyCompositionPage(pageItems));
+        imageItems = imageItems.concat(isBodyCompPage && usePediatricBodyComposition
+          ? sanitizePediatricBodyCompositionPage(pageItems, true)
+          : sanitizeBodyCompositionPage(pageItems));
         if (parsedPage.summary) imageSummaries.push(parsedPage.summary);
         if (!imageInstitution && parsedPage.institution && !isSuspiciousInstitution(parsedPage.institution)) imageInstitution = parsedPage.institution;
         if (!imageCheckDate && parsedPage.checkDate) imageCheckDate = parsedPage.checkDate;
@@ -9352,7 +9384,7 @@ async function runReportParse(reportId) {
         console.log(`[parse-ai] 图片${imageIndex + 1}解析异常 ${reportId}: ${e.message}`);
       }
     }
-    imageItems = sanitizeBodyCompositionItems(imageItems);
+    if (!usePediatricBodyComposition) imageItems = sanitizeBodyCompositionItems(imageItems);
     // 尿/便常规逐项保留；不得在审核前重新聚合。
     sortReportItemsBySource(imageItems);
     const imageWithoutNoise = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(
@@ -9395,6 +9427,8 @@ async function runReportPageParse(reportId, pageNum) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
+  const reportUser = await User.findById(report.user).select('age').lean();
+  const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const isPdf = isPdfReport(report);
   const isImage = report.mimeType?.startsWith('image/') || (Array.isArray(report.fileUrls) && report.fileUrls.length > 0);
   if (!isPdf && !isImage) throw new Error('仅PDF或图片报告支持单页补提');
@@ -9425,7 +9459,10 @@ async function runReportPageParse(reportId, pageNum) {
     for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const regionHint = images.length > 1 ? `这是第${pageNum}页的${regionIndex === 0 ? '上半部分' : '下半部分'}，边界有重叠；` : '';
-      const raw = await parseImage(images[regionIndex], `${REPORT_PARSE_PROMPT}${templatePrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行提取全部实际结果，不得跳过任何栏目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
+      const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
+        ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
+        : REPORT_PARSE_PROMPT;
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行提取全部实际结果，不得跳过任何栏目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
       parsed = safeParseJSON(raw);
       if (parsed?.items?.length) break;
     } catch (error) {
@@ -9447,6 +9484,9 @@ async function runReportPageParse(reportId, pageNum) {
     parsedItems = mergeCoverageAuditItems(parsedItems, regionItems);
   }
   let newPage = tagReportPageItems(parsedItems, pageNum);
+  if (usePediatricBodyComposition && isBodyCompositionPage({}, newPage, report.type)) {
+    newPage = sanitizePediatricBodyCompositionPage(newPage, true);
+  }
   if (useShaoyifuTemplate) newPage = shaoyifuTemplate.normalizeShaoyifuItems(newPage);
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
