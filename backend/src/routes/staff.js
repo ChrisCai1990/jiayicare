@@ -7076,7 +7076,7 @@ const TODO_REVIEW_ROLE = {
   bp_alert_review:      'familyDoctor',
   symptom_review:       'familyDoctor',
   symptom_verify:       'healthManager',
-  transfer_human:       'healthManager',
+  transfer_human:       'healthPlanner',
   supply_plan_review:   'healthManager', // 定期配药/配营养素计划到期，健管专员确认安排
   service_proposal_review: 'healthPlanner',
 };
@@ -7558,7 +7558,7 @@ router.get('/ai-todos', staffAuth, async (req, res) => {
       });
     }
 
-    // ── 健管专员：AI聊天转人工待办（会员在AI健康规划师里点了"转人工"）──
+    // ── 健康规划师：AI聊天转人工待办（会员在小嘉里点了"转人工"）──
     if (can('transfer_human')) {
       const transferFilter = { transferred: true, resolved: false, ...(myPatientIds ? { user: { $in: myPatientIds } } : {}) };
       const pendingTransfers = await ChatLog.find(transferFilter)
@@ -7626,6 +7626,15 @@ router.patch('/service-proposals/:id/review', staffAuth, async (req, res) => {
 // PATCH /api/staff/chat-transfers/:id/resolve — 标记AI聊天转人工待办为已处理（联系过会员后调用）
 router.patch('/chat-transfers/:id/resolve', staffAuth, async (req, res) => {
   try {
+    const pending = await ChatLog.findById(req.params.id).select('user transferred resolved');
+    if (!pending) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (req.staff.role !== 'superadmin') {
+      if (req.staff.role !== 'healthPlanner') {
+        return res.status(403).json({ success: false, message: '仅负责该会员的健康规划师可处理此转接' });
+      }
+      const patient = await User.findOne({ _id: pending.user, assignedHealthPlanner: req.staff._id }).select('_id').lean();
+      if (!patient) return res.status(403).json({ success: false, message: '该会员不属于您的服务范围' });
+    }
     const log = await ChatLog.findByIdAndUpdate(req.params.id, { resolved: true }, { new: true });
     if (!log) return res.status(404).json({ success: false, message: '记录不存在' });
     res.json({ success: true, data: log });

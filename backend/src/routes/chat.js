@@ -12,19 +12,22 @@ const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 const { isAiRecommendable, buildAiCatalogEntry, resolveProductPrices } = require('../utils/productAiProfile');
 const router = express.Router();
 
-const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康规划师。你的角色类似服务顾问：帮助会员梳理健康管理需求、明确阶段目标、介绍平台服务内容、规划服务步骤，并在需要时转接人工健康管理专员。
+const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康规划师。你的唯一职责是服务需求识别与服务导购：了解会员想解决什么问题，从平台已经上架的服务中推荐合适的服务，并在会员需要时转接其专属人工健康规划师。
 
 回答要求：
 1. 使用中文，语气温和专业
 2. 回答控制在200字以内，简洁精准
-3. 先询问会员希望改善的问题、期望目标、可投入时间和服务偏好，再给出健康管理需求清单与建议服务路径
+3. 只询问匹配服务所必需的少量信息，例如所在城市、服务类型、时间、预算和医院/科室偏好；信息足够后直接推荐平台已有服务，不制定需求清单、健康目标、服务步骤或个性化方案
 4. 可以介绍健康档案整理、体检信息整理、生活方式管理、健康提醒、复查提醒和就医协助，但不得把某项服务描述为医疗诊断或治疗
 5. 不提供疾病诊断、治疗方案、处方、线上复诊、检查开单、药品推荐、停换药或剂量调整，不解读症状来判断疾病
 6. 遇到医疗问题，简短说明超出服务范围，建议前往正规医疗机构；遇到胸痛、呼吸困难、意识障碍等紧急情况，提示立即拨打120
 7. 不捏造会员信息，不制造焦虑，不承诺疗效，不使用“治愈”“治疗”“保证改善”等表述
 8. 服务推荐必须说明推荐理由，由会员自主选择，不得诱导购买高价套餐
-9. 每次回答末尾加：「小嘉仅提供健康管理需求梳理与服务规划，不提供诊断、治疗或处方。」
-10. 只能介绍平台已经上线的能力。当前对话支持文字回复、语音播报和转人工，不支持把对话内容导出或下载为文件，不支持生成图文版/PDF，也不支持直接微信推送。不得承诺、暗示或规划这些未上线能力；会员询问时应如实说明暂不支持`;
+9. 会员需要专家时，只了解城市、医院/科室倾向、疾病方向和时间偏好，然后推荐平台的约诊服务；禁止生成或推荐具体专家姓名、职称、擅长领域、科研经历、号源和预约难度，除非这些信息来自本次请求提供的、可核验的平台结构化数据
+10. 会员需要体检时，只推荐平台已上架的体检咨询或预约服务；禁止自行组合检查项目、创造套餐名称、制定体检方案或根据健康资料判断应做哪些检查
+11. 不得使用“我为您制定/整理方案”“服务方案”“定制项目”等表述。需要进一步人工协助时，应说明可转接专属健康规划师，不能声称已经转接；只有系统返回转接成功后才能说已转接
+12. 每次回答末尾加：「小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。」
+13. 只能介绍平台已经上线的能力。当前对话支持文字回复、语音播报和转人工，不支持把对话内容导出或下载为文件，不支持生成图文版/PDF，也不支持直接微信推送。不得承诺、暗示或规划这些未上线能力；会员询问时应如实说明暂不支持`;
 
 const UNSUPPORTED_CAPABILITY_NOTICE = '当前对话暂不支持导出、下载、生成图文版或直接微信推送；您可以在本页面查看和使用语音播报。';
 
@@ -107,6 +110,33 @@ function detectIntent(text) {
   return 'knowledge';
 }
 
+async function buildVerifiedServiceReply(lastUserMsg) {
+  const asksForExpert = /(专家|医生|挂号|约诊)/.test(lastUserMsg);
+  const asksForCheckup = /(体检|健康检查)/.test(lastUserMsg);
+  if (!asksForExpert && !asksForCheckup) return null;
+
+  const servicePattern = asksForExpert
+    ? /(约诊|挂号|专家预约|就医协助)/
+    : /(体检|健康检查)/;
+  const product = await Product.findOne({ status: 'on', name: servicePattern })
+    .sort({ sortOrder: 1 })
+    .select('name subtitle')
+    .lean();
+  const disclaimer = '小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。';
+
+  if (asksForExpert) {
+    if (!product) {
+      return `我不能直接生成或推荐具体专家。目前没有查询到可核验的上架约诊服务；如您愿意，我可以为您转接专属健康规划师继续确认。\n\n${disclaimer}`;
+    }
+    return `您的需求适合平台已上架的「${product.name}」。请告诉我所在城市、医院或科室倾向、就诊方向和方便时间；后续由健康规划师协助匹配约诊资源。小嘉不会生成未经核验的专家姓名或号源。\n\n${disclaimer}`;
+  }
+
+  if (!product) {
+    return `目前没有查询到可核验的上架体检服务，我不能自行制定体检方案或组合检查项目。如您愿意，我可以为您转接专属健康规划师继续确认。\n\n${disclaimer}`;
+  }
+  return `您的需求适合平台已上架的「${product.name}」。我可以继续了解城市、时间和预算偏好，帮助您确认这项服务；具体检查项目由服务内容或专业人员确认，小嘉不自行制定体检方案。\n\n${disclaimer}`;
+}
+
 async function maybeCreateServiceProposal({ userId, messages, lastUserMsg }) {
   const userTurns = messages.filter(message => message.role === 'user');
   const ready = userTurns.length >= 2 && /(方案|推荐|适合|购买|下单|安排|需要什么服务|怎么做)/.test(lastUserMsg);
@@ -126,7 +156,7 @@ async function maybeCreateServiceProposal({ userId, messages, lastUserMsg }) {
     { role: 'user', content: `对话：\n${messages.slice(-10).map(m => `${m.role === 'user' ? '客户' : '规划师'}：${m.content}`).join('\n')}\n\n当前允许 AI 推荐的实时服务目录（JSON）：\n${JSON.stringify(catalog)}` },
   ], {
     jsonMode: true, maxTokens: 1000,
-    systemPrompt: '你是健康管理服务方案草稿生成器。只能推荐目录中给定的产品，必须遵守适用/不适用、必问、地域、不可承诺和转人工规则；信息不足时不要推荐。不得诊断、治疗、开药或承诺资源和效果。通常推荐1项，最多2项。输出JSON：customerNeed字符串、proposalText字符串（面向客户，300字内）、confidence数值0-1、recommendations数组，每项含productId、reason。',
+    systemPrompt: '你是服务匹配助手。只能推荐目录中给定的产品，必须遵守适用/不适用、必问、地域、不可承诺和转人工规则；信息不足时不要推荐。不得制定方案、组合检查项目、创造套餐、推荐具体专家、诊断、治疗、开药或承诺资源和效果。通常推荐1项，最多2项。proposalText只概括客户原始需求和选择这些现有服务的理由，不得使用“方案”“定制”等词。输出JSON：customerNeed字符串、proposalText字符串（面向客户，200字内）、confidence数值0-1、recommendations数组，每项含productId、reason。',
   });
   const parsed = JSON.parse(raw);
   const productMap = new Map(products.map(product => [String(product._id), product]));
@@ -183,7 +213,7 @@ router.post('/', auth, async (req, res) => {
     return res.status(503).json({ success: false, message: 'AI服务暂未开通，请联系管理员配置。' });
   }
 
-  // AI健康规划师仅承担需求梳理与服务规划；是否配有专业团队都不改变非医疗边界。
+  // AI健康规划师仅承担服务需求识别与服务推荐；是否配有专业团队都不改变非医疗边界。
   const me = await User.findById(userId).select('assignedFamilyDoctor aiHealthSummary aiRiskAssessment');
   const hasDoctor = !!me?.assignedFamilyDoctor;
 
@@ -192,16 +222,23 @@ router.post('/', auth, async (req, res) => {
     const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
     const todayCount = await ChatLog.countDocuments({ user: userId, createdAt: { $gte: todayStart } });
     if (todayCount >= DAILY_LIMIT_NO_DOCTOR) {
-      return res.status(429).json({ success: false, message: `今日AI规划次数已达上限（${DAILY_LIMIT_NO_DOCTOR}次），请明天再来，或联系健康管理专员继续梳理需求` });
+      return res.status(429).json({ success: false, message: `今日AI服务咨询次数已达上限（${DAILY_LIMIT_NO_DOCTOR}次），请明天再来，或转接健康规划师继续处理` });
     }
   }
 
   // 意图识别
   const intent = detectIntent(lastUserMsg);
 
+  // 专家约诊和体检属于高风险幻觉场景：只引用数据库中实际上架的服务，不交给模型自由生成。
+  const verifiedServiceReply = await buildVerifiedServiceReply(lastUserMsg);
+  if (verifiedServiceReply) {
+    const log = await ChatLog.create({ user: userId, intent: 'service', userMessage: lastUserMsg, aiReply: verifiedServiceReply });
+    return res.json({ success: true, data: { content: verifiedServiceReply, intent: 'service', logId: log._id } });
+  }
+
   // 超出范围直接返回
   if (intent === 'out_of_scope') {
-    const reply = '这个问题属于医疗诊疗范畴，小嘉不能提供判断或建议。请前往正规医疗机构咨询执业医师；如情况紧急，请立即拨打120。小嘉仅提供健康管理需求梳理与服务规划，不提供诊断、治疗或处方。';
+    const reply = '这个问题属于医疗诊疗范畴，小嘉不能提供判断或建议。请前往正规医疗机构咨询执业医师；如情况紧急，请立即拨打120。小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。';
     const log = await ChatLog.create({ user: userId, intent, userMessage: lastUserMsg, aiReply: reply });
     return res.json({ success: true, data: { content: reply, intent, logId: log._id } });
   }
@@ -221,7 +258,7 @@ router.post('/', auth, async (req, res) => {
     userInfo.medications && `用药：${userInfo.medications}`,
   ].filter(Boolean).join('，');
 
-  const scopeNotice = `\n【角色边界】无论会员是否配有专业服务团队，你都只能进行健康管理需求梳理、服务规划与平台服务介绍。健康资料只能用于判断可能需要哪类非医疗健康管理支持，不能用于疾病判断、诊疗建议或用药指导。`;
+  const scopeNotice = `\n【角色边界】无论会员是否配有专业服务团队，你都只能识别服务需求、推荐平台已有服务并协助转接专属健康规划师。不得制定任何健康、体检、诊疗或服务方案。健康资料只能用于匹配服务类别，不能用于疾病判断、诊疗建议、用药指导或检查项目推荐。`;
 
   const systemPrompt = [
     BASE_SYSTEM,
@@ -261,7 +298,7 @@ router.post('/', auth, async (req, res) => {
       catch (proposalError) { console.error('Service proposal draft error:', proposalError.message); }
     }
 
-    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已为您整理服务方案，正在由专属健康规划师审核。` : replyText, intent, logId: log._id, proposalPending: !!proposal } });
+    res.json({ success: true, data: { content: proposal ? `${replyText}\n\n我已把您的服务需求和可选服务提交给专属健康规划师确认。` : replyText, intent, logId: log._id, proposalPending: !!proposal } });
   } catch (err) {
     console.error('Chat error:', err.message);
     res.status(500).json({ success: false, message: `AI响应失败，请稍后重试。（${err.message}）` });
@@ -386,11 +423,15 @@ router.post('/nutrition', auth, async (req, res) => {
   }
 });
 
-// POST /api/chat/transfer — 转人工，落库为待办，健管专员在 ai-todos 待审核列表可见（transfer_human 场景），
-// 同时把最近几轮AI聊天摘要注入到健管的人工对话（Message，manager频道），避免会员需要重新描述一遍问题
+// POST /api/chat/transfer — 转人工，落库为待办，专属健康规划师在 ai-todos 列表可见（transfer_human 场景），
+// 同时把最近几轮AI聊天摘要注入人工对话（Message，manager频道），避免会员重新描述问题
 router.post('/transfer', auth, async (req, res) => {
   const { lastMessage = '' } = req.body;
   try {
+    const planner = await resolveHealthPlanner(req.user._id);
+    if (!planner) {
+      return res.status(409).json({ success: false, message: '暂未匹配到可接单的健康规划师，请稍后重试或联系客服。' });
+    }
     await ChatLog.create({
       user: req.user._id,
       role: 'transfer',
@@ -414,16 +455,14 @@ router.post('/transfer', auth, async (req, res) => {
       title: 'AI对话转人工',
       content: historyLines
         ? `会员从AI健康规划师转来，以下是此前需求梳理摘要：\n\n${historyLines}\n\n会员当前需求：${lastMessage}`
-        : `会员从AI健康规划师转来人工服务规划：${lastMessage}`,
+        : `会员从小嘉转来，请继续了解需求并推荐合适的平台服务：${lastMessage}`,
       conversationId: `${req.user._id}_manager`,
     });
 
-    const hasManager = !!(await User.findById(req.user._id).select('assignedHealthManager').lean())?.assignedHealthManager;
+    await User.findByIdAndUpdate(req.user._id, { assignedHealthPlanner: planner });
     res.json({
       success: true,
-      message: hasManager
-        ? '已通知健管专员，稍后将有专员与您联系。'
-        : '已记录您的咨询，客服会尽快为您安排专员对接。',
+      message: '已转接您的专属健康规划师。规划师可以看到本次对话内容，并将在工作台中继续处理。',
     });
   } catch (err) {
     console.error('Chat transfer error:', err.message);

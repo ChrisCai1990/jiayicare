@@ -141,14 +141,24 @@ export default function ChatScreen({ navigation, route }) {
   const transferToHuman = async () => {
     if (transferred) return;
     const lastMsg = [...messages].reverse().find(m => m.role === 'user')?.content || '';
-    try { await chatAPI.transfer(lastMsg); } catch {}
-    setTransferred(true);
-    setMessages(prev => [...prev, {
-      id: Date.now(), role: 'assistant',
-      content: '已通知健管专员，稍后将有专员与您联系。如紧急情况请直接拨打急救电话。',
-      roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
-      time: now(),
-    }]);
+    try {
+      const result = await chatAPI.transfer(lastMsg);
+      if (!result?.success) throw new Error(result?.message || '转接失败');
+      setTransferred(true);
+      setMessages(prev => [...prev, {
+        id: Date.now(), role: 'assistant',
+        content: result.message || '已转接您的专属健康规划师，对方可以看到本次对话内容。',
+        roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
+        time: now(),
+      }]);
+    } catch (error) {
+      setMessages(prev => [...prev, {
+        id: Date.now(), role: 'assistant',
+        content: error?.message || '暂时无法完成转接，请稍后重试或联系客服。',
+        roleIcon: ASSISTANT.icon, roleColor: ASSISTANT.color, roleName: ASSISTANT.label,
+        time: now(),
+      }]);
+    }
   };
 
   const send = async (text) => {
