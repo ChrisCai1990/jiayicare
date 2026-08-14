@@ -6184,15 +6184,40 @@ export default function PatientDetailPage() {
         {/* 健康趋势图 */}
         {(() => {
           const srcRecords = trendRecords ?? recentRecords ?? [];
-          const TYPE_COLORS = { bloodPressure: '#DC3545', bloodSugar: '#D97706', weight: '#0077B6', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309' };
+          const TYPE_COLORS = {
+            bloodPressureSystolic: '#DC3545',
+            bloodPressureDiastolic: '#0077B6',
+            bloodSugar: '#D97706', weight: '#0077B6', heartRate: '#7C3AED', sleep: '#059669', mood: '#B45309',
+          };
+          const TREND_TYPE_LABELS = {
+            ...RECORD_TYPE_LABEL,
+            bloodPressureSystolic: '血压（收缩压）',
+            bloodPressureDiastolic: '血压（舒张压）',
+          };
 
           const buildCharts = (records) => {
             const byType = {};
             records.forEach(r => {
-              if (!byType[r.type]) byType[r.type] = [];
               const dateStr = new Date(r.recordedAt).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' });
-              let y = r.type === 'bloodPressure' ? (r.extra?.sys || 0) : parseFloat(r.value) || 0;
-              if (y > 0) byType[r.type].push({ x: dateStr, y });
+              if (r.type === 'bloodPressure') {
+                const [valueSys, valueDia] = String(r.value || '').split('/').map(Number);
+                const systolic = Number(r.extra?.sys ?? r.sys ?? valueSys);
+                const diastolic = Number(r.extra?.dia ?? r.dia ?? valueDia);
+                if (systolic > 0) {
+                  if (!byType.bloodPressureSystolic) byType.bloodPressureSystolic = [];
+                  byType.bloodPressureSystolic.push({ x: dateStr, y: systolic });
+                }
+                if (diastolic > 0) {
+                  if (!byType.bloodPressureDiastolic) byType.bloodPressureDiastolic = [];
+                  byType.bloodPressureDiastolic.push({ x: dateStr, y: diastolic });
+                }
+                return;
+              }
+              const y = parseFloat(r.value) || 0;
+              if (y > 0) {
+                if (!byType[r.type]) byType[r.type] = [];
+                byType[r.type].push({ x: dateStr, y });
+              }
             });
             return Object.entries(byType).filter(([, arr]) => arr.length >= 2).reverse();
           };
@@ -6269,7 +6294,7 @@ export default function PatientDetailPage() {
               ) : charts.length >= 1 ? (
                 <div id="trend-chart-wrap" style={{ padding: '12px 16px', overflowX: 'auto' }}>
                   {charts.map(([type, arr]) => (
-                    <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={RECORD_TYPE_LABEL[type] || type} />
+                    <MiniTrendChart key={type} data={[...arr].reverse()} color={TYPE_COLORS[type] || '#1E6B50'} label={TREND_TYPE_LABELS[type] || type} />
                   ))}
                 </div>
               ) : (
