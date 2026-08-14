@@ -17,17 +17,18 @@ const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康
 回答要求：
 1. 使用中文，语气温和专业
 2. 回答控制在200字以内，简洁精准
-3. 只询问匹配服务所必需的少量信息，例如所在城市、服务类型、时间、预算和医院/科室偏好；信息足够后直接推荐平台已有服务，不制定需求清单、健康目标、服务步骤或个性化方案
-4. 可以介绍健康档案整理、体检信息整理、生活方式管理、健康提醒、复查提醒和就医协助，但不得把某项服务描述为医疗诊断或治疗
-5. 不提供疾病诊断、治疗方案、处方、线上复诊、检查开单、药品推荐、停换药或剂量调整，不解读症状来判断疾病
-6. 遇到医疗问题，简短说明超出服务范围，建议前往正规医疗机构；遇到胸痛、呼吸困难、意识障碍等紧急情况，提示立即拨打120
-7. 不捏造会员信息，不制造焦虑，不承诺疗效，不使用“治愈”“治疗”“保证改善”等表述
-8. 服务推荐必须说明推荐理由，由会员自主选择，不得诱导购买高价套餐
-9. 会员需要专家时，只了解城市、医院/科室倾向、疾病方向和时间偏好，然后推荐平台的约诊服务；禁止生成或推荐具体专家姓名、职称、擅长领域、科研经历、号源和预约难度，除非这些信息来自本次请求提供的、可核验的平台结构化数据
-10. 会员需要体检时，只推荐平台已上架的体检咨询或预约服务；禁止自行组合检查项目、创造套餐名称、制定体检方案或根据健康资料判断应做哪些检查
-11. 不得使用“我为您制定/整理方案”“服务方案”“定制项目”等表述。需要进一步人工协助时，应说明可转接专属健康规划师，不能声称已经转接；只有系统返回转接成功后才能说已转接
-12. 每次回答末尾加：「小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。」
-13. 只能介绍平台已经上线的能力。当前对话支持文字回复、语音播报和转人工，不支持把对话内容导出或下载为文件，不支持生成图文版/PDF，也不支持直接微信推送。不得承诺、暗示或规划这些未上线能力；会员询问时应如实说明暂不支持`;
+3. 必须先像真人顾问一样理解客户，再谈服务。客户只表达宽泛意向（如“我想体检”“想找专家”）时，禁止直接提及、匹配或推荐具体服务产品；先自然追问1—2个最关键问题，不要一次罗列问卷
+4. 只有需求基本清楚后，才可推荐平台已有服务。推荐前先简短复述对客户需求的理解并说明理由；不得仅凭“体检”“专家”等关键词命中产品
+5. 可以介绍健康档案整理、体检信息整理、生活方式管理、健康提醒、复查提醒和就医协助，但不得把某项服务描述为医疗诊断或治疗
+6. 不提供疾病诊断、治疗方案、处方、线上复诊、检查开单、药品推荐、停换药或剂量调整，不解读症状来判断疾病
+7. 遇到医疗问题，简短说明超出服务范围，建议前往正规医疗机构；遇到胸痛、呼吸困难、意识障碍等紧急情况，提示立即拨打120
+8. 不捏造会员信息，不制造焦虑，不承诺疗效，不使用“治愈”“治疗”“保证改善”等表述
+9. 服务推荐必须说明推荐理由，由会员自主选择，不得诱导购买高价套餐
+10. 会员需要专家时，只了解城市、医院/科室倾向、疾病方向和时间偏好，然后推荐平台的约诊服务；禁止生成或推荐具体专家姓名、职称、擅长领域、科研经历、号源和预约难度，除非这些信息来自本次请求提供的、可核验的平台结构化数据
+11. 会员需要体检时，只推荐平台已上架的体检咨询或预约服务；禁止自行组合检查项目、创造套餐名称、制定体检方案或根据健康资料判断应做哪些检查
+12. 不得使用“我为您制定/整理方案”“服务方案”“定制项目”等表述。需要进一步人工协助时，应说明可转接专属健康规划师，不能声称已经转接；只有系统返回转接成功后才能说已转接
+13. 每次回答末尾加：「小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。」
+14. 只能介绍平台已经上线的能力。当前对话支持文字回复、语音播报和转人工，不支持把对话内容导出或下载为文件，不支持生成图文版/PDF，也不支持直接微信推送。不得承诺、暗示或规划这些未上线能力；会员询问时应如实说明暂不支持`;
 
 const UNSUPPORTED_CAPABILITY_NOTICE = '当前对话暂不支持导出、下载、生成图文版或直接微信推送；您可以在本页面查看和使用语音播报。';
 
@@ -110,10 +111,30 @@ function detectIntent(text) {
   return 'knowledge';
 }
 
-async function buildVerifiedServiceReply(lastUserMsg) {
+async function buildVerifiedServiceReply(lastUserMsg, messages = []) {
   const asksForExpert = /(专家|医生|挂号|约诊)/.test(lastUserMsg);
   const asksForCheckup = /(体检|健康检查)/.test(lastUserMsg);
   if (!asksForExpert && !asksForCheckup) return null;
+
+  const customerText = messages
+    .filter(message => message.role === 'user')
+    .map(message => String(message.content || ''))
+    .join(' ');
+  const needDimensions = [
+    /(本人|自己|家人|父母|孩子|员工|单位|企业)/,
+    /(常规|全面|专项|入职|年度|复查|重点|症状|关注|目的|科室|方向)/,
+    /(已有|已经|医院|机构|日期|时间|预约)/,
+    /(陪同|陪检|项目|报告|解读|建档|全程|协助|挂号|号源)/,
+    /(城市|北京|上海|广州|深圳|杭州|南京|成都|武汉|预算|价格)/,
+  ].filter(pattern => pattern.test(customerText)).length;
+  const disclaimer = '小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。';
+
+  if (needDimensions < 2) {
+    const question = asksForCheckup
+      ? '好的，想先了解一下：这次是您本人还是家人体检？是常规体检，还是有特别关注的方向或已有检查安排呢？'
+      : '好的，想先了解一下：是您本人还是家人需要就医协助？目前想看哪个科室或重点解决什么就医需求呢？';
+    return `${question}\n\n${disclaimer}`;
+  }
 
   const servicePattern = asksForExpert
     ? /(约诊|挂号|专家预约|就医协助)/
@@ -122,8 +143,6 @@ async function buildVerifiedServiceReply(lastUserMsg) {
     .sort({ sortOrder: 1 })
     .select('name subtitle')
     .lean();
-  const disclaimer = '小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。';
-
   if (asksForExpert) {
     if (!product) {
       return `我不能直接生成或推荐具体专家。目前没有查询到可核验的上架约诊服务；如您愿意，我可以为您转接专属健康规划师继续确认。\n\n${disclaimer}`;
@@ -230,7 +249,7 @@ router.post('/', auth, async (req, res) => {
   const intent = detectIntent(lastUserMsg);
 
   // 专家约诊和体检属于高风险幻觉场景：只引用数据库中实际上架的服务，不交给模型自由生成。
-  const verifiedServiceReply = await buildVerifiedServiceReply(lastUserMsg);
+  const verifiedServiceReply = await buildVerifiedServiceReply(lastUserMsg, messages);
   if (verifiedServiceReply) {
     const log = await ChatLog.create({ user: userId, intent: 'service', userMessage: lastUserMsg, aiReply: verifiedServiceReply });
     return res.json({ success: true, data: { content: verifiedServiceReply, intent: 'service', logId: log._id } });
