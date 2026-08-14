@@ -1345,17 +1345,51 @@ router.get('/product-categories', adminAuth, async (req, res) => {
 
 // POST /api/admin/product-categories
 router.post('/product-categories', adminAuth, async (req, res) => {
-  const { name } = req.body;
+  const { name, parent = null, sortOrder } = req.body;
   if (!name?.trim()) return res.status(400).json({ success: false, message: '分类名称不能为空' });
   const existing = await ProductCategory.findOne({ name: name.trim() });
   if (existing) return res.status(400).json({ success: false, message: '该分类名称已存在' });
+  let parentId = null;
+  if (parent) {
+    const parentCategory = await ProductCategory.findById(parent);
+    if (!parentCategory) return res.status(400).json({ success: false, message: '父级分类不存在' });
+    if (parentCategory.parent) return res.status(400).json({ success: false, message: '商城分类最多支持两级' });
+    parentId = parentCategory._id;
+  }
   const count = await ProductCategory.countDocuments();
-  const cat = await ProductCategory.create({ name: name.trim(), sortOrder: count * 10 });
+  const cat = await ProductCategory.create({ name: name.trim(), parent: parentId, sortOrder: Number.isFinite(Number(sortOrder)) ? Number(sortOrder) : count * 10 });
   res.json({ success: true, data: cat, message: '分类创建成功' });
+});
+
+router.put('/product-categories/:id', adminAuth, async (req, res) => {
+  const category = await ProductCategory.findById(req.params.id);
+  if (!category) return res.status(404).json({ success: false, message: '分类不存在' });
+  const { name, parent, sortOrder } = req.body;
+  if (name !== undefined) {
+    if (!name?.trim()) return res.status(400).json({ success: false, message: '分类名称不能为空' });
+    const duplicate = await ProductCategory.findOne({ name: name.trim(), _id: { $ne: category._id } });
+    if (duplicate) return res.status(400).json({ success: false, message: '该分类名称已存在' });
+    category.name = name.trim();
+  }
+  if (parent !== undefined) {
+    if (!parent) category.parent = null;
+    else {
+      if (String(parent) === String(category._id)) return res.status(400).json({ success: false, message: '不能选择自身作为父级分类' });
+      const parentCategory = await ProductCategory.findById(parent);
+      if (!parentCategory) return res.status(400).json({ success: false, message: '父级分类不存在' });
+      if (parentCategory.parent) return res.status(400).json({ success: false, message: '商城分类最多支持两级' });
+      if (await ProductCategory.exists({ parent: category._id })) return res.status(400).json({ success: false, message: '包含子分类的分类不能设为二级' });
+      category.parent = parentCategory._id;
+    }
+  }
+  if (sortOrder !== undefined && Number.isFinite(Number(sortOrder))) category.sortOrder = Number(sortOrder);
+  await category.save();
+  res.json({ success: true, data: category, message: '分类已更新' });
 });
 
 // DELETE /api/admin/product-categories/:id
 router.delete('/product-categories/:id', adminAuth, async (req, res) => {
+  if (await ProductCategory.exists({ parent: req.params.id })) return res.status(400).json({ success: false, message: '请先删除该分类下的子分类' });
   await ProductCategory.findByIdAndDelete(req.params.id);
   res.json({ success: true, message: '分类已删除' });
 });
