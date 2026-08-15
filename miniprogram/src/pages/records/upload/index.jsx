@@ -24,20 +24,19 @@ export default function ReportUploadPage() {
       const filePaths = res.tempFilePaths || [];
       if (!filePaths.length) return;
       setUploading(true);
-      const uploaded = [];
+      const contents = [];
       for (const filePath of filePaths) {
-        const uploadRes = await reportsAPI.uploadFile(filePath);
-        uploaded.push(uploadRes.data);
+        const ext = (filePath.split('.').pop() || 'jpg').toLowerCase();
+        const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : /hei[cf]/.test(ext) ? 'image/heic' : 'image/jpeg';
+        const base64 = Taro.getFileSystemManager().readFileSync(filePath, 'base64');
+        contents.push(`data:${mimeType};base64,${base64}`);
       }
       const createRes = await reportsAPI.create({
         title: `体检报告 ${new Date().toLocaleDateString('zh-CN')}`,
         category: '',
-        fileUrl: uploaded[0]?.fileUrl,
-        fileUrls: uploaded.map((item) => item.fileUrl),
-        ossKeys: uploaded.map((item) => item.ossKey),
-        mimeType: uploaded[0]?.mimeType || 'image/jpeg',
-        fileSize: String(uploaded.reduce((sum, item) => sum + Number(item.fileSize || 0), 0)),
-        pages: uploaded.length,
+        contents,
+        mimeType: contents[0]?.slice(5, contents[0].indexOf(';')) || 'image/jpeg',
+        pages: contents.length,
       });
       if (createRes.success) {
         Taro.showToast({ title: '上传成功，等待AI解析', icon: 'success' });

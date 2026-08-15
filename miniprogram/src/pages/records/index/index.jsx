@@ -52,6 +52,7 @@ export default function RecordsIndexPage() {
   const [heartTrend, setHeartTrend] = useState([]);
   const [weightTrend, setWeightTrend] = useState([]);
   const [trendTab, setTrendTab] = useState('bloodPressure');
+  const [bodyTrendTab, setBodyTrendTab] = useState('weight');
   const [bodyComposition, setBodyComposition] = useState({});
   const [bodyCompHistory, setBodyCompHistory] = useState([]);
   const [showAllRecords, setShowAllRecords] = useState(false);
@@ -101,7 +102,6 @@ export default function RecordsIndexPage() {
   const filtered = records.filter((r) => r.type === filter);
   const dailyRecords = records.filter((r) => DAILY_TYPES.includes(r.type));
   const symptoms = records.filter((r) => r.type === 'symptom');
-  const latestSleep = records.find((r) => r.type === 'sleep');
   const trendMap = {
     bloodPressure: { data: bpTrend, color: colors.danger, label: '血压 (mmHg)' },
     bloodSugar: { data: bsTrend, color: colors.warning, label: '血糖 (mmol/L)' },
@@ -114,27 +114,6 @@ export default function RecordsIndexPage() {
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
       <View style={{ padding: `${statusBarHeight + 12}px ${spacing.lg}px 0` }}>
         <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.md}px` }}>健康档案</Text>
-
-        <ScrollView scrollX style={{ whiteSpace: 'nowrap', marginBottom: `${spacing.md}px` }}>
-          <View style={{ display: 'inline-flex', gap: '8px' }}>
-            {CORE_TYPES.map((k) => (
-              <View
-                key={k}
-                onClick={() => { setFilter(k); setTrendTab(k); setShowAllRecords(false); }}
-                style={{
-                  display: 'inline-block', padding: '6px 14px', borderRadius: `${radius.full}px`,
-                  backgroundColor: filter === k ? colors.primary : '#fff',
-                  border: `1px solid ${filter === k ? colors.primary : colors.border}`,
-                }}
-              >
-                <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                  <Icon name={TYPE_META[k].icon} size={12} color={filter === k ? '#fff' : colors.textPrimary} />
-                  <Text style={{ fontSize: '12px', color: filter === k ? '#fff' : colors.textPrimary, fontWeight: 600 }}>{TYPE_META[k].label}</Text>
-                </View>
-              </View>
-            ))}
-          </View>
-        </ScrollView>
 
         <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>档案工具</Text>
         <View style={{ display: 'flex', gap: `${spacing.sm}px`, marginBottom: `${spacing.md}px` }}>
@@ -151,23 +130,7 @@ export default function RecordsIndexPage() {
           ))}
         </View>
 
-        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>健康数据</Text>
-
-        {/* 睡眠指标卡片 */}
-        {!!latestSleep && (
-          <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.md}px`, boxShadow: shadow.card }}>
-            <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <View style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-                <Icon name="🌙" size={14} color={colors.textPrimary} />
-                <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>最近睡眠</Text>
-              </View>
-              <Text style={{ fontSize: '18px', fontWeight: 800, color: colors.primary }}>{latestSleep.value} 小时</Text>
-            </View>
-            {!!latestSleep.extra?.sleepTime && (
-              <Text style={{ fontSize: '11px', color: colors.textMuted }}>{latestSleep.extra.sleepTime} 入睡 · {latestSleep.extra.wakeTime} 醒来</Text>
-            )}
-          </View>
-        )}
+        <Text style={{ fontSize: '11px', fontWeight: 700, color: colors.textMuted, display: 'block', marginBottom: `${spacing.sm}px` }}>健康数据趋势</Text>
 
         {/* 趋势图 Tab：血压/血糖/睡眠 */}
         {(bpTrend.length > 0 || bsTrend.length > 0 || sleepTrend.length > 0 || heartTrend.length > 0 || weightTrend.length > 0) && (
@@ -184,119 +147,41 @@ export default function RecordsIndexPage() {
               ))}
             </View>
             <Text style={{ fontSize: '11px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>{trendMap[trendTab].label}</Text>
-            <TrendChart points={trendMap[trendTab].data} height={100} color={trendMap[trendTab].color} />
+            <TrendChart points={trendMap[trendTab].data} height={120} color={trendMap[trendTab].color} mode="line" />
           </View>
         )}
       </View>
 
       <View style={{ padding: `0 ${spacing.lg}px` }}>
-        {loading ? (
-          <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
-        ) : filtered.length === 0 ? (
-          <View style={{ textAlign: 'center', padding: `${spacing.xxl}px 0` }}>
-            <Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无记录，点击上方按钮开始录入</Text>
-          </View>
-        ) : (
-          (() => {
-            // 按归属日期分组，同日多条折叠展示"共N次"，区分记录时间(recordedAt)和提交时间(createdAt)（2026-07-18 对齐app端）
-            const groups = [];
-            const groupMap = {};
-            (showAllRecords ? filtered : filtered.slice(0, 3)).forEach((r) => {
-              const d = r.recordedAt ? new Date(r.recordedAt) : null;
-              const dateKey = d ? `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` : '未知日期';
-              const dateLabel = formatRecordDate(r.recordedAt);
-              if (!groupMap[dateKey]) {
-                groupMap[dateKey] = { dateKey, dateLabel, items: [] };
-                groups.push(groupMap[dateKey]);
-              }
-              groupMap[dateKey].items.push(r);
-            });
-            return <>{groups.map((group) => (
-              <View key={group.dateKey} style={{ marginBottom: `${spacing.md}px` }}>
-                <View style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
-                  <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textSecondary }}>{group.dateLabel}</Text>
-                  {group.items.length > 1 && <Text style={{ fontSize: '11px', color: colors.textMuted }}>共{group.items.length}次</Text>}
-                </View>
-                {group.items.map((r) => {
-                  const meta = TYPE_META[r.type] || { label: r.label || r.type, icon: '📋', unit: r.unit || '' };
-                  const recordedTime = formatRecordTime(r.recordedAt);
-                  const isBackfilled = r.recordedAt && r.createdAt &&
-                    new Date(r.createdAt).toDateString() !== new Date(r.recordedAt).toDateString();
-                  const createdLabel = isBackfilled
-                    ? `补录于 ${formatRecordDate(r.createdAt).replace(/^\d{4}年/, '')} ${formatRecordTime(r.createdAt)}`
-                    : '';
-                  return (
-                    <View key={r._id} style={{
-                      display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.md}px`,
-                      padding: `${spacing.md}px`, marginBottom: '8px', boxShadow: shadow.card,
-                    }}>
-                      <View style={{ marginRight: `${spacing.sm}px` }}><Icon name={meta.icon} size={22} /></View>
-                      <View style={{ flex: 1 }}>
-                        <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{r.label || meta.label}</Text>
-                        <Text style={{ fontSize: '11px', color: colors.textMuted }}>
-                          {recordedTime}{createdLabel ? ` · ${createdLabel}` : ''}
-                        </Text>
-                      </View>
-                      <Text style={{ fontSize: '16px', fontWeight: 700, color: STATUS_COLOR[r.status] || colors.textPrimary }}>
-                        {r.value} {r.unit || meta.unit}
-                      </Text>
-                    </View>
-                  );
-                })}
-              </View>
-            ))}{filtered.length > 3 && (
-              <View onClick={() => setShowAllRecords((value) => !value)} style={{ textAlign: 'center', padding: '10px 0 18px' }}>
-                <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.primary }}>{showAllRecords ? '收起记录' : `查看全部 ${filtered.length} 条`}</Text>
-              </View>
-            )}</>;
-          })()
-        )}
-      </View>
-
-      <View style={{ padding: `0 ${spacing.lg}px` }}>
-        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>日常生活打卡</Text>
-        <View style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: `${spacing.lg}px` }}>
-          {DAILY_TYPES.map((type) => {
-            const latest = dailyRecords.find((r) => r.type === type);
-            const labelMap = { diet: '饮食', exercise: '运动', bowel: '排便', water: '饮水', smoking: '吸烟', alcohol: '饮酒', mood: '情绪' };
-            return <View key={type} style={{ width: 'calc(50% - 4px)', boxSizing: 'border-box', backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
-              <Text style={{ fontSize: '13px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{labelMap[type]}</Text>
-              <Text style={{ fontSize: '12px', color: latest ? colors.textSecondary : colors.textMuted, marginTop: '4px' }}>{latest?.value || latest?.note || '近30天暂无记录'}</Text>
-            </View>;
-          })}
-        </View>
-
         <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>身体成分</Text>
         {(() => {
           const history = [...bodyCompHistory];
-          if (Object.keys(bodyComposition || {}).length) history.push(bodyComposition);
+          if (Object.keys(bodyComposition || {}).length) history.push({ ...bodyComposition, _isCurrent: true });
           const cards = BODY_METRICS.map((metric) => {
             const rows = history.filter(row => Number.isFinite(bodyNumber(row?.[metric.key])))
-              .sort((a, b) => bodyDate(a).localeCompare(bodyDate(b)));
+              .sort((a, b) => {
+                if (a._isCurrent !== b._isCurrent) return a._isCurrent ? 1 : -1;
+                return bodyDate(a).localeCompare(bodyDate(b));
+              })
+              .slice(-7);
             if (!rows.length) return null;
             const latest = rows[rows.length - 1];
             const points = rows.map(row => ({ label: bodyDate(row)?.slice(5) || '未标注', value: bodyNumber(row[metric.key]) }));
             const reference = [...rows].reverse().find(row => row?.[metric.referenceKey])?.[metric.referenceKey] || '未录入';
-            return <View key={metric.key} style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.sm}px`, boxShadow: shadow.card }}>
-              <View style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-                <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{metric.label}</Text>
-                <Text style={{ fontSize: '18px', fontWeight: 800, color: metric.color }}>{bodyNumber(latest[metric.key])} {metric.unit}</Text>
-              </View>
-              <TrendChart points={points} height={118} color={metric.color} />
-              <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '6px', display: 'block' }}>最新检测：{bodyDate(latest) || '未标注'} · 参考范围：{reference}</Text>
-            </View>;
+            return { metric, latest, points, reference };
           }).filter(Boolean);
-          return cards.length ? <View style={{ marginBottom: `${spacing.lg}px` }}>{cards}</View> : <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无身体成分数据</Text></View>;
-        })()}
-
-        <Text style={{ fontSize: '15px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: `${spacing.sm}px` }}>今日健康状态</Text>
-        {(() => {
-          const todayKey = new Date().toISOString().slice(0, 10);
-          const latest = symptoms.find((r) => String(r.recordedAt || '').slice(0, 10) === todayKey);
-          return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, boxShadow: shadow.card }}>
-            <Text style={{ fontSize: '14px', fontWeight: 700, color: latest ? colors.danger : colors.primary, display: 'block' }}>{latest ? '今天已记录不适' : '今天暂未记录不适'}</Text>
-            <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '4px' }}>{latest ? (latest.value || latest.note || '已提交不适情况') : '如有不适，请在首页“记录健康数据”中及时填写。'}</Text>
-            {latest && <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '4px' }}>来源：{latest.recordedBy?.source === 'staff' ? (latest.recordedBy.staffName || '医护团队录入') : latest.recordedBy?.source === 'system' ? '系统记录' : '客户打卡'}</Text>}
+          if (!cards.length) return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}><Text style={{ fontSize: '13px', color: colors.textMuted }}>暂无身体成分数据</Text></View>;
+          const active = cards.find((item) => item.metric.key === bodyTrendTab) || cards[0];
+          return <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, padding: `${spacing.md}px`, marginBottom: `${spacing.lg}px`, boxShadow: shadow.card }}>
+            <View style={{ display: 'flex', gap: '7px', marginBottom: `${spacing.sm}px` }}>
+              {cards.map(({ metric }) => <View key={metric.key} onClick={() => setBodyTrendTab(metric.key)} style={{ flex: 1, minWidth: 0, textAlign: 'center', padding: '6px 2px', borderRadius: `${radius.full}px`, backgroundColor: active.metric.key === metric.key ? colors.primary : colors.background, border: `1px solid ${active.metric.key === metric.key ? colors.primary : colors.border}` }}><Text style={{ fontSize: '11px', color: active.metric.key === metric.key ? '#fff' : colors.textSecondary }}>{metric.key === 'weight' ? '体重' : metric.label}</Text></View>)}
+            </View>
+            <View style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
+              <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>{active.metric.label}</Text>
+              <Text style={{ fontSize: '18px', fontWeight: 800, color: active.metric.color }}>{bodyNumber(active.latest[active.metric.key])} {active.metric.unit}</Text>
+            </View>
+            <TrendChart points={active.points} height={118} color={active.metric.color} mode="line" />
+            <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '6px', display: 'block' }}>最新检测：{bodyDate(active.latest) || '未标注'} · 参考范围：{active.reference}</Text>
           </View>;
         })()}
       </View>

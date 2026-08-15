@@ -131,7 +131,7 @@ export default function ChatPage() {
         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
         <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>内容仅用于健康管理需求梳理与服务规划，不替代专业人员意见</Text>
       </View>
-      <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView="bottom-anchor">
+      <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView={`planner-bottom-${messages.length}`}>
         {messages.length === 1 && (
           <View style={{ marginBottom: `${spacing.md}px` }}>
             <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>您想先做哪一步？</Text>
@@ -160,7 +160,7 @@ export default function ChatPage() {
           </View>
         ))}
         {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在梳理您的需求...</Text>}
-        <View id="bottom-anchor" />
+        <View id={`planner-bottom-${messages.length}`} />
       </ScrollView>
 
       <View style={{

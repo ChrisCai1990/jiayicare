@@ -11,10 +11,22 @@ const reportUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
   fileFilter: (_req, file, cb) => {
-    if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.mimetype || '')) return cb(new Error('仅支持 JPG、PNG、WEBP 或 HEIC 图片'));
+    if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.mimetype || '') && file.mimetype !== 'application/octet-stream') {
+      return cb(new Error('仅支持 JPG、PNG、WEBP 或 HEIC 图片'));
+    }
     cb(null, true);
   },
 });
+
+const detectImageMime = (buffer) => {
+  if (!buffer || buffer.length < 12) return '';
+  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) return 'image/jpeg';
+  if (buffer.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'image/png';
+  if (buffer.toString('ascii', 0, 4) === 'RIFF' && buffer.toString('ascii', 8, 12) === 'WEBP') return 'image/webp';
+  const brand = buffer.toString('ascii', 8, 12).toLowerCase();
+  if (buffer.toString('ascii', 4, 8) === 'ftyp' && ['heic', 'heix', 'hevc', 'hevx', 'mif1'].includes(brand)) return 'image/heic';
+  return '';
+};
 
 router.post('/upload', auth, (req, res, next) => {
   reportUpload.single('file')(req, res, async (err) => {
@@ -24,11 +36,13 @@ router.post('/upload', auth, (req, res, next) => {
     }
     try {
       if (!req.file) return res.status(400).json({ success: false, message: '未收到上传文件' });
+      const detectedMime = detectImageMime(req.file.buffer);
+      if (!detectedMime) return res.status(400).json({ success: false, message: '图片格式无法识别，请选择 JPG、PNG、WEBP 或 HEIC 图片' });
       if (!process.env.OSS_ACCESS_KEY_ID) return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });
-      const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
-      const result = await uploadBase64(dataUrl, req.file.mimetype);
+      const dataUrl = `data:${detectedMime};base64,${req.file.buffer.toString('base64')}`;
+      const result = await uploadBase64(dataUrl, detectedMime);
       console.info('[report-upload]', { userId: String(req.user._id), size: req.file.size, mimeType: req.file.mimetype, key: result.key });
-      res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || req.file.mimetype, fileSize: req.file.size } });
+      res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: req.file.size } });
     } catch (uploadErr) {
       console.error('[report-upload] failed', { userId: String(req.user._id), message: uploadErr.message });
       next(uploadErr);

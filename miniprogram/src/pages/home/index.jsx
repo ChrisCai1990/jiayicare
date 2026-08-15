@@ -114,7 +114,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
             )}
             {task.checkInItems?.length > 0 && (
               <View style={{ display: 'flex', marginBottom: '10px' }}>
-                <Text style={{ fontSize: '13px', color: colors.textMuted, width: '64px' }}>打卡项目</Text>
+                <Text style={{ fontSize: '13px', color: colors.textMuted, width: '64px' }}>记录项目</Text>
                 <View style={{ flex: 1, display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                   {task.checkInItems.map((k, i) => (
                     <View key={i} style={{ backgroundColor: '#E8F5EF', padding: '3px 10px', borderRadius: `${radius.full}px` }}>
@@ -177,6 +177,14 @@ export default function HomePage() {
     title: '嘉医汇｜全生命周期健康管理',
   }));
   const { statusBarHeight } = useNavBar();
+  const runtimeInfo = (() => {
+    try {
+      const info = Taro.getAccountInfoSync?.();
+      return `${info?.miniProgram?.envVersion || 'unknown'} ${info?.miniProgram?.version || 'no-version'}`;
+    } catch (_) {
+      return 'unknown no-version';
+    }
+  })();
   const { user: authUser, isDemo } = useAuth();
   const [dashData, setDashData] = useState(null);
   const [tasks, setTasks] = useState([]);
@@ -298,8 +306,11 @@ export default function HomePage() {
           paddingTop加状态栏高度，因navigationStyle:custom后系统导航栏已隐藏，需自己避让胶囊按钮所在区域 */}
       <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: `${statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: colors.background }}>
         <View>
-          <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.primary, display: 'block', letterSpacing: '-0.3px' }}>嘉医汇 | 嘉医管家</Text>
-          <Text style={{ fontSize: '10px', color: colors.textMuted, marginTop: '2px', letterSpacing: '0.2px' }}>健康有人管 · 生活更安心</Text>
+          <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.primary, display: 'block', letterSpacing: '-0.3px' }}>嘉医汇<Text style={{ fontSize: '8px', verticalAlign: 'top' }}>®</Text> | 嘉医管家</Text>
+          <View style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
+            <Text style={{ fontSize: '10px', color: colors.textMuted, letterSpacing: '0.2px' }}>健康有人管 · 生活更安心</Text>
+            <Text style={{ fontSize: '8px', color: colors.textMuted }}>· {runtimeInfo}</Text>
+          </View>
         </View>
         <View
           style={{ width: '38px', height: '38px', borderRadius: '19px', backgroundColor: colors.primary, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -310,16 +321,15 @@ export default function HomePage() {
       </View>
 
       <View style={{ padding: `0 ${spacing.lg}px` }}>
-        {/* 问候卡：像素级对齐 app 端 HomeScreen.js heroCard（深墨绿背景#1A2B24、56px评分数字、等级/趋势标签/迷你走势线/行动建议） */}
-        <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#1A2B24', borderRadius: `${radius.lg}px`, padding: '12px 15px', marginBottom: '8px', minHeight: '58px' }}>
+        <View style={{ display: 'flex', alignItems: 'center', backgroundColor: '#fff', borderRadius: `${radius.lg}px`, padding: '18px 18px', marginBottom: '12px', minHeight: '96px', boxShadow: shadow.card }}>
           <View style={{ flex: 1, minWidth: 0 }}>
-            <Text style={{ fontSize: '10px', color: 'rgba(255,255,255,0.6)', display: 'block' }}>{greeting}</Text>
-            <Text style={{ fontSize: '15px', fontWeight: 700, color: '#fff', display: 'block', marginTop: '2px' }} numberOfLines={1}>{name}，{statusText}</Text>
-            {trendActionText && <Text style={{ fontSize: '9px', color: 'rgba(255,255,255,0.7)', display: 'block', marginTop: '3px' }} numberOfLines={1}>{trendActionText}</Text>}
+            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block' }}>{greeting}</Text>
+            <Text style={{ fontSize: '18px', fontWeight: 750, color: colors.textPrimary, display: 'block', marginTop: '5px' }} numberOfLines={1}>{name}，{statusText}</Text>
+            {trendActionText && <Text style={{ fontSize: '11px', color: colors.textSecondary, display: 'block', marginTop: '7px' }} numberOfLines={1}>{trendActionText}</Text>}
           </View>
           <View style={{ display: 'flex', alignItems: 'baseline', marginLeft: '10px' }}>
-            <Text style={{ fontSize: '32px', fontWeight: 800, color: '#fff', lineHeight: '36px' }}>{scoreDisplay != null ? scoreDisplay : '--'}</Text>
-            <Text style={{ fontSize: '10px', color: gradeColors[grade] || '#fff', marginLeft: '4px' }}>{scoreDisplay != null ? `${grade} / 100` : '待录入'}</Text>
+            <Text style={{ fontSize: '46px', fontWeight: 800, color: colors.textPrimary, lineHeight: '50px' }}>{scoreDisplay != null ? scoreDisplay : '--'}</Text>
+            <Text style={{ fontSize: '12px', color: gradeColors[grade] || colors.primary, marginLeft: '5px' }}>{scoreDisplay != null ? `${grade} / 100` : '待录入'}</Text>
           </View>
         </View>
 
@@ -331,7 +341,7 @@ export default function HomePage() {
               <View style={{ display: 'flex', alignItems: 'baseline' }}>
                 <Icon name="🔥" size={20} color="#D97706" style={{ marginRight: '6px' }} />
                 <Text style={{ fontSize: '22px', fontWeight: 800, color: colors.primary, lineHeight: '26px' }}>{growth.streak}</Text>
-                <Text style={{ fontSize: '13px', color: '#4A6558', fontWeight: 600, marginLeft: '3px' }}>天连续打卡</Text>
+                <Text style={{ fontSize: '13px', color: '#4A6558', fontWeight: 600, marginLeft: '3px' }}>天连续记录</Text>
               </View>
               <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
                 <Text style={{ fontSize: '10px', color: colors.textMuted }}>近30天累计</Text>
@@ -346,15 +356,60 @@ export default function HomePage() {
         {/* 完成今日打卡（2026-07-18 打卡页重构对齐）：原内联打卡网格已抽离到独立页 pages/checkin/index，
             首页只保留入口按钮，健康管家团队卡片已移至"我的"页 */}
         <View onClick={() => Taro.navigateTo({ url: '/pages/checkin/index' })} style={{
-          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: colors.primary,
-          borderRadius: `${radius.lg}px`, padding: '12px 16px', marginBottom: `${spacing.md}px`, boxShadow: shadow.sm,
+          display: 'flex', alignItems: 'center', gap: `${spacing.sm}px`, backgroundColor: '#fff',
+          border: `2px solid ${colors.primary}`, borderRadius: `${radius.lg}px`, padding: '12px 16px', marginBottom: `${spacing.md}px`, boxShadow: shadow.sm,
         }}>
-          <Icon name="✅" size={18} color="#fff" />
-          <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: '#fff' }}>记录健康数据</Text>
-          <Text style={{ fontSize: '16px', color: 'rgba(255,255,255,0.8)' }}>›</Text>
+          <Icon name="✅" size={18} color={colors.primary} />
+          <Text style={{ flex: 1, fontSize: '15px', fontWeight: 700, color: colors.textPrimary }}>健康数据记录</Text>
+          <Text style={{ fontSize: '18px', letterSpacing: '-3px', color: colors.primary, fontWeight: 800 }}>›››</Text>
         </View>
 
-        <View style={{ marginBottom: `${spacing.md}px` }}>
+        {/* 待办任务：像素级对齐app端TaskItem/ReminderItem图标行+紧急度徽章，
+            "随访"已移出Tab，"全部"入口跳转独立随访页（2026-07-18 Tab结构调整） */}
+        <View style={{ marginBottom: `${spacing.lg}px` }}>
+          <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
+            <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1.2px', textTransform: 'uppercase' }}>健康计划</Text>
+            <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
+              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>全部</Text>
+              <Text style={{ fontSize: '13px', color: colors.primary }}>›</Text>
+            </View>
+          </View>
+          <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden', padding: `0 ${spacing.md}px` }}>
+            {loading ? (
+              <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', padding: '20px 0', textAlign: 'center' }}>加载中...</Text>
+            ) : (allPendingTaskItems.length === 0 && todayReminders.length === 0) ? (
+              <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: `${spacing.xl}px 0`, gap: `${spacing.sm}px` }}>
+                <Icon name="✅" size={32} color={colors.primary} />
+                <Text style={{ fontSize: '14px', color: colors.textMuted }}>暂无健康计划</Text>
+              </View>
+            ) : (
+              <>
+                {allPendingTaskItems.slice(0, 3).map((t, i, arr) => (
+                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={setTaskDetail} />
+                ))}
+                {todayReminders.map((r, i) => (
+                  <ReminderItemRow key={r._id || i} reminder={r} isLast={i === todayReminders.length - 1} />
+                ))}
+              </>
+            )}
+          </View>
+          {allPendingTaskItems.length > 3 && (
+            <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', padding: '0 4px' }}>
+              <Text style={{ fontSize: '12px', color: colors.primary }}>⋯</Text>
+              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>还有 {allPendingTaskItems.length - 3} 项健康计划 · 查看全部</Text>
+              <Text style={{ fontSize: '12px', color: colors.primary }}>›</Text>
+            </View>
+          )}
+          {todayReminders.length > 0 && (
+            <View onClick={() => Taro.navigateTo({ url: '/pages/reminders/index' })} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', padding: '0 4px' }}>
+              <Icon name="🔔" size={12} color={colors.primary} />
+              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>今日 {todayReminders.length} 条提醒已合并 · 管理提醒</Text>
+              <Text style={{ fontSize: '12px', color: colors.primary }}>›</Text>
+            </View>
+          )}
+        </View>
+
+        <View style={{ marginBottom: `${spacing.lg}px` }}>
           <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
             <Text style={{ fontSize: '14px', fontWeight: 700, color: colors.textPrimary }}>常用健康服务</Text>
             <View onClick={() => Taro.navigateTo({ url: '/pages/services/mall/index' })}><Text style={{ fontSize: '12px', color: colors.primary }}>全部商城 ›</Text></View>
@@ -374,51 +429,6 @@ export default function HomePage() {
               </View>
             </View>
           </ScrollView>
-        </View>
-
-        {/* 待办任务：像素级对齐app端TaskItem/ReminderItem图标行+紧急度徽章，
-            "随访"已移出Tab，"全部"入口跳转独立随访页（2026-07-18 Tab结构调整） */}
-        <View style={{ marginBottom: `${spacing.lg}px` }}>
-          <View style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: `${spacing.sm}px` }}>
-            <Text style={{ fontSize: '10px', fontWeight: 700, color: colors.textMuted, letterSpacing: '1.2px', textTransform: 'uppercase' }}>待办任务</Text>
-            <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '2px' }}>
-              <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 500 }}>全部</Text>
-              <Text style={{ fontSize: '13px', color: colors.primary }}>›</Text>
-            </View>
-          </View>
-          <View style={{ backgroundColor: '#fff', borderRadius: `${radius.md}px`, border: `1px solid ${colors.border}`, overflow: 'hidden', padding: `0 ${spacing.md}px` }}>
-            {loading ? (
-              <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', padding: '20px 0', textAlign: 'center' }}>加载中...</Text>
-            ) : (allPendingTaskItems.length === 0 && todayReminders.length === 0) ? (
-              <View style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: `${spacing.xl}px 0`, gap: `${spacing.sm}px` }}>
-                <Icon name="✅" size={32} color={colors.primary} />
-                <Text style={{ fontSize: '14px', color: colors.textMuted }}>暂无待办任务</Text>
-              </View>
-            ) : (
-              <>
-                {allPendingTaskItems.slice(0, 3).map((t, i, arr) => (
-                  <TaskItemRow key={t._id || i} task={t} isLast={i === arr.length - 1 && todayReminders.length === 0} onPress={setTaskDetail} />
-                ))}
-                {todayReminders.map((r, i) => (
-                  <ReminderItemRow key={r._id || i} reminder={r} isLast={i === todayReminders.length - 1} />
-                ))}
-              </>
-            )}
-          </View>
-          {allPendingTaskItems.length > 3 && (
-            <View onClick={() => Taro.navigateTo({ url: '/pages/tasks/index' })} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', padding: '0 4px' }}>
-              <Text style={{ fontSize: '12px', color: colors.primary }}>⋯</Text>
-              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>还有 {allPendingTaskItems.length - 3} 项待办 · 查看全部</Text>
-              <Text style={{ fontSize: '12px', color: colors.primary }}>›</Text>
-            </View>
-          )}
-          {todayReminders.length > 0 && (
-            <View onClick={() => Taro.navigateTo({ url: '/pages/reminders/index' })} style={{ display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px', padding: '0 4px' }}>
-              <Icon name="🔔" size={12} color={colors.primary} />
-              <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 500, flex: 1 }}>今日 {todayReminders.length} 条提醒已合并 · 管理提醒</Text>
-              <Text style={{ fontSize: '12px', color: colors.primary }}>›</Text>
-            </View>
-          )}
         </View>
 
       </View>

@@ -32,7 +32,7 @@ const normalizeRoleSender = (sender = '') => sender
 const assistantName = (member, fallback) => {
   const title = String(member?.title || fallback).trim();
   const name = String(member?.name || '').trim().replace(new RegExp(`${title}$`), '');
-  return `${name || title}${name ? title : ''}AI助理`;
+  return `${name || title}助理`;
 };
 const visibleMessageContent = (message) => String(message?.content || '')
   .replace(/\n?以上为AI初步回复，仅供参考，不构成医疗诊断或建议，您的专属医护人员会尽快跟进。/g, '')
