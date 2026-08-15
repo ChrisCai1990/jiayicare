@@ -355,6 +355,8 @@ export const adminAPI = {
   // AI 每日健康关怀开关
   getDailyCareConfig:    ()        => req('/system-config/daily-care'),
   updateDailyCareConfig: (enabled) => req('/system-config/daily-care', { method: 'PUT', body: JSON.stringify({ enabled }) }),
+  getHealthAssistantConfig: () => req('/system-config/health-assistant'),
+  updateHealthAssistantConfig: (data) => req('/system-config/health-assistant', { method: 'PUT', body: JSON.stringify(data) }),
   getReviewExperienceConfig: () => req('/system-config/review-experience'),
   updateReviewExperienceConfig: (enabled) => req('/system-config/review-experience', { method: 'PUT', body: JSON.stringify({ enabled }) }),
   getHealthFundConfig:   ()        => req('/system-config/health-fund'),

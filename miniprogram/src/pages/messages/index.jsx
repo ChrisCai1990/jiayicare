@@ -89,7 +89,7 @@ function fmtMsgTime(t) {
   return `${d.getMonth() + 1}/${d.getDate()}`;
 }
 
-export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenPlanner }) {
+export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenPlanner, assistantConfig = {}, onlineStatus = { mode: 'ai', label: 'AI在线' } }) {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
   // Older production users can have careTeam saved as null/object. Keep render
@@ -185,7 +185,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
   };
 
   if (threadRole) {
-    return <ConversationThread role={threadRole} member={careTeamMember(threadRole)} embedded={embedded} onClose={() => { setThreadRole(null); loadMessages(); }} />;
+    return <ConversationThread role={threadRole} member={careTeamMember(threadRole)} embedded={embedded} assistantConfig={assistantConfig} onlineStatus={onlineStatus} onClose={() => { setThreadRole(null); loadMessages(); }} />;
   }
 
   return (
@@ -203,20 +203,20 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
         <Text style={{ fontSize: '13px', color: colors.textMuted, padding: `0 ${spacing.lg}px` }}>加载中...</Text>
       ) : (
         <View style={{ width: '100%', boxSizing: 'border-box', padding: `0 ${spacing.md}px` }}>
-          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>AI健康规划</Text>
+          <Text style={{ display: 'block', fontSize: '15px', fontWeight: 700, color: colors.textPrimary, margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>{assistantConfig.teamName || '健康服务团队'} · {onlineStatus.label}</Text>
           <View onClick={onOpenPlanner} style={{ position: 'relative', overflow: 'hidden', display: 'flex', alignItems: 'center', padding: '16px', marginBottom: `${spacing.md}px`, backgroundColor: colors.primary, borderRadius: `${radius.lg}px`, boxShadow: shadow.card }}>
             <View style={{ position: 'absolute', width: '100px', height: '100px', borderRadius: '50px', right: '-25px', top: '-35px', backgroundColor: 'rgba(255,255,255,0.08)' }} />
             <View style={{ width: '46px', height: '46px', borderRadius: '15px', backgroundColor: 'rgba(255,255,255,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '12px', flexShrink: 0 }}><Icon name="✨" size={20} color="#fff" /></View>
             <View style={{ flex: 1, minWidth: 0 }}>
-              <Text style={{ display: 'block', fontSize: '16px', fontWeight: 800, color: '#fff' }}>AI健康规划师</Text>
-              <Text style={{ display: 'block', fontSize: '11px', lineHeight: '17px', color: 'rgba(255,255,255,0.84)', marginTop: '3px' }}>分析健康需求，匹配适合的服务，生成个性化规划</Text>
+              <Text style={{ display: 'block', fontSize: '16px', fontWeight: 800, color: '#fff' }}>{assistantConfig.plannerName || '小嘉 | 健康规划师'}</Text>
+              <Text style={{ display: 'block', fontSize: '11px', lineHeight: '17px', color: 'rgba(255,255,255,0.84)', marginTop: '3px' }}>{assistantConfig.plannerCardSubtitle || '承接复查提醒并协助办理'}</Text>
             </View>
             <Text style={{ position: 'relative', color: '#fff', fontSize: '20px', marginLeft: '8px' }}>›</Text>
           </View>
 
           <View style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', margin: `0 ${spacing.xs}px ${spacing.sm}px` }}>
             <View>
-              <Text style={{ display: 'block', fontSize: '17px', fontWeight: 800, color: colors.textPrimary }}>我的健康服务团队</Text>
+              <Text style={{ display: 'block', fontSize: '17px', fontWeight: 800, color: colors.textPrimary }}>{assistantConfig.teamName || '健康服务团队'}</Text>
               <Text style={{ display: 'block', fontSize: '11px', color: colors.textMuted, marginTop: '2px' }}>{assignedTeamCount > 0 ? `已配置 ${assignedTeamCount} 位服务人员` : '开通相应服务后为您配置专属人员'}</Text>
             </View>
             {assignedTeamCount > 0 && <View style={{ padding: '4px 8px', borderRadius: `${radius.full}px`, backgroundColor: '#E8F5EF' }}><Text style={{ color: colors.primary, fontSize: '10px', fontWeight: 700 }}>服务中</Text></View>}
@@ -572,7 +572,7 @@ const ROLE_META = {
   nutritionist: { label: '营养师', icon: '🥗', color: '#059669' },
 };
 
-function ConversationThread({ role, member, onClose, embedded = false }) {
+function ConversationThread({ role, member, onClose, embedded = false, assistantConfig = {}, onlineStatus = { mode: 'ai', label: 'AI在线' } }) {
   const { statusBarHeight } = useNavBar();
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -580,7 +580,7 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
   const [sending, setSending] = useState(false);
   const [foodImages, setFoodImages] = useState([]);
   const meta = ROLE_META[role] || ROLE_META.manager;
-  const aiAssistantName = assistantName(member, meta.label);
+  const aiAssistantName = assistantConfig.teamName || '健康服务团队';
   const pollRef = useRef(null);
 
   const loadThread = useCallback(async () => {
@@ -657,8 +657,8 @@ function ConversationThread({ role, member, onClose, embedded = false }) {
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
-          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
-          <Text style={{ fontSize: '11px', color: colors.success }}>● 在线</Text>
+          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{assistantConfig.teamName || '健康服务团队'}</Text>
+          <Text style={{ fontSize: '11px', color: onlineStatus.mode === 'human' ? '#D97706' : colors.success }}>● {onlineStatus.label}</Text>
         </View>
         <View style={{ width: '20px' }} />
       </View>

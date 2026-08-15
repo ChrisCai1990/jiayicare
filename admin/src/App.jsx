@@ -33,6 +33,7 @@ import ScoringConfigPage  from './pages/settings/ScoringConfigPage'
 import DailyCareConfigPage from './pages/settings/DailyCareConfigPage'
 import ReviewExperiencePage from './pages/settings/ReviewExperiencePage'
 import HealthFundConfigPage from './pages/settings/HealthFundConfigPage'
+import HealthAssistantConfigPage from './pages/settings/HealthAssistantConfigPage'
 
 // 项目设置
 import CategoryPage       from './pages/projects/CategoryPage'
@@ -133,6 +134,7 @@ export default function App() {
               <Route path="settings/members"  element={<MemberSettingsPage />} />
               <Route path="settings/scoring"  element={<ScoringConfigPage />} />
               <Route path="settings/daily-care" element={<DailyCareConfigPage />} />
+              <Route path="settings/health-assistant" element={<HealthAssistantConfigPage />} />
               <Route path="settings/review-experience" element={<ReviewExperiencePage />} />
               <Route path="health-fund" element={<HealthFundConfigPage />} />
 

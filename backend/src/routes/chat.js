@@ -8,11 +8,14 @@ const User = require('../models/User');
 const Message = require('../models/Message');
 const Product = require('../models/Product');
 const ServiceProposal = require('../models/ServiceProposal');
+const Reminder = require('../models/Reminder');
+const FollowUp = require('../models/FollowUp');
 const { resolveHealthPlanner } = require('../utils/healthPlannerAssignment');
 const { isAiRecommendable, buildAiCatalogEntry, resolveProductPrices } = require('../utils/productAiProfile');
+const { getHealthAssistantConfig } = require('../utils/healthAssistantConfig');
 const router = express.Router();
 
-const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康规划师。你的唯一职责是服务需求识别与服务导购：了解会员想解决什么问题，从平台已经上架的服务中推荐合适的服务，并在会员需要时转接其专属人工健康规划师。
+const BASE_SYSTEM = `你是「小嘉｜健康规划师」，嘉医汇帮助会员把复查安排办妥的智能服务助手，不是泛健康问答机器人。你的核心工作是承接会员已有的复查提醒，结合平台提供的日常健康记录，帮助会员梳理复查准备、时间与办理流程，并按需匹配平台已上架的陪诊、代办、约诊等服务；无法确认或会员要求时转接人工健康规划师。
 
 回答要求：
 1. 使用中文，语气温和专业
@@ -20,16 +23,16 @@ const BASE_SYSTEM = `你是「小嘉」，嘉医汇健康管理平台的AI健康
 3. 必须先像真人顾问一样理解客户，再谈服务。客户只表达宽泛意向（如“我想体检”“想找专家”）时，禁止直接提及、匹配或推荐具体服务产品；先自然追问1—2个最关键问题，不要一次罗列问卷
 4. 只有需求基本清楚后，才可推荐平台已有服务。推荐前先简短复述对客户需求的理解并说明理由；不得仅凭“体检”“专家”等关键词命中产品
 5. 必须承接客户刚刚回答的信息，不得重复已经问过或客户已经回答的问题。客户追问价格、流程、时间或服务内容时，先直接回答该问题，再视需要补问一个问题
-6. 客户的疾病、检查指标、既往报告和健康风险不属于你的判断范围，也不得用于服务匹配。你只了解客户想获得的帮助、服务对象、城市、时间、预算和服务偏好；涉及健康资料时，引导客户查看健康档案或咨询专业人员
-7. 可以介绍健康档案整理、体检信息整理、生活方式管理、健康提醒、复查提醒和就医协助，但不得把某项服务描述为医疗诊断或治疗
+6. 可以读取系统提供的复查提醒及日常健康记录（如血压、体重趋势），用通俗语言复述客观变化，并据此提醒会员准备资料或向专业人员确认；不得据此诊断疾病、判断病情、制定检查项目或调整用药
+7. 对明确的复查事项，优先给出可执行的办理清单：确认医嘱/提醒来源、目标时间、城市与医院偏好、需要携带的已有资料、是否需要陪诊或代办。信息不足时逐步追问，不得虚构医院流程、号源或检查要求
 8. 不提供疾病诊断、治疗方案、处方、线上复诊、检查开单、药品推荐、停换药或剂量调整，不解读症状来判断疾病
 7. 遇到医疗问题，简短说明超出服务范围，建议前往正规医疗机构；遇到胸痛、呼吸困难、意识障碍等紧急情况，提示立即拨打120
 8. 不捏造会员信息，不制造焦虑，不承诺疗效，不使用“治愈”“治疗”“保证改善”等表述
 9. 服务推荐必须说明推荐理由，由会员自主选择，不得诱导购买高价套餐
 10. 会员需要专家时，只了解城市、医院/科室倾向、疾病方向和时间偏好，然后推荐平台的约诊服务；禁止生成或推荐具体专家姓名、职称、擅长领域、科研经历、号源和预约难度，除非这些信息来自本次请求提供的、可核验的平台结构化数据
 11. 会员需要体检时，只推荐平台已上架的体检咨询或预约服务；禁止自行组合检查项目、创造套餐名称、制定体检方案或根据健康资料判断应做哪些检查
-12. 不得使用“我为您制定/整理方案”“服务方案”“定制项目”等表述。需要进一步人工协助时，应说明可转接专属健康规划师，不能声称已经转接；只有系统返回转接成功后才能说已转接
-13. 每次回答末尾加：「小嘉仅协助梳理服务需求并推荐平台已有服务，不提供诊断、治疗、处方或个性化健康方案。」
+12. 可以为复查事项整理“办理清单”，但不得将其表述为诊疗方案或个性化检查方案。需要进一步人工协助时，应说明可转接人工健康规划师，不能声称已经转接；只有系统返回转接成功后才能说已转接
+13. 仅在涉及指标解释、报告、症状或诊疗边界时，在回答末尾加一次：「以上仅用于健康管理与复查事项整理，不替代医生诊断和建议。」普通流程问答和服务推荐不重复免责声明
 14. 只能介绍平台已经上线的能力。当前对话支持文字回复、语音播报和转人工，不支持把对话内容导出或下载为文件，不支持生成图文版/PDF，也不支持直接微信推送。不得承诺、暗示或规划这些未上线能力；会员询问时应如实说明暂不支持`;
 
 const UNSUPPORTED_CAPABILITY_NOTICE = '当前对话暂不支持导出、下载、生成图文版或直接微信推送；您可以在本页面查看和使用语音播报。';
@@ -234,6 +237,50 @@ async function getUserDataContext(userId) {
   }
 }
 
+async function getFollowupContext(userId) {
+  try {
+    const [reminders, followups] = await Promise.all([
+      Reminder.find({ user: userId, enabled: true, category: { $in: ['followup_abnormal', 'screening_annual'] } })
+        .sort({ targetDate: 1 }).limit(8).lean(),
+      FollowUp.find({ patientId: userId, status: { $in: ['planned', 'in_progress', 'missed'] } })
+        .sort({ date: 1 }).limit(8).select('theme content date status tags').lean(),
+    ]);
+    const reminderLines = reminders.map(item => `${item.title}${item.targetDate ? `（目标日期${new Date(item.targetDate).toLocaleDateString('zh-CN')}）` : ''}${item.description ? `：${item.description}` : ''}`);
+    const followupLines = followups.map(item => `${item.theme || '复查事项'}${item.date ? `（${new Date(item.date).toLocaleDateString('zh-CN')}）` : ''}${item.content ? `：${item.content}` : ''}`);
+    const lines = [...reminderLines, ...followupLines];
+    return lines.length ? `\n用户当前待处理复查事项（只能按原文协助办理，不得扩展检查项目）：\n${lines.join('\n')}` : '\n用户当前没有系统记录的待处理复查事项；如用户提出复查需求，应先确认提醒或医嘱来源。';
+  } catch {
+    return '';
+  }
+}
+
+router.get('/config', auth, async (_req, res) => {
+  try {
+    const cfg = await getHealthAssistantConfig();
+    const { behaviorPrompt, humanPresenceMinutes, ...publicConfig } = cfg;
+    res.json({ success: true, data: publicConfig });
+  } catch (err) { res.status(500).json({ success: false, message: '获取健康助手配置失败' }); }
+});
+
+router.get('/status', auth, async (req, res) => {
+  try {
+    const cfg = await getHealthAssistantConfig();
+    const recentHumanReply = await Message.findOne({
+      conversationId: { $in: [`${req.user._id}_manager`, `${req.user._id}_doctor`, `${req.user._id}_nutritionist`] },
+      type: { $in: ['manager', 'doctor', 'nutritionist'] },
+      isAI: { $ne: true },
+      createdAt: { $gte: new Date(Date.now() - cfg.humanPresenceMinutes * 60 * 1000) },
+    }).sort({ createdAt: -1 }).select('sender createdAt').lean();
+    res.json({ success: true, data: {
+      mode: recentHumanReply ? 'human' : 'ai',
+      label: recentHumanReply ? cfg.humanOnlineLabel : cfg.aiOnlineLabel,
+      staffName: recentHumanReply?.sender || '',
+    } });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '获取在线状态失败' });
+  }
+});
+
 // POST /api/chat — 主对话接口
 router.post('/', auth, async (req, res) => {
   const { messages = [], userInfo = {} } = req.body;
@@ -245,7 +292,7 @@ router.post('/', auth, async (req, res) => {
     return res.status(503).json({ success: false, message: 'AI服务暂未开通，请联系管理员配置。' });
   }
 
-  // AI健康规划师仅承担服务需求识别与服务推荐；是否配有专业团队都不改变非医疗边界。
+  // 小嘉围绕复查办理与履约服务提供协助；是否配有专业团队都不改变非医疗边界。
   const me = await User.findById(userId).select('assignedFamilyDoctor');
   const hasDoctor = !!me?.assignedFamilyDoctor;
 
@@ -280,12 +327,20 @@ router.post('/', auth, async (req, res) => {
     userInfo.name  && `姓名：${userInfo.name}`,
   ].filter(Boolean).join('，');
 
-  const scopeNotice = `\n【角色边界】无论会员是否配有专业服务团队，你都只能识别客户想获得什么服务帮助、推荐平台已有服务并协助转接专属健康规划师。客户的疾病、指标、报告和风险与你的服务匹配无关，不得读取、复述或据此推荐服务，也不得制定任何健康、体检、诊疗或服务方案。`;
+  const [healthDataContext, followupContext, assistantConfig] = await Promise.all([
+    getUserDataContext(userId),
+    getFollowupContext(userId),
+    getHealthAssistantConfig(),
+  ]);
+  const scopeNotice = `\n【角色边界】你可以使用系统提供的复查事项和日常健康记录帮助会员把复查流程办妥，但只能陈述客观记录与变化，不得诊断、推断病情、开检查项目、制定治疗或调整用药。服务只能从平台实时上架目录中推荐。`;
 
   const systemPrompt = [
     BASE_SYSTEM,
+    `\n【后台运营配置】助手名称：${assistantConfig.plannerName}\n${assistantConfig.behaviorPrompt}\n转人工提示：${assistantConfig.transferText}\n免责声明：${assistantConfig.disclaimer}`,
     scopeNotice,
     userContext ? `\n用户基本信息：${userContext}` : '',
+    followupContext,
+    healthDataContext,
   ].join('');
 
   // 格式化历史消息：最近10条，且只取24小时内的（避免几天前的话题被当作当前场景误关联）。

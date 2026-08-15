@@ -31,6 +31,7 @@ const { DynamicQuestionnaire, QuestionnaireResponse } = require('../models/Dynam
 const UserChangeLog = require('../models/UserChangeLog');
 const MedicalReport = require('../models/MedicalReport');
 const SystemConfig  = require('../models/SystemConfig');
+const { DEFAULT_CONFIG: DEFAULT_HEALTH_ASSISTANT, normalizeConfig: normalizeHealthAssistant } = require('../utils/healthAssistantConfig');
 const FollowUpPlan  = require('../models/FollowUpPlan');
 const Commission    = require('../models/Commission');
 const adminAuth = require('../middleware/adminAuth');
@@ -1884,6 +1885,21 @@ router.get('/system-config/daily-care', adminAuth, async (req, res) => {
   } catch (err) {
     res.status(500).json({ success: false, message: err.message });
   }
+});
+
+router.get('/system-config/health-assistant', adminAuth, async (_req, res) => {
+  try {
+    const cfg = await SystemConfig.findOne({ key: 'healthAssistant' });
+    res.json({ success: true, data: normalizeHealthAssistant(cfg?.value || DEFAULT_HEALTH_ASSISTANT) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.put('/system-config/health-assistant', adminAuth, async (req, res) => {
+  try {
+    const value = normalizeHealthAssistant(req.body);
+    await SystemConfig.findOneAndUpdate({ key: 'healthAssistant' }, { key: 'healthAssistant', value, label: '健康规划师与健康服务团队配置' }, { upsert: true, new: true });
+    res.json({ success: true, data: value, message: '健康助手配置已保存并实时生效' });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 router.get('/system-config/review-experience', adminAuth, async (_req, res) => {

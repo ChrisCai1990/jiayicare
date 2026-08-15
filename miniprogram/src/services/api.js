@@ -220,6 +220,8 @@ export const reportsAPI = {
 
 // ── AI Chat ───────────────────────────────────────────────────────
 export const chatAPI = {
+  getConfig: () => request('/chat/config'),
+  getStatus: () => request('/chat/status'),
   send: (messages, userInfo) =>
     request('/chat', {
       method: 'POST',

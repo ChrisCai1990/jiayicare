@@ -8,14 +8,21 @@ import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import MessagesPage from '../messages/index';
 
-const QUICK_PROMPTS = ['我想了解体检服务', '帮家人找合适的服务', '我还不确定需要什么服务'];
-const PLANNER_GREETING = { role: 'assistant', content: '您好，我是AI健康规划师。我会先了解服务对象、所在城市、时间和预算偏好，再从平台已上架的产品中帮您筛选；如果暂时无法准确匹配，我会为您转接真人健康规划师。您这次想为谁了解哪类服务？' };
+const DEFAULT_CONFIG = {
+  plannerName: '小嘉 | 健康规划师', teamName: '健康服务团队', aiOnlineLabel: 'AI在线',
+  plannerCardTitle: '把复查这件事办妥', plannerCardSubtitle: '承接复查提醒，结合日常健康记录梳理流程，并按需对接陪诊、代办等服务。',
+  greeting: '您好，我是小嘉。您可以把已有的复查提醒或这次要办理的事项告诉我，我会先了解情况，再帮您整理下一步。',
+  quickPrompts: ['帮我安排已有的复查提醒', '看看我的血压或体重趋势', '我需要陪诊或代办服务'],
+  disclaimer: '内容用于健康管理和复查事项整理，不替代医生诊断和建议。',
+};
 
 // 小嘉健康规划师：仅梳理健康管理需求与规划平台服务，不提供医疗咨询。
 export default function ChatPage() {
   const { statusBarHeight } = useNavBar();
   const { user } = useAuth();
-  const [messages, setMessages] = useState([PLANNER_GREETING]);
+  const [assistantConfig, setAssistantConfig] = useState(DEFAULT_CONFIG);
+  const [onlineStatus, setOnlineStatus] = useState({ mode: 'ai', label: DEFAULT_CONFIG.aiOnlineLabel });
+  const [messages, setMessages] = useState([{ role: 'assistant', content: DEFAULT_CONFIG.greeting }]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [view, setView] = useState('team');
@@ -28,13 +35,28 @@ export default function ChatPage() {
   const historyUserRef = useRef('');
   const scrollRef = useRef();
 
+  useEffect(() => {
+    let active = true;
+    chatAPI.getConfig().then(res => {
+      if (!active || !res?.data) return;
+      const next = { ...DEFAULT_CONFIG, ...res.data };
+      setAssistantConfig(next);
+      if (!historyUserRef.current) setMessages([{ role: 'assistant', content: next.greeting }]);
+    }).catch(() => {});
+    const refreshStatus = () => chatAPI.getStatus().then(res => { if (active && res?.data) setOnlineStatus(res.data); }).catch(() => {});
+    refreshStatus();
+    const timer = setInterval(refreshStatus, 15000);
+    return () => { active = false; clearInterval(timer); };
+  }, []);
+
   // 与 App 端保持一致：进入规划师时从后端恢复最近 50 轮对话。
   // 对话记录按登录用户查询，既能跨页面/重启保留，也不会在切换账号时串话。
   useEffect(() => {
     if (!user?._id || historyUserRef.current === user._id) return;
     const historyUserId = user._id;
     historyUserRef.current = historyUserId;
-    setMessages([PLANNER_GREETING]);
+    const greeting = { role: 'assistant', content: assistantConfig.greeting };
+    setMessages([greeting]);
     chatAPI.getLogs(historyUserId).then((res) => {
       if (historyUserRef.current !== historyUserId) return;
       if (!res?.success || !Array.isArray(res.data) || res.data.length === 0) return;
@@ -42,9 +64,9 @@ export default function ChatPage() {
         log.userMessage ? { role: 'user', content: log.userMessage } : null,
         log.aiReply ? { role: 'assistant', content: log.aiReply } : null,
       ].filter(Boolean));
-      setMessages([PLANNER_GREETING, ...historyMessages]);
+      setMessages([greeting, ...historyMessages]);
     }).catch(() => {});
-  }, [user?._id]);
+  }, [user?._id, assistantConfig.greeting]);
 
   useDidShow(() => {
     const requestedView = Taro.getStorageSync('healthHubView');
@@ -114,29 +136,29 @@ export default function ChatPage() {
       }}>
         <View style={{ display: 'flex', alignItems: 'center', minHeight: '30px' }}>
           {view === 'ai' && <Text onClick={() => setView('team')} style={{ fontSize: '14px', color: colors.primary, marginRight: '10px' }}>‹ 返回</Text>}
-          <Text style={{ fontSize: '20px', fontWeight: 800, color: colors.textPrimary }}>{view === 'ai' ? 'AI健康规划师' : '健康管家'}</Text>
+          <View style={{ flex: 1 }}><Text style={{ display: 'block', fontSize: '20px', fontWeight: 800, color: colors.textPrimary }}>{view === 'ai' ? assistantConfig.plannerName : '健康管家'}</Text>{view === 'ai' && <Text style={{ display: 'block', fontSize: '11px', color: onlineStatus.mode === 'human' ? '#D97706' : '#059669', marginTop: '2px' }}>● {onlineStatus.label}</Text>}</View>
         </View>
       </View>
 
       {/* 两个区域同时挂载：团队消息进入页面即后台加载，切换时不再临时请求。 */}
       <View style={{ display: view === 'team' ? 'flex' : 'none', flex: 1, minHeight: 0, width: '100%' }}>
-        <MessagesPage embedded onOpenPlanner={() => setView('ai')} />
+        <MessagesPage embedded assistantConfig={assistantConfig} onlineStatus={onlineStatus} onOpenPlanner={() => setView('ai')} />
       </View>
       <View style={{ display: view === 'ai' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
       <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: '#EAF4EF', border: '1px solid #C9DED4' }}>
-        <Text style={{ display: 'block', color: colors.textPrimary, fontSize: '15px', fontWeight: 800 }}>先了解需求，再匹配服务</Text>
-        <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '11px', lineHeight: '17px', marginTop: '4px' }}>仅从平台已上架产品中推荐服务；体检方案由健康顾问后续确认，复杂需求可转真人健康规划师。</Text>
+        <Text style={{ display: 'block', color: colors.textPrimary, fontSize: '15px', fontWeight: 800 }}>{assistantConfig.plannerCardTitle}</Text>
+        <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '11px', lineHeight: '17px', marginTop: '4px' }}>{assistantConfig.plannerCardSubtitle}</Text>
       </View>
       <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
-        <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>内容仅用于健康管理需求梳理与服务规划，不替代专业人员意见</Text>
+        <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>{assistantConfig.disclaimer}</Text>
       </View>
       <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView={`planner-bottom-${messages.length}`}>
         {messages.length === 1 && (
           <View style={{ marginBottom: `${spacing.md}px` }}>
             <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>您想先做哪一步？</Text>
             <View style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {QUICK_PROMPTS.map((prompt) => (
+              {(assistantConfig.quickPrompts || []).map((prompt) => (
                 <View key={prompt} onClick={() => choosePrompt(prompt)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 13px', borderRadius: `${radius.sm}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}` }}>
                   <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 700 }}>{prompt}</Text>
                   <Text style={{ fontSize: '16px', color: colors.primary }}>›</Text>
@@ -154,7 +176,7 @@ export default function ChatPage() {
               backgroundColor: m.role === 'user' ? colors.primary : '#fff',
               border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
             }}>
-              {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>AI健康规划师</Text>}
+              {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>{onlineStatus.mode === 'human' ? onlineStatus.label : assistantConfig.plannerName}</Text>}
               <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>
             </View>
           </View>
