@@ -114,7 +114,7 @@ test('人工录入的检查单主要结论也纳入小结', () => {
 });
 
 test('纯正常检查主要结论不纳入小结', () => {
-  for (const conclusion of ['正常', '未见异常', '未见明显异常', '阴性', '大致正常', '未见占位', '心脏结构未见明显异常']) {
+  for (const conclusion of ['正常', '未见异常', '未见明显异常', '阴性', '大致正常', '未见占位', '心脏结构未见明显异常', '胸部CT平扫未见明显病变', '肝未见明显异常声像', '结论:1、阴性']) {
     assert.equal(isNormalOnlyConclusion(conclusion), true, conclusion);
   }
   const groups = buildSummaryInputGroups([{
@@ -127,7 +127,7 @@ test('纯正常检查主要结论不纳入小结', () => {
 });
 
 test('同时含正常和异常的检查主要结论完整保留', () => {
-  for (const conclusion of ['心脏大小正常，二尖瓣轻度反流', '双肺散在结节，其余未见异常']) {
+  for (const conclusion of ['心脏大小正常，二尖瓣轻度反流', '双肺散在结节，其余未见异常', '肝未见明显异常声像，胆囊壁增厚']) {
     assert.equal(isNormalOnlyConclusion(conclusion), false, conclusion);
   }
 });

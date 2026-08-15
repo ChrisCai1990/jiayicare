@@ -29,10 +29,20 @@ function resolveConfiguredProjectName(projectName, projectOrder) {
 }
 
 function isNormalOnlyConclusion(value) {
-  const text = String(value || '').trim().replace(/[。；;，,\s]+$/g, '');
+  const text = String(value || '')
+    .trim()
+    .replace(/^(?:主要)?结论\s*[：:]\s*(?:\d+\s*[、.．]\s*)?/i, '')
+    .replace(/[。；;，,\s]+$/g, '');
   if (!text) return true;
-  // 只排除整段明确表示正常/阴性的主要结论。混合结论不会命中，避免误删异常。
-  return /^(?:正常|大致正常|基本正常|阴性|未见(?:明显)?异常|未见(?:明显)?(?:占位|病变)|(?:[一-龥A-Za-z0-9()+/\-]+的?)?(?:结构|形态|大小|功能|检查)?未见(?:明显)?异常)$/i.test(text);
+  // 先移除明确的正常语义，再检查剩余内容是否含异常证据。
+  // 这样可以排除“胸部CT平扫未见明显病变”，但保留“肺结节，其余未见异常”。
+  const withoutNormalPhrases = text
+    .replace(/未见(?:明显)?(?:异常(?:声像)?|病变|占位(?:性病变)?)/g, '')
+    .replace(/无(?:明显)?异常/g, '')
+    .replace(/大致正常|基本正常|阴性|正常/g, '');
+  const abnormalEvidence = /结节|斑块|囊肿|钙化|增生|肥大|反流|异常|增高|升高|降低|减低|阳性|强回声|低回声|高回声|占位|病变|增粗|增厚|狭窄|扩张|积液|硬化|脂肪肝|纤维化|息肉|炎症|癌|瘤/i;
+  if (abnormalEvidence.test(withoutNormalPhrases)) return false;
+  return /(?:未见(?:明显)?(?:异常(?:声像)?|病变|占位(?:性病变)?)|无(?:明显)?异常|大致正常|基本正常|阴性|正常)/.test(text);
 }
 
 function buildSummaryInputGroups(reports, bucketKey, categoryBucket, projectOrder = new Map()) {
