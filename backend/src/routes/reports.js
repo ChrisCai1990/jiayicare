@@ -50,6 +50,31 @@ router.post('/upload', auth, (req, res, next) => {
   });
 });
 
+// 微信小程序的 uploadFile 域名需要单独配置。提供普通 JSON 请求的逐图上传通道，
+// 避免域名配置未同步时请求在客户端直接失败。
+router.post('/upload-base64', auth, async (req, res, next) => {
+  try {
+    const content = String(req.body?.content || '');
+    const declaredMime = String(req.body?.mimeType || '').toLowerCase();
+    if (!content || !/^data:[^;]+;base64,/.test(content)) {
+      return res.status(400).json({ success: false, message: '未收到有效图片内容' });
+    }
+    const raw = content.replace(/^data:[^;]+;base64,/, '');
+    const buffer = Buffer.from(raw, 'base64');
+    if (!buffer.length) return res.status(400).json({ success: false, message: '图片内容为空' });
+    if (buffer.length > 15 * 1024 * 1024) return res.status(413).json({ success: false, message: '单张图片不能超过15MB' });
+    const detectedMime = detectImageMime(buffer);
+    if (!detectedMime) return res.status(400).json({ success: false, message: '图片格式无法识别，请选择 JPG、PNG、WEBP 或 HEIC 图片' });
+    if (!process.env.OSS_ACCESS_KEY_ID) return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });
+    const result = await uploadBase64(`data:${detectedMime};base64,${raw}`, detectedMime);
+    console.info('[report-upload-base64]', { userId: String(req.user._id), size: buffer.length, declaredMime, mimeType: detectedMime, key: result.key });
+    res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: buffer.length } });
+  } catch (uploadErr) {
+    console.error('[report-upload-base64] failed', { userId: String(req.user?._id || ''), message: uploadErr.message });
+    next(uploadErr);
+  }
+});
+
 // 类目中文映射
 const CATEGORY_LABEL = {
   tumor:          '常见肿瘤筛查',

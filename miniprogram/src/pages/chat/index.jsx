@@ -77,8 +77,10 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (view !== 'ai') return;
-    const timer = setTimeout(() => setPlannerScrollTop((value) => value + 100000), 100);
-    return () => clearTimeout(timer);
+    const jumpToBottom = () => setPlannerScrollTop(Date.now());
+    const timer = setTimeout(jumpToBottom, 80);
+    const retryTimer = setTimeout(jumpToBottom, 450);
+    return () => { clearTimeout(timer); clearTimeout(retryTimer); };
   }, [view, messages.length, sending]);
 
   const send = async () => {
@@ -156,13 +158,13 @@ export default function ChatPage() {
         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
         <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>{assistantConfig.disclaimer}</Text>
       </View>
-      <ScrollView scrollX style={{ flexShrink: 0, width: '100%', whiteSpace: 'nowrap', padding: `${spacing.sm}px ${spacing.md}px 0`, boxSizing: 'border-box' }}>
+      <View style={{ flexShrink: 0, width: '100%', display: 'flex', flexWrap: 'wrap', gap: '7px', padding: `${spacing.sm}px ${spacing.md}px 0`, boxSizing: 'border-box' }}>
         {(assistantConfig.quickPrompts || []).map((prompt) => (
-          <View key={prompt} onClick={() => choosePrompt(prompt)} style={{ display: 'inline-block', padding: '7px 11px', marginRight: '7px', borderRadius: `${radius.full}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}` }}>
-            <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 700 }}>{prompt}</Text>
+          <View key={prompt} onClick={() => choosePrompt(prompt)} style={{ maxWidth: '100%', padding: '7px 10px', borderRadius: `${radius.full}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}`, boxSizing: 'border-box' }}>
+            <Text style={{ fontSize: '10px', lineHeight: '15px', color: colors.primary, fontWeight: 700, whiteSpace: 'normal', wordBreak: 'break-all' }}>{prompt}</Text>
           </View>
         ))}
-      </ScrollView>
+      </View>
       <ScrollView scrollY scrollTop={plannerScrollTop} scrollWithAnimation style={{ flex: 1, padding: `${spacing.md}px`, boxSizing: 'border-box' }}>
         {messages.map((m, i) => (
           <View key={i} style={{

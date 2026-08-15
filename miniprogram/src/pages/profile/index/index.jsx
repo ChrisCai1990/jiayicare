@@ -132,20 +132,20 @@ export default function ProfilePage() {
         backgroundColor: '#fff', margin: `-8px ${spacing.lg}px 0`, borderRadius: `${radius.md}px`,
         border: `1px solid ${colors.border}`, overflow: 'hidden',
       }}>
-        <View style={{ display: 'flex', padding: `${spacing.md}px ${spacing.lg}px` }}>
-          <View style={{ flex: 1, textAlign: 'center' }}>
-            <Text style={{ fontSize: '14px', fontWeight: 800, color: hasService ? colors.primary : colors.textMuted, display: 'block' }}>{memberType}</Text>
-            <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '4px', display: 'block' }}>会员类型</Text>
+        <View style={{ display: 'flex', alignItems: 'center', padding: `${spacing.md}px 8px` }}>
+          <View style={{ flex: 1, minWidth: 0, height: '66px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '14px', fontWeight: 800, color: hasService ? colors.primary : colors.textMuted, whiteSpace: 'nowrap' }}>{memberType}</Text></View>
+            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>会员类型</Text>
           </View>
-          <View style={{ width: '1px', backgroundColor: colors.borderLight }} />
-          <View style={{ flex: 1, textAlign: 'center' }}>
-            <Text style={{ fontSize: '20px', fontWeight: 800, color: hasService ? colors.primary : colors.textMuted, display: 'block' }}>{hasService ? daysLeft : '--'}</Text>
-            <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '4px', display: 'block' }}>服务天数</Text>
+          <View style={{ width: '1px', height: '50px', backgroundColor: colors.borderLight, flexShrink: 0 }} />
+          <View style={{ flex: 1, minWidth: 0, height: '66px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '22px', lineHeight: '30px', fontWeight: 800, color: hasService ? colors.primary : colors.textMuted }}>{hasService ? daysLeft : '--'}</Text></View>
+            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>服务天数</Text>
           </View>
-          <View style={{ width: '1px', backgroundColor: colors.borderLight }} />
-          <View style={{ flex: 1, textAlign: 'center' }}>
-            <Text style={{ fontSize: '13px', fontWeight: 800, color: hasService ? colors.textPrimary : colors.textMuted, display: 'block' }}>{hasService ? user.serviceExpiry : '--'}</Text>
-            <Text style={{ fontSize: '11px', color: colors.textMuted, marginTop: '4px', display: 'block' }}>到期日</Text>
+          <View style={{ width: '1px', height: '50px', backgroundColor: colors.borderLight, flexShrink: 0 }} />
+          <View style={{ flex: 1, minWidth: 0, height: '66px', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center' }}>
+            <View style={{ height: '30px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '13px', fontWeight: 800, color: hasService ? colors.textPrimary : colors.textMuted, whiteSpace: 'nowrap' }}>{hasService ? user.serviceExpiry : '--'}</Text></View>
+            <Text style={{ fontSize: '11px', lineHeight: '16px', color: colors.textMuted, display: 'block' }}>到期日</Text>
           </View>
         </View>
         <View style={{

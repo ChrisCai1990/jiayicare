@@ -199,7 +199,13 @@ export const reportsAPI = {
   create: (data) => request('/reports', { method: 'POST', body: JSON.stringify(data), timeout: 60000 }),
   delete: (id) => request(`/reports/${id}`, { method: 'DELETE' }),
   parseAI: (id) => request(`/reports/${id}/parse-ai`, { method: 'POST' }),
-  // 小程序专用：用 Taro.chooseImage + Taro.uploadFile 上传报告图片，再走后端 /reports 创建
+  // 使用普通 request 逐图上传，避免微信 uploadFile 域名白名单未同步时请求在客户端被拦截。
+  uploadBase64: (content, mimeType) => request('/reports/upload-base64', {
+    method: 'POST',
+    body: JSON.stringify({ content, mimeType }),
+    timeout: 60000,
+  }),
+  // 保留文件上传能力供其他已配置 uploadFile 域名的环境使用。
   uploadFile: (filePath) =>
     Taro.uploadFile({
       url: `${BASE_URL}/reports/upload`,

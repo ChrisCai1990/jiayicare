@@ -32,12 +32,13 @@ const normalizeRoleSender = (sender = '') => sender
 const assistantName = (member, fallback) => {
   const title = String(member?.title || fallback).trim();
   const name = String(member?.name || '').trim().replace(new RegExp(`${title}$`), '');
-  return `${name || title}助理`;
+  return name || title;
 };
 const visibleMessageContent = (message) => String(message?.content || '')
   .replace(/\n?以上为AI初步回复，仅供参考，不构成医疗诊断或建议，您的专属医护人员会尽快跟进。/g, '')
   .replace(/\n?（AI回复，仅供参考）/g, '')
   .replace(/[^。！？\n]*医生目前正忙于诊疗[^。！？\n]*[。！？]?/g, '真人这会儿正在接待其他客户，您可以先和我聊聊，我会陪您一起梳理。')
+  .replace(/[^。！？\n]*真人(?:这会儿|目前)?正在接待(?:其他)?客户[^。！？\n]*[。！？]?/g, '在的，怎么啦？您接着说就好。')
   .replace(/我们会尽快安排专属健康管理师为您跟进[。！？]?/g, '')
   .replace(/我马上帮您转给专属顾问跟进[～~。！？]?/g, '您接着说就好，我会认真听着。')
   .trim();

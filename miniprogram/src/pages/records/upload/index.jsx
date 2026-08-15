@@ -6,7 +6,7 @@ import { reportsAPI, mediaUrl } from '../../../services/api';
 import useNavBar from '../../../hooks/useNavBar';
 import Icon from '../../../components/Icon';
 
-// 用 Taro.chooseImage + Taro.uploadFile 对接后端 POST /reports 接口
+// 逐张读取压缩图并通过普通 HTTPS 请求上传，避免 uploadFile 域名配置导致真机端请求未到后端。
 export default function ReportUploadPage() {
   const { statusBarHeight } = useNavBar();
   const [reports, setReports] = useState([]);
@@ -26,7 +26,13 @@ export default function ReportUploadPage() {
       setUploading(true);
       const uploadedFiles = [];
       for (const filePath of filePaths) {
-        uploadedFiles.push((await reportsAPI.uploadFile(filePath)).data);
+        const base64 = Taro.getFileSystemManager().readFileSync(filePath, 'base64');
+        const ext = (filePath.split('.').pop() || 'jpg').toLowerCase();
+        const mimeType = ext === 'png' ? 'image/png'
+          : ext === 'webp' ? 'image/webp'
+          : (ext === 'heic' || ext === 'heif') ? 'image/heic'
+          : 'image/jpeg';
+        uploadedFiles.push((await reportsAPI.uploadBase64(`data:${mimeType};base64,${base64}`, mimeType)).data);
       }
       const createRes = await reportsAPI.create({
         title: `体检报告 ${new Date().getFullYear()}年${new Date().getMonth() + 1}月${new Date().getDate()}日`,
@@ -46,7 +52,8 @@ export default function ReportUploadPage() {
       }
     } catch (err) {
       if (err.errMsg && /cancel/i.test(err.errMsg)) return;
-      Taro.showToast({ title: err.message || '上传失败', icon: 'none' });
+      console.error('[report-upload]', err);
+      Taro.showModal({ title: '上传失败', content: err.message || err.errMsg || '网络异常，请稍后重试', showCancel: false });
     } finally {
       setUploading(false);
     }
