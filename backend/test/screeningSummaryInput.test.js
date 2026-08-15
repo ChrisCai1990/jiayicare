@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   buildSummaryInputGroups, projectNameForItem, resolveConfiguredProjectName,
-  ensureLpla2InCardiovascularSummary, buildDeterministicSummary,
+  ensureLpla2InCardiovascularSummary, buildDeterministicSummary, isNormalOnlyConclusion,
 } = require('../src/utils/screeningSummaryInput');
 
 const tumorBucket = () => 'tumor_risk';
@@ -111,6 +111,25 @@ test('人工录入的检查单主要结论也纳入小结', () => {
   }];
   const groups = buildSummaryInputGroups(reports, 'tumor_risk', tumorBucket);
   assert.equal(groups[0].conclusions[0].conclusion, '右肺上叶磨玻璃结节');
+});
+
+test('纯正常检查主要结论不纳入小结', () => {
+  for (const conclusion of ['正常', '未见异常', '未见明显异常', '阴性', '大致正常', '未见占位', '心脏结构未见明显异常']) {
+    assert.equal(isNormalOnlyConclusion(conclusion), true, conclusion);
+  }
+  const groups = buildSummaryInputGroups([{
+    _id: 'r1', reportItems: [
+      { name: '心脏超声', itemType: 'imaging', conclusion: '未见明显异常', screeningParent: '心血管病早筛' },
+      { name: '胸部CT', itemType: 'imaging', conclusion: '未见占位', screeningParent: '肺癌早筛' },
+    ],
+  }], 'tumor_risk', tumorBucket);
+  assert.deepEqual(groups, []);
+});
+
+test('同时含正常和异常的检查主要结论完整保留', () => {
+  for (const conclusion of ['心脏大小正常，二尖瓣轻度反流', '双肺散在结节，其余未见异常']) {
+    assert.equal(isNormalOnlyConclusion(conclusion), false, conclusion);
+  }
 });
 
 test('确定性小结不遗漏肺CT异常', () => {

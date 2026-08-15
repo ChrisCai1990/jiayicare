@@ -28,6 +28,13 @@ function resolveConfiguredProjectName(projectName, projectOrder) {
   return projectName;
 }
 
+function isNormalOnlyConclusion(value) {
+  const text = String(value || '').trim().replace(/[。；;，,\s]+$/g, '');
+  if (!text) return true;
+  // 只排除整段明确表示正常/阴性的主要结论。混合结论不会命中，避免误删异常。
+  return /^(?:正常|大致正常|基本正常|阴性|未见(?:明显)?异常|未见(?:明显)?(?:占位|病变)|(?:[一-龥A-Za-z0-9()+/\-]+的?)?(?:结构|形态|大小|功能|检查)?未见(?:明显)?异常)$/i.test(text);
+}
+
 function buildSummaryInputGroups(reports, bucketKey, categoryBucket, projectOrder = new Map()) {
   const grouped = new Map();
   (reports || []).forEach(report => {
@@ -54,7 +61,7 @@ function buildSummaryInputGroups(reports, bucketKey, categoryBucket, projectOrde
       const isImaging = item.itemType === 'imaging';
       const mainConclusion = String(item.conclusion || '').trim();
       // 检验项目按 abnormal/attention 筛选；检查项目只按审核后的“主要结论”纳入，不依赖 status。
-      if (isImaging ? !mainConclusion : !['abnormal', 'attention'].includes(item.status)) return;
+      if (isImaging ? isNormalOnlyConclusion(mainConclusion) : !['abnormal', 'attention'].includes(item.status)) return;
       const projectName = resolveConfiguredProjectName(projectNameForItem(item, report), projectOrder);
       if (categoryBucket(item.screeningCategory || report.screeningCategory, report.screeningL1 || '', projectName) !== bucketKey) return;
       if (!grouped.has(projectName)) grouped.set(projectName, {
@@ -131,7 +138,7 @@ function buildDeterministicSummary(groups) {
   return (groups || []).map(group => {
     const details = [];
     (group.conclusions || []).forEach(item => {
-      if (item.itemType === 'imaging' ? !String(item.conclusion || '').trim() : !['abnormal', 'attention'].includes(item.status)) return;
+      if (item.itemType === 'imaging' ? isNormalOnlyConclusion(item.conclusion) : !['abnormal', 'attention'].includes(item.status)) return;
       const detail = conclusionTextForItem(item);
       if (detail && !details.includes(detail)) details.push(detail);
     });
@@ -143,6 +150,7 @@ module.exports = {
   buildSummaryInputGroups,
   projectNameForItem,
   resolveConfiguredProjectName,
+  isNormalOnlyConclusion,
   ensureLpla2InCardiovascularSummary,
   buildDeterministicSummary,
 };
