@@ -2,7 +2,7 @@ const text = value => String(value == null ? '' : value).trim();
 
 const DEPARTMENT_EXAMS = [
   { name: '耳鼻喉科检查', section: /耳鼻喉/, detail: /^(?:耳部|鼻部|咽部|咽喉部|口咽部|喉部|听力)(?:检查)?$|^ENT建议$/i },
-  { name: '眼科检查', section: /眼科/, detail: /^(?:初步印象|左矫正视力|右矫正视力|矫正方式|外眼|眼睑|结膜|角膜|前房|虹膜|左晶体|右晶体|晶状体|左玻璃体|右玻璃体|玻璃体|左杯盘比|右杯盘比|杯盘比|瞳孔|眼底|色觉)(?:检查)?$|^眼科建议$/ },
+  { name: '眼科检查', section: /眼科/, detail: /^(?:初步印象|左矫正视力|右矫正视力|矫正方式|外眼|眼睑|结膜|角膜|前房(?:清)?|周边前房深度(?:左|右)|虹膜|左晶体|右晶体|晶状体|左玻璃体|右玻璃体|玻璃体|左杯盘比|右杯盘比|杯盘比|瞳孔|眼底|色觉)(?:检查)?$|^眼科建议$/ },
   { name: '内科检查', section: /内科/, detail: /^(?:心|肺|肝|脾|腹部|神经系统|淋巴结|甲状腺)(?:检查|触诊)?$/ },
   { name: '外科检查', section: /外科/, detail: /^(?:皮肤|浅表淋巴结|脊柱|四肢|肛门|外生殖器)(?:检查)?$/ },
   { name: '妇科检查', section: /妇科/, detail: /^(?:外阴|阴道|宫颈|子宫|附件|妇科内诊)(?:检查)?$/ },
@@ -10,38 +10,25 @@ const DEPARTMENT_EXAMS = [
 ];
 
 function normalizeDepartmentExamItems(items) {
-  let result = [...(items || [])];
-  for (const exam of DEPARTMENT_EXAMS) {
-    const candidates = result.filter(item => {
-      const context = `${text(item.sourceSection)} ${text(item.orderName)}`;
-      return exam.section.test(context) && exam.detail.test(text(item.name));
+  return (items || []).map(item => {
+    const exam = DEPARTMENT_EXAMS.find(candidate => {
+      const context = `${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`;
+      return candidate.section.test(context);
     });
-    const mains = result.filter(item => exam.section.test(text(item.name)) && !exam.detail.test(text(item.name)));
-    if (!candidates.length && !mains.length) continue;
-    const all = [...mains, ...candidates];
-    const first = all.slice().sort((a, b) => Number(a._page || 0) - Number(b._page || 0)
-      || Number(a._order || 0) - Number(b._order || 0))[0];
-    const findings = [];
-    const diagnoses = [];
-    for (const item of all) {
-      const finding = text(item.findings) || text(item.value);
-      if (finding) findings.push(exam.detail.test(text(item.name)) ? `${text(item.name)}：${finding}` : finding);
-      const diagnosis = text(item.diagnosis) || text(item.conclusion);
-      if (diagnosis) diagnoses.push(diagnosis);
-    }
-    const unique = values => [...new Set(values.filter(Boolean))].join('；');
-    const diagnosis = unique(diagnoses);
-    const remove = new Set(all);
-    result = result.filter(item => !remove.has(item));
-    result.push({
-      ...first,
-      name: exam.name,
+    if (!exam) return item;
+
+    const isDetail = exam.detail.test(text(item.name));
+    const finding = text(item.findings) || text(item.value);
+    return {
+      ...item,
+      // 科室体检也必须按原报告一行一项展示，不能再压成一个无法核对的大文本框。
+      name: isDetail ? text(item.name) : (text(item.name) || exam.name),
       itemType: 'imaging',
-      value: '', unit: '', referenceRange: '', orderName: '', bodyPart: '',
-      findings: unique(findings), diagnosis, conclusion: diagnosis,
-    });
-  }
-  return result;
+      value: '', unit: '', referenceRange: '',
+      sourceSection: text(item.sourceSection) || exam.name,
+      findings: finding,
+    };
+  });
 }
 
 // 呼气试验报告常把“13”漏识别，甚至把“幽门螺杆菌”识别成相近文字。
@@ -116,17 +103,14 @@ function normalizeSingleExamReportItems(items, report = {}) {
   if (/全科|内外科/.test(title)) {
     const rows = list.filter(item => !NON_EXAM_LABEL.test(text(item.name)));
     if (!rows.length) return list;
-    const findings = rows.map(item => {
-      const value = text(item.findings) || text(item.value) || text(item.diagnosis) || text(item.conclusion);
-      return value ? `${text(item.name)}：${value}` : '';
-    }).filter(Boolean);
-    const abnormal = rows.some(item => item.status === 'abnormal');
-    return [{
-      ...rows[0], name: '全科医学检查', itemType: 'imaging', value: '', unit: '', referenceRange: '',
-      orderName: '全科医学检查', sourceSection: '全科医学检查', bodyPart: '',
-      findings: [...new Set(findings)].join('\n'), diagnosis: '', conclusion: '',
-      status: abnormal ? 'abnormal' : 'normal',
-    }];
+    return rows.map(item => ({
+      ...item,
+      itemType: 'imaging',
+      value: '', unit: '', referenceRange: '',
+      orderName: text(item.orderName) || '全科医学检查',
+      sourceSection: text(item.sourceSection) || '全科医学检查',
+      findings: text(item.findings) || text(item.value) || text(item.diagnosis) || text(item.conclusion),
+    }));
   }
   return list;
 }

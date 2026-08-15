@@ -25,35 +25,45 @@ test('单项碳13报告删除医生和结论版面标签，只保留一个检查
   assert.equal(output[0].itemType, 'imaging');
 });
 
-test('全科单项报告无论OCR标成lab还是data都整体收敛为一个检查项目', () => {
+test('全科单项报告逐项保留，便于按原报告逐行核对', () => {
   const output = normalizeSingleExamReportItems([
     { name: '是否吸烟', value: '不吸', itemType: 'lab' },
     { name: '是否饮酒', value: '饮酒', itemType: 'data' },
     { name: '甲状腺', value: '甲状腺结节', itemType: 'lab', status: 'abnormal' },
   ], { title: '全科（内外科）' });
-  assert.equal(output.length, 1);
-  assert.equal(output[0].name, '全科医学检查');
-  assert.equal(output[0].itemType, 'imaging');
-  assert.match(output[0].findings, /是否吸烟：不吸/);
-  assert.match(output[0].findings, /甲状腺：甲状腺结节/);
+  assert.equal(output.length, 3);
+  assert.deepEqual(output.map(item => item.name), ['是否吸烟', '是否饮酒', '甲状腺']);
+  assert.ok(output.every(item => item.itemType === 'imaging'));
+  assert.equal(output[0].findings, '不吸');
+  assert.equal(output[2].findings, '甲状腺结节');
 });
 
-test('耳鼻喉科按检查项目汇总，不把器官细行当成独立检查', () => {
+test('耳鼻喉科保留每个器官细行，不合并成科室摘要', () => {
   const items = ['耳部检查', '鼻部检查', '咽部检查'].map((name, index) => ({
     name, findings: '未见明显异常', sourceSection: '耳鼻喉科体检', itemType: 'imaging', _page: 1, _order: index,
   }));
   const output = normalizeDepartmentExamItems(items);
-  assert.equal(output.length, 1);
-  assert.equal(output[0].name, '耳鼻喉科检查');
-  assert.match(output[0].findings, /耳部检查：未见明显异常/);
-  assert.match(output[0].findings, /鼻部检查：未见明显异常/);
+  assert.equal(output.length, 3);
+  assert.deepEqual(output.map(item => item.name), ['耳部检查', '鼻部检查', '咽部检查']);
+  assert.ok(output.every(item => item.itemType === 'imaging'));
 });
 
-test('单条科室检查名称也归一为可归类的正式检查项目名', () => {
+test('单条科室检查保留报告原名', () => {
   const output = normalizeDepartmentExamItems([
     { name: '口腔科', findings: '未见明显异常', sourceSection: '口腔科体检', itemType: 'imaging' },
   ]);
-  assert.equal(output[0].name, '口腔科检查');
+  assert.equal(output[0].name, '口腔科');
+});
+
+test('眼科前房清和双侧周边前房深度逐项保留且不漏字段', () => {
+  const output = normalizeDepartmentExamItems([
+    { name: '前房清', value: '是', sourceSection: '眼科体检', itemType: 'data' },
+    { name: '周边前房深度右', value: '≥1', sourceSection: '眼科体检', itemType: 'data' },
+    { name: '周边前房深度左', value: '≥1', sourceSection: '眼科体检', itemType: 'data' },
+  ]);
+  assert.deepEqual(output.map(item => item.name), ['前房清', '周边前房深度右', '周边前房深度左']);
+  assert.deepEqual(output.map(item => item.findings), ['是', '≥1', '≥1']);
+  assert.ok(output.every(item => item.itemType === 'imaging'));
 });
 
 test('把明确写着胆囊的超声结论从肝脏项搬回胆囊项', () => {

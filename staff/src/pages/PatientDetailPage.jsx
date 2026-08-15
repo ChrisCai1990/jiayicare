@@ -10154,9 +10154,15 @@ export default function PatientDetailPage() {
                                 {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
                               </div>
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
-                                <input style={{ ...inp, fontWeight: 600, flex: 2 }} value={it.name || ''} placeholder="项目名称" onChange={e => updItem(i, { name: e.target.value })} />
+                                <div style={{ flex: 2 }}>
+                                  {isImaging(it) && <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>原报告项目</div>}
+                                  <input style={{ ...inp, fontWeight: 600, width: '100%' }} value={it.name || ''} placeholder="项目名称" onChange={e => updItem(i, { name: e.target.value })} />
+                                </div>
                                 {isImaging(it) ? (
-                                  <input style={{ ...inp, width: 110 }} value={it.bodyPart || ''} placeholder="检查部位" onChange={e => updItem(i, { bodyPart: e.target.value })} />
+                                  <div style={{ width: 110 }}>
+                                    <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>检查部位</div>
+                                    <input style={{ ...inp, width: '100%' }} value={it.bodyPart || ''} placeholder="可留空" onChange={e => updItem(i, { bodyPart: e.target.value })} />
+                                  </div>
                                 ) : <>
                                   <input style={{ ...inp, flex: 1, color: sc }} value={it.value || ''} placeholder="数值" onChange={e => updItem(i, { value: e.target.value })} />
                                   <input style={{ ...inp, width: 70 }} value={it.unit || ''} placeholder="单位" onChange={e => updItem(i, { unit: e.target.value })} />
@@ -10178,7 +10184,8 @@ export default function PatientDetailPage() {
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>
                               {isImaging(it) && <>
-                                <textarea style={{ ...inp, minHeight: 58, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.findings || ''} placeholder="检查所见（完整原文）" onChange={e => updItem(i, { findings: e.target.value })} />
+                                <div style={{ fontSize: 11, color: '#4A6558', fontWeight: 600, margin: '2px 0' }}>检查结果（原报告同行内容）</div>
+                                <textarea style={{ ...inp, minHeight: 58, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.findings || ''} placeholder="该项目对应的完整原文结果" onChange={e => updItem(i, { findings: e.target.value })} />
                                 <textarea style={{ ...inp, minHeight: 42, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.diagnosis || ''} placeholder="诊断意见" onChange={e => updItem(i, { diagnosis: e.target.value })} />
                                 <input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD', marginBottom: 6 }} value={it.conclusion || ''} placeholder="主要结论" onChange={e => updItem(i, { conclusion: e.target.value })} />
                               </>}
