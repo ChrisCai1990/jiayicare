@@ -78,6 +78,8 @@ async function request(path, options = {}) {
 
 // ── Auth ─────────────────────────────────────────────────────────
 export const authAPI = {
+  reviewExperienceStatus: () => request('/auth/review-experience/status'),
+  reviewExperienceLogin: () => request('/auth/review-experience/login', { method: 'POST' }),
   sendCode: (phone) =>
     request('/auth/send-code', { method: 'POST', body: JSON.stringify({ phone }) }),
 
@@ -117,6 +119,7 @@ export const userAPI = {
   getAiRiskAssessment: () => request('/user/ai-risk-assessment'),
   postAiRiskAssessment: () => request('/user/ai-risk-assessment', { method: 'POST' }),
   getScreeningYearlySummary: (year) => request(`/user/screening-yearly-summary${year ? `?year=${year}` : ''}`),
+  requestRenewal: (data) => request('/user/renewal-request', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 // ── Health Records ────────────────────────────────────────────────
@@ -204,7 +207,14 @@ export const reportsAPI = {
       name: 'file',
       header: _token ? { Authorization: `Bearer ${_token}` } : {},
     }).then((res) => {
-      try { return JSON.parse(res.data); } catch { return res.data; }
+      let data;
+      try { data = JSON.parse(res.data); } catch { data = res.data; }
+      if (res.statusCode < 200 || res.statusCode >= 300 || !data?.success) {
+        const error = new Error(data?.message || `上传失败（${res.statusCode}）`);
+        error.statusCode = res.statusCode;
+        throw error;
+      }
+      return data;
     }),
 };
 

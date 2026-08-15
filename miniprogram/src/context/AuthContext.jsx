@@ -31,6 +31,17 @@ export function AuthProvider({ children }) {
     })();
   }, []);
 
+  useEffect(() => {
+    if (loading || token) return;
+    let route = '';
+    try {
+      const pages = Taro.getCurrentPages?.() || [];
+      route = pages[pages.length - 1]?.route || '';
+    } catch {}
+    if (route === 'pages/auth/login/index' || route === 'pages/legal/index') return;
+    Taro.reLaunch({ url: '/pages/auth/login/index' }).catch(() => {});
+  }, [loading, token]);
+
   const login = async (userData, tok) => {
     saveToken(tok);
     setToken(tok);

@@ -1675,4 +1675,23 @@ router.post('/ai-risk-assessment', auth, async (req, res) => {
   }
 });
 
+router.post('/renewal-request', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user._id).lean();
+    if (!user) return res.status(404).json({ success: false, message: '用户不存在' });
+    const since = new Date(Date.now() - 10 * 60 * 1000);
+    const duplicate = await Message.findOne({ user: user._id, type: 'system', title: '续约服务申请', createdAt: { $gte: since } }).lean();
+    if (duplicate) return res.json({ success: true, duplicate: true, message: '续约需求已提交，请勿重复操作' });
+    const packageName = req.body.packageName || SERVICE_PACKAGE_LABELS[user.servicePackage] || user.servicePackage || '当前会员服务';
+    const content = `会员${user.name || ''}主动申请续约：${packageName}；到期日：${req.body.expiry || user.serviceExpiry || '待确认'}；剩余天数：${req.body.daysLeft ?? '待确认'}。`;
+    let staffId = user.assignedHealthManager;
+    if (!staffId) staffId = (await Admin.findOne({ role: { $in: ['healthManager', 'superadmin'] }, active: { $ne: false } }).sort({ role: 1 }).lean())?._id;
+    if (staffId) await FollowUp.create({ staffId, assignedTo: staffId, patientId: user._id, type: 'other', status: 'planned', theme: '会员续约需求', content, plannedContent: content, date: new Date() });
+    await Message.create({ user: user._id, type: 'system', sender: '嘉医汇', title: '续约服务申请', content: staffId ? '续约需求已发送给健管专员，工作人员会尽快与您联系。' : '续约需求已登记，平台将在分配专员后尽快与您联系。', unread: true });
+    res.json({ success: true, queued: !staffId, message: staffId ? '续约需求已发送给健管专员' : '续约需求已登记，等待分配专员' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: '续约需求提交失败，请稍后重试' });
+  }
+});
+
 module.exports = router;

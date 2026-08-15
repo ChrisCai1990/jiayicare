@@ -8,8 +8,8 @@ import useNavBar from '../../hooks/useNavBar';
 import Icon from '../../components/Icon';
 import MessagesPage from '../messages/index';
 
-const QUICK_PROMPTS = ['帮我分析需求', '推荐适合的服务', '生成健康服务规划'];
-const PLANNER_GREETING = { role: 'assistant', content: '您好，我是小嘉健康规划师。我可以帮您梳理健康管理需求、明确阶段目标并规划合适的服务路径。您目前最想改善或管理的是哪一方面？' };
+const QUICK_PROMPTS = ['我想了解体检服务', '帮家人找合适的服务', '我还不确定需要什么服务'];
+const PLANNER_GREETING = { role: 'assistant', content: '您好，我是AI健康规划师。我会先了解服务对象、所在城市、时间和预算偏好，再从平台已上架的产品中帮您筛选；如果暂时无法准确匹配，我会为您转接真人健康规划师。您这次想为谁了解哪类服务？' };
 
 // 小嘉健康规划师：仅梳理健康管理需求与规划平台服务，不提供医疗咨询。
 export default function ChatPage() {
@@ -60,7 +60,7 @@ export default function ChatPage() {
     setInput('');
     setSending(true);
     try {
-      const res = await chatAPI.send(next, { name: user?.name, age: user?.age, gender: user?.gender });
+      const res = await chatAPI.send(next, { name: user?.name });
       const reply = res?.data?.content || res?.content || '抱歉，我暂时无法回复，请稍后重试。';
       setMessages((m) => [...m, { role: 'assistant', content: reply }]);
     } catch (err) {
@@ -124,8 +124,8 @@ export default function ChatPage() {
       </View>
       <View style={{ display: view === 'ai' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
       <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: '#EAF4EF', border: '1px solid #C9DED4' }}>
-        <Text style={{ display: 'block', color: colors.textPrimary, fontSize: '15px', fontWeight: 800 }}>先了解您，再为您规划</Text>
-        <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '11px', lineHeight: '17px', marginTop: '4px' }}>通过需求分析、服务匹配和阶段安排，形成清晰、可执行的健康服务规划。</Text>
+        <Text style={{ display: 'block', color: colors.textPrimary, fontSize: '15px', fontWeight: 800 }}>先了解需求，再匹配服务</Text>
+        <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '11px', lineHeight: '17px', marginTop: '4px' }}>仅从平台已上架产品中推荐服务；体检方案由健康顾问后续确认，复杂需求可转真人健康规划师。</Text>
       </View>
       <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
@@ -154,7 +154,7 @@ export default function ChatPage() {
               backgroundColor: m.role === 'user' ? colors.primary : '#fff',
               border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
             }}>
-              {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>AI生成</Text>}
+              {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>AI健康规划师</Text>}
               <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>
             </View>
           </View>
@@ -169,7 +169,7 @@ export default function ChatPage() {
       }}>
         <Textarea
           style={{ flex: 1, minHeight: '48px', maxHeight: '112px', boxSizing: 'border-box', backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '12px 14px', fontSize: '15px', lineHeight: '22px' }}
-          placeholder="输入您的健康问题..."
+          placeholder="描述您想了解的服务..."
           value={input}
           onInput={(e) => setInput(e.detail.value)}
           autoHeight

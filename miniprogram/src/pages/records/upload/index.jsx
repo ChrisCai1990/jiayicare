@@ -24,18 +24,20 @@ export default function ReportUploadPage() {
       const filePaths = res.tempFilePaths || [];
       if (!filePaths.length) return;
       setUploading(true);
-      const fs = Taro.getFileSystemManager();
-      const contents = filePaths.map((filePath) => {
-        const base64 = fs.readFileSync(filePath, 'base64');
-        const extension = (filePath.split('.').pop() || 'jpg').toLowerCase();
-        const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
-        return `data:${mimeType};base64,${base64}`;
-      });
+      const uploaded = [];
+      for (const filePath of filePaths) {
+        const uploadRes = await reportsAPI.uploadFile(filePath);
+        uploaded.push(uploadRes.data);
+      }
       const createRes = await reportsAPI.create({
         title: `体检报告 ${new Date().toLocaleDateString('zh-CN')}`,
         category: '',
-        contents,
-        pages: contents.length,
+        fileUrl: uploaded[0]?.fileUrl,
+        fileUrls: uploaded.map((item) => item.fileUrl),
+        ossKeys: uploaded.map((item) => item.ossKey),
+        mimeType: uploaded[0]?.mimeType || 'image/jpeg',
+        fileSize: String(uploaded.reduce((sum, item) => sum + Number(item.fileSize || 0), 0)),
+        pages: uploaded.length,
       });
       if (createRes.success) {
         Taro.showToast({ title: '上传成功，等待AI解析', icon: 'success' });

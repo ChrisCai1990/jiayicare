@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, Text, Input, Button } from '@tarojs/components';
 import Taro from '@tarojs/taro';
 import { colors, spacing, radius } from '../../../theme';
@@ -19,6 +19,18 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [notRegistered, setNotRegistered] = useState(false);
   const [agreed, setAgreed] = useState(false);
+  const [reviewExperienceEnabled, setReviewExperienceEnabled] = useState(false);
+
+  useEffect(() => {
+    authAPI.reviewExperienceStatus()
+      .then((res) => setReviewExperienceEnabled(res?.data?.enabled === true))
+      .catch(() => {});
+  }, []);
+
+  const waitForAuthCommit = () => new Promise((resolve) => {
+    if (typeof Taro.nextTick === 'function') Taro.nextTick(resolve);
+    else setTimeout(resolve, 0);
+  });
 
   const afterLoginSuccess = (user) => {
     if (user?.onboardingCompleted) {
@@ -60,6 +72,7 @@ export default function LoginPage() {
       const res = await authAPI.login(phone, code);
       if (res.success) {
         await login(res.data.user, res.data.token);
+        await waitForAuthCommit();
         afterLoginSuccess(res.data.user);
       }
     } catch (err) {
@@ -77,10 +90,25 @@ export default function LoginPage() {
       const res = await authAPI.wechatLogin();
       if (res.success) {
         await login(res.data.user, res.data.token);
+        await waitForAuthCommit();
         afterLoginSuccess(res.data.user);
       }
     } catch (err) {
       setError(err.message || '微信登录失败，请稍后重试或使用手机号登录');
+    } finally { setLoading(false); }
+  };
+
+  const reviewExperienceLogin = async () => {
+    if (!agreed) { setError('请先阅读并勾选同意相关协议'); return; }
+    setError('');
+    try {
+      setLoading(true);
+      const res = await authAPI.reviewExperienceLogin();
+      await login(res.data.user, res.data.token);
+      await waitForAuthCommit();
+      Taro.switchTab({ url: '/pages/home/index' });
+    } catch (err) {
+      setError(err.message || '审核体验登录失败，请稍后重试');
     } finally { setLoading(false); }
   };
 
@@ -221,6 +249,12 @@ export default function LoginPage() {
             微信一键登录
           </Button>
         </View>
+
+        {reviewExperienceEnabled && (
+          <Button style={{ marginTop: `${spacing.sm}px`, backgroundColor: colors.primary10, border: `1px solid ${colors.primary}`, borderRadius: `${radius.md}px`, fontSize: '14px', fontWeight: 700, color: colors.primary }} onClick={reviewExperienceLogin} disabled={loading}>
+            审核一键体验
+          </Button>
+        )}
 
         <View onClick={() => setAgreed(!agreed)} style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'center', gap: '6px', marginTop: `${spacing.md}px` }}>
           <View style={{ width: '15px', height: '15px', borderRadius: '3px', border: `1.5px solid ${agreed ? colors.primary : colors.border}`, backgroundColor: agreed ? colors.primary : '#fff', textAlign: 'center', lineHeight: '13px', flexShrink: 0 }}>

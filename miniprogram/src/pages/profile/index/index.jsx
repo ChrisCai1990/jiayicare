@@ -86,6 +86,15 @@ export default function ProfilePage() {
     nav(user.onboardingCompleted ? '/pages/profile/edit/index' : '/pages/onboarding/index');
   };
   const doLogout = () => { setShowLogout(false); logout(); Taro.reLaunch({ url: '/pages/auth/login/index' }); };
+  const requestRenewal = async () => {
+    try {
+      const packageName = PACKAGE_LABELS[user.servicePackage] || user.servicePackage;
+      const result = await Taro.showModal({ title: '续约服务', content: `确认向健管专员提交“${packageName}”续约需求？`, confirmText: '提交需求' });
+      if (!result.confirm) return;
+      const res = await userAPI.requestRenewal({ packageName, expiry: user.serviceExpiry, daysLeft });
+      Taro.showToast({ title: res.message || '续约需求已提交', icon: 'none', duration: 2500 });
+    } catch (err) { Taro.showToast({ title: err.message || '提交失败，请稍后重试', icon: 'none' }); }
+  };
 
   return (
     <View style={{ minHeight: '100vh', backgroundColor: colors.background }}>
@@ -167,8 +176,8 @@ export default function ProfilePage() {
               <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }}>{PACKAGE_LABELS[user.servicePackage] || user.servicePackage}</Text>
               <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }}>到期 {user.serviceExpiry} · 剩余 {daysLeft} 天</Text>
             </View>
-            <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={() => nav('/pages/profile/benefits/index')}>
-              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>查看权益</Text>
+            <View style={{ padding: '7px 14px', backgroundColor: colors.primary, borderRadius: `${radius.full}px` }} onClick={requestRenewal}>
+              <Text style={{ fontSize: '12px', color: '#fff', fontWeight: 700 }}>续约服务</Text>
             </View>
           </View>
         </View>

@@ -1,4 +1,5 @@
 const express = require('express');
+const multer = require('multer');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
@@ -6,6 +7,34 @@ const { uploadBase64, deleteFile, urlToKey } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
 const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 const router = express.Router();
+const reportUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024, files: 1 },
+  fileFilter: (_req, file, cb) => {
+    if (!/^image\/(jpeg|png|webp|heic|heif)$/i.test(file.mimetype || '')) return cb(new Error('仅支持 JPG、PNG、WEBP 或 HEIC 图片'));
+    cb(null, true);
+  },
+});
+
+router.post('/upload', auth, (req, res, next) => {
+  reportUpload.single('file')(req, res, async (err) => {
+    if (err) {
+      const tooLarge = err.code === 'LIMIT_FILE_SIZE';
+      return res.status(tooLarge ? 413 : 400).json({ success: false, message: tooLarge ? '单张图片不能超过15MB' : err.message });
+    }
+    try {
+      if (!req.file) return res.status(400).json({ success: false, message: '未收到上传文件' });
+      if (!process.env.OSS_ACCESS_KEY_ID) return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });
+      const dataUrl = `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`;
+      const result = await uploadBase64(dataUrl, req.file.mimetype);
+      console.info('[report-upload]', { userId: String(req.user._id), size: req.file.size, mimeType: req.file.mimetype, key: result.key });
+      res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || req.file.mimetype, fileSize: req.file.size } });
+    } catch (uploadErr) {
+      console.error('[report-upload] failed', { userId: String(req.user._id), message: uploadErr.message });
+      next(uploadErr);
+    }
+  });
+});
 
 // 类目中文映射
 const CATEGORY_LABEL = {
@@ -538,7 +567,8 @@ router.get('/:id', auth, async (req, res) => {
 router.post('/', auth, async (req, res) => {
   try {
     const { title, type, hospital, date, pages, fileSize, keyFindings, note, content, mimeType,
-            screeningCategory, reportYear, checkDate, institution, reportItems, contents } = req.body;
+            screeningCategory, reportYear, checkDate, institution, reportItems, contents,
+            fileUrls: suppliedFileUrls, ossKeys: suppliedOssKeys } = req.body;
     let { fileUrl } = req.body;
     if (!title) return res.status(400).json({ success: false, message: '报告标题不能为空' });
 
@@ -548,8 +578,9 @@ router.post('/', auth, async (req, res) => {
 
     // 有 base64 内容且 OSS 已配置 → 逐张上传到 OSS，不存 MongoDB
     let ossKey = '';
-    let ossKeys = [];
-    let fileUrls = [];
+    let ossKeys = Array.isArray(suppliedOssKeys) ? suppliedOssKeys.filter(Boolean) : [];
+    let fileUrls = Array.isArray(suppliedFileUrls) ? suppliedFileUrls.filter(Boolean) : [];
+    if (!fileUrl && fileUrls.length) fileUrl = fileUrls[0];
     let storedContent = '';
     let effectiveMimeType = mimeType || '';
     if (contentList.length && process.env.OSS_ACCESS_KEY_ID) {

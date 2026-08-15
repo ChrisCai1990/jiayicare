@@ -29,6 +29,15 @@ const normalizeRoleSender = (sender = '') => sender
   .replace(/代家庭医师/g, '代健康顾问')
   .replace(/代健管师/g, '代健管专员');
 
+const assistantName = (member, fallback) => {
+  const title = String(member?.title || fallback).trim();
+  const name = String(member?.name || '').trim().replace(new RegExp(`${title}$`), '');
+  return `${name || title}${name ? title : ''}AI助理`;
+};
+const visibleMessageContent = (message) => String(message?.content || '')
+  .replace(/\n?以上为AI初步回复，仅供参考，不构成医疗诊断或建议，您的专属医护人员会尽快跟进。/g, '')
+  .replace(/\n?（AI回复，仅供参考）/g, '').trim();
+
 const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
 const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
 
@@ -176,7 +185,7 @@ export default function MessagesPage({ embedded = false, refreshKey = 0, onOpenP
   };
 
   if (threadRole) {
-    return <ConversationThread role={threadRole} embedded={embedded} onClose={() => { setThreadRole(null); loadMessages(); }} />;
+    return <ConversationThread role={threadRole} member={careTeamMember(threadRole)} embedded={embedded} onClose={() => { setThreadRole(null); loadMessages(); }} />;
   }
 
   return (
@@ -563,7 +572,7 @@ const ROLE_META = {
   nutritionist: { label: '营养师', icon: '🥗', color: '#059669' },
 };
 
-function ConversationThread({ role, onClose, embedded = false }) {
+function ConversationThread({ role, member, onClose, embedded = false }) {
   const { statusBarHeight } = useNavBar();
   const [msgs, setMsgs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -571,6 +580,7 @@ function ConversationThread({ role, onClose, embedded = false }) {
   const [sending, setSending] = useState(false);
   const [foodImages, setFoodImages] = useState([]);
   const meta = ROLE_META[role] || ROLE_META.manager;
+  const aiAssistantName = assistantName(member, meta.label);
   const pollRef = useRef(null);
 
   const loadThread = useCallback(async () => {
@@ -679,10 +689,10 @@ function ConversationThread({ role, onClose, embedded = false }) {
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url) => <Image key={url} src={url} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', marginBottom: '6px', display: 'block' }} />)}
                     {!isMine && (
                       <Text style={{ fontSize: '11px', fontWeight: 700, color: meta.color, display: 'block', marginBottom: '4px' }}>
-                        {m.isAI ? 'AI生成' : (normalizeRoleSender(m.sender) || meta.label)}
+                        {m.isAI ? aiAssistantName : (normalizeRoleSender(m.sender) || meta.label)}
                       </Text>
                     )}
-                    <Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>
+                    <Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{visibleMessageContent(m)}</Text>
                   </View>
                 </View>
               </View>
