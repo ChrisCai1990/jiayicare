@@ -6,9 +6,7 @@ function isZheyiReport(report) {
 }
 
 function pageMode(pageNum) {
-  if (pageNum >= 1 && pageNum <= 5) return 'skip';
-  if (pageNum >= 6 && pageNum <= 15) return 'extract';
-  return 'duplicate';
+  return 'extract';
 }
 
 const PAGE_SECTIONS = {
@@ -25,30 +23,16 @@ const PAGE_SECTIONS = {
 };
 
 function promptForPage(pageNum) {
-  const sections = PAGE_SECTIONS[pageNum] || '本页原始明细';
-  return `\n\n【浙一体检报告第${pageNum}页适配规则，最高优先级】
-本页应按原版顺序处理：${sections}。
-1. 一般检查必须逐行输出data，心率命名为“脉搏心率”，体重不得遗漏。眼科、耳鼻喉科、牙科、内外科（全科）各科室只输出一条imaging检查项目，科内全部印刷明细按“项目：原文结果”逐行写入findings，不得拆成lab/data。建议文字并入对应科室findings，不单独输出。眼压单独输出一条“眼压检查”。
-2. “科室小结”“小结”“建议”“健康宣教”全部跳过，不生成item，也不得写入findings/diagnosis/conclusion。
-3. 肝胆脾胰组合超声必须拆成肝脏超声、胆囊超声、脾脏超声、胰腺超声四条；双肾相关内容另列肾脏超声。每条只能包含对应器官原文。
-4. 所有检验表格逐行输出，每个指标一条lab，项目、结果、单位、参考范围必须严格同行对应。尿常规和粪便常规也必须逐项拆分，不得合并成摘要；尿生化、尿微量白蛋白/尿肌酐和独立便潜血同样逐项提取。
-5. 输出顺序必须与本页从上到下的阅读顺序一致。`;
+  return `\n\n【浙一医院版式辅助规则】
+医院名称只用于辅助识别常见双栏表格、栏目标题和跨页续表，绝不能据此推断本页项目或跳过任何页。
+必须以当前图片实际可见的标题、表格和检查结果为准；逐栏逐行提取本页全部有效内容。页码${pageNum}不代表固定项目。`;
 }
 
 function needsCoverageAudit(pageNum, items) {
   const pageItems = (items || []).filter(item => Number(item?._page) === pageNum);
-  const names = pageItems.map(item => `${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`).join(' ');
-  if (pageNum === 6) return pageItems.length < 20 || !/视力/.test(names) || !/扁桃体|悬雍垂/.test(names);
-  if (pageNum === 7) return pageItems.length < 20 || !/口腔|牙齿/.test(names) || !/心脏/.test(names) || !/直肠/.test(names);
-  if (pageNum === 8) return pageItems.length < 7 || !/眼压/.test(names) || !/体重控制/.test(names) || !/肺通气/.test(names);
-  if (pageNum === 9) return ![/肺.*CT/, /肾/, /肝/, /胆/, /脾/, /胰/].every(pattern => pattern.test(names));
-  if (pageNum === 10) return ![/甲状腺/, /颈动脉/, /前列腺/, /心脏/].every(pattern => pattern.test(names));
-  if (pageNum === 11) return ![/心电图/, /骨密度/, /13|碳13/, /隐血/].every(pattern => pattern.test(names));
-  if (pageNum === 12) return pageItems.length < 25 || !/白细胞计数/.test(names) || !/尿微量白蛋白/.test(names) || !/空腹胰岛素/.test(names);
-  if (pageNum === 13) return pageItems.length < 30 || !/总前列腺/.test(names) || !/胃蛋白酶原/.test(names);
-  if (pageNum === 14) return pageItems.length < 40 || !/总胆固醇/.test(names) || !/糖化血红蛋白/.test(names);
-  if (pageNum === 15) return pageItems.length < 15 || !/甲状腺/.test(names) || !/维生素/.test(names);
-  return false;
+  if (!pageItems.length) return true;
+  return pageItems.some(item => !text(item.name)
+    || ![item.value, item.findings, item.diagnosis, item.conclusion].some(value => text(value)));
 }
 
 function normalizeZheyiItems(items) {

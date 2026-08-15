@@ -8988,7 +8988,7 @@ async function runReportParse(reportId) {
             console.log(`[parse-ai] 页${pageNum}覆盖复核异常: ${e.message}`);
           }
         }
-        if (useShaoyifuTemplate) {
+        if (false && useShaoyifuTemplate) {
           const targetedPrompts = {
             4: '只补提眼科、耳鼻喉科、妇科三条科室检查。每科一条imaging，科内全部原文写入findings；三科必须全部输出。',
             6: '只补提胆囊超声和脾脏超声两条。必须分别输出，name固定为胆囊超声、脾脏超声；findings只能抄对应器官原文，脾脏不得写成胰腺。',
@@ -9010,7 +9010,7 @@ async function runReportParse(reportId) {
             }
           }
         }
-        if (useZheyiTemplate) {
+        if (false && useZheyiTemplate) {
           const targetedPrompts = {
             6: '只按原报告逐行补提一般检查，必须包含心率、体重、腰围/腹围、现服药情况、现居住地；随后眼科、耳鼻喉科各自只输出一条imaging，科内项目按“项目：结果”换行写入findings。',
             7: '耳鼻喉科、牙科、内外科（全科）分别每科一条imaging，科内所有项目按“项目：结果”换行写入findings；小结、建议、健康宣教和痔疮不提取。',
@@ -9255,7 +9255,6 @@ async function runReportParse(reportId) {
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
       const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
-      if (useShaoyifuTemplate) filteredItems = shaoyifuTemplate.applyShaoyifuOrderAndGroups(filteredItems);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');

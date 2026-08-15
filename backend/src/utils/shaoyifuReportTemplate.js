@@ -6,10 +6,6 @@ function isShaoyifuReport(report) {
 }
 
 function pageMode(pageNum) {
-  if (pageNum >= 1 && pageNum <= 3) return 'skip';
-  if (pageNum >= 4 && pageNum <= 11) return 'extract';
-  if (pageNum === 20) return 'ecg_enrichment';
-  if (pageNum >= 12 && pageNum <= 21) return 'duplicate';
   return 'extract';
 }
 
@@ -26,37 +22,20 @@ const PAGE_RULES = {
 };
 
 function promptForPage(pageNum) {
-  const rule = PAGE_RULES[pageNum] || '';
-  return `\n\n【浙江大学医学院附属邵逸夫医院完整模板·第${pageNum}页，最高优先级】\n${rule}\n输出前必须逐项自查本页规则，禁止用体检小结补充。`;
+  return `\n\n【邵逸夫医院版式辅助规则】
+医院名称只用于辅助识别常见双栏表格、栏目标题和跨页续表，绝不能据此推断本页项目或跳过任何页。
+必须以当前图片实际可见的标题、表格和检查结果为准；逐栏逐行提取本页全部有效内容。页码${pageNum}不代表固定项目。`;
 }
 
 function needsCoverageAudit(pageNum, items) {
   const pageItems = (items || []).filter(item => Number(item?._page) === pageNum);
-  const names = pageItems.map(item => `${text(item.name)} ${text(item.sourceSection)} ${text(item.orderName)}`).join(' ');
-  const hasAll = patterns => patterns.every(pattern => pattern.test(names));
-  if (pageNum === 4) return !hasAll([/体重/, /体重指数|BMI/i, /脉搏/, /跌倒/, /眼科/, /耳鼻喉|ENT/i, /妇科/]);
-  if (pageNum === 5) return pageItems.length < 10 || !/家族史/.test(names);
-  if (pageNum === 6) {
-    const semanticItem = (namePattern, contentPattern, minFindings = 1) => pageItems.some(item => {
-      if (!namePattern.test(`${text(item.name)} ${text(item.sourceSection)}`)) return false;
-      const findings = text(item.findings || item.value);
-      return findings.length >= minFindings && contentPattern.test(findings);
-    });
-    return !semanticItem(/肝/, /肝/)
-      || !semanticItem(/胆/, /胆/)
-      || !semanticItem(/胰/, /胰/)
-      || !semanticItem(/脾/, /脾/)
-      || !semanticItem(/肾/, /肾/)
-      || !semanticItem(/子宫|附件/, /子宫|宫颈|附件/, 20)
-      || !semanticItem(/甲状腺/, /甲状腺/, 20);
-  }
-  if (pageNum === 7) return !hasAll([/乳房|乳腺/, /颈动脉/, /心脏/, /肺.*CT|胸部.*CT/]);
-  if (pageNum === 8) return !hasAll([/心电图/, /C13|碳13/i, /MRA/i, /宫颈液基|TCT/i]);
-  if (pageNum === 9) return pageItems.length < 35 || !hasAll([/红细胞计数/, /血小板压积/, /红细胞沉降|ESR/i, /细菌/]);
-  if (pageNum === 10) return pageItems.length < 25 || !hasAll([/甘油三酯/, /脂蛋白磷脂酶A2/, /促甲状腺/, /25.*维生素D/i, /胰岛素/, /糖链抗原125/]);
-  if (pageNum === 11) return pageItems.length < 34 || !hasAll([/尿肌酐测定/, /乙型肝炎病毒e抗体/, /VCA[-－]?IgA/i, /胃蛋白酶原II/, /HPV51/i, /HPV81/i]);
-  if (pageNum === 20) return !/心电图/.test(names);
-  return false;
+  if (!pageItems.length) return true;
+  return pageItems.some(item => {
+    if (!text(item.name) || ![item.value, item.findings, item.diagnosis, item.conclusion].some(value => text(value))) return true;
+    const organ = [/胆囊/, /胰腺/, /脾脏|^脾$/, /肝脏|^肝$/, /肾脏|双肾/].find(pattern => pattern.test(text(item.name)));
+    const evidence = text(item.findings || item.value);
+    return Boolean(organ && evidence && !organ.test(evidence));
+  });
 }
 
 function content(item) {
@@ -120,6 +99,14 @@ function applyShaoyifuOrderAndGroups(inputItems) {
 }
 
 function normalizeShaoyifuItems(inputItems) {
+  return (inputItems || []).map(item => {
+    const next = { ...item };
+    const context = `${text(next.name)} ${text(next.sourceSection)} ${text(next.orderName)}`;
+    if (/眼科|耳鼻喉|ENT|牙科|口腔|全科|内科|外科/i.test(context)) next.itemType = 'imaging';
+    if (/超声|彩超|CT|MR[AI]?|磁共振|心电图|内镜|胃镜|肠镜|病理/i.test(context)) next.itemType = 'imaging';
+    return next;
+  });
+  /* legacy fixed-page normalizer intentionally unreachable */
   let items = (inputItems || []).filter(item => {
     const page = Number(item?._page || 0);
     return pageMode(page) === 'extract' || pageMode(page) === 'ecg_enrichment';
