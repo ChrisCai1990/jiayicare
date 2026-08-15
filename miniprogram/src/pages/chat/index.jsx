@@ -32,6 +32,7 @@ export default function ChatPage() {
   const [nutritionInput, setNutritionInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [foodImage, setFoodImage] = useState(null);
+  const [plannerScrollTop, setPlannerScrollTop] = useState(0);
   const historyUserRef = useRef('');
   const scrollRef = useRef();
 
@@ -73,6 +74,12 @@ export default function ChatPage() {
     if (requestedView === 'team') setView('team');
     Taro.removeStorageSync('healthHubView');
   });
+
+  useEffect(() => {
+    if (view !== 'ai') return;
+    const timer = setTimeout(() => setPlannerScrollTop((value) => value + 100000), 100);
+    return () => clearTimeout(timer);
+  }, [view, messages.length, sending]);
 
   const send = async () => {
     const text = input.trim();
@@ -145,39 +152,29 @@ export default function ChatPage() {
         <MessagesPage embedded assistantConfig={assistantConfig} onlineStatus={onlineStatus} onOpenPlanner={() => setView('ai')} />
       </View>
       <View style={{ display: view === 'ai' ? 'flex' : 'none', flex: 1, minHeight: 0, flexDirection: 'column' }}>
-      <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '14px', borderRadius: `${radius.md}px`, backgroundColor: '#EAF4EF', border: '1px solid #C9DED4' }}>
-        <Text style={{ display: 'block', color: colors.textPrimary, fontSize: '15px', fontWeight: 800 }}>{assistantConfig.plannerCardTitle}</Text>
-        <Text style={{ display: 'block', color: colors.textSecondary, fontSize: '11px', lineHeight: '17px', marginTop: '4px' }}>{assistantConfig.plannerCardSubtitle}</Text>
-      </View>
       <View style={{ margin: `${spacing.sm}px ${spacing.md}px 0`, padding: '9px 12px', borderRadius: `${radius.sm}px`, backgroundColor: '#FFF7E6', border: '1px solid #F5C26B' }}>
         <Text style={{ display: 'block', color: '#9A5B00', fontSize: '12px', fontWeight: 700 }}>本页面回复由人工智能（AI）生成</Text>
         <Text style={{ display: 'block', color: colors.textMuted, fontSize: '10px', marginTop: '2px' }}>{assistantConfig.disclaimer}</Text>
       </View>
-      <ScrollView scrollY style={{ flex: 1, padding: `${spacing.md}px` }} scrollIntoView={`planner-bottom-${messages.length}`}>
-        {messages.length === 1 && (
-          <View style={{ marginBottom: `${spacing.md}px` }}>
-            <Text style={{ fontSize: '12px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>您想先做哪一步？</Text>
-            <View style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              {(assistantConfig.quickPrompts || []).map((prompt) => (
-                <View key={prompt} onClick={() => choosePrompt(prompt)} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '11px 13px', borderRadius: `${radius.sm}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}` }}>
-                  <Text style={{ fontSize: '13px', color: colors.primary, fontWeight: 700 }}>{prompt}</Text>
-                  <Text style={{ fontSize: '16px', color: colors.primary }}>›</Text>
-                </View>
-              ))}
-            </View>
+      <ScrollView scrollX style={{ flexShrink: 0, width: '100%', whiteSpace: 'nowrap', padding: `${spacing.sm}px ${spacing.md}px 0`, boxSizing: 'border-box' }}>
+        {(assistantConfig.quickPrompts || []).map((prompt) => (
+          <View key={prompt} onClick={() => choosePrompt(prompt)} style={{ display: 'inline-block', padding: '7px 11px', marginRight: '7px', borderRadius: `${radius.full}px`, backgroundColor: '#fff', border: `1px solid ${colors.border}` }}>
+            <Text style={{ fontSize: '11px', color: colors.primary, fontWeight: 700 }}>{prompt}</Text>
           </View>
-        )}
+        ))}
+      </ScrollView>
+      <ScrollView scrollY scrollTop={plannerScrollTop} scrollWithAnimation style={{ flex: 1, padding: `${spacing.md}px`, boxSizing: 'border-box' }}>
         {messages.map((m, i) => (
           <View key={i} style={{
-            display: 'flex', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '10px',
+            display: 'flex', width: '100%', minWidth: 0, justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '10px', boxSizing: 'border-box',
           }}>
             <View style={{
-              maxWidth: '78%', padding: '10px 14px', borderRadius: `${radius.md}px`,
+              maxWidth: '78%', minWidth: 0, padding: '10px 14px', borderRadius: `${radius.md}px`, boxSizing: 'border-box', overflow: 'hidden',
               backgroundColor: m.role === 'user' ? colors.primary : '#fff',
               border: m.role === 'user' ? 'none' : `1px solid ${colors.border}`,
             }}>
               {m.role === 'assistant' && <Text style={{ display: 'block', color: '#9A5B00', fontSize: '10px', fontWeight: 700, marginBottom: '4px' }}>{onlineStatus.mode === 'human' ? onlineStatus.label : assistantConfig.plannerName}</Text>}
-              <Text style={{ fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{m.content}</Text>
+              <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: m.role === 'user' ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{m.content}</Text>
             </View>
           </View>
         ))}

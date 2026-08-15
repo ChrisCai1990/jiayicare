@@ -24,19 +24,19 @@ export default function ReportUploadPage() {
       const filePaths = res.tempFilePaths || [];
       if (!filePaths.length) return;
       setUploading(true);
-      const contents = [];
+      const uploadedFiles = [];
       for (const filePath of filePaths) {
-        const ext = (filePath.split('.').pop() || 'jpg').toLowerCase();
-        const mimeType = ext === 'png' ? 'image/png' : ext === 'webp' ? 'image/webp' : /hei[cf]/.test(ext) ? 'image/heic' : 'image/jpeg';
-        const base64 = Taro.getFileSystemManager().readFileSync(filePath, 'base64');
-        contents.push(`data:${mimeType};base64,${base64}`);
+        uploadedFiles.push((await reportsAPI.uploadFile(filePath)).data);
       }
       const createRes = await reportsAPI.create({
-        title: `体检报告 ${new Date().toLocaleDateString('zh-CN')}`,
+        title: `体检报告 ${new Date().getFullYear()}年${new Date().getMonth() + 1}月${new Date().getDate()}日`,
         category: '',
-        contents,
-        mimeType: contents[0]?.slice(5, contents[0].indexOf(';')) || 'image/jpeg',
-        pages: contents.length,
+        fileUrl: uploadedFiles[0]?.fileUrl || '',
+        fileUrls: uploadedFiles.map((item) => item.fileUrl).filter(Boolean),
+        ossKeys: uploadedFiles.map((item) => item.ossKey).filter(Boolean),
+        mimeType: uploadedFiles[0]?.mimeType || 'image/jpeg',
+        pages: uploadedFiles.length,
+        fileSize: uploadedFiles.reduce((sum, item) => sum + (Number(item.fileSize) || 0), 0),
       });
       if (createRes.success) {
         Taro.showToast({ title: '上传成功，等待AI解析', icon: 'success' });

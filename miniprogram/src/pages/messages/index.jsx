@@ -36,7 +36,11 @@ const assistantName = (member, fallback) => {
 };
 const visibleMessageContent = (message) => String(message?.content || '')
   .replace(/\n?以上为AI初步回复，仅供参考，不构成医疗诊断或建议，您的专属医护人员会尽快跟进。/g, '')
-  .replace(/\n?（AI回复，仅供参考）/g, '').trim();
+  .replace(/\n?（AI回复，仅供参考）/g, '')
+  .replace(/[^。！？\n]*医生目前正忙于诊疗[^。！？\n]*[。！？]?/g, '真人这会儿正在接待其他客户，您可以先和我聊聊，我会陪您一起梳理。')
+  .replace(/我们会尽快安排专属健康管理师为您跟进[。！？]?/g, '')
+  .replace(/我马上帮您转给专属顾问跟进[～~。！？]?/g, '您接着说就好，我会认真听着。')
+  .trim();
 
 const PUSH_TYPES = new Set(['knowledge', 'plan', 'questionnaire', 'supplement', 'product', 'notice']);
 const NOTIF_TYPES = new Set(['system', ...PUSH_TYPES]);
@@ -83,7 +87,7 @@ function fmtMsgTime(t) {
   if (diffMs < 60000) return '刚刚';
   if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}分钟前`;
   const diffDays = Math.floor(diffMs / 86400000);
-  if (diffDays === 0) return d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  if (diffDays === 0) return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   if (diffDays === 1) return '昨天';
   if (diffDays < 7) return `周${'日一二三四五六'[d.getDay()]}`;
   return `${d.getMonth() + 1}/${d.getDate()}`;
@@ -568,7 +572,7 @@ function ProductPushDetail({ msg, onClose }) {
 
 const ROLE_META = {
   doctor: { label: '健康顾问', icon: '🩺', color: colors.primary },
-  manager: { label: '健管师', icon: '🧑‍💼', color: '#D97706' },
+  manager: { label: '健管专员', icon: '🧑‍💼', color: '#D97706' },
   nutritionist: { label: '营养师', icon: '🥗', color: '#059669' },
 };
 
@@ -579,14 +583,16 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [foodImages, setFoodImages] = useState([]);
+  const [scrollTop, setScrollTop] = useState(0);
   const meta = ROLE_META[role] || ROLE_META.manager;
-  const aiAssistantName = assistantConfig.teamName || '健康服务团队';
+  const aiAssistantName = assistantName(member, meta.label);
   const pollRef = useRef(null);
 
   const loadThread = useCallback(async () => {
     try {
       const res = await messagesAPI.getThread(role);
       setMsgs(res.data || []);
+      setTimeout(() => setScrollTop((value) => value + 100000), 80);
     } catch {}
     setLoading(false);
   }, [role]);
@@ -657,13 +663,13 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
       <View style={{ display: 'flex', alignItems: 'center', flexShrink: 0, position: 'relative', zIndex: 20, padding: `${embedded ? 10 : statusBarHeight + 8}px ${spacing.lg}px ${spacing.sm}px`, backgroundColor: '#fff', borderBottom: `1px solid ${colors.border}` }}>
         <View onClick={onClose} style={{ minWidth: '64px', padding: '8px 0', marginRight: '8px' }}><Text style={{ fontSize: '14px', color: colors.primary, fontWeight: 600 }}>‹ 返回</Text></View>
         <View style={{ flex: 1, textAlign: 'center' }}>
-          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{assistantConfig.teamName || '健康服务团队'}</Text>
+          <Text style={{ fontSize: '16px', fontWeight: 700, color: colors.textPrimary, display: 'block' }}>{meta.label}</Text>
           <Text style={{ fontSize: '11px', color: onlineStatus.mode === 'human' ? '#D97706' : colors.success }}>● {onlineStatus.label}</Text>
         </View>
         <View style={{ width: '20px' }} />
       </View>
 
-      <ScrollView scrollY scrollIntoView={msgs.length ? `thread-msg-${msgs[msgs.length - 1]._id}` : 'thread-bottom'} scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
+      <ScrollView scrollY scrollTop={scrollTop} scrollWithAnimation style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.lg}px`, boxSizing: 'border-box' }}>
         {loading ? (
           <Text style={{ fontSize: '13px', color: colors.textMuted }}>加载中...</Text>
         ) : msgs.length === 0 ? (
@@ -680,10 +686,10 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
             const showTime = i === 0 || (new Date(m.createdAt) - new Date(msgs[i - 1].createdAt)) > 300000;
             return (
               <View key={m._id} id={`thread-msg-${m._id}`}>
-                {showTime && <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, margin: '12px 0' }}>{new Date(m.createdAt).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</Text>}
-                <View style={{ display: 'flex', justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: '10px' }}>
+                {showTime && <Text style={{ display: 'block', textAlign: 'center', fontSize: '11px', color: colors.textMuted, margin: '12px 0' }}>{`${String(new Date(m.createdAt).getHours()).padStart(2, '0')}:${String(new Date(m.createdAt).getMinutes()).padStart(2, '0')}`}</Text>}
+                <View style={{ display: 'flex', width: '100%', minWidth: 0, justifyContent: isMine ? 'flex-end' : 'flex-start', marginBottom: '10px', boxSizing: 'border-box' }}>
                   <View style={{
-                    maxWidth: '78%', padding: '10px 14px', borderRadius: `${radius.md}px`,
+                    maxWidth: '78%', minWidth: 0, padding: '10px 14px', borderRadius: `${radius.md}px`, boxSizing: 'border-box', overflow: 'hidden',
                     backgroundColor: isMine ? colors.primary : '#fff', border: isMine ? 'none' : `1px solid ${colors.border}`,
                   }}>
                     {(m.imageUrls?.length ? m.imageUrls : (m.imageUrl ? [m.imageUrl] : [])).map((url) => <Image key={url} src={url} mode="aspectFill" style={{ width: '190px', height: '140px', borderRadius: '8px', marginBottom: '6px', display: 'block' }} />)}
@@ -692,7 +698,7 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
                         {m.isAI ? aiAssistantName : (normalizeRoleSender(m.sender) || meta.label)}
                       </Text>
                     )}
-                    <Text style={{ fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px' }}>{visibleMessageContent(m)}</Text>
+                    <Text style={{ display: 'block', width: '100%', fontSize: '14px', color: isMine ? '#fff' : colors.textPrimary, lineHeight: '20px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', overflowWrap: 'anywhere' }}>{visibleMessageContent(m)}</Text>
                   </View>
                 </View>
               </View>
@@ -708,15 +714,15 @@ function ConversationThread({ role, member, onClose, embedded = false, assistant
         </View>
       )}
       <View style={{ display: 'flex', alignItems: 'flex-end', flexShrink: 0, gap: '8px', padding: `${spacing.sm}px ${spacing.lg}px`, paddingBottom: `calc(${spacing.sm}px + env(safe-area-inset-bottom))`, backgroundColor: '#fff', borderTop: `1px solid ${colors.border}` }}>
-        <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Text style={{ fontSize: '18px' }}>📷</Text></View>
         <Textarea
-          style={{ flex: 1, backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '10px 14px', fontSize: '14px', minHeight: '72px', maxHeight: '140px', border: `1.5px solid ${colors.border}`, boxSizing: 'border-box' }}
+          style={{ flex: 1, width: 0, minWidth: 0, backgroundColor: colors.background, borderRadius: `${radius.md}px`, padding: '9px 12px', fontSize: '14px', minHeight: '40px', maxHeight: '100px', border: `1.5px solid ${colors.border}`, boxSizing: 'border-box' }}
           placeholder={`发消息给${meta.label}…`}
           value={input}
           onInput={(e) => setInput(e.detail.value)}
           maxlength={500}
           autoHeight
         />
+        <View onClick={chooseFoodImage} style={{ width: '40px', height: '40px', borderRadius: '20px', backgroundColor: '#E8F5EF', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}><Text style={{ fontSize: '18px' }}>📷</Text></View>
         <View onClick={send} style={{
           width: '40px', height: '40px', borderRadius: '20px', backgroundColor: ((!input.trim() && !foodImages.length) || sending) ? colors.border : colors.primary,
           display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,

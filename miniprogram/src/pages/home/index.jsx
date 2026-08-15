@@ -40,6 +40,16 @@ const REM_CAT_META = {
 };
 const FOLLOWUP_TYPE_LABEL = { phone: '电话随访', wechat: '微信随访', visit: '上门随访', video: '视频随访', other: '其他' };
 const CHECKIN_ITEM_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' };
+const formatChineseDate = (value, includeYear = false) => {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return '';
+  return `${includeYear ? `${date.getFullYear()}年` : ''}${date.getMonth() + 1}月${date.getDate()}日`;
+};
+const displayTaskDate = (value) => {
+  if (!value) return '';
+  if (/\d+月\d+日/.test(String(value))) return String(value);
+  return formatChineseDate(value);
+};
 
 // 随访计划紧急程度：按实际日期与今天的差值动态算（对齐app端urgencyByDate）
 function urgencyByDate(dateVal) {
@@ -63,7 +73,7 @@ function TaskItemRow({ task, isLast, onPress }) {
       </View>
       <View style={{ flex: 1, minWidth: 0 }}>
         <Text style={{ fontSize: '14px', fontWeight: 600, color: colors.textPrimary, display: 'block' }} numberOfLines={1}>{task.title}</Text>
-        <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }} numberOfLines={1}>{task.assignee} · {task.dueDate} {task.dueTime}</Text>
+        <Text style={{ fontSize: '12px', color: colors.textMuted, marginTop: '2px' }} numberOfLines={1}>{task.assignee} · {displayTaskDate(task.dueDate || task.date)} {task.dueTime}</Text>
       </View>
       <View style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
         <View style={{ padding: '4px 10px', borderRadius: `${radius.full}px`, backgroundColor: urgency.bg }}>
@@ -102,7 +112,7 @@ function TaskDetailModal({ task, onClose, onDone }) {
         <View style={{ width: '36px', height: '4px', borderRadius: '2px', backgroundColor: colors.border, margin: '0 auto 16px' }} />
         <Text style={{ fontSize: '17px', fontWeight: 700, color: colors.textPrimary, display: 'block', marginBottom: '8px' }}>{task.title || task.theme}</Text>
         {!!(task.assignee || task.staffId?.name) && <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: '4px' }}>负责人：{task.assignee || task.staffId?.name}</Text>}
-        {!!(task.dueDate || task.date) && <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>时间：{task.dueDate || (task.date ? new Date(task.date).toLocaleDateString('zh-CN') : '')}</Text>}
+        {!!(task.dueDate || task.date) && <Text style={{ fontSize: '13px', color: colors.textMuted, display: 'block', marginBottom: '8px' }}>时间：{formatChineseDate(task.dueDate || task.date, true) || task.dueDate}</Text>}
 
         {isFollowup ? (
           <View>
@@ -272,7 +282,7 @@ export default function HomePage() {
       title: plan.sourceType === 'symptom' ? '不适主诉待健康顾问处理' : (plan.theme || '随访计划'),
       description: plan.taskRequirements || plan.plannedContent || plan.content,
       assignee: plan.assignedTo?.name || plan.staffId?.name || '医护团队',
-      dueDate: plan.date ? new Date(plan.date).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' }) : '',
+      dueDate: formatChineseDate(plan.date),
       dueTime: '',
       priority: plan.sourceType === 'symptom' ? 'high' : urgencyByDate(plan.date),
       sourceType: plan.sourceType,
