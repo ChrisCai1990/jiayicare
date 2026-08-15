@@ -2,15 +2,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   buildSummaryInputGroups, projectNameForItem, resolveConfiguredProjectName,
-  ensureLpla2InCardiovascularSummary,
+  ensureLpla2InCardiovascularSummary, buildDeterministicSummary,
 } = require('../src/utils/screeningSummaryInput');
 
 const tumorBucket = () => 'tumor_risk';
 
 test('同一筛查项目跨报告合并为一组', () => {
   const reports = [
-    { _id: 'r1', reportItems: [{ name: '肝脏超声', itemType: 'imaging', status: 'attention', screeningParent: '肝癌早筛' }] },
-    { _id: 'r2', reportItems: [{ name: '肝纤维弹性超声', itemType: 'imaging', status: 'abnormal', screeningParent: '肝癌早筛' }] },
+    { _id: 'r1', reportItems: [{ name: '肝脏超声', itemType: 'imaging', status: 'attention', conclusion: '脂肪肝', screeningParent: '肝癌早筛' }] },
+    { _id: 'r2', reportItems: [{ name: '肝纤维弹性超声', itemType: 'imaging', status: 'abnormal', conclusion: '肝脏硬度值增高', screeningParent: '肝癌早筛' }] },
   ];
   const groups = buildSummaryInputGroups(reports, 'tumor_risk', tumorBucket);
   assert.equal(groups.length, 1);
@@ -80,4 +80,55 @@ test('脑血管病小结已有脂蛋白磷脂酶A2时不重复追加', () => {
     conclusions: [{ name: 'Lp-PLA2', value: '128', status: 'normal', conclusion: '' }],
   }];
   assert.equal(ensureLpla2InCardiovascularSummary(summary, groups), summary);
+});
+
+test('检验项目只按异常和需关注状态纳入', () => {
+  const reports = [{
+    _id: 'r1', reportItems: [
+      { name: '白蛋白', itemType: 'lab', value: '52.1', status: 'abnormal', screeningParent: '脏器功能筛查' },
+      { name: '谷丙转氨酶', itemType: 'lab', value: '20', status: 'normal', screeningParent: '脏器功能筛查' },
+    ],
+  }];
+  const groups = buildSummaryInputGroups(reports, 'tumor_risk', tumorBucket);
+  assert.deepEqual(groups[0].conclusions.map(item => item.name), ['白蛋白']);
+});
+
+test('检查项目按主要结论纳入，不依赖异常状态', () => {
+  const reports = [{
+    _id: 'r1', reportItems: [
+      { name: '心脏超声', itemType: 'imaging', status: 'unknown', conclusion: '左室舒张功能减低', screeningParent: '心血管病早筛' },
+      { name: '胸部CT', itemType: 'imaging', status: 'abnormal', conclusion: '', diagnosis: '肺结节', screeningParent: '肺癌早筛' },
+    ],
+  }];
+  const groups = buildSummaryInputGroups(reports, 'tumor_risk', tumorBucket);
+  assert.deepEqual(groups.flatMap(group => group.conclusions).map(item => item.name), ['心脏超声']);
+});
+
+test('人工录入的检查单主要结论也纳入小结', () => {
+  const reports = [{
+    _id: 'r1', screeningL2: '肺癌早筛', reportItems: [],
+    examMainConclusions: { '胸部低剂量CT': '右肺上叶磨玻璃结节' },
+  }];
+  const groups = buildSummaryInputGroups(reports, 'tumor_risk', tumorBucket);
+  assert.equal(groups[0].conclusions[0].conclusion, '右肺上叶磨玻璃结节');
+});
+
+test('确定性小结不遗漏肺CT异常', () => {
+  const result = buildDeterministicSummary([{
+    projectName: '肺癌早筛',
+    conclusions: [{ name: '胸部低剂量CT', itemType: 'imaging', status: 'attention', conclusion: '右肺上叶磨玻璃结节' }],
+  }]);
+  assert.equal(result, '肺癌早筛：胸部低剂量CT：右肺上叶磨玻璃结节。');
+});
+
+test('确定性小结保留同项目的心脏超声等所有异常', () => {
+  const result = buildDeterministicSummary([{
+    projectName: '心血管病早筛',
+    conclusions: [
+      { name: '心脏超声', itemType: 'imaging', status: 'unknown', conclusion: '左室舒张功能减低' },
+      { name: '常规心电图', itemType: 'lab', value: '窦性心动过缓', status: 'attention', conclusion: '' },
+    ],
+  }]);
+  assert.match(result, /心脏超声：左室舒张功能减低/);
+  assert.match(result, /常规心电图需关注（窦性心动过缓）/);
 });

@@ -31,9 +31,30 @@ function resolveConfiguredProjectName(projectName, projectOrder) {
 function buildSummaryInputGroups(reports, bucketKey, categoryBucket, projectOrder = new Map()) {
   const grouped = new Map();
   (reports || []).forEach(report => {
-    (report.reportItems || []).forEach(item => {
-      // 年度小结是异常摘要，不重复罗列正常、阴性或状态不明的检查结果。
-      if (!['abnormal', 'attention'].includes(item.status)) return;
+    const reportItems = [...(report.reportItems || [])];
+    // 人工录入的检查单主要结论单独保存在 examMainConclusions，
+    // 必须和 OCR 检查项的 conclusion 一起纳入年度小结。
+    Object.entries(report.examMainConclusions || {}).forEach(([name, conclusion]) => {
+      if (!String(conclusion || '').trim()) return;
+      const duplicated = reportItems.some(item =>
+        item.itemType === 'imaging'
+        && item.name === name
+        && String(item.conclusion || '').trim() === String(conclusion).trim());
+      if (!duplicated) reportItems.push({
+        name,
+        itemType: 'imaging',
+        status: 'unknown',
+        conclusion,
+        screeningCategory: report.screeningCategory,
+        screeningParent: report.screeningL2,
+      });
+    });
+
+    reportItems.forEach(item => {
+      const isImaging = item.itemType === 'imaging';
+      const mainConclusion = String(item.conclusion || '').trim();
+      // 检验项目按 abnormal/attention 筛选；检查项目只按审核后的“主要结论”纳入，不依赖 status。
+      if (isImaging ? !mainConclusion : !['abnormal', 'attention'].includes(item.status)) return;
       const projectName = resolveConfiguredProjectName(projectNameForItem(item, report), projectOrder);
       if (categoryBucket(item.screeningCategory || report.screeningCategory, report.screeningL1 || '', projectName) !== bucketKey) return;
       if (!grouped.has(projectName)) grouped.set(projectName, {
@@ -49,8 +70,8 @@ function buildSummaryInputGroups(reports, bucketKey, categoryBucket, projectOrde
       }
       if (item.name && !material.itemNames.includes(item.name)) material.itemNames.push(item.name);
       group.conclusions.push({
-        name: item.name, value: item.value, status: item.status,
-        conclusion: item.conclusion || item.diagnosis || item.findings || '',
+        name: item.name, value: item.value, status: item.status, itemType: item.itemType || 'lab',
+        conclusion: isImaging ? mainConclusion : '',
       });
     });
   });
@@ -93,4 +114,35 @@ function ensureLpla2InCardiovascularSummary(summary, groups) {
   return lines.join('\n');
 }
 
-module.exports = { buildSummaryInputGroups, projectNameForItem, resolveConfiguredProjectName, ensureLpla2InCardiovascularSummary };
+function conclusionTextForItem(item) {
+  const name = String(item?.name || '').trim();
+  const value = String(item?.value || '').trim();
+  const conclusion = String(item?.conclusion || '').trim();
+  if (item?.itemType === 'imaging' && conclusion) {
+    return name && !conclusion.includes(name) ? `${name}：${conclusion}` : conclusion;
+  }
+  const statusText = item?.status === 'attention' ? '需关注' : '异常';
+  return `${name || '检查项目'}${statusText}${value ? `（${value}）` : ''}`;
+}
+
+// 最终小结由已审核的异常项确定性生成，不能让模型选择性省略检查。
+// 同一项目合并成一行，并按目录顺序保留每一条异常/需关注结论。
+function buildDeterministicSummary(groups) {
+  return (groups || []).map(group => {
+    const details = [];
+    (group.conclusions || []).forEach(item => {
+      if (item.itemType === 'imaging' ? !String(item.conclusion || '').trim() : !['abnormal', 'attention'].includes(item.status)) return;
+      const detail = conclusionTextForItem(item);
+      if (detail && !details.includes(detail)) details.push(detail);
+    });
+    return details.length ? `${group.projectName}：${details.join('；')}。` : '';
+  }).filter(Boolean).join('\n');
+}
+
+module.exports = {
+  buildSummaryInputGroups,
+  projectNameForItem,
+  resolveConfiguredProjectName,
+  ensureLpla2InCardiovascularSummary,
+  buildDeterministicSummary,
+};

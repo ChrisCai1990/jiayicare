@@ -4032,7 +4032,7 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       user: req.params.id,
       audit_status: 'audited',
       $or: [{ reportYear: year }, { checkDate: new RegExp(`^${year}[-/]`) }, { date: new RegExp(`^${year}[-/]`) }],
-    }).select('_id title checkDate date hospital institution screeningCategory screeningL1 screeningL2 reportItems aiSummary').lean();
+    }).select('_id title checkDate date hospital institution screeningCategory screeningL1 screeningL2 reportItems examMainConclusions').lean();
     if (!reports.length) return res.status(400).json({ success: false, message: `${year}年度没有已审核报告，无法生成小结` });
 
     // 小结核对顺序必须与专项筛查目录一致，不能交给 AI 自由重排。
@@ -4069,28 +4069,16 @@ router.post('/patients/:id/screening-year-summaries/:year/generate', staffAuth, 
       if (/心脑血管病?筛查|心血管筛查|脑血管筛查/.test(effectiveL1) || (!directoryRoot && ['cardiovascular', 'brain_vessel'].includes(category))) return 'cardiovascular_risk';
       return 'chronic_disease';
     };
-    const { buildSummaryInputGroups, ensureLpla2InCardiovascularSummary } = require('../utils/screeningSummaryInput');
+    const { buildSummaryInputGroups, buildDeterministicSummary } = require('../utils/screeningSummaryInput');
     const input = {};
     Object.keys(CATEGORY_MAP).forEach(key => {
       input[key] = buildSummaryInputGroups(reports, key, categoryBucket, projectOrder);
     });
 
-    const { chat } = require('../utils/ai');
-    const raw = await chat([{ role: 'user', content: `根据以下${year}年度已审核检查资料，分别形成简洁、客观的年度异常小结。输入中只包含异常或需关注的项目，严禁描述正常、阴性、未见明显异常的结果。项目已经严格按专项筛查目录从前到后排列，输出必须保持完全相同的项目顺序。每个有异常的项目独占一行，以“项目名：异常结论”开头；同一项目可汇总其异常结果，但禁止跨项目合并、禁止调整顺序、禁止补充正常结果。某分类没有异常项目时，对应值返回空字符串，不得写“正常”“无异常”或“未见异常”。不得补造资料。只输出JSON，三个值均为用换行分隔的字符串：{"tumor_risk":"...","cardiovascular_risk":"...","chronic_disease":"..."}。\n${JSON.stringify(input)}` }], { maxTokens: 1600 });
-    let parsed;
-    try {
-      parsed = JSON.parse(String(raw).replace(/^```json\s*|```$/g, '').trim());
-    } catch {
-      return res.status(502).json({ success: false, message: 'AI年度小结返回格式异常，请重试' });
-    }
+    const parsed = {};
     Object.keys(CATEGORY_MAP).forEach(key => {
-      // 空分类在程序层强制留空，避免模型用“正常/无异常”占位。
-      if (!input[key].length) parsed[key] = '';
+      parsed[key] = buildDeterministicSummary(input[key]);
     });
-    parsed.cardiovascular_risk = ensureLpla2InCardiovascularSummary(
-      parsed.cardiovascular_risk,
-      input.cardiovascular_risk,
-    );
     const tumorMarkerGroups = input.tumor_risk.filter(group => /肿瘤标志物/.test(group.projectName));
     if (tumorMarkerGroups.length && tumorMarkerGroups.every(group => group.conclusions.every(item => !['abnormal', 'attention'].includes(item.status)))) {
       const lines = String(parsed.tumor_risk || '').split(/\n+/).filter(Boolean);
