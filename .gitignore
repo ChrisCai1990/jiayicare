@@ -14,3 +14,22 @@ __pycache__/
 .claude/
 .mp-ci-keys/
 *.key
+
+# Local Codex/deployment worktrees and transfer artifacts
+.codex-upload/
+.deploy-*/
+*.bundle
+
+# Local scratch and generated output
+output/
+tmp/
+scripts/.codex_*.py
+
+# Mini Program developer-tool artifacts
+miniprogram/node_modules.*/
+miniprogram/preview-*.json
+miniprogram/preview-*.png
+miniprogram/preview-info.json
+miniprogram/preview-qrcode.png
+miniprogram/upload-*.json
+miniprogram/project.private.config.json
