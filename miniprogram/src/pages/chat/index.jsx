@@ -32,10 +32,9 @@ export default function ChatPage() {
   const [nutritionInput, setNutritionInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [foodImage, setFoodImage] = useState(null);
+  const [plannerScrollTick, setPlannerScrollTick] = useState(0);
   const historyUserRef = useRef('');
-  // scrollIntoView 必须变更目标值才会重新定位。消息数量、发送状态和视图状态
-  // 共同生成唯一锚点，覆盖历史记录异步恢复、新回复和重新进入规划师三种场景。
-  const plannerBottomId = `planner-bottom-${messages.length}-${sending ? 'sending' : 'idle'}-${view === 'ai' ? 'active' : 'hidden'}`;
+  const plannerBottomId = `planner-bottom-${plannerScrollTick}`;
 
   useEffect(() => {
     let active = true;
@@ -75,6 +74,19 @@ export default function ChatPage() {
     if (requestedView === 'team') setView('team');
     Taro.removeStorageSync('healthHubView');
   });
+
+  // 历史消息和长回复渲染需要时间。先等一帧布局，再做一次复核定位；每次都
+  // 改变锚点 ID，避免微信忽略指向同一目标的 scrollIntoView 更新。
+  useEffect(() => {
+    if (view !== 'ai') return undefined;
+    const jumpToLatest = () => setPlannerScrollTick(Date.now());
+    const layoutTimer = setTimeout(jumpToLatest, 80);
+    const settleTimer = setTimeout(jumpToLatest, 420);
+    return () => {
+      clearTimeout(layoutTimer);
+      clearTimeout(settleTimer);
+    };
+  }, [view, messages.length, sending]);
 
   const send = async () => {
     const text = input.trim();
