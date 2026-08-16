@@ -32,9 +32,10 @@ export default function ChatPage() {
   const [nutritionInput, setNutritionInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [foodImage, setFoodImage] = useState(null);
-  const [plannerScrollTop, setPlannerScrollTop] = useState(0);
   const historyUserRef = useRef('');
-  const scrollRef = useRef();
+  // scrollIntoView 必须变更目标值才会重新定位。消息数量、发送状态和视图状态
+  // 共同生成唯一锚点，覆盖历史记录异步恢复、新回复和重新进入规划师三种场景。
+  const plannerBottomId = `planner-bottom-${messages.length}-${sending ? 'sending' : 'idle'}-${view === 'ai' ? 'active' : 'hidden'}`;
 
   useEffect(() => {
     let active = true;
@@ -74,14 +75,6 @@ export default function ChatPage() {
     if (requestedView === 'team') setView('team');
     Taro.removeStorageSync('healthHubView');
   });
-
-  useEffect(() => {
-    if (view !== 'ai') return;
-    const jumpToBottom = () => setPlannerScrollTop(Date.now());
-    const timer = setTimeout(jumpToBottom, 80);
-    const retryTimer = setTimeout(jumpToBottom, 450);
-    return () => { clearTimeout(timer); clearTimeout(retryTimer); };
-  }, [view, messages.length, sending]);
 
   const send = async () => {
     const text = input.trim();
@@ -165,7 +158,7 @@ export default function ChatPage() {
           </View>
         ))}
       </View>
-      <ScrollView scrollY scrollTop={plannerScrollTop} scrollWithAnimation style={{ flex: 1, padding: `${spacing.md}px`, boxSizing: 'border-box' }}>
+      <ScrollView scrollY scrollIntoView={plannerBottomId} scrollWithAnimation style={{ flex: 1, padding: `${spacing.md}px`, boxSizing: 'border-box' }}>
         {messages.map((m, i) => (
           <View key={i} style={{
             display: 'flex', width: '100%', minWidth: 0, justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '10px', boxSizing: 'border-box',
@@ -181,7 +174,7 @@ export default function ChatPage() {
           </View>
         ))}
         {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在梳理您的需求...</Text>}
-        <View id={`planner-bottom-${messages.length}`} />
+        <View id={plannerBottomId} style={{ height: '1px' }} />
       </ScrollView>
 
       <View style={{
