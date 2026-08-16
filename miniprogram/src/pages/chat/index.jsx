@@ -32,9 +32,8 @@ export default function ChatPage() {
   const [nutritionInput, setNutritionInput] = useState('');
   const [weightInput, setWeightInput] = useState('');
   const [foodImage, setFoodImage] = useState(null);
-  const [plannerScrollTick, setPlannerScrollTick] = useState(0);
+  const [plannerScrollTop, setPlannerScrollTop] = useState(999998);
   const historyUserRef = useRef('');
-  const plannerBottomId = `planner-bottom-${plannerScrollTick}`;
 
   useEffect(() => {
     let active = true;
@@ -75,11 +74,12 @@ export default function ChatPage() {
     Taro.removeStorageSync('healthHubView');
   });
 
-  // 历史消息和长回复渲染需要时间。先等一帧布局，再做一次复核定位；每次都
-  // 改变锚点 ID，避免微信忽略指向同一目标的 scrollIntoView 更新。
+  // 微信真机必须让 scroll-view 自身形成固定的可滚动区域。消息布局完成后用
+  // 两个不同但足够大的有限值交替更新 scrollTop，避免同值更新被忽略，也避免
+  // Date.now() 超出小程序滚动属性的可靠数值范围。
   useEffect(() => {
     if (view !== 'ai') return undefined;
-    const jumpToLatest = () => setPlannerScrollTick(Date.now());
+    const jumpToLatest = () => setPlannerScrollTop((value) => (value === 999999 ? 999998 : 999999));
     const layoutTimer = setTimeout(jumpToLatest, 80);
     const settleTimer = setTimeout(jumpToLatest, 420);
     return () => {
@@ -170,7 +170,12 @@ export default function ChatPage() {
           </View>
         ))}
       </View>
-      <ScrollView scrollY scrollIntoView={plannerBottomId} scrollWithAnimation style={{ flex: 1, padding: `${spacing.md}px`, boxSizing: 'border-box' }}>
+      <ScrollView
+        scrollY
+        enableFlex
+        scrollTop={plannerScrollTop}
+        style={{ flex: 1, height: 0, minHeight: 0, padding: `${spacing.md}px`, boxSizing: 'border-box' }}
+      >
         {messages.map((m, i) => (
           <View key={i} style={{
             display: 'flex', width: '100%', minWidth: 0, justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start', marginBottom: '10px', boxSizing: 'border-box',
@@ -186,7 +191,7 @@ export default function ChatPage() {
           </View>
         ))}
         {sending && <Text style={{ fontSize: '12px', color: colors.textMuted }}>正在梳理您的需求...</Text>}
-        <View id={plannerBottomId} style={{ height: '1px' }} />
+        <View style={{ height: '1px' }} />
       </ScrollView>
 
       <View style={{
