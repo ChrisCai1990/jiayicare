@@ -4,6 +4,7 @@ import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, useStaff } from '../App'
 import FollowUpModal from '../components/FollowUpModal'
 import AiRuleHint from '../components/AiRuleHint'
+import AppIcon from '../components/AppIcon'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 
@@ -1049,7 +1050,7 @@ function PsychAssessmentPanel({ user }) {
   return (
     <div className="card" style={{ marginBottom: 16 }}>
       <div className="card-header">
-        <div className="card-title">🧠 心理健康评估</div>
+        <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 7 }}><AppIcon name="brain" size={17} />心理健康评估</div>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {!hasAny && (
@@ -1235,7 +1236,7 @@ function AscvdRiskPanel({ user, patientId, onSaved, toast }) {
   return (
     <div className="card" style={{ marginBottom: 16, overflow: 'hidden' }}>
       <div className="card-header" style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div className="card-title" style={{ flex: 1 }}>❤️ 10年ASCVD风险评估</div>
+        <div className="card-title" style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 7 }}><AppIcon name="heart" size={17} />10年ASCVD风险评估</div>
         {/* 年度切换：只列出已有评估的年份，一份评估都没有时不展示 */}
         {!editing && years.length > 0 && (
           <div style={{ display: 'flex', gap: 4 }}>
@@ -1415,8 +1416,13 @@ export default function PatientDetailPage() {
   const [serviceRecords, setServiceRecords] = useState([])
   const [patientReferrals, setPatientReferrals] = useState([])
   const [expandedReferralCats, setExpandedReferralCats] = useState({})
-  const [expandedReportYears, setExpandedReportYears] = useState({})
   const [reportSearchKw, setReportSearchKw] = useState('')
+  const [reportYearFilter, setReportYearFilter] = useState('')
+  const [reportTaskFilter, setReportTaskFilter] = useState('all')
+  const [reportMissingOnly, setReportMissingOnly] = useState(false)
+  const [reportPage, setReportPage] = useState(1)
+  const [openReportActionId, setOpenReportActionId] = useState(null)
+  const [showMoreTabs, setShowMoreTabs] = useState(false)
   const [patientOrders, setPatientOrders] = useState([])
   const [redeemingOrderId, setRedeemingOrderId] = useState(null)
   const [requisitions, setRequisitions] = useState([])
@@ -3012,6 +3018,8 @@ export default function PatientDetailPage() {
     .sort((a, b) => String(a?.measuredAt || a?.recordedAt || '').localeCompare(String(b?.measuredAt || b?.recordedAt || '')))
     .at(-1) || {}
   const displayBodyComposition = { ...(user.bodyComposition || {}), ...latestBodyCompHistory }
+  const riskCategories = [['tumor_risk', '肿瘤风险'], ['cardiovascular_risk', '心脑血管病风险'], ['chronic_disease', '慢性病及其他风险']]
+  const hasConfirmedRisk = riskCategories.some(([key]) => normalizeRiskTagValues(user.healthRiskTags?.[key] || (key === 'chronic_disease' ? user.chronicDiseases || [] : [])).length > 0)
 
   return (
     // 2026-07-09 金娟反复反馈"界面看不到全局，要键盘左右移动才能找到按键"：会员详情页内某些
@@ -3041,8 +3049,18 @@ export default function PatientDetailPage() {
       </div>
 
       {/* AI 从专项筛查异常项生成，健康顾问分三类审核 */}
-      <div style={{ marginBottom: 12, padding: '10px 14px', background: '#F7FAF8', borderRadius: 10 }}>
-        {[['tumor_risk','肿瘤风险'], ['cardiovascular_risk','心脑血管病风险'], ['chronic_disease','慢性病及其他风险']].map(([key, label]) => {
+      <div style={{ marginBottom: 12, padding: showTagEditor || hasConfirmedRisk ? '10px 14px' : '8px 14px', background: '#F7FAF8', borderRadius: 10, border: '1px solid #EDF2EE' }}>
+        {!showTagEditor && !hasConfirmedRisk && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, minHeight: 22, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#4A6558' }}>风险概览</span>
+              <span style={{ fontSize: 12, color: '#8AA89C' }}>暂无已确认风险</span>
+              {user.healthRiskTags?.status && <span style={{ fontSize: 11, color: user.healthRiskTags.status === 'reviewed' ? '#16A34A' : '#D97706', background: user.healthRiskTags.status === 'reviewed' ? '#ECFDF5' : '#FFF7ED', borderRadius: 999, padding: '3px 7px' }}>{user.healthRiskTags.status === 'reviewed' ? '风险标签已审核' : '风险标签待审核'}</span>}
+            </div>
+            {['familyDoctor','superadmin'].includes(staff?.role) && <button className="btn btn-secondary btn-sm" onClick={() => { const t = user.healthRiskTags || {}; setTagEditorDiseases({ tumor_risk: normalizeRiskTagValues(t.tumor_risk || []), cardiovascular_risk: normalizeRiskTagValues(t.cardiovascular_risk || []), chronic_disease: normalizeRiskTagValues(t.chronic_disease || user.chronicDiseases || []) }); setTagEditorInput({ tumor_risk: '', cardiovascular_risk: '', chronic_disease: '' }); setShowTagEditor(true) }}>编辑风险标签</button>}
+          </div>
+        )}
+        {(showTagEditor || hasConfirmedRisk) && riskCategories.map(([key, label]) => {
           const values = normalizeRiskTagValues(user.healthRiskTags?.[key] || (key === 'chronic_disease' ? user.chronicDiseases || [] : []))
           const addTags = () => {
             const additions = String(tagEditorInput[key] || '').split(/[、,，;；\n]+/).map(v => v.trim()).filter(Boolean)
@@ -3072,7 +3090,7 @@ export default function PatientDetailPage() {
             setTagEditorDiseases(cur => ({ ...cur, [key]: [...new Set([...(cur[key] || []), ...additions])] }))
             setTagEditorInput(cur => ({ ...cur, [key]: '' }))
           }
-          return <div key={key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minHeight: 32 }}>
+          return <div key={key} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minHeight: showTagEditor ? 32 : undefined, marginBottom: showTagEditor ? 0 : 4 }}>
             <span style={{ width: 120, fontSize: 12, fontWeight: 600, color: '#4A6558', paddingTop: 3 }}>{label}：</span>
             {showTagEditor ? <div style={{ flex: 1 }}>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: (tagEditorDiseases[key] || []).length ? 7 : 0 }}>
@@ -3088,7 +3106,7 @@ export default function PatientDetailPage() {
               : <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, flex: 1 }}>{values.length ? values.map(v => <span key={v} className="badge badge-danger">{v}</span>) : <span style={{ fontSize: 12, color: '#A0AAA5' }}>暂无</span>}</div>}
           </div>
         })}
-        <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
+        <div style={{ display: (showTagEditor || hasConfirmedRisk) ? 'flex' : 'none', gap: 8, justifyContent: 'flex-end', marginTop: 6 }}>
           {!showTagEditor ? <>
             {['familyDoctor','superadmin'].includes(staff?.role) && <button className="btn btn-primary btn-sm" onClick={() => { const t = user.healthRiskTags || {}; setTagEditorDiseases({ tumor_risk: normalizeRiskTagValues(t.tumor_risk || []), cardiovascular_risk: normalizeRiskTagValues(t.cardiovascular_risk || []), chronic_disease: normalizeRiskTagValues(t.chronic_disease || user.chronicDiseases || []) }); setTagEditorInput({ tumor_risk: '', cardiovascular_risk: '', chronic_disease: '' }); setShowTagEditor(true) }}>人工编辑标签</button>}
           </> : <><button className="btn btn-secondary btn-sm" style={{ color: '#DC3545' }} onClick={() => setTagEditorDiseases({ tumor_risk: [], cardiovascular_risk: [], chronic_disease: [] })}>清空全部</button><button className="btn btn-secondary btn-sm" onClick={() => setShowTagEditor(false)}>取消</button><button className="btn btn-primary btn-sm" onClick={handleSaveTags} disabled={tagSaving}>{tagSaving ? '保存中…' : '保存确认'}</button></>}
@@ -3173,31 +3191,43 @@ export default function PatientDetailPage() {
       <ArchiveConfirmLogPanel log={user.archiveConfirmLog} />
 
       {/* Tabs */}
-      <div className="tabs" style={{ marginBottom: 20 }}>
-        {[
+      {(() => {
+        const primaryTabs = [
           { key: 'info',          label: '基本信息' },
           { key: 'records',       label: '健康档案' },
           { key: 'reports',       label: '体检报告' },
           { key: 'portrait',      label: '健康画像' },
-          { key: 'medications',   label: '用药及营养补充信息' },
-          { key: 'ai',            label: 'AI健康信息整理' },
+          { key: 'medications',   label: '用药与营养' },
           { key: 'plans',         label: '管理方案' },
           { key: 'followups',     label: '随访记录' },
+        ]
+        const secondaryTabs = [
+          { key: 'ai',            label: 'AI健康信息整理' },
           { key: 'serviceRecords', label: '服务记录' },
           { key: 'referrals',     label: '转介记录' },
           { key: 'consumption',   label: '消费记录' },
           { key: 'family',        label: '家庭信息' },
           { key: 'membership',    label: '会员信息' },
-        ].map(t => (
+        ]
+        const isSecondaryTab = secondaryTabs.some(t => t.key === tab)
+        const showSecondaryTabs = showMoreTabs || isSecondaryTab
+        const renderTab = (t, isSecondary = false) => (
           <button
             key={t.key}
             className={`tab-btn ${tab === t.key ? 'active' : ''}`}
-            onClick={() => setTab(t.key)}
+            onClick={() => { setTab(t.key); if (!isSecondary) setShowMoreTabs(false) }}
           >
             {t.label}
           </button>
-        ))}
-      </div>
+        )
+        return <div style={{ marginBottom: 20 }}>
+          <div className="tabs" style={{ marginBottom: showSecondaryTabs ? 8 : 0 }}>
+            {primaryTabs.map(t => renderTab(t))}
+            <button className={`tab-btn ${isSecondaryTab ? 'active' : ''}`} onClick={() => setShowMoreTabs(v => !v)}>更多 {showSecondaryTabs ? '⌃' : '⌄'}</button>
+          </div>
+          {showSecondaryTabs && <div className="tabs patient-secondary-tabs">{secondaryTabs.map(t => renderTab(t, true))}</div>}
+        </div>
+      })()}
 
       {/* ── Info Tab ── */}
       {tab === 'info' && (
@@ -8401,15 +8431,40 @@ export default function PatientDetailPage() {
 
       {/* ── Reports Tab ── */}
       {tab === 'reports' && (() => {
-        const L1_COLORS = ['#7C3AED','#DC3545','#D97706','#0369A1','#0891B2','#1E6B50','#9D174D']
-        const AI_COLOR = { none:'#ccc', processing:'#7C3AED', pending:'#D97706', reviewed:'#22A06B', rejected:'#DC3545' }
-        const AI_LABEL = { none:'未解析', processing:'识别中…', pending:'待审核', reviewed:'已审核', rejected:'已驳回' }
-
-        // 搜索：按标题/医院/机构关键词过滤，不影响下面按年份+分类分组的展示逻辑
+        const getReportYear = (report) => {
+          const dateStr = report.checkDate || report.date
+          const dateYear = dateStr ? new Date(dateStr).getFullYear() : NaN
+          const createdYear = report.createdAt ? new Date(report.createdAt).getFullYear() : NaN
+          return String(!Number.isNaN(dateYear) ? dateYear : (report.reportYear || (!Number.isNaN(createdYear) ? createdYear : '未知')))
+        }
+        const reportYears = [...new Set(reports.map(getReportYear))].sort((a, b) => b.localeCompare(a, 'zh', { numeric: true }))
+        const getReportTaskKey = (report) => {
+          if (report.audit_status === 'audited' || report.aiStatus === 'reviewed') return 'audited'
+          if (report.audit_status === 'rejected' || report.aiStatus === 'rejected') return 'rejected'
+          if (report.aiStatus === 'none') return 'parse'
+          if (report.aiStatus === 'processing') return 'processing'
+          return 'review'
+        }
+        const reportTaskOptions = [
+          { key: 'all', label: '全部' },
+          { key: 'parse', label: '待解析' },
+          { key: 'processing', label: '解析中' },
+          { key: 'review', label: '待审核' },
+          { key: 'audited', label: '已审核' },
+        ]
+        // 支持标题/机构关键词及年份筛选，结果统一进入一张总表。
         const kw = reportSearchKw.trim().toLowerCase()
-        const filteredReports = kw
-          ? reports.filter(r => [r.title, r.hospital, r.institution].some(v => (v || '').toLowerCase().includes(kw)))
-          : reports
+        const reportsInScope = reports.filter(r => {
+          const matchesKeyword = !kw || [r.title, r.hospital, r.institution].some(v => (v || '').toLowerCase().includes(kw))
+          return matchesKeyword && (!reportYearFilter || getReportYear(r) === reportYearFilter)
+        })
+        const isReportInfoMissing = report => !(report.hospital || report.institution) || !(report.checkDate || report.date)
+        const missingReportCount = reportsInScope.filter(isReportInfoMissing).length
+        const taskFilterCount = key => key === 'all' ? reportsInScope.length : reportsInScope.filter(r => getReportTaskKey(r) === key).length
+        const filteredReports = reportsInScope.filter(r =>
+          (!reportMissingOnly || isReportInfoMissing(r))
+          && (reportTaskFilter === 'all' || getReportTaskKey(r) === reportTaskFilter)
+        )
 
         // 标题 → L1 节点映射（用 screeningTree）
         const titleToL1 = {}
@@ -8429,12 +8484,8 @@ export default function PatientDetailPage() {
         const routineOtherNode = screeningTree.find(n => n.label === '其他常规筛查')
         const yearMap = {}
         filteredReports.forEach(r => {
-          const dateStr = r.checkDate || r.date
-          // 检查日期是报告归属年份的事实来源。reportYear 是历史冗余字段，旧数据在修改日期后
-          // 可能没有同步，若优先使用它会把 2025 年报告错误显示在 2026 年名下。
-          const dateYear = dateStr ? new Date(dateStr).getFullYear() : NaN
-          const createdYear = r.createdAt ? new Date(r.createdAt).getFullYear() : NaN
-          const yr = (!Number.isNaN(dateYear) ? dateYear : (r.reportYear || (!Number.isNaN(createdYear) ? createdYear : '未知')))
+          // 检查日期是报告归属年份的事实来源，reportYear 仅作为历史记录兜底。
+          const yr = getReportYear(r)
           if (!yearMap[yr]) yearMap[yr] = {}
           let l1Node = r.screeningL1
             ? screeningTree.find(n => String(n._id) === r.screeningL1)
@@ -8470,83 +8521,91 @@ export default function PatientDetailPage() {
           const otherKey  = yrData[ROUTINE_OTHER_KEY] ? [ROUTINE_OTHER_KEY] : []
           return [...annualKey, ...treeKeys, ...typeKeys, ...otherKey]
         }
+        const tableRows = years.flatMap(yr => getL1Keys(yearMap[yr]).flatMap(key => {
+          const group = yearMap[yr][key]
+          const typeLabel = group.label || group.node?.label || '其他常规筛查'
+          return sortByTree(group.reports).map(report => ({ report, typeLabel }))
+        })).sort((a, b) => {
+          const priority = { review: 0, parse: 1, processing: 2, audited: 3, rejected: 4 }
+          const taskDiff = (priority[getReportTaskKey(a.report)] ?? 9) - (priority[getReportTaskKey(b.report)] ?? 9)
+          if (taskDiff) return taskDiff
+          return String(b.report.checkDate || b.report.date || b.report.createdAt || '').localeCompare(String(a.report.checkDate || a.report.date || a.report.createdAt || ''))
+        })
+        const REPORT_PAGE_SIZE = 20
+        const totalReportPages = Math.max(1, Math.ceil(tableRows.length / REPORT_PAGE_SIZE))
+        const currentReportPage = Math.min(reportPage, totalReportPages)
+        const paginatedReportRows = tableRows.slice((currentReportPage - 1) * REPORT_PAGE_SIZE, currentReportPage * REPORT_PAGE_SIZE)
 
         return (
           <div>
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, flexWrap: 'wrap', gap: 8 }}>
-              <div className="card-title">体检报告</div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input className="form-input" style={{ width: 200 }} placeholder="🔍 搜索报告标题/医院"
-                  value={reportSearchKw} onChange={e => setReportSearchKw(e.target.value)} />
-                <button className="btn btn-primary btn-sm" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>
+              <div className="card-title">体检报告 <span style={{ fontSize: 12, fontWeight: 400, color: '#8AA89C', marginLeft: 6 }}>{tableRows.length} 份</span></div>
+              <div className="report-filter-bar">
+                <select className="form-input report-year-select" style={{ width: 132 }} value={reportYearFilter} onChange={e => { setReportYearFilter(e.target.value); setReportPage(1); setOpenReportActionId(null) }} aria-label="按年份筛选报告">
+                  <option value="">全部年份</option>
+                  {reportYears.map(year => <option key={year} value={year}>{year === '未知' ? '年份未知' : `${year} 年`}</option>)}
+                </select>
+                <input className="form-input report-search-input" style={{ width: 240 }} placeholder="搜索报告标题/医院"
+                  value={reportSearchKw} onChange={e => { setReportSearchKw(e.target.value); setReportPage(1); setOpenReportActionId(null) }} />
+                <button className="btn btn-primary btn-sm report-upload-btn" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>
               </div>
             </div>
+            {reports.length > 0 && <div className="report-list-toolbar">
+              <div className="report-task-filters" aria-label="报告任务筛选">
+                {reportTaskOptions.map(option => <button key={option.key} className={reportTaskFilter === option.key ? 'active' : ''} onClick={() => { setReportTaskFilter(option.key); setReportPage(1); setOpenReportActionId(null) }}>
+                  {option.label}<span>{taskFilterCount(option.key)}</span>
+                </button>)}
+              </div>
+              <div className="report-list-controls">
+                <button type="button" className={`report-missing-toggle ${reportMissingOnly ? 'active' : ''}`} onClick={() => { setReportMissingOnly(current => !current); setReportPage(1); setOpenReportActionId(null) }}>
+                  仅看信息待补 <span>{missingReportCount}</span>
+                </button>
+                {totalReportPages > 1 && <div className="report-table-pager report-table-pager-top" aria-label="报告分页">
+                  <button aria-label="上一页" title="上一页" disabled={currentReportPage <= 1} onClick={() => { setReportPage(currentReportPage - 1); setOpenReportActionId(null) }}>‹</button>
+                  <span>第 {currentReportPage} / {totalReportPages} 页</span>
+                  <button aria-label="下一页" title="下一页" disabled={currentReportPage >= totalReportPages} onClick={() => { setReportPage(currentReportPage + 1); setOpenReportActionId(null) }}>›</button>
+                </div>}
+              </div>
+            </div>}
             {reports.length === 0 ? (
               <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无体检报告</div>
             ) : filteredReports.length === 0 ? (
-              <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>没有匹配"{reportSearchKw}"的报告</div>
-            ) : years.map((yr, yrIdx) => {
-              const isExpanded = expandedReportYears[yr] !== undefined ? expandedReportYears[yr] : yrIdx === 0
-              return (
-              <div key={yr} style={{ marginBottom: 20 }}>
-                <div
-                  onClick={() => setExpandedReportYears(prev => ({ ...prev, [yr]: !isExpanded }))}
-                  style={{ fontWeight: 700, fontSize: 15, color: '#1A2B24', padding: '8px 12px', borderBottom: '2px solid #1E6B50', marginBottom: isExpanded ? 12 : 0, cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f9f7f3', borderRadius: isExpanded ? '8px 8px 0 0' : 8 }}
-                >
-                  <span>📅 {yr} 年 <span style={{ fontSize: 12, color: '#aaa', fontWeight: 400, marginLeft: 6 }}>{Object.values(yearMap[yr]).reduce((s, g) => s + g.reports.length, 0)} 份</span></span>
-                  <span style={{ fontSize: 14, color: '#1E6B50' }}>{isExpanded ? '▲' : '▼'}</span>
-                </div>
-                {isExpanded && getL1Keys(yearMap[yr]).map(key => {
-                  const { node: l1Node, label: grpLabel, reports: grpReports } = yearMap[yr][key]
-                  const l1Label = grpLabel || l1Node?.label || '其他'
-                  const l1Idx = l1Node ? screeningTree.findIndex(n => String(n._id) === key) : -1
-                  const color = l1Idx >= 0 ? L1_COLORS[l1Idx % L1_COLORS.length] : '#8AA89C'
-                  const isFunctionalMedicineGroup = /功能检测|功能医学/.test(l1Label)
-                  // 居家监测设备导出报告格式五花八门，AI识别易出错（曾出现机构名幻觉），
-                  // 2026-07-21需求明确不走AI自动解析，与功能医学检测同一处理方式
-                  const isHomeMonitorGroup = /居家监测/.test(l1Label)
-                  return (
-                  <div key={key} style={{ marginBottom: 16, borderRadius: 10, border: '1px solid #e8e4dc', overflow: 'hidden' }}>
-                    <div style={{ padding: '8px 16px', background: '#f5f2ec', fontWeight: 700, fontSize: 13, color, display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block' }} />
-                      {l1Label}
-                      <span style={{ fontWeight: 400, fontSize: 12, color: '#aaa', marginLeft: 4 }}>{grpReports.length} 份</span>
-                    </div>
-                    <table className="table" style={{ marginBottom: 0 }}>
-                      <thead><tr><th>报告标题</th><th>机构</th><th>检查日期</th><th>审核状态</th><th>AI解析</th><th>操作</th></tr></thead>
+              <div className="card" style={{ padding: 40, textAlign: 'center', color: '#aaa' }}>暂无符合当前筛选条件的报告</div>
+            ) : (
+              <>
+                  <div style={{ borderRadius: 8, border: '1px solid #e8e4dc', overflowX: 'auto', background: '#fff' }}>
+                    <table className="table report-table" style={{ marginBottom: 0, minWidth: 920 }}>
+                      <thead><tr><th>报告名称</th><th>类型</th><th>机构</th><th>检查日期</th><th>状态</th><th>操作</th></tr></thead>
                       <tbody>
-                        {sortByTree(grpReports).map(r => (
-                          <tr key={r._id}>
-                            <td style={{ cursor: 'pointer' }} onClick={() => openReportDetail(r)}>
-                              <span style={{ fontWeight: 500, color: '#1E6B50' }}>{r.title}</span>
-                              {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 1 }}>{r.screeningL2}</div>}
-                            </td>
-                            <td style={{ fontSize: 12, color: '#666' }}>{r.hospital || r.institution || '-'}</td>
-                            <td style={{ fontSize: 12, color: '#8AA89C' }}>{r.checkDate || r.date || '-'}</td>
+                      {paginatedReportRows.map(({ report: r, typeLabel }) => {
+                        const auditLabel = r.audit_status === 'audited' ? '已审核'
+                          : r.audit_status === 'rejected' ? '已驳回'
+                          : r.aiStatus === 'none' ? '待解析'
+                          : r.aiStatus === 'processing' ? '解析中'
+                          : '待审核'
+                        const auditColor = r.audit_status === 'audited' ? '#22A06B'
+                          : r.audit_status === 'rejected' ? '#DC3545' : '#D97706'
+                        const isFunctionalMedicineReport = /功能检测|功能医学/.test(typeLabel)
+                        // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
+                        const isHomeMonitorReport = /居家监测/.test(typeLabel)
+                        return (
+                          <React.Fragment key={r._id}>
+                          <tr>
                             <td>
-                              <span style={{ fontSize: 12, fontWeight: 500, color: r.audit_status === 'audited' ? '#22A06B' : r.audit_status === 'rejected' ? '#DC3545' : '#D97706' }}>
-                                {r.audit_status === 'audited' ? '已审核'
-                                  : r.audit_status === 'rejected' ? '已驳回'
-                                  : r.aiStatus === 'none' ? '待解析'
-                                  : r.aiStatus === 'processing' ? '解析中'
-                                  : '待审核'}
-                              </span>
+                              <button type="button" onClick={() => openReportDetail(r)} className="report-table-list-title-btn">{r.title || '未命名报告'}</button>
+                              {r.screeningL2 && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{r.screeningL2}</div>}
                             </td>
-                            <td>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: AI_COLOR[r.aiStatus] || '#ccc' }}>
-                                {AI_LABEL[r.aiStatus] || '—'}
-                              </span>
-                              {r.aiSummary && r.aiStatus === 'pending' && (
-                                <div style={{ fontSize: 11, color: '#8AA89C', maxWidth: 180, marginTop: 2 }}>{r.aiSummary.slice(0, 60)}…</div>
-                              )}
-                            </td>
+                            <td><span style={{ fontSize: 12, color: '#668277', whiteSpace: 'nowrap' }}>{typeLabel}</span></td>
+                            <td style={{ color: '#60756B' }}>{r.hospital || r.institution || <span className="report-missing-field">待补</span>}</td>
+                            <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
+                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
                             <td style={{ whiteSpace: 'nowrap' }}>
-                              {isFunctionalMedicineGroup ? (
+                              {isFunctionalMedicineReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
-                              ) : isHomeMonitorGroup ? (
+                              ) : isHomeMonitorReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
                               ) : r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
-                                <button className="btn btn-primary btn-sm" style={{ marginRight: 4 }}
+                                <button className="btn btn-primary btn-sm report-action-primary"
                                   disabled={parsingReportId === r._id}
                                   onClick={() => handleParseReportAI(r._id)}>
                                   {parsingReportId === r._id ? '提交中…' : 'AI解析'}
@@ -8555,49 +8614,55 @@ export default function PatientDetailPage() {
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}
                               {r.aiStatus === 'processing' && (
-                                <button className="btn btn-sm" style={{ marginRight: 4, background:'#EDE7F9', color:'#7C3AED', border:'1px solid #d9cef2', cursor:'default' }} disabled>
+                                <button className="btn btn-sm report-action-muted" disabled>
                                   <span style={{ display:'inline-block', width:10, height:10, border:'2px solid #7C3AED', borderTopColor:'transparent', borderRadius:'50%', marginRight:6, verticalAlign:'middle', animation:'spin 0.8s linear infinite' }} />
                                   识别中…
                                 </button>
                               )}
-                              {r.audit_status !== 'audited' && (
-                                <button className="btn btn-secondary btn-sm" style={{ marginRight: 4 }}
-                                  onClick={() => {
-                                    setEditingReport(r)
-                                    setEditingReportForm({
-                                      title: r.title || '',
-                                      hospital: r.hospital || r.institution || '',
-                                      date: r.date || r.checkDate || '',
-                                      note: r.note || '',
-                                      type: r.type || 'general_exam',
-                                    })
-                                  }}>编辑</button>
-                              )}
                               {(r.aiStatus === 'pending' || r.aiStatus === 'reviewed') && (
-                                <button className="btn btn-sm" style={{ background: r.aiStatus === 'reviewed' ? '#22A06B' : '#7C3AED', color:'#fff', border:'none', marginRight: 4 }}
+                                <button className={`btn btn-sm ${r.aiStatus === 'reviewed' ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
                                   onClick={() => handleOpenOCRReview(r)}>
                                   {r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
                                 </button>
                               )}
-                              <button className="btn btn-secondary btn-sm" onClick={() => openReportDetail(r)}>查看</button>
                               {r.audit_status !== 'audited' && (
-                                <button className="btn btn-sm" style={{ marginLeft: 4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
-                                  onClick={async () => {
-                                    if (!window.confirm('确认删除这条报告记录？')) return
-                                    try { await staffAPI.deleteReport(r._id); loadReports() } catch (err) { toast(err.message) }
-                                  }}>删除</button>
+                                <button className="report-action-more" aria-label="更多报告操作" title="更多操作" onClick={() => setOpenReportActionId(current => current === r._id ? null : r._id)}>
+                                  {openReportActionId === r._id ? '×' : '···'}
+                                </button>
                               )}
                             </td>
                           </tr>
-                        ))}
+                          {openReportActionId === r._id && r.audit_status !== 'audited' && (
+                            <tr>
+                              <td colSpan={6} style={{ padding: '8px 14px', background: '#F8FAF9', textAlign: 'right' }}>
+                                <span style={{ color: '#8AA89C', fontSize: 12, marginRight: 10 }}>更多操作</span>
+                                <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }} onClick={() => {
+                                  setEditingReport(r)
+                                  setEditingReportForm({
+                                    title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '',
+                                    note: r.note || '', type: r.type || 'general_exam',
+                                  })
+                                  setOpenReportActionId(null)
+                                }}>编辑报告</button>
+                                <button className="btn btn-sm" style={{ background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
+                                  onClick={async () => {
+                                    if (!window.confirm('确认删除这条报告记录？')) return
+                                    try { await staffAPI.deleteReport(r._id); setOpenReportActionId(null); loadReports() } catch (err) { toast(err.message) }
+                                  }}>删除报告</button>
+                              </td>
+                            </tr>
+                          )}
+                          </React.Fragment>
+                        )
+                      })}
                       </tbody>
                     </table>
                   </div>
-                  )
-                })}
-              </div>
-            )
-          })}
+                  <div className="report-table-footer">
+                    <span>显示 {(currentReportPage - 1) * REPORT_PAGE_SIZE + 1}–{Math.min(currentReportPage * REPORT_PAGE_SIZE, tableRows.length)} 条，共 {tableRows.length} 条</span>
+                  </div>
+              </>
+            )}
           </div>
         )
       })()}
