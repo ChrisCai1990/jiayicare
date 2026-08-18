@@ -76,7 +76,7 @@ const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIn
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
-const { compareReportExtractions, compareReportExtractionHistory, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
+const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -9817,7 +9817,7 @@ async function runReportParse(reportId, options = {}) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { assessReportItems, isClearlyNonDetailTextPage } = require('../utils/reportOcrQuality');
+  const { assessReportItems, isClearlyNonDetailTextPage, formatTextLayerEvidence } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
@@ -9826,6 +9826,10 @@ async function runReportParse(reportId, options = {}) {
   const requestedMode = options.mode === 'v2' || options.mode === 'legacy' ? options.mode : '';
   const useOcrV2 = requestedMode === 'v2'
     || (requestedMode !== 'legacy' && (process.env.OCR_V2_ENABLED === 'true' || ocrV2ReportIds.has(String(reportId))));
+  const extractionSource = { ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []) };
+  const extractionHistory = useOcrV2
+    ? await ReportExtraction.find({ reportId }).sort({ version: -1 }).select('version source items').lean()
+    : [];
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const bodyCompositionPrompt = usePediatricBodyComposition
@@ -9910,12 +9914,14 @@ async function runReportParse(reportId, options = {}) {
               }
               for (let attempt = 0; attempt < 2; attempt++) {
                 try {
+                  const pageTextEvidence = useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : '';
                   const firstPassPrompt = report.type === 'body_comp'
                     ? bodyCompositionPrompt
                     : REPORT_PARSE_PROMPT
                       + (useOcrV2 ? `\n\n${OCR_V2_EXTRACTION_CONTRACT}` : '')
                       + (useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : '')
-                      + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '');
+                      + (useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '')
+                      + pageTextEvidence;
                   const firstPassModel = report.type === 'body_comp' ? 'qwen-vl-max' : VL_MODEL;
                   const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 120000 : 45000 });
                   const p = safeParseJSON(text);
@@ -9973,7 +9979,7 @@ async function runReportParse(reportId, options = {}) {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) continue;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
+            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
             const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) continue;
@@ -10004,7 +10010,7 @@ async function runReportParse(reportId, options = {}) {
             try {
               const img = await renderSinglePage(pdfBuf, pageNum, 200);
               if (!img) continue;
-              const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}\n\n【邵逸夫模板缺项专项补提】${targetedPrompts[pageNum]}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
+              const retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}\n\n【邵逸夫模板缺项专项补提】${targetedPrompts[pageNum]}${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 4096, timeoutMs: 120000 });
               const parsed = safeParseJSON(retryText);
               if (!parsed || !Array.isArray(parsed.items)) continue;
               const oldPage = allItems.filter(it => it._page === pageNum);
@@ -10037,7 +10043,7 @@ async function runReportParse(reportId, options = {}) {
               const maxAttempts = pageNum === 14 ? 3 : 1;
               for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 try {
-                  retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}${zheyiTemplate.promptForPage(pageNum)}\n\n【浙一缺项专项补提】${targetedPrompts[pageNum]}\n这是第${attempt}次完整性尝试，必须返回本页全部项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
+                  retryText = await parseImage(img, `${REPORT_PARSE_PROMPT}${zheyiTemplate.promptForPage(pageNum)}\n\n【浙一缺项专项补提】${targetedPrompts[pageNum]}\n这是第${attempt}次完整性尝试，必须返回本页全部项目。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 120000 });
                   if (safeParseJSON(retryText)?.items?.length) break;
                 } catch (error) {
                   if (attempt === maxAttempts) throw error;
@@ -10059,6 +10065,43 @@ async function runReportParse(reportId, options = {}) {
         }
       }
 
+      // 同一原件的历史快照曾在某页识别出项目，而本轮整页归零时，先自动做一次高分辨率恢复。
+      // 只采用重新从原件识别出的结果，不把旧快照内容直接混入新版本；恢复仍失败则保留为空并交由人工确认。
+      if (useOcrV2 && extractionHistory.length) {
+        const emptiedPages = findHistoricalEmptyPages(allItems, extractionSource, extractionHistory, totalPageCount);
+        if (emptiedPages.length) {
+          setOcrProgress('historical_recovery', `正在恢复${emptiedPages.length}页历史有项目的识别结果`, {
+            recoveryPages: emptiedPages.map(item => item.page),
+          });
+          for (const missing of emptiedPages) {
+            const pageNum = missing.page;
+            try {
+              const img = await renderSinglePage(pdfBuf, pageNum, 192);
+              if (!img) continue;
+              const recoveryPrompt = `${REPORT_PARSE_PROMPT}\n\n${OCR_V2_EXTRACTION_CONTRACT}\n\n【整页归零恢复】同一份原件的历史识别曾在本页提取到 ${missing.baselineCount} 项，但本轮为 0 项。请忽略历史内容，只重新仔细阅读当前页原件：凡页面中存在检验结果、体格检查结果、影像/超声检查所见或诊断意见，必须逐项输出；纯图片中的文字标注不单独成项，但图片上方或下方的检查结果与初步意见必须提取。不得因为页面包含多张医学影像而判定为无明细。${formatTextLayerEvidence(textLayer.pages?.[pageNum - 1])}`;
+              const text = await parseImage(img, recoveryPrompt, {
+                isUrl: false,
+                model: 'qwen-vl-max',
+                maxTokens: 8192,
+                timeoutMs: 120000,
+              });
+              const parsed = safeParseJSON(text);
+              if (!parsed || !Array.isArray(parsed.items)) continue;
+              const recovered = tagReportPageItems(parsed.items, pageNum).filter(item => str(item.name));
+              if (!recovered.length) {
+                console.log(`[parse-ai] P${pageNum}整页归零自动恢复仍为0项，保留人工完整性阻断`);
+                continue;
+              }
+              allItems = allItems.filter(item => item._page !== pageNum).concat(recovered);
+              detailPages.add(pageNum);
+              console.log(`[parse-ai] P${pageNum}整页归零自动恢复成功：0→${recovered.length}项（历史最多${missing.baselineCount}项）`);
+            } catch (error) {
+              console.log(`[parse-ai] P${pageNum}整页归零自动恢复异常: ${error.message}`);
+            }
+          }
+        }
+      }
+
       // 数量核对+单页重试：检验单标题写了"N项"但实际条数不够，说明这一页大概率漏提了，只重新识别这一页
       const { pagesToRetry, underOrders } = findUnderExtractedPages(allItems);
       if (pagesToRetry.length) {
@@ -10068,7 +10111,7 @@ async function runReportParse(reportId, options = {}) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) continue;
-            const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到条数明显少于标题声明数量的检验单：${underOrders.filter(o => allItems.some(it => it._page === pageNum && it.orderName === o.orderName)).map(o => `"${o.orderName}"（标题写${o.expected}项，之前只提取到${o.actual}项）`).join('、')}。请重新逐行核对该检验单在图片中的每一行，确保每一个子项都单独输出一条，不得合并、省略或遗漏任何一行，即使多行结果完全相同（如都是阴性）也要逐条列出。`;
+            const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到条数明显少于标题声明数量的检验单：${underOrders.filter(o => allItems.some(it => it._page === pageNum && it.orderName === o.orderName)).map(o => `"${o.orderName}"（标题写${o.expected}项，之前只提取到${o.actual}项）`).join('、')}。请重新逐行核对该检验单在图片中的每一行，确保每一个子项都单独输出一条，不得合并、省略或遗漏任何一行，即使多行结果完全相同（如都是阴性）也要逐条列出。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
             const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
@@ -10109,7 +10152,7 @@ async function runReportParse(reportId, options = {}) {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) continue;
-            const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页的血常规/血细胞分析检验单曾漏提了部分子项（缺少：${missingGroups.join('、')}）。请重新逐行核对该检验单在图片中的每一行，血常规通常有白细胞、中性粒细胞、淋巴细胞、单核细胞、嗜酸性粒细胞、嗜碱性粒细胞、红细胞、血红蛋白、血小板等约20项子指标（含绝对值和百分比两种），必须逐条全部输出，不得省略或遗漏任何一行。`;
+            const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页的血常规/血细胞分析检验单曾漏提了部分子项（缺少：${missingGroups.join('、')}）。请重新逐行核对该检验单在图片中的每一行，血常规通常有白细胞、中性粒细胞、淋巴细胞、单核细胞、嗜酸性粒细胞、嗜碱性粒细胞、红细胞、血红蛋白、血小板等约20项子指标（含绝对值和百分比两种），必须逐条全部输出，不得省略或遗漏任何一行。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
             const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
@@ -10145,7 +10188,7 @@ async function runReportParse(reportId, options = {}) {
           const beforeCoreCount = coreUpperOrganCount(allItems.filter(it => it._page === pageNum && (comboUpperAbdomen(it) || isUltrasoundItem(it))));
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
-          const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。`;
+          const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
           const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
@@ -10174,7 +10217,7 @@ async function runReportParse(reportId, options = {}) {
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
           const emptyNames = allItems.filter(it => it._page === pageNum && PHYSICAL_EXAM_NAMES.some(n => str(it.name).startsWith(n)) && !str(it.findings) && !str(it.diagnosis)).map(it => it.name);
-          const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到"${emptyNames.join('、')}"项目但检查所见/诊断意见内容为空，请重新核对该项目在图片中的具体内容，完整填写findings和diagnosis字段，不要留空。`;
+          const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到"${emptyNames.join('、')}"项目但检查所见/诊断意见内容为空，请重新核对该项目在图片中的具体内容，完整填写findings和diagnosis字段，不要留空。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
           const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
@@ -10473,9 +10516,9 @@ async function runReportParse(reportId, options = {}) {
 // 只补提指定PDF页并与该页已有结果合并；其他页面及其人工审核内容完全保留。
 async function runReportPageParse(reportId, pageNum) {
   const { parseImage } = require('../utils/ai');
-  const { fetchReportBuffer, fetchReportBuffers, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
+  const { fetchReportBuffer, fetchReportBuffers, extractPdfTextLayer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { assessReportItems } = require('../utils/reportOcrQuality');
+  const { assessReportItems, formatTextLayerEvidence } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) throw new Error('报告不存在');
@@ -10491,8 +10534,10 @@ async function runReportPageParse(reportId, pageNum) {
   const templatePrompt = useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum)
     : useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : '';
   let images;
+  let textLayer = null;
   if (isPdf) {
     const pdfBuf = await fetchReportBuffer(report, UPLOADS_DIR);
+    textLayer = await extractPdfTextLayer(pdfBuf).catch(() => null);
     // 补提统一按左右半幅识别；浙一特殊密集页再沿用上下分区。
     images = (useZheyiTemplate && pageNum === 14)
       ? await renderSinglePageRegions(pdfBuf, pageNum, 160)
@@ -10514,7 +10559,8 @@ async function runReportPageParse(reportId, pageNum) {
       const pagePrompt = report.type === 'body_comp' && usePediatricBodyComposition
         ? REPORT_PARSE_PROMPT + PEDIATRIC_BODY_COMPOSITION_PROMPT
         : REPORT_PARSE_PROMPT;
-      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行提取全部实际结果，不得跳过任何栏目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
+      const pageEvidence = formatTextLayerEvidence(textLayer?.pages?.[pageNum - 1]);
+      const raw = await parseImage(images[regionIndex], `${pagePrompt}${templatePrompt}\n\n【单页补提】${regionHint}从上到下、从左到右逐行提取全部实际结果，不得跳过任何栏目。${pageEvidence}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: images.length > 1 ? 5000 : 8192, timeoutMs: 120000 });
       parsed = safeParseJSON(raw);
       if (parsed?.items?.length) break;
     } catch (error) {
@@ -10527,7 +10573,7 @@ async function runReportPageParse(reportId, pageNum) {
     // 单页补提必须再做一次覆盖复核，专门扫描双栏表格的右半侧和下半部；只合并新增项，不覆盖已有人工数据。
     try {
       const existingNames = regionItems.map(item => str(item.name)).filter(Boolean).join('、');
-      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n已提取项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出遗漏项目。`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
+      const auditRaw = await parseImage(images[regionIndex], `${PAGE_COVERAGE_AUDIT_PROMPT}\n\n已提取项目：${existingNames || '无'}。请逐行核对右半侧后再核对左半侧，只输出遗漏项目。${formatTextLayerEvidence(textLayer?.pages?.[pageNum - 1])}`, { isUrl: false, model: 'qwen-vl-max', maxTokens: 5000, timeoutMs: 120000 });
       const audit = safeParseJSON(auditRaw);
       if (audit?.items?.length) regionItems = mergeCoverageAuditItems(regionItems, audit.items);
     } catch (auditError) {
@@ -10546,7 +10592,7 @@ async function runReportPageParse(reportId, pageNum) {
   const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
   const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
   const classifiedRawPage = await classifyItemsAsync(mergedPage);
-  const classifiedPage = latest.ocrVersion ? assessReportItems(classifiedRawPage) : classifiedRawPage;
+  const classifiedPage = latest.ocrVersion ? assessReportItems(classifiedRawPage, { textLayer }) : classifiedRawPage;
   const preserved = (latest.reportItems || []).filter(item => Number(item.sourcePage) !== pageNum);
   const combined = ensureReportItemSourceIds([...preserved, ...classifiedPage]
     .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0)));

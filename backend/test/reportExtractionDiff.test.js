@@ -4,6 +4,7 @@ const {
   compareReportExtractions,
   compareReportExtractionHistory,
   comparePageCoverage,
+  findHistoricalEmptyPages,
   validateCoverageAcknowledgement,
 } = require('../src/utils/reportExtractionDiff');
 
@@ -115,4 +116,21 @@ test('ignores extraction history from a different original source', () => {
   const current = extraction(3, [], ['reports-test/current.pdf']);
   const unrelated = extraction(2, [{ sourcePage: 9, name: '外科' }], ['reports-test/other.pdf']);
   assert.equal(compareReportExtractionHistory(current, [unrelated]), null);
+});
+
+test('finds only historically populated pages that became empty for the same original', () => {
+  const currentSource = { ossKeys: ['reports-test/source.pdf'] };
+  const history = [
+    extraction(1, [
+      { sourcePage: 14, name: '肝脏超声' },
+      { sourcePage: 16, name: '甲状腺超声' },
+      { sourcePage: 31, name: '超出当前原件页数' },
+    ]),
+    extraction(1, [{ sourcePage: 17, name: '其他原件项目' }], ['reports-test/other.pdf']),
+  ];
+
+  assert.deepEqual(findHistoricalEmptyPages([], currentSource, history, 28), [
+    { page: 14, currentCount: 0, baselineCount: 1, baselineVersion: 1 },
+    { page: 16, currentCount: 0, baselineCount: 1, baselineVersion: 1 },
+  ]);
 });

@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { assessReportItems, statusFromRange, isClearlyNonDetailTextPage } = require('../src/utils/reportOcrQuality');
+const { assessReportItems, statusFromRange, isClearlyNonDetailTextPage, formatTextLayerEvidence } = require('../src/utils/reportOcrQuality');
 
 test('covered group summaries are removed while detailed page items remain', () => {
   const items = assessReportItems([
@@ -79,6 +79,15 @@ test('identical cross-page entries are retained but labelled as duplicates', () 
 test('text layer only skips unmistakably non-clinical pages', () => {
   assert.equal(isClearlyNonDetailTextPage('目录\n第一章 体检项目'), true);
   assert.equal(isClearlyNonDetailTextPage('检查结果\n白细胞 5.00 参考范围 3.50-9.50'), false);
+});
+
+test('page text is delimited as evidence and bounded before visual extraction', () => {
+  const prompt = formatTextLayerEvidence('超声所见\n肝脏形态正常\n初步意见 未见明显异常', 8);
+  assert.match(prompt, /同页 PDF 文字层证据/);
+  assert.match(prompt, /<page_text>/);
+  assert.ok(prompt.includes('超声所见'));
+  assert.ok(!prompt.includes('初步意见'));
+  assert.equal(formatTextLayerEvidence('  '), '');
 });
 
 test('key numeric fields need visual and text-layer evidence before auto pass', () => {

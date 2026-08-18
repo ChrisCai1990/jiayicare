@@ -100,6 +100,16 @@ function compareHistoricalPageCoverage(currentItems = [], historicalExtractions 
   };
 }
 
+function findHistoricalEmptyPages(currentItems = [], currentSource = {}, historicalExtractions = [], totalPages = Infinity) {
+  const sameSourceHistory = historicalExtractions.filter(extraction => sameOriginalSource(
+    { source: currentSource },
+    extraction,
+  ));
+  if (!sameSourceHistory.length) return [];
+  return compareHistoricalPageCoverage(currentItems, sameSourceHistory).emptied
+    .filter(item => item.page <= totalPages);
+}
+
 function compareReportExtractions(current, baseline, fields = DEFAULT_FIELDS) {
   const baselineItems = baseline?.items || [];
   const currentItems = current?.items || [];
@@ -184,5 +194,6 @@ module.exports = {
   sameOriginalSource,
   comparePageCoverage,
   compareHistoricalPageCoverage,
+  findHistoricalEmptyPages,
   validateCoverageAcknowledgement,
 };
