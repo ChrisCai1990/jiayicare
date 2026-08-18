@@ -88,7 +88,7 @@ export default function PdfPagePreview({ src, pageNumber, height = '74vh' }) {
   }, [pageNumber, pdfDocument])
 
   return (
-    <div ref={containerRef} data-pdf-page={pageNumber} style={{ position: 'relative', minHeight: height, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflow: 'auto', background: '#EEF2F0', borderRadius: 6 }}>
+    <div ref={containerRef} data-pdf-page={pageNumber} data-pdf-status={status} style={{ position: 'relative', minHeight: height, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflow: 'auto', background: '#EEF2F0', borderRadius: 6 }}>
       <canvas ref={canvasRef} aria-label={`报告 PDF 第 ${pageNumber} 页`} style={{ display: status === 'error' ? 'none' : 'block', background: '#fff', boxShadow: '0 1px 5px rgba(20,45,34,0.12)' }} />
       {(status === 'loading_document' || status === 'rendering_page') && (
         <div style={{ position: 'absolute', top: 12, left: 12, padding: '5px 8px', borderRadius: 5, background: 'rgba(255,255,255,0.92)', color: '#567065', fontSize: 11 }}>
