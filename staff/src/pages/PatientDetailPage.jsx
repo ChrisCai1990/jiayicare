@@ -11491,6 +11491,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const fileInputRef = useRef(null)
   const pendingUploadTokensRef = useRef(new Set())
   const mountedRef = useRef(true)
+  const fileSelectionVersionRef = useRef(0)
   const uploadSessionIdRef = useRef(globalThis.crypto?.randomUUID?.() || `report-${Date.now()}-${Math.random().toString(36).slice(2)}`)
 
   const cleanupPendingUploads = async () => {
@@ -11509,6 +11510,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
 
   const handleClose = () => {
     if (saving) return
+    fileSelectionVersionRef.current += 1
     cleanupPendingUploads()
     onClose()
   }
@@ -11544,7 +11546,22 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
       setError('单次最多选择 50 个文件，请分批上传')
       return
     }
+    const oversized = files.find(file => file.size > 100 * 1024 * 1024)
+    if (oversized) {
+      setError(`“${oversized.name}”超过 100MB，请压缩或拆分后重新选择`)
+      return
+    }
+    const allowedMimeTypes = new Set(['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/heic', 'image/heif', 'image/bmp', 'application/pdf'])
+    const unsupported = files.find(file => !allowedMimeTypes.has(String(file.type || '').toLowerCase()))
+    if (unsupported) {
+      setError(`“${unsupported.name}”格式不受支持，请选择 PDF、JPG、PNG、GIF、WEBP、HEIC 或 BMP 原件`)
+      return
+    }
+    const selectionVersion = fileSelectionVersionRef.current + 1
+    fileSelectionVersionRef.current = selectionVersion
+    setMetaDetecting(false)
     await cleanupPendingUploads()
+    if (!mountedRef.current || selectionVersion !== fileSelectionVersionRef.current) return
     setFileDatas(files.map((f, index) => ({
       id: `${f.name}-${f.size}-${f.lastModified}-${index}`,
       file: f, mimeType: f.type, fileSize: f.size, name: f.name,
@@ -11560,20 +11577,23 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
       setMetaDetecting(true)
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
-        if (!mountedRef.current) {
+        if (!mountedRef.current || selectionVersion !== fileSelectionVersionRef.current) {
           if (uploaded.uploadToken) await staffAPI.cleanupReportUploads([uploaded.uploadToken]).catch(() => {})
           return
         }
         if (uploaded.uploadToken) pendingUploadTokensRef.current.add(uploaded.uploadToken)
         preUploadedRef.current = { file: files[0], url: uploaded.url, ossKey: uploaded.ossKey || '', mimeType: uploaded.mimeType, fileSize: uploaded.fileSize, uploadToken: uploaded.uploadToken }
         const meta = await staffAPI.quickMetaFromReportFile(uploaded.uploadToken)
+        if (!mountedRef.current || selectionVersion !== fileSelectionVersionRef.current) return
         setForm(f => ({
           ...f,
           hospital: f.hospital || meta.data?.institution || '',
           date: f.date || meta.data?.checkDate || '',
         }))
       } catch (err) { /* 识别失败静默忽略，专员仍可手动填写，不阻塞上传流程 */ }
-      finally { setMetaDetecting(false) }
+      finally {
+        if (selectionVersion === fileSelectionVersionRef.current) setMetaDetecting(false)
+      }
     }
   }
 
@@ -11593,6 +11613,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   }
 
   const removeFile = async (id) => {
+    fileSelectionVersionRef.current += 1
+    setMetaDetecting(false)
     const removed = fileDatas.find(fd => fd.id === id)
     if (preUploadedRef.current?.file === removed?.file) await cleanupPendingUploads()
     setFileDatas(current => current.filter(fd => fd.id !== id))
