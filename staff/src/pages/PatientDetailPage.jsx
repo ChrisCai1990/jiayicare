@@ -10364,12 +10364,49 @@ export default function PatientDetailPage() {
                   const attN = abn.filter(it => it.status === 'attention').length
                   const reviewMeta = ocrReviewReport.ocrReviewMeta || null
                   const reviewTimestamp = reviewMeta?.draftSavedAt || reviewMeta?.submittedAt || reviewMeta?.lastActionAt
-                  const reviewTimeText = reviewTimestamp ? new Date(reviewTimestamp).toLocaleString('zh-CN', { hour12: false }) : ''
-                  const history = ocrVersionHistory?.reportId === ocrReviewReport._id ? ocrVersionHistory : null
-                  const historyTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '时间未记录'
-                  return (
-                    <>
-                      {/* 异常快览：只看检验数值类异常，短标签一眼可见 */}
+                   const reviewTimeText = reviewTimestamp ? new Date(reviewTimestamp).toLocaleString('zh-CN', { hour12: false }) : ''
+                   const history = ocrVersionHistory?.reportId === ocrReviewReport._id ? ocrVersionHistory : null
+                   const historyTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '时间未记录'
+                   const currentRevision = history?.revisions?.find(revision => String(revision._id) === String(ocrReviewReport.currentRevisionId || ''))
+                     || history?.revisions?.find(revision => revision.status === 'published')
+                   const currentExtraction = history?.extractions?.find(extraction => String(extraction._id) === String(ocrReviewReport.currentExtractionId || ''))
+                   const uploaderName = ocrReviewReport.uploadedBy?.name || (ocrReviewReport.uploadedBy ? '医护人员' : '会员上传或历史导入')
+                   const projectionState = !currentRevision
+                     ? { text: '审核通过后生成', color: '#6F8379' }
+                     : history?.reviewIntegrity?.status === 'incomplete'
+                       ? { text: '派生数据不完整，需对账', color: '#9B2C2C' }
+                       : history?.pendingScreeningCount > 0
+                         ? { text: `已生成 · ${history.pendingScreeningCount} 项待归类`, color: '#8A5A12' }
+                         : history?.reviewIntegrity?.status === 'consistent'
+                           ? { text: `与审核 V${currentRevision.revisionNo} 一致`, color: '#237A57' }
+                           : { text: '状态待核对', color: '#6F8379' }
+                   return (
+                     <>
+                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 7, marginBottom: 12 }}>
+                         <div style={{ padding: '8px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB' }}>
+                           <div style={{ fontSize: 10, color: '#819188' }}>报告原件</div>
+                           <div style={{ marginTop: 2, fontSize: 12, color: '#304A3E', fontWeight: 700 }}>{uploaderName}</div>
+                           <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{historyTime(ocrReviewReport.createdAt)}</div>
+                         </div>
+                         <div style={{ padding: '8px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB' }}>
+                           <div style={{ fontSize: 10, color: '#819188' }}>当前识别草稿</div>
+                           <div style={{ marginTop: 2, fontSize: 12, color: '#304A3E', fontWeight: 700 }}>{currentExtraction ? `OCR V${currentExtraction.version}` : (ocrReviewReport.ocrVersion || '未版本化')}</div>
+                           <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{currentExtraction ? historyTime(currentExtraction.createdAt) : '等待版本记录'}</div>
+                         </div>
+                         <div style={{ padding: '8px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB' }}>
+                           <div style={{ fontSize: 10, color: '#819188' }}>当前正式审核</div>
+                           <div style={{ marginTop: 2, fontSize: 12, color: currentRevision ? '#304A3E' : '#8A5A12', fontWeight: 700 }}>
+                             {currentRevision ? `审核 V${currentRevision.revisionNo} · ${currentRevision.review?.reviewerName || '审核人未记录'}` : '尚未形成正式版本'}
+                           </div>
+                           <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{currentRevision ? historyTime(currentRevision.review?.reviewedAt || currentRevision.createdAt) : '保存草稿不等于审核通过'}</div>
+                         </div>
+                         <div style={{ padding: '8px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB' }}>
+                           <div style={{ fontSize: 10, color: '#819188' }}>专项筛查投影</div>
+                           <div style={{ marginTop: 2, fontSize: 12, color: projectionState.color, fontWeight: 700 }}>{projectionState.text}</div>
+                           <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>仅来源于正式审核版本</div>
+                         </div>
+                       </div>
+                       {/* 异常快览：只看检验数值类异常，短标签一眼可见 */}
                       <div style={{ padding: '12px 14px', background: abn.length ? '#FFF7F5' : '#F3FAF6', borderRadius: 8, marginBottom: 12, border: `1px solid ${abn.length ? '#FAD9D2' : '#CDEBDD'}` }}>
                         <div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24', marginBottom: abn.length ? 8 : 0 }}>
                           检验指标 {labRows.length} 项{imgRows.length > 0 ? ` · 影像/检查 ${imgRows.length} 项` : ''}
