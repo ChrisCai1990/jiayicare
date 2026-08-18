@@ -95,7 +95,7 @@ const upload = multer({
 
 // 专项筛查文件上传（图片 + PDF，最大 20MB）
 const uploadScreening = multer({
-  // 医疗筛查原件不落地服务器 uploads，由内存直传私有 OSS。
+  // 医疗筛查原件不落地服务器 uploads，由内存直传 OSS。
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
