@@ -76,7 +76,7 @@ const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIn
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
-const { compareReportExtractions, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
+const { compareReportExtractions, compareReportExtractionHistory, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -1991,6 +1991,22 @@ router.get('/medical-reports/:id/extractions/:version/compare/:baselineVersion',
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.get('/medical-reports/:id/extractions/:version/safety-diff', staffAuth, checkPermissionStrict('reports', 'view'), async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id).select('_id');
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const version = Number(req.params.version);
+    const [current, history] = await Promise.all([
+      ReportExtraction.findOne({ reportId: report._id, version }).lean(),
+      ReportExtraction.find({ reportId: report._id, version: { $lt: version } }).sort({ version: -1 }).lean(),
+    ]);
+    if (!current) return res.status(404).json({ success: false, message: '识别版本不存在' });
+    const data = compareReportExtractionHistory(current, history);
+    if (!data) return res.status(409).json({ success: false, message: '没有可比较的同原件历史识别版本' });
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.get('/medical-reports/:id/revisions', staffAuth, checkPermissionStrict('reports', 'view'), async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id).select('_id');
@@ -2460,22 +2476,20 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
     if (reviewAction === 'submit' && report.currentExtractionId) {
       const currentExtraction = await ReportExtraction.findOne({ _id: report.currentExtractionId, reportId: report._id }).lean();
       if (currentExtraction) {
-        const baselineExtraction = await ReportExtraction.findOne({
+        const extractionHistory = await ReportExtraction.find({
           reportId: report._id,
           version: { $lt: currentExtraction.version },
         }).sort({ version: -1 }).lean();
-        if (baselineExtraction) {
-          const extractionDiff = compareReportExtractions(currentExtraction, baselineExtraction);
-          if (extractionDiff.sameSource) {
-            coverageAcknowledgement = validateCoverageAcknowledgement(extractionDiff, req.body?.coverageAcknowledgedPages);
-            if (!coverageAcknowledgement.complete) {
-              return res.status(409).json({
-                success: false,
-                code: 'OCR_PAGE_COVERAGE_ACK_REQUIRED',
-                message: `请先核对整页识别覆盖下降：P${coverageAcknowledgement.missingPages.join('、P')}`,
-                pages: coverageAcknowledgement.missingPages,
-              });
-            }
+        const extractionDiff = compareReportExtractionHistory(currentExtraction, extractionHistory);
+        if (extractionDiff) {
+          coverageAcknowledgement = validateCoverageAcknowledgement(extractionDiff, req.body?.coverageAcknowledgedPages);
+          if (!coverageAcknowledgement.complete) {
+            return res.status(409).json({
+              success: false,
+              code: 'OCR_PAGE_COVERAGE_ACK_REQUIRED',
+              message: `请先核对整页识别覆盖下降：P${coverageAcknowledgement.missingPages.join('、P')}`,
+              pages: coverageAcknowledgement.missingPages,
+            });
           }
         }
       }

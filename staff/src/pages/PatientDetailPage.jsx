@@ -2585,7 +2585,7 @@ export default function PatientDetailPage() {
       const extractionVersions = (extractions.data || []).slice().sort((a, b) => Number(b.version) - Number(a.version))
       if (extractionVersions.length >= 2) {
         setOcrExtractionDiffLoading(true)
-        staffAPI.getReportExtractionDiff(r._id, extractionVersions[0].version, extractionVersions[1].version)
+        staffAPI.getReportExtractionSafetyDiff(r._id, extractionVersions[0].version)
           .then(response => setOcrExtractionDiff(response.data || null))
           .catch(() => setOcrExtractionDiff(null))
           .finally(() => setOcrExtractionDiffLoading(false))
@@ -10295,7 +10295,7 @@ export default function PatientDetailPage() {
                           return isPdf ? (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
-                              <iframe src={`${s}#page=${activePage}`} title={`报告${idx + 1}`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                              <iframe key={`report-pdf-${idx}-${activePage}`} src={`${s}#page=${activePage}`} data-pdf-page={activePage} title={`报告${idx + 1}`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
@@ -10318,7 +10318,9 @@ export default function PatientDetailPage() {
                       {isImg ? (
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
-                        <iframe src={`${src}#page=${activePage}`} title={`报告PDF第${activePage}页`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                        /* 浏览器原生 PDF 阅读器通常不会响应同一 iframe 仅 hash 的变化；页码变化时重建 iframe，
+                           才能保证下拉、上一页/下一页和风险页快捷按钮都把左侧原件定位到同一页。 */
+                        <iframe key={`report-pdf-${activePage}`} src={`${src}#page=${activePage}`} data-pdf-page={activePage} title={`报告PDF第${activePage}页`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
                       )}
@@ -10395,7 +10397,7 @@ export default function PatientDetailPage() {
                               <button key={`coverage-page-${item.page}`} type="button" className="btn btn-secondary btn-sm"
                                 style={{ padding: '4px 8px', borderColor: '#DFA39F', color: '#8F2626', background: activePage === item.page ? '#FFE0DD' : '#fff' }}
                                 onClick={() => { setOcrReviewPage(item.page); setOcrReviewFilter('all') }}>
-                                核对 P{item.page}（上一版 {item.baselineCount} 项）
+                                核对 P{item.page}（历史版本最多 {item.baselineCount} 项）
                               </button>
                             ))}
                           </div>
@@ -10438,7 +10440,7 @@ export default function PatientDetailPage() {
                                 </summary>
                                 <div style={{ marginTop: 6 }}>这是识别版本差异提醒，不代表原报告项目真的增减；系统不会自动沿用旧版结果，请结合左侧原件复核。</div>
                                 {ocrExtractionDiff.pageCoverage?.emptied?.length > 0 && <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 5, background: '#FFFFFFB8', fontWeight: 700 }}>
-                                  整页覆盖下降：{ocrExtractionDiff.pageCoverage.emptied.map(item => `P${item.page}（上一版 ${item.baselineCount} 项，本版 0 项）`).join('、')}。请先逐页核对或补提，再提交审核。
+                                  整页覆盖下降：{ocrExtractionDiff.pageCoverage.emptied.map(item => `P${item.page}（同原件历史版本最多 ${item.baselineCount} 项，本版 0 项）`).join('、')}。请先逐页核对或补提，再提交审核。
                                 </div>}
                                 {ocrExtractionDiff.highAttentionRemoved?.length > 0 && <div style={{ marginTop: 5, fontWeight: 700 }}>重点复核：{ocrExtractionDiff.highAttentionRemoved.slice(0, 8).map(item => `${item.name}${item.sourcePage ? `（P${item.sourcePage}）` : ''}`).join('、')}</div>}
                                 {(ocrExtractionDiff.removed || []).filter(item => !ocrExtractionDiff.highAttentionRemoved?.some(high => high.key === item.key)).slice(0, 8).map(item => <div key={`ocr-remove-${item.key}`} style={{ marginTop: 3 }}>本版未识别：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}

@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { compareReportExtractions, comparePageCoverage, validateCoverageAcknowledgement } = require('../src/utils/reportExtractionDiff');
+const {
+  compareReportExtractions,
+  compareReportExtractionHistory,
+  comparePageCoverage,
+  validateCoverageAcknowledgement,
+} = require('../src/utils/reportExtractionDiff');
 
 const extraction = (version, items, ossKeys = ['reports-test/source.pdf']) => ({
   version,
@@ -84,4 +89,30 @@ test('requires explicit acknowledgement for every emptied page', () => {
     complete: false,
   });
   assert.equal(validateCoverageAcknowledgement(diff, [14, 16, 17]).complete, true);
+});
+
+test('keeps unresolved empty pages visible across later page-reparse versions', () => {
+  const source = ['reports-test/source.pdf'];
+  const v1 = extraction(1, [
+    { sourceItemId: 'p14-liver', sourcePage: 14, name: '肝脏' },
+    { sourceItemId: 'p16-liver-us', sourcePage: 16, name: '肝脏彩超' },
+    { sourceItemId: 'p17-thyroid', sourcePage: 17, name: '甲状腺彩超' },
+  ], source);
+  const v2 = extraction(2, [], source);
+  const v3 = extraction(3, [
+    { sourceItemId: 'p14-liver', sourcePage: 14, name: '肝脏' },
+  ], source);
+
+  const safety = compareReportExtractionHistory(v3, [v1, v2]);
+  assert.deepEqual(safety.pageCoverage.emptied.map(item => item.page), [16, 17]);
+  assert.deepEqual(safety.pageCoverage.decreased, []);
+  assert.deepEqual(safety.historyVersions, [2, 1]);
+  assert.equal(safety.coverageBaseline, 'same_source_history_max');
+  assert.equal(safety.summary.severity, 'high');
+});
+
+test('ignores extraction history from a different original source', () => {
+  const current = extraction(3, [], ['reports-test/current.pdf']);
+  const unrelated = extraction(2, [{ sourcePage: 9, name: '外科' }], ['reports-test/other.pdf']);
+  assert.equal(compareReportExtractionHistory(current, [unrelated]), null);
 });

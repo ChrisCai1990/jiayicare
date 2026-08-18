@@ -68,6 +68,38 @@ function comparePageCoverage(currentItems = [], baselineItems = []) {
   };
 }
 
+function compareHistoricalPageCoverage(currentItems = [], historicalExtractions = []) {
+  const current = pageCounts(currentItems);
+  const historicalMax = new Map();
+  for (const extraction of historicalExtractions) {
+    for (const [page, count] of pageCounts(extraction?.items || [])) {
+      const previous = historicalMax.get(page);
+      if (!previous || count > previous.count) {
+        historicalMax.set(page, { count, version: Number(extraction?.version) || null });
+      }
+    }
+  }
+  const pages = [...new Set([...current.keys(), ...historicalMax.keys()])].sort((a, b) => a - b);
+  const changed = pages.flatMap(page => {
+    const currentCount = current.get(page) || 0;
+    const historical = historicalMax.get(page) || { count: 0, version: null };
+    return currentCount === historical.count ? [] : [{
+      page,
+      currentCount,
+      baselineCount: historical.count,
+      baselineVersion: historical.version,
+    }];
+  });
+  return {
+    emptied: changed.filter(item => item.baselineCount > 0 && item.currentCount === 0),
+    decreased: changed.filter(item => item.baselineCount > item.currentCount && item.currentCount > 0),
+    newlyPopulated: changed.filter(item => item.baselineCount === 0 && item.currentCount > 0),
+    changed,
+    comparedVersions: historicalExtractions.map(item => Number(item?.version)).filter(Number.isFinite).sort((a, b) => a - b),
+    basis: 'same_source_history_max',
+  };
+}
+
 function compareReportExtractions(current, baseline, fields = DEFAULT_FIELDS) {
   const baselineItems = baseline?.items || [];
   const currentItems = current?.items || [];
@@ -133,4 +165,24 @@ function validateCoverageAcknowledgement(diff, acknowledgedPages = []) {
   return { requiredPages, missingPages, complete: missingPages.length === 0 };
 }
 
-module.exports = { compareReportExtractions, sameOriginalSource, comparePageCoverage, validateCoverageAcknowledgement };
+function compareReportExtractionHistory(current, historicalExtractions = []) {
+  const sameSourceHistory = historicalExtractions
+    .filter(item => Number(item?.version) < Number(current?.version) && sameOriginalSource(current, item))
+    .sort((a, b) => Number(b.version) - Number(a.version));
+  if (!sameSourceHistory.length) return null;
+  const result = compareReportExtractions(current, sameSourceHistory[0]);
+  result.pageCoverage = compareHistoricalPageCoverage(current?.items || [], sameSourceHistory);
+  result.historyVersions = sameSourceHistory.map(item => Number(item.version));
+  result.coverageBaseline = 'same_source_history_max';
+  if (result.pageCoverage.emptied.length) result.summary.severity = 'high';
+  return result;
+}
+
+module.exports = {
+  compareReportExtractions,
+  compareReportExtractionHistory,
+  sameOriginalSource,
+  comparePageCoverage,
+  compareHistoricalPageCoverage,
+  validateCoverageAcknowledgement,
+};
