@@ -10144,7 +10144,7 @@ export default function PatientDetailPage() {
                       {isImg ? (
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
-                        <iframe key={activePage} src={`${src}#page=${activePage}`} title={`报告PDF第${activePage}页`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                        <iframe src={`${src}#page=${activePage}`} title={`报告PDF第${activePage}页`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
                       )}

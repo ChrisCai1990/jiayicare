@@ -1,5 +1,10 @@
 # JiayiCare 项目记忆
 
+## 2026-08-18：OCR 审核 PDF 翻页性能
+
+- OCR 审核弹窗原先把 `activePage` 作为 PDF iframe 的 React key；每次切页都会卸载并重建浏览器 PDF 阅读器，即便预览 API 已支持 HTTP Range，仍会重复请求报告。
+- 已移除该 key，保持同一个 iframe 并通过 `#page=` 在同一阅读会话内定位；后端继续使用短时预览令牌与 `private, no-store`，不因性能修复降低原件访问边界。
+
 ## 2026-08-18：用户端报告上传分段入 OSS
 
 - App 不再把一份报告全部页面的 Base64 一次提交到创建报告接口；改为每页最多 15MB、顺序上传至 OSS，全部成功后才创建报告记录，避免多页报告超过 JSON 请求上限。
