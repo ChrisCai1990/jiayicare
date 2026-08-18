@@ -77,6 +77,7 @@ const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
 const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
+const { mapWithConcurrency } = require('../utils/asyncPool');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -9968,30 +9969,35 @@ async function runReportParse(reportId, options = {}) {
         setOcrProgress('coverage_audit', coveragePages.length
           ? `首轮识别完成，正在复核${coveragePages.length}页是否漏项`
           : '首轮识别完成，未发现需要覆盖复核的页面', { totalPages: totalPageCount, coveragePages: coveragePages.length });
-        for (const pageNum of coveragePages) {
+        const coverageResults = await mapWithConcurrency(coveragePages, 2, async pageNum => {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
-            if (!img) continue;
+            if (!img) return null;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
             const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
             const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
             const p = safeParseJSON(text);
-            if (!p || !Array.isArray(p.items)) continue;
+            if (!p || !Array.isArray(p.items)) return null;
             const oldPage = allItems.filter(it => it._page === pageNum);
             const auditedPage = tagReportPageItems(p.items, pageNum);
             const useAuditedPage = useShaoyifuTemplate
               && shaoyifuTemplate.needsCoverageAudit(pageNum, oldPage)
               && !shaoyifuTemplate.needsCoverageAudit(pageNum, auditedPage);
             const mergedPage = useAuditedPage ? auditedPage : mergeCoverageAuditItems(oldPage, auditedPage);
-            if (mergedPage.length > oldPage.length) {
-              allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
-              console.log(`[parse-ai] 页${pageNum}覆盖复核补回${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项）`);
-            } else if (useAuditedPage) {
-              allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
-              console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
-            }
+            return { pageNum, oldPage, mergedPage, useAuditedPage };
           } catch (e) {
             console.log(`[parse-ai] 页${pageNum}覆盖复核异常: ${e.message}`);
+            return null;
+          }
+        });
+        for (const result of coverageResults.filter(Boolean)) {
+          const { pageNum, oldPage, mergedPage, useAuditedPage } = result;
+          if (mergedPage.length > oldPage.length) {
+            allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
+            console.log(`[parse-ai] 页${pageNum}覆盖复核补回${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项）`);
+          } else if (useAuditedPage) {
+            allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
+            console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
           }
         }
         if (false && useShaoyifuTemplate) {
@@ -10142,25 +10148,30 @@ async function runReportParse(reportId, options = {}) {
       if (cbcRetryPages.length) {
         setOcrProgress('targeted_retry', `正在复核血常规缺项（${cbcRetryPages.length}页）`, { retryPages: cbcRetryPages });
         console.log(`[parse-ai] 血常规缺项核对不通过 ${reportId}：缺少${missingGroups.join('、')}，重试页${cbcRetryPages.join(',')}`);
-        for (const pageNum of cbcRetryPages) {
+        const cbcRetryResults = await mapWithConcurrency(cbcRetryPages, 2, async pageNum => {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
-            if (!img) continue;
+            if (!img) return null;
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页的血常规/血细胞分析检验单曾漏提了部分子项（缺少：${missingGroups.join('、')}）。请重新逐行核对该检验单在图片中的每一行，血常规通常有白细胞、中性粒细胞、淋巴细胞、单核细胞、嗜酸性粒细胞、嗜碱性粒细胞、红细胞、血红蛋白、血小板等约20项子指标（含绝对值和百分比两种），必须逐条全部输出，不得省略或遗漏任何一行。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
             const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
             const p = safeParseJSON(text);
-            if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
+            if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) return null;
             const retryItems = tagReportPageItems(p.items, pageNum);
             const retryCbcItems = retryItems.filter(it => CBC_NAME_PATTERN.test(str(it.name)));
             const oldCbcCountOnPage = allItems.filter(it => it._page === pageNum && CBC_NAME_PATTERN.test(str(it.name))).length;
-            if (retryCbcItems.length > oldCbcCountOnPage) {
-              allItems = allItems.filter(it => !(it._page === pageNum && CBC_NAME_PATTERN.test(str(it.name)))).concat(retryCbcItems);
-              console.log(`[parse-ai] 页${pageNum}血常规重试生效：血常规条目 ${oldCbcCountOnPage}→${retryCbcItems.length}`);
-            } else {
-              console.log(`[parse-ai] 页${pageNum}血常规重试未改善，保留原结果`);
-            }
+            return { pageNum, retryCbcItems, oldCbcCountOnPage };
           } catch (e) {
             console.log(`[parse-ai] 页${pageNum}血常规重试异常: ${e.message}`);
+            return null;
+          }
+        });
+        for (const result of cbcRetryResults.filter(Boolean)) {
+          const { pageNum, retryCbcItems, oldCbcCountOnPage } = result;
+          if (retryCbcItems.length > oldCbcCountOnPage) {
+            allItems = allItems.filter(it => !(it._page === pageNum && CBC_NAME_PATTERN.test(str(it.name)))).concat(retryCbcItems);
+            console.log(`[parse-ai] 页${pageNum}血常规重试生效：血常规条目 ${oldCbcCountOnPage}→${retryCbcItems.length}`);
+          } else {
+            console.log(`[parse-ai] 页${pageNum}血常规重试未改善，保留原结果`);
           }
         }
       }
