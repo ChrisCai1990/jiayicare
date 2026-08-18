@@ -67,12 +67,17 @@ async function uploadBase64(base64Data, mimeType, folder = 'reports') {
 
 function getClient() {
   assertConfigured();
+  const configuredTimeout = Number.parseInt(process.env.OSS_TIMEOUT_MS || '', 10);
+  const timeout = Number.isFinite(configuredTimeout) && configuredTimeout >= 60_000
+    ? configuredTimeout
+    : 60_000;
   return new OSS({
     region: process.env.OSS_REGION,
     accessKeyId: process.env.OSS_ACCESS_KEY_ID,
     accessKeySecret: process.env.OSS_ACCESS_KEY_SECRET,
     bucket: process.env.OSS_BUCKET,
     secure: true,
+    timeout,
   });
 }
 
