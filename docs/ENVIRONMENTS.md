@@ -19,6 +19,13 @@ JiayiCare 当前在同一台 ECS 上运行 production（生产）和 staging（�
 | 报告 OSS 前缀 | `reports/` | `reports-staging/` |
 | 定时任务 | 启用 | 必须禁用 |
 
+当前 staging 临时 HTTPS 入口（正式 `staging*.jiaycare.com` DNS 配置前使用）：
+
+- 用户 Web：`https://staging.121-40-156-39.sslip.io`
+- 管理端：`https://staging-admin.121-40-156-39.sslip.io`
+- 医护端：`https://staging-staff.121-40-156-39.sslip.io`
+- API：`https://staging-api.121-40-156-39.sslip.io/api/health`
+
 ## 强制边界
 
 后端在连接数据库、创建上传目录和启动 HTTP 服务前调用运行时门禁：

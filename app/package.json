@@ -8,7 +8,7 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "export:web": "expo export --platform web --output-dir dist",
-    "export:web:staging": "cross-env EXPO_PUBLIC_API_URL=http://localhost:3100/api expo export --platform web --output-dir dist-staging",
+    "export:web:staging": "cross-env EXPO_PUBLIC_API_URL=/api expo export --platform web --output-dir dist-staging",
     "test": "node --check tests/api/smoke.js",
     "test:api": "node tests/api/smoke.js",
     "test:e2e": "npx playwright test",
