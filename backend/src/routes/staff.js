@@ -10186,29 +10186,34 @@ async function runReportParse(reportId, options = {}) {
       const incompleteComboPages = [...new Set(allItems.filter(comboUpperAbdomen).map(it => it._page).filter(Boolean))]
         .filter(pageNum => coreUpperOrganCount(allItems.filter(it => it._page === pageNum && comboUpperAbdomen(it))) < 4);
       const multiOrganPages = [...new Set([...mergedOrganPages, ...incompleteComboPages])].filter(Boolean);
-      for (const pageNum of multiOrganPages) {
+      const ultrasoundRetryResults = await mapWithConcurrency(multiOrganPages, 2, async pageNum => {
         try {
           const beforeMaxOrgans = Math.max(...allItems.filter(it => it._page === pageNum && isUltrasoundItem(it))
             .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
           const beforeCoreCount = coreUpperOrganCount(allItems.filter(it => it._page === pageNum && (comboUpperAbdomen(it) || isUltrasoundItem(it))));
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
-          if (!img) continue;
+          if (!img) return null;
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
           const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
           const p = safeParseJSON(text);
-          if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
+          if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) return null;
           const retryItems = tagReportPageItems(p.items, pageNum);
           const afterMaxOrgans = Math.max(...retryItems.filter(it => isUltrasoundItem(it))
             .map(it => detectOrgans(`${str(it.name)}${str(it.findings)}${str(it.diagnosis)}`).length), 0);
           const afterCoreCount = coreUpperOrganCount(retryItems.filter(it => comboUpperAbdomen(it) || isUltrasoundItem(it)));
-          if ((afterMaxOrgans > 0 && afterMaxOrgans < beforeMaxOrgans) || afterCoreCount > beforeCoreCount) {
-            allItems = allItems.filter(it => it._page !== pageNum).concat(retryItems);
-            console.log(`[parse-ai] 页${pageNum}超声拆分重试生效：单条最多命中器官数 ${beforeMaxOrgans}→${afterMaxOrgans}，肝胆胰脾覆盖 ${beforeCoreCount}→${afterCoreCount}`);
-          } else {
-            console.log(`[parse-ai] 页${pageNum}超声拆分重试未改善，保留原结果`);
-          }
+          return { pageNum, retryItems, beforeMaxOrgans, beforeCoreCount, afterMaxOrgans, afterCoreCount };
         } catch (e) {
           console.log(`[parse-ai] 页${pageNum}超声拆分重试异常: ${e.message}`);
+          return null;
+        }
+      });
+      for (const result of ultrasoundRetryResults.filter(Boolean)) {
+        const { pageNum, retryItems, beforeMaxOrgans, beforeCoreCount, afterMaxOrgans, afterCoreCount } = result;
+        if ((afterMaxOrgans > 0 && afterMaxOrgans < beforeMaxOrgans) || afterCoreCount > beforeCoreCount) {
+          allItems = allItems.filter(it => it._page !== pageNum).concat(retryItems);
+          console.log(`[parse-ai] 页${pageNum}超声拆分重试生效：单条最多命中器官数 ${beforeMaxOrgans}→${afterMaxOrgans}，肝胆胰脾覆盖 ${beforeCoreCount}→${afterCoreCount}`);
+        } else {
+          console.log(`[parse-ai] 页${pageNum}超声拆分重试未改善，保留原结果`);
         }
       }
 
