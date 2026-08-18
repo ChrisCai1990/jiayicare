@@ -1,5 +1,10 @@
 # JiayiCare 项目记忆
 
+## 2026-08-18：历史报告 OSS 预览签名修复
+
+- 历史报告迁移至私有 OSS 后，会员详情页的 `GET /api/staff/patients/:id/reports` 曾直接返回原始对象 URL，AI 审核弹窗会出现 `AccessDenied`。该接口现与其他报告读取接口统一通过 `withSignedReportFiles` 签发短时预览 URL。
+- 修复提交 `e11e471` 已部署；生产环境已验证签名 URL 返回 200。该变更不修改报告记录或 OSS 对象。
+
 ## 2026-08-18：健康原件 OSS 收口
 
 - 医护端体检报告、专项筛查、服务记录附件改为内存直传 OSS，不再写入 ECS `uploads/`；关联对象路径保存到 `MedicalReport.ossKey/ossKeys` 和 `ServiceRecord.attachments[].ossKey`，删除对应业务记录时清理对象。
