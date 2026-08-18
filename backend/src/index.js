@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const connectDB = require('./config/db');
 const { areSchedulersDisabled, assertDeploymentEnvironment } = require('./utils/runtimeSafety');
+const { createCorsOriginValidator } = require('./utils/corsOrigins');
 
 // 必须在连接 MongoDB、创建上传目录和启动 HTTP 服务之前完成环境边界校验。
 // staging 配置一旦误指向生产数据库或正式 OSS 前缀，进程会直接拒绝启动。
@@ -23,25 +24,8 @@ connectDB();
 // 静态文件响应完全没有 Access-Control-Allow-Origin 头。三端各自跑在不同域名下(staff.jiaycare.com
 // 访问 jiaycare.com/api/uploads/...)，pdf.js等用fetch读取跨域静态文件时被浏览器CORS策略拦截，
 // 报"PDF预览失败"——医护端审核弹窗看不到原图的真正根因。CORS必须在静态文件服务之前挂载。
-const ALLOWED_ORIGINS = [
-  'https://jiaycare.com',
-  'https://admin.jiaycare.com',
-  'https://staff.jiaycare.com',
-  // 本地开发
-  'http://localhost:3000',
-  'http://localhost:5173',
-  'http://localhost:5174',
-  'http://localhost:5175',
-  'http://localhost:8081',
-  'http://localhost:8082',
-  'http://localhost:19006', // Expo web
-];
 app.use(cors({
-  origin: (origin, callback) => {
-    // origin 为空表示非浏览器请求（curl、移动端原生、服务器间调用）
-    if (!origin || ALLOWED_ORIGINS.includes(origin)) return callback(null, true);
-    callback(new Error(`CORS: origin ${origin} not allowed`));
-  },
+  origin: createCorsOriginValidator(deploymentBoundary.deploymentEnv),
   credentials: true,
   exposedHeaders: ['Accept-Ranges', 'Content-Length', 'Content-Range'],
 }));
@@ -110,7 +94,11 @@ app.use((req, res) => {
 // 全局错误处理
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ success: false, message: '服务器内部错误', error: process.env.NODE_ENV === 'development' ? err.message : undefined });
+  res.status(err.status || 500).json({
+    success: false,
+    message: err.status === 403 ? '请求来源未授权' : '服务器内部错误',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined,
+  });
 });
 
 const PORT = process.env.PORT || 3000;
