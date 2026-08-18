@@ -3975,10 +3975,6 @@ export default function PatientDetailPage() {
         <style>{`.health-archive-sections{display:grid;grid-template-columns:236px minmax(0,1fr);gap:0 18px;align-items:start}.health-archive-sections>.archive-toolbar,.health-archive-sections>.archive-overview{grid-column:1 / -1}.health-archive-sections>.card{grid-column:2;min-width:0;transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer;min-height:60px;display:flex;align-items:center;gap:12px}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{order:0;flex:0 0 220px;display:flex;align-items:center;gap:8px}.health-archive-sections .card-header[data-archive-toggle="true"]:before{content:attr(data-archive-summary);order:1;flex:1;min-width:0;font-size:12px;font-weight:400;color:#77958A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.health-archive-sections .card-header[data-archive-toggle="true"]>button,.health-archive-sections .card-header[data-archive-toggle="true"]>div:not(.card-title){order:2;flex-shrink:0}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';order:3;margin-left:2px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}.archive-overview{background:linear-gradient(135deg,#EAF4EF 0%,#FAFCFA 62%,#FFF 100%);border:1px solid #D9E9E0;border-radius:14px;padding:20px 22px;margin-bottom:18px}.archive-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}.archive-overview-metric{background:rgba(255,255,255,.86);border:1px solid #E2EEE7;border-radius:10px;padding:12px 13px}.archive-overview-label{font-size:12px;color:#6E8579;margin-bottom:5px}.archive-overview-value{font-size:18px;font-weight:700;color:#173D2B}.archive-overview-task{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FFF;border:1px solid #DDEBE3;border-radius:8px;padding:9px 10px;margin-top:8px}.archive-overview-task-text{font-size:12px;color:#4A6558;margin-top:2px}.archive-nav{grid-column:1;grid-row:3 / span 80;position:sticky;top:16px;background:#FFF;border:1px solid #E0EBE4;border-radius:12px;padding:12px;box-shadow:0 4px 16px rgba(26,61,43,.04)}.archive-nav-title{font-size:12px;font-weight:700;color:#416554;padding:3px 8px 9px}.archive-nav-group{border-top:1px solid #EEF3EF;padding:9px 0 4px}.archive-nav-group:first-of-type{border-top:0}.archive-nav-group-label{font-size:11px;font-weight:700;color:#8AA89C;padding:0 8px 5px}.archive-nav-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;border:0;border-radius:7px;background:transparent;color:#395848;cursor:pointer;font-size:13px;padding:8px;text-align:left}.archive-nav-item:hover{background:#EDF6F0;color:#1E6B50}.archive-nav-item span:last-child{color:#9AB2A5;font-size:14px}@media(max-width:1000px){.health-archive-sections{display:block}.health-archive-sections>.card{margin-left:0}.archive-nav{display:none}.archive-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{flex:1}.health-archive-sections .card-header[data-archive-toggle="true"]:before{display:none}}`}</style>
         <style>{`.health-archive-sections{grid-template-columns:220px minmax(0,1fr);gap:0 16px}.health-archive-sections>.archive-toolbar{grid-column:1/-1;border-bottom:1px solid #E3ECE6;padding:0 4px 14px}.health-archive-sections>.archive-overview{display:none}.health-archive-sections>.archive-nav{grid-row:2 / span 80;margin-top:0;border-radius:10px;box-shadow:none}.health-archive-sections>.card{margin-bottom:14px!important}.health-archive-sections>.archive-section-hidden{display:none}.archive-nav-item.is-active{background:#EAF5EE;color:#176B4D;font-weight:700}.archive-nav-item.is-active span:last-child{color:#176B4D}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:default}.health-archive-sections .card-header[data-archive-toggle="true"]:after{display:none}.health-archive-sections .card-header[data-archive-toggle="true"]:before{color:#8AA89C}.health-archive-sections .archive-collapsed>:not(.card-header){display:block!important}@media(max-width:1000px){.health-archive-sections>.archive-toolbar{padding-bottom:12px}.health-archive-sections>.archive-section-hidden{display:none!important}}`}</style>
         <style>{`.health-archive-sections{display:block}.health-archive-sections>.archive-toolbar{border:0;padding:0 4px 12px;margin-bottom:0!important}.health-archive-sections>.archive-nav{position:static;display:flex;gap:4px;width:100%;padding:0 0 14px;margin:0 0 16px;background:transparent;border:0;border-bottom:1px solid #DDE8E1;border-radius:0;box-shadow:none}.health-archive-sections>.archive-nav .archive-nav-item{position:relative;display:inline-flex;width:auto;align-items:center;gap:6px;padding:10px 16px;border-radius:7px 7px 0 0;color:#668176;font-size:14px;font-weight:600}.health-archive-sections>.archive-nav .archive-nav-item:hover{background:#F1F7F3;color:#1E6B50}.health-archive-sections>.archive-nav .archive-nav-item.is-active{background:transparent;color:#176B4D}.health-archive-sections>.archive-nav .archive-nav-item.is-active:after{content:'';position:absolute;right:12px;bottom:-15px;left:12px;height:2px;background:#1E6B50;border-radius:2px}.health-archive-sections>.archive-nav em{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 5px;border-radius:10px;background:#FFF1DD;color:#B45309;font-size:11px;font-style:normal}.health-archive-sections>.card{margin-left:0;margin-bottom:16px!important}.health-archive-sections>.archive-section-hidden{display:none!important}@media(max-width:760px){.health-archive-sections>.archive-nav{overflow-x:auto}.health-archive-sections>.archive-nav .archive-nav-item{white-space:nowrap;padding:10px 12px}.health-archive-sections>.archive-toolbar{align-items:flex-start!important;gap:8px;flex-direction:column}}`}</style>
-        <div className="archive-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-          <div><div style={{ fontSize: 18, fontWeight: 700, color: '#173D2B' }}>健康档案</div><div style={{ fontSize: 12, color: '#77958A', marginTop: 3 }}>按模块查看和维护会员资料</div></div>
-          <div style={{ fontSize: 12, color: archiveOverview.tasks.length ? '#B45309' : '#1E6B50', background: archiveOverview.tasks.length ? '#FFF7E8' : '#EEF8F1', padding: '6px 10px', borderRadius: 16 }}>{archiveOverview.tasks.length ? `${archiveOverview.tasks.length} 项待处理` : '档案暂无待处理项'}</div>
-        </div>
         <section className="archive-overview" aria-label="健康档案总览">
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
             <div>
@@ -4254,7 +4250,7 @@ export default function PatientDetailPage() {
                 ))}
               </div>
             ) : (() => {
-              const Field = ({ label, val, full }) => !val ? null : (
+              const Field = ({ label, val, full }) => (!val || val === '-') ? null : (
                 <div style={{ gridColumn: full ? '1 / -1' : undefined, display: 'flex', flexDirection: 'column', padding: '5px 0' }}>
                   <span style={{ fontSize: 11, color: '#8AA89C', marginBottom: 2 }}>{label}</span>
                   <span style={{ fontSize: 13, color: '#1A2B24', lineHeight: 1.4 }}>{val}</span>
@@ -4265,15 +4261,15 @@ export default function PatientDetailPage() {
 
               const SECTIONS = [
                 {
-                  icon: '🩸', title: '基础信息', color: '#0077B6',
+                  title: '基础信息',
                   fields: [
-                    <Field key="bt" label="血型" val={bloodType || '-'} />,
+                    <Field key="bt" label="血型" val={bloodType} />,
                     <Field key="da" label="药物过敏" val={user.healthProfile?.drugAllergy} />,
                     <Field key="fa" label="食物过敏" val={user.healthProfile?.foodAllergy} />,
                   ],
                 },
                 {
-                  icon: '📋', title: '病史', color: '#D97706',
+                  title: '病史',
                   fields: [
                     <Field key="ph" label="既往史" val={user.healthProfile?.pastHistory} full />,
                     <Field key="sh" label="手术史" val={user.healthProfile?.surgeryHistory} />,
@@ -4287,14 +4283,14 @@ export default function PatientDetailPage() {
                   ],
                 },
                 {
-                  icon: '💊', title: '用药及补剂', color: '#16A34A',
+                  title: '用药及补剂',
                   fields: [
                     <Field key="mh" label="长期用药（中/西药）" val={user.healthProfile?.medicHistory} />,
                     <Field key="suh" label="长期服用营养补剂" val={user.healthProfile?.supplementHistory} />,
                   ],
                 },
                 ...(user.gender === '女' ? [{
-                  icon: '🌸', title: '女性专项', color: '#DB2777',
+                  title: '女性专项',
                   fields: [
                     <Field key="sxh" label="性生活史" val={user.healthProfile?.sexualHistory} />,
                     <Field key="mnh" label="月经史" val={user.healthProfile?.menstrualHistory} />,
@@ -4302,7 +4298,7 @@ export default function PatientDetailPage() {
                   ],
                 }] : []),
                 {
-                  icon: '🩺', title: '近期健康状态', color: '#7C3AED',
+                  title: '近期健康状态',
                   fields: [
                     <Field key="sym" label="躯体症状" val={symptoms} full />,
                     <Field key="rm" label="近期用药（中/西药）" val={user.healthProfile?.recentMedication} />,
@@ -4312,17 +4308,14 @@ export default function PatientDetailPage() {
               ].filter(sec => sec.fields.some(f => f !== null))
 
               if (SECTIONS.length === 0) {
-                return <div style={{ color: '#8AA89C', fontSize: 13, textAlign: 'center', padding: '16px 0' }}>暂无档案信息，点击「编辑」录入</div>
+                return <div style={{ padding: '22px 18px', background: '#F7FAF8', border: '1px dashed #CFE0D5', borderRadius: 8 }}><div style={{ fontSize: 14, fontWeight: 600, color: '#365C49' }}>基础档案尚未完善</div><div style={{ fontSize: 12, color: '#789286', marginTop: 5 }}>请点击右上角「编辑」，补充病史、过敏及近期健康状态。</div></div>
               }
 
               return (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 10 }}>
                   {SECTIONS.map(sec => (
-                    <div key={sec.title} style={{ background: '#FAFAF8', border: '1px solid #F0EDE7', borderRadius: 8, padding: '10px 14px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                        <span style={{ fontSize: 13 }}>{sec.icon}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: sec.color }}>{sec.title}</span>
-                      </div>
+                    <div key={sec.title} style={{ background: '#FCFDFC', border: '1px solid #E6EEE9', borderRadius: 8, padding: '12px 14px' }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: '#315D46', marginBottom: 8 }}>{sec.title}</div>
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 24px' }}>
                         {sec.fields}
                       </div>
