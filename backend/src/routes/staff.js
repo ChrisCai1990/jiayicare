@@ -9874,6 +9874,7 @@ async function runReportParse(reportId, options = {}) {
         && !useShaoyifuTemplate
         && !useZheyiTemplate;
       const textPrimaryByPage = new Map();
+      const textCoverageRequiredPages = new Set();
       if (useTextLayerPrimary) {
         const pageNumbers = Array.from({ length: textLayer.pageCount }, (_, index) => index + 1);
         const historicalPageBaselines = new Map(
@@ -9905,11 +9906,11 @@ async function runReportParse(reportId, options = {}) {
             const materialHistoricalDrop = baselineCount > 0
               && (shouldSkipParsedReportPage(parsed) || parsedItemCount < Math.max(1, Math.ceil(baselineCount * 0.5)));
             if (materialHistoricalDrop) {
-              console.log(`[parse-ai] P${pageNum}文字层仅提取${parsedItemCount}项，低于同原件历史基线${baselineCount}项，转视觉兜底`);
-              return null;
+              textCoverageRequiredPages.add(pageNum);
+              console.log(`[parse-ai] P${pageNum}文字层仅提取${parsedItemCount}项，低于同原件历史基线${baselineCount}项，标记视觉覆盖复核`);
             }
             const usable = parsed && (shouldSkipParsedReportPage(parsed) || parsedItemCount > 0);
-            return usable ? { pageNum, parsed } : null;
+            return (usable || materialHistoricalDrop) ? { pageNum, parsed } : null;
           } catch (error) {
             console.log(`[parse-ai] P${pageNum}文字层主提取异常，转视觉兜底: ${error.message}`);
             return null;
@@ -10022,11 +10023,12 @@ async function runReportParse(reportId, options = {}) {
       // 每个明细页做第二遍覆盖复核。首轮返回合法JSON但漏掉整页内容或右栏时，过去会被误记为成功；
       // 复核改用144dpi和max模型，只允许补充首轮遗漏项，再由程序证据键去重。
       if (report.type !== 'body_comp') {
-        const coveragePages = useShaoyifuTemplate
+        const selectedCoveragePages = useShaoyifuTemplate
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
           : useZheyiTemplate
             ? [...detailPages].filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems))
           : selectGenericCoverageAuditPages([...detailPages], allItems);
+        const coveragePages = [...new Set([...selectedCoveragePages, ...textCoverageRequiredPages])].sort((a, b) => a - b);
         setOcrProgress('coverage_audit', coveragePages.length
           ? `首轮识别完成，正在复核${coveragePages.length}页是否漏项`
           : '首轮识别完成，未发现需要覆盖复核的页面', { totalPages: totalPageCount, coveragePages: coveragePages.length });
