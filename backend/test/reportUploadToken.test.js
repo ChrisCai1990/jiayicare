@@ -15,6 +15,7 @@ const file = {
   fileUrl: 'https://private-bucket.example/reports/example.pdf',
   mimeType: 'application/pdf',
   fileSize: 12345,
+  sha256: 'a'.repeat(64),
 };
 
 test('report upload token binds the original file to the uploading staff member', () => {
@@ -27,6 +28,7 @@ test('report upload token binds the original file to the uploading staff member'
     ossKey: file.ossKey,
     mimeType: file.mimeType,
     fileSize: file.fileSize,
+    sha256: file.sha256,
   });
 });
 

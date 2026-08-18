@@ -2271,6 +2271,12 @@ router.post('/medical-reports', staffAuth, checkAnyPermissionStrict('reports', [
     const resolvedOssKey = resolvedOssKeys[0] || '';
     const verifiedMimeType = verifiedUploadedFiles[0]?.mimeType || '';
     const verifiedFileSize = verifiedUploadedFiles.reduce((sum, file) => sum + Number(file.fileSize || 0), 0);
+    const sourceFiles = verifiedUploadedFiles.map(file => ({
+      ossKey: file.ossKey,
+      sha256: file.sha256 || '',
+      mimeType: file.mimeType || '',
+      fileSize: Number(file.fileSize || 0),
+    }));
 
     // 医护端新上传只保留受凭证约束的 OSS 原件，不再把第二份 Base64 健康原件写入 MongoDB。
     const effectiveContent = '';
@@ -2308,7 +2314,10 @@ router.post('/medical-reports', staffAuth, checkAnyPermissionStrict('reports', [
       const registrationById = new Map(registrations.map(item => [String(item._id), item]));
       const allMatch = verifiedUploadedFiles.every(file => {
         const item = registrationById.get(String(file.uploadId));
-        return item && item.ossKey === file.ossKey && item.fileUrl === file.fileUrl;
+        return item
+          && item.ossKey === file.ossKey
+          && item.fileUrl === file.fileUrl
+          && (!file.sha256 || item.sha256 === file.sha256);
       });
       if (!allMatch) return res.status(409).json({ success: false, message: '临时上传状态已变化，请重新选择文件' });
       const claimed = await TemporaryReportUpload.updateMany(
@@ -2334,6 +2343,7 @@ router.post('/medical-reports', staffAuth, checkAnyPermissionStrict('reports', [
           existing.fileUrls = resolvedFileUrls;
           existing.ossKey = resolvedOssKey;
           existing.ossKeys = resolvedOssKeys;
+          existing.sourceFiles = sourceFiles;
           existing.content = effectiveContent;
           existing.mimeType = effectiveMimeType;
           existing.fileSize = String(verifiedFileSize || fileSize || '');
@@ -2368,6 +2378,7 @@ router.post('/medical-reports', staffAuth, checkAnyPermissionStrict('reports', [
         user: patientId, title, type: type || 'other', hospital: hospital || '',
         date: checkDate, checkDate, reportYear,
         fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, ossKey: resolvedOssKey, ossKeys: resolvedOssKeys, content: effectiveContent,
+        sourceFiles,
         mimeType: effectiveMimeType, fileSize: String(verifiedFileSize || fileSize || ''),
         uploadedBy: req.staff._id, audit_status: 'unaudited',
         ...(uploadRequestId ? { uploadRequestId } : {}),
@@ -2984,13 +2995,16 @@ router.post('/upload/report-file', staffAuth, checkAnyPermissionStrict('reports'
     catch (fileTypeError) { return res.status(400).json({ success: false, message: fileTypeError.message }); }
     const result = await uploadBuffer(req.file.buffer, verifiedMimeType, getReportUploadFolder());
     uploadedOssKey = result.key;
+    const sha256 = result.sha256;
+    const storedFileSize = Number(result.fileSize || req.file.size);
     const registration = await TemporaryReportUpload.create({
       staffId: req.staff._id,
       tenantId: req.staff.tenantId || null,
       ossKey: result.key,
       fileUrl: result.url,
       mimeType: result.mimeType,
-      fileSize: req.file.size,
+      fileSize: storedFileSize,
+      sha256,
       status: 'temporary',
       expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
     });
@@ -2998,10 +3012,10 @@ router.post('/upload/report-file', staffAuth, checkAnyPermissionStrict('reports'
     const uploadToken = createReportUploadToken({
       staffId: req.staff._id,
       uploadId: registration._id,
-      file: { ossKey: result.key, fileUrl: result.url, mimeType: result.mimeType, fileSize: req.file.size },
+      file: { ossKey: result.key, fileUrl: result.url, mimeType: result.mimeType, fileSize: storedFileSize, sha256 },
       secret: process.env.JWT_SECRET,
     });
-    res.json({ success: true, data: { url: result.url, ossKey: result.key, mimeType: result.mimeType, fileSize: req.file.size, uploadToken } });
+    res.json({ success: true, data: { url: result.url, ossKey: result.key, mimeType: result.mimeType, fileSize: storedFileSize, uploadToken } });
   } catch (err) {
     let uploadCleanupError = '';
     if (uploadedOssKey) {
@@ -9493,7 +9507,11 @@ async function snapshotReportExtraction(reportId, { origin = 'ocr', reparsePage 
         origin,
         reparsePage,
         engine: { ocrVersion: report.ocrVersion || '', templateId: report.ocrTemplateId || '' },
-        source: { ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []), pageCount: resolveExtractionPageCount(report) },
+        source: {
+          ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []),
+          files: report.sourceFiles || [],
+          pageCount: resolveExtractionPageCount(report),
+        },
         reportMetadata: { institution: report.institution || report.hospital || '', checkDate: report.checkDate || report.date || '' },
         summary: report.ocrQualitySummary || null,
         items: normalizeReportItemEvidence(report.reportItems || []),
@@ -9520,6 +9538,7 @@ async function recordReportReviewEvent(report, revision, reviewContext, result) 
     items: ensureReportItemSourceIds(normalizeReportItemEvidence(report.reportItems || [])),
     aiSummary: report.aiSummary || '',
     reportMetadata: { title: report.title || '', institution: report.institution || report.hospital || '', checkDate: report.checkDate || report.date || '', type: report.type || '' },
+    sourceFiles: report.sourceFiles || [],
   };
   const eventContentHash = revision?.contentHash
     || crypto.createHash('sha256').update(JSON.stringify(fallbackPayload)).digest('hex');
@@ -9554,6 +9573,7 @@ async function recordReportReviewEvent(report, revision, reviewContext, result) 
 async function publishReportRevision(report, reviewContext = null) {
   if (!report?.user) return null;
   const revisionItems = ensureReportItemSourceIds(normalizeReportItemEvidence(report.reportItems || []));
+  const sourceFiles = report.sourceFiles || [];
   report.reportItems = revisionItems;
   const revisionPayload = {
     items: revisionItems,
@@ -9563,7 +9583,8 @@ async function publishReportRevision(report, reviewContext = null) {
       checkDate: report.checkDate || report.date || '', type: report.type || '',
     },
   };
-  const contentHash = crypto.createHash('sha256').update(JSON.stringify(revisionPayload)).digest('hex');
+  // 同样的审核内容如果来自不同原件，必须形成不同版本；摘要参与版本哈希但不重复存顶层字段。
+  const contentHash = crypto.createHash('sha256').update(JSON.stringify({ ...revisionPayload, sourceFiles })).digest('hex');
   const identical = await ReportRevision.findOne({ reportId: report._id, contentHash, status: 'published' }).sort({ revisionNo: -1 });
   if (identical) {
     await MedicalReport.updateOne({ _id: report._id }, { $set: { currentRevisionId: identical._id, reportItems: revisionItems } });
@@ -9573,7 +9594,7 @@ async function publishReportRevision(report, reviewContext = null) {
     return identical;
   }
   const extraction = report.currentExtractionId
-    ? await ReportExtraction.findById(report.currentExtractionId).select('version origin engine').lean()
+    ? await ReportExtraction.findById(report.currentExtractionId).select('version origin engine source.files').lean()
     : null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const latest = await ReportRevision.findOne({ reportId: report._id }).sort({ revisionNo: -1 }).select('revisionNo').lean();
@@ -9599,6 +9620,7 @@ async function publishReportRevision(report, reviewContext = null) {
           extractionVersion: extraction?.version ?? null,
           extractionOrigin: extraction?.origin || '',
           ocrVersion: extraction?.engine?.ocrVersion || report.ocrVersion || '',
+          files: extraction?.source?.files?.length ? extraction.source.files : (report.sourceFiles || []),
         },
         reviewMeta: report.ocrReviewMeta || null,
       });

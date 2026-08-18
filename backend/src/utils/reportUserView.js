@@ -2,7 +2,7 @@ const ReportRevision = require('../models/ReportRevision');
 const { signStoredUrl } = require('./oss');
 
 const USER_HIDDEN_REPORT_FIELDS = [
-  'tenantId', 'ossKey', 'ossKeys', 'uploadedBy', 'uploadRequestId',
+  'tenantId', 'ossKey', 'ossKeys', 'sourceFiles', 'uploadedBy', 'uploadRequestId',
   'planItemId', 'planId', 'screeningItemId',
   'currentExtractionId', 'currentRevisionId', 'ocrReviewMeta', 'ocrCorrectionLog',
   'ocrVersion', 'ocrTemplateId', 'ocrQualitySummary', 'ocrProgress', 'pageParseStatus', 'dataEditLog',

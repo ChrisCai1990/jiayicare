@@ -17,6 +17,12 @@ const reportExtractionSchema = new mongoose.Schema({
   },
   source: {
     ossKeys: [{ type: String }],
+    files: [{
+      ossKey: { type: String, default: '' },
+      sha256: { type: String, default: '' },
+      mimeType: { type: String, default: '' },
+      fileSize: { type: Number, default: 0 },
+    }],
     pageCount: { type: Number, default: 0 },
   },
   reportMetadata: {

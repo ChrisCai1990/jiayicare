@@ -10,6 +10,9 @@ const temporaryReportUploadSchema = new mongoose.Schema({
   fileUrl: { type: String, required: true },
   mimeType: { type: String, default: '' },
   fileSize: { type: Number, default: 0 },
+  // 上传时直接对收到的原始字节计算；后续建档和识别快照均引用该摘要，
+  // 不依赖可变的下载 URL 来判断是否仍是同一份原件。
+  sha256: { type: String, default: '' },
   status: {
     type: String,
     enum: ['temporary', 'attaching', 'attached', 'deleting', 'deleted', 'cleanup_failed'],

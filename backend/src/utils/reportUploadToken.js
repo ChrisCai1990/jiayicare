@@ -18,6 +18,7 @@ function createReportUploadToken({ staffId, uploadId, file, secret, expiresIn = 
     url: file.fileUrl,
     mimeType: file.mimeType || '',
     fileSize: Number(file.fileSize || 0),
+    sha256: file.sha256 || '',
   }, requireSecret(secret), { expiresIn });
 }
 
@@ -40,6 +41,7 @@ function verifyReportUploadTokens(tokens, { staffId, secret, requireOne = false 
         ossKey: claim.key,
         mimeType: claim.mimeType || '',
         fileSize: Number(claim.fileSize || 0),
+        sha256: claim.sha256 || '',
       };
     });
   } catch (error) {

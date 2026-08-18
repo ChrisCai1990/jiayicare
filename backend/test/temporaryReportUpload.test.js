@@ -17,12 +17,14 @@ test('new report uploads start temporary and carry an explicit retention deadlin
     staffId: new mongoose.Types.ObjectId(),
     ossKey: 'reports/test.pdf',
     fileUrl: 'https://private.example/reports/test.pdf',
+    sha256: 'b'.repeat(64),
     expiresAt: new Date(Date.now() + 60_000),
   });
 
   assert.equal(upload.validateSync(), undefined);
   assert.equal(upload.status, 'temporary');
   assert.equal(upload.reportId, null);
+  assert.equal(upload.sha256, 'b'.repeat(64));
 });
 
 test('failed original-file deletion remains in a retryable audited state', () => {

@@ -1,6 +1,7 @@
 const OSS = require('ali-oss');
 const { v4: uuidv4 } = require('uuid');
 const path = require('path');
+const crypto = require('crypto');
 const heicConvert = require('heic-convert');
 
 // 苹果设备拍照默认输出 HEIC/HEIF，除 Safari 外绝大多数浏览器（Chrome/Edge/Firefox及部分安卓设备）
@@ -59,7 +60,13 @@ async function uploadBuffer(rawBuffer, mimeType, folder = 'reports') {
   const endpoint = process.env.OSS_ENDPOINT || 'https://oss-cn-beijing.aliyuncs.com';
   const bucket = process.env.OSS_BUCKET;
   const url = `https://${bucket}.${endpoint.replace('https://', '')}/${key}`;
-  return { url, key, mimeType: effectiveMime };
+  return {
+    url,
+    key,
+    mimeType: effectiveMime,
+    fileSize: buffer.length,
+    sha256: crypto.createHash('sha256').update(buffer).digest('hex'),
+  };
 }
 
 // 上传 base64 内容到 OSS，保留为旧上传接口的兼容层。

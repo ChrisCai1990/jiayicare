@@ -14,6 +14,7 @@ const revisionSourceSchema = new mongoose.Schema({
   extractionVersion: { type: Number, default: null },
   extractionOrigin: { type: String, default: '' },
   ocrVersion: { type: String, default: '' },
+  files: { type: [mongoose.Schema.Types.Mixed], default: [] },
 }, { _id: false });
 
 // 人工提交后的正式报告快照。后续修改再次提交会产生新版本，

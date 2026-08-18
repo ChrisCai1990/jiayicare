@@ -140,6 +140,13 @@ const medicalReportSchema = new mongoose.Schema({
   fileUrls:    [{ type: String }],
   ossKey:      { type: String, default: '' },  // OSS 对象路径，删除时用于清理
   ossKeys:     [{ type: String }],  // 多图上传时每张图对应的 OSS key，删除报告需逐个清理，不能只清 ossKey
+  // 医护端新上传原件的不可变清单。旧报告可以为空；fileUrl/fileUrls 继续作为兼容读取入口。
+  sourceFiles: [{
+    ossKey: { type: String, default: '' },
+    sha256: { type: String, default: '' },
+    mimeType: { type: String, default: '' },
+    fileSize: { type: Number, default: 0 },
+  }],
   keyFindings: [{ type: String }],
   status: {
     type: String,
