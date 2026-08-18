@@ -74,7 +74,7 @@ const {
 } = require('../utils/reportItemEvidence');
 const { resolveActiveScreeningKey } = require('../utils/screeningCatalogKey');
 const { createReportUploadToken, verifyReportUploadTokens } = require('../utils/reportUploadToken');
-const { buildReportSourceFiles, reportHasOriginal } = require('../utils/reportOriginalEvidence');
+const { buildReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../utils/reportOriginalEvidence');
 const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction } = require('../utils/reportReviewPolicy');
 const { ALLOWED_REPORT_MIME_TYPES, assertReportFileBuffer, assertVerifiedReportOriginals } = require('../utils/reportUploadPolicy');
 const { validateReportAssociation } = require('../utils/reportAssociationPolicy');
@@ -117,6 +117,8 @@ function withSignedReportFiles(report) {
     return `/api/staff/medical-reports/${obj._id}/preview/${index}?token=${encodeURIComponent(token)}`;
   });
   obj.previewUrl = obj.previewUrls[0] || '';
+  obj.originalEvidence = summarizeReportOriginalEvidence(obj.sourceFiles, keys);
+  delete obj.sourceFiles;
   return obj;
 }
 
@@ -1963,10 +1965,11 @@ router.get('/medical-reports/:id/extractions', staffAuth, checkPermissionStrict(
   try {
     const report = await MedicalReport.findById(req.params.id).select('_id');
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const data = await ReportExtraction.find({ reportId: report._id })
-      .select('-items -aiSummary -source.ossKeys')
+    const rows = await ReportExtraction.find({ reportId: report._id })
+      .select('-items -aiSummary')
       .sort({ version: -1 })
       .lean();
+    const data = rows.map(toSafeVersionOriginalEvidence);
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -1975,7 +1978,8 @@ router.get('/medical-reports/:id/extractions/:version', staffAuth, checkPermissi
   try {
     const report = await MedicalReport.findById(req.params.id).select('_id');
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const data = await ReportExtraction.findOne({ reportId: report._id, version: Number(req.params.version) }).lean();
+    const row = await ReportExtraction.findOne({ reportId: report._id, version: Number(req.params.version) }).lean();
+    const data = row ? toSafeVersionOriginalEvidence(row) : null;
     if (!data) return res.status(404).json({ success: false, message: '识别版本不存在' });
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
@@ -2019,10 +2023,11 @@ router.get('/medical-reports/:id/revisions', staffAuth, checkPermissionStrict('r
   try {
     const report = await MedicalReport.findById(req.params.id).select('_id');
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const data = await ReportRevision.find({ reportId: report._id })
+    const rows = await ReportRevision.find({ reportId: report._id })
       .select('-items')
       .sort({ revisionNo: -1 })
       .lean();
+    const data = rows.map(toSafeVersionOriginalEvidence);
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -2137,9 +2142,9 @@ router.get('/medical-reports/:id/revisions/:revisionNo', staffAuth, checkPermiss
   try {
     const report = await MedicalReport.findById(req.params.id).select('_id');
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const data = await ReportRevision.findOne({ reportId: report._id, revisionNo: Number(req.params.revisionNo) }).lean();
-    if (!data) return res.status(404).json({ success: false, message: '审核版本不存在' });
-    res.json({ success: true, data });
+    const row = await ReportRevision.findOne({ reportId: report._id, revisionNo: Number(req.params.revisionNo) }).lean();
+    if (!row) return res.status(404).json({ success: false, message: '审核版本不存在' });
+    res.json({ success: true, data: toSafeVersionOriginalEvidence(row) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -2492,6 +2497,19 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
     if (reviewAction === 'submit' && report.currentExtractionId) {
       const currentExtraction = await ReportExtraction.findOne({ _id: report.currentExtractionId, reportId: report._id }).lean();
       if (currentExtraction) {
+        const sourceConsistency = compareReportOriginalEvidence(
+          report.sourceFiles,
+          currentExtraction.source?.files,
+          report.ossKeys || (report.ossKey ? [report.ossKey] : []),
+          currentExtraction.source?.ossKeys || [],
+        );
+        if (sourceConsistency.left.status === 'verified' && !sourceConsistency.same) {
+          return res.status(409).json({
+            success: false,
+            code: 'OCR_ORIGINAL_EVIDENCE_MISMATCH',
+            message: '当前识别版本与报告原件留证不一致，请重新识别后再提交审核',
+          });
+        }
         const extractionHistory = await ReportExtraction.find({
           reportId: report._id,
           version: { $lt: currentExtraction.version },

@@ -10510,8 +10510,23 @@ export default function PatientDetailPage() {
                    const historyTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '时间未记录'
                    const currentRevision = history?.revisions?.find(revision => String(revision._id) === String(ocrReviewReport.currentRevisionId || ''))
                      || history?.revisions?.find(revision => revision.status === 'published')
-                   const currentExtraction = history?.extractions?.find(extraction => String(extraction._id) === String(ocrReviewReport.currentExtractionId || ''))
-                   const uploaderName = ocrReviewReport.uploadedBy?.name || (ocrReviewReport.uploadedBy ? '医护人员' : '会员上传或历史导入')
+                    const currentExtraction = history?.extractions?.find(extraction => String(extraction._id) === String(ocrReviewReport.currentExtractionId || ''))
+                    const uploaderName = ocrReviewReport.uploadedBy?.name || (ocrReviewReport.uploadedBy ? '医护人员' : '会员上传或历史导入')
+                    const reportEvidence = ocrReviewReport.originalEvidence || null
+                    const extractionEvidence = currentExtraction?.source?.originalEvidence || null
+                    const revisionEvidence = currentRevision?.source?.originalEvidence || null
+                    const evidenceMatches = evidence => !reportEvidence?.identity || !evidence?.identity || reportEvidence.identity === evidence.identity
+                    const originalEvidenceState = reportEvidence?.status === 'verified'
+                      ? (!evidenceMatches(extractionEvidence) || !evidenceMatches(revisionEvidence)
+                          ? { text: '原件引用不一致', detail: '暂停提交并联系管理员核查', color: '#9B2C2C' }
+                          : {
+                              text: `已留证 · ${reportEvidence.fileCount} 个文件`,
+                              detail: reportEvidence.fingerprints?.length ? `SHA-256 ${reportEvidence.fingerprints.join('、')}…` : '摘要已登记',
+                              color: '#237A57',
+                            })
+                      : reportEvidence?.fileCount
+                        ? { text: '历史原件 · 未完整摘要', detail: '下次新上传开始自动留证', color: '#8A5A12' }
+                        : { text: '原件留证待核对', detail: '未找到可比对的原件摘要', color: '#8A5A12' }
                    const projectionState = !currentRevision
                      ? { text: '审核通过后生成', color: '#6F8379' }
                      : history?.reviewIntegrity?.status === 'incomplete'
@@ -10526,20 +10541,28 @@ export default function PatientDetailPage() {
                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(145px, 1fr))', gap: 7, marginBottom: 12 }}>
                          <div style={{ padding: '8px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB' }}>
                            <div style={{ fontSize: 10, color: '#819188' }}>报告原件</div>
-                           <div style={{ marginTop: 2, fontSize: 12, color: '#304A3E', fontWeight: 700 }}>{uploaderName}</div>
-                           <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{historyTime(ocrReviewReport.createdAt)}</div>
+                            <div style={{ marginTop: 2, fontSize: 12, color: '#304A3E', fontWeight: 700 }}>{uploaderName}</div>
+                            <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{historyTime(ocrReviewReport.createdAt)}</div>
+                            <div style={{ marginTop: 3, fontSize: 10, color: originalEvidenceState.color, fontWeight: 700 }}>{originalEvidenceState.text}</div>
+                            <div style={{ marginTop: 1, fontSize: 9, color: '#819188' }}>{originalEvidenceState.detail}</div>
                          </div>
                          <div style={{ padding: '8px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB' }}>
                            <div style={{ fontSize: 10, color: '#819188' }}>当前识别草稿</div>
                            <div style={{ marginTop: 2, fontSize: 12, color: '#304A3E', fontWeight: 700 }}>{currentExtraction ? `OCR V${currentExtraction.version}` : (ocrReviewReport.ocrVersion || '未版本化')}</div>
-                           <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{currentExtraction ? historyTime(currentExtraction.createdAt) : '等待版本记录'}</div>
+                            <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{currentExtraction ? historyTime(currentExtraction.createdAt) : '等待版本记录'}</div>
+                            {currentExtraction && reportEvidence?.identity && <div style={{ marginTop: 3, fontSize: 10, color: evidenceMatches(extractionEvidence) ? '#237A57' : '#9B2C2C', fontWeight: 700 }}>
+                              {evidenceMatches(extractionEvidence) ? '原件引用一致' : '原件引用不一致'}
+                            </div>}
                          </div>
                          <div style={{ padding: '8px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB' }}>
                            <div style={{ fontSize: 10, color: '#819188' }}>当前正式审核</div>
                            <div style={{ marginTop: 2, fontSize: 12, color: currentRevision ? '#304A3E' : '#8A5A12', fontWeight: 700 }}>
                              {currentRevision ? `审核 V${currentRevision.revisionNo} · ${currentRevision.review?.reviewerName || '审核人未记录'}` : '尚未形成正式版本'}
                            </div>
-                           <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{currentRevision ? historyTime(currentRevision.review?.reviewedAt || currentRevision.createdAt) : '保存草稿不等于审核通过'}</div>
+                            <div style={{ marginTop: 1, fontSize: 10, color: '#819188' }}>{currentRevision ? historyTime(currentRevision.review?.reviewedAt || currentRevision.createdAt) : '保存草稿不等于审核通过'}</div>
+                            {currentRevision && reportEvidence?.identity && <div style={{ marginTop: 3, fontSize: 10, color: evidenceMatches(revisionEvidence) ? '#237A57' : '#9B2C2C', fontWeight: 700 }}>
+                              {evidenceMatches(revisionEvidence) ? '原件引用一致' : '原件引用不一致'}
+                            </div>}
                          </div>
                          <div style={{ padding: '8px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB' }}>
                            <div style={{ fontSize: 10, color: '#819188' }}>专项筛查投影</div>
@@ -10632,7 +10655,8 @@ export default function PatientDetailPage() {
                               <div key={extraction._id} style={{ padding: '3px 0' }}>
                                 OCR V{extraction.version}{String(ocrReviewReport.currentExtractionId || '') === String(extraction._id) ? ' · 当前草稿' : ''}
                                 {extraction.origin === 'page_reparse' ? ` · 补提第 ${extraction.reparsePage || '-'} 页` : ''}
-                                {` · ${extraction.source?.pageCount || 0} 页 / ${extraction.summary?.total ?? extraction.summary?.itemCount ?? '-'} 项 · ${extraction.engine?.ocrVersion || '旧版识别'} · ${historyTime(extraction.createdAt)}`}
+                                 {` · ${extraction.source?.pageCount || 0} 页 / ${extraction.summary?.total ?? extraction.summary?.itemCount ?? '-'} 项 · ${extraction.engine?.ocrVersion || '旧版识别'} · ${historyTime(extraction.createdAt)}`}
+                                 {reportEvidence?.identity && extraction.source?.originalEvidence?.identity ? ` · ${evidenceMatches(extraction.source.originalEvidence) ? '同原件' : '原件不一致'}` : ''}
                               </div>
                             )) : <div>当前报告尚无版本化 OCR 快照（历史报告会在下次重新识别后开始留痕）。</div>}
                             <div style={{ fontWeight: 700, color: '#365347', margin: '8px 0 3px' }}>审核发布版本（{history.revisions.length}）</div>
@@ -10672,7 +10696,8 @@ export default function PatientDetailPage() {
                                 <span>
                                   审核 V{revision.revisionNo}{String(ocrReviewReport.currentRevisionId || '') === String(revision._id) ? ' · 当前正式版本' : ''}
                                   {` · ${revision.status === 'published' ? '已发布' : '已被新版本替代'} · ${revision.review?.reviewerName || '审核人未记录'} · ${historyTime(revision.review?.reviewedAt || revision.review?.staffReviewedAt || revision.createdAt)}`}
-                                  {revision.source?.ocrVersion ? ` · 来源 ${revision.source.ocrVersion}${revision.source.extractionVersion ? ` / OCR V${revision.source.extractionVersion}` : ''}` : ''}
+                                   {revision.source?.ocrVersion ? ` · 来源 ${revision.source.ocrVersion}${revision.source.extractionVersion ? ` / OCR V${revision.source.extractionVersion}` : ''}` : ''}
+                                   {reportEvidence?.identity && revision.source?.originalEvidence?.identity ? ` · ${evidenceMatches(revision.source.originalEvidence) ? '同原件' : '原件不一致'}` : ''}
                                 </span>
                                 {(() => {
                                   const previous = history.revisions.filter(item => Number(item.revisionNo) < Number(revision.revisionNo)).sort((a, b) => Number(b.revisionNo) - Number(a.revisionNo))[0]

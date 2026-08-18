@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const MedicalReport = require('../src/models/MedicalReport');
 const ReportExtraction = require('../src/models/ReportExtraction');
 const ReportRevision = require('../src/models/ReportRevision');
-const { buildReportSourceFiles, reportHasOriginal } = require('../src/utils/reportOriginalEvidence');
+const { buildReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../src/utils/reportOriginalEvidence');
 
 const fileEvidence = {
   ossKey: 'reports/original.pdf',
@@ -59,4 +59,40 @@ test('report preview rotation is display metadata with a bounded quarter-turn va
   const invalid = new MedicalReport({ user: new mongoose.Types.ObjectId(), title: '图片报告', displayRotation: 45 });
   assert.equal(valid.validateSync(), undefined);
   assert.match(invalid.validateSync().errors.displayRotation.message, /not a valid enum value/);
+});
+
+test('staff audit receives comparable fingerprints without OSS object paths', () => {
+  const current = summarizeReportOriginalEvidence([fileEvidence]);
+  const extraction = summarizeReportOriginalEvidence([fileEvidence]);
+  const legacy = summarizeReportOriginalEvidence([], ['reports/legacy.pdf']);
+  assert.equal(current.status, 'verified');
+  assert.deepEqual(current.fingerprints, [fileEvidence.sha256.slice(0, 12)]);
+  assert.equal(current.identity, extraction.identity);
+  assert.equal(legacy.status, 'legacy');
+  assert.equal(legacy.fingerprints.length, 0);
+  assert.equal(JSON.stringify(current).includes(fileEvidence.ossKey), false);
+});
+
+test('original consistency comparison fails closed for a different or missing OCR source', () => {
+  const same = compareReportOriginalEvidence([fileEvidence], [fileEvidence]);
+  const changed = compareReportOriginalEvidence([fileEvidence], [{ ...fileEvidence, sha256: 'f'.repeat(64) }]);
+  const missing = compareReportOriginalEvidence([fileEvidence], []);
+  assert.equal(same.comparable, true);
+  assert.equal(same.same, true);
+  assert.equal(changed.same, false);
+  assert.equal(missing.comparable, false);
+  assert.equal(missing.same, false);
+});
+
+test('version audit response exposes fingerprints but not OSS paths or source manifests', () => {
+  const safe = toSafeVersionOriginalEvidence({
+    version: 2,
+    source: { ossKeys: [fileEvidence.ossKey], files: [fileEvidence], pageCount: 28 },
+  });
+  assert.equal(safe.version, 2);
+  assert.equal(safe.source.pageCount, 28);
+  assert.equal(safe.source.originalEvidence.status, 'verified');
+  assert.equal('files' in safe.source, false);
+  assert.equal('ossKeys' in safe.source, false);
+  assert.equal(JSON.stringify(safe).includes(fileEvidence.ossKey), false);
 });

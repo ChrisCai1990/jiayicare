@@ -29,4 +29,50 @@ function reportHasOriginal(report) {
   );
 }
 
-module.exports = { buildReportSourceFiles, reportHasOriginal };
+function summarizeReportOriginalEvidence(files, fallbackOssKeys = []) {
+  const normalized = buildReportSourceFiles(files);
+  const hashes = normalized.map(file => file.sha256).filter(Boolean);
+  const fallbackKeys = (Array.isArray(fallbackOssKeys) ? fallbackOssKeys : []).map(String).filter(Boolean);
+  const identityParts = hashes.length === normalized.length && hashes.length
+    ? hashes
+    : fallbackKeys;
+  return {
+    fileCount: normalized.length || fallbackKeys.length,
+    verifiedCount: hashes.length,
+    status: normalized.length && hashes.length === normalized.length ? 'verified' : (hashes.length ? 'partial' : 'legacy'),
+    fingerprints: hashes.map(hash => hash.slice(0, 12)),
+    identity: identityParts.length
+      ? crypto.createHash('sha256').update(JSON.stringify(identityParts)).digest('hex')
+      : '',
+  };
+}
+
+function compareReportOriginalEvidence(leftFiles, rightFiles, leftFallbackKeys = [], rightFallbackKeys = []) {
+  const left = summarizeReportOriginalEvidence(leftFiles, leftFallbackKeys);
+  const right = summarizeReportOriginalEvidence(rightFiles, rightFallbackKeys);
+  return {
+    left,
+    right,
+    comparable: Boolean(left.identity && right.identity),
+    same: Boolean(left.identity && right.identity && left.identity === right.identity),
+  };
+}
+
+function toSafeVersionOriginalEvidence(value) {
+  const obj = value?.toObject ? value.toObject() : { ...(value || {}) };
+  const source = { ...(obj.source || {}) };
+  source.originalEvidence = summarizeReportOriginalEvidence(source.files, source.ossKeys);
+  delete source.files;
+  delete source.ossKeys;
+  obj.source = source;
+  return obj;
+}
+
+module.exports = {
+  buildReportSourceFiles,
+  reportHasOriginal,
+  summarizeReportOriginalEvidence,
+  compareReportOriginalEvidence,
+  toSafeVersionOriginalEvidence,
+};
+const crypto = require('crypto');
