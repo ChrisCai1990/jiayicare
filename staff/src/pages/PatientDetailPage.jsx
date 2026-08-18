@@ -1686,6 +1686,7 @@ export default function PatientDetailPage() {
   const [ocrRevisionDiffLoading, setOcrRevisionDiffLoading] = useState(false)
   const [ocrExtractionDiff, setOcrExtractionDiff] = useState(null)
   const [ocrExtractionDiffLoading, setOcrExtractionDiffLoading] = useState(false)
+  const [ocrCoverageAcknowledged, setOcrCoverageAcknowledged] = useState(false)
   const [ocrCandidateSelections, setOcrCandidateSelections] = useState({})
   const [ocrCandidateBusy, setOcrCandidateBusy] = useState(null)
   const [ocrReviewFilter, setOcrReviewFilter] = useState('all') // v2 草稿默认仅看需核对；旧草稿完整展示
@@ -2564,6 +2565,7 @@ export default function PatientDetailPage() {
     setOcrVersionHistoryLoading(true)
     setOcrRevisionDiff(null)
     setOcrExtractionDiff(null)
+    setOcrCoverageAcknowledged(false)
     Promise.all([
       staffAPI.getReportExtractions(r._id),
       staffAPI.getReportRevisions(r._id),
@@ -2693,6 +2695,10 @@ export default function PatientDetailPage() {
 
   const handleApproveOCR = async () => {
     if (!ocrReviewReport) return
+    const coveragePages = (ocrExtractionDiff?.pageCoverage?.emptied || []).map(item => item.page)
+    if (coveragePages.length > 0 && !ocrCoverageAcknowledged) {
+      return toast(`请先确认已核对整页覆盖下降：P${coveragePages.join('、P')}`)
+    }
     const isScreeningMatched = it => it.matchStatus === 'matched' && (it.screeningKey || it.screeningKeys?.[0])
     const matchedCount = ocrEditItems.filter(isScreeningMatched).length
     const unresolvedCount = ocrEditItems.filter(it => !isScreeningMatched(it)).length
@@ -2708,6 +2714,7 @@ export default function PatientDetailPage() {
         aiStatus: 'reviewed',
         reviewAction: 'submit',
         reviewRequestId: ocrReviewRequestIdRef.current,
+        coverageAcknowledgedPages: coveragePages,
       })
       const candidateCount = Number(result.meta?.pendingScreeningCandidateCount || 0)
       toast(candidateCount > 0
@@ -10412,6 +10419,10 @@ export default function PatientDetailPage() {
                                 <div style={{ marginTop: 6 }}>这是识别版本差异提醒，不代表原报告项目真的增减；系统不会自动沿用旧版结果，请结合左侧原件复核。</div>
                                 {ocrExtractionDiff.pageCoverage?.emptied?.length > 0 && <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 5, background: '#FFFFFFB8', fontWeight: 700 }}>
                                   整页覆盖下降：{ocrExtractionDiff.pageCoverage.emptied.map(item => `P${item.page}（上一版 ${item.baselineCount} 项，本版 0 项）`).join('、')}。请先逐页核对或补提，再提交审核。
+                                  <label style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 600 }}>
+                                    <input type="checkbox" checked={ocrCoverageAcknowledged} onChange={event => setOcrCoverageAcknowledged(event.target.checked)} />
+                                    我已对照原件核对上述页面，确认继续使用当前识别版本
+                                  </label>
                                 </div>}
                                 {ocrExtractionDiff.highAttentionRemoved?.length > 0 && <div style={{ marginTop: 5, fontWeight: 700 }}>重点复核：{ocrExtractionDiff.highAttentionRemoved.slice(0, 8).map(item => `${item.name}${item.sourcePage ? `（P${item.sourcePage}）` : ''}`).join('、')}</div>}
                                 {(ocrExtractionDiff.removed || []).filter(item => !ocrExtractionDiff.highAttentionRemoved?.some(high => high.key === item.key)).slice(0, 8).map(item => <div key={`ocr-remove-${item.key}`} style={{ marginTop: 3 }}>本版未识别：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
@@ -10696,7 +10707,8 @@ export default function PatientDetailPage() {
                   {ocrSaving ? '保存中…' : '💾 保存草稿'}
                 </button>
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
-                  disabled={ocrSaving} onClick={handleApproveOCR}>
+                  disabled={ocrSaving || ((ocrExtractionDiff?.pageCoverage?.emptied?.length || 0) > 0 && !ocrCoverageAcknowledged)} onClick={handleApproveOCR}
+                  title={(ocrExtractionDiff?.pageCoverage?.emptied?.length || 0) > 0 && !ocrCoverageAcknowledged ? '请先确认已核对整页覆盖下降' : ''}>
                   {ocrSaving ? '保存中…' : '✓ 提交报告审核'}
                 </button>
                 <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}

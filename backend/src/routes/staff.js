@@ -76,7 +76,7 @@ const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIn
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
-const { compareReportExtractions } = require('../utils/reportExtractionDiff');
+const { compareReportExtractions, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -2456,6 +2456,30 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         return res.json({ success: true, data: report, meta: { pendingScreeningCandidateCount, deduplicatedReview: true } });
       }
     }
+    let coverageAcknowledgement = { requiredPages: [], missingPages: [], complete: true };
+    if (reviewAction === 'submit' && report.currentExtractionId) {
+      const currentExtraction = await ReportExtraction.findOne({ _id: report.currentExtractionId, reportId: report._id }).lean();
+      if (currentExtraction) {
+        const baselineExtraction = await ReportExtraction.findOne({
+          reportId: report._id,
+          version: { $lt: currentExtraction.version },
+        }).sort({ version: -1 }).lean();
+        if (baselineExtraction) {
+          const extractionDiff = compareReportExtractions(currentExtraction, baselineExtraction);
+          if (extractionDiff.sameSource) {
+            coverageAcknowledgement = validateCoverageAcknowledgement(extractionDiff, req.body?.coverageAcknowledgedPages);
+            if (!coverageAcknowledgement.complete) {
+              return res.status(409).json({
+                success: false,
+                code: 'OCR_PAGE_COVERAGE_ACK_REQUIRED',
+                message: `请先核对整页识别覆盖下降：P${coverageAcknowledgement.missingPages.join('、P')}`,
+                pages: coverageAcknowledgement.missingPages,
+              });
+            }
+          }
+        }
+      }
+    }
     let formalReviewContext = null;
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
     if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
@@ -2559,6 +2583,7 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         classifiedCount: reviewedItems.filter(item => item.matchStatus === 'matched' && (item.screeningKey || item.screeningKeys?.[0])).length,
         unclassifiedCount: reviewedItems.filter(item => !(item.matchStatus === 'matched' && (item.screeningKey || item.screeningKeys?.[0]))).length,
         ocrVersion: report.ocrVersion || '',
+        coverageAcknowledgedPages: coverageAcknowledgement.requiredPages,
       };
       const actor = {
         id: String(req.staff._id),

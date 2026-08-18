@@ -125,4 +125,12 @@ function compareReportExtractions(current, baseline, fields = DEFAULT_FIELDS) {
   };
 }
 
-module.exports = { compareReportExtractions, sameOriginalSource, comparePageCoverage };
+function validateCoverageAcknowledgement(diff, acknowledgedPages = []) {
+  const requiredPages = (diff?.pageCoverage?.emptied || []).map(item => Number(item.page)).filter(Number.isInteger);
+  const acknowledged = new Set((Array.isArray(acknowledgedPages) ? acknowledgedPages : [])
+    .map(Number).filter(page => Number.isInteger(page) && page > 0));
+  const missingPages = requiredPages.filter(page => !acknowledged.has(page));
+  return { requiredPages, missingPages, complete: missingPages.length === 0 };
+}
+
+module.exports = { compareReportExtractions, sameOriginalSource, comparePageCoverage, validateCoverageAcknowledgement };

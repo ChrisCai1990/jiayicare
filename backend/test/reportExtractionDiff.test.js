@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { compareReportExtractions, comparePageCoverage } = require('../src/utils/reportExtractionDiff');
+const { compareReportExtractions, comparePageCoverage, validateCoverageAcknowledgement } = require('../src/utils/reportExtractionDiff');
 
 const extraction = (version, items, ossKeys = ['reports-test/source.pdf']) => ({
   version,
@@ -74,4 +74,14 @@ test('highlights pages that changed from populated to empty', () => {
     { page: 16, baselineCount: 1, currentCount: 0 },
   ]);
   assert.deepEqual(result.newlyPopulated, []);
+});
+
+test('requires explicit acknowledgement for every emptied page', () => {
+  const diff = { pageCoverage: { emptied: [{ page: 14 }, { page: 16 }, { page: 17 }] } };
+  assert.deepEqual(validateCoverageAcknowledgement(diff, [14, 17]), {
+    requiredPages: [14, 16, 17],
+    missingPages: [16],
+    complete: false,
+  });
+  assert.equal(validateCoverageAcknowledgement(diff, [14, 16, 17]).complete, true);
 });
