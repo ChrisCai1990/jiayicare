@@ -621,26 +621,28 @@ router.post('/', auth, async (req, res) => {
     let ossKeys = Array.isArray(suppliedOssKeys) ? suppliedOssKeys.filter(Boolean) : [];
     let fileUrls = Array.isArray(suppliedFileUrls) ? suppliedFileUrls.filter(Boolean) : [];
     if (!fileUrl && fileUrls.length) fileUrl = fileUrls[0];
+    if (ossKeys.length) ossKey = ossKeys[0];
     let storedContent = '';
     let effectiveMimeType = mimeType || '';
-    if (contentList.length && process.env.OSS_ACCESS_KEY_ID) {
+    if (contentList.length) {
+      if (!process.env.OSS_ACCESS_KEY_ID) {
+        return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });
+      }
+      const uploadedKeys = [];
       try {
         for (const c of contentList) {
           const result = await uploadBase64(c, mimeType || 'image/jpeg');
           fileUrls.push(result.url);
           ossKeys.push(result.key);
+          uploadedKeys.push(result.key);
           effectiveMimeType = result.mimeType || effectiveMimeType; // HEIC等会被转成JPEG，字段需跟实际文件保持一致
         }
         fileUrl = fileUrls[0];
         ossKey = ossKeys[0];
       } catch (ossErr) {
-        // OSS 上传失败降级：存首张 base64（限10MB），多图场景下降级只保留第一张，避免整单失败
-        storedContent = contentList[0] && contentList[0].length < 10 * 1024 * 1024 ? contentList[0] : '';
-        fileUrls = [];
-        ossKeys = [];
+        await Promise.all(uploadedKeys.map(key => deleteFile(key)));
+        return res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });
       }
-    } else if (contentList.length) {
-      storedContent = contentList[0] && contentList[0].length < 10 * 1024 * 1024 ? contentList[0] : '';
     }
 
     const year = reportYear || (date ? new Date(date).getFullYear() : new Date().getFullYear());

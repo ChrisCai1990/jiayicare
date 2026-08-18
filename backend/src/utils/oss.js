@@ -27,19 +27,28 @@ async function convertHeicBase64IfNeeded(base64Data, mimeType) {
   return { content: `data:${newMime};base64,${buffer.toString('base64')}`, mimeType: newMime };
 }
 
-// 上传 base64 内容到 OSS，返回公开访问 URL
-async function uploadBase64(base64Data, mimeType, folder = 'reports') {
-  const client = getClient();
-
-  const raw = base64Data.replace(/^data:[^;]+;base64,/, '');
-  const rawBuffer = Buffer.from(raw, 'base64');
-  const { buffer, mimeType: effectiveMime } = await convertHeicBufferIfNeeded(rawBuffer, mimeType);
-
-  const ext = effectiveMime === 'application/pdf' ? 'pdf'
-    : effectiveMime === 'image/png' ? 'png'
-    : effectiveMime === 'image/jpeg' || effectiveMime === 'image/jpg' ? 'jpg'
-    : effectiveMime === 'audio/mpeg' ? 'mp3'
+function extensionForMime(mimeType) {
+  return mimeType === 'application/pdf' ? 'pdf'
+    : mimeType === 'image/png' ? 'png'
+    : mimeType === 'image/jpeg' || mimeType === 'image/jpg' ? 'jpg'
+    : mimeType === 'image/gif' ? 'gif'
+    : mimeType === 'image/webp' ? 'webp'
+    : mimeType === 'audio/mpeg' ? 'mp3'
     : 'bin';
+}
+
+function assertConfigured() {
+  const required = ['OSS_REGION', 'OSS_ACCESS_KEY_ID', 'OSS_ACCESS_KEY_SECRET', 'OSS_BUCKET'];
+  const missing = required.filter(key => !process.env[key]);
+  if (missing.length) throw new Error('文件存储未配置完整');
+}
+
+// 上传 Buffer 到 OSS，所有新的医疗原件上传入口共用此方法。
+async function uploadBuffer(rawBuffer, mimeType, folder = 'reports') {
+  const client = getClient();
+  const { buffer, mimeType: effectiveMime } = await convertHeicBufferIfNeeded(rawBuffer, mimeType);
+  const ext = effectiveMime === 'application/pdf' ? 'pdf'
+    : extensionForMime(effectiveMime);
 
   const key = `${folder}/${uuidv4()}.${ext}`;
   await client.put(key, buffer, { mime: effectiveMime });
@@ -50,7 +59,14 @@ async function uploadBase64(base64Data, mimeType, folder = 'reports') {
   return { url, key, mimeType: effectiveMime };
 }
 
+// 上传 base64 内容到 OSS，保留为旧上传接口的兼容层。
+async function uploadBase64(base64Data, mimeType, folder = 'reports') {
+  const raw = base64Data.replace(/^data:[^;]+;base64,/, '');
+  return uploadBuffer(Buffer.from(raw, 'base64'), mimeType, folder);
+}
+
 function getClient() {
+  assertConfigured();
   return new OSS({
     region: process.env.OSS_REGION,
     accessKeyId: process.env.OSS_ACCESS_KEY_ID,
@@ -76,4 +92,4 @@ function urlToKey(url) {
   return match ? match[1] : null;
 }
 
-module.exports = { uploadBase64, deleteFile, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, urlToKey, convertHeicBase64IfNeeded };

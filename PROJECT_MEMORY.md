@@ -1,5 +1,11 @@
 # JiayiCare 项目记忆
 
+## 2026-08-18：健康原件 OSS 收口
+
+- 医护端体检报告、专项筛查、服务记录附件改为内存直传 OSS，不再写入 ECS `uploads/`；关联对象路径保存到 `MedicalReport.ossKey/ossKeys` 和 `ServiceRecord.attachments[].ossKey`，删除对应业务记录时清理对象。
+- 快速 OCR 与完整 OCR 同时兼容 OSS URL 及历史 `/uploads/`；PDF 仅在系统临时目录渲染，不进入业务存储。用户端新的 base64 报告不再在 OSS 失败时降级写入 MongoDB，失败会清理已上传对象并提示重试。
+- 历史 `uploads/` 暂不迁移；迁移前先完成 Mongo 引用、本地文件和容量的只读对账。
+
 更新时间：2026-07-15
 
 ## 权威入口

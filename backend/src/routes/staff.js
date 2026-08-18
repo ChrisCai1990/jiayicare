@@ -71,6 +71,7 @@ const {
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
+const { uploadBuffer, deleteFile } = require('../utils/oss');
 const router = express.Router();
 
 // ── 图片上传（multer） ─────────────────────────────────────────
@@ -94,17 +95,8 @@ const upload = multer({
 
 // 专项筛查文件上传（图片 + PDF，最大 20MB）
 const uploadScreening = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      const dir = path.join(UPLOADS_DIR, 'screening');
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-      cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
-    },
-  }),
+  // 医疗筛查原件不落地服务器 uploads，由内存直传私有 OSS。
+  storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
@@ -112,6 +104,20 @@ const uploadScreening = multer({
     else cb(new Error('只支持图片（JPG/PNG）或 PDF 文件'));
   },
 });
+
+async function uploadHealthFiles(files, folder) {
+  const uploaded = [];
+  try {
+    for (const file of files || []) {
+      const result = await uploadBuffer(file.buffer, file.mimetype, folder);
+      uploaded.push(result);
+    }
+    return uploaded;
+  } catch (err) {
+    await Promise.all(uploaded.map(file => deleteFile(file.key)));
+    throw err;
+  }
+}
 
 // 医护端角色标签
 const ROLE_LABEL = {
@@ -1853,11 +1859,13 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
 // POST /api/staff/medical-reports — 上传报告（Base64）
 router.post('/medical-reports', staffAuth, async (req, res) => {
   try {
-    const { patientId, title, type, hospital, date, fileUrl, fileUrls, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
+    const { patientId, title, type, hospital, date, fileUrl, fileUrls, ossKey, ossKeys, content, mimeType, fileSize, planId, planItemId, screeningL1, screeningL2 } = req.body;
     if (!patientId || !title) return res.status(400).json({ success: false, message: '会员和标题不能为空' });
     // fileUrls（一份报告多张照片场景）优先，fileUrl 仍取第一个做兼容，不破坏现有单文件读取逻辑
     const resolvedFileUrls = Array.isArray(fileUrls) && fileUrls.length ? fileUrls : (fileUrl ? [fileUrl] : []);
     const resolvedFileUrl = resolvedFileUrls[0] || '';
+    const resolvedOssKeys = Array.isArray(ossKeys) && ossKeys.length ? ossKeys.filter(Boolean) : (ossKey ? [ossKey] : []);
+    const resolvedOssKey = resolvedOssKeys[0] || '';
 
     // base64 内容限制（约 7MB 原始文件 → 9.3MB base64）
     if (content && content.length > 10 * 1024 * 1024) {
@@ -1907,6 +1915,8 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
         if (resolvedFileUrl) {
           existing.fileUrl = resolvedFileUrl;
           existing.fileUrls = resolvedFileUrls;
+          existing.ossKey = resolvedOssKey;
+          existing.ossKeys = resolvedOssKeys;
           existing.content = effectiveContent;
           existing.mimeType = effectiveMimeType;
           existing.fileSize = fileSize || '';
@@ -1930,7 +1940,7 @@ router.post('/medical-reports', staffAuth, async (req, res) => {
     report = await MedicalReport.create({
       user: patientId, title, type: type || 'other', hospital: hospital || '',
       date: checkDate, checkDate, reportYear,
-      fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, content: effectiveContent,
+      fileUrl: resolvedFileUrl, fileUrls: resolvedFileUrls, ossKey: resolvedOssKey, ossKeys: resolvedOssKeys, content: effectiveContent,
       mimeType: effectiveMimeType, fileSize: fileSize || '',
       uploadedBy: req.staff._id, audit_status: 'unaudited',
       planId: planId || null, planItemId: planItemId || null,
@@ -1986,7 +1996,7 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, mimeType, fileSize, editSource } = req.body;
+    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource } = req.body;
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
     if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
@@ -2081,6 +2091,10 @@ router.patch('/medical-reports/:id', staffAuth, async (req, res) => {
       if (content && content.length > 10 * 1024 * 1024) return res.status(400).json({ success: false, message: '文件过大，最大约7MB' });
       report.content = content;
     }
+    if (fileUrl !== undefined) report.fileUrl = fileUrl;
+    if (fileUrls !== undefined) report.fileUrls = Array.isArray(fileUrls) ? fileUrls.filter(Boolean) : [];
+    if (ossKey !== undefined) report.ossKey = ossKey;
+    if (ossKeys !== undefined) report.ossKeys = Array.isArray(ossKeys) ? ossKeys.filter(Boolean) : [];
     if (mimeType !== undefined) report.mimeType = mimeType;
     if (fileSize !== undefined) report.fileSize = fileSize;
     await report.save();
@@ -2127,7 +2141,9 @@ router.delete('/medical-reports/:id', staffAuth, checkPermission('reports', 'del
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     if (report.audit_status === 'audited') return res.status(403).json({ success: false, message: '已审核通过的报告不可删除' });
+    const keysToDelete = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
     await report.deleteOne();
+    await Promise.all(keysToDelete.map(key => deleteFile(key)));
     // 级联清理：UserScreeningItem 里 reportId 指向这份报告的记录也要一并删除，
     // 否则报告本体没了但专项筛查索引还留着，页面上会出现一条内容空白、无法展开的孤儿记录
     // （2026-07-03 潘孝银"心脏超声"重复上传后删除旧报告，残留孤儿记录复现过一次）
@@ -2308,17 +2324,8 @@ router.post('/upload/image', staffAuth, upload.single('image'), (req, res) => {
 
 // 报告文件上传（图片 + PDF，最大 100MB）
 const uploadReportFile = multer({
-  storage: multer.diskStorage({
-    destination: (req, file, cb) => {
-      const dir = path.join(UPLOADS_DIR, 'reports');
-      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-      cb(null, dir);
-    },
-    filename: (req, file, cb) => {
-      const ext = path.extname(file.originalname).toLowerCase() || '.bin';
-      cb(null, `${Date.now()}_${Math.random().toString(36).slice(2)}${ext}`);
-    },
-  }),
+  // 体检报告、服务记录附件统一从内存直传 OSS，避免再写入 ECS 本地磁盘。
+  storage: multer.memoryStorage(),
   limits: { fileSize: 100 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowed = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
@@ -2328,10 +2335,15 @@ const uploadReportFile = multer({
 });
 
 // POST /api/staff/upload/report-file
-router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), (req, res) => {
+router.post('/upload/report-file', staffAuth, uploadReportFile.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ success: false, message: '未收到文件' });
-  const url = `/api/uploads/reports/${req.file.filename}`;
-  res.json({ success: true, data: { url, mimeType: req.file.mimetype, fileSize: req.file.size } });
+  try {
+    const result = await uploadBuffer(req.file.buffer, req.file.mimetype, 'reports');
+    res.json({ success: true, data: { url: result.url, ossKey: result.key, mimeType: result.mimeType, fileSize: req.file.size } });
+  } catch (err) {
+    console.error('[staff-report-upload] failed', { staffId: String(req.staff?._id || ''), message: err.message });
+    res.status(503).json({ success: false, message: '报告存储失败，请稍后重试' });
+  }
 });
 
 // 只提取"检查机构"+"检查日期"两个字段的精简prompt，供上传报告时自动回填表单用——
@@ -2351,21 +2363,17 @@ router.post('/upload/quick-meta', staffAuth, async (req, res) => {
     if (!process.env.QWEN_API_KEY) return res.json({ success: true, data: { institution: '', checkDate: '' } });
 
     const { parseImage } = require('../utils/ai');
-    const { renderSinglePage } = require('../utils/pdf');
-    const marker = '/uploads/';
-    const i = url.indexOf(marker);
-    const rel = i >= 0 ? url.slice(i + marker.length) : url.split('/').pop();
-    const fpath = path.join(UPLOADS_DIR, rel);
-    if (!fs.existsSync(fpath)) return res.status(404).json({ success: false, message: '文件不存在' });
+    const { renderSinglePage, fetchReportBuffer } = require('../utils/pdf');
+    // 新文件为 OSS URL，历史文件仍可从 /uploads/ 读取。统一取二进制内容传给 OCR，不依赖本地磁盘或公开链接。
+    const buf = await fetchReportBuffer({ fileUrl: url }, UPLOADS_DIR);
 
     let text;
     if (mimeType === 'application/pdf') {
-      const buf = fs.readFileSync(fpath);
       const img = await renderSinglePage(buf, 1, 96); // 机构/日期通常在首页页眉，只转第一页足够
       if (!img) return res.json({ success: true, data: { institution: '', checkDate: '' } });
       text = await parseImage(img, QUICK_META_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 200 });
     } else {
-      text = await parseImage(`${req.protocol}://${req.get('host')}${url}`, QUICK_META_PROMPT, { isUrl: true, model: 'qwen-vl-plus', maxTokens: 200 });
+      text = await parseImage(`data:${mimeType || 'image/jpeg'};base64,${buf.toString('base64')}`, QUICK_META_PROMPT, { isUrl: false, model: 'qwen-vl-plus', maxTokens: 200 });
     }
     const parsed = safeParseJSON(text) || {};
     res.json({ success: true, data: { institution: sanitizeInstitution(parsed.institution) || '', checkDate: parsed.checkDate || '' } });
@@ -2595,6 +2603,11 @@ router.post('/service-records', staffAuth, checkPermission('service_records', 'c
 router.put('/service-records/:id', staffAuth, checkPermission('service_records', 'edit'), async (req, res) => {
   const record = await ServiceRecord.findOne({ _id: req.params.id, staffId: req.staff._id });
   if (!record) return res.status(404).json({ success: false, message: '记录不存在' });
+  if (Array.isArray(req.body.attachments)) {
+    const nextKeys = new Set(req.body.attachments.map(item => item?.ossKey).filter(Boolean));
+    const removedKeys = (record.attachments || []).map(item => item.ossKey).filter(key => key && !nextKeys.has(key));
+    await Promise.all(removedKeys.map(key => deleteFile(key)));
+  }
   const allowed = ['date', 'title', 'content', 'result', 'nextDate', 'diseaseName', 'medicalEscort', 'tcmRecord', 'specialistRecord', 'attachments'];
   allowed.forEach(k => { if (req.body[k] !== undefined) record[k] = req.body[k]; });
   await record.save();
@@ -2646,7 +2659,8 @@ router.delete('/service-records/:id/supplement/:suppId', staffAuth, checkPermiss
 
 // DELETE /api/staff/service-records/:id
 router.delete('/service-records/:id', staffAuth, checkPermission('service_records', 'delete'), async (req, res) => {
-  await ServiceRecord.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
+  const record = await ServiceRecord.findOneAndDelete({ _id: req.params.id, staffId: req.staff._id });
+  await Promise.all((record?.attachments || []).map(item => item.ossKey).filter(Boolean).map(key => deleteFile(key)));
   res.json({ success: true, message: '已删除' });
 });
 
@@ -6820,10 +6834,11 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
     if (!resolvedTitle) {
       return res.status(400).json({ success: false, message: '请选择筛查分类' });
     }
-    const uploadedFiles = req.files || [];
-    const fileUrls = uploadedFiles.map(f => `/api/uploads/screening/${f.filename}`);
+    const uploadedFiles = await uploadHealthFiles(req.files || [], 'screening');
+    const fileUrls = uploadedFiles.map(file => file.url);
+    const ossKeys = uploadedFiles.map(file => file.key);
     const fileUrl  = fileUrls[0] || '';
-    const mimeType = uploadedFiles[0] ? uploadedFiles[0].mimetype : '';
+    const mimeType = uploadedFiles[0] ? uploadedFiles[0].mimeType : '';
     // 前端已明确传 reportItems，直接使用（不再从 screeningL3Items 兜底）
     const finalReportItems = reportItems;
     // screeningCategory/type 只接受固定 enum，L1 ObjectId 不合法，统一存 'other'
@@ -6845,7 +6860,7 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
       if (examConclusion)     existing.examConclusion    = examConclusion;
       if (hospital)           existing.hospital          = hospital;
       if (note)               existing.note              = note;
-      if (fileUrl)            { existing.fileUrl = fileUrl; existing.fileUrls = fileUrls; existing.mimeType = mimeType; }
+      if (fileUrl)            { existing.fileUrl = fileUrl; existing.fileUrls = fileUrls; existing.ossKey = ossKeys[0] || ''; existing.ossKeys = ossKeys; existing.mimeType = mimeType; }
       report = await existing.save();
     } else {
       report = await MedicalReport.create({
@@ -6865,6 +6880,8 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
         note:             note || '',
         fileUrl,
         fileUrls,
+        ossKey:           ossKeys[0] || '',
+        ossKeys,
         mimeType,
         audit_status:     'unaudited',
         uploadedBy:       req.staff._id,
@@ -6889,6 +6906,8 @@ router.delete('/patients/:id/screening-records/:rid', staffAuth, async (req, res
   try {
     const report = await MedicalReport.findOneAndDelete({ _id: req.params.rid, user: req.params.id });
     if (!report) return res.status(404).json({ success: false, message: '记录不存在' });
+    const keysToDelete = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    await Promise.all(keysToDelete.map(key => deleteFile(key)));
     res.json({ success: true, message: '已删除' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -6914,13 +6933,18 @@ router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.
     if (reportItems)      update.reportItems = reportItems;
     if (screeningL3Items) update.screeningL3Items = screeningL3Items;
     if (req.files && req.files.length > 0) {
-      const newUrls = req.files.map(f => `/api/uploads/screening/${f.filename}`);
+      const uploadedFiles = await uploadHealthFiles(req.files, 'screening');
+      const newUrls = uploadedFiles.map(file => file.url);
+      const newOssKeys = uploadedFiles.map(file => file.key);
       // 追加到已有文件列表
-      const existing = await MedicalReport.findById(req.params.rid).select('fileUrls fileUrl');
+      const existing = await MedicalReport.findById(req.params.rid).select('fileUrls fileUrl ossKeys ossKey');
       const existingUrls = existing?.fileUrls?.length ? existing.fileUrls : (existing?.fileUrl ? [existing.fileUrl] : []);
+      const existingOssKeys = existing?.ossKeys?.length ? existing.ossKeys : (existing?.ossKey ? [existing.ossKey] : []);
       update.fileUrls = [...existingUrls, ...newUrls];
+      update.ossKeys = [...existingOssKeys, ...newOssKeys];
       update.fileUrl  = update.fileUrls[0];
-      update.mimeType = req.files[0].mimetype;
+      update.ossKey = update.ossKeys[0] || '';
+      update.mimeType = uploadedFiles[0].mimeType;
     }
     const report = await MedicalReport.findOneAndUpdate({ _id: req.params.rid, user: req.params.id }, { $set: update }, { new: true });
     if (!report) return res.status(404).json({ success: false, message: '记录不存在' });

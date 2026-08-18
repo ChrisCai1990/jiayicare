@@ -9907,9 +9907,9 @@ export default function PatientDetailPage() {
                             const file = e.target.files[0]
                             if (!file) return
                             try {
-                              const { url, mimeType, fileSize } = await staffAPI.uploadReportFile(file, () => {})
+                              const { url, ossKey, mimeType, fileSize } = await staffAPI.uploadReportFile(file, () => {})
                               const updated = await staffAPI.updateReport(showReportDetail._id, {
-                                fileUrl: url, mimeType, fileSize: String(fileSize), content: ''
+                                fileUrl: url, fileUrls: [url], ossKey, ossKeys: ossKey ? [ossKey] : [], mimeType, fileSize: String(fileSize), content: ''
                               })
                               setShowReportDetail(updated.data)
                               toast('文件已上传')
@@ -10534,7 +10534,7 @@ export default function PatientDetailPage() {
             try {
               for (const f of files) {
                 const res = await staffAPI.uploadReportFile(f, () => {})
-                setEditAttachments(prev => [...prev, { url: res.url, name: f.name, mimeType: res.mimeType, fileSize: String(res.fileSize || '') }])
+                setEditAttachments(prev => [...prev, { url: res.url, ossKey: res.ossKey || '', name: f.name, mimeType: res.mimeType, fileSize: String(res.fileSize || '') }])
               }
             } catch (err) { toast(err.message || '附件上传失败') }
             finally { setAttachUploading(false) }
@@ -11176,7 +11176,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
       setMetaDetecting(true)
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
-        preUploadedRef.current = { file: files[0], url: uploaded.url, mimeType: uploaded.mimeType, fileSize: uploaded.fileSize }
+        preUploadedRef.current = { file: files[0], url: uploaded.url, ossKey: uploaded.ossKey || '', mimeType: uploaded.mimeType, fileSize: uploaded.fileSize }
         const meta = await staffAPI.quickMetaFromReportFile(uploaded.url, uploaded.mimeType)
         setForm(f => ({
           ...f,
@@ -11198,12 +11198,14 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         // 合并模式：全部文件先各自上传拿到url，最后只建一条报告记录、fileUrls存全部url，
         // AI解析时会把这些图片一次性传给模型合并识别（详见后端 runReportParse）
         const urls = []
+        const ossKeys = []
         let mimeType = '', totalSize = 0
         for (let i = 0; i < total; i++) {
           const fd = fileDatas[i]
           setUploadStep(`上传第 ${i + 1}/${total} 个文件...`)
           const res = await staffAPI.uploadReportFile(fd.file, (p) => setUploadProgress(Math.round(((i + p) / total) * 90)))
           urls.push(res.url)
+          if (res.ossKey) ossKeys.push(res.ossKey)
           mimeType = mimeType || res.mimeType
           totalSize += Number(res.fileSize) || 0
         }
@@ -11218,6 +11220,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           note: form.note,
           fileUrl: urls[0],
           fileUrls: urls,
+          ossKey: ossKeys[0] || '',
+          ossKeys,
           mimeType,
           fileSize: String(totalSize),
         })
@@ -11228,13 +11232,13 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           // 单文件且已在选择时预上传过（用于自动识别机构/日期），直接复用那次的URL，
           // 避免同一个文件重复上传一遍浪费流量和等待时间
           const cached = (total === 1 && preUploadedRef.current?.file === fd.file) ? preUploadedRef.current : null
-          let url, mimeType, fileSize
+          let url, ossKey, mimeType, fileSize
           if (cached) {
-            ({ url, mimeType, fileSize } = cached)
+            ({ url, ossKey, mimeType, fileSize } = cached)
             setUploadProgress(90)
           } else {
             setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
-            ;({ url, mimeType, fileSize } = await staffAPI.uploadReportFile(
+            ;({ url, ossKey, mimeType, fileSize } = await staffAPI.uploadReportFile(
               fd.file,
               (p) => setUploadProgress(Math.round(((i + p) / total) * 90))
             ))
@@ -11249,6 +11253,9 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
             date: form.date,
             note: form.note,
             fileUrl: url,
+            fileUrls: [url],
+            ossKey: ossKey || '',
+            ossKeys: ossKey ? [ossKey] : [],
             mimeType,
             fileSize: String(fileSize),
           })

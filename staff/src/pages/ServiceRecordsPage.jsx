@@ -575,7 +575,7 @@ function ServiceRecordModal({ patients, defaultType, onClose, onSaved }) {
     try {
       for (const f of files) {
         const res = await staffAPI.uploadReportFile(f, () => {})
-        setAttachments(prev => [...prev, { url: res.url, name: f.name, mimeType: res.mimeType, fileSize: String(res.fileSize || '') }])
+        setAttachments(prev => [...prev, { url: res.url, ossKey: res.ossKey || '', name: f.name, mimeType: res.mimeType, fileSize: String(res.fileSize || '') }])
       }
     } catch (err) { setError(err.message || '附件上传失败') }
     finally { setAttachUploading(false) }
