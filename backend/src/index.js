@@ -38,6 +38,7 @@ app.use(cors({
     callback(new Error(`CORS: origin ${origin} not allowed`));
   },
   credentials: true,
+  exposedHeaders: ['Accept-Ranges', 'Content-Length', 'Content-Range'],
 }));
 
 // 静态文件（上传图片/PDF）

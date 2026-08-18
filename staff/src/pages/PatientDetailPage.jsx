@@ -8,6 +8,8 @@ import AppIcon from '../components/AppIcon'
 import femalePortraitPhoto from '../assets/health-portrait-female.webp'
 import malePortraitPhoto from '../assets/health-portrait-male.webp'
 
+const PdfPagePreview = React.lazy(() => import('../components/PdfPagePreview'))
+
 const CHECKIN_LABEL = { diet: '饮食', exercise: '运动', sleep: '睡眠', alcohol: '烟酒', weight: '体重', bloodPressure: '血压', bloodSugar: '血糖', heartRate: '心率', water: '饮水' }
 const normalizeRiskTagValues = values => [...new Set((Array.isArray(values) ? values : [values])
   .flatMap(value => String(value || '').split(/[、,，;；\n]+/))
@@ -10295,7 +10297,9 @@ export default function PatientDetailPage() {
                           return isPdf ? (
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
-                              <iframe key={`report-pdf-${idx}-${activePage}`} src={`${s}#page=${activePage}`} data-pdf-page={activePage} title={`报告${idx + 1}`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                              <React.Suspense fallback={<div style={{ padding: 16, color: '#6B7A72', fontSize: 12 }}>正在准备 PDF 阅读器…</div>}>
+                                <PdfPagePreview src={s} pageNumber={activePage} />
+                              </React.Suspense>
                             </div>
                           ) : (
                             <div key={idx} style={{ marginBottom: 8 }}>
@@ -10318,9 +10322,9 @@ export default function PatientDetailPage() {
                       {isImg ? (
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
-                        /* 浏览器原生 PDF 阅读器通常不会响应同一 iframe 仅 hash 的变化；页码变化时重建 iframe，
-                           才能保证下拉、上一页/下一页和风险页快捷按钮都把左侧原件定位到同一页。 */
-                        <iframe key={`report-pdf-${activePage}`} src={`${src}#page=${activePage}`} data-pdf-page={activePage} title={`报告PDF第${activePage}页`} style={{ width: '100%', height: '74vh', border: 'none', borderRadius: 6, background: '#fff' }} />
+                        <React.Suspense fallback={<div style={{ padding: 16, color: '#6B7A72', fontSize: 12 }}>正在准备 PDF 阅读器…</div>}>
+                          <PdfPagePreview src={src} pageNumber={activePage} />
+                        </React.Suspense>
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
                       )}
