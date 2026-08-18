@@ -11,6 +11,8 @@ const PLAN_CHILDREN = [
   { label: '就医协助方案', type: 'medical_assist' },
 ]
 
+const IS_STAGING = String(import.meta.env.VITE_DEPLOYMENT_ENV || '').toLowerCase() === 'staging'
+
 // moduleKey: 对应 StaffRole 里的权限模块 key，无 key 表示所有人可见
 // roles: 无 customRoleId 时按内置角色过滤（空数组=全部可见）
 const ALL_NAV = [
@@ -87,7 +89,7 @@ export default function Layout() {
         <button className="mobile-menu-btn" onClick={() => setSidebarOpen(true)}>
           <span /><span /><span />
         </button>
-        <div className="mobile-header-title">嘉医汇</div>
+        <div className="mobile-header-title">嘉医汇{IS_STAGING ? ' · 预发布' : ''}</div>
         <div className="mobile-header-avatar">{initials}</div>
       </header>
 
@@ -101,6 +103,7 @@ export default function Layout() {
         <div className="sidebar-logo">
           <div className="sidebar-logo-title">嘉医汇</div>
           <div className="sidebar-logo-sub">做健康顾问行业领跑者</div>
+          {IS_STAGING && <div className="staging-sidebar-badge">STAGING · 预发布</div>}
         </div>
 
         <nav className="sidebar-nav">
@@ -190,6 +193,12 @@ export default function Layout() {
 
       {/* Main */}
       <main className="main-content">
+        {IS_STAGING && (
+          <div className="staging-environment-banner" role="status">
+            <strong>预发布测试环境</strong>
+            <span>这里的上传、OCR、审核和专项筛查数据不会进入生产环境</span>
+          </div>
+        )}
         <Outlet />
       </main>
     </div>

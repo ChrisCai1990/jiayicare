@@ -25,7 +25,7 @@ test('staging refuses production database, OSS prefix, public binding and schedu
   const valid = {
     DEPLOYMENT_ENV: 'staging',
     MONGODB_URI: 'mongodb://127.0.0.1:27017/jiayicare_staging',
-    REPORT_UPLOAD_FOLDER: 'reports-staging/ocr2',
+    REPORT_UPLOAD_FOLDER: 'reports-staging',
     DISABLE_SCHEDULERS: 'true',
     BIND_HOST: '127.0.0.1',
     PORT: '3100',
@@ -48,5 +48,5 @@ test('production rejects staging resources when formal environment flag is enabl
   };
   assert.equal(assertDeploymentEnvironment(valid).deploymentEnv, 'production');
   assert.throws(() => assertDeploymentEnvironment({ ...valid, MONGODB_URI: 'mongodb://127.0.0.1:27017/jiayicare_staging' }), /生产环境拒绝/);
-  assert.throws(() => assertDeploymentEnvironment({ ...valid, REPORT_UPLOAD_FOLDER: 'reports-staging/ocr2' }), /必须为 reports/);
+  assert.throws(() => assertDeploymentEnvironment({ ...valid, REPORT_UPLOAD_FOLDER: 'reports-staging' }), /必须为 reports/);
 });

@@ -6,13 +6,17 @@ JiayiCare 当前在同一台 ECS 上运行 production（生产）和 staging（�
 | --- | --- | --- |
 | 环境标识 | `DEPLOYMENT_ENV=production`（生产后续维护窗口启用；未启用前为兼容模式） | `DEPLOYMENT_ENV=staging` |
 | 代码目录 | `/var/www/jiayicare` | `/var/www/jiayicare-staging` |
-| Git 分支 | `master` | `staging/ocr-review-2.0` |
+| Git 分支 | `master` | `staging` |
 | 后端进程 | `jiayicare-backend`（后续维护窗口可改标准名） | `jiayicare-staging-backend` |
 | 医护端进程 | Nginx 正式站点 | `jiayicare-staging-staff` |
+| 管理端进程 | Nginx 正式站点 | `jiayicare-staging-admin` |
+| 用户 Web 进程 | Nginx 正式站点 | `jiayicare-staging-app` |
 | 后端端口 | `3000` | `127.0.0.1:3100` |
 | 医护端端口 | 正式域名 | `127.0.0.1:5174` |
+| 管理端端口 | 正式域名 | `127.0.0.1:5175` |
+| 用户 Web 端口 | 正式域名 | `127.0.0.1:8081` |
 | MongoDB 数据库 | `jiayicare` | `jiayicare_staging` |
-| 报告 OSS 前缀 | `reports/` | `reports-staging/ocr2/` |
+| 报告 OSS 前缀 | `reports/` | `reports-staging/` |
 | 定时任务 | 启用 | 必须禁用 |
 
 ## 强制边界
@@ -30,6 +34,7 @@ JiayiCare 当前在同一台 ECS 上运行 production（生产）和 staging（�
 ## 部署原则
 
 - staging 先验收，再决定是否合并并部署 production；两者不得共用工作目录。
+- staging 同时运行 Backend、Staff、Admin 和用户 Web 四个端口；小程序没有常驻 HTTP 端口，只生成独立 staging 构建包。
 - staging 可以复制最小必要的脱敏或指定测试数据，不做生产数据库持续同步。
 - staging 上传、OCR、审核、驳回和专项筛查投影只能写入 staging 数据库与 OSS 前缀。
 - 生产目录、生产进程名的标准化改名必须安排维护窗口，不能为了命名统一而无提示重启生产。

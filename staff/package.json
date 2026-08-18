@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --port 5174",
     "build": "vite build",
+    "build:staging": "vite build --mode staging",
     "preview": "vite preview --port 5174",
     "start": "npx serve dist -s -l $PORT"
   },

@@ -68,6 +68,10 @@ a { text-decoration: none; color: inherit; }
 .sidebar-logo { padding: 24px 20px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); }
 .sidebar-logo-title { font-size: 16px; font-weight: 700; color: #fff; letter-spacing: 0.5px; }
 .sidebar-logo-sub { font-size: 11px; color: rgba(255,255,255,0.45); margin-top: 3px; }
+.staging-sidebar-badge {
+  display: inline-flex; margin-top: 10px; padding: 3px 7px; border-radius: 5px;
+  background: #FFF1C7; color: #76540A; font-size: 10px; font-weight: 800; letter-spacing: 0.4px;
+}
 .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; min-height: 0; }
 .sidebar-section-label {
   font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.3);
@@ -101,6 +105,12 @@ a { text-decoration: none; color: inherit; }
 
 /* ── Main ──────────────────────────────────────────────── */
 .main-content { margin-left: 220px; flex: 1; min-height: 100vh; padding: 28px 28px 40px; overflow-x: hidden; min-width: 0; }
+.staging-environment-banner {
+  position: sticky; top: 0; z-index: 120; display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: -28px -28px 20px; padding: 7px 14px; border-bottom: 1px solid #E2BF65;
+  background: #FFF4CF; color: #664B13; font-size: 12px; box-shadow: 0 2px 7px rgba(85, 62, 12, 0.08);
+}
+.staging-environment-banner strong { font-size: 12px; }
 
 /* ── Page ──────────────────────────────────────────────── */
 .page { }
@@ -389,6 +399,7 @@ textarea.form-control { resize: vertical; }
     margin-left: 0;
     padding: 64px 12px 32px;
   }
+  .staging-environment-banner { margin: -12px -12px 16px; padding: 6px 10px; flex-direction: column; gap: 1px; text-align: center; }
 
   /* 页面头部堆叠 */
   .page-header { flex-direction: column; align-items: flex-start; gap: 10px; margin-bottom: 16px; }

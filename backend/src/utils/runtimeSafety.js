@@ -44,8 +44,8 @@ function assertDeploymentEnvironment(env = process.env) {
   if (databaseName !== 'jiayicare_staging') {
     throw new Error(`预发布环境拒绝连接数据库“${databaseName || '未指定'}”`);
   }
-  if (!reportUploadFolder.startsWith('reports-staging/')) {
-    throw new Error('预发布环境的 REPORT_UPLOAD_FOLDER 必须位于 reports-staging/ 下');
+  if (reportUploadFolder !== 'reports-staging' && !reportUploadFolder.startsWith('reports-staging/')) {
+    throw new Error('预发布环境的 REPORT_UPLOAD_FOLDER 必须为 reports-staging 或位于其下');
   }
   if (!areSchedulersDisabled(env)) {
     throw new Error('预发布环境必须设置 DISABLE_SCHEDULERS=true');
