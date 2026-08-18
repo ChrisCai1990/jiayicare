@@ -1676,6 +1676,7 @@ export default function PatientDetailPage() {
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
+  const [ocrReviewFilter, setOcrReviewFilter] = useState('all') // v2 草稿默认仅看需核对；旧草稿完整展示
   const [ocrFocusItemIndex, setOcrFocusItemIndex] = useState(null)
   const [ocrSaving, setOcrSaving] = useState(false)
   const [ocrClassifySearch, setOcrClassifySearch] = useState({}) // {[rowIndex]: searchText}
@@ -2538,6 +2539,7 @@ export default function PatientDetailPage() {
   const handleOpenOCRReview = (r, focusItems = []) => {
     ocrFocusHandledRef.current = null
     setOcrReviewReport(r)
+    setOcrReviewFilter(r.ocrVersion ? 'exceptions' : 'all')
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
     if (!r.content && !r.fileUrl && !(r.fileUrls && r.fileUrls.length)) {
@@ -10161,7 +10163,11 @@ export default function PatientDetailPage() {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
                   // 后端已经按报告页码和页内位置保存顺序；审核层只按该顺序展示，不再按类型重排。
                   const indexedAll = ocrEditItems.map((it, i) => ({ it, i }))
-                  const indexed = indexedAll.filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
+                  const pageItems = indexedAll.filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
+                  const needsReview = ({ it }) => !it.ocrVersion || it.reviewPriority !== 'auto' || (it.qualityFlags || []).length > 0
+                  const exceptionItems = pageItems.filter(needsReview)
+                  const indexed = ocrReviewFilter === 'exceptions' ? exceptionItems : pageItems
+                  const autoCount = pageItems.length - exceptionItems.length
                   // 影像/描述判定：标了 imaging，或数值是长文本（>40字，基本是诊断描述而非检验值）
                   const isImaging = (it) => it.itemType === 'imaging' || (it.value || '').length > 40
                   const labRows = indexed.filter(({ it }) => !isImaging(it))
@@ -10203,8 +10209,15 @@ export default function PatientDetailPage() {
 
                       {/* 严格按 reportItems 原序渲染，检验和检查不再拆区 */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                        <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>报告原序（{indexed.length} 项）</div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>报告原序（{indexed.length}/{pageItems.length} 项）</div>
+                          {ocrReviewReport.ocrVersion && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>OCR {ocrReviewReport.ocrVersion} · {autoCount} 项已通过规则校验，可按需展开复核</div>}
+                        </div>
                         <div style={{ display: 'flex', gap: 6 }}>
+                          {ocrReviewReport.ocrVersion && <>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setOcrReviewFilter('exceptions')} style={{ background: ocrReviewFilter === 'exceptions' ? '#FFF7E8' : undefined, color: ocrReviewFilter === 'exceptions' ? '#B45309' : undefined }}>需核对 {exceptionItems.length}</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setOcrReviewFilter('all')} style={{ background: ocrReviewFilter === 'all' ? '#EEF8F2' : undefined, color: ocrReviewFilter === 'all' ? '#1E6B50' : undefined }}>全部 {pageItems.length}</button>
+                          </>}
                           <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增检验项</button>
                           <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>
                         </div>
@@ -10220,6 +10233,9 @@ export default function PatientDetailPage() {
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
                                 {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
                               </div>
+                              {(it.qualityFlags || []).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
+                                {it.qualityFlags.map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', unclassified: '待归类', text_layer_unverified: '文字层待核对' })[flag] || flag}</span>)}
+                              </div>}
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                                 <div style={{ flex: 2 }}>
                                   {isImaging(it) && <div style={{ fontSize: 10, color: '#8AA89C', marginBottom: 2 }}>原报告项目</div>}

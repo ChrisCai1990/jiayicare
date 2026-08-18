@@ -33,6 +33,15 @@ const reportItemSchema = new mongoose.Schema({
   screeningParent:   { type: String, default: '' }, // 二级（如「肺癌」）
   matchStatus:       { type: String, enum: ['matched', 'unclassified'], default: 'unclassified' },
   matchConfidence:   { type: Number, default: 0 },   // 匹配置信度 0-1（最佳命中）
+  // OCR v2 质量层。matchConfidence 仅指分类匹配；以下字段用于识别可靠性和例外审核分流。
+  ocrVersion:        { type: String, default: '' },
+  ocrConfidence:     { type: Number, default: 0 },
+  evidenceText:      { type: String, default: '' },
+  qualityFlags:      [{ type: String }],
+  reviewPriority:    { type: String, enum: ['auto', 'review', 'high'], default: 'review' },
+  duplicateGroup:    { type: String, default: '' },
+  textLayerAvailable:{ type: Boolean, default: false },
+  textLayerEvidence: { type: String, enum: ['unavailable', 'verified', 'inconclusive'], default: 'unavailable' },
 }, { _id: false });
 
 const medicalReportSchema = new mongoose.Schema({
@@ -59,6 +68,20 @@ const medicalReportSchema = new mongoose.Schema({
   reportItems:     [reportItemSchema],                // 解析后的各项结果
   aiSummary:       { type: String, default: '' },     // AI 趋势分析文字
   aiStatus:        { type: String, enum: ['none', 'processing', 'pending', 'reviewed', 'rejected'], default: 'none' },
+  ocrVersion:      { type: String, default: '' },
+  ocrTemplateId:   { type: String, default: '' },
+  ocrQualitySummary: { type: mongoose.Schema.Types.Mixed, default: null },
+  // 人工对 OCR v2 草稿的真实修正，供模板/规则回归分析；不影响正式报告内容。
+  ocrCorrectionLog: [{
+    itemIndex: Number,
+    itemName: { type: String, default: '' },
+    field: { type: String, default: '' },
+    oldValue: { type: String, default: '' },
+    newValue: { type: String, default: '' },
+    qualityFlags: [{ type: String }],
+    operatorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+    at: { type: Date, default: Date.now },
+  }],
   pageParseStatus: { type: mongoose.Schema.Types.Mixed, default: null }, // 单页补提进度：{pageNum,status,startedAt,completedAt,message,itemCount}
   reviewedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   reviewedAt:      { type: Date, default: null },
