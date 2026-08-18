@@ -90,7 +90,7 @@ function normalizeBreathTestItems(items, report = {}) {
   return reportKind ? output : output;
 }
 
-const NON_EXAM_LABEL = /^(?:报告医生|开单医生|审核者|申请科室|检查医生|报告日期|检查日期|报告时间|检查时间|报告编号|检查报告号|诊断结论|检查描述|所见)$/;
+const NON_EXAM_LABEL = /^(?:检查者|检查医生|检查医师|报告医生|报告医师|开单医生|审核者|审核医生|审核医师|操作医生|操作医师|录入者|录入医生|签发医生|签发医师|申请科室|报告日期|检查日期|报告时间|检查时间|报告编号|检查报告号|诊断结论|检查描述|所见)$/;
 
 // 单项报告按“检查项目”收敛。模型可以负责读字，但不能决定把版面标签拆成多少个检验项目。
 function normalizeSingleExamReportItems(items, report = {}) {

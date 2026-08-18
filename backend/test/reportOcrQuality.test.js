@@ -90,7 +90,7 @@ test('page text is delimited as evidence and bounded before visual extraction', 
   assert.equal(formatTextLayerEvidence('  '), '');
 });
 
-test('generic coverage audit only retries pages with sparse or incomplete extraction', () => {
+test('generic coverage audit only retries sparse pages', () => {
   const pages = selectGenericCoverageAuditPages([8, 9, 10, 11], [
     { sourcePage: 8, name: '体重', value: '60' },
     { sourcePage: 9, name: '甲状腺超声', itemType: 'imaging', findings: '未见明显异常' },
@@ -103,7 +103,7 @@ test('generic coverage audit only retries pages with sparse or incomplete extrac
     { sourcePage: 11, name: '视力', itemType: 'imaging', findings: '正常' },
     { sourcePage: 11, name: '眼底', itemType: 'imaging', findings: '正常' },
   ]);
-  assert.deepEqual(pages, [8, 11]);
+  assert.deepEqual(pages, [8]);
 });
 
 test('key numeric fields need visual and text-layer evidence before auto pass', () => {

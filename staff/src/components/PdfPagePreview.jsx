@@ -14,6 +14,17 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
   const [pageCount, setPageCount] = useState(0)
   const [pdfDocument, setPdfDocument] = useState(null)
   const sourceUrl = useMemo(() => String(src || '').split('#')[0], [src])
+  const sourceIdentity = useMemo(() => {
+    try {
+      const parsed = new URL(sourceUrl, globalThis.location?.href)
+      for (const key of [...parsed.searchParams.keys()]) {
+        if (/token|signature|expires|credential|date/i.test(key)) parsed.searchParams.delete(key)
+      }
+      return parsed.toString()
+    } catch {
+      return sourceUrl
+    }
+  }, [sourceUrl])
   const prefetchKey = useMemo(() => [...new Set((prefetchPages || []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b).join(','), [prefetchPages])
 
   useEffect(() => {
@@ -48,7 +59,7 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
       loadingTask.destroy?.()
       if (!loadingTask.destroy && pdf) pdf.destroy?.()
     }
-  }, [sourceUrl])
+  }, [sourceIdentity])
 
   useEffect(() => {
     if (!pdfDocument || !canvasRef.current) return
@@ -63,17 +74,25 @@ export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], he
         const availableWidth = Math.max(240, (containerRef.current?.clientWidth || baseViewport.width) - 16)
         const viewport = page.getViewport({ scale: availableWidth / baseViewport.width })
         const ratio = Math.min(globalThis.devicePixelRatio || 1, 2)
-        const canvas = canvasRef.current
-        const context = canvas.getContext('2d', { alpha: false })
-        canvas.width = Math.floor(viewport.width * ratio)
-        canvas.height = Math.floor(viewport.height * ratio)
-        canvas.style.width = `${Math.floor(viewport.width)}px`
-        canvas.style.height = `${Math.floor(viewport.height)}px`
+        // 在离屏画布完成整页渲染后再替换可见画布，避免切页时先清空而长时间黑屏。
+        const nextCanvas = document.createElement('canvas')
+        const nextContext = nextCanvas.getContext('2d', { alpha: false })
+        nextCanvas.width = Math.floor(viewport.width * ratio)
+        nextCanvas.height = Math.floor(viewport.height * ratio)
         renderTaskRef.current?.cancel?.()
-        const renderTask = page.render({ canvasContext: context, viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0] })
+        const renderTask = page.render({ canvasContext: nextContext, viewport, transform: ratio === 1 ? null : [ratio, 0, 0, ratio, 0, 0] })
         renderTaskRef.current = renderTask
         await renderTask.promise
-        if (active) setStatus('ready')
+        if (!active || !canvasRef.current) return
+        const canvas = canvasRef.current
+        const context = canvas.getContext('2d', { alpha: false })
+        canvas.width = nextCanvas.width
+        canvas.height = nextCanvas.height
+        canvas.style.width = `${Math.floor(viewport.width)}px`
+        canvas.style.height = `${Math.floor(viewport.height)}px`
+        context.drawImage(nextCanvas, 0, 0)
+        renderTaskRef.current = null
+        setStatus('ready')
       } catch (err) {
         if (!active || err?.name === 'RenderingCancelledException') return
         setError(err?.message || 'PDF 页面渲染失败')

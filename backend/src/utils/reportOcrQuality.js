@@ -142,16 +142,8 @@ function formatTextLayerEvidence(pageText, maxChars = 6000) {
 function selectGenericCoverageAuditPages(detailPages = [], items = []) {
   const pages = [...new Set((detailPages || []).map(Number).filter(page => Number.isInteger(page) && page > 0))]
     .sort((a, b) => a - b);
-  return pages.filter(page => {
-    const pageItems = (items || []).filter(item => Number(item.sourcePage || item._page) === page);
-    if (pageItems.length <= 2) return true;
-    return pageItems.some(item => {
-      if (!text(item.name)) return true;
-      return item.itemType === 'imaging'
-        ? !text(item.findings) && !text(item.diagnosis) && !text(item.conclusion)
-        : !text(item.value);
-    });
-  });
+  return pages.filter(page => (items || [])
+    .filter(item => Number(item.sourcePage || item._page) === page).length <= 2);
 }
 
 function assessReportItems(items, { textLayer = null } = {}) {

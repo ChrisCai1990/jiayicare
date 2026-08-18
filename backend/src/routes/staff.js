@@ -76,7 +76,7 @@ const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIn
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
-const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, findHistoricalReducedPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
+const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -8412,7 +8412,7 @@ const REPORT_PARSE_PROMPT = `你是体检报告结构化提取助手。请分析
 
 【基本规则】
 规则零：只提取本图中实际存在的内容，绝对不推断、联想或补全。
-规则A：跳过会员基本信息页——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，一律不提取。
+规则A：跳过会员及报告签署元数据——姓名、性别、年龄、出生日期、身份证号、手机号/电话、单位/工作单位、体检日期、体检编号/报告编号，以及检查者、检查医生、报告医生、审核者、操作医生、录入者等人员署名，一律不作为检查项目提取。
 规则B：跳过汇总页——页面标题含"异常结果""检查结果"等字样再加上"汇总""说明""及建议""及说明""解读"等词的组合（如"异常结果汇总""体检结果汇总""异常结果及建议""体检异常结果及说明"，不要求逐字匹配这几个例子，只要是同类"异常/结果+说明性后缀"的标题都算），或以"尊敬的XX先生/女士"开头的综合小结页，整页跳过不提取。判断汇总页的核心标准：这一页是把多个不同检查项目（胃镜/肠镜/超声/放射等）的结论压缩摘要在同一页里罗列，而不是聚焦单一检查项目的完整详细报告单。这类汇总页有时按科室分组罗列诊断名词（如"放射科：1、右肺结节 2、左肾上腺增粗"／"消化内镜：1、内痔 2、大肠息肉"），即使看起来像分了类别标题，这仍是汇总页，不是具体检查项目，禁止把"放射科""消化内镜""病理科""彩超"等科室/类别标题当成 name 生成条目，也不能把里面的诊断名词列表当作findings/diagnosis提取——这些内容详细报告单里都有，只从详细报告单提取。
 规则B2：跳过"名词解释""检查异常结果解读""温馨提示""健康建议"类科普说明页——这类页面是对某个诊断名词（如"甲状腺结节3类是什么"）的通用医学科普介绍，不是本次检查的具体所见，禁止把这类科普文字当成检查所见/项目提取（如"肾结石多与饮水少有关，建议..."这种句子禁止提取为任何条目）。
 规则B3：必须先判定整页类型并填写 pageType/pageTitle/skipPage。只有逐项展示原始检查数值、检查所见或诊断意见的详细报告页才是 detail。汇总、小结页=summary，封面/会员信息页=cover，目录/清单页=catalog，建议/科普/解读页=advice。凡不是 detail 的页面必须令 skipPage=true 且 items=[]；禁止一边标记跳过一边仍输出条目。
@@ -8663,6 +8663,8 @@ function collapseBreathTestItems(items) {
 const PATIENT_INFO_NAMES = new Set([
   '姓名', '性别', '年龄', '出生日期', '身份证号', '手机号', '电话', '联系电话',
   '单位', '工作单位', '体检日期', '体检编号', '报告编号', '科别', '部门',
+  '检查者', '检查医生', '检查医师', '报告医生', '报告医师', '审核者', '审核医生',
+  '审核医师', '操作医生', '操作医师', '录入者', '录入医生', '签发医生', '签发医师',
   '一般情况', '主要阳性体征', '阳性体征', '体检结果汇总', '异常结果汇总',
 ]);
 
@@ -9861,14 +9863,14 @@ async function runReportParse(reportId, options = {}) {
         : '文字层不可用，开始逐页视觉识别');
       const isComprehensiveCheckup = report.type === 'annual';
       const baseDpi = useShaoyifuTemplate ? 160 : ((useZheyiTemplate || isComprehensiveCheckup) ? 144 : 96);
-      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批8页/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''}) 文字层=${textLayer.available ? `可用/${textLayer.pageCount}页` : '不可用'}`);
 
       // 邵逸夫21页模板含大量小字号双栏表格，96dpi/plus会稳定漏掉右栏，改为160dpi/max。
       // 同时模板规则会跳过小结及重复报告页，因此实际模型调用页数反而更少。
       const VL_MODEL = (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 'qwen-vl-max' : 'qwen-vl-plus';
-      const CONCURRENCY = useShaoyifuTemplate ? 2 : 3;
-      const BATCH_SIZE = 8;
+      const CONCURRENCY = useShaoyifuTemplate ? 2 : (useZheyiTemplate ? 3 : 4);
+      const BATCH_SIZE = useShaoyifuTemplate || useZheyiTemplate ? 8 : 12;
       const DPI = baseDpi;
+      console.log(`[parse-ai] PDF开始 ${reportId} 大小${(pdfBuf.length/1024/1024).toFixed(1)}MB 分批处理(每批${BATCH_SIZE}页/并发${CONCURRENCY}/${baseDpi}dpi${useZheyiTemplate ? '/浙一P6-P15' : ''}) 文字层=${textLayer.available ? `可用/${textLayer.pageCount}页` : '不可用'}`);
 
       let allItems = [];
       const summaries = [];
@@ -9965,10 +9967,7 @@ async function runReportParse(reportId, options = {}) {
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
           : useZheyiTemplate
             ? [...detailPages].filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems))
-          : [...new Set([
-              ...selectGenericCoverageAuditPages([...detailPages], allItems),
-              ...findHistoricalReducedPages(allItems, extractionSource, extractionHistory, totalPageCount).map(item => item.page),
-            ])].sort((a, b) => a - b);
+          : selectGenericCoverageAuditPages([...detailPages], allItems);
         setOcrProgress('coverage_audit', coveragePages.length
           ? `首轮识别完成，正在复核${coveragePages.length}页是否漏项`
           : '首轮识别完成，未发现需要覆盖复核的页面', { totalPages: totalPageCount, coveragePages: coveragePages.length });

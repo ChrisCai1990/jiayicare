@@ -25,6 +25,15 @@ test('单项碳13报告删除医生和结论版面标签，只保留一个检查
   assert.equal(output[0].itemType, 'imaging');
 });
 
+test('单项报告过滤检查者和签发人员等版面元数据', () => {
+  const output = normalizeSingleExamReportItems([
+    { name: '检查者', value: '李林', itemType: 'lab' },
+    { name: '签发医生', value: '张医生', itemType: 'lab' },
+    { name: '是否吸烟', value: '不吸', itemType: 'data' },
+  ], { title: '全科检查' });
+  assert.deepEqual(output.map(item => item.name), ['是否吸烟']);
+});
+
 test('全科单项报告逐项保留，便于按原报告逐行核对', () => {
   const output = normalizeSingleExamReportItems([
     { name: '是否吸烟', value: '不吸', itemType: 'lab' },
