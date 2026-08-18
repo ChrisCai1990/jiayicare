@@ -1585,6 +1585,7 @@ export default function PatientDetailPage() {
   const [editRecordSaving, setEditRecordSaving] = useState(false)
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
+  const [archiveActiveSection, setArchiveActiveSection] = useState('初始健康数据录入')
 
   // 健康档案原先只有一串可折叠表单，进入后很难判断先处理什么。这里仅基于已加载
   // 的现有数据生成浏览摘要，不改变评分、筛查或审核的任何业务规则。
@@ -1624,7 +1625,7 @@ export default function PatientDetailPage() {
       '健康数据趋势': '查看近期变化趋势',
       '日常健康打卡数据': healthRecords.length ? `最近 ${Math.min(healthRecords.length, 10)} 条记录` : '暂无日常记录',
     }
-    archiveSectionsRef.current.querySelectorAll('.card').forEach(card => {
+    Array.from(archiveSectionsRef.current.children).filter(node => node.classList?.contains('card')).forEach(card => {
       const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
       if (header) {
         header.dataset.archiveToggle = 'true'
@@ -1634,14 +1635,20 @@ export default function PatientDetailPage() {
         if (matchedTitle) {
           header.dataset.archiveSection = matchedTitle
           header.dataset.archiveSummary = summaries[matchedTitle]
+          card.classList.toggle('archive-section-hidden', matchedTitle !== archiveActiveSection)
+          if (matchedTitle === archiveActiveSection) card.classList.remove('archive-collapsed')
         }
         if (!card.dataset.archiveInitialized) {
           card.classList.add('archive-collapsed')
           card.dataset.archiveInitialized = 'true'
         }
-      }
+      } else if (card.textContent?.trim().startsWith('初始健康数据录入')) {
+        card.dataset.archiveSection = '初始健康数据录入'
+        card.classList.toggle('archive-section-hidden', archiveActiveSection !== '初始健康数据录入')
+        if (archiveActiveSection === '初始健康数据录入') card.classList.remove('archive-collapsed')
+      } else card.classList.add('archive-section-hidden')
     })
-  }, [tab, data, healthRecords, archiveOverview, screeningItems, screeningReports])
+  }, [tab, data, healthRecords, archiveOverview, screeningItems, screeningReports, archiveActiveSection])
 
   const handleArchiveSectionClick = (event) => {
     if (event.target.closest('button, a, input, select, textarea, label')) return
@@ -2679,10 +2686,8 @@ export default function PatientDetailPage() {
   }
 
   const openArchiveSection = (section) => {
-    const header = archiveSectionsRef.current?.querySelector(`[data-archive-section="${section}"]`)
-    if (!header) return
-    header.parentElement?.classList.remove('archive-collapsed')
-    header.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setArchiveActiveSection(section)
+    requestAnimationFrame(() => archiveSectionsRef.current?.querySelector(`[data-archive-section="${section}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   }
 
   const handleLoadOCRRevisionDiff = async (reportId, revisionNo, baselineNo) => {
@@ -3959,9 +3964,10 @@ export default function PatientDetailPage() {
       {tab === 'records' && (
         <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
         <style>{`.health-archive-sections{display:grid;grid-template-columns:236px minmax(0,1fr);gap:0 18px;align-items:start}.health-archive-sections>.archive-toolbar,.health-archive-sections>.archive-overview{grid-column:1 / -1}.health-archive-sections>.card{grid-column:2;min-width:0;transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer;min-height:60px;display:flex;align-items:center;gap:12px}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{order:0;flex:0 0 220px;display:flex;align-items:center;gap:8px}.health-archive-sections .card-header[data-archive-toggle="true"]:before{content:attr(data-archive-summary);order:1;flex:1;min-width:0;font-size:12px;font-weight:400;color:#77958A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.health-archive-sections .card-header[data-archive-toggle="true"]>button,.health-archive-sections .card-header[data-archive-toggle="true"]>div:not(.card-title){order:2;flex-shrink:0}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';order:3;margin-left:2px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}.archive-overview{background:linear-gradient(135deg,#EAF4EF 0%,#FAFCFA 62%,#FFF 100%);border:1px solid #D9E9E0;border-radius:14px;padding:20px 22px;margin-bottom:18px}.archive-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}.archive-overview-metric{background:rgba(255,255,255,.86);border:1px solid #E2EEE7;border-radius:10px;padding:12px 13px}.archive-overview-label{font-size:12px;color:#6E8579;margin-bottom:5px}.archive-overview-value{font-size:18px;font-weight:700;color:#173D2B}.archive-overview-task{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FFF;border:1px solid #DDEBE3;border-radius:8px;padding:9px 10px;margin-top:8px}.archive-overview-task-text{font-size:12px;color:#4A6558;margin-top:2px}.archive-nav{grid-column:1;grid-row:3 / span 80;position:sticky;top:16px;background:#FFF;border:1px solid #E0EBE4;border-radius:12px;padding:12px;box-shadow:0 4px 16px rgba(26,61,43,.04)}.archive-nav-title{font-size:12px;font-weight:700;color:#416554;padding:3px 8px 9px}.archive-nav-group{border-top:1px solid #EEF3EF;padding:9px 0 4px}.archive-nav-group:first-of-type{border-top:0}.archive-nav-group-label{font-size:11px;font-weight:700;color:#8AA89C;padding:0 8px 5px}.archive-nav-item{display:flex;width:100%;align-items:center;justify-content:space-between;gap:8px;border:0;border-radius:7px;background:transparent;color:#395848;cursor:pointer;font-size:13px;padding:8px;text-align:left}.archive-nav-item:hover{background:#EDF6F0;color:#1E6B50}.archive-nav-item span:last-child{color:#9AB2A5;font-size:14px}@media(max-width:1000px){.health-archive-sections{display:block}.health-archive-sections>.card{margin-left:0}.archive-nav{display:none}.archive-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{flex:1}.health-archive-sections .card-header[data-archive-toggle="true"]:before{display:none}}`}</style>
-        <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
-          <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(true) }}>全部收起</button>
-          <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(false) }}>全部展开</button>
+        <style>{`.health-archive-sections{grid-template-columns:220px minmax(0,1fr);gap:0 16px}.health-archive-sections>.archive-toolbar{grid-column:1/-1;border-bottom:1px solid #E3ECE6;padding:0 4px 14px}.health-archive-sections>.archive-overview{display:none}.health-archive-sections>.archive-nav{grid-row:2 / span 80;margin-top:0;border-radius:10px;box-shadow:none}.health-archive-sections>.card{margin-bottom:14px!important}.health-archive-sections>.archive-section-hidden{display:none}.archive-nav-item.is-active{background:#EAF5EE;color:#176B4D;font-weight:700}.archive-nav-item.is-active span:last-child{color:#176B4D}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:default}.health-archive-sections .card-header[data-archive-toggle="true"]:after{display:none}.health-archive-sections .card-header[data-archive-toggle="true"]:before{color:#8AA89C}.health-archive-sections .archive-collapsed>:not(.card-header){display:block!important}@media(max-width:1000px){.health-archive-sections>.archive-toolbar{padding-bottom:12px}.health-archive-sections>.archive-section-hidden{display:none!important}}`}</style>
+        <div className="archive-toolbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+          <div><div style={{ fontSize: 18, fontWeight: 700, color: '#173D2B' }}>健康档案</div><div style={{ fontSize: 12, color: '#77958A', marginTop: 3 }}>按模块查看和维护会员资料</div></div>
+          <div style={{ fontSize: 12, color: archiveOverview.tasks.length ? '#B45309' : '#1E6B50', background: archiveOverview.tasks.length ? '#FFF7E8' : '#EEF8F1', padding: '6px 10px', borderRadius: 16 }}>{archiveOverview.tasks.length ? `${archiveOverview.tasks.length} 项待处理` : '档案暂无待处理项'}</div>
         </div>
         <section className="archive-overview" aria-label="健康档案总览">
           <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
@@ -3994,7 +4000,7 @@ export default function PatientDetailPage() {
             ['指标与趋势', ['体检关键指标', '身体成分指标', '慢病分级', '健康数据趋势', '日常健康打卡数据']],
           ].map(([label, sections]) => <div className="archive-nav-group" key={label}>
             <div className="archive-nav-group-label">{label}</div>
-            {sections.map(section => <button type="button" className="archive-nav-item" key={section} onClick={e => { e.stopPropagation(); openArchiveSection(section) }}><span>{section.replace('（膳食调查）', '')}</span><span>›</span></button>)}
+            {sections.map(section => <button type="button" className={`archive-nav-item ${archiveActiveSection === section ? 'is-active' : ''}`} key={section} onClick={e => { e.stopPropagation(); openArchiveSection(section) }}><span>{section.replace('（膳食调查）', '')}</span><span>›</span></button>)}
           </div>)}
         </aside>
         {/* 档案是问卷答案自动导入的，冲突提醒已在页面顶部单独展示（见"问卷自动填档"横幅）；
