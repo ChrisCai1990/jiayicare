@@ -10359,6 +10359,7 @@ export default function PatientDetailPage() {
                   const reviewTimestamp = reviewMeta?.draftSavedAt || reviewMeta?.submittedAt || reviewMeta?.lastActionAt
                   const reviewTimeText = reviewTimestamp ? new Date(reviewTimestamp).toLocaleString('zh-CN', { hour12: false }) : ''
                   const history = ocrVersionHistory?.reportId === ocrReviewReport._id ? ocrVersionHistory : null
+                  const coverageRiskPages = ocrExtractionDiff?.pageCoverage?.emptied || []
                   const historyTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '时间未记录'
                   return (
                     <>
@@ -10385,6 +10386,25 @@ export default function PatientDetailPage() {
                           {reviewTimeText ? ` 最近${reviewMeta?.lastAction === 'save_draft' ? '保存草稿' : '审核操作'}：${reviewTimeText}` : ''}
                         </div>
                       </div>
+                      {coverageRiskPages.length > 0 && (
+                        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#FFF1F0', border: '1px solid #F1B8B4', color: '#8F2626', fontSize: 12, lineHeight: 1.55 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>识别完整性待确认：{coverageRiskPages.length} 页整页覆盖下降</div>
+                          <div style={{ marginTop: 3 }}>请点击页码对照左侧原件；如当前版本确实完整，再确认继续提交。也可以进入对应页面使用“补提本页”。</div>
+                          <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                            {coverageRiskPages.map(item => (
+                              <button key={`coverage-page-${item.page}`} type="button" className="btn btn-secondary btn-sm"
+                                style={{ padding: '4px 8px', borderColor: '#DFA39F', color: '#8F2626', background: activePage === item.page ? '#FFE0DD' : '#fff' }}
+                                onClick={() => { setOcrReviewPage(item.page); setOcrReviewFilter('all') }}>
+                                核对 P{item.page}（上一版 {item.baselineCount} 项）
+                              </button>
+                            ))}
+                          </div>
+                          <label style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 7, cursor: 'pointer', fontWeight: 600 }}>
+                            <input type="checkbox" style={{ marginTop: 2 }} checked={ocrCoverageAcknowledged} onChange={event => setOcrCoverageAcknowledged(event.target.checked)} />
+                            <span>我已对照原件核对上述页面，确认继续使用当前识别版本</span>
+                          </label>
+                        </div>
+                      )}
                       <details style={{ marginBottom: 12, border: '1px solid #E0D9CE', borderRadius: 8, background: '#fff' }}>
                         <summary style={{ cursor: 'pointer', padding: '9px 12px', color: '#365347', fontSize: 12, fontWeight: 600, userSelect: 'none' }}>版本与审核留痕</summary>
                         <div style={{ borderTop: '1px solid #EEF1EF', padding: '9px 12px', fontSize: 11, color: '#596C62', lineHeight: 1.65 }}>
@@ -10419,10 +10439,6 @@ export default function PatientDetailPage() {
                                 <div style={{ marginTop: 6 }}>这是识别版本差异提醒，不代表原报告项目真的增减；系统不会自动沿用旧版结果，请结合左侧原件复核。</div>
                                 {ocrExtractionDiff.pageCoverage?.emptied?.length > 0 && <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 5, background: '#FFFFFFB8', fontWeight: 700 }}>
                                   整页覆盖下降：{ocrExtractionDiff.pageCoverage.emptied.map(item => `P${item.page}（上一版 ${item.baselineCount} 项，本版 0 项）`).join('、')}。请先逐页核对或补提，再提交审核。
-                                  <label style={{ marginTop: 6, display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer', fontWeight: 600 }}>
-                                    <input type="checkbox" checked={ocrCoverageAcknowledged} onChange={event => setOcrCoverageAcknowledged(event.target.checked)} />
-                                    我已对照原件核对上述页面，确认继续使用当前识别版本
-                                  </label>
                                 </div>}
                                 {ocrExtractionDiff.highAttentionRemoved?.length > 0 && <div style={{ marginTop: 5, fontWeight: 700 }}>重点复核：{ocrExtractionDiff.highAttentionRemoved.slice(0, 8).map(item => `${item.name}${item.sourcePage ? `（P${item.sourcePage}）` : ''}`).join('、')}</div>}
                                 {(ocrExtractionDiff.removed || []).filter(item => !ocrExtractionDiff.highAttentionRemoved?.some(high => high.key === item.key)).slice(0, 8).map(item => <div key={`ocr-remove-${item.key}`} style={{ marginTop: 3 }}>本版未识别：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
