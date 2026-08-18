@@ -3084,7 +3084,10 @@ router.get('/patients/:id/reports', staffAuth, async (req, res) => {
   // 区分（蒋梁锋一次连续上传7份不同体检报告，被误合并成1条，6份在医护端列表消失）。停用该合并逻辑，
   // 医护端与用户端一致，按记录数原样展示，不做任何跨记录合并。
   const result = reports.map(r => {
-    const obj = r.toObject();
+    // OSS bucket 是私有的。会员详情页的报告列表此前直接返回存储 URL，
+    // 导致 AI 审核弹窗预览迁移后的历史文件时触发 AccessDenied。
+    // 与单份报告、报告管理列表保持一致：仅向已鉴权的医护端签发短时 URL。
+    const obj = withSignedReportFiles(r);
     obj.hasContent = !!hasContentMap[String(r._id)];
     return obj;
   });
