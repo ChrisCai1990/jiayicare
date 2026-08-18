@@ -3,8 +3,17 @@ const auth = require('../middleware/auth');
 const Message = require('../models/Message');
 const PushRecord = require('../models/PushRecord');
 const { QuestionnaireResponse } = require('../models/DynamicQuestionnaire');
-const { uploadBase64 } = require('../utils/oss');
+const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const router = express.Router();
+
+function withSignedMessageImages(message) {
+  const obj = message.toObject ? message.toObject() : { ...message };
+  const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
+  const signedUrls = urls.map(url => signStoredUrl(url));
+  obj.imageUrls = signedUrls;
+  obj.imageUrl = signedUrls[0] || '';
+  return obj;
+}
 
 // 获取未读消息数（含推送记录，用于导航角标）
 router.get('/unread-count', auth, async (req, res) => {
@@ -30,7 +39,7 @@ router.get('/', auth, async (req, res) => {
   if (type) query.type = type;
   const messages = await Message.find(query).sort({ createdAt: -1 }).limit(50);
   const unreadCount = await Message.countDocuments({ user: req.user._id, unread: true, recalled: { $ne: true } });
-  res.json({ success: true, data: messages, unreadCount });
+  res.json({ success: true, data: messages.map(withSignedMessageImages), unreadCount });
 });
 
 // 获取与某个角色的完整对话线程
@@ -46,7 +55,7 @@ router.get('/thread/:role', auth, async (req, res) => {
   }).sort({ createdAt: 1 }).limit(100);
   // 标记所有未读为已读
   await Message.updateMany({ conversationId, user: req.user._id, type: { $ne: 'user' }, unread: true }, { unread: false, readAt: new Date() });
-  res.json({ success: true, data: messages, conversationId });
+  res.json({ success: true, data: messages.map(withSignedMessageImages), conversationId });
 });
 
 router.post('/nutrition-analysis', auth, async (req, res) => {

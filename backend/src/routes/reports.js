@@ -3,10 +3,20 @@ const multer = require('multer');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
-const { uploadBase64, deleteFile, urlToKey } = require('../utils/oss');
+const { uploadBase64, deleteFile, urlToKey, signStoredUrl } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
 const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
 const router = express.Router();
+
+function withSignedReportFiles(report) {
+  const obj = report.toObject ? report.toObject() : { ...report };
+  const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
+  const keys = obj.ossKeys?.length ? obj.ossKeys : (obj.ossKey ? [obj.ossKey] : []);
+  const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));
+  obj.fileUrls = signedUrls;
+  obj.fileUrl = signedUrls[0] || '';
+  return obj;
+}
 const reportUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
@@ -105,7 +115,7 @@ router.get('/by-category', auth, async (req, res) => {
       if (!yearMap[year]) yearMap[year] = {};
       const cat = r.screeningCategory || 'other_routine';
       if (!yearMap[year][cat]) yearMap[year][cat] = [];
-      const obj = r.toObject();
+      const obj = withSignedReportFiles(r);
       obj.hasContent = !!obj.content;
       delete obj.content;
       yearMap[year][cat].push(obj);
@@ -581,7 +591,7 @@ router.get('/', auth, async (req, res) => {
     const reports = await MedicalReport.find({ user: req.user._id })
       .sort({ createdAt: -1 });
     const data = reports.map(r => {
-      const obj = r.toObject();
+      const obj = withSignedReportFiles(r);
       obj.hasContent = !!obj.content;
       delete obj.content;
       return obj;
@@ -597,7 +607,7 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    res.json({ success: true, data: report });
+    res.json({ success: true, data: withSignedReportFiles(report) });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取报告失败', error: err.message });
   }

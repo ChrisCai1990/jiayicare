@@ -85,6 +85,18 @@ async function deleteFile(key) {
   }
 }
 
+// 私有 bucket 不向前端暴露可长期访问的原始 URL。每次已鉴权的 API 读取时再签发短时链接，默认 10 分钟。
+function getSignedUrl(key, expires = 600) {
+  if (!key) return '';
+  return getClient().signatureUrl(key, { expires });
+}
+
+function signStoredUrl(url, key, expires = 600) {
+  const resolvedKey = key || urlToKey(url || '');
+  if (!resolvedKey) return url || '';
+  try { return getSignedUrl(resolvedKey, expires); } catch { return url || ''; }
+}
+
 // 从 OSS URL 提取 key
 function urlToKey(url) {
   const bucket = process.env.OSS_BUCKET;
@@ -92,4 +104,4 @@ function urlToKey(url) {
   return match ? match[1] : null;
 }
 
-module.exports = { uploadBase64, uploadBuffer, deleteFile, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, urlToKey, convertHeicBase64IfNeeded };

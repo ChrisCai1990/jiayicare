@@ -71,8 +71,18 @@ const {
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
-const { uploadBuffer, deleteFile } = require('../utils/oss');
+const { uploadBuffer, deleteFile, signStoredUrl } = require('../utils/oss');
 const router = express.Router();
+
+function withSignedReportFiles(report) {
+  const obj = report.toObject ? report.toObject() : { ...report };
+  const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
+  const keys = obj.ossKeys?.length ? obj.ossKeys : (obj.ossKey ? [obj.ossKey] : []);
+  const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));
+  obj.fileUrls = signedUrls;
+  obj.fileUrl = signedUrls[0] || '';
+  return obj;
+}
 
 // ── 图片上传（multer） ─────────────────────────────────────────
 const UPLOADS_DIR = process.env.UPLOADS_DIR || path.join(__dirname, '../../../uploads');
@@ -1845,7 +1855,7 @@ router.get('/medical-reports', staffAuth, checkPermission('reports', 'view'), as
       .populate('user', 'name phone').populate('uploadedBy', 'name role'),
     MedicalReport.countDocuments(filter),
   ]);
-  res.json({ success: true, data: { reports, total } });
+  res.json({ success: true, data: { reports: reports.map(withSignedReportFiles), total } });
 });
 
 // GET /api/staff/medical-reports/:id
@@ -1853,7 +1863,7 @@ router.get('/medical-reports/:id', staffAuth, async (req, res) => {
   const report = await MedicalReport.findById(req.params.id)
     .populate('user', 'name phone').populate('uploadedBy', 'name');
   if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-  res.json({ success: true, data: report });
+  res.json({ success: true, data: withSignedReportFiles(report) });
 });
 
 // POST /api/staff/medical-reports — 上传报告（Base64）

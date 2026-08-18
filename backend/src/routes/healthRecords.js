@@ -5,8 +5,18 @@ const FollowUp = require('../models/FollowUp');
 const User = require('../models/User');
 const PointsLog = require('../models/PointsLog');
 const { calcStatus } = require('../utils/healthRecordStatus');
-const { uploadBase64 } = require('../utils/oss');
+const { uploadBase64, signStoredUrl } = require('../utils/oss');
 const router = express.Router();
+
+function withSignedHealthImages(record) {
+  const obj = record.toObject ? record.toObject() : { ...record };
+  const urls = obj.imageUrls?.length ? obj.imageUrls : (obj.imageUrl ? [obj.imageUrl] : []);
+  const signedUrls = urls.map(url => signStoredUrl(url));
+  obj.imageUrls = signedUrls;
+  obj.imageUrl = signedUrls[0] || '';
+  if (obj.extra?.imageUrl) obj.extra = { ...obj.extra, imageUrl: signStoredUrl(obj.extra.imageUrl) };
+  return obj;
+}
 
 // 打卡固定积分：每种打卡类型每天（CST）限计一次，防刷分
 const CHECKIN_POINTS = 5;
@@ -136,7 +146,7 @@ router.get('/', auth, async (req, res) => {
       .skip((page - 1) * limit);
 
     const total = await HealthRecord.countDocuments(query);
-    res.json({ success: true, data: records, total, page: Number(page) });
+    res.json({ success: true, data: records.map(withSignedHealthImages), total, page: Number(page) });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取记录失败', error: err.message });
   }
