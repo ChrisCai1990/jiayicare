@@ -19,12 +19,14 @@ JiayiCare 当前在同一台 ECS 上运行 production（生产）和 staging（�
 | 报告 OSS 前缀 | `reports/` | `reports-staging/` |
 | 定时任务 | 启用 | 必须禁用 |
 
-当前 staging 临时 HTTPS 入口（正式 `staging*.jiaycare.com` DNS 配置前使用）：
+staging 固定 HTTPS 入口：
 
-- 用户 Web：`https://staging.121-40-156-39.sslip.io`
-- 管理端：`https://staging-admin.121-40-156-39.sslip.io`
-- 医护端：`https://staging-staff.121-40-156-39.sslip.io`
-- API：`https://staging-api.121-40-156-39.sslip.io/api/health`
+- 用户 Web：`https://staging.jiaycare.com`
+- 管理端：`https://staging-admin.jiaycare.com`
+- 医护端：`https://staging-staff.jiaycare.com`
+- API：`https://staging-api.jiaycare.com/api/health`
+
+启用入口前，阿里云 DNS 必须为以上四个主机名添加指向 `121.40.156.39` 的 A 记录，并完成独立 TLS 证书签发。Nginx 模板见 `deploy/nginx/jiayicare-staging.conf`；DNS 和证书未就绪时不得用明文 HTTP 承载健康数据。
 
 ## 强制边界
 
