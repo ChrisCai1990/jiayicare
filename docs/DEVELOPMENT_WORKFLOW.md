@@ -1,5 +1,16 @@
 # JiayiCare 代码提交与阿里云部署流程
 
+生产环境和 staging 环境共用一个 Git 仓库，但使用不同分支、服务器目录、数据库、OSS 前缀和 PM2 进程。环境边界详见 `docs/ENVIRONMENTS.md`。
+
+staging 标准部署命令：
+
+```powershell
+git switch staging-main
+python scripts/deploy_staging.py --push
+```
+
+该脚本只接受干净的 `staging-main`，只写入 `/var/www/jiayicare-staging` 并只重启 `jiayicare-staging-*` 进程。执行前后会比较生产目录 commit 和 `jiayicare-backend` PID；任一变化都会判定部署异常。生产发布仍使用本文后续的 `scripts/deploy.py`，两套命令不得混用。
+
 本文是 Codex 与 Claude Code 共用的标准流程。GitHub `origin/master` 是版本历史的唯一事实来源；部署由本地主动发起，并将同一 Git commit 直接上传阿里云，阿里云不需要连接 GitHub。禁止在服务器长期直接修改业务代码。
 
 ## 1. 一次性机器配置

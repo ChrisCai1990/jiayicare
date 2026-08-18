@@ -11,10 +11,12 @@ JiayiCare 当前在同一台 ECS 上运行 production（生产）和 staging（�
 | 医护端进程 | Nginx 正式站点 | `jiayicare-staging-staff` |
 | 管理端进程 | Nginx 正式站点 | `jiayicare-staging-admin` |
 | 用户 Web 进程 | Nginx 正式站点 | `jiayicare-staging-app` |
+| 金伊森 Web 进程 | Nginx 正式站点 | `jiayicare-staging-jinyisen` |
 | 后端端口 | `3000` | `127.0.0.1:3100` |
 | 医护端端口 | 正式域名 | `127.0.0.1:5174` |
 | 管理端端口 | 正式域名 | `127.0.0.1:5175` |
 | 用户 Web 端口 | 正式域名 | `127.0.0.1:8081` |
+| 金伊森 Web 端口 | 正式域名 | `127.0.0.1:8082` |
 | MongoDB 数据库 | `jiayicare` | `jiayicare_staging` |
 | 报告 OSS 前缀 | `reports/` | `reports-staging/` |
 | 定时任务 | 启用 | 必须禁用 |
@@ -22,11 +24,12 @@ JiayiCare 当前在同一台 ECS 上运行 production（生产）和 staging（�
 staging 固定 HTTPS 入口：
 
 - 用户 Web：`https://staging.jiaycare.com`
+- 金伊森 Web：`https://staging-jinyisen.jiaycare.com`
 - 管理端：`https://staging-admin.jiaycare.com`
 - 医护端：`https://staging-staff.jiaycare.com`
 - API：`https://staging-api.jiaycare.com/api/health`
 
-启用入口前，阿里云 DNS 必须为以上四个主机名添加指向 `121.40.156.39` 的 A 记录，并完成独立 TLS 证书签发。Nginx 模板见 `deploy/nginx/jiayicare-staging.conf`；DNS 和证书未就绪时不得用明文 HTTP 承载健康数据。
+启用入口前，阿里云 DNS 必须为以上五个主机名添加指向 `121.40.156.39` 的 A 记录，并完成独立 TLS 证书签发。Nginx 模板见 `deploy/nginx/jiayicare-staging.conf`；DNS 和证书未就绪时不得用明文 HTTP 承载健康数据。
 
 ## 强制边界
 
@@ -43,7 +46,7 @@ staging 固定 HTTPS 入口：
 ## 部署原则
 
 - staging 先验收，再决定是否合并并部署 production；两者不得共用工作目录。
-- staging 同时运行 Backend、Staff、Admin 和用户 Web 四个端口；小程序没有常驻 HTTP 端口，只生成独立 staging 构建包。
+- staging 同时运行 Backend、Staff、Admin、嘉医管家 Web 和金伊森 Web 五个端口；小程序没有常驻 HTTP 端口，只生成独立 staging 构建包。
 - staging 可以复制最小必要的脱敏或指定测试数据，不做生产数据库持续同步。
 - staging 上传、OCR、审核、驳回和专项筛查投影只能写入 staging 数据库与 OSS 前缀。
 - 生产目录、生产进程名的标准化改名必须安排维护窗口，不能为了命名统一而无提示重启生产。
