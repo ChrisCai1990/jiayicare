@@ -10410,6 +10410,9 @@ export default function PatientDetailPage() {
                                   OCR V{ocrExtractionDiff.currentVersion} 对比 V{ocrExtractionDiff.baselineVersion}：新增 {ocrExtractionDiff.summary.added} 项，减少 {ocrExtractionDiff.summary.removed} 项，内容变化 {ocrExtractionDiff.summary.changed} 项
                                 </summary>
                                 <div style={{ marginTop: 6 }}>这是识别版本差异提醒，不代表原报告项目真的增减；系统不会自动沿用旧版结果，请结合左侧原件复核。</div>
+                                {ocrExtractionDiff.pageCoverage?.emptied?.length > 0 && <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 5, background: '#FFFFFFB8', fontWeight: 700 }}>
+                                  整页覆盖下降：{ocrExtractionDiff.pageCoverage.emptied.map(item => `P${item.page}（上一版 ${item.baselineCount} 项，本版 0 项）`).join('、')}。请先逐页核对或补提，再提交审核。
+                                </div>}
                                 {ocrExtractionDiff.highAttentionRemoved?.length > 0 && <div style={{ marginTop: 5, fontWeight: 700 }}>重点复核：{ocrExtractionDiff.highAttentionRemoved.slice(0, 8).map(item => `${item.name}${item.sourcePage ? `（P${item.sourcePage}）` : ''}`).join('、')}</div>}
                                 {(ocrExtractionDiff.removed || []).filter(item => !ocrExtractionDiff.highAttentionRemoved?.some(high => high.key === item.key)).slice(0, 8).map(item => <div key={`ocr-remove-${item.key}`} style={{ marginTop: 3 }}>本版未识别：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
                               </details>

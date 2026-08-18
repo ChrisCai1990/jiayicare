@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { compareReportExtractions } = require('../src/utils/reportExtractionDiff');
+const { compareReportExtractions, comparePageCoverage } = require('../src/utils/reportExtractionDiff');
 
 const extraction = (version, items, ossKeys = ['reports-test/source.pdf']) => ({
   version,
@@ -52,4 +52,26 @@ test('refuses to describe versions from different originals as the same source',
     extraction(1, [], ['reports-test/old.pdf']),
   );
   assert.equal(result.sameSource, false);
+});
+
+test('highlights pages that changed from populated to empty', () => {
+  const result = comparePageCoverage(
+    [
+      { sourcePage: 9, name: '外科' },
+      { sourcePage: 15, name: '胆囊彩超' },
+    ],
+    [
+      { sourcePage: 9, name: '外科' },
+      { sourcePage: 14, name: '肝脏' },
+      { sourcePage: 14, name: '胆囊' },
+      { sourcePage: 15, name: '胆囊彩超' },
+      { sourcePage: 16, name: '肝脏彩超' },
+    ],
+  );
+
+  assert.deepEqual(result.emptied, [
+    { page: 14, baselineCount: 2, currentCount: 0 },
+    { page: 16, baselineCount: 1, currentCount: 0 },
+  ]);
+  assert.deepEqual(result.newlyPopulated, []);
 });

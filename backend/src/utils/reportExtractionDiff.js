@@ -42,9 +42,37 @@ function sameOriginalSource(current, baseline) {
     && currentKeys.every((key, index) => key === baselineKeys[index]);
 }
 
+function pageCounts(items = []) {
+  const counts = new Map();
+  for (const item of items) {
+    const page = Number(item?.sourcePage);
+    if (!Number.isInteger(page) || page <= 0) continue;
+    counts.set(page, (counts.get(page) || 0) + 1);
+  }
+  return counts;
+}
+
+function comparePageCoverage(currentItems = [], baselineItems = []) {
+  const current = pageCounts(currentItems);
+  const baseline = pageCounts(baselineItems);
+  const pages = [...new Set([...current.keys(), ...baseline.keys()])].sort((a, b) => a - b);
+  const changed = pages.flatMap(page => {
+    const currentCount = current.get(page) || 0;
+    const baselineCount = baseline.get(page) || 0;
+    return currentCount === baselineCount ? [] : [{ page, currentCount, baselineCount }];
+  });
+  return {
+    emptied: changed.filter(item => item.baselineCount > 0 && item.currentCount === 0),
+    newlyPopulated: changed.filter(item => item.baselineCount === 0 && item.currentCount > 0),
+    changed,
+  };
+}
+
 function compareReportExtractions(current, baseline, fields = DEFAULT_FIELDS) {
-  const before = itemMap(baseline?.items || []);
-  const after = itemMap(current?.items || []);
+  const baselineItems = baseline?.items || [];
+  const currentItems = current?.items || [];
+  const before = itemMap(baselineItems);
+  const after = itemMap(currentItems);
   const added = [];
   const removed = [];
   const changed = [];
@@ -69,7 +97,8 @@ function compareReportExtractions(current, baseline, fields = DEFAULT_FIELDS) {
   const dropCount = Math.max(0, baselineCount - currentCount);
   const dropRatio = baselineCount ? dropCount / baselineCount : 0;
   const highAttentionRemoved = removed.filter(item => HIGH_ATTENTION_NAMES.some(pattern => pattern.test(item.name)));
-  const severity = highAttentionRemoved.length || dropRatio >= 0.1
+  const pageCoverage = comparePageCoverage(currentItems, baselineItems);
+  const severity = pageCoverage.emptied.length || highAttentionRemoved.length || dropRatio >= 0.1
     ? 'high'
     : (removed.length ? 'review' : 'none');
 
@@ -92,7 +121,8 @@ function compareReportExtractions(current, baseline, fields = DEFAULT_FIELDS) {
     removed,
     changed,
     highAttentionRemoved,
+    pageCoverage,
   };
 }
 
-module.exports = { compareReportExtractions, sameOriginalSource };
+module.exports = { compareReportExtractions, sameOriginalSource, comparePageCoverage };
