@@ -86,7 +86,9 @@ function withSignedReportFiles(report) {
     const key = keys[index] || urlToKey(url || '');
     if (!key || !obj._id || !process.env.JWT_SECRET) return '';
     const token = jwt.sign({ scope: 'report-preview', reportId: String(obj._id), fileIndex: index }, process.env.JWT_SECRET, { expiresIn: '10m' });
-    return `/staff/medical-reports/${obj._id}/preview/${index}?token=${encodeURIComponent(token)}`;
+    // 前端对以 / 开头的资源统一拼接 API_ORIGIN（不含 /api），故此处必须保留 /api 前缀；
+    // 否则会被错误路由到用户端 SPA，最终在审核窗口显示登录页而非 PDF。
+    return `/api/staff/medical-reports/${obj._id}/preview/${index}?token=${encodeURIComponent(token)}`;
   });
   obj.previewUrl = obj.previewUrls[0] || '';
   return obj;
