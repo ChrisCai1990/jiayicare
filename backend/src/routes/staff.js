@@ -74,6 +74,7 @@ const {
 } = require('../utils/reportItemEvidence');
 const { resolveActiveScreeningKey } = require('../utils/screeningCatalogKey');
 const { createReportUploadToken, verifyReportUploadTokens } = require('../utils/reportUploadToken');
+const { buildReportSourceFiles, reportHasOriginal } = require('../utils/reportOriginalEvidence');
 const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction } = require('../utils/reportReviewPolicy');
 const { ALLOWED_REPORT_MIME_TYPES, assertReportFileBuffer, assertVerifiedReportOriginals } = require('../utils/reportUploadPolicy');
 const { validateReportAssociation } = require('../utils/reportAssociationPolicy');
@@ -2271,12 +2272,7 @@ router.post('/medical-reports', staffAuth, checkAnyPermissionStrict('reports', [
     const resolvedOssKey = resolvedOssKeys[0] || '';
     const verifiedMimeType = verifiedUploadedFiles[0]?.mimeType || '';
     const verifiedFileSize = verifiedUploadedFiles.reduce((sum, file) => sum + Number(file.fileSize || 0), 0);
-    const sourceFiles = verifiedUploadedFiles.map(file => ({
-      ossKey: file.ossKey,
-      sha256: file.sha256 || '',
-      mimeType: file.mimeType || '',
-      fileSize: Number(file.fileSize || 0),
-    }));
+    const sourceFiles = buildReportSourceFiles(verifiedUploadedFiles);
 
     // 医护端新上传只保留受凭证约束的 OSS 原件，不再把第二份 Base64 健康原件写入 MongoDB。
     const effectiveContent = '';
@@ -2458,6 +2454,8 @@ function applyAuditedInstitution(report) {
 }
 
 router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports', 'audit'), async (req, res) => {
+  let supplementUploadId = '';
+  let supplementAttachAttemptId = '';
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
@@ -2651,18 +2649,72 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         : { reportItems: report.reportItems, snapshotAt: new Date() };
     }
     if (aiSummary !== undefined) report.aiSummary = aiSummary;
-    // 补传/替换文件
+    if (content !== undefined && content && content.length > 10 * 1024 * 1024) {
+      return res.status(400).json({ success: false, message: '文件过大，最大约7MB' });
+    }
+
+    // 补传原件必须消费当前医护人员的临时上传凭证；不再接受前端直接回填 OSS URL。
+    // 已经有关联原件的报告不能从通用编辑接口静默替换，避免审核证据与实际原件脱节。
+    const fileReferenceMutation = [fileUrl, fileUrls, ossKey, ossKeys].some(value => value !== undefined);
+    let supplementedFile = null;
+    if (fileReferenceMutation) {
+      if (reportHasOriginal(report)) {
+        return res.status(409).json({ success: false, message: '报告已有关联原件，不能通过编辑接口替换；请新建报告保留版本关系' });
+      }
+      let verifiedFiles;
+      try {
+        verifiedFiles = verifyReportUploadTokens(req.body?.uploadTokens, {
+          staffId: req.staff._id,
+          secret: process.env.JWT_SECRET,
+          requireOne: true,
+        });
+        assertVerifiedReportOriginals(verifiedFiles);
+      } catch (tokenError) {
+        return res.status(400).json({ success: false, message: tokenError.message || '补传凭证无效，请重新选择文件' });
+      }
+      if (verifiedFiles.length !== 1) return res.status(400).json({ success: false, message: '补传原件一次只能选择一个文件' });
+      [supplementedFile] = verifiedFiles;
+      supplementUploadId = supplementedFile.uploadId;
+      supplementAttachAttemptId = crypto.randomUUID();
+      const claimed = await TemporaryReportUpload.findOneAndUpdate(
+        {
+          _id: supplementUploadId,
+          staffId: req.staff._id,
+          status: 'temporary',
+          ossKey: supplementedFile.ossKey,
+          fileUrl: supplementedFile.fileUrl,
+          ...(supplementedFile.sha256 ? { sha256: supplementedFile.sha256 } : {}),
+        },
+        { $set: { status: 'attaching', attachAttemptId: supplementAttachAttemptId, cleanupError: '' } },
+        { new: true },
+      );
+      if (!claimed) return res.status(409).json({ success: false, message: '临时上传状态已变化，请重新选择文件' });
+    }
+
     if (content !== undefined) {
-      if (content && content.length > 10 * 1024 * 1024) return res.status(400).json({ success: false, message: '文件过大，最大约7MB' });
       report.content = content;
     }
-    if (fileUrl !== undefined) report.fileUrl = fileUrl;
-    if (fileUrls !== undefined) report.fileUrls = Array.isArray(fileUrls) ? fileUrls.filter(Boolean) : [];
-    if (ossKey !== undefined) report.ossKey = ossKey;
-    if (ossKeys !== undefined) report.ossKeys = Array.isArray(ossKeys) ? ossKeys.filter(Boolean) : [];
-    if (mimeType !== undefined) report.mimeType = mimeType;
-    if (fileSize !== undefined) report.fileSize = fileSize;
+    if (supplementedFile) {
+      report.fileUrl = supplementedFile.fileUrl;
+      report.fileUrls = [supplementedFile.fileUrl];
+      report.ossKey = supplementedFile.ossKey;
+      report.ossKeys = [supplementedFile.ossKey];
+      report.mimeType = supplementedFile.mimeType || '';
+      report.fileSize = String(Number(supplementedFile.fileSize || 0));
+      report.sourceFiles = buildReportSourceFiles([supplementedFile]);
+    } else {
+      if (mimeType !== undefined) report.mimeType = mimeType;
+      if (fileSize !== undefined) report.fileSize = fileSize;
+    }
     await report.save();
+    if (supplementUploadId) {
+      const attached = await TemporaryReportUpload.updateOne(
+        { _id: supplementUploadId, staffId: req.staff._id, status: 'attaching', attachAttemptId: supplementAttachAttemptId },
+        { $set: { status: 'attached', attachAttemptId: '', reportId: report._id, attachedAt: new Date(), cleanupError: '' } },
+      );
+      if (attached.modifiedCount !== 1) throw new Error('补传原件登记未能完成关联，请刷新后核查');
+      supplementUploadId = '';
+    }
 
     if (reviewAction === 'reject' && formalReviewContext === null) {
       const meta = report.ocrReviewMeta || {};
@@ -2715,6 +2767,12 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       : 0;
     res.json({ success: true, data: report, meta: { pendingScreeningCandidateCount } });
   } catch (err) {
+    if (supplementUploadId) {
+      await TemporaryReportUpload.updateOne(
+        { _id: supplementUploadId, staffId: req.staff._id, status: 'attaching', attachAttemptId: supplementAttachAttemptId },
+        { $set: { status: 'temporary', attachAttemptId: '' } },
+      ).catch(() => {});
+    }
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -9509,7 +9567,7 @@ async function snapshotReportExtraction(reportId, { origin = 'ocr', reparsePage 
         engine: { ocrVersion: report.ocrVersion || '', templateId: report.ocrTemplateId || '' },
         source: {
           ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []),
-          files: report.sourceFiles || [],
+          files: buildReportSourceFiles(report.sourceFiles),
           pageCount: resolveExtractionPageCount(report),
         },
         reportMetadata: { institution: report.institution || report.hospital || '', checkDate: report.checkDate || report.date || '' },
@@ -9538,7 +9596,7 @@ async function recordReportReviewEvent(report, revision, reviewContext, result) 
     items: ensureReportItemSourceIds(normalizeReportItemEvidence(report.reportItems || [])),
     aiSummary: report.aiSummary || '',
     reportMetadata: { title: report.title || '', institution: report.institution || report.hospital || '', checkDate: report.checkDate || report.date || '', type: report.type || '' },
-    sourceFiles: report.sourceFiles || [],
+    sourceFiles: buildReportSourceFiles(report.sourceFiles),
   };
   const eventContentHash = revision?.contentHash
     || crypto.createHash('sha256').update(JSON.stringify(fallbackPayload)).digest('hex');
@@ -9573,7 +9631,7 @@ async function recordReportReviewEvent(report, revision, reviewContext, result) 
 async function publishReportRevision(report, reviewContext = null) {
   if (!report?.user) return null;
   const revisionItems = ensureReportItemSourceIds(normalizeReportItemEvidence(report.reportItems || []));
-  const sourceFiles = report.sourceFiles || [];
+  const sourceFiles = buildReportSourceFiles(report.sourceFiles);
   report.reportItems = revisionItems;
   const revisionPayload = {
     items: revisionItems,
@@ -9620,7 +9678,7 @@ async function publishReportRevision(report, reviewContext = null) {
           extractionVersion: extraction?.version ?? null,
           extractionOrigin: extraction?.origin || '',
           ocrVersion: extraction?.engine?.ocrVersion || report.ocrVersion || '',
-          files: extraction?.source?.files?.length ? extraction.source.files : (report.sourceFiles || []),
+          files: buildReportSourceFiles(extraction?.source?.files?.length ? extraction.source.files : report.sourceFiles),
         },
         reviewMeta: report.ocrReviewMeta || null,
       });

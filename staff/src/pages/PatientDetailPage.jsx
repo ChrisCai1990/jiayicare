@@ -10205,14 +10205,26 @@ export default function PatientDetailPage() {
                           onChange={async (e) => {
                             const file = e.target.files[0]
                             if (!file) return
+                            let uploadToken = ''
                             try {
-                              const { url, ossKey, mimeType, fileSize } = await staffAPI.uploadReportFile(file, () => {})
+                              const uploaded = await staffAPI.uploadReportFile(file, () => {})
+                              uploadToken = uploaded.uploadToken || ''
                               const updated = await staffAPI.updateReport(showReportDetail._id, {
-                                fileUrl: url, fileUrls: [url], ossKey, ossKeys: ossKey ? [ossKey] : [], mimeType, fileSize: String(fileSize), content: ''
+                                fileUrl: uploaded.url,
+                                fileUrls: [uploaded.url],
+                                ossKey: uploaded.ossKey,
+                                ossKeys: uploaded.ossKey ? [uploaded.ossKey] : [],
+                                mimeType: uploaded.mimeType,
+                                fileSize: String(uploaded.fileSize),
+                                uploadTokens: uploadToken ? [uploadToken] : [],
+                                content: '',
                               })
                               setShowReportDetail(updated.data)
                               toast('文件已上传')
-                            } catch (err) { toast(err.message || '上传失败') }
+                            } catch (err) {
+                              if (uploadToken) await staffAPI.cleanupReportUploads([uploadToken]).catch(() => {})
+                              toast(err.message || '上传失败')
+                            }
                           }} />
                       </label>
                     )}

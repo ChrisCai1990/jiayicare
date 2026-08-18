@@ -5,6 +5,7 @@ const mongoose = require('mongoose');
 const MedicalReport = require('../src/models/MedicalReport');
 const ReportExtraction = require('../src/models/ReportExtraction');
 const ReportRevision = require('../src/models/ReportRevision');
+const { buildReportSourceFiles, reportHasOriginal } = require('../src/utils/reportOriginalEvidence');
 
 const fileEvidence = {
   ossKey: 'reports/original.pdf',
@@ -44,4 +45,11 @@ test('report, extraction and reviewed revision can retain the same original-file
   assert.equal(report.sourceFiles[0].sha256, fileEvidence.sha256);
   assert.equal(extraction.source.files[0].sha256, fileEvidence.sha256);
   assert.equal(revision.source.files[0].sha256, fileEvidence.sha256);
+});
+
+test('original evidence is normalized and invalid hashes are never presented as verified', () => {
+  assert.deepEqual(buildReportSourceFiles([{ ...fileEvidence, sha256: fileEvidence.sha256.toUpperCase() }]), [fileEvidence]);
+  assert.equal(buildReportSourceFiles([{ ...fileEvidence, sha256: 'not-a-hash' }])[0].sha256, '');
+  assert.equal(reportHasOriginal({ sourceFiles: [fileEvidence] }), true);
+  assert.equal(reportHasOriginal({ fileUrls: [], ossKeys: [], sourceFiles: [] }), false);
 });
