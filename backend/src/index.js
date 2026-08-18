@@ -6,6 +6,7 @@ const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs');
 const connectDB = require('./config/db');
+const { areSchedulersDisabled } = require('./utils/runtimeSafety');
 
 const app = express();
 
@@ -107,7 +108,12 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const BIND_HOST = process.env.BIND_HOST || undefined;
+app.listen(PORT, BIND_HOST, () => {
+  if (areSchedulersDisabled()) {
+    console.log('[startup] 定时任务与启动数据修复已禁用');
+    return;
+  }
   console.log(`🚀 服务启动成功，端口：${PORT}`);
   // 重置上次进程崩溃遗留的 processing 状态（OOM/kill 导致 catch 未运行）
   const MedicalReport = require('./models/MedicalReport');

@@ -73,6 +73,7 @@ const { ALLOWED_REPORT_MIME_TYPES, assertReportFileBuffer, assertVerifiedReportO
 const { validateReportAssociation } = require('../utils/reportAssociationPolicy');
 const { ensureReportAbnormalReview } = require('../utils/reportAbnormalReview');
 const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIntegrity');
+const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -2914,7 +2915,7 @@ router.post('/upload/report-file', staffAuth, checkAnyPermissionStrict('reports'
     let verifiedMimeType;
     try { verifiedMimeType = assertReportFileBuffer(req.file.buffer, req.file.mimetype); }
     catch (fileTypeError) { return res.status(400).json({ success: false, message: fileTypeError.message }); }
-    const result = await uploadBuffer(req.file.buffer, verifiedMimeType, 'reports');
+    const result = await uploadBuffer(req.file.buffer, verifiedMimeType, getReportUploadFolder());
     uploadedOssKey = result.key;
     const registration = await TemporaryReportUpload.create({
       staffId: req.staff._id,
