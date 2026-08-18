@@ -103,6 +103,12 @@ function signStoredUrl(url, key, expires = 600) {
   try { return getSignedUrl(resolvedKey, expires); } catch { return url || ''; }
 }
 
+// 供服务端受控预览使用。浏览器不直接读取私有 OSS 对象，避免对象的下载策略影响内嵌预览。
+async function getObjectStream(key) {
+  if (!key) throw new Error('文件对象不存在');
+  return getClient().getStream(key);
+}
+
 // 从 OSS URL 提取 key
 function urlToKey(url) {
   const bucket = process.env.OSS_BUCKET;
@@ -110,4 +116,4 @@ function urlToKey(url) {
   return match ? match[1] : null;
 }
 
-module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, urlToKey, convertHeicBase64IfNeeded };

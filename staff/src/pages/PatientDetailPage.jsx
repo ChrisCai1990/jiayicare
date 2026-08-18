@@ -9838,8 +9838,9 @@ export default function PatientDetailPage() {
                   // 一份报告可能关联多张照片(如"结论页"+"数据页"，见 fileUrls)。content 场景只有单个
                   // data URI，没有多图概念，仍走单文件展示；fileUrls 存在且 >1 张时逐张列出，
                   // 否则退化为单文件展示，兼容旧数据(只有fileUrl没有fileUrls的历史报告)。
-                  const multiUrls = (!showReportDetail.content && showReportDetail.fileUrls && showReportDetail.fileUrls.length > 1)
-                    ? showReportDetail.fileUrls : null
+                  const reportPreviewUrls = showReportDetail.previewUrls?.length ? showReportDetail.previewUrls : showReportDetail.fileUrls
+                  const multiUrls = (!showReportDetail.content && reportPreviewUrls && reportPreviewUrls.length > 1)
+                    ? reportPreviewUrls : null
                   if (multiUrls) {
                     const isPdf = showReportDetail.mimeType === 'application/pdf'
                     const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
@@ -9862,7 +9863,7 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   }
-                  const rawSrc = showReportDetail.content || showReportDetail.fileUrl
+                  const rawSrc = showReportDetail.content || showReportDetail.previewUrl || showReportDetail.fileUrl
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
                   const isPdf = showReportDetail.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
                   const isImg = showReportDetail.mimeType?.startsWith('image/') || rawSrc.startsWith('data:image')
@@ -10106,8 +10107,9 @@ export default function PatientDetailPage() {
                   const paneStyle = { width: '40%', borderRight: '1px solid #E0D9CE', overflow: 'auto', flexShrink: 0, background: '#F6F9F7', padding: 8 }
                   // 一份报告可能关联多张照片(fileUrls，如"结论页"+"数据页")。content 场景没有多图概念，
                   // 仍走单文件预览；fileUrls 有多张时全部展示，不再只取第一张，避免审核时看不到其余照片。
-                  const multiUrls = (!ocrReviewReport.content && ocrReviewReport.fileUrls && ocrReviewReport.fileUrls.length > 1)
-                    ? ocrReviewReport.fileUrls : null
+                  const reportPreviewUrls = ocrReviewReport.previewUrls?.length ? ocrReviewReport.previewUrls : ocrReviewReport.fileUrls
+                  const multiUrls = (!ocrReviewReport.content && reportPreviewUrls && reportPreviewUrls.length > 1)
+                    ? reportPreviewUrls : null
                   if (multiUrls) {
                     const isPdf = ocrReviewReport.mimeType === 'application/pdf'
                     return (
@@ -10131,7 +10133,7 @@ export default function PatientDetailPage() {
                       </div>
                     )
                   }
-                  const rawSrc = ocrReviewReport.content || ocrReviewReport.fileUrl || (ocrReviewReport.fileUrls && ocrReviewReport.fileUrls[0]) || ''
+                  const rawSrc = ocrReviewReport.content || ocrReviewReport.previewUrl || ocrReviewReport.fileUrl || (ocrReviewReport.fileUrls && ocrReviewReport.fileUrls[0]) || ''
                   if (!rawSrc) return <div style={{ ...paneStyle, color: '#B0C4BB', fontSize: 13, padding: 16 }}>无原始文件可预览</div>
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
                   const isPdf = ocrReviewReport.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')

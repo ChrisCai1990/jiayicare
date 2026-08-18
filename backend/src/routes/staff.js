@@ -71,7 +71,7 @@ const {
 const staffAuth = require('../middleware/staffAuth');
 const checkPermission = require('../middleware/checkPermission');
 const { checkPlanType } = require('../middleware/checkPermission');
-const { uploadBuffer, deleteFile, signStoredUrl } = require('../utils/oss');
+const { uploadBuffer, deleteFile, signStoredUrl, getObjectStream, urlToKey } = require('../utils/oss');
 const router = express.Router();
 
 function withSignedReportFiles(report) {
@@ -81,6 +81,14 @@ function withSignedReportFiles(report) {
   const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));
   obj.fileUrls = signedUrls;
   obj.fileUrl = signedUrls[0] || '';
+  // PDF 在 OSS 侧可能按附件下载；预览地址由 API 以 inline 响应转发，且仅对当前报告、当前文件短时有效。
+  obj.previewUrls = urls.map((url, index) => {
+    const key = keys[index] || urlToKey(url || '');
+    if (!key || !obj._id || !process.env.JWT_SECRET) return '';
+    const token = jwt.sign({ scope: 'report-preview', reportId: String(obj._id), fileIndex: index }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    return `/staff/medical-reports/${obj._id}/preview/${index}?token=${encodeURIComponent(token)}`;
+  });
+  obj.previewUrl = obj.previewUrls[0] || '';
   return obj;
 }
 
@@ -1856,6 +1864,41 @@ router.get('/medical-reports', staffAuth, checkPermission('reports', 'view'), as
     MedicalReport.countDocuments(filter),
   ]);
   res.json({ success: true, data: { reports: reports.map(withSignedReportFiles), total } });
+});
+
+// GET /api/staff/medical-reports/:id/preview/:index
+// iframe/img 无法携带医护端 Authorization 请求头，故使用仅绑定某份报告某个文件、10 分钟失效的预览令牌。
+// 不透传 OSS 的 Content-Disposition，统一以 inline 返回，避免 PDF 被浏览器下载后无法在审核弹窗内查看。
+router.get('/medical-reports/:id/preview/:index', async (req, res) => {
+  try {
+    const payload = jwt.verify(String(req.query.token || ''), process.env.JWT_SECRET);
+    const fileIndex = Number(req.params.index);
+    if (payload.scope !== 'report-preview' || payload.reportId !== String(req.params.id)
+      || payload.fileIndex !== fileIndex || !Number.isInteger(fileIndex) || fileIndex < 0) {
+      return res.status(403).json({ success: false, message: '预览链接无效或已失效' });
+    }
+
+    const report = await MedicalReport.findById(req.params.id).select('fileUrl fileUrls ossKey ossKeys mimeType');
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const urls = report.fileUrls?.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const keys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    const key = keys[fileIndex] || urlToKey(urls[fileIndex] || '');
+    if (!key) return res.status(404).json({ success: false, message: '原始文件不存在' });
+
+    const object = await getObjectStream(key);
+    res.status(200);
+    res.set({
+      'Content-Type': object.res.headers['content-type'] || report.mimeType || 'application/octet-stream',
+      'Content-Disposition': 'inline',
+      'Cache-Control': 'private, no-store',
+      'Referrer-Policy': 'no-referrer',
+      'X-Content-Type-Options': 'nosniff',
+    });
+    object.stream.on('error', () => { if (!res.headersSent) res.status(502).end(); else res.destroy(); });
+    object.stream.pipe(res);
+  } catch {
+    return res.status(403).json({ success: false, message: '预览链接无效或已失效' });
+  }
 });
 
 // GET /api/staff/medical-reports/:id
