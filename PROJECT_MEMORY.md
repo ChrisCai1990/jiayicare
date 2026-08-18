@@ -6,6 +6,11 @@
 - `/api/reports/upload-base64` 现按文件头校验 PDF/JPG/PNG/WEBP/HEIC，上传成功后仅向当前用户签发 30 分钟上传凭证。创建报告时优先以凭证内的 OSS key 和 URL 为准；中途上传或建档失败时 App 调用受凭证约束的清理接口回收该次对象。
 - 本机 Expo 依赖目录被占用，无法完成 Web 构建；上线前由部署脚本的干净依赖安装环境完成构建并核验。后端路由已通过 `node --check` 与 `git diff --check`。
 
+## 2026-08-18：私有 PDF 预览分段读取
+
+- 医护端报告预览继续通过短时、报告与文件索引绑定的 API 令牌访问私有 OSS；预览代理现只透传受校验的单段 `Range` 请求，并返回 OSS 的 `206`、`Content-Range`、`Content-Length`、`Accept-Ranges`。大 PDF 可由浏览器优先读取当前页所需字节，避免等待整份文件流式完成。
+- 仍保持 `Content-Disposition: inline`、`private, no-store` 和 `no-referrer`；不因性能优化改为公开 Bucket 或长期直链。
+
 ## 2026-08-18：历史报告 OSS 预览签名修复
 
 - 历史报告迁移至私有 OSS 后，会员详情页的 `GET /api/staff/patients/:id/reports` 曾直接返回原始对象 URL，AI 审核弹窗会出现 `AccessDenied`。该接口现与其他报告读取接口统一通过 `withSignedReportFiles` 签发短时预览 URL。

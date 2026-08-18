@@ -104,9 +104,9 @@ function signStoredUrl(url, key, expires = 600) {
 }
 
 // 供服务端受控预览使用。浏览器不直接读取私有 OSS 对象，避免对象的下载策略影响内嵌预览。
-async function getObjectStream(key) {
+async function getObjectStream(key, headers = {}) {
   if (!key) throw new Error('文件对象不存在');
-  return getClient().getStream(key);
+  return getClient().getStream(key, { headers });
 }
 
 // 从 OSS URL 提取 key

@@ -1887,15 +1887,28 @@ router.get('/medical-reports/:id/preview/:index', async (req, res) => {
     const key = keys[fileIndex] || urlToKey(urls[fileIndex] || '');
     if (!key) return res.status(404).json({ success: false, message: '原始文件不存在' });
 
-    const object = await getObjectStream(key);
-    res.status(200);
+    // PDF 阅读器会使用 Range 按需读取当前页附近的字节。此前这里总是转发完整对象，
+    // 大 PDF 每次打开/翻页都必须先等待较大的下载，审核体验很差。
+    // 只接受单段 bytes 范围，避免把任意请求头透传到 OSS。
+    const range = String(req.headers.range || '').trim();
+    if (range && !/^bytes=\d*-\d*$/.test(range)) {
+      return res.status(416).set('Content-Range', 'bytes */*').end();
+    }
+    const object = await getObjectStream(key, range ? { Range: range } : {});
+    const sourceHeaders = object.res.headers || {};
+    const isPartial = object.res.status === 206;
+    res.status(isPartial ? 206 : 200);
     res.set({
-      'Content-Type': object.res.headers['content-type'] || report.mimeType || 'application/octet-stream',
+      'Content-Type': sourceHeaders['content-type'] || report.mimeType || 'application/octet-stream',
       'Content-Disposition': 'inline',
+      'Accept-Ranges': 'bytes',
       'Cache-Control': 'private, no-store',
       'Referrer-Policy': 'no-referrer',
       'X-Content-Type-Options': 'nosniff',
     });
+    if (sourceHeaders['content-length']) res.set('Content-Length', sourceHeaders['content-length']);
+    if (sourceHeaders['content-range']) res.set('Content-Range', sourceHeaders['content-range']);
+    if (sourceHeaders.etag) res.set('ETag', sourceHeaders.etag);
     object.stream.on('error', () => { if (!res.headersSent) res.status(502).end(); else res.destroy(); });
     object.stream.pipe(res);
   } catch {
