@@ -11487,6 +11487,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadStep, setUploadStep] = useState('')
   const [error, setError] = useState('')
+  const [dragActive, setDragActive] = useState(false)
+  const fileInputRef = useRef(null)
   const pendingUploadTokensRef = useRef(new Set())
   const mountedRef = useRef(true)
   const uploadSessionIdRef = useRef(globalThis.crypto?.randomUUID?.() || `report-${Date.now()}-${Math.random().toString(36).slice(2)}`)
@@ -11535,8 +11537,8 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const [metaDetecting, setMetaDetecting] = useState(false)
   // 单文件自动识别时会先上传拿URL，缓存下来给 handleSubmit 复用，避免同一个文件传两次
   const preUploadedRef = useRef(null) // { file, url, mimeType, fileSize }
-  const handleFile = async (e) => {
-    const files = Array.from(e.target.files)
+  const handleSelectedFiles = async (selectedFiles) => {
+    const files = Array.from(selectedFiles || [])
     if (!files.length) return
     if (files.length > 50) {
       setError('单次最多选择 50 个文件，请分批上传')
@@ -11573,6 +11575,11 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
       } catch (err) { /* 识别失败静默忽略，专员仍可手动填写，不阻塞上传流程 */ }
       finally { setMetaDetecting(false) }
     }
+  }
+
+  const handleFile = (e) => {
+    handleSelectedFiles(e.target.files)
+    e.target.value = ''
   }
 
   const moveFile = (index, direction) => {
@@ -11699,6 +11706,78 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">1. 选择报告原件 *</label>
+            <div style={{ fontSize: 12, color: '#6F8379', marginBottom: 8 }}>
+              支持图片或 PDF，每个文件不超过 100MB；原件会独立留存，识别结果须经人工审核后才进入专项筛查。
+            </div>
+            <input ref={fileInputRef} type="file" accept="image/*,.pdf" multiple onChange={handleFile} style={{ display: 'none' }} />
+            <button
+              type="button"
+              disabled={saving}
+              onClick={() => fileInputRef.current?.click()}
+              onDragEnter={e => { e.preventDefault(); if (!saving) setDragActive(true) }}
+              onDragOver={e => { e.preventDefault(); if (!saving) setDragActive(true) }}
+              onDragLeave={e => { e.preventDefault(); setDragActive(false) }}
+              onDrop={e => {
+                e.preventDefault()
+                setDragActive(false)
+                if (!saving) handleSelectedFiles(e.dataTransfer.files)
+              }}
+              style={{
+                width: '100%', minHeight: 86, padding: '14px 18px', borderRadius: 10,
+                border: `1.5px dashed ${dragActive ? '#1E6B50' : '#AFC5BA'}`,
+                background: dragActive ? '#EAF6F0' : '#F7FAF8', cursor: saving ? 'not-allowed' : 'pointer',
+                color: '#304A3E', textAlign: 'center', transition: 'all .15s ease',
+              }}
+            >
+              <span style={{ display: 'block', fontSize: 14, fontWeight: 700 }}>{fileDatas.length ? '重新选择原件' : '点击选择或拖入 PDF / 图片'}</span>
+              <span style={{ display: 'block', marginTop: 5, fontSize: 12, color: '#71877C', fontWeight: 400 }}>多页照片可一次选择，选择后可调整页序</span>
+            </button>
+            {metaDetecting && (
+              <div style={{ marginTop: 8, padding: '7px 9px', borderRadius: 7, background: '#EEF6F2', color: '#4A6558', fontSize: 12 }}>
+                正在从原件读取机构和日期，不影响原件上传；识别不到时可手动补充。
+              </div>
+            )}
+            {fileDatas.length > 0 && (
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {fileDatas.map((fd, i) => (
+                  <div key={fd.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid #DCE5E0', borderRadius: 8, background: '#FAFCFB' }}>
+                    <span style={{ width: 22, height: 22, borderRadius: 6, background: '#E8F5EF', color: '#1E6B50', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
+                    <span style={{ minWidth: 0, flex: 1, fontSize: 12, color: '#304A3E', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fd.name}>{fd.name}</span>
+                    <span style={{ fontSize: 11, color: '#8AA096', flexShrink: 0 }}>{(fd.fileSize / 1024 / 1024).toFixed(fd.fileSize >= 1024 * 1024 ? 1 : 2)} MB</span>
+                    {fileDatas.length > 1 && <>
+                      <button type="button" onClick={() => moveFile(i, -1)} disabled={i === 0 || saving} aria-label={`上移 ${fd.name}`} title="上移一页" style={{ border: 0, background: 'transparent', color: i === 0 ? '#C8D5CE' : '#4A6558', cursor: i === 0 ? 'default' : 'pointer', padding: '2px 4px' }}>↑</button>
+                      <button type="button" onClick={() => moveFile(i, 1)} disabled={i === fileDatas.length - 1 || saving} aria-label={`下移 ${fd.name}`} title="下移一页" style={{ border: 0, background: 'transparent', color: i === fileDatas.length - 1 ? '#C8D5CE' : '#4A6558', cursor: i === fileDatas.length - 1 ? 'default' : 'pointer', padding: '2px 4px' }}>↓</button>
+                    </>}
+                    <button type="button" onClick={() => removeFile(fd.id)} disabled={saving} aria-label={`移除 ${fd.name}`} title="移除文件" style={{ border: 0, background: 'transparent', color: '#B34A4A', cursor: 'pointer', padding: '2px 4px' }}>移除</button>
+                  </div>
+                ))}
+                {fileDatas.length > 1 && (
+                  <div style={{ marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: '#304A3E', fontWeight: 600, marginBottom: 6 }}>这些文件之间是什么关系？</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {[
+                        [true, '同一份报告', `按上方顺序合并为 1 份报告，共 ${fileDatas.length} 页`],
+                        [false, '不同报告', `分别创建 ${fileDatas.length} 份报告，可稍后单独审核`],
+                      ].map(([value, label, help]) => (
+                        <label key={String(value)} style={{ display: 'flex', gap: 7, padding: '9px 10px', border: `1.5px solid ${mergeFiles === value ? '#1E6B50' : '#D5DFDA'}`, borderRadius: 8, background: mergeFiles === value ? '#F0F8F4' : '#fff', cursor: 'pointer' }}>
+                          <input type="radio" name="report-file-relation" checked={mergeFiles === value} onChange={() => setMergeFiles(value)} style={{ marginTop: 2 }} />
+                          <span><span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#304A3E' }}>{label}</span><span style={{ display: 'block', marginTop: 2, fontSize: 11, lineHeight: 1.4, color: '#70847A' }}>{help}</span></span>
+                        </label>
+                      ))}
+                    </div>
+                    {mergeFiles && <div style={{ fontSize: 11, color: '#7A5A20', background: '#FFF8E8', border: '1px solid #EED9A6', borderRadius: 6, padding: '6px 8px', marginTop: 7 }}>页码顺序会影响 OCR 阅读顺序，请在上传前用 ↑ ↓ 核对。</div>}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div style={{ borderTop: '1px solid #E4EBE7', marginTop: 2, paddingTop: 12, fontSize: 13, fontWeight: 700, color: '#304A3E' }}>
+            2. 补充报告信息
+          </div>
+
           {/* L1 大类 */}
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">报告大类（可不选）</label>
@@ -11748,45 +11827,6 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告原件 *</label>
-            <div style={{ fontSize: 12, color: '#6F8379', marginBottom: 6 }}>支持图片或 PDF，每个文件不超过 100MB；多页照片可一次选择。</div>
-            <input type="file" accept="image/*,.pdf" multiple onChange={e => { handleFile(e); e.target.value = '' }} style={{ fontSize: 13, padding: '6px 0' }} />
-            {fileDatas.length > 0 && (
-              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
-                {fileDatas.map((fd, i) => (
-                  <div key={fd.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid #DCE5E0', borderRadius: 8, background: '#FAFCFB' }}>
-                    <span style={{ width: 22, height: 22, borderRadius: 6, background: '#E8F5EF', color: '#1E6B50', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
-                    <span style={{ minWidth: 0, flex: 1, fontSize: 12, color: '#304A3E', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fd.name}>{fd.name}</span>
-                    <span style={{ fontSize: 11, color: '#8AA096', flexShrink: 0 }}>{(fd.fileSize / 1024 / 1024).toFixed(fd.fileSize >= 1024 * 1024 ? 1 : 2)} MB</span>
-                    {fileDatas.length > 1 && <>
-                      <button type="button" onClick={() => moveFile(i, -1)} disabled={i === 0 || saving} aria-label={`上移 ${fd.name}`} title="上移一页" style={{ border: 0, background: 'transparent', color: i === 0 ? '#C8D5CE' : '#4A6558', cursor: i === 0 ? 'default' : 'pointer', padding: '2px 4px' }}>↑</button>
-                      <button type="button" onClick={() => moveFile(i, 1)} disabled={i === fileDatas.length - 1 || saving} aria-label={`下移 ${fd.name}`} title="下移一页" style={{ border: 0, background: 'transparent', color: i === fileDatas.length - 1 ? '#C8D5CE' : '#4A6558', cursor: i === fileDatas.length - 1 ? 'default' : 'pointer', padding: '2px 4px' }}>↓</button>
-                    </>}
-                    <button type="button" onClick={() => removeFile(fd.id)} disabled={saving} aria-label={`移除 ${fd.name}`} title="移除文件" style={{ border: 0, background: 'transparent', color: '#B34A4A', cursor: 'pointer', padding: '2px 4px' }}>移除</button>
-                  </div>
-                ))}
-                {fileDatas.length > 1 && (
-                  <div style={{ marginTop: 2 }}>
-                    <div style={{ fontSize: 12, color: '#304A3E', fontWeight: 600, marginBottom: 6 }}>这些文件之间是什么关系？</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-                      {[
-                        [true, '同一份报告', `按上方顺序合并为 1 份报告，共 ${fileDatas.length} 页`],
-                        [false, '不同报告', `分别创建 ${fileDatas.length} 份报告，可稍后单独审核`],
-                      ].map(([value, label, help]) => (
-                        <label key={String(value)} style={{ display: 'flex', gap: 7, padding: '9px 10px', border: `1.5px solid ${mergeFiles === value ? '#1E6B50' : '#D5DFDA'}`, borderRadius: 8, background: mergeFiles === value ? '#F0F8F4' : '#fff', cursor: 'pointer' }}>
-                          <input type="radio" name="report-file-relation" checked={mergeFiles === value} onChange={() => setMergeFiles(value)} style={{ marginTop: 2 }} />
-                          <span><span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#304A3E' }}>{label}</span><span style={{ display: 'block', marginTop: 2, fontSize: 11, lineHeight: 1.4, color: '#70847A' }}>{help}</span></span>
-                        </label>
-                      ))}
-                    </div>
-                    {mergeFiles && <div style={{ fontSize: 11, color: '#7A5A20', background: '#FFF8E8', border: '1px solid #EED9A6', borderRadius: 6, padding: '6px 8px', marginTop: 7 }}>页码顺序会影响 OCR 阅读顺序，请在上传前用 ↑ ↓ 核对。</div>}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">备注</label>
             <textarea className="form-input" rows={2} value={form.note} onChange={e => setForm(f => ({ ...f, note: e.target.value }))} placeholder="补充说明（可选）" />
           </div>
@@ -11809,7 +11849,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
             <button className="btn btn-secondary" onClick={handleClose} disabled={saving}>取消</button>
-            <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
+            <button className="btn btn-primary" onClick={handleSubmit} disabled={saving || !fileDatas.length || !form.title.trim()} title={!fileDatas.length ? '请先选择报告原件' : (!form.title.trim() ? '请填写报告标题' : '')}>
               {saving ? (uploadProgress < 100 ? `上传中 ${uploadProgress}%` : '处理中...') : '确认上传'}
             </button>
           </div>
