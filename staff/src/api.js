@@ -85,6 +85,7 @@ export const staffAPI = {
   getReport:     (id)     => req(`/staff/medical-reports/${id}`),
   getReportExtractions: (id) => req(`/staff/medical-reports/${id}/extractions`),
   getReportExtraction:  (id, version) => req(`/staff/medical-reports/${id}/extractions/${version}`),
+  getReportExtractionDiff: (id, version, baselineVersion) => req(`/staff/medical-reports/${id}/extractions/${version}/compare/${baselineVersion}`),
   getReportRevisions:   (id) => req(`/staff/medical-reports/${id}/revisions`),
   getReportReviewEvents: (id) => req(`/staff/medical-reports/${id}/review-events`),
   getReportReviewIntegrity: (id) => req(`/staff/medical-reports/${id}/review-integrity`),

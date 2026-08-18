@@ -76,6 +76,7 @@ const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIn
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
+const { compareReportExtractions } = require('../utils/reportExtractionDiff');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -1968,6 +1969,24 @@ router.get('/medical-reports/:id/extractions/:version', staffAuth, checkPermissi
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const data = await ReportExtraction.findOne({ reportId: report._id, version: Number(req.params.version) }).lean();
     if (!data) return res.status(404).json({ success: false, message: '识别版本不存在' });
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+// 同一报告的两个不可变 OCR 快照差异。仅返回结构化项目差异，不返回原件地址或 OCR 原始响应。
+router.get('/medical-reports/:id/extractions/:version/compare/:baselineVersion', staffAuth, checkPermissionStrict('reports', 'view'), async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id).select('_id');
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const [current, baseline] = await Promise.all([
+      ReportExtraction.findOne({ reportId: report._id, version: Number(req.params.version) }).lean(),
+      ReportExtraction.findOne({ reportId: report._id, version: Number(req.params.baselineVersion) }).lean(),
+    ]);
+    if (!current || !baseline) return res.status(404).json({ success: false, message: '识别版本不存在' });
+    const data = compareReportExtractions(current, baseline);
+    if (!data.sameSource) {
+      return res.status(409).json({ success: false, message: '两个识别版本的原件来源不同，不能直接比较' });
+    }
     res.json({ success: true, data });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -9862,8 +9881,8 @@ async function runReportParse(reportId, options = {}) {
                   const text = await parseImage(batchImages[i], firstPassPrompt, { isUrl: false, model: firstPassModel, maxTokens: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate || isComprehensiveCheckup) ? 120000 : 45000 });
                   const p = safeParseJSON(text);
                   if (p) { batchResults[i] = p; break; }
-                  if (attempt === 1) console.log(`[parse-ai] 页${i + 1}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
-                } catch (e) { if (attempt === 1) console.log(`[parse-ai] 页${i + 1}异常: ${e.message}`); }
+                  if (attempt === 1) console.log(`[parse-ai] 页${pageNum}解析失败 raw(前200)=${String(text).slice(0, 200)}`);
+                } catch (e) { if (attempt === 1) console.log(`[parse-ai] 页${pageNum}异常: ${e.message}`); }
               }
             }
           };

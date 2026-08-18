@@ -1684,6 +1684,8 @@ export default function PatientDetailPage() {
   const [ocrIntegrityRepairBusy, setOcrIntegrityRepairBusy] = useState(false)
   const [ocrRevisionDiff, setOcrRevisionDiff] = useState(null)
   const [ocrRevisionDiffLoading, setOcrRevisionDiffLoading] = useState(false)
+  const [ocrExtractionDiff, setOcrExtractionDiff] = useState(null)
+  const [ocrExtractionDiffLoading, setOcrExtractionDiffLoading] = useState(false)
   const [ocrCandidateSelections, setOcrCandidateSelections] = useState({})
   const [ocrCandidateBusy, setOcrCandidateBusy] = useState(null)
   const [ocrReviewFilter, setOcrReviewFilter] = useState('all') // v2 草稿默认仅看需核对；旧草稿完整展示
@@ -2561,6 +2563,7 @@ export default function PatientDetailPage() {
     setOcrVersionHistory(null)
     setOcrVersionHistoryLoading(true)
     setOcrRevisionDiff(null)
+    setOcrExtractionDiff(null)
     Promise.all([
       staffAPI.getReportExtractions(r._id),
       staffAPI.getReportRevisions(r._id),
@@ -2577,6 +2580,14 @@ export default function PatientDetailPage() {
         reviewEvents: reviewEvents.data || [],
         reviewIntegrity: reviewIntegrity.data || null,
       })
+      const extractionVersions = (extractions.data || []).slice().sort((a, b) => Number(b.version) - Number(a.version))
+      if (extractionVersions.length >= 2) {
+        setOcrExtractionDiffLoading(true)
+        staffAPI.getReportExtractionDiff(r._id, extractionVersions[0].version, extractionVersions[1].version)
+          .then(response => setOcrExtractionDiff(response.data || null))
+          .catch(() => setOcrExtractionDiff(null))
+          .finally(() => setOcrExtractionDiffLoading(false))
+      }
     }).catch(() => {
       // 旧后端或暂时的网络失败不影响审核主链路；弹窗中会明确显示版本记录暂不可用。
       setOcrVersionHistory({ reportId: r._id, unavailable: true, extractions: [], revisions: [], screeningCandidates: [], pendingScreeningCount: 0, reviewEvents: [] })
@@ -10392,11 +10403,22 @@ export default function PatientDetailPage() {
                               <div style={{ marginBottom: 8, color: '#237A57' }}>审核版本与专项筛查派生数据一致。</div>
                             )}
                             <div style={{ fontWeight: 700, color: '#365347', marginBottom: 3 }}>识别草稿（{history.extractions.length}）</div>
+                            {ocrExtractionDiffLoading && <div style={{ marginBottom: 7 }}>正在核对最近两次识别结果…</div>}
+                            {ocrExtractionDiff && ocrExtractionDiff.summary?.severity !== 'none' && (
+                              <details open style={{ margin: '5px 0 8px', padding: '7px 9px', borderRadius: 6, background: ocrExtractionDiff.summary.severity === 'high' ? '#FFF1F0' : '#FFF8E8', border: `1px solid ${ocrExtractionDiff.summary.severity === 'high' ? '#F1B8B4' : '#F2D39A'}`, color: ocrExtractionDiff.summary.severity === 'high' ? '#9B2C2C' : '#8A5A12' }}>
+                                <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
+                                  OCR V{ocrExtractionDiff.currentVersion} 对比 V{ocrExtractionDiff.baselineVersion}：新增 {ocrExtractionDiff.summary.added} 项，减少 {ocrExtractionDiff.summary.removed} 项，内容变化 {ocrExtractionDiff.summary.changed} 项
+                                </summary>
+                                <div style={{ marginTop: 6 }}>这是识别版本差异提醒，不代表原报告项目真的增减；系统不会自动沿用旧版结果，请结合左侧原件复核。</div>
+                                {ocrExtractionDiff.highAttentionRemoved?.length > 0 && <div style={{ marginTop: 5, fontWeight: 700 }}>重点复核：{ocrExtractionDiff.highAttentionRemoved.slice(0, 8).map(item => `${item.name}${item.sourcePage ? `（P${item.sourcePage}）` : ''}`).join('、')}</div>}
+                                {(ocrExtractionDiff.removed || []).filter(item => !ocrExtractionDiff.highAttentionRemoved?.some(high => high.key === item.key)).slice(0, 8).map(item => <div key={`ocr-remove-${item.key}`} style={{ marginTop: 3 }}>本版未识别：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
+                              </details>
+                            )}
                             {history.extractions.length ? history.extractions.map(extraction => (
                               <div key={extraction._id} style={{ padding: '3px 0' }}>
                                 OCR V{extraction.version}{String(ocrReviewReport.currentExtractionId || '') === String(extraction._id) ? ' · 当前草稿' : ''}
                                 {extraction.origin === 'page_reparse' ? ` · 补提第 ${extraction.reparsePage || '-'} 页` : ''}
-                                {` · ${extraction.engine?.ocrVersion || '旧版识别'} · ${historyTime(extraction.createdAt)}`}
+                                {` · ${extraction.source?.pageCount || 0} 页 / ${extraction.summary?.total ?? extraction.summary?.itemCount ?? '-'} 项 · ${extraction.engine?.ocrVersion || '旧版识别'} · ${historyTime(extraction.createdAt)}`}
                               </div>
                             )) : <div>当前报告尚无版本化 OCR 快照（历史报告会在下次重新识别后开始留痕）。</div>}
                             <div style={{ fontWeight: 700, color: '#365347', margin: '8px 0 3px' }}>审核发布版本（{history.revisions.length}）</div>
