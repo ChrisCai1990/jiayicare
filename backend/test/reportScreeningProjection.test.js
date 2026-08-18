@@ -46,7 +46,7 @@ test('正式报告中的未归类项目进入独立候选，已归类项目不�
   ]);
   assert.deepEqual(result, [{
     sourceItemId: 'a',
-    itemSnapshot: { name: '血糖', itemType: 'lab', sourcePage: 3, sourceSection: '', orderName: '', status: 'normal' },
+    itemSnapshot: { name: '血糖', itemType: 'lab', sourcePage: 3, sourcePages: [3], sourceSection: '', orderName: '', status: 'normal' },
   }]);
 });
 

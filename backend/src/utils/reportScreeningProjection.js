@@ -1,3 +1,5 @@
+const { reportItemSourcePages } = require('./reportItemEvidence');
+
 function buildReportScreeningCandidates(items) {
   return (Array.isArray(items) ? items : []).filter(item => {
     const key = item?.screeningKey || item?.screeningKeys?.[0];
@@ -6,6 +8,7 @@ function buildReportScreeningCandidates(items) {
     sourceItemId: item.sourceItemId,
     itemSnapshot: {
       name: item.name || '', itemType: item.itemType || '', sourcePage: item.sourcePage || null,
+      sourcePages: reportItemSourcePages(item),
       sourceSection: item.sourceSection || '', orderName: item.orderName || '', status: item.status || '',
     },
   }));

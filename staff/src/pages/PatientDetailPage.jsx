@@ -16,6 +16,20 @@ const normalizeRiskTagValues = values => [...new Set((Array.isArray(values) ? va
   .map(value => value.trim())
   .filter(Boolean))]
 
+const reportItemEvidencePages = item => [...new Set([
+  Number(item?.sourcePage),
+  ...(Array.isArray(item?.sourcePages) ? item.sourcePages.map(Number) : []),
+  ...(Array.isArray(item?.sourceEvidence) ? item.sourceEvidence.map(row => Number(row?.page)) : []),
+].filter(page => Number.isInteger(page) && page > 0))].sort((a, b) => a - b)
+
+const reportItemPageLabel = item => {
+  const pages = reportItemEvidencePages(item)
+  if (!pages.length) return ''
+  if (pages.length === 1) return `P${pages[0]}`
+  const contiguous = pages.every((page, index) => index === 0 || page === pages[index - 1] + 1)
+  return contiguous ? `P${pages[0]}–P${pages[pages.length - 1]}` : pages.map(page => `P${page}`).join('、')
+}
+
 function HealthPortraitOverview({ user, reports = [] }) {
   const [expandedGroups, setExpandedGroups] = useState({})
   const profile = user.healthProfile || {}
@@ -2689,9 +2703,9 @@ export default function PatientDetailPage() {
     }
     setOcrEditItems(items)
     setOcrFocusItemIndex(focusedIndex >= 0 ? focusedIndex : null)
-    const pages = items.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0)
+    const pages = items.flatMap(reportItemEvidencePages)
     const focused = focusedIndex >= 0 ? items[focusedIndex] : null
-    setOcrReviewPage(Number(focused?.sourcePage) || (pages.length ? Math.min(...pages) : 1))
+    setOcrReviewPage(reportItemEvidencePages(focused)[0] || (pages.length ? Math.min(...pages) : 1))
   }
 
   const openArchiveSection = (section) => {
@@ -10277,9 +10291,9 @@ export default function PatientDetailPage() {
         ]
         const updItem = (i, patch) => setOcrEditItems(arr => arr.map((it, idx) => idx === i ? { ...it, ...patch } : it))
         const delItem = (i) => setOcrEditItems(arr => arr.filter((_, idx) => idx !== i))
-        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
+        const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab', sourcePage: ocrReviewPage || 1, sourcePages: [ocrReviewPage || 1] }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
-        const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
+        const sourcePages = [...new Set(ocrEditItems.flatMap(reportItemEvidencePages))].sort((a, b) => a - b)
         // PDF 可浏览页数不能由“成功提取到项目的页码”推断，否则封面、建议页、纯影像页或
         // 本次未识别页会从下拉框消失。优先使用当前报告文字层页数和识别快照原件页数，
         // 仅在旧数据没有页数元数据时才回退到项目最大页码。
@@ -10463,7 +10477,10 @@ export default function PatientDetailPage() {
                   const inp = { width: '100%', padding: '4px 6px', border: '1px solid #E0D9CE', borderRadius: 4, fontSize: 12, boxSizing: 'border-box' }
                   // 后端已经按报告页码和页内位置保存顺序；审核层只按该顺序展示，不再按类型重排。
                   const indexedAll = ocrEditItems.map((it, i) => ({ it, i }))
-                  const pageItems = indexedAll.filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
+                  const pageItems = indexedAll.filter(({ it }) => {
+                    const pages = reportItemEvidencePages(it)
+                    return !pages.length || pages.includes(activePage)
+                  })
                   // “待归类”属于后续专项筛查分流，不应让它占用报告事实审核队列。
                   // 审核页优先解决原文、数值、单位、参考范围及重复等证据问题。
                   const nonClassificationFlags = it => (it.qualityFlags || []).filter(flag => flag !== 'unclassified')
@@ -10604,8 +10621,8 @@ export default function PatientDetailPage() {
                                 {ocrExtractionDiff.pageCoverage?.emptied?.length > 0 && <div style={{ marginTop: 6, padding: '6px 8px', borderRadius: 5, background: '#FFFFFFB8', fontWeight: 700 }}>
                                   整页覆盖下降：{ocrExtractionDiff.pageCoverage.emptied.map(item => `P${item.page}（同原件历史版本最多 ${item.baselineCount} 项，本版 0 项）`).join('、')}。请先逐页核对或补提，再提交审核。
                                 </div>}
-                                {ocrExtractionDiff.highAttentionRemoved?.length > 0 && <div style={{ marginTop: 5, fontWeight: 700 }}>重点复核：{ocrExtractionDiff.highAttentionRemoved.slice(0, 8).map(item => `${item.name}${item.sourcePage ? `（P${item.sourcePage}）` : ''}`).join('、')}</div>}
-                                {(ocrExtractionDiff.removed || []).filter(item => !ocrExtractionDiff.highAttentionRemoved?.some(high => high.key === item.key)).slice(0, 8).map(item => <div key={`ocr-remove-${item.key}`} style={{ marginTop: 3 }}>本版未识别：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
+                                {ocrExtractionDiff.highAttentionRemoved?.length > 0 && <div style={{ marginTop: 5, fontWeight: 700 }}>重点复核：{ocrExtractionDiff.highAttentionRemoved.slice(0, 8).map(item => `${item.name}${reportItemPageLabel(item) ? `（${reportItemPageLabel(item)}）` : ''}`).join('、')}</div>}
+                                {(ocrExtractionDiff.removed || []).filter(item => !ocrExtractionDiff.highAttentionRemoved?.some(high => high.key === item.key)).slice(0, 8).map(item => <div key={`ocr-remove-${item.key}`} style={{ marginTop: 3 }}>本版未识别：{item.name || '未命名项目'}{reportItemPageLabel(item) ? `（${reportItemPageLabel(item)}）` : ''}</div>)}
                               </details>
                             )}
                             {history.extractions.length ? history.extractions.map(extraction => (
@@ -10626,7 +10643,7 @@ export default function PatientDetailPage() {
                                   <div key={candidate._id} style={{ marginTop: 7, paddingTop: 7, borderTop: '1px solid #EAD8B3', display: 'grid', gridTemplateColumns: 'minmax(120px,1fr) minmax(180px,1.5fr) auto', gap: 6, alignItems: 'center' }}>
                                     <div>
                                       <div style={{ fontWeight: 700, color: '#51432D' }}>{candidate.itemSnapshot?.name || '未命名项目'}</div>
-                                      <div style={{ color: '#8A7652' }}>{candidate.itemSnapshot?.sourcePage ? `原报告 P${candidate.itemSnapshot.sourcePage}` : '页码未记录'}</div>
+                                      <div style={{ color: '#8A7652' }}>{reportItemPageLabel(candidate.itemSnapshot) ? `原报告 ${reportItemPageLabel(candidate.itemSnapshot)}` : '页码未记录'}</div>
                                     </div>
                                     <select className="form-input" style={{ fontSize: 11, padding: '5px 7px' }} value={ocrCandidateSelections[candidate._id] || ''}
                                       onChange={event => setOcrCandidateSelections(current => ({ ...current, [candidate._id]: event.target.value }))}>
@@ -10674,9 +10691,9 @@ export default function PatientDetailPage() {
                             {ocrRevisionDiffLoading && <div style={{ marginTop: 8 }}>正在计算版本差异…</div>}
                             {ocrRevisionDiff && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: '#F6F9F7', border: '1px solid #DCE9E1' }}>
                               <div style={{ color: '#365347', fontWeight: 700 }}>审核 V{ocrRevisionDiff.currentRevisionNo} 对比 V{ocrRevisionDiff.baselineRevisionNo}：新增 {ocrRevisionDiff.summary?.added || 0} 项 · 移除 {ocrRevisionDiff.summary?.removed || 0} 项 · 修改 {ocrRevisionDiff.summary?.changed || 0} 项</div>
-                              {(ocrRevisionDiff.changed || []).slice(0, 8).map(item => <div key={item.key} style={{ marginTop: 3 }}>修改：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''} · {item.changes.map(change => change.field).join('、')}</div>)}
-                              {(ocrRevisionDiff.added || []).slice(0, 5).map(item => <div key={`add-${item.key}`} style={{ marginTop: 3 }}>新增：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
-                              {(ocrRevisionDiff.removed || []).slice(0, 5).map(item => <div key={`remove-${item.key}`} style={{ marginTop: 3 }}>移除：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
+                              {(ocrRevisionDiff.changed || []).slice(0, 8).map(item => <div key={item.key} style={{ marginTop: 3 }}>修改：{item.name || '未命名项目'}{reportItemPageLabel(item) ? `（${reportItemPageLabel(item)}）` : ''} · {item.changes.map(change => change.field).join('、')}</div>)}
+                              {(ocrRevisionDiff.added || []).slice(0, 5).map(item => <div key={`add-${item.key}`} style={{ marginTop: 3 }}>新增：{item.name || '未命名项目'}{reportItemPageLabel(item) ? `（${reportItemPageLabel(item)}）` : ''}</div>)}
+                              {(ocrRevisionDiff.removed || []).slice(0, 5).map(item => <div key={`remove-${item.key}`} style={{ marginTop: 3 }}>移除：{item.name || '未命名项目'}{reportItemPageLabel(item) ? `（${reportItemPageLabel(item)}）` : ''}</div>)}
                             </div>}
                           </>}
                         </div>
@@ -10704,19 +10721,21 @@ export default function PatientDetailPage() {
                             <button className="btn btn-secondary btn-sm" onClick={() => setOcrReviewFilter('all')} style={{ background: ocrReviewFilter === 'all' ? '#EEF8F2' : undefined, color: ocrReviewFilter === 'all' ? '#1E6B50' : undefined }}>全部 {pageItems.length}</button>
                           </>}
                           <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增检验项</button>
-                          <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown' }])}>＋ 新增检查项</button>
+                          <button className="btn btn-secondary btn-sm" onClick={() => setOcrEditItems(arr => [...arr, { name: '', itemType: 'imaging', bodyPart: '', findings: '', diagnosis: '', conclusion: '', status: 'unknown', sourcePage: activePage, sourcePages: [activePage] }])}>＋ 新增检查项</button>
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
                         {indexed.map(({ it, i }) => {
                           const sc = STATUS_OPTS.find(s => s.v === it.status)?.color || '#8AA89C'
                           const isFocusedItem = ocrFocusItemIndex === i
+                          const evidencePages = reportItemEvidencePages(it)
                           return (
                             <div key={i} ref={node => { if (node) ocrItemRefs.current[i] = node; else delete ocrItemRefs.current[i] }}
                               style={{ border: isFocusedItem ? '2px solid #7C3AED' : '1px solid #E0D9CE', borderRadius: 8, padding: '10px 12px', background: isFocusedItem ? '#F5F3FF' : (isImaging(it) ? '#fafaf8' : '#fff'), boxShadow: isFocusedItem ? '0 0 0 3px rgba(124,58,237,.12)' : 'none' }}>
                               {isFocusedItem && <div style={{ fontSize: 11, color: '#7C3AED', fontWeight: 800, marginBottom: 6 }}>已定位到需要核对归属的项目</div>}
-                              <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
-                                {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
+                              <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 4 }}>
+                                {evidencePages.length > 0 && <span>原报告 {reportItemPageLabel(it)} ·</span>}<span>第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}</span>
+                                {evidencePages.length > 1 && evidencePages.map(page => <button key={page} type="button" onClick={() => setOcrReviewPage(page)} style={{ border: page === activePage ? '1px solid #7C3AED' : '1px solid #CFC4F5', background: page === activePage ? '#EDE9FE' : '#fff', color: '#6D28D9', borderRadius: 10, padding: '1px 6px', fontSize: 10, cursor: 'pointer' }}>P{page}</button>)}
                               </div>
                               {nonClassificationFlags(it).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
                                 {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ abnormal_unverified: '异常结果待确认', status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || '识别结果待核对'}</span>)}

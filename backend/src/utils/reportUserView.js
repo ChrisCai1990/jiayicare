@@ -12,7 +12,7 @@ const USER_HIDDEN_REPORT_FIELDS = [
 ];
 
 const USER_HIDDEN_ITEM_FIELDS = [
-  'sourceItemId', 'sourcePage',
+  'sourceItemId', 'sourcePage', 'sourcePages', 'sourceEvidence',
   'screeningKeys', 'screeningKey', 'screeningCategory', 'screeningParent',
   'matchStatus', 'matchConfidence',
   'ocrVersion', 'ocrConfidence', 'evidenceText', 'qualityFlags', 'reviewPriority',

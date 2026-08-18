@@ -9,6 +9,8 @@ const HIGH_ATTENTION_NAMES = [
   /空腹血糖|糖化血红蛋白|甲胎蛋白|癌胚抗原/,
 ];
 
+const { reportItemSourcePages } = require('./reportItemEvidence');
+
 function normalizeText(value) {
   return String(value ?? '').trim().replace(/\s+/g, ' ');
 }
@@ -31,6 +33,7 @@ function publicItem(key, item) {
     name: normalizeText(item.name),
     itemType: normalizeText(item.itemType),
     sourcePage: Number(item.sourcePage) || null,
+    sourcePages: reportItemSourcePages(item),
   };
 }
 
@@ -45,9 +48,9 @@ function sameOriginalSource(current, baseline) {
 function pageCounts(items = []) {
   const counts = new Map();
   for (const item of items) {
-    const page = Number(item?.sourcePage);
-    if (!Number.isInteger(page) || page <= 0) continue;
-    counts.set(page, (counts.get(page) || 0) + 1);
+    for (const page of reportItemSourcePages(item)) {
+      counts.set(page, (counts.get(page) || 0) + 1);
+    }
   }
   return counts;
 }

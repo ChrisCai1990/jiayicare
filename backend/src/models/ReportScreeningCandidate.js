@@ -13,6 +13,7 @@ const reportScreeningCandidateSchema = new mongoose.Schema({
     name: { type: String, default: '' },
     itemType: { type: String, default: '' },
     sourcePage: { type: Number, default: null },
+    sourcePages: [{ type: Number }],
     sourceSection: { type: String, default: '' },
     orderName: { type: String, default: '' },
     status: { type: String, default: '' },

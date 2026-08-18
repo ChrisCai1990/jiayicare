@@ -26,7 +26,8 @@ test('存在发布版本时始终返回发布版本而非当前 OCR 工作副本
   const revision = {
     revisionNo: 3,
     items: [{
-      name: '已审核血糖', value: '5.2', sourceItemId: 'internal-item-1', sourcePage: 9,
+      name: '已审核血糖', value: '5.2', sourceItemId: 'internal-item-1', sourcePage: 9, sourcePages: [9, 10],
+      sourceEvidence: [{ page: 9, text: '内部证据', method: 'text_layer' }],
       ocrConfidence: 0.61, evidenceText: '内部识别证据', qualityFlags: ['low_confidence'],
       screeningKey: 'chronic.diabetes', matchConfidence: 0.92,
     }],

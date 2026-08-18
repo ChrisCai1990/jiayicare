@@ -66,6 +66,12 @@ const ReportScreeningCandidate = require('../models/ReportScreeningCandidate');
 const TemporaryReportUpload = require('../models/TemporaryReportUpload');
 const { buildReportScreeningCandidates, mergeScreeningProjectionKeys } = require('../utils/reportScreeningProjection');
 const { ensureReportItemSourceIds } = require('../utils/reportItemSource');
+const {
+  itemTouchesPage,
+  mergeAdjacentReportItemEvidence,
+  normalizeReportItemEvidence,
+  reportItemSourcePages,
+} = require('../utils/reportItemEvidence');
 const { resolveActiveScreeningKey } = require('../utils/screeningCatalogKey');
 const { createReportUploadToken, verifyReportUploadTokens } = require('../utils/reportUploadToken');
 const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction } = require('../utils/reportReviewPolicy');
@@ -2108,15 +2114,15 @@ router.get('/medical-reports/:id/revisions/:revisionNo/compare/:baselineNo', sta
     };
     const before = itemKeyMap(baseline.items);
     const after = itemKeyMap(current.items);
-    const fields = ['name', 'value', 'unit', 'referenceRange', 'status', 'bodyPart', 'findings', 'diagnosis', 'conclusion', 'screeningKey'];
+    const fields = ['name', 'value', 'unit', 'referenceRange', 'status', 'bodyPart', 'findings', 'diagnosis', 'conclusion', 'screeningKey', 'sourcePages'];
     const added = [], removed = [], changed = [];
     for (const [key, item] of after) {
-      if (!before.has(key)) { added.push({ key, name: item.name || '', sourcePage: item.sourcePage || null }); continue; }
+      if (!before.has(key)) { added.push({ key, name: item.name || '', sourcePage: item.sourcePage || null, sourcePages: reportItemSourcePages(item) }); continue; }
       const previous = before.get(key);
       const changes = fields.flatMap(field => String(previous[field] ?? '') === String(item[field] ?? '') ? [] : [{ field, before: previous[field] ?? '', after: item[field] ?? '' }]);
-      if (changes.length) changed.push({ key, name: item.name || previous.name || '', sourcePage: item.sourcePage || previous.sourcePage || null, changes });
+      if (changes.length) changed.push({ key, name: item.name || previous.name || '', sourcePage: item.sourcePage || previous.sourcePage || null, sourcePages: reportItemSourcePages(item), changes });
     }
-    for (const [key, item] of before) if (!after.has(key)) removed.push({ key, name: item.name || '', sourcePage: item.sourcePage || null });
+    for (const [key, item] of before) if (!after.has(key)) removed.push({ key, name: item.name || '', sourcePage: item.sourcePage || null, sourcePages: reportItemSourcePages(item) });
     res.json({ success: true, data: {
       currentRevisionNo: current.revisionNo,
       baselineRevisionNo: baseline.revisionNo,
@@ -2562,10 +2568,10 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       // (value/findings/diagnosis/conclusion) 全空的空壳项（金娟2023-05-16超声7项里有5项是空壳），
       // 既让页面显示混乱，又污染专项筛查。保存时统一剔除这类完全空白的项，保留至少有名称或有任一内容的项。
       const _blank = (v) => String(v == null ? '' : v).trim() === '';
-      const nextItems = ensureReportItemSourceIds((Array.isArray(reportItems) ? reportItems : []).filter(it => {
+      const nextItems = ensureReportItemSourceIds(normalizeReportItemEvidence((Array.isArray(reportItems) ? reportItems : []).filter(it => {
         if (!it || typeof it !== 'object') return false;
         return !(_blank(it.name) && _blank(it.value) && _blank(it.findings) && _blank(it.diagnosis) && _blank(it.conclusion));
-      }));
+      })));
       if (editSource || report.audit_status === 'audited' || (aiStatus === 'reviewed' && report.ocrVersion)) {
         const trackedFields = ['name', 'value', 'unit', 'referenceRange', 'status', 'findings', 'diagnosis', 'conclusion', 'screeningKey'];
         const oldItems = report.reportItems || [];
@@ -8623,7 +8629,18 @@ function mergeCoverageAuditItems(originalItems, auditItems) {
 function tagReportPageItems(items, pageNum) {
   return (items || [])
     .filter(it => it?.name && str(it.name).trim())
-    .map((it, index) => ({ ...it, sourcePage: pageNum, _page: pageNum, _order: index }));
+    .map((it, index) => ({
+      ...it,
+      sourcePage: pageNum,
+      sourcePages: [pageNum],
+      sourceEvidence: [{
+        page: pageNum,
+        text: str(it.evidenceText) || [it.name, it.value, it.unit, it.referenceRange, it.findings, it.diagnosis, it.conclusion].map(str).filter(Boolean).join(' '),
+        method: 'unknown',
+      }],
+      _page: pageNum,
+      _order: index,
+    }));
 }
 
 function sortReportItemsBySource(items) {
@@ -9479,7 +9496,7 @@ async function snapshotReportExtraction(reportId, { origin = 'ocr', reparsePage 
         source: { ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []), pageCount: resolveExtractionPageCount(report) },
         reportMetadata: { institution: report.institution || report.hospital || '', checkDate: report.checkDate || report.date || '' },
         summary: report.ocrQualitySummary || null,
-        items: report.reportItems || [],
+        items: normalizeReportItemEvidence(report.reportItems || []),
         aiSummary: report.aiSummary || '',
       });
       await ReportExtraction.updateMany(
@@ -9500,7 +9517,7 @@ async function recordReportReviewEvent(report, revision, reviewContext, result) 
   if (!reviewContext?.requestId || (!revision?._id && result !== 'rejected')) return null;
   const filter = { reportId: report._id, requestId: reviewContext.requestId };
   const fallbackPayload = {
-    items: ensureReportItemSourceIds(report.reportItems || []),
+    items: ensureReportItemSourceIds(normalizeReportItemEvidence(report.reportItems || [])),
     aiSummary: report.aiSummary || '',
     reportMetadata: { title: report.title || '', institution: report.institution || report.hospital || '', checkDate: report.checkDate || report.date || '', type: report.type || '' },
   };
@@ -9536,7 +9553,7 @@ async function recordReportReviewEvent(report, revision, reviewContext, result) 
 
 async function publishReportRevision(report, reviewContext = null) {
   if (!report?.user) return null;
-  const revisionItems = ensureReportItemSourceIds(report.reportItems || []);
+  const revisionItems = ensureReportItemSourceIds(normalizeReportItemEvidence(report.reportItems || []));
   report.reportItems = revisionItems;
   const revisionPayload = {
     items: revisionItems,
@@ -10415,14 +10432,18 @@ async function runReportParse(reportId, options = {}) {
       const advisoryFiltered = dropAdvisoryEcho(filterPatientInfoItems(collapseBreathTestItems(allItems)));
       // 邵逸夫模板的眼科/耳鼻喉科/妇科本来就是“短科室名+多条编号所见”，结构与通用小结回声相似，不能删除。
       const departmentFiltered = (useShaoyifuTemplate || useZheyiTemplate) ? advisoryFiltered : dropDepartmentSummaryEcho(advisoryFiltered);
-      const cleanedItems = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))));
+      const cleanedItems = cleanupExtractedItems(mergeAdjacentReportItemEvidence(
+        splitEndoscopyPathology(dropNonResultAndSummaryItems(dropNumberedSummaryEcho(departmentFiltered))),
+      ));
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
       const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
       if (useOcrV2) filteredItems = recoverExplicitUltrasoundRowsFromTextLayer(filteredItems, textLayer);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       setOcrProgress('quality_check', '正在进行模板、数值和双证据质量校验');
-      const qualityItems = ensureReportItemSourceIds(useOcrV2 ? assessReportItems(classified, { textLayer }) : classified);
+      const qualityItems = ensureReportItemSourceIds(normalizeReportItemEvidence(
+        useOcrV2 ? assessReportItems(classified, { textLayer }) : classified,
+      ));
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -10578,11 +10599,11 @@ async function runReportParse(reportId, options = {}) {
     if (!usePediatricBodyComposition) imageItems = sanitizeBodyCompositionItems(imageItems);
     // 尿/便常规逐项保留；不得在审核前重新聚合。
     sortReportItemsBySource(imageItems);
-    const imageWithoutNoise = cleanupExtractedItems(splitEndoscopyPathology(dropNonResultAndSummaryItems(
+    const imageWithoutNoise = cleanupExtractedItems(mergeAdjacentReportItemEvidence(splitEndoscopyPathology(dropNonResultAndSummaryItems(
       dropNumberedSummaryEcho(dropDepartmentSummaryEcho(dropAdvisoryEcho(filterPatientInfoItems(
         collapseBreathTestItems(normalizeBreathTestItems(imageItems, report))
       ))))
-    )));
+    ))));
     const imageExamNormalized = normalizeSingleExamReportItems(
       normalizeDepartmentExamItems(mergeInternalMedicineSubparts(imageWithoutNoise)), report
     );
@@ -10591,7 +10612,9 @@ async function runReportParse(reportId, options = {}) {
     );
     const classifiedImg = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(cleanedImageItems)))))))));
     setOcrProgress('quality_check', '正在进行数值和质量校验');
-    const qualityImageItems = ensureReportItemSourceIds(useOcrV2 ? assessReportItems(classifiedImg) : classifiedImg);
+    const qualityImageItems = ensureReportItemSourceIds(normalizeReportItemEvidence(
+      useOcrV2 ? assessReportItems(classifiedImg) : classifiedImg,
+    ));
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
@@ -10703,13 +10726,13 @@ async function runReportPageParse(reportId, pageNum) {
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
   const latest = await MedicalReport.findById(reportId);
-  const oldPage = (latest.reportItems || []).filter(item => Number(item.sourcePage) === pageNum);
+  const oldPage = (latest.reportItems || []).filter(item => itemTouchesPage(item, pageNum));
   const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
   const classifiedRawPage = await classifyItemsAsync(mergedPage);
   const classifiedPage = latest.ocrVersion ? assessReportItems(classifiedRawPage, { textLayer }) : classifiedRawPage;
-  const preserved = (latest.reportItems || []).filter(item => Number(item.sourcePage) !== pageNum);
-  const combined = ensureReportItemSourceIds([...preserved, ...classifiedPage]
-    .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0)));
+  const preserved = (latest.reportItems || []).filter(item => !itemTouchesPage(item, pageNum));
+  const combined = ensureReportItemSourceIds(normalizeReportItemEvidence([...preserved, ...classifiedPage]
+    .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0))));
   await MedicalReport.findByIdAndUpdate(reportId, {
     reportItems: combined,
     aiStatus: 'pending',

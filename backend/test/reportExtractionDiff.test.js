@@ -82,6 +82,20 @@ test('highlights pages that changed from populated to empty', () => {
   assert.deepEqual(result.newlyPopulated, []);
 });
 
+test('counts a cross-page item as evidence on every linked page', () => {
+  const result = comparePageCoverage(
+    [{ sourcePage: 8, sourcePages: [8, 9], name: '胸部CT' }],
+    [{ sourcePage: 8, sourcePages: [8, 9], name: '胸部CT' }],
+  );
+  assert.deepEqual(result.changed, []);
+
+  const missingSecondPage = comparePageCoverage(
+    [{ sourcePage: 8, sourcePages: [8], name: '胸部CT' }],
+    [{ sourcePage: 8, sourcePages: [8, 9], name: '胸部CT' }],
+  );
+  assert.deepEqual(missingSecondPage.emptied, [{ page: 9, baselineCount: 1, currentCount: 0 }]);
+});
+
 test('requires explicit acknowledgement for every emptied page', () => {
   const diff = { pageCoverage: { emptied: [{ page: 14 }, { page: 16 }, { page: 17 }] } };
   assert.deepEqual(validateCoverageAcknowledgement(diff, [14, 17]), {
