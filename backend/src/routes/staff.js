@@ -85,7 +85,7 @@ function withSignedReportFiles(report) {
   obj.previewUrls = urls.map((url, index) => {
     const key = keys[index] || urlToKey(url || '');
     if (!key || !obj._id || !process.env.JWT_SECRET) return '';
-    const token = jwt.sign({ scope: 'report-preview', reportId: String(obj._id), fileIndex: index }, process.env.JWT_SECRET, { expiresIn: '10m' });
+    const token = jwt.sign({ scope: 'report-preview', reportId: String(obj._id), fileIndex: index }, process.env.JWT_SECRET, { expiresIn: '30m' });
     // 前端对以 / 开头的资源统一拼接 API_ORIGIN（不含 /api），故此处必须保留 /api 前缀；
     // 否则会被错误路由到用户端 SPA，最终在审核窗口显示登录页而非 PDF。
     return `/api/staff/medical-reports/${obj._id}/preview/${index}?token=${encodeURIComponent(token)}`;
@@ -1869,7 +1869,7 @@ router.get('/medical-reports', staffAuth, checkPermission('reports', 'view'), as
 });
 
 // GET /api/staff/medical-reports/:id/preview/:index
-// iframe/img 无法携带医护端 Authorization 请求头，故使用仅绑定某份报告某个文件、10 分钟失效的预览令牌。
+// iframe/img 无法携带医护端 Authorization 请求头，故使用仅绑定某份报告某个文件、30 分钟失效的预览令牌。
 // 不透传 OSS 的 Content-Disposition，统一以 inline 返回，避免 PDF 被浏览器下载后无法在审核弹窗内查看。
 router.get('/medical-reports/:id/preview/:index', async (req, res) => {
   try {
