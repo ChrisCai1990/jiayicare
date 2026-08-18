@@ -10271,8 +10271,8 @@ export default function PatientDetailPage() {
                 <h3 className="modal-title">审核AI识别结果 · {ocrReviewReport.title}</h3>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
-                  <select value={activePage} onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
-                    {expectedPages.map(page => <option key={page} value={page}>第 {page} 页{missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
+                  <select value={activePage} aria-label="原件页码" onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
+                    {expectedPages.map(page => <option key={page} value={page}>原件第 {page} / {lastSourcePage} 页{missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
                   </select>
                   <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
                 </div>
@@ -10430,21 +10430,21 @@ export default function PatientDetailPage() {
                         </div>
                       </div>
                       {coverageRiskPages.length > 0 && (
-                        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#FFF1F0', border: '1px solid #F1B8B4', color: '#8F2626', fontSize: 12, lineHeight: 1.55 }}>
-                          <div style={{ fontWeight: 700, fontSize: 13 }}>识别完整性待确认：{coverageRiskPages.length} 页整页覆盖下降</div>
-                          <div style={{ marginTop: 3 }}>请点击页码对照左侧原件；如当前版本确实完整，再确认继续提交。也可以进入对应页面使用“补提本页”。</div>
+                        <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#FFF8E8', border: '1px solid #F2D39A', color: '#7A4B08', fontSize: 12, lineHeight: 1.55 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13 }}>提交前还需核对 {coverageRiskPages.length} 页原件</div>
+                          <div style={{ marginTop: 3 }}>这些页面本次识别的项目数少于历史版本。请逐页对照左侧原件；如有缺失，使用底部“重新识别当前页”。</div>
                           <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                             {coverageRiskPages.map(item => (
                               <button key={`coverage-page-${item.page}`} type="button" className="btn btn-secondary btn-sm"
-                                style={{ padding: '4px 8px', borderColor: '#DFA39F', color: '#8F2626', background: activePage === item.page ? '#FFE0DD' : '#fff' }}
+                                style={{ padding: '4px 8px', borderColor: '#DDBB78', color: '#7A4B08', background: activePage === item.page ? '#FDECC8' : '#fff' }}
                                 onClick={() => { setOcrReviewPage(item.page); setOcrReviewFilter('all') }}>
-                                核对 P{item.page}（历史版本最多 {item.baselineCount} 项）
+                                核对原件 P{item.page}（历史最多 {item.baselineCount} 项）
                               </button>
                             ))}
                           </div>
                           <label style={{ marginTop: 8, display: 'flex', alignItems: 'flex-start', gap: 7, cursor: 'pointer', fontWeight: 600 }}>
                             <input type="checkbox" style={{ marginTop: 2 }} checked={ocrCoverageAcknowledged} onChange={event => setOcrCoverageAcknowledged(event.target.checked)} />
-                            <span>我已对照原件核对上述页面，确认继续使用当前识别版本</span>
+                            <span>上述页面均已对照原件核对，确认当前识别内容完整</span>
                           </label>
                         </div>
                       )}
@@ -10574,12 +10574,12 @@ export default function PatientDetailPage() {
                       {/* 严格按 reportItems 原序渲染，检验和检查不再拆区 */}
                       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                         <div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>报告原序（{indexed.length}/{pageItems.length} 项）</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1E6B50' }}>本页审核进度（显示 {indexed.length} / 共 {pageItems.length} 项）</div>
                           {ocrReviewReport.ocrVersion && <div style={{ fontSize: 11, color: '#8AA89C', marginTop: 2 }}>OCR {ocrReviewReport.ocrVersion} · {autoCount} 项已通过规则校验，可按需展开复核</div>}
                         </div>
                         <div style={{ display: 'flex', gap: 6 }}>
                           {ocrReviewReport.ocrVersion && <>
-                            <button className="btn btn-secondary btn-sm" onClick={() => setOcrReviewFilter('exceptions')} style={{ background: ocrReviewFilter === 'exceptions' ? '#FFF7E8' : undefined, color: ocrReviewFilter === 'exceptions' ? '#B45309' : undefined }}>需核对 {exceptionItems.length}</button>
+                            <button className="btn btn-secondary btn-sm" onClick={() => setOcrReviewFilter('exceptions')} style={{ background: ocrReviewFilter === 'exceptions' ? '#FFF7E8' : undefined, color: ocrReviewFilter === 'exceptions' ? '#B45309' : undefined }}>待处理 {exceptionItems.length}</button>
                             <button className="btn btn-secondary btn-sm" onClick={() => setOcrReviewFilter('all')} style={{ background: ocrReviewFilter === 'all' ? '#EEF8F2' : undefined, color: ocrReviewFilter === 'all' ? '#1E6B50' : undefined }}>全部 {pageItems.length}</button>
                           </>}
                           <button className="btn btn-secondary btn-sm" onClick={addItem}>＋ 新增检验项</button>
@@ -10598,7 +10598,7 @@ export default function PatientDetailPage() {
                                 {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
                               </div>
                               {nonClassificationFlags(it).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
-                                {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || flag}</span>)}
+                                {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ abnormal_unverified: '异常结果待确认', status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || '识别结果待核对'}</span>)}
                               </div>}
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                                 <div style={{ flex: 2 }}>
@@ -10626,7 +10626,7 @@ export default function PatientDetailPage() {
                                     ...arr.slice(i + 1),
                                   ])}
                                   style={{ whiteSpace: 'nowrap', padding: '4px 7px', border: `1px solid ${isImaging(it) ? '#BAE6FD' : '#C4B5FD'}`, borderRadius: 4, background: isImaging(it) ? '#F0F9FF' : '#F3EFFB', color: isImaging(it) ? '#0369A1' : '#7C3AED', cursor: 'pointer', fontSize: 11, fontWeight: 600 }}>
-                                  下方新增
+                                  在下方插入一项
                                 </button>
                                 <button onClick={() => delItem(i)} style={{ background: 'none', border: 'none', color: '#DC3545', cursor: 'pointer', fontSize: 14 }}>✕</button>
                               </div>
@@ -10750,31 +10750,34 @@ export default function PatientDetailPage() {
                 })()}
               </div>
               </div>
-              <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
-                <button className="btn btn-secondary" style={{ flex: 0.7 }}
-                  disabled={ocrSaving || pageParsing} onClick={handleParseCurrentPage}
-                  title={`只重新提取原报告第${activePage}页，其他页保持不变`}>
-                  {pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : `补提第${activePage}页`}
-                </button>
-                <button className="btn btn-secondary" style={{ flex: 0.6 }}
-                  disabled={ocrSaving} onClick={handleReclassifyOCR}
-                  title="用最新专项筛查目录重新自动归类所有项目">
-                  {ocrSaving ? '处理中…' : '🔄 重新归类'}
-                </button>
-                <button className="btn btn-secondary" style={{ flex: 0.6 }}
-                  disabled={ocrSaving} onClick={handleSaveOCRDraft}>
-                  {ocrSaving ? '保存中…' : '💾 保存草稿'}
-                </button>
-                <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
+              <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
+                <div style={{ display: 'flex', gap: 7 }}>
+                  <button className="btn btn-secondary"
+                    disabled={ocrSaving || pageParsing} onClick={handleParseCurrentPage}
+                    title={`只重新识别原报告第${activePage}页，其他页保持不变`}>
+                    {pageParsing ? `第${activePage}页识别中…` : ocrSaving ? '处理中…' : '重新识别当前页'}
+                  </button>
+                  <button className="btn btn-secondary"
+                    disabled={ocrSaving} onClick={handleReclassifyOCR}
+                    title="用最新专项筛查目录重新匹配所有项目">
+                    {ocrSaving ? '处理中…' : '重新匹配专项筛查'}
+                  </button>
+                  <button className="btn btn-secondary" disabled={ocrSaving} onClick={handleSaveOCRDraft}>
+                    {ocrSaving ? '保存中…' : '保存草稿'}
+                  </button>
+                </div>
+                <div style={{ flex: 1, minWidth: 150, color: coverageRiskPages.length > 0 && !ocrCoverageAcknowledged ? '#9A6700' : '#6F8379', fontSize: 11, lineHeight: 1.4 }}>
+                  {coverageRiskPages.length > 0 && !ocrCoverageAcknowledged
+                    ? `提交前：还需确认 ${coverageRiskPages.length} 页完整性`
+                    : '提交后将生成正式审核版本与专项筛查投影'}
+                </div>
+                <button className="btn btn-sm" style={{ background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
+                  disabled={ocrSaving} onClick={handleRejectOCR}>驳回</button>
+                <button className="btn btn-primary" style={{ minWidth: 190, background: '#22A06B', border: 'none' }}
                   disabled={ocrSaving || ((ocrExtractionDiff?.pageCoverage?.emptied?.length || 0) > 0 && !ocrCoverageAcknowledged)} onClick={handleApproveOCR}
-                  title={(ocrExtractionDiff?.pageCoverage?.emptied?.length || 0) > 0 && !ocrCoverageAcknowledged ? '请先确认已核对整页覆盖下降' : ''}>
-                  {ocrSaving ? '保存中…' : '✓ 提交报告审核'}
+                  title={(ocrExtractionDiff?.pageCoverage?.emptied?.length || 0) > 0 && !ocrCoverageAcknowledged ? '请先确认已核对整页覆盖下降' : '生成不可变审核版本及审核后专项筛查投影'}>
+                  {ocrSaving ? '保存中…' : '确认审核并生成正式版本'}
                 </button>
-                <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
-                  disabled={ocrSaving} onClick={handleRejectOCR}>
-                  驳回
-                </button>
-                <button className="btn btn-secondary" onClick={() => setOcrReviewReport(null)}>取消</button>
               </div>
             </div>
           </div>
