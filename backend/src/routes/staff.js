@@ -9820,7 +9820,7 @@ async function runReportParse(reportId, options = {}) {
   const { chat, parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { assessReportItems, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages } = require('../utils/reportOcrQuality');
+  const { assessReportItems, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages, recoverExplicitUltrasoundRowsFromTextLayer } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
@@ -9903,8 +9903,12 @@ async function runReportParse(reportId, options = {}) {
             const parsed = safeParseJSON(raw);
             const parsedItemCount = Array.isArray(parsed?.items) ? parsed.items.length : 0;
             const baselineCount = historicalPageBaselines.get(pageNum) || 0;
+            const compactPageText = pageText.replace(/\s/g, '');
+            const hasClinicalTextSignal = /参考范围|检查结果|检验结果|检查所见|超声所见|初步意见|诊断意见|mmol|μmol|10\^/.test(compactPageText);
+            const hasGarbledTextLayer = /\u0000/.test(pageText);
             const materialHistoricalDrop = baselineCount > 0
-              && (shouldSkipParsedReportPage(parsed) || parsedItemCount < Math.max(1, Math.ceil(baselineCount * 0.5)));
+              && parsedItemCount === 0
+              && (hasClinicalTextSignal || hasGarbledTextLayer);
             if (materialHistoricalDrop) {
               textCoverageRequiredPages.add(pageNum);
               console.log(`[parse-ai] P${pageNum}文字层仅提取${parsedItemCount}项，低于同原件历史基线${baselineCount}项，标记视觉覆盖复核`);
@@ -10027,7 +10031,9 @@ async function runReportParse(reportId, options = {}) {
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
           : useZheyiTemplate
             ? [...detailPages].filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems))
-          : selectGenericCoverageAuditPages([...detailPages], allItems);
+          : useTextLayerPrimary
+            ? []
+            : selectGenericCoverageAuditPages([...detailPages], allItems);
         const coveragePages = [...new Set([...selectedCoveragePages, ...textCoverageRequiredPages])].sort((a, b) => a - b);
         setOcrProgress('coverage_audit', coveragePages.length
           ? `首轮识别完成，正在复核${coveragePages.length}页是否漏项`
@@ -10413,6 +10419,7 @@ async function runReportParse(reportId, options = {}) {
       // 耳鼻喉按报告印刷的耳部/鼻部/咽部等检查项目保留，不再合并成科室摘要。
       const departmentNormalized = normalizeSingleExamReportItems(normalizeDepartmentExamItems(mergeInternalMedicineSubparts(cleanedItems)), report);
       let filteredItems = fillEmptyDiagnosisFromFindings(realignUpperAbdomenConclusions(cleanupUltrasoundOverlap(departmentNormalized)));
+      if (useOcrV2) filteredItems = recoverExplicitUltrasoundRowsFromTextLayer(filteredItems, textLayer);
       const classified = await forceBodyCompositionClassification(stripReportSourceOrder(sortReportItemsBySource(dropGenericLabelEcho(dropResultCommentEcho(dropDiagnosisPhraseEcho(dropExerciseGuideEcho(dropUnclassifiedNameEcho(await classifyItemsAsync(filteredItems)))))))));
       setOcrProgress('quality_check', '正在进行模板、数值和双证据质量校验');
       const qualityItems = ensureReportItemSourceIds(useOcrV2 ? assessReportItems(classified, { textLayer }) : classified);

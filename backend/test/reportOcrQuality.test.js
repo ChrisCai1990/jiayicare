@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { assessReportItems, statusFromRange, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages } = require('../src/utils/reportOcrQuality');
+const { assessReportItems, statusFromRange, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages, recoverExplicitUltrasoundRowsFromTextLayer } = require('../src/utils/reportOcrQuality');
 
 test('covered group summaries are removed while detailed page items remain', () => {
   const items = assessReportItems([
@@ -104,6 +104,23 @@ test('generic coverage audit only retries sparse pages', () => {
     { sourcePage: 11, name: '眼底', itemType: 'imaging', findings: '正常' },
   ]);
   assert.deepEqual(pages, [8]);
+});
+
+test('native text layer restores explicit ultrasound organ rows without duplicating existing organs', () => {
+  const textLayer = {
+    available: true,
+    pages: [`超声检查\n  胆                                   未见明显异常\n  胰                                   未见明显异常\n  脾                                   未见明显异常\n  双肾                                  双肾大小正常`],
+  };
+  const restored = recoverExplicitUltrasoundRowsFromTextLayer([
+    { name: '双肾输尿管膀胱彩超', itemType: 'imaging', findings: '双肾大小正常', sourcePage: 1 },
+  ], textLayer);
+  assert.deepEqual(restored.map(item => item.name), [
+    '双肾输尿管膀胱彩超',
+    '胆囊彩超',
+    '胰腺彩超',
+    '脾脏彩超',
+  ]);
+  assert.equal(restored.filter(item => item.name.includes('双肾')).length, 1);
 });
 
 test('key numeric fields need visual and text-layer evidence before auto pass', () => {

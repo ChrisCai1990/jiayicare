@@ -101,6 +101,41 @@ function recoverInternalMedicineFromTextLayer(items, textLayer) {
   return list;
 }
 
+function recoverExplicitUltrasoundRowsFromTextLayer(items, textLayer) {
+  const list = (items || []).map(item => ({ ...item }));
+  if (!textLayer?.available) return list;
+  const organRows = [
+    { label: '胆', name: '胆囊彩超', matches: /胆囊|^胆$/ },
+    { label: '胰', name: '胰腺彩超', matches: /胰腺|^胰$/ },
+    { label: '脾', name: '脾脏彩超', matches: /脾脏|^脾$/ },
+    { label: '双肾', name: '双肾输尿管膀胱彩超', matches: /双肾|肾脏/ },
+  ];
+  (textLayer.pages || []).forEach((rawPage, pageIndex) => {
+    const page = pageIndex + 1;
+    const lines = canonical(rawPage).replace(/\r/g, '').split('\n');
+    for (const organ of organRows) {
+      const alreadyPresent = list.some(item => Number(item.sourcePage || item._page) === page && organ.matches.test(text(item.name)));
+      if (alreadyPresent) continue;
+      const row = lines.find(line => new RegExp(`^\\s*${organ.label}\\s{2,}\\S`).test(line));
+      if (!row) continue;
+      const findings = row.replace(new RegExp(`^\\s*${organ.label}\\s+`), '').trim();
+      if (!findings || /用户ID|体检号|报告解读/.test(findings)) continue;
+      list.push({
+        name: organ.name,
+        sourceSection: '超声检查',
+        itemType: 'imaging',
+        findings,
+        diagnosis: '',
+        conclusion: '',
+        status: /未见(?:明显)?异常|正常/.test(findings) ? 'normal' : 'unknown',
+        sourcePage: page,
+        _page: page,
+      });
+    }
+  });
+  return list;
+}
+
 function dropCoveredSummaryItems(items) {
   const list = (items || []).map(item => {
     if (text(item.name) === '内科' && text(item.sourceSection) === '内科' && text(item.findings) === '无') {
@@ -203,4 +238,4 @@ function assessReportItems(items, { textLayer = null } = {}) {
   });
 }
 
-module.exports = { assessReportItems, parseRange, statusFromRange, duplicateKey, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages, textLayerEvidence, dropCoveredSummaryItems, normalizeImagingStatus, recoverInternalMedicineFromTextLayer };
+module.exports = { assessReportItems, parseRange, statusFromRange, duplicateKey, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages, textLayerEvidence, dropCoveredSummaryItems, normalizeImagingStatus, recoverInternalMedicineFromTextLayer, recoverExplicitUltrasoundRowsFromTextLayer };
