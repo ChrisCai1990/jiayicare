@@ -2508,10 +2508,14 @@ export default function PatientDetailPage() {
     finally { setAiSummaryLoading(false) }
   }
 
-  const handleParseReportAI = async (reportId, mode = 'legacy') => {
+  const handleParseReportAI = async (reportOrId, mode = 'legacy') => {
+    const report = typeof reportOrId === 'object' ? reportOrId : null
+    const reportId = report?._id || reportOrId
+    const isAuditedReparse = mode === 'v2' && report?.audit_status === 'audited'
+    if (isAuditedReparse && !window.confirm('该报告已经审核通过。重新使用 OCR v2 会覆盖当前解析结果，并把报告恢复为“待审核”；原始PDF不会改变。确认继续吗？')) return
     setParsingReportId(reportId)
     try {
-      const res = await staffAPI.parseReportAI(reportId, mode)
+      const res = await staffAPI.parseReportAI(reportId, mode, { confirmReparseAudited: isAuditedReparse })
       toast(res.message || 'AI解析完成')
       loadReports()
     } catch (err) { toast(err.message || 'AI解析失败') }
@@ -8610,13 +8614,13 @@ export default function PatientDetailPage() {
                                 <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                                   <button className="btn btn-primary btn-sm report-action-primary"
                                     disabled={parsingReportId === r._id}
-                                    onClick={() => handleParseReportAI(r._id, 'legacy')}>
+                                    onClick={() => handleParseReportAI(r, 'legacy')}>
                                     {parsingReportId === r._id ? '提交中…' : 'AI解析'}
                                   </button>
                                   <button className="btn btn-sm report-action-review"
                                     title="仅当前报告使用文字层与视觉双证据、质量分流；结果仍需人工审核"
                                     disabled={parsingReportId === r._id}
-                                    onClick={() => handleParseReportAI(r._id, 'v2')}>
+                                    onClick={() => handleParseReportAI(r, 'v2')}>
                                     OCR v2（测试）
                                   </button>
                                 </span>
@@ -8633,6 +8637,14 @@ export default function PatientDetailPage() {
                                 <button className={`btn btn-sm ${r.aiStatus === 'reviewed' ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
                                   onClick={() => handleOpenOCRReview(r)}>
                                   {r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
+                                </button>
+                              )}
+                              {r.audit_status === 'audited' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) && !isFunctionalMedicineReport && !isHomeMonitorReport && (
+                                <button className="btn btn-sm report-action-review" style={{ marginLeft: 6 }}
+                                  title="重新解析后报告会恢复为待审核，原始PDF不变"
+                                  disabled={parsingReportId === r._id}
+                                  onClick={() => handleParseReportAI(r, 'v2')}>
+                                  {parsingReportId === r._id ? '提交中…' : '重新用 OCR v2'}
                                 </button>
                               )}
                               {r.audit_status !== 'audited' && (

@@ -9662,6 +9662,10 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const parseMode = req.body?.mode === 'v2' ? 'v2' : 'legacy';
+    const isAuditedReparse = report.audit_status === 'audited';
+    if (isAuditedReparse && (parseMode !== 'v2' || req.body?.confirmReparseAudited !== true)) {
+      return res.status(409).json({ success: false, message: '已审核报告只能在明确确认后使用OCR v2重新解析' });
+    }
 
     const hasFile = !!report.fileUrl || !!report.content;
     const isImage = report.mimeType?.startsWith('image/');
@@ -9695,7 +9699,15 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     }
 
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
-    await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
+    const processingUpdate = { aiStatus: 'processing' };
+    if (isAuditedReparse) {
+      Object.assign(processingUpdate, {
+        audit_status: 'unaudited', audited_by: '', audited_at: null,
+        reviewedByStaff: null, reviewedAt: null,
+        familyDoctorAudit: { status: 'pending', by: null, byName: '', at: null, editLog: [] },
+      });
+    }
+    await MedicalReport.findByIdAndUpdate(report._id, processingUpdate);
     runReportParse(report._id, { mode: parseMode }).catch(err => {
       console.error('[parse-ai] 后台任务异常', String(report._id), err.message);
       MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' }).catch(() => {});
