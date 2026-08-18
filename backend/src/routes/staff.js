@@ -76,7 +76,7 @@ const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIn
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
-const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
+const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, findHistoricalReducedPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -9817,7 +9817,7 @@ async function runReportParse(reportId, options = {}) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
-  const { assessReportItems, isClearlyNonDetailTextPage, formatTextLayerEvidence } = require('../utils/reportOcrQuality');
+  const { assessReportItems, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
@@ -9965,12 +9965,10 @@ async function runReportParse(reportId, options = {}) {
           ? [4, 5, 6, 7, 8, 9, 10, 11, 20].filter(pageNum => shaoyifuTemplate.needsCoverageAudit(pageNum, allItems))
           : useZheyiTemplate
             ? [...detailPages].filter(pageNum => zheyiTemplate.needsCoverageAudit(pageNum, allItems))
-          : (() => {
-              const pages = [...detailPages].sort((a, b) => a - b);
-              if (!pages.length) return [];
-              // 通用报告必须复核首尾明细页之间的每一页；中间页即使首轮误判为空，也不得跳过。
-              return Array.from({ length: pages[pages.length - 1] - pages[0] + 1 }, (_, i) => pages[0] + i);
-            })();
+          : [...new Set([
+              ...selectGenericCoverageAuditPages([...detailPages], allItems),
+              ...findHistoricalReducedPages(allItems, extractionSource, extractionHistory, totalPageCount).map(item => item.page),
+            ])].sort((a, b) => a - b);
         setOcrProgress('coverage_audit', coveragePages.length
           ? `首轮识别完成，正在复核${coveragePages.length}页是否漏项`
           : '首轮识别完成，未发现需要覆盖复核的页面', { totalPages: totalPageCount, coveragePages: coveragePages.length });

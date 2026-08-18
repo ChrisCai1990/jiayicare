@@ -5,6 +5,7 @@ const {
   compareReportExtractionHistory,
   comparePageCoverage,
   findHistoricalEmptyPages,
+  findHistoricalReducedPages,
   validateCoverageAcknowledgement,
 } = require('../src/utils/reportExtractionDiff');
 
@@ -132,5 +133,20 @@ test('finds only historically populated pages that became empty for the same ori
   assert.deepEqual(findHistoricalEmptyPages([], currentSource, history, 28), [
     { page: 14, currentCount: 0, baselineCount: 1, baselineVersion: 1 },
     { page: 16, currentCount: 0, baselineCount: 1, baselineVersion: 1 },
+  ]);
+});
+
+test('finds pages whose current extraction is lower than same-source history', () => {
+  const currentSource = { ossKeys: ['reports-test/source.pdf'] };
+  const history = [extraction(1, [
+    { sourcePage: 13, name: '项目A' },
+    { sourcePage: 13, name: '项目B' },
+    { sourcePage: 14, name: '项目C' },
+  ])];
+  assert.deepEqual(findHistoricalReducedPages([
+    { sourcePage: 13, name: '项目A' },
+  ], currentSource, history, 28), [
+    { page: 13, currentCount: 1, baselineCount: 2, baselineVersion: 1 },
+    { page: 14, currentCount: 0, baselineCount: 1, baselineVersion: 1 },
   ]);
 });

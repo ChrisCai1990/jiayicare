@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { assessReportItems, statusFromRange, isClearlyNonDetailTextPage, formatTextLayerEvidence } = require('../src/utils/reportOcrQuality');
+const { assessReportItems, statusFromRange, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages } = require('../src/utils/reportOcrQuality');
 
 test('covered group summaries are removed while detailed page items remain', () => {
   const items = assessReportItems([
@@ -88,6 +88,22 @@ test('page text is delimited as evidence and bounded before visual extraction', 
   assert.ok(prompt.includes('超声所见'));
   assert.ok(!prompt.includes('初步意见'));
   assert.equal(formatTextLayerEvidence('  '), '');
+});
+
+test('generic coverage audit only retries pages with sparse or incomplete extraction', () => {
+  const pages = selectGenericCoverageAuditPages([8, 9, 10, 11], [
+    { sourcePage: 8, name: '体重', value: '60' },
+    { sourcePage: 9, name: '甲状腺超声', itemType: 'imaging', findings: '未见明显异常' },
+    { sourcePage: 9, name: '颈动脉超声', itemType: 'imaging', findings: '未见明显异常' },
+    { sourcePage: 9, name: '心脏超声', itemType: 'imaging', findings: '未见明显异常' },
+    { sourcePage: 10, name: '白细胞', value: '5.0' },
+    { sourcePage: 10, name: '红细胞', value: '4.5' },
+    { sourcePage: 10, name: '血小板', value: '200' },
+    { sourcePage: 11, name: '眼压', itemType: 'imaging', findings: '' },
+    { sourcePage: 11, name: '视力', itemType: 'imaging', findings: '正常' },
+    { sourcePage: 11, name: '眼底', itemType: 'imaging', findings: '正常' },
+  ]);
+  assert.deepEqual(pages, [8, 11]);
 });
 
 test('key numeric fields need visual and text-layer evidence before auto pass', () => {

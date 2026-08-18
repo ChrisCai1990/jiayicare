@@ -110,6 +110,18 @@ function findHistoricalEmptyPages(currentItems = [], currentSource = {}, histori
     .filter(item => item.page <= totalPages);
 }
 
+function findHistoricalReducedPages(currentItems = [], currentSource = {}, historicalExtractions = [], totalPages = Infinity) {
+  const sameSourceHistory = historicalExtractions.filter(extraction => sameOriginalSource(
+    { source: currentSource },
+    extraction,
+  ));
+  if (!sameSourceHistory.length) return [];
+  const coverage = compareHistoricalPageCoverage(currentItems, sameSourceHistory);
+  return [...coverage.emptied, ...coverage.decreased]
+    .filter(item => item.page <= totalPages)
+    .sort((a, b) => a.page - b.page);
+}
+
 function compareReportExtractions(current, baseline, fields = DEFAULT_FIELDS) {
   const baselineItems = baseline?.items || [];
   const currentItems = current?.items || [];
@@ -195,5 +207,6 @@ module.exports = {
   comparePageCoverage,
   compareHistoricalPageCoverage,
   findHistoricalEmptyPages,
+  findHistoricalReducedPages,
   validateCoverageAcknowledgement,
 };
