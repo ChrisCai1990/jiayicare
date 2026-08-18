@@ -6,6 +6,12 @@
 - 快速 OCR 与完整 OCR 同时兼容 OSS URL 及历史 `/uploads/`；PDF 仅在系统临时目录渲染，不进入业务存储。用户端新的 base64 报告不再在 OSS 失败时降级写入 MongoDB，失败会清理已上传对象并提示重试。
 - 历史 `uploads/` 暂不迁移；迁移前先完成 Mongo 引用、本地文件和容量的只读对账。
 
+### 历史报告迁移执行状态
+
+- 已完成只读对账：`uploads/` 共 3,209 个文件、约 5GB；`MedicalReport` 关联的 2,433 个历史本地文件均存在，另有 776 个未引用文件，均不在本次迁移或清理范围内。
+- 迁移工具：`backend/scripts/migrate-local-reports-to-oss.js`。仅复制报告原件至私有 OSS，写入成功后才更新 `MedicalReport.fileUrl/fileUrls/ossKey/ossKeys`；源文件不删除。实际写入需同时提供 `--apply`、`--limit` 和 `MIGRATION_CONFIRM=health-file-copy-v1`。
+- 已验证首批 10 份与后续 100 份：数据库指针、OSS 对象可读性和本地源文件均一致。后续批次在服务器以每批 100 份继续执行，任一批迁移或校验失败即停止，不自动清理旧文件。
+
 更新时间：2026-07-15
 
 ## 权威入口
