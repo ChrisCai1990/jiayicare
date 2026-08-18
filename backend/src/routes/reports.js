@@ -1,5 +1,6 @@
 const express = require('express');
 const multer = require('multer');
+const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
@@ -38,6 +39,34 @@ const detectImageMime = (buffer) => {
   return '';
 };
 
+const detectReportMime = (buffer) => {
+  const imageMime = detectImageMime(buffer);
+  if (imageMime) return imageMime;
+  return buffer?.subarray(0, 5).toString('ascii') === '%PDF-' ? 'application/pdf' : '';
+};
+
+function createUploadToken(userId, file) {
+  return jwt.sign({
+    scope: 'report-upload',
+    userId: String(userId),
+    key: file.ossKey,
+    url: file.fileUrl,
+    mimeType: file.mimeType,
+  }, process.env.JWT_SECRET, { expiresIn: '30m' });
+}
+
+function verifyUploadTokens(tokens, userId) {
+  if (!Array.isArray(tokens) || !tokens.length) return [];
+  if (!process.env.JWT_SECRET) throw new Error('上传凭证服务暂不可用');
+  return tokens.map((token) => {
+    const claim = jwt.verify(String(token), process.env.JWT_SECRET);
+    if (claim.scope !== 'report-upload' || claim.userId !== String(userId) || !claim.key || !claim.url) {
+      throw new Error('上传凭证无效，请重新上传文件');
+    }
+    return { fileUrl: claim.url, ossKey: claim.key, mimeType: claim.mimeType || '' };
+  });
+}
+
 router.post('/upload', auth, (req, res, next) => {
   reportUpload.single('file')(req, res, async (err) => {
     if (err) {
@@ -67,21 +96,35 @@ router.post('/upload-base64', auth, async (req, res, next) => {
     const content = String(req.body?.content || '');
     const declaredMime = String(req.body?.mimeType || '').toLowerCase();
     if (!content || !/^data:[^;]+;base64,/.test(content)) {
-      return res.status(400).json({ success: false, message: '未收到有效图片内容' });
+      return res.status(400).json({ success: false, message: '未收到有效文件内容' });
     }
     const raw = content.replace(/^data:[^;]+;base64,/, '');
     const buffer = Buffer.from(raw, 'base64');
-    if (!buffer.length) return res.status(400).json({ success: false, message: '图片内容为空' });
-    if (buffer.length > 15 * 1024 * 1024) return res.status(413).json({ success: false, message: '单张图片不能超过15MB' });
-    const detectedMime = detectImageMime(buffer);
-    if (!detectedMime) return res.status(400).json({ success: false, message: '图片格式无法识别，请选择 JPG、PNG、WEBP 或 HEIC 图片' });
+    if (!buffer.length) return res.status(400).json({ success: false, message: '文件内容为空' });
+    if (buffer.length > 15 * 1024 * 1024) return res.status(413).json({ success: false, message: '单个文件不能超过15MB' });
+    const detectedMime = detectReportMime(buffer);
+    if (!detectedMime) return res.status(400).json({ success: false, message: '文件格式无法识别，请选择 PDF、JPG、PNG、WEBP 或 HEIC 文件' });
     if (!process.env.OSS_ACCESS_KEY_ID) return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });
+    if (!process.env.JWT_SECRET) return res.status(503).json({ success: false, message: '上传凭证服务暂不可用，请稍后重试' });
     const result = await uploadBase64(`data:${detectedMime};base64,${raw}`, detectedMime);
     console.info('[report-upload-base64]', { userId: String(req.user._id), size: buffer.length, declaredMime, mimeType: detectedMime, key: result.key });
-    res.status(201).json({ success: true, data: { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: buffer.length } });
+    const file = { fileUrl: result.url, ossKey: result.key, mimeType: result.mimeType || detectedMime, fileSize: buffer.length };
+    res.status(201).json({ success: true, data: { ...file, uploadToken: createUploadToken(req.user._id, file) } });
   } catch (uploadErr) {
     console.error('[report-upload-base64] failed', { userId: String(req.user?._id || ''), message: uploadErr.message });
     next(uploadErr);
+  }
+});
+
+// 客户端在“文件已上传、报告创建失败”时清理本次上传的临时对象。
+// 仅接受由当前用户上传接口签发、且 30 分钟内有效的凭证，避免删除任意 OSS 对象。
+router.post('/upload-cleanup', auth, async (req, res, next) => {
+  try {
+    const files = verifyUploadTokens(req.body?.uploadTokens, req.user._id);
+    await Promise.all(files.map(({ ossKey }) => deleteFile(ossKey)));
+    res.json({ success: true });
+  } catch (err) {
+    res.status(400).json({ success: false, message: err.message || '上传清理失败' });
   }
 });
 
@@ -620,7 +663,7 @@ router.post('/', auth, async (req, res) => {
   try {
     const { title, type, hospital, date, pages, fileSize, keyFindings, note, content, mimeType,
             screeningCategory, reportYear, checkDate, institution, reportItems, contents,
-            fileUrls: suppliedFileUrls, ossKeys: suppliedOssKeys } = req.body;
+            fileUrls: suppliedFileUrls, ossKeys: suppliedOssKeys, uploadTokens } = req.body;
     let { fileUrl } = req.body;
     if (!title) return res.status(400).json({ success: false, message: '报告标题不能为空' });
 
@@ -630,12 +673,23 @@ router.post('/', auth, async (req, res) => {
 
     // 有 base64 内容且 OSS 已配置 → 逐张上传到 OSS，不存 MongoDB
     let ossKey = '';
-    let ossKeys = Array.isArray(suppliedOssKeys) ? suppliedOssKeys.filter(Boolean) : [];
-    let fileUrls = Array.isArray(suppliedFileUrls) ? suppliedFileUrls.filter(Boolean) : [];
-    if (!fileUrl && fileUrls.length) fileUrl = fileUrls[0];
+    let verifiedUploadedFiles = [];
+    try {
+      verifiedUploadedFiles = verifyUploadTokens(uploadTokens, req.user._id);
+    } catch (tokenError) {
+      return res.status(400).json({ success: false, message: tokenError.message || '上传凭证无效，请重新上传文件' });
+    }
+    let ossKeys = verifiedUploadedFiles.length
+      ? verifiedUploadedFiles.map(file => file.ossKey)
+      : (Array.isArray(suppliedOssKeys) ? suppliedOssKeys.filter(Boolean) : []);
+    let fileUrls = verifiedUploadedFiles.length
+      ? verifiedUploadedFiles.map(file => file.fileUrl)
+      : (Array.isArray(suppliedFileUrls) ? suppliedFileUrls.filter(Boolean) : []);
+    if (verifiedUploadedFiles.length) fileUrl = fileUrls[0];
+    else if (!fileUrl && fileUrls.length) fileUrl = fileUrls[0];
     if (ossKeys.length) ossKey = ossKeys[0];
     let storedContent = '';
-    let effectiveMimeType = mimeType || '';
+    let effectiveMimeType = verifiedUploadedFiles[0]?.mimeType || mimeType || '';
     if (contentList.length) {
       if (!process.env.OSS_ACCESS_KEY_ID) {
         return res.status(503).json({ success: false, message: '文件存储服务暂不可用，请稍后重试' });

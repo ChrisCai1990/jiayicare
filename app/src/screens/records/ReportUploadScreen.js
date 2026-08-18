@@ -312,7 +312,7 @@ function UploadZone({ onPress, uploading, typeFilter }) {
         }
       </View>
       <Text style={[styles.uploadTitle, tm && { color: tm.color }]}>{title}</Text>
-      <Text style={styles.uploadDesc}>支持 PDF、JPG、PNG 格式{'\n'}单文件最大 20MB</Text>
+      <Text style={styles.uploadDesc}>支持 PDF、JPG、PNG 格式{'\n'}单文件最大 15MB</Text>
       {!uploading && (
         <View style={styles.uploadBtnRow}>
           <TouchableOpacity
@@ -963,7 +963,7 @@ export default function ReportUploadScreen({ navigation, route }) {
 
   useEffect(() => { loadReports(); loadRequisitions(); }, [loadReports, loadRequisitions]);
 
-  const MAX_FILE_BYTES = 20 * 1024 * 1024;
+  const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
   const fileSizeStr = (bytes) => {
     const kb = bytes / 1024;
@@ -1015,7 +1015,7 @@ export default function ReportUploadScreen({ navigation, route }) {
         }
         const oversized = files.find(file => file.size > MAX_FILE_BYTES);
         if (oversized) {
-          reject(new Error(`${oversized.name} 超过20MB`));
+          reject(new Error(`${oversized.name} 超过15MB`));
           return;
         }
         resolve(await Promise.all(files.map(webFileToPage)));
@@ -1063,7 +1063,7 @@ export default function ReportUploadScreen({ navigation, route }) {
 
     const oversized = result.assets.find(a => (a.fileSize || 0) > MAX_FILE_BYTES);
     if (oversized) {
-      showToast('文件大小不能超过 20MB', true);
+      showToast('文件大小不能超过 15MB', true);
       return;
     }
     try {
@@ -1097,7 +1097,7 @@ export default function ReportUploadScreen({ navigation, route }) {
 
     const a = result.assets[0];
     if ((a.fileSize || 0) > MAX_FILE_BYTES) {
-      showToast('文件大小不能超过 20MB', true);
+      showToast('文件大小不能超过 15MB', true);
       return;
     }
     setPendingPages([{
@@ -1125,7 +1125,7 @@ export default function ReportUploadScreen({ navigation, route }) {
 
       const oversized = result.assets.find(a => (a.size || 0) > MAX_FILE_BYTES);
       if (oversized) {
-        showToast('文件大小不能超过 20MB', true);
+        showToast('文件大小不能超过 15MB', true);
         return;
       }
 
@@ -1183,7 +1183,17 @@ export default function ReportUploadScreen({ navigation, route }) {
     if (!fd) return;
 
     setUploading(true);
+    const uploadedFiles = [];
+    const uploadTokens = [];
     try {
+      for (const page of fd.pages) {
+        const upload = await reportsAPI.uploadBase64(page.content, page.mimeType);
+        if (!upload.success || !upload.data?.fileUrl || !upload.data?.ossKey || !upload.data?.uploadToken) {
+          throw new Error(upload.message || '文件上传失败，请重试');
+        }
+        uploadedFiles.push(upload.data);
+        uploadTokens.push(upload.data.uploadToken);
+      }
       const payload = {
         title,
         type,
@@ -1193,8 +1203,11 @@ export default function ReportUploadScreen({ navigation, route }) {
         fileSize: fd.sizeStr,
         keyFindings: [],
         note: '',
-        contents: fd.pages.map(p => p.content),
-        mimeType: fd.pages[0].mimeType,
+        fileUrl: uploadedFiles[0].fileUrl,
+        fileUrls: uploadedFiles.map(file => file.fileUrl),
+        ossKeys: uploadedFiles.map(file => file.ossKey),
+        uploadTokens,
+        mimeType: uploadedFiles[0].mimeType || fd.pages[0].mimeType,
       };
       const res = await reportsAPI.create(payload);
       if (res.success) {
@@ -1205,9 +1218,11 @@ export default function ReportUploadScreen({ navigation, route }) {
         const reportId = res.data._id || res.data.id;
         reportsAPI.parseAI(reportId).catch(() => {});
       } else {
+        await reportsAPI.cleanupUploads(uploadTokens).catch(() => {});
         showToast('上传失败，请重试', true);
       }
     } catch (err) {
+      if (uploadTokens.length) await reportsAPI.cleanupUploads(uploadTokens).catch(() => {});
       showToast(err.message || '上传失败，请重试', true);
     } finally {
       setUploading(false);

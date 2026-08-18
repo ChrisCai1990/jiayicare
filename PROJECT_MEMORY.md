@@ -1,5 +1,11 @@
 # JiayiCare 项目记忆
 
+## 2026-08-18：用户端报告上传分段入 OSS
+
+- App 不再把一份报告全部页面的 Base64 一次提交到创建报告接口；改为每页最多 15MB、顺序上传至 OSS，全部成功后才创建报告记录，避免多页报告超过 JSON 请求上限。
+- `/api/reports/upload-base64` 现按文件头校验 PDF/JPG/PNG/WEBP/HEIC，上传成功后仅向当前用户签发 30 分钟上传凭证。创建报告时优先以凭证内的 OSS key 和 URL 为准；中途上传或建档失败时 App 调用受凭证约束的清理接口回收该次对象。
+- 本机 Expo 依赖目录被占用，无法完成 Web 构建；上线前由部署脚本的干净依赖安装环境完成构建并核验。后端路由已通过 `node --check` 与 `git diff --check`。
+
 ## 2026-08-18：历史报告 OSS 预览签名修复
 
 - 历史报告迁移至私有 OSS 后，会员详情页的 `GET /api/staff/patients/:id/reports` 曾直接返回原始对象 URL，AI 审核弹窗会出现 `AccessDenied`。该接口现与其他报告读取接口统一通过 `withSignedReportFiles` 签发短时预览 URL。
