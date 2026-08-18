@@ -9875,12 +9875,12 @@ async function runReportParse(reportId, options = {}) {
         && !useZheyiTemplate;
       const textPrimaryByPage = new Map();
       const textCoverageRequiredPages = new Set();
+      const historicalPageBaselines = new Map(
+        findHistoricalEmptyPages([], extractionSource, extractionHistory, textLayer.pageCount)
+          .map(item => [item.page, item.baselineCount])
+      );
       if (useTextLayerPrimary) {
         const pageNumbers = Array.from({ length: textLayer.pageCount }, (_, index) => index + 1);
-        const historicalPageBaselines = new Map(
-          findHistoricalEmptyPages([], extractionSource, extractionHistory, textLayer.pageCount)
-            .map(item => [item.page, item.baselineCount])
-        );
         setOcrProgress('text_primary', `文字层可用，正在结构化提取${pageNumbers.length}页`, {
           totalPages: textLayer.pageCount,
           concurrency: 4,
@@ -10037,7 +10037,10 @@ async function runReportParse(reportId, options = {}) {
             const img = await renderSinglePage(pdfBuf, pageNum, useShaoyifuTemplate ? 180 : 144);
             if (!img) return null;
             const firstNames = allItems.filter(it => it._page === pageNum).map(it => str(it.name)).filter(Boolean);
-            const auditPrompt = `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
+            const baselineCount = historicalPageBaselines.get(pageNum) || 0;
+            const auditPrompt = firstNames.length === 0 && baselineCount > 0
+              ? `${REPORT_PARSE_PROMPT}\n\n${OCR_V2_EXTRACTION_CONTRACT}\n\n【历史完整性重读】同一原件历史识别在本页最多提取过${baselineCount}项，本轮文字层为0项。请从当前原件完整逐项重读，不得复制或猜测历史内容。${formatTextLayerEvidence(textLayer.pages?.[pageNum - 1])}`
+              : `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
             const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) return null;
@@ -10061,6 +10064,37 @@ async function runReportParse(reportId, options = {}) {
           } else if (useAuditedPage) {
             allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
             console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
+          }
+        }
+        const materiallyReducedPages = [...textCoverageRequiredPages].filter(pageNum => {
+          const baselineCount = historicalPageBaselines.get(pageNum) || 0;
+          const currentCount = allItems.filter(item => item._page === pageNum).length;
+          return baselineCount > 0 && currentCount < Math.max(1, Math.ceil(baselineCount * 0.5));
+        });
+        if (materiallyReducedPages.length) {
+          setOcrProgress('historical_recovery', `正在完整重读${materiallyReducedPages.length}页历史下降页面`, {
+            recoveryPages: materiallyReducedPages,
+          });
+          const reducedRecoveryResults = await mapWithConcurrency(materiallyReducedPages, 2, async pageNum => {
+            try {
+              const baselineCount = historicalPageBaselines.get(pageNum) || 0;
+              const currentItems = allItems.filter(item => item._page === pageNum);
+              const img = await renderSinglePage(pdfBuf, pageNum, 192);
+              if (!img) return null;
+              const recoveryPrompt = `${REPORT_PARSE_PROMPT}\n\n${OCR_V2_EXTRACTION_CONTRACT}\n\n【历史下降页完整重读】同一原件历史识别在本页最多提取过${baselineCount}项，本轮当前仅${currentItems.length}项。请忽略历史内容，只从当前原件完整逐行读取本页全部项目；不得只输出异常项，不得把医学影像页误判为空页。${formatTextLayerEvidence(textLayer.pages?.[pageNum - 1])}`;
+              const raw = await parseImage(img, recoveryPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 60000 });
+              const parsed = safeParseJSON(raw);
+              if (!parsed || shouldSkipParsedReportPage(parsed) || !Array.isArray(parsed.items)) return null;
+              const recovered = tagReportPageItems(parsed.items, pageNum).filter(item => str(item.name));
+              return recovered.length > currentItems.length ? { pageNum, currentItems, recovered, baselineCount } : null;
+            } catch (error) {
+              console.log(`[parse-ai] P${pageNum}历史下降页完整重读异常: ${error.message}`);
+              return null;
+            }
+          });
+          for (const result of reducedRecoveryResults.filter(Boolean)) {
+            allItems = allItems.filter(item => item._page !== result.pageNum).concat(result.recovered);
+            console.log(`[parse-ai] P${result.pageNum}历史下降页完整重读：${result.currentItems.length}→${result.recovered.length}项（历史最多${result.baselineCount}项）`);
           }
         }
         if (false && useShaoyifuTemplate) {
