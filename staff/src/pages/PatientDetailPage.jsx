@@ -8502,23 +8502,10 @@ export default function PatientDetailPage() {
         const closePreview = () => { setPreviewImageUrl(null); setPreviewRotation(0) }
         const rotate = () => setPreviewRotation(r => (r + 90) % 360)
         const saveRotation = async () => {
-          if (previewRotation === 0) return closePreview()
+          if (previewRotation === Number(previewImageUrl.savedRotation || 0)) return closePreview()
           setPreviewSaving(true)
           try {
-            const img = new Image()
-            img.crossOrigin = 'anonymous'
-            await new Promise((resolve, reject) => { img.onload = resolve; img.onerror = reject; img.src = imgSrc })
-            const swap = previewRotation === 90 || previewRotation === 270
-            const canvas = document.createElement('canvas')
-            canvas.width = swap ? img.height : img.width
-            canvas.height = swap ? img.width : img.height
-            const ctx = canvas.getContext('2d')
-            ctx.translate(canvas.width / 2, canvas.height / 2)
-            ctx.rotate((previewRotation * Math.PI) / 180)
-            ctx.drawImage(img, -img.width / 2, -img.height / 2)
-            const mimeType = imgSrc.startsWith('data:image/png') ? 'image/png' : 'image/jpeg'
-            const dataUrl = canvas.toDataURL(mimeType, 0.92)
-            await staffAPI.updateReport(previewImageUrl.reportId, { content: dataUrl, mimeType })
+            await staffAPI.updateReport(previewImageUrl.reportId, { displayRotation: previewRotation })
             const refreshed = await staffAPI.getReport(previewImageUrl.reportId)
             setShowReportDetail(refreshed.data)
             closePreview()
@@ -8538,7 +8525,7 @@ export default function PatientDetailPage() {
                   style={{ background: 'rgba(255,255,255,0.15)', border: 'none', color: '#fff', fontSize: 14, cursor: 'pointer', borderRadius: 20, padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 6 }}>
                   ↻ 旋转
                 </button>
-                {previewRotation !== 0 && (
+                {previewRotation !== Number(previewImageUrl.savedRotation || 0) && (
                   <button onClick={saveRotation} disabled={previewSaving}
                     style={{ background: '#22A06B', border: 'none', color: '#fff', fontSize: 14, cursor: previewSaving ? 'default' : 'pointer', borderRadius: 20, padding: '10px 18px', opacity: previewSaving ? 0.7 : 1 }}>
                     {previewSaving ? '保存中…' : '保存旋转'}
@@ -10176,7 +10163,11 @@ export default function PatientDetailPage() {
                         <div style={{ fontWeight: 500, fontSize: 13, color: '#1A2B24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
                         {sizeKB && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}</div>}
                       </div>
-                      <button className="btn btn-primary btn-sm" onClick={() => { setPreviewRotation(0); setPreviewImageUrl(canRotateSave ? { url: src, reportId: showReportDetail._id } : src) }}>查看</button>
+                      <button className="btn btn-primary btn-sm" onClick={() => {
+                        const savedRotation = Number(showReportDetail.displayRotation || 0)
+                        setPreviewRotation(savedRotation)
+                        setPreviewImageUrl(canRotateSave ? { url: src, reportId: showReportDetail._id, savedRotation } : src)
+                      }}>查看</button>
                     </div>
                   )
                 })() : (

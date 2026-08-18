@@ -37,13 +37,14 @@ test('存在发布版本时始终返回发布版本而非当前 OCR 工作副本
     aiStatus: 'processing', tenantId: 'tenant-1', ossKey: 'private/object-key.pdf',
     ossKeys: ['private/object-key.pdf'], uploadedBy: 'staff-1', uploadRequestId: 'request-1',
     sourceFiles: [{ ossKey: 'private/object-key.pdf', sha256: 'c'.repeat(64) }],
+    displayRotation: 90,
     familyDoctorAudit: { status: 'audited', byName: '内部医生' },
   }), revision);
   assert.deepEqual(result.reportItems, [{ name: '已审核血糖', value: '5.2' }]);
   assert.equal(result.aiSummary, '已审核结论');
   assert.equal(result.aiStatus, 'reviewed');
   assert.equal(result.publishedRevisionNo, 3);
-  for (const field of ['tenantId', 'ossKey', 'ossKeys', 'sourceFiles', 'uploadedBy', 'uploadRequestId', 'familyDoctorAudit']) {
+  for (const field of ['tenantId', 'ossKey', 'ossKeys', 'sourceFiles', 'displayRotation', 'uploadedBy', 'uploadRequestId', 'familyDoctorAudit']) {
     assert.equal(field in result, false);
   }
 });

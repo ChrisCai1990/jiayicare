@@ -2459,7 +2459,7 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
   try {
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, editSource, reviewAction } = req.body;
+    const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, displayRotation, editSource, reviewAction } = req.body;
     const OCR_REVIEW_ACTIONS = new Set(['save_draft', 'submit', 'reject']);
     if (reviewAction && !OCR_REVIEW_ACTIONS.has(reviewAction)) {
       return res.status(400).json({ success: false, message: '无效的 OCR 审核动作' });
@@ -2649,6 +2649,21 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         : { reportItems: report.reportItems, snapshotAt: new Date() };
     }
     if (aiSummary !== undefined) report.aiSummary = aiSummary;
+    if (displayRotation !== undefined) {
+      const nextRotation = Number(displayRotation);
+      if (![0, 90, 180, 270].includes(nextRotation)) {
+        return res.status(400).json({ success: false, message: '无效的报告预览旋转角度' });
+      }
+      const previousRotation = Number(report.displayRotation || 0);
+      if (previousRotation !== nextRotation) {
+        report.dataEditLog.push({
+          field: 'displayRotation', oldValue: String(previousRotation), newValue: String(nextRotation),
+          operatorId: req.staff._id, operatorName: req.staff.name || req.staff.username || '', operatorRole: req.staff.role || '',
+          source: 'report_preview_rotation', at: new Date(),
+        });
+        report.displayRotation = nextRotation;
+      }
+    }
     if (content !== undefined && content && content.length > 10 * 1024 * 1024) {
       return res.status(400).json({ success: false, message: '文件过大，最大约7MB' });
     }

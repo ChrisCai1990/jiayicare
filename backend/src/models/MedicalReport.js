@@ -157,6 +157,8 @@ const medicalReportSchema = new mongoose.Schema({
   // 文件预览内容（data URI，仅小文件 < 3MB 存储，用于前端预览）
   content: { type: String, default: '' },
   mimeType:{ type: String, default: '' },
+  // 仅控制医护端预览方向，不修改原件字节，也不作为 OCR 输入。
+  displayRotation: { type: Number, enum: [0, 90, 180, 270], default: 0 },
   // 审核状态（由管理员设置，健管专员这一道审核）
   audit_status: {
     type: String,

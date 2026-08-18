@@ -31,7 +31,9 @@ function downloadBuffer(url, redirects = 3) {
 
 // 从报告记录里取出 PDF 二进制（优先 content base64，其次 fileUrl）
 async function fetchReportBuffer(report, uploadsDir) {
-  if (report.content) {
+  // 已登记原件摘要的新报告始终从原件入口读取。content 仅兼容历史 Base64 报告，
+  // 避免预览派生内容或旧客户端字段覆盖可追溯的 OCR 输入。
+  if (!report.sourceFiles?.length && report.content) {
     const b64 = report.content.replace(/^data:[^;]+;base64,/, '');
     return Buffer.from(b64, 'base64');
   }

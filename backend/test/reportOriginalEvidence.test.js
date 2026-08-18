@@ -53,3 +53,10 @@ test('original evidence is normalized and invalid hashes are never presented as 
   assert.equal(reportHasOriginal({ sourceFiles: [fileEvidence] }), true);
   assert.equal(reportHasOriginal({ fileUrls: [], ossKeys: [], sourceFiles: [] }), false);
 });
+
+test('report preview rotation is display metadata with a bounded quarter-turn value', () => {
+  const valid = new MedicalReport({ user: new mongoose.Types.ObjectId(), title: '图片报告', displayRotation: 270 });
+  const invalid = new MedicalReport({ user: new mongoose.Types.ObjectId(), title: '图片报告', displayRotation: 45 });
+  assert.equal(valid.validateSync(), undefined);
+  assert.match(invalid.validateSync().errors.displayRotation.message, /not a valid enum value/);
+});
