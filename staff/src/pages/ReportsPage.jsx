@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { staffAPI, API_ORIGIN } from '../api'
 import { useToast, usePermission } from '../App'
 import Pagination from '../components/Pagination'
@@ -10,6 +11,7 @@ const AUDIT_COLOR = { unaudited:'#D97706', audited:'#22A06B', rejected:'#DC3545'
 export default function ReportsPage() {
   const toast = useToast()
   const can = usePermission()
+  const navigate = useNavigate()
   const [reports, setReports] = useState([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -25,6 +27,8 @@ export default function ReportsPage() {
   const [editModal, setEditModal] = useState(null) // report object being edited
   const [editForm, setEditForm] = useState({ title: '', type: 'annual', hospital: '', date: '', note: '' })
   const [editSaving, setEditSaving] = useState(false)
+  const [auditBusyId, setAuditBusyId] = useState('')
+  const auditRequestIdsRef = useRef(new Map())
   const [patients, setPatients] = useState([])
   const limit = 20
 
@@ -56,10 +60,19 @@ export default function ReportsPage() {
   }
 
   const handleAudit = async (id, action, rejectReason = '') => {
+    if (auditBusyId) return
+    const requestKey = `${id}:${action}`
+    const requestId = auditRequestIdsRef.current.get(requestKey)
+      || globalThis.crypto?.randomUUID?.()
+      || `report-review-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    auditRequestIdsRef.current.set(requestKey, requestId)
+    setAuditBusyId(id)
     try {
-      await staffAPI.auditReport(id, { action, rejectReason })
+      await staffAPI.auditReport(id, { action, rejectReason, reviewRequestId: requestId })
+      auditRequestIdsRef.current.delete(requestKey)
       toast(action === 'approve' ? '审核通过' : '已驳回'); load()
     } catch (err) { toast(err.message) }
+    finally { setAuditBusyId('') }
   }
 
   const handleEditSave = async () => {
@@ -79,7 +92,7 @@ export default function ReportsPage() {
           <h1 className="page-title">报告管理</h1>
           <p className="page-subtitle">共 {total} 份报告</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setShowUpload(true)}>＋ 上传报告</button>
+        {(can('reports', 'create') || can('reports', 'audit')) && <button className="btn btn-primary" onClick={() => setShowUpload(true)}>＋ 上传报告</button>}
       </div>
 
       {/* 状态筛选 + 搜索 */}
@@ -122,11 +135,14 @@ export default function ReportsPage() {
                   <td>
                     <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       <button className="btn btn-secondary btn-sm" onClick={() => openDetail(r)}>查看</button>
-                      {r.audit_status !== 'audited' && (
+                      {can('reports', 'audit') && r.audit_status !== 'audited' && (
                         <button className="btn btn-secondary btn-sm" onClick={() => { setEditModal(r); setEditForm({ title: r.title || '', type: r.type || 'annual', hospital: r.hospital || '', date: r.date || '', note: r.note || '' }) }}>✏️ 修改</button>
                       )}
-                      {can('reports', 'audit') && r.audit_status === 'unaudited' && (
+                      {can('reports', 'audit') && r.audit_status === 'unaudited' && (!r.aiStatus || r.aiStatus === 'none') && (
                         <button className="btn btn-primary btn-sm" onClick={() => handleAudit(r._id, 'approve')}>✓ 通过</button>
+                      )}
+                      {can('reports', 'audit') && r.audit_status === 'unaudited' && r.aiStatus && r.aiStatus !== 'none' && (
+                        <button className="btn btn-secondary btn-sm" onClick={() => navigate(`/patients/${r.user?._id}?tab=reports`)}>前往核对 OCR</button>
                       )}
                       {can('reports', 'audit') && (r.audit_status === 'unaudited' || r.audit_status === 'audited') && (
                         <button className="btn btn-danger btn-sm" onClick={() => { setRejectModal(r); setRejectReason('') }}>✗ 驳回</button>
@@ -145,7 +161,14 @@ export default function ReportsPage() {
       )}
 
       {/* 上传弹窗 */}
-      {showUpload && <UploadModal patients={patients} onClose={() => setShowUpload(false)} onSaved={() => { setShowUpload(false); toast('上传成功'); load() }} />}
+      {showUpload && <SelectUploadPatientModal
+        patients={patients}
+        onClose={() => setShowUpload(false)}
+        onSelect={(patientId) => {
+          setShowUpload(false)
+          navigate(`/patients/${patientId}?tab=reports&upload=1`)
+        }}
+      />}
 
       {/* 详情弹窗 */}
       {showDetail && (
@@ -215,11 +238,14 @@ export default function ReportsPage() {
             </div>
             <div className="modal-footer">
               <button className="btn btn-secondary" onClick={() => setShowDetail(null)}>关闭</button>
-              {(showDetail.audit_status === 'unaudited' || showDetail.audit_status === 'audited') && (
+              {can('reports', 'audit') && (showDetail.audit_status === 'unaudited' || showDetail.audit_status === 'audited') && (
                 <button className="btn btn-danger" onClick={() => { setShowDetail(null); setRejectModal(showDetail); setRejectReason('') }}>✗ 驳回</button>
               )}
-              {showDetail.audit_status === 'unaudited' && (
+              {can('reports', 'audit') && showDetail.audit_status === 'unaudited' && (!showDetail.aiStatus || showDetail.aiStatus === 'none') && (
                 <button className="btn btn-primary" onClick={() => { handleAudit(showDetail._id, 'approve'); setShowDetail(null) }}>✓ 审核通过</button>
+              )}
+              {can('reports', 'audit') && showDetail.audit_status === 'unaudited' && showDetail.aiStatus && showDetail.aiStatus !== 'none' && (
+                <button className="btn btn-primary" onClick={() => navigate(`/patients/${showDetail.user?._id}?tab=reports`)}>前往核对 OCR</button>
               )}
             </div>
           </div>
@@ -300,152 +326,30 @@ export default function ReportsPage() {
   )
 }
 
-const PLAN_TYPE_LABEL = { checkup:'体检方案', health:'健康管理方案', followup:'随访计划', nutrition:'营养干预', rehab:'运动康复', tcm:'中医方案' }
-
-function UploadModal({ patients, onClose, onSaved }) {
-  const [form, setForm] = useState({ patientId: '', title: '', type: 'annual', hospital: '', date: '', note: '', planId: '', planItemId: '' })
-  const [fileData, setFileData] = useState(null) // { content, mimeType, fileSize, name }
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [planItems, setPlanItems] = useState([])
-  const [loadingItems, setLoadingItems] = useState(false)
-  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }))
-
-  const handleFileChange = (e) => {
-    const file = e.target.files[0]
-    if (!file) return
-    if (file.size > 7 * 1024 * 1024) { setError('文件不能超过7MB，请压缩后重试'); return }
-    const ALLOWED = ['image/jpeg', 'image/png', 'image/gif', 'application/pdf', 'image/webp']
-    if (file.type && !ALLOWED.includes(file.type)) { setError(`不支持的格式 ${file.type}，请上传 JPG/PNG/PDF`); return }
-    setError('')
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      setFileData({ content: ev.target.result, mimeType: file.type, fileSize: Math.round(file.size / 1024) + 'KB', name: file.name })
-    }
-    reader.onerror = () => setError('文件读取失败，请重试')
-    reader.readAsDataURL(file)
-  }
-
-  // 切换会员时加载该会员的待完成方案项目
-  const handlePatientChange = async (e) => {
-    const patientId = e.target.value
-    setForm(f => ({ ...f, patientId, planId: '', planItemId: '' }))
-    if (!patientId) { setPlanItems([]); return }
-    setLoadingItems(true)
-    try {
-      const res = await staffAPI.getActivePlanItems(patientId)
-      setPlanItems(res.data)
-    } catch { setPlanItems([]) }
-    finally { setLoadingItems(false) }
-  }
-
-  // 选择关联项目后自动填充标题
-  const handleItemChange = (e) => {
-    const val = e.target.value
-    if (!val) { setForm(f => ({ ...f, planId: '', planItemId: '' })); return }
-    const [planId, itemId] = val.split('|')
-    const item = planItems.find(i => i.planId.toString() === planId && i.itemId.toString() === itemId)
-    setForm(f => ({
-      ...f, planId, planItemId: itemId,
-      title: f.title || (item ? item.itemName : f.title),
-    }))
-  }
-
-  const handleSubmit = async () => {
-    if (!form.patientId || !form.title) { setError('会员和标题不能为空'); return }
-    setSaving(true); setError('')
-    try {
-      await staffAPI.uploadReport({
-        ...form,
-        content: fileData?.content || '',
-        mimeType: fileData?.mimeType || '',
-        fileSize: fileData?.fileSize || '',
-        fileUrl: '',
-      })
-      onSaved()
-    } catch (err) { setError(err.message) }
-    finally { setSaving(false) }
-  }
-
+function SelectUploadPatientModal({ patients, onClose, onSelect }) {
+  const [patientId, setPatientId] = useState('')
   return (
     <div className="modal-overlay">
-      <div className="modal" style={{ maxWidth: 500 }}>
+      <div className="modal" style={{ maxWidth: 460 }}>
         <div className="modal-header">
-          <h3 className="modal-title">上传报告</h3>
+          <h3 className="modal-title">选择报告所属会员</h3>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
-        {error && <div className="login-err" style={{ margin: '0 20px 8px' }}>⚠️ {error}</div>}
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div style={{ fontSize: 13, lineHeight: 1.6, color: '#60756B', background: '#F4F8F6', borderRadius: 8, padding: '9px 11px' }}>
+            选择会员后进入其报告页上传。图片、多页报告和 PDF 都会使用统一的原件留证、安全清理与 OCR 审核流程。
+          </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label className="form-label">选择会员 *</label>
-            <select className="form-input" value={form.patientId} onChange={handlePatientChange}>
+            <select className="form-input" value={patientId} onChange={event => setPatientId(event.target.value)} autoFocus>
               <option value="">-- 请选择会员 --</option>
               {patients.map(p => <option key={p._id} value={p._id}>{p.name} · {p.phone}</option>)}
             </select>
           </div>
-
-          {/* 关联待完成项目 */}
-          {form.patientId && (
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">关联方案项目（可选）
-                <span style={{ fontSize: 11, color: '#8AA89C', marginLeft: 6 }}>关联后审核通过自动标记完成</span>
-              </label>
-              <select className="form-input" value={form.planId && form.planItemId ? `${form.planId}|${form.planItemId}` : ''} onChange={handleItemChange}>
-                <option value="">-- 不关联 --</option>
-                {loadingItems && <option disabled>加载中...</option>}
-                {planItems.map(i => (
-                  <option key={`${i.planId}|${i.itemId}`} value={`${i.planId}|${i.itemId}`}>
-                    [{PLAN_TYPE_LABEL[i.planType] || i.planType}] {i.planTitle} · {i.itemName}
-                    {i.scheduledDate ? ` (${new Date(i.scheduledDate).toLocaleDateString('zh-CN')})` : ''}
-                  </option>
-                ))}
-                {!loadingItems && planItems.length === 0 && <option disabled>暂无待完成项目</option>}
-              </select>
-            </div>
-          )}
-
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告标题 *</label>
-            <input className="form-input" placeholder="如：2025年度体检报告" value={form.title} onChange={set('title')} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">报告类型</label>
-              <select className="form-input" value={form.type} onChange={set('type')}>
-                {Object.entries(REPORT_TYPE).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-              </select>
-            </div>
-            <div className="form-group" style={{ marginBottom: 0 }}>
-              <label className="form-label">报告日期</label>
-              <input className="form-input" type="date" value={form.date} onChange={set('date')} />
-            </div>
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">医院</label>
-            <input className="form-input" placeholder="医院名称" value={form.hospital} onChange={set('hospital')} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">备注</label>
-            <textarea className="form-input" rows={2} value={form.note} onChange={set('note')} />
-          </div>
-          <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">选择文件（PDF/图片，最大5MB）</label>
-            <input
-              type="file"
-              accept="image/*,application/pdf"
-              onChange={handleFileChange}
-              style={{ display: 'block', width: '100%', padding: '8px 0', fontSize: 13 }}
-            />
-            {fileData && (
-              <div style={{ marginTop: 6, fontSize: 12, color: '#22A06B' }}>
-                ✅ 已选择：{fileData.name} ({fileData.fileSize})
-              </div>
-            )}
-          </div>
         </div>
         <div className="modal-footer">
           <button className="btn btn-secondary" onClick={onClose}>取消</button>
-          <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>{saving ? '上传中...' : '提交'}</button>
+          <button className="btn btn-primary" onClick={() => patientId && onSelect(patientId)} disabled={!patientId}>进入安全上传</button>
         </div>
       </div>
     </div>

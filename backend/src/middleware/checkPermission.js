@@ -32,6 +32,47 @@ function checkPermission(moduleKey, action) {
   };
 }
 
+// 医疗数据发布、审核和删除等高风险动作使用严格版本：仍兼容未启用自定义角色的老员工，
+// 但一旦账号已经绑定自定义角色，角色缺失或权限服务异常都不能按“默认放行”处理。
+function checkPermissionStrict(moduleKey, action) {
+  return async (req, res, next) => {
+    try {
+      if (req.staff.role === 'superadmin' || req.staff.role === 'platformSuper') return next();
+      if (!req.staff.customRoleId) return next();
+
+      const role = await StaffRole.findById(req.staff.customRoleId).select('permissions').lean();
+      if (!role) return res.status(403).json({ success: false, message: '当前账号的自定义角色已失效，请联系管理员' });
+      if (!role.permissions?.[moduleKey]?.[action]) {
+        return res.status(403).json({ success: false, message: '当前角色无此操作权限' });
+      }
+      next();
+    } catch (err) {
+      console.error('[checkPermissionStrict] 权限校验异常：', err.message);
+      return res.status(503).json({ success: false, message: '权限校验暂时不可用，请稍后重试' });
+    }
+  };
+}
+
+function checkAnyPermissionStrict(moduleKey, actions) {
+  const acceptedActions = Array.isArray(actions) ? actions : [actions];
+  return async (req, res, next) => {
+    try {
+      if (req.staff.role === 'superadmin' || req.staff.role === 'platformSuper') return next();
+      if (!req.staff.customRoleId) return next();
+
+      const role = await StaffRole.findById(req.staff.customRoleId).select('permissions').lean();
+      if (!role) return res.status(403).json({ success: false, message: '当前账号的自定义角色已失效，请联系管理员' });
+      if (!acceptedActions.some(action => !!role.permissions?.[moduleKey]?.[action])) {
+        return res.status(403).json({ success: false, message: '当前角色无此操作权限' });
+      }
+      next();
+    } catch (err) {
+      console.error('[checkAnyPermissionStrict] 权限校验异常：', err.message);
+      return res.status(503).json({ success: false, message: '权限校验暂时不可用，请稍后重试' });
+    }
+  };
+}
+
 // 健康方案按「方案类型」细分授权：管理员在角色管理里可对某角色关闭某类方案（如只让营养师管营养干预方案）。
 // getType(req) 返回本次操作的方案 type（create 从 body.type、edit/delete 从已加载的 plan）。
 // 兼容：①superadmin/无自定义角色 放行 ②角色没存过 planTypes（旧角色或该类型键缺失）默认放行，
@@ -66,3 +107,5 @@ function checkPlanType(getType) {
 
 module.exports = checkPermission;
 module.exports.checkPlanType = checkPlanType;
+module.exports.checkPermissionStrict = checkPermissionStrict;
+module.exports.checkAnyPermissionStrict = checkAnyPermissionStrict;

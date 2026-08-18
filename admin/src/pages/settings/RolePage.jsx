@@ -19,7 +19,7 @@ const MODULES = [
   { key: 'patients',        label: '我的会员',     actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'followups',       label: '随访管理',     actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'plans',           label: '健康方案',     actions: ['view', 'create', 'edit', 'delete'], planTypes: PLAN_TYPES },
-  { key: 'reports',         label: '报告管理',     actions: ['view', 'audit', 'delete'] },
+  { key: 'reports',         label: '报告管理',     actions: ['view', 'create', 'audit', 'delete'] },
   { key: 'abnormal_review', label: '异常复查',     actions: ['view', 'create', 'edit'] },
   { key: 'service_records', label: '服务记录',     actions: ['view', 'create', 'edit', 'delete'] },
   { key: 'knowledge',       label: '科普推送',     actions: ['view', 'send'] },

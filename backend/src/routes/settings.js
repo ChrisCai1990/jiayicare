@@ -105,7 +105,7 @@ const DEFAULT_PERMISSIONS = {
   staff:          { view: false, create: false, edit: false, delete: false },
   settings:       { view: false, edit: false },
   projects:       { view: false, create: false, edit: false, delete: false },
-  reports:        { view: false, audit: false },
+  reports:        { view: false, create: false, audit: false, delete: false },
   followups:      { view: false, create: false, edit: false, delete: false },
 };
 

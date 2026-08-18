@@ -28,3 +28,13 @@ test('unknown itemType remains invalid instead of being silently accepted', () =
 
   assert.match(report.validateSync().message, /itemType/);
 });
+
+test('legacy uploads do not receive an empty idempotency key', () => {
+  const report = new MedicalReport({
+    user: new mongoose.Types.ObjectId(),
+    title: '旧版客户端上传报告',
+  });
+
+  assert.equal(report.uploadRequestId, undefined);
+  assert.equal(report.toObject().uploadRequestId, undefined);
+});

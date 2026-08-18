@@ -7,6 +7,7 @@ import Pagination from './Pagination'
 const TYPE_CONFIG = {
   report_parse:    { icon: '📄', label: '体检报告待解析', color: '#D97706', priority: 2 },
   report_review:   { icon: '📋', label: '体检报告待审核', color: '#0077B6', priority: 2 },
+  report_screening_classify: { icon: '🗂️', label: '专项筛查待归类', color: '#D97706', priority: 3 },
   report_familydoctor_review: { icon: '📋', label: '体检信息待专业人员复核', color: '#7C3AED', priority: 2 },
   archive_review:  { icon: '🗂️', label: '健康档案问卷待审核', color: '#0077B6', priority: 3 },
   summary_review:  { icon: '🩺', label: '健康信息整理待核对', color: '#22A06B', priority: 2 },

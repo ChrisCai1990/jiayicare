@@ -83,6 +83,16 @@ export const staffAPI = {
   // Medical Reports
   getReports:    (p = {}) => req('/staff/medical-reports?' + qs(p)),
   getReport:     (id)     => req(`/staff/medical-reports/${id}`),
+  getReportExtractions: (id) => req(`/staff/medical-reports/${id}/extractions`),
+  getReportExtraction:  (id, version) => req(`/staff/medical-reports/${id}/extractions/${version}`),
+  getReportRevisions:   (id) => req(`/staff/medical-reports/${id}/revisions`),
+  getReportReviewEvents: (id) => req(`/staff/medical-reports/${id}/review-events`),
+  getReportReviewIntegrity: (id) => req(`/staff/medical-reports/${id}/review-integrity`),
+  reconcileReportReviewIntegrity: (id, requestId) => req(`/staff/medical-reports/${id}/review-integrity/reconcile`, { method: 'POST', body: JSON.stringify({ requestId }) }),
+  getReportRevision:    (id, revisionNo) => req(`/staff/medical-reports/${id}/revisions/${revisionNo}`),
+  getReportRevisionDiff: (id, revisionNo, baselineNo) => req(`/staff/medical-reports/${id}/revisions/${revisionNo}/compare/${baselineNo}`),
+  getReportScreeningCandidates: (id) => req(`/staff/medical-reports/${id}/screening-candidates`),
+  resolveReportScreeningCandidate: (reportId, candidateId, data) => req(`/staff/medical-reports/${reportId}/screening-candidates/${candidateId}`, { method: 'PATCH', body: JSON.stringify(data) }),
   uploadReport:  (data)   => req('/staff/medical-reports', { method: 'POST', body: JSON.stringify(data) }),
   // 健康顾问健康档案查看确认（2026-07-28改造，不再逐份审核报告数据本身）
   getPendingDoctorAuditReports: (patientId) => req(`/staff/patients/${patientId}/reports/pending-doctor-audit`),
@@ -91,7 +101,8 @@ export const staffAPI = {
   // 膳食调查问卷营养师复核
   nutritionistReviewResponse: (patientId, responseId) => req(`/staff/patients/${patientId}/questionnaire-responses/${responseId}/nutritionist-review`, { method: 'POST' }),
   // 上传报告后自动识别机构/日期回填表单
-  quickMetaFromReportFile: (url, mimeType) => req('/staff/upload/quick-meta', { method: 'POST', body: JSON.stringify({ url, mimeType }) }),
+  quickMetaFromReportFile: (uploadToken) => req('/staff/upload/quick-meta', { method: 'POST', body: JSON.stringify({ uploadToken }) }),
+  cleanupReportUploads: (uploadTokens) => req('/staff/upload/report-file/cleanup', { method: 'POST', body: JSON.stringify({ uploadTokens }) }),
   uploadReportFile: (file, onProgress) => new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     xhr.open('POST', `${BASE}/staff/upload/report-file`)
@@ -109,23 +120,13 @@ export const staffAPI = {
     fd.append('file', file)
     xhr.send(fd)
   }),
-  uploadReportWithProgress: (data, onProgress) => new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest()
-    xhr.open('POST', `${BASE}/staff/medical-reports`)
-    xhr.setRequestHeader('Content-Type', 'application/json')
-    const token = getToken()
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`)
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)) }
-    xhr.onload = () => {
-      const res = JSON.parse(xhr.responseText)
-      if (xhr.status === 401) { clearToken(); window.location.href = '/login'; reject(new Error('Token 无效或已过期')) }
-      else if (xhr.status >= 400) reject(new Error(res.message || '上传失败'))
-      else resolve(res)
-    }
-    xhr.onerror = () => reject(new Error('网络错误，上传失败'))
-    xhr.send(JSON.stringify(data))
+  auditReport:   (id, d)  => req(`/staff/medical-reports/${id}/audit`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      ...d,
+      ...(['approve', 'reject'].includes(d?.action) ? { reviewRequestId: d.reviewRequestId || globalThis.crypto?.randomUUID?.() || `review-${Date.now()}` } : {}),
+    }),
   }),
-  auditReport:   (id, d)  => req(`/staff/medical-reports/${id}/audit`, { method: 'PATCH', body: JSON.stringify(d) }),
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
   deleteReport:  (id)     => req(`/staff/medical-reports/${id}`,       { method: 'DELETE' }),
   parseReportAI: (id, mode = 'legacy', options = {}) => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST', body: JSON.stringify({ mode, ...options }) }),

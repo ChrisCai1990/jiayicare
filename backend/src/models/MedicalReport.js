@@ -7,6 +7,8 @@ const normalizeReportItemType = value => value === 'pathology' ? 'imaging' : val
 
 // 报告解析后的单条项目（检验/检查值）
 const reportItemSchema = new mongoose.Schema({
+  // 同一原报告位置的稳定标识：识别版本、审核版本和专项筛查投影均可引用，避免仅凭项目名称关联。
+  sourceItemId:   { type: String, default: '' },
   name:           { type: String, default: '' }, // 项目名称
   sourceSection:  { type: String, default: '' }, // 报告原始栏目标题，用于保序和组合检查完整性校验
   value:          { type: String, default: '' }, // 检测值（字符串保留原始格式）
@@ -71,6 +73,9 @@ const medicalReportSchema = new mongoose.Schema({
   ocrVersion:      { type: String, default: '' },
   ocrTemplateId:   { type: String, default: '' },
   ocrQualitySummary: { type: mongoose.Schema.Types.Mixed, default: null },
+  // 当前识别草稿与当前已发布审核版本。历史版本保存在独立集合中，原报告仍是文件与流程主记录。
+  currentExtractionId: { type: mongoose.Schema.Types.ObjectId, ref: 'ReportExtraction', default: null },
+  currentRevisionId:   { type: mongoose.Schema.Types.ObjectId, ref: 'ReportRevision', default: null },
   // OCR v2 异步任务的前端可见进度；仅用于展示，不参与审核结论。
   ocrProgress: { type: mongoose.Schema.Types.Mixed, default: null },
   // 人工对 OCR v2 草稿的真实修正，供模板/规则回归分析；不影响正式报告内容。
@@ -84,6 +89,9 @@ const medicalReportSchema = new mongoose.Schema({
     operatorId: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
     at: { type: Date, default: Date.now },
   }],
+  // OCR 审核工作台的轻量留痕。首轮不迁移既有报告版本，只记录草稿/提交的操作者、时间和
+  // 服务端按当前项目计算出的摘要，避免把“保存草稿”误当成“已审核通过”。
+  ocrReviewMeta: { type: mongoose.Schema.Types.Mixed, default: null },
   pageParseStatus: { type: mongoose.Schema.Types.Mixed, default: null }, // 单页补提进度：{pageNum,status,startedAt,completedAt,message,itemCount}
   reviewedByStaff: { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
   reviewedAt:      { type: Date, default: null },
@@ -193,11 +201,14 @@ const medicalReportSchema = new mongoose.Schema({
   }],
   // 医护端：上传人 & 关联方案项目
   uploadedBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'Admin', default: null },
+  // 不设空字符串默认值：sparse 唯一索引只应约束真正携带幂等键的医护端上传。
+  uploadRequestId: { type: String }, // 医护端上传幂等键，网络重试不重复建档
   planItemId:       { type: mongoose.Schema.Types.ObjectId, default: null }, // 关联体检方案中的项目
   planId:           { type: mongoose.Schema.Types.ObjectId, ref: 'HealthPlan', default: null },
   screeningItemId:  { type: mongoose.Schema.Types.ObjectId, ref: 'UserScreeningItem', default: null },
 }, { timestamps: true });
 
 medicalReportSchema.plugin(require('../utils/tenantScope').tenantScopePlugin);
+medicalReportSchema.index({ uploadedBy: 1, uploadRequestId: 1 }, { unique: true, sparse: true });
 
 module.exports = mongoose.model('MedicalReport', medicalReportSchema);

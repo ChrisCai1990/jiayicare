@@ -33,6 +33,9 @@ function extensionForMime(mimeType) {
     : mimeType === 'image/jpeg' || mimeType === 'image/jpg' ? 'jpg'
     : mimeType === 'image/gif' ? 'gif'
     : mimeType === 'image/webp' ? 'webp'
+    : mimeType === 'image/heic' ? 'heic'
+    : mimeType === 'image/heif' ? 'heif'
+    : mimeType === 'image/bmp' ? 'bmp'
     : mimeType === 'audio/mpeg' ? 'mp3'
     : 'bin';
 }
@@ -82,10 +85,14 @@ function getClient() {
 }
 
 // 删除 OSS 文件
+async function deleteFileStrict(key) {
+  const client = getClient();
+  await client.delete(key);
+}
+
 async function deleteFile(key) {
   try {
-    const client = getClient();
-    await client.delete(key);
+    await deleteFileStrict(key);
   } catch (e) {
     // 删除失败不阻断流程
   }
@@ -116,4 +123,4 @@ function urlToKey(url) {
   return match ? match[1] : null;
 }
 
-module.exports = { uploadBase64, uploadBuffer, deleteFile, getSignedUrl, signStoredUrl, getObjectStream, urlToKey, convertHeicBase64IfNeeded };
+module.exports = { uploadBase64, uploadBuffer, deleteFile, deleteFileStrict, getSignedUrl, signStoredUrl, getObjectStream, urlToKey, convertHeicBase64IfNeeded };

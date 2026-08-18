@@ -1403,6 +1403,9 @@ export default function PatientDetailPage() {
   const location = useLocation()
   const toast = useToast()
   const { staff } = useStaff()
+  const canAuditReports = !staff?.customPermissions || !!staff.customPermissions.reports?.audit
+  const canDeleteReports = !staff?.customPermissions || !!staff.customPermissions.reports?.delete
+  const canUploadReports = !staff?.customPermissions || !!(staff.customPermissions.reports?.create || staff.customPermissions.reports?.audit)
   const [data, setData] = useState(null)
   const [loadError, setLoadError] = useState(null) // 加载会员详情失败时的具体原因（区分"无权限查看"和"会员不存在"，2026-07-13 修复：此前统一误显示成"会员不存在"）
   const [loading, setLoading] = useState(true)
@@ -1439,7 +1442,7 @@ export default function PatientDetailPage() {
   const [followUpDetail, setFollowUpDetail] = useState(null)
   const [editingFollowUp, setEditingFollowUp] = useState(null)
   const [followUpSaving, setFollowUpSaving] = useState(false)
-  const [showUploadReport, setShowUploadReport] = useState(false)
+  const [showUploadReport, setShowUploadReport] = useState(() => new URLSearchParams(location.search).get('upload') === '1')
   const [showMessageModal, setShowMessageModal] = useState(() => new URLSearchParams(location.search).get('openChat') === '1')
   const [auditLoading, setAuditLoading] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
@@ -1676,6 +1679,13 @@ export default function PatientDetailPage() {
   const [ocrReviewReport, setOcrReviewReport] = useState(null)
   const [ocrEditItems, setOcrEditItems] = useState([])
   const [ocrReviewPage, setOcrReviewPage] = useState(null)
+  const [ocrVersionHistory, setOcrVersionHistory] = useState(null)
+  const [ocrVersionHistoryLoading, setOcrVersionHistoryLoading] = useState(false)
+  const [ocrIntegrityRepairBusy, setOcrIntegrityRepairBusy] = useState(false)
+  const [ocrRevisionDiff, setOcrRevisionDiff] = useState(null)
+  const [ocrRevisionDiffLoading, setOcrRevisionDiffLoading] = useState(false)
+  const [ocrCandidateSelections, setOcrCandidateSelections] = useState({})
+  const [ocrCandidateBusy, setOcrCandidateBusy] = useState(null)
   const [ocrReviewFilter, setOcrReviewFilter] = useState('all') // v2 草稿默认仅看需核对；旧草稿完整展示
   const [ocrFocusItemIndex, setOcrFocusItemIndex] = useState(null)
   const [ocrSaving, setOcrSaving] = useState(false)
@@ -1686,6 +1696,9 @@ export default function PatientDetailPage() {
   const ocrModalBodyRef = useRef(null)                          // 归类下拉框的真实裁切边界是这个 overflow:auto 的表格滚动容器，不是浏览器视口
   const ocrItemRefs = useRef({})
   const ocrFocusHandledRef = useRef(null)
+  const ocrReviewRequestIdRef = useRef('')
+  const manualAuditRequestIdsRef = useRef(new Map())
+  const integrityRepairRequestIdsRef = useRef(new Map())
   const [screeningCatalog, setScreeningCatalog] = useState([])
   useEffect(() => { staffAPI.getScreeningCatalog().then(r => setScreeningCatalog(r.data || [])).catch(() => {}) }, [])
   // 客户归属决定会员类型和服务包选项，两者均读取 admin 会员设置。
@@ -2542,8 +2555,32 @@ export default function PatientDetailPage() {
 
   const handleOpenOCRReview = (r, focusItems = []) => {
     ocrFocusHandledRef.current = null
+    ocrReviewRequestIdRef.current = globalThis.crypto?.randomUUID?.() || `ocr-review-${Date.now()}-${Math.random().toString(36).slice(2)}`
     setOcrReviewReport(r)
     setOcrReviewFilter(r.ocrVersion ? 'exceptions' : 'all')
+    setOcrVersionHistory(null)
+    setOcrVersionHistoryLoading(true)
+    setOcrRevisionDiff(null)
+    Promise.all([
+      staffAPI.getReportExtractions(r._id),
+      staffAPI.getReportRevisions(r._id),
+      staffAPI.getReportScreeningCandidates(r._id),
+      staffAPI.getReportReviewEvents(r._id),
+      staffAPI.getReportReviewIntegrity(r._id),
+    ]).then(([extractions, revisions, candidates, reviewEvents, reviewIntegrity]) => {
+      setOcrVersionHistory({
+        reportId: r._id,
+        extractions: extractions.data || [],
+        revisions: revisions.data || [],
+        screeningCandidates: candidates.data || [],
+        pendingScreeningCount: candidates.pendingCount || 0,
+        reviewEvents: reviewEvents.data || [],
+        reviewIntegrity: reviewIntegrity.data || null,
+      })
+    }).catch(() => {
+      // 旧后端或暂时的网络失败不影响审核主链路；弹窗中会明确显示版本记录暂不可用。
+      setOcrVersionHistory({ reportId: r._id, unavailable: true, extractions: [], revisions: [], screeningCandidates: [], pendingScreeningCount: 0, reviewEvents: [] })
+    }).finally(() => setOcrVersionHistoryLoading(false))
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
     if (!r.content && !r.fileUrl && !(r.fileUrls && r.fileUrls.length)) {
@@ -2584,11 +2621,87 @@ export default function PatientDetailPage() {
     setOcrReviewPage(Number(focused?.sourcePage) || (pages.length ? Math.min(...pages) : 1))
   }
 
+  const handleLoadOCRRevisionDiff = async (reportId, revisionNo, baselineNo) => {
+    setOcrRevisionDiffLoading(true)
+    try {
+      const res = await staffAPI.getReportRevisionDiff(reportId, revisionNo, baselineNo)
+      setOcrRevisionDiff(res.data || null)
+    } catch (err) {
+      toast(err.message || '版本差异读取失败')
+      setOcrRevisionDiff(null)
+    } finally { setOcrRevisionDiffLoading(false) }
+  }
+
+  const handleOCRScreeningCandidate = async (candidate, action) => {
+    const screeningKey = ocrCandidateSelections[candidate._id] || ''
+    if (action === 'resolve' && !screeningKey) return toast('请先选择专项筛查分类')
+    if (action === 'dismiss' && !window.confirm(`确认“${candidate.itemSnapshot?.name || '该项目'}”不进入专项筛查？报告内容不会删除。`)) return
+    setOcrCandidateBusy(candidate._id)
+    try {
+      await staffAPI.resolveReportScreeningCandidate(ocrReviewReport._id, candidate._id, { action, screeningKey })
+      if (action === 'resolve') {
+        const [screeningCategory, screeningParent] = screeningKey.split('|')
+        setOcrEditItems(items => items.map(item => item.sourceItemId === candidate.sourceItemId ? {
+          ...item,
+          screeningKey,
+          screeningKeys: [screeningKey],
+          screeningCategory,
+          screeningParent,
+          matchStatus: 'matched',
+          matchConfidence: 1,
+        } : item))
+      }
+      const refreshed = await staffAPI.getReportScreeningCandidates(ocrReviewReport._id)
+      setOcrVersionHistory(current => current ? {
+        ...current,
+        screeningCandidates: refreshed.data || [],
+        pendingScreeningCount: refreshed.pendingCount || 0,
+      } : current)
+      toast(action === 'resolve' ? '已写入专项筛查，并保留审核版本来源' : '已标记为不进入专项筛查')
+    } catch (err) { toast(err.message || '处理待归类项目失败') }
+    finally { setOcrCandidateBusy(null) }
+  }
+
+  const handleReconcileReportIntegrity = async () => {
+    const reportId = ocrReviewReport?._id
+    if (!reportId || !window.confirm('重新对账只会按当前正式审核版本补齐候选和专项筛查投影，并保留人工已确认归类。是否继续？')) return
+    const requestId = integrityRepairRequestIdsRef.current.get(reportId)
+      || globalThis.crypto?.randomUUID?.()
+      || `report-reconcile-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    integrityRepairRequestIdsRef.current.set(reportId, requestId)
+    setOcrIntegrityRepairBusy(true)
+    try {
+      const result = await staffAPI.reconcileReportReviewIntegrity(reportId, requestId)
+      integrityRepairRequestIdsRef.current.delete(reportId)
+      setOcrVersionHistory(current => current ? { ...current, reviewIntegrity: result.data } : current)
+      toast(result.data?.consistent ? '审核派生数据已重新对账并恢复一致' : '已完成可自动修复项，仍有审核证据缺口需管理员核查')
+      loadReports()
+    } catch (err) { toast(err.message || '重新对账失败') }
+    finally { setOcrIntegrityRepairBusy(false) }
+  }
+
   const handleApproveOCR = async () => {
+    if (!ocrReviewReport) return
+    const isScreeningMatched = it => it.matchStatus === 'matched' && (it.screeningKey || it.screeningKeys?.[0])
+    const matchedCount = ocrEditItems.filter(isScreeningMatched).length
+    const unresolvedCount = ocrEditItems.filter(it => !isScreeningMatched(it)).length
+    const exceptionCount = ocrEditItems.filter(it => it.reviewPriority === 'high' || (it.qualityFlags || []).some(flag => flag !== 'unclassified')).length
+    const confirmed = window.confirm(
+      `提交报告审核？\n\n将发布报告项目：${ocrEditItems.length} 项\n需要重点复核：${exceptionCount} 项\n将同步到专项筛查索引（已归类）：${matchedCount} 项\n审核后进入专项筛查待归类队列：${unresolvedCount} 项\n\n未归类项目不阻塞报告发布，也不会提前进入会员筛查记录。`
+    )
+    if (!confirmed) return
     setOcrSaving(true)
     try {
-      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'reviewed' })
-      toast('审核通过，数据已写入专项筛查，已进入待健康顾问审核')
+      const result = await staffAPI.updateReport(ocrReviewReport._id, {
+        reportItems: ocrEditItems,
+        aiStatus: 'reviewed',
+        reviewAction: 'submit',
+        reviewRequestId: ocrReviewRequestIdRef.current,
+      })
+      const candidateCount = Number(result.meta?.pendingScreeningCandidateCount || 0)
+      toast(candidateCount > 0
+        ? `报告审核已提交；另有 ${candidateCount} 项进入专项筛查待归类队列`
+        : '报告审核已提交；已归类项目已同步到专项筛查')
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '保存失败') }
@@ -2599,7 +2712,7 @@ export default function PatientDetailPage() {
   const handleSaveOCRDraft = async () => {
     setOcrSaving(true)
     try {
-      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
+      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending', reviewAction: 'save_draft' })
       toast('草稿已保存（仍为待审核）')
       setOcrReviewReport(null)
       loadReports()
@@ -2651,7 +2764,9 @@ export default function PatientDetailPage() {
   const handleRejectOCR = async () => {
     setOcrSaving(true)
     try {
-      await staffAPI.updateReport(ocrReviewReport._id, { aiStatus: 'none', reportItems: [] })
+      await staffAPI.updateReport(ocrReviewReport._id, {
+        aiStatus: 'none', reportItems: [], reviewAction: 'reject', reviewRequestId: ocrReviewRequestIdRef.current,
+      })
       toast('已驳回，可重新触发AI识别')
       setOcrReviewReport(null)
       loadReports()
@@ -2994,9 +3109,15 @@ export default function PatientDetailPage() {
   }
 
   const handleAudit = async (action) => {
+    const requestKey = `${showReportDetail?._id || ''}:${action}`
+    const requestId = manualAuditRequestIdsRef.current.get(requestKey)
+      || globalThis.crypto?.randomUUID?.()
+      || `report-review-${Date.now()}-${Math.random().toString(36).slice(2)}`
+    manualAuditRequestIdsRef.current.set(requestKey, requestId)
     try {
       setAuditLoading(true)
-      await staffAPI.auditReport(showReportDetail._id, { action, rejectReason })
+      await staffAPI.auditReport(showReportDetail._id, { action, rejectReason, reviewRequestId: requestId })
+      manualAuditRequestIdsRef.current.delete(requestKey)
       toast(action === 'approve' ? '已审核通过' : '已驳回')
       setShowReportDetail(null)
       setRejectReason('')
@@ -4633,7 +4754,7 @@ export default function PatientDetailPage() {
                     {totalCount > 0 && <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{totalCount} 项</span>}
                     <span style={{ fontSize: 11, color: '#8AA89C', flexShrink: 0 }}>{isExpanded ? '▲' : '▼'}</span>
                   </div>
-                  {r.isAI
+                  {r.isAI && canAuditReports
                     ? (<>
                         <button onClick={() => {
                           const rid = (r._sourceItems || [])[0]?.reportId
@@ -8445,6 +8566,7 @@ export default function PatientDetailPage() {
         }
         const reportYears = [...new Set(reports.map(getReportYear))].sort((a, b) => b.localeCompare(a, 'zh', { numeric: true }))
         const getReportTaskKey = (report) => {
+          if (Number(report.pendingScreeningCandidateCount || 0) > 0) return 'classify'
           if (report.audit_status === 'audited' || report.aiStatus === 'reviewed') return 'audited'
           if (report.audit_status === 'rejected' || report.aiStatus === 'rejected') return 'rejected'
           if (report.aiStatus === 'none') return 'parse'
@@ -8456,6 +8578,7 @@ export default function PatientDetailPage() {
           { key: 'parse', label: '待解析' },
           { key: 'processing', label: '解析中' },
           { key: 'review', label: '待审核' },
+          { key: 'classify', label: '待归类' },
           { key: 'audited', label: '已审核' },
         ]
         // 支持标题/机构关键词及年份筛选，结果统一进入一张总表。
@@ -8532,7 +8655,7 @@ export default function PatientDetailPage() {
           const typeLabel = group.label || group.node?.label || '其他常规筛查'
           return sortByTree(group.reports).map(report => ({ report, typeLabel }))
         })).sort((a, b) => {
-          const priority = { review: 0, parse: 1, processing: 2, audited: 3, rejected: 4 }
+          const priority = { review: 0, classify: 1, parse: 2, processing: 3, audited: 4, rejected: 5 }
           const taskDiff = (priority[getReportTaskKey(a.report)] ?? 9) - (priority[getReportTaskKey(b.report)] ?? 9)
           if (taskDiff) return taskDiff
           return String(b.report.checkDate || b.report.date || b.report.createdAt || '').localeCompare(String(a.report.checkDate || a.report.date || a.report.createdAt || ''))
@@ -8553,7 +8676,7 @@ export default function PatientDetailPage() {
                 </select>
                 <input className="form-input report-search-input" style={{ width: 240 }} placeholder="搜索报告标题/医院"
                   value={reportSearchKw} onChange={e => { setReportSearchKw(e.target.value); setReportPage(1); setOpenReportActionId(null) }} />
-                <button className="btn btn-primary btn-sm report-upload-btn" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>
+                {canUploadReports && <button className="btn btn-primary btn-sm report-upload-btn" onClick={() => setShowUploadReport(true)}>＋ 上传报告</button>}
               </div>
             </div>
             {reports.length > 0 && <div className="report-list-toolbar">
@@ -8606,13 +8729,13 @@ export default function PatientDetailPage() {
                             <td><span style={{ fontSize: 12, color: '#668277', whiteSpace: 'nowrap' }}>{typeLabel}</span></td>
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
-                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span>{ocrProgressText && <div style={{ fontSize: 10, color: '#7C3AED', marginTop: 5, lineHeight: 1.35, maxWidth: 180 }}>{ocrProgressText}</div>}</td>
+                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span>{Number(r.pendingScreeningCandidateCount || 0) > 0 && <div style={{ fontSize: 10, color: '#9A6700', background: '#FFF8E8', borderRadius: 999, padding: '2px 6px', marginTop: 5, width: 'fit-content' }}>待归类 {r.pendingScreeningCandidateCount}</div>}{ocrProgressText && <div style={{ fontSize: 10, color: '#7C3AED', marginTop: 5, lineHeight: 1.35, maxWidth: 180 }}>{ocrProgressText}</div>}</td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {isFunctionalMedicineReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
                               ) : isHomeMonitorReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
-                              ) : r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
+                              ) : canAuditReports && r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
                                   <button className="btn btn-primary btn-sm report-action-primary"
                                     disabled={parsingReportId === r._id}
@@ -8626,6 +8749,8 @@ export default function PatientDetailPage() {
                                     OCR v2（测试）
                                   </button>
                                 </span>
+                              ) : !canAuditReports && r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
+                                <span style={{ fontSize: 11, color: '#8AA89C' }}>仅可查看，当前角色无报告审核权限</span>
                               ) : r.aiStatus === 'none' ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}
@@ -8635,13 +8760,20 @@ export default function PatientDetailPage() {
                                   识别中…
                                 </button>
                               )}
-                              {(r.aiStatus === 'pending' || r.aiStatus === 'reviewed') && (
-                                <button className={`btn btn-sm ${r.aiStatus === 'reviewed' ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
-                                  onClick={() => handleOpenOCRReview(r)}>
-                                  {r.aiStatus === 'reviewed' ? '编辑AI结果' : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
+                              {canAuditReports && Number(r.pendingScreeningCandidateCount || 0) > 0 && !['pending', 'reviewed'].includes(r.aiStatus) && (
+                                <button className="btn btn-sm report-action-review" style={{ marginLeft: 6 }} onClick={() => handleOpenOCRReview(r)}>
+                                  处理待归类（{r.pendingScreeningCandidateCount}）
                                 </button>
                               )}
-                              {r.audit_status === 'audited' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) && !isFunctionalMedicineReport && !isHomeMonitorReport && (
+                              {canAuditReports && (r.aiStatus === 'pending' || r.aiStatus === 'reviewed') && (
+                                <button className={`btn btn-sm ${r.aiStatus === 'reviewed' ? 'report-action-primary' : 'report-action-review'}`} style={r.aiStatus === 'reviewed' ? { background: '#22A06B' } : undefined}
+                                  onClick={() => handleOpenOCRReview(r)}>
+                                  {r.aiStatus === 'reviewed'
+                                    ? (Number(r.pendingScreeningCandidateCount || 0) > 0 ? `处理待归类（${r.pendingScreeningCandidateCount}）` : '查看审核结果')
+                                    : `审核AI结果${r.reportItems?.length ? `（${r.reportItems.length}项）` : ''}`}
+                                </button>
+                              )}
+                              {canAuditReports && r.audit_status === 'audited' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) && !isFunctionalMedicineReport && !isHomeMonitorReport && (
                                 <button className="btn btn-sm report-action-review" style={{ marginLeft: 6 }}
                                   title="重新解析后报告会恢复为待审核，原始PDF不变"
                                   disabled={parsingReportId === r._id}
@@ -8649,30 +8781,30 @@ export default function PatientDetailPage() {
                                   {parsingReportId === r._id ? '提交中…' : '重新用 OCR v2'}
                                 </button>
                               )}
-                              {r.audit_status !== 'audited' && (
+                              {r.audit_status !== 'audited' && (canAuditReports || canDeleteReports) && (
                                 <button className="report-action-more" aria-label="更多报告操作" title="更多操作" onClick={() => setOpenReportActionId(current => current === r._id ? null : r._id)}>
                                   {openReportActionId === r._id ? '×' : '···'}
                                 </button>
                               )}
                             </td>
                           </tr>
-                          {openReportActionId === r._id && r.audit_status !== 'audited' && (
+                          {openReportActionId === r._id && r.audit_status !== 'audited' && (canAuditReports || canDeleteReports) && (
                             <tr>
                               <td colSpan={6} style={{ padding: '8px 14px', background: '#F8FAF9', textAlign: 'right' }}>
                                 <span style={{ color: '#8AA89C', fontSize: 12, marginRight: 10 }}>更多操作</span>
-                                <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }} onClick={() => {
+                                {canAuditReports && <button className="btn btn-secondary btn-sm" style={{ marginRight: 6 }} onClick={() => {
                                   setEditingReport(r)
                                   setEditingReportForm({
                                     title: r.title || '', hospital: r.hospital || r.institution || '', date: r.date || r.checkDate || '',
                                     note: r.note || '', type: r.type || 'general_exam',
                                   })
                                   setOpenReportActionId(null)
-                                }}>编辑报告</button>
-                                <button className="btn btn-sm" style={{ background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
+                                }}>编辑报告</button>}
+                                {canDeleteReports && <button className="btn btn-sm" style={{ background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
                                   onClick={async () => {
                                     if (!window.confirm('确认删除这条报告记录？')) return
                                     try { await staffAPI.deleteReport(r._id); setOpenReportActionId(null); loadReports() } catch (err) { toast(err.message) }
-                                  }}>删除报告</button>
+                                  }}>删除报告</button>}
                               </td>
                             </tr>
                           )}
@@ -9894,7 +10026,7 @@ export default function PatientDetailPage() {
                   const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
                   const ext = isPdf ? '.pdf' : isImg ? (showReportDetail.mimeType === 'image/png' ? '.png' : '.jpg') : ''
                   const displayName = showReportDetail.title ? `${showReportDetail.title}${ext}` : (isPdf ? 'PDF 文件' : isImg ? '图片文件' : '附件')
-                  const canRotateSave = isImg && showReportDetail.audit_status !== 'audited'
+                  const canRotateSave = canAuditReports && isImg && showReportDetail.audit_status !== 'audited'
                   return (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', background: '#F6F9F7', borderRadius: 8, border: '1px solid #D8EDE3' }}>
                       <span style={{ fontSize: 28, lineHeight: 1 }}>{isPdf ? '📄' : isImg ? '🖼️' : '📎'}</span>
@@ -9924,7 +10056,7 @@ export default function PatientDetailPage() {
                         </div>
                       )
                     })()}
-                    {showReportDetail.audit_status !== 'audited' && (
+                    {canAuditReports && showReportDetail.audit_status !== 'audited' && (
                       <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 14px', borderRadius: 6, border: '1px dashed #B0C4BB', color: '#4A6558', fontSize: 13, cursor: 'pointer' }}>
                         📎 补传文件
                         <input type="file" accept="image/*,application/pdf" style={{ display: 'none' }}
@@ -9953,7 +10085,7 @@ export default function PatientDetailPage() {
                   拿到的是未经健管核对过的AI原始提取数据。收紧：走过AI解析流程(aiStatus不是none)
                   的报告必须先在"审核AI结果"弹窗确认，这里不再单独放行；居家监测/功能医学检测等
                   本就不支持AI解析的报告(aiStatus一直是none)保留原有直接审核通道，否则永远无法审核。 */}
-              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
+              {canAuditReports && showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
                 && showReportDetail.aiStatus === 'none' && (
                 <>
                   {showRejectInput ? (
@@ -9990,7 +10122,7 @@ export default function PatientDetailPage() {
                   )}
                 </>
               )}
-              {showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
+              {canAuditReports && showReportDetail.audit_status !== 'audited' && showReportDetail.audit_status !== 'rejected'
                 && showReportDetail.aiStatus !== 'none' && (
                 <div style={{ fontSize: 12, color: '#8AA89C', textAlign: 'center', padding: '4px 0' }}>
                   请在"审核AI结果"里确认检验数据，确认后自动完成审核
@@ -10043,7 +10175,7 @@ export default function PatientDetailPage() {
           const parts = key.split('|')
           updItem(i, { screeningKey: key, screeningKeys: [key], screeningCategory: parts[0], screeningParent: parts[1], matchStatus: 'matched', matchConfidence: 1 })
         }
-        const matchedN = ocrEditItems.filter(it => it.matchStatus === 'matched' && it.screeningKey).length
+        const matchedN = ocrEditItems.filter(it => it.matchStatus === 'matched' && (it.screeningKey || it.screeningKeys?.[0])).length
         const unclassifiedN = ocrEditItems.length - matchedN
         // 所有可选归类项打平，供搜索用
         const allClassifyOpts = classifyGroups.flatMap(g => g.opts.map(o => ({ ...o, groupLabel: g.label })))
@@ -10186,7 +10318,15 @@ export default function PatientDetailPage() {
                   // 后端已经按报告页码和页内位置保存顺序；审核层只按该顺序展示，不再按类型重排。
                   const indexedAll = ocrEditItems.map((it, i) => ({ it, i }))
                   const pageItems = indexedAll.filter(({ it }) => !it.sourcePage || Number(it.sourcePage) === activePage)
-                  const needsReview = ({ it }) => !it.ocrVersion || it.reviewPriority !== 'auto' || (it.qualityFlags || []).length > 0
+                  // “待归类”属于后续专项筛查分流，不应让它占用报告事实审核队列。
+                  // 审核页优先解决原文、数值、单位、参考范围及重复等证据问题。
+                  const nonClassificationFlags = it => (it.qualityFlags || []).filter(flag => flag !== 'unclassified')
+                  const needsReview = ({ it }) => {
+                    if (!it.ocrVersion) return true
+                    const flags = it.qualityFlags || []
+                    const onlyClassificationIssue = flags.length > 0 && flags.every(flag => flag === 'unclassified')
+                    return nonClassificationFlags(it).length > 0 || (it.reviewPriority === 'high' && !onlyClassificationIssue)
+                  }
                   const exceptionItems = pageItems.filter(needsReview)
                   const indexed = ocrReviewFilter === 'exceptions' ? exceptionItems : pageItems
                   const autoCount = pageItems.length - exceptionItems.length
@@ -10197,6 +10337,11 @@ export default function PatientDetailPage() {
                   const abn = labRows.map(x => x.it).filter(it => it.status === 'abnormal' || it.status === 'attention')
                   const abnN = abn.filter(it => it.status === 'abnormal').length
                   const attN = abn.filter(it => it.status === 'attention').length
+                  const reviewMeta = ocrReviewReport.ocrReviewMeta || null
+                  const reviewTimestamp = reviewMeta?.draftSavedAt || reviewMeta?.submittedAt || reviewMeta?.lastActionAt
+                  const reviewTimeText = reviewTimestamp ? new Date(reviewTimestamp).toLocaleString('zh-CN', { hour12: false }) : ''
+                  const history = ocrVersionHistory?.reportId === ocrReviewReport._id ? ocrVersionHistory : null
+                  const historyTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '时间未记录'
                   return (
                     <>
                       {/* 异常快览：只看检验数值类异常，短标签一眼可见 */}
@@ -10206,7 +10351,7 @@ export default function PatientDetailPage() {
                           {abnN > 0 && <span style={{ color: '#DC3545', marginLeft: 8 }}>异常 {abnN}</span>}
                           {attN > 0 && <span style={{ color: '#D97706', marginLeft: 8 }}>注意 {attN}</span>}
                           {abn.length === 0 && <span style={{ color: '#22A06B', marginLeft: 8, fontWeight: 400 }}>· 检验值未见异常</span>}
-                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已自动归类 {matchedN} 项（将写入专项筛查）</span>
+                          <span style={{ marginLeft: 8, fontWeight: 400, color: '#1E6B50' }}>· 已生成专项筛查建议 {matchedN} 项</span>
                         </div>
                         {abn.length > 0 && (
                           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
@@ -10217,7 +10362,109 @@ export default function PatientDetailPage() {
                             ))}
                           </div>
                         )}
+                        <div style={{ marginTop: abn.length ? 8 : 4, fontSize: 11, color: '#6B7A72', lineHeight: 1.5 }}>
+                          本次只核对报告事实；专项筛查归类不作为提交阻断项。{unclassifiedN > 0 ? `另有 ${unclassifiedN} 项暂不归类，仅保留在报告中。` : ''}
+                          {reviewTimeText ? ` 最近${reviewMeta?.lastAction === 'save_draft' ? '保存草稿' : '审核操作'}：${reviewTimeText}` : ''}
+                        </div>
                       </div>
+                      <details style={{ marginBottom: 12, border: '1px solid #E0D9CE', borderRadius: 8, background: '#fff' }}>
+                        <summary style={{ cursor: 'pointer', padding: '9px 12px', color: '#365347', fontSize: 12, fontWeight: 600, userSelect: 'none' }}>版本与审核留痕</summary>
+                        <div style={{ borderTop: '1px solid #EEF1EF', padding: '9px 12px', fontSize: 11, color: '#596C62', lineHeight: 1.65 }}>
+                          {ocrVersionHistoryLoading && <div>正在读取识别与审核版本…</div>}
+                          {!ocrVersionHistoryLoading && history?.unavailable && <div style={{ color: '#9A6700' }}>版本记录暂不可用，不影响本次审核；请稍后刷新重试。</div>}
+                          {!ocrVersionHistoryLoading && history && !history.unavailable && <>
+                            {history.reviewIntegrity?.status === 'incomplete' && (
+                              <div style={{ marginBottom: 8, padding: '7px 9px', borderRadius: 6, background: '#FFF1F0', border: '1px solid #F1B8B4', color: '#9B2C2C' }}>
+                                审核派生数据不完整：审核事件 {history.reviewIntegrity.reviewEventCount || 0} 条；
+                                缺候选 {history.reviewIntegrity.missingCandidateSourceItemIds?.length || 0} 项；
+                                缺筛查投影 {history.reviewIntegrity.missingProjectionKeys?.length || 0} 项；
+                                残留记录 {(history.reviewIntegrity.staleCandidateSourceItemIds?.length || 0) + (history.reviewIntegrity.staleProjectionKeys?.length || 0)} 项。
+                                请勿重复人工录入，保留当前报告并联系管理员对账。
+                                {canAuditReports && (
+                                  <button className="btn btn-secondary btn-sm" style={{ marginLeft: 8 }} disabled={ocrIntegrityRepairBusy}
+                                    onClick={handleReconcileReportIntegrity}>
+                                    {ocrIntegrityRepairBusy ? '正在对账…' : '重新对账派生数据'}
+                                  </button>
+                                )}
+                              </div>
+                            )}
+                            {history.reviewIntegrity?.status === 'consistent' && (
+                              <div style={{ marginBottom: 8, color: '#237A57' }}>审核版本与专项筛查派生数据一致。</div>
+                            )}
+                            <div style={{ fontWeight: 700, color: '#365347', marginBottom: 3 }}>识别草稿（{history.extractions.length}）</div>
+                            {history.extractions.length ? history.extractions.map(extraction => (
+                              <div key={extraction._id} style={{ padding: '3px 0' }}>
+                                OCR V{extraction.version}{String(ocrReviewReport.currentExtractionId || '') === String(extraction._id) ? ' · 当前草稿' : ''}
+                                {extraction.origin === 'page_reparse' ? ` · 补提第 ${extraction.reparsePage || '-'} 页` : ''}
+                                {` · ${extraction.engine?.ocrVersion || '旧版识别'} · ${historyTime(extraction.createdAt)}`}
+                              </div>
+                            )) : <div>当前报告尚无版本化 OCR 快照（历史报告会在下次重新识别后开始留痕）。</div>}
+                            <div style={{ fontWeight: 700, color: '#365347', margin: '8px 0 3px' }}>审核发布版本（{history.revisions.length}）</div>
+                            {history.pendingScreeningCount > 0 && (
+                              <details style={{ margin: '5px 0 7px', padding: '7px 9px', borderRadius: 6, background: '#FFF8E8', border: '1px solid #F2D39A', color: '#8A5A12' }}>
+                                <summary style={{ cursor: 'pointer', fontWeight: 700 }}>
+                                  专项筛查待归类 {history.pendingScreeningCount} 项（不阻塞报告审核）
+                                </summary>
+                                <div style={{ marginTop: 7, color: '#6B5A3A' }}>只有在此处人工确认后才写入会员筛查记录；选择“不进入”不会删除报告项目。</div>
+                                {(history.screeningCandidates || []).filter(candidate => candidate.status === 'pending').map(candidate => (
+                                  <div key={candidate._id} style={{ marginTop: 7, paddingTop: 7, borderTop: '1px solid #EAD8B3', display: 'grid', gridTemplateColumns: 'minmax(120px,1fr) minmax(180px,1.5fr) auto', gap: 6, alignItems: 'center' }}>
+                                    <div>
+                                      <div style={{ fontWeight: 700, color: '#51432D' }}>{candidate.itemSnapshot?.name || '未命名项目'}</div>
+                                      <div style={{ color: '#8A7652' }}>{candidate.itemSnapshot?.sourcePage ? `原报告 P${candidate.itemSnapshot.sourcePage}` : '页码未记录'}</div>
+                                    </div>
+                                    <select className="form-input" style={{ fontSize: 11, padding: '5px 7px' }} value={ocrCandidateSelections[candidate._id] || ''}
+                                      onChange={event => setOcrCandidateSelections(current => ({ ...current, [candidate._id]: event.target.value }))}>
+                                      <option value="">选择专项筛查分类</option>
+                                      {(screeningCatalog || []).map(group => (
+                                        <optgroup key={group.label} label={group.label}>
+                                          {(group.opts || []).map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
+                                        </optgroup>
+                                      ))}
+                                    </select>
+                                    <div style={{ display: 'flex', gap: 5 }}>
+                                      <button className="btn btn-primary btn-sm" disabled={ocrCandidateBusy === candidate._id}
+                                        onClick={() => handleOCRScreeningCandidate(candidate, 'resolve')}>确认归类</button>
+                                      <button className="btn btn-secondary btn-sm" disabled={ocrCandidateBusy === candidate._id}
+                                        onClick={() => handleOCRScreeningCandidate(candidate, 'dismiss')}>不进入</button>
+                                    </div>
+                                  </div>
+                                ))}
+                              </details>
+                            )}
+                            {history.revisions.length ? history.revisions.map(revision => (
+                              <div key={revision._id} style={{ padding: '3px 0', display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                <span>
+                                  审核 V{revision.revisionNo}{String(ocrReviewReport.currentRevisionId || '') === String(revision._id) ? ' · 当前正式版本' : ''}
+                                  {` · ${revision.status === 'published' ? '已发布' : '已被新版本替代'} · ${revision.review?.reviewerName || '审核人未记录'} · ${historyTime(revision.review?.reviewedAt || revision.review?.staffReviewedAt || revision.createdAt)}`}
+                                  {revision.source?.ocrVersion ? ` · 来源 ${revision.source.ocrVersion}${revision.source.extractionVersion ? ` / OCR V${revision.source.extractionVersion}` : ''}` : ''}
+                                </span>
+                                {(() => {
+                                  const previous = history.revisions.filter(item => Number(item.revisionNo) < Number(revision.revisionNo)).sort((a, b) => Number(b.revisionNo) - Number(a.revisionNo))[0]
+                                  return previous ? <button className="btn btn-secondary btn-sm" style={{ padding: '2px 6px', fontSize: 10 }} disabled={ocrRevisionDiffLoading}
+                                    onClick={() => handleLoadOCRRevisionDiff(ocrReviewReport._id, revision.revisionNo, previous.revisionNo)}>
+                                    与 V{previous.revisionNo} 对比
+                                  </button> : null
+                                })()}
+                              </div>
+                            )) : <div>尚未正式提交审核版本。</div>}
+                            <div style={{ fontWeight: 700, color: '#365347', margin: '8px 0 3px' }}>正式审核操作（{history.reviewEvents?.length || 0}）</div>
+                            {history.reviewEvents?.length ? history.reviewEvents.map(event => (
+                              <div key={event._id} style={{ padding: '3px 0' }}>
+                                {event.action === 'submit' ? '提交 OCR 审核' : event.action === 'approve' ? '人工审核通过' : event.action === 'reject' ? '驳回' : event.action === 'reconcile' ? '重新对账派生数据' : '历史审核回填'}
+                                {` · ${event.actor?.name || '审核人未记录'}${event.actor?.role ? `（${event.actor.role}）` : ''} · ${historyTime(event.occurredAt)}`}
+                                {event.result === 'deduplicated' ? ' · 内容未变化，沿用既有版本' : ''}
+                              </div>
+                            )) : <div>尚无独立审核操作记录；历史报告可在受控回填后补齐。</div>}
+                            {ocrRevisionDiffLoading && <div style={{ marginTop: 8 }}>正在计算版本差异…</div>}
+                            {ocrRevisionDiff && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: '#F6F9F7', border: '1px solid #DCE9E1' }}>
+                              <div style={{ color: '#365347', fontWeight: 700 }}>审核 V{ocrRevisionDiff.currentRevisionNo} 对比 V{ocrRevisionDiff.baselineRevisionNo}：新增 {ocrRevisionDiff.summary?.added || 0} 项 · 移除 {ocrRevisionDiff.summary?.removed || 0} 项 · 修改 {ocrRevisionDiff.summary?.changed || 0} 项</div>
+                              {(ocrRevisionDiff.changed || []).slice(0, 8).map(item => <div key={item.key} style={{ marginTop: 3 }}>修改：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''} · {item.changes.map(change => change.field).join('、')}</div>)}
+                              {(ocrRevisionDiff.added || []).slice(0, 5).map(item => <div key={`add-${item.key}`} style={{ marginTop: 3 }}>新增：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
+                              {(ocrRevisionDiff.removed || []).slice(0, 5).map(item => <div key={`remove-${item.key}`} style={{ marginTop: 3 }}>移除：{item.name || '未命名项目'}{item.sourcePage ? `（P${item.sourcePage}）` : ''}</div>)}
+                            </div>}
+                          </>}
+                        </div>
+                      </details>
                       {/* AI文字分析：折叠收起 */}
                       {ocrReviewReport.aiSummary && (
                         <details style={{ marginBottom: 14 }}>
@@ -10255,8 +10502,8 @@ export default function PatientDetailPage() {
                               <div style={{ fontSize: 10, color: isImaging(it) ? '#0369A1' : '#7C3AED', fontWeight: 700, marginBottom: 6 }}>
                                 {it.sourcePage ? `原报告 P${it.sourcePage} · ` : ''}第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}
                               </div>
-                              {(it.qualityFlags || []).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
-                                {it.qualityFlags.map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', unclassified: '待归类', text_layer_unverified: '文字层待核对' })[flag] || flag}</span>)}
+                              {nonClassificationFlags(it).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
+                                {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || flag}</span>)}
                               </div>}
                               <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 6 }}>
                                 <div style={{ flex: 2 }}>
@@ -10294,7 +10541,12 @@ export default function PatientDetailPage() {
                                 <textarea style={{ ...inp, minHeight: 42, lineHeight: 1.6, resize: 'vertical', marginBottom: 6 }} value={it.diagnosis || ''} placeholder="诊断意见" onChange={e => updItem(i, { diagnosis: e.target.value })} />
                                 <input style={{ ...inp, background: '#F3EFFB', borderColor: '#C4B5FD', marginBottom: 6 }} value={it.conclusion || ''} placeholder="主要结论" onChange={e => updItem(i, { conclusion: e.target.value })} />
                               </>}
-                              {classifyCell(it, i)}
+                              <details style={{ marginTop: 4 }}>
+                                <summary style={{ cursor: 'pointer', color: it.screeningKey ? '#1E6B50' : '#8AA89C', fontSize: 11, userSelect: 'none' }}>
+                                  专项筛查归类（可稍后处理）{it.screeningKey ? ' · 已建议归类' : ' · 暂不归类'}
+                                </summary>
+                                <div style={{ marginTop: 6 }}>{classifyCell(it, i)}</div>
+                              </details>
                             </div>
                           )
                         })}
@@ -10396,7 +10648,7 @@ export default function PatientDetailPage() {
                       )}
                       </div>
                       <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 8 }}>
-                        提示：AI识别可能有误，请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值与单位。已自动归类项提交后将写入专项筛查，其余体检指标保留在报告中供查阅。
+                        提示：请重点核对<span style={{ color: '#DC3545' }}>异常项</span>的数值、单位与原文证据。专项筛查建议会在报告审核通过后同步，未归类项仍安全保留在报告中。
                       </div>
                     </>
                   )
@@ -10420,7 +10672,7 @@ export default function PatientDetailPage() {
                 </button>
                 <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
                   disabled={ocrSaving} onClick={handleApproveOCR}>
-                  {ocrSaving ? '保存中…' : '✓ 提交审核（写入专项筛查）'}
+                  {ocrSaving ? '保存中…' : '✓ 提交报告审核'}
                 </button>
                 <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
                   disabled={ocrSaving} onClick={handleRejectOCR}>
@@ -10808,7 +11060,7 @@ export default function PatientDetailPage() {
       )}
 
       {/* 上传体检报告弹窗 */}
-      {showUploadReport && (
+      {showUploadReport && canUploadReports && (
         <UploadReportModal
           patientId={id}
           screeningTree={screeningTree}
@@ -11176,6 +11428,29 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const [uploadProgress, setUploadProgress] = useState(0)
   const [uploadStep, setUploadStep] = useState('')
   const [error, setError] = useState('')
+  const pendingUploadTokensRef = useRef(new Set())
+  const mountedRef = useRef(true)
+  const uploadSessionIdRef = useRef(globalThis.crypto?.randomUUID?.() || `report-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+
+  const cleanupPendingUploads = async () => {
+    const tokens = [...pendingUploadTokensRef.current]
+    pendingUploadTokensRef.current.clear()
+    preUploadedRef.current = null
+    if (tokens.length) await staffAPI.cleanupReportUploads(tokens).catch(() => {})
+  }
+
+  useEffect(() => () => {
+    mountedRef.current = false
+    const tokens = [...pendingUploadTokensRef.current]
+    pendingUploadTokensRef.current.clear()
+    if (tokens.length) staffAPI.cleanupReportUploads(tokens).catch(() => {})
+  }, [])
+
+  const handleClose = () => {
+    if (saving) return
+    cleanupPendingUploads()
+    onClose()
+  }
 
   const isAnnual = form.l1Id === ANNUAL_L1_ID
   const currentL1 = isAnnual ? null : screeningTree.find(n => String(n._id) === form.l1Id)
@@ -11204,7 +11479,15 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
   const handleFile = async (e) => {
     const files = Array.from(e.target.files)
     if (!files.length) return
-    setFileDatas(files.map(f => ({ file: f, mimeType: f.type, fileSize: f.size, name: f.name })))
+    if (files.length > 50) {
+      setError('单次最多选择 50 个文件，请分批上传')
+      return
+    }
+    await cleanupPendingUploads()
+    setFileDatas(files.map((f, index) => ({
+      id: `${f.name}-${f.size}-${f.lastModified}-${index}`,
+      file: f, mimeType: f.type, fileSize: f.size, name: f.name,
+    })))
     if (!form.title && files.length === 1) setForm(f => ({ ...f, title: files[0].name.replace(/\.[^.]+$/, '') }))
     setError('')
     preUploadedRef.current = null
@@ -11216,8 +11499,13 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
       setMetaDetecting(true)
       try {
         const uploaded = await staffAPI.uploadReportFile(files[0], () => {})
-        preUploadedRef.current = { file: files[0], url: uploaded.url, ossKey: uploaded.ossKey || '', mimeType: uploaded.mimeType, fileSize: uploaded.fileSize }
-        const meta = await staffAPI.quickMetaFromReportFile(uploaded.url, uploaded.mimeType)
+        if (!mountedRef.current) {
+          if (uploaded.uploadToken) await staffAPI.cleanupReportUploads([uploaded.uploadToken]).catch(() => {})
+          return
+        }
+        if (uploaded.uploadToken) pendingUploadTokensRef.current.add(uploaded.uploadToken)
+        preUploadedRef.current = { file: files[0], url: uploaded.url, ossKey: uploaded.ossKey || '', mimeType: uploaded.mimeType, fileSize: uploaded.fileSize, uploadToken: uploaded.uploadToken }
+        const meta = await staffAPI.quickMetaFromReportFile(uploaded.uploadToken)
         setForm(f => ({
           ...f,
           hospital: f.hospital || meta.data?.institution || '',
@@ -11226,6 +11514,23 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
       } catch (err) { /* 识别失败静默忽略，专员仍可手动填写，不阻塞上传流程 */ }
       finally { setMetaDetecting(false) }
     }
+  }
+
+  const moveFile = (index, direction) => {
+    setFileDatas(current => {
+      const target = index + direction
+      if (target < 0 || target >= current.length) return current
+      const next = [...current]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
+  const removeFile = async (id) => {
+    const removed = fileDatas.find(fd => fd.id === id)
+    if (preUploadedRef.current?.file === removed?.file) await cleanupPendingUploads()
+    setFileDatas(current => current.filter(fd => fd.id !== id))
+    setError('')
   }
 
   const handleSubmit = async () => {
@@ -11239,17 +11544,19 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
         // AI解析时会把这些图片一次性传给模型合并识别（详见后端 runReportParse）
         const urls = []
         const ossKeys = []
+        const uploadTokens = []
         let mimeType = '', totalSize = 0
         for (let i = 0; i < total; i++) {
           const fd = fileDatas[i]
           setUploadStep(`上传第 ${i + 1}/${total} 个文件...`)
           const res = await staffAPI.uploadReportFile(fd.file, (p) => setUploadProgress(Math.round(((i + p) / total) * 90)))
+          if (res.uploadToken) { uploadTokens.push(res.uploadToken); pendingUploadTokensRef.current.add(res.uploadToken) }
           urls.push(res.url)
           if (res.ossKey) ossKeys.push(res.ossKey)
           mimeType = mimeType || res.mimeType
           totalSize += Number(res.fileSize) || 0
         }
-        await staffAPI.uploadReport({
+        const createResult = await staffAPI.uploadReport({
           patientId,
           title: form.title,
           type: selectedReportType,
@@ -11264,7 +11571,11 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           ossKeys,
           mimeType,
           fileSize: String(totalSize),
+          uploadTokens,
+          uploadRequestId: `${uploadSessionIdRef.current}:merged`,
         })
+        if (createResult.meta?.deduplicated) await staffAPI.cleanupReportUploads(uploadTokens).catch(() => {})
+        uploadTokens.forEach(token => pendingUploadTokensRef.current.delete(token))
       } else {
         for (let i = 0; i < total; i++) {
           const fd = fileDatas[i]
@@ -11273,17 +11584,19 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           // 避免同一个文件重复上传一遍浪费流量和等待时间
           const cached = (total === 1 && preUploadedRef.current?.file === fd.file) ? preUploadedRef.current : null
           let url, ossKey, mimeType, fileSize
+          let uploadToken = ''
           if (cached) {
-            ({ url, ossKey, mimeType, fileSize } = cached)
+            ({ url, ossKey, mimeType, fileSize, uploadToken } = cached)
             setUploadProgress(90)
           } else {
             setUploadStep(total > 1 ? `上传第 ${i + 1}/${total} 个文件...` : '上传中...')
-            ;({ url, ossKey, mimeType, fileSize } = await staffAPI.uploadReportFile(
+            ;({ url, ossKey, mimeType, fileSize, uploadToken } = await staffAPI.uploadReportFile(
               fd.file,
               (p) => setUploadProgress(Math.round(((i + p) / total) * 90))
             ))
+            if (uploadToken) pendingUploadTokensRef.current.add(uploadToken)
           }
-          await staffAPI.uploadReport({
+          const createResult = await staffAPI.uploadReport({
             patientId,
             title: form.title + titleSuffix,
             type: selectedReportType,
@@ -11298,12 +11611,18 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
             ossKeys: ossKey ? [ossKey] : [],
             mimeType,
             fileSize: String(fileSize),
+            uploadTokens: uploadToken ? [uploadToken] : [],
+            uploadRequestId: `${uploadSessionIdRef.current}:${i}`,
           })
+          if (createResult.meta?.deduplicated && uploadToken) await staffAPI.cleanupReportUploads([uploadToken]).catch(() => {})
+          if (uploadToken) pendingUploadTokensRef.current.delete(uploadToken)
         }
       }
       setUploadProgress(100)
+      preUploadedRef.current = null
       onSaved()
     } catch (err) {
+      await cleanupPendingUploads()
       setError(err.message || '上传失败')
     } finally {
       setSaving(false)
@@ -11317,7 +11636,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
       <div className="modal" style={{ maxWidth: 500 }}>
         <div className="modal-header">
           <h3 className="modal-title">上传体检报告</h3>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="modal-close" onClick={handleClose}>✕</button>
         </div>
         <div className="modal-body" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
 
@@ -11370,25 +11689,39 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>
-            <label className="form-label">报告文件（图片/PDF，每个≤100MB，可多选）</label>
-            <input type="file" accept="image/*,.pdf" multiple onChange={handleFile} style={{ fontSize: 13, padding: '6px 0' }} />
+            <label className="form-label">报告原件 *</label>
+            <div style={{ fontSize: 12, color: '#6F8379', marginBottom: 6 }}>支持图片或 PDF，每个文件不超过 100MB；多页照片可一次选择。</div>
+            <input type="file" accept="image/*,.pdf" multiple onChange={e => { handleFile(e); e.target.value = '' }} style={{ fontSize: 13, padding: '6px 0' }} />
             {fileDatas.length > 0 && (
-              <div style={{ marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {fileDatas.map((fd, i) => (
-                  <div key={i} style={{ fontSize: 12, color: '#22A06B' }}>✓ {fd.name}</div>
+                  <div key={fd.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 9px', border: '1px solid #DCE5E0', borderRadius: 8, background: '#FAFCFB' }}>
+                    <span style={{ width: 22, height: 22, borderRadius: 6, background: '#E8F5EF', color: '#1E6B50', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>{i + 1}</span>
+                    <span style={{ minWidth: 0, flex: 1, fontSize: 12, color: '#304A3E', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={fd.name}>{fd.name}</span>
+                    <span style={{ fontSize: 11, color: '#8AA096', flexShrink: 0 }}>{(fd.fileSize / 1024 / 1024).toFixed(fd.fileSize >= 1024 * 1024 ? 1 : 2)} MB</span>
+                    {fileDatas.length > 1 && <>
+                      <button type="button" onClick={() => moveFile(i, -1)} disabled={i === 0 || saving} aria-label={`上移 ${fd.name}`} title="上移一页" style={{ border: 0, background: 'transparent', color: i === 0 ? '#C8D5CE' : '#4A6558', cursor: i === 0 ? 'default' : 'pointer', padding: '2px 4px' }}>↑</button>
+                      <button type="button" onClick={() => moveFile(i, 1)} disabled={i === fileDatas.length - 1 || saving} aria-label={`下移 ${fd.name}`} title="下移一页" style={{ border: 0, background: 'transparent', color: i === fileDatas.length - 1 ? '#C8D5CE' : '#4A6558', cursor: i === fileDatas.length - 1 ? 'default' : 'pointer', padding: '2px 4px' }}>↓</button>
+                    </>}
+                    <button type="button" onClick={() => removeFile(fd.id)} disabled={saving} aria-label={`移除 ${fd.name}`} title="移除文件" style={{ border: 0, background: 'transparent', color: '#B34A4A', cursor: 'pointer', padding: '2px 4px' }}>移除</button>
+                  </div>
                 ))}
                 {fileDatas.length > 1 && (
-                  <>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, fontSize: 12, color: '#4A6558', cursor: 'pointer' }}>
-                      <input type="checkbox" checked={mergeFiles} onChange={e => setMergeFiles(e.target.checked)} />
-                      这些文件是同一份报告的多张照片（如结论页+数据页），合并为一条记录
-                    </label>
-                    <div style={{ fontSize: 11, color: '#8AA89C' }}>
-                      {mergeFiles
-                        ? `共 ${fileDatas.length} 个文件将合并为一条报告，AI会一次性识别全部图片`
-                        : `共 ${fileDatas.length} 个文件，每个文件将分别创建一条报告记录`}
+                  <div style={{ marginTop: 2 }}>
+                    <div style={{ fontSize: 12, color: '#304A3E', fontWeight: 600, marginBottom: 6 }}>这些文件之间是什么关系？</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                      {[
+                        [true, '同一份报告', `按上方顺序合并为 1 份报告，共 ${fileDatas.length} 页`],
+                        [false, '不同报告', `分别创建 ${fileDatas.length} 份报告，可稍后单独审核`],
+                      ].map(([value, label, help]) => (
+                        <label key={String(value)} style={{ display: 'flex', gap: 7, padding: '9px 10px', border: `1.5px solid ${mergeFiles === value ? '#1E6B50' : '#D5DFDA'}`, borderRadius: 8, background: mergeFiles === value ? '#F0F8F4' : '#fff', cursor: 'pointer' }}>
+                          <input type="radio" name="report-file-relation" checked={mergeFiles === value} onChange={() => setMergeFiles(value)} style={{ marginTop: 2 }} />
+                          <span><span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: '#304A3E' }}>{label}</span><span style={{ display: 'block', marginTop: 2, fontSize: 11, lineHeight: 1.4, color: '#70847A' }}>{help}</span></span>
+                        </label>
+                      ))}
                     </div>
-                  </>
+                    {mergeFiles && <div style={{ fontSize: 11, color: '#7A5A20', background: '#FFF8E8', border: '1px solid #EED9A6', borderRadius: 6, padding: '6px 8px', marginTop: 7 }}>页码顺序会影响 OCR 阅读顺序，请在上传前用 ↑ ↓ 核对。</div>}
+                  </div>
                 )}
               </div>
             )}
@@ -11416,7 +11749,7 @@ function UploadReportModal({ patientId, screeningTree = [], onClose, onSaved }) 
             </div>
           )}
           <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
-            <button className="btn btn-secondary" onClick={onClose} disabled={saving}>取消</button>
+            <button className="btn btn-secondary" onClick={handleClose} disabled={saving}>取消</button>
             <button className="btn btn-primary" onClick={handleSubmit} disabled={saving}>
               {saving ? (uploadProgress < 100 ? `上传中 ${uploadProgress}%` : '处理中...') : '确认上传'}
             </button>

@@ -4,20 +4,13 @@ const jwt = require('jsonwebtoken');
 const auth = require('../middleware/auth');
 const MedicalReport = require('../models/MedicalReport');
 const HealthRecord = require('../models/HealthRecord');
-const { uploadBase64, deleteFile, urlToKey, signStoredUrl } = require('../utils/oss');
+const { uploadBase64, deleteFile, urlToKey } = require('../utils/oss');
 const { parseImage } = require('../utils/ai');
 const { normalizeDepartmentExamItems, normalizeBreathTestItems, normalizeSingleExamReportItems, realignUpperAbdomenConclusions } = require('../utils/reportItemNormalization');
+const { toUserReport, toUserReports } = require('../utils/reportUserView');
 const router = express.Router();
 
-function withSignedReportFiles(report) {
-  const obj = report.toObject ? report.toObject() : { ...report };
-  const urls = obj.fileUrls?.length ? obj.fileUrls : (obj.fileUrl ? [obj.fileUrl] : []);
-  const keys = obj.ossKeys?.length ? obj.ossKeys : (obj.ossKey ? [obj.ossKey] : []);
-  const signedUrls = urls.map((url, index) => signStoredUrl(url, keys[index] || ''));
-  obj.fileUrls = signedUrls;
-  obj.fileUrl = signedUrls[0] || '';
-  return obj;
-}
+
 const reportUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 15 * 1024 * 1024, files: 1 },
@@ -144,10 +137,11 @@ router.get('/by-category', auth, async (req, res) => {
   try {
     const reports = await MedicalReport.find({ user: req.user._id })
       .sort({ reportYear: -1, checkDate: -1, createdAt: -1 });
+    const visibleReports = await toUserReports(reports);
 
     // 按年份分组
     const yearMap = {};
-    reports.forEach(r => {
+    visibleReports.forEach(r => {
       const dateValue = r.checkDate || r.date;
       const dateYear = dateValue ? new Date(dateValue).getFullYear() : NaN;
       const createdYear = r.createdAt ? new Date(r.createdAt).getFullYear() : NaN;
@@ -158,7 +152,7 @@ router.get('/by-category', auth, async (req, res) => {
       if (!yearMap[year]) yearMap[year] = {};
       const cat = r.screeningCategory || 'other_routine';
       if (!yearMap[year][cat]) yearMap[year][cat] = [];
-      const obj = withSignedReportFiles(r);
+      const obj = r;
       obj.hasContent = !!obj.content;
       delete obj.content;
       yearMap[year][cat].push(obj);
@@ -635,8 +629,8 @@ router.get('/', auth, async (req, res) => {
   try {
     const reports = await MedicalReport.find({ user: req.user._id })
       .sort({ createdAt: -1 });
-    const data = reports.map(r => {
-      const obj = withSignedReportFiles(r);
+    const visibleReports = await toUserReports(reports);
+    const data = visibleReports.map(obj => {
       obj.hasContent = !!obj.content;
       delete obj.content;
       return obj;
@@ -652,7 +646,8 @@ router.get('/:id', auth, async (req, res) => {
   try {
     const report = await MedicalReport.findOne({ _id: req.params.id, user: req.user._id });
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    res.json({ success: true, data: withSignedReportFiles(report) });
+    const [visibleReport] = await toUserReports([report]);
+    res.json({ success: true, data: visibleReport });
   } catch (err) {
     res.status(500).json({ success: false, message: '获取报告失败', error: err.message });
   }
@@ -736,7 +731,8 @@ router.post('/', auth, async (req, res) => {
       reportItems:        reportItems        || [],
     });
 
-    const { content: _, ...reportObj } = report.toObject();
+    const reportObj = toUserReport(report);
+    delete reportObj.content;
     res.status(201).json({ success: true, data: reportObj });
   } catch (err) {
     res.status(500).json({ success: false, message: '上传报告失败', error: err.message });

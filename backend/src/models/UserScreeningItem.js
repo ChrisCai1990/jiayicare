@@ -8,6 +8,10 @@ const UserScreeningItemSchema = new mongoose.Schema({
   itemLabel:   { type: String, required: true },  // '肺CT'
   status:      { type: String, enum: ['pending', 'uploaded', 'completed'], default: 'pending' },
   reportId:    { type: mongoose.Schema.Types.ObjectId, ref: 'MedicalReport' },
+  // 专项筛查是已审核报告的业务投影；保留版本来源，方便报告更正后识别当前有效来源。
+  reportRevisionId: { type: mongoose.Schema.Types.ObjectId, ref: 'ReportRevision', default: null },
+  sourceType:  { type: String, enum: ['legacy', 'manual', 'ocr_review'], default: 'legacy' },
+  sourceItemIds: [{ type: String }], // 当前审核版本中构成该筛查证据的一个或多个报告项目
   note:        { type: String },
 }, { timestamps: true });
 
