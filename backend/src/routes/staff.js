@@ -9823,11 +9823,8 @@ async function runReportParse(reportId, options = {}) {
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
-  const ocrV2ReportIds = new Set(String(process.env.OCR_V2_REPORT_IDS || '')
-    .split(',').map(id => id.trim()).filter(Boolean));
-  const requestedMode = options.mode === 'v2' || options.mode === 'legacy' ? options.mode : '';
-  const useOcrV2 = requestedMode === 'v2'
-    || (requestedMode !== 'legacy' && (process.env.OCR_V2_ENABLED === 'true' || ocrV2ReportIds.has(String(reportId))));
+  const requestedMode = options.mode === 'legacy' ? 'legacy' : 'v2';
+  const useOcrV2 = requestedMode !== 'legacy';
   const extractionSource = { ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []) };
   const extractionHistory = useOcrV2
     ? await ReportExtraction.find({ reportId }).sort({ version: -1 }).select('version source items').lean()
@@ -10610,10 +10607,10 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, checkPermissionStrict('r
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    const parseMode = req.body?.mode === 'v2' ? 'v2' : 'legacy';
+    const parseMode = 'v2';
     const isAuditedReparse = report.audit_status === 'audited';
     if (isAuditedReparse && (parseMode !== 'v2' || req.body?.confirmReparseAudited !== true)) {
-      return res.status(409).json({ success: false, message: '已审核报告只能在明确确认后使用OCR v2重新解析' });
+      return res.status(409).json({ success: false, message: '已审核报告只能在明确确认后重新解析' });
     }
 
     const hasFile = !!report.fileUrl || !!report.content;
@@ -10650,7 +10647,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, checkPermissionStrict('r
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
     const processingUpdate = {
       aiStatus: 'processing',
-      ...(parseMode === 'v2' ? { ocrVersion: OCR_POLICY_VERSION, ocrProgress: { stage: 'queued', message: 'OCR v2任务已提交，正在准备解析', elapsedMs: 0, updatedAt: new Date() } } : {}),
+      ocrVersion: OCR_POLICY_VERSION,
+      ocrProgress: { stage: 'queued', message: '识别任务已提交，正在准备解析', elapsedMs: 0, updatedAt: new Date() },
     };
     if (isAuditedReparse) {
       Object.assign(processingUpdate, {
@@ -10669,8 +10667,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, checkPermissionStrict('r
       success: true,
       processing: true,
       message: isPdf
-        ? `${parseMode === 'v2' ? 'OCR v2测试' : 'PDF识别'}已开始，多页报告约需 1–3 分钟，完成后状态自动变为「待审核」`
-        : `${parseMode === 'v2' ? 'OCR v2测试' : 'AI识别'}已开始，约需数秒，完成后状态自动变为「待审核」`,
+        ? 'AI 解析已开始，完成后状态自动变为「待审核」'
+        : 'AI 解析已开始，完成后状态自动变为「待审核」',
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'AI解析失败：' + err.message });

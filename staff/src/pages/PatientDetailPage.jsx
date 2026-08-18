@@ -2526,14 +2526,14 @@ export default function PatientDetailPage() {
     finally { setAiSummaryLoading(false) }
   }
 
-  const handleParseReportAI = async (reportOrId, mode = 'legacy') => {
+  const handleParseReportAI = async (reportOrId) => {
     const report = typeof reportOrId === 'object' ? reportOrId : null
     const reportId = report?._id || reportOrId
-    const isAuditedReparse = mode === 'v2' && report?.audit_status === 'audited'
-    if (isAuditedReparse && !window.confirm('该报告已经审核通过。重新使用 OCR v2 会覆盖当前解析结果，并把报告恢复为“待审核”；原始PDF不会改变。确认继续吗？')) return
+    const isAuditedReparse = report?.audit_status === 'audited'
+    if (isAuditedReparse && !window.confirm('该报告已经审核通过。重新解析会生成新的识别草稿，并把报告恢复为“待审核”；原始 PDF 和历史版本不会改变。确认继续吗？')) return
     setParsingReportId(reportId)
     try {
-      const res = await staffAPI.parseReportAI(reportId, mode, { confirmReparseAudited: isAuditedReparse })
+      const res = await staffAPI.parseReportAI(reportId, 'v2', { confirmReparseAudited: isAuditedReparse })
       toast(res.message || 'AI解析完成')
       loadReports()
     } catch (err) { toast(err.message || 'AI解析失败') }
@@ -8735,7 +8735,7 @@ export default function PatientDetailPage() {
                         const auditColor = r.audit_status === 'audited' ? '#22A06B'
                           : r.audit_status === 'rejected' ? '#DC3545' : '#D97706'
                         const ocrProgressText = r.aiStatus === 'processing' && r.ocrProgress
-                          ? (r.ocrProgress?.message || 'OCR v2正在准备解析') : ''
+                          ? (r.ocrProgress?.message || '正在准备解析') : ''
                         const isFunctionalMedicineReport = /功能检测|功能医学/.test(typeLabel)
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const isHomeMonitorReport = /居家监测/.test(typeLabel)
@@ -8756,19 +8756,12 @@ export default function PatientDetailPage() {
                               ) : isHomeMonitorReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
                               ) : canAuditReports && r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
-                                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
-                                  <button className="btn btn-primary btn-sm report-action-primary"
-                                    disabled={parsingReportId === r._id}
-                                    onClick={() => handleParseReportAI(r, 'legacy')}>
-                                    {parsingReportId === r._id ? '提交中…' : 'AI解析'}
-                                  </button>
-                                  <button className="btn btn-sm report-action-review"
-                                    title="仅当前报告使用文字层与视觉双证据、质量分流；结果仍需人工审核"
-                                    disabled={parsingReportId === r._id}
-                                    onClick={() => handleParseReportAI(r, 'v2')}>
-                                    OCR v2（测试）
-                                  </button>
-                                </span>
+                                <button className="btn btn-primary btn-sm report-action-primary"
+                                  title="使用 PDF 文字层与视觉识别生成草稿，结果仍需人工审核"
+                                  disabled={parsingReportId === r._id}
+                                  onClick={() => handleParseReportAI(r)}>
+                                  {parsingReportId === r._id ? '提交中…' : 'AI 解析'}
+                                </button>
                               ) : !canAuditReports && r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <span style={{ fontSize: 11, color: '#8AA89C' }}>仅可查看，当前角色无报告审核权限</span>
                               ) : r.aiStatus === 'none' ? (
@@ -8797,8 +8790,8 @@ export default function PatientDetailPage() {
                                 <button className="btn btn-sm report-action-review" style={{ marginLeft: 6 }}
                                   title="重新解析后报告会恢复为待审核，原始PDF不变"
                                   disabled={parsingReportId === r._id}
-                                  onClick={() => handleParseReportAI(r, 'v2')}>
-                                  {parsingReportId === r._id ? '提交中…' : '重新用 OCR v2'}
+                                  onClick={() => handleParseReportAI(r)}>
+                                  {parsingReportId === r._id ? '提交中…' : '重新解析'}
                                 </button>
                               )}
                               {r.audit_status !== 'audited' && (canAuditReports || canDeleteReports) && (
@@ -10272,7 +10265,13 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 'auto', marginRight: 12 }}>
                   <button className="btn btn-secondary btn-sm" disabled={activePage <= firstSourcePage} onClick={() => setOcrReviewPage(p => Math.max(firstSourcePage, (p || firstSourcePage) - 1))}>上一页</button>
                   <select value={activePage} aria-label="原件页码" onChange={e => setOcrReviewPage(Number(e.target.value))} style={{ padding: '5px 8px', border: '1px solid #D8EDE3', borderRadius: 6 }}>
-                    {expectedPages.map(page => <option key={page} value={page}>原件第 {page} / {lastSourcePage} 页{missingPages.includes(page) ? '（无提取数据）' : ''}</option>)}
+                    {expectedPages.map(page => {
+                      const coverageRisk = coverageRiskPages.some(item => item.page === page)
+                      const pageNote = coverageRisk
+                        ? '（需核对：本次未识别到项目）'
+                        : missingPages.includes(page) ? '（本页无结构化项目）' : ''
+                      return <option key={page} value={page}>原件第 {page} / {lastSourcePage} 页{pageNote}</option>
+                    })}
                   </select>
                   <button className="btn btn-secondary btn-sm" disabled={activePage >= lastSourcePage} onClick={() => setOcrReviewPage(p => Math.min(lastSourcePage, (p || firstSourcePage) + 1))}>下一页</button>
                 </div>
