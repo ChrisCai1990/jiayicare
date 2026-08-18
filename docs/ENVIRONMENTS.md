@@ -6,7 +6,7 @@ JiayiCare 当前在同一台 ECS 上运行 production（生产）和 staging（�
 | --- | --- | --- |
 | 环境标识 | `DEPLOYMENT_ENV=production`（生产后续维护窗口启用；未启用前为兼容模式） | `DEPLOYMENT_ENV=staging` |
 | 代码目录 | `/var/www/jiayicare` | `/var/www/jiayicare-staging` |
-| Git 分支 | `master` | `staging` |
+| Git 分支 | `master` | `staging-main` |
 | 后端进程 | `jiayicare-backend`（后续维护窗口可改标准名） | `jiayicare-staging-backend` |
 | 医护端进程 | Nginx 正式站点 | `jiayicare-staging-staff` |
 | 管理端进程 | Nginx 正式站点 | `jiayicare-staging-admin` |
