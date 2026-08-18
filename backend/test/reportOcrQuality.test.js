@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { assessReportItems, statusFromRange, isClearlyNonDetailTextPage, formatTextLayerEvidence, selectGenericCoverageAuditPages, recoverExplicitUltrasoundRowsFromTextLayer } = require('../src/utils/reportOcrQuality');
+const { assessReportItems, statusFromRange, isClearlyNonDetailTextPage, formatTextLayerEvidence, formatAdjacentTextLayerContext, selectGenericCoverageAuditPages, recoverExplicitUltrasoundRowsFromTextLayer } = require('../src/utils/reportOcrQuality');
 
 test('covered group summaries are removed while detailed page items remain', () => {
   const items = assessReportItems([
@@ -11,6 +11,18 @@ test('covered group summaries are removed while detailed page items remain', () 
     { name: '白细胞计数', value: '5.00', itemType: 'lab', sourcePage: 9 },
   ]);
   assert.deepEqual(items.map(item => item.name), ['收缩压', '舒张压', '白细胞计数']);
+});
+
+test('adjacent page context is bounded and explicitly excluded from extraction', () => {
+  const context = formatAdjacentTextLayerContext([
+    `内科\n${'A'.repeat(1200)}`,
+    '当前页结果',
+    `${'B'.repeat(1200)}\n外科`,
+  ], 2, 100);
+  assert.match(context, /previous_page_tail/);
+  assert.match(context, /next_page_head/);
+  assert.match(context, /不得提取相邻页自己的项目/);
+  assert.ok(context.length < 600);
 });
 
 test('explicitly normal examination prose does not enter the review queue', () => {
