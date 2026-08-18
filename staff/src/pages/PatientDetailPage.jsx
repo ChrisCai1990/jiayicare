@@ -10179,6 +10179,7 @@ export default function PatientDetailPage() {
         const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
         const pageParsing = activePageParse?.status === 'processing'
         const missingPages = expectedPages.filter(page => !sourcePages.includes(page))
+        const coverageRiskPages = ocrExtractionDiff?.pageCoverage?.emptied || []
         // 专项筛查归类：选项分组 + 手动归类
         // screeningCatalog 来自后端 /screening-catalog，数据源为 admin 配置的「专项筛查项目」（LabTestPackage）
         // 格式：[{ label: 'L1分类名', opts: [{value: 'L1|packageName|itemName', label: '...', groupLabel: 'L1分类名'}] }]
@@ -10298,7 +10299,7 @@ export default function PatientDetailPage() {
                             <div key={idx} style={{ marginBottom: 8 }}>
                               <div style={{ fontSize: 10, color: '#8AA89C', margin: '4px 0' }}>第 {idx + 1} 张</div>
                               <React.Suspense fallback={<div style={{ padding: 16, color: '#6B7A72', fontSize: 12 }}>正在准备 PDF 阅读器…</div>}>
-                                <PdfPagePreview src={s} pageNumber={activePage} />
+                                <PdfPagePreview src={s} pageNumber={activePage} prefetchPages={coverageRiskPages.map(item => item.page)} />
                               </React.Suspense>
                             </div>
                           ) : (
@@ -10323,7 +10324,7 @@ export default function PatientDetailPage() {
                         <img src={src} alt="报告" style={{ width: '100%', borderRadius: 6, cursor: 'zoom-in' }} onClick={() => setPreviewImageUrl(src)} />
                       ) : isPdf ? (
                         <React.Suspense fallback={<div style={{ padding: 16, color: '#6B7A72', fontSize: 12 }}>正在准备 PDF 阅读器…</div>}>
-                          <PdfPagePreview src={src} pageNumber={activePage} />
+                          <PdfPagePreview src={src} pageNumber={activePage} prefetchPages={coverageRiskPages.map(item => item.page)} />
                         </React.Suspense>
                       ) : (
                         <button className="btn btn-primary btn-sm" onClick={() => window.open(src, '_blank')}>打开文件</button>
@@ -10365,7 +10366,6 @@ export default function PatientDetailPage() {
                   const reviewTimestamp = reviewMeta?.draftSavedAt || reviewMeta?.submittedAt || reviewMeta?.lastActionAt
                   const reviewTimeText = reviewTimestamp ? new Date(reviewTimestamp).toLocaleString('zh-CN', { hour12: false }) : ''
                   const history = ocrVersionHistory?.reportId === ocrReviewReport._id ? ocrVersionHistory : null
-                  const coverageRiskPages = ocrExtractionDiff?.pageCoverage?.emptied || []
                   const historyTime = value => value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '时间未记录'
                   return (
                     <>

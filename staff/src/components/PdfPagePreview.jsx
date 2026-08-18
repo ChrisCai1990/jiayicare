@@ -4,7 +4,7 @@ import pdfWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 
 GlobalWorkerOptions.workerSrc = pdfWorkerUrl
 
-export default function PdfPagePreview({ src, pageNumber, height = '74vh' }) {
+export default function PdfPagePreview({ src, pageNumber, prefetchPages = [], height = '74vh' }) {
   const containerRef = useRef(null)
   const canvasRef = useRef(null)
   const documentRef = useRef(null)
@@ -14,6 +14,7 @@ export default function PdfPagePreview({ src, pageNumber, height = '74vh' }) {
   const [pageCount, setPageCount] = useState(0)
   const [pdfDocument, setPdfDocument] = useState(null)
   const sourceUrl = useMemo(() => String(src || '').split('#')[0], [src])
+  const prefetchKey = useMemo(() => [...new Set((prefetchPages || []).map(Number).filter(Number.isInteger))].sort((a, b) => a - b).join(','), [prefetchPages])
 
   useEffect(() => {
     let active = true
@@ -86,6 +87,29 @@ export default function PdfPagePreview({ src, pageNumber, height = '74vh' }) {
       renderTaskRef.current = null
     }
   }, [pageNumber, pdfDocument])
+
+  useEffect(() => {
+    if (!pdfDocument || status !== 'ready') return
+    let cancelled = false
+    const timer = setTimeout(async () => {
+      const candidates = [...new Set([
+        Number(pageNumber) + 1,
+        Number(pageNumber) - 1,
+        ...prefetchKey.split(',').map(Number),
+      ])].filter(page => Number.isInteger(page) && page > 0 && page <= pdfDocument.numPages && page !== Number(pageNumber)).slice(0, 5)
+      for (const target of candidates) {
+        if (cancelled) break
+        try {
+          const page = await pdfDocument.getPage(target)
+          if (cancelled) break
+          await page.getOperatorList()
+        } catch {
+          // 预取失败不影响当前页；用户真正切换时仍会按正常路径重试。
+        }
+      }
+    }, 250)
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [pdfDocument, pageNumber, prefetchKey, status])
 
   return (
     <div ref={containerRef} data-pdf-page={pageNumber} data-pdf-status={status} style={{ position: 'relative', minHeight: height, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', overflow: 'auto', background: '#EEF2F0', borderRadius: 6 }}>
