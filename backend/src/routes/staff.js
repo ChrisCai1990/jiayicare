@@ -75,6 +75,7 @@ const { ensureReportAbnormalReview } = require('../utils/reportAbnormalReview');
 const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIntegrity');
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
+const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -9414,7 +9415,7 @@ async function snapshotReportExtraction(reportId, { origin = 'ocr', reparsePage 
         origin,
         reparsePage,
         engine: { ocrVersion: report.ocrVersion || '', templateId: report.ocrTemplateId || '' },
-        source: { ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []), pageCount: Number(report.pages || report.ocrProgress?.totalPages || 0) },
+        source: { ossKeys: report.ossKeys || (report.ossKey ? [report.ossKey] : []), pageCount: resolveExtractionPageCount(report) },
         reportMetadata: { institution: report.institution || report.hospital || '', checkDate: report.checkDate || report.date || '' },
         summary: report.ocrQualitySummary || null,
         items: report.reportItems || [],
