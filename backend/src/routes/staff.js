@@ -9876,6 +9876,10 @@ async function runReportParse(reportId, options = {}) {
       const textPrimaryByPage = new Map();
       if (useTextLayerPrimary) {
         const pageNumbers = Array.from({ length: textLayer.pageCount }, (_, index) => index + 1);
+        const historicalPageBaselines = new Map(
+          findHistoricalEmptyPages([], extractionSource, extractionHistory, textLayer.pageCount)
+            .map(item => [item.page, item.baselineCount])
+        );
         setOcrProgress('text_primary', `文字层可用，正在结构化提取${pageNumbers.length}页`, {
           totalPages: textLayer.pageCount,
           concurrency: 4,
@@ -9896,7 +9900,15 @@ async function runReportParse(reportId, options = {}) {
               timeoutMs: 60000,
             });
             const parsed = safeParseJSON(raw);
-            const usable = parsed && (shouldSkipParsedReportPage(parsed) || (Array.isArray(parsed.items) && parsed.items.length > 0));
+            const parsedItemCount = Array.isArray(parsed?.items) ? parsed.items.length : 0;
+            const baselineCount = historicalPageBaselines.get(pageNum) || 0;
+            const materialHistoricalDrop = baselineCount > 0
+              && (shouldSkipParsedReportPage(parsed) || parsedItemCount < Math.max(1, Math.ceil(baselineCount * 0.5)));
+            if (materialHistoricalDrop) {
+              console.log(`[parse-ai] P${pageNum}文字层仅提取${parsedItemCount}项，低于同原件历史基线${baselineCount}项，转视觉兜底`);
+              return null;
+            }
+            const usable = parsed && (shouldSkipParsedReportPage(parsed) || parsedItemCount > 0);
             return usable ? { pageNum, parsed } : null;
           } catch (error) {
             console.log(`[parse-ai] P${pageNum}文字层主提取异常，转视觉兜底: ${error.message}`);
