@@ -10257,10 +10257,17 @@ export default function PatientDetailPage() {
         const addItem = () => setOcrEditItems(arr => [...arr, { name: '', value: '', unit: '', referenceRange: '', status: 'normal', itemType: 'lab' }])
         const abnormalCount = ocrEditItems.filter(it => it.status === 'abnormal' || it.status === 'attention').length
         const sourcePages = [...new Set(ocrEditItems.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0))].sort((a, b) => a - b)
-        const firstSourcePage = sourcePages[0] || 1
-        const lastSourcePage = sourcePages[sourcePages.length - 1] || firstSourcePage
-        const expectedPages = Array.from({ length: Math.max(1, lastSourcePage - firstSourcePage + 1) }, (_, i) => firstSourcePage + i)
-        const activePage = ocrReviewPage || firstSourcePage
+        // PDF 可浏览页数不能由“成功提取到项目的页码”推断，否则封面、建议页、纯影像页或
+        // 本次未识别页会从下拉框消失。优先使用当前报告文字层页数和识别快照原件页数，
+        // 仅在旧数据没有页数元数据时才回退到项目最大页码。
+        const extractionPageCount = Math.max(0, ...(ocrVersionHistory?.extractions || []).map(extraction => Number(extraction.source?.pageCount) || 0))
+        const qualityPageCount = Number(ocrReviewReport.ocrQualitySummary?.textLayerPageCount) || 0
+        const reportPageCount = Number(ocrReviewReport.pages) || 0
+        const filePageCount = ocrReviewReport.mimeType !== 'application/pdf' ? (ocrReviewReport.fileUrls?.length || 0) : 0
+        const firstSourcePage = 1
+        const lastSourcePage = Math.max(1, reportPageCount, qualityPageCount, extractionPageCount, filePageCount, sourcePages[sourcePages.length - 1] || 0)
+        const expectedPages = Array.from({ length: lastSourcePage }, (_, i) => i + 1)
+        const activePage = Math.min(lastSourcePage, Math.max(firstSourcePage, ocrReviewPage || firstSourcePage))
         const activePageParse = Number(ocrReviewReport.pageParseStatus?.pageNum) === activePage ? ocrReviewReport.pageParseStatus : null
         const pageParsing = activePageParse?.status === 'processing'
         const missingPages = expectedPages.filter(page => !sourcePages.includes(page))
