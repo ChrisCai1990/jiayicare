@@ -2508,10 +2508,10 @@ export default function PatientDetailPage() {
     finally { setAiSummaryLoading(false) }
   }
 
-  const handleParseReportAI = async (reportId) => {
+  const handleParseReportAI = async (reportId, mode = 'legacy') => {
     setParsingReportId(reportId)
     try {
-      const res = await staffAPI.parseReportAI(reportId)
+      const res = await staffAPI.parseReportAI(reportId, mode)
       toast(res.message || 'AI解析完成')
       loadReports()
     } catch (err) { toast(err.message || 'AI解析失败') }
@@ -8607,11 +8607,19 @@ export default function PatientDetailPage() {
                               ) : isHomeMonitorReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>居家监测类不支持AI解析，请人工录入</span>
                               ) : r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
-                                <button className="btn btn-primary btn-sm report-action-primary"
-                                  disabled={parsingReportId === r._id}
-                                  onClick={() => handleParseReportAI(r._id)}>
-                                  {parsingReportId === r._id ? '提交中…' : 'AI解析'}
-                                </button>
+                                <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center' }}>
+                                  <button className="btn btn-primary btn-sm report-action-primary"
+                                    disabled={parsingReportId === r._id}
+                                    onClick={() => handleParseReportAI(r._id, 'legacy')}>
+                                    {parsingReportId === r._id ? '提交中…' : 'AI解析'}
+                                  </button>
+                                  <button className="btn btn-sm report-action-review"
+                                    title="仅当前报告使用文字层与视觉双证据、质量分流；结果仍需人工审核"
+                                    disabled={parsingReportId === r._id}
+                                    onClick={() => handleParseReportAI(r._id, 'v2')}>
+                                    OCR v2（测试）
+                                  </button>
+                                </span>
                               ) : r.aiStatus === 'none' ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}

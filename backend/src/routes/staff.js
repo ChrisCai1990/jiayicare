@@ -8933,7 +8933,7 @@ function findUnderExtractedPages(items) {
 }
 
 // 后台执行报告 AI 解析（不阻塞 HTTP 响应；完成后状态置 pending 待人工审核）
-async function runReportParse(reportId) {
+async function runReportParse(reportId, options = {}) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
@@ -8944,7 +8944,9 @@ async function runReportParse(reportId) {
   if (!report) return;
   const ocrV2ReportIds = new Set(String(process.env.OCR_V2_REPORT_IDS || '')
     .split(',').map(id => id.trim()).filter(Boolean));
-  const useOcrV2 = process.env.OCR_V2_ENABLED === 'true' || ocrV2ReportIds.has(String(reportId));
+  const requestedMode = options.mode === 'v2' || options.mode === 'legacy' ? options.mode : '';
+  const useOcrV2 = requestedMode === 'v2'
+    || (requestedMode !== 'legacy' && (process.env.OCR_V2_ENABLED === 'true' || ocrV2ReportIds.has(String(reportId))));
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
   const bodyCompositionPrompt = usePediatricBodyComposition
@@ -9393,7 +9395,7 @@ async function runReportParse(reportId) {
           review: qualityItems.filter(item => item.reviewPriority === 'review').length,
           high: qualityItems.filter(item => item.reviewPriority === 'high').length,
           },
-        } : {}),
+        } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
       });
       const totalMs = Date.now() - t0;
       console.log(`[parse-ai] PDF完成 ${reportId} 共${totalPageCount}页 成功${okPages}页 提取${allItems.length}项 归类${matchedCount}项 | 总耗时${(totalMs/1000).toFixed(1)}s`);
@@ -9552,7 +9554,7 @@ async function runReportParse(reportId) {
           review: qualityImageItems.filter(item => item.reviewPriority === 'review').length,
           high: qualityImageItems.filter(item => item.reviewPriority === 'high').length,
         },
-      } : {}),
+      } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
     });
     console.log(`[parse-ai] 图片完成 ${reportId} 共${bufs.length}张 成功${imageOkCount}张 提取${imageItems.length}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
@@ -9659,6 +9661,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const parseMode = req.body?.mode === 'v2' ? 'v2' : 'legacy';
 
     const hasFile = !!report.fileUrl || !!report.content;
     const isImage = report.mimeType?.startsWith('image/');
@@ -9693,7 +9696,7 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
 
     // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
     await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
-    runReportParse(report._id).catch(err => {
+    runReportParse(report._id, { mode: parseMode }).catch(err => {
       console.error('[parse-ai] 后台任务异常', String(report._id), err.message);
       MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' }).catch(() => {});
     });
@@ -9702,8 +9705,8 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, async (req, res) => {
       success: true,
       processing: true,
       message: isPdf
-        ? 'PDF识别已开始，多页报告约需 1–3 分钟，完成后状态自动变为「待审核」'
-        : 'AI识别已开始，约需数秒，完成后状态自动变为「待审核」',
+        ? `${parseMode === 'v2' ? 'OCR v2测试' : 'PDF识别'}已开始，多页报告约需 1–3 分钟，完成后状态自动变为「待审核」`
+        : `${parseMode === 'v2' ? 'OCR v2测试' : 'AI识别'}已开始，约需数秒，完成后状态自动变为「待审核」`,
     });
   } catch (err) {
     res.status(500).json({ success: false, message: 'AI解析失败：' + err.message });
