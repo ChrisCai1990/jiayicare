@@ -4,6 +4,7 @@ const os = require('os');
 const path = require('path');
 const https = require('https');
 const http = require('http');
+const { signStoredUrl } = require('./oss');
 
 // 下载远程文件为 Buffer（跟随一次重定向）
 function downloadBuffer(url, redirects = 3) {
@@ -30,7 +31,7 @@ async function fetchReportBuffer(report, uploadsDir) {
   }
   if (report.fileUrl) {
     if (report.fileUrl.startsWith('http')) {
-      return await downloadBuffer(report.fileUrl);
+      return await downloadBuffer(signStoredUrl(report.fileUrl, report.ossKey || ''));
     }
     // 本地路径，如 /api/uploads/reports/xxx.pdf → 取 /uploads/ 之后的相对路径（含子目录）
     let rel = report.fileUrl;
@@ -51,9 +52,11 @@ async function fetchReportBuffers(report, uploadsDir) {
   const urls = (report.fileUrls && report.fileUrls.length) ? report.fileUrls : [];
   if (!urls.length) return [await fetchReportBuffer(report, uploadsDir)];
   const buffers = [];
-  for (const url of urls) {
+  for (let index = 0; index < urls.length; index++) {
+    const url = urls[index];
     if (url.startsWith('http')) {
-      buffers.push(await downloadBuffer(url));
+      const key = report.ossKeys?.[index] || (index === 0 ? report.ossKey : '');
+      buffers.push(await downloadBuffer(signStoredUrl(url, key)));
       continue;
     }
     let rel = url;

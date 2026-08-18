@@ -531,7 +531,9 @@ findings、diagnosis、conclusion 字段只放报告原文，绝对禁止写入�
 
     // 优先用 OSS URL（通义千问可直接读取公开 URL，PDF/图片均支持）；fileUrls 存在多张图片时
     // （一份报告拍成多张照片，如"结论页"+"数据页"），一次性把全部图片传给AI合并识别成一份结果
-    const ossUrls = report.fileUrls && report.fileUrls.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const storedOssUrls = report.fileUrls && report.fileUrls.length ? report.fileUrls : (report.fileUrl ? [report.fileUrl] : []);
+    const storedOssKeys = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    const ossUrls = storedOssUrls.map((url, index) => signStoredUrl(url, storedOssKeys[index] || ''));
     const text = hasOssUrl
       ? await parseImage(ossUrls.length > 1 ? ossUrls : ossUrls[0], prompt, { isUrl: true, maxTokens: 8000 })
       : await parseImage(report.content, prompt, { isUrl: false, maxTokens: 8000 });
