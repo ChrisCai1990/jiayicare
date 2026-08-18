@@ -71,6 +71,8 @@ const medicalReportSchema = new mongoose.Schema({
   ocrVersion:      { type: String, default: '' },
   ocrTemplateId:   { type: String, default: '' },
   ocrQualitySummary: { type: mongoose.Schema.Types.Mixed, default: null },
+  // OCR v2 异步任务的前端可见进度；仅用于展示，不参与审核结论。
+  ocrProgress: { type: mongoose.Schema.Types.Mixed, default: null },
   // 人工对 OCR v2 草稿的真实修正，供模板/规则回归分析；不影响正式报告内容。
   ocrCorrectionLog: [{
     itemIndex: Number,

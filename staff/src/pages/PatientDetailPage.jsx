@@ -8591,6 +8591,8 @@ export default function PatientDetailPage() {
                           : '待审核'
                         const auditColor = r.audit_status === 'audited' ? '#22A06B'
                           : r.audit_status === 'rejected' ? '#DC3545' : '#D97706'
+                        const ocrProgressText = r.aiStatus === 'processing' && r.ocrProgress
+                          ? (r.ocrProgress?.message || 'OCR v2正在准备解析') : ''
                         const isFunctionalMedicineReport = /功能检测|功能医学/.test(typeLabel)
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const isHomeMonitorReport = /居家监测/.test(typeLabel)
@@ -8604,7 +8606,7 @@ export default function PatientDetailPage() {
                             <td><span style={{ fontSize: 12, color: '#668277', whiteSpace: 'nowrap' }}>{typeLabel}</span></td>
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
-                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span></td>
+                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span>{ocrProgressText && <div style={{ fontSize: 10, color: '#7C3AED', marginTop: 5, lineHeight: 1.35, maxWidth: 180 }}>{ocrProgressText}</div>}</td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {isFunctionalMedicineReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
