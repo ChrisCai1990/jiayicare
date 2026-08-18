@@ -74,6 +74,7 @@ const { validateReportAssociation } = require('../utils/reportAssociationPolicy'
 const { ensureReportAbnormalReview } = require('../utils/reportAbnormalReview');
 const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIntegrity');
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
+const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -9758,7 +9759,6 @@ async function runReportParse(reportId, options = {}) {
   const { fetchReportBuffer, fetchReportBuffers, pdfBufferToImages, isPdfReport, extractPdfTextLayer, renderSinglePage } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { assessReportItems, isClearlyNonDetailTextPage } = require('../utils/reportOcrQuality');
-  const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
   const MedicalReport = require('../models/MedicalReport');
   const report = await MedicalReport.findById(reportId);
   if (!report) return;
