@@ -1,6 +1,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction } = require('../src/utils/reportReviewPolicy');
+const {
+  canDirectlyApproveReport,
+  validateOcrReviewTransition,
+  validateManualAuditAction,
+  validateOcrVersionBinding,
+} = require('../src/utils/reportReviewPolicy');
 
 test('legacy reports without OCR can still use direct manual approval', () => {
   assert.equal(canDirectlyApproveReport(undefined), true);
@@ -33,4 +38,11 @@ test('manual audit only accepts explicit approve or reject actions with request 
   assert.match(validateManualAuditAction('anything', 'review-1'), /无效/);
   assert.match(validateManualAuditAction('approve', ''), /请求标识/);
   assert.equal(validateManualAuditAction('reject', 'reject-1'), '');
+});
+
+test('OCR review requires a valid immutable extraction version', () => {
+  assert.equal(validateOcrVersionBinding({}), '');
+  assert.match(validateOcrVersionBinding({ ocrVersion: 'OCR V3' }), /缺少识别版本记录/);
+  assert.match(validateOcrVersionBinding({ ocrVersion: 'OCR V3', currentExtractionId: 'extraction-1', extractionExists: false }), /引用已失效/);
+  assert.equal(validateOcrVersionBinding({ ocrVersion: 'OCR V3', currentExtractionId: 'extraction-1', extractionExists: true }), '');
 });

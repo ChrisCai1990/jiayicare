@@ -75,7 +75,7 @@ const {
 const { resolveActiveScreeningKey } = require('../utils/screeningCatalogKey');
 const { createReportUploadToken, verifyReportUploadTokens } = require('../utils/reportUploadToken');
 const { buildReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../utils/reportOriginalEvidence');
-const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction } = require('../utils/reportReviewPolicy');
+const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction, validateOcrVersionBinding } = require('../utils/reportReviewPolicy');
 const { ALLOWED_REPORT_MIME_TYPES, assertReportFileBuffer, assertVerifiedReportOriginals } = require('../utils/reportUploadPolicy');
 const { validateReportAssociation } = require('../utils/reportAssociationPolicy');
 const { ensureReportAbnormalReview } = require('../utils/reportAbnormalReview');
@@ -2494,37 +2494,57 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       }
     }
     let coverageAcknowledgement = { requiredPages: [], missingPages: [], complete: true };
+    const versionBindingError = reviewAction === 'submit'
+      ? validateOcrVersionBinding({ ocrVersion: report.ocrVersion, currentExtractionId: report.currentExtractionId })
+      : '';
+    if (versionBindingError) {
+      return res.status(409).json({
+        success: false,
+        code: 'OCR_EXTRACTION_VERSION_REQUIRED',
+        message: versionBindingError,
+      });
+    }
     if (reviewAction === 'submit' && report.currentExtractionId) {
       const currentExtraction = await ReportExtraction.findOne({ _id: report.currentExtractionId, reportId: report._id }).lean();
-      if (currentExtraction) {
-        const sourceConsistency = compareReportOriginalEvidence(
-          report.sourceFiles,
-          currentExtraction.source?.files,
-          report.ossKeys || (report.ossKey ? [report.ossKey] : []),
-          currentExtraction.source?.ossKeys || [],
-        );
-        if (sourceConsistency.left.status === 'verified' && !sourceConsistency.same) {
+      const extractionBindingError = validateOcrVersionBinding({
+        ocrVersion: report.ocrVersion,
+        currentExtractionId: report.currentExtractionId,
+        extractionExists: Boolean(currentExtraction),
+      });
+      if (extractionBindingError) {
+        return res.status(409).json({
+          success: false,
+          code: 'OCR_EXTRACTION_VERSION_MISSING',
+          message: extractionBindingError,
+        });
+      }
+      const sourceConsistency = compareReportOriginalEvidence(
+        report.sourceFiles,
+        currentExtraction.source?.files,
+        report.ossKeys || (report.ossKey ? [report.ossKey] : []),
+        currentExtraction.source?.ossKeys || [],
+      );
+      if (sourceConsistency.left.status === 'verified' && !sourceConsistency.same) {
+        return res.status(409).json({
+          success: false,
+          code: 'OCR_ORIGINAL_EVIDENCE_MISMATCH',
+          message: '当前识别版本与报告原件留证不一致，请重新识别后再提交审核',
+        });
+      }
+      const extractionHistory = await ReportExtraction.find({
+        reportId: report._id,
+        version: { $lt: currentExtraction.version },
+      }).sort({ version: -1 }).lean();
+      const extractionDiff = compareReportExtractionHistory(currentExtraction, extractionHistory);
+      if (extractionDiff) {
+        coverageAcknowledgement = validateCoverageAcknowledgement(extractionDiff, req.body?.coverageAcknowledgedPages);
+        if (!coverageAcknowledgement.complete) {
           return res.status(409).json({
             success: false,
-            code: 'OCR_ORIGINAL_EVIDENCE_MISMATCH',
-            message: '当前识别版本与报告原件留证不一致，请重新识别后再提交审核',
+            code: 'OCR_PAGE_COVERAGE_ACK_REQUIRED',
+            message: `请先核对整页识别覆盖下降：P${coverageAcknowledgement.missingPages.join('、P')}`,
+            pages: coverageAcknowledgement.missingPages,
           });
-        }
-        const extractionHistory = await ReportExtraction.find({
-          reportId: report._id,
-          version: { $lt: currentExtraction.version },
-        }).sort({ version: -1 }).lean();
-        const extractionDiff = compareReportExtractionHistory(currentExtraction, extractionHistory);
-        if (extractionDiff) {
-          coverageAcknowledgement = validateCoverageAcknowledgement(extractionDiff, req.body?.coverageAcknowledgedPages);
-          if (!coverageAcknowledgement.complete) {
-            return res.status(409).json({
-              success: false,
-              code: 'OCR_PAGE_COVERAGE_ACK_REQUIRED',
-              message: `请先核对整页识别覆盖下降：P${coverageAcknowledgement.missingPages.join('、P')}`,
-              pages: coverageAcknowledgement.missingPages,
-            });
-          }
         }
       }
     }
@@ -10573,7 +10593,7 @@ async function runReportParse(reportId, options = {}) {
       await MedicalReport.findByIdAndUpdate(reportId, {
         reportItems: qualityItems,
         aiSummary:   aiSummaryOut,
-        aiStatus:    'pending',
+        aiStatus:    'processing',
         institution, checkDate,
         ...(useOcrV2 ? {
           ocrVersion: OCR_POLICY_VERSION,
@@ -10588,10 +10608,14 @@ async function runReportParse(reportId, options = {}) {
           review: qualityItems.filter(item => item.reviewPriority === 'review').length,
             high: qualityItems.filter(item => item.reviewPriority === 'high').length,
           },
-          ocrProgress: { stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
+          ocrProgress: { stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
         } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
       });
-      await snapshotReportExtraction(reportId).catch(err => console.error('[report-extraction] PDF快照保存失败', String(reportId), err.message));
+      await snapshotReportExtraction(reportId);
+      await MedicalReport.findByIdAndUpdate(reportId, {
+        aiStatus: 'pending',
+        ...(useOcrV2 ? { ocrProgress: { stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount } } : {}),
+      });
       const totalMs = Date.now() - t0;
       console.log(`[parse-ai] PDF完成 ${reportId} 共${totalPageCount}页 成功${okPages}页 提取${allItems.length}项 归类${matchedCount}项 | 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
@@ -10738,7 +10762,7 @@ async function runReportParse(reportId, options = {}) {
     await MedicalReport.findByIdAndUpdate(reportId, {
       reportItems: qualityImageItems,
       aiSummary:   imgSummary,
-      aiStatus:    'pending',
+      aiStatus:    'processing',
       institution: sanitizeInstitution(imageInstitution) || report.institution,
       checkDate:   imageCheckDate || report.checkDate,
       ...(useOcrV2 ? {
@@ -10752,10 +10776,14 @@ async function runReportParse(reportId, options = {}) {
           review: qualityImageItems.filter(item => item.reviewPriority === 'review').length,
           high: qualityImageItems.filter(item => item.reviewPriority === 'high').length,
         },
-        ocrProgress: { stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length },
+        ocrProgress: { stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length },
       } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
     });
-    await snapshotReportExtraction(reportId).catch(err => console.error('[report-extraction] 图片快照保存失败', String(reportId), err.message));
+    await snapshotReportExtraction(reportId);
+    await MedicalReport.findByIdAndUpdate(reportId, {
+      aiStatus: 'pending',
+      ...(useOcrV2 ? { ocrProgress: { stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length } } : {}),
+    });
     console.log(`[parse-ai] 图片完成 ${reportId} 共${bufs.length}张 成功${imageOkCount}张 提取${imageItems.length}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
@@ -10852,11 +10880,14 @@ async function runReportPageParse(reportId, pageNum) {
     .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0))));
   await MedicalReport.findByIdAndUpdate(reportId, {
     reportItems: combined,
+    aiStatus: 'processing',
+    pageParseStatus: { pageNum, status: 'processing', startedAt: report.pageParseStatus?.startedAt || new Date(), message: `第${pageNum}页补提完成，正在保存识别版本`, itemCount: classifiedPage.length },
+  });
+  await snapshotReportExtraction(reportId, { origin: 'page_reparse', reparsePage: pageNum });
+  await MedicalReport.findByIdAndUpdate(reportId, {
     aiStatus: 'pending',
     pageParseStatus: { pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: `第${pageNum}页补提完成，共${classifiedPage.length}项`, itemCount: classifiedPage.length },
   });
-  await snapshotReportExtraction(reportId, { origin: 'page_reparse', reparsePage: pageNum })
-    .catch(err => console.error('[report-extraction] 单页补提快照保存失败', String(reportId), err.message));
   console.log(`[parse-page] ${reportId} P${pageNum} 完成：${oldPage.length}→${classifiedPage.length}，其他页保留${preserved.length}项`);
 }
 
@@ -10948,7 +10979,10 @@ router.post('/medical-reports/:id/parse-page', staffAuth, checkPermissionStrict(
     await MedicalReport.findByIdAndUpdate(report._id, { pageParseStatus: { pageNum, status: 'processing', startedAt: new Date(), message: `正在补提第${pageNum}页` } });
     runReportPageParse(report._id, pageNum).catch(async error => {
       console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message);
-      await MedicalReport.findByIdAndUpdate(report._id, { pageParseStatus: { pageNum, status: 'failed', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: error.message } }).catch(() => {});
+      await MedicalReport.findByIdAndUpdate(report._id, {
+        aiStatus: 'pending',
+        pageParseStatus: { pageNum, status: 'failed', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: error.message },
+      }).catch(() => {});
     });
     res.json({ success: true, processing: true, message: `第${pageNum}页补提已开始，其他页面不会改动` });
   } catch (err) {

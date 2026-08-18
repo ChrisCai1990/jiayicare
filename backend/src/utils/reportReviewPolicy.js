@@ -22,4 +22,16 @@ function validateManualAuditAction(action, reviewRequestId) {
   return '';
 }
 
-module.exports = { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction };
+function validateOcrVersionBinding({ ocrVersion, currentExtractionId, extractionExists = true } = {}) {
+  if (!String(ocrVersion || '').trim()) return '';
+  if (!currentExtractionId) return '当前 OCR 草稿缺少识别版本记录，请重新识别后再提交审核';
+  if (!extractionExists) return '当前识别版本引用已失效，请重新识别后再提交审核';
+  return '';
+}
+
+module.exports = {
+  canDirectlyApproveReport,
+  validateOcrReviewTransition,
+  validateManualAuditAction,
+  validateOcrVersionBinding,
+};
