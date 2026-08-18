@@ -29,7 +29,7 @@ staging 固定 HTTPS 入口：
 - 医护端：`https://staging-staff.jiaycare.com`
 - API：`https://staging-api.jiaycare.com/api/health`
 
-启用入口前，阿里云 DNS 必须为以上五个主机名添加指向 `121.40.156.39` 的 A 记录，并完成独立 TLS 证书签发。Nginx 模板见 `deploy/nginx/jiayicare-staging.conf`；DNS 和证书未就绪时不得用明文 HTTP 承载健康数据。
+启用入口前，阿里云 DNS 必须为以上五个主机名添加指向 `121.40.156.39` 的 A 记录，并完成独立 TLS 证书签发。首次签发只使用 `deploy/nginx/jiayicare-staging-http.conf` 提供 ACME 校验且其他路径返回 404，证书生成后立即替换为 `deploy/nginx/jiayicare-staging.conf`；不得用明文 HTTP 承载健康数据。
 
 ## 强制边界
 
