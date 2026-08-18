@@ -6,7 +6,12 @@ const morgan = require('morgan');
 const path = require('path');
 const fs = require('fs');
 const connectDB = require('./config/db');
-const { areSchedulersDisabled } = require('./utils/runtimeSafety');
+const { areSchedulersDisabled, assertDeploymentEnvironment } = require('./utils/runtimeSafety');
+
+// 必须在连接 MongoDB、创建上传目录和启动 HTTP 服务之前完成环境边界校验。
+// staging 配置一旦误指向生产数据库或正式 OSS 前缀，进程会直接拒绝启动。
+const deploymentBoundary = assertDeploymentEnvironment();
+console.log(`[startup] deployment=${deploymentBoundary.deploymentEnv} database=${deploymentBoundary.databaseName || 'legacy'} uploads=${deploymentBoundary.reportUploadFolder || 'legacy'}`);
 
 const app = express();
 
