@@ -4,7 +4,7 @@
 
 - 历史报告迁移至私有 OSS 后，会员详情页的 `GET /api/staff/patients/:id/reports` 曾直接返回原始对象 URL，AI 审核弹窗会出现 `AccessDenied`。该接口现与其他报告读取接口统一通过 `withSignedReportFiles` 签发短时预览 URL。
 - 修复提交 `e11e471` 已部署；生产环境已验证签名 URL 返回 200。该变更不修改报告记录或 OSS 对象。
-- 个别历史 PDF 的 OSS 响应会强制下载，无法在 OCR 审核弹窗逐页核对。`e473f0d` 增加了仅绑定报告/文件、10 分钟失效的预览令牌，由已部署 API 从私有 OSS 流式转发并强制 `Content-Disposition: inline`；生产验证 PDF 预览响应为 200。
+- 个别历史 PDF 的 OSS 响应会强制下载，无法在 OCR 审核弹窗逐页核对。`e473f0d` 增加了仅绑定报告/文件、30 分钟失效的预览令牌（时效由 `4e97610` 从 10 分钟调整），由已部署 API 从私有 OSS 流式转发并强制 `Content-Disposition: inline`；生产验证 PDF 预览响应为 200。
 - 预览地址必须包含 `/api` 前缀：医护端的 `API_ORIGIN` 不含该路径，缺失时会误进入用户端 SPA 并显示登录页。`c33874d` 已修正并验证完整预览地址返回 `200 application/pdf inline`。
 
 ## 2026-08-18：健康原件 OSS 收口
