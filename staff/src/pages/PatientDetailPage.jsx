@@ -4339,6 +4339,8 @@ export default function PatientDetailPage() {
         {/* ── 生活方式（膳食调查基础资料）── 位于健康档案顶部，打卡数据在下方 */}
         {(() => {
           const ld = editingLifestyle ? (lifestyleForm.lifestyle_data || {}) : (user.lifestyle_data || {})
+          const lifestyleFields = ['breakfastTime','breakfastDetail','breakfastDesc','morningSnack','morningSnackDesc','lunchTime','lunchDetail','lunchDesc','afternoonSnack','afternoonSnackDesc','dinnerTime','dinnerDetail','dinnerDesc','eveningSnack','eveningSnackDesc','dailyStaple','dailyVegetables','dailyMeat','fruitFrequency','fruitAmount','eggFrequency','eggAmount','dairyAmount','dairyRemark','nutFrequency','nutAmount','grainFrequency','grainAmount','dietaryRestrictions','dietaryRestrictionsDesc','badDietHabits','entertainment','exerciseType','exerciseFrequency','exerciseDuration','wakeTime','sleepTime','scheduleRegularity','exerciseRemark','smokingStatus','drinkingFrequency','drinkingType','drinkingTypeOtherDesc','drinkingAmount','entertainmentFreq','nutritionHistory','dailyDietAssessment','nutrientOverview','foodAllergens','foodAllergensOtherDesc','glutenAllergy','dailyWater','psychStress','bowelRegularity','bowelShape']
+          const hasLifestyleData = lifestyleFields.some(key => Array.isArray(ld[key]) ? ld[key].length > 0 : Boolean(ld[key]))
           const setLd = (patch) => setLifestyleForm(p => ({ ...p, lifestyle_data: { ...(p.lifestyle_data || {}), ...patch } }))
           const row2 = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 20px', marginBottom: 12 }
           const row3 = { display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px 20px', marginBottom: 12 }
@@ -4354,10 +4356,16 @@ export default function PatientDetailPage() {
             border: 'none', borderRadius: '6px 6px 0 0',
             borderBottom: lifestyleTab === k ? '2px solid #1E6B50' : '2px solid transparent',
           })
+          const lifestyleOverviewGroups = [
+            { key: 'diet', title: '饮食', hint: '三餐、加餐与日常摄入', items: [['三餐', [ld.breakfastTime && `早 ${ld.breakfastTime}`, ld.lunchTime && `午 ${ld.lunchTime}`, ld.dinnerTime && `晚 ${ld.dinnerTime}`].filter(Boolean).join(' · ')], ['主食', ld.dailyStaple], ['蔬菜', ld.dailyVegetables], ['饮食习惯', Array.isArray(ld.badDietHabits) ? ld.badDietHabits.join('、') : '']] },
+            { key: 'exercise', title: '运动与作息', hint: '运动频率与睡眠节律', items: [['运动', [ld.exerciseType, ld.exerciseFrequency, ld.exerciseDuration && `每次 ${ld.exerciseDuration} 分钟`].filter(Boolean).join(' · ')], ['作息', [ld.wakeTime && `起床 ${ld.wakeTime}`, ld.sleepTime && `入睡 ${ld.sleepTime}`, ld.scheduleRegularity].filter(Boolean).join(' · ')], ['备注', ld.exerciseRemark]] },
+            { key: 'alcohol', title: '烟酒与应酬', hint: '吸烟、饮酒与社交应酬', items: [['吸烟', ld.smokingStatus], ['饮酒', [ld.drinkingFrequency, ld.drinkingAmount].filter(Boolean).join(' · ')], ['应酬', ld.entertainmentFreq || ld.entertainment]] },
+            { key: 'nutrition', title: '营养与消化', hint: '过敏、饮水、排便与压力', items: [['食物过敏', Array.isArray(ld.foodAllergens) ? ld.foodAllergens.join('、') : ''], ['饮水', ld.dailyWater], ['排便', [ld.bowelRegularity, ld.bowelShape].filter(Boolean).join(' · ')], ['压力', ld.psychStress]] },
+          ]
           return (
             <div className="card" style={{ marginBottom: 20 }}>
               <div className="card-header">
-                <div className="card-title">生活方式（膳食调查）</div>
+                <div><div className="card-title">生活方式</div>{!editingLifestyle && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 3 }}>聚焦当前习惯；需要完整字段时进入编辑。</div>}</div>
                 {!editingLifestyle
                   ? <div style={{ display: 'flex', gap: 8 }}>
                       <button className="btn btn-primary btn-sm" onClick={() => setShowLifestyleChangeModal(true)}>＋ 新增变化</button>
@@ -4370,6 +4378,20 @@ export default function PatientDetailPage() {
                 }
               </div>
               <div className="card-body">
+                {!editingLifestyle ? (
+                  hasLifestyleData ? (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
+                      {lifestyleOverviewGroups.map(group => {
+                        const items = group.items.filter(([, value]) => value)
+                        return <div key={group.key} style={{ border: '1px solid #DDE8E2', borderRadius: 10, padding: '14px 15px', background: '#FCFDFC', minHeight: 158, display: 'flex', flexDirection: 'column' }}>
+                          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}><div><div style={{ fontSize: 14, fontWeight: 700, color: '#1A2B24' }}>{group.title}</div><div style={{ fontSize: 11, color: '#8AA89C', marginTop: 3 }}>{group.hint}</div></div><span style={{ fontSize: 11, color: items.length ? '#1E6B50' : '#B7791F', background: items.length ? '#E8F5EF' : '#FFF5E6', borderRadius: 12, padding: '3px 7px', whiteSpace: 'nowrap' }}>{items.length ? `已填 ${items.length} 项` : '待补充'}</span></div>
+                          <div style={{ marginTop: 13, display: 'flex', flexDirection: 'column', gap: 7, flex: 1 }}>{items.length ? items.slice(0, 3).map(([label, value]) => <div key={label} style={{ display: 'grid', gridTemplateColumns: '52px 1fr', gap: 6, fontSize: 12, lineHeight: 1.45 }}><span style={{ color: '#8AA89C' }}>{label}</span><span style={{ color: '#4A6558', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{value}</span></div>) : <div style={{ fontSize: 12, color: '#9BAEA4', lineHeight: 1.55 }}>暂无记录，可在编辑中补充该类资料。</div>}</div>
+                          <button type="button" onClick={() => { setLifestyleTab(group.key); setEditingLifestyle(true) }} style={{ alignSelf: 'flex-start', marginTop: 13, padding: 0, border: 'none', background: 'transparent', color: '#1E6B50', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>{items.length ? '完善资料 →' : '开始补充 →'}</button>
+                        </div>
+                      })}
+                    </div>
+                  ) : <div style={{ padding: '22px 18px', background: '#F7FAF8', border: '1px dashed #CFE0D5', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}><div><div style={{ fontSize: 14, fontWeight: 700, color: '#365C49' }}>生活方式资料尚未填写</div><div style={{ fontSize: 12, color: '#789286', marginTop: 5 }}>从饮食、运动作息、烟酒和营养消化开始补充，建立后续风险评估的基础。</div></div><button className="btn btn-primary btn-sm" onClick={() => { setLifestyleTab('diet'); setEditingLifestyle(true) }}>开始补充</button></div>
+                ) : <>
                 {/* 子板块 Tab 导航 */}
                 <div style={{ display: 'flex', borderBottom: '1px solid #e0d9ce', marginBottom: 16, overflowX: 'auto' }}>
                   {[
@@ -4638,6 +4660,7 @@ export default function PatientDetailPage() {
 
                   </div>
                 )}
+                </>}
               </div>
             </div>
           )
