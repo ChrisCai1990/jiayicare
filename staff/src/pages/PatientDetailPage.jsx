@@ -1586,20 +1586,59 @@ export default function PatientDetailPage() {
   const screeningSearchTimer = useRef(null)
   const [healthRecords, setHealthRecords] = useState([])
 
+  // 健康档案原先只有一串可折叠表单，进入后很难判断先处理什么。这里仅基于已加载
+  // 的现有数据生成浏览摘要，不改变评分、筛查或审核的任何业务规则。
+  const archiveOverview = useMemo(() => {
+    const archiveUser = data?.user
+    const profile = archiveUser?.healthProfile || {}
+    const score = Number(archiveUser?.healthScore || 0)
+    const hasBasicProfile = Boolean(archiveUser?.bloodTypeABO || archiveUser?.drugAllergy || archiveUser?.pastHistory || profile.recentSymptoms?.length)
+    const lifestyle = archiveUser?.lifestyle_data || {}
+    const lifestyleFields = ['diet', 'exercise', 'sleep', 'smoking', 'alcohol', 'water', 'bowel'].filter(key => lifestyle[key]).length
+    const abnormalScreenings = [...(screeningItems || []), ...(screeningReports || [])].filter(item => {
+      if (item.status === 'abnormal' || item.status === 'attention') return true
+      return (item.reportItems || []).some(row => row.status === 'abnormal' || row.status === 'attention')
+    }).length
+    const tasks = []
+    if (!healthRecords.length) tasks.push({ section: '初始健康数据录入', text: '补录初始健康数据，建立评分和趋势的基础。', action: '开始录入' })
+    else if (!score) tasks.push({ section: '健康评分', text: '已有健康数据，等待重新计算健康评分。', action: '计算评分' })
+    if (!hasBasicProfile) tasks.push({ section: '基本档案', text: '基本病史和过敏信息尚未完善。', action: '补充档案' })
+    if (!screeningItems.length && !screeningReports.length) tasks.push({ section: '专项筛查结果', text: '尚无专项筛查结果，可按报告补录。', action: '录入筛查' })
+    return { score, hasBasicProfile, lifestyleFields, abnormalScreenings, tasks: tasks.slice(0, 2) }
+  }, [data?.user, healthRecords, screeningItems, screeningReports])
+
   useEffect(() => {
     if (tab !== 'records' || !archiveSectionsRef.current) return
+    const summaries = {
+      '初始健康数据录入': healthRecords.length ? `已录入 ${healthRecords.length} 条数据` : '尚未建立基础数据',
+      '健康评分': archiveOverview.score ? `当前 ${archiveOverview.score} 分` : '待计算',
+      '基本档案': archiveOverview.hasBasicProfile ? '已建立，按需更新' : '待补充病史与过敏信息',
+      '心理健康评估': '量表结果与历史记录',
+      '10年ASCVD风险评估': '心脑血管风险',
+      '生活方式（膳食调查）': archiveOverview.lifestyleFields ? `已填写 ${archiveOverview.lifestyleFields} 项` : '待填写生活方式信息',
+      '生活方式变化记录': '按时间追踪变化',
+      '专项筛查结果': archiveOverview.abnormalScreenings ? `${archiveOverview.abnormalScreenings} 项需关注` : `${screeningItems.length + screeningReports.length} 条记录`,
+      '体检关键指标': '用于评分与风险判断',
+      '身体成分指标': '体成分与趋势数据',
+    }
     archiveSectionsRef.current.querySelectorAll('.card').forEach(card => {
       const header = Array.from(card.children).find(child => child.classList?.contains('card-header'))
       if (header) {
         header.dataset.archiveToggle = 'true'
         header.title = '点击收起或展开此板块'
+        const title = header.querySelector('.card-title')?.textContent?.trim() || ''
+        const matchedTitle = Object.keys(summaries).find(key => title.startsWith(key))
+        if (matchedTitle) {
+          header.dataset.archiveSection = matchedTitle
+          header.dataset.archiveSummary = summaries[matchedTitle]
+        }
         if (!card.dataset.archiveInitialized) {
           card.classList.add('archive-collapsed')
           card.dataset.archiveInitialized = 'true'
         }
       }
     })
-  }, [tab, data, healthRecords])
+  }, [tab, data, healthRecords, archiveOverview, screeningItems, screeningReports])
 
   const handleArchiveSectionClick = (event) => {
     if (event.target.closest('button, a, input, select, textarea, label')) return
@@ -2634,6 +2673,13 @@ export default function PatientDetailPage() {
     const pages = items.map(it => Number(it.sourcePage)).filter(Number.isFinite).filter(n => n > 0)
     const focused = focusedIndex >= 0 ? items[focusedIndex] : null
     setOcrReviewPage(Number(focused?.sourcePage) || (pages.length ? Math.min(...pages) : 1))
+  }
+
+  const openArchiveSection = (section) => {
+    const header = archiveSectionsRef.current?.querySelector(`[data-archive-section="${section}"]`)
+    if (!header) return
+    header.parentElement?.classList.remove('archive-collapsed')
+    header.parentElement?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
   const handleLoadOCRRevisionDiff = async (reportId, revisionNo, baselineNo) => {
@@ -3909,11 +3955,33 @@ export default function PatientDetailPage() {
       {/* ── Records Tab ── */}
       {tab === 'records' && (
         <div ref={archiveSectionsRef} className="health-archive-sections" onClick={handleArchiveSectionClick}>
-        <style>{`.health-archive-sections>.archive-toolbar+.card,.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}`}</style>
+        <style>{`.health-archive-sections>.archive-toolbar+.archive-overview+.card,.health-archive-sections>.card{transition:box-shadow .2s}.health-archive-sections .archive-collapsed>:not(.card-header){display:none!important}.health-archive-sections .card-header[data-archive-toggle="true"]{cursor:pointer;min-height:54px}.health-archive-sections .card-header[data-archive-toggle="true"] .card-title{display:flex;align-items:center;gap:8px}.health-archive-sections .card-header[data-archive-toggle="true"]:before{content:attr(data-archive-summary);order:2;font-size:12px;font-weight:400;color:#8AA89C;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:340px}.health-archive-sections .card-header[data-archive-toggle="true"]:after{content:'⌃';margin-left:10px;color:#1E6B50;font-size:18px}.health-archive-sections .archive-collapsed>.card-header[data-archive-toggle="true"]:after{content:'⌄'}.archive-overview{background:linear-gradient(135deg,#F3F8F5 0%,#FFF 72%);border:1px solid #DDEBE3;border-radius:12px;padding:18px 20px;margin-bottom:16px}.archive-overview-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:14px}.archive-overview-metric{background:rgba(255,255,255,.82);border:1px solid #E7EFEA;border-radius:9px;padding:11px 12px}.archive-overview-label{font-size:12px;color:#6E8579;margin-bottom:5px}.archive-overview-value{font-size:18px;font-weight:700;color:#173D2B}.archive-overview-task{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#FFF;border:1px solid #DDEBE3;border-radius:8px;padding:9px 10px;margin-top:8px}.archive-overview-task-text{font-size:12px;color:#4A6558;margin-top:2px}@media(max-width:900px){.archive-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.health-archive-sections .card-header[data-archive-toggle="true"]:before{display:none}}`}</style>
         <div className="archive-toolbar" style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginBottom: 12 }}>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(true) }}>全部收起</button>
           <button className="btn btn-secondary btn-sm" onClick={e => { e.stopPropagation(); setAllArchiveSections(false) }}>全部展开</button>
         </div>
+        <section className="archive-overview" aria-label="健康档案总览">
+          <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#173D2B' }}>健康档案总览</div>
+              <div style={{ fontSize: 12, color: '#6E8579', marginTop: 4 }}>先确认档案完整性和待处理事项，再进入对应模块。</div>
+            </div>
+            <span style={{ fontSize: 12, color: '#6E8579' }}>点击任一模块标题可展开查看</span>
+          </div>
+          <div className="archive-overview-grid">
+            <div className="archive-overview-metric"><div className="archive-overview-label">健康评分</div><div className="archive-overview-value" style={{ color: archiveOverview.score ? '#1E6B50' : '#8AA89C' }}>{archiveOverview.score ? `${archiveOverview.score} 分` : '待计算'}</div></div>
+            <div className="archive-overview-metric"><div className="archive-overview-label">基础档案</div><div className="archive-overview-value">{archiveOverview.hasBasicProfile ? '已建立' : '待补充'}</div></div>
+            <div className="archive-overview-metric"><div className="archive-overview-label">生活方式</div><div className="archive-overview-value">{archiveOverview.lifestyleFields ? `已填 ${archiveOverview.lifestyleFields} 项` : '待填写'}</div></div>
+            <div className="archive-overview-metric"><div className="archive-overview-label">筛查需关注</div><div className="archive-overview-value" style={{ color: archiveOverview.abnormalScreenings ? '#B45309' : '#1E6B50' }}>{archiveOverview.abnormalScreenings ? `${archiveOverview.abnormalScreenings} 项` : '暂无'}</div></div>
+          </div>
+          {archiveOverview.tasks.length > 0 && <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: '#4A6558' }}>建议下一步</div>
+            {archiveOverview.tasks.map(task => <div className="archive-overview-task" key={task.section}>
+              <div><div style={{ fontSize: 13, fontWeight: 600, color: '#1A2B24' }}>{task.action}</div><div className="archive-overview-task-text">{task.text}</div></div>
+              <button className="btn btn-primary btn-sm" onClick={e => { e.stopPropagation(); openArchiveSection(task.section) }}>去处理</button>
+            </div>)}
+          </div>}
+        </section>
         {/* 档案是问卷答案自动导入的，冲突提醒已在页面顶部单独展示（见"问卷自动填档"横幅）；
             一致的情况无需人工再次确认，故此处不再重复放置整体人工审核开关 */}
 
