@@ -10765,6 +10765,22 @@ export default function PatientDetailPage() {
                                 {evidencePages.length > 0 && <span>原报告 {reportItemPageLabel(it)} ·</span>}<span>第 {i + 1} 项 · {isImaging(it) ? '检查/影像' : '检验/数值'}{it.sourceSection ? ` · ${it.sourceSection}` : ''}{it.orderName ? ` · ${it.orderName}` : ''}</span>
                                 {evidencePages.length > 1 && evidencePages.map(page => <button key={page} type="button" onClick={() => setOcrReviewPage(page)} style={{ border: page === activePage ? '1px solid #7C3AED' : '1px solid #CFC4F5', background: page === activePage ? '#EDE9FE' : '#fff', color: '#6D28D9', borderRadius: 10, padding: '1px 6px', fontSize: 10, cursor: 'pointer' }}>P{page}</button>)}
                               </div>
+                              {evidencePages.length > 1 && (
+                                <details style={{ margin: '-1px 0 7px', padding: '5px 8px', border: '1px solid #E6E0F5', borderRadius: 6, background: '#FAF8FF' }}>
+                                  <summary style={{ cursor: 'pointer', color: '#6D28D9', fontSize: 10, fontWeight: 700 }}>查看跨页原文证据（{evidencePages.length} 页）</summary>
+                                  <div style={{ display: 'grid', gap: 5, marginTop: 6 }}>
+                                    {evidencePages.map(page => {
+                                      const evidence = (it.sourceEvidence || []).find(row => Number(row?.page) === page)
+                                      const evidenceText = String(evidence?.text || '').trim()
+                                      return (
+                                        <button key={page} type="button" onClick={() => setOcrReviewPage(page)} style={{ textAlign: 'left', border: 'none', borderRadius: 5, padding: '5px 7px', background: page === activePage ? '#EDE9FE' : '#fff', color: '#4A3A6B', cursor: 'pointer', fontSize: 10, lineHeight: 1.45 }}>
+                                          <strong>P{page}</strong>{evidenceText ? `：${evidenceText.slice(0, 320)}${evidenceText.length > 320 ? '…' : ''}` : '：请切换到该页核对原件'}
+                                        </button>
+                                      )
+                                    })}
+                                  </div>
+                                </details>
+                              )}
                               {nonClassificationFlags(it).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
                                 {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ abnormal_unverified: '异常结果待确认', status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || '识别结果待核对'}</span>)}
                               </div>}
