@@ -69,6 +69,7 @@ const { buildReportScreeningCandidates, mergeScreeningProjectionKeys, buildScree
 const { ensureReportItemSourceIds } = require('../utils/reportItemSource');
 const {
   itemTouchesPage,
+  linkedReportItemPages,
   mergeAdjacentReportItemEvidence,
   normalizeReportItemEvidence,
   reportItemSourcePages,
@@ -11248,6 +11249,7 @@ router.post('/medical-reports/:id/parse-page', staffAuth, checkPermissionStrict(
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const linkedPages = linkedReportItemPages(report.reportItems || [], pageNum);
     const pageRunId = crypto.randomUUID();
     const startedAt = new Date();
     const claimed = await MedicalReport.findOneAndUpdate(
@@ -11265,7 +11267,14 @@ router.post('/medical-reports/:id/parse-page', staffAuth, checkPermissionStrict(
         pageParseStatus: { runId: pageRunId, pageNum, status: 'failed', startedAt, completedAt: new Date(), message: error.message },
       } }).catch(() => {});
     });
-    res.json({ success: true, processing: true, message: `第${pageNum}页补提已开始，其他页面不会改动` });
+    res.json({
+      success: true,
+      processing: true,
+      linkedPages,
+      message: linkedPages.length
+        ? `第${pageNum}页补提已开始；跨页项目还关联 P${linkedPages.join('、P')}，已有跨页内容会保留`
+        : `第${pageNum}页补提已开始，其他页面不会改动`,
+    });
   } catch (err) {
     res.status(500).json({ success: false, message: '单页补提失败：' + err.message });
   }

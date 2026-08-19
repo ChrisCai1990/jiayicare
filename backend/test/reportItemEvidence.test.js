@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   itemTouchesPage,
+  linkedReportItemPages,
   mergeAdjacentReportItemEvidence,
   normalizeReportItemEvidence,
   reportItemSourcePages,
@@ -48,6 +49,15 @@ test('multiple evidence inputs are deduplicated and sorted', () => {
     sourcePages: [10, 8, 9],
     sourceEvidence: [{ page: 10 }, { page: 11 }],
   }), [8, 9, 10, 11]);
+});
+
+test('linked pages identify every other evidence page for safe single-page supplementation', () => {
+  assert.deepEqual(linkedReportItemPages([
+    { name: 'A', sourcePages: [21, 22] },
+    { name: 'B', sourcePages: [20, 21, 23] },
+    { name: 'C', sourcePage: 21 },
+  ], 21), [20, 22, 23]);
+  assert.deepEqual(linkedReportItemPages([{ sourcePages: [21, 22] }], 19), []);
 });
 
 test('mongoose report subdocuments normalize into plain snapshot items', () => {

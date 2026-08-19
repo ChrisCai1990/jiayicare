@@ -65,6 +65,15 @@ function itemTouchesPage(item, page) {
   return Boolean(target && reportItemSourcePages(item).includes(target));
 }
 
+function linkedReportItemPages(items = [], page) {
+  const target = positivePage(page);
+  if (!target) return [];
+  return [...new Set((Array.isArray(items) ? items : []).flatMap(item => {
+    const pages = reportItemSourcePages(item);
+    return pages.length > 1 && pages.includes(target) ? pages : [];
+  }).filter(linkedPage => linkedPage !== target))].sort((a, b) => a - b);
+}
+
 function mergeText(left, right) {
   const first = text(left);
   const second = text(right);
@@ -134,6 +143,7 @@ function mergeAdjacentReportItemEvidence(items = []) {
 
 module.exports = {
   itemTouchesPage,
+  linkedReportItemPages,
   mergeAdjacentReportItemEvidence,
   normalizeReportItemEvidence,
   reportItemSourcePages,

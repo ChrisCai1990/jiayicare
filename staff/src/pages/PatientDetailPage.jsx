@@ -2824,6 +2824,13 @@ export default function PatientDetailPage() {
 
   const handleParseCurrentPage = async () => {
     if (!ocrReviewReport || !ocrReviewPage) return
+    const linkedPages = [...new Set((ocrEditItems || []).flatMap(item => {
+      const pages = reportItemEvidencePages(item)
+      return pages.length > 1 && pages.includes(Number(ocrReviewPage)) ? pages : []
+    }).filter(page => page !== Number(ocrReviewPage)))].sort((a, b) => a - b)
+    if (linkedPages.length && !window.confirm(
+      `第${ocrReviewPage}页包含与 P${linkedPages.join('、P')} 相连的跨页项目。\n\n本操作只补提当前页的遗漏项，不会覆盖或删除已有跨页内容；如需更正跨页项目，请在审核表单中核对全部关联页后手工修改。\n\n是否继续补提当前页？`
+    )) return
     setOcrSaving(true)
     try {
       // 先保存当前人工修改，再启动单页补提，避免覆盖尚未保存的审核内容。
@@ -10607,7 +10614,7 @@ export default function PatientDetailPage() {
                       {coverageRiskPages.length > 0 && (
                         <div style={{ marginBottom: 12, padding: '10px 12px', borderRadius: 8, background: '#FFF8E8', border: '1px solid #F2D39A', color: '#7A4B08', fontSize: 12, lineHeight: 1.55 }}>
                           <div style={{ fontWeight: 700, fontSize: 13 }}>提交前还需核对 {coverageRiskPages.length} 页原件</div>
-                          <div style={{ marginTop: 3 }}>这些页面本次识别的项目数少于历史版本。请逐页对照左侧原件；如有缺失，使用底部“重新识别当前页”。</div>
+                          <div style={{ marginTop: 3 }}>这些页面本次识别的项目数少于历史版本。请逐页对照左侧原件；如有缺失，使用底部“补提当前页”。</div>
                           <div style={{ marginTop: 7, display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                             {coverageRiskPages.map(item => (
                               <button key={`coverage-page-${item.page}`} type="button" className="btn btn-secondary btn-sm"
@@ -10962,8 +10969,8 @@ export default function PatientDetailPage() {
                 <div style={{ display: 'flex', gap: 7 }}>
                   <button className="btn btn-secondary"
                     disabled={ocrSaving || pageParsing} onClick={handleParseCurrentPage}
-                    title={`只重新识别原报告第${activePage}页，其他页保持不变`}>
-                    {pageParsing ? `第${activePage}页识别中…` : ocrSaving ? '处理中…' : '重新识别当前页'}
+                    title={`只补提原报告第${activePage}页的遗漏项，已有内容与其他页面保持不变`}>
+                    {pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : '补提当前页'}
                   </button>
                   <button className="btn btn-secondary"
                     disabled={ocrSaving} onClick={handleReclassifyOCR}
