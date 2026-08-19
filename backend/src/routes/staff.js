@@ -63,8 +63,9 @@ const ReportExtraction  = require('../models/ReportExtraction');
 const ReportRevision    = require('../models/ReportRevision');
 const ReportReviewEvent = require('../models/ReportReviewEvent');
 const ReportScreeningCandidate = require('../models/ReportScreeningCandidate');
+const ReportScreeningProjectionEvent = require('../models/ReportScreeningProjectionEvent');
 const TemporaryReportUpload = require('../models/TemporaryReportUpload');
-const { buildReportScreeningCandidates, mergeScreeningProjectionKeys } = require('../utils/reportScreeningProjection');
+const { buildReportScreeningCandidates, mergeScreeningProjectionKeys, buildScreeningProjectionEvents } = require('../utils/reportScreeningProjection');
 const { ensureReportItemSourceIds } = require('../utils/reportItemSource');
 const {
   itemTouchesPage,
@@ -2044,6 +2045,18 @@ router.get('/medical-reports/:id/review-events', staffAuth, checkPermissionStric
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
+router.get('/medical-reports/:id/screening-projection-events', staffAuth, checkPermissionStrict('reports', 'view'), async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id).select('_id');
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const data = await ReportScreeningProjectionEvent.find({ reportId: report._id })
+      .select('reportRevisionId itemId sourceItemIds action source actor occurredAt')
+      .sort({ occurredAt: -1, createdAt: -1 })
+      .lean();
+    res.json({ success: true, data });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
 router.get('/medical-reports/:id/review-integrity', staffAuth, checkPermissionStrict('reports', 'view'), async (req, res) => {
   try {
     const report = await MedicalReport.findById(req.params.id).select('_id currentRevisionId');
@@ -2213,6 +2226,19 @@ router.patch('/medical-reports/:id/screening-candidates/:candidateId', staffAuth
       await upsertScreeningKey(candidate.user, candidate.reportId, target.value, candidate.itemSnapshot?.name, {
         sourceType: 'ocr_review', reportRevisionId: candidate.reportRevisionId,
         sourceItemIds: [candidate.sourceItemId], replaceSourceItemIds: false,
+      });
+      await recordScreeningProjectionEvents({
+        reportId: candidate.reportId,
+        reportRevisionId: candidate.reportRevisionId,
+        user: candidate.user,
+        tenantId: candidate.tenantId || null,
+        events: [{
+          itemId: target.value,
+          sourceItemIds: [candidate.sourceItemId],
+          action: 'activated',
+          source: 'candidate_resolution',
+        }],
+        actor: { id: actor.id, name: actor.name, role: req.staff.role || '' },
       });
       claimed.status = 'resolved';
       claimed.resolvedScreeningKey = target.value;
@@ -9812,12 +9838,41 @@ async function upsertScreeningKey(userId, reportId, key, fallbackName, { sourceT
   );
 }
 
+async function recordScreeningProjectionEvents({ reportId, reportRevisionId, user, tenantId = null, events = [], actor = null }) {
+  if (!reportId || !reportRevisionId || !user || !events.length) return 0;
+  const occurredAt = new Date();
+  await ReportScreeningProjectionEvent.bulkWrite(events.map(event => ({
+    updateOne: {
+      filter: { reportRevisionId, itemId: event.itemId, action: event.action },
+      update: { $setOnInsert: {
+        reportId,
+        reportRevisionId,
+        user,
+        tenantId,
+        itemId: event.itemId,
+        sourceItemIds: event.sourceItemIds || [],
+        action: event.action,
+        source: event.source,
+        actor: actor || {},
+        occurredAt,
+      } },
+      upsert: true,
+    },
+  })));
+  return events.length;
+}
+
 // 将报告已归类项同步写入 UserScreeningItem（upsert，同一 itemId 按 reportId 各自保留一条，支持多年数据并存）
 // 2026-07-09（用户决策"一项只归一类"）：每个检验项只写【一条】——优先医护在审核弹窗确认的单值 screeningKey，
 // 回退 screeningKeys 数组的第一个（最佳匹配）。不再对 AI 多匹配出的每个 screeningKey 都写一条，
 // 从根上消除金娟反馈的"专项筛查里多出 AI 单独生成的部分"（如球蛋白同时被写进肝功能+免疫球蛋白两处）。
 async function syncScreeningItems(userId, reportId, items, { reportRevisionId = null } = {}) {
   try {
+    const existingProjections = await UserScreeningItem.find({
+      user: userId,
+      reportId,
+      sourceType: 'ocr_review',
+    }).select('itemId sourceItemIds').lean();
     const matched = (items || []).filter(it => it.matchStatus === 'matched');
     const grouped = new Map();
     for (const it of matched) {
@@ -9829,13 +9884,27 @@ async function syncScreeningItems(userId, reportId, items, { reportRevisionId = 
       grouped.set(key, current);
     }
     const resolvedCandidates = reportRevisionId
-      ? await ReportScreeningCandidate.find({ reportRevisionId, status: 'resolved' }).select('resolvedScreeningKey').lean()
+      ? await ReportScreeningCandidate.find({ reportRevisionId, status: 'resolved' }).select('resolvedScreeningKey sourceItemId').lean()
       : [];
     // 候选人工归类已经产生的投影属于当前正式版本，审核重试/重新对账时必须保留。
     const syncedKeys = mergeScreeningProjectionKeys([...grouped.keys()], resolvedCandidates);
     for (const [key, group] of grouped) {
       await upsertScreeningKey(userId, reportId, key, group.name, { sourceType: 'ocr_review', reportRevisionId, sourceItemIds: group.sourceItemIds });
     }
+    const resolvedByKey = new Map();
+    for (const candidate of resolvedCandidates) {
+      const key = String(candidate.resolvedScreeningKey || '');
+      if (!key) continue;
+      const row = resolvedByKey.get(key) || [];
+      if (candidate.sourceItemId) row.push(candidate.sourceItemId);
+      resolvedByKey.set(key, row);
+    }
+    const nextProjections = syncedKeys.map(key => {
+      const automatic = grouped.get(key);
+      return automatic
+        ? { itemId: key, sourceItemIds: automatic.sourceItemIds, source: 'automatic_match' }
+        : { itemId: key, sourceItemIds: resolvedByKey.get(key) || [], source: 'candidate_resolution' };
+    });
     // 只清理本机制写入、且当前发布版本已不再包含的投影；历史/人工筛查记录绝不受影响。
     await UserScreeningItem.deleteMany({
       user: userId,
@@ -9843,6 +9912,16 @@ async function syncScreeningItems(userId, reportId, items, { reportRevisionId = 
       sourceType: 'ocr_review',
       itemId: { $nin: syncedKeys },
     });
+    if (reportRevisionId) {
+      const reportMeta = await MedicalReport.findById(reportId).select('tenantId').lean();
+      await recordScreeningProjectionEvents({
+        reportId,
+        reportRevisionId,
+        user: userId,
+        tenantId: reportMeta?.tenantId || null,
+        events: buildScreeningProjectionEvents(existingProjections, nextProjections),
+      });
+    }
     if (syncedKeys.length) console.log(`[screening-sync] userId=${userId} reportId=${reportId} 同步${syncedKeys.length}个筛查投影`);
   } catch (err) {
     console.error('[screening-sync] 失败', String(reportId), err.message);

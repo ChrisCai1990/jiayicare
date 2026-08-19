@@ -21,4 +21,23 @@ function mergeScreeningProjectionKeys(matchedKeys, resolvedCandidates) {
   ].map(String))];
 }
 
-module.exports = { buildReportScreeningCandidates, mergeScreeningProjectionKeys };
+function buildScreeningProjectionEvents(existingProjections, nextProjections) {
+  const existing = new Map((existingProjections || []).filter(item => item?.itemId).map(item => [String(item.itemId), item]));
+  const next = new Map((nextProjections || []).filter(item => item?.itemId).map(item => [String(item.itemId), item]));
+  return [
+    ...[...next.entries()].map(([itemId, item]) => ({
+      itemId,
+      sourceItemIds: [...new Set((item.sourceItemIds || []).filter(Boolean).map(String))],
+      action: 'activated',
+      source: item.source || 'automatic_match',
+    })),
+    ...[...existing.entries()].filter(([itemId]) => !next.has(itemId)).map(([itemId, item]) => ({
+      itemId,
+      sourceItemIds: [...new Set((item.sourceItemIds || []).filter(Boolean).map(String))],
+      action: 'superseded',
+      source: 'version_reconcile',
+    })),
+  ];
+}
+
+module.exports = { buildReportScreeningCandidates, mergeScreeningProjectionKeys, buildScreeningProjectionEvents };

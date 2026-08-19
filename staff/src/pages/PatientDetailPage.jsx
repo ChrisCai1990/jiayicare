@@ -2645,8 +2645,9 @@ export default function PatientDetailPage() {
       staffAPI.getReportRevisions(r._id),
       staffAPI.getReportScreeningCandidates(r._id),
       staffAPI.getReportReviewEvents(r._id),
+      staffAPI.getReportScreeningProjectionEvents(r._id),
       staffAPI.getReportReviewIntegrity(r._id),
-    ]).then(([extractions, revisions, candidates, reviewEvents, reviewIntegrity]) => {
+    ]).then(([extractions, revisions, candidates, reviewEvents, projectionEvents, reviewIntegrity]) => {
       setOcrVersionHistory({
         reportId: r._id,
         extractions: extractions.data || [],
@@ -2654,6 +2655,7 @@ export default function PatientDetailPage() {
         screeningCandidates: candidates.data || [],
         pendingScreeningCount: candidates.pendingCount || 0,
         reviewEvents: reviewEvents.data || [],
+        projectionEvents: projectionEvents.data || [],
         reviewIntegrity: reviewIntegrity.data || null,
       })
       const extractionVersions = (extractions.data || []).slice().sort((a, b) => Number(b.version) - Number(a.version))
@@ -2666,7 +2668,7 @@ export default function PatientDetailPage() {
       }
     }).catch(() => {
       // 旧后端或暂时的网络失败不影响审核主链路；弹窗中会明确显示版本记录暂不可用。
-      setOcrVersionHistory({ reportId: r._id, unavailable: true, extractions: [], revisions: [], screeningCandidates: [], pendingScreeningCount: 0, reviewEvents: [] })
+      setOcrVersionHistory({ reportId: r._id, unavailable: true, extractions: [], revisions: [], screeningCandidates: [], pendingScreeningCount: 0, reviewEvents: [], projectionEvents: [] })
     }).finally(() => setOcrVersionHistoryLoading(false))
     // 列表接口 select('-content') 裁掉了原图内容（体积大），这里按需补拉完整报告，
     // 否则走 content(base64) 存储的报告在审核弹窗左侧会显示"无原始文件可预览"
@@ -10716,6 +10718,18 @@ export default function PatientDetailPage() {
                                 {event.result === 'deduplicated' ? ' · 内容未变化，沿用既有版本' : ''}
                               </div>
                             )) : <div>尚无独立审核操作记录；历史报告可在受控回填后补齐。</div>}
+                            <div style={{ fontWeight: 700, color: '#365347', margin: '8px 0 3px' }}>专项筛查投影变更（{history.projectionEvents?.length || 0}）</div>
+                            {history.projectionEvents?.length ? history.projectionEvents.map(event => {
+                              const revision = history.revisions.find(item => String(item._id) === String(event.reportRevisionId || ''))
+                              const itemLabel = String(event.itemId || '').split('|').filter(Boolean).slice(-1)[0] || '未命名筛查项'
+                              return (
+                                <div key={event._id} style={{ padding: '3px 0' }}>
+                                  {event.action === 'activated' ? '写入/继续生效' : '被新版本撤销'}：{itemLabel}
+                                  {` · 审核 V${revision?.revisionNo || '-'} · ${event.source === 'candidate_resolution' ? '人工归类' : event.source === 'version_reconcile' ? '版本对账' : '审核后自动匹配'} · ${historyTime(event.occurredAt)}`}
+                                  {event.actor?.name ? ` · ${event.actor.name}` : ''}
+                                </div>
+                              )
+                            }) : <div>尚无投影变更事件；启用留痕后的新审核版本会在这里记录。</div>}
                             {ocrRevisionDiffLoading && <div style={{ marginTop: 8 }}>正在计算版本差异…</div>}
                             {ocrRevisionDiff && <div style={{ marginTop: 8, padding: '8px 10px', borderRadius: 6, background: '#F6F9F7', border: '1px solid #DCE9E1' }}>
                               <div style={{ color: '#365347', fontWeight: 700 }}>审核 V{ocrRevisionDiff.currentRevisionNo} 对比 V{ocrRevisionDiff.baselineRevisionNo}：新增 {ocrRevisionDiff.summary?.added || 0} 项 · 移除 {ocrRevisionDiff.summary?.removed || 0} 项 · 修改 {ocrRevisionDiff.summary?.changed || 0} 项</div>

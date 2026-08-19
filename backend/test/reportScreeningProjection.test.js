@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { buildReportScreeningCandidates, mergeScreeningProjectionKeys } = require('../src/utils/reportScreeningProjection');
+const { buildReportScreeningCandidates, mergeScreeningProjectionKeys, buildScreeningProjectionEvents } = require('../src/utils/reportScreeningProjection');
 const { ensureReportItemSourceIds } = require('../src/utils/reportItemSource');
 const { resolveActiveScreeningKey } = require('../src/utils/screeningCatalogKey');
 
@@ -66,4 +66,21 @@ test('审核重试保留当前版本中已经人工确认的候选投影', () =>
       { status: 'dismissed', resolvedScreeningKey: 'other|其他|不应保留' },
     ],
   ), ['chronic|糖尿病|血糖', 'other|其他|新项目']);
+});
+
+test('新正式版本生成追加式投影事件并记录被撤销的旧投影', () => {
+  assert.deepEqual(buildScreeningProjectionEvents(
+    [
+      { itemId: 'keep', sourceItemIds: ['old-1'] },
+      { itemId: 'remove', sourceItemIds: ['old-2'] },
+    ],
+    [
+      { itemId: 'keep', sourceItemIds: ['new-1'], source: 'automatic_match' },
+      { itemId: 'candidate', sourceItemIds: ['new-2'], source: 'candidate_resolution' },
+    ],
+  ), [
+    { itemId: 'keep', sourceItemIds: ['new-1'], action: 'activated', source: 'automatic_match' },
+    { itemId: 'candidate', sourceItemIds: ['new-2'], action: 'activated', source: 'candidate_resolution' },
+    { itemId: 'remove', sourceItemIds: ['old-2'], action: 'superseded', source: 'version_reconcile' },
+  ]);
 });
