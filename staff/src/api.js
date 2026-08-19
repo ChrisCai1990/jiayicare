@@ -91,6 +91,7 @@ export const staffAPI = {
   getReportReviewEvents: (id) => req(`/staff/medical-reports/${id}/review-events`),
   getReportScreeningProjectionEvents: (id) => req(`/staff/medical-reports/${id}/screening-projection-events`),
   getReportReviewIntegrity: (id) => req(`/staff/medical-reports/${id}/review-integrity`),
+  getReportScreeningProjections: (id) => req(`/staff/medical-reports/${id}/screening-projections`),
   reconcileReportReviewIntegrity: (id, requestId) => req(`/staff/medical-reports/${id}/review-integrity/reconcile`, { method: 'POST', body: JSON.stringify({ requestId }) }),
   getReportRevision:    (id, revisionNo) => req(`/staff/medical-reports/${id}/revisions/${revisionNo}`),
   getReportRevisionDiff: (id, revisionNo, baselineNo) => req(`/staff/medical-reports/${id}/revisions/${revisionNo}/compare/${baselineNo}`),

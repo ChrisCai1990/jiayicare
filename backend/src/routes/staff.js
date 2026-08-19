@@ -84,6 +84,7 @@ const { validateReportAssociation } = require('../utils/reportAssociationPolicy'
 const { validateReportScreeningAssociation } = require('../utils/reportScreeningAssociation');
 const { ensureReportAbnormalReview } = require('../utils/reportAbnormalReview');
 const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIntegrity');
+const { buildReportScreeningProjectionView } = require('../utils/reportScreeningProjectionView');
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
 const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/ocrPolicy');
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
@@ -2083,6 +2084,40 @@ router.get('/medical-reports/:id/review-integrity', staffAuth, checkPermissionSt
       return res.status(409).json({ success: false, message: '当前正式版本引用已失效，请联系管理员核查' });
     }
     res.json({ success: true, data: assessReportProjectionIntegrity({ revision, reviewEvents, candidates, projections, projectionEvents }) });
+  } catch (err) { res.status(500).json({ success: false, message: err.message }); }
+});
+
+router.get('/medical-reports/:id/screening-projections', staffAuth, checkPermissionStrict('reports', 'view'), async (req, res) => {
+  try {
+    const report = await MedicalReport.findById(req.params.id)
+      .select('_id currentRevisionId checkDate date institution hospital title')
+      .lean();
+    if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    if (!report.currentRevisionId) {
+      return res.json({ success: true, data: [], reportRevisionId: null, revisionNo: null });
+    }
+
+    const [revision, projections] = await Promise.all([
+      ReportRevision.findOne({ _id: report.currentRevisionId, reportId: report._id })
+        .select('revisionNo items')
+        .lean(),
+      UserScreeningItem.find({
+        reportId: report._id,
+        reportRevisionId: report.currentRevisionId,
+        sourceType: 'ocr_review',
+      }).select('itemId category parentLabel itemLabel status sourceItemIds reportRevisionId sourceType note updatedAt').lean(),
+    ]);
+    if (!revision) {
+      return res.status(409).json({ success: false, message: '当前正式版本引用已失效，请联系管理员核查' });
+    }
+
+    const data = buildReportScreeningProjectionView({ report, revision, projections });
+    res.json({
+      success: true,
+      data,
+      reportRevisionId: report.currentRevisionId,
+      revisionNo: revision.revisionNo,
+    });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 

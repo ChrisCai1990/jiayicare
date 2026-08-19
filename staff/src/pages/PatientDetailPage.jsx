@@ -2068,21 +2068,9 @@ export default function PatientDetailPage() {
       staffAPI.markReportFamilyDoctorViewed(r._id).catch(() => {})
     }
 
-    // 背景异步：拉专项筛查匹配数据（不阻塞弹窗）
-    const reportTitle = r.title || ''
-    const reportDate  = r.checkDate || r.date || ''
-    staffAPI.getScreeningReports(id)
-      .then(res => {
-        const all = res.data || []
-        const matched = all.filter(s => {
-          const l2 = s.screeningL2 || s.title || ''
-          const l2Match = l2 === reportTitle || l2.includes(reportTitle) || reportTitle.includes(l2)
-          if (!l2Match) return false
-          if (!reportDate || !s.checkDate) return true
-          return Math.abs(new Date(reportDate) - new Date(s.checkDate)) / 86400000 <= 30
-        })
-        setReportScreeningData(matched)
-      })
+    // 专项筛查只能来自当前正式审核版本；禁止按标题/日期把报告草稿模糊匹配成投影。
+    staffAPI.getReportScreeningProjections(r._id)
+      .then(res => setReportScreeningData(res.data || []))
       .catch(() => {})
   }
 
@@ -10125,7 +10113,7 @@ export default function PatientDetailPage() {
               {reportScreeningData.length > 0 && (
                 <div style={{ marginTop: 16 }}>
                   <div style={{ fontWeight: 600, fontSize: 13, color: '#1E6B50', marginBottom: 10, paddingBottom: 6, borderBottom: '1px solid #e8f5ef' }}>
-                    专项筛查记录（共 {reportScreeningData.length} 条）
+                    正式版本专项筛查投影（共 {reportScreeningData.length} 条）
                   </div>
                   {reportScreeningData.map((s, idx) => (
                     <div key={s._id || idx} style={{ marginBottom: 14, padding: '12px 14px', background: '#f8fcfa', borderRadius: 8, borderLeft: '3px solid #1E6B50' }}>
