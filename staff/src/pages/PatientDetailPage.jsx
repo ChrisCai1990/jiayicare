@@ -2816,34 +2816,15 @@ export default function PatientDetailPage() {
   }
 
   const handleApproveOCR = async () => {
-    if (!ocrReviewReport) return
-    const coveragePages = (ocrExtractionDiff?.pageCoverage?.emptied || []).map(item => item.page)
-    if (coveragePages.length > 0 && !ocrCoverageAcknowledged) {
-      return toast(`请先确认已核对整页覆盖下降：P${coveragePages.join('、P')}`)
-    }
-    const isScreeningMatched = it => it.matchStatus === 'matched' && (it.screeningKey || it.screeningKeys?.[0])
-    const matchedCount = ocrEditItems.filter(isScreeningMatched).length
-    const unresolvedCount = ocrEditItems.filter(it => !isScreeningMatched(it)).length
-    const exceptionCount = ocrEditItems.filter(it => it.reviewPriority === 'high' || (it.qualityFlags || []).some(flag => flag !== 'unclassified')).length
-    const confirmed = window.confirm(
-      `提交报告审核？\n\n将发布报告项目：${ocrEditItems.length} 项\n需要重点复核：${exceptionCount} 项\n将同步到专项筛查索引（已归类）：${matchedCount} 项\n审核后进入专项筛查待归类队列：${unresolvedCount} 项\n\n未归类项目不阻塞报告发布，也不会提前进入会员筛查记录。`
-    )
-    if (!confirmed) return
     setOcrSaving(true)
     try {
-      const result = await staffAPI.updateReport(ocrReviewReport._id, {
+      await staffAPI.updateReport(ocrReviewReport._id, {
         reportItems: ocrEditItems,
         aiStatus: 'reviewed',
-        reviewAction: 'submit',
-        reviewRequestId: ocrReviewRequestIdRef.current,
-        reviewExtractionId: ocrReviewReport.currentExtractionId || '',
-        reviewBaseRevisionId: ocrReviewReport.currentRevisionId || null,
-        coverageAcknowledgedPages: coveragePages,
+        // staging 继续使用原审核归类：提交后直接写入专项筛查，不创建新归类队列。
+        reviewAction: 'legacy_submit',
       })
-      const candidateCount = Number(result.meta?.pendingScreeningCandidateCount || 0)
-      toast(candidateCount > 0
-        ? `报告审核已提交；另有 ${candidateCount} 项进入专项筛查待归类队列`
-        : '报告审核已提交；已归类项目已同步到专项筛查')
+      toast('审核通过，数据已写入专项筛查，已进入待健康顾问审核')
       setOcrReviewReport(null)
       loadReports()
     } catch (err) { toast(err.message || '保存失败') }
@@ -11175,34 +11156,30 @@ export default function PatientDetailPage() {
                 })()}
               </div>
               </div>
-              <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10 }}>
-                <div style={{ display: 'flex', gap: 7 }}>
-                  <button className="btn btn-secondary"
-                    disabled={ocrSaving || pageParsing} onClick={handleParseCurrentPage}
-                    title={`只补提原报告第${activePage}页的遗漏项，已有内容与其他页面保持不变`}>
-                    {pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : '补提当前页'}
-                  </button>
-                  <button className="btn btn-secondary"
-                    disabled={ocrSaving} onClick={handleReclassifyOCR}
-                    title="用最新专项筛查目录重新匹配所有项目">
-                    {ocrSaving ? '处理中…' : '重新匹配专项筛查'}
-                  </button>
-                  <button className="btn btn-secondary" disabled={ocrSaving} onClick={handleSaveOCRDraft}>
-                    {ocrSaving ? '保存中…' : '保存草稿'}
-                  </button>
-                </div>
-                <div style={{ flex: 1, minWidth: 150, color: coverageRiskPages.length > 0 && !ocrCoverageAcknowledged ? '#9A6700' : '#6F8379', fontSize: 11, lineHeight: 1.4 }}>
-                  {coverageRiskPages.length > 0 && !ocrCoverageAcknowledged
-                    ? `提交前：还需确认 ${coverageRiskPages.length} 页完整性`
-                    : '提交后将生成正式审核版本与专项筛查投影'}
-                </div>
-                <button className="btn btn-sm" style={{ background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
-                  disabled={ocrSaving} onClick={handleRejectOCR}>驳回</button>
-                <button className="btn btn-primary" style={{ minWidth: 190, background: '#22A06B', border: 'none' }}
-                  disabled={ocrSaving || ((ocrExtractionDiff?.pageCoverage?.emptied?.length || 0) > 0 && !ocrCoverageAcknowledged)} onClick={handleApproveOCR}
-                  title={(ocrExtractionDiff?.pageCoverage?.emptied?.length || 0) > 0 && !ocrCoverageAcknowledged ? '请先确认已核对整页覆盖下降' : '生成不可变审核版本及审核后专项筛查投影'}>
-                  {ocrSaving ? '保存中…' : '确认审核并生成正式版本'}
+              <div className="modal-footer" style={{ flexShrink: 0, display: 'flex', gap: 8 }}>
+                <button className="btn btn-secondary" style={{ flex: 0.7 }}
+                  disabled={ocrSaving || pageParsing} onClick={handleParseCurrentPage}
+                  title={`只重新提取原报告第${activePage}页，其他页保持不变`}>
+                  {pageParsing ? `第${activePage}页补提中…` : ocrSaving ? '处理中…' : `补提第${activePage}页`}
                 </button>
+                <button className="btn btn-secondary" style={{ flex: 0.6 }}
+                  disabled={ocrSaving} onClick={handleReclassifyOCR}
+                  title="用最新专项筛查目录重新自动归类所有项目">
+                  {ocrSaving ? '处理中…' : '🔄 重新归类'}
+                </button>
+                <button className="btn btn-secondary" style={{ flex: 0.6 }}
+                  disabled={ocrSaving} onClick={handleSaveOCRDraft}>
+                  {ocrSaving ? '保存中…' : '💾 保存草稿'}
+                </button>
+                <button className="btn btn-primary" style={{ flex: 1, background: '#22A06B', border: 'none' }}
+                  disabled={ocrSaving} onClick={handleApproveOCR}>
+                  {ocrSaving ? '保存中…' : '✓ 提交审核（写入专项筛查）'}
+                </button>
+                <button className="btn btn-sm" style={{ flex: 0.4, background: '#fff0f0', color: '#c00', border: '1px solid #fcc' }}
+                  disabled={ocrSaving} onClick={handleRejectOCR}>
+                  驳回
+                </button>
+                <button className="btn btn-secondary" onClick={() => setOcrReviewReport(null)}>取消</button>
               </div>
             </div>
           </div>

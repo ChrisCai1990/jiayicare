@@ -2585,7 +2585,7 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
     const { title, type, hospital, date, note, aiStatus, screeningCategory, reportYear, reportItems, aiSummary, content, fileUrl, fileUrls, ossKey, ossKeys, mimeType, fileSize, displayRotation, editSource, reviewAction } = req.body;
-    const OCR_REVIEW_ACTIONS = new Set(['save_draft', 'submit', 'reject']);
+    const OCR_REVIEW_ACTIONS = new Set(['save_draft', 'submit', 'reject', 'legacy_submit']);
     if (reviewAction && !OCR_REVIEW_ACTIONS.has(reviewAction)) {
       return res.status(400).json({ success: false, message: '无效的 OCR 审核动作' });
     }
@@ -2594,7 +2594,14 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
     const hasReviewBaseRevisionId = Object.prototype.hasOwnProperty.call(req.body || {}, 'reviewBaseRevisionId');
     const reviewBaseRevisionId = String(req.body?.reviewBaseRevisionId || '').trim();
     if (reviewRequestId.length > 120) return res.status(400).json({ success: false, message: '审核请求标识无效' });
-    const reviewTransitionError = validateOcrReviewTransition({ aiStatus, reviewAction, reviewRequestId });
+    // staging 保留旧版“提交审核即直接写入专项筛查”的归类流程，和正式版本/待归类队列并行隔离。
+    const isLegacyStagingSubmit = reviewAction === 'legacy_submit' && process.env.DEPLOYMENT_ENV === 'staging';
+    if (reviewAction === 'legacy_submit' && !isLegacyStagingSubmit) {
+      return res.status(400).json({ success: false, message: '旧版归类流程仅允许在 staging 环境使用' });
+    }
+    const reviewTransitionError = isLegacyStagingSubmit
+      ? ''
+      : validateOcrReviewTransition({ aiStatus, reviewAction, reviewRequestId });
     if (reviewTransitionError) return res.status(400).json({ success: false, message: reviewTransitionError });
     if (['submit', 'reject'].includes(reviewAction) && reviewRequestId) {
       const completedReview = await ReportReviewEvent.findOne({ reportId: report._id, requestId: reviewRequestId }).lean();
@@ -2986,7 +2993,7 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
 
     // 正式提交才创建审核版本；保存草稿仍只修改当前工作副本，避免把未完成编辑当作正式数据。
     let publishedRevision = null;
-    if (aiStatus === 'reviewed' && report.user) {
+    if (aiStatus === 'reviewed' && report.user && !isLegacyStagingSubmit) {
       publishedRevision = await publishReportRevision(report, formalReviewContext);
     }
     if (publishedRevision && auditFinalizeContext) {
