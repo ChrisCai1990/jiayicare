@@ -5,7 +5,7 @@ const mongoose = require('mongoose');
 const MedicalReport = require('../src/models/MedicalReport');
 const ReportExtraction = require('../src/models/ReportExtraction');
 const ReportRevision = require('../src/models/ReportRevision');
-const { buildReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../src/utils/reportOriginalEvidence');
+const { buildReportSourceFiles, mergeReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../src/utils/reportOriginalEvidence');
 
 const fileEvidence = {
   ossKey: 'reports/original.pdf',
@@ -52,6 +52,11 @@ test('original evidence is normalized and invalid hashes are never presented as 
   assert.equal(buildReportSourceFiles([{ ...fileEvidence, sha256: 'not-a-hash' }])[0].sha256, '');
   assert.equal(reportHasOriginal({ sourceFiles: [fileEvidence] }), true);
   assert.equal(reportHasOriginal({ fileUrls: [], ossKeys: [], sourceFiles: [] }), false);
+});
+
+test('appending original evidence preserves order and never duplicates an OSS object', () => {
+  const second = { ...fileEvidence, ossKey: 'reports/page-2.pdf', sha256: 'e'.repeat(64) };
+  assert.deepEqual(mergeReportSourceFiles([fileEvidence], [fileEvidence, second]), [fileEvidence, second]);
 });
 
 test('report preview rotation is display metadata with a bounded quarter-turn value', () => {

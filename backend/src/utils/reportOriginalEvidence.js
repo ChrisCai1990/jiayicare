@@ -19,6 +19,17 @@ function buildReportSourceFiles(files) {
   }).filter(file => file.ossKey);
 }
 
+function mergeReportSourceFiles(currentFiles, appendedFiles) {
+  const merged = [];
+  const seen = new Set();
+  for (const file of buildReportSourceFiles([...(currentFiles || []), ...(appendedFiles || [])])) {
+    if (seen.has(file.ossKey)) continue;
+    seen.add(file.ossKey);
+    merged.push(file);
+  }
+  return merged;
+}
+
 function reportHasOriginal(report) {
   return Boolean(
     report?.fileUrl
@@ -70,6 +81,7 @@ function toSafeVersionOriginalEvidence(value) {
 
 module.exports = {
   buildReportSourceFiles,
+  mergeReportSourceFiles,
   reportHasOriginal,
   summarizeReportOriginalEvidence,
   compareReportOriginalEvidence,

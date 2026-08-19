@@ -225,6 +225,7 @@ async function main() {
     assert.equal(reportAfterDraft.currentRevisionId ?? null, null);
     assert.ok(reportAfterDraft.dataEditLog.some(entry => entry.sourceItemId === 'e2e-draft-item' && entry.field === '__item_added__'));
     assert.ok(reportAfterDraft.ocrCorrectionLog.some(entry => entry.sourceItemId === 'e2e-draft-item' && entry.field === '__item_added__'));
+    assert.equal(await UserScreeningItem.countDocuments({ reportId }), 0);
 
     const reviewRequestId = crypto.randomUUID();
     await request(baseUrl, `/api/staff/medical-reports/${reportId}`, staffToken, {
@@ -382,7 +383,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'draft_correction_traced', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'draft_correction_traced', 'draft_projection_blocked', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));

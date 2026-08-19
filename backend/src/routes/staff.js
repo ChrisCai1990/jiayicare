@@ -77,7 +77,7 @@ const {
 } = require('../utils/reportItemEvidence');
 const { resolveActiveScreeningKey } = require('../utils/screeningCatalogKey');
 const { createReportUploadToken, verifyReportUploadTokens } = require('../utils/reportUploadToken');
-const { buildReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../utils/reportOriginalEvidence');
+const { buildReportSourceFiles, mergeReportSourceFiles, reportHasOriginal, summarizeReportOriginalEvidence, compareReportOriginalEvidence, toSafeVersionOriginalEvidence } = require('../utils/reportOriginalEvidence');
 const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction, validateOcrVersionBinding } = require('../utils/reportReviewPolicy');
 const { ALLOWED_REPORT_MIME_TYPES, assertReportFileBuffer, assertVerifiedReportOriginals } = require('../utils/reportUploadPolicy');
 const { validateReportAssociation } = require('../utils/reportAssociationPolicy');
@@ -7929,7 +7929,7 @@ ${candText}
 
 // ── 4.3 专项筛查：录入筛查结果（支持图片/PDF上传） ────────────────
 // POST /api/staff/patients/:id/screening-records
-router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array('files', 10), async (req, res) => {
+router.post('/patients/:id/screening-records', staffAuth, checkAnyPermissionStrict('reports', ['create', 'audit']), uploadScreening.array('files', 10), async (req, res) => {
   try {
     const { title, screeningCategory, checkDate, hospital, note,
             screeningL1, screeningL2, screeningL3, examDescription, examConclusion } = req.body;
@@ -7946,6 +7946,12 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
     const ossKeys = uploadedFiles.map(file => file.key);
     const fileUrl  = fileUrls[0] || '';
     const mimeType = uploadedFiles[0] ? uploadedFiles[0].mimeType : '';
+    const sourceFiles = buildReportSourceFiles(uploadedFiles.map(file => ({
+      ossKey: file.key,
+      sha256: file.sha256,
+      mimeType: file.mimeType,
+      fileSize: file.fileSize,
+    })));
     // 前端已明确传 reportItems，直接使用（不再从 screeningL3Items 兜底）
     const finalReportItems = reportItems;
     // screeningCategory/type 只接受固定 enum，L1 ObjectId 不合法，统一存 'other'
@@ -7955,9 +7961,11 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
     const safeType     = VALID_TYPES.includes(screeningCategory)     ? screeningCategory : 'other';
     // 查重：同一会员、同一检查日期、同一 screeningL1，更新已有记录而非新建
     let report;
-    const existing = checkDate && screeningL1
+    let existing = checkDate && screeningL1
       ? await MedicalReport.findOne({ user: req.params.id, checkDate, screeningL1 })
       : null;
+    // 有新原件时只允许填充无文件占位记录；已有原件必须新建报告，不能静默覆盖历史证据。
+    if (existing && fileUrl && reportHasOriginal(existing)) existing = null;
     if (existing) {
       if (finalReportItems.length) existing.reportItems = finalReportItems;
       if (screeningL2)        existing.screeningL2       = screeningL2;
@@ -7967,7 +7975,7 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
       if (examConclusion)     existing.examConclusion    = examConclusion;
       if (hospital)           existing.hospital          = hospital;
       if (note)               existing.note              = note;
-      if (fileUrl)            { existing.fileUrl = fileUrl; existing.fileUrls = fileUrls; existing.ossKey = ossKeys[0] || ''; existing.ossKeys = ossKeys; existing.mimeType = mimeType; }
+      if (fileUrl)            { existing.fileUrl = fileUrl; existing.fileUrls = fileUrls; existing.ossKey = ossKeys[0] || ''; existing.ossKeys = ossKeys; existing.sourceFiles = sourceFiles; existing.mimeType = mimeType; }
       report = await existing.save();
     } else {
       report = await MedicalReport.create({
@@ -7989,39 +7997,52 @@ router.post('/patients/:id/screening-records', staffAuth, uploadScreening.array(
         fileUrls,
         ossKey:           ossKeys[0] || '',
         ossKeys,
+        sourceFiles,
         mimeType,
         audit_status:     'unaudited',
         uploadedBy:       req.staff._id,
       });
     }
 
-    // 医护手动录入也同步写入 UserScreeningItem，跟AI自动归类共用同一份"当前状态"索引，
-    // 避免手动录入和AI识别各存一份、专项筛查视图里出现重复/对不上账
-    if (screeningL1 && screeningL2 && screeningL3Items.length) {
-      for (const name of screeningL3Items) {
-        const key = `${screeningL1}|${screeningL2}|${name}`;
-        await upsertScreeningKey(req.params.id, report._id, key, name);
-      }
-    }
+    // 此处只保存待审核报告。专项筛查投影统一在正式审核版本发布后生成，避免手工录入
+    // 绕过版本绑定、审核人和审核时间直接进入会员筛查结果。
 
     res.json({ success: true, data: report });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // DELETE /api/staff/patients/:id/screening-records/:rid
-router.delete('/patients/:id/screening-records/:rid', staffAuth, async (req, res) => {
+router.delete('/patients/:id/screening-records/:rid', staffAuth, checkPermissionStrict('reports', 'delete'), async (req, res) => {
   try {
-    const report = await MedicalReport.findOneAndDelete({ _id: req.params.rid, user: req.params.id });
+    const report = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id });
     if (!report) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (report.audit_status === 'audited' || report.currentRevisionId || await ReportRevision.exists({ reportId: report._id })) {
+      return res.status(409).json({ success: false, message: '已审核或已有正式版本的报告不可直接删除' });
+    }
     const keysToDelete = report.ossKeys?.length ? report.ossKeys : (report.ossKey ? [report.ossKey] : []);
+    await Promise.all([
+      ReportExtraction.deleteMany({ reportId: report._id }),
+      ReportScreeningCandidate.deleteMany({ reportId: report._id }),
+      ReportReviewEvent.deleteMany({ reportId: report._id }),
+      UserScreeningItem.deleteMany({ reportId: report._id }),
+    ]);
+    await report.deleteOne();
     await Promise.all(keysToDelete.map(key => deleteFile(key)));
     res.json({ success: true, message: '已删除' });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
 // PATCH /api/staff/patients/:id/screening-records/:rid
-router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.array('files', 10), async (req, res) => {
+router.patch('/patients/:id/screening-records/:rid', staffAuth, checkAnyPermissionStrict('reports', ['create', 'audit']), uploadScreening.array('files', 10), async (req, res) => {
   try {
+    const existingReport = await MedicalReport.findOne({ _id: req.params.rid, user: req.params.id });
+    if (!existingReport) return res.status(404).json({ success: false, message: '记录不存在' });
+    if (existingReport.audit_status === 'audited' || existingReport.currentRevisionId || await ReportRevision.exists({ reportId: existingReport._id })) {
+      return res.status(409).json({ success: false, message: '已审核或已有正式版本的报告不可修改，请新建记录保留历史版本' });
+    }
+    if (req.files?.length && (existingReport.currentExtractionId || await ReportExtraction.exists({ reportId: existingReport._id }))) {
+      return res.status(409).json({ success: false, message: '该报告已有识别版本，不能追加原件；请新建报告后重新识别' });
+    }
     const { title, checkDate, hospital, note, screeningL1, screeningL2, screeningL3, examDescription, examConclusion } = req.body;
     const raw = req.body.reportItems;
     const reportItems = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : undefined);
@@ -8044,26 +8065,20 @@ router.patch('/patients/:id/screening-records/:rid', staffAuth, uploadScreening.
       const newUrls = uploadedFiles.map(file => file.url);
       const newOssKeys = uploadedFiles.map(file => file.key);
       // 追加到已有文件列表
-      const existing = await MedicalReport.findById(req.params.rid).select('fileUrls fileUrl ossKeys ossKey');
-      const existingUrls = existing?.fileUrls?.length ? existing.fileUrls : (existing?.fileUrl ? [existing.fileUrl] : []);
-      const existingOssKeys = existing?.ossKeys?.length ? existing.ossKeys : (existing?.ossKey ? [existing.ossKey] : []);
+      const existingUrls = existingReport.fileUrls?.length ? existingReport.fileUrls : (existingReport.fileUrl ? [existingReport.fileUrl] : []);
+      const existingOssKeys = existingReport.ossKeys?.length ? existingReport.ossKeys : (existingReport.ossKey ? [existingReport.ossKey] : []);
+      const appendedSourceFiles = uploadedFiles.map(file => ({ ossKey: file.key, sha256: file.sha256, mimeType: file.mimeType, fileSize: file.fileSize }));
       update.fileUrls = [...existingUrls, ...newUrls];
       update.ossKeys = [...existingOssKeys, ...newOssKeys];
       update.fileUrl  = update.fileUrls[0];
       update.ossKey = update.ossKeys[0] || '';
+      update.sourceFiles = mergeReportSourceFiles(existingReport.sourceFiles, appendedSourceFiles);
       update.mimeType = uploadedFiles[0].mimeType;
     }
     const report = await MedicalReport.findOneAndUpdate({ _id: req.params.rid, user: req.params.id }, { $set: update }, { new: true });
     if (!report) return res.status(404).json({ success: false, message: '记录不存在' });
 
-    // 同 POST：编辑手动录入的筛查记录也要重新同步 UserScreeningItem
-    const syncL1 = report.screeningL1, syncL2 = report.screeningL2, syncL3Items = report.screeningL3Items || [];
-    if (syncL1 && syncL2 && syncL3Items.length) {
-      for (const name of syncL3Items) {
-        const key = `${syncL1}|${syncL2}|${name}`;
-        await upsertScreeningKey(req.params.id, report._id, key, name);
-      }
-    }
+    // 编辑仍只更新待审核工作副本；专项筛查投影由正式审核版本统一派生。
 
     res.json({ success: true, data: report });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
