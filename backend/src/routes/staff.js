@@ -86,6 +86,7 @@ const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/oc
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
 const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
 const { mapWithConcurrency } = require('../utils/asyncPool');
+const { buildFullOcrClaimFilter, buildPageOcrClaimFilter, buildOcrRunOwnerFilter, buildPageOcrRunOwnerFilter } = require('../utils/reportOcrRun');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
   PEDIATRIC_BODY_COMPOSITION_PROMPT,
@@ -2841,10 +2842,20 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       const { isFunctionalMedicineL1 } = require('../utils/screeningMatch');
       const skipAi = await isFunctionalMedicineL1(report.screeningL1);
       if (!skipAi && process.env.QWEN_API_KEY) {
-        await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'processing' });
-        runReportParse(report._id).catch(err => {
+        const runId = crypto.randomUUID();
+        const claimed = await MedicalReport.findOneAndUpdate(
+          buildFullOcrClaimFilter(report._id),
+          { $set: {
+            aiStatus: 'processing',
+            ocrVersion: OCR_POLICY_VERSION,
+            pageParseStatus: null,
+            ocrProgress: { runId, stage: 'queued', message: '归类已更新，正在重新识别', elapsedMs: 0, updatedAt: new Date() },
+          } },
+          { new: true },
+        );
+        if (claimed) runReportParse(report._id, { mode: 'v2', runId }).catch(err => {
           console.error('[parse-ai] 归类变更后台重新解析异常', String(report._id), err.message);
-          MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' }).catch(() => {});
+          MedicalReport.updateOne(buildOcrRunOwnerFilter(report._id, runId), { $set: { aiStatus: 'pending' } }).catch(() => {});
         });
       }
     }
@@ -9637,9 +9648,13 @@ function fillEmptyDiagnosisFromFindings(items) {
   });
 }
 
-// 为已完成 OCR 生成不可变识别快照。失败不应影响主识别链路，因此调用端按 best-effort 处理。
-async function snapshotReportExtraction(reportId, { origin = 'ocr', reparsePage = null } = {}) {
-  const report = await MedicalReport.findById(reportId).lean();
+// 为已完成 OCR 生成不可变识别快照。只有仍持有任务运行权的调用方才能激活新版本；
+// 快照失败时保持 processing，避免未版本化的工作副本进入正式审核。
+async function snapshotReportExtraction(reportId, { origin = 'ocr', reparsePage = null, runId = '', pageRunId = '' } = {}) {
+  const ownerFilter = pageRunId
+    ? buildPageOcrRunOwnerFilter(reportId, pageRunId)
+    : buildOcrRunOwnerFilter(reportId, runId);
+  const report = await MedicalReport.findOne(ownerFilter).lean();
   if (!report?.user) return null;
   for (let attempt = 0; attempt < 3; attempt++) {
     const latest = await ReportExtraction.findOne({ reportId }).sort({ version: -1 }).select('version').lean();
@@ -9663,11 +9678,15 @@ async function snapshotReportExtraction(reportId, { origin = 'ocr', reparsePage 
         items: normalizeReportItemEvidence(report.reportItems || []),
         aiSummary: report.aiSummary || '',
       });
+      const activated = await MedicalReport.updateOne(ownerFilter, { $set: { currentExtractionId: extraction._id } });
+      if (!activated.modifiedCount) {
+        await ReportExtraction.updateOne({ _id: extraction._id }, { $set: { status: 'superseded' } });
+        return null;
+      }
       await ReportExtraction.updateMany(
         { reportId, _id: { $ne: extraction._id }, status: 'ready_for_review' },
         { $set: { status: 'superseded' } },
       );
-      await MedicalReport.updateOne({ _id: reportId }, { $set: { currentExtractionId: extraction._id } });
       return extraction;
     } catch (err) {
       if (err?.code !== 11000 || attempt === 2) throw err;
@@ -10061,7 +10080,9 @@ async function runReportParse(reportId, options = {}) {
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { assessReportItems, isClearlyNonDetailTextPage, formatTextLayerEvidence, formatAdjacentTextLayerContext, selectGenericCoverageAuditPages, recoverExplicitUltrasoundRowsFromTextLayer } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
-  const report = await MedicalReport.findById(reportId);
+  const runId = str(options.runId);
+  const runFilter = buildOcrRunOwnerFilter(reportId, runId);
+  const report = await MedicalReport.findOne(runFilter);
   if (!report) return;
   const requestedMode = options.mode === 'legacy' ? 'legacy' : 'v2';
   const useOcrV2 = requestedMode !== 'legacy';
@@ -10084,8 +10105,8 @@ async function runReportParse(reportId, options = {}) {
   const t0 = Date.now();
   const setOcrProgress = (stage, message, extra = {}) => {
     if (!useOcrV2) return;
-    MedicalReport.findByIdAndUpdate(reportId, {
-      ocrProgress: { stage, message, elapsedMs: Date.now() - t0, updatedAt: new Date(), ...extra },
+    MedicalReport.findOneAndUpdate(runFilter, {
+      ocrProgress: { runId, stage, message, elapsedMs: Date.now() - t0, updatedAt: new Date(), ...extra },
     }).catch(() => {});
   };
   try {
@@ -10679,7 +10700,7 @@ async function runReportParse(reportId, options = {}) {
         : failedPages > 0
           ? `${summaryText}${summaryText ? '\n' : ''}⚠️ 有${failedPages}/${totalPageCount}页识别失败，请核对是否有遗漏项目`
           : summaryText;
-      await MedicalReport.findByIdAndUpdate(reportId, {
+      const accepted = await MedicalReport.updateOne(runFilter, { $set: {
         reportItems: qualityItems,
         aiSummary:   aiSummaryOut,
         aiStatus:    'processing',
@@ -10697,14 +10718,16 @@ async function runReportParse(reportId, options = {}) {
           review: qualityItems.filter(item => item.reviewPriority === 'review').length,
             high: qualityItems.filter(item => item.reviewPriority === 'high').length,
           },
-          ocrProgress: { stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
+          ocrProgress: { runId, stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
         } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
-      });
-      await snapshotReportExtraction(reportId);
-      await MedicalReport.findByIdAndUpdate(reportId, {
+      } });
+      if (!accepted.modifiedCount) return;
+      const extraction = await snapshotReportExtraction(reportId, { runId });
+      if (!extraction) return;
+      await MedicalReport.updateOne(runFilter, { $set: {
         aiStatus: 'pending',
-        ...(useOcrV2 ? { ocrProgress: { stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount } } : {}),
-      });
+        ...(useOcrV2 ? { ocrProgress: { runId, stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount } } : {}),
+      } });
       const totalMs = Date.now() - t0;
       console.log(`[parse-ai] PDF完成 ${reportId} 共${totalPageCount}页 成功${okPages}页 提取${allItems.length}项 归类${matchedCount}项 | 总耗时${(totalMs/1000).toFixed(1)}s`);
       return;
@@ -10848,7 +10871,7 @@ async function runReportParse(reportId, options = {}) {
     const imgSummary = imageOkCount
       ? [...new Set(imageSummaries.map(s => str(s)).filter(Boolean))].join('\n')
       : `⚠️ 自动识别失败：未能提取到数据（可能是AI服务额度不足或网络异常），请重新识别或人工录入${lastRawText ? '\n原始返回(前200字): ' + String(lastRawText).slice(0, 200) : ''}`;
-    await MedicalReport.findByIdAndUpdate(reportId, {
+    const accepted = await MedicalReport.updateOne(runFilter, { $set: {
       reportItems: qualityImageItems,
       aiSummary:   imgSummary,
       aiStatus:    'processing',
@@ -10865,33 +10888,37 @@ async function runReportParse(reportId, options = {}) {
           review: qualityImageItems.filter(item => item.reviewPriority === 'review').length,
           high: qualityImageItems.filter(item => item.reviewPriority === 'high').length,
         },
-        ocrProgress: { stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length },
+        ocrProgress: { runId, stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length },
       } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
-    });
-    await snapshotReportExtraction(reportId);
-    await MedicalReport.findByIdAndUpdate(reportId, {
+    } });
+    if (!accepted.modifiedCount) return;
+    const extraction = await snapshotReportExtraction(reportId, { runId });
+    if (!extraction) return;
+    await MedicalReport.updateOne(runFilter, { $set: {
       aiStatus: 'pending',
-      ...(useOcrV2 ? { ocrProgress: { stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length } } : {}),
-    });
+      ...(useOcrV2 ? { ocrProgress: { runId, stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length } } : {}),
+    } });
     console.log(`[parse-ai] 图片完成 ${reportId} 共${bufs.length}张 成功${imageOkCount}张 提取${imageItems.length}项 自动归类${classifiedImg.filter(i=>i.matchStatus==='matched').length}项 | 总耗时${((Date.now()-t0)/1000).toFixed(1)}s`);
   } catch (e) {
     console.error('[parse-ai] 解析失败', String(reportId), e.message);
     setOcrProgress('failed', `识别失败：${e.message}`);
-    await MedicalReport.findByIdAndUpdate(reportId, {
+    await MedicalReport.updateOne(runFilter, { $set: {
       aiStatus: 'pending',
       aiSummary: '自动识别失败：' + e.message + '（请人工录入或重新识别）',
-    }).catch(() => {});
+    } }).catch(() => {});
   }
 }
 
 // 只补提指定PDF页并与该页已有结果合并；其他页面及其人工审核内容完全保留。
-async function runReportPageParse(reportId, pageNum) {
+async function runReportPageParse(reportId, pageNum, options = {}) {
   const { parseImage } = require('../utils/ai');
   const { fetchReportBuffer, fetchReportBuffers, extractPdfTextLayer, renderSinglePage, renderSinglePageRegions, renderSinglePageColumns, splitImageColumns, isPdfReport } = require('../utils/pdf');
   const { classifyItemsAsync } = require('../utils/screeningMatch');
   const { assessReportItems, formatTextLayerEvidence } = require('../utils/reportOcrQuality');
   const MedicalReport = require('../models/MedicalReport');
-  const report = await MedicalReport.findById(reportId);
+  const pageRunId = str(options.runId);
+  const pageRunFilter = buildPageOcrRunOwnerFilter(reportId, pageRunId);
+  const report = await MedicalReport.findOne(pageRunFilter);
   if (!report) throw new Error('报告不存在');
   const reportUser = await User.findById(report.user).select('age').lean();
   const usePediatricBodyComposition = isPediatricAge(reportUser?.age);
@@ -10959,7 +10986,8 @@ async function runReportPageParse(reportId, pageNum) {
   if (useShaoyifuTemplate) newPage = shaoyifuTemplate.normalizeShaoyifuItems(newPage);
   if (useZheyiTemplate) newPage = zheyiTemplate.normalizeZheyiItems(newPage);
   newPage = normalizeSingleExamReportItems(normalizeDepartmentExamItems(normalizeBreathTestItems(newPage, report)), report);
-  const latest = await MedicalReport.findById(reportId);
+  const latest = await MedicalReport.findOne(pageRunFilter);
+  if (!latest) return;
   const oldPage = (latest.reportItems || []).filter(item => itemTouchesPage(item, pageNum));
   const mergedPage = mergeCoverageAuditItems(oldPage, newPage);
   const classifiedRawPage = await classifyItemsAsync(mergedPage);
@@ -10967,16 +10995,18 @@ async function runReportPageParse(reportId, pageNum) {
   const preserved = (latest.reportItems || []).filter(item => !itemTouchesPage(item, pageNum));
   const combined = ensureReportItemSourceIds(normalizeReportItemEvidence([...preserved, ...classifiedPage]
     .sort((a, b) => Number(a.sourcePage || 0) - Number(b.sourcePage || 0))));
-  await MedicalReport.findByIdAndUpdate(reportId, {
+  const accepted = await MedicalReport.updateOne(pageRunFilter, { $set: {
     reportItems: combined,
     aiStatus: 'processing',
-    pageParseStatus: { pageNum, status: 'processing', startedAt: report.pageParseStatus?.startedAt || new Date(), message: `第${pageNum}页补提完成，正在保存识别版本`, itemCount: classifiedPage.length },
-  });
-  await snapshotReportExtraction(reportId, { origin: 'page_reparse', reparsePage: pageNum });
-  await MedicalReport.findByIdAndUpdate(reportId, {
+    pageParseStatus: { runId: pageRunId, pageNum, status: 'processing', startedAt: report.pageParseStatus?.startedAt || new Date(), message: `第${pageNum}页补提完成，正在保存识别版本`, itemCount: classifiedPage.length },
+  } });
+  if (!accepted.modifiedCount) return;
+  const extraction = await snapshotReportExtraction(reportId, { origin: 'page_reparse', reparsePage: pageNum, pageRunId });
+  if (!extraction) return;
+  await MedicalReport.updateOne(pageRunFilter, { $set: {
     aiStatus: 'pending',
-    pageParseStatus: { pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: `第${pageNum}页补提完成，共${classifiedPage.length}项`, itemCount: classifiedPage.length },
-  });
+    pageParseStatus: { runId: pageRunId, pageNum, status: 'success', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: `第${pageNum}页补提完成，共${classifiedPage.length}项`, itemCount: classifiedPage.length },
+  } });
   console.log(`[parse-page] ${reportId} P${pageNum} 完成：${oldPage.length}→${classifiedPage.length}，其他页保留${preserved.length}项`);
 }
 
@@ -11020,15 +11050,14 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, checkPermissionStrict('r
       await MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' });
       return res.json({ success: true, message: '该格式暂不支持自动解析，已加入待审核队列' });
     }
-    if (report.aiStatus === 'processing') {
-      return res.json({ success: true, processing: true, message: '正在识别中，请稍候刷新' });
-    }
-
-    // 标记处理中，立即返回；识别在后台进行，避免多页 PDF 阻塞请求超时
+    // 原子占用任务，避免两个请求同时越过“处理中”判断；超过租约时间的旧任务允许恢复，
+    // 但它后续的进度、结果与版本写入都会被 runId 隔离。
+    const runId = crypto.randomUUID();
     const processingUpdate = {
       aiStatus: 'processing',
       ocrVersion: OCR_POLICY_VERSION,
-      ocrProgress: { stage: 'queued', message: '识别任务已提交，正在准备解析', elapsedMs: 0, updatedAt: new Date() },
+      pageParseStatus: null,
+      ocrProgress: { runId, stage: 'queued', message: '识别任务已提交，正在准备解析', elapsedMs: 0, updatedAt: new Date() },
     };
     if (isAuditedReparse) {
       Object.assign(processingUpdate, {
@@ -11037,10 +11066,17 @@ router.post('/medical-reports/:id/parse-ai', staffAuth, checkPermissionStrict('r
         familyDoctorAudit: { status: 'pending', by: null, byName: '', at: null, editLog: [] },
       });
     }
-    await MedicalReport.findByIdAndUpdate(report._id, processingUpdate);
-    runReportParse(report._id, { mode: parseMode }).catch(err => {
+    const claimed = await MedicalReport.findOneAndUpdate(
+      buildFullOcrClaimFilter(report._id),
+      { $set: processingUpdate },
+      { new: true },
+    );
+    if (!claimed) {
+      return res.json({ success: true, processing: true, duplicate: true, message: '已有识别或单页补提任务正在运行，请稍候刷新' });
+    }
+    runReportParse(report._id, { mode: parseMode, runId }).catch(err => {
       console.error('[parse-ai] 后台任务异常', String(report._id), err.message);
-      MedicalReport.findByIdAndUpdate(report._id, { aiStatus: 'pending' }).catch(() => {});
+      MedicalReport.updateOne(buildOcrRunOwnerFilter(report._id, runId), { $set: { aiStatus: 'pending' } }).catch(() => {});
     });
 
     res.json({
@@ -11062,16 +11098,22 @@ router.post('/medical-reports/:id/parse-page', staffAuth, checkPermissionStrict(
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
-    if (report.pageParseStatus?.status === 'processing' && Number(report.pageParseStatus.pageNum) === pageNum) {
-      return res.json({ success: true, processing: true, duplicate: true, message: `第${pageNum}页正在补提，请勿重复点击` });
+    const pageRunId = crypto.randomUUID();
+    const startedAt = new Date();
+    const claimed = await MedicalReport.findOneAndUpdate(
+      buildPageOcrClaimFilter(report._id),
+      { $set: { pageParseStatus: { runId: pageRunId, pageNum, status: 'processing', startedAt, message: `正在补提第${pageNum}页` } } },
+      { new: true },
+    );
+    if (!claimed) {
+      return res.json({ success: true, processing: true, duplicate: true, message: '已有完整识别或单页补提任务正在运行，请稍候刷新' });
     }
-    await MedicalReport.findByIdAndUpdate(report._id, { pageParseStatus: { pageNum, status: 'processing', startedAt: new Date(), message: `正在补提第${pageNum}页` } });
-    runReportPageParse(report._id, pageNum).catch(async error => {
+    runReportPageParse(report._id, pageNum, { runId: pageRunId }).catch(async error => {
       console.error(`[parse-page] ${report._id} P${pageNum} 失败:`, error.message);
-      await MedicalReport.findByIdAndUpdate(report._id, {
+      await MedicalReport.updateOne(buildPageOcrRunOwnerFilter(report._id, pageRunId), { $set: {
         aiStatus: 'pending',
-        pageParseStatus: { pageNum, status: 'failed', startedAt: report.pageParseStatus?.startedAt || new Date(), completedAt: new Date(), message: error.message },
-      }).catch(() => {});
+        pageParseStatus: { runId: pageRunId, pageNum, status: 'failed', startedAt, completedAt: new Date(), message: error.message },
+      } }).catch(() => {});
     });
     res.json({ success: true, processing: true, message: `第${pageNum}页补提已开始，其他页面不会改动` });
   } catch (err) {

@@ -26,6 +26,7 @@ const ReportReviewEvent = require('../src/models/ReportReviewEvent');
 const ReportScreeningCandidate = require('../src/models/ReportScreeningCandidate');
 const UserScreeningItem = require('../src/models/UserScreeningItem');
 const { createReportUploadToken } = require('../src/utils/reportUploadToken');
+const { buildFullOcrClaimFilter, buildPageOcrClaimFilter, buildOcrRunOwnerFilter } = require('../src/utils/reportOcrRun');
 const staffRouter = require('../src/routes/staff');
 const reportsRouter = require('../src/routes/reports');
 
@@ -116,6 +117,40 @@ async function main() {
     assert.equal(replayed.meta?.deduplicated, true);
     assert.equal(await MedicalReport.countDocuments({ user: user._id, uploadedBy: staff._id, uploadRequestId }), 1);
 
+    const [firstFullClaim, secondFullClaim] = await Promise.all([
+      MedicalReport.findOneAndUpdate(
+        buildFullOcrClaimFilter(reportId),
+        { $set: { aiStatus: 'processing', ocrProgress: { runId: 'e2e-full-1', updatedAt: new Date() } } },
+        { new: true },
+      ),
+      MedicalReport.findOneAndUpdate(
+        buildFullOcrClaimFilter(reportId),
+        { $set: { aiStatus: 'processing', ocrProgress: { runId: 'e2e-full-2', updatedAt: new Date() } } },
+        { new: true },
+      ),
+    ]);
+    assert.equal(Number(Boolean(firstFullClaim)) + Number(Boolean(secondFullClaim)), 1);
+    const activeFullRunId = firstFullClaim?.ocrProgress?.runId || secondFullClaim?.ocrProgress?.runId;
+    const staleFullRunId = activeFullRunId === 'e2e-full-1' ? 'e2e-full-2' : 'e2e-full-1';
+    const staleWrite = await MedicalReport.updateOne(buildOcrRunOwnerFilter(reportId, staleFullRunId), { $set: { aiSummary: 'must-not-win' } });
+    assert.equal(staleWrite.modifiedCount, 0);
+
+    await MedicalReport.updateOne({ _id: reportId }, { $set: { aiStatus: 'pending', ocrProgress: null, pageParseStatus: null } });
+    const [firstPageClaim, secondPageClaim] = await Promise.all([
+      MedicalReport.findOneAndUpdate(
+        buildPageOcrClaimFilter(reportId),
+        { $set: { pageParseStatus: { runId: 'e2e-page-1', status: 'processing', startedAt: new Date() } } },
+        { new: true },
+      ),
+      MedicalReport.findOneAndUpdate(
+        buildPageOcrClaimFilter(reportId),
+        { $set: { pageParseStatus: { runId: 'e2e-page-2', status: 'processing', startedAt: new Date() } } },
+        { new: true },
+      ),
+    ]);
+    assert.equal(Number(Boolean(firstPageClaim)) + Number(Boolean(secondPageClaim)), 1);
+    await MedicalReport.updateOne({ _id: reportId }, { $set: { pageParseStatus: null } });
+
     const reviewRequestId = crypto.randomUUID();
     await request(baseUrl, `/api/staff/medical-reports/${reportId}`, staffToken, {
       method: 'PATCH',
@@ -166,7 +201,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'revision_published', 'review_event_recorded', 'candidate_created', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'revision_published', 'review_event_recorded', 'candidate_created', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
