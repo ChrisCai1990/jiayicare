@@ -11022,17 +11022,6 @@ export default function PatientDetailPage() {
                                   与 {reportItemPageLabel(mergeCandidate.it)} 同名项目合并
                                 </button>
                               )}
-                              {r.aiStatus === 'processing' && ocrRuntime?.retryAllowed && canAuditReports && (
-                                <button className="btn btn-sm report-action-review"
-                                  title="原识别任务已超过 30 分钟没有更新；重新尝试会取得新任务租约，旧任务的迟到结果不会覆盖新结果"
-                                  disabled={parsingReportId === r._id}
-                                  onClick={() => handleParseReportAI(r)}>
-                                  {parsingReportId === r._id ? '重新提交中…' : '重新尝试识别'}
-                                </button>
-                              )}
-                              {r.aiStatus === 'processing' && ocrRuntime?.retryAllowed && !canAuditReports && (
-                                <span style={{ fontSize: 11, color: '#8AA89C' }}>识别进度已超时，请联系有审核权限的医护人员重试</span>
-                              )}
                               {nonClassificationFlags(it).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
                                 {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ abnormal_unverified: '异常结果待确认', status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', cross_page_continuation_candidate: '疑似跨页续写，请核对后合并', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || '识别结果待核对'}</span>)}
                               </div>}
