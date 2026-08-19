@@ -88,7 +88,7 @@ const { OCR_POLICY_VERSION, OCR_V2_EXTRACTION_CONTRACT } = require('../config/oc
 const { resolveExtractionPageCount } = require('../utils/reportExtractionSnapshot');
 const { compareReportExtractions, compareReportExtractionHistory, findHistoricalEmptyPages, validateCoverageAcknowledgement } = require('../utils/reportExtractionDiff');
 const { mapWithConcurrency } = require('../utils/asyncPool');
-const { buildFullOcrClaimFilter, buildPageOcrClaimFilter, buildOcrRunOwnerFilter, buildPageOcrRunOwnerFilter } = require('../utils/reportOcrRun');
+const { buildFullOcrClaimFilter, buildPageOcrClaimFilter, buildOcrRunOwnerFilter, buildPageOcrRunOwnerFilter, describeOcrRun } = require('../utils/reportOcrRun');
 const { buildReviewSubmissionClaimFilter, buildReviewSubmissionOwnerFilter } = require('../utils/reportReviewRun');
 const { applyCheckupPrecautions } = require('../utils/checkupPrecautions');
 const {
@@ -1910,6 +1910,9 @@ router.get('/medical-reports', staffAuth, checkPermissionStrict('reports', 'view
   const visibleReports = reports.map(report => {
     const obj = withSignedReportFiles(report);
     obj.pendingScreeningCandidateCount = pendingCandidateCountMap.get(String(report._id)) || 0;
+    if (report.aiStatus === 'processing') {
+      obj.ocrRuntime = describeOcrRun(report.ocrProgress);
+    }
     return obj;
   });
   res.json({ success: true, data: { reports: visibleReports, total } });

@@ -1,8 +1,29 @@
 const OCR_RUN_STALE_MS = 30 * 60 * 1000;
+const OCR_RUN_WARNING_MS = 10 * 60 * 1000;
 const { reviewSubmissionStaleBefore } = require('./reportReviewRun');
 
 function ocrRunStaleBefore(now = new Date()) {
   return new Date(new Date(now).getTime() - OCR_RUN_STALE_MS);
+}
+
+function describeOcrRun(progress, now = new Date()) {
+  const updatedAtMs = new Date(progress?.updatedAt).getTime();
+  if (!Number.isFinite(updatedAtMs)) {
+    return {
+      estimatedElapsedMs: Math.max(0, Number(progress?.elapsedMs) || 0),
+      inactiveMs: null,
+      warning: true,
+      retryAllowed: true,
+    };
+  }
+
+  const inactiveMs = Math.max(0, new Date(now).getTime() - updatedAtMs);
+  return {
+    estimatedElapsedMs: Math.max(0, Number(progress?.elapsedMs) || 0) + inactiveMs,
+    inactiveMs,
+    warning: inactiveMs >= OCR_RUN_WARNING_MS,
+    retryAllowed: inactiveMs >= OCR_RUN_STALE_MS,
+  };
 }
 
 function buildFullOcrClaimFilter(reportId, now = new Date()) {
@@ -71,7 +92,9 @@ function buildPageOcrRunOwnerFilter(reportId, runId) {
 
 module.exports = {
   OCR_RUN_STALE_MS,
+  OCR_RUN_WARNING_MS,
   ocrRunStaleBefore,
+  describeOcrRun,
   buildFullOcrClaimFilter,
   buildPageOcrClaimFilter,
   buildOcrRunOwnerFilter,

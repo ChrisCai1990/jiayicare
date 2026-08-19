@@ -2,7 +2,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   OCR_RUN_STALE_MS,
+  OCR_RUN_WARNING_MS,
   ocrRunStaleBefore,
+  describeOcrRun,
   buildFullOcrClaimFilter,
   buildPageOcrClaimFilter,
   buildOcrRunOwnerFilter,
@@ -12,7 +14,35 @@ const {
 test('OCR run leases use a bounded recovery window', () => {
   const now = new Date('2026-08-19T06:00:00.000Z');
   assert.equal(OCR_RUN_STALE_MS, 30 * 60 * 1000);
+  assert.equal(OCR_RUN_WARNING_MS, 10 * 60 * 1000);
   assert.equal(ocrRunStaleBefore(now).toISOString(), '2026-08-19T05:30:00.000Z');
+});
+
+test('OCR runtime distinguishes active, delayed, and safely retryable runs', () => {
+  const now = new Date('2026-08-19T06:00:00.000Z');
+  assert.deepEqual(describeOcrRun({ elapsedMs: 100000, updatedAt: '2026-08-19T05:58:00.000Z' }, now), {
+    estimatedElapsedMs: 220000,
+    inactiveMs: 120000,
+    warning: false,
+    retryAllowed: false,
+  });
+
+  const delayed = describeOcrRun({ elapsedMs: 0, updatedAt: '2026-08-19T05:49:00.000Z' }, now);
+  assert.equal(delayed.warning, true);
+  assert.equal(delayed.retryAllowed, false);
+
+  const expired = describeOcrRun({ elapsedMs: 0, updatedAt: '2026-08-19T05:29:00.000Z' }, now);
+  assert.equal(expired.warning, true);
+  assert.equal(expired.retryAllowed, true);
+});
+
+test('OCR run without a progress timestamp can be safely reclaimed', () => {
+  assert.deepEqual(describeOcrRun({ elapsedMs: 1200 }, new Date('2026-08-19T06:00:00.000Z')), {
+    estimatedElapsedMs: 1200,
+    inactiveMs: null,
+    warning: true,
+    retryAllowed: true,
+  });
 });
 
 test('full OCR atomically excludes active full and page OCR runs', () => {

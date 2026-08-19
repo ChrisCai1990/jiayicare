@@ -30,6 +30,14 @@ const reportItemPageLabel = item => {
   return contiguous ? `P${pages[0]}–P${pages[pages.length - 1]}` : pages.map(page => `P${page}`).join('、')
 }
 
+const formatOcrElapsed = value => {
+  const seconds = Math.max(0, Math.floor((Number(value) || 0) / 1000))
+  if (seconds < 60) return `${seconds} 秒`
+  const minutes = Math.floor(seconds / 60)
+  const remainder = seconds % 60
+  return remainder ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分钟`
+}
+
 function HealthPortraitOverview({ user, reports = [] }) {
   const [expandedGroups, setExpandedGroups] = useState({})
   const profile = user.healthProfile || {}
@@ -8885,6 +8893,9 @@ export default function PatientDetailPage() {
                           : r.audit_status === 'rejected' ? '#DC3545' : '#D97706'
                         const ocrProgressText = r.aiStatus === 'processing' && r.ocrProgress
                           ? (r.ocrProgress?.message || '正在准备解析') : ''
+                        const ocrRuntime = r.aiStatus === 'processing' ? r.ocrRuntime : null
+                        const ocrRuntimeText = ocrRuntime
+                          ? `已运行约 ${formatOcrElapsed(ocrRuntime.estimatedElapsedMs)}` : ''
                         const isFunctionalMedicineReport = /功能检测|功能医学/.test(typeLabel)
                         // 居家监测设备导出报告格式差异大，不走 AI 自动解析。
                         const isHomeMonitorReport = /居家监测/.test(typeLabel)
@@ -8898,7 +8909,7 @@ export default function PatientDetailPage() {
                             <td><span style={{ fontSize: 12, color: '#668277', whiteSpace: 'nowrap' }}>{typeLabel}</span></td>
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
-                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span>{Number(r.pendingScreeningCandidateCount || 0) > 0 && <div style={{ fontSize: 10, color: '#9A6700', background: '#FFF8E8', borderRadius: 999, padding: '2px 6px', marginTop: 5, width: 'fit-content' }}>待归类 {r.pendingScreeningCandidateCount}</div>}{ocrProgressText && <div style={{ fontSize: 10, color: '#7C3AED', marginTop: 5, lineHeight: 1.35, maxWidth: 180 }}>{ocrProgressText}</div>}</td>
+                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span>{Number(r.pendingScreeningCandidateCount || 0) > 0 && <div style={{ fontSize: 10, color: '#9A6700', background: '#FFF8E8', borderRadius: 999, padding: '2px 6px', marginTop: 5, width: 'fit-content' }}>待归类 {r.pendingScreeningCandidateCount}</div>}{ocrProgressText && <div style={{ fontSize: 10, color: ocrRuntime?.warning ? '#B45309' : '#7C3AED', marginTop: 5, lineHeight: 1.35, maxWidth: 190 }}>{ocrProgressText}{ocrRuntimeText && <><br />{ocrRuntimeText}</>}{ocrRuntime?.warning && <><br />{ocrRuntime.retryAllowed ? '任务已长时间无进度，可安全重新尝试' : '超过 10 分钟无新进度，可能仍在等待模型响应'}</>}</div>}</td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {isFunctionalMedicineReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
@@ -8916,7 +8927,7 @@ export default function PatientDetailPage() {
                               ) : r.aiStatus === 'none' ? (
                                 <span style={{ fontSize: 11, color: '#D97706' }}>无报告文件，请让客户重新上传图片/PDF后再解析</span>
                               ) : null}
-                              {r.aiStatus === 'processing' && (
+                              {r.aiStatus === 'processing' && !ocrRuntime?.retryAllowed && (
                                 <button className="btn btn-sm report-action-muted" disabled>
                                   <span style={{ display:'inline-block', width:10, height:10, border:'2px solid #7C3AED', borderTopColor:'transparent', borderRadius:'50%', marginRight:6, verticalAlign:'middle', animation:'spin 0.8s linear infinite' }} />
                                   识别中…
@@ -10925,6 +10936,17 @@ export default function PatientDetailPage() {
                                 <button type="button" onClick={() => mergeCrossPageItems(i, mergeCandidate.i)} style={{ margin: '-1px 0 7px', border: '1px solid #CFC4F5', borderRadius: 5, padding: '4px 7px', background: '#FAF8FF', color: '#6D28D9', cursor: 'pointer', fontSize: 10 }}>
                                   与 {reportItemPageLabel(mergeCandidate.it)} 同名项目合并
                                 </button>
+                              )}
+                              {r.aiStatus === 'processing' && ocrRuntime?.retryAllowed && canAuditReports && (
+                                <button className="btn btn-sm report-action-review"
+                                  title="原识别任务已超过 30 分钟没有更新；重新尝试会取得新任务租约，旧任务的迟到结果不会覆盖新结果"
+                                  disabled={parsingReportId === r._id}
+                                  onClick={() => handleParseReportAI(r)}>
+                                  {parsingReportId === r._id ? '重新提交中…' : '重新尝试识别'}
+                                </button>
+                              )}
+                              {r.aiStatus === 'processing' && ocrRuntime?.retryAllowed && !canAuditReports && (
+                                <span style={{ fontSize: 11, color: '#8AA89C' }}>识别进度已超时，请联系有审核权限的医护人员重试</span>
                               )}
                               {nonClassificationFlags(it).length > 0 && <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, margin: '-2px 0 6px' }}>
                                 {nonClassificationFlags(it).map(flag => <span key={flag} style={{ fontSize: 10, color: '#B45309', background: '#FFF7E8', borderRadius: 10, padding: '2px 6px' }}>{({ abnormal_unverified: '异常结果待确认', status_conflict: '状态需核对', cross_page_duplicate: '跨页疑似重复', cross_page_continuation_candidate: '疑似跨页续写，请核对后合并', range_missing: '缺参考范围', result_missing: '缺结果', name_missing: '缺名称', text_layer_unverified: '文字层待核对' })[flag] || '识别结果待核对'}</span>)}
