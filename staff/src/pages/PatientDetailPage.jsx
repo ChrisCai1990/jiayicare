@@ -1457,6 +1457,7 @@ export default function PatientDetailPage() {
   const [showReferralModal, setShowReferralModal] = useState(false)
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
+  const [reportDetailTrace, setReportDetailTrace] = useState(null)
   const [showSRDetail, setShowSRDetail] = useState(null)
   const [reviewingDraft, setReviewingDraft] = useState(null)
   const [staffList, setStaffList] = useState([])
@@ -2030,6 +2031,7 @@ export default function PatientDetailPage() {
     // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
     setReportScreeningData([])
+    setReportDetailTrace(null)
     setReportDetailLoading(true)
 
     // 背景异步：拉完整报告详情
@@ -2037,6 +2039,19 @@ export default function PatientDetailPage() {
       .then(res => setShowReportDetail(res.data))
       .catch(() => { /* 保持列表数据，下方会显示加载失败提示 */ })
       .finally(() => setReportDetailLoading(false))
+
+    // 普通详情也应能看见正式审核版本和派生数据状态；单独加载，失败不阻塞原件预览。
+    Promise.allSettled([
+      staffAPI.getReportRevisions(r._id),
+      staffAPI.getReportReviewIntegrity(r._id),
+    ]).then(([revisions, integrity]) => {
+      setReportDetailTrace({
+        reportId: r._id,
+        revisions: revisions.status === 'fulfilled' ? (revisions.value.data || []) : [],
+        reviewIntegrity: integrity.status === 'fulfilled' ? (integrity.value.data || null) : null,
+        unavailable: revisions.status === 'rejected' && integrity.status === 'rejected',
+      })
+    })
 
     // 健康顾问打开报告详情，联动标记"已解读"（2026-07-28新增）：此前用户端报告列表的
     // "待解读/已解读"状态字段(status)从未被任何动作驱动过，一直卡死在默认值"待解读"，
@@ -10024,6 +10039,57 @@ export default function PatientDetailPage() {
                     <span style={{ flex: 1, fontSize: 13, color: '#1A2B24' }}>{v}</span>
                   </div>
                 ))
+              })()}
+              {(() => {
+                const trace = reportDetailTrace?.reportId === showReportDetail._id ? reportDetailTrace : null
+                const revisions = trace?.revisions || []
+                const currentRevision = revisions.find(row => String(row._id) === String(showReportDetail.currentRevisionId || ''))
+                  || revisions.find(row => row.status === 'published')
+                const evidence = showReportDetail.originalEvidence || null
+                const integrity = trace?.reviewIntegrity || null
+                const timeText = value => value
+                  ? new Date(value).toLocaleString('zh-CN', { hour12: false })
+                  : '时间未记录'
+                const auditStatus = showReportDetail.audit_status === 'audited'
+                  ? { text: '已审核', color: '#237A57' }
+                  : showReportDetail.audit_status === 'rejected'
+                    ? { text: '已驳回', color: '#9B2C2C' }
+                    : { text: '待审核', color: '#8A5A12' }
+                const evidenceText = evidence?.status === 'verified'
+                  ? `已校验 ${evidence.verifiedCount}/${evidence.fileCount} 个原件`
+                  : evidence?.status === 'partial'
+                    ? `部分校验 ${evidence.verifiedCount}/${evidence.fileCount} 个原件`
+                    : evidence?.fileCount
+                      ? `历史原件 ${evidence.fileCount} 个，暂无完整摘要`
+                      : '原件留证待核对'
+                const projectionState = !currentRevision
+                  ? { text: '审核通过后生成', color: '#6F8379' }
+                  : integrity?.status === 'consistent'
+                    ? { text: '与正式版本一致', color: '#237A57' }
+                    : integrity?.status === 'incomplete'
+                      ? { text: '派生数据需对账', color: '#9B2C2C' }
+                      : { text: '状态待核对', color: '#6F8379' }
+                const cards = [
+                  { label: '审核状态', value: auditStatus.text, detail: currentRevision?.review?.reviewerName || showReportDetail.audited_by || '审核人未记录', color: auditStatus.color },
+                  { label: '审核时间', value: timeText(currentRevision?.review?.reviewedAt || showReportDetail.audited_at || showReportDetail.reviewedAt), detail: '正式提交时间', color: '#304A3E' },
+                  { label: '正式版本', value: currentRevision ? `审核 V${currentRevision.revisionNo}` : (showReportDetail.currentRevisionId ? '正式版本已生成' : '尚未形成正式版本'), detail: evidenceText, color: currentRevision ? '#304A3E' : '#8A5A12' },
+                  { label: '专项筛查投影', value: projectionState.text, detail: '仅来源于正式审核版本', color: projectionState.color },
+                ]
+                return (
+                  <div style={{ marginTop: 14 }}>
+                    <div style={{ marginBottom: 7, fontSize: 12, fontWeight: 700, color: '#4A6558' }}>审核与留痕</div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 7 }}>
+                      {cards.map(card => (
+                        <div key={card.label} style={{ padding: '9px 10px', border: '1px solid #DFE7E2', borderRadius: 8, background: '#FAFCFB', minWidth: 0 }}>
+                          <div style={{ fontSize: 10, color: '#819188' }}>{card.label}</div>
+                          <div style={{ marginTop: 3, fontSize: 12, color: card.color, fontWeight: 700, overflowWrap: 'anywhere' }}>{card.value}</div>
+                          <div style={{ marginTop: 2, fontSize: 10, color: '#819188', overflowWrap: 'anywhere' }}>{card.detail}</div>
+                        </div>
+                      ))}
+                    </div>
+                    {trace?.unavailable && <div style={{ marginTop: 6, fontSize: 10, color: '#8A5A12' }}>版本留痕暂时无法读取，不影响查看报告原件。</div>}
+                  </div>
+                )
               })()}
               {showReportDetail.note && (
                 <div style={{ marginTop: 12, padding: 12, background: '#f9f7f3', borderRadius: 8, fontSize: 13 }}>{showReportDetail.note}</div>
