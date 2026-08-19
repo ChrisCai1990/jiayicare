@@ -38,6 +38,14 @@ const formatOcrElapsed = value => {
   return remainder ? `${minutes} 分 ${remainder} 秒` : `${minutes} 分钟`
 }
 
+const formatReportFileSize = value => {
+  const bytes = Number(value)
+  if (!Number.isFinite(bytes) || bytes <= 0) return '大小未知'
+  const sizeKB = bytes / 1024
+  if (sizeKB >= 1024) return `${(sizeKB / 1024).toFixed(1)} MB`
+  return `${Math.max(1, Math.round(sizeKB))} KB`
+}
+
 function HealthPortraitOverview({ user, reports = [] }) {
   const [expandedGroups, setExpandedGroups] = useState({})
   const profile = user.healthProfile || {}
@@ -10240,12 +10248,12 @@ export default function PatientDetailPage() {
                     ? reportPreviewUrls : null
                   if (multiUrls) {
                     const isPdf = showReportDetail.mimeType === 'application/pdf'
-                    const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
+                    const sizeText = formatReportFileSize(showReportDetail.fileSize)
                     return (
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         <div style={{ fontSize: 12, color: '#8AA89C' }}>
                           共 {multiUrls.length} 张照片合并为一份报告
-                          {sizeKB ? `，合计 ${sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}` : ''}
+                          {`，合计 ${sizeText}`}
                         </div>
                         {multiUrls.map((u, idx) => {
                           const src = u.startsWith('/') ? API_ORIGIN + u : u
@@ -10264,7 +10272,7 @@ export default function PatientDetailPage() {
                   const src = rawSrc.startsWith('/') ? API_ORIGIN + rawSrc : rawSrc
                   const isPdf = showReportDetail.mimeType === 'application/pdf' || rawSrc.includes('.pdf') || rawSrc.startsWith('data:application/pdf')
                   const isImg = showReportDetail.mimeType?.startsWith('image/') || rawSrc.startsWith('data:image')
-                  const sizeKB = showReportDetail.fileSize ? Math.round(Number(showReportDetail.fileSize) / 1024) : null
+                  const sizeText = formatReportFileSize(showReportDetail.fileSize)
                   const ext = isPdf ? '.pdf' : isImg ? (showReportDetail.mimeType === 'image/png' ? '.png' : '.jpg') : ''
                   const displayName = showReportDetail.title ? `${showReportDetail.title}${ext}` : (isPdf ? 'PDF 文件' : isImg ? '图片文件' : '附件')
                   const canRotateSave = canAuditReports && isImg && showReportDetail.audit_status !== 'audited'
@@ -10273,7 +10281,7 @@ export default function PatientDetailPage() {
                       <span style={{ fontSize: 28, lineHeight: 1 }}>{isPdf ? '📄' : isImg ? '🖼️' : '📎'}</span>
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontWeight: 500, fontSize: 13, color: '#1A2B24', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{displayName}</div>
-                        {sizeKB && <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{sizeKB >= 1024 ? `${(sizeKB / 1024).toFixed(1)} MB` : `${sizeKB} KB`}</div>}
+                        <div style={{ fontSize: 12, color: '#8AA89C', marginTop: 2 }}>{sizeText}</div>
                       </div>
                       <button className="btn btn-primary btn-sm" onClick={() => {
                         const savedRotation = Number(showReportDetail.displayRotation || 0)
