@@ -162,13 +162,8 @@ function convertPdfRange(pdfPath, firstPage, lastPage, dpi, crop = null) {
 function groupPdfPageNumbers(pageNumbers, batchSize) {
   const pages = [...new Set((pageNumbers || []).map(Number)
     .filter(page => Number.isInteger(page) && page > 0))].sort((a, b) => a - b);
-  const groups = [];
-  for (const page of pages) {
-    const current = groups[groups.length - 1];
-    if (!current || current.length >= batchSize || page !== current[current.length - 1] + 1) groups.push([page]);
-    else current.push(page);
-  }
-  return groups;
+  return Array.from({ length: Math.ceil(pages.length / batchSize) }, (_, index) =>
+    pages.slice(index * batchSize, (index + 1) * batchSize));
 }
 
 async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, pageNumbers = null, onBatch } = {}) {
@@ -197,18 +192,30 @@ async function pdfBufferToImages(pdfBuffer, { dpi = 96, batchSize = 8, pageNumbe
 
     for (let batchIndex = 0; batchIndex < groups.length; batchIndex += 1) {
       const batchPages = groups[batchIndex];
-      const first = batchPages[0];
-      const last = batchPages[batchPages.length - 1];
-      const images = await convertPdfRange(tmpPdf, first, last, dpi);
+      let images;
+      let renderedPages;
+      if (requestedGroups) {
+        const rendered = await Promise.all(batchPages.map(async page => ({
+          page,
+          image: (await convertPdfRange(tmpPdf, page, page, dpi))[0] || null,
+        })));
+        images = rendered.filter(result => result.image).map(result => result.image);
+        renderedPages = rendered.filter(result => result.image).map(result => result.page);
+      } else {
+        const first = batchPages[0];
+        const last = batchPages[batchPages.length - 1];
+        images = await convertPdfRange(tmpPdf, first, last, dpi);
+        renderedPages = batchPages.slice(0, images.length);
+      }
       if (images.length === 0) break; // pdftoppm 返回空说明已超出实际页数
 
       if (onBatch) {
-        await onBatch(images, batchIndex, batchPages.slice(0, images.length));
+        await onBatch(images, batchIndex, renderedPages);
       } else {
         allImages.push(...images);
       }
       // 如果实际转出的页数少于请求的，说明已到最后一批
-      if (images.length < last - first + 1) break;
+      if (!requestedGroups && images.length < batchPages.length) break;
     }
 
     if (!onBatch && allImages.length === 0) {

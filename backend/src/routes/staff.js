@@ -10498,6 +10498,25 @@ async function runReportParse(reportId, options = {}) {
         },
       });
 
+      // Text-first reports should not spend several additional minutes chaining
+      // best-effort visual retries after the primary extraction has completed.
+      // High-value coverage and historical recovery run first; once the shared
+      // budget is exhausted, remaining pages stay visible for manual review or
+      // explicit single-page supplementation.
+      const retryDeadline = useTextLayerPrimary ? Date.now() + 90_000 : Number.POSITIVE_INFINITY;
+      const deferredRetryPages = new Set();
+      const retryTimeRemaining = () => Math.max(0, retryDeadline - Date.now());
+      const retryTimeoutMs = maximum => Number.isFinite(retryDeadline)
+        ? Math.max(5_000, Math.min(maximum, retryTimeRemaining()))
+        : maximum;
+      const budgetedRetryPages = (pages, label) => {
+        const uniquePages = [...new Set((pages || []).map(Number).filter(Boolean))];
+        if (!uniquePages.length || retryTimeRemaining() >= 5_000) return uniquePages;
+        uniquePages.forEach(page => deferredRetryPages.add(page));
+        console.log(`[parse-ai] ${label}跳过：文字层报告后置补提已达到90秒预算，转人工核对 P${uniquePages.join(',')}`);
+        return [];
+      };
+
       // 每个明细页做第二遍覆盖复核。首轮返回合法JSON但漏掉整页内容或右栏时，过去会被误记为成功；
       // 复核改用144dpi和max模型，只允许补充首轮遗漏项，再由程序证据键去重。
       if (report.type !== 'body_comp') {
@@ -10508,7 +10527,10 @@ async function runReportParse(reportId, options = {}) {
           : useTextLayerPrimary
             ? []
             : selectGenericCoverageAuditPages([...detailPages], allItems);
-        const coveragePages = [...new Set([...selectedCoveragePages, ...textCoverageRequiredPages])].sort((a, b) => a - b);
+        const coveragePages = budgetedRetryPages(
+          [...new Set([...selectedCoveragePages, ...textCoverageRequiredPages])].sort((a, b) => a - b),
+          '覆盖复核',
+        );
         setOcrProgress('coverage_audit', coveragePages.length
           ? `首轮识别完成，正在复核${coveragePages.length}页是否漏项`
           : '首轮识别完成，未发现需要覆盖复核的页面', { totalPages: totalPageCount, coveragePages: coveragePages.length });
@@ -10521,7 +10543,7 @@ async function runReportParse(reportId, options = {}) {
             const auditPrompt = firstNames.length === 0 && baselineCount > 0
               ? `${REPORT_PARSE_PROMPT}\n\n${OCR_V2_EXTRACTION_CONTRACT}\n\n【历史完整性重读】同一原件历史识别在本页最多提取过${baselineCount}项，本轮文字层为0项。请从当前原件完整逐项重读，不得复制或猜测历史内容。${formatTextLayerEvidence(textLayer.pages?.[pageNum - 1])}`
               : `${PAGE_COVERAGE_AUDIT_PROMPT}${useShaoyifuTemplate ? shaoyifuTemplate.promptForPage(pageNum) : ''}${useZheyiTemplate ? zheyiTemplate.promptForPage(pageNum) : ''}${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}\n\n首轮已提取项目：${firstNames.length ? firstNames.join('、') : '无（请重点核对是否整页漏识别）'}`;
-            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: (useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000 });
+            const text = await parseImage(img, auditPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: (useShaoyifuTemplate || useZheyiTemplate) ? 8192 : 4096, timeoutMs: retryTimeoutMs((useShaoyifuTemplate || useZheyiTemplate) ? 120000 : 45000) });
             const p = safeParseJSON(text);
             if (!p || !Array.isArray(p.items)) return null;
             const oldPage = allItems.filter(it => it._page === pageNum);
@@ -10546,11 +10568,11 @@ async function runReportParse(reportId, options = {}) {
             console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
           }
         }
-        const materiallyReducedPages = [...textCoverageRequiredPages].filter(pageNum => {
+        const materiallyReducedPages = budgetedRetryPages([...textCoverageRequiredPages].filter(pageNum => {
           const baselineCount = historicalPageBaselines.get(pageNum) || 0;
           const currentCount = allItems.filter(item => item._page === pageNum).length;
           return baselineCount > 0 && currentCount < Math.max(1, Math.ceil(baselineCount * 0.5));
-        });
+        }), '历史下降页完整重读');
         if (materiallyReducedPages.length) {
           setOcrProgress('historical_recovery', `正在完整重读${materiallyReducedPages.length}页历史下降页面`, {
             recoveryPages: materiallyReducedPages,
@@ -10562,7 +10584,7 @@ async function runReportParse(reportId, options = {}) {
               const img = await renderSinglePage(pdfBuf, pageNum, 192);
               if (!img) return null;
               const recoveryPrompt = `${REPORT_PARSE_PROMPT}\n\n${OCR_V2_EXTRACTION_CONTRACT}\n\n【历史下降页完整重读】同一原件历史识别在本页最多提取过${baselineCount}项，本轮当前仅${currentItems.length}项。请忽略历史内容，只从当前原件完整逐行读取本页全部项目；不得只输出异常项，不得把医学影像页误判为空页。${formatTextLayerEvidence(textLayer.pages?.[pageNum - 1])}`;
-              const raw = await parseImage(img, recoveryPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: 60000 });
+              const raw = await parseImage(img, recoveryPrompt, { isUrl: false, model: 'qwen-vl-max', maxTokens: 8192, timeoutMs: retryTimeoutMs(60000) });
               const parsed = safeParseJSON(raw);
               if (!parsed || shouldSkipParsedReportPage(parsed) || !Array.isArray(parsed.items)) return null;
               const recovered = tagReportPageItems(parsed.items, pageNum).filter(item => str(item.name));
@@ -10645,7 +10667,9 @@ async function runReportParse(reportId, options = {}) {
       // 同一原件的历史快照曾在某页识别出项目，而本轮整页归零时，先自动做一次高分辨率恢复。
       // 只采用重新从原件识别出的结果，不把旧快照内容直接混入新版本；恢复仍失败则保留为空并交由人工确认。
       if (useOcrV2 && extractionHistory.length) {
-        const emptiedPages = findHistoricalEmptyPages(allItems, extractionSource, extractionHistory, totalPageCount);
+        const rawEmptiedPages = findHistoricalEmptyPages(allItems, extractionSource, extractionHistory, totalPageCount);
+        const allowedEmptyPages = new Set(budgetedRetryPages(rawEmptiedPages.map(item => item.page), '整页归零恢复'));
+        const emptiedPages = rawEmptiedPages.filter(item => allowedEmptyPages.has(item.page));
         if (emptiedPages.length) {
           setOcrProgress('historical_recovery', `正在恢复${emptiedPages.length}页历史有项目的识别结果`, {
             recoveryPages: emptiedPages.map(item => item.page),
@@ -10660,7 +10684,7 @@ async function runReportParse(reportId, options = {}) {
                 isUrl: false,
                 model: 'qwen-vl-max',
                 maxTokens: 8192,
-                timeoutMs: 120000,
+                timeoutMs: retryTimeoutMs(120000),
               });
               const parsed = safeParseJSON(text);
               if (!parsed || !Array.isArray(parsed.items)) continue;
@@ -10681,10 +10705,16 @@ async function runReportParse(reportId, options = {}) {
 
       // 数量核对+单页重试：检验单标题写了"N项"但实际条数不够，说明这一页大概率漏提了，只重新识别这一页
       const { pagesToRetry, underOrders } = findUnderExtractedPages(allItems);
-      if (pagesToRetry.length) {
-        setOcrProgress('targeted_retry', `正在补提${pagesToRetry.length}页检验明细`, { retryPages: pagesToRetry });
-        console.log(`[parse-ai] 数量核对不通过 ${reportId}：${underOrders.map(o => `${o.orderName}(应${o.expected}实${o.actual})`).join('、')}，重试页${pagesToRetry.join(',')}`);
-        for (const pageNum of pagesToRetry) {
+      const orderRetryPages = budgetedRetryPages(pagesToRetry, '检验数量补提');
+      if (orderRetryPages.length) {
+        setOcrProgress('targeted_retry', `正在补提${orderRetryPages.length}页检验明细`, { retryPages: orderRetryPages });
+        console.log(`[parse-ai] 数量核对不通过 ${reportId}：${underOrders.map(o => `${o.orderName}(应${o.expected}实${o.actual})`).join('、')}，重试页${orderRetryPages.join(',')}`);
+        for (let retryIndex = 0; retryIndex < orderRetryPages.length; retryIndex += 1) {
+          const pageNum = orderRetryPages[retryIndex];
+          if (retryTimeRemaining() < 5_000) {
+            orderRetryPages.slice(retryIndex).forEach(page => deferredRetryPages.add(page));
+            break;
+          }
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) continue;
@@ -10722,15 +10752,16 @@ async function runReportParse(reportId, options = {}) {
       // 上面按标题解析条数的机制覆盖不到，改用固定项目清单比对是否缺项（详见 findUnderExtractedCBC 注释）
       const CBC_NAME_PATTERN = /白细胞计数|血红蛋白\(HGB\)|WBC|血细胞分析|中性粒细胞|淋巴细胞|单核细胞|嗜酸性粒细胞|嗜碱性粒细胞|红细胞计数|血小板计数|红细胞比积|平均红细胞|血小板比积|血小板体积|大血小板比率|红细胞分布宽度|红细胞体积分布宽度/;
       const { pagesToRetry: cbcRetryPages, missingGroups } = findUnderExtractedCBC(allItems);
-      if (cbcRetryPages.length) {
-        setOcrProgress('targeted_retry', `正在复核血常规缺项（${cbcRetryPages.length}页）`, { retryPages: cbcRetryPages });
-        console.log(`[parse-ai] 血常规缺项核对不通过 ${reportId}：缺少${missingGroups.join('、')}，重试页${cbcRetryPages.join(',')}`);
-        const cbcRetryResults = await mapWithConcurrency(cbcRetryPages, 2, async pageNum => {
+      const allowedCbcRetryPages = budgetedRetryPages(cbcRetryPages, '血常规缺项补提');
+      if (allowedCbcRetryPages.length) {
+        setOcrProgress('targeted_retry', `正在复核血常规缺项（${allowedCbcRetryPages.length}页）`, { retryPages: allowedCbcRetryPages });
+        console.log(`[parse-ai] 血常规缺项核对不通过 ${reportId}：缺少${missingGroups.join('、')}，重试页${allowedCbcRetryPages.join(',')}`);
+        const cbcRetryResults = await mapWithConcurrency(allowedCbcRetryPages, 2, async pageNum => {
           try {
             const img = await renderSinglePage(pdfBuf, pageNum, DPI);
             if (!img) return null;
             const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页的血常规/血细胞分析检验单曾漏提了部分子项（缺少：${missingGroups.join('、')}）。请重新逐行核对该检验单在图片中的每一行，血常规通常有白细胞、中性粒细胞、淋巴细胞、单核细胞、嗜酸性粒细胞、嗜碱性粒细胞、红细胞、血红蛋白、血小板等约20项子指标（含绝对值和百分比两种），必须逐条全部输出，不得省略或遗漏任何一行。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
-            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: retryTimeoutMs(useShaoyifuTemplate ? 120000 : 45000) });
             const p = safeParseJSON(text);
             if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) return null;
             const retryItems = tagReportPageItems(p.items, pageNum);
@@ -10762,7 +10793,10 @@ async function runReportParse(reportId, options = {}) {
         .map(it => it._page);
       const incompleteComboPages = [...new Set(allItems.filter(comboUpperAbdomen).map(it => it._page).filter(Boolean))]
         .filter(pageNum => coreUpperOrganCount(allItems.filter(it => it._page === pageNum && comboUpperAbdomen(it))) < 4);
-      const multiOrganPages = [...new Set([...mergedOrganPages, ...incompleteComboPages])].filter(Boolean);
+      const multiOrganPages = budgetedRetryPages(
+        [...new Set([...mergedOrganPages, ...incompleteComboPages])].filter(Boolean),
+        '超声器官拆分',
+      );
       const ultrasoundRetryResults = await mapWithConcurrency(multiOrganPages, 2, async pageNum => {
         try {
           const beforeMaxOrgans = Math.max(...allItems.filter(it => it._page === pageNum && isUltrasoundItem(it))
@@ -10771,7 +10805,7 @@ async function runReportParse(reportId, options = {}) {
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) return null;
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾把多个器官的超声内容合并写进了同一条记录（如肝、胆、胰、脾写在一起）。请重新逐句核对"超声所见"和"超声提示"部分，严格按器官各自拆成独立的一条记录，禁止把两个及以上器官的检查所见/诊断意见写进同一条 findings 或 diagnosis 里。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
-          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+            const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: retryTimeoutMs(useShaoyifuTemplate ? 120000 : 45000) });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) return null;
           const retryItems = tagReportPageItems(p.items, pageNum);
@@ -10796,16 +10830,21 @@ async function runReportParse(reportId, options = {}) {
 
       // 体格检查类内容为空重试：眼压等体格检查项目偶尔被提取成空壳(findings/diagnosis均为空)，
       // 大概率是模型在长报告+多任务prompt下的遗漏(概率性问题，非稳定复现的规则漏洞)，重试一次这一页争取补全，不强求一定成功
-      const emptyExamPages = [...new Set(
+      const emptyExamPages = budgetedRetryPages([...new Set(
         allItems.filter(it => PHYSICAL_EXAM_NAMES.some(n => str(it.name).startsWith(n)) && !str(it.findings) && !str(it.diagnosis)).map(it => it._page)
-      )].filter(Boolean);
-      for (const pageNum of emptyExamPages) {
+      )].filter(Boolean), '体格检查空内容补提');
+      for (let retryIndex = 0; retryIndex < emptyExamPages.length; retryIndex += 1) {
+        const pageNum = emptyExamPages[retryIndex];
+        if (retryTimeRemaining() < 5_000) {
+          emptyExamPages.slice(retryIndex).forEach(page => deferredRetryPages.add(page));
+          break;
+        }
         try {
           const img = await renderSinglePage(pdfBuf, pageNum, DPI);
           if (!img) continue;
           const emptyNames = allItems.filter(it => it._page === pageNum && PHYSICAL_EXAM_NAMES.some(n => str(it.name).startsWith(n)) && !str(it.findings) && !str(it.diagnosis)).map(it => it.name);
           const retryPrompt = REPORT_PARSE_PROMPT + `\n\n【补充提醒】本页曾提取到"${emptyNames.join('、')}"项目但检查所见/诊断意见内容为空，请重新核对该项目在图片中的具体内容，完整填写findings和diagnosis字段，不要留空。${useOcrV2 ? formatTextLayerEvidence(textLayer.pages?.[pageNum - 1]) : ''}`;
-          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: useShaoyifuTemplate ? 120000 : 45000 });
+          const text = await parseImage(img, retryPrompt, { isUrl: false, model: VL_MODEL, maxTokens: useShaoyifuTemplate ? 8192 : 4096, timeoutMs: retryTimeoutMs(useShaoyifuTemplate ? 120000 : 45000) });
           const p = safeParseJSON(text);
           if (!p || shouldSkipParsedReportPage(p) || !Array.isArray(p.items)) continue;
           const retryItems = tagReportPageItems(p.items, pageNum);
@@ -10919,14 +10958,17 @@ async function runReportParse(reportId, options = {}) {
           ocrVersion: OCR_POLICY_VERSION,
           ocrTemplateId,
           ocrQualitySummary: {
-          templateId: ocrTemplateId,
-          textLayerAvailable: textLayer.available,
-          textLayerPageCount: textLayer.pageCount,
-          textLayerCharCount: textLayer.charCount,
-          total: qualityItems.length,
-          auto: qualityItems.filter(item => item.reviewPriority === 'auto').length,
-          review: qualityItems.filter(item => item.reviewPriority === 'review').length,
+            templateId: ocrTemplateId,
+            textLayerAvailable: textLayer.available,
+            textLayerPageCount: textLayer.pageCount,
+            textLayerCharCount: textLayer.charCount,
+            total: qualityItems.length,
+            auto: qualityItems.filter(item => item.reviewPriority === 'auto').length,
+            review: qualityItems.filter(item => item.reviewPriority === 'review').length,
             high: qualityItems.filter(item => item.reviewPriority === 'high').length,
+            retryBudgetMs: useTextLayerPrimary ? 90_000 : null,
+            retryBudgetExceeded: deferredRetryPages.size > 0,
+            deferredRetryPages: [...deferredRetryPages].sort((a, b) => a - b),
           },
           ocrProgress: { runId, stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
         } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
@@ -10936,7 +10978,16 @@ async function runReportParse(reportId, options = {}) {
       if (!extraction) return;
       await MedicalReport.updateOne(runFilter, { $set: {
         aiStatus: 'pending',
-        ...(useOcrV2 ? { ocrProgress: { runId, stage: 'completed', message: 'OCR v2识别完成，等待人工审核', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount } } : {}),
+        ...(useOcrV2 ? { ocrProgress: {
+          runId,
+          stage: 'completed',
+          message: deferredRetryPages.size
+            ? `OCR v2识别完成；P${[...deferredRetryPages].sort((a, b) => a - b).join('、P')}自动补提达到时限，请人工核对`
+            : 'OCR v2识别完成，等待人工审核',
+          elapsedMs: Date.now() - t0,
+          updatedAt: new Date(),
+          totalPages: totalPageCount,
+        } } : {}),
       } });
       const totalMs = Date.now() - t0;
       console.log(`[parse-ai] PDF完成 ${reportId} 共${totalPageCount}页 成功${okPages}页 提取${allItems.length}项 归类${matchedCount}项 | 总耗时${(totalMs/1000).toFixed(1)}s`);
