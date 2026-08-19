@@ -208,6 +208,22 @@ async function main() {
       { $unset: { reviewSubmission: 1 } },
     );
 
+    const savedDraft = await request(baseUrl, `/api/staff/medical-reports/${reportId}`, staffToken, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        aiStatus: 'pending',
+        reviewAction: 'save_draft',
+        reviewExtractionId: String(extraction._id),
+        reviewBaseRevisionId: null,
+        reportItems: [{ sourceItemId: 'e2e-draft-item', name: 'Draft item', value: 'draft' }],
+      }),
+    });
+    assert.equal(savedDraft.data.ocrReviewMeta.lastAction, 'save_draft');
+    const reportAfterDraft = await MedicalReport.findById(reportId).select('reviewSubmission currentExtractionId currentRevisionId').lean();
+    assert.equal(reportAfterDraft.reviewSubmission ?? null, null);
+    assert.equal(String(reportAfterDraft.currentExtractionId), String(extraction._id));
+    assert.equal(reportAfterDraft.currentRevisionId ?? null, null);
+
     const reviewRequestId = crypto.randomUUID();
     await request(baseUrl, `/api/staff/medical-reports/${reportId}`, staffToken, {
       method: 'PATCH',
@@ -239,6 +255,34 @@ async function main() {
     const staleReviewBody = await staleReviewResponse.json();
     assert.equal(staleReviewResponse.status, 409);
     assert.equal(staleReviewBody.code, 'REPORT_REVIEW_VERSION_CHANGED');
+
+    const staleDraftResponse = await fetch(`${baseUrl}/api/staff/medical-reports/${reportId}`, {
+      method: 'PATCH',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${staffToken}` },
+      body: JSON.stringify({
+        aiStatus: 'pending',
+        reviewAction: 'save_draft',
+        reviewExtractionId: String(extraction._id),
+        reviewBaseRevisionId: null,
+        reportItems: [{ sourceItemId: 'stale-draft-item', name: 'Stale draft', value: 'must-not-win' }],
+      }),
+    });
+    const staleDraftBody = await staleDraftResponse.json();
+    assert.equal(staleDraftResponse.status, 409);
+    assert.equal(staleDraftBody.code, 'REPORT_REVIEW_VERSION_CHANGED');
+
+    const stalePageParseResponse = await fetch(`${baseUrl}/api/staff/medical-reports/${reportId}/parse-page`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${staffToken}` },
+      body: JSON.stringify({
+        pageNum: 1,
+        expectedExtractionId: String(extraction._id),
+        expectedBaseRevisionId: null,
+      }),
+    });
+    const stalePageParseBody = await stalePageParseResponse.json();
+    assert.equal(stalePageParseResponse.status, 409);
+    assert.equal(stalePageParseBody.code, 'REPORT_REVIEW_VERSION_CHANGED');
 
     const [report, revision, event, candidate, projection] = await Promise.all([
       MedicalReport.findById(reportId).lean(),
@@ -303,7 +347,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'stale_review_version_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));

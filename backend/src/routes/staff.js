@@ -2579,7 +2579,7 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         return res.json({ success: true, data: report, meta: { pendingScreeningCandidateCount, deduplicatedReview: true } });
       }
     }
-    if (['submit', 'reject'].includes(reviewAction) && report.ocrVersion) {
+    if (['save_draft', 'submit', 'reject'].includes(reviewAction) && report.ocrVersion) {
       const currentExtractionId = String(report.currentExtractionId || '');
       const currentRevisionId = String(report.currentRevisionId || '');
       if (!reviewExtractionId || reviewExtractionId !== currentExtractionId || !hasReviewBaseRevisionId || reviewBaseRevisionId !== currentRevisionId) {
@@ -2856,7 +2856,7 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       if (mimeType !== undefined) report.mimeType = mimeType;
       if (fileSize !== undefined) report.fileSize = fileSize;
     }
-    if (['submit', 'reject'].includes(reviewAction)) {
+    if (['save_draft', 'submit', 'reject'].includes(reviewAction)) {
       reviewClaimId = crypto.randomUUID();
       const claimedReview = await MedicalReport.findOneAndUpdate(
         buildReviewSubmissionClaimFilter(
@@ -11249,15 +11249,46 @@ router.post('/medical-reports/:id/parse-page', staffAuth, checkPermissionStrict(
     const MedicalReport = require('../models/MedicalReport');
     const report = await MedicalReport.findById(req.params.id);
     if (!report) return res.status(404).json({ success: false, message: '报告不存在' });
+    const expectedExtractionId = String(req.body?.expectedExtractionId || '').trim();
+    const hasExpectedBaseRevisionId = Object.prototype.hasOwnProperty.call(req.body || {}, 'expectedBaseRevisionId');
+    const expectedBaseRevisionId = String(req.body?.expectedBaseRevisionId || '').trim();
+    if (report.ocrVersion && (
+      !expectedExtractionId
+      || expectedExtractionId !== String(report.currentExtractionId || '')
+      || !hasExpectedBaseRevisionId
+      || expectedBaseRevisionId !== String(report.currentRevisionId || '')
+    )) {
+      return res.status(409).json({
+        success: false,
+        code: 'REPORT_REVIEW_VERSION_CHANGED',
+        message: '识别或审核版本已经变化，请刷新审核页面后再补提',
+      });
+    }
     const linkedPages = linkedReportItemPages(report.reportItems || [], pageNum);
     const pageRunId = crypto.randomUUID();
     const startedAt = new Date();
+    const pageClaimFilter = buildPageOcrClaimFilter(report._id);
+    if (report.ocrVersion) {
+      pageClaimFilter.currentExtractionId = report.currentExtractionId || null;
+      pageClaimFilter.currentRevisionId = report.currentRevisionId || null;
+    }
     const claimed = await MedicalReport.findOneAndUpdate(
-      buildPageOcrClaimFilter(report._id),
+      pageClaimFilter,
       { $set: { pageParseStatus: { runId: pageRunId, pageNum, status: 'processing', startedAt, message: `正在补提第${pageNum}页` } } },
       { new: true },
     );
     if (!claimed) {
+      const latestVersion = await MedicalReport.findById(report._id).select('currentExtractionId currentRevisionId').lean();
+      if (report.ocrVersion && (
+        String(latestVersion?.currentExtractionId || '') !== String(report.currentExtractionId || '')
+        || String(latestVersion?.currentRevisionId || '') !== String(report.currentRevisionId || '')
+      )) {
+        return res.status(409).json({
+          success: false,
+          code: 'REPORT_REVIEW_VERSION_CHANGED',
+          message: '识别或审核版本已经变化，请刷新审核页面后再补提',
+        });
+      }
       return res.json({ success: true, processing: true, duplicate: true, message: '已有完整识别或单页补提任务正在运行，请稍候刷新' });
     }
     runReportPageParse(report._id, pageNum, { runId: pageRunId }).catch(async error => {

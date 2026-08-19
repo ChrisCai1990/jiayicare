@@ -2814,7 +2814,13 @@ export default function PatientDetailPage() {
   const handleSaveOCRDraft = async () => {
     setOcrSaving(true)
     try {
-      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending', reviewAction: 'save_draft' })
+      await staffAPI.updateReport(ocrReviewReport._id, {
+        reportItems: ocrEditItems,
+        aiStatus: 'pending',
+        reviewAction: 'save_draft',
+        reviewExtractionId: ocrReviewReport.currentExtractionId || '',
+        reviewBaseRevisionId: ocrReviewReport.currentRevisionId || null,
+      })
       toast('草稿已保存（仍为待审核）')
       setOcrReviewReport(null)
       loadReports()
@@ -2834,8 +2840,17 @@ export default function PatientDetailPage() {
     setOcrSaving(true)
     try {
       // 先保存当前人工修改，再启动单页补提，避免覆盖尚未保存的审核内容。
-      await staffAPI.updateReport(ocrReviewReport._id, { reportItems: ocrEditItems, aiStatus: 'pending' })
-      const res = await staffAPI.parseReportPageAI(ocrReviewReport._id, ocrReviewPage)
+      await staffAPI.updateReport(ocrReviewReport._id, {
+        reportItems: ocrEditItems,
+        aiStatus: 'pending',
+        reviewAction: 'save_draft',
+        reviewExtractionId: ocrReviewReport.currentExtractionId || '',
+        reviewBaseRevisionId: ocrReviewReport.currentRevisionId || null,
+      })
+      const res = await staffAPI.parseReportPageAI(ocrReviewReport._id, ocrReviewPage, {
+        expectedExtractionId: ocrReviewReport.currentExtractionId || '',
+        expectedBaseRevisionId: ocrReviewReport.currentRevisionId || null,
+      })
       toast(res.message || `第${ocrReviewPage}页补提已开始`)
       setOcrReviewReport(prev => prev ? { ...prev, pageParseStatus: { pageNum: ocrReviewPage, status: 'processing', message: `正在补提第${ocrReviewPage}页` } } : prev)
       // 保持审核窗口打开并轮询；完成后原地刷新该页数据，避免用户靠猜测反复点击。

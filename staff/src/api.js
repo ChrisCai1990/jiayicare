@@ -133,7 +133,14 @@ export const staffAPI = {
   updateReport:  (id, d)  => req(`/staff/medical-reports/${id}`,       { method: 'PATCH', body: JSON.stringify(d) }),
   deleteReport:  (id)     => req(`/staff/medical-reports/${id}`,       { method: 'DELETE' }),
   parseReportAI: (id, mode = 'legacy', options = {}) => req(`/staff/medical-reports/${id}/parse-ai`, { method: 'POST', body: JSON.stringify({ mode, ...options }) }),
-  parseReportPageAI: (id, pageNum) => req(`/staff/medical-reports/${id}/parse-page`, { method: 'POST', body: JSON.stringify({ pageNum }) }),
+  parseReportPageAI: (id, pageNum, version = {}) => req(`/staff/medical-reports/${id}/parse-page`, {
+    method: 'POST',
+    body: JSON.stringify({
+      pageNum,
+      expectedExtractionId: version.expectedExtractionId || '',
+      expectedBaseRevisionId: version.expectedBaseRevisionId || null,
+    }),
+  }),
   reclassifyReport: (patientId, reportId) => req(`/staff/patients/${patientId}/reports/${reportId}/reclassify`, { method: 'POST' }),
   getScreeningCatalog: () => req('/staff/screening-catalog'),
   getScreeningYearSummaries: (id) => req(`/staff/patients/${id}/screening-year-summaries`),
