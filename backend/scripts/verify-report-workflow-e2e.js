@@ -303,20 +303,23 @@ async function main() {
     assert.equal(stalePageParseResponse.status, 409);
     assert.equal(stalePageParseBody.code, 'REPORT_REVIEW_VERSION_CHANGED');
 
-    const [report, revision, event, candidate, projection] = await Promise.all([
+    const [report, revision, event, candidate, projection, automaticProjectionEvent] = await Promise.all([
       MedicalReport.findById(reportId).lean(),
       ReportRevision.findOne({ reportId }).lean(),
       ReportReviewEvent.findOne({ reportId, requestId: reviewRequestId }).lean(),
       ReportScreeningCandidate.findOne({ reportId, sourceItemId: 'e2e-item-2' }).lean(),
       UserScreeningItem.findOne({ reportId, itemId: 'chronic|糖尿病|空腹血糖' }).lean(),
+      ReportScreeningProjectionEvent.findOne({ reportId, itemId: 'chronic|糖尿病|空腹血糖', action: 'activated' }).lean(),
     ]);
     assert.equal(report.audit_status, 'audited');
-    assert.ok(revision && event && candidate && projection);
+    assert.ok(revision && event && candidate && projection && automaticProjectionEvent);
     assert.equal(revision.review.auditStatus, 'audited');
     assert.equal(String(revision.review.reviewerId), String(staff._id));
     assert.ok(revision.review.reviewedAt);
     assert.equal(String(report.currentRevisionId), String(revision._id));
     assert.equal(String(projection.reportRevisionId), String(revision._id));
+    assert.equal(automaticProjectionEvent.source, 'automatic_match');
+    assert.equal(String(automaticProjectionEvent.actor.id), String(staff._id));
 
     const integrityBefore = await request(baseUrl, `/api/staff/medical-reports/${reportId}/review-integrity`, staffToken);
     assert.equal(integrityBefore.data.consistent, true, JSON.stringify(integrityBefore.data));
@@ -348,7 +351,10 @@ async function main() {
     assert.equal(reportAfterCandidate.reviewSubmission ?? null, null);
     assert.equal(String(reportAfterCandidate.currentRevisionId), String(revision._id));
 
-    await UserScreeningItem.deleteOne({ _id: projection._id });
+    await Promise.all([
+      UserScreeningItem.deleteOne({ _id: projection._id }),
+      ReportScreeningProjectionEvent.deleteOne({ _id: automaticProjectionEvent._id }),
+    ]);
     const brokenIntegrity = await request(baseUrl, `/api/staff/medical-reports/${reportId}/review-integrity`, staffToken);
     assert.equal(brokenIntegrity.data.consistent, false);
     assert.deepEqual(brokenIntegrity.data.missingProjectionKeys, ['chronic|糖尿病|空腹血糖']);
@@ -358,6 +364,13 @@ async function main() {
       body: JSON.stringify({ requestId: crypto.randomUUID() }),
     });
     assert.equal(reconciled.data.consistent, true, JSON.stringify(reconciled.data));
+    const reconciledProjectionEvent = await ReportScreeningProjectionEvent.findOne({
+      reportRevisionId: revision._id,
+      itemId: 'chronic|糖尿病|空腹血糖',
+      action: 'activated',
+    }).lean();
+    assert.equal(reconciledProjectionEvent.source, 'version_reconcile');
+    assert.equal(String(reconciledProjectionEvent.actor.id), String(staff._id));
 
     const userReports = await request(baseUrl, '/api/reports', userToken);
     assert.equal(userReports.data.length, 1);

@@ -2094,14 +2094,19 @@ router.post('/medical-reports/:id/review-integrity/reconcile', staffAuth, checkP
 
     const existingEvent = await ReportReviewEvent.findOne({ reportId: report._id, requestId }).lean();
     if (!existingEvent) {
+      const reconcileActor = { id: String(req.staff._id), name: req.staff.name || req.staff.username || '', role: req.staff.role || '' };
       await syncReportScreeningCandidates(report, revision);
-      await syncScreeningItems(report.user, report._id, revision.items || [], { reportRevisionId: revision._id });
+      await syncScreeningItems(report.user, report._id, revision.items || [], {
+        reportRevisionId: revision._id,
+        projectionActor: reconcileActor,
+        projectionEventSource: 'version_reconcile',
+      });
       await recordReportReviewEvent(report, revision, {
         requestId,
         action: 'reconcile',
         source: 'integrity_repair',
         occurredAt: new Date(),
-        actor: { id: String(req.staff._id), name: req.staff.name || req.staff.username || '', role: req.staff.role || '' },
+        actor: reconcileActor,
         summary: { reason: String(req.body?.reason || '医护端审核派生数据重新对账').slice(0, 200) },
       }, 'reconciled');
     }
@@ -2597,7 +2602,10 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         // 上一次请求可能在“版本和审核事件已落库”后、专项筛查投影完成前断开。
         // 重试必须对账下游投影，而不是只返回成功；这些同步函数均按报告/版本幂等覆盖。
         await syncReportScreeningCandidates(report, completedRevision);
-        await syncScreeningItems(report.user, report._id, completedRevision.items || [], { reportRevisionId: completedRevision._id });
+        await syncScreeningItems(report.user, report._id, completedRevision.items || [], {
+          reportRevisionId: completedRevision._id,
+          projectionActor: completedReview.actor || null,
+        });
         if (report.audit_status === 'audited') await syncBodyCompositionFromReport(report);
         const pendingScreeningCandidateCount = await ReportScreeningCandidate.countDocuments({
           reportRevisionId: completedRevision._id,
@@ -2963,7 +2971,10 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
     // 也会触发同步，导致专项筛查在审核通过前就被写入。改成严格要求 aiStatus 变为 reviewed 才同步，
     // 跟前端"提交审核（写入专项筛查）"按钮的文案设计意图一致——只有审核通过后才应该出现在专项筛查。
     if (aiStatus === 'reviewed' && report.user) {
-      await syncScreeningItems(report.user, report._id, report.reportItems, { reportRevisionId: publishedRevision?._id || null });
+      await syncScreeningItems(report.user, report._id, report.reportItems, {
+        reportRevisionId: publishedRevision?._id || null,
+        projectionActor: formalReviewContext?.actor || null,
+      });
       if (report.audit_status === 'audited') await syncBodyCompositionFromReport(report);
     }
     // 已审核报告后续若由医护修正提取项/归类并再次保存，也要用同一来源报告ID覆盖身体成分历史。
@@ -10085,7 +10096,11 @@ async function recordScreeningProjectionEvents({ reportId, reportRevisionId, use
 // 2026-07-09（用户决策"一项只归一类"）：每个检验项只写【一条】——优先医护在审核弹窗确认的单值 screeningKey，
 // 回退 screeningKeys 数组的第一个（最佳匹配）。不再对 AI 多匹配出的每个 screeningKey 都写一条，
 // 从根上消除金娟反馈的"专项筛查里多出 AI 单独生成的部分"（如球蛋白同时被写进肝功能+免疫球蛋白两处）。
-async function syncScreeningItems(userId, reportId, items, { reportRevisionId = null } = {}) {
+async function syncScreeningItems(userId, reportId, items, {
+  reportRevisionId = null,
+  projectionActor = null,
+  projectionEventSource = '',
+} = {}) {
   try {
     const existingProjections = await UserScreeningItem.find({
       user: userId,
@@ -10146,12 +10161,15 @@ async function syncScreeningItems(userId, reportId, items, { reportRevisionId = 
     });
     if (reportRevisionId) {
       const reportMeta = await MedicalReport.findById(reportId).select('tenantId').lean();
+      const projectionEvents = buildScreeningProjectionEvents(existingProjections, nextProjections)
+        .map(event => projectionEventSource ? { ...event, source: projectionEventSource } : event);
       await recordScreeningProjectionEvents({
         reportId,
         reportRevisionId,
         user: userId,
         tenantId: reportMeta?.tenantId || null,
-        events: buildScreeningProjectionEvents(existingProjections, nextProjections),
+        events: projectionEvents,
+        actor: projectionActor,
       });
     }
     if (syncedKeys.length) console.log(`[screening-sync] userId=${userId} reportId=${reportId} 同步${syncedKeys.length}个筛查投影`);
