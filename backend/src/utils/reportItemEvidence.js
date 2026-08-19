@@ -105,6 +105,16 @@ function statusPriority(status) {
   return ({ abnormal: 4, attention: 3, normal: 2, unknown: 1 })[status] || 0;
 }
 
+function hasComplementaryContinuation(left, right) {
+  // Adjacency and an identical name are not enough: native PDF text and model
+  // context can repeat a complete row on the next page. Auto-merge only when
+  // the later fragment supplies a field that was genuinely absent before.
+  // Same-field continuations remain reviewable as separate rows and can still
+  // be merged manually after the reviewer checks both source pages.
+  return ['value', 'unit', 'referenceRange', 'findings', 'diagnosis', 'conclusion', 'pathologyFindings', 'pathologyDiagnosis']
+    .some(field => !text(left[field]) && text(right[field]));
+}
+
 // Only merge exact, adjacent imaging/data continuations. Numeric lab rows are
 // deliberately excluded because the same analyte can legitimately recur.
 function mergeAdjacentReportItemEvidence(items = []) {
@@ -127,7 +137,8 @@ function mergeAdjacentReportItemEvidence(items = []) {
     const previousPages = previous ? reportItemSourcePages(previous) : [];
     const canMerge = previous
       && ['imaging', 'data'].includes(normalized.itemType)
-      && pages[0] === previousPages[previousPages.length - 1] + 1;
+      && pages[0] === previousPages[previousPages.length - 1] + 1
+      && hasComplementaryContinuation(previous, normalized);
 
     if (!canMerge) {
       result.push(normalized);

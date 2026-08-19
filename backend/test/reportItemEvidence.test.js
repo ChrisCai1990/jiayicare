@@ -43,6 +43,26 @@ test('lab rows and non-adjacent records are never auto-merged', () => {
   assert.deepEqual(reportItemSourcePages(rows[1]), [9]);
 });
 
+test('repeated complete imaging rows on adjacent pages are not mistaken for continuations', () => {
+  const rows = mergeAdjacentReportItemEvidence([
+    { name: '皮肤', itemType: 'imaging', sourceSection: '外科', sourcePage: 8, findings: '未见明显异常', diagnosis: '未见明显异常' },
+    { name: '皮肤', itemType: 'imaging', sourceSection: '外科', sourcePage: 9, findings: '未见明显异常', diagnosis: '未见明显异常' },
+  ]);
+
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map(reportItemSourcePages), [[8], [9]]);
+});
+
+test('same-field prose on a later page remains separate for manual continuation review', () => {
+  const rows = mergeAdjacentReportItemEvidence([
+    { name: '心脏彩超', itemType: 'imaging', sourceSection: '心脏彩超', sourcePage: 18, findings: '左房饱满' },
+    { name: '心脏彩超', itemType: 'imaging', sourceSection: '心脏彩超', sourcePage: 19, findings: '心包未见分离' },
+  ]);
+
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows.map(reportItemSourcePages), [[18], [19]]);
+});
+
 test('multiple evidence inputs are deduplicated and sorted', () => {
   assert.deepEqual(reportItemSourcePages({
     sourcePage: 9,

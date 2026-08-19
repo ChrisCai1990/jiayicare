@@ -179,11 +179,12 @@ function formatAdjacentTextLayerContext(pages, pageNum, maxCharsPerSide = 900) {
   if (!Array.isArray(pages) || !Number.isInteger(page) || page <= 0) return '';
   const limit = Number.isInteger(maxCharsPerSide) && maxCharsPerSide > 0 ? maxCharsPerSide : 900;
   const previous = canonical(pages[page - 2]).replace(/\u0000/g, '').trim();
-  const next = canonical(pages[page]).replace(/\u0000/g, '').trim();
   const previousTail = previous ? previous.slice(-limit) : '';
-  const nextHead = next ? next.slice(0, limit) : '';
-  if (!previousTail && !nextHead) return '';
-  return `\n\n【相邻页边界上下文】\n以下内容只用于判断当前页是否续接上一页的栏目、表格或检查项目，不得提取相邻页自己的项目。当前页缺少重复表头时，可以继承相邻页明确出现的栏目标题；项目结果与页码仍以当前页为准。${previousTail ? `\n<previous_page_tail>\n${previousTail}\n</previous_page_tail>` : ''}${nextHead ? `\n<next_page_head>\n${nextHead}\n</next_page_head>` : ''}`;
+  if (!previousTail) return '';
+  // Only the previous page can explain why the current page starts without a
+  // repeated title. Supplying the next page lets the model pull future results
+  // into the current page, creating false cross-page evidence.
+  return `\n\n【上一页边界上下文】\n以下内容只用于判断当前页是否续接上一页的栏目、表格或检查项目，不得提取上一页自己的项目。当前页缺少重复表头时，可以继承上一页明确出现的栏目标题；项目结果与页码仍以当前页为准。\n<previous_page_tail>\n${previousTail}\n</previous_page_tail>`;
 }
 
 function selectGenericCoverageAuditPages(detailPages = [], items = []) {
