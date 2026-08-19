@@ -95,7 +95,7 @@ test('text layer only skips unmistakably non-clinical pages', () => {
 });
 
 test('header and footer only text is sent to visual page classification', () => {
-  const boilerplate = `健康体检报告 MEDICAL EXAMINATION REPORT  夏小波 先生 用户ID 5069437410 体检号 3072608140052\n${'A'.repeat(64)}\n爱康卓悦杭州未来科技城分院 15 / 27\n注：自费增项\n全国统一报告解读专线：400-081-8899`;
+  const boilerplate = `健康体检报告 MEDICAL EXAMINATION REPORT  夏小波 先生 用户ID 5069437410 体检号 3072608140052\n${'A'.repeat(64)}\n爱康卓悦杭州未来科技城分院 15 / 27\n注：自费增项\n全国统一报告解读专线：400-081-8899\n司）`;
   assert.equal(isBoilerplateOnlyReportTextPage(boilerplate), true);
   assert.equal(isBoilerplateOnlyReportTextPage(`${boilerplate}\n超声所见 肝脏形态正常`), false);
 });

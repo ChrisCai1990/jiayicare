@@ -180,7 +180,10 @@ function isBoilerplateOnlyReportTextPage(pageText) {
       && !/^注[:：]?.*自费增项$/.test(dense)
       && !/^\d+\/\d+$/.test(dense);
   });
-  return meaningfulLines.length <= 1 && meaningfulLines.join('').replace(/\s/g, '').length < 100;
+  // Institution names in some PDFs wrap their company suffix (for example
+  // "司）") onto a second line. Two short residual lines are still boilerplate;
+  // routing them to visual classification is safe and avoids hiding image pages.
+  return meaningfulLines.length <= 2 && meaningfulLines.join('').replace(/\s/g, '').length < 100;
 }
 
 function formatTextLayerEvidence(pageText, maxChars = 6000) {
