@@ -10773,6 +10773,8 @@ export default function PatientDetailPage() {
                                 OCR V{extraction.version}{String(ocrReviewReport.currentExtractionId || '') === String(extraction._id) ? ' · 当前草稿' : ''}
                                 {extraction.origin === 'page_reparse' ? ` · 补提第 ${extraction.reparsePage || '-'} 页` : ''}
                                  {` · ${extraction.source?.pageCount || 0} 页 / ${extraction.summary?.total ?? extraction.summary?.itemCount ?? '-'} 项 · ${extraction.engine?.ocrVersion || '旧版识别'} · ${historyTime(extraction.createdAt)}`}
+                                 {Number(extraction.summary?.performance?.elapsedMs) > 0 ? ` · 识别 ${Math.round(Number(extraction.summary.performance.elapsedMs) / 1000)} 秒` : ''}
+                                 {extraction.summary?.performance?.processingMode === 'text_primary_with_visual_fallback' ? ` · 文字层主提取 ${extraction.summary.performance.textPrimaryPageCount || 0} 页 / 视觉兜底 ${extraction.summary.performance.visualFallbackPageCount || 0} 页` : ''}
                                  {reportEvidence?.identity && extraction.source?.originalEvidence?.identity ? ` · ${evidenceMatches(extraction.source.originalEvidence) ? '同原件' : '原件不一致'}` : ''}
                               </div>
                             )) : <div>当前报告尚无版本化 OCR 快照（历史报告会在下次重新识别后开始留痕）。</div>}

@@ -10325,8 +10325,11 @@ async function runReportParse(reportId, options = {}) {
 
   const isPdf = isPdfReport(report);
   const t0 = Date.now();
+  const { createOcrStageTimer } = require('../utils/ocrPerformance');
+  const ocrStageTimer = createOcrStageTimer();
   const setOcrProgress = (stage, message, extra = {}) => {
     if (!useOcrV2) return;
+    ocrStageTimer.transition(stage);
     MedicalReport.findOneAndUpdate(runFilter, {
       ocrProgress: { runId, stage, message, elapsedMs: Date.now() - t0, updatedAt: new Date(), ...extra },
     }).catch(() => {});
@@ -11013,6 +11016,12 @@ async function runReportParse(reportId, options = {}) {
             retryBudgetExceeded: deferredRetryPages.size > 0,
             deferredRetryPages: [...deferredRetryPages].sort((a, b) => a - b),
             pageDispositions: finalizedPageDispositions,
+            performance: ocrStageTimer.snapshot({
+              processingMode: useTextLayerPrimary ? 'text_primary_with_visual_fallback' : 'visual_primary',
+              textPrimaryPageCount: textPrimaryByPage.size,
+              visualFallbackPageCount: visualFallbackPages?.length ?? totalPageCount,
+              deferredRetryPageCount: deferredRetryPages.size,
+            }),
           },
           ocrProgress: { runId, stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
         } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
@@ -11041,6 +11050,7 @@ async function runReportParse(reportId, options = {}) {
     // 图片：按上传顺序逐张识别。禁止把多张图一次性交给模型后让模型自行重排，
     // 否则不同版式报告容易被重新按 lab/imaging 分类，破坏原报告从前到后的顺序。
     const bufs = report.fileUrls && report.fileUrls.length ? await fetchReportBuffers(report, UPLOADS_DIR) : [await fetchReportBuffer(report, UPLOADS_DIR)];
+    setOcrProgress('visual_ocr', `正在识别上传的${bufs.length}张报告图片`, { totalPages: bufs.length });
     let imageItems = [];
     const imageSummaries = [];
     let imageInstitution = report.institution;
@@ -11192,6 +11202,12 @@ async function runReportParse(reportId, options = {}) {
           auto: qualityImageItems.filter(item => item.reviewPriority === 'auto').length,
           review: qualityImageItems.filter(item => item.reviewPriority === 'review').length,
           high: qualityImageItems.filter(item => item.reviewPriority === 'high').length,
+          performance: ocrStageTimer.snapshot({
+            processingMode: 'image_visual',
+            textPrimaryPageCount: 0,
+            visualFallbackPageCount: bufs.length,
+            deferredRetryPageCount: 0,
+          }),
         },
         ocrProgress: { runId, stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: bufs.length },
       } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
