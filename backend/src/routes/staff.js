@@ -2064,16 +2064,17 @@ router.get('/medical-reports/:id/review-integrity', staffAuth, checkPermissionSt
     if (!report.currentRevisionId) {
       return res.json({ success: true, data: assessReportProjectionIntegrity() });
     }
-    const [revision, reviewEvents, candidates, projections] = await Promise.all([
+    const [revision, reviewEvents, candidates, projections, projectionEvents] = await Promise.all([
       ReportRevision.findOne({ _id: report.currentRevisionId, reportId: report._id }).lean(),
       ReportReviewEvent.find({ reportId: report._id, reportRevisionId: report.currentRevisionId }).select('reportRevisionId action source result').lean(),
       ReportScreeningCandidate.find({ reportId: report._id, reportRevisionId: report.currentRevisionId }).select('sourceItemId status resolvedScreeningKey').lean(),
       UserScreeningItem.find({ reportId: report._id, sourceType: 'ocr_review' }).select('itemId reportRevisionId').lean(),
+      ReportScreeningProjectionEvent.find({ reportId: report._id, reportRevisionId: report.currentRevisionId }).select('reportRevisionId itemId action').lean(),
     ]);
     if (!revision) {
       return res.status(409).json({ success: false, message: '当前正式版本引用已失效，请联系管理员核查' });
     }
-    res.json({ success: true, data: assessReportProjectionIntegrity({ revision, reviewEvents, candidates, projections }) });
+    res.json({ success: true, data: assessReportProjectionIntegrity({ revision, reviewEvents, candidates, projections, projectionEvents }) });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
 
@@ -2101,12 +2102,13 @@ router.post('/medical-reports/:id/review-integrity/reconcile', staffAuth, checkP
       }, 'reconciled');
     }
 
-    const [reviewEvents, candidates, projections] = await Promise.all([
+    const [reviewEvents, candidates, projections, projectionEvents] = await Promise.all([
       ReportReviewEvent.find({ reportId: report._id, reportRevisionId: revision._id }).select('reportRevisionId action source result').lean(),
       ReportScreeningCandidate.find({ reportId: report._id, reportRevisionId: revision._id }).select('sourceItemId status resolvedScreeningKey').lean(),
       UserScreeningItem.find({ reportId: report._id, sourceType: 'ocr_review' }).select('itemId reportRevisionId').lean(),
+      ReportScreeningProjectionEvent.find({ reportId: report._id, reportRevisionId: revision._id }).select('reportRevisionId itemId action').lean(),
     ]);
-    const integrity = assessReportProjectionIntegrity({ revision, reviewEvents, candidates, projections });
+    const integrity = assessReportProjectionIntegrity({ revision, reviewEvents, candidates, projections, projectionEvents });
     res.json({ success: true, data: integrity, meta: { deduplicated: !!existingEvent } });
   } catch (err) { res.status(500).json({ success: false, message: err.message }); }
 });
@@ -9761,6 +9763,7 @@ async function publishReportRevision(report, reviewContext = null) {
           files: buildReportSourceFiles(extraction?.source?.files?.length ? extraction.source.files : report.sourceFiles),
         },
         reviewMeta: report.ocrReviewMeta || null,
+        projectionAuditVersion: 'v1',
       });
       await ReportRevision.updateMany(
         { reportId: report._id, _id: { $ne: revision._id }, status: 'published' },

@@ -39,6 +39,26 @@ test('a published revision is consistent when audit, candidates and projections 
   assert.equal(result.reviewEventCount, 1);
 });
 
+test('new revisions require an activation event for every current projection', () => {
+  const auditedRevision = { ...revision, projectionAuditVersion: 'v1' };
+  const base = {
+    revision: auditedRevision,
+    reviewEvents: [{ reportRevisionId: 'revision-2', action: 'submit', source: 'ocr_review', result: 'published' }],
+    candidates: [{ sourceItemId: 'item-2', status: 'pending' }],
+    projections: [{ itemId: 'chronic|糖尿病|血糖', reportRevisionId: 'revision-2' }],
+  };
+  const missing = assessReportProjectionIntegrity(base);
+  assert.equal(missing.consistent, false);
+  assert.deepEqual(missing.missingProjectionEventKeys, ['chronic|糖尿病|血糖']);
+
+  const complete = assessReportProjectionIntegrity({
+    ...base,
+    projectionEvents: [{ reportRevisionId: 'revision-2', itemId: 'chronic|糖尿病|血糖', action: 'activated' }],
+  });
+  assert.equal(complete.consistent, true);
+  assert.equal(complete.projectionEventCount, 1);
+});
+
 test('resolved candidates become expected projections and dismissed candidates do not', () => {
   const result = assessReportProjectionIntegrity({
     revision,

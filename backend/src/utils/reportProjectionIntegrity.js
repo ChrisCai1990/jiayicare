@@ -6,12 +6,13 @@ function expectedMatchedKeys(items) {
   return uniq((items || []).filter(item => item?.matchStatus === 'matched').map(item => item.screeningKey || item.screeningKeys?.[0]));
 }
 
-function assessReportProjectionIntegrity({ revision, reviewEvents = [], candidates = [], projections = [] } = {}) {
+function assessReportProjectionIntegrity({ revision, reviewEvents = [], candidates = [], projections = [], projectionEvents = [] } = {}) {
   if (!revision?._id) {
     return {
       status: 'not_published', consistent: true, reviewEventCount: 0,
       missingCandidateSourceItemIds: [], staleCandidateSourceItemIds: [],
       missingProjectionKeys: [], staleProjectionKeys: [], wrongRevisionProjectionKeys: [],
+      missingProjectionEventKeys: [], staleProjectionEventKeys: [],
     };
   }
   const revisionId = String(revision._id);
@@ -39,12 +40,24 @@ function assessReportProjectionIntegrity({ revision, reviewEvents = [], candidat
   const wrongRevisionProjectionKeys = uniq((projections || [])
     .filter(item => item.itemId && String(item.reportRevisionId || '') !== revisionId)
     .map(item => item.itemId));
+  const projectionAuditRequired = revision.projectionAuditVersion === 'v1';
+  const activatedEventKeys = uniq((projectionEvents || [])
+    .filter(item => item.action === 'activated' && String(item.reportRevisionId || '') === revisionId)
+    .map(item => item.itemId));
+  const missingProjectionEventKeys = projectionAuditRequired
+    ? expectedProjectionKeys.filter(key => !activatedEventKeys.includes(key))
+    : [];
+  const staleProjectionEventKeys = projectionAuditRequired
+    ? activatedEventKeys.filter(key => !expectedProjectionKeys.includes(key))
+    : [];
   const consistent = linkedEvents.length > 0
     && !missingCandidateSourceItemIds.length
     && !staleCandidateSourceItemIds.length
     && !missingProjectionKeys.length
     && !staleProjectionKeys.length
-    && !wrongRevisionProjectionKeys.length;
+    && !wrongRevisionProjectionKeys.length
+    && !missingProjectionEventKeys.length
+    && !staleProjectionEventKeys.length;
 
   return {
     status: consistent ? 'consistent' : 'incomplete',
@@ -60,6 +73,10 @@ function assessReportProjectionIntegrity({ revision, reviewEvents = [], candidat
     missingProjectionKeys,
     staleProjectionKeys,
     wrongRevisionProjectionKeys,
+    projectionAuditRequired,
+    projectionEventCount: activatedEventKeys.length,
+    missingProjectionEventKeys,
+    staleProjectionEventKeys,
   };
 }
 

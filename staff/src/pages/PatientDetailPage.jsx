@@ -10625,6 +10625,7 @@ export default function PatientDetailPage() {
                                 审核派生数据不完整：审核事件 {history.reviewIntegrity.reviewEventCount || 0} 条；
                                 缺候选 {history.reviewIntegrity.missingCandidateSourceItemIds?.length || 0} 项；
                                 缺筛查投影 {history.reviewIntegrity.missingProjectionKeys?.length || 0} 项；
+                                缺投影留痕 {history.reviewIntegrity.missingProjectionEventKeys?.length || 0} 项；
                                 残留记录 {(history.reviewIntegrity.staleCandidateSourceItemIds?.length || 0) + (history.reviewIntegrity.staleProjectionKeys?.length || 0)} 项。
                                 请勿重复人工录入，保留当前报告并联系管理员对账。
                                 {canAuditReports && (

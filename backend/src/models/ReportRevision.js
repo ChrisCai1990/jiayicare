@@ -33,6 +33,8 @@ const reportRevisionSchema = new mongoose.Schema({
   review: { type: revisionReviewSchema, required: true },
   source: { type: revisionSourceSchema, default: () => ({}) },
   reviewMeta: { type: mongoose.Schema.Types.Mixed, default: null },
+  // v1 起要求每个当前筛查投影都有追加式 projection event；历史版本为空时保持兼容。
+  projectionAuditVersion: { type: String, default: '' },
 }, { timestamps: true });
 
 reportRevisionSchema.index({ reportId: 1, revisionNo: 1 }, { unique: true });
