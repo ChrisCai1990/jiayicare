@@ -240,6 +240,23 @@ async function main() {
       }),
     });
 
+    // Simulate interruption after the immutable revision and review event were stored,
+    // but before the mutable report status was finalized. Retrying the same request
+    // must repair the status without creating a second revision.
+    await MedicalReport.updateOne(
+      { _id: reportId },
+      { $set: { audit_status: 'unaudited' }, $unset: { audited_by: 1, audited_at: 1, staffAuditSnapshot: 1 } },
+    );
+    const recoveredReview = await request(baseUrl, `/api/staff/medical-reports/${reportId}`, staffToken, {
+      method: 'PATCH',
+      body: JSON.stringify({ aiStatus: 'reviewed', reviewAction: 'submit', reviewRequestId }),
+    });
+    assert.equal(recoveredReview.meta.deduplicatedReview, true);
+    const reportAfterReviewRecovery = await MedicalReport.findById(reportId).lean();
+    assert.equal(reportAfterReviewRecovery.audit_status, 'audited');
+    assert.ok(reportAfterReviewRecovery.staffAuditSnapshot?.snapshotAt);
+    assert.equal(await ReportRevision.countDocuments({ reportId }), 1);
+
     const staleReviewResponse = await fetch(`${baseUrl}/api/staff/medical-reports/${reportId}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json', authorization: `Bearer ${staffToken}` },
@@ -293,6 +310,9 @@ async function main() {
     ]);
     assert.equal(report.audit_status, 'audited');
     assert.ok(revision && event && candidate && projection);
+    assert.equal(revision.review.auditStatus, 'audited');
+    assert.equal(String(revision.review.reviewerId), String(staff._id));
+    assert.ok(revision.review.reviewedAt);
     assert.equal(String(report.currentRevisionId), String(revision._id));
     assert.equal(String(projection.reportRevisionId), String(revision._id));
 
@@ -347,7 +367,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));

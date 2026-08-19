@@ -2567,6 +2567,32 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
         if (String(report.currentRevisionId || '') !== String(completedRevision._id)) {
           return res.json({ success: true, data: report, meta: { deduplicatedReview: true, supersededReview: true } });
         }
+        // 正式版本与审核事件已经落库、但请求在最终状态回填前中断时，同一 requestId
+        // 的重试负责补齐报告状态。这样页面仍保持“待审核”可重试，不会形成不可见的半完成记录。
+        if (report.audit_status !== 'audited') {
+          const recoveredAt = completedReview.occurredAt || new Date();
+          const recoveredBy = completedReview.actor?.name || report.audited_by || '';
+          const recovered = await MedicalReport.updateOne(
+            { _id: report._id, currentRevisionId: completedRevision._id },
+            { $set: {
+              audit_status: 'audited',
+              audited_by: recoveredBy,
+              audited_at: recoveredAt,
+              staffAuditSnapshot: { reportItems: completedRevision.items || [], snapshotAt: recoveredAt },
+            } },
+          );
+          if (recovered.matchedCount !== 1) {
+            return res.status(409).json({
+              success: false,
+              code: 'REPORT_REVIEW_VERSION_CHANGED',
+              message: '报告正式版本已经变化，请刷新后核对当前审核状态',
+            });
+          }
+          report.audit_status = 'audited';
+          report.audited_by = recoveredBy;
+          report.audited_at = recoveredAt;
+          report.staffAuditSnapshot = { reportItems: completedRevision.items || [], snapshotAt: recoveredAt };
+        }
         // 上一次请求可能在“版本和审核事件已落库”后、专项筛查投影完成前断开。
         // 重试必须对账下游投影，而不是只返回成功；这些同步函数均按报告/版本幂等覆盖。
         await syncReportScreeningCandidates(report, completedRevision);
@@ -2646,6 +2672,7 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
       }
     }
     let formalReviewContext = null;
+    let auditFinalizeContext = null;
     // 已审核通过的报告：只允许更新 AI归类（aiStatus/reportItems），其余字段不可改
     if (report.audit_status === 'audited' && (title || type || hospital || date || content)) {
       return res.status(403).json({ success: false, message: '已审核通过的报告不可修改基本信息' });
@@ -2776,12 +2803,15 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
     }
     if (autoAuditPending) {
       applyAuditedInstitution(report);
-      report.audit_status = 'audited';
-      report.audited_by = req.staff.name;
-      report.audited_at = new Date();
-      report.staffAuditSnapshot = report.staffAuditSnapshot?.snapshotAt
-        ? report.staffAuditSnapshot
-        : { reportItems: report.reportItems, snapshotAt: new Date() };
+      const auditedAt = new Date();
+      auditFinalizeContext = {
+        auditedBy: req.staff.name || req.staff.username || '',
+        auditedAt,
+        staffAuditSnapshot: report.staffAuditSnapshot?.snapshotAt
+          ? report.staffAuditSnapshot
+          : { reportItems: report.reportItems, snapshotAt: auditedAt },
+      };
+      if (formalReviewContext) formalReviewContext.targetAuditStatus = 'audited';
     }
     if (aiSummary !== undefined) report.aiSummary = aiSummary;
     if (displayRotation !== undefined) {
@@ -2910,6 +2940,22 @@ router.patch('/medical-reports/:id', staffAuth, checkPermissionStrict('reports',
     let publishedRevision = null;
     if (aiStatus === 'reviewed' && report.user) {
       publishedRevision = await publishReportRevision(report, formalReviewContext);
+    }
+    if (publishedRevision && auditFinalizeContext) {
+      const finalized = await MedicalReport.updateOne(
+        buildReviewSubmissionOwnerFilter(report._id, reviewClaimId),
+        { $set: {
+          audit_status: 'audited',
+          audited_by: auditFinalizeContext.auditedBy,
+          audited_at: auditFinalizeContext.auditedAt,
+          staffAuditSnapshot: auditFinalizeContext.staffAuditSnapshot,
+        } },
+      );
+      if (finalized.matchedCount !== 1) throw new Error('正式审核版本已生成，但报告状态回填失败，请使用同一审核请求重试');
+      report.audit_status = 'audited';
+      report.audited_by = auditFinalizeContext.auditedBy;
+      report.audited_at = auditFinalizeContext.auditedAt;
+      report.staffAuditSnapshot = auditFinalizeContext.staffAuditSnapshot;
     }
 
     // 2026-07-02修复：此前条件是 || 关系，"保存草稿"(aiStatus:'pending')只要带了reportItems字段
@@ -9917,7 +9963,7 @@ async function publishReportRevision(report, reviewContext = null) {
           reviewerRole: reviewContext?.actor?.role || '',
           reviewedAt: reviewContext?.occurredAt || report.reviewedAt || new Date(),
           action: reviewContext?.action || 'approve',
-          auditStatus: report.audit_status || '',
+          auditStatus: reviewContext?.targetAuditStatus || report.audit_status || '',
         },
         source: {
           extractionVersion: extraction?.version ?? null,
