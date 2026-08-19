@@ -226,6 +226,10 @@ async function main() {
     assert.ok(reportAfterDraft.dataEditLog.some(entry => entry.sourceItemId === 'e2e-draft-item' && entry.field === '__item_added__'));
     assert.ok(reportAfterDraft.ocrCorrectionLog.some(entry => entry.sourceItemId === 'e2e-draft-item' && entry.field === '__item_added__'));
     assert.equal(await UserScreeningItem.countDocuments({ reportId }), 0);
+    const draftProjectionView = await request(baseUrl, `/api/staff/medical-reports/${reportId}/screening-projections`, staffToken);
+    assert.deepEqual(draftProjectionView.data, []);
+    assert.equal(draftProjectionView.reportRevisionId, null);
+    assert.equal(draftProjectionView.revisionNo, null);
 
     const reviewRequestId = crypto.randomUUID();
     await request(baseUrl, `/api/staff/medical-reports/${reportId}`, staffToken, {
@@ -321,6 +325,61 @@ async function main() {
     assert.equal(String(projection.reportRevisionId), String(revision._id));
     assert.equal(automaticProjectionEvent.source, 'automatic_match');
     assert.equal(String(automaticProjectionEvent.actor.id), String(staff._id));
+
+    const publishedProjectionView = await request(baseUrl, `/api/staff/medical-reports/${reportId}/screening-projections`, staffToken);
+    assert.equal(String(publishedProjectionView.reportRevisionId), String(revision._id));
+    assert.equal(publishedProjectionView.revisionNo, revision.revisionNo);
+    assert.equal(publishedProjectionView.data.length, 1);
+    assert.equal(publishedProjectionView.data[0].itemId, projection.itemId);
+    assert.equal(publishedProjectionView.data[0].reportItems.length, 1);
+    assert.equal(publishedProjectionView.data[0].reportItems[0].sourceItemId, 'e2e-item-1');
+    assert.equal(publishedProjectionView.data[0].reportItems[0].value, '5.2');
+
+    // The detail view must be built from the immutable formal revision. A later
+    // mutable draft and projections from a superseded revision must not leak in.
+    await MedicalReport.updateOne(
+      { _id: reportId },
+      { $set: { reportItems: [{ sourceItemId: 'e2e-item-1', name: 'Mutable draft', value: 'must-not-leak' }] } },
+    );
+    const supersededRevision = await ReportRevision.create({
+      reportId,
+      extractionId: extraction._id,
+      user: user._id,
+      tenantId,
+      revisionNo: 0,
+      contentHash: crypto.createHash('sha256').update(`superseded-${reportId}`).digest('hex'),
+      status: 'superseded',
+      items: [{ sourceItemId: 'old-item', name: 'Old item', value: 'old' }],
+      review: {
+        reviewerId: staff._id,
+        reviewerName: staff.name,
+        reviewerRole: staff.role,
+        reviewedAt: new Date(),
+        action: 'submit',
+        auditStatus: 'audited',
+      },
+    });
+    const supersededProjection = await UserScreeningItem.create({
+      user: user._id,
+      itemId: 'legacy|old|item',
+      category: 'legacy',
+      parentLabel: 'Old',
+      itemLabel: 'Old item',
+      status: 'completed',
+      reportId,
+      reportRevisionId: supersededRevision._id,
+      sourceType: 'ocr_review',
+      sourceItemIds: ['old-item'],
+    });
+    const isolatedProjectionView = await request(baseUrl, `/api/staff/medical-reports/${reportId}/screening-projections`, staffToken);
+    assert.equal(isolatedProjectionView.data.length, 1);
+    assert.equal(isolatedProjectionView.data[0].itemId, projection.itemId);
+    assert.equal(isolatedProjectionView.data[0].reportItems[0].value, '5.2');
+    await Promise.all([
+      MedicalReport.updateOne({ _id: reportId }, { $set: { reportItems: revision.items } }),
+      UserScreeningItem.deleteOne({ _id: supersededProjection._id }),
+      ReportRevision.deleteOne({ _id: supersededRevision._id }),
+    ]);
 
     const integrityBefore = await request(baseUrl, `/api/staff/medical-reports/${reportId}/review-integrity`, staffToken);
     assert.equal(integrityBefore.data.consistent, true, JSON.stringify(integrityBefore.data));
@@ -439,7 +498,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'draft_correction_traced', 'draft_projection_blocked', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'manual_screening_association_validated', 'manual_review_projected', 'manual_review_retry_recovered', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'draft_correction_traced', 'draft_projection_blocked', 'draft_projection_view_empty', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'projection_view_bound_to_formal_revision', 'superseded_projection_excluded', 'mutable_draft_excluded_from_projection_view', 'integrity_detected_and_reconciled', 'manual_screening_association_validated', 'manual_review_projected', 'manual_review_retry_recovered', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
