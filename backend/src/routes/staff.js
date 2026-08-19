@@ -9304,6 +9304,7 @@ function dropNumberedSummaryEcho(items) {
 function isUnclassifiedNameEcho(it) {
   if (it.matchStatus !== 'unclassified') return false;
   const name = str(it.name);
+  if (/口腔|牙科|龋|齿|牙结石|牙周/.test(`${name}${str(it.sourceSection)}`)) return false;
   if (!name || name.length < 3) return false;
   const stripNum = (s) => s.replace(/^\d+\s*[、.．:：]\s*/, '').trim();
   const findings = stripNum(str(it.findings));
@@ -12270,6 +12271,6 @@ ${addonListText}
 // without exposing a second implementation. The runner itself enforces a
 // localhost-only database and local uploads path before calling this function.
 router.runReportParse = runReportParse;
-router.reportFilterInternals = { isAdvisoryEcho };
+router.reportFilterInternals = { isAdvisoryEcho, isUnclassifiedNameEcho };
 
 module.exports = router;
