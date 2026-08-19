@@ -1466,6 +1466,7 @@ export default function PatientDetailPage() {
   const [showReportDetail, setShowReportDetail] = useState(null)
   const [reportDetailLoading, setReportDetailLoading] = useState(false)
   const [reportDetailTrace, setReportDetailTrace] = useState(null)
+  const reportDetailRequestRef = useRef({ sequence: 0, reportId: '' })
   const [showSRDetail, setShowSRDetail] = useState(null)
   const [reviewingDraft, setReviewingDraft] = useState(null)
   const [staffList, setStaffList] = useState([])
@@ -2035,7 +2036,26 @@ export default function PatientDetailPage() {
   const [reportScreeningData, setReportScreeningData] = useState([])
   const [reportSourceFocus, setReportSourceFocus] = useState(null)
 
+  const closeReportDetail = () => {
+    reportDetailRequestRef.current = {
+      sequence: reportDetailRequestRef.current.sequence + 1,
+      reportId: '',
+    }
+    setShowReportDetail(null)
+    setReportDetailLoading(false)
+    setReportDetailTrace(null)
+    setReportScreeningData([])
+    setReportSourceFocus(null)
+  }
+
   const openReportDetail = (r) => {
+    const request = {
+      sequence: reportDetailRequestRef.current.sequence + 1,
+      reportId: String(r._id || ''),
+    }
+    reportDetailRequestRef.current = request
+    const isCurrentRequest = () => reportDetailRequestRef.current.sequence === request.sequence
+      && reportDetailRequestRef.current.reportId === request.reportId
     // 立即显示弹窗（用列表里已有的数据）
     setShowReportDetail(r)
     setReportScreeningData([])
@@ -2044,15 +2064,16 @@ export default function PatientDetailPage() {
 
     // 背景异步：拉完整报告详情
     staffAPI.getReport(r._id)
-      .then(res => setShowReportDetail(res.data))
+      .then(res => { if (isCurrentRequest()) setShowReportDetail(res.data) })
       .catch(() => { /* 保持列表数据，下方会显示加载失败提示 */ })
-      .finally(() => setReportDetailLoading(false))
+      .finally(() => { if (isCurrentRequest()) setReportDetailLoading(false) })
 
     // 普通详情也应能看见正式审核版本和派生数据状态；单独加载，失败不阻塞原件预览。
     Promise.allSettled([
       staffAPI.getReportRevisions(r._id),
       staffAPI.getReportReviewIntegrity(r._id),
     ]).then(([revisions, integrity]) => {
+      if (!isCurrentRequest()) return
       setReportDetailTrace({
         reportId: r._id,
         revisions: revisions.status === 'fulfilled' ? (revisions.value.data || []) : [],
@@ -2070,7 +2091,7 @@ export default function PatientDetailPage() {
 
     // 专项筛查只能来自当前正式审核版本；禁止按标题/日期把报告草稿模糊匹配成投影。
     staffAPI.getReportScreeningProjections(r._id)
-      .then(res => setReportScreeningData(res.data || []))
+      .then(res => { if (isCurrentRequest()) setReportScreeningData(res.data || []) })
       .catch(() => {})
   }
 
@@ -3269,7 +3290,7 @@ export default function PatientDetailPage() {
       })
       manualAuditRequestIdsRef.current.delete(requestKey)
       toast(action === 'approve' ? '已审核通过' : '已驳回')
-      setShowReportDetail(null)
+      closeReportDetail()
       setRejectReason('')
       setShowRejectInput(false)
       loadReports()
@@ -10010,7 +10031,7 @@ export default function PatientDetailPage() {
           <div className="modal" style={{ maxWidth: 560, maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
             <div className="modal-header" style={{ flexShrink: 0 }}>
               <h3 className="modal-title">{showReportDetail.title}</h3>
-              <button className="modal-close" onClick={() => setShowReportDetail(null)}>✕</button>
+              <button className="modal-close" onClick={closeReportDetail}>✕</button>
             </div>
             <div className="modal-body" style={{ overflowY: 'auto', flex: 1 }}>
               {(() => {
@@ -10381,7 +10402,7 @@ export default function PatientDetailPage() {
                   请在"审核AI结果"里确认检验数据，确认后自动完成审核
                 </div>
               )}
-              <button className="btn btn-secondary" onClick={() => { setShowReportDetail(null); setShowRejectInput(false); setRejectReason('') }}>关闭</button>
+              <button className="btn btn-secondary" onClick={() => { closeReportDetail(); setShowRejectInput(false); setRejectReason('') }}>关闭</button>
             </div>
           </div>
         </div>
