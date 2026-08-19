@@ -4,11 +4,18 @@ const connectDB = async () => {
   try {
     const conn = await mongoose.connect(process.env.MONGODB_URI);
     console.log(`✅ MongoDB 连接成功: ${conn.connection.host}`);
-    // 启动自愈：进程重启会杀死正在跑的后台AI识别任务，残留的「识别中」状态需重置，避免永久卡死
+    // 启动自愈：进程重启会终止内存中的识别任务。完整识别必须回到“待解析”，不能把未完成草稿
+    // 误放进待审核；单页补提则保留原草稿并明确标记失败，供审核人员重新补提。
     try {
       const MedicalReport = require('../models/MedicalReport');
-      const r = await MedicalReport.updateMany({ aiStatus: 'processing' }, { $set: { aiStatus: 'none' } });
-      if (r.modifiedCount > 0) console.log(`🔧 已重置 ${r.modifiedCount} 条残留「识别中」报告`);
+      const {
+        recoverInterruptedOcrRuns,
+      } = require('../utils/reportOcrRun');
+      const recoveredAt = new Date();
+      const recovered = await recoverInterruptedOcrRuns(MedicalReport, recoveredAt);
+      if (recovered.fullRunCount > 0 || recovered.pageRunCount > 0) {
+        console.log(`🔧 已恢复中断识别任务：完整识别 ${recovered.fullRunCount} 条，单页补提 ${recovered.pageRunCount} 条`);
+      }
     } catch (e) { console.error('重置残留识别中报告失败:', e.message); }
     // 索引迁移：年度方案从「每人每年一份」改为「每人每年每类型一份」，需删除旧唯一索引
     try {

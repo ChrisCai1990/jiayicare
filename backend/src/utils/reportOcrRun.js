@@ -26,6 +26,44 @@ function describeOcrRun(progress, now = new Date()) {
   };
 }
 
+function buildInterruptedFullOcrRecoveryUpdate(now = new Date()) {
+  return {
+    $set: {
+      aiStatus: 'none',
+      'ocrProgress.stage': 'interrupted',
+      'ocrProgress.message': '上次识别因服务重启中断，请重新触发识别',
+      'ocrProgress.updatedAt': new Date(now),
+    },
+  };
+}
+
+function buildInterruptedPageOcrRecoveryUpdate(now = new Date()) {
+  return {
+    $set: {
+      'pageParseStatus.status': 'failed',
+      'pageParseStatus.message': '单页补提因服务重启中断，请重新识别当前页',
+      'pageParseStatus.completedAt': new Date(now),
+    },
+  };
+}
+
+async function recoverInterruptedOcrRuns(MedicalReport, now = new Date()) {
+  const [fullRuns, pageRuns] = await Promise.all([
+    MedicalReport.updateMany(
+      { aiStatus: 'processing' },
+      buildInterruptedFullOcrRecoveryUpdate(now),
+    ),
+    MedicalReport.updateMany(
+      { 'pageParseStatus.status': 'processing' },
+      buildInterruptedPageOcrRecoveryUpdate(now),
+    ),
+  ]);
+  return {
+    fullRunCount: Number(fullRuns?.modifiedCount || 0),
+    pageRunCount: Number(pageRuns?.modifiedCount || 0),
+  };
+}
+
 function buildFullOcrClaimFilter(reportId, now = new Date()) {
   const staleBefore = ocrRunStaleBefore(now);
   const staleReviewBefore = reviewSubmissionStaleBefore(now);
@@ -95,6 +133,9 @@ module.exports = {
   OCR_RUN_WARNING_MS,
   ocrRunStaleBefore,
   describeOcrRun,
+  buildInterruptedFullOcrRecoveryUpdate,
+  buildInterruptedPageOcrRecoveryUpdate,
+  recoverInterruptedOcrRuns,
   buildFullOcrClaimFilter,
   buildPageOcrClaimFilter,
   buildOcrRunOwnerFilter,

@@ -5,6 +5,9 @@ const {
   OCR_RUN_WARNING_MS,
   ocrRunStaleBefore,
   describeOcrRun,
+  buildInterruptedFullOcrRecoveryUpdate,
+  buildInterruptedPageOcrRecoveryUpdate,
+  recoverInterruptedOcrRuns,
   buildFullOcrClaimFilter,
   buildPageOcrClaimFilter,
   buildOcrRunOwnerFilter,
@@ -43,6 +46,46 @@ test('OCR run without a progress timestamp can be safely reclaimed', () => {
     warning: true,
     retryAllowed: true,
   });
+});
+
+test('service restart returns incomplete full OCR to retry instead of review', () => {
+  const now = new Date('2026-08-19T06:00:00.000Z');
+  assert.deepEqual(buildInterruptedFullOcrRecoveryUpdate(now), {
+    $set: {
+      aiStatus: 'none',
+      'ocrProgress.stage': 'interrupted',
+      'ocrProgress.message': '上次识别因服务重启中断，请重新触发识别',
+      'ocrProgress.updatedAt': now,
+    },
+  });
+});
+
+test('service restart makes an interrupted page OCR explicitly retryable', () => {
+  const now = new Date('2026-08-19T06:00:00.000Z');
+  assert.deepEqual(buildInterruptedPageOcrRecoveryUpdate(now), {
+    $set: {
+      'pageParseStatus.status': 'failed',
+      'pageParseStatus.message': '单页补提因服务重启中断，请重新识别当前页',
+      'pageParseStatus.completedAt': now,
+    },
+  });
+});
+
+test('startup recovery targets full and page OCR independently', async () => {
+  const calls = [];
+  const MedicalReport = {
+    async updateMany(filter, update) {
+      calls.push({ filter, update });
+      return { modifiedCount: calls.length };
+    },
+  };
+  const now = new Date('2026-08-19T06:00:00.000Z');
+  const result = await recoverInterruptedOcrRuns(MedicalReport, now);
+  assert.deepEqual(result, { fullRunCount: 1, pageRunCount: 2 });
+  assert.deepEqual(calls[0].filter, { aiStatus: 'processing' });
+  assert.equal(calls[0].update.$set.aiStatus, 'none');
+  assert.deepEqual(calls[1].filter, { 'pageParseStatus.status': 'processing' });
+  assert.equal(calls[1].update.$set['pageParseStatus.status'], 'failed');
 });
 
 test('full OCR atomically excludes active full and page OCR runs', () => {

@@ -109,13 +109,6 @@ app.listen(PORT, BIND_HOST, () => {
     return;
   }
   console.log(`🚀 服务启动成功，端口：${PORT}`);
-  // 重置上次进程崩溃遗留的 processing 状态（OOM/kill 导致 catch 未运行）
-  const MedicalReport = require('./models/MedicalReport');
-  MedicalReport.updateMany(
-    { aiStatus: 'processing' },
-    { aiStatus: 'pending', aiSummary: '上次识别被中断（服务重启），请重新触发AI识别' }
-  ).then(r => { if (r.modifiedCount > 0) console.log(`[startup] 重置 ${r.modifiedCount} 条卡住的 processing 报告`); }).catch(() => {});
-
   // 首次登录用户第二批问卷（生活方式+心理健康）延迟自动推送，每天扫描一次
   require('./utils/onboardingPush').startBatch2Scheduler();
 

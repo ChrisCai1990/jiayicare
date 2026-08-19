@@ -8893,6 +8893,8 @@ export default function PatientDetailPage() {
                           : r.audit_status === 'rejected' ? '#DC3545' : '#D97706'
                         const ocrProgressText = r.aiStatus === 'processing' && r.ocrProgress
                           ? (r.ocrProgress?.message || '正在准备解析') : ''
+                        const interruptedOcrText = r.aiStatus === 'none' && r.ocrProgress?.stage === 'interrupted'
+                          ? (r.ocrProgress.message || '上次识别因服务重启中断，请重新识别') : ''
                         const ocrRuntime = r.aiStatus === 'processing' ? r.ocrRuntime : null
                         const ocrRuntimeText = ocrRuntime
                           ? `已运行约 ${formatOcrElapsed(ocrRuntime.estimatedElapsedMs)}` : ''
@@ -8909,7 +8911,7 @@ export default function PatientDetailPage() {
                             <td><span style={{ fontSize: 12, color: '#668277', whiteSpace: 'nowrap' }}>{typeLabel}</span></td>
                             <td style={{ color: '#60756B' }}>{r.hospital || r.institution || <span className="report-missing-field">待补</span>}</td>
                             <td style={{ color: '#8AA89C', whiteSpace: 'nowrap' }}>{r.checkDate || r.date || <span className="report-missing-field">待补</span>}</td>
-                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span>{Number(r.pendingScreeningCandidateCount || 0) > 0 && <div style={{ fontSize: 10, color: '#9A6700', background: '#FFF8E8', borderRadius: 999, padding: '2px 6px', marginTop: 5, width: 'fit-content' }}>待归类 {r.pendingScreeningCandidateCount}</div>}{ocrProgressText && <div style={{ fontSize: 10, color: ocrRuntime?.warning ? '#B45309' : '#7C3AED', marginTop: 5, lineHeight: 1.35, maxWidth: 190 }}>{ocrProgressText}{ocrRuntimeText && <><br />{ocrRuntimeText}</>}{ocrRuntime?.warning && <><br />{ocrRuntime.retryAllowed ? '任务已长时间无进度，可安全重新尝试' : '超过 10 分钟无新进度，可能仍在等待模型响应'}</>}</div>}</td>
+                            <td><span style={{ fontSize: 11, fontWeight: 600, color: auditColor, background: `${auditColor}12`, borderRadius: 999, padding: '3px 7px', whiteSpace: 'nowrap' }}>{auditLabel}</span>{Number(r.pendingScreeningCandidateCount || 0) > 0 && <div style={{ fontSize: 10, color: '#9A6700', background: '#FFF8E8', borderRadius: 999, padding: '2px 6px', marginTop: 5, width: 'fit-content' }}>待归类 {r.pendingScreeningCandidateCount}</div>}{ocrProgressText && <div style={{ fontSize: 10, color: ocrRuntime?.warning ? '#B45309' : '#7C3AED', marginTop: 5, lineHeight: 1.35, maxWidth: 190 }}>{ocrProgressText}{ocrRuntimeText && <><br />{ocrRuntimeText}</>}{ocrRuntime?.warning && <><br />{ocrRuntime.retryAllowed ? '任务已长时间无进度，可安全重新尝试' : '超过 10 分钟无新进度，可能仍在等待模型响应'}</>}</div>}{interruptedOcrText && <div style={{ fontSize: 10, color: '#B45309', marginTop: 5, lineHeight: 1.35, maxWidth: 190 }}>{interruptedOcrText}</div>}</td>
                             <td style={{ whiteSpace: 'nowrap' }}>
                               {isFunctionalMedicineReport ? (
                                 <span style={{ fontSize: 11, color: '#aaa' }}>功能医学类不支持AI解析，请人工查阅</span>
@@ -8920,7 +8922,7 @@ export default function PatientDetailPage() {
                                   title="使用 PDF 文字层与视觉识别生成草稿，结果仍需人工审核"
                                   disabled={parsingReportId === r._id}
                                   onClick={() => handleParseReportAI(r)}>
-                                  {parsingReportId === r._id ? '提交中…' : 'AI 解析'}
+                                  {parsingReportId === r._id ? '提交中…' : interruptedOcrText ? '重新识别' : 'AI 解析'}
                                 </button>
                               ) : !canAuditReports && r.aiStatus === 'none' && (r.fileUrl || r.content || r.hasContent || (r.fileUrls && r.fileUrls.length)) ? (
                                 <span style={{ fontSize: 11, color: '#8AA89C' }}>仅可查看，当前角色无报告审核权限</span>
