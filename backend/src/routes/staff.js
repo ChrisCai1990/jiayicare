@@ -43,6 +43,7 @@ const PlanDeletionLog = require('../models/PlanDeletionLog');
 const Product = require('../models/Product');
 const ProductShare = require('../models/ProductShare');
 const ServiceProposal = require('../models/ServiceProposal');
+const ServicePackage = require('../models/ServicePackage');
 const FollowUpForm      = require('../models/FollowUpForm');
 const FollowUpPlan      = require('../models/FollowUpPlan');
 const SystemConfig      = require('../models/SystemConfig');
