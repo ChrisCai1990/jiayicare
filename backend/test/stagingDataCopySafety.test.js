@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { assertSafety } = require('../scripts/copy-production-to-staging-sanitized');
+const { assertSafety, buildIndexCreateSpec } = require('../scripts/copy-production-to-staging-sanitized');
 
 const salt = '12345678901234567890123456789012';
 const confirm = 'create-isolated-anonymized-staging-copy-v1';
@@ -24,4 +24,18 @@ test('apply can write only a new isolated import database with explicit confirma
   assert.throws(() => assertSafety({ sourceDbName: 'jiayicare', targetDbName: 'jiayicare_staging', apply: true, confirm, salt }), /临时库/);
   assert.throws(() => assertSafety({ sourceDbName: 'jiayicare', targetDbName: 'jiayicare_staging_import_x', apply: true, confirm: 'wrong', salt }), /确认值/);
   assert.throws(() => assertSafety({ sourceDbName: 'jiayicare', targetDbName: 'jiayicare_staging_import_x', apply: true, confirm, salt: 'short' }), /32 个字符/);
+});
+
+test('MongoDB internal text indexes are rebuilt from their public weights', () => {
+  const spec = buildIndexCreateSpec({
+    name: 'name_text_icdCode_text',
+    key: { _fts: 'text', _ftsx: 1 },
+    weights: { name: 1, icdCode: 2 },
+    default_language: 'english',
+    language_override: 'language',
+  });
+  assert.deepEqual(spec.key, { name: 'text', icdCode: 'text' });
+  assert.deepEqual(spec.options.weights, { name: 1, icdCode: 2 });
+  assert.equal(spec.options.default_language, 'english');
+  assert.equal(spec.options.language_override, 'language');
 });

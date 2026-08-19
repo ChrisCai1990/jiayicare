@@ -54,18 +54,31 @@ async function buildNameReplacements(sourceDb, salt) {
   return [...unique.values()];
 }
 
+function buildIndexCreateSpec(index) {
+  const isTextIndex = index.key?._fts === 'text' || !!index.weights;
+  const key = isTextIndex
+    ? Object.fromEntries(Object.keys(index.weights || {}).map(field => [field, 'text']))
+    : index.key;
+  if (!key || !Object.keys(key).length) throw new Error(`索引 ${index.name || '未命名'} 缺少可重建字段`);
+  const options = {
+    name: index.name,
+    ...(index.unique != null ? { unique: index.unique } : {}),
+    ...(index.sparse != null ? { sparse: index.sparse } : {}),
+    ...(index.expireAfterSeconds != null ? { expireAfterSeconds: index.expireAfterSeconds } : {}),
+    ...(index.partialFilterExpression ? { partialFilterExpression: index.partialFilterExpression } : {}),
+    ...(index.collation ? { collation: index.collation } : {}),
+    ...(isTextIndex && index.weights ? { weights: index.weights } : {}),
+    ...(isTextIndex && index.default_language ? { default_language: index.default_language } : {}),
+    ...(isTextIndex && index.language_override ? { language_override: index.language_override } : {}),
+  };
+  return { key, options };
+}
+
 async function copyIndexes(sourceCollection, targetCollection) {
   const indexes = (await sourceCollection.indexes()).filter(index => index.name !== '_id_');
   for (const index of indexes) {
-    const { key, name, unique, sparse, expireAfterSeconds, partialFilterExpression, collation } = index;
-    await targetCollection.createIndex(key, {
-      name,
-      ...(unique != null ? { unique } : {}),
-      ...(sparse != null ? { sparse } : {}),
-      ...(expireAfterSeconds != null ? { expireAfterSeconds } : {}),
-      ...(partialFilterExpression ? { partialFilterExpression } : {}),
-      ...(collation ? { collation } : {}),
-    });
+    const { key, options } = buildIndexCreateSpec(index);
+    await targetCollection.createIndex(key, options);
   }
 }
 
@@ -178,4 +191,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { assertSafety };
+module.exports = { assertSafety, buildIndexCreateSpec };
