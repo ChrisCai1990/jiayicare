@@ -9165,6 +9165,11 @@ const ADVISORY_TEXT_PATTERNS = [
 ];
 function isAdvisoryEcho(it) {
   const name = str(it.name);
+  const section = str(it.sourceSection);
+  // Oral examination result tables often place a concrete finding and its
+  // treatment suggestion in the same row. The suggestion wording must not
+  // cause the actual dental finding to be discarded as generic education.
+  if (/口腔|牙科|龋|齿|牙结石|牙周/.test(`${name}${section}`)) return false;
   if (/人群(的)?(健康)?教育|健康宣教|健康指导(建议)?|生活方式指导|膳食指导|运动指导/.test(name)) return true; // name本身就是科普栏目标题，直接判定，无需再看内容
   const text = `${str(it.findings)}${str(it.diagnosis)}`;
   if (!text) return false;
@@ -10574,9 +10579,11 @@ async function runReportParse(reportId, options = {}) {
           const { pageNum, oldPage, mergedPage, useAuditedPage } = result;
           if (mergedPage.length > oldPage.length) {
             allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
+            pageDispositions.set(pageNum, { page: pageNum, type: 'detail', itemCount: mergedPage.length });
             console.log(`[parse-ai] 页${pageNum}覆盖复核补回${mergedPage.length - oldPage.length}项（首轮${oldPage.length}项）`);
           } else if (useAuditedPage) {
             allItems = allItems.filter(it => it._page !== pageNum).concat(mergedPage);
+            pageDispositions.set(pageNum, { page: pageNum, type: 'detail', itemCount: mergedPage.length });
             console.log(`[parse-ai] 页${pageNum}覆盖复核通过模板完整性校验，替换首轮结果`);
           }
         }
@@ -10953,6 +10960,10 @@ async function runReportParse(reportId, options = {}) {
       const qualityItems = ensureReportItemSourceIds(normalizeReportItemEvidence(
         useOcrV2 ? assessReportItems(classified, { textLayer }) : classified,
       ));
+      const finalizedPageDispositions = [...pageDispositions.values()].map(disposition => ({
+        ...disposition,
+        itemCount: qualityItems.filter(item => itemTouchesPage(item, disposition.page)).length,
+      })).sort((a, b) => a.page - b.page);
       const matchedCount = classified.filter(i => i.matchStatus === 'matched').length;
       const summaryText = [...new Set(summaries.map(s => s.trim()).filter(Boolean))].join('\n');
       const failedPages = totalPageCount - okPages;
@@ -10982,7 +10993,7 @@ async function runReportParse(reportId, options = {}) {
             retryBudgetMs: useTextLayerPrimary ? 90_000 : null,
             retryBudgetExceeded: deferredRetryPages.size > 0,
             deferredRetryPages: [...deferredRetryPages].sort((a, b) => a - b),
-            pageDispositions: [...pageDispositions.values()].sort((a, b) => a.page - b.page),
+            pageDispositions: finalizedPageDispositions,
           },
           ocrProgress: { runId, stage: 'versioning', message: '识别完成，正在保存不可变版本', elapsedMs: Date.now() - t0, updatedAt: new Date(), totalPages: totalPageCount },
         } : { ocrVersion: '', ocrTemplateId: '', ocrQualitySummary: null }),
@@ -12259,5 +12270,6 @@ ${addonListText}
 // without exposing a second implementation. The runner itself enforces a
 // localhost-only database and local uploads path before calling this function.
 router.runReportParse = runReportParse;
+router.reportFilterInternals = { isAdvisoryEcho };
 
 module.exports = router;
