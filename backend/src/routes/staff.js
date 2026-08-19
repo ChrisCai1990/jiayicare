@@ -81,6 +81,7 @@ const { buildReportSourceFiles, mergeReportSourceFiles, reportHasOriginal, summa
 const { canDirectlyApproveReport, validateOcrReviewTransition, validateManualAuditAction, validateOcrVersionBinding } = require('../utils/reportReviewPolicy');
 const { ALLOWED_REPORT_MIME_TYPES, assertReportFileBuffer, assertVerifiedReportOriginals } = require('../utils/reportUploadPolicy');
 const { validateReportAssociation } = require('../utils/reportAssociationPolicy');
+const { validateReportScreeningAssociation } = require('../utils/reportScreeningAssociation');
 const { ensureReportAbnormalReview } = require('../utils/reportAbnormalReview');
 const { assessReportProjectionIntegrity } = require('../utils/reportProjectionIntegrity');
 const { getReportUploadFolder } = require('../utils/runtimeSafety');
@@ -7958,6 +7959,19 @@ router.post('/patients/:id/screening-records', staffAuth, checkAnyPermissionStri
     if (!resolvedTitle) {
       return res.status(400).json({ success: false, message: '请选择筛查分类' });
     }
+    const patient = mongoose.isValidObjectId(req.params.id)
+      ? await User.findById(req.params.id).select('_id').lean()
+      : null;
+    const patientError = validateReportAssociation({ patientId: req.params.id, patient });
+    if (patientError) return res.status(patientError.status).json({ success: false, message: patientError.message });
+    const l1Node = mongoose.isValidObjectId(screeningL1)
+      ? await ProjectCategory.findOne({ _id: screeningL1, parent: null, status: 'active' }).select('_id').lean()
+      : null;
+    const l2Node = l1Node && screeningL2
+      ? await ProjectCategory.findOne({ parent: l1Node._id, name: String(screeningL2).trim(), status: 'active' }).select('_id parent name').lean()
+      : null;
+    const categoryError = validateReportScreeningAssociation({ screeningL1, screeningL2, l1Node, l2Node });
+    if (categoryError) return res.status(categoryError.status).json({ success: false, message: categoryError.message });
     const uploadedFiles = await uploadHealthFiles(req.files || [], 'screening');
     const fileUrls = uploadedFiles.map(file => file.url);
     const ossKeys = uploadedFiles.map(file => file.key);
@@ -8061,6 +8075,16 @@ router.patch('/patients/:id/screening-records/:rid', staffAuth, checkAnyPermissi
       return res.status(409).json({ success: false, message: '该报告已有识别版本，不能追加原件；请新建报告后重新识别' });
     }
     const { title, checkDate, hospital, note, screeningL1, screeningL2, screeningL3, examDescription, examConclusion } = req.body;
+    const nextScreeningL1 = screeningL1 || existingReport.screeningL1;
+    const nextScreeningL2 = screeningL2 || existingReport.screeningL2;
+    const l1Node = mongoose.isValidObjectId(nextScreeningL1)
+      ? await ProjectCategory.findOne({ _id: nextScreeningL1, parent: null, status: 'active' }).select('_id').lean()
+      : null;
+    const l2Node = l1Node && nextScreeningL2
+      ? await ProjectCategory.findOne({ parent: l1Node._id, name: String(nextScreeningL2).trim(), status: 'active' }).select('_id parent name').lean()
+      : null;
+    const categoryError = validateReportScreeningAssociation({ screeningL1: nextScreeningL1, screeningL2: nextScreeningL2, l1Node, l2Node });
+    if (categoryError) return res.status(categoryError.status).json({ success: false, message: categoryError.message });
     const raw = req.body.reportItems;
     const reportItems = Array.isArray(raw) ? raw : (raw ? JSON.parse(raw) : undefined);
     const rawL3Items = req.body.screeningL3Items;

@@ -380,20 +380,24 @@ async function main() {
     assert.equal('ossKey' in userReports.data[0], false);
     assert.equal('currentRevisionId' in userReports.data[0], false);
 
-    const manualReport = await MedicalReport.create({
-      user: user._id,
-      tenantId,
-      title: 'E2E手工报告',
-      aiStatus: 'none',
-      audit_status: 'unaudited',
-      reportItems: [{
-        sourceItemId: 'manual-item-1',
-        name: '手工血压',
-        value: '120/80',
-        matchStatus: 'matched',
-        screeningKey: 'cardiovascular|高血压|血压',
-      }],
+    const manualCreate = await request(baseUrl, `/api/staff/patients/${user._id}/screening-records`, staffToken, {
+      method: 'POST',
+      body: JSON.stringify({
+        title: 'E2E手工报告',
+        screeningL1: String(screeningRoot._id),
+        screeningL2: screeningParent.name,
+        screeningL3Items: ['手工血压'],
+        reportItems: [{
+          sourceItemId: 'manual-item-1',
+          name: '手工血压',
+          value: '120/80',
+          matchStatus: 'matched',
+          screeningKey: 'cardiovascular|高血压|血压',
+        }],
+      }),
     });
+    const manualReport = manualCreate.data;
+    assert.equal(await UserScreeningItem.countDocuments({ reportId: manualReport._id }), 0);
     const manualReviewRequestId = crypto.randomUUID();
     const manualReviewBody = {
       action: 'approve',
@@ -435,7 +439,7 @@ async function main() {
     console.log(JSON.stringify({
       success: true,
       database: databaseName,
-      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'draft_correction_traced', 'draft_projection_blocked', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'manual_review_projected', 'manual_review_retry_recovered', 'user_view_sanitized'],
+      checks: ['verified_original_attached', 'upload_retry_deduplicated', 'ocr_run_claim_is_atomic', 'late_ocr_write_rejected', 'page_ocr_claim_is_atomic', 'review_submission_claim_is_atomic', 'draft_version_bound', 'draft_correction_traced', 'draft_projection_blocked', 'review_finalize_recovered', 'stale_review_version_rejected', 'stale_draft_version_rejected', 'stale_page_parse_rejected', 'revision_published', 'review_event_recorded', 'candidate_created', 'candidate_resolution_serialized', 'projection_created', 'integrity_detected_and_reconciled', 'manual_screening_association_validated', 'manual_review_projected', 'manual_review_retry_recovered', 'user_view_sanitized'],
     }, null, 2));
   } finally {
     if (server) await new Promise(resolve => server.close(resolve));
